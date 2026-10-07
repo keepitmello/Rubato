@@ -20,8 +20,11 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertNotIn("/Users/wy", skill)
         self.assertNotIn("harness/skills/outpost/scripts", skill)
         self.assertIn("--quality xhigh", skill)
-        self.assertIn("gpt-5-6-thinking", skill)
-        self.assertIn("gpt-6-pro", skill)
+        import sys
+        sys.path.insert(0, str(ROOT / "scripts"))
+        from run_aside_repl_outpost import QUALITY_MODEL_SLUGS
+        for slug in QUALITY_MODEL_SLUGS.values():
+            self.assertIn(slug, skill)
         self.assertIn("Exit `78`", skill)
         self.assertIn("Exit `79`", skill)
         self.assertIn("--quality pro", skill)
@@ -45,7 +48,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertRegex(runbook, r'outpost"? doctor')
         self.assertNotIn("/Users/wy", runbook)
         self.assertNotIn("harness/skills/outpost/scripts", runbook)
-        self.assertIn("outpost-picker.json", runbook)
+        self.assertIn("outpost-ui.json", runbook)
         self.assertIn("under 120 seconds", runbook)
         self.assertIn("submitElapsedSeconds", runbook)
         self.assertIn("same project page", runbook)
@@ -73,8 +76,7 @@ class ConsultAsideContractTest(unittest.TestCase):
         self.assertIn("Never submit from global Chat", skill)
         self.assertIn("Never send from Work mode", skill)
         self.assertIn('data-tpp-toggle-value="chatgpt"', skill)
-        self.assertIn("**최신**", skill)
-        self.assertIn("매우 높음", skill)
+        self.assertIn("**GPT-6**", skill)
         self.assertIn("`pro`: **Pro**", skill)
         self.assertNotIn("QUALITY: xhigh", skill)
         self.assertIn("QUALITY: pro", skill)

@@ -75,6 +75,16 @@ class ConsultCliTest(unittest.TestCase):
         self.assertEqual(recovered[0], "--recover-from")
         self.assertEqual(recovered[1], ".outpost/foo/result.json")
         self.assertIn(".outpost/foo/response.md", recovered)
+        self.assertNotIn("--url", recovered)
+        # A result.json written before projectUrl was saved is searched in the
+        # project the caller names.
+        in_project = MODULE.build_engine_argv(
+            "recover",
+            MODULE.parse_args(
+                ["recover", ".outpost/foo", "--url", "https://chatgpt.com/g/g-p-abc/project"]
+            ),
+        )
+        self.assertEqual(in_project[-2:], ["--url", "https://chatgpt.com/g/g-p-abc/project"])
 
     def test_send_without_quality_fails_closed(self) -> None:
         args = MODULE.parse_args(["send", "packet.md"])

@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Sequence
 from urllib.error import URLError
@@ -31,6 +32,15 @@ DEFAULT_RESPONSE_TIMEOUT_SECONDS = 3600
 # "other side closed" — the failure the keepalive log shows over and over.
 ASIDE_HEALTH_URL = os.environ.get("ASIDE_HEALTH_URL", "http://127.0.0.1:21420/health")
 DAEMON_SETTLE_SECONDS = 20
+# `aside repl` takes the script as one command-line argument, and macOS caps
+# arguments at 1 MB (2026-10-03: a 1.26 MB zip inlined as base64 never started
+# the REPL). The packet and uploads are staged as files instead and the script
+# reads them with the REPL's `fs`, which only reaches the account directory
+# (`~/.aside/u/<n>`) and the per-run session directory.
+ASIDE_ROOT_ENV = "OUTPOST_ASIDE_ROOT"
+ASIDE_ROOT_MARKER = "OUTPOST_ASIDE_SESSION "
+STAGING_SUBDIR = Path("tmp") / "outpost-staging"
+STAGING_MAX_AGE_SECONDS = 24 * 3600
 # Doctor rehearses the whole send path with this throwaway packet. It never
 # reaches ChatGPT: the rehearsal stops before the click.
 REHEARSAL_TOPIC = "outpost 리허설"
@@ -48,54 +58,67 @@ SUBMIT_MARKER = "ASIDE_REPL_SUBMIT_RESULT "
 SUBMIT_UNKNOWN_MARKER = "ASIDE_REPL_SUBMIT_UNKNOWN "
 RESPONSE_MARKER = "ASIDE_REPL_RESPONSE_RESULT "
 BACKEND_RECOVERY_MARKER = "ASIDE_BACKEND_RECOVERY_RESULT "
-DOCTOR_MARKER = "OUTPOST_DOCTOR_RESULT "
 REHEARSAL_MARKER = "OUTPOST_REHEARSAL_RESULT "
+DIAG_MARKER = "OUTPOST_DIAG "
+# Aside drops the whole output of a script that ends in an error once it passes
+# roughly 16-20 KB, and a failed step always ends in one, so the page report
+# has to fit well under that next to the error itself.
+DIAG_TREE_LIMIT = 7000
+DIAG_OUTLINE_LIMIT = 4000
+# After a send click that threw, how long the page may take to show the user
+# turn before the runner asks the backend instead.
+CLICK_ERROR_TURN_WAIT_MS = 20_000
 # The REPL drops a top-level `return`: the script then stops silently partway,
 # with no error and no output. The rehearsal ends with a sentinel throw instead.
 REHEARSAL_STOP = "OUTPOST_REHEARSAL_STOP"
 FAIL_STAGE_RE = re.compile(r"OUTPOST_FAIL stage=(\S+)\s+(.*)")
 STAGE_IN_MESSAGE_RE = re.compile(r"단계:\s*(\S+)")
 STAGE_HINTS = {
+    "load-staged-files": "스테이징한 패킷·첨부 읽기",
     "open-isolated-tab": "격리 탭",
     "load-work-project": "프로젝트 페이지",
     "load-saved-conversation": "저장된 대화",
+    "select-account": "프로젝트가 있는 ChatGPT 워크스페이스",
     "wait-project-composer": "새 채팅 입력창",
     "wait-conversation-composer": "이어가기 입력창",
     "select-chat-surface": "Chat/Work 토글",
     "select-tier": "추론 수준/Pro 버튼",
-    "verify-model": "모델 선택",
+    "open-tier-slider": "추론 슬라이더 메뉴",
+    "read-tier": "추론 단계 읽기",
+    "pick-tier": "추론 단계 고르기",
+    "open-model-menu": "모델 선택 메뉴",
+    "verify-model": "GPT-6 모델 라디오",
     "fill-composer": "입력창 채우기",
     "attach-packet": "패킷 첨부",
     "ready-to-send": "보내기 버튼",
     "commit-user-turn": "제출",
 }
-DEFAULT_PICKER_PATH = Path.home() / ".codex" / "outpost-picker.json"
-PREFERRED_MODEL_RADIO = "최신"
-FORBIDDEN_MODEL_RADIOS = ("GPT-5.6 Sol", "5.6 Sol")
-# The only model an outpost turn may run on. The picker label is a moving
-# alias, so the run is judged by the slug ChatGPT reports for the answer.
+# The picker selects the pinned GPT-6 family; the answer's backend slug
+# independently verifies the exact model used for the requested tier.
 # Each quality is one tier pick, and each tier runs one model. ChatGPT reports
 # the slug it actually ran, so a run checks that slug against the tier it asked
-# for. `pro` is the paid GPT-6 tier; `xhigh` is ChatGPT's `매우 높음`, which runs
-# GPT-5.6 — cheaper to spend, and never what a Pro packet should be answered by.
+# for. Both qualities are pinned to GPT-6; `xhigh` is the cheaper Thinking tier,
+# never what a Pro packet should be answered by.
 QUALITY_MODEL_SLUGS: dict[str, str] = {
     "pro": "gpt-6-pro",
-    "xhigh": "gpt-5-6-thinking",
+    "xhigh": "gpt-6-thinking",
 }
 QUALITIES = tuple(QUALITY_MODEL_SLUGS)
 WRONG_MODEL_EXIT = 78
 DUPLICATE_SEND_EXIT = 79
-DEFAULT_TIER_ALIASES = (
-    "추론 수준",
-    "즉시",
-    "중간",
-    "높음",
-    "매우 높음",
-    "Pro",
-    "Instant",
-    "High",
-)
+NOT_SENT_EXIT = 75
+SUBMIT_UNKNOWN_EXIT = 76
 CONVERSATION_ID_RE = re.compile(r"/c/([0-9a-fA-F-]{8,})")
+PROJECT_GIZMO_RE = re.compile(r"^/g/(g-p-[0-9a-fA-F]+)")
+# How long the backend is polled for a turn before "not there" counts as not
+# sent: a click that landed a moment before the REPL died is still committing.
+LOCATE_TIMEOUT_SECONDS = 20
+# Aside cuts `aside repl` at 120 seconds and drops the output; one backend
+# lookup ends well before that and the wait for a long reply loops in Python.
+REPL_LOOKUP_SECONDS = 90
+# A lookup only reads project conversations touched this long before the send
+# started, so it stays a handful of reads even in a busy project.
+LOCATE_SINCE_SLACK_SECONDS = 120
 KOREAN_UPLOAD_PREAMBLE = (
     "첨부한 독립형 컨텍스트 패킷을 검토하고, 그 안의 질문이나 작업에 답해 주세요.\n\n"
     "이 패킷 외의 저장소, 터미널, 이전 대화는 볼 수 없다고 가정하세요. "
@@ -114,56 +137,19 @@ KOREAN_FOLLOWUP_PREAMBLE = (
 
 
 
-def picker_contract_path() -> Path:
-    return Path(os.environ.get("OUTPOST_PICKER_PATH") or DEFAULT_PICKER_PATH)
+def load_ui_module():
+    spec = importlib.util.spec_from_file_location(
+        "outpost_ui",
+        Path(__file__).with_name("outpost_ui.py"),
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("outpost_ui.py is missing")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
-def default_picker_contract() -> dict[str, Any]:
-    return {
-        "modelRadio": PREFERRED_MODEL_RADIO,
-        "tierAliases": list(DEFAULT_TIER_ALIASES),
-        "xhighLabel": "매우 높음",
-        "proLabel": "Pro",
-        "forbiddenModels": list(FORBIDDEN_MODEL_RADIOS),
-    }
-
-
-def load_picker_contract() -> dict[str, Any]:
-    contract = default_picker_contract()
-    path = picker_contract_path()
-    if not path.is_file():
-        return contract
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return contract
-    if not isinstance(data, dict):
-        return contract
-    model = str(data.get("modelRadio") or "").strip()
-    if model and model not in FORBIDDEN_MODEL_RADIOS:
-        contract["modelRadio"] = model
-    aliases = data.get("tierAliases")
-    if isinstance(aliases, list):
-        merged: list[str] = []
-        for item in list(DEFAULT_TIER_ALIASES) + [str(alias) for alias in aliases]:
-            text = " ".join(item.split())
-            if text and text not in merged:
-                merged.append(text)
-        contract["tierAliases"] = merged
-    xhigh = str(data.get("xhighLabel") or "").strip()
-    pro = str(data.get("proLabel") or "").strip()
-    if xhigh:
-        contract["xhighLabel"] = xhigh
-    if pro:
-        contract["proLabel"] = pro
-    return contract
-
-
-def save_picker_contract(contract: dict[str, Any]) -> Path:
-    path = picker_contract_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(contract, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    return path
+UI = load_ui_module()
 
 
 def tier_name_pattern(aliases: Sequence[str]) -> str:
@@ -180,41 +166,6 @@ def tier_name_pattern(aliases: Sequence[str]) -> str:
             parts.append(re.escape(candidate))
     parts.append(r"[0-9]* ?Pro")
     return r"^(?:" + "|".join(parts) + r")$"
-
-
-def picker_from_doctor_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
-    radios = payload.get("modelRadios") or []
-    names: list[str] = []
-    for row in radios:
-        if isinstance(row, dict):
-            name = str(row.get("name") or "").strip()
-        else:
-            name = str(row).strip()
-        if name:
-            names.append(name)
-    if PREFERRED_MODEL_RADIO not in names:
-        return None
-    aliases: list[str] = []
-    hint = re.compile(r"(추론|즉시|중간|높음|Pro|Instant|High|Thinking)", re.I)
-    for item in list(DEFAULT_TIER_ALIASES) + [str(x) for x in (payload.get("tierInnerText") or [])]:
-        text = " ".join(item.split())
-        if not text or text in aliases:
-            continue
-        if text in DEFAULT_TIER_ALIASES or hint.search(text):
-            aliases.append(text)
-    return {
-        "modelRadio": PREFERRED_MODEL_RADIO,
-        "tierAliases": aliases,
-        "xhighLabel": "매우 높음",
-        "proLabel": "Pro",
-        "forbiddenModels": list(FORBIDDEN_MODEL_RADIOS),
-        "observedAt": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-        "url": str(payload.get("url") or ""),
-        "modelRadios": names,
-        "tierInnerText": [
-            " ".join(str(x).split()) for x in (payload.get("tierInnerText") or []) if str(x).strip()
-        ],
-    }
 
 
 def load_sessions_module():
@@ -316,8 +267,16 @@ def is_chatgpt_project_url(value: str | None) -> bool:
     )
 
 
-def composer_aria_label(project_name: str) -> str:
-    return f"{project_name}에서 새 채팅"
+def composer_aria_labels(project_name: str, ui: dict[str, Any] | None = None) -> list[str]:
+    ui = ui or UI.load_ui_map()
+    return [label.replace("{project}", project_name) for label in ui["projectComposerLabels"]]
+
+
+def composer_selector(labels: Sequence[str] | None = None, ui: dict[str, Any] | None = None) -> str:
+    editors = (ui or UI.load_ui_map())["composer"]
+    if not labels:
+        return ", ".join(editors)
+    return ", ".join(f'{editor}[aria-label="{label}"]' for editor in editors for label in labels)
 
 
 def resolve_project_name(
@@ -428,8 +387,8 @@ def normalized_zip_bytes(path: Path) -> tuple[bytes, list[tuple[str, str]]]:
     return buffer.getvalue(), renames
 
 
-def build_uploads(paths: Sequence[str]) -> tuple[list[dict[str, str]], list[str]]:
-    uploads: list[dict[str, str]] = []
+def build_uploads(paths: Sequence[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    uploads: list[dict[str, Any]] = []
     notes: list[str] = []
     for index, raw in enumerate(paths):
         source = Path(raw).expanduser()
@@ -448,10 +407,63 @@ def build_uploads(paths: Sequence[str]) -> tuple[list[dict[str, str]], list[str]
             {
                 "name": upload_name,
                 "mime": "application/zip" if source.suffix.lower() == ".zip" else "application/octet-stream",
-                "base64": base64.b64encode(payload).decode("ascii"),
+                "data": payload,
             }
         )
     return uploads, notes
+
+
+def aside_project_root() -> Path:
+    """The account directory the REPL's `fs` may read, asked of the REPL itself."""
+    override = os.environ.get(ASIDE_ROOT_ENV)
+    if override:
+        return Path(override).expanduser()
+    transcript = run_repl_process(
+        f"console.log({js(ASIDE_ROOT_MARKER)} + await fs.resolvePath('.'))",
+        timeout=20,
+    )
+    for line in transcript.splitlines():
+        clean = ANSI_RE.sub("", line).strip()
+        if clean.startswith(ASIDE_ROOT_MARKER):
+            session = Path(clean[len(ASIDE_ROOT_MARKER):].strip())
+            if session.parent.name == "sessions":
+                return session.parent.parent
+    raise RuntimeError(f"aside session directory not found: {transcript.strip()[:200]}")
+
+
+def stage_payload(
+    root: Path,
+    outpost_id: str,
+    packet: bytes,
+    uploads: Sequence[dict[str, Any]] = (),
+) -> tuple[Path, str, list[dict[str, str]]]:
+    """Write the packet and uploads where the REPL can read them; no size limit."""
+    base = root / STAGING_SUBDIR
+    if base.is_dir():
+        cutoff = time.time() - STAGING_MAX_AGE_SECONDS
+        for old in base.iterdir():
+            if old.is_dir() and old.stat().st_mtime < cutoff:
+                shutil.rmtree(old, ignore_errors=True)
+    staging = base / outpost_id
+    staging.mkdir(parents=True, exist_ok=True)
+    packet_path = staging / "packet.md"
+    packet_path.write_bytes(packet)
+    staged: list[dict[str, str]] = []
+    for index, item in enumerate(uploads):
+        path = staging / f"upload-{index}"
+        path.write_bytes(item["data"])
+        staged.append({"name": item["name"], "mime": item["mime"], "path": str(path)})
+    return staging, str(packet_path), staged
+
+
+@contextmanager
+def staged_payload(outpost_id: str, packet: bytes, uploads: Sequence[dict[str, Any]] = ()):
+    """Stage for one run and remove the files when it ends."""
+    staging, packet_path, staged = stage_payload(aside_project_root(), outpost_id, packet, uploads)
+    try:
+        yield packet_path, staged
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
 
 
 def save_outpost_attachments(
@@ -682,15 +694,23 @@ def build_backend_recovery_script(
     *,
     timeout_ms: int = 45_000,
     poll_interval_ms: int = 5_000,
+    project_url: str | None = None,
+    since: float = 0,
+    until_found: bool = False,
 ) -> str:
     return f"""
 var outpostId = {js(outpost_id)};
 var conversationUrl = {js(conversation_url or "")};
+var projectGizmoId = {js(project_gizmo_id(project_url))};
+var since = {float(since or 0)};
+var untilFound = {js(bool(until_found))};
 var deadline = Date.now() + {int(timeout_ms)};
 var pollIntervalMs = {int(poll_interval_ms)};
 var recoveredModelSlug = '';
 var home = await openTab('https://chatgpt.com/');
 await home.waitForLoadState('domcontentloaded');
+{ACCOUNT_HELPERS}
+await ensureProjectAccount(home, projectGizmoId);
 var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
 if (!sess || !sess.accessToken) throw new Error('chatgpt session token missing');
 var auth = {{ headers: {{ Authorization: 'Bearer ' + sess.accessToken }} }};
@@ -802,25 +822,83 @@ function userHasId(payload) {{
     return node && node.message && node.message.author && node.message.author.role === 'user' && messageText(node.message).includes(outpostId);
   }});
 }}
-async function findConversation() {{
-  var payload = conversationId ? await readConversation(conversationId) : null;
-  if (payload && userHasId(payload)) return payload;
-  var list = await fetch('https://chatgpt.com/backend-api/conversations?offset=0&limit=15&order=updated', auth);
-  if (!list.ok) return payload && userHasId(payload) ? payload : null;
-  var items = (await list.json()).items || [];
+// A project conversation is missing from the account-wide list, so the
+// project's own list is where a new turn is found. `searched` is true only when
+// every place the turn could be was read, so "not found" there means not sent.
+var searched = false;
+function touchedAt(item) {{
+  var stamp = item.update_time || item.create_time || 0;
+  return typeof stamp === 'number' ? stamp : Date.parse(stamp) / 1000;
+}}
+function recentEnough(item) {{
+  return !since || !(touchedAt(item) < since);
+}}
+async function scanList(url) {{
+  var list = await fetch(url, auth).catch(function () {{ return null; }});
+  if (!list || !list.ok) return {{ complete: false, payload: null }};
+  var body = await list.json().catch(function () {{ return null; }});
+  var items = body && body.items;
+  if (!Array.isArray(items)) return {{ complete: false, payload: null }};
+  // The list is newest first. It covers the send only when it reaches past the
+  // send's start or has no further page.
+  var complete = !body.cursor || (since > 0 && items.some(function (item) {{
+    return item && touchedAt(item) < since;
+  }}));
   for (var i = 0; i < items.length; i += 1) {{
-    payload = await readConversation(items[i].id);
-    if (payload && userHasId(payload)) {{
+    if (!items[i] || !items[i].id || !recentEnough(items[i])) continue;
+    var candidate = await readConversation(items[i].id).catch(function () {{ return null; }});
+    if (!candidate) {{
+      complete = false;
+      continue;
+    }}
+    if (userHasId(candidate)) {{
       conversationId = items[i].id;
-      return payload;
+      return {{ complete: true, payload: candidate }};
     }}
   }}
+  return {{ complete: complete, payload: null }};
+}}
+async function findConversation() {{
+  searched = false;
+  // The saved conversation first, then the one an earlier poll found.
+  var savedId = conversationId;
+  if (savedId) {{
+    var saved = await readConversation(savedId).catch(function () {{ return null; }});
+    if (saved && userHasId(saved)) {{
+      conversationId = savedId;
+      return saved;
+    }}
+    // A follow-up turn can only land in its saved conversation.
+    if (saved && !projectGizmoId) searched = true;
+  }}
+  if (projectGizmoId) {{
+    var project = await scanList('https://chatgpt.com/backend-api/gizmos/' + projectGizmoId + '/conversations?cursor=0');
+    if (project.payload) return project.payload;
+    searched = project.complete;
+  }}
+  var global = await scanList('https://chatgpt.com/backend-api/conversations?offset=0&limit=15&order=updated');
+  if (global.payload) return global.payload;
   return null;
 }}
-var last = {{ ok: false }};
+var last = {{ ok: false, found: false, searched: false }};
 while (Date.now() < deadline) {{
   var payload = await findConversation();
   if (payload && conversationId) {{
+    if (untilFound) {{
+      var located = assistantFrom(payload);
+      last = {{
+        ok: true,
+        found: true,
+        searched: true,
+        responseText: located.text,
+        finished: located.finished,
+        idMatched: located.text.includes(outpostId),
+        conversationUrl: 'https://chatgpt.com/c/' + conversationId,
+        conversationId: conversationId,
+        modelSlug: recoveredModelSlug
+      }};
+      break;
+    }}
     var extracted = assistantFrom(payload);
     var writingArtifacts = [];
     if (extracted.writingBlocks) {{
@@ -863,6 +941,8 @@ while (Date.now() < deadline) {{
     }}
     last = {{
       ok: true,
+      found: true,
+      searched: true,
       responseText: extracted.text,
       finished: extracted.finished,
       idMatched: extracted.text.includes(outpostId),
@@ -873,6 +953,8 @@ while (Date.now() < deadline) {{
       modelSlug: recoveredModelSlug
     }};
     if (extracted.text && extracted.finished) break;
+  }} else if (!last.found) {{
+    last = {{ ok: false, found: false, searched: searched }};
   }}
   await sleep(pollIntervalMs);
 }}
@@ -881,28 +963,118 @@ console.log({js(BACKEND_RECOVERY_MARKER)} + JSON.stringify(last));
 """.strip()
 
 
+def project_gizmo_id(project_url: str | None) -> str:
+    """The `g-p-...` id of a project URL; the project's conversation list is keyed by it."""
+    match = PROJECT_GIZMO_RE.search(urlparse(project_url or "").path)
+    return match.group(1) if match else ""
+
+
+def write_result(path: Path, data: dict[str, Any]) -> None:
+    """Write result.json, keeping where the turn was sent from the pending write.
+
+    `recover` finds a turn in its project; a later write that drops `projectUrl`
+    sends it to the configured default project instead (2026-10-01: a 커리어 Pro
+    turn was looked up in Work and never recovered).
+    """
+    try:
+        prior = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        prior = {}
+    kept = {key: prior[key] for key in ("projectUrl", "startedAt") if prior.get(key) and not data.get(key)}
+    path.write_text(json.dumps({**data, **kept}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def backend_lookup(
+    outpost_id: str,
+    conversation_url: str | None = None,
+    *,
+    timeout: int = 45,
+    poll_interval: int = 5,
+    project_url: str | None = None,
+    since: float = 0,
+    until_found: bool = False,
+) -> dict[str, Any] | None:
+    """What the backend knows about the turn carrying this id; None when it could not be asked.
+
+    One lookup stays under Aside's 120-second `aside repl` cut. A longer script
+    loses its output and keeps polling inside the daemon after the caller gave
+    up; repeated recovers then stack those pollers until ChatGPT answers 429.
+    """
+    if not outpost_id:
+        return None
+    timeout = max(1, min(int(timeout), REPL_LOOKUP_SECONDS))
+    transcript = run_repl_process(
+        build_backend_recovery_script(
+            outpost_id,
+            conversation_url,
+            timeout_ms=timeout * 1000,
+            poll_interval_ms=max(1, int(poll_interval)) * 1000,
+            project_url=project_url,
+            since=since,
+            until_found=until_found,
+        ),
+        timeout=timeout + 15,
+    )
+    return marker_payload(transcript, BACKEND_RECOVERY_MARKER)
+
+
 def recover_outpost_from_backend(
     outpost_id: str,
     conversation_url: str | None = None,
     *,
     timeout: int = 45,
     poll_interval: int = 5,
+    project_url: str | None = None,
+    since: float = 0,
+    wait_between: float = 60,
+    clock=time.monotonic,
+    sleep=time.sleep,
 ) -> dict[str, Any] | None:
-    if not outpost_id:
-        return None
-    transcript = run_repl_process(
-        build_backend_recovery_script(
+    """Wait up to `timeout` for the reply as short lookups with a pause between them."""
+    deadline = clock() + max(1, int(timeout))
+    while True:
+        payload = backend_lookup(
             outpost_id,
             conversation_url,
-            timeout_ms=max(1, int(timeout)) * 1000,
-            poll_interval_ms=max(1, int(poll_interval)) * 1000,
-        ),
-        timeout=max(1, int(timeout)) + 15,
+            timeout=max(1, int(deadline - clock())),
+            poll_interval=poll_interval,
+            project_url=project_url,
+            since=since,
+        )
+        found = payload if payload and payload.get("ok") else None
+        if finished_backend_reply(found) or deadline - clock() <= wait_between:
+            return found
+        sleep(wait_between)
+
+
+def locate_outpost_turn(
+    outpost_id: str,
+    *,
+    project_url: str | None = None,
+    conversation_url: str | None = None,
+    since: float = 0,
+    timeout: int = LOCATE_TIMEOUT_SECONDS,
+) -> tuple[str, dict[str, Any] | None]:
+    """Ground truth for "was it sent": `found`, `absent` or `unknown`.
+
+    `absent` needs a complete read of every place the turn could be — the saved
+    conversation for a follow-up, the project list for a new chat — polled long
+    enough for a turn that was still committing. Anything less is `unknown`.
+    """
+    payload = backend_lookup(
+        outpost_id,
+        conversation_url,
+        timeout=timeout,
+        poll_interval=5,
+        project_url=project_url,
+        since=since,
+        until_found=True,
     )
-    payload = marker_payload(transcript, BACKEND_RECOVERY_MARKER)
-    if not payload or not payload.get("ok"):
-        return None
-    return payload
+    if payload and payload.get("found") and payload.get("conversationUrl"):
+        return "found", payload
+    if payload and payload.get("searched"):
+        return "absent", payload
+    return "unknown", payload
 
 
 def finished_backend_reply(payload: dict[str, Any] | None) -> bool:
@@ -944,6 +1116,60 @@ def wrong_model_message(observed: str, response_path: Path, required: str) -> st
 # no aria-label, so the send died at select-tier while doctor's click fallback
 # covered for it. snapshot() prints the computed name, so resolve names there
 # and act on the ref locator. String names compare exactly; RegExp names test.
+# ChatGPT picks the workspace from the `_account` cookie. After the browser
+# restarts it can fall back to the first workspace in the login's ordering, where
+# the project does not exist (2026-10-01: a team workspace; every project and
+# conversation read 404 and a Pro answer could not be recovered). Every script
+# that reads or sends pins the workspace that can see the project first.
+ACCOUNT_HELPERS = r"""
+async function ensureProjectAccount(target, gizmoId) {
+  if (!gizmoId) return '';
+  var listUrl = 'https://chatgpt.com/backend-api/gizmos/' + gizmoId + '/conversations?cursor=0';
+  async function token() {
+    var s = await (await fetch('https://chatgpt.com/api/auth/session')).json().catch(() => null);
+    return s && s.accessToken ? s : null;
+  }
+  async function visible(s) {
+    var r = await fetch(listUrl, { headers: { Authorization: 'Bearer ' + s.accessToken } }).catch(() => null);
+    return r ? r.status : 0;
+  }
+  async function pin(id) {
+    await target.evaluate((value) => {
+      var tail = '; path=/; max-age=31536000; secure; samesite=lax';
+      document.cookie = '_account=' + value + tail;
+      document.cookie = '_account=' + value + '; domain=.chatgpt.com' + tail;
+    }, id);
+    // The session endpoint answers for the workspace the page was loaded with.
+    await target.reload();
+    await target.waitForLoadState('domcontentloaded');
+  }
+  var s = await token();
+  if (!s) return '';
+  var status = await visible(s);
+  // Only "not found / no access" says the workspace is wrong; a rate limit or a
+  // network error says nothing about it.
+  if (status !== 403 && status !== 404) return '';
+  var current = (s.account && s.account.id) || '';
+  var check = await fetch('https://chatgpt.com/backend-api/accounts/check/v4-2023-04-27', {
+    headers: { Authorization: 'Bearer ' + s.accessToken }
+  }).catch(() => null);
+  var accounts = check && check.ok ? (((await check.json().catch(() => null)) || {}).accounts || {}) : {};
+  // The access token is issued for one workspace, so another workspace is only
+  // tried by switching the cookie and asking for a fresh session.
+  for (var id of Object.keys(accounts)) {
+    if (id === 'default' || id === current) continue;
+    await pin(id);
+    var next = await token();
+    if (next && next.account && next.account.id === id && (await visible(next)) === 200) {
+      console.log('OUTPOST_ACCOUNT switched from=' + current + ' to=' + id);
+      return id;
+    }
+  }
+  if (current) await pin(current);
+  throw new Error('project ' + gizmoId + ' is not visible in any ChatGPT workspace of this login');
+}
+"""
+
 NAME_LOOKUP_HELPERS = r"""
 function findRefByName(tree, role, name) {
   var pattern = new RegExp('- ' + role + ' "([^"]*)" \\[ref=(e\\d+)\\]', 'g');
@@ -975,42 +1201,60 @@ def build_repl_script(
     project_name: str = DEFAULT_PROJECT_NAME,
     quality: str,
     packet_name: str,
-    packet_base64: str,
+    packet_path: str,
     topic: str,
     outpost_id: str,
     response_timeout_ms: int,
     artifact_output: str | None = None,
     conversation_url: str | None = None,
     follow_up: bool = False,
-    picker: dict[str, Any] | None = None,
+    ui: dict[str, Any] | None = None,
     uploads: Sequence[dict[str, str]] | None = None,
     dry_run: bool = False,
 ) -> str:
-    picker = picker or load_picker_contract()
-    target_label = str(picker.get(f"{quality}Label") or "").strip()
-    if not target_label:
-        raise ValueError(f"picker contract has no tier label for quality {quality}")
-    target_model = str(picker.get("modelRadio") or PREFERRED_MODEL_RADIO)
-    tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
+    """`packet_path` and each upload's `path` are files staged by `stage_payload`."""
+    ui = ui or UI.load_ui_map()
+    target_labels = list(ui["tierLabels"].get(quality) or [])
+    if not target_labels:
+        raise ValueError(f"screen map has no tier label for quality {quality}")
+    target_model = str(ui["modelRadio"])
+    tier_pattern = tier_name_pattern(ui["tierButtonNames"])
     model_pattern = r"^" + re.escape(target_model) + r"$"
-    composer_label = composer_aria_label(project_name)
+    composer_labels = composer_aria_labels(project_name, ui)
+    enabled = ':not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])'
     continue_mode = bool(conversation_url)
     start_url = conversation_url or project_url
     expected_conversation_id = conversation_id_from_url(conversation_url) or ""
     return f"""
 var projectUrl = {js(project_url)};
 var startUrl = {js(start_url)};
+var projectGizmoId = {js(project_gizmo_id(project_url))};
 var continueMode = {js(continue_mode)};
 var expectedConversationId = {js(expected_conversation_id)};
 var outpostId = {js(outpost_id)};
-var composerLabel = {js(composer_label)};
+var composerLabel = {js(" | ".join(composer_labels))};
+var anyComposerSelector = {js(composer_selector(None, ui))};
+var projectComposerSelector = {js(composer_selector(composer_labels, ui))};
+var chatToggleSelector = {js(UI.css(ui["chatToggle"]))};
+var workToggleSelector = {js(UI.css(ui["workToggle"]))};
+var fileInputSelector = {js(UI.css(ui["fileInput"]))};
+var sendSelector = {js(", ".join(sel + enabled for sel in ui["sendButton"]))};
+var stopSelector = {js(UI.css(ui["stopButton"]))};
+var copyResponseSelector = {js(UI.css(ui["copyResponse"]))};
+var userMessageSelector = {js(UI.css(ui["userMessage"]))};
+var assistantMessageSelector = {js(UI.css(ui["assistantMessage"]))};
+var modelMenuNames = {js(list(ui["modelMenuNames"]))};
+var tierPositionRe = new RegExp({js(ui["tierPositionPattern"])});
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
-var packetBase64 = {js(packet_base64)};
+var packetStem = {js(packet_name.rsplit(".", 1)[0])};
+var packetFile = {js(packet_path)};
 var extraUploads = {js(list(uploads or []))};
 var artifactRequested = {js(artifact_output is not None)};
 var composerPrompt = {js(build_composer_prompt(topic, outpost_id, artifact_output, follow_up=follow_up))};
-var targetLabel = {js(target_label)};
+var targetLabels = {js(target_labels)};
+var targetLabel = targetLabels.join(' | ');
+var tierSliderNames = {js(list(ui["tierSliderNames"]))};
 var targetModel = {js(target_model)};
 var tierNameRe = new RegExp({js(tier_pattern)});
 var modelNameRe = new RegExp({js(model_pattern)});
@@ -1018,7 +1262,10 @@ var verifiedTier = null;
 var dryRun = {js(dry_run)};
 var modelRadiosSeen = [];
 var submitStartedAt = Date.now();
-var submitStage = 'open-isolated-tab';
+var submitStage = 'load-staged-files';
+var diagPage = null;
+var diagEmitted = false;
+var presubmitDone = false;
 // Aside builds its role/accessible-name index inside snapshot(). getByRole()
 // returns zero matches on a page that was never snapshotted in this REPL
 // session, so every role lookup below primes the index first.
@@ -1038,10 +1285,79 @@ async function waitRole(target, role, name, timeoutMs) {{
   }}
 }}
 {NAME_LOOKUP_HELPERS}
+{ACCOUNT_HELPERS}
 async function bodyTextOf(target) {{
   return await target.evaluate(function () {{
     return (document.body && document.body.innerText || '').trim();
   }}).catch(function () {{ return ''; }});
+}}
+// A failed step leaves what the page showed at that moment, so doctor can hand
+// it to the heal model instead of a person opening the page to look.
+async function captureDiag(target) {{
+  var diag = {{ stage: submitStage, url: '', title: '', tree: '', outline: [] }};
+  try {{ diag.url = target.url(); }} catch (error) {{}}
+  try {{ diag.title = await target.title(); }} catch (error) {{}}
+  try {{
+    // Sidebar conversation links fill the tree and are never a control the
+    // send uses; everything else stays, one short line each.
+    diag.tree = String((await snapshot(target, {{ interactive: true }})).tree || '')
+      .split('\\n')
+      .filter((line) => !/^\\s*- link /.test(line))
+      .map((line) => line.slice(0, 160))
+      .join('\\n')
+      .slice(0, {DIAG_TREE_LIMIT});
+  }} catch (error) {{}}
+  try {{
+    diag.outline = await target.evaluate(function () {{
+      var seen = new Set();
+      var rows = [];
+      // The controls the send drives come first, so the size cap below never
+      // cuts them: editors and file inputs, then submit and menu buttons and
+      // toggles, then the rest of the form and any open menu.
+      var groups = [
+        '[contenteditable], textarea, input[type="file"]',
+        'form button[type="submit"], button[aria-haspopup], [data-tpp-toggle-value]',
+        '[role="menu"] [role], [role="menu"] button, [role="dialog"] button, form button, form [role]'
+      ];
+      groups.forEach(function (selector) {{
+        document.querySelectorAll(selector).forEach(function (el) {{
+          if (seen.has(el) || rows.length >= 120) return;
+          if (el.closest('nav, a[href*="/c/"]')) return;
+          seen.add(el);
+          var box = el.getBoundingClientRect();
+          rows.push({{
+            tag: el.tagName.toLowerCase(),
+            id: el.id || undefined,
+            role: el.getAttribute('role') || undefined,
+            aria: el.getAttribute('aria-label') || undefined,
+            type: el.getAttribute('type') || undefined,
+            accept: el.hasAttribute('accept') ? el.getAttribute('accept') : undefined,
+            editable: el.getAttribute('contenteditable') || undefined,
+            testid: el.getAttribute('data-testid') || undefined,
+            checked: el.getAttribute('aria-checked') || undefined,
+            disabled: (el.disabled || el.getAttribute('aria-disabled') === 'true') || undefined,
+            cls: (typeof el.className === 'string' ? el.className : '').slice(0, 30) || undefined,
+            text: (el.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 40) || undefined,
+            hidden: !(box.width || box.height) || undefined
+          }});
+        }});
+      }});
+      return rows;
+    }});
+  }} catch (error) {{}}
+  while (diag.outline.length && JSON.stringify(diag.outline).length > {DIAG_OUTLINE_LIMIT}) {{
+    diag.outline.pop();
+  }}
+  return diag;
+}}
+async function emitDiag() {{
+  if (diagEmitted || !diagPage) return;
+  diagEmitted = true;
+  var diag = await Promise.race([
+    captureDiag(diagPage),
+    new Promise((resolve) => setTimeout(() => resolve(null), 15000))
+  ]);
+  if (diag) console.log({js(DIAG_MARKER)} + JSON.stringify(diag));
 }}
 async function waitComposer(target, selector, attempts) {{
   for (var composerAttempt = 0; composerAttempt < attempts; composerAttempt += 1) {{
@@ -1071,9 +1387,17 @@ async function waitComposer(target, selector, attempts) {{
 var submitState = await Promise.race([
   (async () => {{
     try {{
+    // The bytes come from staged files, not the script: `aside repl` takes the
+    // script as one command-line argument and macOS caps that at 1 MB.
+    var uploadFiles = [{{ name: packetName, mimeType: 'text/markdown', buffer: await fs.readFile(packetFile) }}];
+    for (var stagedUpload of extraUploads) {{
+      uploadFiles.push({{ name: stagedUpload.name, mimeType: stagedUpload.mime, buffer: await fs.readFile(stagedUpload.path) }});
+    }}
+    submitStage = 'open-isolated-tab';
     var ownershipMarker = 'outpost-owner-' + {js(outpost_id)};
     var ownershipUrl = 'data:text/html,<title>' + ownershipMarker + '</title>';
     var workPage = await openTab(ownershipUrl);
+    diagPage = workPage;
     var openedTabs = await listBrowserTabs();
     var ownedTabs = openedTabs.filter(
       (tab) => tab.title === ownershipMarker && tab.url === ownershipUrl
@@ -1083,10 +1407,16 @@ var submitState = await Promise.race([
     submitStage = continueMode ? 'load-saved-conversation' : 'load-work-project';
     await workPage.goto(startUrl);
     await workPage.waitForLoadState('domcontentloaded');
+    submitStage = 'select-account';
+    if (await ensureProjectAccount(workPage, projectGizmoId)) {{
+      submitStage = continueMode ? 'load-saved-conversation' : 'load-work-project';
+      await workPage.goto(startUrl);
+      await workPage.waitForLoadState('domcontentloaded');
+    }}
     var composer;
     if (continueMode) {{
       submitStage = 'wait-conversation-composer';
-      composer = await waitComposer(workPage, '#prompt-textarea[contenteditable="true"]', 3);
+      composer = await waitComposer(workPage, anyComposerSelector, 3);
       if (!composer) {{
         throw new Error(
           'saved conversation composer not visible url=' + workPage.url() +
@@ -1102,13 +1432,9 @@ var submitState = await Promise.race([
       }}
     }} else {{
       submitStage = 'wait-project-composer';
-      composer = await waitComposer(
-        workPage,
-        '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]',
-        3
-      );
+      composer = await waitComposer(workPage, projectComposerSelector, 3);
       if (!composer) {{
-        var found = await workPage.locator('#prompt-textarea').evaluateAll((els) =>
+        var found = await workPage.locator(anyComposerSelector).evaluateAll((els) =>
           els.map((el) => ({{
             ariaLabel: el.getAttribute('aria-label'),
             contenteditable: el.getAttribute('contenteditable')
@@ -1122,14 +1448,14 @@ var submitState = await Promise.race([
         );
       }}
     }}
-    var assistantCountBefore = await workPage.locator('[data-message-author-role="assistant"]').count();
+    var assistantCountBefore = await workPage.locator(assistantMessageSelector).count();
     if (!continueMode && assistantCountBefore !== 0) throw new Error('isolated Work composer contains stale assistant turns');
     if ((await bodyTextOf(workPage)).indexOf('요청이 너무 많습니다') !== -1) {{
       throw new Error('ChatGPT rate-limited the project page');
     }}
     submitStage = 'select-chat-surface';
-    var chatToggle = workPage.locator('button[data-tpp-toggle-value="chatgpt"]');
-    var workToggle = workPage.locator('button[data-tpp-toggle-value="work"]');
+    var chatToggle = workPage.locator(chatToggleSelector);
+    var workToggle = workPage.locator(workToggleSelector);
     var chatToggleVisible = false;
     try {{
       await chatToggle.waitFor({{ state: 'visible', timeout: 3000 }});
@@ -1156,10 +1482,8 @@ var submitState = await Promise.race([
       throw new Error('Work mode selected and Chat toggle missing');
     }}
     composer = continueMode
-      ? workPage.locator('#prompt-textarea[contenteditable="true"]')
-      : workPage.locator(
-          '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
-        );
+      ? workPage.locator(anyComposerSelector)
+      : workPage.locator(projectComposerSelector);
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
     submitStage = 'select-tier';
     // Closed Pro pill accessible name is quota+label, e.g. "6 Pro" or "6Pro".
@@ -1179,23 +1503,38 @@ var submitState = await Promise.race([
       );
     }}
     await tierButton.click();
-    var performance = await waitRole(workPage, 'menuitem', '성능', 8000);
-    if (!performance) throw new Error('performance menuitem not visible');
+    submitStage = 'open-tier-slider';
+    var performance = null;
+    var sliderName = null;
+    var sliderDeadline = Date.now() + 8000;
+    while (!performance && Date.now() < sliderDeadline) {{
+      for (var sliderIndex = 0; sliderIndex < tierSliderNames.length; sliderIndex += 1) {{
+        performance = await waitRole(workPage, 'menuitem', tierSliderNames[sliderIndex], 0);
+        if (performance) {{
+          sliderName = tierSliderNames[sliderIndex];
+          break;
+        }}
+      }}
+      if (!performance) await sleep(500);
+    }}
+    if (!performance) throw new Error('performance menuitem not visible: expected ' + tierSliderNames.join(' | '));
     var readTier = (tree) => {{
-      var match = tree.match(/([^\\n"]+), (\\d+)개 중 (\\d+)번째/);
-      if (!match) return null;
+      var match = tree.match(tierPositionRe);
+      if (!match || !match.groups) return null;
       return {{
-        label: match[1].replace(/^.*text: "/, '').trim(),
-        total: Number(match[2]),
-        index: Number(match[3])
+        label: match.groups.label.replace(/^.*text: "/, '').trim(),
+        total: Number(match.groups.total),
+        index: Number(match.groups.index)
       }};
     }};
+    submitStage = 'read-tier';
     var tierSnapshot = await snapshot(workPage, {{ interactive: true }});
     var current = readTier(tierSnapshot.tree);
     if (!current) throw new Error('tier position not readable');
-    if (current.label !== targetLabel) {{
+    submitStage = 'pick-tier';
+    if (targetLabels.indexOf(current.label) === -1) {{
       await primeRoles(workPage);
-      performance = workPage.getByRole('menuitem', {{ name: '성능' }});
+      performance = workPage.getByRole('menuitem', {{ name: sliderName }});
       await performance.focus();
       for (var i = 0; i < current.total; i += 1) {{
         await workPage.keyboard.press('ArrowLeft');
@@ -1205,7 +1544,7 @@ var submitState = await Promise.race([
       for (var i = 0; i < total; i += 1) {{
         current = readTier((await snapshot(workPage, {{ interactive: true }})).tree);
         if (!current) throw new Error('tier position not readable');
-        if (current.label === targetLabel) {{
+        if (targetLabels.indexOf(current.label) !== -1) {{
           found = true;
           break;
         }}
@@ -1215,12 +1554,20 @@ var submitState = await Promise.race([
     }}
     var selectedSnapshot = await snapshot(workPage, {{ interactive: true }});
     var selected = readTier(selectedSnapshot.tree);
-    if (!selected || selected.label !== targetLabel) throw new Error('requested tier not verified');
+    if (!selected || targetLabels.indexOf(selected.label) === -1) throw new Error('requested tier not verified');
     verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
-    submitStage = 'verify-model';
-    var modelMenu = await waitRole(workPage, 'menuitem', '모델 선택', 8000);
-    if (!modelMenu) throw new Error('model menu not visible');
+    submitStage = 'open-model-menu';
+    var modelMenu = null;
+    var modelMenuDeadline = Date.now() + 8000;
+    while (!modelMenu && Date.now() < modelMenuDeadline) {{
+      for (var menuIndex = 0; menuIndex < modelMenuNames.length && !modelMenu; menuIndex += 1) {{
+        modelMenu = await waitRole(workPage, 'menuitem', modelMenuNames[menuIndex], 0);
+      }}
+      if (!modelMenu) await sleep(500);
+    }}
+    if (!modelMenu) throw new Error('model menu not visible: expected ' + modelMenuNames.join(' | '));
     await modelMenu.click();
+    submitStage = 'verify-model';
     // The model radio has no aria-label either; its name is its own text.
     var latest = await waitNamedRef(workPage, 'menuitemradio', modelNameRe, 8000);
     if (!latest) {{
@@ -1254,66 +1601,50 @@ var submitState = await Promise.race([
     );
     if (composerValue !== composerPrompt) throw new Error('composer prompt mismatch');
     submitStage = 'attach-packet';
-    var fileInput = workPage.locator('#upload-files');
+    var fileInput = workPage.locator(fileInputSelector).first();
     var attachmentName = {js(outpost_id)};
     async function attachmentPresent(timeoutMs) {{
       var attachDeadline = Date.now() + timeoutMs;
       while (true) {{
         if (await waitRole(workPage, 'group', attachmentName, 0)) return true;
-        if ((await bodyTextOf(workPage)).indexOf(packetName) !== -1) return true;
+        // ChatGPT renames a name it has seen before to `outpost-<id>(1).md`,
+        // so match the name without its extension.
+        if ((await bodyTextOf(workPage)).indexOf(packetStem) !== -1) return true;
         if (Date.now() >= attachDeadline) return false;
         await sleep(1000);
       }}
     }}
     var attached = false;
     for (var attachAttempt = 0; attachAttempt < 2 && !attached; attachAttempt += 1) {{
-      await fileInput.setInputFiles([{{
-        name: packetName,
-        mimeType: 'text/markdown',
-        buffer: Buffer.from(packetBase64, 'base64')
-      }}].concat(extraUploads.map(function (item) {{
-        return {{
-          name: item.name,
-          mimeType: item.mime,
-          buffer: Buffer.from(item.base64, 'base64')
-        }};
-      }})));
+      await fileInput.setInputFiles(uploadFiles);
       attached = await attachmentPresent(30000);
     }}
     if (!attached) throw new Error('packet attachment missing before send');
     submitStage = 'ready-to-send';
-    var send = workPage.locator(
-      '#composer-submit-button:not(:disabled):not([aria-disabled="true"]):not([data-visually-disabled])'
-    );
+    var send = workPage.locator(sendSelector).first();
     await send.waitFor({{ state: 'visible', timeout: 60000 }});
     if (!(await attachmentPresent(10000))) {{
-      await fileInput.setInputFiles([{{
-        name: packetName,
-        mimeType: 'text/markdown',
-        buffer: Buffer.from(packetBase64, 'base64')
-      }}].concat(extraUploads.map(function (item) {{
-        return {{
-          name: item.name,
-          mimeType: item.mime,
-          buffer: Buffer.from(item.base64, 'base64')
-        }};
-      }})));
+      await fileInput.setInputFiles(uploadFiles);
       if (!(await attachmentPresent(30000))) {{
         throw new Error('packet attachment missing before send');
       }}
     }}
     return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore, composer }};
     }} catch (error) {{
+      await emitDiag().catch(() => {{}});
       var failMessage = String(error && error.message || error);
       if (failMessage.indexOf('OUTPOST_FAIL stage=') === 0) throw error;
       throw new Error('OUTPOST_FAIL stage=' + submitStage + ' ' + failMessage);
     }}
   }})(),
-  new Promise((_, reject) => setTimeout(
-    () => reject(new Error('OUTPOST_FAIL stage=' + submitStage + ' pre-submit preparation exceeded 110 seconds')),
-    110000
-  ))
+  new Promise((_, reject) => setTimeout(async () => {{
+    if (presubmitDone) return;
+    var timedOutStage = submitStage;
+    await emitDiag().catch(() => {{}});
+    reject(new Error('OUTPOST_FAIL stage=' + timedOutStage + ' pre-submit preparation exceeded 110 seconds'));
+  }}, 110000))
 ]);
+presubmitDone = true;
 var workPage = submitState.workPage;
 if (dryRun) {{
   // The rehearsal is the send path minus the click: it proves every locator the
@@ -1323,7 +1654,7 @@ if (dryRun) {{
     stage: 'ready-to-send',
     url: workPage.url(),
     expectedComposer: composerLabel,
-    composerLabels: await workPage.locator('#prompt-textarea').evaluateAll((els) =>
+    composerLabels: await workPage.locator(anyComposerSelector).evaluateAll((els) =>
       els.map((el) => el.getAttribute('aria-label'))
     ).catch(() => []),
     tierInnerText: await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
@@ -1348,12 +1679,35 @@ var assistantCountBefore = submitState.assistantCountBefore || 0;
 var remainingSubmitMs = 120000 - (Date.now() - submitStartedAt);
 if (remainingSubmitMs <= 0) throw new Error('pre-submit preparation exceeded 120 seconds');
 submitStage = 'commit-user-turn';
-await submitState.send.click({{ timeout: remainingSubmitMs }});
-var userTurn = workPage.locator('[data-message-author-role="user"]').filter({{ hasText: {js(f"ID: {outpost_id}")} }}).last();
+// Aside resolves a locator once when it clicks and never waits: a send button
+// that is disabled for a moment is "not found" and nothing is clicked.
+await submitState.send.waitFor({{
+  state: 'visible',
+  timeout: Math.max(1, Math.min(30000, 120000 - (Date.now() - submitStartedAt)))
+}}).catch(() => {{}});
+// A click that throws proves nothing either way: the turn may already be out.
+// The page decides below, and the runner asks the backend when it cannot.
+var clickError = '';
 try {{
-  await userTurn.waitFor({{ state: 'visible', timeout: remainingSubmitMs }});
+  await submitState.send.click({{ timeout: Math.max(1, 120000 - (Date.now() - submitStartedAt)) }});
 }} catch (error) {{
-  userTurn = workPage.locator('[data-message-author-role="user"]').last();
+  clickError = String(error && error.message || error).slice(0, 300);
+}}
+remainingSubmitMs = Math.max(1, 120000 - (Date.now() - submitStartedAt));
+var userTurn = workPage.locator(userMessageSelector).filter({{ hasText: {js(f"ID: {outpost_id}")} }}).last();
+try {{
+  await userTurn.waitFor({{
+    state: 'visible',
+    timeout: clickError ? Math.min({CLICK_ERROR_TURN_WAIT_MS}, remainingSubmitMs) : remainingSubmitMs
+  }});
+}} catch (error) {{
+  if (clickError) {{
+    throw new Error(
+      'OUTPOST_FAIL stage=commit-user-turn send click failed and no user turn showed on the page: ' +
+      clickError + ' url=' + workPage.url()
+    );
+  }}
+  userTurn = workPage.locator(userMessageSelector).last();
   try {{
     await userTurn.waitFor({{ state: 'visible', timeout: 8000 }});
     var userText = await userTurn.innerText();
@@ -1405,7 +1759,8 @@ console.log({js(SUBMIT_MARKER)} + JSON.stringify({{
   submitElapsedMs,
   conversationUrl: stickyConversationUrl || (submittedTab ? submittedTab.url : workPage.url()),
   conversationId: conversationId,
-  targetId: submitState.ownedTargetId
+  targetId: submitState.ownedTargetId,
+  clickError: clickError
 }}));
 var responseStartedAt = Date.now();
 var responseDeadline = responseStartedAt + {response_timeout_ms};
@@ -1522,15 +1877,11 @@ async function readAssistantFromBackend() {{
     attachments: lastMeta.attachments || null
   }};
 }}
-var stopButton = workPage.locator(
-  'button[data-testid="stop-button"], button[aria-label*="중지"], button[aria-label*="Stop"]'
-);
-var assistant = workPage.locator('[data-message-author-role="assistant"]').last();
+var stopButton = workPage.locator(stopSelector);
+var assistant = workPage.locator(assistantMessageSelector).last();
 // Live locators: a RegExp name or a heading name never resolves through
 // getByRole() here, and these are re-checked on every poll.
-var copyResponse = workPage.locator(
-  'button[aria-label="응답 복사"], button[aria-label="Copy response"]'
-).last();
+var copyResponse = workPage.locator(copyResponseSelector).last();
 var responseText = '';
 var backendExtracted = null;
 while (Date.now() < responseDeadline) {{
@@ -1552,7 +1903,7 @@ while (Date.now() < responseDeadline) {{
   }}
   // Only use DOM fallback if backend explicitly finished or if backend extraction failed to find anything
   if (!extracted || (!extracted.text && !extracted.finished)) {{
-    if ((await workPage.locator('[data-message-author-role="assistant"]').count()) > assistantCountBefore) {{
+    if ((await workPage.locator(assistantMessageSelector).count()) > assistantCountBefore) {{
       try {{
         await assistant.waitFor({{ state: 'visible', timeout: 1000 }});
         var liveText = (await assistant.innerText()).trim();
@@ -1856,6 +2207,12 @@ def marker_payload(transcript: str, marker: str) -> dict[str, Any] | None:
     return None
 
 
+def nothing_typed_yet(stage: str) -> bool:
+    """A step before the composer is filled cannot have sent anything."""
+    rank = stage_rank(stage)
+    return 0 <= rank < stage_rank("fill-composer")
+
+
 def run_repl_outpost(
     script: str,
     *,
@@ -1863,72 +2220,118 @@ def run_repl_outpost(
     response_timeout: int,
     outpost_id: str = "",
     on_submit: Callable[[dict[str, Any]], None] | None = None,
+    project_url: str | None = None,
+    conversation_url: str | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], float, float, str]:
+    """Run the send script; decide from the backend, not the error, whether it went out.
+
+    A REPL that ends without the submit marker says nothing about the send by
+    itself: a click can throw after the turn left, and the daemon can drop
+    mid-click. Unless the script stopped before the composer held the prompt,
+    the backend is asked for the turn by its id. Found means sent; a complete
+    search that finds nothing means not sent; anything else is unknown.
+    """
     timeout = submit_timeout + response_timeout + 30
     transcript = ""
     earlier = ""
     submit_payload = None
+    since = time.time() - LOCATE_SINCE_SLACK_SECONDS
     for attempt in range(2):
         transcript = run_repl_process(script, timeout=timeout)
-        submit_unknown_payload = marker_payload(transcript, SUBMIT_UNKNOWN_MARKER)
-        if submit_unknown_payload is not None:
-            raise SubmitUnknownError(
-                "submission state unknown; do not retry\n"
-                + json.dumps(submit_unknown_payload, ensure_ascii=False)
-                + "\n"
-                + earlier
-                + transcript
-            )
         submit_payload = marker_payload(transcript, SUBMIT_MARKER)
         if submit_payload is not None:
             break
-        recovered = None
-        if outpost_id and (
-            transcript_lost_aside_daemon(transcript) or "/c/" in transcript
-        ):
-            recovered = recover_outpost_from_backend(outpost_id)
-        if recovered and recovered.get("conversationUrl"):
+        submit_unknown_payload = marker_payload(transcript, SUBMIT_UNKNOWN_MARKER)
+        daemon_lost = transcript_lost_aside_daemon(transcript)
+        stage, _detail = failure_reason_from(transcript)
+        late_commit = "120-second" in str((submit_unknown_payload or {}).get("reason") or "")
+        state, located = "unknown", None
+        if submit_unknown_payload is None and nothing_typed_yet(stage):
+            state = "absent"
+        elif outpost_id and not late_commit:
+            if daemon_lost:
+                ensure_aside_daemon()
+            state, located = locate_outpost_turn(
+                outpost_id,
+                project_url=project_url,
+                conversation_url=conversation_url,
+                since=since,
+            )
+        if state == "found":
+            assert located is not None
             submit_payload = {
                 "quality": "",
-                "model": "최신",
+                "model": "GPT-6",
                 "tier": "",
-                "conversationUrl": recovered["conversationUrl"],
+                "conversationUrl": located["conversationUrl"],
+                "conversationId": located.get("conversationId") or "",
                 "targetId": "",
                 "submitElapsedMs": 0,
+                "foundByBackend": True,
             }
+            print(
+                f"OUTPOST_SENT_DESPITE_ERROR stage={stage or '-'} url={located['conversationUrl']} "
+                "— 보내기 단계가 오류로 끝났지만 백엔드에 이 ID의 턴이 있다. 보낸 것으로 보고 답을 회수한다.",
+                file=sys.stderr,
+                flush=True,
+            )
             if on_submit is not None:
                 on_submit(submit_payload)
-            if recovered.get("responseText") and recovered.get("finished", True):
+            if located.get("responseText") and located.get("finished", True):
                 return (
                     submit_payload,
                     {
-                        "responseText": recovered["responseText"],
-                        "idMatched": bool(recovered.get("idMatched")),
+                        "responseText": located["responseText"],
+                        "idMatched": bool(located.get("idMatched")),
                         "packetUnread": False,
                         "recoveredFromBackend": True,
                         "responseElapsedMs": 0,
-                        "conversationUrl": recovered["conversationUrl"],
+                        "conversationUrl": located["conversationUrl"],
+                        "conversationId": located.get("conversationId") or "",
+                        "modelSlug": located.get("modelSlug") or "",
                     },
                     0.0,
                     0.0,
                     earlier + transcript,
                 )
             raise SubmittedResponseError(submit_payload, 0.0, earlier + transcript)
-        if attempt == 0 and transcript_lost_aside_daemon(transcript):
+        if submit_unknown_payload is not None or state == "unknown":
+            reason = (
+                submit_unknown_payload
+                or {
+                    "reason": "the send step ended without proof either way and the backend "
+                    "could not be searched completely",
+                    "stage": stage or "",
+                }
+            )
+            raise SubmitUnknownError(
+                "submission state unknown; do not retry\n"
+                + json.dumps(reason, ensure_ascii=False)
+                + "\n"
+                + earlier
+                + transcript
+            )
+        verified = (
+            ""
+            if located is None
+            else "backend: no turn with this id in the project; the packet was not sent\n"
+        )
+        if attempt == 0 and daemon_lost:
             earlier = transcript + "\n"
             if ensure_aside_daemon() is None:
                 continue
-        if transcript_lost_aside_daemon(transcript):
+        if daemon_lost:
             raise RuntimeError(
                 describe_pre_submit_failure(
                     "aside daemon closed before submission; packet was not sent\n"
+                    + verified
                     + earlier
                     + transcript
                 )
             )
         raise RuntimeError(
             describe_pre_submit_failure(
-                "Aside REPL exited before submission marker\n" + transcript
+                "Aside REPL exited before submission marker\n" + verified + transcript
             )
         )
     assert submit_payload is not None
@@ -1957,108 +2360,191 @@ def run_repl_outpost(
 
 
 
-def build_doctor_script(*, project_url: str, project_name: str, picker: dict[str, Any] | None = None) -> str:
-    composer_label = composer_aria_label(project_name)
-    picker = picker or load_picker_contract()
-    tier_pattern = tier_name_pattern(picker.get("tierAliases") or DEFAULT_TIER_ALIASES)
+# Doctor checks the send path twice. A Pro rehearsal walks every pre-submit
+# step with the Pro stop selected and stops at the click, so it spends no Pro
+# quota. An xhigh send then really goes out and comes back — xhigh quota is not
+# limited — which proves the click, the commit, and the answer recovery too.
+# Any pre-submit step that cannot find its control is handed to the heal loop.
+DOCTOR_TOPIC = "outpost 점검"
+DOCTOR_PACKET = (
+    "# outpost 점검\n\n"
+    "전송 경로를 점검하는 패킷이다. 답변 첫 줄에 ID를 쓰고, 둘째 줄에 '점검 완료'라고만 써 달라.\n"
+)
+DOCTOR_RESPONSE_TIMEOUT_SECONDS = 600
+STAGE_ORDER = tuple(STAGE_HINTS)
+HEALABLE_STAGES = frozenset(STAGE_ORDER[STAGE_ORDER.index("wait-project-composer") : STAGE_ORDER.index("commit-user-turn")])
+
+
+def stage_rank(stage: str) -> int:
+    return STAGE_ORDER.index(stage) if stage in STAGE_ORDER else -1
+
+
+def auto_heal_enabled() -> bool:
+    return os.environ.get("OUTPOST_AUTO_HEAL", "1") != "0"
+
+
+def failure_from_transcript(transcript: str) -> dict[str, Any]:
+    stage, detail = failure_reason_from(transcript)
+    return {
+        "ok": False,
+        "stage": stage or "rehearsal",
+        "detail": detail,
+        "diag": marker_payload(transcript, DIAG_MARKER),
+        "daemonLost": transcript_lost_aside_daemon(transcript),
+    }
+
+
+def healable(failure: dict[str, Any]) -> bool:
+    detail = str(failure.get("detail") or "")
+    return (
+        str(failure.get("stage") or "") in HEALABLE_STAGES
+        and not failure.get("daemonLost")
+        and "rate-limited" not in detail
+    )
+
+
+def rehearse(
+    *,
+    project_url: str,
+    project_name: str,
+    quality: str,
+    conversation_url: str | None = None,
+) -> dict[str, Any]:
+    """Walk the send path for this quality up to the click; never send."""
+    rehearsal_id = secrets.token_hex(8)
+    try:
+        with staged_payload(rehearsal_id, REHEARSAL_PACKET.encode("utf-8")) as (packet_path, _):
+            script = build_repl_script(
+                project_url=project_url,
+                project_name=project_name,
+                quality=quality,
+                packet_name=f"outpost-{rehearsal_id}.md",
+                packet_path=packet_path,
+                topic=REHEARSAL_TOPIC,
+                outpost_id=rehearsal_id,
+                response_timeout_ms=1000,
+                conversation_url=conversation_url,
+                follow_up=bool(conversation_url),
+                dry_run=True,
+            )
+            transcript = run_repl_process(script, timeout=SUBMIT_TIMEOUT_SECONDS)
+    except (RuntimeError, OSError) as exc:
+        return {"ok": False, "stage": "load-staged-files", "detail": str(exc)[:200]}
+    payload = marker_payload(transcript, REHEARSAL_MARKER)
+    if payload is not None:
+        return {**payload, "ok": True, "stage": "ready-to-send"}
+    return failure_from_transcript(transcript)
+
+
+def build_hide_conversation_script(conversation_id: str) -> str:
     return f"""
-var projectUrl = {js(project_url)};
-var composerLabel = {js(composer_label)};
-var preferredModel = {js(PREFERRED_MODEL_RADIO)};
-var tierNameRe = new RegExp({js(tier_pattern)});
-var report = {{
-  url: '',
-  title: '',
-  expectedComposer: composerLabel,
-  composerLabels: [],
-  composerOk: false,
-  chatTogglePresent: false,
-  chatChecked: false,
-  workChecked: false,
-  chatSurfaceOk: false,
-  tierInnerText: [],
-  tierRoleMatched: false,
-  performanceVisible: false,
-  modelMenuVisible: false,
-  latestRadioPresent: false,
-  modelRadios: [],
-  blockers: []
-}};
-{NAME_LOOKUP_HELPERS}
-var page = await openTab(projectUrl);
+var page = await openTab('https://chatgpt.com/');
 await page.waitForLoadState('domcontentloaded');
+var status = 0;
 try {{
-  report.url = page.url();
-  report.title = await page.title();
-  var composer = page.locator(
-    '#prompt-textarea[contenteditable="true"][aria-label="' + composerLabel + '"]'
-  );
-  try {{
-    await composer.waitFor({{ state: 'visible', timeout: 30000 }});
-    report.composerOk = true;
-  }} catch (error) {{
-    report.blockers.push('composer');
-  }}
-  report.composerLabels = await page.locator('#prompt-textarea').evaluateAll((els) =>
-    els.map((el) => el.getAttribute('aria-label'))
-  ).catch(() => []);
-  var chatToggle = page.locator('button[data-tpp-toggle-value="chatgpt"]');
-  var workToggle = page.locator('button[data-tpp-toggle-value="work"]');
-  report.chatTogglePresent = await chatToggle.isVisible().catch(() => false);
-  report.chatChecked = report.chatTogglePresent
-    && (await chatToggle.getAttribute('aria-checked')) === 'true';
-  report.workChecked = await workToggle.isVisible().catch(() => false)
-    && (await workToggle.getAttribute('aria-checked')) === 'true';
-  report.chatSurfaceOk = report.chatChecked || (!report.workChecked && report.composerOk);
-  if (!report.chatSurfaceOk) report.blockers.push('chat-surface');
-  report.tierInnerText = await page.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
-    els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim()).filter(Boolean)
-  ).catch(() => []);
-  // Doctor has to probe the same lookup send uses, or its green light is a lie.
-  // The click-every-menu fallback that used to cover for getByRole() is why
-  // doctor passed while every send died at select-tier.
-  var tierButton = await waitNamedRef(page, 'button', tierNameRe, 20000);
-  report.tierRoleMatched = !!tierButton
-    && await tierButton.isVisible().catch(() => false);
-  if (!report.tierRoleMatched) {{
-    report.blockers.push('tier');
-  }} else {{
-    await tierButton.click();
-    await sleep(800);
-    await snapshot(page, {{ interactive: true }});
-    report.performanceVisible = await page.getByRole('menuitem', {{ name: '성능' }})
-      .isVisible().catch(() => false);
-    var modelItem = page.getByRole('menuitem', {{ name: '모델 선택' }});
-    report.modelMenuVisible = await modelItem.isVisible().catch(() => false);
-    if (!report.performanceVisible) report.blockers.push('performance');
-    if (!report.modelMenuVisible) {{
-      report.blockers.push('model-menu');
-    }} else {{
-      await modelItem.click();
-      await sleep(500);
-      report.modelRadios = await page.locator('[role="menuitemradio"]').evaluateAll((els) =>
-        els.map((el) => ({{
-          name: (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').trim(),
-          checked: el.getAttribute('aria-checked') === 'true'
-        }})).filter((row) => row.name)
-      ).catch(() => []);
-      report.latestRadioPresent = report.modelRadios.some((row) => row.name === preferredModel);
-      if (!report.latestRadioPresent) report.blockers.push('latest');
-    }}
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
-  }}
+  var sess = await (await fetch('https://chatgpt.com/api/auth/session')).json();
+  var response = await fetch('https://chatgpt.com/backend-api/conversation/' + {js(conversation_id)}, {{
+    method: 'PATCH',
+    headers: {{ Authorization: 'Bearer ' + sess.accessToken, 'Content-Type': 'application/json' }},
+    body: JSON.stringify({{ is_visible: false }})
+  }});
+  status = response.status;
 }} finally {{
   await closeTab(page).catch(() => {{}});
 }}
-report.ok = report.blockers.length === 0
-  && report.composerOk
-  && report.chatSurfaceOk
-  && report.tierRoleMatched
-  && report.performanceVisible
-  && report.latestRadioPresent;
-console.log('OUTPOST_DOCTOR_RESULT ' + JSON.stringify(report));
-"""
+console.log('OUTPOST_HIDE_RESULT ' + JSON.stringify({{ status: status }}));
+""".strip()
+
+
+def live_check(*, project_url: str, project_name: str) -> dict[str, Any]:
+    """Send a throwaway packet on xhigh and read the answer back."""
+    outpost_id = secrets.token_hex(16)
+    try:
+        with staged_payload(outpost_id, DOCTOR_PACKET.encode("utf-8")) as (packet_path, _):
+            script = build_repl_script(
+                project_url=project_url,
+                project_name=project_name,
+                quality="xhigh",
+                packet_name=f"outpost-{outpost_id}.md",
+                packet_path=packet_path,
+                topic=DOCTOR_TOPIC,
+                outpost_id=outpost_id,
+                response_timeout_ms=DOCTOR_RESPONSE_TIMEOUT_SECONDS * 1000,
+            )
+            submit, response, _, response_elapsed, _ = run_repl_outpost(
+                script,
+                submit_timeout=SUBMIT_TIMEOUT_SECONDS,
+                response_timeout=DOCTOR_RESPONSE_TIMEOUT_SECONDS,
+                outpost_id=outpost_id,
+                project_url=project_url,
+            )
+    except SubmitUnknownError as exc:
+        return {"ok": False, "sent": True, "stage": "commit-user-turn", "detail": str(exc)[:200]}
+    except SubmittedResponseError as exc:
+        recovered = recover_outpost_from_backend(
+            outpost_id,
+            conversation_url=str(exc.submit_payload.get("conversationUrl") or "") or None,
+            timeout=DOCTOR_RESPONSE_TIMEOUT_SECONDS,
+            project_url=project_url,
+        )
+        if not finished_backend_reply(recovered):
+            return {"ok": False, "sent": True, "stage": "await-response", "detail": "answer not recovered"}
+        assert recovered is not None
+        submit, response, response_elapsed = exc.submit_payload, recovered, 0.0
+    except RuntimeError as exc:
+        return {**failure_from_transcript(str(exc)), "sent": False}
+    conversation_url = str(response.get("conversationUrl") or submit.get("conversationUrl") or "")
+    slug = str(response.get("modelSlug") or "") or confirm_model_slug(outpost_id, conversation_url or None)
+    required = QUALITY_MODEL_SLUGS["xhigh"]
+    result = {
+        "ok": slug == required and bool(response.get("idMatched")),
+        "sent": True,
+        "stage": "answered",
+        "tier": str(submit.get("tier") or ""),
+        "modelSlug": slug,
+        "requiredModel": required,
+        "idMatched": bool(response.get("idMatched")),
+        "responseElapsedSeconds": round(float(response_elapsed or 0), 1),
+    }
+    if not result["ok"]:
+        result["detail"] = (
+            f"answered by {slug or 'unknown'} (want {required}), idMatched={result['idMatched']}"
+        )
+    conversation_id = conversation_id_from_url(conversation_url)
+    if conversation_id:
+        hidden = marker_payload(
+            run_repl_process(build_hide_conversation_script(conversation_id), timeout=60),
+            "OUTPOST_HIDE_RESULT ",
+        )
+        result["cleanedUp"] = bool(hidden and hidden.get("status") == 200)
+    return result
+
+
+def heal_screen_map(
+    failure: dict[str, Any],
+    verify: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    return UI.heal(
+        failure=failure,
+        verify=verify,
+        stage_rank=stage_rank,
+        stage_hint=lambda stage: STAGE_HINTS.get(stage, ""),
+        log=lambda line: print(line, file=sys.stderr, flush=True),
+    )
+
+
+def format_step(name: str, result: dict[str, Any]) -> str:
+    state = "ok" if result.get("ok") else "FAIL"
+    line = f"{name} {state} stage={result.get('stage') or '-'}"
+    if result.get("tier"):
+        line += f" tier={result['tier']}"
+    if result.get("modelSlug"):
+        line += f" model={result['modelSlug']}"
+    if result.get("healed"):
+        line += f" healed_in={result['healed']}"
+    if not result.get("ok") and result.get("detail"):
+        line += f"\n  detail={result['detail']}"
+    return line
 
 
 def format_doctor_report(payload: dict[str, Any]) -> str:
@@ -2068,33 +2554,27 @@ def format_doctor_report(payload: dict[str, Any]) -> str:
         f"daemon up={payload.get('daemonUptime') or 'unknown'} "
         f"pid={payload.get('daemonPid') or '-'}",
     ]
-    if payload.get("stage") == "ready-to-send":
-        lines.extend(
-            [
-                f"rehearsal stage=ready-to-send url={payload.get('url') or '-'}",
-                f"composer expected={payload.get('expectedComposer') or '-'} "
-                f"found={json.dumps(payload.get('composerLabels') or [], ensure_ascii=False)}",
-                f"tier expected={payload.get('tierLabel') or '-'} "
-                f"verified={payload.get('tier') or '-'}",
-                f"model expected={payload.get('model') or '-'} "
-                f"present={'true' if payload.get('latestRadioPresent') else 'false'}",
-                f"radios={json.dumps(payload.get('modelRadios') or [], ensure_ascii=False)}",
-            ]
-        )
-    else:
-        lines.append(f"rehearsal stage={payload.get('stage') or '-'}")
-        if payload.get("detail"):
-            lines.append(f"detail={payload['detail']}")
-        if payload.get("pickerProbe"):
-            lines.append(
-                "picker probe="
-                + json.dumps(payload["pickerProbe"].get("tierInnerText") or [], ensure_ascii=False)
-            )
+    for name in ("pro", "xhigh"):
+        step = payload.get(name)
+        if step:
+            lines.append(format_step("pro-rehearsal" if name == "pro" else "xhigh-send", step))
+    if payload.get("uiMap"):
+        lines.append(f"screen map {payload['uiMap']}")
     blockers = payload.get("blockers") or []
     if blockers:
         lines.append("blockers=" + ",".join(str(b) for b in blockers))
     if not ok:
-        lines.append("exit 75 — 리허설이 전송 직전까지 가지 못했다. 패킷은 보내지 않음.")
+        failed = [
+            str(step.get("stage") or "")
+            for step in (payload.get("pro"), payload.get("xhigh"))
+            if step and not step.get("ok")
+        ]
+        if not failed:
+            lines.append("exit 75 — Aside 데몬이 준비되지 않았다. 잠시 뒤 다시 돌려라.")
+        elif any(stage_rank(stage) >= 0 or stage in {"answered", "await-response"} for stage in failed):
+            lines.append("exit 75 — 전송 경로가 막혀 있고 자동 수리로도 풀리지 않았다. 코드 수정이 필요하다.")
+        else:
+            lines.append("exit 75 — Aside가 스크립트를 돌리지 못했다. 화면 문제가 아니다; 잠시 뒤 다시 돌려라.")
     return "\n".join(lines)
 
 
@@ -2123,76 +2603,64 @@ def run_doctor(args: argparse.Namespace) -> int:
         print(daemon_error, file=sys.stderr)
         return 75
     health = aside_daemon_health()
-    # Doctor walks the send path itself, with a throwaway packet, and stops at
-    # the click. Its green light is the send's own pre-submit path, so it can no
-    # longer pass on a lookup the send cannot perform.
-    rehearsal_id = secrets.token_hex(8)
-    script = build_repl_script(
-        project_url=project_url,
-        project_name=project_name,
-        quality="pro",
-        packet_name=f"outpost-{rehearsal_id}.md",
-        packet_base64=base64.b64encode(REHEARSAL_PACKET.encode("utf-8")).decode("ascii"),
-        topic=REHEARSAL_TOPIC,
-        outpost_id=rehearsal_id,
-        response_timeout_ms=1000,
-        picker=load_picker_contract(),
-        dry_run=True,
-    )
-    transcript = run_repl_process(script, timeout=SUBMIT_TIMEOUT_SECONDS)
-    payload = marker_payload(transcript, REHEARSAL_MARKER)
-    wrote = None
-    if payload is not None:
-        payload = dict(payload)
-        contract = picker_from_doctor_payload(payload)
-        if contract is not None:
-            wrote = save_picker_contract(contract)
-            payload["pickerPath"] = str(wrote)
-            payload["picker"] = contract
+    heal = auto_heal_enabled() and not args.no_heal
+    payload: dict[str, Any] = {"blockers": []}
+
+    def once_more_if_aside_failed(check: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        result = check()
+        # No stage means the script never ran a step: Aside was not answering,
+        # not a changed screen. Wait for the daemon and run it once more.
+        if (
+            not result.get("ok")
+            and not result.get("sent")
+            and stage_rank(str(result.get("stage") or "")) < 0
+            and ensure_aside_daemon() is None
+        ):
+            result = check()
+        return result
+
+    def check_pro() -> dict[str, Any]:
+        return once_more_if_aside_failed(
+            lambda: rehearse(project_url=project_url, project_name=project_name, quality="pro")
+        )
+
+    def check_live() -> dict[str, Any]:
+        return once_more_if_aside_failed(
+            lambda: live_check(project_url=project_url, project_name=project_name)
+        )
+
+    def check_xhigh_dry() -> dict[str, Any]:
+        return rehearse(project_url=project_url, project_name=project_name, quality="xhigh")
+
+    pro = check_pro()
+    if not pro.get("ok") and heal and healable(pro):
+        healed = heal_screen_map(pro, check_pro)
+        pro = {**healed["result"], "healed": healed["attempts"]} if healed["ok"] else healed["result"]
+    payload["pro"] = {k: v for k, v in pro.items() if k != "diag"}
+    if not pro.get("ok"):
+        payload["blockers"].append("pro-rehearsal")
     else:
-        stage, detail = failure_reason_from(transcript)
-        payload = {
-            "ok": False,
-            "stage": stage or "rehearsal",
-            "detail": detail,
-            "blockers": ["rehearsal"],
-        }
-        # A renamed picker is the one drift the saved contract can absorb by
-        # itself, so read the live names before reporting it as a code problem.
-        if stage in {"select-tier", "verify-model"}:
-            probe = marker_payload(
-                run_repl_process(
-                    build_doctor_script(project_url=project_url, project_name=project_name),
-                    timeout=60,
-                ),
-                DOCTOR_MARKER,
-            )
-            if probe is not None:
-                payload["pickerProbe"] = probe
-                payload["url"] = probe.get("url") or ""
-                contract = picker_from_doctor_payload(probe)
-                if contract is not None:
-                    wrote = save_picker_contract(contract)
-                    payload["pickerPath"] = str(wrote)
-    # A reachable daemon is not a usable one: the browser behind it may still be
-    # starting, which is how a send dies right after a restart.
+        live = check_live()
+        if not live.get("ok") and not live.get("sent") and heal and healable(live):
+            healed = heal_screen_map(live, check_xhigh_dry)
+            if healed["ok"]:
+                live = {**check_live(), "healed": healed["attempts"]}
+            else:
+                live = healed["result"]
+        payload["xhigh"] = {k: v for k, v in live.items() if k != "diag"}
+        if not live.get("ok"):
+            payload["blockers"].append("xhigh-send")
+    payload["uiMap"] = str(UI.ui_map_path())
     payload["daemonUptime"] = format_daemon_uptime(health)
     payload["daemonPid"] = health.get("pid") if health else None
     if health is not None and health.get("ready") is not True:
-        payload["blockers"] = list(payload.get("blockers") or []) + ["daemon-not-ready"]
-        payload["ok"] = False
+        payload["blockers"].append("daemon-not-ready")
+    payload["ok"] = not payload["blockers"]
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print(format_doctor_report(payload))
-        if wrote is not None:
-            print(f"OUTPOST_PICKER wrote {wrote}")
-    if payload.get("ok"):
-        return 0
-    if wrote is not None:
-        print("exit 0 — 피커 계약을 갱신했으니 다음 send는 이 이름을 쓴다.")
-        return 0
-    return 75
+    return 0 if payload["ok"] else 75
 
 
 def parse_args(argv: Sequence[str]) -> argparse.Namespace:
@@ -2230,7 +2698,12 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
     parser.add_argument(
         "--doctor",
         action="store_true",
-        help="Probe ChatGPT UI without sending a packet.",
+        help="Rehearse Pro, send one xhigh round trip, and heal the screen map on failure.",
+    )
+    parser.add_argument(
+        "--no-heal",
+        action="store_true",
+        help="Doctor only reports; it does not rewrite the screen map.",
     )
     parser.add_argument(
         "--thread",
@@ -2382,6 +2855,17 @@ def open_or_continue_thread(
     return store, thread, store.thread_lock(thread["threadId"]), False, None, False
 
 
+def configured_project_url(args: argparse.Namespace) -> str | None:
+    config_path = resolve_config_path(args.config)
+    return (
+        args.url
+        or os.environ.get("OUTPOST_CHATGPT_URL")
+        or os.environ.get("CONSULT_CHATGPT_URL")
+        or read_config_value(config_path, "OUTPOST_CHATGPT_URL")
+        or read_config_value(config_path, "CONSULT_CHATGPT_URL")
+    )
+
+
 def recover_from_saved_state(args: argparse.Namespace) -> int:
     evidence_path = Path(args.recover_from).expanduser()
     try:
@@ -2402,16 +2886,45 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
         evidence.get("conversationUrl"),
         evidence.get("conversationId"),
     ) or None
-    recovered = recover_outpost_from_backend(
-        outpost_id,
-        conversation_url=conversation_url,
-        timeout=args.response_timeout,
-    )
+    # A run that ended before its conversation was known (exit 76, or an older
+    # run that wrongly said not sent) is found by its id in its project.
+    project_url = str(evidence.get("projectUrl") or "") or configured_project_url(args) or None
+    started_at = float(evidence.get("startedAt") or 0)
+    since = started_at - LOCATE_SINCE_SLACK_SECONDS if started_at else 0
     response_path = Path(args.response_output).expanduser()
     json_path = Path(args.json_output).expanduser()
     stderr_path = Path(args.stderr_output).expanduser()
     for path in (response_path, json_path, stderr_path):
         path.parent.mkdir(parents=True, exist_ok=True)
+    if not conversation_url:
+        state, located = locate_outpost_turn(outpost_id, project_url=project_url, since=since)
+        if state == "found":
+            assert located is not None
+            conversation_url = str(located["conversationUrl"])
+            print(f"OUTPOST_FOUND url={conversation_url} — 이 ID의 턴을 프로젝트에서 찾았다.", flush=True)
+        else:
+            status = "not_sent" if state == "absent" else "submit_unknown"
+            write_result(json_path, {**evidence, "ok": False, "status": status})
+            if state == "absent":
+                message = (
+                    "exit 75 — 프로젝트 어디에도 이 ID의 턴이 없다. 보내지 않은 것이니 "
+                    "같은 패킷을 다시 보내도 된다."
+                )
+            else:
+                message = (
+                    "exit 76 — 이 ID의 턴을 찾지도, 없다고 확인하지도 못했다. 다시 보내지 말고 "
+                    "잠시 뒤 recover를 다시 돌려라 (프로젝트가 다르면 --url)."
+                )
+            stderr_path.write_text(message + "\n", encoding="utf-8")
+            print(message, file=sys.stderr)
+            return NOT_SENT_EXIT if state == "absent" else SUBMIT_UNKNOWN_EXIT
+    recovered = recover_outpost_from_backend(
+        outpost_id,
+        conversation_url=conversation_url,
+        timeout=args.response_timeout,
+        project_url=project_url,
+        since=since,
+    )
     if finished_backend_reply(recovered):
         assert recovered is not None
         saved_paths = save_outpost_attachments(
@@ -2447,7 +2960,11 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
             saved["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
         saved = attach_thread_fields(saved, {"threadId": evidence.get("threadId") or ""}, str(evidence.get("mode") or "recover"))
         saved["packetSha"] = str(evidence.get("packetSha") or "")
-        json_path.write_text(json.dumps(saved, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        if project_url:
+            saved["projectUrl"] = project_url
+        if evidence.get("startedAt"):
+            saved["startedAt"] = evidence["startedAt"]
+        write_result(json_path, saved)
         record_thread_outcome(
             session_store_from_args(args),
             {"threadId": evidence.get("threadId") or ""} if evidence.get("threadId") else None,
@@ -2485,7 +3002,7 @@ def recover_from_saved_state(args: argparse.Namespace) -> int:
         {"threadId": evidence.get("threadId") or ""} if evidence.get("threadId") else None,
         str(evidence.get("mode") or "recover"),
     )
-    json_path.write_text(json.dumps(failed, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_result(json_path, failed)
     print(
         "submission committed but response recovery failed; recover the same conversation and do not resend",
         file=sys.stderr,
@@ -2558,7 +3075,6 @@ def main(argv: Sequence[str]) -> int:
             + "\n".join(f"- `{note}`" for note in upload_notes)
             + "\n"
         )
-    packet_base64 = base64.b64encode(raw_body.encode("utf-8")).decode("ascii")
     outpost_id = secrets.token_hex(16)
     stderr_path = Path(args.stderr_output).expanduser()
     response_path = Path(args.response_output).expanduser()
@@ -2590,6 +3106,7 @@ def main(argv: Sequence[str]) -> int:
             previous_status = str(previous.get("status") or ("finished" if previous.get("ok") else ""))
             if previous.get("ok") or previous_status in {
                 "submitted_pending",
+                "submit_unknown",
                 "submitted_response_unavailable",
                 "submitted_artifact_unavailable",
                 "finished",
@@ -2621,6 +3138,7 @@ def main(argv: Sequence[str]) -> int:
         print(str(exc), file=sys.stderr)
         return 2
     mode = "continue" if follow_up else "new"
+    started_at = time.time()
     print(
         f"OUTPOST_THREAD thread={thread.get('threadId') if thread else '-'} "
         f"mode={mode} url={conversation_url or '-'}",
@@ -2639,16 +3157,17 @@ def main(argv: Sequence[str]) -> int:
         "conversationUrl": conversation_url or "",
         "threadId": (thread or {}).get("threadId") or "",
         "mode": mode,
+        # recover finds a turn by its id in this project even when nothing
+        # else about the send was saved.
+        "projectUrl": project_url,
+        "startedAt": round(started_at, 3),
     }
 
     def write_pending(extra: dict[str, Any] | None = None) -> None:
         if extra:
             pending_evidence.update(extra)
         try:
-            json_path.write_text(
-                json.dumps(pending_evidence, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            write_result(json_path, pending_evidence)
         except OSError:
             pass
 
@@ -2682,6 +3201,7 @@ def main(argv: Sequence[str]) -> int:
             outpost_id=outpost_id,
         )
 
+    staging: Path | None = None
     try:
         with thread_lock:
             if needs_start and thread is not None and store is not None:
@@ -2694,40 +3214,94 @@ def main(argv: Sequence[str]) -> int:
                     packet_path=packet_source,
                     pid=os.getpid(),
                 )
-            (
-                submit_payload,
-                response_payload,
-                submit_elapsed,
-                response_elapsed,
-                transcript,
-            ) = run_repl_outpost(
-                build_repl_script(
-                    project_url=project_url,
-                    project_name=project_name,
-                    quality=args.quality,
-                    packet_name=f"outpost-{outpost_id}.md",
-                    packet_base64=packet_base64,
-                    topic=topic,
+            try:
+                staging, staged_packet, staged_uploads = stage_payload(
+                    aside_project_root(), outpost_id, raw_body.encode("utf-8"), uploads
+                )
+            except (RuntimeError, OSError) as exc:
+                raise RuntimeError(f"OUTPOST_FAIL stage=load-staged-files {exc}") from exc
+            def send_once():
+                # The script is rebuilt on every attempt so a healed screen map
+                # is what the retry looks up.
+                return run_repl_outpost(
+                    build_repl_script(
+                        project_url=project_url,
+                        project_name=project_name,
+                        quality=args.quality,
+                        packet_name=f"outpost-{outpost_id}.md",
+                        packet_path=staged_packet,
+                        topic=topic,
+                        outpost_id=outpost_id,
+                        response_timeout_ms=args.response_timeout * 1000,
+                        artifact_output=str(artifact_path) if artifact_path else None,
+                        conversation_url=conversation_url,
+                        follow_up=follow_up,
+                        uploads=staged_uploads,
+                    ),
+                    submit_timeout=SUBMIT_TIMEOUT_SECONDS,
+                    response_timeout=args.response_timeout,
                     outpost_id=outpost_id,
-                    response_timeout_ms=args.response_timeout * 1000,
-                    artifact_output=str(artifact_path) if artifact_path else None,
+                    on_submit=mark_submitted,
+                    project_url=project_url,
                     conversation_url=conversation_url,
-                    follow_up=follow_up,
-                    picker=load_picker_contract(),
-                    uploads=uploads,
-                ),
-                submit_timeout=SUBMIT_TIMEOUT_SECONDS,
-                response_timeout=args.response_timeout,
-                outpost_id=outpost_id,
-                on_submit=mark_submitted,
-            )
+                )
+
+            try:
+                (
+                    submit_payload,
+                    response_payload,
+                    submit_elapsed,
+                    response_elapsed,
+                    transcript,
+                ) = send_once()
+            except RuntimeError as first:
+                # A plain RuntimeError here means the packet was not sent, so
+                # healing the screen map and sending again cannot double-send.
+                if isinstance(first, (SubmitUnknownError, SubmittedResponseError)):
+                    raise
+                failure = failure_from_transcript(str(first))
+                if not (auto_heal_enabled() and healable(failure)):
+                    raise
+                print(
+                    f"OUTPOST_HEAL start stage={failure['stage']} — 전송 전 단계라 보낸 것은 없다. "
+                    "화면 지도를 고친 뒤 한 번 다시 보낸다.",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                healed = heal_screen_map(
+                    failure,
+                    lambda: rehearse(
+                        project_url=project_url,
+                        project_name=project_name,
+                        quality=args.quality,
+                        conversation_url=conversation_url,
+                    ),
+                )
+                if not healed["ok"]:
+                    raise RuntimeError(
+                        f"{first}\n\n자동 수리 {healed['attempts']}회로도 풀리지 않았다 "
+                        f"(마지막 단계 {healed['result'].get('stage') or '-'})."
+                    ) from first
+                (
+                    submit_payload,
+                    response_payload,
+                    submit_elapsed,
+                    response_elapsed,
+                    transcript,
+                ) = send_once()
     except SESSIONS.ThreadBusyError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except SubmitUnknownError as exc:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
+        print(
+            f"exit 76 — 보냈는지 확인되지 않았다. 다시 보내지 말고 'outpost recover {json_path.parent}'로 "
+            "이 ID의 턴을 프로젝트에서 찾아 회수하라.",
+            file=sys.stderr,
+        )
         stage, detail = failure_reason_from(exc)
+        write_pending({"ok": False, "status": "submit_unknown", "failureStage": stage or "commit-user-turn"})
         record_thread_outcome(
             store,
             thread,
@@ -2737,7 +3311,7 @@ def main(argv: Sequence[str]) -> int:
             failure_stage=stage or "commit-user-turn",
             failure_detail=detail,
         )
-        return 76
+        return SUBMIT_UNKNOWN_EXIT
     except SubmittedResponseError as exc:
         submitted = exc.submit_payload
         recovered = recover_outpost_from_backend(
@@ -2749,6 +3323,8 @@ def main(argv: Sequence[str]) -> int:
             )
             or None,
             timeout=args.response_timeout,
+            project_url=project_url,
+            since=started_at - LOCATE_SINCE_SLACK_SECONDS,
         )
         if finished_backend_reply(recovered):
             saved_paths = save_outpost_attachments(
@@ -2794,10 +3370,7 @@ def main(argv: Sequence[str]) -> int:
                 recovered_evidence["attachments"] = [str(p) for p in saved_paths]
                 recovered_evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
             recovered_evidence["packetSha"] = packet_sha
-            json_path.write_text(
-                json.dumps(recovered_evidence, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
+            write_result(json_path, recovered_evidence)
             record_thread_outcome(
                 store,
                 thread,
@@ -2857,10 +3430,7 @@ def main(argv: Sequence[str]) -> int:
             mode,
         )
         evidence["packetSha"] = packet_sha
-        json_path.write_text(
-            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        write_result(json_path, evidence)
         record_thread_outcome(
             store,
             thread,
@@ -2883,6 +3453,10 @@ def main(argv: Sequence[str]) -> int:
         stderr_path.write_text(str(exc), encoding="utf-8")
         print(str(exc), file=sys.stderr)
         stage, detail = failure_reason_from(exc)
+        # Only a failure the runner proved unsent lands here: the step stopped
+        # before the prompt was typed, or the backend has no turn with this id.
+        # The run directory must not look sent: a resend is the fix, not a duplicate.
+        write_pending({"ok": False, "status": "not_sent", "failureStage": stage or "pre-submit"})
         record_thread_outcome(
             store,
             thread,
@@ -2892,7 +3466,10 @@ def main(argv: Sequence[str]) -> int:
             failure_stage=stage or "pre-submit",
             failure_detail=detail,
         )
-        return 75
+        return NOT_SENT_EXIT
+    finally:
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
     stderr_path.write_text(transcript, encoding="utf-8")
     saved_paths = save_outpost_attachments(
         outpost_id,
@@ -2952,10 +3529,7 @@ def main(argv: Sequence[str]) -> int:
             mode,
         )
         evidence["packetSha"] = packet_sha
-        json_path.write_text(
-            json.dumps(evidence, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        write_result(json_path, evidence)
         record_thread_outcome(
             store,
             thread,
@@ -3023,7 +3597,7 @@ def main(argv: Sequence[str]) -> int:
         evidence["attachments"] = [str(p) for p in saved_paths]
         evidence["attachmentsDir"] = str(Path(f"/tmp/outpost-{outpost_id}"))
     evidence["packetSha"] = packet_sha
-    json_path.write_text(json.dumps(evidence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    write_result(json_path, evidence)
     record_thread_outcome(
         store,
         thread,

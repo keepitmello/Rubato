@@ -23,7 +23,7 @@ SPEC.loader.exec_module(MODULE)
 FAKE_ASIDE = """#!/usr/bin/env python3
 import pathlib, sys
 pathlib.Path(SENTINEL).write_text("ran", encoding="utf-8")
-print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"최신","tier":"Pro (5 of 5)","submitElapsedMs":1200,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"t"}')
+print('ASIDE_REPL_SUBMIT_RESULT {"quality":"pro","model":"GPT-6","tier":"Pro (5 of 5)","submitElapsedMs":1200,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef","targetId":"t"}')
 print('ASIDE_REPL_RESPONSE_RESULT {"modelSlug":"SLUG","responseText":"answer","idMatched":true,"packetUnread":false,"responseElapsedMs":900,"conversationUrl":"https://chatgpt.com/c/6a95625e-1f78-83e8-aa90-a49f982e36ef"}')
 """
 
@@ -34,7 +34,14 @@ class ModelAndLossGuardTest(unittest.TestCase):
         self.addCleanup(self._sessions_dir.cleanup)
         env = mock.patch.dict(
             os.environ,
-            {"OUTPOST_SESSIONS_PATH": str(Path(self._sessions_dir.name) / "sessions.json")},
+            {
+                "OUTPOST_SESSIONS_PATH": str(Path(self._sessions_dir.name) / "sessions.json"),
+                "OUTPOST_ASIDE_ROOT": str(Path(self._sessions_dir.name) / "aside"),
+                # A test never reads the machine's learned screen map or calls
+                # the heal model unless it asks to.
+                "OUTPOST_UI_MAP_PATH": str(Path(self._sessions_dir.name) / "outpost-ui.json"),
+                "OUTPOST_AUTO_HEAL": "0",
+            },
         )
         env.start()
         self.addCleanup(env.stop)
@@ -123,36 +130,48 @@ class ModelAndLossGuardTest(unittest.TestCase):
 
     def test_each_quality_expects_exactly_one_model(self) -> None:
         self.assertEqual(tuple(MODULE.QUALITIES), ("pro", "xhigh"))
-        self.assertEqual(MODULE.required_model_slug("pro"), "gpt-6-pro")
-        self.assertEqual(MODULE.required_model_slug("xhigh"), "gpt-5-6-thinking")
-        # recover reads the quality off the saved evidence, so an old xhigh run
-        # keeps expecting the tier it was sent to
+        for quality, slug in MODULE.QUALITY_MODEL_SLUGS.items():
+            self.assertTrue(slug.startswith("gpt-6-"))
+            self.assertEqual(MODULE.required_model_slug(quality), slug)
+        self.assertNotEqual(MODULE.required_model_slug("pro"), MODULE.required_model_slug("xhigh"))
+        # Recovery uses the same pinned model contract as a new send.
         self.assertEqual(MODULE.required_model_slug("xhigh"), MODULE.QUALITY_MODEL_SLUGS["xhigh"])
 
     def test_a_model_other_than_the_quality_asked_for_fails_the_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            code, result_path, _sentinel = self._run(root, "gpt-5-6-thinking")
+            code, result_path, _sentinel = self._run(root, "legacy-thinking")
             self.assertEqual(code, MODULE.WRONG_MODEL_EXIT)
             evidence = json.loads(result_path.read_text(encoding="utf-8"))
             self.assertFalse(evidence["ok"])
             self.assertFalse(evidence["modelOk"])
-            self.assertEqual(evidence["modelSlug"], "gpt-5-6-thinking")
-            self.assertEqual(evidence["requiredModel"], "gpt-6-pro")
+            self.assertEqual(evidence["modelSlug"], "legacy-thinking")
+            self.assertEqual(evidence["requiredModel"], MODULE.required_model_slug("pro"))
             # the answer is still saved, so quota is never silently thrown away
             self.assertIn("answer", (root / "response.md").read_text(encoding="utf-8"))
 
-    def test_xhigh_passes_on_gpt_5_6_thinking(self) -> None:
+    def test_xhigh_passes_on_its_pinned_gpt_6_model(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             code, result_path, _sentinel = self._run(
-                root, "gpt-5-6-thinking", quality="xhigh"
+                root, MODULE.required_model_slug("xhigh"), quality="xhigh"
             )
             self.assertEqual(code, 0)
             evidence = json.loads(result_path.read_text(encoding="utf-8"))
             self.assertTrue(evidence["modelOk"])
             self.assertEqual(evidence["quality"], "xhigh")
-            self.assertEqual(evidence["requiredModel"], "gpt-5-6-thinking")
+            self.assertEqual(evidence["requiredModel"], MODULE.required_model_slug("xhigh"))
+
+    def test_every_quality_rejects_a_legacy_model_and_preserves_the_answer(self) -> None:
+        for quality in MODULE.QUALITIES:
+            with self.subTest(quality=quality), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                code, result_path, _ = self._run(root, "legacy-thinking", quality=quality)
+                self.assertEqual(code, MODULE.WRONG_MODEL_EXIT)
+                evidence = json.loads(result_path.read_text(encoding="utf-8"))
+                self.assertFalse(evidence["modelOk"])
+                self.assertEqual(evidence["requiredModel"], MODULE.required_model_slug(quality))
+                self.assertIn("answer", (root / "response.md").read_text(encoding="utf-8"))
 
     def test_xhigh_on_the_pro_model_fails_the_run(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -161,7 +180,7 @@ class ModelAndLossGuardTest(unittest.TestCase):
             self.assertEqual(code, MODULE.WRONG_MODEL_EXIT)
             evidence = json.loads(result_path.read_text(encoding="utf-8"))
             self.assertFalse(evidence["modelOk"])
-            self.assertEqual(evidence["requiredModel"], "gpt-5-6-thinking")
+            self.assertEqual(evidence["requiredModel"], MODULE.required_model_slug("xhigh"))
 
     def test_gpt_6_pro_passes_and_records_the_server_slug(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -191,11 +210,17 @@ class ModelAndLossGuardTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             fake = root / "aside"
-            fake.write_text("#!/usr/bin/env python3\nprint('nothing')\n", encoding="utf-8")
+            result_path = root / "result.json"
+            during = root / "result.during.json"
+            fake.write_text(
+                "#!/usr/bin/env python3\nimport shutil\n"
+                f"shutil.copyfile({str(result_path)!r}, {str(during)!r})\n"
+                "print('Error: OUTPOST_FAIL stage=select-tier tier button not visible')\n",
+                encoding="utf-8",
+            )
             fake.chmod(0o755)
             packet = root / "packet.md"
             packet.write_text("# Topic\n\nquestion", encoding="utf-8")
-            result_path = root / "result.json"
             path = f"{root}{os.pathsep}{os.environ.get('PATH', '')}"
             with mock.patch.dict(os.environ, {"PATH": path}):
                 with mock.patch.object(MODULE, "ensure_aside_daemon", return_value=None):
@@ -210,11 +235,19 @@ class ModelAndLossGuardTest(unittest.TestCase):
                                 "--stderr-output", str(root / "stderr.log"),
                             ]
                         )
-            self.assertTrue(result_path.is_file())
-            pending = json.loads(result_path.read_text(encoding="utf-8"))
+            # written before the send, so a dead REPL still leaves a recoverable turn
+            pending = json.loads(during.read_text(encoding="utf-8"))
             self.assertEqual(pending["status"], "submitted_pending")
             self.assertTrue(pending["id"])
             self.assertTrue(pending["packetSha"])
+            # recover can find the turn by its id in this project later
+            self.assertEqual(pending["projectUrl"], "https://chatgpt.com/g/g-p-test-work/project")
+            self.assertTrue(pending["startedAt"])
+            # this send died before the click, so the run must not look sent:
+            # sending the same packet again is the fix, not a duplicate (exit 79)
+            final = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertEqual(final["status"], "not_sent")
+            self.assertEqual(final["packetSha"], pending["packetSha"])
 
     def test_non_ascii_upload_names_are_renamed_before_upload(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -235,9 +268,7 @@ class ModelAndLossGuardTest(unittest.TestCase):
             self.assertTrue(any("01-방법론.md" in note for note in notes))
 
             repacked = root / "repacked.zip"
-            repacked.write_bytes(
-                __import__("base64").b64decode(uploads[1]["base64"])
-            )
+            repacked.write_bytes(uploads[1]["data"])
             with ZipFile(repacked) as archive:
                 names = archive.namelist()
             for name in names:
@@ -250,14 +281,14 @@ class ModelAndLossGuardTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="t",
             outpost_id="abc123",
             response_timeout_ms=1000,
         )
         self.assertIn("async function primeRoles(target)", script)
         self.assertIn("waitNamedRef(workPage, 'button', tierNameRe", script)
-        self.assertIn("waitRole(workPage, 'menuitem', '성능'", script)
+        self.assertIn("waitRole(workPage, 'menuitem', tierSliderNames[sliderIndex]", script)
         self.assertIn("waitNamedRef(workPage, 'menuitemradio', modelNameRe", script)
         self.assertIn("waitRole(workPage, 'group', attachmentName", script)
         # a bare role lookup before the first snapshot silently matches nothing
@@ -272,7 +303,7 @@ class ModelAndLossGuardTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="t",
             outpost_id="abc123",
             response_timeout_ms=1000,
@@ -286,7 +317,7 @@ class ModelAndLossGuardTest(unittest.TestCase):
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
             packet_name="packet.md",
-            packet_base64="cGFja2V0",
+            packet_path="/tmp/packet.md",
             topic="t",
             outpost_id="abc123",
             response_timeout_ms=1000,

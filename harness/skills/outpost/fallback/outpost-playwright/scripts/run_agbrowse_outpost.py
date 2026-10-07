@@ -615,7 +615,7 @@ def parse_args(argv: Sequence[str]) -> argparse.Namespace:
         "--quality",
         choices=tuple(QUALITY_PRESETS),
         default=None,
-        help="Required GPT-5.6 outpost tier: xhigh or pro.",
+        help="Required GPT-6 outpost tier: xhigh or pro.",
     )
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument(
@@ -853,6 +853,8 @@ def main(argv: Sequence[str]) -> int:
                     chatgpt_url,
                     "--model",
                     selected_model,
+                    "--family",
+                    "gpt-6",
                     "--allow-copy-markdown-fallback",
                     "--timeout",
                     str(args.timeout),

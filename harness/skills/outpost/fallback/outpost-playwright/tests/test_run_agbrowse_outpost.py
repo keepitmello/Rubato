@@ -227,6 +227,7 @@ class ConsultHelperTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         invocation = json.loads(argv_log.read_text(encoding="utf-8"))
         self.assertIn("--parallel", invocation)
+        self.assertEqual(invocation[invocation.index("--family") + 1], "gpt-6")
         self.assertNotIn("--new-tab", invocation)
 
     def test_global_chat_url_is_rejected_before_provider_launch(self) -> None:

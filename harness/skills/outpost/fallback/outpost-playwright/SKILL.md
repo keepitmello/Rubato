@@ -10,7 +10,7 @@ Load this skill only after the main Outpost Aside path fails, or when the user
 explicitly requests the Playwright fallback. This skill is not installed in an
 ordinary Agent Skills root and must not compete with `outpost`.
 
-Send one self-contained packet to the ChatGPT web UI through `agbrowse web-ai`, bring GPT-5.6 Pro's answer back as evidence, and act on it only after local verification.
+Send one self-contained packet to the ChatGPT web UI through `agbrowse web-ai`, bring GPT-6 Pro's answer back as evidence, and act on it only after local verification.
 
 Outpost carries two kinds of load, not just questions. An **advice outpost** buys the strongest single read available — research, design, diagnosis, review. A **work outpost** hands Pro a complete piece of work it builds and exercises in its own sandbox — implementation, a patch, tests, a runnable experiment — through code mode (see Code artifacts). When the task is buildable, prefer handing the whole build over asking how to build it: the sandbox result is stronger evidence than an opinion. The boundary is sandbox fit, not difficulty — a work outpost needs all inputs to travel in the packet and verification to run inside Pro's sandbox; code that depends on local services, databases, or repo state the sandbox cannot reach gets an advice outpost on strategy or review instead, so a passing artifact never fakes confidence its dependencies were never tested against.
 
@@ -29,13 +29,13 @@ Outpost carries two kinds of load, not just questions. An **advice outpost** buy
 ## Quality tiers
 
 There is no default tier. The caller must explicitly pass `--quality pro` or
-`--quality xhigh`; without one, stop before browser launch. `pro` (GPT-5.6 Pro)
-is for questions that deserve the strongest single read. `xhigh` (GPT-5.6
+`--quality xhigh`; without one, stop before browser launch. `pro` (GPT-6 Pro)
+is for questions that deserve the strongest single read. `xhigh` (GPT-6
 Thinking / Extra High) is for ordinary bounded outposts.
 
 Cost is not the axis that decides this — usage is effectively free, and a background submit hides latency. What actually gets spent on `pro` is the asker's wait: Pro thinks for many minutes and can run to an hour, so pointing it at an everyday question buys nothing and delays the answer. Reach for `pro` when the question is genuinely heavy, and let ordinary ones ride `xhigh`.
 
-Selection fails closed: if the visible model picker cannot verify the requested GPT-5.6 family and tier, the outpost stops before sending — an unverified current model is not an acceptable fallback.
+Selection fails closed: if the visible model picker cannot verify the requested GPT-6 family and tier, the outpost stops before sending — an unverified current model is not an acceptable fallback.
 
 ## Response language
 
