@@ -389,21 +389,17 @@ export const compactOnce = Effect.gen(function* () {
 
 /**
  * Runs a pass at startup and every RETENTION.interval after it. Before the file
- * is incremental, the first pass and the one-time VACUUM run before the layer is
- * ready, so the server serves nothing while they hold the connection; later
- * startups run the pass in the background.
+ * is incremental, only the one-time VACUUM runs before the layer is ready.
+ * Retention always runs in the background: walking a large event history can
+ * take minutes and must not consume the desktop's backend readiness deadline.
+ * VACUUM still precedes serving requests because it holds the connection.
  */
 export const rubatoStateRetentionLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const periodic = runRetention.pipe(Effect.repeat(Schedule.spaced(RETENTION.interval)));
     const mode = yield* autoVacuumMode.pipe(Effect.orElseSucceed(() => AUTO_VACUUM_INCREMENTAL));
-    if (mode === AUTO_VACUUM_INCREMENTAL) {
-      yield* Effect.forkScoped(periodic);
-      return;
-    }
-    yield* runRetention;
-    yield* step("compact", compactOnce, false);
-    yield* Effect.forkScoped(Effect.sleep(RETENTION.interval).pipe(Effect.andThen(periodic)));
+    if (mode !== AUTO_VACUUM_INCREMENTAL) yield* step("compact", compactOnce, false);
+    yield* Effect.forkScoped(periodic);
   }),
 );
 
