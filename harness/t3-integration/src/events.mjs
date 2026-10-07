@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { modelDisplayLabel } from './model-catalog-order.mjs';
-import { assistantPhaseOf, toolActivityOf } from './activity.mjs';
+import { assistantPhaseOf, toolActivityOf, waitActivityOf } from './activity.mjs';
 
 export const textOf = (message, type = 'text') => typeof message?.content === 'string'
   ? type === 'text' ? message.content : ''
@@ -453,7 +453,7 @@ export class EventProjection {
     if (this.awaiting !== hold) return;
     if (labels.length > 0) {
       hold.emptySince = undefined;
-      this.showAwaiting(hold, labels.join(' · '));
+      this.showAwaiting(hold, labels);
       hold.timer = unref(setTimeout(() => { void this.checkAwaiting(hold); }, this.awaitTimings.pollMs));
       return;
     }
@@ -465,20 +465,26 @@ export class EventProjection {
     this.settle();
     this.released();
   }
-  showAwaiting(hold, detail) {
+  showAwaiting(hold, labels) {
+    const detail = labels.join(' · ');
     if (hold.detail === detail) return;
     const started = !hold.itemId;
     hold.itemId ??= `rubato-wait:${this.sessionId}:${randomUUID()}`;
     hold.detail = detail;
-    this.event(started ? 'item.started' : 'item.updated',
-      { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail, status: 'inProgress' }, { itemId: hold.itemId });
+    hold.activity = waitActivityOf(labels);
+    const payload = { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail, status: 'inProgress',
+      data: { rubatoActivity: hold.activity } };
+    // T3 draws no row from a start (session-logic skips tool.started); with only the
+    // start, the open turn showed T3's bare "Thinking" for the whole wait.
+    if (started) this.event('item.started', payload, { itemId: hold.itemId });
+    this.event('item.updated', payload, { itemId: hold.itemId });
   }
   /** Close the wait: its row is done and the turn carries on (a wake) or ends (a settle). */
   endAwaiting() {
     const hold = this.stopAwaiting();
     if (!hold?.itemId) return;
-    this.event('item.completed', { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail: hold.detail, status: 'completed' },
-      { itemId: hold.itemId });
+    this.event('item.completed', { itemType: AWAIT_ITEM_TYPE, title: AWAIT_TITLE, detail: hold.detail, status: 'completed',
+      data: { rubatoActivity: hold.activity } }, { itemId: hold.itemId });
   }
   /** Forget the wait without a word (the presentation detached or the session changed). */
   stopAwaiting() {

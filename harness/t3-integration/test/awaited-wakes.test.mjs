@@ -33,7 +33,7 @@ test('a settle on a wait that will wake the agent keeps the turn open and names 
   projection.project({ type: 'agent_start' });
   const turnId = projection.turnId;
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
+  await until(() => waitRows().length === 2);
   assert.equal(of('turn.completed').length, 0, 'no "Thread completed" while the wake is still coming');
   assert.equal(projection.turnId, turnId);
   const [row] = waitRows();
@@ -41,6 +41,10 @@ test('a settle on a wait that will wake the agent keeps the turn open and names 
   assert.equal(row.turnId, turnId);
   assert.equal(row.payload.status, 'inProgress');
   assert.equal(row.payload.detail, 'wait for unittest run · python3 -m unittest');
+  // T3 draws no row from a start, so the update right after it is what shows the wait.
+  assert.equal(waitRows()[1].type, 'item.updated');
+  assert.deepEqual(waitRows()[1].payload.data.rubatoActivity,
+    { kind: 'wait', target: 'wait for unittest run · python3 -m unittest' });
 
   // The tests finish: the monitor has reported, the command has exited, the completion wakes the agent.
   answer.current = { items: [] };
@@ -48,7 +52,7 @@ test('a settle on a wait that will wake the agent keeps the turn open and names 
   assert.equal(projection.turnId, turnId, 'the wake continues the turn that waited');
   assert.equal(of('turn.started').length, 1);
   assert.deepEqual(waitRows().map((event) => [event.type, event.payload.status]),
-    [['item.started', 'inProgress'], ['item.completed', 'completed']]);
+    [['item.started', 'inProgress'], ['item.updated', 'inProgress'], ['item.completed', 'completed']]);
 
   projection.project({ type: 'agent_settled' });
   await until(() => of('turn.completed').length === 1);
@@ -86,12 +90,12 @@ test('a wait that ends with no wake closes the turn after the grace, not before'
   const { projection, answer, of, waitRows } = harness({ items: [{ id: 'bash_3', description: 'npm test' }] });
   projection.project({ type: 'agent_start' });
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
+  await until(() => waitRows().length === 2);
   answer.current = { items: [] };
   await delay(timings.pollMs * 3);
   assert.equal(of('turn.completed').length, 0, 'the wake gets its moment to start');
   await until(() => of('turn.completed').length === 1);
-  assert.deepEqual(waitRows().map((event) => event.type), ['item.started', 'item.completed']);
+  assert.deepEqual(waitRows().map((event) => event.type), ['item.started', 'item.updated', 'item.completed']);
   assert.equal(of('turn.completed')[0].payload.state, 'completed');
 });
 
@@ -99,13 +103,13 @@ test('the wait row follows what is still awaited', async () => {
   const { projection, answer, waitRows } = harness({ items: [{ id: 'a', description: 'build' }, { id: 'b', description: 'lint' }] });
   projection.project({ type: 'agent_start' });
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
-  answer.current = { items: [{ id: 'a', description: 'build' }] };
   await until(() => waitRows().length === 2);
-  assert.equal(waitRows()[1].type, 'item.updated');
-  assert.equal(waitRows()[1].payload.detail, 'build');
+  answer.current = { items: [{ id: 'a', description: 'build' }] };
+  await until(() => waitRows().length === 3);
+  assert.equal(waitRows()[2].type, 'item.updated');
+  assert.equal(waitRows()[2].payload.detail, 'build');
   await delay(timings.pollMs * 3);
-  assert.equal(waitRows().length, 2, 'an unchanged wait sends nothing new');
+  assert.equal(waitRows().length, 3, 'an unchanged wait sends nothing new');
   projection.settle();
 });
 
@@ -144,7 +148,7 @@ test('a message sent while the turn waits starts a run in that turn instead of a
   const turnId = projection.turnId;
   state.isStreaming = false;
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
+  await until(() => waitRows().length === 2);
   const sent = await bridge.sendTurn({ threadId: 'send-thread', input: 'while you wait, check the docs' });
   assert.equal(sent.turnId, turnId);
   assert.deepEqual(commands.filter((command) => ['prompt', 'steer'].includes(command.type)).map((command) => command.type), ['prompt']);
@@ -157,7 +161,7 @@ test('stop during a wait ends the turn as interrupted and closes the wait row', 
   const { bridge, context, projection, state, of, waitRows } = bridgeHarness('stop-thread');
   state.isStreaming = false;
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
+  await until(() => waitRows().length === 2);
   await bridge.interruptTurn('stop-thread');
   assert.deepEqual(of('turn.completed').map((event) => event.payload.state), ['interrupted']);
   assert.equal(waitRows().at(-1).type, 'item.completed');
@@ -172,9 +176,19 @@ test('a detached presentation forgets the wait without closing the turn behind T
   bridge.sessions.get('detach-thread').client.close = async () => {};
   state.isStreaming = false;
   projection.project({ type: 'agent_settled' });
-  await until(() => waitRows().length === 1);
+  await until(() => waitRows().length === 2);
   await bridge.stopSession('detach-thread');
   await delay(timings.graceMs * 2);
   assert.equal(of('turn.completed').length, 0);
   assert.equal(projection.awaiting, undefined);
+});
+
+test('a wait named only by a session id reads as background work, not the id', async () => {
+  const { projection, waitRows } = harness({ items: [{ id: 'bash_16', description: 'bash_16' }] });
+  projection.project({ type: 'agent_start' });
+  projection.project({ type: 'agent_settled' });
+  await until(() => waitRows().length === 2);
+  assert.deepEqual(waitRows()[1].payload.data.rubatoActivity, { kind: 'wait' });
+  projection.settle();
+  assert.deepEqual(waitRows().at(-1).payload.data.rubatoActivity, { kind: 'wait' });
 });

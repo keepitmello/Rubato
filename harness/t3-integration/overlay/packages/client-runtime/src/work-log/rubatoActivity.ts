@@ -9,7 +9,15 @@
  * commentary with the work when the turn ends, leaving the final answer.
  */
 
-export type RubatoActivityKind = "read" | "search" | "list" | "command" | "edit" | "web" | "other";
+export type RubatoActivityKind =
+  | "read"
+  | "search"
+  | "list"
+  | "command"
+  | "edit"
+  | "web"
+  | "wait"
+  | "other";
 
 export interface RubatoActivity {
   readonly kind: RubatoActivityKind;
@@ -21,7 +29,7 @@ export interface RubatoActivity {
   readonly count?: number;
 }
 
-const KINDS = new Set<string>(["read", "search", "list", "command", "edit", "web", "other"]);
+const KINDS = new Set<string>(["read", "search", "list", "command", "edit", "web", "wait", "other"]);
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -59,6 +67,8 @@ export function rubatoActivityGroupAction(
     case "edit":
       return "edit";
     case "command":
+    // An idle agent waits on its background commands and monitors.
+    case "wait":
       return "command";
     case "web":
       return "search";
@@ -114,6 +124,9 @@ export function rubatoActivityLabel(
         : running
           ? "Searching the web"
           : "Searched the web";
+    case "wait":
+      // What the agent ended its run on and will be woken by, not thinking.
+      return `${running ? "Waiting on" : "Waited on"} ${target ?? "background work"}`;
     case "other":
       return undefined;
   }
