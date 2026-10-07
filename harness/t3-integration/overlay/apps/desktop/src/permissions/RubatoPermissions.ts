@@ -10,9 +10,11 @@ import type {
   RubatoPermissionId,
   RubatoPermissionStatus,
   RubatoPermissionsState,
+  RubatoServiceId,
 } from "@t3tools/contracts";
 import { MAC_PERMISSION_SETTINGS_URLS, type MacPermission } from "./MacPermission.ts";
 import { MacPermissionHelper, macAppBundlePath } from "./MacPermissionHelper.ts";
+import { RUBATO_SERVICES, readServices, rubatoHarness, startService } from "./RubatoServices.ts";
 
 // macOS privacy permissions for the Rubato app and everything it spawns.
 // Session commands (screencapture, osascript) run as children of this app,
@@ -29,6 +31,7 @@ const ACTION_CHANNEL = "rubato:permissions:action";
 const IDS: readonly RubatoPermissionId[] = ["screen", "accessibility", "fullDisk", "automation"];
 const ACTIONS: readonly RubatoPermissionAction[] = [
   "request", "open", "reset", "relaunch", "cua-install", "cua-start", "cua-grant", "cua-update",
+  "service-start",
 ];
 // Cua Driver is the computer-use backend. It runs as its own daemon app, so its
 // grants belong to CuaDriver.app, not to Rubato.
@@ -66,6 +69,8 @@ const fullDiskProbes = () => [
 
 const windows = new Map<number, { window: BrowserWindow; origin: string }>();
 let registered = false;
+// The server settings name the Rubato checkout, whose installers start the background services.
+let serverSettingsPath: string | undefined;
 let helper: MacPermissionHelper | undefined;
 // An Apple Event probe is the only status source without Full Disk Access.
 let automationProbe: RubatoPermissionStatus | undefined;
@@ -220,6 +225,7 @@ async function readState(electron: ElectronServices): Promise<RubatoPermissionsS
     automation,
   };
   return {
+    services: await readServices(await rubatoHarness(serverSettingsPath)),
     cua: await cuaState(),
     appPath: bundle,
     bundleId: id,
@@ -286,8 +292,10 @@ export function attachRubatoPermissions(
   window: BrowserWindow,
   electron: ElectronServices,
   applicationUrl: string,
+  settingsPath?: string,
 ) {
   if (process.platform !== "darwin") return;
+  serverSettingsPath ??= settingsPath;
   const windowId = window.webContents.id;
   windows.set(windowId, { window, origin: new URL(applicationUrl).origin });
   window.once("closed", () => windows.delete(windowId));
@@ -310,6 +318,11 @@ export function attachRubatoPermissions(
       // Screen Recording applies to this process only after a restart.
       electron.app.relaunch();
       electron.app.quit();
+      return readState(electron);
+    }
+    if (action === "service-start") {
+      if (!RUBATO_SERVICES.some((service) => service.id === id)) throw new Error("Invalid service");
+      await startService(await rubatoHarness(serverSettingsPath), id as RubatoServiceId);
       return readState(electron);
     }
     if (typeof action === "string" && action.startsWith("cua-")) {

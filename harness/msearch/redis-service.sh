@@ -4,6 +4,7 @@
 #
 #   redis-service.sh            지금 상태와 할 일을 말한다
 #   redis-service.sh --apply    없으면 깔고, 죽어 있으면 고쳐서 띄운다
+#   redis-service.sh --check    떠 있으면 0, 아니면 1 (앱 설정 화면이 수 초마다 묻는다)
 #
 # 버전과 cask 고정 커밋은 runtime.lock 이 정본이다. 6380 에 맞는 서버가 이미 떠
 # 있으면 손대지 않는다. 같은 포트를 쓰는 launchd 작업이 이미 있으면(예전 손설치)
@@ -21,14 +22,18 @@ LABEL="${MSEARCH_REDIS_LABEL:-com.keepitmello.rubato.msearch-redis}"
 AGENTS="$HOME/Library/LaunchAgents"
 DATA="$HOME/.rubato/msearch/redis"
 APPLY=0
+CHECK=0
 [ "${1-}" = "--apply" ] && APPLY=1
+[ "${1-}" = "--check" ] && CHECK=1
 
 say()  { printf '  %s\n' "$1"; }
 fail() { printf '  ! %s\n' "$1" >&2; exit 1; }
 
 [ "$(uname -s)" = Darwin ] || fail "macOS 만 자동으로 세운다. 다른 OS 는 harness/msearch/README.md 의 Redis 절을 따른다"
-command -v brew >/dev/null 2>&1 || fail "Homebrew 가 없다. https://brew.sh 를 깐 뒤 다시 실행한다"
-CASK_DIR="$(brew --prefix)/Caskroom/redis/$REDIS_VERSION"
+# brew --prefix 는 느려서(수백 ms) 자주 묻는 --check 에 맞지 않는다. 두 표준 자리를 본다.
+BREW_PREFIX=""
+for prefix in /opt/homebrew /usr/local; do [ -x "$prefix/bin/brew" ] && { BREW_PREFIX="$prefix"; break; }; done
+CASK_DIR="${BREW_PREFIX:-/opt/homebrew}/Caskroom/redis/$REDIS_VERSION"
 SERVER="$CASK_DIR/bin/redis-server"
 CLI="$CASK_DIR/bin/redis-cli"
 MODULES="$CASK_DIR/lib/redis/modules"
@@ -41,10 +46,13 @@ healthy() {
   "$CLI" -p "$PORT" INFO modules 2>/dev/null | grep -q "^search_version:$SEARCH_VERSION"
 }
 
+if [ "$CHECK" -eq 1 ]; then healthy; exit $?; fi
 if healthy; then
   say "Redis $REDIS_VERSION + Search $SEARCH_VERSION 이 이미 $PORT 에 떠 있다"
   exit 0
 fi
+[ -n "$BREW_PREFIX" ] || fail "Homebrew 가 없다. https://brew.sh 를 깐 뒤 다시 실행한다"
+PATH="$BREW_PREFIX/bin:$PATH"
 
 # 이 포트로 redis 를 띄우는 launchd 작업. 예전에 손으로 건 것도 그대로 쓴다.
 existing_plist() {
