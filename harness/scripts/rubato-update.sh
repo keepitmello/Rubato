@@ -589,6 +589,22 @@ elif [ "$need_scheduler" = install ] && [ -f "$HERE/account-home.sh" ] && [ -f "
   fi
 fi
 
+# msearch 검색 백엔드(6380 의 Redis + Search). 업데이트는 install.sh 를 --only-shell 로만
+# 불러 그 단계를 지나지 않으니, 이미 설치한 사람도 여기서 받는다. 떠 있으면 바로 지나가고
+# (redis-service.sh --check), 없거나 죽었으면 깔고 고쳐서 launchd 에 건다.
+MSEARCH_REDIS="$HERE/../msearch/redis-service.sh"
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -z "${RUBATO_NO_MSEARCH_REDIS-}" ] \
+  && [ -x "$MSEARCH_REDIS" ] && [ -f "$HERE/account-home.sh" ] && ! "$MSEARCH_REDIS" --check; then
+  . "$HERE/account-home.sh"
+  if rubato_home_is_account_home; then
+    if "$MSEARCH_REDIS" --apply >/dev/null 2>&1; then
+      ok "msearch 검색 백엔드를 띄웠다 (6380)"
+    else
+      warn "msearch 검색 백엔드를 못 띄웠다 — 손으로: $MSEARCH_REDIS --apply (앱 설정 > macOS Permissions 에서도 켤 수 있다)"
+    fi
+  fi
+fi
+
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서
 # LaunchAgent 를 다시 심어도 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
 #

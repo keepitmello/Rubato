@@ -3,6 +3,9 @@ import type {
   RubatoPermissionId,
   RubatoPermissionStatus,
   RubatoPermissionsState,
+  RubatoServiceId,
+  RubatoServiceState,
+  RubatoServiceStatus,
 } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -86,7 +89,10 @@ export function RubatoPermissionsSettings() {
     };
   }, [refresh]);
 
-  const act = async (id: RubatoPermissionId | null, action: RubatoPermissionAction) => {
+  const act = async (
+    id: RubatoPermissionId | RubatoServiceId | null,
+    action: RubatoPermissionAction,
+  ) => {
     if (!bridge || busyRef.current) return;
     busyRef.current = true;
     setBusy(`${id ?? "app"}:${action}`);
@@ -200,6 +206,7 @@ export function RubatoPermissionsSettings() {
         })}
         {error ? <SettingsRow title="Error" description={error} /> : null}
       </SettingsSection>
+      {state ? <ServicesSection services={state.services} busy={busy} act={act} /> : null}
       {state ? <CuaDriverSection cua={state.cua} busy={busy} act={act} /> : null}
     </SettingsPageContainer>
   );
@@ -221,7 +228,7 @@ function CuaDriverSection({
 }: {
   cua: RubatoPermissionsState["cua"];
   busy: string | null;
-  act: (id: RubatoPermissionId | null, action: RubatoPermissionAction) => Promise<void>;
+  act: (id: RubatoPermissionId | RubatoServiceId | null, action: RubatoPermissionAction) => Promise<void>;
 }) {
   const updatable = cua.installed && cua.latest !== null && cua.latest !== cua.version;
   const granted = cua.accessibility === "granted" && cua.screenRecording === "granted";
@@ -278,6 +285,118 @@ function CuaDriverSection({
           />
         </>
       ) : null}
+    </SettingsSection>
+  );
+}
+
+const SERVICES: Record<RubatoServiceId, { title: string; description: string }> = {
+  msearch: {
+    title: "Memory search",
+    description:
+      "Redis with its search module on port 6380. Agents search Rubato's memory through it (msearch) to find earlier decisions.",
+  },
+  scheduler: {
+    title: "Scheduled tasks",
+    description: "Runs the tasks in Settings › Scheduled Tasks at their times, even while this window is closed.",
+  },
+  "remote-hub": {
+    title: "Remote access",
+    description: "Lets the phone app and other machines reach this Mac's sessions.",
+  },
+  "aside-cursor": {
+    title: "Aside proxy",
+    description: "Serves Aside's models to Rubato sessions.",
+  },
+  "speed-data": {
+    title: "Speed data upload",
+    description: "Uploads the model speed samples this Mac measured, on a schedule.",
+  },
+};
+
+const SERVICE_STATUS: Record<
+  RubatoServiceStatus,
+  { label: string; variant: "success" | "warning" | "error" | "info" }
+> = {
+  running: { label: "Running", variant: "success" },
+  scheduled: { label: "Scheduled", variant: "success" },
+  stopped: { label: "Off", variant: "warning" },
+  failed: { label: "Failing", variant: "error" },
+  missing: { label: "Not set up", variant: "warning" },
+};
+
+const isUp = (service: RubatoServiceState) =>
+  service.status === "running" || service.status === "scheduled";
+// Remote access is set up by pairing a phone; the other services set themselves up.
+const canStart = (service: RubatoServiceState) =>
+  service.id !== "remote-hub" || service.status !== "missing";
+
+/** The launchd agents Rubato runs beside the app: what is up, and a way to bring each back. */
+function ServicesSection({
+  services,
+  busy,
+  act,
+}: {
+  services: RubatoServiceState[];
+  busy: string | null;
+  act: (id: RubatoPermissionId | RubatoServiceId | null, action: RubatoPermissionAction) => Promise<void>;
+}) {
+  const down = services.filter((service) => !isUp(service) && canStart(service));
+  const startAll = async () => {
+    for (const service of down) await act(service.id, "service-start");
+  };
+  return (
+    <SettingsSection
+      title="Background services"
+      headerAction={
+        down.length > 1 ? (
+          <Button size="xs" variant="ghost" disabled={busy !== null} onClick={() => void startAll()}>
+            Start all
+          </Button>
+        ) : undefined
+      }
+    >
+      <SettingsRow
+        title="Services Rubato keeps running"
+        description="They start when you log in and come back if they stop. Starting one here runs the same setup as ./install.sh --apply, and may install what it needs."
+      />
+      {services.map((service) => {
+        const copy = SERVICES[service.id];
+        const status = SERVICE_STATUS[service.status];
+        const starting = busy === `${service.id}:service-start`;
+        return (
+          <SettingsRow
+            key={service.id}
+            title={
+              <span className="flex items-center gap-2">
+                {copy.title}
+                <Badge size="sm" variant={status.variant}>
+                  {status.label}
+                </Badge>
+              </span>
+            }
+            description={copy.description}
+            status={
+              service.detail ??
+              (service.id === "remote-hub" && service.status === "missing"
+                ? "Pair a phone in Settings › Phone to set this up."
+                : undefined)
+            }
+            control={
+              // A running memory search has nothing to restart: its setup only fills gaps.
+              !canStart(service) || (service.id === "msearch" && isUp(service)) ? null : (
+                <Button
+                  size="xs"
+                  variant={isUp(service) ? "ghost" : "default"}
+                  disabled={busy !== null}
+                  onClick={() => void act(service.id, "service-start")}
+                >
+                  {starting ? "Starting…" : isUp(service) ? "Restart" : "Start"}
+                </Button>
+              )
+            }
+          />
+        );
+      })}
     </SettingsSection>
   );
 }
