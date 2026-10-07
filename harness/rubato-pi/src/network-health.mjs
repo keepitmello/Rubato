@@ -6,6 +6,9 @@ export const PROBE_INTERVAL_MS = 15_000;
 export const PROBE_TIMEOUT_MS = 3_000;
 export const PROBE_CLASSIFY_AFTER = 20;
 export const PROBE_REFERENCE_WINDOW = 60;
+// Classification reads the last PROBE_REFERENCE_WINDOW successes and the probes
+// inside one call. A process lives for days; keep about four hours per origin.
+export const PROBE_HISTORY_PER_ORIGIN = 1_000;
 export const RTT_FLOOR_MS = 20;
 export const RTT_MAD_MULT = 6;
 
@@ -164,6 +167,7 @@ export function createNetworkHealth({
       .filter((route) => route.kind === "probe" && probeTarget(route.origin))
       .map((route) => route.origin),
   )];
+  const historyLimit = PROBE_HISTORY_PER_ORIGIN * Math.max(1, origins.length);
 
   async function probeOrigin(origin) {
     const target = probeTarget(origin);
@@ -184,6 +188,7 @@ export function createNetworkHealth({
       rttMs: Number.isFinite(result.rttMs) ? result.rttMs : Math.max(0, endMs - startMs),
     };
     probes.push(probe);
+    if (probes.length > historyLimit) probes.splice(0, probes.length - historyLimit);
     return probe;
   }
 

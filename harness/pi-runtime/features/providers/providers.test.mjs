@@ -60,6 +60,10 @@ const stockEventStream = await import(pathToFileURL(join(piAiRoot, "dist/utils/e
 const speedStores = await import(
   pathToFileURL(join(piAiRoot, "dist/rubato-features/providers/src/speed-index-store.mjs")).href
 );
+const networkHealth = await import(
+  pathToFileURL(join(piAiRoot, "dist/rubato-features/providers/src/network-health.mjs")).href
+);
+const extensionEvents = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/extensions/runner.js")).href);
 
 function environment(extra = {}) {
   return {
@@ -144,7 +148,7 @@ function authData() {
   };
 }
 
-async function startSession(t, { selectedModel, env, observers = [], speedIndexStore, enableTools = false }) {
+async function startSession(t, { selectedModel, env, observers = [], speedIndexStore, providerOptions = {}, enableTools = false }) {
   const root = mkdtempSync(join(scratchRoot, "session-"));
   const cwd = join(root, "cwd");
   const agentDir = join(root, "agent");
@@ -169,6 +173,7 @@ async function startSession(t, { selectedModel, env, observers = [], speedIndexS
           env: { ...env, RUBATO_PI_CODING_AGENT_DIR: agentDir },
           kiro: { ensureKiro: async () => {} },
           speedIndexStore,
+          ...providerOptions,
         }),
       },
       ...observers.map((factory, index) => ({ name: `observer-${index}`, factory })),
@@ -506,6 +511,34 @@ test("actual stock SDK carries the shared Speed and final requested tier through
     version: 1, metricVersion: 1, status: "ready", score: expected.score,
   });
   assert.deepEqual(session.agent.state.messages.at(-1).rubatoSpeedIndex, messages[0].rubatoSpeedIndex);
+});
+
+test("a session-owned Speed store stops probing when its session shuts down", async (t) => {
+  let connects = 0;
+  let owned;
+  const session = await startSession(t, {
+    selectedModel: model({ provider: "kiro", id: "claude-opus-5", api: "anthropic-messages", baseUrl: "http://127.0.0.1:9" }),
+    env: environment(),
+    providerOptions: {
+      createSessionSpeedStore: (agentDir) => owned = speedStores.createSpeedIndexStore({
+        agentDir,
+        probesEnabled: true,
+        networkHealth: networkHealth.createNetworkHealth({
+          intervalMs: 5,
+          connect: async () => { connects += 1; return { ok: true, rttMs: 1 }; },
+        }),
+      }),
+    },
+  });
+  assert.ok(owned, "the extension built its own store");
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const warm = networkHealth.PROBE_CLASSIFY_AFTER * owned.networkHealth.origins.length;
+  for (let waited = 0; connects <= warm && waited < 2_000; waited += 10) await sleep(10);
+  assert.ok(connects > warm, `interval probes ran before shutdown (${connects})`);
+  await extensionEvents.emitSessionShutdownEvent(session.extensionRunner, { type: "session_shutdown", reason: "unload" });
+  const atShutdown = connects;
+  await sleep(60);
+  assert.equal(connects, atShutdown);
 });
 
 test("actual stock SDK completes Cursor HTTP/2 Connect and exposes the request hook", async (t) => {

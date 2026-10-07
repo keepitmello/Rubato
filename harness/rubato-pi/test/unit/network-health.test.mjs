@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PROBE_CLASSIFY_AFTER,
+  PROBE_HISTORY_PER_ORIGIN,
   classifyCallNetwork,
   classifyProviderCall,
   createNetworkHealth,
@@ -171,5 +172,23 @@ test("start warmups to the classify threshold instead of waiting for the 15s int
     endMs: last.endMs + 1,
   });
   assert.equal(verdict.status, "healthy");
+  health.stop();
+});
+
+test("probe history stays bounded per origin and still classifies the newest calls", async () => {
+  let clock = 0;
+  const health = createNetworkHealth({
+    autostart: false,
+    now: () => clock,
+    connect: async () => { clock += 5; return { ok: true, rttMs: 12 }; },
+  });
+  const limit = PROBE_HISTORY_PER_ORIGIN * health.origins.length;
+  for (let i = 0; i < limit + 50; i += 1) {
+    clock += 100;
+    await health.probeOrigin(ORIGIN);
+  }
+  assert.equal(health.probes.length, limit);
+  const last = health.probes.at(-1);
+  assert.equal(health.classify({ providerId: "openai-codex", startMs: last.endMs, endMs: last.endMs + 1 }).status, "healthy");
   health.stop();
 });

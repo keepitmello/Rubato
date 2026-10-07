@@ -85,10 +85,23 @@ export function createProvidersExtension(options = {}) {
         );
       }
     }
-    const speedStore = options.speedIndexStore ?? sessionSpeedStore(agentDir, env);
+    const ownedSpeedStore = options.speedIndexStore ? undefined
+      : (options.createSessionSpeedStore ?? sessionSpeedStore)(agentDir, env);
+    const speedStore = options.speedIndexStore ?? ownedSpeedStore;
+    // The store's probe intervals start inside this session's async context, so a
+    // running interval keeps the whole session (history, images, runtime) reachable.
+    // Every shutdown reason ends this extension instance; reload builds a new store.
+    if (ownedSpeedStore) pi.on?.("session_shutdown", () => ownedSpeedStore.stop?.());
     if (options.modelRuntime && speedStore) options.modelRuntime.speedIndexStore = speedStore;
-    const providers = await createRubatoProviders({ ...options, antigravity, env, speedIndexStore: speedStore });
-    const admitted = admitProviders(pi, providers);
+    let admitted;
+    try {
+      const providers = await createRubatoProviders({ ...options, antigravity, env, speedIndexStore: speedStore });
+      admitted = admitProviders(pi, providers);
+    } catch (error) {
+      // A failed load may never see session_shutdown; probes already started.
+      ownedSpeedStore?.stop?.();
+      throw error;
+    }
     installOpenAiApiRefusal(pi);
     if (antigravity.stateStore && antigravity.lineage) {
       registerAntigravityLifecycle(pi, { ...antigravity, env });
