@@ -91,7 +91,7 @@ intent stock-pi-0-86-1 · 지난 기록 · fulfilled (끝난 합의) · rev 1 ·
 |------|------|
 | Python 3.13.2 + 패키지 잠금 | `install.sh --apply` 가 `harness/msearch/.venv` 에 재현한다 |
 | JDK 17 | **손으로 깐다** (`brew install openjdk@17`) |
-| Redis 8.4.0 + Search 8.4.2 | **손으로 깐다** (아래) |
+| Redis 8.4.0 + Search 8.4.2 | macOS 는 `install.sh --apply` 가 6380 에 세우고 launchd 에 건다 (아래) |
 | `OPENAI_API_KEY` | **손으로 넣는다** (아래) |
 
 네 개가 다 서야 검색이 돈다. 어디까지 됐는지는 `msearch --doctor` 한 곳에서만 판정한다.
@@ -114,59 +114,29 @@ PEP 668 이다. `--break-system-packages` 로 뚫는 대신 venv 를 쓰는 이�
 `FT.HYBRID`를 검증했다. `redis-server --version`만 보지 말고 `INFO modules`의
 `search_version`까지 확인해야 한다.
 
-macOS에서는 Redis 공식 tap의 8.4.0 cask를 고정 커밋에서 설치한다:
+macOS 는 `redis-service.sh` 가 맡는다 (`install.sh --apply` 가 부른다. 인자 없이 부르면 계획만 말한다):
+
+- 6380 에 맞는 서버가 이미 떠 있으면 손대지 않는다.
+- 없으면 redis/redis tap 의 cask 를 `runtime.lock` 의 `REDIS_CASK_COMMIT` 에서 깐다. 그 cask 는
+  arm64·x86_64 바이너리와 Search 모듈을 함께 담는다. 자동 업그레이드는 검증 전까지 하지 않는다.
+- cask 가 선언한 의존성 중 빠진 것을 깐다. Search 모듈은 `llvm@18` 의 libunwind 를 링크해서,
+  brew 정리로 그것이 지워지면 모듈 로드에서 죽고 launchd 는 재시작만 되풀이한다.
+- 같은 포트로 redis 를 띄우는 launchd 작업이 이미 있으면 그것을 되살리고, 없으면
+  `com.keepitmello.rubato.msearch-redis` 를 만든다(데이터 `~/.rubato/msearch/redis`,
+  127.0.0.1 만, 로그인 때 뜨고 죽으면 다시 뜬다).
+
+`/opt/homebrew/etc/redis.conf` 는 쓰지 않는다. 한 머신에서 그 파일이 바이너리(8.4.0)보다 새
+버전용 설정을 담고 있어 서버가 기동을 거부했다("Module Configuration detected without
+loadmodule directive"). conf 는 cask 와 따로 움직여 또 어긋나니 필요한 인자만 명령줄로 준다.
+
+다른 OS 는 같은 버전의 Redis 와 Search 모듈(`redisearch.so`, `rejson.so`)을 6380 에 띄운다.
+확인은 어느 쪽이든 같다:
 
 ```bash
-brew tap redis/redis
-tap="$(brew --repo redis/redis)"
-git -C "$tap" checkout eb1de700eae6b3a2c398f2c287ed9650c6710cea
-brew trust --cask redis/redis/redis
-HOMEBREW_NO_AUTO_UPDATE=1 brew install --cask redis/redis/redis
-git -C "$tap" switch -
-```
-
-그 cask는 arm64와 x86_64용 8.4.0 바이너리 및 Search 모듈을 함께 담는다. 설치 뒤에는
-tap을 원래 브랜치로 돌려도 설치된 8.4.0은 유지된다. 자동 업그레이드는 검증 전까지 하지 않는다.
-
-6380으로 띄우고 확인한다:
-
-```bash
-redis-server --port 6380 \
-  --dir /opt/homebrew/var/db/redis \
-  --save '300 10' \
-  --loadmodule /opt/homebrew/opt/redis/lib/redis/modules/redisearch.so \
-  --loadmodule /opt/homebrew/opt/redis/lib/redis/modules/rejson.so
 redis-cli -p 6380 INFO server | grep redis_version       # 8.4.0
 redis-cli -p 6380 INFO modules | grep search_version     # 8.4.2
 redis-cli -p 6380 COMMAND INFO FT.CREATE FT.HYBRID       # 둘 다 있어야 함
 ```
-
-**`/opt/homebrew/etc/redis.conf` 를 쓰지 않는다.** 한 머신에서 그 파일이 바이너리(8.4.0)보다
-새 버전용 설정(`array-slice-size`, `hash-*-template` 등)을 담고 있어 서버가 기동을
-거부했다("Module Configuration detected without loadmodule directive"). conf 는 cask와
-따로 움직여서 또 어긋나간다 — 필요한 인자만 명령줄로 준다. 모듈 경로는 cask 가
-`/opt/homebrew/opt/redis` 심링크를 안 만들면 직접 걸어준다:
-`ln -sfn /opt/homebrew/Caskroom/redis/8.4.0 /opt/homebrew/opt/redis`
-
-**계속 켜두기.** cask는 `brew services`가 관리하지 않으므로 로그인 때 뜨게 하려면
-직접 건다. macOS 예시 (`~/Library/LaunchAgents/dev.msearch.redis.plist`):
-
-```xml
-<key>ProgramArguments</key>
-<array>
-  <string>/opt/homebrew/bin/redis-server</string>
-  <string>--port</string><string>6380</string>
-  <string>--daemonize</string><string>no</string>
-  <string>--dir</string><string>/opt/homebrew/var/db/redis</string>
-  <string>--save</string><string>300 10</string>
-  <string>--loadmodule</string><string>/opt/homebrew/opt/redis/lib/redis/modules/redisearch.so</string>
-  <string>--loadmodule</string><string>/opt/homebrew/opt/redis/lib/redis/modules/rejson.so</string>
-</array>
-<key>RunAtLoad</key><true/>
-<key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
-```
-
-`launchctl bootstrap gui/$(id -u) <plist>` 로 걸고 `launchctl bootout gui/$(id -u)/dev.msearch.redis` 로 끈다.
 
 ### OPENAI_API_KEY
 
@@ -211,6 +181,7 @@ MSEARCH_ROOT=~/notes MSEARCH_CHANNEL=notes msearch --index
 | `msearch_scope.py` | 현재 폴더가 쓰는 저장소 규칙 (엔진 `memory-core/src/identity/project.ts` 와 같다) |
 | `msearch_env.py` | Python·패키지가 두 잠금 파일과 일치하는지 판정한다 |
 | `runtime.lock` | 검증한 Python·Java·Redis·Search 버전의 정본 |
+| `redis-service.sh` | macOS 에서 6380 의 Redis + Search 를 깔고 launchd 에 건다 (`install.sh --apply` 가 부른다) |
 | `requirements.lock` | 검증한 Python 패키지 전체 버전의 정본 |
 | `test-runtime.sh` | 설치 모드와 런처 환경 선택의 회귀 테스트 |
 | `msearch_freshness.py` | 색인이 뒤처졌는지 보고 따라잡는다 |

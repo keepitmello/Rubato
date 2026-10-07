@@ -443,9 +443,27 @@ else
   fi
 fi
 
-# 검색 백엔드(Redis Stack, OPENAI_API_KEY)는 이 설치기가 세우지 않는다. 상태 판정은
-# doctor 한 곳에만 두고 여기서는 가리키기만 한다 — 판정이 두 곳에 있으면 갈린다.
-say "백엔드(Redis Stack · OPENAI_API_KEY)는 msearch --doctor 로 본다"
+# 검색 백엔드인 Redis + Search 는 msearch/redis-service.sh 가 6380 에 세우고 launchd 에
+# 건다(macOS). 처음엔 손설치였는데, 재부팅이나 brew 정리 뒤 조용히 죽은 채로 남아
+# msearch 가 아무것도 못 찾았다. launchd 작업은 HOME 이 아니라 계정에 하나라서 시험·
+# 샌드박스 HOME 에서는 건드리지 않는다. 전체 판정(키·색인 포함)은 msearch --doctor 다.
+. "$HARNESS/scripts/account-home.sh"
+if [ "$(uname -s 2>/dev/null)" != "Darwin" ]; then
+  add_manual "msearch 검색 백엔드: harness/msearch/README.md 의 Redis 절대로 6380 에 띄운다"
+elif [ "$APPLY" -eq 0 ]; then
+  "$HARNESS/msearch/redis-service.sh" 2>&1 | sed 's/^  /    /'
+elif [ -n "${RUBATO_NO_MSEARCH_REDIS-}" ]; then
+  say "msearch 검색 백엔드는 건너뛴다 (RUBATO_NO_MSEARCH_REDIS)"
+elif ! rubato_home_is_account_home; then
+  say "msearch 검색 백엔드는 건너뛴다 (이 HOME 은 이 계정의 홈이 아니다)"
+elif REDIS_OUT="$("$HARNESS/msearch/redis-service.sh" --apply 2>&1)"; then
+  ok "$(printf '%s' "$REDIS_OUT" | tail -n 1 | sed 's/^ *//')"
+else
+  warn "msearch 검색 백엔드를 못 세웠다"
+  printf '%s\n' "$REDIS_OUT" | tail -n 6 | sed 's/^/      /'
+  add_manual "msearch 검색 백엔드: harness/msearch/redis-service.sh --apply 를 다시 실행한다"
+fi
+say "검색 키(OPENAI_API_KEY)와 색인 상태는 msearch --doctor 로 본다"
 
 fi   # ONLY_SHELL 의존성 스킵 끝
 
