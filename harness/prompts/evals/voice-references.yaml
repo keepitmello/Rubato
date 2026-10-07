@@ -1,0 +1,91 @@
+# Regression cases for how the reply names things it talked about earlier.
+#
+# What this guards: harness/prompts/voice.md, the paragraph that says to call
+# a thing by its content instead of a coined number, abbreviation or metaphor.
+#
+# Failure this suite exists for (2026-10-07 writing-workbench session,
+# 01a115e3): over a long resume-tailoring thread the lead split the job
+# posting into five numbered asks, then talked in coined names: "요약 축을
+# 2번으로", "DAO `제어` 불릿", "Rubato `기준먼저`", "메뉴판", "장르 후보".
+# Numbers pointed at a table 35 minutes back; backticked words were keys in
+# a selection JSON the user never read. When the user asked "요약", the lead
+# cut the explanations and kept only these pointers, and the user answered
+# "니 말이 이해가 안되네". The next reply restated the five asks in plain
+# words and drew which resume section carries which one; that one landed.
+# The user also rejected the first fix idea: glossing each label in
+# parentheses still reads as abstraction. The rule is to not coin the name.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi lead session in
+# a scratch workspace, seed it with the turns in `state`, paste `user`, and
+# grade the reply against `expect`. Run each case `trials` times on each model
+# in `models`; one pass is not evidence.
+
+version: 1
+suite: voice-references
+prompt_files:
+  - harness/prompts/voice.md
+models:
+  - anthropic/claude-opus-5-5
+  - openai-codex/gpt-6.1-sol
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  content-not-pointer: >
+    Every item the reply refers to is named by what it is ("호텔 에어컨이
+    리모컨뿐이라 IR 허브로 제어한 얘기"), not by a number from an earlier
+    turn, a file key, or a name the agent coined. A reader who skipped the
+    earlier turns understands each sentence. A number defined and used
+    inside the same reply is fine.
+  no-gloss-crutch: >
+    The reply does not keep a coined label and explain it in parentheses or
+    with "즉". It does not introduce metaphor names ("메뉴판", "축", "장르")
+    for things that have a plain name.
+  user-words-stay: >
+    Words the user already uses in the thread ("해체", "JD", "이력서") appear
+    as is, without a gloss. The reply is not longer than the same answer
+    would be without the voice.md paragraph; compare character counts
+    against a run on the previous voice.md.
+
+cases:
+  - id: summary-after-long-thread
+    category: content-not-pointer
+    user: >
+      요약
+    state: >
+      Six earlier turns: the agent split a job posting into five asks in a
+      numbered table (1 judges AI output itself, 2 turns an unfamiliar
+      industry's problem into software, 3 designs and builds alone, 4 asks
+      why before building, 5 writes documents), then proposed which resume
+      section carries which ask, citing bullet keys from
+      이력서/직무별/프로덕트/고르기.json (제어, 연동, 기준먼저, 제품) and a
+      stored summary variant named 서비스. The user never used the numbers
+      or keys.
+    expect: content-not-pointer
+    why: >
+      the observed reply was this exact turn, and it kept only pointers.
+
+  - id: no-coined-names
+    category: no-gloss-crutch
+    user: >
+      이력서 맨 위 소개 문단에 뭘 내세울지 같이 정하자. 후보 정리해줘.
+    state: >
+      A resume repo with seven stored summary paragraphs, a selection JSON of
+      bullet keys, and a job posting with five distinct asks.
+    expect: no-gloss-crutch
+    why: >
+      the coined names in the observed session started at this kind of
+      turn, before any summary request.
+
+  - id: user-term-not-reexplained
+    category: user-words-stay
+    user: >
+      해체 표에서 두 번째 줄만 다시 보자. 회사가 그걸로 뭘 확인하려는 건지.
+    state: >
+      The user has written "해체" three times in earlier turns; the agent's
+      table of what the company wants to check is two turns back.
+    expect: user-words-stay
+    why: >
+      the fix must not make every reply re-explain shared words; the user
+      named that side effect before the change went in.
