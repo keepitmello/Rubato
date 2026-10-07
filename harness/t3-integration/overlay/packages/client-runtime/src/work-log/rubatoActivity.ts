@@ -180,3 +180,54 @@ export function rubatoPhaseOf(message: { readonly context?: unknown }): RubatoAs
   }
   return undefined;
 }
+
+/** One entry of a turn, as the answer rule sees it. */
+export interface RubatoAnswerItem {
+  readonly id: string;
+  readonly kind: "answer" | "thought" | "tool" | "other";
+  /** The stored message id, for an answer or a thought. */
+  readonly messageId?: string;
+  readonly phase?: RubatoAssistantPhase | undefined;
+  readonly streaming?: boolean;
+}
+
+// One Pi assistant message is one answer row, and its thought row carries the same key.
+const PI_ANSWER_ID = /^assistant:pi:([^:]+:[a-f0-9]{24})$/;
+const PI_THOUGHT_ID = /^(?:reasoning:[a-z]+|assistant):pi:([^:]+:[a-f0-9]{24}):/;
+
+/**
+ * Which of a turn's Pi answers are commentary and which are final, and which stay
+ * in sight once the turn has folded. A message tagged by the bridge says its own
+ * phase. One stored before tags ended with tool calls exactly when its tool rows
+ * follow it (its own thought may sit between), which is what the tag would have
+ * said. Final answers stay; so does a last word that no tool followed, such as
+ * commentary cut short by a stop. Other providers' messages are not answered here.
+ */
+export function rubatoPiAnswers(items: ReadonlyArray<RubatoAnswerItem>): {
+  readonly phases: ReadonlyMap<string, RubatoAssistantPhase>;
+  readonly visible: ReadonlySet<string>;
+} {
+  const phases = new Map<string, RubatoAssistantPhase>();
+  const visible = new Set<string>();
+  const lastAnswerIndex = items.findLastIndex((item) => item.kind === "answer");
+  for (const [index, item] of items.entries()) {
+    if (item.kind !== "answer") continue;
+    const key = PI_ANSWER_ID.exec(item.messageId ?? "")?.[1];
+    if (!key) continue;
+    let next = index + 1;
+    while (
+      items[next]?.kind === "thought" &&
+      PI_THOUGHT_ID.exec(items[next]!.messageId ?? "")?.[1] === key
+    ) {
+      next += 1;
+    }
+    const followedByTool = items[next]?.kind === "tool";
+    if (item.phase === undefined && items[next] === undefined && item.streaming) continue;
+    const phase = item.phase ?? (followedByTool ? "commentary" : "final_answer");
+    phases.set(item.id, phase);
+    if (phase === "final_answer" || (!followedByTool && index === lastAnswerIndex)) {
+      visible.add(item.id);
+    }
+  }
+  return { phases, visible };
+}

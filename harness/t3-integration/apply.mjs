@@ -659,35 +659,6 @@ const edits = {
       'replace',
     ],
   ],
-  // 중간 발화는 완료 후 접되, 마지막 답변의 연속된 조각은 전부 남긴다.
-  // 사고/답변 분리는 브리지의 이벤트 타입이 맡는다.
-  // Pi 메시지 하나가 답 한 행이다. 도구를 부른 메시지는 바로 뒤에 그 도구 행이
-  // 붙고, 도구 없이 끝난 메시지는 그 실행을 끝낸 답이다. 답 뒤에 알림이 같은
-  // 실행을 다시 깨워 말이 더 붙어도 그 답은 접지 않는다.
-  'apps/web/src/components/chat/MessagesTimeline.logic.ts': [
-    [
-      ' * Settled turns fold activity before their terminal assistant message behind\n * a "Worked for ..." row. A single ordinary activity after that message joins\n * the fold, while larger groups and failures stay visible as a trailing summary.',
-      ' * Settled turns fold intermediate commentary and activity behind a "Worked for"\n * row. Keep the terminal run of assistant messages intact, not just its last\n * fragment. A single ordinary activity after the answer joins the fold;\n * larger groups and failures stay visible as a trailing summary.',
-      'replace',
-    ],
-    [
-      '    for (const [index, entry] of group.entries.entries()) {\n      if (entry.id === group.terminalEntry?.id) {\n        continue;\n      }',
-      '    // 답변은 마지막 조각만 남기지 않는다. 터미널 답변 앞으로 이어진 assistant\n    // 메시지를 한 덩어리로 본다. 사고 행은 이 덩어리에 넣지 않는다 — 업스트림이\n    // 답변 뒤 thinking 을 그 턴의 접힘에 넣기 때문이다.\n    let answerStartIndex = terminalEntryIndex;\n    while (answerStartIndex > 0) {\n      const previous = group.entries[answerStartIndex - 1];\n      if (previous?.kind !== "message" || previous.message.role !== "assistant") break;\n      answerStartIndex -= 1;\n    }\n    // Pi 답 바로 뒤(자기 생각 행은 건너뛴다)에 도구 행이 없으면 도구 없이 끝난\n    // 답이다. 그 뒤에 같은 실행이 이어져도 접지 않는다.\n    const settledPiAnswerIds = new Set<string>();\n    for (const [index, entry] of group.entries.entries()) {\n      if (entry.kind !== "message" || entry.message.role !== "assistant") continue;\n      const piKey = /^assistant:pi:([^:]+:[a-f0-9]{24})$/.exec(entry.message.id)?.[1];\n      if (!piKey) continue;\n      const next = group.entries.find(\n        (candidate, candidateIndex) =>\n          candidateIndex > index &&\n          !(\n            candidate.kind === "message" &&\n            candidate.message.role === "reasoning" &&\n            candidate.message.id.includes(`:pi:${piKey}:`)\n          ),\n      );\n      if (next?.kind === "work" && workLogEntryIsToolLike(next.entry)) continue;\n      settledPiAnswerIds.add(entry.id);\n    }\n    for (const [index, entry] of group.entries.entries()) {\n      if (\n        settledPiAnswerIds.has(entry.id) ||\n        (entry.kind === "message" &&\n          entry.message.role === "assistant" &&\n          index >= answerStartIndex)\n      ) {\n        continue;\n      }',
-      'replace',
-    ],
-  ],
-  'apps/web/src/components/chat/MessagesTimeline.logic.test.ts': [
-    [
-      '  it("folds all assistant messages before the terminal message", () => {',
-      '  it("keeps all adjacent final answer fragments when there is no intervening work", () => {',
-      'replace',
-    ],
-    [
-      '    expect(rows.map((row) => row.id)).toEqual(["turn-fold:turn-1", "assistant-final-entry"]);\n  });\n\n  const reasoningEntry = (id: string, at: string, turnId: string | null) => ({',
-      '    expect(rows.map((row) => row.id)).toEqual([\n      "assistant-first-entry", "assistant-middle-entry", "assistant-final-entry",\n    ]);\n  });\n\n  const reasoningEntry = (id: string, at: string, turnId: string | null) => ({',
-      'replace',
-    ],
-  ],
   // 큐에 든 말과 끼어드는 말은 다른 물건이다. T3 는 대기 메시지를 첫 툴 경계에서
   // 내보내므로 ↑(Send now) 와 자동 방출이 같은 결과가 되고, Rubato 에서는 그 말이
   // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
@@ -740,55 +711,8 @@ const edits = {
       'replace',
     ],
     [
-      '  const firstAssistantMessageIdByTurn = new Map<TurnId, string>();\n  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      if (!firstAssistantMessageIdByTurn.has(entry.message.turnId)) {\n        firstAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n      }\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
-      '  const terminalAssistantMessageIdByTurn = new Map<TurnId, string>();\n  for (const entry of feed) {\n    if (entry.type === "message" && entry.message.role === "assistant" && entry.message.turnId) {\n      terminalAssistantMessageIdByTurn.set(entry.message.turnId, entry.id);\n    }\n  }',
-      'replace',
-    ],
-    [
-      '    const firstAssistantMessageId = firstAssistantMessageIdByTurn.get(turnId);\n    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry) =>\n            entry.id !== firstAssistantMessageId &&\n            entry.id !== terminalAssistantMessageId &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
-      '    const terminalAssistantMessageId = terminalAssistantMessageIdByTurn.get(turnId);\n    const terminalIndex = entries.findIndex((entry) => entry.id === terminalAssistantMessageId);\n    // 웹과 같은 규칙이다. 답변은 마지막 조각만 남기지 않고, 사고 행은 덩어리에\n    // 넣지 않는다. 도구 없이 끝난 Pi 답은 뒤에 같은 실행이 이어져도 남긴다.\n    let answerStartIndex = terminalIndex;\n    while (answerStartIndex > 0) {\n      const previous = entries[answerStartIndex - 1];\n      if (previous?.type !== "message" || previous.message.role !== "assistant") break;\n      answerStartIndex -= 1;\n    }\n    const settledPiAnswerIds = new Set<string>();\n    for (const [index, entry] of entries.entries()) {\n      if (entry.type !== "message" || entry.message.role !== "assistant") continue;\n      const piKey = /^assistant:pi:([^:]+:[a-f0-9]{24})$/.exec(entry.message.id)?.[1];\n      if (!piKey) continue;\n      const next = entries.find(\n        (candidate, candidateIndex) =>\n          candidateIndex > index &&\n          !(\n            candidate.type === "message" &&\n            candidate.message.role === "reasoning" &&\n            candidate.message.id.includes(`:pi:${piKey}:`)\n          ),\n      );\n      if (next?.type === "activity-group") continue;\n      settledPiAnswerIds.add(entry.id);\n    }\n    const hiddenEntryIds = new Set(\n      entries\n        .filter(\n          (entry, index) =>\n            !settledPiAnswerIds.has(entry.id) &&\n            !(\n              entry.type === "message" &&\n              entry.message.role === "assistant" &&\n              index >= answerStartIndex\n            ) &&\n            !(entry.type === "activity-group" && isUserInputActivityGroup(entry)),\n        )\n        .map((entry) => entry.id),\n    );',
-      'replace',
-    ],
-    [
       '    if (activity.kind === "context-window.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
       '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "session.speed.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
-      'replace',
-    ],
-  ],
-  'apps/mobile/src/lib/threadActivity.test.ts': [
-    [
-      '  it("keeps the first and terminal assistant messages visible around settled work", () => {',
-      '  it("folds intermediate commentary and keeps the terminal answer visible", () => {',
-      'replace',
-    ],
-    [
-      '    expect(collapsed.map((entry) => entry.id)).toEqual([\n      "assistant-first",\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n    expect(collapsed[1]).toMatchObject({',
-      '    expect(collapsed.map((entry) => entry.id)).toEqual([\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n    expect(collapsed[0]).toMatchObject({',
-      'replace',
-    ],
-    [
-      '    expect(expanded.map((entry) => entry.id)).toEqual([\n      "assistant-first",\n      "turn-fold:turn-1",\n      "work-toggle:work-group:tool-completed",',
-      '    expect(expanded.map((entry) => entry.id)).toEqual([\n      "turn-fold:turn-1",\n      "assistant-first",\n      "work-toggle:work-group:tool-completed",',
-      'replace',
-    ],
-    [
-      '    expect(interrupted[1]).toMatchObject({\n      type: "turn-fold",\n      label: "You stopped after 19s",',
-      '    expect(interrupted[0]).toMatchObject({\n      type: "turn-fold",\n      label: "You stopped after 19s",',
-      'replace',
-    ],
-    [
-      '    expect(retimed[1]).toMatchObject({ type: "turn-fold", label: "Worked for 23s" });\n    expect(collapsed[1]).toMatchObject({ type: "turn-fold", label: "Worked for 17s" });',
-      '    expect(retimed[0]).toMatchObject({ type: "turn-fold", label: "Worked for 23s" });\n    expect(collapsed[0]).toMatchObject({ type: "turn-fold", label: "Worked for 17s" });',
-      'replace',
-    ],
-    [
-      '  it("folds assistant messages between the first and terminal messages", () => {',
-      '  it("keeps adjacent final answer fragments without intervening work", () => {',
-      'replace',
-    ],
-    [
-      '      "assistant-first",\n      "turn-fold:turn-1",\n      "assistant-final",\n    ]);\n  });\n\n  it("measures a steer-superseded turn from its user boundary through trailing work", () => {',
-      '      "assistant-first",\n      "assistant-middle",\n      "assistant-final",\n    ]);\n  });\n\n  it("measures a steer-superseded turn from its user boundary through trailing work", () => {',
       'replace',
     ],
   ],
