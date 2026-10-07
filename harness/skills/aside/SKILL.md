@@ -20,15 +20,13 @@ Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 ### Start a task
 
 Omit `-m`. The model comes from Aside settings Task models, not from `aside guide`.
-This account maps every slot to Grok 4.7: Default, Fast, Standard, Deep, Visual.
-`-s fast` selects the Fast slot. `--effort` is thinking level, not the model.
+`--effort` is thinking level, not the model.
 
 `aside guide` and `aside exec --help` print `-m openai/gpt-5.6-sol` as a generic
 example. That model is not on this account. Do not copy it.
 
 ```bash
 aside "Find flights from SF to Tokyo for next weekend"
-aside -s fast "Quick lookup"
 aside --effort high "Research quarterly earnings"
 aside --effort ultrabrowse "Research this deeply"
 aside --account u1 "Check unread Slack notifications"
