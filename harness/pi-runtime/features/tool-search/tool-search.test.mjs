@@ -168,7 +168,7 @@ test("only the direct tool set starts active; other extension tools wait in the 
         name: "surface-fixture",
         factory: (pi) => {
           pi.registerTool(tool("todo"));
-          pi.registerTool(tool("team_create"));
+          pi.registerTool(tool("team_send"));
           pi.registerTool(tool("mode_gated", { allowLazyActivation: false }));
           for (const name of ["probe_a", "probe_b", "probe_c", "probe_d", "probe_e"]) pi.registerTool(tool(name));
         },
@@ -183,14 +183,14 @@ test("only the direct tool set starts active; other extension tools wait in the 
   const active = session.getActiveToolNames();
   assert.ok(active.includes("todo"), JSON.stringify(active));
   assert.ok(active.includes("tool_search"), JSON.stringify(active));
-  assert.ok(!active.includes("team_create"), JSON.stringify(active));
+  assert.ok(!active.includes("team_send"), JSON.stringify(active));
   assert.ok(active.includes("mode_gated"), "an owner that forbids lazy activation keeps its tool");
   assert.ok(!active.includes("grep"), "engine builtins stay out");
   assert.ok(!session.getAllTools().some(({ name, exposure }) => name === "grep" && exposure === "search"));
 
-  const search = await session.executeTool("tool_search", { query: "team_create" });
-  assert.deepEqual(search.details.activated, ["team_create"]);
-  assert.ok(session.getActiveToolNames().includes("team_create"));
+  const search = await session.executeTool("tool_search", { query: "team_send" });
+  assert.deepEqual(search.details.activated, ["team_send"]);
+  assert.ok(session.getActiveToolNames().includes("team_send"));
 
   // A broad search turns on only its best three; the rest are named, not activated.
   const broad = await session.executeTool("tool_search", { query: "probe fixture capability" });

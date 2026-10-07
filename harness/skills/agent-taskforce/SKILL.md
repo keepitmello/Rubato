@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "Read before deciding on continuing owners, independent outcomes or consequential coordination/review. Preserve the user conversation and frame; staff only when separate responsibility repays its cost. Resolve intent and confirm a readable intent/roster proposal. May choose no team."
+description: "Read when work splits into outcomes that can progress on their own, long execution would crowd the user conversation, an independent check could change acceptance, or a second Agent is about to go toward the same goal. Chooses between direct work, subagents and a team (team_create), and confirms one readable intent/roster proposal with the user."
 ---
 
 # Agent Taskforce
@@ -36,5 +36,5 @@ handoffs and continuity. General prompt/context guidance belongs to
 The user's optional product-value framing workflow belongs to `product-framing`.
 
 For continuing ownership, read the sibling `work-intent` and reuse existing
-user/frame/spec authority. A skill read is not a team decision. Small direct work
-and subagents need no invented mission, board, interview or additional ceremony.
+user/frame/spec authority. Small direct work and subagents need no invented
+mission, board, interview or additional ceremony.

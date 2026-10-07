@@ -219,6 +219,8 @@ export function createTeamCreateTool(deps: TeamToolDeps): ToolDefinition {
     label: "Team Create",
     description: CREATE_DESCRIPTION,
     parameters,
+    // Always visible to the lead, like Agent: a lead that never sees team_create picks Agent by default.
+    exposure: "direct",
     prepareArguments: prepareTeamCreateArguments,
     execute: (_toolCallId: string, params: TeamCreateInput) => runTeamCreate(deps.service, params),
   }
