@@ -16,6 +16,9 @@ const phaseContext = (phase: "commentary" | "final_answer") => ({
   ],
 });
 
+const piHex = (name: string) =>
+  [...name].map((char) => char.charCodeAt(0).toString(16)).join("").padEnd(24, "0").slice(0, 24);
+
 function message(
   id: string,
   second: number,
@@ -24,7 +27,8 @@ function message(
   phase?: "commentary" | "final_answer",
 ): TimelineEntry {
   const chat = {
-    id: MessageId.make(id),
+    // Assistant rows carry the Pi id the bridge mints (one Pi message, one row).
+    id: MessageId.make(role === "assistant" ? `assistant:pi:session:${piHex(id)}` : id),
     role,
     text,
     turnId: role === "user" ? null : turnId,
@@ -79,12 +83,25 @@ describe("rubato work log", () => {
     expect(settled.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "answer-entry"]);
   });
 
-  it("keeps the old guess for a turn that never reached a final answer", () => {
+  it("reads an untagged Pi message by whether its tool rows follow it", () => {
     const settled = rows([
       message("user", 0, "user", "Fix it"),
       message("note-1", 1, "assistant", "Looking.", "commentary"),
       work("read", 2, { rubatoActivity: { kind: "read", target: "a.ts" } }),
-      message("note-2", 3, "assistant", "Stopped here."),
+      message("note-2", 3, "assistant", "Done."),
+      // Woken later in the same turn: a note whose tool rows follow it folds.
+      message("note-3", 4, "assistant", "One more check."),
+      work("test", 5, { rubatoActivity: { kind: "command", target: "npm test" } }),
+    ]);
+    expect(settled.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "note-2-entry"]);
+  });
+
+  it("keeps a last word that no tool followed, such as commentary cut short", () => {
+    const settled = rows([
+      message("user", 0, "user", "Fix it"),
+      message("note-1", 1, "assistant", "Looking.", "commentary"),
+      work("read", 2, { rubatoActivity: { kind: "read", target: "a.ts" } }),
+      message("note-2", 3, "assistant", "About to run the tests.", "commentary"),
     ]);
     expect(settled.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "note-2-entry"]);
   });
