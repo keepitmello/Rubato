@@ -169,13 +169,14 @@ test('old superseded tool updates and context-window rows go, and the thread sna
   assert.deepEqual(snapshot(m, db), before);
 });
 
-test('the server runs the job at startup: prune, one VACUUM, then incremental vacuum on later passes', { skip: !source }, async (t) => {
+test('startup compacts once without waiting for a large retention history; later passes reclaim pages', { skip: !source }, async (t) => {
   const m = await load();
   const { file, db } = await database(t, m);
-  cursors(db, m.projectors, 100);
+  // Sparse, high sequences reproduce a pass that exceeds desktop readiness.
+  cursors(db, m.projectors, 10_000_000);
   for (let sequence = 1; sequence <= 50; sequence += 1) event(db, sequence, 'thread.activity-appended', ago(5));
   db.close();
-  // First start: the file is not incremental yet, so the pass and VACUUM finish before the layer is ready.
+  // First start must become ready even while the retention pass is unfinished.
   const first = await m.run(file, m.Effect.scoped(m.Effect.gen(function* () {
     yield* m.Layer.build(m.retention.rubatoStateRetentionLayer);
     return yield* m.retention.autoVacuumMode;
@@ -183,7 +184,8 @@ test('the server runs the job at startup: prune, one VACUUM, then incremental va
   assert.equal(first, 2);
   const reopened = new DatabaseSync(file);
   t.after(() => reopened.isOpen && reopened.close());
-  assert.equal(reopened.prepare('SELECT COUNT(*) AS n FROM orchestration_events').get().n, 0);
+  assert.ok(reopened.prepare('SELECT COUNT(*) AS n FROM orchestration_events').get().n > 0);
+  cursors(reopened, m.projectors, 100);
   // Later starts run the pass in the background, and it gives freed pages back.
   const receipt = reopened.prepare(`INSERT INTO orchestration_command_receipts (command_id, aggregate_kind, aggregate_id, accepted_at, result_sequence, status)
     VALUES (?, 'thread', 't1', ?, 1, 'rejected')`);
