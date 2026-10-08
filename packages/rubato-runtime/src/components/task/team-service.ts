@@ -3,8 +3,10 @@ import { listActiveTeams, loadRuntimeState } from "@rubato/team-core/team-state-
 import { log } from "@rubato/utils"
 import {
   TEAM_LEAD_SENTINEL,
+  addTeamMember,
   claimTeamTask,
   createTeam,
+  liveMemberNames,
   replaceTeamMember,
   createTeamTask,
   createTaskRecordStore,
@@ -170,6 +172,24 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
         ...(deps.now !== undefined ? { now: deps.now } : {}),
       })
     },
+    async addMember(input) {
+      assertCanonicalTeamRunId(input.teamRunId)
+      await assertOwnedTeam(deps, config, input.teamRunId)
+      return addTeamMember(input, {
+        manager: deps.manager,
+        destruction: deps.destruction,
+        stateDir,
+        taskSettings: deps.settings,
+        leadSessionId: requireLeadSession(deps),
+        spawnDepth: TEAM_MEMBER_SPAWN_DEPTH,
+        memberPorts: ports,
+        memberExtension: {
+          entryPath: memberExtensionEntryPath,
+          inheritedExtensions: parseExtensionEntries(process.argv),
+        },
+        ...(deps.now !== undefined ? { now: deps.now } : {}),
+      })
+    },
     deleteTeam: async (input) => {
       assertCanonicalTeamRunId(input.teamRunId)
       await assertOwnedTeam(deps, config, input.teamRunId)
@@ -187,7 +207,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
         teamRunId,
         stateDir,
         config,
-        activeMembers: runtimeState.members.map((member) => member.name),
+        activeMembers: liveMemberNames(runtimeState.members),
         appendEvent: appendTaskEvent,
         inspectMember: (taskId) => {
           const record = deps.manager.get(taskId)
@@ -247,7 +267,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
       return withTeamRuntimeMutation(stateDir, teamRunId, () => approveShutdown(teamRunId, member, {
         config,
         sendMessage: makeShutdownMessenger(deps.manager, stateDir, teamRunId),
-        cancelMemberTask: makeCancelMemberTask(deps.manager, stateDir, teamRunId),
+        cancelMemberTask: makeCancelMemberTask(deps.manager, deps.destruction, stateDir, teamRunId),
         ...(deps.now !== undefined ? { now: deps.now } : {}),
       }))
     },

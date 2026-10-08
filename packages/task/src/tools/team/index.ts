@@ -3,6 +3,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent"
 import { createTeamCreateTool, createTeamDeleteTool } from "./lifecycle"
 import { createTeamSendTool } from "./messaging"
 import { createTeamReplaceMemberTool } from "./replacement"
+import { createTeamAddMemberTool } from "./add-member"
 import {
   createTeamApproveShutdownTool,
   createTeamRejectShutdownTool,
@@ -25,6 +26,8 @@ export {
 export type { TeamCreateDetails, TeamCreateInput, TeamCreateMemberView, TeamDeleteDetails, TeamDeleteInput } from "./lifecycle"
 export { TeamSendParams, createTeamSendTool, runTeamSend } from "./messaging"
 export { TeamReplaceMemberParams, createTeamReplaceMemberTool, runTeamReplaceMember } from "./replacement"
+export { TeamAddMemberParams, createTeamAddMemberTool, runTeamAddMember } from "./add-member"
+export type { TeamAddMemberInput } from "./add-member"
 export type {
   LeadDeliveryView,
   MemberDeliveryOutcome,
@@ -81,6 +84,7 @@ export type {
 export function buildLeadTeamTools(deps: LeadTeamToolDeps): ToolDefinition[] {
   return [
     createTeamCreateTool(deps),
+    createTeamAddMemberTool(deps),
     createTeamReplaceMemberTool(deps),
     createTeamDeleteTool(deps),
     createTeamSendTool(deps),

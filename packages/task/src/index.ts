@@ -492,3 +492,5 @@ export type {
 export * from "./tools/team"
 export { replaceTeamMember, TeamMemberReplacementError } from "./team"
 export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./team"
+export { addTeamMember, liveMemberNames, stopMemberTask, TeamMemberAddError } from "./team"
+export type { AddTeamMemberInput, AddTeamMemberResult, AddTeamMemberDeps } from "./team"

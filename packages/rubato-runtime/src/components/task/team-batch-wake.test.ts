@@ -194,6 +194,17 @@ test("an unmapped roster member cannot disappear from all-members completion", a
   expect(await listUnreadMessages(h.teamRunId, "lead", h.config)).toEqual([])
 })
 
+test("a removed member's stopped task does not hold the batch", async () => {
+  const h = await fixture()
+  h.store.mutate(h.map.verifier, (record) => ({ ...record, status: "cancelled" }))
+  expect((await h.makeWake().evaluate())[0]).toEqual({ kind: "wait", reason: "member-unfinished:verifier:cancelled" })
+  await transitionRuntimeState(h.teamRunId, (state) => ({
+    ...state,
+    members: state.members.map((member) => member.name === "verifier" ? { ...member, status: "shutdown_approved" } : member),
+  }), h.config)
+  expect((await h.makeWake().evaluate())[0]).toEqual({ kind: "delivered", teamRunId: h.teamRunId, members: ["owner"] })
+})
+
 test("undelivered peer work prevents the aggregate", async () => {
   const h = await fixture()
   await sendMessage({

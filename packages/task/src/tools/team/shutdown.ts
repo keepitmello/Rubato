@@ -76,7 +76,7 @@ export function createTeamShutdownRequestTool(deps: TeamToolDeps): ToolDefinitio
     name: "team_shutdown_request",
     label: "Team Shutdown Request",
     description:
-      "Request that a team member shut down. Lead-only team protocol; distinct from AgentCancel, which stops a spawned Agent session.",
+      "Remove a member from a team, step 1 of 2: notify the member that it is leaving. Then team_approve_shutdown stops it and takes it off the roster. Before removing, have it persist its handoff and close or reassign its open board items. Lead-only team protocol; distinct from AgentCancel, which stops a spawned Agent session.",
     parameters: TeamShutdownRequestParams,
     execute: (_toolCallId: string, params: TeamShutdownRequestInput) => runTeamShutdownRequest(deps.service, params),
   }
@@ -86,7 +86,7 @@ export function createTeamApproveShutdownTool(deps: TeamToolDeps): ToolDefinitio
   return {
     name: "team_approve_shutdown",
     label: "Team Approve Shutdown",
-    description: "Approve a pending team member shutdown request. Lead-only team protocol.",
+    description: "Approve a pending team member shutdown request (step 2 of removing a member): its execution stops, peers can no longer message it, and the team's completion wake no longer waits for it. Its name stays taken. Lead-only team protocol.",
     parameters: TeamApproveShutdownParams,
     execute: (_toolCallId: string, params: TeamApproveShutdownInput) => runTeamApproveShutdown(deps.service, params),
   }

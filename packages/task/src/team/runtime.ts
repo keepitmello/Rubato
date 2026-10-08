@@ -236,31 +236,41 @@ async function cancelMemberTasks(teamRunId: string, runtimeDir: string, deps: De
     const record = deps.manager.get(taskId)
     const identity = record === undefined ? undefined : parseTeamMemberTaskIdentity(record)
     if (identity?.teamRunId !== teamRunId || identity.memberName !== memberName) continue
-    const outcome = await deps.manager.cancelTask(taskId, `delete team ${teamRunId}`)
-    if (outcome.kind === "cancelled") {
-      cancelled.push(taskId)
-      continue
-    }
-    // Terminal cancellation is an intentional noop (completed residents stay revivable), but team
-    // deletion owns member teardown: route the resident through the lifecycle single-writer port.
-    // A `cancelled` noop means an in-flight cancellation already owns destruction, and a
-    // non-resident record has nothing left to tear down, so neither path may destroy again. Re-read
-    // immediately before destruction so a revive between the noop and residency checks wins; a
-    // narrower revive window remains after this final read and is serialized by lifecycle teardown.
-    const observed = deps.manager.get(taskId)
-    if (outcome.kind === "noop" && outcome.status !== "cancelled" && observed?.residency_state === "resident") {
-      const current = deps.manager.get(taskId)
-      if (
-        current !== undefined
-        && current.status !== "pending"
-        && current.status !== "running"
-        && current.residency_state === "resident"
-      ) {
-        await deps.destruction.destroyResidentTask(taskId, "cancel")
-      }
-    }
+    if (await stopMemberTask(taskId, `delete team ${teamRunId}`, deps)) cancelled.push(taskId)
   }
   return cancelled
+}
+
+/**
+ * Stop a member's execution for good (team deletion, approved removal). Returns true when a live
+ * turn was cancelled.
+ */
+export async function stopMemberTask(
+  taskId: string,
+  reason: string,
+  deps: Pick<DeleteTeamDeps, "manager" | "destruction">,
+): Promise<boolean> {
+  const outcome = await deps.manager.cancelTask(taskId, reason)
+  if (outcome.kind === "cancelled") return true
+  // Terminal cancellation is an intentional noop (completed residents stay revivable), but the
+  // caller owns member teardown: route the resident through the lifecycle single-writer port.
+  // A `cancelled` noop means an in-flight cancellation already owns destruction, and a
+  // non-resident record has nothing left to tear down, so neither path may destroy again. Re-read
+  // immediately before destruction so a revive between the noop and residency checks wins; a
+  // narrower revive window remains after this final read and is serialized by lifecycle teardown.
+  const observed = deps.manager.get(taskId)
+  if (outcome.kind === "noop" && outcome.status !== "cancelled" && observed?.residency_state === "resident") {
+    const current = deps.manager.get(taskId)
+    if (
+      current !== undefined
+      && current.status !== "pending"
+      && current.status !== "running"
+      && current.residency_state === "resident"
+    ) {
+      await deps.destruction.destroyResidentTask(taskId, "cancel")
+    }
+  }
+  return false
 }
 
 async function loadRuntimeStateOrNull(teamRunId: string, config: TeamCoreConfig): Promise<RuntimeState | null> {

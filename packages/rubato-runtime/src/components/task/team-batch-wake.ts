@@ -3,6 +3,7 @@ import { loadRuntimeState } from "@rubato/team-core/team-state-store"
 import {
   countUnreadTeamMessages,
   createTeamBatchWake,
+  liveMemberNames,
   listTeamTasks,
   readMemberTaskMap,
   resolveTeamRuntimeDirs,
@@ -47,8 +48,9 @@ export function createRuntimeTeamBatchWake(deps: TeamBatchWakeDeps): TeamBatchWa
         resolved.push({
           teamRunId: team.teamRunId,
           teamName: team.teamName,
-          // A missing map entry is unfinished, not permission to shrink "every member".
-          members: state.members.map((member) => ({ name: member.name, taskId: map[member.name] })),
+          // A missing map entry is unfinished, not permission to shrink "every member". A removed
+          // (shutdown-approved) member is off the roster: its stopped task must not hold the batch.
+          members: liveMemberNames(state.members).map((name) => ({ name, taskId: map[name] })),
         })
       }
       return resolved

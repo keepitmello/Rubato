@@ -4,11 +4,13 @@ import {
   normalizeSenpiTeamSpec,
   readMemberTaskMap,
   resolveTeamRuntimeDirs,
+  stopMemberTask,
   validateSenpiTeamMembers,
   type SenpiTeamMemberPorts,
   type ModelCatalog,
   type ShutdownMessenger,
   type StateDirConfig,
+  type TaskLifecycle,
   type TaskManager,
   type TeamSpecSource,
 } from "@rubato/task"
@@ -95,11 +97,17 @@ export function makeShutdownMessenger(manager: TaskManager, stateDir: StateDirCo
   }
 }
 
-// Cancels a member's background child (approve-shutdown teardown), resolving its task via the sidecar.
-export function makeCancelMemberTask(manager: TaskManager, stateDir: StateDirConfig, teamRunId: string): (memberName: string) => Promise<void> {
+// Stops a removed member's execution (approve-shutdown teardown), resolving its task via the sidecar.
+// An idle resident is torn down too; a bare cancel is a noop for it and would leave it running.
+export function makeCancelMemberTask(
+  manager: TaskManager,
+  destruction: Pick<TaskLifecycle, "destroyResidentTask">,
+  stateDir: StateDirConfig,
+  teamRunId: string,
+): (memberName: string) => Promise<void> {
   return async (memberName) => {
     const taskId = await memberTaskId(stateDir, teamRunId, memberName)
     if (taskId === undefined) return
-    await manager.cancelTask(taskId, `team ${teamRunId} shutdown approved`)
+    await stopMemberTask(taskId, `team ${teamRunId} shutdown approved`, { manager, destruction })
   }
 }

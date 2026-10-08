@@ -35,6 +35,7 @@ import {
 } from "./report-reminder"
 import { createMemberTaskSendTool } from "./tools"
 import { readMemberTaskMap } from "../member-map"
+import { liveMemberNames } from "../shutdown-helpers"
 import { resolveTeamRuntimeDirs } from "../storage"
 
 export {
@@ -200,6 +201,7 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     taskId: parsed.taskId,
     config: parsed.config,
     members: parsed.members,
+    currentMembers: async () => liveMemberNames((await loadRuntimeState(parsed.teamRunId, parsed.config)).members),
     isCurrentMember,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
     onSent: () => reminder.onTeamSend(),
@@ -284,6 +286,7 @@ export function createMemberBoardService(parsed: ParsedMemberExtensionEnv): Team
   return {
     createTeam: unused("createTeam"),
     replaceMember: unused("replaceMember"),
+    addMember: unused("addMember"),
     deleteTeam: unused("deleteTeam"),
     sendMessage: unused("sendMessage"),
     status: unused("status"),

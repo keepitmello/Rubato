@@ -38,6 +38,9 @@ export type ShutdownOutboundMessage = {
 
 export type ShutdownMessenger = (message: ShutdownOutboundMessage) => Promise<void>
 
+/** What a member being removed should do with the turn the request gives it. */
+export const SHUTDOWN_REQUEST_BODY = "The lead is removing you from the team. Persist your result and handoff on the artifact or board, mark the board items you own, then end your turn. Do not start new work."
+
 export type RequestShutdownDeps = {
   readonly config: TeamCoreConfig
   readonly sendMessage: ShutdownMessenger
@@ -80,7 +83,7 @@ export async function requestShutdown(
   const existingIndex = findLatestShutdownRequestIndex(state, memberName)
   if (isUnresolvedRequest(state.shutdownRequests[existingIndex])) return state
 
-  await deps.sendMessage({ to: memberName, kind: "shutdown_request", body: "" })
+  await deps.sendMessage({ to: memberName, kind: "shutdown_request", body: SHUTDOWN_REQUEST_BODY })
 
   const requestedAt = (deps.now ?? Date.now)()
   return transitionRuntimeState(
