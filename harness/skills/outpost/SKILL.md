@@ -71,9 +71,7 @@ process; when it exits, an idle parent session is woken.
 
 ## After
 
-Read `response.md` and `result.json`. Verify every material claim locally
-before acting. Discard an unrelated reply. `references/after-advice.md`
-governs that pass.
+Read `response.md` and `result.json` together. Confirm the request marker and response belong to this turn; topical similarity alone does not resolve a mismatched id. Recover existing output before any resend. A matched, supported challenge to your framing is relevant even when it rejects your preferred answer. Verify claims that change the next action and use `references/after-advice.md` for synthesis inside authority.
 
 - Exit `75` — nothing was sent, proven (stopped before the prompt was typed, or
   no turn with this run's ID in the project). Report the stage and stop; resend

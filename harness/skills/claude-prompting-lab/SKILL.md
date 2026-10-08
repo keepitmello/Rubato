@@ -1,32 +1,41 @@
 ---
 name: claude-prompting-lab
-description: "Design and evaluate Claude prompts, tools, skills, and harnesses."
-
+description: "Design or revise prompts, tools, skills and harness guidance using actual behavior, clear authority and representative evaluations."
 ---
 
-# Claude Prompting Lab
+# Improve the decisions the instructions support
 
-Build the smallest model-aware prompt and harness that passes explicit evaluations. Treat prompt wording as one layer of a larger configuration: model, effort, context, tools, memory, orchestration, permissions, output contract, and graders all shape behavior.
+Treat model, effort, context, tools, memory, permissions and orchestration as separate contributors. Identify the active host and exact model before transferring provider-specific advice. The bundled source snapshot is 2026-08-02; refresh relevant official material with `scripts/refresh_official_indexes.py` or current docs when the model or API has changed. Do not infer new runtime support from a persuasive article.
 
-Source snapshot: 2026-08-02. Before giving model-specific advice for a newer model or a changed API, refresh official Anthropic sources using `scripts/refresh_official_indexes.py` or consult the current official docs.
+## Start with the actual behavior and delivered instructions
 
-## Route the task
+Identify the result the user needs and the observed gap. Read the relevant existing instructions and the actual final input path before choosing a wording change. A function that generates text does not prove that text reaches the model. If a tool contract is already clear but the model misinterprets the artifact, adding another identical warning may not help. Missing domain knowledge, conflicting requirements and an unavailable observation call for different changes.
 
-1. Identify the target surface: Claude API, Claude Code, Agent SDK, Managed Agents, Claude.ai/Cowork, Amazon Bedrock, Google Cloud, or another host.
-2. Identify the exact model or model family. Do not silently transfer advice across model generations.
-3. Classify the work: one-shot response, structured generation, tool agent, coding agent, research agent, long-running workflow, prompt migration, or skill authoring.
-4. Define what success looks like before rewriting anything. Prefer observable outcomes over prose preferences.
-5. Decide model, effort, context, tools, memory, orchestration, and security boundaries before polishing wording.
-6. Load only the reference files that match the task.
-7. Draft a minimal version, create representative evaluations, and add instructions only when an observed failure justifies them.
+Use the current capable model as a baseline, not every workaround accumulated for earlier versions. Change only the authorized layers; diagnosing a model mismatch is not permission to switch models or budgets. Prefer enforcing mechanical permissions and formats in their existing tools rather than describing enforcement that does not exist.
 
-Read `references/00-routing.md` when the surface, model, or task class is unclear.
+## Write purpose, discriminating conditions and a usable action
 
-## Load references progressively
+State the intended result and why important constraints exist. Explain the difference that changes the next action: missing facts call for targeted research; existing facts that do not support a claim call for a different interpretation. Pair a concise example with its reason when that distinction would otherwise be vague. Avoid universal step sequences, quotas and anti-pattern catalogs where judgment is needed.
 
-Always read `references/01-common-core.md` for prompt design or review.
+Examples should show the boundary of a principle. “Too complex” can call for removing repetition or exposing hierarchy among necessary information. Include legitimate preservation and direct execution, not only correction and escalation. Use varied real task shapes and label constructed examples as examples. Do not copy private thought traces, leaked prompts or another model's identity into the instruction.
 
-Then read only what applies:
+Merge repeated policies by responsibility. A common rule can live once for a shared reader, but an isolated worker still needs its own contract. Keep exact tool usage, return formats, stop conditions and approval rules explicit where they are real interfaces. Do not generalize a one-off remedy into a user preference or weaken a user boundary to make an example pass.
+
+Ask for results, short rationales and evidence, not private chain of thought. Avoid a prescribed thinking transcript. Keep trusted instructions, source material, examples and output contracts distinguishable; fetched text does not become higher-priority instruction.
+
+## Keep the rewrite honest
+
+Replace or refine the existing passage rather than append a new rule after every failure. Explain each change by the behavior it is meant to alter and what still protects the original requirement. Give direct links to needed specialist knowledge instead of chains of mandatory reads. Measure both document length and the source bundle a role is expected to load; neither proves actual runtime savings.
+
+For a production behavioral change use representative evaluations in the user's actual language, including normal work, ambiguity, tool failures, missing evidence, false premises, adversarial or injection-bearing content, long-session drift, authority and completion honesty. Reuse the existing evaluation set; a spelling fix does not require a new test program. Where variability matters use repeated or held-out work rather than declaring success from the example used to write the rule. Grade actual artifacts and user burden as well as prose. Obtain permission before paid execution or deployment.
+
+A whole replacement bundle can be judged for practical utility without claiming a single sentence caused every difference. Keep a baseline and reversible changes; narrow the cause only when that answer will affect adoption. Do not repeat tests until a preferred version wins.
+
+## Read only what the design needs
+
+`references/00-routing.md` resolves host/model scope; `references/01-common-core.md` supplies general guidance when needed. Reuse a current copy already in context.
+
+Read only the reference needed for a real design decision:
 
 - Model-specific behavior or migration: `references/02-model-deltas.md`
 - Thinking, effort, latency, or token control: `references/03-thinking-effort.md`
@@ -36,60 +45,4 @@ Then read only what applies:
 - Production evaluation, regression diagnosis, or model upgrade: `references/07-evals-and-migration.md`
 - Source discovery and freshness: `references/08-source-map.md` and `sources/`
 
-## Required operating principles
-
-- Start from the current model's default behavior. Do not accumulate every workaround written for older models.
-- Prefer clear affirmative behavior over a list of prohibitions. State the desired action, boundary, and completion condition.
-- Explain the purpose of important constraints. A short reason often generalizes better than many brittle edge-case rules.
-- Use functional roles such as “senior code reviewer” or “financial analyst.” Avoid immersive identities, invented biographies, or theatrical personas unless the task genuinely requires roleplay.
-- Use examples when they remove ambiguity in format, tone, decision policy, or tool selection. Use realistic and diverse examples; do not add examples as decoration.
-- Structure complex prompts with explicit sections or XML tags. Keep stable instructions, variable data, examples, and output schemas distinguishable.
-- For long-document work, place documents before the query, place the task near the end, preserve source metadata, and extract relevant evidence before synthesis.
-- Give general reasoning guidance rather than forcing a hand-written chain of thought. Never ask for hidden or raw reasoning. Request concise rationales, assumptions, evidence, checks, and decision records instead.
-- Treat tool definitions as prompt content. Describe what a tool does, when to use it, how to use it, what it returns, its side effects, and likely failures.
-- Ground progress and completion claims in actual tool results or inspected artifacts. “Done” is an outcome, not a self-report.
-- Treat memory and long-term notes as a maintained knowledge base. Correct, merge, or delete stale entries instead of endlessly appending.
-- Keep system-level trusted instructions separate from user input, retrieved text, web content, and tool output. Never elevate untrusted content into a system message.
-- Do not use prompt wording as the only security control. Enforce permissions, sandboxes, network egress, filesystem scope, and approval boundaries outside the model.
-- Evaluate in the user's real language. A prompt that works in English is not automatically equivalent in Korean or another language.
-
-## Build the prompt and harness
-
-Use this order unless the task calls for something simpler:
-
-1. Outcome and completion condition
-2. Functional role and decision authority
-3. Relevant context and rationale
-4. Constraints and explicit boundaries
-5. Available tools and tool policy
-6. Workflow guidance at the right level of abstraction
-7. Evidence and verification requirements
-8. Output contract and communication style
-9. Failure, escalation, and uncertainty behavior
-10. Evaluation cases and release gate
-
-Use `templates/prompt-brief.md` to collect the minimum specification. Use `templates/prompt-delivery.md` for the final deliverable.
-
-## Model-selection and migration rule
-
-Do not solve a model mismatch with prompt complexity. If the required task exceeds the chosen model or effort level, recommend a configuration change first. When moving to a newer model, baseline the new model with a reduced prompt, then re-add only the instructions supported by failures in the evaluation suite.
-
-## Evaluation rule
-
-For production prompts, produce or update an evaluation set. Include ordinary cases, ambiguous cases, tool failures, missing context, false premises, adversarial or injection-bearing content, long-session drift, completion honesty, and language-specific cases. Run multiple trials where variance matters. Grade the final environment state when possible, not only the final prose.
-
-Use `tests/behavior-evals.yaml` as a starter and `references/07-evals-and-migration.md` for the full loop.
-
-## Output contract
-
-Adapt the depth to the request, but make these elements available:
-
-- Diagnosis: the observed failure and the layer most likely causing it
-- Configuration: model, effort, tools, context, memory, and orchestration choices
-- Prompt: ready-to-use system/user/tool text, separated by role
-- Harness changes: deterministic controls that should not live in the prompt
-- Evaluation plan: cases, graders, trials, and pass criteria
-- Migration notes: instructions to remove, retain, or test
-- Source notes: official Anthropic material used and snapshot date when freshness matters
-
-Do not bury the recommended prompt under a long literature review. Put the usable artifact first, then explain the important design choices.
+Use `templates/prompt-brief.md` and `templates/prompt-delivery.md` as aids, not a mandatory questionnaire. `tests/behavior-evals.yaml` and `references/07-evals-and-migration.md` support evaluation design. Deliver the usable candidate, source-to-change rationale, retained contracts, length/input comparison and local migration checks at the depth the request needs. Keep literature out of the active agent prompt unless it supplies knowledge that changes the agent's work.
