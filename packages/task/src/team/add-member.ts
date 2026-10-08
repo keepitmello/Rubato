@@ -56,7 +56,7 @@ export function addTeamMember(input: AddTeamMemberInput, deps: AddTeamMemberDeps
         kind: input.kind,
         model: input.model,
         prompt: [
-          `You join team '${runtime.teamName}' after it started. Peers already working: ${liveMemberNames(runtime.members).join(", ") || "none"}.`,
+          `You join team '${runtime.teamName}' after it started. Peers already working: ${liveMemberNames(runtime).join(", ") || "none"}.`,
           "The board may already hold work and decisions; read it before you start.",
           input.prompt,
         ].join("\n\n"),
@@ -70,7 +70,7 @@ export function addTeamMember(input: AddTeamMemberInput, deps: AddTeamMemberDeps
       deny("name_taken", `The team already has or had a member named '${member.name}'. Choose another name; use team_replace_member to swap an existing member's execution.`)
     }
     const maxMembers = deps.taskSettings.team.max_members
-    if (liveMemberNames(runtime.members).length + 1 > maxMembers) {
+    if (liveMemberNames(runtime).length + 1 > maxMembers) {
       deny("bounds_exceeded", `The team already has ${maxMembers} live members (max_members). Remove one before adding another.`)
     }
     validateSenpiTeamMembers(spec, deps.memberPorts)

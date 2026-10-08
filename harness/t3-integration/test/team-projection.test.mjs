@@ -255,3 +255,48 @@ test('a finished agent revived by AgentSend is working again, and settles again'
   assert.equal(rows('task.completed').length, 2);
   assert.equal(rows('task.completed').at(-1).payload.summary, 'Second report.');
 });
+
+const joinTeam = (projection, toolName, details) => {
+  projection.project({ type: 'tool_execution_start', toolName, toolCallId: `call_${toolName}`, args: { team_run_id: 'run_team' } });
+  projection.project({ type: 'tool_execution_end', toolName, toolCallId: `call_${toolName}`, isError: false, result: { details } });
+};
+
+test('a member added after creation joins the team card, and the team waits for it', () => {
+  const { events, projection, finish, tick } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
+  finish();
+  joinTeam(projection, 'team_add_member', { kind: 'added', team_run_id: 'run_team',
+    member: { name: 'reviewer', task_id: 'st_reviewer', role: 'verifier', requested_model: 'openai-codex/gpt-6-astra', task_summary: 'Review the fix' } });
+  tick('st_reviewer', 'running');
+  for (const event of events.filter(event => event.type.startsWith('task.') && event.payload.taskId === 'st_reviewer')) {
+    assert.equal(event.payload.parentAgentId, 'call_team');
+    assert.equal(event.payload.memberName, 'reviewer');
+    assert.equal(event.payload.workflowName, 'mobile-team');
+  }
+  tick('st_owner', 'completed');
+  tick('st_verifier', 'completed');
+  assert.equal(events.some(event => event.type === 'task.completed' && event.payload.taskId === 'call_team'), false);
+  tick('st_reviewer', 'completed');
+  assert.equal(events.filter(event => event.type === 'task.completed' && event.payload.taskId === 'call_team').length, 1);
+});
+
+test('a team closed by its only failed member reopens for the replacement', () => {
+  const { events, projection, finish, tick } = setup({ inline_spec: { name: 'solo', members: [] } });
+  finish({ kind: 'created', team_name: 'solo', team_run_id: 'run_team', members: [members[0]] });
+  tick('st_owner', 'failed');
+  assert.equal(events.find(event => event.type === 'task.completed' && event.payload.taskId === 'call_team').payload.status, 'failed');
+  joinTeam(projection, 'team_replace_member', { kind: 'replaced', team_run_id: 'run_team', previous_task_id: 'st_owner',
+    member: { name: 'owner', task_id: 'st_owner2', role: 'owner', requested_model: 'anthropic/claude-opus-5-5' } });
+  const reopened = events.filter(event => event.type === 'task.progress' && event.payload.taskId === 'call_team').at(-1);
+  assert.equal(reopened.payload.status, 'running');
+  assert.equal(events.find(event => event.type === 'task.started' && event.payload.taskId === 'st_owner2').payload.parentAgentId, 'call_team');
+  tick('st_owner', 'failed');
+  assert.equal(events.find(event => event.type === 'task.started' && event.payload.taskId === 'st_owner').payload.parentAgentId, 'call_team');
+  tick('st_owner2', 'completed');
+  assert.equal(events.filter(event => event.type === 'task.completed' && event.payload.taskId === 'call_team').at(-1).payload.status, 'completed');
+});
+
+test('a join for a team this bridge never linked changes nothing', () => {
+  const { events, projection } = setup({ inline_spec: { name: 'x', members: [] } });
+  joinTeam(projection, 'team_add_member', { kind: 'added', team_run_id: 'run_other', member: { name: 'a', task_id: 'st_a' } });
+  assert.equal(events.some(event => event.type.startsWith('task.') && event.payload.taskId === 'st_a'), false);
+});

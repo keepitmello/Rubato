@@ -194,13 +194,15 @@ test("an unmapped roster member cannot disappear from all-members completion", a
   expect(await listUnreadMessages(h.teamRunId, "lead", h.config)).toEqual([])
 })
 
-test("a removed member's stopped task does not hold the batch", async () => {
+test("a removed member's stopped task does not hold the batch, whatever status approval left it", async () => {
   const h = await fixture()
-  h.store.mutate(h.map.verifier, (record) => ({ ...record, status: "cancelled" }))
-  expect((await h.makeWake().evaluate())[0]).toEqual({ kind: "wait", reason: "member-unfinished:verifier:cancelled" })
+  h.store.mutate(h.map.verifier, (record) => ({ ...record, status: "error" }))
+  expect((await h.makeWake().evaluate())[0]).toEqual({ kind: "wait", reason: "member-unfinished:verifier:error" })
+  // Approving an errored member keeps its status; only the approved request records the removal.
   await transitionRuntimeState(h.teamRunId, (state) => ({
     ...state,
-    members: state.members.map((member) => member.name === "verifier" ? { ...member, status: "shutdown_approved" } : member),
+    members: state.members.map((member) => member.name === "verifier" ? { ...member, status: "errored" } : member),
+    shutdownRequests: [{ memberId: "verifier", requesterName: "lead", requestedAt: 1, approvedAt: 2 }],
   }), h.config)
   expect((await h.makeWake().evaluate())[0]).toEqual({ kind: "delivered", teamRunId: h.teamRunId, members: ["owner"] })
 })

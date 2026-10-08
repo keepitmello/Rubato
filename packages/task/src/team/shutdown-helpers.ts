@@ -19,9 +19,21 @@ export function findRuntimeMember(state: RuntimeState, memberName: string): Runt
   return state.members.find((candidate) => candidate.name === memberName)
 }
 
-/** Members still on the team: a removed (shutdown-approved) member keeps its record but is gone. */
-export function liveMemberNames(members: readonly Pick<RuntimeStateMember, "name" | "status">[]): string[] {
-  return members.filter((member) => member.status !== "shutdown_approved").map((member) => member.name)
+type RosterState = Pick<RuntimeState, "members" | "shutdownRequests">
+
+/**
+ * A removed member keeps its record, so removal is read from the approved shutdown request: approval
+ * leaves a completed/errored member's status as it was, and a status refresh rewrites it from the
+ * task record. An approved request is never reopened.
+ */
+export function isMemberRemoved(state: RosterState, memberName: string): boolean {
+  return state.members.some((member) => member.name === memberName && member.status === "shutdown_approved")
+    || state.shutdownRequests.some((request) => request.memberId === memberName && request.approvedAt !== undefined)
+}
+
+/** Members still on the team. */
+export function liveMemberNames(state: RosterState): string[] {
+  return state.members.filter((member) => !isMemberRemoved(state, member.name)).map((member) => member.name)
 }
 
 /**

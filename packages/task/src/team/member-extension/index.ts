@@ -201,7 +201,7 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     taskId: parsed.taskId,
     config: parsed.config,
     members: parsed.members,
-    currentMembers: async () => liveMemberNames((await loadRuntimeState(parsed.teamRunId, parsed.config)).members),
+    currentMembers: async () => liveMemberNames(await loadRuntimeState(parsed.teamRunId, parsed.config)),
     isCurrentMember,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
     onSent: () => reminder.onTeamSend(),

@@ -50,7 +50,7 @@ export function createRuntimeTeamBatchWake(deps: TeamBatchWakeDeps): TeamBatchWa
           teamName: team.teamName,
           // A missing map entry is unfinished, not permission to shrink "every member". A removed
           // (shutdown-approved) member is off the roster: its stopped task must not hold the batch.
-          members: liveMemberNames(state.members).map((name) => ({ name, taskId: map[name] })),
+          members: liveMemberNames(state).map((name) => ({ name, taskId: map[name] })),
         })
       }
       return resolved

@@ -207,7 +207,7 @@ export function createTeamService(deps: TeamServiceDeps): TeamToolsService {
         teamRunId,
         stateDir,
         config,
-        activeMembers: liveMemberNames(runtimeState.members),
+        activeMembers: liveMemberNames(runtimeState),
         appendEvent: appendTaskEvent,
         inspectMember: (taskId) => {
           const record = deps.manager.get(taskId)

@@ -11,6 +11,7 @@ import type { TeamMemberExtensionConfig } from "./runtime-types"
 import { toTeamCoreConfig } from "./runtime-config"
 import { resolveTeamRuntimeDirs, teamStorageBaseDir } from "./storage"
 import { parseTeamMemberTaskIdentity } from "./liveness-ownership"
+import { isMemberRemoved } from "./shutdown-helpers"
 
 type TeamMemberTaskIdentity = {
   readonly teamRunId: string
@@ -63,7 +64,7 @@ export function createTeamMemberRespawnLaunchResolver(
       throw new TeamMemberRespawnLaunchError("runtime_inactive", identity)
     }
     const member = runtime.members.find((entry) => entry.name === identity.memberName)
-    if (member === undefined || member.status === "shutdown_approved") {
+    if (member === undefined || isMemberRemoved(runtime, identity.memberName)) {
       throw new TeamMemberRespawnLaunchError("member_missing", identity)
     }
     const map = await readMemberTaskMap(resolveTeamRuntimeDirs(options.stateDir, identity.teamRunId).runtimeDir)

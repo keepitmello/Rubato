@@ -68,7 +68,8 @@ export async function refreshTeamMemberStatuses(
         const sessionId = deps.manager.getResidentHandle(taskId)?.sessionId ?? record.child_session_id ?? member.sessionId
         return {
           ...member,
-          status: projectMemberStatus(record.status),
+          // A removed member stays removed; its stopped task must not read as errored or completed.
+          status: member.status === "shutdown_approved" ? member.status : projectMemberStatus(record.status),
           ...(sessionId !== undefined ? { sessionId } : {}),
         }
       }),

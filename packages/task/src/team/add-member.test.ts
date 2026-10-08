@@ -10,7 +10,10 @@ import { createMemberSelfPoller } from "./member-extension/self-poller"
 import { runMemberTaskSend } from "./member-extension/tools"
 import { createTeamMemberRespawnLaunchResolver } from "./member-respawn"
 import { normalizeSenpiTeamSpec } from "./normalize"
+import { replaceTeamMember } from "./replace-member"
 import { createTeam, deleteTeam } from "./runtime"
+import { refreshTeamMemberStatuses } from "./member-projection"
+import { approveShutdown, requestShutdown } from "./shutdown"
 import { toTeamCoreConfig } from "./runtime-config"
 import { liveMemberNames } from "./shutdown-helpers"
 import { resolveTeamRuntimeDirs, teamStorageBaseDir } from "./storage"
@@ -66,7 +69,7 @@ function endpoint(h: Harness, name: string, taskId: string, spawnRoster: readonl
     send: (to: string, message: string) => runMemberTaskSend({
       teamRunId: h.teamRunId, memberName: name, taskId, config: h.config,
       members: spawnRoster, isCurrentMember,
-      currentMembers: async () => liveMemberNames((await loadRuntimeState(h.teamRunId, h.config)).members),
+      currentMembers: async () => liveMemberNames(await loadRuntimeState(h.teamRunId, h.config)),
     }, { to, message }),
   }
 }
@@ -138,5 +141,48 @@ describe("adding a member to a running team", () => {
     expect(h.manager.cancelled).toHaveLength(1)
     expect(h.manager.cancelled[0]?.taskId).not.toBe(h.created.memberTaskIds.owner)
     expect((h.deps.destruction as FakeDestruction).calls.map((call) => call.taskId)).toEqual([h.manager.cancelled[0]!.taskId])
+  })
+
+  test("a member removed after it finished stays removed through a status refresh", async () => {
+    const h = await harness({ maxMembers: 2 })
+    const added = await addTeamMember(h.input, h.deps)
+    h.manager.setStatus(added.member.taskId, "completed")
+    await refreshTeamMemberStatuses(h.teamRunId, { manager: h.manager, config: h.config, runtimeDir: h.runtimeDir })
+    const shutdownDeps = { config: h.config, sendMessage: async () => {}, cancelMemberTask: async () => {} }
+    await requestShutdown(h.teamRunId, "verifier", shutdownDeps)
+    const approved = await approveShutdown(h.teamRunId, "verifier", shutdownDeps)
+    // Approval keeps a finished member's status; removal is the approved request.
+    expect(approved.members.find((member) => member.name === "verifier")?.status).toBe("completed")
+    const refreshed = await refreshTeamMemberStatuses(h.teamRunId, { manager: h.manager, config: h.config, runtimeDir: h.runtimeDir })
+    expect(liveMemberNames(refreshed)).toEqual(["owner"])
+
+    const owner = endpoint(h, "owner", h.created.memberTaskIds.owner!, ["owner", "verifier"])
+    await expect(owner.send("verifier", "still there?")).rejects.toThrow("Unknown team recipient: verifier")
+    const resolver = createTeamMemberRespawnLaunchResolver({ ...h.deps, memberExtension: h.deps.memberExtension! })
+    await expect(resolver(h.manager.get(added.member.taskId)!)).rejects.toThrow("member_missing")
+    expect((await addTeamMember({ ...h.input, name: "successor" }, h.deps)).member.name).toBe("successor")
+  })
+
+  test("a loose name is normalized to one the member process carries; the lead's name is refused", async () => {
+    const h = await harness()
+    const before = h.manager.started.length
+    await expect(addTeamMember({ ...h.input, name: "lead" }, h.deps)).rejects.toMatchObject({ code: "RESERVED_LEAD_MEMBER" })
+    expect(h.manager.started).toHaveLength(before)
+    const added = await addTeamMember({ ...h.input, name: "Second Reviewer" }, h.deps)
+    expect(added.member.name).toBe("second-reviewer")
+    expect(h.manager.started.at(-1)?.memberEnv?.RUBATO_TASK_MEMBER).toBe(`${h.teamRunId}::second-reviewer`)
+    await expect(addTeamMember({ ...h.input, name: "SECOND reviewer" }, h.deps)).rejects.toMatchObject({ code: "name_taken" })
+  })
+
+  test("an added member that fails is recovered at the same address", async () => {
+    const h = await harness()
+    const added = await addTeamMember(h.input, h.deps)
+    h.manager.setStatus(added.member.taskId, "error")
+    const replaced = await replaceTeamMember({
+      teamRunId: h.teamRunId, member: "verifier", expectedTaskId: added.member.taskId, model: MODEL,
+      prompt: "Recheck revision B.",
+    }, h.deps)
+    expect((await readMemberTaskMap(h.runtimeDir)).verifier).toBe(replaced.member.taskId)
+    expect(h.manager.started.at(-1)?.memberEnv?.RUBATO_PI_ROLE).toBe("verifier")
   })
 })

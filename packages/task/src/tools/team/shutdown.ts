@@ -76,7 +76,7 @@ export function createTeamShutdownRequestTool(deps: TeamToolDeps): ToolDefinitio
     name: "team_shutdown_request",
     label: "Team Shutdown Request",
     description:
-      "Remove a member from a team, step 1 of 2: notify the member that it is leaving. Then team_approve_shutdown stops it and takes it off the roster. Before removing, have it persist its handoff and close or reassign its open board items. Lead-only team protocol; distinct from AgentCancel, which stops a spawned Agent session.",
+      "Remove a member from a team, step 1 of 2: notify the member that it is leaving. Then team_approve_shutdown stops it and takes it off the roster. Before removing, have it persist its handoff, and complete or delete its open board items (there is no reassignment; create fresh items for a successor). Lead-only team protocol; distinct from AgentCancel, which stops a spawned Agent session.",
     parameters: TeamShutdownRequestParams,
     execute: (_toolCallId: string, params: TeamShutdownRequestInput) => runTeamShutdownRequest(deps.service, params),
   }
