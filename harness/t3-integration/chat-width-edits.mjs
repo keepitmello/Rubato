@@ -1,17 +1,25 @@
 // Chat width as a percentage. T3 offers three presets (Comfortable / Wide / Full)
 // whose pixel caps the settings screen never states, so nobody can tell what
-// "Wide" means or aim between two of them. The setting is now the share of the
-// window the messages and the composer may fill, 40-100%, set with a slider
-// like Glass opacity. A 24rem floor keeps a small window readable at the low end.
+// "Wide" means or aim between two of them. The setting is a percentage, 40-100%,
+// set with a slider like Glass opacity.
+//
+// The width grows with the window but not as a plain share of it:
+// width = percent x (0.6 x window width + 1024px). A plain share looked right on
+// a 4K monitor (window 2560px, 50% = 1280px) and narrow on a laptop (window
+// 1472px, 50% = 736px, about 200px empty on each side of an 1150px chat column),
+// because a short line reads as narrow however much of the column it fills. The
+// fixed part gives a small window a larger share: at 50% the laptop gets 954px
+// and the 4K monitor still 1280px. At 100% the width passes the chat column on
+// both, so the messages fill it. A fixed pixel cap was tried and rejected: the
+// width has to grow with the monitor.
 //
 // The old `chatWidth` preset is gone. A saved "wide" or "full" is ignored on
-// load and the width falls back to the 65% default.
+// load and the width falls back to the 50% default.
 //
-// The width is a share of the window (vw), not of the chat column. Opening or
-// resizing the right panel or the sidebar narrows the column; a share of the
-// column made the messages shrink with it while empty margins stayed, and the
-// width only stays put if its base does not move. When the column gets narrower
-// than the width, the column bounds it, as it did the old fixed 48rem.
+// The base is the window (vw), not the chat column. Opening or resizing the right
+// panel or the sidebar narrows the column; a share of the column made the
+// messages shrink with it while empty margins stayed. When the column gets
+// narrower than the width, the column bounds it.
 // The value holds no `%` on purpose: the composer stack, shell and form and the
 // timeline rows and separator all cap at it one inside the other, and a `%` (or a
 // `cqi` inside the shell, itself a container) resolves at each of them again.
@@ -134,10 +142,10 @@ export const chatWidthEdits = {
     [
       '/** Maximum width of the chat timeline and composer on wide screens. */\nexport const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);\nexport type ChatWidth = typeof ChatWidth.Type;\n',
       [
-        '/** Share of the window width the timeline and composer may fill, in percent. */',
+        '/** Chat width in percent; it scales with the window (index.css --chat-max-width). */',
         'export const MIN_CHAT_WIDTH_PERCENT = 40;',
         'export const MAX_CHAT_WIDTH_PERCENT = 100;',
-        'export const DEFAULT_CHAT_WIDTH_PERCENT = 65;',
+        'export const DEFAULT_CHAT_WIDTH_PERCENT = 50;',
         'export const ChatWidthPercent = Schema.Int.check(',
         '  Schema.isBetween({ minimum: MIN_CHAT_WIDTH_PERCENT, maximum: MAX_CHAT_WIDTH_PERCENT }),',
         ');',
@@ -178,12 +186,14 @@ export const chatWidthEdits = {
       ].join('\n'),
       [
         '/* Chat timeline and composer column width. --chat-width-percent comes from the',
-        '   Chat width setting (__root.tsx) and is a share of the window, so side panels',
-        '   and the sidebar leave it alone until the chat column is narrower. No % here:',
+        '   Chat width setting (__root.tsx). The width grows with the window, and the',
+        '   fixed part gives a small window a larger share: at 50% a 1472px window gets',
+        '   954px and a 2560px one 1280px (chat-width-edits.mjs). Side panels and the',
+        '   sidebar leave it alone until the chat column is narrower. No % here:',
         '   nested boxes cap at this value and a % would resolve at each of them. */',
         ':root {',
-        '  --chat-width-percent: 65;',
-        '  --chat-max-width: max(24rem, calc(var(--chat-width-percent) * 1vw));',
+        '  --chat-width-percent: 50;',
+        '  --chat-max-width: calc(var(--chat-width-percent) * (0.6vw + 10.24px));',
         '}',
         '',
       ].join('\n'),
@@ -245,6 +255,6 @@ export const chatWidthEdits = {
     ],
     [ROW_OLD, ROW_NEW, 'replace'],
     ['  description="Set how wide messages and the composer can grow on large screens."\n',
-      '  description="Set how much of the window width messages and the composer can fill."\n', 'replace'],
+      '  description="Set how wide messages and the composer grow. The width scales with the window; smaller windows get a larger share."\n', 'replace'],
   ],
 };
