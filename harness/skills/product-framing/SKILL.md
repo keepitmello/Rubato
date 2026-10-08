@@ -1,171 +1,123 @@
 ---
 name: product-framing
-description: "Pre-launch checklist before hackathons, contests, or new products: users, current alternatives, comparative value, outcome and experiment scope. Idea validation before PRD/implementation, frame freeze/unfreeze, value-drift checks mid-build."
+description: "Decide the next investment or build scope for a product, hackathon or contest entry: user, current alternative, value, experiment and approval. Owns product kickoff, value drift and changes to a frozen frame. Does not turn open discussion or everyday choices into a product checklist."
+metadata:
+  experiment: co-thinking-v0.3
 ---
 
-# Framing — 착수 전 가치 점검표와 프레임 동결
+# Decide the product's next investment and approval scope
 
-구현을 시작하기 전에 **누가, 어떤 순간에, 지금은 뭘로 때우고 있고, 이게 그보다 왜 나으며, 그래서 뭐가 달라지는가**를 잠정 확정하고, 구현에 들어간 뒤 그 프레임이 조용히 흐려지는 것을 막는 워크플로우.
+Work out together who is doing what at which moment, what should change, and how far the next step will investigate or build.
+The checklist does not certify that the product will succeed. It is the material for approving the next learning investment or a defined build scope.
+Do not bend results to prove the current plan.
 
-운용 원칙 하나가 전체를 지배한다:
+Use this skill when the product is about to commit real time, resources or outside promises to its next step.
+If the conversation is still exploring questions and experiences, keep it a conversation; this skill is not needed yet.
+Product work does not mean rewriting every field from scratch each time. Start from the active documents and what actually changed.
 
-> **점검표가 통과시키는 것은 제품이 아니라 다음 학습 투자다.**
-> 구현은 프레임을 증명하는 행위가 아니라, 프레임을 반증할 기회를 만드는 행위다.
+## Help with product judgment while keeping approval authority where it is
 
-## 언제 쓰나
+Keep the user's original idea and the owner's candidates distinct, and compare them by what a real person can do differently at a given moment. An empty input field getting filled is a change in behavior. Being able to explain a new judgment from what was already written is a candidate for use value. Do not count one as proof of the other.
 
-- 해커톤·공모전 아이디어를 잡을 때
-- 새 프로젝트·새 기능 착수 전
-- PRD를 쓰기 전. PRD는 이 점검표의 하류 산출물이다 — 프레임이 틀린 채 PRD를 잘 쓰면 잘못된 제품을 더 정확히 정의하게 될 뿐이다
-- 구현 중에 "이걸 왜 만들더라"가 흐려졌을 때 → 바로 5단계(동결 확인)로 간다
+The model investigates checkable facts, points out contradictions and makes reasoned recommendations. The user decides personal experience, values and material commitments. The user being convinced does not prove an outside fact, and the model writing something does not make it E0 evidence. Keep the source of a proposal, its evidence grade, its adoption and permission to execute separate.
 
-결정 뒤에는 주의가 실행으로 좁아지고 초기 코드·화면이 사고를 고정하며, 기능 완성이 사용자 변화라는 목표를 대신한다. 의지보다 구조의 문제이므로 **탐색과 구현 사이의 명시적 절차**로 막는다. 자세한 배경은 `references/05-why-this-shape.md`를 본다.
+When other candidates differ only in name and share the same premise, use `metaframe`; when the product concept itself needs fresh research, use `product-reframing`. Keeping the current direction and doing nothing are also comparable options.
 
-## 세션 진행 방식 — 티키타카 프로토콜
+Check a new objection against the facts; do not repeat the same objection without new evidence. Record remaining disagreement separately from what is currently adopted. Do not waive the approval and protection conditions below just to close the conversation.
 
-사용자가 아이디어만 들고 이 스킬을 호출하면, 점검표를 대신 써주는 것도 받아쓰는 것도 아니라 **주고받으며 함께 다듬는다**. 사용자가 다 정하면 모델의 관점이 죽고, 모델이 다 정하면 사용자의 사실과 가치판단이 빠진다.
+## Decide the scope of the next investment
 
-**결정권 분배 — 종류로 나눈다:**
-- 사용자만 확정: 사실(실제 관찰·경험·행동), 가치판단(이 문제가 중요한가, 위험을 감수할 만한가), 최종 프레임 선택
-- 모델 담당: 후보·선택지 생성, 모순·모호함·누락 지적, 구체화 압박, 각 후보가 틀렸다면 어떤 신호가 보일지 제시
+Look first at which risks and commitments apply. Do not downgrade because of the timeline or because the user calls it an "experiment."
 
-**모델의 역할 팔레트 — 한 번에 하나, 바꿀 때 선언한다:**
-
-| 역할 | 하는 일 | 언제 |
+| Tier | Default condition | Allowed outcome |
 |---|---|---|
-| **발산** | 사용자의 설익은 생각을 가장 강한 버전으로 키운다 — 후보 확장, 더 좋은 메커니즘 제안, "이 방향이 맞다면 최선의 형태는 이것" | 탐색·후보 만들기. 이 모드에서는 공격 금지 |
-| **스파링** | 모호함·모순을 되받아친다 (아래 턴 구조, 반론 2회 상한) | 필드 채우기 |
-| **레드팀** | 완성된 초안을 심사자·경쟁자·회의적 구매자 입장에서 공격 — 가장 약한 필드 하나, 가장 위험한 미확인 가정 하나 | 초안 완성 후 |
-| **블라인드 리뷰** | 심사자·사용자가 문서만 잠깐 보고 누가·뭘·왜·기존 대비 뭐가 나은지를 복원할 수 있는지 재연 | 동결 직전 |
-| **기록자** | 대화를 점검표 문서에 정직하게 반영 — 증거 등급 유지, `[모델 이견]` 기록 | 상시 |
+| PROBE | Disposable internal experiment with no outside loss and no real personal data, payments or operating commitments | PASS-PROBE allows only that experiment |
+| STANDARD | Outside evaluation, parallel building, substantial build investment, etc. | PASS-BUILD allows the defined build scope |
+| COMMITMENT | Includes any of: real personal or sensitive data, paying customers, automated decisions that can cause harm, contracts, ongoing operation | Requires per-risk approval and the production appendix |
 
-전환 규칙:
-- 역할 선언은 매 턴이 아니라 **단계가 바뀔 때만** 한다. 역할은 건너뛰거나 반복할 수 있다 (발산 → 스파링 → 새 정보 발견 → 짧은 발산 → 스파링). 연습은 기록자와 스파링만으로 끝내도 된다
-- 발산 중에는 선호·매력·실현 가능성 **평가를 보류**하고 후보를 즉시 탈락시키지 않는다. 단 사실과의 명백한 충돌, 안전·법무·윤리 위험, 사용자 제약 위반, 후보들이 구조적으로 동일하다는 지적은 어느 역할에서든 즉시 표시한다
-- 기본 순서는 탐색=발산 → 필드 채우기=스파링 → 초안 완성=레드팀 → 동결 직전=블라인드 리뷰다. 단 **Pass 1·2에서는 기록자만 허용한다**. 발산은 사용자 원안(HUMAN_SEED) 보존을 마친 Pass 3부터 시작한다. 사용자는 언제든 역할을 직접 호출할 수 있다("발산해줘", "레드팀 해줘") — 원안 보존 전의 발산 요청만은 보존부터 마치고 응한다
-- **레드팀의 독립성은 운용 단계가 정한다.** 무대 이상은 초안 작성에 참여하지 않은 새 세션이 블라인드로 수행해야 한다 — 같이 만든 세션은 자기가 다듬은 프레임에 애착이 생겨 공격이 무뎌진다. 다른 모델 계열이면 더 좋지만 필수는 아니다. 독립 세션을 쓸 수 없으면 사용자 예외 승인을 §8에 남기거나 보류한다. 연습은 같은 세션이 역할 전환을 선언해도 된다
-- 레드팀과 블라인드 리뷰에는 **점검표 문서 전체와 인용된 증거 묶음**(관찰 기록·로그·리뷰 발췌)을 준다. 대화 맥락은 가린다 — 문서에 제약 사항(§7)이 있어 검토자가 불가능했던 일을 안 한 일로 오판하지 않는다. 레드팀 출력은 치명적 결함 / 가장 강한 대안 프레임 / 근거 없는 인과 연결 / 판정을 바꿀 증거 / 가장 거부할 청중 / 권고 판정. 블라인드 리뷰 출력은 문서만으로 복원한 사용자·문제·대안·차별점·주최사 연결이다 — 복원이 안 되는 부분이 곧 약한 필드다
+Exact applicability conditions and document state transitions follow `references/02-tiers-and-verdicts.md`.
+Do not average a high-risk condition with low-risk items. Do not route product release or execution approval through an experiment approval.
 
-**진행 — 자유 대화 후 구조화하는 하이브리드 (필드 순차 채우기가 아니다).** 아래 4 Pass가 대화의 진행 축이고, 뒤의 워크플로우 1~6은 점검표 전후를 포함한 전체 생명주기다:
+## Distinguish experiments that discover criteria from experiments that confirm a stated claim
 
-1. **Pass 1 — 자유 발화와 사용자 원안 동결.** 사용자의 아이디어·최근 실제 사례를 **사용자 원안(HUMAN_SEED)** 으로 원문 그대로 보존한다(없으면 `NO_HUMAN_SEED`). 이 단계에서는 기록만 해 탐색이 AI의 예시로 좁아지는 것을 막는다. 원안 보존 직후 운용 단계(연습/무대/실전)를 잠정 정한다 — 이후의 위임·리뷰 규칙이 단계에 따라 갈린다(조건은 워크플로우 2단계)
-2. **Pass 2 — 기록자 매핑.** 대화를 8필드에 임시 매핑하고 각 필드를 FILLED / PARTIAL / CONTRADICTORY / MISSING으로 표시한다
-3. **Pass 3 — 빈 곳·모순만 스파링.** 의존 순서(사용자·압력 → 대안·전환 비용 → 아웃컴 → 비교 가치 → 필요하면 1로 돌아가 사용자군 재조정 → 도입 경로 → 가정·실험 → 스코프 → 선택)로 다듬되, **뒤에서 앞으로 되돌아가는 것을 허용**한다. 모든 필드는 종합 전까지 DRAFT다. 후보 제시 규칙:
-   - 사용자 원안이 있으면 그것을 강화한 후보 + 구조적으로 다른 후보 + 반대 방향 후보로 흩어서 낸다. 표현만 다른 세 후보는 하나로 합치고, "셋 다 아님 / 현 상태 유지"도 선택지로 둔다. 연습은 메인 세션이 인라인으로 낸다. 무대 이상은 원안+사실 패킷을 교차 모델 세션들에 병렬로 주고 서로의 답을 못 보게 한 뒤 메인이 겹치는 후보를 쳐내고 합친다 — 같은 모델이 낸 "다른 안"은 같은 사고의 변주인 경우가 많다
-   - 모델이 쓴 것은 전부 `AI_PROPOSED` + E0이다. 사용자가 손대기 전까지 미작성으로 보고, 최종 문서에 제안 출처 토큰을 남긴다
-   - **반론 예산**: 같은 지점에 새 근거 없는 반복 반론은 2회까지 — 이 수는 실증 최적값이 아니라 무한 논쟁 방지용 대화 예산이다. 사용자가 새 증거를 내면 카운트가 리셋된다. 상한 도달은 해소가 아니다 — 사용자 결정으로 적되 `[모델 이견]` + UNRESOLVED_RISK를 남긴다. 안전·법무·개인정보·중대한 금전 위험은 상한으로 닫지 않는다(보류 또는 사람 판단 필요). **결격 사유는 면제되지 않는다** — 유지된 답이 결격 사유라면 판정은 실패이고, 유일한 전진 경로는 그 항목을 가장 위험한 가정으로 옮긴 연습 재분류다. 단 연습 재분류는 그 실험이 실제로 연습의 위험 조건(폐기 가능, 데이터·피해 없음)을 충족할 때만 가능하다
-4. **Pass 4 — 종합.** 한 문단으로 연결하지 못하면 동결하지 않는다. 무대 이상: "누가 → 어떤 순간에 → 지금 뭘 쓰며 → 어디서 깨지고 → 우리는 뭘 다르게 해 → 어떤 아웃컴을 만들며 → 어떤 도입 경로로 채택되고 → 뭘 먼저 검증하는가". 연습은 §4·5를 생략하므로 "누가 → 어떤 순간에 → 지금 뭘 쓰며 → 어떤 아웃컴을 노리고 → 어떤 가정을 어떤 실험으로 → 어디까지만(스코프·상한)"이면 된다
+Record the experiment kind as `validation` or `discovery` in the existing checklist §6 field `experiment_kind`.
+This does not create a new approval tier or document state.
 
-**수렴:**
-- **연습 빠른 경로**: 필수 필드 + 결격 사유 검사 + 사용자 승인이면 실험 승인(PASS-PROBE). 레드팀·블라인드 리뷰·별도 `FRAME_LOCK`은 생략할 수 있으며 점검표의 실험 계약과 상한이 동결 역할을 한다
-- 무대 이상: 독립 레드팀 1회와 블라인드 리뷰 1회를 거치고, 지적별 수용·기각을 §8에 남긴다
-- 결격 사유 검사와 린터 판정을 보여준다. 연습에는 아래 축소판을 적용한다
-- 되돌리기 쉬운 스캐폴딩(프로젝트 뼈대, 타입, 합성 데이터 준비)은 동결 전에도 허용한다. 아웃컴·완료 조건·사용자 경험에 종속되는 구현 계획과 위임은 사용자가 구현 승인(PASS-BUILD)하고 `FRAME_LOCK`을 발행한 뒤 시작한다
+`validation` fixes the claim under judgment, competing explanations and PASS/FAIL criteria in advance.
+Do not change the criteria after seeing results to rewrite that cycle as a success.
 
-**역할별 위임 — 새 눈(블라인드)이 가치인 역할만 밖으로 보낸다:**
+`discovery` is for when the important judgment criteria only become known by experiencing something directly.
+Write down in advance who will experience which scene, which difference will be compared, how much will be built and what will be observed,
+what will not be touched, and the stop, time and cost conditions. Safety, data and scope conditions stay fixed.
+Mark product success criteria that are not yet known as "still forming"; do not invent numbers for them.
+Record a cycle's result as observations, newly visible differences and the next decision. Do not call finishing an exploration a product success.
+To claim an outcome later, set criteria in advance in a separate confirmation cycle and test them.
 
-사용자와의 주고받기가 본체인 역할(발산·스파링·기록자)은 메인 세션이 직접 한다. 위임하면 왕복 비용만 생기고 맥락이 죽는다. 반대로 아래는 대화 맥락을 모르는 것이 자격이므로 밖으로 보낸다. (환경에 해당 수단이 없으면 새 서브에이전트로 대체)
+For both kinds, check that the thing can actually be built or observed. Distinguish uncertainty about user value, technical feasibility,
+and problems where the feel cannot be observed, and pick tools and approach accordingly. See `references/03-cheap-tests.md`.
+`discovery` cannot waive COMMITMENT protections or STANDARD's public claims and independent review.
 
-- **후보 산출(무대 이상)** → 교차 모델 세션들에 원안+사실 패킷만 주고 병렬 블라인드로. 메인은 병합·중복 제거를 맡는다
-- **레드팀** → 다른 모델 계열 세션에 점검표 문서만 주고 블라인드로. 같은 모델의 새 세션보다 다른 계열이 다른 각도로 공격한다
-- **블라인드 리뷰** → 가벼운 서브에이전트. 문서만 주고 "사용자·문제·대안·차별점·주최사 연결을 복원하라"
-- **현재 대안 조사** → 리서치 에이전트. 필드 2를 추측(E0) 대신 실제 경쟁 서비스·리뷰·시장 흔적(E1)으로 보강
-- **동결 직전 큰 갈림길** (프레임 A vs B) → 가장 강한 외부 모델 1회 상담, 결과는 입력이지 판정이 아니다
-- **동결 후 구현** → 워커 브리프에 프레임 문서 경로를 넣어 lock을 읽고 시작하게 한다. 불변식 변경 요청은 FRAME_CONFLICT
+## Write the checklist and judge it
 
-산출물은 프로젝트 저장소의 `docs/frame/<frame_id>.md`에 둔다. 무대 이상은 점검표 전체와 `FRAME_LOCK`, 연습은 점검표만 쓴다. 시작 전 원안 원문은 `docs/frame/raw-brief-<frame_id>.md`에 그대로 동결한다. 저장소당 `ACTIVE` 동결은 하나이며, 자세한 저장·전이 규칙은 `references/04-lock-and-reopen.md`를 따른다.
+For an actual investment decision use `templates/gate.md`; for the purpose of each field use `references/01-gate-fields.md`.
+Connect the product's user and scene, the current alternative, the desired change, the uncertainty that would change the choice, and the scope.
+Leave unknown fields honestly unknown. The model may research and write what is needed;
+the user confirms their own judgment and material commitments instead of rewriting every field.
 
-동결 후 발표·영업 서사가 필요하면 `templates/pitch-brief.md`로 변환한다 — 점검표는 피치의 사실 입력값이지 피치 자체가 아니다. 피치의 각 주장은 점검표 필드·증거에 연결돼야 하고, 연결 안 되는 주장이 자꾸 필요하면 점검표가 부족하다는 신호다.
+PROBE checks §1, 2, 3, 6, 7 and the conditions for its experiment kind. What matters is that the following content exists, not the format.
 
-## 워크플로우
+- A concrete person and scene, and a current alternative or a current behavior that will actually be observed.
+- The desired change is not expressed only as code or a number of screens.
+- For a confirmation experiment: claim, competing explanation and criteria set in advance. For a discovery experiment: the exploration question, the scenes compared and the observation method.
+- Boundaries for the work and data, stop/time/cost conditions, and user approval.
 
-### 1. 후보 프레임 만들기 (탐색)
+If the user or the current behavior itself is still being found, go back to conversation and observation first. Do not judge that state as
+a failed person or a bad idea; explain that a build approval document is not needed yet.
 
-- 결정 질문을 먼저 적는다. "어떤 사용자를 위한 제품인가?"가 아니라 "A 프레임과 B 프레임 중 어느 것을 다음 실험에 채택할 것인가?" 수준으로.
-- 동시에 비교하는 후보는 **3개 이하**. 나머지는 보관함.
-- 후보들을 같은 기준으로 비교한다: 근거 강도, 문제 중요성, 현재 대안의 결함, 차별성, (해커톤이면) 주최사 적합성, 시험 가능성, 되돌릴 수 있음.
-- 추가 브레인스토밍보다 실험이 더 구별력 있는 정보를 주는 시점이 오면 닫는다.
-- 후보가 전부 비슷하거나 탐색이 수렴하지 않으면 `product-reframing` 스킬로 프레임 밖 후보를 만들어 온다. 여기의 발산 역할이 현재 결정 경계 안에서 후보를 넓히는 것이라면, reframing은 그 경계 자체를 의심하는 탈출이다.
+STANDARD keeps every field, evidence for the claims that apply, and independent review.
+Do not grant build approval when there is no concrete user and moment, the problem is written only as the absence of a solution,
+there is no current alternative or desired change, organizer dependence is named without substance, related documents contradict each other, or risks and observation methods are missing.
+COMMITMENT additionally needs the per-risk approvals in §9 and the required operation, failure and rollback items.
+`references/02-tiers-and-verdicts.md` is canonical for the detailed conditions.
 
-### 2. 운용 단계 정하기
+## Independent review and decision
 
-무게는 **기간이 아니라 되돌릴 수 없음**으로 정한다. 하루짜리라도 실제 고객 데이터와 결제가 들어가면 무겁게, 일주일짜리라도 폐기 가능한 내부 실험이면 가볍게.
+The primary owner holds the conversation with the user. Delegate reviews whose value is independence, and research that can genuinely be split off.
+STANDARD and above keep an independent red team and an independent blind review by people who did not take part in writing.
+If those are unavailable, record the user's exception approval and reason as the existing rules require, or hold. A helper switching roles
+does not count as independent review. Review findings are evidence, not a substitute for the user's strategic judgment and approval authority.
 
-| 운용 단계 | 조건 | 통과 결과 |
-|---|---|---|
-| **연습(PROBE)** | 버려도 외부 손실 없음, 데이터·결제·법무 위험 없음, 목적이 가설 하나 시험 | 실험 승인(PASS-PROBE) — 폐기 가능한 실험만 허용 |
-| **무대(STANDARD)** | 외부 평가, 여러 구현 워커 병렬, 며칠 이상 투자, 주최사 연결이 평가 대상 | 구현 승인(PASS-BUILD) — 정의된 스코프의 구현 허용 |
-| **실전(COMMITMENT)** | 유료 고객, 실제 개인정보, 자동 의사결정·피해 가능성, 계약·법무, 지속 운영 책임 중 **하나라도** | 추가 검토 필수 — `references/02-tiers-and-verdicts.md` |
+Give reviewers the original idea, the current document, the cited material, execution constraints and the experiment kind.
+Make sure a discovery experiment is not mistaken for product success validation. Conversely, do not hide missing protections under the name of discovery.
+Record acceptance or rejection of each finding with its reason in the existing §8. Do not average scores to pass a protection condition.
 
-고위험 조건 하나를 다른 낮은 조건들로 평균 내어 낮추지 않는다.
+## Build after approval, and re-judge when new experience arrives
 
-### 3. 점검표 작성
+Do not start state-changing build work before the user approves.
+Reversible preparation that was separately approved may proceed within that scope.
+PASS-PROBE applies only to the defined experiment and its limits; PASS-BUILD and FRAME_LOCK apply to their build scope.
 
-`templates/gate.md`를 채운다. 8개 필드의 번호와 단계별 필수 범위는 템플릿과 `references/01-gate-fields.md`를 따른다.
+Put the actual document at `docs/frame/<frame_id>.md` and the provided original idea at `docs/frame/raw-brief-<frame_id>.md`.
+If an authoritative file already preserves the original idea, reference it without distorting the original text.
+The short PROBE path and the conditions for skipping `FRAME_LOCK` follow the existing contract.
 
-필드별 작성 규칙과 좋은/나쁜 예는 `references/01-gate-fields.md`.
+Implementers do not make the user define the product again. `dispatching` passes fixed conditions and provisional methods separately.
+Screens and interaction feel follow the owner's actual-run verification and the user-judgment rules.
 
-### 4. 판정
+Learning inside variable elements updates the §6 cycle. Keep earlier results reachable through `prior_cycle_ref`;
+new criteria apply to future judgments and do not turn a past failure into a pass.
+When an invariant has to change, get the user's decision with `templates/reopen-request.md`.
+Do not lift a freeze on a worker's judgment or on a guess that "the user will like it."
+Exact transitions follow `references/04-lock-and-reopen.md`.
 
-1. 모든 필수 필드가 실제 텍스트로 있는지 검사
-2. 결격 사유 검사 (아래)
-3. 핵심 주장마다 증거 등급(E0–E4)과 출처 검사
-4. 사용자 → 대안 → 메커니즘 → 아웃컴 → 실험이 서로 모순 없는지 검사
-5. **사람이 중요성·위험·전략을 승인하고 서명**
+## Read material only as far as needed
 
-`gate_verdict` 토큰과 상태 전이는 `references/02-tiers-and-verdicts.md`가 정본이다. 동결된 프레임은 판정 토큰이 아니라 별도 동결 해제 결정으로 연다.
+- Reasons and examples for each field: `references/01-gate-fields.md`.
+- Tiers, verdicts, evidence grades and output contract: `references/02-tiers-and-verdicts.md`.
+- Pre-build checks and conditions per experiment kind: `references/03-cheap-tests.md`.
+- Freezing, new cycles and changes to a freeze: `references/04-lock-and-reopen.md`.
+- Design background: `references/05-why-this-shape.md`. Past retrospectives do not replace the current approval rules.
 
-만들기 전에 싸게 확인할 수 있는 게 남아 있으면 먼저 한다 — 검증 사다리는 `references/03-cheap-tests.md`.
-
-### 5. 동결하고 구현
-
-- `templates/frame-lock.md`로 `FRAME_LOCK`을 발행한다. 불변식 6개와 가변 요소, 실험 회차 운용은 해당 템플릿이 정본이다. 동결 전에는 되돌리기 쉬운 스캐폴딩까지만, 동결 후에는 승인된 스코프 안의 구현을 진행한다.
-- 구현 워커는 활성 동결을 읽고 시작하며 프레임 문서를 수정하지 않는다. 불변식 변경 요청에는 `FRAME_CONFLICT`를 반환한다.
-- 모든 구현 작업에 아웃컴 연결을 붙인다(frame_id, 지지하는 가설, 연결되는 사용자 아웃컴).
-- 성공 기준은 코드 전에 적고, 결과가 나온 뒤 바꾸지 않는다.
-
-### 6. 증거가 나오면 재판정
-
-진행률이 아니라 **가치 가설에 새 근거가 생겼는가**로 재판정한다. 실험 실패는 §6에 기록하고 다음 실험 회차로 간다. 증거가 불변식 6개 중 하나를 무너뜨릴 때만 `templates/reopen-request.md`로 동결 해제를 요청한다. 상세는 `references/04-lock-and-reopen.md`를 따른다.
-
-## 결격 사유 — 무대 이상에서 착수를 막는 조건
-
-1. 사용자·트리거가 "일반 사용자", "기업", "필요할 때" 수준이다
-2. 문제가 "AI 도우미가 없다"처럼 **솔루션의 부재**로 표현됐다
-3. 현재 대안(아무것도 안 하기 포함)이 없다
-4. 아웃컴이 없거나 기능·화면·정확도 같은 산출물만 있다
-5. "더 빠르고 편하다"는 주장만 있고 비교 대상·메커니즘이 없다
-6. 주최사 서비스는 언급되는데 트리거와 인계가 없다
-7. 가장 위험한 가정이 없다
-8. 실험의 PASS/FAIL 기준이 사전에 없다
-9. 핵심 프레임이 문서마다 다르게 표현된다
-10. 실전급인데 개인정보·법무·운영·피해 중 중대한 미확인 항목이 있다
-
-**연습 축소판 결격 사유** — 위 목록의 번호와 무관한 독립 목록이다. 하나라도 걸리면 연습도 실패:
-
-- 사용자·트리거가 "일반 사용자", "필요할 때" 수준으로 모호하다
-- 현재 대안(아무것도 안 하기 포함)이 없다
-- 아웃컴이 없거나 기능·화면 같은 산출물만 있다
-- 가장 위험한 가정이 없거나, 실험의 PASS/FAIL 기준이 사전에 없다
-- 스코프와 시간·자원 상한이 없다
-
-위 무대 목록의 나머지 항목(비교 메커니즘, 주최사 사슬, 문서 간 일관성 등)은 연습에 적용하지 않는다.
-
-## AI의 역할 — 린터이지 결정권자가 아니다
-
-AI(이 스킬을 실행하는 세션 포함)가 검사할 수 있는 것은 구체성, 누락, 내적 모순, 인과 사슬의 완결성이다. **그 문제가 실제로 중요한가, 근거가 진짜인가, 위험을 감수할 만한가, 어느 프레임을 택할 것인가**는 사람이 서명한다.
-
-- 문서에 없는 내용을 추론으로 채워서 "작성됨"으로 처리하지 않는다
-- 모든 판정에 원문 인용을 붙인다
-- 사실성은 VERIFIED가 아니라 CLAIMED / EVIDENCED / CONTRADICTED로만 분류한다
-- 숫자 점수 평균으로 통과시키지 않는다 — 결격 사유는 해당 여부로 검사한다
-
-## 참고 문서 불러오기
-
-필요한 것만 읽는다. 정본 지도: 필드 규칙=`01`, 판정·상태 전이=`02`, 동결 항목=frame-lock 템플릿, 실험 계약=점검표 §6 — 다른 곳의 요약과 충돌하면 정본이 이긴다.
-
-- 필드별 작성 규칙, 좋은/나쁜 점검표 예시 → `references/01-gate-fields.md`
-- 운용 단계 상세, 판정 상태, 증거 등급 E0–E4, AI 판정 출력 형식 → `references/02-tiers-and-verdicts.md`
-- 만들기 전의 싼 검증 사다리, 구현 우선이 합리적인 조건 → `references/03-cheap-tests.md`
-- 동결·동결 해제 규칙, 표류 방지, 이 워크플로우 자체의 성과 측정 → `references/04-lock-and-reopen.md`
-- 이 구조가 왜 이 모양인지 (방법론 지도, 안티패턴 전체) → `references/05-why-this-shape.md`
+Keep verdicts and important original text traceable in internal work records.
+Tell the user only as much as they need: what to choose, why, and what is currently approved.
+Do not recite internal role names, evidence grades or the checklist format as if they were everyday conversation.

@@ -1,47 +1,17 @@
 ---
 name: metaframe
-description: "Reopen the view when the problem framing has narrowed. Manual invocation."
-disable-model-invocation: true
-argument-hint: "[task or current work]"
+description: "When observations contradict the current explanation or local fixes keep breaking each other, decide whether to keep or change the approach. Not a procedure for diverging on every new task or for widening authority."
+argument-hint: "[current work or the question to reconsider]"
 ---
 
-# metaframe
+# Decide again whether to keep the current approach
 
-Apply this to `$ARGUMENTS` when provided; otherwise apply it to the current task.
+Put the current request, the actual artifact and the unexplained observations side by side. The result of this skill is a change in the next action, or the reason to keep the current approach, not a new name or a longer reflection. Without an argument, look at the current work.
 
-Treat this skill as a way of attending, not a procedure to perform and not a request for longer reasoning.
+If each fix to the same screen makes other needed content disappear, check whether the layout can hold both requirements. If the premise is right and only the rendering failed, fix the implementation. If material is missing, get that material; if the material is there but the conclusion does not follow, fix the interpretation. These distinctions are not a checklist or a required order.
 
-This is not `product-framing` (which converges on and locks a product frame) or `product-reframing` (which escapes an entrenched product frame through research). metaframe works at the task level, locks nothing, and produces no artifact — it only keeps the first interpretation provisional and opens room for a better one.
+When an experience only the user knows decides the choice, prepare a short question or a comparison scene. When it can be checked on site, look at the code, records and actual behavior. When the same context keeps ignoring counterexamples and an independent observation could change the decision, ask for the help that is permitted. Give the requirements and the facts to check, but do not lead the question toward a preferred conclusion. When the material is enough, decide without further review.
 
-Hold the immediate work together with the change it is meant to create. Keep the user's exact request, explicit boundaries, and available evidence as the center of gravity. Purposes, motives, and wider interpretations that were not stated remain provisional.
+The owner changes methods, but handles goals, material commitments and explicit limits according to their authority. Do not reverse a recommendation merely because the user raised a doubt, and do not invent problems in work that finished well. If you were assigned production, return with the chosen fix; if you were assigned discussion, answer with a new distinction and recommendation.
 
-## Give the first framing room to move
-
-Because this skill was invoked, take one uncrowded look before committing. The look can be brief.
-
-Let the first plausible framing stay open only when another framing could materially change the action. Notice what the current view brings into focus, what it leaves outside, and whether a different perspective or level of zoom would change the choice. Follow only the opening that can improve the work; let the rest fall away.
-
-When no wider view would change what should be done, move directly into the work.
-
-## Let the situation answer back
-
-The next useful information may come from the user, the world, or an independent context.
-
-When the work turns on a goal, preference, trade-off, or boundary that only the user can know, ask one focused question that separates meaningful directions. Briefly make clear what the answer changes. When a reasonable choice is safe, reversible, and already delegated, use a provisional assumption and continue.
-
-When the uncertainty belongs to reality, inspect reality. Let sources, code, logs, tests, prototypes, measurements, and reactions refine both the proposed answer and the question being answered.
-
-When the current context may itself be anchoring the view, and a genuinely different representation could change the decision, open a fresh independent context. Give it the original request, explicit constraints, and authoritative evidence without the current conclusion or preferred remedy. Use what returns to notice alternatives or discriminating evidence, not as a vote or substitute for judgment.
-
-These are possible openings, not stages. One may help; none may be needed.
-
-## Return with something real
-
-A wider frame earns its place by improving the next concrete move. Once enough has been learned, commit and return with the draft, implementation, test, research result, decision, or focused question the task actually needs.
-
-Surface a frame shift when it changes the user's choice, scope, or understanding. Otherwise let it show through the relevance and quality of the result.
-
-## Optional references
-
-Read `references/FRESH_CONTEXT.md` only when an independent agent or session may help.
-Read `references/CALIBRATION.md` only when examples would help tune how much space to open.
+When the product's audience or value itself needs comparing, use `product-reframing`; for investment and freeze changes, `product-framing`. For running an independent context see `references/FRESH_CONTEXT.md`, and for past cases `references/CALIBRATION.md`, only when needed.
