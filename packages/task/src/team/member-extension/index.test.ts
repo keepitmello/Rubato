@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent"
 import { TeamModeConfigSchema } from "@rubato/team-core/config"
 import { sendMessage } from "@rubato/team-core/team-mailbox"
+import { getInboxDir } from "@rubato/team-core/team-registry"
 
 import { TEAM_BOARD_TOOL_NAMES } from "@rubato/team-core/team-tasklist"
 import { writeMemberTaskMap } from "../member-map"
@@ -166,6 +167,69 @@ describe("member extension lifecycle", () => {
           options: { triggerTurn: true, deliverAs: "steer" },
         },
       ])
+    } finally {
+      await dispatch(handlers, "session_shutdown")
+      restoreMemberEnv(previous)
+    }
+  })
+  test("#given the first poll fails at session_start #when the cause clears #then later team mail still arrives", async () => {
+    const root = mkdtempSync(join(tmpdir(), "senpi-member-start-failure-"))
+    roots.push(root)
+    const stateDir = join(root, "state")
+    const sessionDir = join(root, "sessions")
+    const config = TeamModeConfigSchema.parse({ base_dir: join(stateDir, "teams") })
+    mkdirSync(sessionDir, { recursive: true })
+    const { runtimeDir } = resolveTeamRuntimeDirs({ project_dir: root, task: { state_dir: stateDir } }, TEAM_RUN_ID)
+    mkdirSync(runtimeDir, { recursive: true })
+    await writeMemberTaskMap(runtimeDir, { alice: "st_00000001" })
+    // A reservation torn by a crash makes every poll throw until it is gone.
+    const inbox = getInboxDir(config.base_dir ?? "", TEAM_RUN_ID, "alice")
+    mkdirSync(inbox, { recursive: true })
+    const torn = join(inbox, ".delivering-torn.json")
+    writeFileSync(torn, "")
+
+    const handlers = new Map<string, Array<() => unknown | Promise<unknown>>>()
+    const injected: Array<Record<string, unknown>> = []
+    const api = {
+      on(event: string, handler: () => unknown | Promise<unknown>) {
+        const registered = handlers.get(event) ?? []
+        registered.push(handler)
+        handlers.set(event, registered)
+      },
+      registerTool() {},
+      sendMessage(message: Record<string, unknown>) {
+        injected.push(message)
+      },
+      sendUserMessage() {},
+    } as unknown as ExtensionAPI
+    const previous = captureMemberEnv()
+    Object.assign(process.env, {
+      SENPI_TASK_MEMBER: `${TEAM_RUN_ID}::alice`,
+      RUBATO_TASK_MEMBER_TASK_ID: "st_00000001",
+      RUBATO_TASK_TEAM_CONFIG: JSON.stringify({ ...config, stateDir, members: ["alice"] }),
+      SENPI_CODING_AGENT_SESSION_DIR: sessionDir,
+    })
+
+    try {
+      await registerMemberExtension(api)
+      await dispatch(handlers, "session_start")
+      expect(injected).toEqual([])
+
+      rmSync(torn)
+      await sendMessage({
+        version: 1,
+        messageId: MESSAGE_ID,
+        from: "lead",
+        to: "alice",
+        kind: "message",
+        body: "after the crash",
+        timestamp: 1,
+      }, TEAM_RUN_ID, config, { isLead: true, activeMembers: ["alice"] })
+
+      const deadline = Date.now() + 5_000
+      while (injected.length === 0 && Date.now() < deadline) await Bun.sleep(50)
+      expect(injected).toHaveLength(1)
+      expect(injected[0]?.details).toEqual({ messageId: MESSAGE_ID })
     } finally {
       await dispatch(handlers, "session_shutdown")
       restoreMemberEnv(previous)

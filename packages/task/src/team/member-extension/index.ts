@@ -216,16 +216,17 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
 async function startRuntime(runtime: ActiveRuntime): Promise<void> {
   if (runtime.started) return
   runtime.started = true
+  // Timers first: session_start fires once per process, so a first poll that fails (an inbox
+  // lock left by a crash) must not leave the member deaf to team mail for the rest of its life.
+  // pollOnce recovers reservations itself until that succeeds.
+  runtime.pollTimer = setInterval(() => runSafely("poll", runtime.poller.pollOnce()), MEMBER_POLL_INTERVAL_MS)
+  runtime.ackTimer = setInterval(() => runSafely("ack", runtime.poller.checkPendingAcks()), ACK_POLL_INTERVAL_MS)
   try {
     await runtime.poller.recoverReservations()
     if (!runtime.started) return
     await runtime.poller.pollOnce()
-    if (!runtime.started) return
-    runtime.pollTimer = setInterval(() => runSafely("poll", runtime.poller.pollOnce()), MEMBER_POLL_INTERVAL_MS)
-    runtime.ackTimer = setInterval(() => runSafely("ack", runtime.poller.checkPendingAcks()), ACK_POLL_INTERVAL_MS)
   } catch (error) {
-    runtime.started = false
-    throw error
+    log("senpi-task member extension first poll failed; the poll timer keeps retrying", { error: String(error) })
   }
 }
 

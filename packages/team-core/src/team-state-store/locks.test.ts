@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import type { Mode, OpenMode, PathLike } from "node:fs"
-import { mkdtemp, open, readdir, readFile, rename, rm, writeFile } from "node:fs/promises"
+import { mkdtemp, open, readdir, readFile, rename, rm, utimes, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -252,5 +252,38 @@ test("detects and reaps stale lock entries", async () => {
   // then
   expect(staleDetected).toBe(true)
   await expect(readFile(lockPath, "utf8")).rejects.toThrow()
+  await rm(rootDirectory, { recursive: true, force: true })
+})
+
+test("reaps an empty lock left by a crash once it is older than the torn-lock grace", async () => {
+  // given: a holder created the lock file but died before writing its owner line
+  const { withLock } = await import("./locks")
+  const rootDirectory = await createTempDirectory("locks-torn-")
+  const lockPath = join(rootDirectory, "lock")
+  await writeFile(lockPath, "")
+  const crashedAt = new Date(Date.now() - 60_000)
+  await utimes(lockPath, crashedAt, crashedAt)
+
+  // when
+  const result = await withLock(lockPath, async () => "acquired", { staleAfterMs: 0 })
+
+  // then
+  expect(result).toBe("acquired")
+  await expect(readFile(lockPath, "utf8")).rejects.toThrow()
+  await rm(rootDirectory, { recursive: true, force: true })
+})
+
+test("leaves a just-created empty lock to its holder", async () => {
+  // given: a holder that has created the file and is about to write its owner line
+  const { detectStaleLock } = await import("./locks")
+  const rootDirectory = await createTempDirectory("locks-torn-fresh-")
+  const lockPath = join(rootDirectory, "lock")
+  await writeFile(lockPath, "")
+
+  // when
+  const staleDetected = await detectStaleLock(lockPath, 0)
+
+  // then
+  expect(staleDetected).toBe(false)
   await rm(rootDirectory, { recursive: true, force: true })
 })
