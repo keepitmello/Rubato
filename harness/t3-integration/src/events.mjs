@@ -779,6 +779,32 @@ export class EventProjection {
     }
     if (!team.done) this.completeTask(team, 'completed');
   }
+  // team_add_member / team_replace_member start a member after team_create returned, so the
+  // create response never listed it. Without this it showed up as a stray agent beside the team.
+  teamMemberJoined(event) {
+    if (event.type !== 'tool_execution_end' || event.isError) return;
+    const details = detailsOf(event.result ?? {});
+    if (details.kind !== 'added' && details.kind !== 'replaced') return;
+    const team = this.teams.get(nonempty(details.team_run_id));
+    const member = record(details.member);
+    const memberId = nonempty(member.task_id);
+    if (!team || !memberId) return;
+    // A team whose every member had settled (one failed, all removed) closed; a new member reopens it.
+    if (team.done) {
+      team.done = false; team.terminal = undefined; team.resting = false;
+      this.progressTask(team, { description: 'running', status: 'running' });
+    }
+    // The replaced attempt keeps its row under the team but no longer decides how the team ends.
+    const previous = details.kind === 'replaced' ? nonempty(details.previous_task_id) : undefined;
+    if (previous && previous !== memberId && this.children.get(previous) === team.toolUseId) this.children.delete(previous);
+    this.rememberChild(memberId, team.toolUseId);
+    const child = this.startTask(memberId, { taskId: memberId,
+      label: nonempty(member.task_summary) || nonempty(member.name), taskType: 'subagent',
+      role: nonempty(member.role), model: nonempty(member.requested_model),
+      workflowName: team.workflowName || team.label, memberName: nonempty(member.name),
+      parentAgentId: team.taskId, toolUseId: team.toolUseId });
+    if (child) this.syncTeam(child);
+  }
   rememberChild(childId, toolCallId) {
     const id = nonempty(childId);
     if (id && nonempty(toolCallId)) this.children.set(id, toolCallId);
@@ -1000,6 +1026,7 @@ export class EventProjection {
         if (spawn) this.spawnTool(event);
         else if (CANCEL_TOOLS.has(event.toolName)) this.cancelTool(event);
         else if (event.toolName === 'team_delete') this.teamDeleted(event);
+        else if (event.toolName === 'team_add_member' || event.toolName === 'team_replace_member') this.teamMemberJoined(event);
         break;
       }
       case 'compaction_end':

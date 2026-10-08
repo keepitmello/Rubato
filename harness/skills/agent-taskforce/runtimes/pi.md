@@ -51,9 +51,11 @@ team splits peer addresses and the board. Peers can message the new name at once
 Tell the peers it must coordinate with and record its assignment on the board.
 To remove a member, `team_shutdown_request` gives it one turn to persist its result
 and handoff; `team_approve_shutdown` then stops it and takes it off the roster and
-the completion wake. Close or reassign its open board items first: an open item still
-holds the batch. A removed member's name and mail stay with it; add a successor under
-a new name.
+the completion wake. The board has no reassignment: first mark its open items
+completed (`team_task_update` with `owner` set to that member) or deleted, and create
+fresh items for whoever takes the work over; an open item still holds the batch. A
+removed member's name and mail stay with it; add a successor under a new name. Names
+are normalized to lowercase-hyphen form, and the result reports the actual name.
 
 A team lead and an owner read the result artifact or board rather than replaying a
 child's transcript; a completion carries its result file path. A teammate's normal

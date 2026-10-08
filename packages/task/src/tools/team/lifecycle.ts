@@ -116,7 +116,7 @@ const CREATE_DESCRIPTION = [
   "Create a team run from a named spec or an inline spec. The current session is the team lead.",
   "Pass inline_spec for an ad hoc team or team_name for a named spec; inline_spec takes precedence when both are provided. Members run as background children; you coordinate them with the other team_* tools.",
   "Returns invalid_arguments for malformed input, spec_error for invalid specs, and runtime_error for spawn/bounds failures.",
-  "Before choosing the execution shape, read the installed agent-taskforce skill and its Pi adapter. Investigate available facts, resolve the intent, and present its readable summary with the minimal model/role roster. Wait for explicit confirmation of both intent and roster before calling. Carry the newly accepted intent_ref in member briefs. This tool does not load skills or enforce human approval for you.",
+  "Before choosing the execution shape, read the installed agent-taskforce skill and its Pi adapter. Investigate available facts, resolve the intent, and present its readable summary with the minimal model/role roster. Wait for explicit confirmation of both intent and roster before calling. Carry the newly accepted intent_ref in member briefs. This tool does not load skills or enforce human approval for you. To change a running team's roster, add with team_add_member or remove with team_shutdown_request (find them via tool_search); do not create a second team.",
 ].join(" ")
 
 const DELETE_DESCRIPTION = "Delete a team run and cancel its members (terminal, not resumable). Lead-only. Pass force=true to tear it down while members are still active."

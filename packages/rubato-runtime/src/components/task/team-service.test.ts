@@ -206,6 +206,31 @@ describe("createTeamService member recovery", () => {
   })
 })
 
+describe("createTeamService roster changes", () => {
+  test("add, message, and remove an idle member on the real manager", async () => {
+    const { service, started, engine, store } = extensionOrderHarness()
+    const created = await service.createTeam({
+      inlineSpec: { name: "roster", members: [{ name: "alpha", kind: "owner", model: TEST_MODEL, prompt: "Build." }] },
+    })
+    const teamRunId = created.runtimeState.teamRunId
+    await expect(service.addMember({ teamRunId, name: "beta", kind: "verifier", model: "missing/model", prompt: "Verify." }))
+      .rejects.toMatchObject({ code: "MODEL_UNAVAILABLE" })
+    expect(started).toHaveLength(1)
+    const added = await service.addMember({ teamRunId, name: "beta", kind: "verifier", model: TEST_MODEL, prompt: "Verify." })
+    expect(started.at(-1)?.memberEnv?.RUBATO_TASK_MEMBER).toBe(`${teamRunId}::beta`)
+    expect(await service.sendMessage(teamRunId, { from: "lead", to: "beta", body: "start" }))
+      .toMatchObject({ kind: "to_members", recipients: ["beta"] })
+
+    // An idle resident member: a bare cancel is a noop for it, so removal must tear it down.
+    store.mutate(added.member.taskId, (record) => ({ ...record, status: "completed" }))
+    await service.requestShutdown(teamRunId, "beta")
+    await service.approveShutdown(teamRunId, "beta")
+    expect(engine.manager.get(added.member.taskId)?.residency_state).toBe("disposed")
+    await expect(service.sendMessage(teamRunId, { from: "lead", to: "beta", body: "again" })).rejects.toThrow("unknown or inactive")
+    await service.deleteTeam({ teamRunId, force: true })
+  })
+})
+
 describe("createTeamService lead messaging", () => {
   test("#given a mapped recipient task #when the lead sends #then the correlation event is persisted on the recipient task", async () => {
     // given
