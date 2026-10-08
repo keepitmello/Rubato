@@ -41,7 +41,8 @@ when new experience changes it.
 - Subagents: **DeepSeek** (ultrafast) or **Opus**.
 - Owners: **Opus** or **DeepSeek** (ultrafast).
 - **Fable** or **Astra** for either, with explicit approval.
-- Verifier: **Astra** at `xhigh`, then **Opus**, then any other capable model.
+- Verifier: **Astra**, then **Opus**, then any other capable model.
+- Astra runs at `xhigh` in every role (user, 2026-10-08).
 - Any approved model can own or verify.
 
 The `Agent` catalog lists only models from providers this user has signed in to,
@@ -70,8 +71,8 @@ local evidence you already have; ordinary work does not wait for new telemetry.
 Pass an exact `provider/model` or a named `preset` the live harness accepts. The
 same display name on two routes may spend different resources.
 
-Omit `effort` so the configured default applies; the default verifier is the
-exception and runs Astra at `xhigh`. Keep explicit user settings;
+Omit `effort` so the configured default applies, except Astra, which always
+runs at `xhigh`. Keep explicit user settings;
 override only for a supported, authorized reason; a role label or your reading of
 difficulty is not one. Report the requested model and
 effort separately from what the runtime confirms actually ran. If identity is not
