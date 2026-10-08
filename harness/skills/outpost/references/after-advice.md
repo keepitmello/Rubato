@@ -1,26 +1,12 @@
-# After Advice Workflow
+# Use advice to choose the next action
 
-Use this after receiving a response from the external consultant.
+First establish that the returned response matches the request, then judge its substance. A consultant may correctly challenge your framing; that is different from receiving another turn's reply. Recover a mismatched or incomplete delivery through the existing sender contract, not another paid resend.
 
-1. Confirm that the response answers the attached packet, then extract concrete claims.
-2. Verify each claim against repository facts, docs, tests, or current web sources if needed.
-3. Classify recommendations:
-   - Apply now
-   - Investigate with a small experiment
-   - Reject because it conflicts with repo constraints
-   - Needs more context or follow-up
-4. Make the smallest safe change first.
-5. Run the relevant tests and commands.
-6. Summarize:
-   - the question and thread id
-   - what advice was used
-   - what was changed
-   - what was rejected and why
-   - test results
-   - remaining risks and uncertainty
+Separate the observation from the diagnosis and proposed remedy. A true overlap in a comparison table may call for a better criterion, not deleting the competitor. Keep a supported observation when rejecting a poor remedy. Check consequential claims against the current artifact and source; agreement among consultants does not establish independence or correctness.
 
-Do not treat the consultant as authoritative when its assumptions conflict with
-the codebase. Repo facts, user constraints, and passing tests win.
+Choose what the evidence changes. After acting on advice, check the changed claim or behavior and say what that check covers. Missing facts call for targeted investigation. A local defect calls for its correction; repairs that repeatedly break other requirements call for a different approach. Supported counter-evidence can justify abandoning your preferred method. A successful component check cannot establish the full user outcome, and existing required checks remain binding until changed by their proper authority.
+
+Return to the work already assigned. For discussion give a recommendation; for authorized production get the needed correction from its owner and return the result. Advice is not implementation permission. Keep rejected remedies and unresolved observations distinguishable in the existing record, without turning every comment into a new user rule or a mandatory task.
 
 ## After Code Artifacts
 
