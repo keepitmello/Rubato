@@ -1,6 +1,6 @@
 ---
 name: memory-discipline
-description: Read before writing Rubato memory: whether a finding is worth keeping, which file owns it, and what to delete. One question per file, current answer only, read-modify-write, and the git-beats-memory gate.
+description: "Read before writing Rubato memory: whether a finding is worth keeping, which file owns it, and what to delete. One question per file, current answer only, read-modify-write, and the git-beats-memory gate."
 ---
 
 # Memory Discipline
