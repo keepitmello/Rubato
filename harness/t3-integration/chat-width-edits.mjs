@@ -1,18 +1,17 @@
-// Chat width as a pixel cap. T3 offers three presets (Comfortable / Wide / Full)
+// Chat width as a percentage. T3 offers three presets (Comfortable / Wide / Full)
 // whose pixel caps the settings screen never states, so nobody can tell what
-// "Wide" means or aim between two of them. The setting is now the widest the
-// messages and the composer may grow, 640-1600px, set with a slider like Glass
-// opacity and shown as the number. The top of the slider is "Full": no cap.
+// "Wide" means or aim between two of them. The setting is now the share of the
+// window the messages and the composer may fill, 40-100%, set with a slider
+// like Glass opacity. A 24rem floor keeps a small window readable at the low end.
 //
-// A fixed length, so the same setting reads the same on every monitor. A share
-// of the window gave a laptop 734px with wide empty margins and an external
-// monitor 1280px from the same 50%. A share of the chat column moved with the
-// right panel and the sidebar. A length moves with neither: when the chat column
-// is narrower than the cap, the column bounds it and the messages fill it.
+// The old `chatWidth` preset is gone. A saved "wide" or "full" is ignored on
+// load and the width falls back to the 65% default.
 //
-// The old `chatWidth` preset and `chatWidthPercent` share are gone. A saved value
-// of either is ignored on load and the width falls back to the default.
-//
+// The width is a share of the window (vw), not of the chat column. Opening or
+// resizing the right panel or the sidebar narrows the column; a share of the
+// column made the messages shrink with it while empty margins stayed, and the
+// width only stays put if its base does not move. When the column gets narrower
+// than the width, the column bounds it, as it did the old fixed 48rem.
 // The value holds no `%` on purpose: the composer stack, shell and form and the
 // timeline rows and separator all cap at it one inside the other, and a `%` (or a
 // `cqi` inside the shell, itself a container) resolves at each of them again.
@@ -41,33 +40,31 @@ const SETTINGS_TEST_OLD = [
 const SETTINGS_TEST_NEW = [
   'describe("ClientSettings chat width", () => {',
   '  it("defaults to the shared default width when none is saved", () => {',
-  '    expect(decodeClientSettings({}).chatMaxWidth).toBe(DEFAULT_CHAT_MAX_WIDTH);',
+  '    expect(decodeClientSettings({}).chatWidthPercent).toBe(DEFAULT_CHAT_WIDTH_PERCENT);',
   '  });',
   '',
-  '  it.each([MIN_CHAT_MAX_WIDTH, 960, MAX_CHAT_MAX_WIDTH])("round-trips a %spx width", (chatMaxWidth) => {',
-  '    const settings = decodeClientSettings({ chatMaxWidth });',
-  '    expect(encodeClientSettings(settings).chatMaxWidth).toBe(chatMaxWidth);',
-  '    expect(decodeClientSettingsPatch({ chatMaxWidth }).chatMaxWidth).toBe(chatMaxWidth);',
-  '  });',
+  '  it.each([MIN_CHAT_WIDTH_PERCENT, 72, MAX_CHAT_WIDTH_PERCENT])(',
+  '    "round-trips a %s percent width",',
+  '    (chatWidthPercent) => {',
+  '      const settings = decodeClientSettings({ chatWidthPercent });',
+  '      expect(encodeClientSettings(settings).chatWidthPercent).toBe(chatWidthPercent);',
+  '      expect(decodeClientSettingsPatch({ chatWidthPercent }).chatWidthPercent).toBe(',
+  '        chatWidthPercent,',
+  '      );',
+  '    },',
+  '  );',
   '',
   '  it("rejects widths outside the slider range", () => {',
-  '    for (const chatMaxWidth of [MIN_CHAT_MAX_WIDTH - 1, MAX_CHAT_MAX_WIDTH + 1, 960.5]) {',
-  '      expect(() => decodeClientSettings({ chatMaxWidth })).toThrow();',
-  '      expect(() => decodeClientSettingsPatch({ chatMaxWidth })).toThrow();',
+  '    for (const chatWidthPercent of [MIN_CHAT_WIDTH_PERCENT - 1, MAX_CHAT_WIDTH_PERCENT + 1, 50.5]) {',
+  '      expect(() => decodeClientSettings({ chatWidthPercent })).toThrow();',
+  '      expect(() => decodeClientSettingsPatch({ chatWidthPercent })).toThrow();',
   '    }',
   '  });',
   '',
-  '  it("ignores the widths saved by earlier versions", () => {',
-  '    expect(decodeClientSettings({ chatWidth: "wide" }).chatMaxWidth).toBe(DEFAULT_CHAT_MAX_WIDTH);',
-  '    expect(decodeClientSettings({ chatWidthPercent: 50 }).chatMaxWidth).toBe(',
-  '      DEFAULT_CHAT_MAX_WIDTH,',
+  '  it("ignores the old preset names saved by earlier versions", () => {',
+  '    expect(decodeClientSettings({ chatWidth: "wide" }).chatWidthPercent).toBe(',
+  '      DEFAULT_CHAT_WIDTH_PERCENT,',
   '    );',
-  '  });',
-  '',
-  '  it("caps at the width in pixels and lifts the cap at the top of the slider", () => {',
-  '    expect(chatMaxWidthCss(MIN_CHAT_MAX_WIDTH)).toBe(`${MIN_CHAT_MAX_WIDTH}px`);',
-  '    expect(chatMaxWidthCss(960)).toBe("960px");',
-  '    expect(chatMaxWidthCss(MAX_CHAT_MAX_WIDTH)).toBe("none");',
   '  });',
   '});',
   '',
@@ -99,33 +96,33 @@ const ROW_OLD = [
 
 const ROW_NEW = [
   '          control={',
-  '            <div className="flex w-full items-center gap-3 sm:w-56">',
+  '            <div className="flex w-full items-center gap-3 sm:w-52">',
   '              <output',
-  '                className="min-w-16 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"',
+  '                className="min-w-12 rounded-md bg-muted px-2 py-1 text-center font-mono text-xs font-medium tabular-nums text-foreground"',
   '                htmlFor="chat-width"',
   '              >',
-  '                {settings.chatMaxWidth >= MAX_CHAT_MAX_WIDTH ? "Full" : `${settings.chatMaxWidth}px`}',
+  '                {settings.chatWidthPercent}%',
   '              </output>',
   '              <input',
   '                aria-label="Chat width"',
   '                className="settings-slider min-w-0 flex-1"',
   '                id="chat-width"',
-  '                max={MAX_CHAT_MAX_WIDTH}',
-  '                min={MIN_CHAT_MAX_WIDTH}',
+  '                max={MAX_CHAT_WIDTH_PERCENT}',
+  '                min={MIN_CHAT_WIDTH_PERCENT}',
   '                onChange={(event) => {',
-  '                  const chatMaxWidth = Number(event.currentTarget.value);',
+  '                  const chatWidthPercent = Number(event.currentTarget.value);',
   '                  if (',
-  '                    Number.isInteger(chatMaxWidth) &&',
-  '                    chatMaxWidth >= MIN_CHAT_MAX_WIDTH &&',
-  '                    chatMaxWidth <= MAX_CHAT_MAX_WIDTH',
+  '                    Number.isInteger(chatWidthPercent) &&',
+  '                    chatWidthPercent >= MIN_CHAT_WIDTH_PERCENT &&',
+  '                    chatWidthPercent <= MAX_CHAT_WIDTH_PERCENT',
   '                  ) {',
-  '                    updateSettings({ chatMaxWidth });',
+  '                    updateSettings({ chatWidthPercent });',
   '                  }',
   '                }}',
-  '                step={CHAT_MAX_WIDTH_STEP}',
+  '                step={1}',
   '                style={chatWidthSliderStyle}',
   '                type="range"',
-  '                value={settings.chatMaxWidth}',
+  '                value={settings.chatWidthPercent}',
   '              />',
   '            </div>',
   '          }',
@@ -137,32 +134,28 @@ export const chatWidthEdits = {
     [
       '/** Maximum width of the chat timeline and composer on wide screens. */\nexport const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);\nexport type ChatWidth = typeof ChatWidth.Type;\n',
       [
-        '/** Widest the timeline and composer may grow, in CSS pixels. The maximum means no cap. */',
-        'export const MIN_CHAT_MAX_WIDTH = 640;',
-        'export const MAX_CHAT_MAX_WIDTH = 1600;',
-        'export const DEFAULT_CHAT_MAX_WIDTH = 960;',
-        'export const CHAT_MAX_WIDTH_STEP = 20;',
-        'export const ChatMaxWidth = Schema.Int.check(',
-        '  Schema.isBetween({ minimum: MIN_CHAT_MAX_WIDTH, maximum: MAX_CHAT_MAX_WIDTH }),',
+        '/** Share of the window width the timeline and composer may fill, in percent. */',
+        'export const MIN_CHAT_WIDTH_PERCENT = 40;',
+        'export const MAX_CHAT_WIDTH_PERCENT = 100;',
+        'export const DEFAULT_CHAT_WIDTH_PERCENT = 65;',
+        'export const ChatWidthPercent = Schema.Int.check(',
+        '  Schema.isBetween({ minimum: MIN_CHAT_WIDTH_PERCENT, maximum: MAX_CHAT_WIDTH_PERCENT }),',
         ');',
-        'export type ChatMaxWidth = typeof ChatMaxWidth.Type;',
-        '/** The --chat-max-width value for a setting: a length, or none at the top of the slider. */',
-        'export const chatMaxWidthCss = (width: number): string =>',
-        '  width >= MAX_CHAT_MAX_WIDTH ? "none" : `${width}px`;',
+        'export type ChatWidthPercent = typeof ChatWidthPercent.Type;',
         '',
       ].join('\n'),
       'replace',
     ],
     [
       '  chatWidth: ChatWidth.pipe(Schema.withDecodingDefault(Effect.succeed("comfortable" as const))),\n',
-      '  chatMaxWidth: ChatMaxWidth.pipe(Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_MAX_WIDTH))),\n',
+      '  chatWidthPercent: ChatWidthPercent.pipe(\n    Schema.withDecodingDefault(Effect.succeed(DEFAULT_CHAT_WIDTH_PERCENT)),\n  ),\n',
       'replace',
     ],
-    ['  chatWidth: Schema.optionalKey(ChatWidth),\n', '  chatMaxWidth: Schema.optionalKey(ChatMaxWidth),\n', 'replace'],
+    ['  chatWidth: Schema.optionalKey(ChatWidth),\n', '  chatWidthPercent: Schema.optionalKey(ChatWidthPercent),\n', 'replace'],
   ],
   'packages/contracts/src/settings.test.ts': [
     ['  DEFAULT_SERVER_SETTINGS,\n  resolveProviderInstanceEnabled,\n',
-      '  chatMaxWidthCss,\n  DEFAULT_CHAT_MAX_WIDTH,\n  DEFAULT_SERVER_SETTINGS,\n  MAX_CHAT_MAX_WIDTH,\n  MIN_CHAT_MAX_WIDTH,\n  resolveProviderInstanceEnabled,\n',
+      '  DEFAULT_CHAT_WIDTH_PERCENT,\n  DEFAULT_SERVER_SETTINGS,\n  MAX_CHAT_WIDTH_PERCENT,\n  MIN_CHAT_WIDTH_PERCENT,\n  resolveProviderInstanceEnabled,\n',
       'replace'],
     [SETTINGS_TEST_OLD, SETTINGS_TEST_NEW, 'replace'],
   ],
@@ -184,12 +177,13 @@ export const chatWidthEdits = {
         '',
       ].join('\n'),
       [
-        '/* Chat timeline and composer column width, a length from the Chat width setting',
-        '   (__root.tsx sets it; none means no cap). A length reads the same on every',
-        '   monitor; a narrower chat column bounds it. No % here: nested boxes cap at',
-        '   this value and a % would resolve at each of them. */',
+        '/* Chat timeline and composer column width. --chat-width-percent comes from the',
+        '   Chat width setting (__root.tsx) and is a share of the window, so side panels',
+        '   and the sidebar leave it alone until the chat column is narrower. No % here:',
+        '   nested boxes cap at this value and a % would resolve at each of them. */',
         ':root {',
-        '  --chat-max-width: 960px;',
+        '  --chat-width-percent: 65;',
+        '  --chat-max-width: max(24rem, calc(var(--chat-width-percent) * 1vw));',
         '}',
         '',
       ].join('\n'),
@@ -197,11 +191,6 @@ export const chatWidthEdits = {
     ],
   ],
   'apps/web/src/routes/__root.tsx': [
-    [
-      'import { type ServerLifecycleWelcomePayload } from "@t3tools/contracts";\n',
-      'import { chatMaxWidthCss, type ServerLifecycleWelcomePayload } from "@t3tools/contracts";\n',
-      'replace',
-    ],
     [
       [
         '  const chatWidth = useClientSettings((settings) => settings.chatWidth);',
@@ -211,10 +200,10 @@ export const chatWidthEdits = {
         '',
       ].join('\n'),
       [
-        '  const chatMaxWidth = useClientSettings((settings) => settings.chatMaxWidth);',
+        '  const chatWidthPercent = useClientSettings((settings) => settings.chatWidthPercent);',
         '  useEffect(() => {',
-        '    document.documentElement.style.setProperty("--chat-max-width", chatMaxWidthCss(chatMaxWidth));',
-        '  }, [chatMaxWidth]);',
+        '    document.documentElement.style.setProperty("--chat-width-percent", String(chatWidthPercent));',
+        '  }, [chatWidthPercent]);',
         '',
       ].join('\n'),
       'replace',
@@ -222,21 +211,22 @@ export const chatWidthEdits = {
   ],
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
     ['  const chatWidth = useClientSettings((settings) => settings.chatWidth);\n',
-      '  const chatMaxWidth = useClientSettings((settings) => settings.chatMaxWidth);\n', 'replace'],
-    ['rows.length, reportContentOverflow, chatWidth]);', 'rows.length, reportContentOverflow, chatMaxWidth]);', 'replace'],
+      '  const chatWidthPercent = useClientSettings((settings) => settings.chatWidthPercent);\n', 'replace'],
+    ['rows.length, reportContentOverflow, chatWidth]);', 'rows.length, reportContentOverflow, chatWidthPercent]);', 'replace'],
   ],
   'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['  type ChatWidth,\n', '  CHAT_MAX_WIDTH_STEP,\n  MAX_CHAT_MAX_WIDTH,\n  MIN_CHAT_MAX_WIDTH,\n', 'replace'],
+    ['  type ChatWidth,\n', '  MAX_CHAT_WIDTH_PERCENT,\n  MIN_CHAT_WIDTH_PERCENT,\n', 'replace'],
     [
       'const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {\n  comfortable: "Comfortable",\n  wide: "Wide",\n  full: "Full",\n};\n\nconst DIFF_LAYOUT_LABELS',
-      '// Chat width is a pixel slider (chat-width-edits.mjs), so it has no labels.\n\nconst DIFF_LAYOUT_LABELS',
+      '// Chat width is a percentage slider (chat-width-edits.mjs), so it has no labels.\n\nconst DIFF_LAYOUT_LABELS',
       'replace',
     ],
     [
       '  const appearanceContrastRatio =\n',
       [
         '  const chatWidthRatio =',
-        '    (settings.chatMaxWidth - MIN_CHAT_MAX_WIDTH) / (MAX_CHAT_MAX_WIDTH - MIN_CHAT_MAX_WIDTH);',
+        '    (settings.chatWidthPercent - MIN_CHAT_WIDTH_PERCENT) /',
+        '    (MAX_CHAT_WIDTH_PERCENT - MIN_CHAT_WIDTH_PERCENT);',
         '  const chatWidthSliderStyle = {',
         '    "--settings-slider-progress": `${chatWidthRatio * 100}%`,',
         '    "--settings-slider-fill-offset": `${0.5 - chatWidthRatio}rem`,',
@@ -245,16 +235,16 @@ export const chatWidthEdits = {
       ].join('\n'),
     ],
     ['      ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),\n',
-      '      ...(settings.chatMaxWidth !== DEFAULT_UNIFIED_SETTINGS.chatMaxWidth ? ["Chat width"] : []),\n', 'replace'],
-    ['      settings.chatWidth,\n', '      settings.chatMaxWidth,\n', 'replace'],
-    ['      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,\n', '      chatMaxWidth: DEFAULT_UNIFIED_SETTINGS.chatMaxWidth,\n', 'replace'],
+      '      ...(settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent\n        ? ["Chat width"]\n        : []),\n', 'replace'],
+    ['      settings.chatWidth,\n', '      settings.chatWidthPercent,\n', 'replace'],
+    ['      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,\n', '      chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent,\n', 'replace'],
     [
       '            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (\n              <SettingResetButton\n                label="chat width"\n                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}\n              />',
-      '            settings.chatMaxWidth !== DEFAULT_UNIFIED_SETTINGS.chatMaxWidth ? (\n              <SettingResetButton\n                label="chat width"\n                onClick={() => updateSettings({ chatMaxWidth: DEFAULT_UNIFIED_SETTINGS.chatMaxWidth })}\n              />',
+      '            settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent ? (\n              <SettingResetButton\n                label="chat width"\n                onClick={() =>\n                  updateSettings({ chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent })\n                }\n              />',
       'replace',
     ],
     [ROW_OLD, ROW_NEW, 'replace'],
     ['  description="Set how wide messages and the composer can grow on large screens."\n',
-      '  description="Set how wide messages and the composer can grow. Narrower windows fill the chat area."\n', 'replace'],
+      '  description="Set how much of the window width messages and the composer can fill."\n', 'replace'],
   ],
 };

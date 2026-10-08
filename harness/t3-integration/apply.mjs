@@ -2127,7 +2127,7 @@ overlays.push(...rightPanelOverlays);
 for (const [relative, changes] of Object.entries(rightPanelEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Chat width as a pixel cap slider (chat-width-edits.mjs).
+// Chat width as a percentage slider (chat-width-edits.mjs).
 overlays.push(...chatWidthOverlays);
 for (const [relative, changes] of Object.entries(chatWidthEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
