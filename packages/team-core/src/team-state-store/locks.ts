@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto"
-import { access, open, readFile, rename, rm, unlink } from "node:fs/promises"
+import { access, open, readFile, rename, rm, stat, unlink } from "node:fs/promises"
 import { dirname } from "node:path"
 
 import { tolerantFsync } from "../tolerant-fsync"
@@ -27,6 +27,10 @@ type LockReleaseDeps = {
 
 const LOCK_RETRY_MS = 50
 const LOCK_WAIT_TIMEOUT_MS = 15_000
+// A holder writes its owner line right after creating the file, so a lock that still has no
+// readable owner this long after creation was torn by a crash between create and write. Kept
+// under LOCK_WAIT_TIMEOUT_MS so a waiter that saw the lock appear can still reap it.
+const TORN_LOCK_GRACE_MS = 10_000
 const LOCK_RELEASE_RETRY_ATTEMPTS = 3
 const LOCK_RELEASE_RETRY_MS = 25
 
@@ -154,7 +158,12 @@ export async function detectStaleLock(lockPath: string, staleAfterMs: number): P
   try {
     const content = await readFile(lockPath, "utf8")
     const parsed = parseOwnerContent(content)
-    if (parsed === null) return false
+    if (parsed === null) {
+      // No owner to prove alive. Without this, a lock left empty by a power loss or kernel panic
+      // blocks every later holder forever.
+      const { mtimeMs } = await stat(lockPath)
+      return Date.now() - mtimeMs > TORN_LOCK_GRACE_MS
+    }
 
     if (isPidAlive(parsed.ownerPid)) return false
 
