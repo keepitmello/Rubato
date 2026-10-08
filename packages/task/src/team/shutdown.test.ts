@@ -14,6 +14,7 @@ import { TeamSpecSchema, type RuntimeStateMember } from "@rubato/team-core/types
 
 import { toTeamCoreConfig, type TeamCoreConfig } from "./runtime-config"
 import {
+  SHUTDOWN_REQUEST_BODY,
   SenpiShutdownError,
   approveShutdown,
   rejectShutdown,
@@ -85,7 +86,7 @@ describe("team shutdown protocol", () => {
     expect(state.shutdownRequests).toHaveLength(1)
     expect(state.shutdownRequests[0]?.memberId).toBe("alpha")
     expect(state.shutdownRequests[0]?.approvedAt).toBeUndefined()
-    expect(messenger.sent).toEqual([{ to: "alpha", kind: "shutdown_request", body: "" }])
+    expect(messenger.sent).toEqual([{ to: "alpha", kind: "shutdown_request", body: SHUTDOWN_REQUEST_BODY }])
   })
 
   test("#given a member with a pending request #when requestShutdown runs again #then it is idempotent (no duplicate record or message)", async () => {

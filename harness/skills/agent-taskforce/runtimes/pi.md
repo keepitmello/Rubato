@@ -7,6 +7,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 |---|---|
 | Lead | Current user-facing rubato-pi session |
 | Continuing owner/verifier | `team_create` member after combined intent/roster approval |
+| Roster change during the run | Lead-only `team_add_member` adds an owner/verifier to the same team under a new name; removal is `team_shutdown_request`, then `team_approve_shutdown` |
 | Subagent | `Agent`, continued with `AgentSend` |
 | Agent status/results | Completion pointer plus its result file; the notification is not work acceptance |
 | Team communication | Direct peer `team_send` mailbox |
@@ -43,6 +44,16 @@ Carry the same intent, artifact paths, checked revisions and outstanding request
 in the English handoff. Unread mail and board ownership stay with the member;
 consumed requests need the handoff, and old verdicts do not cover later edits.
 Recovery does not authorize a model/cost change or reopening approved shutdown; a model change the user approved goes through the same tool with `user_approval_ref`.
+
+When the approved roster grows, add the member to the existing team with
+`team_add_member` and the same English brief a `team_create` member gets; a second
+team splits peer addresses and the board. Peers can message the new name at once.
+Tell the peers it must coordinate with and record its assignment on the board.
+To remove a member, `team_shutdown_request` gives it one turn to persist its result
+and handoff; `team_approve_shutdown` then stops it and takes it off the roster and
+the completion wake. Close or reassign its open board items first: an open item still
+holds the batch. A removed member's name and mail stay with it; add a successor under
+a new name.
 
 A team lead and an owner read the result artifact or board rather than replaying a
 child's transcript; a completion carries its result file path. A teammate's normal

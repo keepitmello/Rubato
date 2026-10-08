@@ -20,9 +20,12 @@ export type {
   TeamRegistryError,
   TeamSpecSource,
 } from "./registry"
-export { createTeam, deleteTeam, SenpiTeamRuntimeError } from "./runtime"
+export { createTeam, deleteTeam, stopMemberTask, SenpiTeamRuntimeError } from "./runtime"
 export { replaceTeamMember, TeamMemberReplacementError } from "./replace-member"
 export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./replace-member"
+export { addTeamMember, TeamMemberAddError } from "./add-member"
+export { liveMemberNames } from "./shutdown-helpers"
+export type { AddTeamMemberInput, AddTeamMemberResult, AddTeamMemberDeps } from "./add-member"
 export type {
   CreateTeamDeps,
   CreateTeamResult,

@@ -30,6 +30,8 @@ export type MemberTaskSendDeps = {
   readonly taskId: string
   readonly config: TeamModeConfig
   readonly members: readonly string[]
+  /** The live roster; members added or removed after this process started. Falls back to `members`. */
+  readonly currentMembers?: () => Promise<readonly string[]>
   readonly appendEvent?: (taskId: string, event: PersistedTaskEvent) => void
   readonly onSent?: () => void
   readonly now?: () => number
@@ -52,8 +54,9 @@ export async function runMemberTaskSend(
   deps: MemberTaskSendDeps,
   input: MemberTaskSendInput,
 ): Promise<AgentToolResult<MemberTaskSendDetails>> {
-  const recipients = new Set([...deps.members, TEAM_LEAD_SENTINEL])
-  if (!recipients.has(input.to)) throw new UnknownMemberRecipientError(input.to, deps.members)
+  const members = await resolveMembers(deps)
+  const recipients = new Set([...members, TEAM_LEAD_SENTINEL])
+  if (!recipients.has(input.to)) throw new UnknownMemberRecipientError(input.to, members)
   if (deps.isCurrentMember !== undefined && !(await deps.isCurrentMember())) {
     throw new Error("This execution is not the team's active member. If still starting, retry after activation; a replaced execution must not use the peer address.")
   }
@@ -70,7 +73,7 @@ export async function runMemberTaskSend(
 
   await sendMessage(message, deps.teamRunId, deps.config, {
     isLead: false,
-    activeMembers: [...deps.members],
+    activeMembers: [...members],
     leadRecipient: TEAM_LEAD_SENTINEL,
   })
   deps.appendEvent?.(deps.taskId, {
@@ -84,6 +87,15 @@ export async function runMemberTaskSend(
     message_id: message.messageId,
     to: input.to,
   })
+}
+
+async function resolveMembers(deps: MemberTaskSendDeps): Promise<readonly string[]> {
+  if (deps.currentMembers === undefined) return deps.members
+  try {
+    return await deps.currentMembers()
+  } catch {
+    return deps.members
+  }
 }
 
 export function createMemberTaskSendTool(

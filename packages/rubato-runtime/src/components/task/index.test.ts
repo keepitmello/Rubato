@@ -25,6 +25,7 @@ import { createSessionTransitionBridge } from "./session-transition-bridge"
 const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel"]
 const TEAM_TOOL_NAMES = [
   "team_create",
+  "team_add_member",
   "team_replace_member",
   "team_delete",
   "team_send",

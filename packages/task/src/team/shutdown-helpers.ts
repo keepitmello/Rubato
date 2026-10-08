@@ -19,6 +19,11 @@ export function findRuntimeMember(state: RuntimeState, memberName: string): Runt
   return state.members.find((candidate) => candidate.name === memberName)
 }
 
+/** Members still on the team: a removed (shutdown-approved) member keeps its record but is gone. */
+export function liveMemberNames(members: readonly Pick<RuntimeStateMember, "name" | "status">[]): string[] {
+  return members.filter((member) => member.status !== "shutdown_approved").map((member) => member.name)
+}
+
 /**
  * Index of the most recent shutdown request for a member, scanning newest-first so a fresh request
  * that follows a resolved (approved/rejected) one wins. Returns -1 when the member has no request.

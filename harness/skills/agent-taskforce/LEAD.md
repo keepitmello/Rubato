@@ -64,7 +64,10 @@ Include the concrete reason for separate context, parallel work, fresh evidence 
 resource allocation. Quote a saving only from measurements. Preserve approved
 owners through corrections and re-verification. Like-for-like recovery is recovery;
 material restaffing, new scope or cost commitments receive a concise delta proposal
-before affected work. Ordinary support inside approved authority has no extra team
+before affected work. The roster can change while the team runs: add a member to the
+same team when a new outcome or an independent check appears, and remove one whose
+outcome is done or dropped. Removing a finished member needs no proposal; dropping
+an unfinished approved outcome is a scope change. Ordinary support inside approved authority has no extra team
 ceremony and cannot bypass model approval.
 
 ## 5. Give a complete brief once

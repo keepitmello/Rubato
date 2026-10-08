@@ -87,7 +87,7 @@ try {
   // A task child works with the lead's tools. The only differences are the ones stated here:
   // memory is bound to the lead's identity, team management is the lead's, and Agent is a team
   // member's (a plain subagent is at the depth limit).
-  const leadOnly = ["memory", "memory_apply_patch", "mcp__rubato-memory_memory", "mcp__rubato-memory_memory_apply_patch", "team_create", "team_replace_member", "team_delete", "team_send",
+  const leadOnly = ["memory", "memory_apply_patch", "mcp__rubato-memory_memory", "mcp__rubato-memory_memory_apply_patch", "team_create", "team_add_member", "team_replace_member", "team_delete", "team_send",
     "team_shutdown_request", "team_approve_shutdown", "team_reject_shutdown",
     "team_task_create", "team_task_get", "team_task_list", "team_task_update"];
   const agentFamily = ["Agent", "AgentSend", "AgentCancel"];
