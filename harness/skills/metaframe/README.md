@@ -1,6 +1,6 @@
-# metaframe v3
+# metaframe v4
 
-metaframe is a manually invoked Claude Code skill for opening a small amount of problem space before committing to a frame. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
+metaframe is a skill for deciding again whether to keep or change the current approach when observations contradict the current explanation or local fixes keep breaking each other. The model may load it at that signal, and you can invoke it yourself. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
 
 ## What this version keeps
 
@@ -14,7 +14,6 @@ metaframe is a manually invoked Claude Code skill for opening a small amount of 
 
 ## What this version removes
 
-- automatic invocation;
 - `direct / ask / probe / scout` as an explicit routing taxonomy;
 - scoring rubrics, pass thresholds, contrast-case suites, and speculative release gates;
 - mandatory blind-brief templates and detailed scout protocols;
@@ -30,7 +29,7 @@ The canonical copy lives in the shared skill store:
 
 Each CLI (`~/.claude/skills/`, `~/.codex/skills/`, `~/.grok/skills/`) symlinks to it. For a project-local install, copy into `.claude/skills/metaframe/`.
 
-Invoke it manually:
+The model loads it when its description matches the situation. You can also invoke it manually:
 
 ```text
 /metaframe
@@ -42,7 +41,7 @@ or pass the task as an argument:
 /metaframe Review this product decision before implementation.
 ```
 
-`disable-model-invocation: true` keeps the skill out of Claude's context until you invoke it. Once invoked, the skill text remains in that session, so use a new session or clear the context before unrelated work when you want a clean baseline.
+Once loaded, the skill text remains in that session, so use a new session or clear the context before unrelated work when you want a clean baseline. If it starts interrupting ordinary tasks, add `disable-model-invocation: true` back to the frontmatter to make it manual-only.
 
 ## Package shape
 

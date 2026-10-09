@@ -5,16 +5,16 @@ Create a coherent experience from the person's purpose and real material. Availa
 ## Contents
 
 - [1. Frame the path](#1-frame-the-path)
-- [2. Hard budgets](#2-hard-budgets)
+- [2. Real limits](#2-real-limits)
 - [3. Compose content and hierarchy](#3-compose-content-and-hierarchy)
 - [4. Copy rules](#4-copy-rules)
 - [5. Visual concept](#5-visual-concept)
 - [6. Model interaction and reachable states](#6-model-interaction-and-reachable-states)
 - [7. Implement the complete path](#7-implement-the-complete-path)
-- [8. Deletion pass](#8-deletion-pass)
+- [8. Removing clutter](#8-removing-clutter)
 - [9. Render and walk the path](#9-render-and-walk-the-path)
-- [10. Fresh-eyes gate](#10-fresh-eyes-gate)
-- [Stop-and-redesign triggers](#stop-and-redesign-triggers)
+- [10. Fresh-eyes review](#10-fresh-eyes-review)
+- [When to redesign instead of patch](#when-to-redesign-instead-of-patch)
 
 ## 1. Frame the path
 
@@ -22,7 +22,7 @@ Use the current request, relevant artifacts and existing product to identify the
 
 Keep a brief in existing notes only when coordination or resumption needs it. Distinguish required behavior from the implementation you chose. Before splitting work, connect what the user must see or do to the behavior that makes it possible. If the proposed scene cannot arise, revise the plan inside authority rather than ask the user to imagine it. Exploration can help form a preference without authorizing publication or product changes.
 
-## 2. Hard budgets
+## 2. Real limits
 
 Only user, product, platform and accepted work boundaries create hard limits. Do not turn an estimated layout budget into a content deletion rule. Dense tools can need many controls; a viewing surface may need none. When a true constraint conflicts with the proposed experience, surface that specific conflict with a recommendation. Existing explicit freezes and permission checks are not waived by this guide.
 
@@ -60,7 +60,7 @@ Cover states the changed path can actually enter: trigger, visible meaning, avai
 
 Use semantic structure, accessible names, visible labels, logical focus and keyboard operation with readable contrast. Preserve input across recoverable failures when safe, show feedback for consequential actions and respect reduced-motion preferences. Responsive behavior follows the content and task, not a device-name checklist. Required product and release conditions remain requirements.
 
-## 8. Deletion pass
+## 8. Removing clutter
 
 Remove or demote clutter while composing and viewing the result, without inventing a deletion quota or a separate inventory. Deliberate expression and useful evidence can deserve space even when neither is a button. If removing an element also removes an important explanation, carry that explanation another way or explain why it is no longer needed.
 
@@ -72,7 +72,7 @@ Check the relevant viewports, keyboard/focus, text readability, browser errors, 
 
 Keep enough inputs, observations and artifact references to reproduce decisive checks in the existing evidence location. Fix inspectable in-scope omissions before passing the design problem back to the user. An explicit preview checkpoint still ends the assignment even with reported gaps.
 
-## 10. Fresh-eyes gate
+## 10. Fresh-eyes review
 
 Use independent comprehension review when the user/release contract requires it or when a separate reader can resolve a material blind spot. Do not add a reviewer to every visual edit. Staffing, model and budget permissions still apply.
 
@@ -80,7 +80,7 @@ Use independent comprehension review when the user/release contract requires it 
 
 Use supported findings for an in-scope correction. A required pending review stays pending. Re-review only when required or when changed evidence could change the verdict, not to collect agreement.
 
-## Stop-and-redesign triggers
+## When to redesign instead of patch
 
 If local changes keep creating more explanation without making the task clearer, revisit the chosen scene, information relationship or interaction model. If the task is clear and one state fails, repair that state. If a necessary observation is unavailable, report that precise gap rather than declaring either success or universal impossibility. This is a choice of repair scope, not a fixed retry count or new approval workflow.
 

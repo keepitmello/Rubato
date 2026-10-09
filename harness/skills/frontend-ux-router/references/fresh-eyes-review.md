@@ -19,7 +19,7 @@ The reviewer must receive ONLY:
 2. screenshots of the rendered initial view at target and narrow viewports, or a live route/URL;
 3. optionally, the post-primary-action screenshot when feedback is being judged.
 
-The reviewer must NOT receive: the task brief, the path card, design rationale, internal terminology, the diff, or answers to their questions. If the reviewer asks "what is this supposed to be?", that is a FAIL finding, not a question to answer.
+The reviewer must NOT receive: the task brief, the builder's framing of the task, design rationale, internal terminology, the diff, or answers to their questions. If the reviewer asks "what is this supposed to be?", that is a FAIL finding, not a question to answer.
 
 ## Reviewer prompt (dispatch verbatim)
 
@@ -55,8 +55,8 @@ failure even if it happens to be right.
 ## Grading
 
 - **PASS** requires confident answers to all five questions AND no blocking items in lists 6–8. "I guessed and got lucky" is a FAIL.
-- On **FAIL**, the reviewer's raw answers are the redesign input. The failed question numbers map to the path card: Q1–Q3 failures → evidence/orientation problems; Q4 → primary action hierarchy; Q5 → missing expected-result signal; list 7 items → copy rule violations.
-- The implementer responds to a FAIL by returning to the path card (stop-and-redesign procedure in `frontend-creation.md`), not by explaining the answer to the reviewer or adding a tooltip for each confusion.
+- On **FAIL**, the reviewer's raw answers are the redesign input. The failed question numbers point to what to revisit: Q1–Q3 failures → evidence/orientation problems; Q4 → action hierarchy; Q5 → missing expected-result signal; list 7 items → copy problems.
+- The implementer responds to a FAIL by revisiting the task model (`frontend-creation.md`, "When to redesign instead of patch"), not by explaining the answer to the reviewer or adding a tooltip for each confusion.
 - One re-review after recomposition. A second FAIL on the same question means the task model itself is wrong — escalate to the user with both review transcripts.
 
 ## Dispatcher notes
@@ -64,4 +64,4 @@ failure even if it happens to be right.
 - Any capable agent with vision can be the reviewer; a cheap fast model is fine — the reviewer needs perception, not implementation skill.
 - Run the reviewer in a fresh context (new worker/session). Never reuse the implementer's session or a session that saw the brief.
 - When the screen's actor is an expert (diagnostic tools, admin consoles), set the persona line to that expert. The gate tests fit-to-actor, not universal simplicity.
-- Attach the verdict and the reviewer's raw answers to the completion evidence. `VERIFIED` requires a PASS on record.
+- Attach the verdict and the reviewer's raw answers to the completion evidence. When the review is required, a review that has not run stays pending; do not report it as passed.

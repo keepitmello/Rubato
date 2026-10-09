@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0 — keep or change the approach
+
+- Opened model invocation: the description names the trigger (observations contradict the current explanation, or local fixes keep breaking each other) and says it is not for diverging on every task.
+- Rewrote the core around one result: a changed next action, or the reason to keep the current approach.
+- Distinguished implementation defects, missing material and weak interpretation as different repairs.
+- Pointed product-level reconsideration to `product-reframing` and investment or freeze changes to `product-framing`.
+
 ## 0.3.0 — rebuilt
 
 - Kept manual invocation with `disable-model-invocation: true`.

@@ -1,4 +1,4 @@
-# metaframe v3 design notes
+# metaframe v4 design notes
 
 ## Design decision
 
@@ -14,7 +14,7 @@ The attached Claude Prompting Lab repeatedly favors a small common core, affirma
 
 Those principles produced five concrete choices:
 
-1. **Manual invocation** — timing belongs to the user because metaframe is not useful on every task.
+1. **Narrow model invocation** — metaframe is not useful on every task, so the description names the signal (observations that contradict the current explanation, local fixes that keep breaking each other) rather than a task type. `product-framing` and `product-reframing` route to it for task-level reinterpretation.
 2. **A short core** — `SKILL.md` contains the posture and the few openings that can change action; examples and fresh-context details stay optional.
 3. **No forced reasoning sequence** — user questions, external probes, and independent context are possibilities rather than stages or labels to output.
 4. **Purpose with epistemic restraint** — the result the work should create matters, but unstated purposes and human motives remain provisional.
