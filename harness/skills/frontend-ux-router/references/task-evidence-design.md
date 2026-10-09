@@ -16,7 +16,7 @@ Use this reference when a user must inspect, compare, classify, approve, correct
 
 ## Frame the decision
 
-Complete the path card in `frontend-creation.md` before composing the interface. Give special attention to:
+Settle the path in `frontend-creation.md` §1 before composing the interface. Give special attention to:
 
 - the actor's goal in familiar language;
 - the evidence required for a valid decision;
@@ -24,7 +24,7 @@ Complete the path card in `frontend-creation.md` before composing the interface.
 - a legitimate uncertainty action;
 - mistake recovery, interruption, resume, and completion.
 
-When the required evidence, action consequence, or decision remains materially unclear, pause composition, ask the user one focused question, and wait for confirmation. Treat sending, publishing, charging, deleting, approving, reserving, committing, and undoing as explicit action consequences. Use the focused question as the complete response for that clarification turn.
+When the required evidence, action consequence, or decision remains materially unclear after inspecting what exists, ask the user rather than guess. Sending, publishing, charging, deleting, approving, reserving, committing, and undoing are consequences worth confirming.
 
 Start from the user's verb: inspect, compare, choose, correct, approve, listen, retry, or continue. Map internal categories to the concrete judgment the actor can make.
 
@@ -98,7 +98,7 @@ For temporal interfaces, exercise play, pause, seeking, end or loop reset, item 
 
 ## Return to the task model
 
-Return to the path card when:
+Revisit the task model (`frontend-creation.md`, "When to redesign instead of patch") when:
 
 - the user asks what they are supposed to do;
 - the task needs repeated verbal coaching;
