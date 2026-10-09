@@ -79,6 +79,7 @@ approved_by:         # 사람. LOCKED 전이는 이 기록 없이는 불가
 근거 및 확인 상태:
 ## 6. 가장 위험한 가정 (실험 계약 — 학습 주기마다 이 섹션만 갱신)
 learning_cycle: 1
+experiment_kind: validation | discovery   # validation: 아래 PASS/FAIL을 결과 보기 전에 고정 / discovery: PASS/FAIL 대신 탐색 질문·비교할 장면·관찰 방법을 적고, 아직 모르는 제품 성공 기준은 "형성 중"으로 둔다
 리스크 유형: VALUE | USABILITY | FEASIBILITY | VIABILITY
 핵심 가정 (하나):
 이것이 가장 위험한 이유:

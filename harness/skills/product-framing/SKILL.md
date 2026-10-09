@@ -1,8 +1,6 @@
 ---
 name: product-framing
 description: "Decide the next investment or build scope for a product, hackathon or contest entry: user, current alternative, value, experiment and approval. Owns product kickoff, value drift and changes to a frozen frame. Does not turn open discussion or everyday choices into a product checklist."
-metadata:
-  experiment: co-thinking-v0.3
 ---
 
 # Decide the product's next investment and approval scope
@@ -21,7 +19,7 @@ Keep the user's original idea and the owner's candidates distinct, and compare t
 
 The model investigates checkable facts, points out contradictions and makes reasoned recommendations. The user decides personal experience, values and material commitments. The user being convinced does not prove an outside fact, and the model writing something does not make it E0 evidence. Keep the source of a proposal, its evidence grade, its adoption and permission to execute separate.
 
-When other candidates differ only in name and share the same premise, use `metaframe`; when the product concept itself needs fresh research, use `product-reframing`. Keeping the current direction and doing nothing are also comparable options.
+When candidates differ only in name and share the same product premise, use `product-reframing` to compare a different concept against real evidence; `metaframe` re-reads the current task or approach, not the product concept. Keeping the current direction and doing nothing are also comparable options.
 
 Check a new objection against the facts; do not repeat the same objection without new evidence. Record remaining disagreement separately from what is currently adopted. Do not waive the approval and protection conditions below just to close the conversation.
 
@@ -40,7 +38,7 @@ Do not average a high-risk condition with low-risk items. Do not route product r
 
 ## Distinguish experiments that discover criteria from experiments that confirm a stated claim
 
-Record the experiment kind as `validation` or `discovery` in the existing checklist §6 field `experiment_kind`.
+Record the experiment kind as `validation` or `discovery` in the checklist §6 field `experiment_kind`.
 This does not create a new approval tier or document state.
 
 `validation` fixes the claim under judgment, competing explanations and PASS/FAIL criteria in advance.
@@ -64,7 +62,7 @@ Connect the product's user and scene, the current alternative, the desired chang
 Leave unknown fields honestly unknown. The model may research and write what is needed;
 the user confirms their own judgment and material commitments instead of rewriting every field.
 
-PROBE checks §1, 2, 3, 6, 7 and the conditions for its experiment kind. What matters is that the following content exists, not the format.
+PROBE checks §1, 2, 3, 6, 7. Missing any of the following disqualifies a PROBE; what matters is that the content exists, not the format.
 
 - A concrete person and scene, and a current alternative or a current behavior that will actually be observed.
 - The desired change is not expressed only as code or a number of screens.
@@ -75,10 +73,12 @@ If the user or the current behavior itself is still being found, go back to conv
 a failed person or a bad idea; explain that a build approval document is not needed yet.
 
 STANDARD keeps every field, evidence for the claims that apply, and independent review.
-Do not grant build approval when there is no concrete user and moment, the problem is written only as the absence of a solution,
-there is no current alternative or desired change, organizer dependence is named without substance, related documents contradict each other, or risks and observation methods are missing.
+Do not grant build approval (the STANDARD disqualifiers) when there is no concrete user and moment, the problem is written only as the absence of a solution,
+there is no current alternative, the outcome is only an output such as features, screens or accuracy, a claimed advantage has no comparison or mechanism,
+organizer dependence is named without substance, related documents contradict each other, the riskiest assumption or its observation method is missing,
+or a validation experiment has no criteria set in advance.
 COMMITMENT additionally needs the per-risk approvals in §9 and the required operation, failure and rollback items.
-`references/02-tiers-and-verdicts.md` is canonical for the detailed conditions.
+`references/02-tiers-and-verdicts.md` is canonical for tier conditions, verdicts and state transitions; this section is canonical for the disqualifiers.
 
 ## Independent review and decision
 
@@ -114,7 +114,7 @@ Exact transitions follow `references/04-lock-and-reopen.md`.
 
 - Reasons and examples for each field: `references/01-gate-fields.md`.
 - Tiers, verdicts, evidence grades and output contract: `references/02-tiers-and-verdicts.md`.
-- Pre-build checks and conditions per experiment kind: `references/03-cheap-tests.md`.
+- Pre-build checks: `references/03-cheap-tests.md`. Conditions per experiment kind are in the section on experiment kinds above.
 - Freezing, new cycles and changes to a freeze: `references/04-lock-and-reopen.md`.
 - Design background: `references/05-why-this-shape.md`. Past retrospectives do not replace the current approval rules.
 
