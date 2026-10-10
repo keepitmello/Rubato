@@ -201,12 +201,17 @@ export class RubatoPiBridge {
   // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
   async inventory() {
     const sessions = await this.viaInventory((client) => client.list());
-    return sessions.filter((entry) => this.claimed.has(entry.sessionId) || this.shows(entry));
+    // A side chat belongs to the thread it was opened from, never to the sidebar: its thread is
+    // made by /rubato/side-chat, so the inventory must not import a second one.
+    return sessions.filter((entry) => !entry.sideChatOf && (this.claimed.has(entry.sessionId) || this.shows(entry)));
   }
   async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
   // A new Pi session holding `sessionId`'s completed history (a running turn stays behind),
   // named `title`. The inventory shows it as a thread like any session started elsewhere.
-  async forkSession(sessionId, title) { return this.viaInventory((client) => client.fork(sessionId, { title })); }
+  // `side` makes it a side chat (pi-runtime session-link/side-chat.mjs).
+  async forkSession(sessionId, title, { side = false } = {}) { return this.viaInventory((client) => client.fork(sessionId, { title, side })); }
+  // Deletes a side chat's session; the engine refuses any other conversation.
+  async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;

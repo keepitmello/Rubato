@@ -1,6 +1,6 @@
 // The surface launcher (empty right panel) and the tab bar's "+" menu list nine
 // surfaces in one flat column, which did not read at a glance. Both now follow
-// rubatoSurfaceGroups.ts: Agents | Files, Markdown note, Terminal | Browser,
+// rubatoSurfaceGroups.ts: Agents | Files, Markdown note, Terminal, Side chat | Browser,
 // Device | Diff, Pull request, Linked pull requests, with a thin rule between
 // groups. Shortcut letters are unchanged.
 export const surfaceMenuOverlays = [

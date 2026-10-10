@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -9,6 +9,7 @@ import { SessionFiles } from '../src/session-files.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 import { startSessionServer } from '../src/host.mjs';
 import { SessionClient } from '../src/client.mjs';
+import { SIDE_CHAT_ENTRY, SIDE_CHAT_NOTICE, SIDE_CHAT_NOTICE_TEXT } from '../../pi-runtime/features/session-link/side-chat.mjs';
 
 const fixture = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i = 0; i < 200; i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
@@ -34,6 +35,25 @@ test('stored list does not hydrate 100 sessions; missing ID never creates a sess
   assert.equal(env.host.metrics.runtimeStarts, 0);
   await assert.rejects(client.attach('absent'), /not found/i);
   assert.equal((await client.list()).length, 100);
+});
+
+test('attach waits for startup beyond the management deadline and preserves session deadlines', async (t) => {
+  class SlowWorker extends RpcWorker {
+    async start() { await delay(180); return super.start(); }
+  }
+  const env = await setup(t, { workerFactory: (metadata) => new SlowWorker(metadata, { cliPath: fixture }) });
+  const inventory = await env.client();
+  const first = await inventory.create({ cwd: env.root, title: 'Slow startup' });
+  const second = await inventory.create({ cwd: env.root, title: 'Explicit session deadline' });
+  const client = await new SessionClient({ socketPath: env.socketPath, serverId: env.serverId,
+    timeoutMs: 50 }).connect();
+  const bounded = await new SessionClient({ socketPath: env.socketPath, serverId: env.serverId,
+    timeoutMs: 50, sessionTimeoutMs: 50 }).connect();
+  t.after(async () => { await client.close(); await bounded.close(); });
+  await client.attach(first.sessionId);
+  assert.equal((await client.snapshot()).sessionId, first.sessionId);
+  assert.equal(client.timeoutMs, 50, 'directory/management deadline remains unchanged');
+  await assert.rejects(bounded.attach(second.sessionId), /timeout/i);
 });
 
 test('running A survives detach, B interaction, concurrent reattach, and reconnect', async (t) => {
@@ -200,6 +220,52 @@ test('management fork publishes a titled copy of the completed history and leave
   assert.equal(env.host.metrics.runtimeStarts, 0, 'forking loads no runtime');
   await assert.rejects(client.fork(id, { title: ' ' }), /Invalid title/);
   await assert.rejects(client.fork('absent'), /not found/i);
+});
+
+test('a side chat fork carries the hidden notice after the copied history and is the only kind discard deletes', async (t) => {
+  const env = await setup(t);
+  const client = await env.client();
+  await mkdir(env.sessionsDir, { recursive: true });
+  const id = '01a10319-8c59-7244-a427-5634c2442bc3';
+  const stamp = new Date().toISOString();
+  const file = path.join(env.sessionsDir, `${stamp.replace(/[:.]/g, '-')}_${id}.jsonl`);
+  const message = (role, text, extra = {}) => ({ type: 'message', message: { role, content: [{ type: 'text', text }], timestamp: Date.now(), ...extra } });
+  const entries = [
+    message('user', 'question'),
+    message('assistant', 'answer', { stopReason: 'stop', provider: 'fixture', model: 'local' }),
+  ].map((entry, index) => ({ id: `e${index}`, parentId: index ? `e${index - 1}` : null, timestamp: stamp, ...entry }));
+  await writeFile(file, [{ type: 'session', version: 3, id, timestamp: stamp, cwd: env.root }, ...entries].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  await until(async () => (await client.list()).some((entry) => entry.sessionId === id));
+
+  const side = await client.fork(id, { title: 'Source (side chat)', side: true });
+  assert.equal(side.sideChatOf, id, 'the session list names where a side chat came from');
+  const plain = await client.fork(id);
+  assert.equal('sideChatOf' in plain, false, 'an ordinary fork carries no side-chat field');
+
+  const sideFile = (await readdir(env.sessionsDir)).find((name) => name.endsWith(`_${side.sessionId}.jsonl`));
+  const written = (await readFile(path.join(env.sessionsDir, sideFile), 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  const body = written.filter((entry) => entry.type !== 'session' && entry.type !== 'session_info');
+  // The copied history comes first and unchanged, so the parent's cached prefix is the same bytes.
+  assert.deepEqual(body.slice(0, 2).map((entry) => JSON.stringify(entry.message)), entries.map((entry) => JSON.stringify(entry.message)));
+  assert.deepEqual(body.slice(2).map((entry) => [entry.type, entry.customType]),
+    [['custom', SIDE_CHAT_ENTRY], ['custom_message', SIDE_CHAT_NOTICE]]);
+  assert.equal(body[3].display, false, 'the notice is for the model, not the transcript');
+  assert.equal(body[3].content[0].text, SIDE_CHAT_NOTICE_TEXT);
+  assert.equal(body[2].parentId, 'e1');
+  assert.equal(body[3].parentId, body[2].id);
+  assert.equal(new Set(written.map((entry) => entry.id)).size, written.length, 'entry ids stay unique');
+  assert.deepEqual((await client.transcript(side.sessionId)).messages.map((entry) => entry.role), ['user', 'assistant'],
+    'the notice is not a transcript row');
+
+  await assert.rejects(client.discard(id), /Only a side chat/);
+  await assert.rejects(client.discard(plain.sessionId), /Only a side chat/);
+  await mkdir(path.join(env.sessionsDir, sideFile.replace(/\.jsonl$/, '-artifacts')));
+  await client.discard(side.sessionId);
+  const left = await readdir(env.sessionsDir);
+  assert.equal(left.some((name) => name.includes(side.sessionId)), false, 'the file and its artifacts are gone');
+  assert.equal((await client.list()).some((entry) => entry.sessionId === side.sessionId), false);
+  assert.equal((await client.list()).some((entry) => entry.sessionId === id), true, 'the source stays');
+  await assert.rejects(client.discard(side.sessionId), /No such conversation/);
 });
 
 test('client cleanup is idempotent after an explicit transport disconnect', async (t) => {

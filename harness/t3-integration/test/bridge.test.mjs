@@ -64,6 +64,18 @@ test('a fork is a new session the inventory shows under the asked name, not clai
   assert.ok((await bridge.inventory()).some((entry) => entry.sessionId === forked.sessionId));
   await assert.rejects(bridge.forkSession('absent', 'x'), /not found/i);
 });
+test('a side chat fork stays out of the inventory and is the only session the bridge can discard', async (t) => {
+  const { root, bridge, external } = await setup(t);
+  const source = await external.create({ cwd: root, title: 'Source' });
+  const side = await bridge.forkSession(source.sessionId, 'Source (side chat)', { side: true });
+  assert.equal(side.sideChatOf, source.sessionId);
+  assert.equal((await bridge.inventory()).some((entry) => entry.sessionId === side.sessionId), false,
+    'its thread comes from /rubato/side-chat, not the inventory');
+  await assert.rejects(bridge.discardSession(source.sessionId), /Only a side chat/);
+  await bridge.discardSession(side.sessionId);
+  assert.equal((await external.list()).some((entry) => entry.sessionId === side.sessionId), false);
+  assert.ok((await bridge.inventory()).some((entry) => entry.sessionId === source.sessionId));
+});
 test('T3 creates a new Pi session, forwards questions, reconnects and continues the same worker', async (t) => {
   const { root, service, events, bridge } = await setup(t);
   const session = await bridge.startSession({ threadId:'new-thread', runtimeMode:'full-access', cwd:root });

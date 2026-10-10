@@ -10,6 +10,8 @@ import { pathToFileURL } from "node:url";
 import { Agent } from "undici";
 import { senpiNested } from "../../src/engine-paths.mjs";
 import {
+  CACHE_SESSION_KEYS,
+  cacheSessionKeyFor,
   kRubatoStream,
   measurementBodyFromContext,
   isReplayableContent,
@@ -807,4 +809,32 @@ test("계정 풀의 커밋 판정은 decorator 의 재생 가능 판정과 같�
   }
   assert.equal(isCommittedOutput({ type: "thinking_delta" }), false);
   assert.equal(isCommittedOutput({ type: "text_delta" }), true);
+});
+
+test("사이드 채팅은 OpenAI 계열 캐시 키로 원본 세션 id 를 쓰고, 다른 프로바이더와 계측은 제 id 를 쓴다", async () => {
+  // 쓰는 쪽(세션 시작 때 표시를 읽는 확장)의 함수로 등록해야 두 파일이 같은 자리를 보는지 검사된다.
+  const { setCacheSessionKey, CACHE_SESSION_KEYS: writerSymbol } = await import(
+    "../../../pi-runtime/features/session-link/side-chat.mjs"
+  );
+  assert.equal(writerSymbol, CACHE_SESSION_KEYS);
+  setCacheSessionKey("side-1", "parent-1");
+  try {
+    const seenFor = async (target) => {
+      let seen;
+      const inner = (m, c, options) => {
+        seen = options;
+        return scriptedStream([{ type: "done", reason: "stop", message: assistant({ stopReason: "stop" }) }])(m, c, options);
+      };
+      const recorder = recorderSpy();
+      await drain(withRubatoStream(inner)(target, context, { env: {}, sessionId: "side-1", measurementRecorder: recorder }));
+      return seen;
+    };
+    assert.equal((await seenFor({ provider: "openai-codex", id: "gpt-6-luna", api: "openai-codex-responses" })).sessionId, "parent-1");
+    assert.equal((await seenFor({ provider: "xai", id: "grok-4.7", api: "openai-responses" })).sessionId, "parent-1");
+    // Cursor 는 세션 id 로 서버 쪽 대화를 잇는다. 바꾸면 남의 대화에 붙는다.
+    assert.equal((await seenFor({ provider: "cursor", id: "composer-2.5", api: "cursor-agent" })).sessionId, "side-1");
+  } finally {
+    setCacheSessionKey("side-1", undefined);
+  }
+  assert.equal(cacheSessionKeyFor("side-1"), undefined);
 });

@@ -8,6 +8,7 @@ const RUNTIME_FILES = Object.freeze([
   "tools.mjs",
   "render.mjs",
   "host-sdk.mjs",
+  "side-chat.mjs",
 ]);
 
 export const patches = Object.freeze([]);

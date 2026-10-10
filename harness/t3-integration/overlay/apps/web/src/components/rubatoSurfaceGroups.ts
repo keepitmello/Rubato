@@ -5,7 +5,7 @@
  */
 export const RUBATO_SURFACE_GROUPS: ReadonlyArray<ReadonlyArray<string>> = [
   ["Agents"],
-  ["Files", "Markdown note", "Terminal"],
+  ["Files", "Markdown note", "Terminal", "Side chat"],
   ["Browser", "Device"],
   ["Diff", "Pull request", "Linked pull requests"],
 ];

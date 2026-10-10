@@ -1,5 +1,6 @@
 import { DELIVER_REQUEST, SESSION_MESSAGE_TYPE, buildSessionMessage, deliveredMessageIds, parseDelivery } from "./message.mjs";
 import { renderSessionMessage } from "./render.mjs";
+import { trackSideChatCache } from "./side-chat.mjs";
 import { createSessionTools } from "./tools.mjs";
 
 // How often a message held while the session is busy without a run (a manual compaction or a
@@ -69,8 +70,12 @@ export function installSessionLink(pi, { sessionLink } = {}) {
     send(state.waiting.values().next().value, { triggerTurn: true });
   }
 
+  let untrackSideChat = () => {};
   function reset(ctx) {
     clearTimeout(state.retry);
+    untrackSideChat();
+    // A side chat keeps using the prompt cache of the conversation it came from (side-chat.mjs).
+    untrackSideChat = ctx ? trackSideChatCache(ctx) : () => {};
     Object.assign(state, { ctx, waiting: new Map(), handed: new Set(), running: false, interrupted: false, retry: undefined });
   }
 

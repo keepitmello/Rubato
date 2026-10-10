@@ -11,4 +11,5 @@ export { installSessionLink } from "./extension.mjs";
 export { DELIVER_REQUEST, SESSION_MESSAGE_TYPE, buildEnvelope, buildSessionMessage, parseDelivery } from "./message.mjs";
 export { renderSessionMessage, sessionMessageHeader } from "./render.mjs";
 export { SESSION_TOOL_NAMES, createSessionTools } from "./tools.mjs";
+export { CACHE_SESSION_KEYS, SIDE_CHAT_ENTRY, SIDE_CHAT_NOTICE, SIDE_CHAT_NOTICE_TEXT, setCacheSessionKey, sideChatEntries, sideChatParent, trackSideChatCache } from "./side-chat.mjs";
 export default createSessionLinkFactories;

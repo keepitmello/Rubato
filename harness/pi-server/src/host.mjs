@@ -378,11 +378,13 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               return directory.value.sessions.find((item) => item.sessionId === created.id);
             },
             // A new conversation from the completed history of `id`'s live branch (a
-            // running turn stays behind), idle or running. `title` names the copy.
-            fork: async (id, { title } = {}) => {
+            // running turn stays behind), idle or running. `title` names the copy; `side`
+            // makes it a side chat (pi-runtime session-link/side-chat.mjs).
+            fork: async (id, { title, side = false } = {}) => {
               if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw invalid('Invalid title');
+              if (typeof side !== 'boolean') throw invalid('Invalid side');
               const source = handles.get(id)?.metadata.file ?? (await host.resolveSession(id)).file;
-              const { metadata } = await forkSessionFile({ source, sessionsDir, title: title?.trim() });
+              const { metadata } = await forkSessionFile({ source, sessionsDir, title: title?.trim(), side });
               if (refreshing) await refreshing;
               await refresh();
               return directory.value.sessions.find((item) => item.sessionId === metadata.id);
@@ -398,6 +400,20 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               }
             },
             detach: async (context) => { await presentation.detachSession(context); return null; },
+            // Throws a side chat away: its runtime stops, wherever it was, and its file and
+            // artifacts go. Any other conversation is refused, so a wrong id deletes nothing.
+            // The context-notes index of it ages out on its own (14 days, store.mjs).
+            discard: async (id) => {
+              const metadata = (await files.list()).find((item) => item.id === id);
+              if (!metadata) throw invalid('No such conversation');
+              if (!metadata.sideChatOf) throw invalid('Only a side chat can be discarded');
+              await handles.get(id)?.close();
+              await rm(metadata.file, { force: true });
+              await rm(metadata.file.replace(/\.jsonl$/, '-artifacts'), { force: true, recursive: true });
+              if (refreshing) await refreshing;
+              await refresh();
+              return null;
+            },
             unload: async (id) => {
               const handle = handles.get(id);
               if (!handle) { await files.resolve(id); return null; }

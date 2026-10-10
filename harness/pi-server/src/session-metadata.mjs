@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { finished } from 'node:stream/promises';
+import { SIDE_CHAT_ENTRY } from '../../pi-runtime/features/session-link/side-chat.mjs';
 
 /** The pinned Pi SessionInfo semantics, without retaining allMessagesText.
  * Keep the differential test against SessionManager.listAll when updating Pi.
@@ -10,7 +11,7 @@ export async function readSessionMetadata(file, stats) {
   if (!stats.size) return null;
   const input = createReadStream(file, { encoding: 'utf8', end: Number(stats.size) - 1 });
   const lines = createInterface({ input, crlfDelay: Infinity });
-  let header, name, firstMessage = '', messageCount = 0, lastActivityTime;
+  let header, name, firstMessage = '', messageCount = 0, lastActivityTime, sideChatOf;
   try {
     for await (const line of lines) {
       let entry;
@@ -23,6 +24,8 @@ export async function readSessionMetadata(file, stats) {
           continue;
         }
         if (entry.type === 'session_info') name = entry.name?.trim() || undefined;
+        // Not Pi's: a side chat names the conversation it was opened from (side-chat.mjs).
+        if (entry.type === 'custom' && entry.customType === SIDE_CHAT_ENTRY && typeof entry.data?.parentSessionId === 'string') sideChatOf = entry.data.parentSessionId;
         if (entry.type !== 'message') continue;
         messageCount++;
         const message = entry.message;
@@ -50,7 +53,8 @@ export async function readSessionMetadata(file, stats) {
     const modifiedAt = typeof lastActivityTime === 'number' && lastActivityTime > 0
       ? new Date(lastActivityTime).getTime() : !Number.isNaN(headerTime) ? headerTime : mtime;
     return { id: header.id, file, cwd: typeof header.cwd === 'string' ? header.cwd : '',
-      title: name || firstMessage || '(no messages)', createdAt: new Date(header.timestamp).getTime(), modifiedAt, messageCount };
+      title: name || firstMessage || '(no messages)', createdAt: new Date(header.timestamp).getTime(), modifiedAt, messageCount,
+      ...(sideChatOf ? { sideChatOf } : {}) };
   } finally {
     lines.close();
     input.destroy();

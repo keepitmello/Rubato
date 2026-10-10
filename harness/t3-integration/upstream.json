@@ -87,6 +87,7 @@
     "apps/server/src/orchestration/decider.ts": "f78b642fe2d7d391056dff5cfc7d3d61e173fc0f38f437f060cd82c08ccc2245",
     "packages/client-runtime/src/work-log/presentation.ts": "42292f5d8724d660d8ab3ad824f1dc0ff7f239e7bbdf8e0dc934408b78318aad",
     "apps/server/src/orchestration/ActivityPayloadProjection.ts": "cc06dc64f34a69e1672b70a2496cabdd0f2c10cdecc1fe8defd0349f104bee24",
-    "tsconfig.base.json": "3c4971bce186971debdd3e817555c65345ec9d7156fd7662270062519c0d203b"
+    "tsconfig.base.json": "3c4971bce186971debdd3e817555c65345ec9d7156fd7662270062519c0d203b",
+    "packages/client-runtime/src/state/shell.ts": "f5b9ccd3100f6086b9038b3a54e691c412faae047dbbd503102efb03cc9e8bf2"
   }
 }

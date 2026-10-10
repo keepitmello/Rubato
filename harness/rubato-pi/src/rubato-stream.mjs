@@ -57,6 +57,28 @@ export const kRubatoStream = Symbol.for("rubato.stream.decorated");
  */
 export const kRubatoCallActive = Symbol.for("rubato.stream.callActive");
 
+/**
+ * Session id → the session id whose prompt cache it uses (a side chat → the conversation it
+ * came from). Written by pi-runtime/features/session-link/side-chat.mjs under the same symbol;
+ * the two files are staged into different packages, and a test holds them to one symbol.
+ */
+export const CACHE_SESSION_KEYS = Symbol.for("rubato.cacheSessionKeys");
+
+export function cacheSessionKeyFor(sessionId) {
+  if (typeof sessionId !== "string" || !sessionId) return undefined;
+  const key = globalThis[CACHE_SESSION_KEYS]?.get?.(sessionId);
+  return typeof key === "string" && key && key !== sessionId ? key : undefined;
+}
+
+// APIs that route the prompt cache by the session id alone (`prompt_cache_key` and the
+// session header). Elsewhere a session id can name server-side conversation state (Cursor),
+// so it is never swapped there.
+const SESSION_ROUTED_CACHE_APIS = new Set(["openai-codex-responses", "openai-responses"]);
+
+export function routesCacheBySession(model) {
+  return SESSION_ROUTED_CACHE_APIS.has(model?.api);
+}
+
 const GOOGLE_FETCH_BLOCKED_APIS = new Set(["google-generative-ai", "google-vertex"]);
 
 function resolveStreamUpstreamFetch(model, env) {
@@ -610,6 +632,11 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
         options.onRubatoRequest?.(body);
       },
     };
+    // A side chat asks with the cache key of the conversation it came from, so its first
+    // request reads the prefix that conversation already cached. Measurement and audit keep
+    // the real session id (`options.sessionId`).
+    const cacheKey = cacheSessionKeyFor(options.sessionId);
+    if (cacheKey && routesCacheBySession(model)) innerOptions.sessionId = cacheKey;
     // 직결 경로의 캐시 실사: SDK 가 부르는 fetch 를 감싸 최종 body 와 원시 usage 를
     // 남긴다 (`RUBATO_CACHE_AUDIT_DIR`). Codex 는 기본 WebSocket 이라 fetch 가 안
     // 불리므로 audit 이 켜진 세션에서만 `transport: "sse"` 를 강제한다.
@@ -632,6 +659,9 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     }
     if (model?.provider === "anthropic") {
       const effort = options.midConversationEffort ?? midConversationEffort();
+      // The frozen effort and its marks are part of the cached prefix; a side chat starts from
+      // the parent's, or its first request rewrites the effort and misses the copied history.
+      if (cacheKey) effort.inherit?.(options.sessionId, cacheKey);
       fetchImpl = effort.wrapFetch(fetchImpl, {
         sessionId: options.sessionId,
         provider: model.provider,

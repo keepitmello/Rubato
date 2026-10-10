@@ -35,6 +35,8 @@ export interface PiSummary {
   readonly createdAt: number;
   readonly status: string;
   readonly runtimeId: string | null;
+  /** The session a side chat was opened from; absent for every other session. */
+  readonly sideChatOf?: string;
 }
 /** A message another conversation sent into a Pi session (bridge events.mjs sessionMessageFrom). */
 export interface PiSessionMessage {
@@ -58,7 +60,9 @@ export interface PiBridge {
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
   /** A new session from `id`'s completed history, named `title` (pi-server Management fork). */
-  forkSession(id: string, title: string): Promise<PiSummary | undefined>;
+  forkSession(id: string, title: string, options?: {side?: boolean}): Promise<PiSummary | undefined>;
+  /** Deletes a side chat's session (pi-server Management discard); refuses any other. */
+  discardSession(id: string): Promise<void>;
   /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
   importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
   catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;

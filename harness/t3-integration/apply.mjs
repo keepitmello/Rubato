@@ -26,6 +26,7 @@ import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
+import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2145,6 +2146,11 @@ for (const [relative, changes] of Object.entries(workLogEdits)) {
 // State DB retention and one-time compaction; tsgo checker count (state-retention-edits.mjs).
 overlays.push(...stateRetentionOverlays);
 for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
+overlays.push(...sideChatOverlays);
+for (const [relative, changes] of Object.entries(sideChatEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

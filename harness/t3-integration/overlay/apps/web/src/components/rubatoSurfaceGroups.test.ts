@@ -5,6 +5,7 @@ import { orderSurfaceActions, startsSurfaceGroup } from "./rubatoSurfaceGroups";
 const upstreamOrder = [
   "Browser",
   "Terminal",
+  "Side chat",
   "Files",
   "Markdown note",
   "Diff",
@@ -15,13 +16,14 @@ const upstreamOrder = [
 ].map((label) => ({ label }));
 
 describe("surface groups", () => {
-  it("puts Agents first, then files, previews and source control", () => {
+  it("puts Agents first, then files with Side chat under Terminal, previews and source control", () => {
     const ordered = orderSurfaceActions(upstreamOrder);
     expect(ordered.map((action) => action.label)).toEqual([
       "Agents",
       "Files",
       "Markdown note",
       "Terminal",
+      "Side chat",
       "Browser",
       "Device",
       "Diff",

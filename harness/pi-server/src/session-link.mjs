@@ -1,9 +1,10 @@
 import { open, readFile, stat, writeFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { SessionClient } from './client.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
+import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
 
 /** Answered by the session-link extension inside the target runtime. */
 export const DELIVER_REQUEST = 'rubato.session-link.deliver';
@@ -152,14 +153,21 @@ export function completedHistory(branch) {
  * `admit(sessionId)` runs before the file exists and returns a release; it may refuse by
  * throwing, so a refused fork leaves nothing behind. The session link's fork and the
  * engine's Management fork (host.mjs) both copy through here.
+ * `side` makes the copy a side chat: the history is followed by the marker and the hidden
+ * notice of side-chat.mjs, so the model knows where it is and the copied bytes stay as cached.
  */
-export async function forkSessionFile({ source, sessionsDir, title, admit = () => () => {} }) {
+export async function forkSessionFile({ source, sessionsDir, title, side = false, admit = () => () => {} }) {
   const { parseSessionEntries, migrateSessionEntries, SessionManager } = await import('@earendil-works/pi-coding-agent');
   const entries = parseSessionEntries(await readFile(source, 'utf8'));
   const header = entries.find((entry) => entry.type === 'session');
   if (!header) throw fail('invalid', `Conversation ${source} has no session header`);
   migrateSessionEntries(entries);
   const copied = completedHistory(branchOf(entries).branch);
+  if (side) {
+    const taken = new Set(entries.map((entry) => entry.id));
+    const newId = () => { let id; do id = randomBytes(4).toString('hex'); while (taken.has(id)); taken.add(id); return id; };
+    copied.push(...sideChatEntries({ parentSessionId: header.id, parentId: copied.at(-1)?.id ?? null, newId }));
+  }
   const dir = path.dirname(source);
   const root = await realpath(sessionsDir);
   if (dir !== root && !dir.startsWith(root + path.sep)) throw fail('invalid', 'Source conversation is outside this profile');

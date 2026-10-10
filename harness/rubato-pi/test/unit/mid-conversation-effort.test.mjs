@@ -333,3 +333,28 @@ test("a tool loop after an effort mark keeps the earlier messages byte-identical
   assert.deepEqual(looped.slice(0, marked.length), marked);
   assert.equal(JSON.parse(seen[2].init.body).output_config.effort, "high");
 });
+
+test("a side chat starts from its parent's frozen effort and marks, then keeps its own", async () => {
+  const effort = createMidConversationEffort();
+  const parent = effort.wrapFetch(async () => new Response("{}"), { sessionId: "parent", provider: "anthropic" });
+  const history = [user("hi"), assistant("yo"), user("again")];
+  await send(parent, body({ effort: "high", messages: [user("hi")] }));
+  await send(parent, body({ effort: "low", messages: history }));
+
+  effort.inherit("side", "parent");
+  const seen = [];
+  const side = effort.wrapFetch(async (_url, init) => { seen.push(JSON.parse(init.body)); return new Response("{}"); },
+    { sessionId: "side", provider: "anthropic" });
+  await send(side, body({ effort: "low", messages: [...history, assistant("ok"), user("side question")] }));
+  // The copied prefix is sent exactly as the parent sent it: base effort high, the low mark in place.
+  assert.equal(seen[0].output_config.effort, "high");
+  assert.deepEqual(seen[0].messages[2], systemMark("low"));
+
+  // A change in the side chat is its own; the parent's state does not move.
+  await send(side, body({ effort: "max", messages: [...history, assistant("ok"), user("side question"), assistant("a"), user("b")] }));
+  assert.equal(effort.store.get("parent").marks.length, 1);
+  assert.equal(effort.store.get("side").marks.length, 2);
+  // A side chat that already has state is not reset by a later inherit.
+  effort.inherit("side", "parent");
+  assert.equal(effort.store.get("side").marks.length, 2);
+});

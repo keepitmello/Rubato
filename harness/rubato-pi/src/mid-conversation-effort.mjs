@@ -214,6 +214,15 @@ export function createMidConversationEffort({ store = new Map() } = {}) {
     wrapFetch(baseFetch, meta = {}) {
       return wrapMidConversationEffortFetch(baseFetch, { ...meta, store });
     },
+    /**
+     * A fork that has no state yet starts from `fromSessionId`'s, so its first request keeps
+     * the effort and marks the copied history was sent with. Later changes stay its own.
+     */
+    inherit(sessionId, fromSessionId) {
+      if (typeof sessionId !== "string" || !sessionId || store.has(sessionId)) return;
+      const from = store.get(fromSessionId);
+      if (from) store.set(sessionId, { ...from, marks: [...(from.marks ?? [])] });
+    },
   };
 }
 

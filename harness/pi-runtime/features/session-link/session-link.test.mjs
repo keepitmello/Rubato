@@ -326,3 +326,20 @@ test("the catalog loads session-link with its RPC and tool-search chain, and the
   const modules = readdirSync(new URL(".", import.meta.url)).filter((name) => name.endsWith(".mjs") && !name.endsWith(".test.mjs") && name !== "feature.mjs");
   assert.deepEqual(own.files.map(({ path }) => path).sort(), modules.map((name) => `rubato-features/session-link/${name}`).sort());
 });
+
+test("a side chat uses the prompt cache of the conversation it came from while it runs", async () => {
+  const { CACHE_SESSION_KEYS, SIDE_CHAT_ENTRY } = await import("./side-chat.mjs");
+  const keys = () => globalThis[CACHE_SESSION_KEYS] ?? new Map();
+  const pi = fakePi();
+  createSessionLinkFactories()[0].factory(pi);
+  const marker = { type: "custom", customType: SIDE_CHAT_ENTRY, data: { parentSessionId: "parent-1" }, id: "m", parentId: null };
+  pi.start({ cwd: "/work", sessionManager: { getSessionId: () => "side-1", getCwd: () => "/work", getEntries: () => [marker] } });
+  assert.equal(keys().get("side-1"), "parent-1");
+  // Another session in the same runtime clears it, and an ordinary session registers nothing.
+  pi.start({ cwd: "/work", sessionManager: { getSessionId: () => "plain-1", getCwd: () => "/work", getEntries: () => [] } });
+  assert.equal(keys().has("side-1"), false);
+  assert.equal(keys().has("plain-1"), false);
+  pi.start({ cwd: "/work", sessionManager: { getSessionId: () => "side-1", getCwd: () => "/work", getEntries: () => [marker] } });
+  for (const handler of pi.handlers.get("session_shutdown") ?? []) handler({});
+  assert.equal(keys().has("side-1"), false, "ending the session clears it");
+});
