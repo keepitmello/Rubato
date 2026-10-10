@@ -63,6 +63,8 @@ export interface PiBridge {
   forkSession(id: string, title: string, options?: {side?: boolean}): Promise<PiSummary | undefined>;
   /** Deletes a side chat's session (pi-server Management discard); refuses any other. */
   discardSession(id: string): Promise<void>;
+  /** Every side chat session, which `inventory()` leaves out. */
+  sideChats(): Promise<ReadonlyArray<PiSummary>>;
   /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
   importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
   catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;

@@ -1,14 +1,14 @@
-// The right panel's Side chat: a throwaway fork of the thread's conversation beside it, the
-// way Codex's /side works. It sits in the surface launcher right under Terminal.
+// The right panel's Side chat: forks of the thread's conversation beside it, the way Codex's
+// /side works. It sits in the surface launcher right under Terminal.
 //
-// - /rubato/side-chat and /rubato/side-chat/close on the server (RubatoSideChat.ts) fork the
-//   thread's Pi session as a side chat and delete it again. The engine writes a hidden notice
-//   after the copied history, so the model knows it is in a side chat and the bytes the parent
-//   cached stay the same (pi-runtime session-link/side-chat.mjs);
-// - a `side-chat` surface kind in the panel store, carrying the side chat's thread id;
-// - the panel (RubatoSideChatPanel.tsx) draws that thread with the thread timeline and a plain
-//   composer that keeps the source's model;
-// - rubatoSideChat.ts deletes a side chat whenever its tab leaves the panel, by any close path;
+// - /rubato/side-chat, /list and /close on the server (RubatoSideChat.ts) fork the thread's Pi
+//   session as a side chat, list the thread's side chats and delete one. The engine writes a
+//   hidden notice after the copied history, so the model knows it is in a side chat and the bytes
+//   the parent cached stay the same (pi-runtime session-link/side-chat.mjs);
+// - a singleton `side-chat` surface: the panel (RubatoSideChatPanel.tsx) lists the thread's side
+//   chats and opens one in place of the list, like the Agents panel opens an agent. Closing the
+//   tab keeps them; Side chat in the launcher brings the list back, or starts one when none exist;
+// - what the Agents and Side chat surfaces have open survives a thread switch (rubatoPanelViews.ts);
 // - the client's shell leaves side chat threads out (packages/shared rubatoSideChat.ts), so no
 //   sidebar, search or notification lists them; the panel reads the thread's detail instead.
 export const sideChatOverlays = [
@@ -19,11 +19,11 @@ export const sideChatOverlays = [
   'apps/web/src/components/rubatoSideChat.ts',
   'apps/web/src/components/rubatoSideChat.test.ts',
   'apps/web/src/components/RubatoSideChatPanel.tsx',
+  'apps/web/src/rubatoPanelViews.ts',
+  'apps/web/src/rubatoPanelViews.test.ts',
 ];
 
 const SURFACE = '  | { id: "agents"; kind: "agents" };';
-const EXCLUDED = 'Exclude<RightPanelKind, "file" | "terminal" | "pull-request">';
-const EXCLUDED_SIDE = 'Exclude<RightPanelKind, "file" | "terminal" | "pull-request" | "side-chat">';
 
 const launcherAction = (reasons, badge) => [
   '    {',
@@ -88,36 +88,11 @@ export const sideChatEdits = {
     ['  "agents",\n] as const;', '  "agents",\n  "side-chat",\n] as const;', 'replace'],
     [SURFACE, [
       '  | { id: "agents"; kind: "agents" }',
-      '  /** Rubato: a throwaway fork of the thread\'s conversation (components/rubatoSideChat.ts). */',
-      '  | { id: `side-chat:${string}`; kind: "side-chat"; threadId: string };',
+      '  /** Rubato: the thread\'s side chats (components/rubatoSideChat.ts). */',
+      '  | { id: "side-chat"; kind: "side-chat" };',
     ].join('\n'), 'replace'],
-    [`  open: (\n    ref: ScopedThreadRef,\n    kind: ${EXCLUDED},`,
-      `  open: (\n    ref: ScopedThreadRef,\n    kind: ${EXCLUDED_SIDE},`, 'replace'],
-    [`  toggle: (\n    ref: ScopedThreadRef,\n    kind: ${EXCLUDED},`,
-      `  toggle: (\n    ref: ScopedThreadRef,\n    kind: ${EXCLUDED_SIDE},`, 'replace'],
-    ['  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request">,\n): RightPanelSurface => {',
-      '  kind: Exclude<RightPanelKind, "file" | "preview" | "terminal" | "pull-request" | "side-chat">,\n): RightPanelSurface => {',
-      'replace'],
-    ['  openBrowser: (ref: ScopedThreadRef, tabId: string | null) => void;\n',
-      '  /** Rubato: opens the side chat `threadId` as a tab of `ref` (components/rubatoSideChat.ts). */\n  openSideChat: (ref: ScopedThreadRef, threadId: string) => void;\n'],
-    ['      openBrowser: (ref, tabId) =>\n', [
-      '      openSideChat: (ref, threadId) =>',
-      '        set((state) =>',
-      '          userAction(state, scopedThreadKey(ref), (current) =>',
-      '            upsertSurface(current, { id: `side-chat:${threadId}`, kind: "side-chat", threadId }),',
-      '          ),',
-      '        ),',
-      '',
-    ].join('\n')],
-    ['                    if (surface.kind !== "terminal") return [surface];\n', [
-      '                    if (surface.kind === "side-chat") {',
-      '                      return typeof surface.threadId === "string" &&',
-      '                        surface.id === `side-chat:${surface.threadId}`',
-      '                        ? [surface]',
-      '                        : [];',
-      '                    }',
-      '',
-    ].join('\n')],
+    ['    case "agents":\n      return { id: "agents", kind };\n',
+      '    case "side-chat":\n      return { id: "side-chat", kind };\n'],
   ],
   'apps/web/src/components/RightPanelTabs.tsx': [
     ['  TerminalSquare,\n', '  MessagesSquare,\n'],
@@ -138,26 +113,42 @@ export const sideChatEdits = {
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { stackedThreadToast, toastManager } from "./ui/toast";\n', [
+      'import { setOpenedInPanel, usePanelViewStore, watchPanelViews } from "../rubatoPanelViews";',
       'import { RubatoSideChatPanel } from "./RubatoSideChatPanel";',
-      'import { openSideChat, sideChatSourceReady, watchSideChatTabs } from "./rubatoSideChat";',
+      'import { createSideChat, deleteSideChatIfEmpty, listSideChats, sideChatRef, sideChatSourceReady } from "./rubatoSideChat";',
       'import { threadRunsOnRubato } from "./sidebar/rubatoThreadFork";',
       '',
     ].join('\n')],
     ['  const addAgentsSurface = useCallback(() => {\n', [
-      '  // Rubato: the Side chat surface (rubatoSideChat.ts). Closing its tab deletes it.',
-      '  useEffect(() => watchSideChatTabs(), []);',
+      '  // Rubato: what the Agents and Side chat tabs have open survives a thread switch, and a side',
+      '  // chat left without a word is deleted when its tab closes (rubatoPanelViews.ts).',
+      '  useEffect(',
+      '    () =>',
+      '      watchPanelViews({',
+      '        onSideChatLeft: (owner, sideThreadId) =>',
+      '          deleteSideChatIfEmpty(sideChatRef(owner.environmentId, sideThreadId)),',
+      '      }),',
+      '    [],',
+      '  );',
       '  const sideChatAvailable = sideChatSourceReady(',
       '    activeServerThread,',
       '    activeServerThread !== null && threadRunsOnRubato(activeServerThread),',
       '  );',
+      '  // Side chat shows the side chat that was open, else the list, else starts the first one.',
       '  const addSideChatSurface = useCallback(async () => {',
       '    if (!activeThreadRef) return;',
       '    const ref = activeThreadRef;',
+      '    const key = scopedThreadKey(ref);',
+      '    const show = () => useRightPanelStore.getState().open(ref, "side-chat");',
+      '    if (usePanelViewStore.getState().opened["side-chat"][key]) return show();',
+      '    const existing = await listSideChats(ref).catch(() => null);',
+      '    if (existing === null || existing.length > 0) return show();',
       '    const progress = toastManager.add({ type: "loading", title: "Opening a side chat…" });',
       '    try {',
-      '      const side = await openSideChat(ref);',
+      '      const side = await createSideChat(ref);',
       '      toastManager.close(progress);',
-      '      useRightPanelStore.getState().openSideChat(ref, side.threadId);',
+      '      setOpenedInPanel("side-chat", key, side.threadId);',
+      '      show();',
       '    } catch (error) {',
       '      toastManager.update(',
       '        progress,',
@@ -174,9 +165,8 @@ export const sideChatEdits = {
     ['    ) : renderedRightPanelSurface?.kind === "agents" ? (\n', [
       '    ) : renderedRightPanelSurface?.kind === "side-chat" && activeThreadRef ? (',
       '      <RubatoSideChatPanel',
-      '        key={renderedRightPanelSurface.id}',
       '        environmentId={activeThreadRef.environmentId}',
-      '        threadId={renderedRightPanelSurface.threadId}',
+      '        threadId={activeThreadRef.threadId}',
       '        workspaceRoot={activeWorkspaceRoot}',
       '      />',
       '',

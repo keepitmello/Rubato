@@ -45,6 +45,8 @@ import {
 
 import { cn } from "~/lib/utils";
 import { ScrollArea } from "~/components/ui/scroll-area";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
 import { RubatoAgentSession } from "./RubatoAgentSession";
 
 /** A row opens its agent's conversation in place of the list. */
@@ -631,13 +633,17 @@ export function RubatoAgentsPanel({
   /** The thread's session directory; its children's conversations are read under it. */
   cwd?: string | null;
 }) {
-  // Keyed by thread so switching threads goes back to that thread's list.
-  const [opened, setOpened] = useState<{ threadId: string | null; agentId: string } | null>(null);
-  const openedId = opened && opened.threadId === (threadId ?? null) ? opened.agentId : null;
-  const openAgent = useCallback(
-    (agentId: string) => setOpened({ threadId: threadId ?? null, agentId }),
-    [threadId],
+  // Per thread, for the app session: a thread switch or a hidden panel comes back to the agent
+  // that was open; closing the Agents tab returns to the list (rubatoPanelViews.ts).
+  const threadKey = environmentId && threadId ? scopedThreadKey(scopeThreadRef(environmentId, threadId)) : null;
+  const openedId = useOpenedInPanel("agents", threadKey);
+  const setOpened = useCallback(
+    (agentId: string | null) => {
+      if (threadKey) setOpenedInPanel("agents", threadKey, agentId);
+    },
+    [threadKey],
   );
+  const openAgent = useCallback((agentId: string) => setOpened(agentId), [setOpened]);
   const found = openedId ? findPanelAgent(model, openedId) : null;
   if (found) {
     const { agent, inTeam } = found;

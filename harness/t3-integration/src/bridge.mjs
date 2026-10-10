@@ -212,6 +212,8 @@ export class RubatoPiBridge {
   async forkSession(sessionId, title, { side = false } = {}) { return this.viaInventory((client) => client.fork(sessionId, { title, side })); }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
+  // Every side chat session, which the inventory leaves out (/rubato/side-chat lists and sweeps them).
+  async sideChats() { return (await this.viaInventory((client) => client.list())).filter((entry) => entry.sideChatOf); }
   async catalogue(cwd) {
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;

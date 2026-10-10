@@ -71,6 +71,7 @@ test('a side chat fork stays out of the inventory and is the only session the br
   assert.equal(side.sideChatOf, source.sessionId);
   assert.equal((await bridge.inventory()).some((entry) => entry.sessionId === side.sessionId), false,
     'its thread comes from /rubato/side-chat, not the inventory');
+  assert.deepEqual((await bridge.sideChats()).map((entry) => entry.sessionId), [side.sessionId]);
   await assert.rejects(bridge.discardSession(source.sessionId), /Only a side chat/);
   await bridge.discardSession(side.sessionId);
   assert.equal((await external.list()).some((entry) => entry.sessionId === side.sessionId), false);
