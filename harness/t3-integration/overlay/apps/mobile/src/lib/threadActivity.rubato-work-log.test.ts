@@ -118,6 +118,36 @@ describe("rubato work log on the phone", () => {
     ).toEqual(["turn-fold:turn-1", `assistant:${piId(2)}`]);
   });
 
+  it("keeps an answer in sight when the agent only saved notes after writing it", () => {
+    const notes = {
+      id: EventId.make("tool-notes"),
+      kind: "tool.completed" as const,
+      tone: "tool" as const,
+      summary: "notes_append_to_file",
+      createdAt: at(4),
+      turnId,
+      payload: {
+        title: "notes_append_to_file",
+        itemType: "dynamic_tool_call",
+        status: "completed",
+        toolCallId: "pi-tool:session:call-notes",
+        data: { rubatoActivity: { kind: "other", bookkeeping: true } },
+      },
+    };
+    expect(
+      ids(
+        thread(
+          [
+            assistant(1, 1, "Checking.", "commentary"),
+            assistant(2, 3, "Long answer.", "commentary"),
+            assistant(3, 5, "Send the rest.", "final_answer"),
+          ],
+          [bash(1, 2, "rg foo"), notes],
+        ),
+      ),
+    ).toEqual(["turn-fold:turn-1", `assistant:${piId(2)}`, `assistant:${piId(3)}`]);
+  });
+
   it("names a tagged call the way web does, keeping a command row's command", () => {
     const entry = {
       id: "e",

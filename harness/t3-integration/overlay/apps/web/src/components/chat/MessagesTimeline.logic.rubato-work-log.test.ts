@@ -106,6 +106,40 @@ describe("rubato work log", () => {
     expect(settled.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "note-2-entry"]);
   });
 
+  it("keeps an answer in sight when the agent only saved notes after writing it", () => {
+    const notes = (id: string, second: number) =>
+      work(id, second, {
+        label: "notes_append_to_file",
+        toolTitle: "notes_append_to_file",
+        itemType: "dynamic_tool_call",
+        rubatoActivity: { kind: "other", bookkeeping: true },
+      });
+    const settled = rows([
+      message("user", 0, "user", "Which one?"),
+      message("note-1", 1, "assistant", "Checking the records.", "commentary"),
+      work("read", 2, { rubatoActivity: { kind: "read", target: "a.md" } }),
+      // The whole answer, in a message that ended by saving notes.
+      message("answer", 3, "assistant", "Long answer.", "commentary"),
+      notes("save", 4),
+      message("closing", 5, "assistant", "Send the rest and I'll write it up.", "final_answer"),
+    ]);
+    expect(settled.map((row) => row.id)).toEqual([
+      "user-entry",
+      `turn-fold:${turnId}`,
+      "answer-entry",
+      "closing-entry",
+    ]);
+    // Notes saved mid-turn, with work after them, fold as before.
+    const midTurn = rows([
+      message("user", 0, "user", "Fix it"),
+      message("note-1", 1, "assistant", "Saving progress.", "commentary"),
+      notes("save", 2),
+      work("test", 3, { rubatoActivity: { kind: "command", target: "npm test" } }),
+      message("answer", 4, "assistant", "Fixed.", "final_answer"),
+    ]);
+    expect(midTurn.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "answer-entry"]);
+  });
+
   it("shows no thought row once the thinking is done", () => {
     const settled = rows([
       message("user", 0, "user", "Why?"),

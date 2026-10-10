@@ -27,6 +27,8 @@ export interface RubatoActivity {
   readonly path?: string;
   /** Files one patch touches, when more than one. */
   readonly count?: number;
+  /** The call only keeps the agent's own records (notes, task list); see rubatoPiAnswers. */
+  readonly bookkeeping?: true;
 }
 
 const KINDS = new Set<string>(["read", "search", "list", "command", "edit", "web", "wait", "other"]);
@@ -52,6 +54,7 @@ export function rubatoActivityOf(data: unknown): RubatoActivity | undefined {
     ...(target ? { target } : {}),
     ...(path ? { path } : {}),
     ...(typeof count === "number" && Number.isInteger(count) && count > 1 ? { count } : {}),
+    ...(activity?.bookkeeping === true ? { bookkeeping: true as const } : {}),
   };
 }
 
@@ -202,6 +205,8 @@ export interface RubatoAnswerItem {
   readonly messageId?: string;
   readonly phase?: RubatoAssistantPhase | undefined;
   readonly streaming?: boolean;
+  /** A tool that only keeps the agent's own records. */
+  readonly bookkeeping?: boolean;
 }
 
 // One Pi assistant message is one answer row, and its thought row carries the same key.
@@ -214,7 +219,10 @@ const PI_THOUGHT_ID = /^(?:reasoning:[a-z]+|assistant):pi:([^:]+:[a-f0-9]{24}):/
  * phase. One stored before tags ended with tool calls exactly when its tool rows
  * follow it (its own thought may sit between), which is what the tag would have
  * said. Final answers stay; so does a last word that no tool followed, such as
- * commentary cut short by a stop. Other providers' messages are not answered here.
+ * commentary cut short by a stop, and an answer that only bookkeeping followed: an
+ * agent that writes its answer and then saves its notes or ticks its task list ends
+ * that message in a tool call, yet no work came after it. Other providers' messages
+ * are not answered here.
  */
 export function rubatoPiAnswers(items: ReadonlyArray<RubatoAnswerItem>): {
   readonly phases: ReadonlyMap<string, RubatoAssistantPhase>;
@@ -223,6 +231,7 @@ export function rubatoPiAnswers(items: ReadonlyArray<RubatoAnswerItem>): {
   const phases = new Map<string, RubatoAssistantPhase>();
   const visible = new Set<string>();
   const lastAnswerIndex = items.findLastIndex((item) => item.kind === "answer");
+  const lastWorkIndex = items.findLastIndex((item) => item.kind === "tool" && !item.bookkeeping);
   for (const [index, item] of items.entries()) {
     if (item.kind !== "answer") continue;
     const key = PI_ANSWER_ID.exec(item.messageId ?? "")?.[1];
@@ -238,7 +247,11 @@ export function rubatoPiAnswers(items: ReadonlyArray<RubatoAnswerItem>): {
     if (item.phase === undefined && items[next] === undefined && item.streaming) continue;
     const phase = item.phase ?? (followedByTool ? "commentary" : "final_answer");
     phases.set(item.id, phase);
-    if (phase === "final_answer" || (!followedByTool && index === lastAnswerIndex)) {
+    if (
+      phase === "final_answer" ||
+      (!followedByTool && index === lastAnswerIndex) ||
+      (followedByTool && index > lastWorkIndex)
+    ) {
       visible.add(item.id);
     }
   }

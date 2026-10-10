@@ -5,7 +5,9 @@ import {
   rubatoActivityLabel,
   rubatoActivityOf,
   rubatoPhaseOf,
+  rubatoPiAnswers,
   type RubatoActivity,
+  type RubatoAnswerItem,
 } from "./rubatoActivity.ts";
 
 const tool = (rubatoActivity: RubatoActivity): WorkLogPresentationEntry => ({
@@ -25,6 +27,10 @@ describe("rubato work log activity", () => {
       rubatoActivityOf({ rubatoActivity: { kind: "edit", target: "a.ts", count: 3 } }),
     ).toEqual({ kind: "edit", target: "a.ts", count: 3 });
     expect(rubatoActivityOf({ rubatoActivity: { kind: "launch" } })).toBeUndefined();
+    expect(rubatoActivityOf({ rubatoActivity: { kind: "other", bookkeeping: true } })).toEqual({
+      kind: "other",
+      bookkeeping: true,
+    });
     expect(rubatoActivityOf({})).toBeUndefined();
     expect(rubatoActivityOf(null)).toBeUndefined();
   });
@@ -98,5 +104,25 @@ describe("rubato work log activity", () => {
     expect(rubatoPhaseOf(withPhase("final_answer"))).toBe("final_answer");
     expect(rubatoPhaseOf(withPhase("other"))).toBeUndefined();
     expect(rubatoPhaseOf({})).toBeUndefined();
+  });
+
+  it("keeps an answer in sight when only bookkeeping followed it", () => {
+    const answer = (n: number, phase: "commentary" | "final_answer"): RubatoAnswerItem => ({
+      id: `a${n}`,
+      kind: "answer",
+      messageId: `assistant:pi:session:${String(n).padStart(24, "0")}`,
+      phase,
+    });
+    const work: RubatoAnswerItem = { id: "work", kind: "tool" };
+    const notes: RubatoAnswerItem = { id: "notes", kind: "tool", bookkeeping: true };
+    // The answer, then a notes save in the same message, then a closing line.
+    expect(
+      rubatoPiAnswers([answer(1, "commentary"), work, answer(2, "commentary"), notes, answer(3, "final_answer")])
+        .visible,
+    ).toEqual(new Set(["a2", "a3"]));
+    // Ticking the task list mid-turn is still commentary when work comes after it.
+    expect(
+      rubatoPiAnswers([answer(1, "commentary"), notes, work, answer(2, "final_answer")]).visible,
+    ).toEqual(new Set(["a2"]));
   });
 });

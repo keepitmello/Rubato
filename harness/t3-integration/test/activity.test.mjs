@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { assistantPhaseOf, classifyShellCommand, shellWords, toolActivityOf } from '../src/activity.mjs';
 import { EventProjection } from '../src/events.mjs';
+import { CONTEXT_NOTES_TOOL_NAMES } from '../../rubato-pi/src/context-notes/tools.mjs';
+import { TOOL_SEARCH_TOOL_NAME } from '../../pi-runtime/features/tool-search/tool.mjs';
+import { createTodoExtension } from '../../pi-runtime/features/prompt-rules/todo.mjs';
 
 test('an assistant message is commentary when it hands off to tools and the answer when it stops', () => {
   const text = (extra = {}) => ({ role: 'assistant', content: [{ type: 'text', text: 'hi', ...extra }] });
@@ -67,7 +70,17 @@ test('tool calls classify by what they do', () => {
     { kind: 'edit', target: 'a.ts', count: 2 });
   assert.deepEqual(toolActivityOf('webfetch', { url: 'https://x.dev' }), { kind: 'web', target: 'https://x.dev' });
   assert.deepEqual(toolActivityOf('bash', { command: 'npm test' }), { kind: 'command', target: 'npm test' });
-  assert.deepEqual(toolActivityOf('todo', { op: 'view' }), { kind: 'other' });
+  assert.deepEqual(toolActivityOf('Agent', { prompt: 'go' }), { kind: 'other' });
+});
+
+test('calls that only keep the agent\'s own records are bookkeeping', () => {
+  // The todo tool's name, as its extension registers it.
+  const registered = [];
+  createTodoExtension()({ on() {}, registerTool: (tool) => registered.push(tool.name) });
+  const names = [...CONTEXT_NOTES_TOOL_NAMES, TOOL_SEARCH_TOOL_NAME, ...registered];
+  assert.ok(registered.length > 0);
+  for (const name of names) assert.deepEqual(toolActivityOf(name, {}), { kind: 'other', bookkeeping: true }, name);
+  assert.equal(toolActivityOf('bash', { command: 'npm test' }).bookkeeping, undefined);
 });
 
 const project = () => {

@@ -4,6 +4,9 @@
 // it is done ("Read files and ran commands"), and folds everything but the final
 // answer when the turn ends. Only plain JSON leaves this file.
 
+import { CONTEXT_NOTES_TOOL_NAMES } from '../../rubato-pi/src/context-notes/tools.mjs';
+import { TOOL_SEARCH_TOOL_NAME } from '../../pi-runtime/features/tool-search/tool.mjs';
+
 /** Pi's stopReason says how an assistant message ended. */
 const COMMENTARY_STOPS = new Set(['toolUse']);
 const FINAL_STOPS = new Set(['stop', 'length']);
@@ -252,6 +255,11 @@ export function classifyShellCommand(command) {
 const EDIT_TOOLS = new Set(['edit', 'write', 'apply_patch', 'multiedit', 'notebook_edit']);
 const SEARCH_TOOLS = new Set(['grep', 'find', 'glob', 'ast_grep', 'mcp__ast_grep_search', 'ast_grep_search']);
 const WEB_TOOLS = new Set(['webfetch', 'web_fetch', 'websearch', 'web_search']);
+// Calls that only keep the agent's own records: its working notes and context window,
+// its task list (`todo`, registered by pi-runtime prompt-rules/todo.mjs) and the tools it
+// turns on. An agent often writes its answer and then saves notes or ticks its list in
+// the same message; that message ended in a tool call, but no work for the user followed.
+const BOOKKEEPING_TOOLS = new Set([...CONTEXT_NOTES_TOOL_NAMES, 'todo', TOOL_SEARCH_TOOL_NAME]);
 
 const patchedFiles = (input) => {
   if (typeof input !== 'string') return [];
@@ -262,10 +270,13 @@ const patchedFiles = (input) => {
  * What a tool call does, for the thread: `{ kind, target? }`, where kind is one of
  * `read`, `search`, `list`, `command`, `edit`, `web` or `other`. Target is the file,
  * pattern, folder, command or URL the live line names; `path` is where a search looks.
+ * `bookkeeping` marks a call that only keeps the agent's own records, so the timeline
+ * keeps an answer in sight when nothing but such calls followed it.
  */
 export function toolActivityOf(toolName, args) {
   const input = record(args);
   const name = typeof toolName === 'string' ? toolName : '';
+  if (BOOKKEEPING_TOOLS.has(name)) return { kind: 'other', bookkeeping: true };
   if (name === 'bash') return classifyShellCommand(input.command);
   if (name === 'read') {
     const target = string(input.path) ?? string(input.file_path);
