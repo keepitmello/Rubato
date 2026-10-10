@@ -2,9 +2,10 @@
  * The right panel's Side chat (rubatoSideChat.ts). It lists the thread's side chats and opens one
  * in place of the list, the way the Agents panel opens an agent; what is open survives a thread
  * switch and a hidden panel (rubatoPanelViews.ts). A side chat is the fork's own thread, drawn by
- * the same timeline as the thread beside it, with a plain composer at the bottom. It starts empty
- * at the fork while the model has the whole copied conversation, and keeps the model and modes of
- * the thread it came from, which the copied prefix was cached with, so it offers no picker.
+ * the same timeline as the thread beside it, with the thread composer's look at the bottom
+ * (RubatoPanelComposer.tsx). It starts empty at the fork while the model has the whole copied
+ * conversation, and keeps the model and modes of the thread it came from, which the copied prefix
+ * was cached with, so it offers no picker.
  */
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import {
@@ -14,12 +15,11 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { ThreadId, type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
-import { ArrowLeft, ArrowUp, MessagesSquare, Plus, Square, Trash2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { ArrowLeft, MessagesSquare, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "~/components/ui/button";
 import { ScrollArea } from "~/components/ui/scroll-area";
-import { Textarea } from "~/components/ui/textarea";
 import { useTheme } from "~/hooks/useTheme";
 import { useClientSettings } from "~/hooks/useSettings";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
@@ -32,6 +32,7 @@ import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { ChatMessage } from "../types";
 import { buildThreadTurnInterruptInput } from "./ChatView.logic";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { RubatoPanelComposer } from "./RubatoPanelComposer";
 import {
   createSideChat,
   deleteSideChat,
@@ -276,12 +277,6 @@ function SideChatConversation({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    void send();
-  };
-
   const remove = async () => {
     setError(null);
     try {
@@ -295,23 +290,33 @@ function SideChatConversation({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-center gap-1 border-b border-border/60 p-1.5">
-        <Button variant="ghost" size="icon-sm" aria-label="Back to side chats" onClick={onBack} className="shrink-0">
+      <div className="flex min-h-10 shrink-0 items-center gap-1 border-b border-border/60 px-1.5 py-1">
+        <Button variant="ghost-muted" size="icon-sm" aria-label="Back to side chats" onClick={onBack} className="shrink-0">
           <ArrowLeft aria-hidden />
         </Button>
-        <span className="min-w-0 flex-1 truncate text-sm">{first || "New side chat"}</span>
-        <Button variant="ghost" size="icon-sm" aria-label="Delete side chat" onClick={() => void remove()} className="shrink-0">
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{first || "New side chat"}</span>
+        <Button
+          variant="ghost-destructive"
+          size="icon-sm"
+          aria-label="Delete side chat"
+          onClick={() => void remove()}
+          className="shrink-0"
+        >
           <Trash2 aria-hidden />
         </Button>
       </div>
-      <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {!thread ? (
-          <p className="p-3 text-sm text-muted-foreground">Opening the side chat…</p>
+          <p className="m-auto p-6 text-sm text-muted-foreground">Opening the side chat…</p>
         ) : entries.length === 0 && !working ? (
-          <p className="p-3 text-sm text-muted-foreground">
-            Ask anything about this thread. The side chat sees the whole conversation so far, and the
-            thread will not see what you say here.
-          </p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 p-6 text-center">
+            <MessagesSquare aria-hidden className="size-6 text-muted-foreground/60" />
+            <p className="text-sm font-medium">Ask on the side</p>
+            <p className="max-w-64 text-xs text-muted-foreground">
+              This side chat sees the whole conversation so far. The thread will not see what you
+              say here.
+            </p>
+          </div>
         ) : (
           <MessagesTimeline
             listRef={listRef}
@@ -342,35 +347,20 @@ function SideChatConversation({
           />
         )}
       </div>
-      <footer className="space-y-1.5 border-t border-border/60 p-2">
-        {error ? <p className="text-xs text-destructive-foreground">{error}</p> : null}
-        <Textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-          placeholder="Ask in this side chat…"
-          aria-label="Message to this side chat"
-          rows={2}
-          disabled={!thread}
-          className="text-sm"
-        />
-        <div className="flex items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate text-[.65rem] text-muted-foreground">
-            Side chat · same model as the thread
-          </span>
-          {working ? (
-            <Button variant="destructive-outline" size="xs" disabled={busy === "stop"} onClick={() => void stop()}>
-              <Square aria-hidden />
-              {busy === "stop" ? "Stopping…" : "Stop"}
-            </Button>
-          ) : (
-            <Button size="xs" disabled={!thread || busy !== null || draft.trim().length === 0} onClick={() => void send()}>
-              <ArrowUp aria-hidden />
-              Send
-            </Button>
-          )}
-        </div>
-      </footer>
+      <RubatoPanelComposer
+        value={draft}
+        onChange={setDraft}
+        onSend={() => void send()}
+        onStop={() => void stop()}
+        placeholder="Ask in this side chat…"
+        ariaLabel="Message to this side chat"
+        hint="Same model as the thread"
+        error={error}
+        running={working}
+        sending={busy === "send"}
+        canSend={!working && busy === null}
+        disabled={!thread}
+      />
     </div>
   );
 }

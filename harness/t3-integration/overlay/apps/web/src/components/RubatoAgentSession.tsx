@@ -1,26 +1,25 @@
 /**
  * One child agent's conversation, opened from a row of the Agents panel, drawn by the same
- * timeline as the thread itself (rubatoAgentTimeline.ts), with the controls to stop it or
- * tell it something at the bottom. The conversation is read from the agent's own session
- * file (src/agents/transcript.mjs), so a finished agent of a thread that is not running can
- * still be read; stopping and messaging need the thread's session to be running.
+ * timeline as the thread itself (rubatoAgentTimeline.ts), with the thread composer's look at
+ * the bottom (RubatoPanelComposer.tsx) to stop it or tell it something. The conversation is
+ * read from the agent's own session file (src/agents/transcript.mjs), so a finished agent of a
+ * thread that is not running can still be read; stopping and messaging need the thread's
+ * session to be running.
  */
 import { scopedThreadKey } from "@t3tools/client-runtime/environment";
 import { ThreadId } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
-import { ArrowLeft, ArrowUp, Square } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  type KeyboardEvent,
   type ReactNode,
 } from "react";
 
 import { Button } from "~/components/ui/button";
-import { Textarea } from "~/components/ui/textarea";
 import { useTheme } from "~/hooks/useTheme";
 import { useClientSettings } from "~/hooks/useSettings";
 import {
@@ -31,6 +30,7 @@ import {
   type AgentTranscriptItem,
 } from "../state/rubatoAgents";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
+import { RubatoPanelComposer } from "./RubatoPanelComposer";
 import { agentTimeline } from "./rubatoAgentTimeline";
 
 /** How often a working agent's conversation is read again. */
@@ -115,7 +115,9 @@ function AgentSessionNotice({ children, error = false }: { children: string; err
   return (
     <p
       className={
-        error ? "p-3 text-sm text-destructive-foreground" : "p-3 text-sm text-muted-foreground"
+        error
+          ? "m-auto max-w-72 p-6 text-center text-sm text-destructive-foreground"
+          : "m-auto max-w-72 p-6 text-center text-sm text-muted-foreground"
       }
     >
       {children}
@@ -180,19 +182,13 @@ export function RubatoAgentSession({
     }
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
-    event.preventDefault();
-    void run("send");
-  };
-
   const canControl = target !== null && transcript.controllable;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex items-start gap-1 border-b border-border/60 p-1.5">
+      <div className="flex shrink-0 items-start gap-1 border-b border-border/60 px-1.5 py-1">
         <Button
-          variant="ghost"
+          variant="ghost-muted"
           size="icon-sm"
           aria-label="Back to agents"
           onClick={onBack}
@@ -202,7 +198,7 @@ export function RubatoAgentSession({
         </Button>
         <div className="min-w-0 flex-1">{header}</div>
       </div>
-      <div className="relative flex min-h-0 flex-1 flex-col bg-background">
+      <div className="relative flex min-h-0 flex-1 flex-col">
         {!target ? (
           <AgentSessionNotice>This thread has no folder to read the agent from.</AgentSessionNotice>
         ) : !transcript.loaded ? (
@@ -243,52 +239,32 @@ export function RubatoAgentSession({
           />
         )}
       </div>
-      <footer className="space-y-1.5 border-t border-border/60 p-2">
-        {actionError ? <p className="text-xs text-destructive-foreground">{actionError}</p> : null}
-        {canControl ? (
-          <>
-            <Textarea
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder={live ? "Tell this agent something…" : "Continue this agent…"}
-              aria-label="Message to this agent"
-              rows={2}
-              className="text-xs"
-            />
-            <div className="flex items-center gap-1.5">
-              <span className="min-w-0 flex-1 truncate text-[.65rem] text-muted-foreground">
-                The lead sees a note of what you send.
-              </span>
-              {live ? (
-                <Button
-                  variant="destructive-outline"
-                  size="xs"
-                  disabled={busy !== null}
-                  onClick={() => void run("stop")}
-                >
-                  <Square aria-hidden />
-                  {busy === "stop" ? "Stopping…" : "Stop"}
-                </Button>
-              ) : null}
-              <Button
-                size="xs"
-                disabled={busy !== null || draft.trim().length === 0}
-                onClick={() => void run("send")}
-              >
-                <ArrowUp aria-hidden />
-                {busy === "send" ? "Sending…" : "Send"}
-              </Button>
-            </div>
-          </>
-        ) : (
-          <p className="text-[.65rem] text-muted-foreground">
+      {canControl ? (
+        <RubatoPanelComposer
+          value={draft}
+          onChange={setDraft}
+          onSend={() => void run("send")}
+          onStop={() => void run("stop")}
+          placeholder={live ? "Tell this agent something…" : "Continue this agent…"}
+          ariaLabel="Message to this agent"
+          hint="The lead sees a note of what you send."
+          error={actionError}
+          running={live}
+          sending={busy === "send"}
+          canSend={busy === null}
+        />
+      ) : (
+        <footer className="shrink-0 border-t border-border/60 px-3 py-2">
+          {actionError ? (
+            <p className="pb-1 text-xs text-destructive-foreground">{actionError}</p>
+          ) : null}
+          <p className="text-xs text-muted-foreground">
             {target
               ? "Stopping and messaging work while this thread's session is running."
               : "Stopping and messaging need the thread's folder."}
           </p>
-        )}
-      </footer>
+        </footer>
+      )}
     </div>
   );
 }
