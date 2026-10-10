@@ -487,6 +487,13 @@ const runtimeSources = [
 	...walk(join(featureDir, "src")),
 ].sort();
 
+// src/model-core holds source-tree shims; the stage gets the real modules from packages/model-core.
+const modelCoreDir = fileURLToPath(new URL("../../../../packages/model-core/src/", import.meta.url));
+function stagedSourceOf(sourcePath) {
+	const fromSrc = relative(join(featureDir, "src", "model-core"), sourcePath);
+	return fromSrc.startsWith("..") ? sourcePath : join(modelCoreDir, fromSrc);
+}
+
 export const patches = Object.freeze([
 	Object.freeze({
 		id: "openai-responses-provider-native",
@@ -519,7 +526,7 @@ export const files = Object.freeze(
 			target: "runtime",
 			version: VERSION,
 			path: `rubato-features/media-tools/${relative(featureDir, sourcePath).split(sep).join("/")}`,
-			sourcePath,
+			sourcePath: stagedSourceOf(sourcePath),
 		}),
 	),
 );

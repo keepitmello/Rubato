@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -16,8 +16,6 @@ import {
 	patches,
 } from "./patches.mjs";
 import { addAnthropicBashToPayload, isAnthropicBashEnabled, materializeAnthropicBash } from "./src/anthropic-bash/index.js";
-import { externalizeNativeImages } from "./src/openai-image-gen/externalize.js";
-import { applyImageGenerationTools } from "./src/openai-image-gen/inject.js";
 import {
 	addOpenAiWebSearchToPayload,
 	isOpenaiWebSearchEnabled,
@@ -179,12 +177,6 @@ test("A10 convertContentBlocks anchors survive the anthropic native patch", () =
 	assert.match(patched, /!model\.compat\?\.supportsWebSearch && isAnthropicWebSearchReplayBlock\(raw\)/);
 });
 
-test("native image injection keeps client and Responses tools mutually exclusive", () => {
-	const payload = { tools: [{ type: "function", name: "generate_image" }, { type: "image_generation" }] };
-	assert.deepEqual(applyImageGenerationTools(payload, "native").tools, [{ type: "image_generation" }]);
-	assert.deepEqual(applyImageGenerationTools(payload, "client").tools, [{ type: "function", name: "generate_image" }]);
-});
-
 test("PI_OPENAI_WEB_SEARCH defaults on and honors the product disabled list", async () => {
 	await withEnv("PI_OPENAI_WEB_SEARCH", undefined, () => {
 		assert.equal(isOpenaiWebSearchEnabled(), true);
@@ -217,22 +209,6 @@ test("PI_ANTHROPIC_BASH defaults off and injects bash_20250124 when on", async (
 	});
 });
 
-test("externalize writes generated PNG and scrubs the native base64 block", async () => {
-	const cwd = mkdtempSync(join(tmpdir(), "a14-image-"));
-	try {
-		const message = {
-			role: "assistant",
-			content: [{ type: "providerNative", subtype: "image_generation_call", raw: { type: "image_generation_call", id: "ig_1", status: "completed", result: PNG_DATA, revised_prompt: "one pixel" } }],
-		};
-		const next = await externalizeNativeImages(message, cwd);
-		assert.match(next.content[0].text, /Generated image: generated-images\/ig_1\.png/);
-		assert.equal(existsSync(join(cwd, "generated-images", "ig_1.png")), true);
-		assert.equal(JSON.stringify(next).includes(PNG_DATA), false);
-	} finally {
-		rmSync(cwd, { recursive: true, force: true });
-	}
-});
-
 test("staged stock SDK parses native image, web search, and anthropic bash from local mock streams", async (t) => {
 	const scratch = mkdtempSync(join(tmpdir(), "a14-native-"));
 	t.after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -258,10 +234,9 @@ test("staged stock SDK parses native image, web search, and anthropic bash from 
 	assert.equal(imageOut.content[0].type, "providerNative");
 	assert.equal(imageOut.content[0].subtype, "image_generation_call");
 	assert.equal(imageOut.content[0].raw.result, PNG_DATA);
-	const saved = await externalizeNativeImages(imageOut, scratch);
-	assert.equal(existsSync(join(scratch, "generated-images", "ig_1.png")), true);
-	assert.equal(JSON.stringify(saved).includes(PNG_DATA), false);
-	assert.match(saved.content[0].text, /Generated image:/);
+	// image_create/image_edit read the saved image and its revised prompt from this block.
+	assert.equal(imageOut.content[0].raw.status, "completed");
+	assert.equal(imageOut.content[0].raw.revised_prompt, "one pixel");
 
 	const searchOut = assistantOutput(model);
 	await processResponsesStream(asStream(webSearchEvents()), searchOut, new AssistantMessageEventStream(), model, {});

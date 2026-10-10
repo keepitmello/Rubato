@@ -20,12 +20,8 @@ const packageDirOf = (name) => dirname(findPackageJSON(name, codingAgentEntry));
 const piAiDir = packageDirOf("@earendil-works/pi-ai");
 const piTuiDir = packageDirOf("@earendil-works/pi-tui");
 const piAi = await import(pathToFileURL(join(piAiDir, "dist/index.js")).href);
-const piAiCompat = await import(pathToFileURL(join(piAiDir, "dist/compat.js")).href);
 const piTui = await import(pathToFileURL(join(piTuiDir, "dist/index.js")).href);
 
 export const StringEnum = piAi.StringEnum;
 export const Text = piTui.Text;
 export const truncateToWidth = piTui.truncateToWidth;
-export const generateImages = piAiCompat.generateImages;
-export const getImagesApiProvider = piAiCompat.getImagesApiProvider;
-export const registerImagesApiProvider = piAiCompat.registerImagesApiProvider;

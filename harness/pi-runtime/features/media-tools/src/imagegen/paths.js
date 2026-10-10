@@ -15,34 +15,23 @@ function sanitizeToolCallId(toolCallId) {
     return sanitizeImageStem(toolCallId);
 }
 /**
- * Resolves the absolute destination paths for a generation call.
+ * Resolves the absolute destination path for a generation call.
  *
  * A relative output_path resolves against the working directory. An omitted path
  * falls back to generated-images/<sanitized tool call id>.png. An extensionless
- * path gains .png; any other extension is rejected. With more than one image a
- * zero-padded index is inserted before the extension.
+ * path gains .png; any other extension is rejected.
  */
-export function resolveTargets(cwd, toolCallId, count, outputPath) {
+export function resolveTarget(cwd, toolCallId, outputPath) {
     const requested = outputPath?.trim();
-    let base;
     if (requested === undefined || requested.length === 0) {
-        base = resolve(cwd, DEFAULT_DIRECTORY, `${sanitizeToolCallId(toolCallId)}.png`);
+        return { ok: true, path: resolve(cwd, DEFAULT_DIRECTORY, `${sanitizeToolCallId(toolCallId)}.png`) };
     }
-    else {
-        const absolute = isAbsolute(requested) ? requested : resolve(cwd, requested);
-        const extensionMatch = /\.[^./\\]+$/.exec(absolute);
-        if (extensionMatch && extensionMatch[0].toLowerCase() !== ".png") {
-            return { ok: false, error: `Error: output_path must end in .png (got "${requested}").` };
-        }
-        base = extensionMatch ? absolute : `${absolute}.png`;
+    const absolute = isAbsolute(requested) ? requested : resolve(cwd, requested);
+    const extensionMatch = /\.[^./\\]+$/.exec(absolute);
+    if (extensionMatch && extensionMatch[0].toLowerCase() !== ".png") {
+        return { ok: false, error: `Error: output_path must end in .png (got "${requested}").` };
     }
-    if (count === 1)
-        return { ok: true, paths: [base] };
-    const stem = base.slice(0, -".png".length);
-    return {
-        ok: true,
-        paths: Array.from({ length: count }, (_, index) => `${stem}-${String(index + 1).padStart(2, "0")}.png`),
-    };
+    return { ok: true, path: extensionMatch ? absolute : `${absolute}.png` };
 }
 /** Prefers a path relative to the working directory, falling back to absolute. */
 export function displayPath(cwd, absolute) {

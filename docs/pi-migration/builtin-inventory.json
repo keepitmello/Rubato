@@ -50,16 +50,16 @@
       "defaultPolicy": "registered-subject-to-settings",
       "status": "candidate-has",
       "verdict": "candidate-has",
-      "evidence": "media-tools: features/media-tools/src/imagegen + src/index.mjs; features/media-tools/media-tools.test.mjs (client generate_image against local fixtures)."
+      "evidence": "media-tools: features/media-tools/src/imagegen registers image_create (Images 2.5 Flare) and image_edit (Images 2.5 Sunburst) on the openai-codex ChatGPT login only; features/media-tools/imagegen.test.mjs."
     },
     {
       "id": "openai-image-gen",
       "registration": "builtin",
       "source": "dist/core/extensions/builtin/openai-image-gen/index.js",
       "defaultPolicy": "registered-subject-to-settings",
-      "status": "candidate-has",
-      "verdict": "candidate-has",
-      "evidence": "media-tools registers src/openai-image-gen/* (index.mjs + media-tools.test.mjs closure). Native Responses parser gap remains per docs/pi-migration/media-tools.md; registration is present."
+      "status": "rubato-disabled",
+      "verdict": "rubato-disabled",
+      "evidence": "Removed: native injection served API-key OpenAI endpoints only. Images run through image_create/image_edit on the ChatGPT login."
     },
     {
       "id": "prompt-preset",

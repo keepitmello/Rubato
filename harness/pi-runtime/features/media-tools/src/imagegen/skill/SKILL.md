@@ -1,20 +1,20 @@
 ---
 name: gpt-image-gen
-description: MUST read before generating images. Detailed prompt-crafting guide for gpt-image models, covering tool routing (native image_generation server tool vs the generate_image tool), prompt structure from subject to background, verbatim text rendering, anti-patterns, and the revised_prompt feedback loop for iteration.
+description: MUST read before creating or editing images. Covers when to use image_create versus image_edit, prompt structure from subject to background, verbatim text rendering, how edits drift and how to hold them, anti-patterns, and the revised_prompt feedback loop.
 ---
 
 # GPT Image Generation
 
-How to write image prompts that come back right the first time, and how to fix them fast when they don't. Read this before your first generation call.
+How to write image prompts that come back right the first time, and how to fix them fast when they don't. Read this before your first image call.
 
 ## Which tool
 
-When image generation tooling is present in your tool set, pick the surface that actually exists right now:
+Both tools run ChatGPT Images 2.5 on the user's OpenAI ChatGPT login and save a PNG.
 
-- If a native `image_generation` server tool is available, use it. The provider runs generation server-side and returns the image in the response stream.
-- Otherwise, call the `generate_image` tool. It sends your prompt to the configured OpenAI-compatible endpoint and saves the result to a file.
+- `image_create` makes a new image from text. It uses Flare, the fast tier, which suits drafts, explorations and everyday images.
+- `image_edit` changes an image. It uses Sunburst, the precise-editing tier. Pass `images` to edit or reference specific files. Omit `images` to keep editing the last image made in this session; the earlier requests of that chain ride along so the edit keeps their intent.
 
-Check your current tool set before choosing. Skill visibility refreshes on reload, but tool state can change mid-session (model switch, credential change), so trust the tools you can see over what this page said at startup. If both surfaces ever appear, prefer the native server tool.
+A chain restarts whenever `image_create` runs or `image_edit` gets explicit `images`. If a tool says the ChatGPT login is missing, tell the user to run `/login` and choose OpenAI; there is no other credential path.
 
 ## Prompt crafting
 
@@ -39,29 +39,36 @@ A weathered wooden sign above the door reads "OPEN TIL LATE" in hand-painted whi
 
 Keep on-image text short. Long passages smear. If the layout matters, say where each string sits.
 
+Small numbers, prices, scores and dense multilingual text still waver. When they must be exact, generate the image without them and overlay the text afterwards.
+
 ### Anti-patterns
 
 - Contradictory instructions. "Photorealistic watercolor" or "minimalist scene packed with detail" forces the model to average two opposing goals, and you get neither.
 - Element overcrowding. Every named object competes for pixels and attention. Past roughly five or six distinct elements, small ones get dropped or mangled. Cut before you add.
 - Style-list collisions. "In the style of anime, oil painting, and pixel art" is three prompts in a trench coat. Choose one style per image and generate variants separately.
 
+## Editing
+
+Every edit redraws the whole image. "Keep everything else identical" is a request, not a constraint, so camera angle, color and small details can drift.
+
+- Change one or two things per call. Several removals in one call make the model redraw freely.
+- Repeat the preservation list on every call: same camera angle, same layout, same brightness, same faces. Saying it once at the start of a chain is not enough.
+- Start from the cleanest base you have. A good intermediate result makes a better source than the original plus five changes.
+- Long chains drift: colors darken or warm up, faces move after four or five steps. Counter it in the prompt ("preserve the original brightness, neutral skin tone"), or restart the chain from the original with `images`.
+- With several input images, label their roles: "Image 1: the product photo. Image 2: the style reference." Say what transfers and what stays.
+- When exact pixel preservation is required, prompting alone will not hold it. Edit, then composite only the changed region back onto the original.
+
 ### The revised_prompt loop
 
-Both surfaces can return a `revised_prompt`: the prompt the model actually used after its own rewrite. Always read it.
+Both tools return a revised prompt: the prompt the image model actually used after its own rewrite. Always read it.
 
 1. Diff it against your intent. Note what the model added, dropped, or reinterpreted.
 2. Fold the delta into your next prompt explicitly. If the rewrite dropped "overcast sky", put "overcast sky, no direct sunlight" back with more weight. If it added something you dislike, name the exclusion ("no lens flare").
 3. Regenerate. Treat each round as a conversation with the rewriter, not a fresh roll of the dice.
 
-## Editing and masks
-
-v1 has no editing surface. The `generate_image` tool is text-only: it accepts a prompt and returns new images. There is no image input, no mask, no inpainting, no variation mode. The native `image_generation` server tool may perform provider-side edits on its own (action=auto), but no edit controls are exposed here.
-
-Don't build workflows around editing. If the user asks to change an existing image, say that v1 generates from text only, then offer the closest text-only path: describe the desired end state as a full new prompt. Editing, masks, and image input are planned for a future version.
-
 ## Iteration workflow
 
 - Generate one image first. Inspect the result against every clause of your prompt before spending more.
 - Correct deviations by editing the prompt, not by hoping. Name what was wrong and what stays fixed.
-- Batch with `n` only after the prompt is proven. `n` variants of a bad prompt is `n` bad images.
+- Make variants only after the prompt is proven. Ten variants of a bad prompt are ten bad images.
 - Keep the full prompt text in the conversation. It is your reproducibility record: anyone can re-run the exact call later, and you can diff prompt versions when results drift.

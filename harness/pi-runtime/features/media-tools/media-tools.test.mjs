@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { findPackageJSON } from "node:module";
 import { tmpdir } from "node:os";
@@ -42,44 +42,9 @@ async function waitUntil(predicate, message, timeoutMs = 5_000) {
 
 async function createLoopbackServer(t) {
 	const sockets = new Set();
-	const imageRequests = [];
 	let slowStarted = false;
 	let slowClosed = false;
-	let imageAbortStarted = false;
-	let imageAbortClosed = false;
-	let beforeImageResponse;
 	const server = createServer(async (request, response) => {
-		if (request.method === "POST" && request.url === "/v1/images/generations") {
-			const chunks = [];
-			for await (const chunk of request) chunks.push(chunk);
-			const payload = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-			imageRequests.push({ payload, headers: { ...request.headers } });
-			if (payload.prompt.includes("abort image fixture")) {
-				imageAbortStarted = true;
-				response.on("close", () => {
-					imageAbortClosed = true;
-				});
-				return;
-			}
-			await beforeImageResponse?.(payload);
-			if (payload.prompt.includes("provider error fixture")) {
-				const body = JSON.stringify({ error: { message: "fixture rejected image prompt", type: "invalid_request_error" } });
-				response.writeHead(400, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
-				response.end(body);
-				return;
-			}
-			const body = JSON.stringify({
-				created: 1,
-				data: Array.from({ length: payload.n ?? 1 }, (_, index) => ({
-					b64_json: PNG_DATA,
-					revised_prompt: `fixture revised prompt ${index + 1}`,
-				})),
-				usage: { input_tokens: 7, output_tokens: 11, total_tokens: 18 },
-			});
-			response.writeHead(200, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
-			response.end(body);
-			return;
-		}
 		if (request.url === "/redirect") {
 			response.writeHead(302, { Location: "/article" });
 			response.end();
@@ -143,27 +108,16 @@ async function createLoopbackServer(t) {
 		get slowClosed() {
 			return slowClosed;
 		},
-		imageRequests,
-		get imageAbortStarted() {
-			return imageAbortStarted;
-		},
-		get imageAbortClosed() {
-			return imageAbortClosed;
-		},
-		setBeforeImageResponse(hook) {
-			beforeImageResponse = hook;
-		},
 	};
 }
 
-test("media-tools source closure is runtime-owned and carries webfetch, look_at, and generate_image", async () => {
-	assert.equal(files.length, 45);
+test("media-tools source closure is runtime-owned and carries webfetch, look_at, and the image tools", async () => {
+	assert.equal(files.length, 34);
 	assert.equal(files.every((entry) => entry.target === "runtime"), true);
 	for (const relativePath of [
-		"src/openai-image-gen/externalize.js",
-		"src/openai-image-gen/gate.js",
-		"src/openai-image-gen/index.js",
-		"src/openai-image-gen/inject.js",
+		"src/imagegen/codex.js",
+		"src/imagegen/chain.js",
+		"src/imagegen/tool.js",
 		"src/openai-web-search/index.js",
 		"src/anthropic-bash/index.js",
 		"src/host/image-limit.mjs",
@@ -173,6 +127,12 @@ test("media-tools source closure is runtime-owned and carries webfetch, look_at,
 			true,
 			relativePath,
 		);
+	}
+	assert.equal(files.some((entry) => /openai-image-gen|openai-images|imagegen\/auth/.test(entry.path)), false);
+	// The model-core shims stage the real catalog so the image tools follow the picker's Codex row.
+	for (const name of ["product-model-catalog.mjs", "model-label.mjs"]) {
+		const entry = files.find((candidate) => candidate.path.endsWith(`src/model-core/${name}`));
+		assert.equal(entry?.sourcePath, fileURLToPath(new URL(`../../../../packages/model-core/src/${name}`, import.meta.url)));
 	}
 	for (const sourceFile of sourceFiles(fileURLToPath(new URL("./src", import.meta.url)))) {
 		const source = readFileSync(sourceFile, "utf8");
@@ -186,105 +146,7 @@ test("media-tools source closure is runtime-owned and carries webfetch, look_at,
 	assert.equal(typeof module.imageGenExtension, "function");
 });
 
-test("imagegen auth keeps stored, pinned gateway, sorted gateway, environment, and sentinel precedence", async () => {
-	const { resolveImageGenAuth } = await import("./src/imagegen/auth.js");
-	const gateway = (provider) => ({
-		provider,
-		id: `${provider}-model`,
-		baseUrl: `https://${provider}.example.test`,
-		api: "openai-responses",
-	});
-	function registry({ models = [], credentials = {}, storedOpenAI } = {}) {
-		return {
-			getProviderAuthStatus: (provider) => ({
-				configured: provider === "openai" && storedOpenAI !== undefined,
-				...(provider === "openai" && storedOpenAI !== undefined ? { source: "stored" } : {}),
-			}),
-			getProviderAuth: async (provider) =>
-				provider === "openai" && storedOpenAI !== undefined ? { auth: { apiKey: storedOpenAI } } : undefined,
-			getAll: () => models,
-			getApiKeyAndHeaders: async (model) =>
-				credentials[model.provider]
-					? { ok: true, apiKey: credentials[model.provider], headers: { "x-fixture-provider": model.provider } }
-					: { ok: false, error: "not configured" },
-		};
-	}
-
-	const models = [gateway("zeta"), gateway("my-openai-gateway"), gateway("alpha")];
-	const stored = await resolveImageGenAuth({
-		modelRegistry: registry({ models, credentials: { zeta: "zeta-key" }, storedOpenAI: "stored-key" }),
-		env: { PI_IMAGE_GEN_PROVIDER: "zeta", OPENAI_API_KEY: "env-key" },
-	});
-	assert.deepEqual(stored, {
-		kind: "native-openai",
-		apiKey: "stored-key",
-		baseUrl: "https://api.openai.com/v1",
-		provenance: "store",
-		providerId: "openai",
-	});
-
-	const pinned = await resolveImageGenAuth({
-		modelRegistry: registry({ models, credentials: { zeta: "zeta-key", "my-openai-gateway": "openai-gateway-key" } }),
-		env: { PI_IMAGE_GEN_PROVIDER: "zeta", OPENAI_API_KEY: "env-key" },
-	});
-	assert.equal(pinned.providerId, "zeta");
-	assert.equal(pinned.provenance, "provider-config");
-	assert.deepEqual(pinned.headers, { "x-fixture-provider": "zeta" });
-
-	const sorted = await resolveImageGenAuth({
-		modelRegistry: registry({
-			models,
-			credentials: { alpha: "alpha-key", zeta: "zeta-key", "my-openai-gateway": "openai-gateway-key" },
-		}),
-		env: {},
-	});
-	assert.equal(sorted.providerId, "my-openai-gateway", "OpenAI-named gateways retain first preference");
-
-	const sentinelFallsThrough = await resolveImageGenAuth({
-		modelRegistry: registry({
-			models: [gateway("alpha")],
-			credentials: { alpha: "alpha-key" },
-			storedOpenAI: "SK-SENTINEL-DO-NOT-LOG-fixture",
-		}),
-		env: { OPENAI_API_KEY: "SK-SENTINEL-DO-NOT-LOG-env" },
-	});
-	assert.equal(sentinelFallsThrough.providerId, "alpha");
-
-	const fromEnv = await resolveImageGenAuth({
-		modelRegistry: registry(),
-		env: { OPENAI_API_KEY: "env-key" },
-	});
-	assert.deepEqual(fromEnv, {
-		kind: "native-openai",
-		apiKey: "env-key",
-		baseUrl: "https://api.openai.com/v1",
-		provenance: "env",
-	});
-	const missing = await resolveImageGenAuth({ modelRegistry: registry(), env: {} });
-	assert.equal(missing.kind, "none");
-	assert.match(missing.reason, /Image generation is not configured/);
-});
-
-test("imagegen output paths stay deterministic, PNG-only, and tool-call-id safe", async () => {
-	const { displayPath, resolveTargets, sanitizeImageStem } = await import("./src/imagegen/paths.js");
-	const cwd = resolve(tmpdir(), "rubato-image-path-fixture");
-	assert.equal(sanitizeImageStem("../unsafe/id"), "___unsafe_id");
-	assert.deepEqual(resolveTargets(cwd, "../unsafe/id", 2), {
-		ok: true,
-		paths: [
-			join(cwd, "generated-images/___unsafe_id-01.png"),
-			join(cwd, "generated-images/___unsafe_id-02.png"),
-		],
-	});
-	assert.deepEqual(resolveTargets(cwd, "call", 1, "artifacts/result"), {
-		ok: true,
-		paths: [join(cwd, "artifacts/result.png")],
-	});
-	assert.match(resolveTargets(cwd, "call", 1, "artifacts/result.jpg").error, /must end in \.png/);
-	assert.equal(displayPath(cwd, join(cwd, "artifacts/result.png")), "artifacts/result.png");
-});
-
-test("staged stock SDK executes webfetch, look_at, and client generate_image against local fixtures", async (t) => {
+test("staged stock SDK executes webfetch and look_at, and keeps the image tools behind the ChatGPT login", async (t) => {
 	const previousWebfetchEnv = process.env.PI_WEBFETCH;
 	delete process.env.PI_WEBFETCH;
 	t.after(() => {
@@ -318,7 +180,6 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 		["jsdom", "30.0.1"],
 		["@mozilla/readability", "0.6.0"],
 		["turndown", "7.2.4"],
-		["openai", "6.26.0"],
 	]) {
 		const manifest = findPackageJSON(packageName, pathToFileURL(stagedEntry));
 		assert.equal(JSON.parse(readFileSync(manifest, "utf8")).version, version);
@@ -437,14 +298,13 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 	assert.equal(session.getActiveToolNames().includes("webfetch"), true);
 	assert.equal(typeof session.getToolDefinition("look_at")?.execute, "function");
 	assert.equal(session.getActiveToolNames().includes("look_at"), true);
-	assert.equal(typeof session.getToolDefinition("generate_image")?.execute, "function");
-	assert.equal(session.getActiveToolNames().includes("generate_image"), true);
-	const imageSkill = resourceLoader.getSkills().skills.find((skill) => skill.name === "gpt-image-gen");
-	assert.notEqual(imageSkill, undefined);
-	assert.equal(
-		realpathSync(imageSkill.filePath),
-		realpathSync(join(outputRoot, "rubato-features/media-tools/src/imagegen/skill/SKILL.md")),
-	);
+	for (const name of ["image_create", "image_edit"]) {
+		assert.equal(typeof session.getToolDefinition(name)?.execute, "function");
+		assert.equal(session.getActiveToolNames().includes(name), true);
+	}
+	assert.equal(session.getToolDefinition("generate_image"), undefined);
+	// Without a ChatGPT login the image skill stays out of the prompt.
+	assert.equal(resourceLoader.getSkills().skills.some((skill) => skill.name === "gpt-image-gen"), false);
 
 	const updates = [];
 	const fetched = await extensionApi.executeTool(
@@ -542,108 +402,12 @@ test("staged stock SDK executes webfetch, look_at, and client generate_image aga
 	assert.match(textOf(abortedLookAt), /look_at analysis was aborted/);
 	assert.equal(lookAtRequests.at(-1).options.signal.aborted, true);
 
-	const generated = await extensionApi.executeTool(
-		"generate_image",
-		{
-			prompt: "draw the local image fixture",
-			size: "1024x1536",
-			quality: "high",
-			n: 2,
-			output_path: "outputs/art.png",
-		},
-		{ toolCallId: "image-success" },
-	);
-	assert.deepEqual(generated.details, {
-		paths: ["outputs/art-01.png", "outputs/art-02.png"],
-		model: "gpt-image-2",
-		source: "provider-config:media-fixture",
-		size: "1024x1536",
-		quality: "high",
-		requested: 2,
-		generated: 2,
-		revisedPrompts: ["fixture revised prompt 1", "fixture revised prompt 2"],
-	});
-	assert.equal(generated.content.filter((part) => part.type === "image").length, 2);
-	assert.equal(generated.usage.input, 7);
-	assert.equal(generated.usage.output, 11);
-	for (const path of generated.details.paths) {
-		assert.deepEqual(readFileSync(join(cwd, path)), Buffer.from(PNG_DATA, "base64"));
-	}
-	const successfulImageRequest = loopback.imageRequests.at(-1);
-	assert.deepEqual(successfulImageRequest.payload, {
-		model: "gpt-image-2",
-		prompt: "draw the local image fixture",
-		size: "1024x1536",
-		quality: "high",
-		n: 2,
-		output_format: "png",
-		stream: false,
-	});
-	assert.equal(successfulImageRequest.headers.authorization, "Bearer media-fixture-not-a-real-key");
-	assert.equal(successfulImageRequest.headers["x-image-fixture"], "present");
-
-	writeFileSync(join(cwd, "already-there.png"), "owned by fixture");
-	const requestsBeforePreflight = loopback.imageRequests.length;
-	const preflight = await extensionApi.executeTool("generate_image", {
-		prompt: "must not make a provider request",
-		output_path: "already-there.png",
-	});
-	assert.equal(preflight.details.reason, "invalid_params");
-	assert.match(textOf(preflight), /already exists/);
-	assert.equal(loopback.imageRequests.length, requestsBeforePreflight);
-	assert.equal(readFileSync(join(cwd, "already-there.png"), "utf8"), "owned by fixture");
-
-	const blankPrompt = await extensionApi.executeTool("generate_image", { prompt: "   " });
-	assert.equal(blankPrompt.details.reason, "invalid_params");
-	assert.match(textOf(blankPrompt), /non-whitespace text/);
-
-	const providerFailure = await extensionApi.executeTool("generate_image", {
-		prompt: "provider error fixture",
-		output_path: "provider-error.png",
-	});
-	assert.equal(providerFailure.details.reason, "provider_error");
-	assert.match(textOf(providerFailure), /fixture rejected image prompt/);
-	assert.equal(existsSync(join(cwd, "provider-error.png")), false);
-
-	const imageAbort = new AbortController();
-	const pendingImage = extensionApi.executeTool(
-		"generate_image",
-		{ prompt: "abort image fixture", output_path: "aborted.png" },
-		{ signal: imageAbort.signal },
-	);
-	await waitUntil(() => loopback.imageAbortStarted, "generate_image abort probe never reached the provider fixture");
-	imageAbort.abort(new Error("generate_image local abort probe"));
-	const abortedImage = await pendingImage;
-	assert.equal(abortedImage.details.reason, "provider_error");
-	assert.match(textOf(abortedImage), /abort/i);
-	assert.equal(existsSync(join(cwd, "aborted.png")), false);
-	await waitUntil(() => loopback.imageAbortClosed, "aborted generate_image request retained its provider socket");
-
-	const rollbackSecond = join(cwd, "rollback-02.png");
-	loopback.setBeforeImageResponse((payload) => {
-		if (payload.prompt === "partial write rollback fixture") writeFileSync(rollbackSecond, "racing owner");
-	});
-	const rolledBack = await extensionApi.executeTool("generate_image", {
-		prompt: "partial write rollback fixture",
-		n: 2,
-		output_path: "rollback.png",
-	});
-	loopback.setBeforeImageResponse(undefined);
-	assert.equal(rolledBack.details.reason, "write_failed");
-	assert.equal(existsSync(join(cwd, "rollback-01.png")), false);
-	assert.equal(readFileSync(rollbackSecond, "utf8"), "racing owner");
-
-	const imageState = await import(pathToFileURL(join(dirname(stagedEntry), "imagegen/state.js")).href);
-	const requestsBeforeBypass = loopback.imageRequests.length;
-	imageState.setNativeBypass(true);
-	try {
-		const bypassed = await extensionApi.executeTool("generate_image", { prompt: "native bypass fixture" });
-		assert.equal(bypassed.details.reason, "provider_native_bypass");
-		assert.match(textOf(bypassed), /native image_generation tool/);
-		assert.equal(loopback.imageRequests.length, requestsBeforeBypass);
-	}
-	finally {
-		imageState.setNativeBypass(false);
+	// The fixture agent dir has no ChatGPT login, so both image tools refuse before any request.
+	for (const name of ["image_create", "image_edit"]) {
+		const refused = await extensionApi.executeTool(name, { prompt: "must not reach a provider", output_path: `${name}.png` });
+		assert.equal(refused.details.reason, "missing_config");
+		assert.match(textOf(refused), /OpenAI ChatGPT login/);
+		assert.equal(existsSync(join(cwd, `${name}.png`)), false);
 	}
 
 	await session.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
