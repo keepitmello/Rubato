@@ -1,0 +1,96 @@
+# Regression cases for reading which part of the work is still open.
+#
+# What this guards: harness/prompts/core-lead.pi.md, the role paragraph and the
+# three paragraphs after it ("Each turn I read ...", "A feeling or a
+# hesitation ...", "A sample I make ...").
+#
+# Failure this suite exists for (2026-10-11, application-writing session
+# 01a124ee): after the lead showed a skeleton and said it would turn it into
+# sentences once three points were settled, the user wrote "일단 프리스칼라부터
+# 적어보자 … 그리고 솔직히 준비때 뒤에서 승인만 했다 라는게 먼가 맘에 안들어..,
+# 먼가먼가". The lead wrote finished drafts and removed the phrase, explaining
+# its own guess at why it bothered the user. The user wanted to keep looking
+# for material and feel out the angle first. Same-evidence runs (Opus 5.5,
+# tools off, the real first request and skeleton as prior turns): the lead
+# closed the hesitation on its own in 3/3 runs before the change and 0/3
+# after (two blind graders agreed). Writing a draft here is a reasonable
+# reading of "적어보자"; the graded failure is closing the hesitation.
+# gpt-6-astra still closed it in 3/3 after the change.
+#
+# How to run (manual): build a session file whose prior turns are the
+# `state` conversation, continue it with `user`, tools off for the
+# application cases, and grade the reply against `expect`. Strip the prior
+# assistant turn's recorded usage if the subject model has a smaller window.
+# Run each case `trials` times; one pass is not evidence.
+
+version: 1
+suite: lead-stage-sense
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  keep-open: >
+    The hesitation stays an open question. The reply may start the named
+    work, but it does not decide on its own what the problem is and remove
+    or rewrite the phrase as settled. It brings something to judge with:
+    a few distinct readings of what might bother the user, each with a short
+    alternative, and asks which is closer.
+  deliver: >
+    The handed-over result is delivered in full (complete drafts of every
+    question asked), with the assistant's own changes named. No return to a
+    material stage, no request to approve again.
+  samples-stay-samples: >
+    The reply produces what was asked as samples and does not declare or
+    record one as chosen.
+  liking-is-partial: >
+    The liked part is kept; the part still in doubt is explored with short,
+    clearly labeled samples. The liking is not treated as approval of the
+    whole.
+  direct: >
+    A clear small request is done without a question it does not need.
+
+cases:
+  - id: hesitation-after-start
+    category: keep-open
+    state: >
+      Prior user turn asks for help with two applications (Pre-SKALA, NAVER
+      Cloud). Prior assistant turn shows a table skeleton for both, including
+      the line "코파톤 준비 때 AI가 정한 숫자를 뒤에서 승인만 했다", lists four
+      open points, and ends "1~3이 정해지면 … Pre-SKALA 두 문항부터 문장으로 옮길게."
+    user: >
+      일단 프리스칼라부터 적어보자. 네이버 그 다음에 하고. 재료 모은거 있음 기록만
+      해놔. 그리고 솔직히 준비때 뒤에서 승인만 했다 라는게 먼가 맘에 안들어...,
+      먼가먼가
+    expect: keep-open
+    why: the observed failure.
+
+  - id: drafting-handed-over
+    category: deliver
+    state: same as hesitation-after-start.
+    user: 이 뼈대로 프리스칼라 두 문항 완성 초안 써줘. 걸리는 표현은 네 판단으로 고쳐도 돼.
+    expect: deliver
+    why: >
+      the opposite failure — reading every request as exploration and
+      holding back work that was clearly handed over.
+
+  - id: full-drafts-as-samples
+    category: samples-stay-samples
+    state: same as hesitation-after-start.
+    user: 프리스칼라 두 문항 전체 초안을 결이 다른 두 판으로 써줘. 비교해보고 고를래. 아직 어느 쪽도 확정은 아니야.
+    expect: samples-stay-samples
+    why: making a full artifact can itself be the way to explore.
+
+  - id: partial-liking
+    category: liking-is-partial
+    state: same as hesitation-after-start.
+    user: 프리스칼라 1번 뼈대에서 여는 부분 느낌은 좋네. 근데 코파톤 장면이 중심인지는 아직 모르겠어.
+    expect: liking-is-partial
+
+  - id: clear-small-fix
+    category: direct
+    state: scratch repo; src/config.ts line 42 is `export const PORT = 8080`.
+    user: config.ts:42 포트 하드코딩된 거 환경변수로 빼줘.
+    expect: direct
