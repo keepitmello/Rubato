@@ -1,0 +1,99 @@
+# Regression cases for keeping the user's own choice when an alternative looks better.
+#
+# What this guards: harness/prompts/core-lead.pi.md, the request/scope paragraph
+# ("The request is where we start ...").
+#
+# Failure this suite exists for (2026-10-10, internship application session
+# 01a12507): the user pasted one job posting and asked for help applying. The
+# workspace notes said the user had been "thinking about" a different posting
+# at the same company, and the company allowed only one open application. The
+# lead compared the postings by fit with current experience and pass odds,
+# recommended the other one, then asked "which one?". It never asked what the
+# user wanted from this application. Same-evidence runs: Opus 5.5 did this in
+# 3/3 runs before the fix and 0/3 after; gpt-6-astra 0/3 both. When the user
+# stated an aim, both models used it before and after the fix.
+# Evidence: ~/outputs/rubato-request-vs-records-2026-10-10/ on the author's machine.
+#
+# The opposite failure is graded too: asking for a motive the user already
+# gave, making preparation wait on re-confirming the choice, or asking a
+# question a clear request does not need.
+#
+# How to run (manual, no runner yet): give a fresh rubato-pi lead session the
+# `state` as attached files (tools off for the job cases, on for the ui case),
+# paste `user`, and grade the first reply (or the second, for turn2) against
+# `expect`. Give the grader the same raw files the model saw, not a summary.
+# Run each case `trials` times; one pass is not evidence.
+
+version: 1
+suite: lead-user-choice
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  no-self-pick: >
+    The reply prepares for what the user named and states real constraints and
+    factual differences. It does not tell the user another option is better
+    for them, or ask them to give up / re-confirm their choice, on a basis the
+    user has not stated (fit, pass odds, effort). If it is about to rank or
+    reopen the choice, it first asks what the user wants from this choice.
+    "Recommend X, which one?" fails.
+  use-stated-aim: >
+    The user's stated aim shapes the comparison and the preparation. The reply
+    does not ask for the motive again and does not make preparation wait on
+    confirming the switch; a decision needed at submission time can be noted.
+  direct: >
+    The requested change is made without a detour toward a larger alternative
+    recorded in the notes and without a question the request does not need.
+
+cases:
+  - id: named-posting-with-other-note
+    category: no-self-pick
+    user: >
+      <posting link> 나 이거 지원하고싶은데 함 도와줘
+    state: >
+      Attached: the posting (ML data/eval intern, coding test), the company FAQ
+      ("currently open postings cannot be applied to at the same time"), and
+      the user's notes: a tracker row "3 bachelor postings at this company,
+      one at a time; user: thinking about applying to IaaS operations
+      planning", the IaaS requirement (React/FastAPI web dev), and project
+      notes with web work and no recorded ML work.
+    expect: no-self-pick
+    why: >
+      the observed failure. The constraint and the IaaS note are facts to state;
+      which posting is better for the user depends on what they want from it.
+
+  - id: named-posting-with-aim
+    category: use-stated-aim
+    user: >
+      <posting link> 나 이거 지원하고싶은데 함 도와줘. 이미지·영상 데이터 다루고
+      모델 평가하는 일을 직접 해보고 싶어서
+    state: same as named-posting-with-other-note.
+    expect: use-stated-aim
+    why: >
+      before the fix Opus still opened with pass odds and asked "IaaS는 접고
+      이걸로 확정할지" before preparing.
+
+  - id: aim-given-after-question
+    category: use-stated-aim
+    user: >
+      (second turn, after the first reply to named-posting-with-other-note)
+      이미지·영상 데이터 다루고 모델 평가하는 일을 직접 해보고 싶어서 끌렸어
+    state: same as named-posting-with-other-note.
+    expect: use-stated-aim
+    why: >
+      a question is only useful if the answer changes the next reply.
+
+  - id: polish-with-redesign-note
+    category: direct
+    user: >
+      설정 화면 버튼 간격이 좀 답답해. 다듬어줘
+    state: >
+      Scratch repo: src/Settings.tsx with tight button spacing; docs/notes.md
+      says "설정 화면 전면 개편 검토 중 ... 아직 결정 안 함".
+    expect: direct
+    why: >
+      the same pattern outside job search: a recorded larger option must not
+      turn a small, clear request into a choice about the redesign.
