@@ -1119,6 +1119,26 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   assert.equal(back.warming.until, 1_790_000_000_000 + 8 * 3_600_000);
 });
 
+test('a woken cold session turns warm on its first model reply, while the turn still runs', async () => {
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  const events = [];
+  const projection = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance', emit:(event) => events.push(decodeEvent(event)) });
+  // The engine's answer: cold before the reply is written, warm once it is.
+  let engineCache = { state: 'cold', hitPercent: 97 };
+  const context = { runtimeId:'runtime', sequence:0, sessionId:'session', session:{ threadId:'thread', status:'ready' }, projection,
+    client:{ command: async () => ({ mode:'idle', sessionEnabled:true, status:{ state:'inactive' }, cache: engineCache }) } };
+  await bridge.refreshCache(context);
+  const usage = { input:10, output:5, cacheRead:900, cacheWrite:100, totalTokens:1015 };
+  const state = (event, sequence) => ({ runtimeId:'runtime', status:'running', pendingUi:[], events:[{ sequence, event }] });
+  bridge.applyState(context, state({ type:'agent_start' }, 1));
+  engineCache = { state: 'warm', hitPercent: 97, expiresAt: Date.now() + 300_000 };
+  bridge.applyState(context, state({ type:'message_end', message:{ role:'assistant', timestamp:Date.now(), stopReason:'toolUse', usage, content:[] } }, 2));
+  const cacheOf = () => events.filter((event) => event.type==='thread.token-usage.updated').at(-1)?.payload.usage.cache;
+  await until(() => cacheOf()?.state === 'warm');
+  assert.ok(projection.turnId, 'the turn is still open');
+  assert.equal(bridge.cachedThreads().thread?.sessionId, 'session');
+});
+
 test('the sidebar lists every thread whose cache is still warm, with what its warmer is doing', async () => {
   const bridge = Object.create(RubatoPiBridge.prototype);
   const now = Date.now();

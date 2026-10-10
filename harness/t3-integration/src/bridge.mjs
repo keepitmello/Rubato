@@ -730,7 +730,10 @@ export class RubatoPiBridge {
   }
   /**
    * The context ring shows the cache: its lifetime, hit rate and the warmer. They move
-   * when a turn settles and when the warmer refreshes, so those two events re-read them.
+   * with every model reply (a woken cold session is warm again after its first one, long
+   * before a tool-running turn settles), when a turn settles and when the warmer
+   * refreshes, so those events re-read them. The engine writes a reply to the session
+   * before it hears the next command, so the re-read already counts it.
    * An engine without `get_cache_warming` leaves the ring as it was.
    */
   async refreshCache(context) {
@@ -770,7 +773,9 @@ export class RubatoPiBridge {
     return threads;
   }
   cacheMoved(event) {
-    return event?.type === 'agent_settled' || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
+    return event?.type === 'agent_settled'
+      || (event?.type === 'message_end' && event.message?.role === 'assistant')
+      || (event?.type === 'entry_appended' && event.entry?.kind === 'cache_warm');
   }
   /**
    * The ring's control sets one session's warmer: on/off and hours from now. A thread T3 has let go of
