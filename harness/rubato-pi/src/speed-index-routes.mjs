@@ -22,6 +22,7 @@ export const SPEED_INDEX_NETWORK_ROUTES = Object.freeze({
   opencode: Object.freeze({ kind: "probe", origin: "https://opencode.ai/zen/v1" }),
   "b-ai": Object.freeze({ kind: "probe", origin: "https://api.b.ai/v1" }),
   opengateway: Object.freeze({ kind: "probe", origin: "https://apis.opengateway.ai/v1" }),
+  nanogpt: Object.freeze({ kind: "probe", origin: "https://api.nano-gpt.com/api/v1" }),
 });
 
 export function networkRouteFor(providerId) {

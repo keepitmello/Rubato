@@ -44,11 +44,12 @@ const DISPLAY_NAME: Record<string, string> = {
   cursor: "Cursor",
   "b-ai": "b.ai",
   opengateway: "OpenGateway",
+  nanogpt: "NanoGPT",
   kiro: "Kiro",
   "google-antigravity": "Antigravity",
   opencode: "OpenCode",
 };
-const DISPLAY_ORDER = ["anthropic", "openai-codex", "xai", "cursor", "b-ai", "opengateway", "google-antigravity", "kiro", "opencode"];
+const DISPLAY_ORDER = ["anthropic", "openai-codex", "xai", "cursor", "b-ai", "opengateway", "nanogpt", "google-antigravity", "kiro", "opencode"];
 
 const STATE_VIEW: Record<ConnectionState, { label: string; dot: string; badge: "success" | "warning" | "outline" }> = {
   connected: { label: "Connected", dot: "bg-success", badge: "success" },

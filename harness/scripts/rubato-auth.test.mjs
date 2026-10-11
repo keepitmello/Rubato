@@ -69,6 +69,8 @@ test("login aliases map to engine provider ids", () => {
   assert.deepEqual(resolveLoginProvider("b-ai"), { id: "b-ai" });
   assert.deepEqual(resolveLoginProvider("opengateway"), { id: "opengateway" });
   assert.deepEqual(resolveLoginMethod("opengateway"), { id: "api_key" });
+  assert.deepEqual(resolveLoginProvider("nanogpt"), { id: "nanogpt" });
+  assert.deepEqual(resolveLoginProvider("nano-gpt"), { id: "nanogpt" });
   assert.equal(resolveLoginProvider("nope").error, "unknown");
 });
 
@@ -196,6 +198,21 @@ test("login opengateway key goes to the opengateway api_key method and stores it
   const stored = JSON.parse(readFileSync(authPath, "utf8")).opengateway;
   assert.equal(stored.type, "api_key");
   assert.equal(stored.key, "apik_test_key");
+});
+
+test("login nanogpt key stores the key under the nanogpt provider", async () => {
+  const dir = tempHome();
+  const authPath = join(dir, "auth.json");
+  const ctx = {
+    ...capture(),
+    env: { HOME: dir, RUBATO_AUTH_PATH: authPath },
+    home: dir,
+    readLine: async () => "nano_test_key",
+  };
+  assert.equal(await handleAuthArgs(["login", "nanogpt", "key"], ctx), "ok");
+  const stored = JSON.parse(readFileSync(authPath, "utf8")).nanogpt;
+  assert.equal(stored.type, "api_key");
+  assert.equal(stored.key, "nano_test_key");
 });
 
 test("login anthropic oauth and token go through the same command", async () => {

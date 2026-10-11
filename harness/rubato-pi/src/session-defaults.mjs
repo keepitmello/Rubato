@@ -149,6 +149,72 @@ function ensureOpenGatewayProvider(providers) {
   return next;
 }
 
+/** Pi builtin 에 없는 id 라 b-ai 처럼 disabledProviders 와 부딪히지 않는다. */
+export const NANOGPT_PROVIDER_ID = "nanogpt";
+/** API 키 연동용 호스트. 웹 호스트(nano-gpt.com)보다 긴 요청과 큰 본문을 받는다. */
+export const NANOGPT_BASE_URL = "https://api.nano-gpt.com/api/v1";
+export const NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID = "z-ai/glm-5.3-flash-uncensored";
+
+/**
+ * 능력은 `GET /api/v1/models?detailed=true` 의 이 모델 행이 정본이다: 1M 문맥, 출력 32K,
+ * 이미지 입력, 추론 노력은 low·high 둘. 추론은 `reasoning_effort` 로 켜고 응답은
+ * `delta.reasoning` 으로 오는데, pi-ai 기본 openai 형식이 둘 다 그대로 다룬다.
+ * 가격은 백만 토큰당 USD.
+ */
+export const DEFAULT_NANOGPT_PROVIDER = Object.freeze({
+  name: "NanoGPT",
+  baseUrl: NANOGPT_BASE_URL,
+  api: "openai-completions",
+  apiKey: "$NANOGPT_API_KEY",
+  authHeader: true,
+  models: Object.freeze([
+    Object.freeze({
+      id: NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID,
+      name: "GLM 5.3 Flash Uncensored",
+      contextWindow: 1_048_576,
+      maxTokens: 32_768,
+      input: Object.freeze(["text", "image"]),
+      reasoning: true,
+      cost: Object.freeze({ input: 0.2, output: 0.8, cacheRead: 0.07, cacheWrite: 0 }),
+      thinkingLevelMap: Object.freeze({
+        minimal: null,
+        low: "low",
+        medium: null,
+        high: "high",
+        xhigh: null,
+        max: null,
+      }),
+      compat: Object.freeze({
+        supportsStore: false,
+        supportsDeveloperRole: false,
+        supportsReasoningEffort: true,
+        maxTokensField: "max_tokens",
+        thinkingFormat: "openai",
+      }),
+    }),
+  ]),
+});
+
+export function nanoGptProviderLooksCurrent(providers) {
+  const provider = providers?.[NANOGPT_PROVIDER_ID];
+  if (!isPlainObject(provider) || !Array.isArray(provider.models)) return false;
+  const template = DEFAULT_NANOGPT_PROVIDER.models[0];
+  return provider.models.some((model) => model?.id === template.id && rowMatchesTemplate(model, template));
+}
+
+// OpenGateway 와 같은 방식이다: 우리 행만 템플릿으로 맞추고 사용자가 더한 행은 둔다.
+function ensureNanoGptProvider(providers) {
+  const next = { ...providers };
+  const existing = isPlainObject(next[NANOGPT_PROVIDER_ID]) ? next[NANOGPT_PROVIDER_ID] : null;
+  const template = DEFAULT_NANOGPT_PROVIDER.models[0];
+  const models = Array.isArray(existing?.models) ? [...existing.models] : [];
+  const index = models.findIndex((model) => model?.id === template.id);
+  if (index === -1) models.push(structuredClone(template));
+  else models[index] = { ...models[index], ...structuredClone(template) };
+  next[NANOGPT_PROVIDER_ID] = { ...structuredClone(DEFAULT_NANOGPT_PROVIDER), ...existing, models };
+  return next;
+}
+
 /**
  * 끄는 built-in OAuth extension.
  *
@@ -239,7 +305,11 @@ export function modelsLookCurrent(current) {
   if (!required.every((id) => current.disabledProviders.includes(id))) return false;
   const ours = [...SUPPORTED_PROVIDER_IDS, ...CUSTOM_PROVIDER_IDS];
   if (ours.some((id) => current.disabledProviders.includes(id))) return false;
-  return baiProviderLooksCurrent(current.providers) && openGatewayProviderLooksCurrent(current.providers);
+  return (
+    baiProviderLooksCurrent(current.providers) &&
+    openGatewayProviderLooksCurrent(current.providers) &&
+    nanoGptProviderLooksCurrent(current.providers)
+  );
 }
 
 export function sessionDefaultsLookCurrent(
@@ -315,7 +385,9 @@ export function ensureModelsConfig(
 ) {
   const path = modelsPath(agentDir);
   const current = exists(path) ? JSON.parse(readFile(path, "utf8")) : {};
-  const providers = ensureOpenGatewayProvider(ensureBaiProvider(isPlainObject(current.providers) ? current.providers : {}));
+  const providers = ensureNanoGptProvider(
+    ensureOpenGatewayProvider(ensureBaiProvider(isPlainObject(current.providers) ? current.providers : {})),
+  );
   const next = {
     ...current,
     providers,

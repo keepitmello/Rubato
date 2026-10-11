@@ -30,7 +30,7 @@ import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/RubatoAgentsPanel.tsx', 'apps/web/src/components/RubatoAgentsPanel.test.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/RubatoAgentsPanel.tsx', 'apps/web/src/components/RubatoAgentsPanel.test.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -435,7 +435,7 @@ const edits = {
   // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
   'apps/web/src/components/chat/providerIconUtils.ts': [
-    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\nimport { OpenGatewayIcon } from "../OpenGatewayIcon";\n'],
+    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\nimport { OpenGatewayIcon } from "../OpenGatewayIcon";\nimport { ZhipuIcon } from "../ZhipuIcon";\n'],
     [
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
       '  CursorIcon,\n  GrokIcon,\n  Icon,\n  KiroIcon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
@@ -458,6 +458,7 @@ const edits = {
         '  opencode: OpenCodeIcon,',
         '  "b-ai": DeepSeekIcon,',
         '  opengateway: OpenGatewayIcon,',
+        '  nanogpt: ZhipuIcon,',
         '};',
         'const VENDOR_LABELS: Record<string, string> = {',
         '  "openai-codex": "OpenAI",',
@@ -469,6 +470,7 @@ const edits = {
         '  opencode: "OpenCode",',
         '  "b-ai": "b.ai",',
         '  opengateway: "OpenGateway",',
+        '  nanogpt: "NanoGPT",',
         '};',
         '',
         'export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {',
