@@ -14,7 +14,8 @@ const scratch = mkdtempSync(join(tmpdir(), "rubato-cache-warming-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "stage"), features: [cacheWarmingFeature] });
 const runtime = resolvePiRuntime({ root: staged.root });
-const { CacheWarmer } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
+const { CacheWarmer, RUBATO_CACHE_LIFETIME_MS } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
+const { SessionManager } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/session-manager.js")).href);
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
 
@@ -302,3 +303,55 @@ for (const [provider, intervalMin, graceMin] of [["anthropic", 40, 10], ["openai
     }
   });
 }
+
+// The stock check (sdk.js cacheContextIsCurrent): the transcript still extends the request
+// when every message the request held is the same object at the same place.
+function extendsRequest(requested, current) {
+  return requested.length <= current.length && requested.every((message, index) => current[index] === message);
+}
+
+test("rebuilding the transcript keeps the request it extends, with notices, a summary and edits in it", () => {
+  const session = SessionManager.inMemory("/tmp");
+  const text = (value) => [{ type: "text", text: value }];
+  const user = session.appendMessage({ role: "user", content: text("first"), timestamp: 1 });
+  session.appendMessage({ role: "assistant", content: text("ok"), usage, timestamp: 2 });
+  session.appendCompaction("summary of the first window", user, 100);
+  session.appendCustomMessageEntry("rubato-runtime:wake", "a background task finished", false);
+  const edited = session.appendMessage({ role: "user", content: text("long tool output"), timestamp: 3 });
+  session.appendContextEdit(edited, { content: "trimmed" });
+  const requested = session.buildSessionProjection().messages;
+  assert.deepEqual(requested.map((message) => message.role), ["compactionSummary", "user", "assistant", "custom", "user"]);
+
+  session.appendMessage({ role: "assistant", content: text("done"), usage, timestamp: 4 });
+  // Each turn boundary rebuilds the transcript from the session (agent-session _refreshFinalizedContext).
+  const rebuilt = session.buildSessionProjection().messages;
+  assert.ok(extendsRequest(requested, rebuilt), "the rebuilt transcript still extends the request");
+  assert.equal(rebuilt[4].content, "trimmed");
+});
+
+test("a warmer holding a transcript with a notice still refreshes after the turn boundary rebuild", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const session = SessionManager.inMemory("/tmp");
+  session.appendMessage({ role: "user", content: [{ type: "text", text: "go" }], timestamp: 0 });
+  session.appendCustomMessageEntry("senpi-terminal:notification", "watcher fired", false);
+  let transcript = session.buildSessionProjection().messages;
+  const requested = transcript;
+  session.appendMessage({ role: "assistant", content: [], usage, timestamp: 1 });
+  transcript = session.buildSessionProjection().messages;
+
+  const { warmer, warms } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => extendsRequest(requested, transcript));
+  warmer.onAgentSettled();
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+  assert.equal(warmer.status.state, "scheduled");
+});
+
+test("the context ring counts Codex's cache for the lifetime the warmer refreshes it on", async () => {
+  const { resolveCachePolicy } = await import("../statusline/statusline.mjs");
+  const codex = resolveCachePolicy({ provider: "openai-codex", api: "openai-codex-responses", id: "gpt-6-astra" });
+  assert.equal(codex.kind, "sliding");
+  assert.equal(codex.ttlSeconds * 1000, RUBATO_CACHE_LIFETIME_MS["openai-codex"]);
+  assert.equal(resolveCachePolicy({ provider: "anthropic", api: "anthropic-messages" }).ttlSeconds * 1000, RUBATO_CACHE_LIFETIME_MS.anthropic);
+});

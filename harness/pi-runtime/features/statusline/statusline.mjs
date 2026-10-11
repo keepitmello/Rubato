@@ -159,9 +159,10 @@ export function resolveCachePolicy(model) {
   if (api === "anthropic-messages" || api === "bedrock-converse-stream") {
     return { kind: "sliding", ttlSeconds: model?.cacheRetention === "long" ? 3600 : 300 };
   }
+  // 캐시 워머가 Codex 캐시를 30분짜리로 보고 갱신한다(cache-warming 의 RUBATO_CACHE_LIFETIME_MS). 표시도 같은 수명을 쓴다.
+  if (provider === "openai-codex" || api === "openai-codex-responses") return { kind: "sliding", ttlSeconds: 1800 };
   if (
     provider === "xai" || id.includes("grok") || id.includes("gemini") ||
-    provider === "openai-codex" || api === "openai-codex-responses" ||
     provider === "google" || provider === "google-vertex" || provider === "google-antigravity"
   ) return { kind: "opaque" };
   return undefined;
@@ -172,6 +173,8 @@ export function resolveCachePolicy(model) {
  * 요청(`cache_warm` usage 엔트리)도 그 요청이다. 갱신이 cache 필드를 비워 돌려주면
  * 아무것도 증명하지 못하니 건너뛴다. 입력이 하나도 안 찍힌 응답(제공자가 사용량을 돌려주기
  * 전에 끊긴 인터럽트·오류)도 같은 이유로 건너뛴다.
+ * Codex 갱신은 앞부분 처리가 끝난 순간 끊어서 사용량 없이 "stopped after prefill" 로 남는다.
+ * 그 시점에 캐시 항목은 이미 갱신됐으니 적중한 갱신으로 센다.
  */
 function latestCacheObservation(entries) {
   if (!Array.isArray(entries)) return undefined;
@@ -181,7 +184,9 @@ function latestCacheObservation(entries) {
       const cacheRead = nonNegativeNumber(entry.usage?.cacheRead);
       const cacheWrite = nonNegativeNumber(entry.usage?.cacheWrite);
       const timestamp = Date.parse(entry.timestamp);
-      if ((cacheRead > 0 || cacheWrite > 0) && Number.isFinite(timestamp)) {
+      if (!Number.isFinite(timestamp)) continue;
+      if (String(entry.note ?? "").includes("stopped after prefill")) return { timestamp, hit: true, wrote: false };
+      if (cacheRead > 0 || cacheWrite > 0) {
         return { timestamp, hit: cacheRead > 0, wrote: cacheWrite > 0 };
       }
       continue;

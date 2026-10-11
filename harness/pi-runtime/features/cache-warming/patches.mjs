@@ -18,6 +18,13 @@
 // Codex has no output-token cap on the wire, so a replay would generate a whole turn. Its refresh
 // stops at the first output event instead: by then the prompt prefix has been processed, which is
 // what refreshes the cache entry.
+//
+// The warmer keeps going while the transcript still extends the request it holds, compared by
+// message identity. Pi rebuilds the transcript from the session at every turn boundary, and the
+// rebuild made a fresh object for every custom message (wakes, terminal notices) and for the
+// context window's summary, so any session holding one read as changed after its last turn and
+// the warmer stopped before its first refresh. `patchStableProjection` gives each session entry
+// the same message objects on every rebuild.
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_AGENT = "@earendil-works/pi-coding-agent";
@@ -420,6 +427,74 @@ export function patchSettingsWarmingDefault(source) {
 }
 
 /**
+ * One session entry projects to the same message objects on every rebuild (see the header).
+ * The cache is keyed by the entry and checked against the fields the messages are made from,
+ * so an entry whose fields change still projects fresh.
+ */
+export function patchStableProjection(source) {
+  let next = replaceOnce(
+    source,
+    `export function sessionEntryToContextMessages(entry) {
+    if (entry.type === "message") {`,
+    `const projectedMessagesByEntry = new WeakMap();
+const editedMessagesByEntry = new WeakMap();
+function projectionInputs(entry) {
+    switch (entry?.type) {
+        case "message": return [entry.message];
+        case "custom_message": return [entry.customType, entry.content, entry.display, entry.details, entry.timestamp];
+        case "branch_summary": return [entry.summary, entry.fromId, entry.timestamp];
+        case "compaction": return [entry.summary, entry.tokensBefore, entry.timestamp, entry.systemMessage];
+        default: return undefined;
+    }
+}
+function sameItems(left, right) {
+    return left.length === right.length && left.every((item, index) => item === right[index]);
+}
+export function sessionEntryToContextMessages(entry) {
+    const inputs = projectionInputs(entry);
+    if (!inputs)
+        return projectEntryMessages(entry);
+    const cached = projectedMessagesByEntry.get(entry);
+    if (cached && sameItems(cached.inputs, inputs))
+        return [...cached.messages];
+    const messages = projectEntryMessages(entry);
+    projectedMessagesByEntry.set(entry, { inputs, messages });
+    return [...messages];
+}
+function projectEntryMessages(entry) {
+    if (entry.type === "message") {`,
+    "stable-projection",
+  );
+  next = replaceOnce(
+    next,
+    `    const replacement = edit.replacement;
+    if (replacement === null)
+        return [];
+    return messages.map((message) => {`,
+    `    const replacement = edit.replacement;
+    if (replacement === null)
+        return [];
+    const cached = editedMessagesByEntry.get(entry);
+    if (cached && cached.edit === edit && sameItems(cached.source, messages))
+        return [...cached.messages];
+    const edited = messages.map((message) => {`,
+    "stable-edit",
+  );
+  return replaceOnce(
+    next,
+    `        return { ...message, content };
+    });
+}`,
+    `        return { ...message, content };
+    });
+    editedMessagesByEntry.set(entry, { edit, source: messages, messages: edited });
+    return [...edited];
+}`,
+    "stable-edit-store",
+  );
+}
+
+/**
  * The warmer's live state is in memory; a presentation (the app's context ring) and the
  * session host (which must not unload a runtime with a refresh still due) read it here.
  * `set_session_cache_warming` sets this session's warmer (on/off, hours from now); the global mode stays a setting.
@@ -458,6 +533,7 @@ export function patchRpcCacheWarming(source) {
 export const patches = Object.freeze([
   patch("cache-warming:core/cache-warmer.js", "dist/core/cache-warmer.js", "9c4b000930d6d3c567073102f6b6a52660110bb0f79cf78dd72c4dd1ebc87fc0", patchCacheWarmer),
   patch("cache-warming:core/settings-manager.js", "dist/core/settings-manager.js", "b3a424ac1af9bd0c380796f9e5d812e2c61755ed3b31dd39982a57bbe0d5a391", patchSettingsWarmingDefault),
+  patch("cache-warming:core/session-manager.js", "dist/core/session-manager.js", "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926", patchStableProjection),
   patch("cache-warming:modes/rpc/rpc-mode.js", "dist/modes/rpc/rpc-mode.js", "631697cd35928fc827f4a423538c43ff227b8cbf63c2a2f11060616f55eba6db", patchRpcCacheWarming),
 ]);
 export const files = Object.freeze([]);

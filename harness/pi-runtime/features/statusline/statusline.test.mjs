@@ -25,7 +25,26 @@ test("a scheduled warmer keeps the cache until an hour after its last refresh in
 });
 
 test("providers without a published lifetime stay unknown", () => {
-  assert.deepEqual(cacheSnapshot([turn], { provider: "openai-codex", id: "gpt-6-sol" }, turnAt), { state: "unknown", hitPercent: 90 });
+  assert.deepEqual(cacheSnapshot([turn], { provider: "xai", id: "grok-4.7" }, turnAt), { state: "unknown", hitPercent: 90 });
+});
+
+const codex = { provider: "openai-codex", api: "openai-codex-responses", id: "gpt-6-astra" };
+
+test("Codex's cache lives 30 minutes from the last request", () => {
+  assert.deepEqual(cacheSnapshot([turn], codex, turnAt + 10 * MIN), { state: "warm", hitPercent: 90, expiresAt: turnAt + 30 * MIN });
+  assert.equal(cacheSnapshot([turn], codex, turnAt + 31 * MIN).state, "cold");
+});
+
+test("a Codex refresh stopped after prefill restarts the lifetime though it reports no usage", () => {
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+  const warm = { type: "usage", kind: "cache_warm", timestamp: new Date(turnAt + 20 * MIN).toISOString(), usage: zero, note: "stopped after prefill" };
+  assert.deepEqual(cacheSnapshot([turn, warm], codex, turnAt + 40 * MIN), { state: "warm", hitPercent: 90, expiresAt: turnAt + 50 * MIN });
+});
+
+test("a scheduled Codex warmer keeps the cache until 30 minutes after its last refresh inside the window", () => {
+  const warming = { state: "scheduled", nextWarmAt: turnAt + 20 * MIN, until: turnAt + 120 * MIN, intervalMs: 20 * MIN };
+  // Refreshes at 20, 40, 60, 80 and 100 minutes; the last one holds the cache to 130.
+  assert.equal(cacheSnapshot([turn], codex, turnAt + 5 * MIN, warming).expiresAt, turnAt + 130 * MIN);
 });
 
 test("an interrupted turn with no reported usage leaves the cache as it was", () => {
