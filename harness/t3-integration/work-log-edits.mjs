@@ -284,25 +284,6 @@ export const workLogEdits = {
         '  if (rubatoLabel) return rubatoLabel;',
         ''),
       'replace'],
-    // Codex shows no thought rows. Thinking reads as the live line while it happens.
-    // Only Pi's thoughts (ids the bridge mints) go; other providers keep their rows.
-    [lines(
-      '        const groupId =',
-      '          timelineEntry.kind === "work"',
-      '            ? workGroupId(timelineEntry.id, timelineEntry.entry)',
-      '            : `activity-group:${timelineEntry.id}`;',
-      ''),
-    lines(
-      '        if (',
-      '          !active &&',
-      '          entries.every(',
-      '            (entry) => entry.kind === "message" && /^reasoning:[a-z]+:pi:/.test(entry.message.id),',
-      '          )',
-      '        ) {',
-      '          index = cursor - 1;',
-      '          continue;',
-      '        }',
-      '')],
     // A Pi turn keeps its final answers in sight and folds its commentary with the
     // work (rubatoPiAnswers). Other providers keep T3's rule: the terminal message stays.
     [lines(

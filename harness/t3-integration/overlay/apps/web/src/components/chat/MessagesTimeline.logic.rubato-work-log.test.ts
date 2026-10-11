@@ -5,7 +5,7 @@ import type { TimelineEntry, WorkLogEntry } from "../../session-logic";
 import type { ChatMessage } from "../../types";
 import { deriveMessagesTimelineRows, liveWorkEntryLabel } from "./MessagesTimeline.logic";
 
-// Rubato's work log (work-log-edits.mjs): phase folds, Codex labels, no thought rows.
+// Rubato's work log (work-log-edits.mjs): phase folds, Codex labels, thoughts that stay reachable.
 const turnId = TurnId.make("turn-1");
 const at = (second: number) => new Date(Date.UTC(2026, 9, 8, 0, 0, second)).toISOString();
 
@@ -140,14 +140,52 @@ describe("rubato work log", () => {
     expect(midTurn.map((row) => row.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "answer-entry"]);
   });
 
-  it("shows no thought row once the thinking is done", () => {
+  it("keeps a finished thought that led to words, not tools, as its own row", () => {
+    const thought = message("reasoning:raw:pi:s:0123456789abcdef01234567:reasoning", 1, "reasoning", "Considering.");
     const settled = rows([
       message("user", 0, "user", "Why?"),
-      message("reasoning:raw:pi:s:0123456789abcdef01234567:reasoning", 1, "reasoning", "Considering."),
+      thought,
       message("answer", 2, "assistant", "Because.", "final_answer"),
     ]);
-    expect(settled.map((row) => row.kind)).toEqual(["message", "message"]);
-    expect(settled.map((row) => row.id)).toEqual(["user-entry", "answer-entry"]);
+    expect(settled.map((row) => row.id)).toEqual(["user-entry", `activity-group:${thought.id}`, "answer-entry"]);
+
+    // The first thought of a turn usually precedes a word to the person, then tools.
+    // Once the words arrive it is no longer live, and it must not vanish.
+    const live = rows(
+      [
+        message("user", 0, "user", "Fix it"),
+        thought,
+        message("note", 2, "assistant", "Looking at the bridge.", "commentary"),
+        work("read", 3, { rubatoActivity: { kind: "read", target: "src/events.mjs" } }),
+      ],
+      true,
+    );
+    const row = live.find((candidate) => candidate.id === `activity-group:${thought.id}`);
+    expect(row?.kind === "activity-group" && row.active).toBe(false);
+    expect(row?.kind === "activity-group" && row.entries.map((entry) => entry.id)).toEqual([thought.id]);
+    expect(live.findIndex((candidate) => candidate === row)).toBeLessThan(
+      live.findIndex((candidate) => candidate.id === "note-entry"),
+    );
+
+    // A settled turn folds that thought with its work; opening the fold shows it.
+    const entries = [
+      message("user", 0, "user", "Fix it"),
+      thought,
+      message("note", 2, "assistant", "Looking at the bridge.", "commentary"),
+      work("read", 3, { rubatoActivity: { kind: "read", target: "src/events.mjs" } }),
+      message("answer", 4, "assistant", "Fixed.", "final_answer"),
+    ];
+    const folded = rows(entries);
+    expect(folded.map((candidate) => candidate.id)).toEqual(["user-entry", `turn-fold:${turnId}`, "answer-entry"]);
+    const opened = deriveMessagesTimelineRows({
+      timelineEntries: entries,
+      isWorking: false,
+      activeTurnStartedAt: null,
+      turnDiffSummaries: [],
+      supportsConversationRollback: false,
+      expandedTurnIds: new Set([turnId]),
+    });
+    expect(opened.some((candidate) => candidate.id === `activity-group:${thought.id}`)).toBe(true);
   });
 
   it("names a finished call, not the thinking after it, on another provider's live line", () => {
