@@ -40,9 +40,15 @@ describe('tasks', () => {
     expect((await refusal(store().create(input({ cwd: 'relative/path' })))).field).toBe('cwd');
     expect((await refusal(store().create(input({ prompt: '' })))).field).toBe('prompt');
     expect((await refusal(store().create(input({ model: 'not a model' })))).field).toBe('model');
+    expect((await refusal(store().create(input({ model: 'opengateway/deepseek/' })))).field).toBe('model');
     expect((await refusal(store().create(input({ thinking: 'extreme' })))).field).toBe('thinking');
     expect((await refusal(store().create(input({ schedule: '0 9 * * *' })))).code).toBe('schedule-unsupported');
     expect((await store().list()).tasks).toEqual([]);
+  });
+
+  test('a model id whose own part holds slashes is accepted', async () => {
+    const task = await store().create(input({ model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast' }));
+    expect(task.model).toBe('opengateway/deepseek/deepseek-v4.1-flash-ultrafast');
   });
 
   test('editing the schedule or switching a task back on restarts judging from now', async () => {

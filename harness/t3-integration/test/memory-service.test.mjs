@@ -194,6 +194,9 @@ test('settings writes keep the user file and commit the self store', async (t) =
   await assert.rejects(f.service.handle('config', { publish: 'review' }), /Nothing to change/);
   await assert.rejects(f.service.handle('config', { models: [] }), /1 to 8 models/);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'grok' }] }), /not valid/);
+  await assert.rejects(f.service.handle('config', { models: [{ model: 'opengateway/deepseek/' }] }), /not valid/);
+  await f.service.handle('config', { models: [{ model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast' }] });
+  assert.deepEqual(jsoncModels(await readFile(configFile, 'utf8')), [{ model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast' }]);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7' }, { model: 'xai/grok-4.7' }] }), /twice/);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'huge' }] }), /Reasoning/);
   await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /No memory store/);

@@ -12,7 +12,8 @@ import { pruneRuns } from './judge.mjs';
 // reader never sees half a file and `revision` rises on every change.
 
 export const THINKING_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
-const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,127}$/;
+// The id after the provider may itself hold slashes (opengateway/deepseek/deepseek-v4.1-flash-ultrafast).
+const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,127}){1,3}$/;
 const LOCK_WAIT_MS = 5000;
 const LOCK_STALE_MS = 30_000;
 

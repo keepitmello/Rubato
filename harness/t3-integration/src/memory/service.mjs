@@ -27,7 +27,8 @@ const jsonc = createRequire(path.join(repoRoot, 'packages', 'rubato-config-core'
 
 const STORE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+// The id after the provider may itself hold slashes (opengateway/deepseek/deepseek-v4.1-flash-ultrafast).
+const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._:-]{0,127}){1,3}$/;
 const REASONING = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const LADDER_MAX = 8;
 const SHA = /^[0-9a-f]{7,64}$/;
