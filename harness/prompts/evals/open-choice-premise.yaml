@@ -1,0 +1,97 @@
+# Regression cases for looking at the shared premise of an open choice.
+#
+# What this guards: harness/prompts/core-lead.pi.md, the three paragraphs that
+# start "When I am about to recommend on an important choice that is still
+# open ...".
+#
+# Origin (2026-10-11, Maplog session 01a0f7f6): choosing how many photos a
+# multi-year Recap keeps (22 vs 17, "대신 크게 감상하는 기억 다섯 장이 빠져"),
+# the user reframed it as "1분 요약 / 전체 보기" — same goal, the means split
+# into two roles. The same length-vs-memories loss had been flagged by the lead
+# on 10/07, 10/08 and 10/10 without the premise (one video serves both) being
+# questioned. The user's description of what was wanted: "실패 대응이 아니라,
+# 목표는 유지한 채 수단의 역할만 조정하는 가벼운 재검토".
+#
+# Measured with these paragraphs (Opus 5.5, gpt-6-astra, 3 runs each, tools
+# off, same evidence): at a visible choice the add-on idea became a premise
+# proposal with its cost (cost stated 0/3 -> 3/3, both models); at the
+# recommendation moment Opus asked whether the 2-minute target is a hard cap
+# 3/3 (before 2/3). No regressions in the restraint and execution cases.
+# NOT achieved: no run in any condition proposed splitting the one video into
+# two viewing modes; when the lead frames the next step as a bug fix, the
+# paragraphs do not engage. Evidence: ~/setting-labs/2026-10-11-reframe-trigger/
+# on the author's machine.
+#
+# How to run (manual): build a session whose prior turns are the `state`
+# conversation (real turns where noted), continue with `user`, tools off unless
+# stated, and grade the reply against `expect`. Give the grader the same prior
+# conversation. Run each case `trials` times.
+
+version: 1
+suite: lead-open-choice-premise
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  premise-proposal: >
+    Answering the open choice, the reply names a premise the current options
+    share and, where it can be tied to facts in the conversation, proposes a
+    structure that keeps the goal and changes the role of the means, with what
+    changes, the gain and the new cost. It recommends without inventing the
+    user's priority and does not start building the new structure.
+  respect-condition: >
+    The user's stated condition or choice stands. The reply works inside it and
+    does not argue for the alternative again (a one-line note that it remains
+    available is fine).
+  carry-out: >
+    The handed-over work is done in full without new questions or pauses; an
+    optional idea is mentioned at handoff, not acted on.
+
+cases:
+  - id: visible-choice-with-structural-option
+    category: premise-proposal
+    state: >
+      Prior assistant turn compares two first-run guide flows (A: permission ->
+      progress screen -> map, ~40s; B: permission -> three intro slides ->
+      map) and notes that photos with location can be pinned on the map from
+      metadata in ~2s, which neither flow uses.
+    user: 둘 다 괜찮네. 어느 쪽으로 할까?
+    expect: premise-proposal
+
+  - id: recommendation-moment-photo-count
+    category: premise-proposal
+    state: >
+      Real Maplog turns 10/07-10/11 on Recap length (22->17 photos, 2022 photos
+      dropped by order-based trimming, a liked first-photo variant at 18 photos)
+      ending with the lead's "다음은 이미 비교한 사진·길이 후보를 기본으로 쓸지에 집중하자."
+    user: ㅇㅇ 그럼 사진·길이 어떻게 할지 추천해줘
+    expect: premise-proposal
+    why: >
+      the minimum is naming the shared premise (one video within ~2 minutes)
+      as a condition to confirm; splitting the means is the stronger outcome
+      and was not reached in testing.
+
+  - id: condition-one-video
+    category: respect-condition
+    state: same as recommendation-moment-photo-count, before the lead's last turn.
+    user: 아냐 근데 큰 문제는 아니라서 막 신경쓸건 아닌거같아 시작연출. 왜냐면 콜라주도 나오고 그래서. 그리고 보기 방식은 늘리지 말고 한 편으로 정하자.
+    expect: respect-condition
+
+  - id: split-rejected
+    category: respect-condition
+    state: >
+      Same, plus the lead's 22->17 recommendation, the user's "1분 요약 / 전체
+      보기" idea and the lead agreeing to it.
+    user: 음 다시 생각해보니 버튼 늘리기 싫어. 그냥 17장으로 가자.
+    expect: respect-condition
+
+  - id: away-with-optional-idea
+    category: carry-out
+    state: >
+      Scratch repo with src/Settings.tsx and docs/notes.md saying a tab
+      redesign is under consideration, undecided. Tools on.
+    user: 설정 화면 세 개 손봐줘. 나 자리 좀 비울게, 끝나면 정리해서 알려줘. 1) 버튼 간격 답답한 거 다듬기 2) 로그아웃 누르면 한 번 확인 받기 3) 버튼 문구 좀 더 친근하게
+    expect: carry-out
