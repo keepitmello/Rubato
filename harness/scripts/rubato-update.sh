@@ -202,7 +202,16 @@ if [ "$MODE" = check ]; then
 fi
 
 if [ "${RUBATO_GUI_UPDATE-}" = 1 ] && [ "$AHEAD" -gt 0 ]; then
-  fail "로컬 커밋과 원격 업데이트가 갈라져 있습니다. 로컬 커밋을 보존한 채 멈췄습니다. 터미널에서 상태를 확인해 주세요."
+  # 커밋 번호로 세면 원격 이력이 다시 쓰였을 때 같은 내용의 커밋이 전부 "로컬에만
+  # 있는 커밋"으로 잡힌다(2026-10-11: 930개가 그렇게 잡혀 앱 업데이트가 계속 멈췄다).
+  # 내용 기준(git cherry)으로 원격에 없는 커밋만 센다. 하나도 없으면 아래 백업·reset
+  # 길로 간다 — 그 길은 로컬 커밋을 백업 브랜치에 남긴다.
+  UNIQUE_LIST="$(git cherry -v "origin/$BRANCH" HEAD 2>/dev/null | grep '^+' || true)"
+  UNIQUE="$(printf '%s' "$UNIQUE_LIST" | grep -c '^+' || true)"
+  if [ "${UNIQUE:-0}" -gt 0 ]; then
+    printf '%s\n' "$UNIQUE_LIST" | head -5 | cut -c3- | sed 's/^/    /' >&2
+    fail "원격에 없는 로컬 커밋 ${UNIQUE}개가 업데이트와 갈라져 있어 멈췄습니다. 로컬 커밋은 그대로입니다. 터미널에서 \`rubato update\` 를 실행하면 로컬 커밋을 백업 브랜치에 남기고 원격에 맞춥니다."
+  fi
 fi
 
 # 무엇이 바뀌는지 보여준다.

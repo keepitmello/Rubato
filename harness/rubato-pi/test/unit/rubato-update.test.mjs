@@ -248,9 +248,34 @@ test("GUI update preserves divergent local commits instead of resetting", () => 
   const before = git(fixture.local, ["rev-parse", "HEAD"]).stdout;
   const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /로컬 커밋/);
+  assert.match(result.stderr, /원격에 없는 로컬 커밋 1개/);
+  assert.match(result.stderr, /local-only/);
+  assert.match(result.stderr, /rubato update/);
   assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, before);
   assert.equal(existsSync(fixture.trace), false);
+});
+
+// A rewritten remote history gives the same changes new hashes, so every local
+// commit counted as local-only and the app's update stopped for good
+// (2026-10-11: 930 such commits). Commits the remote already has by content
+// must not block; they still go to the backup branch.
+test("GUI update moves past local commits the remote already has under other hashes", () => {
+  const fixture = setupFixture({ localCommit: false });
+  const seed = join(fixture.root, "seed");
+  write(join(seed, "shared.txt"), "same\n");
+  git(seed, ["add", "shared.txt"]);
+  git(seed, ["commit", "-m", "shared"]);
+  git(seed, ["push", "origin", "rubato/base"]);
+  write(join(fixture.local, "shared.txt"), "same\n");
+  git(fixture.local, ["add", "shared.txt"]);
+  git(fixture.local, ["commit", "-m", "shared under an old hash"]);
+  const oldHead = git(fixture.local, ["rev-parse", "HEAD"]).stdout.trim();
+
+  const result = runUpdate(fixture, { env: { RUBATO_GUI_UPDATE: "1" } });
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, out);
+  assert.equal(git(fixture.local, ["rev-parse", "HEAD"]).stdout, git(fixture.local, ["rev-parse", "origin/rubato/base"]).stdout);
+  git(fixture.local, ["merge-base", "--is-ancestor", oldHead, backupBranch(fixture.local)]);
 });
 
 test("GUI update check reports network failure rather than cached availability", () => {
