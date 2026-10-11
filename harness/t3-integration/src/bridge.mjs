@@ -214,7 +214,11 @@ export class RubatoPiBridge {
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
   // Every side chat session, which the inventory leaves out (/rubato/side-chat lists and sweeps them).
   async sideChats() { return (await this.viaInventory((client) => client.list())).filter((entry) => entry.sideChatOf); }
-  async catalogue(cwd) {
+  // `fresh` 는 사용자가 다시 받으라고 한 경우다(키 추가·삭제, Refresh). 그때는 모든 폴더의
+  // 재사용 목록을 버린다. 안 버리면 방금 넣은 키의 모델이 60초 안의 옛 목록에 가려
+  // 설정 화면에 "No models listed" 로 굳는다(2026-10-12 NanoGPT).
+  async catalogue(cwd, { fresh = false } = {}) {
+    if (fresh) this.catalogues.clear();
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;
     const pending = (async () => {

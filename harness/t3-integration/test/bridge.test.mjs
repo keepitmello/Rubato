@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1444,4 +1444,24 @@ test('a session message id names the thread: the same thread on another Pi sessi
     assert.deepEqual(bridge.importedMessages('session', [{ entryId:'e1', ...sessionMessage() }], 'thread'), [liveIn('thread', 'other')]);
     assert.throws(() => bridge.importedMessages('session', [sessionMessage()]), /T3 thread/);
   } finally { await bridge.close(); }
+});
+
+test('catalogue reuses a recent list until a fresh request drops every cached folder', async (t) => {
+  // 회귀: 키를 넣고 다시 받으라고 해도 60초 안의 옛 목록이 돌아와 설정 화면에 모델이 안 떴다.
+  const { root, bridge } = await setup(t);
+  const other = path.join(root, 'other');
+  await mkdir(other);
+  let fetches = 0;
+  const original = bridge.viaInventory.bind(bridge);
+  bridge.viaInventory = (run) => { fetches += 1; return original(run); };
+  await bridge.catalogue(root);
+  await bridge.catalogue(root);
+  assert.equal(fetches, 1);
+  await bridge.catalogue(other);
+  assert.equal(fetches, 2);
+  await bridge.catalogue(root, { fresh: true });
+  assert.equal(fetches, 3);
+  // fresh 는 다른 폴더의 재사용 목록도 버린다. 작업 폴더 피커도 새 키의 모델을 본다.
+  await bridge.catalogue(other);
+  assert.equal(fetches, 4);
 });

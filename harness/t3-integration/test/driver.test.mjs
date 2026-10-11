@@ -114,7 +114,8 @@ test('provider snapshot carries Rubato commands and skills, and workspace probes
     assert.equal(first.reportsContextWindow, true);
     assert.equal(instance.adapter.compaction?.type, 'native');
     const bridge = rubatoBridgeFor(instance);
-    bridge.catalogue = async () => ({
+    const freshFlags = [];
+    bridge.catalogue = async (_cwd, options) => (freshFlags.push(options?.fresh ?? false), {
       models: [], model: null,
       slashCommands: first.slashCommands.concat([{ name: 'audit', description: 'Run an audit' }]),
       skills: [{ name: 'ship-it', description: 'Ship the change', path: `${root}/SKILL.md`, enabled: true,
@@ -135,5 +136,8 @@ test('provider snapshot carries Rubato commands and skills, and workspace probes
     const published = yield* Stream.runHead(instance.snapshot.streamChanges).pipe(
       Effect.timeoutOption('100 millis'));
     assert.equal(Option.isNone(published), true);
+    // 워크스페이스 조회는 재사용 목록을 써도 되고, 다시 받으라는 요청은 새로 받는다.
+    yield* instance.refreshModels();
+    assert.deepEqual(freshFlags, [false, true]);
   })));
 });

@@ -67,7 +67,8 @@ export interface PiBridge {
   sideChats(): Promise<ReadonlyArray<PiSummary>>;
   /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
   importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
-  catalogue(cwd: string): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;
+  /** `fresh` drops every cached catalogue first: an explicit refresh must see a key added a moment ago. */
+  catalogue(cwd: string, options?: {fresh?: boolean}): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;
   startSession(input: unknown): Promise<unknown>;
   sendTurn(input: unknown): Promise<unknown>;
   compact(threadId: string, customInstructions?: string): Promise<void>;
@@ -137,9 +138,9 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });
     // 카탈로그 한 번 조회. 기계 스냅샷도 발행도 건드리지 않는다.
-    const probeCatalogue = (cwd: string) => Effect.gen(function* () {
+    const probeCatalogue = (cwd: string, fresh = false) => Effect.gen(function* () {
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
-      const result = enabled ? yield* request("catalogue", () => bridge.catalogue(cwd)).pipe(Effect.result) : null;
+      const result = enabled ? yield* request("catalogue", () => bridge.catalogue(cwd, {fresh})).pipe(Effect.result) : null;
       return {checkedAt, catalogue: result?._tag === "Success" ? result.success : null,
         failure: result?._tag === "Failure" ? result.failure : null};
     });
@@ -155,9 +156,10 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       skills:probe.catalogue?.skills ?? [],
     });
     // 기계 스냅샷을 새로 쓰고 알리는 자리는 여기 하나뿐이다. workspaceSnapshots 는
-    // T3 registry 가 자기 목록으로 merge 하므로 드라이버가 싣지 않는다.
+    // T3 registry 가 자기 목록으로 merge 하므로 드라이버가 싣지 않는다. 다시 받으라는
+    // 요청이라 bridge 의 재사용 목록을 거치지 않는다.
     const refreshFor = (cwd: string) => Effect.gen(function* () {
-      current = snapshotFrom(yield* probeCatalogue(cwd));
+      current = snapshotFrom(yield* probeCatalogue(cwd, true));
       yield* PubSub.publish(updates, current);
       return current;
     });
