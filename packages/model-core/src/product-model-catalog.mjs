@@ -40,7 +40,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   "b-ai": Object.freeze(["deepseek-v4.1-flash"]),
   // OpenGateway 의 id 는 `제작사/모델` 이라 슬래시를 품는다. 슬러그는 첫 슬래시에서만 프로바이더를 가른다.
   opengateway: Object.freeze(["deepseek/deepseek-v4.1-flash-ultrafast"]),
-  nanogpt: Object.freeze(["z-ai/glm-5.3-flash-uncensored"]),
+  nanogpt: Object.freeze(["z-ai/glm-5.3-uncensored"]),
 });
 
 export const CURSOR_GROK_PRESENTED_ID = `cursor/${CURSOR_GROK_BASE_ID}`;

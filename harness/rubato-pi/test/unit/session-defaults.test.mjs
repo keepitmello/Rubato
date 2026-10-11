@@ -10,7 +10,7 @@ import {
   OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
   OPENGATEWAY_PROVIDER_ID,
   openGatewayProviderLooksCurrent,
-  NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID,
+  NANOGPT_GLM_UNCENSORED_MODEL_ID,
   NANOGPT_PROVIDER_ID,
   nanoGptProviderLooksCurrent,
   baiProviderLooksCurrent,
@@ -489,10 +489,10 @@ test("opengateway 행이 없으면 models.json 은 현재가 아니다", () => {
   }), false);
 });
 
-// NanoGPT: GLM 5.3 Flash Uncensored 한 행만 쓴다. 피커 카탈로그와 템플릿이 같은 id 를 가리켜야 행이 뜬다.
+// NanoGPT: GLM 5.3 Uncensored 한 행만 쓴다. 피커 카탈로그와 템플릿이 같은 id 를 가리켜야 행이 뜬다.
 test("nanogpt 템플릿의 모델 id 는 피커 카탈로그가 소유한 id 와 같다", () => {
-  assert.deepEqual([...PRODUCT_MODEL_ORDER[NANOGPT_PROVIDER_ID]], [NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID]);
-  assert.deepEqual(DEFAULT_NANOGPT_PROVIDER.models.map((model) => model.id), [NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID]);
+  assert.deepEqual([...PRODUCT_MODEL_ORDER[NANOGPT_PROVIDER_ID]], [NANOGPT_GLM_UNCENSORED_MODEL_ID]);
+  assert.deepEqual(DEFAULT_NANOGPT_PROVIDER.models.map((model) => model.id), [NANOGPT_GLM_UNCENSORED_MODEL_ID]);
 });
 
 test("nanogpt 가 없는 models.json 에 api 호스트로 나가는 행이 생기고 꺼짐 목록에는 들지 않는다", () => {
@@ -511,8 +511,9 @@ test("nanogpt 가 없는 models.json 에 api 호스트로 나가는 행이 생�
   assert.equal(provider.api, "openai-completions");
   assert.equal(provider.apiKey, "$NANOGPT_API_KEY");
   const [row] = provider.models;
-  assert.equal(row.id, "z-ai/glm-5.3-flash-uncensored");
-  assert.ok(row.input.includes("image"));
+  assert.equal(row.id, "z-ai/glm-5.3-uncensored");
+  // 이 모델은 이미지를 못 읽는다. image 를 열어 두면 붙여넣은 스크린샷이 그대로 나가 요청이 깨진다.
+  assert.deepEqual(row.input, ["text"]);
   assert.equal(row.compat.thinkingFormat, "openai");
   assert.equal(row.compat.supportsReasoningEffort, true);
   assert.equal(next.disabledProviders.includes(NANOGPT_PROVIDER_ID), false);
@@ -528,7 +529,7 @@ test("nanogpt 키와 사용자가 추가한 행은 템플릿이 덮지 않고, �
           apiKey: "local-keep",
           models: [
             { id: "z-ai/glm-5.3", name: "mine" },
-            { id: NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID, input: ["text"], maxTokens: 1 },
+            { id: NANOGPT_GLM_UNCENSORED_MODEL_ID, input: ["text", "image"], maxTokens: 1 },
           ],
         },
       },
@@ -538,8 +539,8 @@ test("nanogpt 키와 사용자가 추가한 행은 템플릿이 덮지 않고, �
   });
   const provider = next.providers[NANOGPT_PROVIDER_ID];
   assert.equal(provider.apiKey, "local-keep");
-  assert.deepEqual(provider.models.map((model) => model.id), ["z-ai/glm-5.3", NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID]);
-  assert.deepEqual(provider.models[1].input, ["text", "image"]);
+  assert.deepEqual(provider.models.map((model) => model.id), ["z-ai/glm-5.3", NANOGPT_GLM_UNCENSORED_MODEL_ID]);
+  assert.deepEqual(provider.models[1].input, ["text"]);
   assert.equal(provider.models[1].maxTokens, DEFAULT_NANOGPT_PROVIDER.models[0].maxTokens);
   assert.equal(nanoGptProviderLooksCurrent(next.providers), true);
 });

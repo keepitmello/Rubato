@@ -576,7 +576,7 @@ function apiKeyNotes(providerId) {
   if (providerId === "opencode") return ["Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다."];
   if (providerId === "b-ai") return ["B.AI 키입니다. 모델은 DeepSeek V4.1 Flash."];
   if (providerId === "opengateway") return ["opengateway.ai 대시보드(API Keys → Create Key)에서 만든 키입니다. 모델은 DeepSeek V4.1 Flash Ultrafast."];
-  if (providerId === "nanogpt") return ["nano-gpt.com/api 에서 만든 키입니다. 모델은 GLM 5.3 Flash Uncensored."];
+  if (providerId === "nanogpt") return ["nano-gpt.com/api 에서 만든 키입니다. 모델은 GLM 5.3 Uncensored."];
   return [];
 }
 

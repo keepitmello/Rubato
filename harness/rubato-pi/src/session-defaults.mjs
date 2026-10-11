@@ -153,11 +153,11 @@ function ensureOpenGatewayProvider(providers) {
 export const NANOGPT_PROVIDER_ID = "nanogpt";
 /** API 키 연동용 호스트. 웹 호스트(nano-gpt.com)보다 긴 요청과 큰 본문을 받는다. */
 export const NANOGPT_BASE_URL = "https://api.nano-gpt.com/api/v1";
-export const NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID = "z-ai/glm-5.3-flash-uncensored";
+export const NANOGPT_GLM_UNCENSORED_MODEL_ID = "z-ai/glm-5.3-uncensored";
 
 /**
- * 능력은 `GET /api/v1/models?detailed=true` 의 이 모델 행이 정본이다: 1M 문맥, 출력 32K,
- * 이미지 입력, 추론 노력은 low·high 둘. 추론은 `reasoning_effort` 로 켜고 응답은
+ * 능력은 `GET /api/v1/models?detailed=true` 의 이 모델 행이 정본이다: 1M 문맥, 출력 128K,
+ * 글자만 입력, 추론 노력은 low·high·max 셋. 추론은 `reasoning_effort` 로 켜고 응답은
  * `delta.reasoning` 으로 오는데, pi-ai 기본 openai 형식이 둘 다 그대로 다룬다.
  * 가격은 백만 토큰당 USD.
  */
@@ -169,20 +169,20 @@ export const DEFAULT_NANOGPT_PROVIDER = Object.freeze({
   authHeader: true,
   models: Object.freeze([
     Object.freeze({
-      id: NANOGPT_GLM_FLASH_UNCENSORED_MODEL_ID,
-      name: "GLM 5.3 Flash Uncensored",
+      id: NANOGPT_GLM_UNCENSORED_MODEL_ID,
+      name: "GLM 5.3 Uncensored",
       contextWindow: 1_048_576,
-      maxTokens: 32_768,
-      input: Object.freeze(["text", "image"]),
+      maxTokens: 131_072,
+      input: Object.freeze(["text"]),
       reasoning: true,
-      cost: Object.freeze({ input: 0.2, output: 0.8, cacheRead: 0.07, cacheWrite: 0 }),
+      cost: Object.freeze({ input: 1.25, output: 2.25, cacheRead: 0.3, cacheWrite: 0 }),
       thinkingLevelMap: Object.freeze({
         minimal: null,
         low: "low",
         medium: null,
         high: "high",
         xhigh: null,
-        max: null,
+        max: "max",
       }),
       compat: Object.freeze({
         supportsStore: false,
