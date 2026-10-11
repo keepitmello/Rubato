@@ -57,6 +57,7 @@ export function shortModelLabel(modelId) {
   if (lc === "deepseek-v4.1-flash") return "v4.1 Flash";
   if (lc === "deepseek-v4.1-flash-ultrafast") return "v4.1 Flash Ultrafast";
   if (lc === "glm-5.3-uncensored") return "GLM 5.3 Uncensored";
+  if (lc === "glm-5.3-flash-uncensored") return "GLM 5.3 Flash Uncensored";
   const variant = variantLabel(lc);
   if (variant) return variant;
   for (const [key, label] of FAMILIES) {

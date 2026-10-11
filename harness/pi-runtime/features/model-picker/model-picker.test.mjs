@@ -91,6 +91,7 @@ test("display labels and stock patch replace item.id", () => {
   // OpenGateway 의 id 는 `제작사/모델` 이라 슬래시를 품어도 라벨은 모델 이름만 읽는다.
   assert.equal(modelPickerLabel({ provider: "opengateway", id: MODEL_ORDER.opengateway[0], model: {} }), "v4.1 Flash Ultrafast");
   assert.equal(modelPickerLabel({ provider: "nanogpt", id: MODEL_ORDER.nanogpt[0], model: {} }), "GLM 5.3 Uncensored");
+  assert.equal(modelPickerLabel({ provider: "nanogpt", id: MODEL_ORDER.nanogpt[1], model: {} }), "GLM 5.3 Flash Uncensored");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");

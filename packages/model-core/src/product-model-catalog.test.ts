@@ -97,11 +97,13 @@ describe("product model catalog", () => {
     expect(admitProductCatalogItems([{ provider: "opengateway", id: OPENGATEWAY_FLASH }, { provider: "opengateway", id: "z-ai/glm-5.3" }]).map(pick)).toEqual([
       `opengateway/${OPENGATEWAY_FLASH}`,
     ])
-    // NanoGPT 는 GLM 5.3 Uncensored 한 행만 피커에 들인다.
-    const NANOGPT_GLM = PRODUCT_MODEL_ORDER.nanogpt[0]
+    // NanoGPT 는 GLM 5.3 Uncensored 와 Flash Uncensored 두 행만 피커에 들인다.
+    const [NANOGPT_GLM, NANOGPT_GLM_FLASH] = PRODUCT_MODEL_ORDER.nanogpt
     expect(productCatalogLabel({ provider: "nanogpt", id: NANOGPT_GLM })).toBe("GLM 5.3 Uncensored")
-    expect(admitProductCatalogItems([{ provider: "nanogpt", id: NANOGPT_GLM }, { provider: "nanogpt", id: "z-ai/glm-5.3-flash-uncensored" }]).map(pick)).toEqual([
+    expect(productCatalogLabel({ provider: "nanogpt", id: NANOGPT_GLM_FLASH })).toBe("GLM 5.3 Flash Uncensored")
+    expect(admitProductCatalogItems([{ provider: "nanogpt", id: NANOGPT_GLM }, { provider: "nanogpt", id: NANOGPT_GLM_FLASH }, { provider: "nanogpt", id: "z-ai/glm-5.3" }]).map(pick)).toEqual([
       `nanogpt/${NANOGPT_GLM}`,
+      `nanogpt/${NANOGPT_GLM_FLASH}`,
     ])
     expect(PRODUCT_MODEL_ORDER.cursor).toContain("composer-2.5")
   })
