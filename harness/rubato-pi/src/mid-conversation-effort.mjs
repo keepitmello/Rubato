@@ -25,7 +25,8 @@ const MODEL_SET = new Set(MID_CONVERSATION_EFFORT_MODELS);
 
 export function isMidConversationEffortModel(modelId) {
   if (typeof modelId !== "string") return false;
-  const wireId = modelId.endsWith("-sub") ? modelId.slice(0, -4) : modelId;
+  // `-sub`·`-sub2` 는 같은 모델의 다른 계정 행이다.
+  const wireId = modelId.replace(/-sub2?$/, "");
   return MODEL_SET.has(wireId);
 }
 

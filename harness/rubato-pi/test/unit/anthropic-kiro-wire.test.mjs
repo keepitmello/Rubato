@@ -221,11 +221,11 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
 
   // pin 에 없는 파생 행은 피커 명단 중 pin 에 아직 없는 현재 세대뿐이다. pin 이 그 세대를
   // 싣기 시작하면 파생은 사라지고 pin 행이 그대로 쓰인다 (pi 1.0.1 은 opus/sonnet 5.5 를 싣는다).
-  // 두 번째 계정이 있는 기기에서는 파생 행마다 `[sub]` 사본도 함께 생긴다.
+  // 파생 행마다 계정 행 `[sub]`·`[sub2]` 사본도 함께 생긴다.
   const derived = ours.filter((model) => !byId.has(model.id));
   const expectedDerived = [DERIVED_OPUS, DERIVED_SONNET].filter((id) => !byId.has(id));
   assert.deepEqual(
-    derived.map((model) => model.id).filter((id) => !id.endsWith("-sub")),
+    derived.map((model) => model.id).filter((id) => !/-sub2?$/.test(id)),
     expectedDerived,
   );
   const derivedById = new Map(derived.map((model) => [model.id, model]));

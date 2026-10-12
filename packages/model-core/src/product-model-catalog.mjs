@@ -72,14 +72,24 @@ function rankedIndex(values, value) {
   return index < 0 ? Number.MAX_SAFE_INTEGER : index;
 }
 
-const SUB_SUFFIX = "-sub";
+/**
+ * 같은 모델을 다른 계정으로 부르는 행의 꼬리. `-sub` 는 두 번째, `-sub2` 는 세 번째 계정이다.
+ * 모델이 다른 게 아니라 계정이 다른 것이라, 꼬리를 떼면 원래 모델 id 가 된다.
+ */
+export const ACCOUNT_LANE_SUFFIXES = Object.freeze(["-sub", "-sub2"]);
+
+export function accountLaneSuffix(id) {
+  if (typeof id !== "string") return undefined;
+  return ACCOUNT_LANE_SUFFIXES.find((suffix) => id.endsWith(suffix));
+}
 
 export function productCatalogBaseId(id) {
-  return typeof id === "string" && id.endsWith(SUB_SUFFIX) ? id.slice(0, -SUB_SUFFIX.length) : id;
+  const suffix = accountLaneSuffix(id);
+  return suffix ? id.slice(0, -suffix.length) : id;
 }
 
 function catalogOrderIds(order) {
-  return order.flatMap((id) => [id, `${id}${SUB_SUFFIX}`]);
+  return order.flatMap((id) => [id, ...ACCOUNT_LANE_SUFFIXES.map((suffix) => `${id}${suffix}`)]);
 }
 
 export function catalogSlugs() {
@@ -98,8 +108,8 @@ export function isProductCatalogSlug(model) {
   if (typeof model !== "string") return false;
   const identity = productCatalogIdentity(model);
   if (catalogSlugs().includes(identity)) return true;
-  if (!identity.endsWith(SUB_SUFFIX)) return false;
-  return catalogSlugs().includes(identity.slice(0, -SUB_SUFFIX.length));
+  if (!accountLaneSuffix(identity)) return false;
+  return catalogSlugs().includes(productCatalogBaseId(identity));
 }
 
 export function admitProductCatalogItems(models, options = {}) {
@@ -136,8 +146,9 @@ export function sortProductCatalogItems(models) {
 }
 
 export function productCatalogLabel(item) {
-  if (typeof item.id === "string" && item.id.endsWith(SUB_SUFFIX)) {
-    return `${productCatalogLabel({ ...item, id: item.id.slice(0, -SUB_SUFFIX.length) })} [sub]`;
+  const lane = accountLaneSuffix(item.id);
+  if (lane) {
+    return `${productCatalogLabel({ ...item, id: productCatalogBaseId(item.id) })} [${lane.slice(1)}]`;
   }
   // Lane suffixes that the short label drops on purpose: the footer renders them as separate
   // badges, but the picker has no badge column, so these rows would otherwise be
@@ -170,8 +181,9 @@ export function availableProductModelIds(entries) {
   const ids = [];
   for (const slug of catalogSlugs()) {
     if (productCatalogAliases(slug).some((alias) => raw.has(alias))) ids.push(slug);
-    const sub = `${slug}${SUB_SUFFIX}`;
-    if (raw.has(sub)) ids.push(sub);
+    for (const suffix of ACCOUNT_LANE_SUFFIXES) {
+      if (raw.has(`${slug}${suffix}`)) ids.push(`${slug}${suffix}`);
+    }
   }
   return ids;
 }

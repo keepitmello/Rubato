@@ -509,6 +509,9 @@ test("a [sub] account clone is judged on the model, not on the account suffix", 
   const sub = { ...MODELS.anthropic, id: `${MODELS.anthropic.id}-sub`, name: "Anthropic fixture [sub]" };
   assert.equal(supportsFastMode(sub), true);
   assert.equal(fastWireMode(sub), "anthropic-fast");
+  const sub2 = { ...MODELS.anthropic, id: `${MODELS.anthropic.id}-sub2`, name: "Anthropic fixture [sub2]" };
+  assert.equal(supportsFastMode(sub2), true);
+  assert.equal(fastWireMode(sub2), "anthropic-fast");
 
   const unsupportedSub = {
     ...MODELS.anthropicUnsupported,

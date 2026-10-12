@@ -4,6 +4,7 @@ import {
   PRODUCT_PROVIDER_ORDER,
   admitProductCatalogItems,
   catalogSlugs,
+  productCatalogBaseId,
   productCatalogLabel,
   sortProductCatalogItems,
 } from "../../../packages/model-core/src/product-model-catalog.mjs";
@@ -53,7 +54,7 @@ export function modelSupportsFast(model) {
   if (model?.api !== "anthropic-messages") return false;
   if (model.provider !== "anthropic" && !/api\.anthropic\.com/.test(String(model.baseUrl ?? ""))) return false;
   const raw = String(model.upstreamModelId ?? model.id ?? "").toLowerCase();
-  const wireId = raw.endsWith("-sub") ? raw.slice(0, -4) : raw;
+  const wireId = productCatalogBaseId(raw);
   return ANTHROPIC_FAST_MODEL_ID.test(wireId);
 }
 

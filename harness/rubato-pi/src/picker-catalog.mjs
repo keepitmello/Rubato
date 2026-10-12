@@ -29,10 +29,24 @@ export const CODEX_SUB_PICKER_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-astra"]
 /** Anthropic `[sub]` 는 Fable, Opus, Sonnet 만. Haiku 는 한 계정으로만 고른다. */
 export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"]);
 
-const SUB_PICKER_IDS = Object.freeze({
-  "openai-codex": CODEX_SUB_PICKER_IDS,
-  anthropic: ANTHROPIC_SUB_PICKER_IDS,
+export const SUB_MODEL_SUFFIX = "-sub";
+export const SUB2_MODEL_SUFFIX = "-sub2";
+
+/**
+ * 계정 행 꼬리마다 행을 붙일 모델. 명단이지 기본값이 아니다 — 여기 없는 프로바이더·꼬리는 행이 없다.
+ * `[sub2]` 는 Anthropic 만 세 번째 계정을 쓴다.
+ */
+const ACCOUNT_LANE_PICKER_IDS = Object.freeze({
+  [SUB_MODEL_SUFFIX]: Object.freeze({
+    "openai-codex": CODEX_SUB_PICKER_IDS,
+    anthropic: ANTHROPIC_SUB_PICKER_IDS,
+  }),
+  [SUB2_MODEL_SUFFIX]: Object.freeze({
+    anthropic: ANTHROPIC_SUB_PICKER_IDS,
+  }),
 });
+
+const ACCOUNT_LANE_SUFFIXES = Object.freeze(Object.keys(ACCOUNT_LANE_PICKER_IDS));
 
 export function keepPickerIds(models, ids) {
   if (!Array.isArray(models) || models.length === 0) return models;
@@ -45,25 +59,23 @@ export function keepPickerIds(models, ids) {
   return order.filter((id) => byId.has(id)).map((id) => byId.get(id));
 }
 
-export const SUB_MODEL_SUFFIX = "-sub";
-
 export function isSubModelId(id) {
-  return typeof id === "string" && id.endsWith(SUB_MODEL_SUFFIX);
+  return typeof id === "string" && ACCOUNT_LANE_SUFFIXES.some((suffix) => id.endsWith(suffix));
 }
 
-export function cloneSubModels(models) {
+export function cloneSubModels(models, suffix = SUB_MODEL_SUFFIX) {
   return models
     .filter((model) => !isSubModelId(model.id))
     .map((model) => ({
       ...model,
-      id: `${model.id}${SUB_MODEL_SUFFIX}`,
-      name: `${model.name ?? model.id} [sub]`,
+      id: `${model.id}${suffix}`,
+      name: `${model.name ?? model.id} [${suffix.slice(1)}]`,
     }));
 }
 
-function subCopyBases(models, providerId) {
+function subCopyBases(models, providerId, suffix) {
   const bases = models.filter((model) => !isSubModelId(model?.id));
-  const allow = SUB_PICKER_IDS[providerId];
+  const allow = ACCOUNT_LANE_PICKER_IDS[suffix]?.[providerId];
   // Allowlist, not a fallthrough: `[sub]` is a curated pair of rows for the two providers we
   // actually run two accounts on. A provider that merely happens to carry a leftover second
   // credential slot (a re-login appends one) must not grow `[sub]` rows on its own.
@@ -71,9 +83,27 @@ function subCopyBases(models, providerId) {
   return bases.filter((model) => allow.includes(model.id));
 }
 
+/**
+ * 기본 계정 다음 계정들의 슬롯 이름. 순서가 곧 행 꼬리다: 0번은 `-sub`, 1번은 `-sub2`.
+ * `sub`·`sub2` 로 이름 붙인 슬롯이 먼저고, 로그인이 붙인 `login-N` 은 번호 순서로 뒤에 선다.
+ * auth-pool/runtime-pool.mjs `accountLaneSlotNames` 와 같은 규칙이다 — 하나를 바꾸면 둘 다 바꾼다.
+ */
+export function accountLaneSlotNames(slots) {
+  const names = (Array.isArray(slots) ? slots : []).map((slot) => slot?.name).filter((name) => typeof name === "string");
+  const named = ["sub", "sub2"].filter((name) => names.includes(name));
+  const logins = names
+    .filter((name) => /^login-\d+$/.test(name))
+    .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
+  return [...named, ...logins];
+}
+
+function credentialLaneSuffixes(credential) {
+  const count = accountLaneSlotNames(credential?.accounts).length;
+  return ACCOUNT_LANE_SUFFIXES.slice(0, count);
+}
+
 export function credentialHasSubAccount(credential) {
-  const slots = Array.isArray(credential?.accounts) ? credential.accounts : [];
-  return slots.some((slot) => slot?.name === "sub" || slot?.name === "login-2");
+  return credentialLaneSuffixes(credential).length > 0;
 }
 
 function mergeById(models, extras) {
@@ -81,7 +111,14 @@ function mergeById(models, extras) {
   return [...models, ...extras.filter((model) => !seen.has(model.id))];
 }
 
-/** 두 번째 계정이 있으면 피커에 `[sub]` 행을 붙이고, getModels 에도 같은 id 를 넣어 에이전트 스폰이 찾게 한다. */
+function laneCopies(models, providerId, suffixes) {
+  return suffixes.flatMap((suffix) => cloneSubModels(subCopyBases(models, providerId, suffix), suffix));
+}
+
+/**
+ * 두 번째 계정이 있으면 `[sub]`, 세 번째 계정이 있으면 `[sub2]` 행을 피커에 붙인다.
+ * getModels 에는 계정과 상관없이 같은 id 를 넣어 에이전트 스폰이 찾게 한다.
+ */
 export function withSubAccountCopies(provider) {
   if (typeof provider?.getModels !== "function") return provider;
   const nativeGetModels = provider.getModels.bind(provider);
@@ -91,15 +128,12 @@ export function withSubAccountCopies(provider) {
     getModels: () => {
       const models = nativeGetModels();
       const presented = nativeFilter ? nativeFilter(models, undefined) : models;
-      const bases = subCopyBases(presented, provider.id);
-      return mergeById(models, cloneSubModels(bases));
+      return mergeById(models, laneCopies(presented, provider.id, ACCOUNT_LANE_SUFFIXES));
     },
     filterModels: (models, credential) => {
       const presented = nativeFilter ? nativeFilter(models, credential) : models;
       const kept = presented.filter((model) => !isSubModelId(model?.id));
-      const bases = subCopyBases(kept, provider.id);
-      if (!credentialHasSubAccount(credential)) return kept;
-      return [...kept, ...cloneSubModels(bases)];
+      return [...kept, ...laneCopies(kept, provider.id, credentialLaneSuffixes(credential))];
     },
   };
 }
