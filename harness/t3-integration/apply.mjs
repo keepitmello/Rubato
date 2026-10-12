@@ -27,6 +27,7 @@ import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs'
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
+import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2153,6 +2154,11 @@ for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
 // Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
 overlays.push(...sideChatOverlays);
 for (const [relative, changes] of Object.entries(sideChatEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Chat links to files with non-ASCII names (file-link-edits.mjs).
+overlays.push(...fileLinkOverlays);
+for (const [relative, changes] of Object.entries(fileLinkEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {
