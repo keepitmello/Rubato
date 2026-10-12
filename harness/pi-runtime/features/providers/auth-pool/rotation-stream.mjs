@@ -138,6 +138,29 @@ function errorFromEvent(event) {
   return failure;
 }
 
+function localMinute(ms) {
+  const date = new Date(ms);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+/**
+ * 고른 계정이 쉬고 있을 때의 오류 문구. 이유와 풀리는 때를 말한다 — "unavailable" 한 마디로는
+ * 토큰이 죽었는지 한도에 걸렸는지 알 수 없어서, 살아 있는 토큰을 의심하게 만들었다(2026-10-13).
+ */
+export function requiredSlotUnavailableMessage(name, slot, now) {
+  if (slot?.blockReason === "rate_limit" && slot.blockedUntil !== undefined && slot.blockedUntil > now) {
+    return `Account '${name}' hit its rate limit; Rubato retries it after ${localMinute(slot.blockedUntil)}`;
+  }
+  if (slot?.blockReason === "auth_error") {
+    return `Account '${name}' failed authentication; check it with \`rubato auth\``;
+  }
+  if (slot?.blockReason === "account_disabled") {
+    return `Account '${name}' is disabled or out of credits; check it with \`rubato auth\``;
+  }
+  return `Account '${name}' is unavailable`;
+}
+
 export function streamWithCredentialRotation(options) {
   const { sources, runAttempt } = options;
   const hasher = options.hasher ?? sha256SlotHasher;
@@ -150,11 +173,12 @@ export function streamWithCredentialRotation(options) {
   return runCredentialFailover({
     listSlots: () => listRotationSlots(sources),
     stickySlotName: () => readBound()?.name,
-    select: (candidates) => {
+    select: (candidates, slots = candidates) => {
       if (options.requiredSlotName) {
         const required = candidates.find((candidate) => candidate.name === options.requiredSlotName);
         if (!required) {
-          throw new Error(`Account '${options.requiredSlotName}' is unavailable`);
+          const known = slots.find((slot) => slot.name === options.requiredSlotName);
+          throw new Error(requiredSlotUnavailableMessage(options.requiredSlotName, known, now()));
         }
         return bindSessionSlot(store, providerId, affinityKey, required);
       }
@@ -175,6 +199,7 @@ export function streamWithCredentialRotation(options) {
     errorFromEvent,
     classify: (error, context) => classifyCredentialFailure(error, {
       ...context,
+      serverRetryAfterMs: options.serverRetryAfterMs?.(context?.slot),
       cooldownBaseMs: sources.policy?.cooldownBaseMs,
       cooldownCapMs: sources.policy?.cooldownCapMs,
     }),

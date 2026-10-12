@@ -221,6 +221,42 @@ test("google adapters 는 dispatcher fetch 를 넣지 않고, 호출자 fetch �
   assert.equal(seen[0], caller);
 });
 
+// 계정 묶음이 서버가 알려 준 "풀리는 때"로 계정을 쉬게 하려면 429 응답 헤더가 필요하다.
+// SDK 는 429 를 예외로 바꾸며 헤더를 버리므로, 여기 fetch 가 헤더를 넘기는 유일한 자리다.
+test("onRateLimitResponse 가 있으면 고른 fetch 위에서 429 응답 헤더만 넘긴다", async () => {
+  const seen = [];
+  const inner = (_model, _context, options) => {
+    seen.push(options.fetch);
+    return scriptedStream([{ type: "done", reason: "stop", message: assistant({ stopReason: "stop" }) }])();
+  };
+  const wrapped = wrapProviderStreams({ id: "anthropic", stream: inner, streamSimple: inner });
+  const statuses = [429, 200];
+  const calls = [];
+  const caller = async (...args) => {
+    calls.push(args);
+    return new Response("", { status: statuses.shift(), headers: { "retry-after": "120" } });
+  };
+  const observed = [];
+  await drain(wrapped.streamSimple(model, context, {
+    env: {},
+    fetch: caller,
+    onRateLimitResponse: (headers) => observed.push(headers.get("retry-after")),
+  }));
+  assert.notEqual(seen[0], caller, "관측이 호출자 fetch 를 감싼다");
+  assert.equal((await seen[0]("https://example.test/a")).status, 429);
+  assert.equal((await seen[0]("https://example.test/b")).status, 200);
+  assert.deepEqual(observed, ["120"], "429 만 넘긴다");
+  assert.deepEqual(calls.map(([url]) => url), ["https://example.test/a", "https://example.test/b"]);
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(
+    { api: "google-generative-ai", provider: "google", id: "gemini-3-flash" },
+    context,
+    { env: {}, fetch: caller, onRateLimitResponse: () => {} },
+  ));
+  assert.equal(seen[0], caller, "Google 계열은 바뀐 fetch 를 거절하므로 감싸지 않는다");
+});
+
 test("upstreamFetch 는 global Request 의 method+headers+body 를 전달한다", async () => {
   const seen = { method: "", headers: {}, body: "" };
   const server = createServer((req, res) => {

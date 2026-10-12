@@ -104,7 +104,7 @@ export async function* runCredentialFailover(options) {
           ...(retryAt === undefined ? {} : { retryAt }),
         });
     }
-    const slot = options.select(candidates);
+    const slot = options.select(candidates, slots);
     let committedOutput = false;
     // 소비자에게 event 를 하나라도(`start` 포함) 넘겼는가. 커밋(텍스트·도구)과는 다른
     // 질문이다: agent loop 는 `start` 마다 partial 을 context 에 하나씩 넣으므로
@@ -123,7 +123,7 @@ export async function* runCredentialFailover(options) {
             throw failure;
           }
           if (!isAbortedEvent(event)) {
-            const action = classify(failure, { failureCount: (slot.failureCount ?? 0) + (retriesBySlot.get(slot.name) ?? 0) });
+            const action = classify(failure, { failureCount: (slot.failureCount ?? 0) + (retriesBySlot.get(slot.name) ?? 0), slot });
             if (action.kind === "failover") {
               if (shouldPersistBlock(action.block, slots)) await options.persistBlock(slot, action.block);
               await options.onRotate?.({ slot, block: action.block, attempt: attempted.size, committedOutput });
@@ -141,7 +141,7 @@ export async function* runCredentialFailover(options) {
     } catch (error) {
       if (attemptStream) await settle(attemptStream);
       const failureCount = (slot.failureCount ?? 0) + (retriesBySlot.get(slot.name) ?? 0);
-      const action = classify(error, { failureCount });
+      const action = classify(error, { failureCount, slot });
       lastOriginal = error;
       let failure;
       if (action.kind === "retry_same" && !committedOutput && !yieldedOutput) {

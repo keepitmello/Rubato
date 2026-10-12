@@ -37,14 +37,49 @@ function errorText(error) {
   return String(error ?? "");
 }
 
+/**
+ * 한도 초과(429) 응답이 알려 주는 "다시 돼도 되는 때"까지 남은 ms. 모르면 `undefined`.
+ *
+ * `retry-after-ms`·`retry-after`(초 또는 HTTP 날짜)가 먼저고, 없으면 Anthropic 구독 한도의
+ * `anthropic-ratelimit-unified-reset`(유닉스 초)을 쓴다. `headers` 는 `Headers` 든 평범한
+ * 객체든 받는다.
+ */
+export function serverRetryAfterMs(headers, now = Date.now()) {
+  if (!headers) return undefined;
+  const get = (name) => {
+    const value = typeof headers.get === "function" ? headers.get(name) : headers[name];
+    return typeof value === "string" && value.trim() !== "" ? value.trim() : undefined;
+  };
+  const retryAfterMs = Number.parseFloat(get("retry-after-ms") ?? "");
+  if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) return retryAfterMs;
+  const retryAfter = get("retry-after");
+  if (retryAfter !== undefined) {
+    const seconds = Number(retryAfter);
+    const ms = Number.isFinite(seconds) ? seconds * 1_000 : Date.parse(retryAfter) - now;
+    if (Number.isFinite(ms)) return Math.max(0, ms);
+  }
+  const resetSeconds = Number(get("anthropic-ratelimit-unified-reset") ?? "");
+  if (Number.isFinite(resetSeconds) && resetSeconds > 0) return Math.max(0, resetSeconds * 1_000 - now);
+  return undefined;
+}
+
+/**
+ * 한도 초과로 계정을 얼마나 쉬게 할지.
+ *
+ * 서버가 풀리는 때를 알려 주면 그 값을 그대로 쓴다. 지수 백오프는 서버가 말이 없을 때만이다.
+ * 실측(2026-10-13): 서버 값을 버리고 60s × 2^실패횟수로만 셌더니 실패 19번째에 상한 48h 에
+ * 닿아, 몇 시간 만에 풀린 구독 한도를 이틀 동안 잠갔다. 그동안 그 계정에 묶인 모델은 이유도
+ * 없이 "Account 'setup-token' is unavailable" 로만 실패했다.
+ */
 export function rateLimitCooldown(failureCount, serverHintMs, policy = {}) {
   const cap = policy.capMs ?? COOLDOWN_CAP_MS;
   const base = policy.baseMs ?? COOLDOWN_BASE_MS;
-  const backoff = Math.min(cap, base * 2 ** Math.max(0, failureCount));
-  const floored = serverHintMs === undefined ? backoff : Math.max(backoff, serverHintMs);
+  const wanted = serverHintMs === undefined
+    ? base * 2 ** Math.max(0, failureCount)
+    : Math.max(1_000, serverHintMs);
   return {
-    cooldownMs: Math.min(cap, floored),
-    retryAfterWasCapped: floored > cap,
+    cooldownMs: Math.min(cap, wanted),
+    retryAfterWasCapped: serverHintMs !== undefined && wanted > cap,
   };
 }
 
@@ -74,7 +109,7 @@ export function classifyCredentialFailure(error, context = {}) {
       kind: "failover",
       block: {
         reason: "rate_limit",
-        ...rateLimitCooldown(failureCount, undefined, {
+        ...rateLimitCooldown(failureCount, context.serverRetryAfterMs, {
           baseMs: context.cooldownBaseMs,
           capMs: context.cooldownCapMs,
         }),

@@ -9,7 +9,8 @@ import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { providersFeature } from "./patches.mjs";
 import { appendLoginSlot, listSlots, mergeRefreshed, mergeRefreshedSlot, projectSlot } from "./auth-pool/slots.mjs";
-import { classifyCredentialFailure } from "./auth-pool/classify.mjs";
+import { classifyCredentialFailure, rateLimitCooldown, serverRetryAfterMs } from "./auth-pool/classify.mjs";
+import { requiredSlotUnavailableMessage } from "./auth-pool/rotation-stream.mjs";
 import { selectSlot, sha256SlotHasher } from "./auth-pool/select.mjs";
 import { discoverEnvSlots } from "./auth-pool/env-slots.mjs";
 
@@ -266,7 +267,81 @@ test("candidate ModelRuntime keeps a session on the first account after a pre-ou
   const second = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "affinity-2" }).result();
   assert.equal(hits.length, 2);
   assert.equal(second.stopReason, "error");
-  assert.match(String(second.errorMessage ?? ""), /Account 'default' is unavailable/);
+  // 이유와 풀리는 때를 말한다 — "unavailable" 만으로는 살아 있는 토큰을 의심하게 된다.
+  assert.match(String(second.errorMessage ?? ""), /Account 'default' hit its rate limit; Rubato retries it after \d{4}-\d\d-\d\d \d\d:\d\d/);
+});
+
+// 실측(2026-10-13): 429 헤더의 리셋 시각을 버리고 60s × 2^실패횟수로만 쉬게 해, 실패 19번째에
+// 상한 48h 로 몇 시간짜리 구독 한도를 이틀 잠갔다.
+test("429 의 서버 리셋 시각이 그대로 계정 쉬는 시간이 된다", async () => {
+  const hits = [];
+  const { agentDir, modelRuntime } = await createPooledRuntime({
+    xai: {
+      type: "api_key",
+      key: "xai-key-a",
+      accounts: [
+        { name: "default", source: "login", key: "xai-key-a" },
+        { name: "login-2", source: "login", key: "xai-key-b" },
+      ],
+    },
+  });
+  const statePath = join(agentDir, "credential-pool-state.json");
+  writeFileSync(statePath, `${JSON.stringify({
+    schemaVersion: 1,
+    providers: { xai: { lanes: { stored: { slots: { default: { failureCount: 18, stateVersion: 1 } } } } } },
+  })}\n`);
+  const provider = mockXaiProvider(hits, "never");
+  provider.streamSimple = function (_model, _context, options) {
+    hits.push(options.apiKey);
+    // rubato-stream 이 fetch 에서 하는 일: 429 응답 헤더를 넘긴다.
+    options.onRateLimitResponse?.(new Headers({ "retry-after": "7200" }));
+    const error = new Error("Too Many Requests");
+    error.status = 429;
+    throw error;
+  };
+  modelRuntime.registerNativeProvider(provider);
+  const model = modelRuntime.getModel("xai", "grok-4.7");
+  const before = Date.now();
+  const result = await modelRuntime.streamSimple(model, { messages: [{ role: "user", content: "hi" }] }, { sessionId: "reset-1" }).result();
+  assert.equal(result.stopReason, "error");
+  assert.deepEqual(hits, ["xai-key-a"]);
+  const slot = JSON.parse(readFileSync(statePath, "utf8")).providers.xai.lanes.stored.slots.default;
+  assert.equal(slot.blockReason, "rate_limit");
+  const cooldown = slot.blockedUntil - before;
+  assert.ok(cooldown >= 7_200_000 && cooldown < 7_200_000 + 60_000, `2시간이어야 하는데 ${cooldown}ms`);
+});
+
+test("서버 리셋 시각은 retry-after, HTTP 날짜, Anthropic 구독 리셋 순서로 읽는다", () => {
+  const now = Date.parse("2026-10-13T00:00:00Z");
+  assert.equal(serverRetryAfterMs(new Headers({ "retry-after-ms": "1500", "retry-after": "9" }), now), 1_500);
+  assert.equal(serverRetryAfterMs(new Headers({ "retry-after": "120" }), now), 120_000);
+  assert.equal(serverRetryAfterMs({ "retry-after": "Tue, 13 Oct 2026 01:00:00 GMT" }, now), 3_600_000);
+  assert.equal(
+    serverRetryAfterMs(new Headers({ "anthropic-ratelimit-unified-reset": String(now / 1_000 + 3 * 3_600) }), now),
+    3 * 3_600_000,
+  );
+  assert.equal(serverRetryAfterMs(new Headers({ "x-other": "1" }), now), undefined);
+  assert.equal(serverRetryAfterMs(undefined, now), undefined);
+});
+
+test("쉬는 시간: 서버 값이 있으면 그 값, 없을 때만 지수 백오프", () => {
+  assert.equal(rateLimitCooldown(19, 2 * 3_600_000).cooldownMs, 2 * 3_600_000);
+  assert.equal(rateLimitCooldown(0, 5 * 24 * 3_600_000).retryAfterWasCapped, true);
+  assert.equal(rateLimitCooldown(0, 5 * 24 * 3_600_000).cooldownMs, 48 * 3_600_000);
+  assert.equal(rateLimitCooldown(2, undefined).cooldownMs, 240_000);
+  const error = Object.assign(new Error("Too Many Requests"), { status: 429 });
+  assert.equal(classifyCredentialFailure(error, { failureCount: 19, serverRetryAfterMs: 600_000 }).block.cooldownMs, 600_000);
+});
+
+test("고른 계정이 쉬고 있으면 이유와 풀리는 때를 말한다", () => {
+  const now = Date.now();
+  assert.match(
+    requiredSlotUnavailableMessage("setup-token", { blockReason: "rate_limit", blockedUntil: now + 3_600_000 }, now),
+    /^Account 'setup-token' hit its rate limit; Rubato retries it after \d{4}-\d\d-\d\d \d\d:\d\d$/,
+  );
+  assert.match(requiredSlotUnavailableMessage("sub", { blockReason: "auth_error" }, now), /failed authentication/);
+  assert.match(requiredSlotUnavailableMessage("sub", { blockReason: "account_disabled" }, now), /disabled or out of credits/);
+  assert.equal(requiredSlotUnavailableMessage("sub2", undefined, now), "Account 'sub2' is unavailable");
 });
 
 test("candidate ModelRuntime does not rotate after committed output", async () => {

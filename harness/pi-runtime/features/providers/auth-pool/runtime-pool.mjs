@@ -5,6 +5,7 @@ import { discoverSetupTokenSlots } from "./setup-token-slots.mjs";
 import { listSlots } from "./slots.mjs";
 import { CredentialSlotRepository } from "./state-store.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./rotation-stream.mjs";
+import { serverRetryAfterMs } from "./classify.mjs";
 
 function poolStatePathFor(runtime) {
   const authPath = runtime.credentials?.store?.authPath;
@@ -63,6 +64,27 @@ function slotRequestOptions(options, slot) {
   return { ...options, slotName: slot.name };
 }
 
+/**
+ * 이 시도의 429 응답 헤더를 받을 콜백을 요청 옵션에 싣는다.
+ *
+ * SDK 는 429 를 예외로 던지고 엔진은 그 메시지 문자열만 남긴다 — "언제 풀린다"는 응답 헤더는
+ * 계정 쉬는 시간을 정하는 자리까지 오지 못한다. 헤더를 보는 곳은 fetch 뿐이라, fetch 를 고르는
+ * rubato-stream 이 `onRateLimitResponse` 로 헤더를 건넨다. 여기서 fetch 를 직접 갈면 그쪽이
+ * 고르는 연결 풀을 건너뛰고, Google 계열은 바뀐 fetch 를 거절한다.
+ */
+export function withRateLimitObserver(prepared, onRetryAfterMs, now = Date.now) {
+  return {
+    ...prepared,
+    options: {
+      ...prepared?.options,
+      onRateLimitResponse: (headers) => {
+        const ms = serverRetryAfterMs(headers, now());
+        if (ms !== undefined) onRetryAfterMs(ms);
+      },
+    },
+  };
+}
+
 // 계정 행 꼬리. 순서가 곧 계정 순서다: `-sub` 는 두 번째, `-sub2` 는 세 번째 계정.
 // 꼬리 목록은 packages/model-core/src/product-model-catalog.mjs `ACCOUNT_LANE_SUFFIXES` 와 같다.
 const ACCOUNT_LANES = Object.freeze([
@@ -117,18 +139,22 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
     : undefined;
   if (sources) {
     const slots = await listRotationSlots(sources, { acquireLeases: false });
+    const retryAfterBySlot = new Map();
     return streamWithCredentialRotation({
       sources,
       affinityStore: sessionAffinityStore(runtime),
       requiredSlotName: requiredAccountSlotName(model, slots),
+      serverRetryAfterMs: (slot) => retryAfterBySlot.get(slot?.name),
       ...(streamOptions?.affinityKey !== undefined
         ? { affinityKey: streamOptions.affinityKey }
         : streamOptions?.sessionId !== undefined
           ? { affinityKey: streamOptions.sessionId }
           : {}),
       runAttempt: async (slot) => {
+        retryAfterBySlot.delete(slot.name);
         const prepared = await runtime.prepareRequest(wire, slotRequestOptions(streamOptions, slot));
-        return callProviderStream(prepared, method, context, runtime);
+        const observed = withRateLimitObserver(prepared, (ms) => retryAfterBySlot.set(slot.name, ms));
+        return callProviderStream(observed, method, context, runtime);
       },
     });
   }

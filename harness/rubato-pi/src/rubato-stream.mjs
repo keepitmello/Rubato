@@ -87,6 +87,21 @@ function resolveStreamUpstreamFetch(model, env) {
   return resolveUpstreamFetch(env);
 }
 
+/**
+ * 429 응답 헤더를 `onRateLimitResponse` 로 건넨다. 응답은 그대로 돌려준다.
+ * 계정 묶음(auth-pool runtime-pool)이 서버가 알려 준 "풀리는 때"로 계정을 쉬게 하려고 쓴다 —
+ * SDK 는 429 를 예외로 바꾸면서 헤더를 버리므로, 헤더를 볼 수 있는 곳은 여기뿐이다.
+ */
+export function observeRateLimitResponses(fetchImpl, onRateLimitResponse) {
+  return async (...args) => {
+    const response = await fetchImpl(...args);
+    if (response?.status === 429) {
+      try { onRateLimitResponse(response.headers); } catch { /* 관측이 요청을 깨지 않는다 */ }
+    }
+    return response;
+  };
+}
+
 function isTerminal(event) {
   return event?.type === "done" || event?.type === "error";
 }
@@ -667,10 +682,14 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
         sessionId: options.sessionId,
         provider: model.provider,
       });
-      fetchImpl = wrapAnthropicServerCompactionFetch(fetchImpl, {
-        provider: model.provider,
-        contextWindow: model.contextWindow,
-      });
+        fetchImpl = wrapAnthropicServerCompactionFetch(fetchImpl, {
+          provider: model.provider,
+          contextWindow: model.contextWindow,
+        });
+    }
+    // Google 계열은 바뀐 fetch 를 거절하므로 관측을 얹지 않는다.
+    if (fetchImpl && !GOOGLE_FETCH_BLOCKED_APIS.has(model?.api) && typeof options.onRateLimitResponse === "function") {
+      fetchImpl = observeRateLimitResponses(fetchImpl, options.onRateLimitResponse);
     }
     if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;
     // Codex: 같은 세션에서 서버가 생각 기록 재전송을 연달아 거절하면 범인 하나를 찾아 뺀다
