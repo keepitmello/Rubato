@@ -205,6 +205,22 @@ test('startup compacts once without waiting for a large retention history; later
   assert.deepEqual(second, { n: 0, freelist_count: 0 });
 });
 
+test('startup finds activities by kind through an index, not by reading every work log', { skip: !source }, async (t) => {
+  const m = await load();
+  const { file, db } = await database(t, m);
+  db.close();
+  await m.run(file, m.Effect.scoped(m.Layer.build(m.retention.rubatoStateRetentionLayer)));
+  // The query T3's startup runs (listActivityRowsByKind), taken from its source.
+  const snapshotQuery = await readFile(path.join(source, 'apps/server/src/orchestration/Layers/ProjectionSnapshotQuery.ts'), 'utf8');
+  const body = snapshotQuery.match(/const listActivityRowsByKind = SqlSchema\.findAll\([\s\S]*?execute: \(\{ kind \}\) => sql`([\s\S]*?)`/)?.[1];
+  assert.ok(body, 'listActivityRowsByKind moved; find the startup query by kind again');
+  const reopened = new DatabaseSync(file);
+  t.after(() => reopened.isOpen && reopened.close());
+  const plan = reopened.prepare(`EXPLAIN QUERY PLAN ${body.replace('${kind}', '?')}`).all('worktree-setup').map((row) => row.detail);
+  assert.ok(plan.some((step) => step.includes(`USING INDEX ${m.retention.ACTIVITY_KIND_INDEX} (kind=?)`)), plan.join('\n'));
+  assert.ok(!plan.some((step) => step.includes('TEMP B-TREE')), plan.join('\n'));
+});
+
 test('the cleanup cursor name matches the projection pipeline', { skip: !source }, async () => {
   const m = await load();
   const pipeline = await readFile(path.join(source, 'apps/server/src/orchestration/Layers/ProjectionPipeline.ts'), 'utf8');

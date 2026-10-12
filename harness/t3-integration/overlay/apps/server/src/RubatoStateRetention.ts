@@ -388,6 +388,24 @@ export const compactOnce = Effect.gen(function* () {
 });
 
 /**
+ * Lets T3's startup find activities by kind without reading every work log.
+ * Startup asks for the `worktree-setup` rows of all live threads
+ * (listActivityRowsByKind in ProjectionSnapshotQuery.ts). With no index on kind,
+ * SQLite walked every activity of every live thread: 365k rows and 668MB of
+ * payload on a two-month-old install. That held the one connection for 6.6s on
+ * a fresh start and kept the backend from answering. The index also matches the
+ * query's ORDER BY, so no sort is left.
+ */
+export const ACTIVITY_KIND_INDEX = "idx_rubato_projection_thread_activities_kind_created";
+export const ensureActivityKindIndex = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql.unsafe(
+    `CREATE INDEX IF NOT EXISTS ${ACTIVITY_KIND_INDEX}
+       ON projection_thread_activities (kind, created_at, activity_id)`,
+  ).raw;
+});
+
+/**
  * Runs a pass at startup and every RETENTION.interval after it. Before the file
  * is incremental, only the one-time VACUUM runs before the layer is ready.
  * Retention always runs in the background: walking a large event history can
@@ -399,6 +417,7 @@ export const rubatoStateRetentionLayer = Layer.effectDiscard(
     const periodic = runRetention.pipe(Effect.repeat(Schedule.spaced(RETENTION.interval)));
     const mode = yield* autoVacuumMode.pipe(Effect.orElseSucceed(() => AUTO_VACUUM_INCREMENTAL));
     if (mode !== AUTO_VACUUM_INCREMENTAL) yield* step("compact", compactOnce, false);
+    yield* step("activity-kind-index", ensureActivityKindIndex, undefined);
     yield* Effect.forkScoped(periodic);
   }),
 );
