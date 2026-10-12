@@ -116,7 +116,7 @@ function patchResolveAuth(sourceText) {
                     ]);
                     return await oauth.refresh(current, refreshSignal);`,
     `            post = await credentials.modify(providerId, async (current) => {
-                if (current?.type !== "oauth")
+                if (slotName === undefined && current?.type !== "oauth")
                     return undefined; // logged out meanwhile
                 const view = slotName === undefined ? current : projectSlot(current, slotName);
                 if (view?.type !== "oauth")
@@ -137,7 +137,7 @@ function patchResolveAuth(sourceText) {
     `        if (post?.type !== "oauth")
             return undefined; // logged out meanwhile
         credential = post;`,
-    `        if (post?.type !== "oauth")
+    `        if (slotName === undefined && post?.type !== "oauth")
             return undefined; // logged out meanwhile
         const postView = slotName === undefined ? post : projectSlot(post, slotName);
         if (postView?.type !== "oauth")
