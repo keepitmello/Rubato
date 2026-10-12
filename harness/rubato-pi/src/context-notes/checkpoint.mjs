@@ -1,6 +1,9 @@
 import { NOTE_ENTRY } from "./protocol.mjs";
 
+// tool_search belongs here: the notes tools and new_context start inactive, so a checkpoint
+// turn has to search for them, and activating a tool leaves no work for the cut to lose.
 export const MANAGEMENT_TOOLS = new Set([
+  "tool_search",
   "history_list_windows", "history_list_items", "history_search_contents", "history_read_item",
   "notes_list_files_by_prefix", "notes_read_file", "notes_search_contents", "notes_write_file",
   "notes_append_to_file", "new_context", "get_context_remaining",
@@ -36,9 +39,12 @@ export function assertCheckpointFresh(branch, note, { allowStale = false, allowP
     const message = entry.message;
     if (message?.role === "toolResult" && MANAGEMENT_TOOLS.has(message.toolName)) continue;
     if (message?.role === "toolResult" && managementEvalResult(message)) continue;
-    if (message?.role === "assistant" && !["error", "aborted"].includes(message.stopReason)) {
+    if (message?.role === "assistant") {
       const calls = Array.isArray(message.content) ? message.content.filter((p) => p?.type === "toolCall") : [];
-      if (calls.length > 0 && calls.every(managementCall)) continue;
+      // A turn that failed or was stopped before calling any tool did no work to lose.
+      if (["error", "aborted"].includes(message.stopReason)) {
+        if (calls.length === 0) continue;
+      } else if (calls.length > 0 && calls.every(managementCall)) continue;
     }
     throw new CheckpointRefreshRequired("노트 저장 뒤 새 작업 결과가 생겼어요. 최신 상태를 노트에 저장한 뒤 전환해 주세요.");
   }

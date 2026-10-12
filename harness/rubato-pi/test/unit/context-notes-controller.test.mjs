@@ -217,6 +217,58 @@ test("a fresh note past the 90% target rolls at the turn boundary without anothe
   await f.c.turnEnd({},f.ctx);
   assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
 });
+// 2026-10-12, Astra: the checkpoint turn saved its notes, then searched for new_context (it
+// starts inactive). That search counted as new work, the repair turn no longer fit, and the
+// session stopped with "체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요".
+test("a checkpoint turn that searches for new_context after saving still rolls", async(t)=>{
+  const f=setup(t);
+  f.ctx.getContextUsage=()=>({tokens:31000}); // past the 95% hard line of the 32K window
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.checkpointRequested,true); assert.equal(f.sent.length,1);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
+  save(f);
+  f.addMessage("assistant",[{type:"toolCall",id:"search1",name:"tool_search",arguments:{query:"new_context"}}]);
+  f.addMessage("toolResult","Activated: new_context",{toolName:"tool_search",toolCallId:"search1"});
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,1);
+});
+test("past the physical window a stale note cuts instead of dead-ending, since no repair turn fits", async(t)=>{
+  const f=setup(t);
+  f.ctx.getContextUsage=()=>({tokens:31000});
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
+  save(f);
+  f.addMessage("toolResult","more work after the note",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:32500}); // over the whole window: a repair turn cannot run
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.abort.signal.aborted,false); assert.equal(f.c.paused,null);
+  assert.equal(f.c.store.diagnostics().filter(e=>e.event==="hard_rollover_stale_note").length,1);
+});
+test("a session already stopped over the window reopens from its notes with /new-context", async(t)=>{
+  const f=setup(t);
+  save(f);
+  f.addMessage("assistant",[{type:"toolCall",id:"search1",name:"tool_search",arguments:{query:"new_context"}}]);
+  f.addMessage("toolResult","Activated: new_context",{toolName:"tool_search",toolCallId:"search1"});
+  // The stopped request left an empty aborted turn behind; it did no work.
+  f.addMessage("assistant",[],{stopReason:"aborted",errorMessage:"체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요."});
+  f.ctx.getContextUsage=()=>({tokens:32500});
+  f.c.refresh(f.ctx);
+  assert.throws(()=>f.c.admit(f.build().messages),/\/new-context/);
+  await f.c.manual(f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
+});
+test("over the window, /new-context opens the next window even from a note that work came after", async(t)=>{
+  const f=setup(t);
+  save(f);
+  f.addMessage("toolResult","more work after the note",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:32500});
+  f.c.refresh(f.ctx);
+  await f.c.manual(f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
+  assert.equal(f.c.store.diagnostics().filter(e=>e.event==="hard_rollover_stale_note").length,1);
+});
 test("turn end remains idle while no model context window is available", async(t)=>{
   const f=setup(t); f.ctx.model={}; f.c.refresh(f.ctx);
   await f.c.turnEnd({},f.ctx);

@@ -274,7 +274,7 @@ export class ContextNotesController {
     const usage = this.usage();
     if (usage.tokens >= usage.full) {
       this.showStatus({ ...usage, remaining: 0 });
-      throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.`);
+      throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했어요. /new-context 를 실행하면 저장된 작업 노트로 새 창을 열어요.`);
     }
     if (usage.hard !== undefined && usage.tokens >= usage.hard && !this.checkpointRequested) {
       throw new HardLineRefusal(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 이어서 체크포인트 전용 턴을 요청해요. 새 창으로 넘어가지 않으면 /new-context를 실행해 주세요.`);
@@ -545,13 +545,15 @@ export class ContextNotesController {
       // A stale/incomplete checkpoint is repairable by the same model. Do not
       // turn the first validation rejection into a generic aborted run. Bound
       // retries and retain the physical-window/storage failure safety stops.
-      if (error instanceof CheckpointRefreshRequired && !this.fatal && !ctx.signal?.aborted && this.checkpointRetried) {
-        // The rollover-only buffer failed twice. At the hard line cut with the latest note
-        // rather than dead-end the session; the original record stays readable in history.
+      // The rollover-only buffer failed twice, or the window has no room left for a repair
+      // turn. At the hard line cut with the latest note rather than dead-end the session;
+      // the original record stays readable in history. The cut itself calls no model.
+      if (error instanceof CheckpointRefreshRequired && !this.fatal && !ctx.signal?.aborted) {
         try {
           const usage = this.usage();
           const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
-          if (usage.hard !== undefined && usage.tokens >= usage.hard && note) {
+          const noRepairTurn = this.checkpointRetried || usage.tokens >= usage.full;
+          if (noRepairTurn && usage.hard !== undefined && usage.tokens >= usage.hard && note) {
             this.checkpointRequested = false;
             this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens });
             await this.roll(ctx, "hard");
@@ -576,7 +578,7 @@ export class ContextNotesController {
   requestCheckpoint({ retry = false, reason } = {}) {
     const usage = this.usage(this.activeMessages);
     if (usage.tokens >= usage.full) {
-      throw new Error("체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했으니 더 큰 한도로 같은 세션을 다시 열어 주세요.");
+      throw new Error("체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했어요. /new-context 를 실행하면 저장된 작업 노트로 새 창을 열어요.");
     }
     if (this.checkpointRequested) return { requested: true, repeated: true };
     this.checkpointRequested = true;
@@ -598,6 +600,13 @@ export class ContextNotesController {
       let fresh = true;
       try { assertCheckpointFresh(this.store.branch, note); } catch { fresh = false; }
       if (fresh) return this.roll(ctx, "manual");
+      // No checkpoint turn fits any more: open the next window from the latest note rather
+      // than leave the session with no way forward. The cut calls no model.
+      const usage = this.usage();
+      if (usage.tokens >= usage.full) {
+        this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens, reason: "manual" });
+        return this.roll(ctx, "hard");
+      }
     }
     return this.requestCheckpoint();
   }
