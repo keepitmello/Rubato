@@ -238,6 +238,10 @@ if [ "$APPLY" -eq 0 ]; then
   exit 0
 fi
 
+# 소스를 핀 + overlay 로 맞추고 설정·진입점을 쓴다. restart-gui.sh 가 같은 잠금 안에서
+# 방금 --prepare 로 이 일을 마쳤으면(RUBATO_GUI_PREPARED=1) 앱이 내려간 사이에 다시 하지
+# 않는다 — 그동안 소스가 바뀔 틈이 없고, 앱이 꺼져 있는 시간만 1초 남짓 는다.
+prepare_sources() {
 mkdir -p "$(dirname "$T3_DIR")" "$T3_HOME/userdata"
 if [ ! -d "$T3_DIR/.git" ]; then
   git clone --filter=blob:none --no-checkout https://github.com/pingdotgg/t3code.git "$T3_DIR" || {
@@ -312,6 +316,10 @@ require("node:fs").writeFileSync(out, [
 ].join("\n"));
 ' "$REMOTE_ENTRY" "$HERE/remote-server.mjs" "$T3_DIR" "$T3_HOME" "$NODE" \
   && ok "SSH 원격 진입점 $REMOTE_ENTRY" || warn "SSH 원격 진입점을 만들지 못했다: $REMOTE_ENTRY"
+}
+if [ "$PREPARE" = 1 ] || [ "${RUBATO_GUI_PREPARED-}" != 1 ]; then
+  prepare_sources
+fi
 
 WANT="$(build_fingerprint)"
 

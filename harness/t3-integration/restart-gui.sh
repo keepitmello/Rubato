@@ -112,7 +112,11 @@ sync_bundle() {
   mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
   progress_start "데스크톱 번들을 맞추는 중"
   # install-gui.sh 는 bash 스크립트다. 리눅스의 sh(dash)로는 못 돈다.
-  bash "$INSTALL_GUI" --apply >"$INSTALL_LOG" 2>&1
+  # 이 실행이 잠금을 쥔 채 방금 준비를 마쳤으면 소스 맞추기는 건너뛴다.
+  case "${PREPARE_STATUS-1}" in
+    10|11) RUBATO_GUI_PREPARED=1 bash "$INSTALL_GUI" --apply >>"$INSTALL_LOG" 2>&1 ;;
+    *) bash "$INSTALL_GUI" --apply >"$INSTALL_LOG" 2>&1 ;;
+  esac
   sync_status=$?
   progress_stop
   if [ "$sync_status" -ne 0 ]; then

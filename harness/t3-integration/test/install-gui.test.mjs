@@ -397,3 +397,23 @@ test('install-macos-app signs the runtime bundle only when it changed', (t) => {
   assert.equal(run().status, 0);
   assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\n', 'the launcher remade the bundle');
 });
+
+// After a prepare under the same lock, the install that runs with the app closed
+// goes straight to the bundle: the pin checkout and overlay are already in place.
+test('an install right after a prepare does not set up the sources again', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-prepared-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const t3 = path.join(root, 't3');
+  mkdirSync(path.join(t3, 'apps/desktop/dist-electron'), { recursive: true });
+  writeFileSync(path.join(t3, 'apps/desktop/dist-electron/main.cjs'), '');
+  const fingerprint = src.slice(src.indexOf('build_fingerprint() {'), src.indexOf('\n}\n', src.indexOf('build_fingerprint() {')) + 3);
+  const here = path.dirname(installGui);
+  const pin = JSON.parse(readFileSync(path.join(here, 'upstream.json'), 'utf8')).upstreamCommit;
+  const want = spawnSync('bash', ['-c', [`HERE='${here}'`, `PIN='${pin}'`, fingerprint, 'build_fingerprint'].join('\n')], { encoding: 'utf8' }).stdout.trim();
+  writeFileSync(path.join(t3, '.rubato-gui-build'), `${want}\n`);
+  const result = spawnSync('bash', [installGui, '--apply'], { encoding: 'utf8', env: { ...process.env,
+    RUBATO_GUI_PREPARED: '1', RUBATO_HOST_OS: 'Linux', RUBATO_T3_SOURCE: t3, RUBATO_T3_HOME: path.join(root, 'home') } });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /데스크톱은 이미 이 핀에 맞다/);
+  assert.doesNotMatch(result.stdout, /Rubato overlay|T3 [0-9a-f]{40}/);
+});

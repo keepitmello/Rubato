@@ -75,7 +75,7 @@ function harness(t, {
   const fakeStart = join(root, 'fake-start-gui.sh');
   executable(fakeStart, `#!/bin/sh\nprintf 'START-GUI\\n' >> '${log}'\nprintf 'relaunched' > '${relaunch}'\nexit 0\n`);
   const fakeInstall = join(root, 'fake-install-gui.sh');
-  executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\n` +
+  executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s%s\\n' "$*" "\${RUBATO_GUI_PREPARED:+ (prepared)}" >> '${log}'\n` +
     `[ "$1" = --prepare ] && exit ${prepareStatus}\n` +
     (openDuringBuild ? `printf 'running' > '${guiState}'\n` : '') + 'exit 0\n');
   const fakeCodeCheck = join(root, 'fake-code-check');
@@ -172,7 +172,7 @@ test('running app restart also restarts SSH-launched servers', (t) => {
   const h = harness(t, { app: false, bundle: true, running: true, sshServers: 0 });
   const result = h.run();
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.match(h.calls(), /INSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI/);
+  assert.match(h.calls(), /INSTALL-GUI --apply( \(prepared\))?\nSSH-SERVERS\nSTART-GUI/);
 });
 
 test('non-Darwin without .app or desktop build still skips', (t) => {
@@ -337,7 +337,7 @@ test('an app left running under T3\'s name is quit before Rubato starts', async 
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(h.alive(h.strayPid), false);
   assert.equal(h.alive(h.otherPid), true);
-  assert.match(h.calls(), /INSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI/);
+  assert.match(h.calls(), /INSTALL-GUI --apply( \(prepared\))?\nSSH-SERVERS\nSTART-GUI/);
   // Asking "Rubato" to quit is for a running Rubato; there is none.
   assert.doesNotMatch(h.calls(), /tell application/);
 });
@@ -408,7 +408,8 @@ test('a bundle staged with the app open is swapped in after the app quits', (t) 
   const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 10, codeCurrent: true });
   const result = h.run();
   assert.equal(result.status, 0, result.stderr + result.stdout);
-  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI\n');
+  // The prepare just ran under the same lock, so the install skips setting up the sources again.
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply (prepared)\nSSH-SERVERS\nSTART-GUI\n');
 });
 
 // Changed dependencies cannot be installed under an open app, and a failed
@@ -418,7 +419,8 @@ test('changed dependencies or a failed prepare fall back to building with the ap
     const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus, codeCurrent: true });
     const result = h.run();
     assert.equal(result.status, 0, result.stderr + result.stdout);
-    assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI\n', `prepare ${prepareStatus}`);
+    const install = prepareStatus === 11 ? 'INSTALL-GUI --apply (prepared)' : 'INSTALL-GUI --apply';
+    assert.equal(h.calls(), `INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\n${install}\nSSH-SERVERS\nSTART-GUI\n`, `prepare ${prepareStatus}`);
   }
 });
 
@@ -427,7 +429,7 @@ test('changed dependencies or a failed prepare fall back to building with the ap
 test('--prepare-only builds beside the open app and touches nothing else', (t) => {
   const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
   const result = spawnSync('sh', [restartGui, '--prepare-only'], { cwd: h.home, encoding: 'utf8',
-    env: { ...process.env, ...h.env, RUBATO_GUI_PREPARE_LOG: join(h.home, 'prepare.log') } });
+    env: { ...h.env, RUBATO_GUI_PREPARE_LOG: join(h.home, 'prepare.log') } });
   assert.equal(result.status, 0, result.stderr + result.stdout);
   assert.equal(h.calls(), 'INSTALL-GUI --prepare\n');
   assert.equal(h.relaunched(), undefined);
