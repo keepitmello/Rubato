@@ -246,6 +246,31 @@ test("past the physical window a stale note cuts instead of dead-ending, since n
   assert.equal(f.c.window.number,1); assert.equal(f.abort.signal.aborted,false); assert.equal(f.c.paused,null);
   assert.equal(f.c.store.diagnostics().filter(e=>e.event==="hard_rollover_stale_note").length,1);
 });
+// 2026-10-12 14:45, Astra at 255k of a 272k window (past 90%, under 95%): the note was saved
+// in an eval that also read a file, so it read as stale; the repair turns failed and the run
+// was aborted instead of handing the window over.
+test("past the target line a failed repair turn cuts with the latest note instead of aborting", async(t)=>{
+  const f=setup(t);
+  f.ctx.getContextUsage=()=>({tokens:29500}); // past 90% (28,800), under 95% (30,400) of 32K
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
+  save(f); f.addMessage("toolResult","read during the save",{toolName:"read"});
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,0); assert.equal(f.sent.length,2);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
+  f.addMessage("toolResult","read again",{toolName:"read"});
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.abort.signal.aborted,false);
+});
+test("past the target line /new-context opens the next window from a stale note", async(t)=>{
+  const f=setup(t);
+  save(f); f.addMessage("toolResult","read during the save",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:29500});
+  f.c.refresh(f.ctx);
+  await f.c.manual(f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
+});
 test("a session already stopped over the window reopens from its notes with /new-context", async(t)=>{
   const f=setup(t);
   save(f);

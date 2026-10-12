@@ -545,14 +545,17 @@ export class ContextNotesController {
       // turn the first validation rejection into a generic aborted run. Bound
       // retries and retain the physical-window/storage failure safety stops.
       // The rollover-only buffer failed twice, or the window has no room left for a repair
-      // turn. At the hard line cut with the latest note rather than dead-end the session;
+      // turn. Past the target line cut with the latest note rather than dead-end the session;
       // the original record stays readable in history. The cut itself calls no model.
       if (error instanceof CheckpointRefreshRequired && !this.fatal && !ctx.signal?.aborted) {
         try {
           const usage = this.usage();
           const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
           const noRepairTurn = this.checkpointRetried || usage.tokens >= usage.full;
-          if (noRepairTurn && usage.hard !== undefined && usage.tokens >= usage.hard && note) {
+          // From the target line the window only serves the hand-over; past it a failed
+          // repair turn cuts too (2026-10-12: aborted at 255k, 3k under the hard line).
+          const line = usage.target ?? usage.hard;
+          if (noRepairTurn && line !== undefined && usage.tokens >= line && note) {
             this.checkpointRequested = false;
             this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens });
             await this.roll(ctx, "hard");
@@ -599,10 +602,13 @@ export class ContextNotesController {
       let fresh = true;
       try { assertCheckpointFresh(this.store.branch, note); } catch { fresh = false; }
       if (fresh) return this.roll(ctx, "manual");
-      // No checkpoint turn fits any more: open the next window from the latest note rather
-      // than leave the session with no way forward. The cut calls no model.
+      // Past the target line the window only serves the hand-over, and a checkpoint turn
+      // there can fail the same way the last one did. The person asked for the next window
+      // and a note for their current request exists: open it from that note. Work after the
+      // note stays readable in history. The cut calls no model.
       const usage = this.usage();
-      if (usage.tokens >= usage.full) {
+      const line = usage.target ?? usage.hard ?? usage.full;
+      if (usage.tokens >= line) {
         this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens, reason: "manual" });
         return this.roll(ctx, "hard");
       }
