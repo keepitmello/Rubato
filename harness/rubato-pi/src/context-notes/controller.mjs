@@ -422,6 +422,32 @@ export class ContextNotesController {
     return { scheduled: true, message: "현재 도구 묶음이 끝나면 요약 없이 새 문맥 창으로 넘어가요. 환경 상태는 유지돼요." };
   }
 
+  /**
+   * The opening of a window cut without a note for the latest request: that request, cut to
+   * fit, and where its full text and the notes are. Fits the 4,000-byte hint with the notes list.
+   */
+  carryOverHint(old, requestBytes = 1500) {
+    const entry = this.store.branch.findLast((e) => e.type === "message" && e.message?.role === "user");
+    const text = entry ? messageText(entry.message) : "";
+    let excerpt = "";
+    for (const char of text) {
+      if (Buffer.byteLength(excerpt + char) > requestBytes) { excerpt += "…"; break; }
+      excerpt += char;
+    }
+    const carried = excerpt
+      ? `The window filled before a note covered the latest user request. It was, verbatim${excerpt.endsWith("…") ? " up to the cut" : ""}:\n${excerpt}\nFull text: history_list_items role=user window_id=${old.windowId} recent_first=true.`
+      : "The window filled before a note covered the latest work.";
+    const notes = this.store.hint({ maxBytes: 4000 - Buffer.byteLength(carried) - 1 });
+    return `${carried}\n${notes}`;
+  }
+
+  /** Last resort when no checkpoint turn can run: open the next window without one. */
+  async rescue(ctx, usage, reason) {
+    this.checkpointRequested = false;
+    this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens, reason });
+    return this.roll(ctx, "hard");
+  }
+
   async roll(ctx, reason = "tool") {
     if (this.transitioning) return { applied: false, reason: "busy" };
     ctx.signal?.throwIfAborted();
@@ -430,7 +456,9 @@ export class ContextNotesController {
     const old = this.window;
     const throughUserId = this.lastUser;
     const note = this.store.latestNoteForWindow(old.windowId, this.lastUser);
-    if (!note) throw new Error("새 사용자 요청을 반영한 노트가 없어서 문맥 전환을 중단했어요. 노트를 갱신해 주세요.");
+    // A hard cut is the last resort and needs no note: the person's latest request rides in
+    // the new window's opening (carryOverHint), and everything before it stays in history.
+    if (!note && reason !== "hard") throw new Error("새 사용자 요청을 반영한 노트가 없어서 문맥 전환을 중단했어요. 노트를 갱신해 주세요.");
     // A fresh note has nothing after it but management calls, however early it was saved.
     if (reason !== "hard") assertCheckpointFresh(this.store.branch, note);
     if (typeof ctx.applyCompaction !== "function" || typeof ctx.getMessageRevision !== "function") {
@@ -439,7 +467,7 @@ export class ContextNotesController {
     this.transitioning = true;
     try {
       const window = nextWindow(old);
-      const summary = encodeBootstrap(window, this.store.hint());
+      const summary = encodeBootstrap(window, note ? this.store.hint() : this.carryOverHint(old));
       this.pi.appendEntry(PREPARE_ENTRY, { window, source: SOURCE });
       this.refresh(ctx, true);
       const marker = this.store.branch.findLast((e) => e.customType === PREPARE_ENTRY && e.data?.window?.windowId === window.windowId);
@@ -452,10 +480,10 @@ export class ContextNotesController {
       // All old messages/tools are durably indexed before changing the active
       // context. No provider/model call is made here.
       const result = { summary, firstKeptEntryId: marker.id, tokensBefore: this.usage().tokens,
-        details: { source: SOURCE, window, checkpointEntryId: note.id, preparedLeafId: marker.id, reason } };
+        details: { source: SOURCE, window, checkpointEntryId: note?.id ?? null, preparedLeafId: marker.id, reason } };
       const expectedRevision = ctx.getMessageRevision();
       this.record("transition_requested", { from: old.windowId, to: window.windowId, reason,
-        tokens_before: result.tokensBefore, checkpoint_entry_id: note.id });
+        tokens_before: result.tokensBefore, checkpoint_entry_id: note?.id ?? null });
       let outcome;
       let applyError;
       try { outcome = await ctx.applyCompaction(result, { reason: "extension", expectedRevision }); }
@@ -498,8 +526,12 @@ export class ContextNotesController {
           this.checkpointRequested = false;
           return;
         }
-        if (!this.fatal && ctx.model?.contextWindow && this.usage().target !== undefined &&
-            this.usage().tokens >= this.usage().target && !this.checkpointRequested) this.requestCheckpoint();
+        const usage = this.usage();
+        if (!this.fatal && ctx.model?.contextWindow && usage.target !== undefined &&
+            usage.tokens >= usage.target && !this.checkpointRequested) {
+          if (usage.tokens >= usage.full) await this.rescue(ctx, usage, "full");
+          else this.requestCheckpoint();
+        }
         return;
       }
       this.refresh(ctx, true);
@@ -534,6 +566,8 @@ export class ContextNotesController {
           // checkpoint-only turn first, also at the hard line (the stale cut below is
           // the last resort after that turn failed twice).
           if (fresh) await this.roll(ctx, "budget");
+          // No checkpoint turn fits past the physical window: cut without one.
+          else if (usage.tokens >= usage.full) await this.rescue(ctx, usage, "full");
           else this.requestCheckpoint();
         } else if (ctx.model?.contextWindow && past(usage.soft) && fresh) {
           // Soft zone: roll at a natural boundary, a turn that ended on a fresh note.
@@ -555,10 +589,8 @@ export class ContextNotesController {
           // From the target line the window only serves the hand-over; past it a failed
           // repair turn cuts too (2026-10-12: aborted at 255k, 3k under the hard line).
           const line = usage.target ?? usage.hard;
-          if (noRepairTurn && line !== undefined && usage.tokens >= line && note) {
-            this.checkpointRequested = false;
-            this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens });
-            await this.roll(ctx, "hard");
+          if (noRepairTurn && line !== undefined && usage.tokens >= line) {
+            await this.rescue(ctx, usage, note ? "repair_failed" : "repair_failed_no_note");
             return;
           }
         } catch (rollError) { error = rollError; }
@@ -602,17 +634,15 @@ export class ContextNotesController {
       let fresh = true;
       try { assertCheckpointFresh(this.store.branch, note); } catch { fresh = false; }
       if (fresh) return this.roll(ctx, "manual");
-      // Past the target line the window only serves the hand-over, and a checkpoint turn
-      // there can fail the same way the last one did. The person asked for the next window
-      // and a note for their current request exists: open it from that note. Work after the
-      // note stays readable in history. The cut calls no model.
-      const usage = this.usage();
-      const line = usage.target ?? usage.hard ?? usage.full;
-      if (usage.tokens >= line) {
-        this.record("hard_rollover_stale_note", { window_id: this.window.windowId, tokens: usage.tokens, reason: "manual" });
-        return this.roll(ctx, "hard");
-      }
     }
+    // Past the target line the window only serves the hand-over, and a checkpoint turn there
+    // can fail the same way the last one did. The person asked for the next window: open it
+    // from the note for their request. With no such note a checkpoint turn still comes first,
+    // unless none fits; then the cut carries their latest request instead. Work after the
+    // note stays readable in history. The cut calls no model.
+    const usage = this.usage();
+    const line = note ? usage.target ?? usage.hard ?? usage.full : usage.full;
+    if (ctx.isIdle() && usage.tokens >= line) return this.rescue(ctx, usage, note ? "manual" : "manual_no_note");
     return this.requestCheckpoint();
   }
 

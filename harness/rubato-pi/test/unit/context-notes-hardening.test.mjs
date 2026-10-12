@@ -244,3 +244,15 @@ test("note data cannot override the journal entry id", (t) => {
   f.c.store.sync(branch);
   assert.equal(f.c.store.noteVersions.get("work.md").id, entry.id);
 });
+test("commit fence lets a last-resort cut through with no note at all", async (t) => {
+  const f = setup(t); const apply = f.ctx.applyCompaction;
+  f.ctx.getContextUsage = () => ({ tokens: 32500 }); // over the whole 32K window
+  f.c.refresh(f.ctx);
+  f.ctx.applyCompaction = async (result, options) => {
+    assert.equal(result.details.checkpointEntryId, null);
+    withNotes(() => assertTransitionCommit({ precomputed: result }, f.manager));
+    return apply(result, options);
+  };
+  await f.c.manual(f.ctx);
+  assert.equal(f.c.window.number, 1);
+});

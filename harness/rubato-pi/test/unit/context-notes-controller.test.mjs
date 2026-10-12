@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
-import { NOTE_ENTRY, SOURCE, messageText } from "../../src/context-notes/protocol.mjs";
+import { NOTE_ENTRY, SOURCE, decodeBootstrap, messageText } from "../../src/context-notes/protocol.mjs";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
 
 function setup(t) {
@@ -164,8 +164,11 @@ test("a queued checkpoint is not retried before its own delivery", async(t)=>{
 test("checkpoint turn never consumes the provider safety reserve", async(t)=>{
   const f=setup(t); f.addMessage("toolResult","a".repeat(120000),{toolName:"read"});
   f.c.refresh(f.ctx);
-  await assert.rejects(f.c.manual(f.ctx),/안전하게 실행할 여유/);
+  // No checkpoint turn fits and no note covers the request: the cut carries the request.
+  await f.c.manual(f.ctx);
   assert.equal(f.sent.length,0); assert.equal(f.c.checkpointRequested,false);
+  assert.equal(f.c.window.number,1);
+  assert.match(decodeBootstrap(f.c.bootstrap).hint,/Fix the cache\. Preserve the public API\./);
 });
 test("reasoning payloads do not inflate the experiment budget", (t)=>{
   const f=setup(t);
@@ -270,6 +273,42 @@ test("past the target line /new-context opens the next window from a stale note"
   f.c.refresh(f.ctx);
   await f.c.manual(f.ctx);
   assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
+});
+test("a new request that overflows the window before any note covers it still reaches a new window", async(t)=>{
+  const f=setup(t);
+  save(f);
+  f.addMessage("user","Now rewrite question two around the payment work.");
+  f.addMessage("toolResult","x",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:32500}); // over the whole 32K window
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0); assert.equal(f.abort.signal.aborted,false);
+  const hint=decodeBootstrap(f.c.bootstrap).hint;
+  assert.match(hint,/Now rewrite question two around the payment work\./);
+  assert.match(hint,/history_list_items role=user/);
+  assert.match(hint,/"work\.md"/,"the earlier note is still listed");
+});
+test("past the target line a repair turn that writes no note at all still cuts", async(t)=>{
+  const f=setup(t);
+  f.ctx.getContextUsage=()=>({tokens:29500});
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  for (let i=0;i<2;i+=1) {
+    f.append({type:"custom_message",...f.sent.at(-1)[0]});
+    f.addMessage("assistant","kept working without a note");
+    await f.c.turnEnd({},f.ctx);
+  }
+  assert.equal(f.c.window.number,1); assert.equal(f.abort.signal.aborted,false);
+  assert.match(decodeBootstrap(f.c.bootstrap).hint,/Fix the cache/);
+});
+test("a long request is cut to fit the window opening", async(t)=>{
+  const f=setup(t);
+  f.addMessage("user","가".repeat(3000));
+  f.ctx.getContextUsage=()=>({tokens:32500});
+  f.c.refresh(f.ctx);
+  await f.c.manual(f.ctx);
+  const hint=decodeBootstrap(f.c.bootstrap).hint;
+  assert.ok(Buffer.byteLength(hint)<=4000); assert.match(hint,/가…/);
 });
 test("a session already stopped over the window reopens from its notes with /new-context", async(t)=>{
   const f=setup(t);

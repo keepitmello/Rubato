@@ -23,6 +23,8 @@ function managementEvalResult(message) {
 
 /** A note is a safe checkpoint only if no newer work can be lost by the cut. */
 export function assertCheckpointFresh(branch, note, { allowStale = false, allowPendingEval = false } = {}) {
+  // A last-resort cut may carry no note at all; there is nothing to check.
+  if (allowStale && (note?.id === null || note?.id === undefined)) return;
   const index = branch.findIndex((e) => e.id === note?.id && e.type === "custom" && e.customType === NOTE_ENTRY);
   if (index < 0) throw new Error("현재 가지에서 작업 노트를 찾지 못했어요.");
   if (allowStale) return;
