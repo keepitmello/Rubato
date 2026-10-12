@@ -151,6 +151,9 @@ export async function runUpdate({
   if (!release) return { duplicate: true };
   const resultFile = path.join(directory, 'result.json');
   const readyFile = path.join(directory, `ready-${token}.json`);
+  // restart-gui.sh leaves this when the app could stay open: nothing it runs
+  // changed, so it only reconnects to the new engine and no window reopens.
+  const keptFile = path.join(directory, `kept-${token}.json`);
   const controller = new AbortController();
   const abort = () => controller.abort();
   const ignoreHangup = () => {};
@@ -178,6 +181,8 @@ export async function runUpdate({
     if (app) jobEnv.RUBATO_GUI_UPDATE_RELAUNCH = '1';
     await executeUpdate(command, jobArgs, { cwd: root, env: jobEnv }, updateTimeoutMs, controller.signal, words.did);
     if (!app) result = { token, kind, status: 'succeeded', finishedAt: Date.now() };
+    else if ((await readJson(keptFile))?.token === token && alive(parentPid))
+      result = { token, kind, status: 'succeeded', appPid: parentPid, kept: true, finishedAt: Date.now() };
     const deadline = Date.now() + readyTimeoutMs;
     while (app && !result && !controller.signal.aborted && Date.now() < deadline) {
       const ready = await readJson(readyFile);
@@ -195,6 +200,7 @@ export async function runUpdate({
       if (result) await atomicJson(resultFile, result);
     } finally {
       await unlink(readyFile).catch(() => {});
+      await unlink(keptFile).catch(() => {});
       await release();
       process.removeListener('SIGHUP', ignoreHangup);
       process.removeListener('SIGTERM', abort);

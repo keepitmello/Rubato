@@ -3,6 +3,16 @@
 # 터미널 실행기는 Rubato CLI다. 내부 driver id는 rubato-pi로 남긴다.
 #
 # 기본은 계획만 출력한다. 적용은 --apply.
+#
+# --prepare 는 앱이 켜져 있어도 되는 일만 한다. 소스를 핀 + overlay 로 맞추고, 번들이
+# 낡았으면 켜진 앱이 읽는 폴더 옆(<폴더>.rubato-next)에 빌드한다. 앱 실행용 번들
+# (.electron-runtime)과 서명은 건드리지 않는다. 그다음 --apply 는 앱이 내려간 사이에
+# 미리 만든 폴더를 이름만 바꿔 끼운다 — 예전에는 앱을 끈 채로 30초 남짓 빌드했다.
+# --prepare 의 종료 코드:
+#   0   번들이 이미 이 소스에 맞다
+#   10  새 번들을 옆에 만들어 뒀다 (앱을 껐다 켜야 한다)
+#   11  의존성이 바뀌어 미리 만들 수 없다 (앱을 끈 뒤 --apply 가 받고 빌드한다)
+#   1   실패
 set -uo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -11,12 +21,15 @@ REPO="$(cd "$HERE/../.." && pwd)"
 HOST_OS="${RUBATO_HOST_OS:-$(uname -s)}"
 is_darwin() { [ "$HOST_OS" = Darwin ]; }
 APPLY=0
+PREPARE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --apply) APPLY=1 ;;
+    --prepare) APPLY=1; PREPARE=1 ;;
     --help|-h)
-      printf '%s\n' '사용법: harness/t3-integration/install-gui.sh [--apply]' \
-        '  T3 Code를 받아 Rubato overlay를 얹고, 제공자 이름을 Rubato로 연결한다.'
+      printf '%s\n' '사용법: harness/t3-integration/install-gui.sh [--apply | --prepare]' \
+        '  T3 Code를 받아 Rubato overlay를 얹고, 제공자 이름을 Rubato로 연결한다.' \
+        '  --prepare 는 앱을 켜 둔 채 새 번들을 옆 폴더에 미리 빌드한다.'
       exit 0 ;;
     *) printf '모르는 옵션: %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -41,6 +54,12 @@ DESCRIPTOR="$AGENT_DIR/server/connection.json"
 BUNDLE="$T3_DIR/apps/desktop/dist-electron/main.cjs"
 STAMP="$T3_DIR/.rubato-gui-build"
 DEPS_STAMP="$T3_DIR/.rubato-gui-deps"
+# 미리 만든 번들. 켜진 앱이 읽는 세 폴더마다 옆에 같은 이름 + 접미사로 만든다.
+# 도장은 그 번들이 어느 지문으로 만들어졌는지다.
+STAGE_SUFFIX=.rubato-next
+STAGED_STAMP="$T3_DIR/.rubato-gui-staged"
+OUTPUT_DIRS="apps/web/dist apps/server/dist apps/desktop/dist-electron"
+RUNTIME_STAMP="$T3_DIR/.rubato-gui-runtime"
 
 # T3 는 packageManager 로 pnpm 을 선언하고, 그 설치가 vite-plus 를 devDependency
 # 로 끌어온다. 그래서 전역 vp 가 없어도 빌드는 된다 — 예전에는 여기서 전역 vp 만
@@ -58,6 +77,81 @@ record_deps_stamp() {
   [ -n "$deps_hash" ] || return 0
   [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" = "$deps_hash" ] && return 0
   printf '%s\n' "$deps_hash" > "$DEPS_STAMP"
+}
+# node_modules 가 이 락파일로 받은 그대로인가. 아니면 받는 일이 켜진 앱이 쓰는
+# node_modules 를 바꾸므로, 미리 빌드하지 않고 앱을 끈 뒤로 미룬다.
+deps_current() {
+  [ -x "$T3_DIR/node_modules/.bin/vp" ] || return 1
+  want_deps="$(cd "$T3_DIR" 2>/dev/null && shasum -a 256 pnpm-lock.yaml 2>/dev/null | cut -d' ' -f1)"
+  [ -n "$want_deps" ] && [ "$(cat "$DEPS_STAMP" 2>/dev/null || true)" = "$want_deps" ]
+}
+# T3 의 `vp run --filter @t3tools/desktop --filter t3 build` 와 같은 세 단계를, 각각
+# 켜진 앱이 읽는 폴더 옆에 쓰게 해서 차례로 돈다. vp run 을 거치지 않는 이유: 작업
+# 실행기는 정해진 환경변수만 작업에 넘기는데, 출력 위치가 거기서 빠지면 빌드는 켜진
+# 앱의 폴더에 그대로 쏟아진다. 여기서는 각 단계에 위치를 직접 준다. 단계가 T3 와
+# 갈라지면 install-gui.test.mjs 가 잡는다.
+staged_build() {
+  (
+    cd "$T3_DIR" || exit 1
+    export PATH="$(dirname "$NODE"):$PATH" COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+    vp="$T3_DIR/node_modules/.bin/vp"
+    # 서버 빌드가 옆 폴더에 쓰는 것은 staged-build-edits.mjs 의 편집 덕분이다. 그 편집이
+    # 빠진 트리에서 돌리면 켜진 앱이 읽는 apps/server/dist 를 지우고 다시 쓴다.
+    grep -q 'RUBATO_T3_OUT_SUFFIX' apps/server/scripts/cli.ts || {
+      printf '  서버 빌드 스크립트에 옆 폴더 편집이 없다 — 앱을 끈 뒤에 빌드한다\n' >&2
+      exit 1
+    }
+    for dir in $OUTPUT_DIRS; do rm -rf "$dir$STAGE_SUFFIX"; done
+    (cd apps/web && "$vp" build --outDir "dist$STAGE_SUFFIX" --emptyOutDir) || exit 1
+    (cd apps/server && RUBATO_T3_OUT_SUFFIX="$STAGE_SUFFIX" "$NODE" scripts/cli.ts build) || exit 1
+    (cd apps/desktop && "$NODE" scripts/build-browser-secret.mjs \
+      && "$NODE" scripts/build-preview-annotation-css.mjs \
+      && "$vp" pack --out-dir "dist-electron$STAGE_SUFFIX") || exit 1
+    staged_complete
+  )
+}
+staged_complete() {
+  [ -f "$T3_DIR/apps/web/dist$STAGE_SUFFIX/index.html" ] \
+    && [ -f "$T3_DIR/apps/server/dist$STAGE_SUFFIX/bin.mjs" ] \
+    && [ -f "$T3_DIR/apps/server/dist$STAGE_SUFFIX/client/index.html" ] \
+    && [ -f "$T3_DIR/apps/desktop/dist-electron$STAGE_SUFFIX/main.cjs" ]
+}
+# 앱이 내려간 사이에 미리 만든 폴더를 이름만 바꿔 끼운다. 하나라도 못 바꾸면
+# 바꾼 것을 되돌리고 실패한다 — 그러면 부르는 쪽이 그 자리에서 빌드한다.
+swap_staged() {
+  (
+    cd "$T3_DIR" || exit 1
+    staged_complete || exit 1
+    swapped=''
+    for dir in $OUTPUT_DIRS; do
+      rm -rf "$dir.rubato-old"
+      if { [ ! -e "$dir" ] || mv "$dir" "$dir.rubato-old"; } && mv "$dir$STAGE_SUFFIX" "$dir"; then
+        swapped="$swapped $dir"
+        continue
+      fi
+      # 이 폴더는 옛것만 옮겨졌을 수 있다. 앞서 바꾼 폴더는 새것을 도로 옆에 두고 옛것을 돌린다.
+      [ ! -e "$dir" ] && [ -e "$dir.rubato-old" ] && mv "$dir.rubato-old" "$dir"
+      for back in $swapped; do
+        mv "$back" "$back$STAGE_SUFFIX" && mv "$back.rubato-old" "$back"
+      done
+      exit 1
+    done
+    rm -f "$STAGED_STAMP"
+    # 옛 번들 300MB 를 지우는 데 앱이 기다릴 이유는 없다.
+    for dir in $OUTPUT_DIRS; do
+      [ -d "$dir.rubato-old" ] && { nohup rm -rf "$dir.rubato-old" >/dev/null 2>&1 & }
+    done
+    exit 0
+  )
+}
+# 앱 실행용 번들(.electron-runtime)을 다시 만들어야 하는 입력: 아이콘, 그리고 이름과
+# 번들 id 를 정하는 런처·package.json. 번들 코드(dist-electron)는 번들 밖에서 읽으므로
+# 여기 들지 않는다. 예전에는 빌드할 때마다 비워서, 켤 때마다 290MB 를 다시 복사하고
+# 다시 서명했다.
+runtime_fingerprint() {
+  shasum -a 256 "$HERE/assets/Rubato.png" "$HERE/assets/Rubato.icns" \
+    "$T3_DIR/apps/desktop/scripts/electron-launcher.mjs" "$T3_DIR/apps/desktop/package.json" 2>/dev/null \
+    | cut -d' ' -f1 | shasum -a 256 | cut -d' ' -f1
 }
 build_desktop() {
   (
@@ -176,9 +270,14 @@ ok "Rubato overlay"
 # 읽는 경로를 바꾸는 대신 그 자리에 Rubato 것을 깔아둔다 — 경로를 바꾸면 그
 # 절대 경로가 소스에 박혀 머신마다 달라지고, 레포를 옮기면 그림이 사라진다.
 # 위 checkout 이 매번 upstream 파일로 되돌리므로 여기서 다시 깐다.
+# 수정 시각은 레포의 원본 것으로 맞춘다. 런처는 이 파일이 만들어 둔 아이콘보다
+# 새로우면 아이콘을 다시 만들고, 그러면 앱 실행용 번들 전체를 다시 복사하고 서명한다.
+# 복사할 때마다 시각이 지금으로 바뀌어 재시작마다 그 일이 일어났다. 그림이 정말
+# 바뀌면 runtime_fingerprint 가 그 번들을 비운다.
 for target in assets/prod/black-macos-1024.png assets/prod/black-universal-1024.png; do
   if [ -f "$T3_DIR/$target" ]; then
-    cp "$HERE/assets/Rubato.png" "$T3_DIR/$target" || warn "아이콘 교체 실패: $target"
+    { cp "$HERE/assets/Rubato.png" "$T3_DIR/$target" && touch -r "$HERE/assets/Rubato.png" "$T3_DIR/$target"; } \
+      || warn "아이콘 교체 실패: $target"
   fi
 done
 # 웹 쪽 진입점 — 부트 스플래시, 브라우저 탭, 아이폰 홈 화면 — 은 apps/web/public 의
@@ -215,24 +314,64 @@ require("node:fs").writeFileSync(out, [
   && ok "SSH 원격 진입점 $REMOTE_ENTRY" || warn "SSH 원격 진입점을 만들지 못했다: $REMOTE_ENTRY"
 
 WANT="$(build_fingerprint)"
+
+# 앱이 켜져 있을 수 있다. 켜진 앱이 읽는 폴더는 건드리지 않고 옆에만 만든다.
+if [ "$PREPARE" = 1 ]; then
+  if [ -f "$BUNDLE" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$WANT" ]; then
+    ok "데스크톱은 이미 이 핀에 맞다"
+    record_deps_stamp
+    exit 0
+  fi
+  if [ "$(cat "$STAGED_STAMP" 2>/dev/null || true)" = "$WANT" ] && staged_complete; then
+    ok "새 데스크톱 번들은 이미 옆에 만들어 뒀다"
+    exit 10
+  fi
+  if ! deps_current; then
+    say "의존성이 바뀌었다. 앱을 끈 뒤에 받고 빌드한다"
+    exit 11
+  fi
+  say "새 데스크톱 번들을 옆에 만든다 ${DIM}(앱은 켜 둔 채로)${RST}"
+  rm -f "$STAGED_STAMP"
+  if staged_build; then
+    printf '%s\n' "$WANT" > "$STAGED_STAMP"
+    ok "새 데스크톱 번들 (켤 때 바꿔 끼운다)"
+    exit 10
+  fi
+  err "데스크톱 빌드 실패"
+  exit 1
+fi
+
 built=0
 if [ -f "$BUNDLE" ] && [ "$(cat "$STAMP" 2>/dev/null || true)" = "$WANT" ]; then
   ok "데스크톱은 이미 이 핀에 맞다"
   record_deps_stamp
   built=1
+elif [ "$(cat "$STAGED_STAMP" 2>/dev/null || true)" = "$WANT" ] && swap_staged; then
+  printf '%s\n' "$WANT" > "$STAMP"
+  ok "데스크톱 번들을 미리 만든 것으로 바꿨다"
+  record_deps_stamp
+  built=1
 else
   say "데스크톱을 빌드한다 ${DIM}(처음이면 몇 분 걸려요)${RST}"
   if build_desktop; then
-    # T3 런처는 아이콘을 mtime 으로만 판단해서, 원본을 Rubato 것으로 바꿔도
-    # 먼저 만들어 둔 icns 를 그대로 쓴다. 이름이 바뀌면 옛 이름의 런타임 번들도
-    # 옆에 남는다. 설치할 때 비우고 다음 실행에서 다시 만들게 한다.
-    rm -rf "$T3_DIR/apps/desktop/.electron-runtime"
     printf '%s\n' "$WANT" > "$STAMP"
+    # 다른 지문으로 미리 만들어 둔 번들이 있었다면 이제 쓸 일이 없다.
+    for dir in $OUTPUT_DIRS; do rm -rf "$T3_DIR/$dir$STAGE_SUFFIX"; done
+    rm -f "$STAGED_STAMP"
     ok "데스크톱 빌드"
     built=1
   else
     err "데스크톱 빌드 실패"
   fi
+fi
+
+# T3 런처는 아이콘을 mtime 으로만 판단해서, 원본을 Rubato 것으로 바꿔도 먼저 만들어
+# 둔 icns 를 그대로 쓸 수 있다. 이름이 바뀌면 옛 이름의 런타임 번들도 옆에 남는다.
+# 그 입력이 바뀌었을 때만 비우고 다음 실행에서 다시 만들게 한다.
+RUNTIME_WANT="$(runtime_fingerprint)"
+if [ "$(cat "$RUNTIME_STAMP" 2>/dev/null || true)" != "$RUNTIME_WANT" ]; then
+  rm -rf "$T3_DIR/apps/desktop/.electron-runtime"
+  printf '%s\n' "$RUNTIME_WANT" > "$RUNTIME_STAMP"
 fi
 
 # 맥 앱 번들은 맥에만 만든다. T3 런처는 비-Darwin 에서 electron 바이너리를

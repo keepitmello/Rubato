@@ -30,6 +30,22 @@ is_darwin() { [ "$HOST_OS" = Darwin ]; }
 
 . "$HERE/../scripts/account-home.sh"
 
+# 켜진 앱이 레포에서 읽어 들인 코드가 지금 디스크의 것과 같은가
+# (src/code-fingerprint.mjs). Node 가 없거나 판단할 수 없으면 "아니다"다.
+CODE_CHECK="${RUBATO_GUI_CODE_CHECK:-}"
+loaded_code_current() {
+  if [ -n "$CODE_CHECK" ]; then
+    "$CODE_CHECK" >/dev/null 2>&1
+    return
+  fi
+  check_node="${RUBATO_GUI_UPDATE_NODE:-}"
+  if [ -z "$check_node" ] && [ -f "$HERE/../scripts/find-node.sh" ]; then
+    check_node="$(. "$HERE/../scripts/find-node.sh" && rubato_find_node 2>/dev/null)" || check_node=''
+  fi
+  [ -n "$check_node" ] || return 1
+  "$check_node" "$HERE/src/code-fingerprint.mjs" check >/dev/null 2>&1
+}
+
 PGREP_BIN="${RUBATO_PGREP_BIN:-/usr/bin/pgrep}"
 OSASCRIPT_BIN="${RUBATO_OSASCRIPT_BIN:-/usr/bin/osascript}"
 GUI_APP="${RUBATO_GUI_APP:-/Applications/Rubato.app}"
@@ -254,7 +270,40 @@ quit_app() {
   fi
 }
 
+# 앱이 켜져 있으면 끄기 전에 할 수 있는 일을 먼저 한다. install-gui.sh --prepare 가
+# 소스를 맞추고, 번들이 낡았으면 켜진 앱이 읽는 폴더 옆에 새 번들을 빌드한다. 예전에는
+# 앱을 끈 채로 30초 남짓 빌드했다. 번들도, 앱이 레포에서 읽어 들인 코드
+# (src/code-fingerprint.mjs)도 그대로면 앱은 끄지 않는다 — 켜진 앱은 새 엔진에 스스로
+# 다시 붙는다. 어느 쪽이든 모르면 예전처럼 껐다 켠다.
+#   PREPARE_STATUS 0   번들이 이미 맞다 → 끈 뒤에 맞출 것이 없다
+#                  10  새 번들을 옆에 만들어 뒀다 → 끈 뒤에 바꿔 끼운다
+#                  11  의존성이 바뀌었다 → 끈 뒤에 받고 빌드한다
+#                  그 밖  준비하지 못했다 → 끈 뒤에 예전처럼 맞춰 본다
+PREPARE_STATUS=1
 if [ "${GUI_ALREADY_CLOSED-}" != 1 ]; then
+  if [ -f "$INSTALL_GUI" ]; then
+    mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
+    progress_start "새 데스크톱 번들을 준비하는 중 (앱은 켜 둔 채로)"
+    PREPARE_STATUS=0
+    bash "$INSTALL_GUI" --prepare >"$INSTALL_LOG" 2>&1 || PREPARE_STATUS=$?
+    progress_stop
+    case "$PREPARE_STATUS" in
+      0|10|11) : ;;
+      *) ui_note "앱을 켜 둔 채로는 번들을 준비하지 못했어요. 끈 뒤에 다시 맞춥니다 — 기록: $INSTALL_LOG" ;;
+    esac
+  else
+    PREPARE_STATUS=0
+  fi
+  if [ "$PREPARE_STATUS" = 0 ] && loaded_code_current; then
+    ui_ok "데스크톱 앱은 그대로 둬요 (앱이 읽는 코드가 그대로라 새 엔진에 다시 붙어요)"
+    # GUI 업데이터는 다시 켜진 창을 기다린다. 다시 켤 창이 없다고 알린다.
+    if [ -n "${RUBATO_GUI_UPDATE_TOKEN-}" ]; then
+      KEPT_DIR="${RUBATO_GUI_UPDATE_DIR:-$HOME/.rubato-pi/gui-update}"
+      mkdir -p "$KEPT_DIR" 2>/dev/null || true
+      printf '{"token":"%s"}\n' "$RUBATO_GUI_UPDATE_TOKEN" > "$KEPT_DIR/kept-$RUBATO_GUI_UPDATE_TOKEN.json"
+    fi
+    exit 0
+  fi
   quit_app || exit 1
 fi
 if [ ! -x "$START_GUI" ]; then
@@ -265,7 +314,9 @@ fi
 # 앱이 내려간 지금이 번들을 다시 만들 수 있는 유일한 창이다. 여기서 실패해도
 # 앱을 볼모로 잡지 않는다 — 옛 번들로라도 돌아오는 편이 앱이 없는 것보다 낫다.
 RESTART_FAIL=0
-if ! sync_bundle; then
+if [ "$PREPARE_STATUS" = 0 ]; then
+  : # 끄기 전에 이미 맞췄다.
+elif ! sync_bundle; then
   ui_fail "핀·overlay 를 다시 얹지 못했습니다. 옛 번들 그대로 다시 켭니다 — 손으로: bash \"$INSTALL_GUI\" --apply"
   RESTART_FAIL=1
 fi

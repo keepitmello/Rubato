@@ -33,6 +33,11 @@ function harness(t, {
   // An app a half-done install opened under T3's own name ("T3 Code (Alpha).app")
   // from our runtime directory. It is a real process, so a SIGTERM really lands.
   stray = false,
+  // What `install-gui.sh --prepare` answers while the app is still open:
+  // 0 bundle current, 10 new bundle staged, 11 dependencies changed, 1 failed.
+  prepareStatus = 10,
+  // Whether the open app loaded the repository code on disk now.
+  codeCurrent = false,
 } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'rb-restart-gui-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -71,7 +76,10 @@ function harness(t, {
   executable(fakeStart, `#!/bin/sh\nprintf 'START-GUI\\n' >> '${log}'\nprintf 'relaunched' > '${relaunch}'\nexit 0\n`);
   const fakeInstall = join(root, 'fake-install-gui.sh');
   executable(fakeInstall, `#!/bin/sh\nprintf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\n` +
+    `[ "$1" = --prepare ] && exit ${prepareStatus}\n` +
     (openDuringBuild ? `printf 'running' > '${guiState}'\n` : '') + 'exit 0\n');
+  const fakeCodeCheck = join(root, 'fake-code-check');
+  executable(fakeCodeCheck, `#!/bin/sh\nexit ${codeCurrent ? 0 : 1}\n`);
   const fakeSshServers = join(root, 'fake-restart-ssh-servers.sh');
   executable(fakeSshServers, `#!/bin/sh\nprintf 'SSH-SERVERS\\n' >> '${log}'\nexit ${sshServers}\n`);
   const runtime = join(root, 'runtime');
@@ -117,6 +125,7 @@ function harness(t, {
     RUBATO_GUI_LOG: join(root, 'gui-restart.log'),
     RUBATO_GUI_WAIT_SECS: '2',
     RUBATO_RESTART_SSH_SERVERS: fakeSshServers,
+    RUBATO_GUI_CODE_CHECK: fakeCodeCheck,
   };
   return {
     home,
@@ -182,8 +191,9 @@ test('non-Darwin running app quits gracefully and relaunches via start-gui.sh', 
   assert.match(h.calls(), /QUIT-GUI/);
   assert.match(h.calls(), /INSTALL-GUI --apply/);
   assert.match(h.calls(), /START-GUI/);
-  assert.ok(h.calls().indexOf('QUIT-GUI') < h.calls().indexOf('INSTALL-GUI'), h.calls());
-  assert.ok(h.calls().indexOf('INSTALL-GUI') < h.calls().indexOf('START-GUI'), h.calls());
+  assert.ok(h.calls().indexOf('INSTALL-GUI --prepare') < h.calls().indexOf('QUIT-GUI'), h.calls());
+  assert.ok(h.calls().indexOf('QUIT-GUI') < h.calls().indexOf('INSTALL-GUI --apply'), h.calls());
+  assert.ok(h.calls().indexOf('INSTALL-GUI --apply') < h.calls().indexOf('START-GUI'), h.calls());
   assert.doesNotMatch(h.calls(), /tell application/);
 });
 
@@ -293,7 +303,7 @@ test('an app opened during the rebuild is quit before the new one starts', (t) =
   assert.equal(result.status, 0, result.stderr + result.stdout);
   const calls = h.calls();
   assert.equal(calls.match(/tell application "Rubato" to quit/g)?.length, 2, calls);
-  assert.ok(calls.indexOf('INSTALL-GUI') < calls.lastIndexOf('tell application'), calls);
+  assert.ok(calls.indexOf('INSTALL-GUI --apply') < calls.lastIndexOf('tell application'), calls);
   assert.ok(calls.lastIndexOf('tell application') < calls.indexOf('START-GUI'), calls);
   assert.match(result.stdout, /번들을 맞추는 사이 열린 앱이 있어요/);
 });
@@ -368,4 +378,45 @@ test('restart-gui keeps Darwin Electron pattern and has no force-quit happy path
   assert.deepEqual(guiCode.match(/\bkill\b[^\n]*/g), ['kill -TERM $STRAYS 2>/dev/null || true']);
   assert.match(restartSrc, /CloseMainWindow/);
   assert.match(restartSrc, /dist-electron\/main\.cjs/);
+});
+
+// A restart used to quit the app every time and build with it closed. Now the
+// bundle is prepared with the app open, and an app whose code did not change is
+// left open: it reconnects to the new engine by itself.
+test('an app whose bundle and loaded code are current stays open', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 0, codeCurrent: true });
+  const updateDir = join(h.home, 'gui-update');
+  const result = h.run({ RUBATO_GUI_UPDATE_TOKEN: 'token-1', RUBATO_GUI_UPDATE_DIR: updateDir });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.match(result.stdout, /데스크톱 앱은 그대로 둬요/);
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n');
+  assert.equal(h.relaunched(), undefined);
+  // The GUI updater waits for a reopened window unless it is told none will come.
+  assert.deepEqual(JSON.parse(readFileSync(join(updateDir, 'kept-token-1.json'), 'utf8')), { token: 'token-1' });
+});
+
+test('a current bundle with changed app code reopens the app without rebuilding', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 0, codeCurrent: false });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nSSH-SERVERS\nSTART-GUI\n');
+  assert.equal(h.relaunched(), 'relaunched');
+});
+
+test('a bundle staged with the app open is swapped in after the app quits', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 10, codeCurrent: true });
+  const result = h.run();
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI\n');
+});
+
+// Changed dependencies cannot be installed under an open app, and a failed
+// prepare is retried the old way: quit, then the full install.
+test('changed dependencies or a failed prepare fall back to building with the app closed', (t) => {
+  for (const prepareStatus of [11, 1]) {
+    const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus, codeCurrent: true });
+    const result = h.run();
+    assert.equal(result.status, 0, result.stderr + result.stdout);
+    assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI\n', `prepare ${prepareStatus}`);
+  }
 });

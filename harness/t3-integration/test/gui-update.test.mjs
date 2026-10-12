@@ -150,6 +150,27 @@ test('a restart with no app here succeeds on exit 0 and never asks for a reopen'
   assert.equal(jobEnv.RUBATO_GUI_UPDATE, undefined, 'the update-only mode stays off');
 });
 
+// restart-gui.sh leaves the app open when nothing it runs changed. The job must
+// not wait for a reopened window that never comes and report a failure.
+test('a restart that kept the app open succeeds without a reopened window', async (t) => {
+  const h = await fixture(t);
+  const kept = path.join(h.directory, `kept-${h.options.token}.json`);
+  const result = await runUpdate({ ...h.options, kind: 'restart', readyTimeoutMs: 60_000,
+    args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(kept)}, JSON.stringify({ token: ${JSON.stringify(h.options.token)} }))`] });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.kept, true);
+  assert.equal(result.appPid, process.pid);
+  assert.equal(await readJson(kept), null);
+  assert.equal(await readJson(path.join(h.directory, 'lock.json')), null);
+});
+
+test('a kept marker of another restart does not certify this one', async (t) => {
+  const h = await fixture(t);
+  await writeFile(path.join(h.directory, `kept-${h.options.token}.json`), JSON.stringify({ token: randomUUID() }));
+  const result = await runUpdate({ ...h.options, kind: 'restart', args: ['-e', ''], readyTimeoutMs: 50 });
+  assert.equal(result.status, 'failed');
+});
+
 test('an update and a restart do not run at once', async (t) => {
   const h = await fixture(t);
   await writeFile(path.join(h.directory, 'lock.json'), JSON.stringify({ pid: process.pid, token: randomUUID() }));

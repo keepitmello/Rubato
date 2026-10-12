@@ -28,6 +28,7 @@ import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
+import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2161,6 +2162,11 @@ overlays.push(...fileLinkOverlays);
 for (const [relative, changes] of Object.entries(fileLinkEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// The server build can write into a sibling directory while the app runs (staged-build-edits.mjs).
+overlays.push(...stagedBuildOverlays);
+for (const [relative, changes] of Object.entries(stagedBuildEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 function transform(text, changes) {
   for (const [anchor, addition, mode] of changes) {
     if (text.split(anchor).length !== 2) throw new Error(`T3 integration anchor is missing or ambiguous: ${anchor}`);
@@ -2199,6 +2205,11 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   if (old.version!==1) throw new Error('Unsupported previous overlay manifest');
   const planned = [];
   const manifest = {version:1,upstreamCommit:upstream.upstreamCommit,files:{}};
+  // An edit is applied only to a file listed in upstream.json. One that is not
+  // listed was skipped without a word, and the staged build then wrote into the
+  // output the open app was reading.
+  const unlisted = Object.keys(edits).filter((relative) => !(relative in upstream.targets));
+  if (unlisted.length) throw new Error(`Edited T3 files missing from upstream.json targets: ${unlisted.join(', ')}`);
   for (const relative of [...Object.keys(upstream.targets),...overlays]) {
     const destination = path.join(target,relative);
     const parent = await realpath(path.dirname(destination));

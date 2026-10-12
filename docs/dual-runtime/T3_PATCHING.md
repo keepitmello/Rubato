@@ -160,7 +160,7 @@ T3가 우리 이벤트를 전부 파일로 남긴다:
 | Pi 프로필 엔진 | `harness/pi-server/src/` | `rubato update` · `rubato restart` (SIGTERM, `kill -9` 금지 — 락이 15초 stale로 남는다) |
 | 데스크톱 앱 | `harness/t3-integration/src/` (켤 때 한 번 읽는다) | `rubato update` · `rubato restart` |
 | remote hub | `packages/rubato-remote-hub/` | `rubato update` · `rubato restart` |
-| T3 서버 번들 | 핀 + `harness/t3-integration/overlay/` (번들에 컴파일돼 들어간다) | 같음 (앱이 내려간 창에서 다시 만든다) |
+| T3 서버 번들 | 핀 + `harness/t3-integration/overlay/` (번들에 컴파일돼 들어간다) | 같음 (앱을 켜 둔 채 옆 폴더에 빌드하고, 앱이 내려간 사이에 바꿔 끼운다) |
 
 **손으로 칠 명령은 `rubato update` 와 `rubato restart` 둘뿐이다.** 어느 쪽을 쳐도 앱까지
 간다. 앱을 끄고·번들을 다시 만들고·다시 켜는 일은 `harness/t3-integration/restart-gui.sh`
@@ -169,7 +169,16 @@ T3가 우리 이벤트를 전부 파일로 남긴다:
 적용돼요" 로 끝나서, 켜져 있는 앱은 옛 코드로 계속 돌았다.
 
 다시 만들지 말지는 `install-gui.sh` 가 핀·overlay 지문으로 판단한다. 이미 맞는 설치는
-빌드 없이 지나가므로 평소 재시작은 그대로 빠르다. 핀이 이미 디스크에 있으면 네트워크도
+빌드 없이 지나간다. 다시 만들 때는 `--prepare` 가 앱을 켜 둔 채 켜진 앱이 읽는 세 폴더
+(`apps/web/dist`, `apps/server/dist`, `apps/desktop/dist-electron`) 옆 `.rubato-next` 에
+빌드하고, 앱을 끈 뒤 `--apply` 가 이름만 바꿔 끼운다. 서버 빌드가 옆에 쓰는 것은
+`staged-build-edits.mjs` 의 편집 덕분이라, 그 편집이 빠진 트리에서는 미리 빌드하지 않는다.
+의존성이 바뀌었으면 켜진 앱의 node_modules 를 건드릴 수 없어 예전처럼 끈 뒤에 받고 빌드한다.
+
+앱을 껐다 켤지는 `restart-gui.sh` 가 정한다. 번들이 이미 맞고, 켜진 앱이 레포에서 읽어
+들인 코드(`src/` 와 거기서 import 하는 파일, 레포 lockfile)가 디스크의 것과 같으면 앱은
+그대로 둔다. 브리지가 로드될 때 자기 pid 로 그 지문을 남기고(`src/code-fingerprint.mjs`),
+모르면 껐다 켠다. 핀이 이미 디스크에 있으면 네트워크도
 치지 않아서 오프라인에서도 앱을 다시 켤 수 있다.
 
 둘의 차이는 앞단뿐이다. `update` 는 원격에서 받아 바뀐 것만 다시 만들고, 받을 것이 없어도

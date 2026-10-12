@@ -4,6 +4,7 @@ import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
+import { recordLoadedCode } from './code-fingerprint.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -68,6 +69,8 @@ function resolveNode() {
 }
 const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
 t3BridgeLog('t3-bridge loaded');
+// A restart reopens the app only when the code recorded here has changed (code-fingerprint.mjs).
+recordLoadedCode();
 
 
 const copy = (value) => JSON.parse(JSON.stringify(value));

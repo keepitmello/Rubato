@@ -50,13 +50,20 @@ fi
 
 ENTRY="$BUNDLE/Contents/Resources/app"
 mkdir -p "$ENTRY"
-cat > "$ENTRY/package.json" <<'JSON'
+# 내용이 같으면 쓰지 않는다. 쓰면 아래에서 번들 전체를 다시 서명해야 한다.
+write_if_changed() {
+  local target="$1" next
+  next="$(cat)"
+  [ -f "$target" ] && [ "$(cat "$target")" = "$next" ] && return 0
+  printf '%s\n' "$next" > "$target"
+}
+write_if_changed "$ENTRY/package.json" <<'JSON'
 { "name": "rubato", "productName": "Rubato", "main": "index.js" }
 JSON
 # 경로를 굽지 않는다. 이 파일은 항상 <desktop>/.electron-runtime/Rubato.app 안에
 # 있으므로 다섯 단계 위가 데스크톱 디렉터리다. 예전에 검증용 /private/tmp 경로가
 # 런처에 박힌 채 남아서, tmp 가 비워진 뒤로 앱이 조용히 안 켜졌다.
-cat > "$ENTRY/index.js" <<JS
+write_if_changed "$ENTRY/index.js" <<JS
 // Dock/Finder 로 켤 때의 진입점. 터미널 경로(start-gui.sh)는 main.cjs 를 직접
 // 넘기므로 이 파일을 지나지 않는다.
 const path = require("node:path");
@@ -69,7 +76,14 @@ JS
 
 # Resources 에 파일을 넣으면 런처가 걸어둔 애드혹 서명이 깨진다. 다시 서명하되
 # 이 머신의 로컬 인증서로 건다 — 애드혹이면 다시 만들 때마다 macOS 권한이 풀린다.
-bash "$HERE/mac-signing.sh" sign "$BUNDLE" || true
+# 서명은 번들이 바뀌었을 때만 한다: 런처가 번들을 새로 만들면 metadata.json 이,
+# 진입점을 고치면 위 두 파일이 바뀐다. 290MB 번들을 재시작마다 다시 서명하고 있었다.
+SIGN_STAMP="$(dirname "$BUNDLE")/.rubato-signed"
+SIGN_WANT="$(cat "$(dirname "$BUNDLE")/metadata.json" "$ENTRY/package.json" "$ENTRY/index.js" 2>/dev/null | shasum -a 256 | cut -d' ' -f1)"
+if [ "$(cat "$SIGN_STAMP" 2>/dev/null || true)" != "$SIGN_WANT" ]; then
+  bash "$HERE/mac-signing.sh" sign "$BUNDLE" || true
+  printf '%s\n' "$SIGN_WANT" > "$SIGN_STAMP"
+fi
 
 # /Applications 이름은 Finder·Spotlight 용이다. 복사본이 아니라 링크라서
 # 업데이트로 번들이 바뀌어도 따라간다. Dock 고정은 실행 중 뜨는 아이콘으로 한다

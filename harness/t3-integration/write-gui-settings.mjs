@@ -102,7 +102,12 @@ const modest = { instanceId: 'rubato', model: 'xai/grok-4.7' };
 seedIfMissing(settings, 'defaultModelSelection', modest);
 seedIfMissing(settings, 'textGenerationModelSelection', modest);
 seedIfMissing(settings, 'sourceControlWriterModelSelection', modest);
-await writeFile(settingsPath, `${JSON.stringify(settings, null, 2)}\n`);
+// 재시작은 이 스크립트를 앱이 켜진 채로 부른다(install-gui.sh --prepare). 켜진 서버는
+// 이 파일을 지켜보다 다시 읽으므로, 바뀐 것이 없으면 쓰지 않는다.
+const nextSettings = `${JSON.stringify(settings, null, 2)}\n`;
+let currentSettings = null;
+try { currentSettings = await readFile(settingsPath, 'utf8'); } catch { /* first install */ }
+if (currentSettings !== nextSettings) await writeFile(settingsPath, nextSettings);
 
 const clientPath = path.join(userdata, 'client-settings.json');
 let client = {};

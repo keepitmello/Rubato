@@ -237,3 +237,163 @@ test('every web icon replaces a file the pinned T3 web app already serves', { sk
   assert.ok(icons.length > 0);
   for (const icon of icons) assert.ok(served.stdout.split('\n').includes(`apps/web/public/${icon}`), icon);
 });
+
+// --prepare builds the three outputs beside the ones the open app reads, by
+// running T3's build steps itself. If T3 changes those steps, the staged bundle
+// would differ from what `vp run ... build` makes, so the steps are pinned here.
+test('the staged build runs the same steps as T3\'s desktop build', { skip: !process.env.T3_SOURCE }, () => {
+  const t3 = process.env.T3_SOURCE;
+  assert.equal(JSON.parse(readFileSync(path.join(t3, 'apps/web/package.json'), 'utf8')).scripts.build, 'vp build');
+  const server = readFileSync(path.join(t3, 'apps/server/vite.config.ts'), 'utf8');
+  assert.match(server, /build: \{\n\s+command: "node scripts\/cli\.ts build",\n\s+dependsOn: \["@t3tools\/web#build"\]/);
+  const desktop = readFileSync(path.join(t3, 'apps/desktop/vite.config.ts'), 'utf8');
+  assert.match(desktop, /build: \{\n\s+command:\n\s+"node scripts\/build-browser-secret\.mjs && node scripts\/build-preview-annotation-css\.mjs && vp pack",\n\s+dependsOn: \["t3#build"\]/);
+  const staged = src.slice(src.indexOf('staged_build() {'), src.indexOf('staged_complete() {'));
+  for (const step of ['"$vp" build --outDir "dist$STAGE_SUFFIX"', 'RUBATO_T3_OUT_SUFFIX="$STAGE_SUFFIX" "$NODE" scripts/cli.ts build',
+    '"$NODE" scripts/build-browser-secret.mjs', '"$NODE" scripts/build-preview-annotation-css.mjs', '"$vp" pack --out-dir "dist-electron$STAGE_SUFFIX"'])
+    assert.ok(staged.includes(step), step);
+});
+
+function slice(start, end) {
+  const from = src.indexOf(start);
+  const to = src.indexOf(end, from);
+  assert.ok(from >= 0 && to > from, `${start} … ${end}`);
+  return src.slice(from, to);
+}
+const helpers = () => slice('staged_complete() {', 'runtime_fingerprint() {');
+
+function outputs(root, suffix, label) {
+  for (const [dir, file] of [['apps/web/dist', 'index.html'], ['apps/server/dist', 'bin.mjs'],
+    ['apps/server/dist', 'client/index.html'], ['apps/desktop/dist-electron', 'main.cjs']]) {
+    mkdirSync(path.dirname(path.join(root, dir + suffix, file)), { recursive: true });
+    writeFileSync(path.join(root, dir + suffix, file), label);
+  }
+}
+
+function runShell(lines) {
+  return spawnSync('bash', ['-c', ['set -uo pipefail', ...lines].join('\n')], { encoding: 'utf8' });
+}
+
+test('a staged bundle is swapped in whole, and the old one goes', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-swap-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  outputs(root, '', 'old');
+  outputs(root, '.rubato-next', 'new');
+  writeFileSync(path.join(root, '.rubato-gui-staged'), 'fp\n');
+  const result = runShell([`T3_DIR='${root}'`, 'STAGE_SUFFIX=.rubato-next', `STAGED_STAMP='${root}/.rubato-gui-staged'`,
+    'OUTPUT_DIRS="apps/web/dist apps/server/dist apps/desktop/dist-electron"', helpers(), 'swap_staged']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(path.join(root, 'apps/server/dist/bin.mjs'), 'utf8'), 'new');
+  assert.equal(readFileSync(path.join(root, 'apps/desktop/dist-electron/main.cjs'), 'utf8'), 'new');
+  assert.equal(readFileSync(path.join(root, 'apps/web/dist/index.html'), 'utf8'), 'new');
+  // The old bundle is removed in the background.
+  for (let tries = 0; tries < 50 && readdirSync(path.join(root, 'apps/server')).length > 1; tries += 1)
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.deepEqual(readdirSync(path.join(root, 'apps/server')), ['dist']);
+  assert.deepEqual(readdirSync(root).filter((name) => name.startsWith('.rubato')), []);
+});
+
+test('a staged bundle that cannot be swapped whole leaves the live one as it was', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-swap-fail-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  outputs(root, '', 'old');
+  outputs(root, '.rubato-next', 'new');
+  // The last output cannot move into place after the first two did.
+  const result = runShell([`T3_DIR='${root}'`, 'STAGE_SUFFIX=.rubato-next', `STAGED_STAMP='${root}/.rubato-gui-staged'`,
+    'OUTPUT_DIRS="apps/web/dist apps/server/dist apps/desktop/dist-electron"', helpers(),
+    // A mv that refuses the desktop output, the way a busy or read-only directory would.
+    'mv() { case "$1" in apps/desktop/dist-electron.rubato-next) return 1 ;; esac; command mv "$@"; }',
+    'swap_staged']);
+  assert.equal(result.status, 1, result.stderr);
+  for (const file of ['apps/web/dist/index.html', 'apps/server/dist/bin.mjs', 'apps/desktop/dist-electron/main.cjs'])
+    assert.equal(readFileSync(path.join(root, file), 'utf8'), 'old', file);
+  for (const file of ['apps/web/dist.rubato-next/index.html', 'apps/server/dist.rubato-next/bin.mjs', 'apps/desktop/dist-electron.rubato-next/main.cjs'])
+    assert.equal(readFileSync(path.join(root, file), 'utf8'), 'new', file);
+});
+
+// Exit codes restart-gui.sh reads: 0 current, 10 staged, 11 dependencies changed, 1 failed.
+function prepareRun(t, { stamp = 'old', staged = '', complete = false, deps = true, build = true } = {}) {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-prepare-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  writeFileSync(path.join(root, 'main.cjs'), '');
+  writeFileSync(path.join(root, 'stamp'), `${stamp}\n`);
+  if (staged) writeFileSync(path.join(root, 'staged'), `${staged}\n`);
+  const block = slice('if [ "$PREPARE" = 1 ]; then', '\nbuilt=0');
+  const result = runShell([
+    'PREPARE=1', 'WANT=new', 'DIM=; RST=', `BUNDLE='${root}/main.cjs'`, `STAMP='${root}/stamp'`, `STAGED_STAMP='${root}/staged'`,
+    'ok() { echo "ok $1"; }', 'say() { echo "say $1"; }', 'err() { echo "err $1"; }', 'record_deps_stamp() { :; }',
+    `staged_complete() { ${complete ? 'true' : 'false'}; }`, `deps_current() { ${deps ? 'true' : 'false'}; }`,
+    `staged_build() { echo BUILD; ${build ? 'true' : 'false'}; }`,
+    block, 'echo fell-through']);
+  let stagedStamp = null;
+  try { stagedStamp = readFileSync(path.join(root, 'staged'), 'utf8').trim(); } catch {}
+  return { status: result.status, out: result.stdout, stagedStamp };
+}
+
+test('--prepare says what the restart has to do once the app is closed', (t) => {
+  const current = prepareRun(t, { stamp: 'new' });
+  assert.equal(current.status, 0);
+  assert.doesNotMatch(current.out, /BUILD/);
+  const already = prepareRun(t, { staged: 'new', complete: true });
+  assert.equal(already.status, 10);
+  assert.doesNotMatch(already.out, /BUILD/);
+  const deps = prepareRun(t, { deps: false });
+  assert.equal(deps.status, 11);
+  assert.doesNotMatch(deps.out, /BUILD/);
+  const built = prepareRun(t, { staged: 'older' });
+  assert.equal(built.status, 10);
+  assert.match(built.out, /BUILD/);
+  assert.equal(built.stagedStamp, 'new');
+  const failed = prepareRun(t, { build: false });
+  assert.equal(failed.status, 1);
+  assert.equal(failed.stagedStamp, null);
+});
+
+// The runtime bundle (a 290MB Electron copy, signed) was emptied on every build and
+// rebuilt on the next launch. Only a new icon, name or bundle id needs that.
+test('the app runtime bundle is emptied only when its icon, name or bundle id inputs change', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-runtime-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const here = path.join(root, 'here');
+  const t3 = path.join(root, 't3');
+  mkdirSync(path.join(here, 'assets'), { recursive: true });
+  mkdirSync(path.join(t3, 'apps/desktop/scripts'), { recursive: true });
+  for (const file of ['assets/Rubato.png', 'assets/Rubato.icns']) writeFileSync(path.join(here, file), file);
+  writeFileSync(path.join(t3, 'apps/desktop/scripts/electron-launcher.mjs'), 'const APP_DISPLAY_NAME = "Rubato";');
+  writeFileSync(path.join(t3, 'apps/desktop/package.json'), '{}');
+  const runtime = path.join(t3, 'apps/desktop/.electron-runtime');
+  const run = () => runShell([`HERE='${here}'`, `T3_DIR='${t3}'`, `RUNTIME_STAMP='${t3}/.rubato-gui-runtime'`,
+    slice('runtime_fingerprint() {', '\n}\n') + '\n}',
+    slice('RUNTIME_WANT="$(runtime_fingerprint)"', '\n# 맥 앱 번들은')]);
+  mkdirSync(runtime);
+  assert.equal(run().status, 0);
+  assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), false, 'a first install starts fresh');
+  mkdirSync(runtime);
+  assert.equal(run().status, 0);
+  assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), true, 'nothing changed');
+  writeFileSync(path.join(t3, 'apps/desktop/scripts/electron-launcher.mjs'), 'const APP_DISPLAY_NAME = "Rubato 2";');
+  assert.equal(run().status, 0);
+  assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), false, 'the name changed');
+});
+
+test('the copied launcher icon keeps the repository icon\'s time, so the runtime bundle is not remade', () => {
+  assert.match(src, /cp "\$HERE\/assets\/Rubato\.png" "\$T3_DIR\/\$target" && touch -r "\$HERE\/assets\/Rubato\.png" "\$T3_DIR\/\$target"/);
+});
+
+test('install-macos-app signs the runtime bundle only when it changed', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-install-macos-sign-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bundle = path.join(root, '.electron-runtime', 'Rubato.app');
+  mkdirSync(path.join(bundle, 'Contents'), { recursive: true });
+  writeFileSync(path.join(root, '.electron-runtime', 'metadata.json'), '{"v":1}\n');
+  const log = path.join(root, 'signed');
+  writeFileSync(log, '');
+  writeFileSync(path.join(root, 'mac-signing.sh'), `printf 'sign\\n' >> '${log}'\n`);
+  const step = macAppSrc.slice(macAppSrc.indexOf('ENTRY="$BUNDLE/Contents/Resources/app"'), macAppSrc.indexOf('# /Applications 이름은'));
+  const run = () => runShell([`BUNDLE='${bundle}'`, `HERE='${root}'`, 'HOME_LINE=""', step]);
+  for (let index = 0; index < 2; index += 1) assert.equal(run().status, 0);
+  assert.equal(readFileSync(log, 'utf8'), 'sign\n', 'unchanged: signed once');
+  writeFileSync(path.join(root, '.electron-runtime', 'metadata.json'), '{"v":2}\n');
+  assert.equal(run().status, 0);
+  assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\n', 'the launcher remade the bundle');
+});
