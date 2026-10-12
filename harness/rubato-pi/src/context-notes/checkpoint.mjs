@@ -1,7 +1,7 @@
 import { NOTE_ENTRY } from "./protocol.mjs";
 
-// tool_search belongs here: the notes tools and new_context start inactive, so a checkpoint
-// turn has to search for them, and activating a tool leaves no work for the cut to lose.
+// tool_search belongs here: a checkpoint turn may still search for a tool, and activating
+// a tool leaves no work for the cut to lose.
 export const MANAGEMENT_TOOLS = new Set([
   "tool_search",
   "history_list_windows", "history_list_items", "history_search_contents", "history_read_item",

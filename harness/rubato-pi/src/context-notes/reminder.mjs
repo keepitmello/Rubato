@@ -6,9 +6,10 @@ export const REMINDER_TEXT = "<context_window_reminder>This window is nearing it
 // Periodic, advisory note refresh. Placed exactly like the reminder: after the message
 // that was last when it was recorded, in every later request of the same window, with
 // fixed text. It never moves, never changes and never touches an earlier message.
-export const NUDGE_TEXT = "<context_notes_nudge>Your notes may be behind. If a user requirement, correction, decision or the work state changed, update them now (tool_search \"notes history\" activates the notes tools), then continue. Otherwise just continue.</context_notes_nudge>";
+export const NUDGE_TEXT = "<context_notes_nudge>Your notes may be behind. If a user requirement, correction, decision or the work state changed, update them now, then continue. Otherwise just continue.</context_notes_nudge>";
 // Stored nudges keep the text they were sent with; a request must repeat it byte for byte.
 const LEGACY_NUDGE_TEXTS = new Set([
+  "<context_notes_nudge>Your notes may be behind. If a user requirement, correction, decision or the work state changed, update them now (tool_search \"notes history\" activates the notes tools), then continue. Otherwise just continue.</context_notes_nudge>",
   "<context_notes_nudge>A substantial amount of work has accumulated since your working notes were last saved. If material state changed (goal, user requirements, decisions, progress, failed approaches and why, next steps, hard-to-recover IDs, commands or errors, window/item references), update your notes with the notes tools now, then continue. If nothing material changed, just continue. This is not a request to stop or to start a new context.</context_notes_nudge>",
 ]);
 

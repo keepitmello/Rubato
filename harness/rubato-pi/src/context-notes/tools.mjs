@@ -7,33 +7,22 @@ export const CONTEXT_NOTES_TOOL_NAMES = Object.freeze([
   "notes_append_to_file", "new_context", "get_context_remaining",
 ]);
 
-// The notes tools are search-exposed: in notes mode tool_search can activate them, in
-// summary mode nothing can. An activation is declared mid-conversation (`toolsAdded`)
-// and the session-prompt projection keeps it there, so the cached prefix survives on
-// lanes with native tool additions. Keeping all eleven in every prefix instead
-// (2026-09-23) cost ~2.3k tokens per request for tools most windows never call.
-const parkedNotesTools = new WeakMap();
-
-export function syncNotesToolActivation(pi, enabled, definitions = []) {
-  for (const definition of definitions) {
-    if (definition.allowLazyActivation === enabled) continue;
-    definition.allowLazyActivation = enabled;
-    pi.registerTool({ ...definition });
-  }
+// In notes mode all eleven tools are active from the start, in one fixed order; summary
+// mode takes them away. They were search-exposed from 2026-09-25 to save ~1.6k tokens a
+// request, and then they went unused: sessions reading history fell from 24% (on,
+// 9/13-9/25) to 7%. A checkpoint also had to spend a turn searching for new_context, and
+// on 2026-10-12 that turn did not fit and stopped a full Astra window. A mid-session
+// change of the loadout is declared in place (`toolsAdded`/`toolsRemoved`), so turning
+// them on or off does not rewrite the cached prefix.
+export function syncNotesToolActivation(pi, enabled) {
   if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") return;
   const notes = new Set(CONTEXT_NOTES_TOOL_NAMES);
   const current = pi.getActiveTools();
-  const parked = parkedNotesTools.get(pi) ?? new Set();
-  if (!enabled) {
-    for (const name of current) if (notes.has(name)) parked.add(name);
-    parkedNotesTools.set(pi, parked);
-    const next = current.filter((name) => !notes.has(name));
-    if (next.length !== current.length) pi.setActiveTools(next);
-    return;
-  }
-  const restore = [...parked].filter((name) => notes.has(name) && !current.includes(name));
-  parked.clear();
-  if (restore.length) pi.setActiveTools([...current, ...restore]);
+  // Only add what is missing and only remove what is present: a resync never moves a tool.
+  const next = enabled
+    ? [...current, ...CONTEXT_NOTES_TOOL_NAMES.filter((name) => !current.includes(name))]
+    : current.filter((name) => !notes.has(name));
+  if (next.length !== current.length) pi.setActiveTools(next);
 }
 
 // Flat tool names preserve the Codex operations across providers whose function

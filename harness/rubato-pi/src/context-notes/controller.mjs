@@ -10,8 +10,7 @@ import { trimRequestImages } from "./request-images.mjs";
 import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
-const NOTES_TOOLS_TEXT = `These tools start inactive: run tool_search("notes history") once before first use, and search new_context by name when you need it.
-Write notes for yourself after this conversation is gone. Keep now.md short, start it after
+const NOTES_TOOLS_TEXT = `Write notes for yourself after this conversation is gone. Keep now.md short, start it after
 the first unit of work, and rewrite it first whenever it stops being true: the user's goal,
 their standing requirements and corrections, decisions in force, state and next steps, each
 with its window_id/item_id. Only then, if useful, append to log.md what should not be retried,

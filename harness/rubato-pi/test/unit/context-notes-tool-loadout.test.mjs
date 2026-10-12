@@ -16,24 +16,28 @@ function fakePi(active) {
   };
 }
 
-// Notes tools stay out of the prefix: notes mode only makes them findable, tool_search
-// activates one when the model asks, and summary mode takes them away again.
-test("notes mode makes the notes tools searchable without activating them", () => {
-  const definitions = CONTEXT_NOTES_TOOL_NAMES.map((name) => ({ name, exposure: "search", allowLazyActivation: false }));
+// Notes mode turns all eleven on from the start, in one fixed order; summary mode takes them
+// away. A resync never moves a tool that is already active.
+test("notes mode activates every notes tool up front, and summary mode removes them", () => {
   const pi = fakePi(["read", "bash", "tool_search"]);
 
-  syncNotesToolActivation(pi, true, definitions);
-  assert.deepEqual(pi.active, ["read", "bash", "tool_search"]);
-  assert.equal(pi.writes.length, 0);
-  assert.ok(pi.registered.every((definition) => definition.allowLazyActivation === true));
-  assert.equal(pi.registered.length, CONTEXT_NOTES_TOOL_NAMES.length);
+  syncNotesToolActivation(pi, true);
+  assert.deepEqual(pi.active, ["read", "bash", "tool_search", ...CONTEXT_NOTES_TOOL_NAMES]);
 
-  pi.setActiveTools([...pi.active, "notes_write_file"]);
-  syncNotesToolActivation(pi, false, definitions);
-  assert.deepEqual(pi.active, ["read", "bash", "tool_search"]);
-  assert.ok(definitions.every((definition) => definition.allowLazyActivation === false));
+  syncNotesToolActivation(pi, true);
+  assert.equal(pi.writes.length, 1, "an unchanged loadout is not written again");
 
-  syncNotesToolActivation(pi, true, definitions);
-  assert.ok(pi.active.includes("notes_write_file"), "a tool removed for summary must return when notes returns");
-  assert.ok(pi.active.includes("read"));
+  pi.setActiveTools([...pi.active, "eval"]);
+  syncNotesToolActivation(pi, false);
+  assert.deepEqual(pi.active, ["read", "bash", "tool_search", "eval"]);
+
+  syncNotesToolActivation(pi, true);
+  assert.deepEqual(pi.active, ["read", "bash", "tool_search", "eval", ...CONTEXT_NOTES_TOOL_NAMES]);
+});
+
+test("a resumed session that activated some notes tools gets the rest without moving them", () => {
+  const pi = fakePi(["read", "notes_write_file", "bash"]);
+  syncNotesToolActivation(pi, true);
+  assert.deepEqual(pi.active.slice(0, 3), ["read", "notes_write_file", "bash"]);
+  assert.deepEqual([...pi.active].sort(), ["bash", "read", ...CONTEXT_NOTES_TOOL_NAMES].sort());
 });
