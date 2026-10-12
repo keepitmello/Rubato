@@ -103,6 +103,9 @@ function estimate(messages, systemPrompt = "") {
 }
 
 class HardLineRefusal extends Error {}
+// Over the physical window no request fits. The run ends as an error, not an abort, so
+// turn_end can open the next window without a model call and carry on with the request.
+class FullWindowRefusal extends Error {}
 
 export class ContextNotesController {
   constructor(pi, ctx, options = {}) {
@@ -273,7 +276,7 @@ export class ContextNotesController {
     const usage = this.usage();
     if (usage.tokens >= usage.full) {
       this.showStatus({ ...usage, remaining: 0 });
-      throw new Error(`체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요. 기록은 보존했어요. /new-context 를 실행하면 저장된 작업 노트로 새 창을 열어요.`);
+      throw new FullWindowRefusal("문맥 창이 가득 찼어요. 기록은 보존했어요. 모델을 부르지 않고 새 창으로 넘어간 뒤 하던 요청을 이어가요.");
     }
     if (usage.hard !== undefined && usage.tokens >= usage.hard && !this.checkpointRequested) {
       throw new HardLineRefusal(`현재 문맥이 창 한도 ${usage.hard}토큰에 도달했어요. 기록은 보존했으며 요약은 실행하지 않았어요. 이어서 체크포인트 전용 턴을 요청해요. 새 창으로 넘어가지 않으면 /new-context를 실행해 주세요.`);
@@ -370,7 +373,7 @@ export class ContextNotesController {
     this.showStatus();
     // A hard-line refusal ends the run as an error, not an abort: turn_end then asks for
     // the checkpoint turn, the only way forward from past the line.
-    if ((this.checkpointRequested || error instanceof HardLineRefusal) && !fatal) return;
+    if ((this.checkpointRequested || error instanceof HardLineRefusal || error instanceof FullWindowRefusal) && !fatal) return;
     this.checkpointRequested = false;
     this.ctx.abort?.("system");
   }
@@ -439,6 +442,14 @@ export class ContextNotesController {
       : "The window filled before a note covered the latest work.";
     const notes = this.store.hint({ maxBytes: 4000 - Buffer.byteLength(carried) - 1 });
     return `${carried}\n${notes}`;
+  }
+
+  /** After a cut that ended the run, start the next turn on the person's latest request. */
+  continueInNewWindow() {
+    this.pi.sendMessage({ customType: "rubato-context-continue", display: true,
+      details: { windowId: this.window.windowId },
+      content: "이전 창이 가득 차서 모델을 부르지 않고 새 창으로 넘어왔어요. 창 첫머리의 안내와 작업 노트를 읽고, 마지막 요청을 이어서 진행해 주세요." },
+    { triggerTurn: true, deliverAs: "steer" });
   }
 
   /** Last resort when no checkpoint turn can run: open the next window without one. */
@@ -527,10 +538,13 @@ export class ContextNotesController {
           return;
         }
         const usage = this.usage();
-        if (!this.fatal && ctx.model?.contextWindow && usage.target !== undefined &&
-            usage.tokens >= usage.target && !this.checkpointRequested) {
-          if (usage.tokens >= usage.full) await this.rescue(ctx, usage, "full");
-          else this.requestCheckpoint();
+        if (!this.fatal && ctx.model?.contextWindow && usage.target !== undefined && usage.tokens >= usage.target) {
+          // The run stopped because nothing fits (FullWindowRefusal), a pending checkpoint
+          // turn included: open the next window and pick the request back up there.
+          if (usage.tokens >= usage.full) {
+            await this.rescue(ctx, usage, "full");
+            this.continueInNewWindow();
+          } else if (!this.checkpointRequested) this.requestCheckpoint();
         }
         return;
       }

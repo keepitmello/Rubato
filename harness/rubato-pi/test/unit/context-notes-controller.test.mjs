@@ -310,6 +310,38 @@ test("a long request is cut to fit the window opening", async(t)=>{
   const hint=decodeBootstrap(f.c.bootstrap).hint;
   assert.ok(Buffer.byteLength(hint)<=4000); assert.match(hint,/가…/);
 });
+// The provider gate refuses a request that no longer fits. It used to abort the run, and
+// turn_end skips an aborted run, so the session sat there until someone typed /new-context.
+test("a request refused over the window ends the run as an error, cuts and carries on by itself", async(t)=>{
+  const f=setup(t);
+  save(f);
+  f.addMessage("user","Now rewrite question two around the payment work.");
+  f.addMessage("toolResult","a huge read",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:32500});
+  f.c.refresh(f.ctx);
+  // What the provider gate does (registerSessionGate in the controller).
+  try { f.c.admit(f.build().messages); assert.fail("must refuse"); } catch (error) { f.c.fail(error); }
+  assert.equal(f.abort.signal.aborted,false,"the run ends as an error, not an abort");
+  await f.c.turnEnd({message:{stopReason:"error"}},f.ctx);
+  assert.equal(f.c.window.number,1);
+  assert.match(decodeBootstrap(f.c.bootstrap).hint,/Now rewrite question two/);
+  assert.equal(f.sent.length,1);
+  assert.equal(f.sent[0][0].customType,"rubato-context-continue");
+  assert.equal(f.sent[0][1].triggerTurn,true);
+});
+test("a pending checkpoint turn that no longer fits is cut and carried on the same way", async(t)=>{
+  const f=setup(t);
+  f.ctx.getContextUsage=()=>({tokens:31000});
+  f.c.refresh(f.ctx);
+  await f.c.turnEnd({},f.ctx);
+  assert.equal(f.c.checkpointRequested,true);
+  f.append({type:"custom_message",...f.sent.at(-1)[0]});
+  f.addMessage("toolResult","a huge read",{toolName:"read"});
+  f.ctx.getContextUsage=()=>({tokens:32500}); f.c.refresh(f.ctx);
+  await f.c.turnEnd({message:{stopReason:"error"}},f.ctx);
+  assert.equal(f.c.window.number,1); assert.equal(f.c.checkpointRequested,false);
+  assert.equal(f.sent.at(-1)[0].customType,"rubato-context-continue");
+});
 test("a session already stopped over the window reopens from its notes with /new-context", async(t)=>{
   const f=setup(t);
   save(f);
@@ -319,7 +351,7 @@ test("a session already stopped over the window reopens from its notes with /new
   f.addMessage("assistant",[],{stopReason:"aborted",errorMessage:"체크포인트 턴을 안전하게 실행할 여유도 남지 않았어요."});
   f.ctx.getContextUsage=()=>({tokens:32500});
   f.c.refresh(f.ctx);
-  assert.throws(()=>f.c.admit(f.build().messages),/\/new-context/);
+  assert.throws(()=>f.c.admit(f.build().messages),/새 창으로 넘어간/);
   await f.c.manual(f.ctx);
   assert.equal(f.c.window.number,1); assert.equal(f.sent.length,0);
 });
