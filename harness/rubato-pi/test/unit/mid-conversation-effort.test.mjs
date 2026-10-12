@@ -5,6 +5,7 @@ import {
   MID_CONVERSATION_EFFORT_MODELS,
   appendMidConversationEffortBeta,
   createMidConversationEffort,
+  isMidConversationEffortModel,
   nextEffortSessionState,
 } from "../../src/mid-conversation-effort.mjs";
 import { withRubatoStream } from "../../src/rubato-stream.mjs";
@@ -357,4 +358,12 @@ test("a side chat starts from its parent's frozen effort and marks, then keeps i
   // A side chat that already has state is not reset by a later inherit.
   effort.inherit("side", "parent");
   assert.equal(effort.store.get("side").marks.length, 2);
+});
+
+test("account rows [sub] and [sub2] are judged on the model, not the account suffix", () => {
+  for (const id of MID_CONVERSATION_EFFORT_MODELS) {
+    assert.equal(isMidConversationEffortModel(`${id}-sub`), true);
+    assert.equal(isMidConversationEffortModel(`${id}-sub2`), true);
+  }
+  assert.equal(isMidConversationEffortModel("claude-haiku-4-5-sub2"), false);
 });

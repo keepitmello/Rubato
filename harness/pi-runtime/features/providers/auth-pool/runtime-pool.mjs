@@ -63,22 +63,50 @@ function slotRequestOptions(options, slot) {
   return { ...options, slotName: slot.name };
 }
 
+// 계정 행 꼬리. 순서가 곧 계정 순서다: `-sub` 는 두 번째, `-sub2` 는 세 번째 계정.
+// 꼬리 목록은 packages/model-core/src/product-model-catalog.mjs `ACCOUNT_LANE_SUFFIXES` 와 같다.
+const ACCOUNT_LANES = Object.freeze([
+  Object.freeze({ suffix: "-sub", fallback: "sub" }),
+  Object.freeze({ suffix: "-sub2", fallback: "sub2" }),
+]);
+
+function accountLaneOf(model) {
+  const id = model?.id;
+  if (typeof id !== "string") return -1;
+  return ACCOUNT_LANES.findIndex((lane) => id.endsWith(lane.suffix));
+}
+
 export function wireAccountModel(model) {
-  if (typeof model?.id !== "string" || !model.id.endsWith("-sub")) return model;
-  return { ...model, id: model.id.slice(0, -4) };
+  const lane = accountLaneOf(model);
+  if (lane < 0) return model;
+  return { ...model, id: model.id.slice(0, -ACCOUNT_LANES[lane].suffix.length) };
+}
+
+/**
+ * 기본 계정 다음 계정들의 슬롯 이름. 순서가 곧 행 꼬리다: 0번은 `-sub`, 1번은 `-sub2`.
+ * `sub`·`sub2` 로 이름 붙인 슬롯이 먼저고, 로그인이 붙인 `login-N` 은 번호 순서로 뒤에 선다.
+ * rubato-pi/src/picker-catalog.mjs `accountLaneSlotNames` 와 같은 규칙이다 — 하나를 바꾸면 둘 다 바꾼다.
+ */
+export function accountLaneSlotNames(slots) {
+  const names = slots.map((slot) => slot.name);
+  const named = ["sub", "sub2"].filter((name) => names.includes(name));
+  const logins = names
+    .filter((name) => /^login-\d+$/.test(name))
+    .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
+  return [...named, ...logins];
 }
 
 export function subAccountName(slots) {
-  if (slots.some((slot) => slot.name === "sub")) return "sub";
-  return slots.find((slot) => slot.name === "login-2")?.name;
+  return accountLaneSlotNames(slots)[0];
 }
 
 export function requiredAccountSlotName(model, slots) {
-  const subName = subAccountName(slots);
-  if (typeof model?.id === "string" && model.id.endsWith("-sub")) return subName ?? "sub";
-  if (!subName) return undefined;
+  const laneNames = accountLaneSlotNames(slots);
+  const lane = accountLaneOf(model);
+  if (lane >= 0) return laneNames[lane] ?? ACCOUNT_LANES[lane].fallback;
+  if (laneNames.length === 0) return undefined;
   return slots.find((slot) => slot.name === "setup-token" || slot.lane === "setup-token")?.name
-    ?? slots.find((slot) => slot.name !== subName)?.name;
+    ?? slots.find((slot) => !laneNames.includes(slot.name))?.name;
 }
 
 export async function streamWithCredentialPool(runtime, method, model, context, options) {

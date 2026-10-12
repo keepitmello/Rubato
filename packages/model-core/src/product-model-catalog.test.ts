@@ -140,4 +140,28 @@ describe("product model catalog", () => {
       `anthropic/${OPUS}`,
     ])
   })
+
+  test("#given a third anthropic account #when labeled and listed #then sub2 rows follow their sub rows", () => {
+    expect(productCatalogLabel({ provider: "anthropic", id: `${OPUS}-sub2` })).toBe("Opus 5.5 [sub2]")
+    expect(isProductCatalogSlug(`anthropic/${OPUS}-sub2`)).toBe(true)
+    expect(isProductCatalogSlug(`anthropic/${OPUS}-sub3`)).toBe(false)
+    expect(sortProductCatalogItems([
+      { provider: "anthropic", id: `${OPUS}-sub2` },
+      { provider: "anthropic", id: `${FABLE}-sub2` },
+      { provider: "anthropic", id: OPUS },
+      { provider: "anthropic", id: `${OPUS}-sub` },
+      { provider: "anthropic", id: FABLE },
+    ]).map(pick)).toEqual([
+      `anthropic/${FABLE}`,
+      `anthropic/${FABLE}-sub2`,
+      `anthropic/${OPUS}`,
+      `anthropic/${OPUS}-sub`,
+      `anthropic/${OPUS}-sub2`,
+    ])
+    expect(availableProductModelIds([
+      { provider: "anthropic", id: OPUS },
+      { provider: "anthropic", id: `${OPUS}-sub` },
+      { provider: "anthropic", id: `${OPUS}-sub2` },
+    ])).toEqual([`anthropic/${OPUS}`, `anthropic/${OPUS}-sub`, `anthropic/${OPUS}-sub2`])
+  })
 })

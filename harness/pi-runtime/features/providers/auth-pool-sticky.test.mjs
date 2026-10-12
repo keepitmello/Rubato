@@ -185,6 +185,24 @@ test("sub model ids wire to the base model and require the sub account", () => {
   assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5" }, [{ name: "default" }]), undefined);
 });
 
+test("sub2 model ids wire to the base model and require the third account", () => {
+  const model = { provider: "anthropic", id: "claude-opus-5-5-sub2" };
+  assert.equal(wireAccountModel(model).id, "claude-opus-5-5");
+  // 실제 저장소 모양: 기본(default) · 두 번째(sub) · 로그인이 붙인 세 번째(login-2).
+  const stored = [{ name: "default" }, { name: "sub" }, { name: "login-2" }];
+  assert.equal(requiredAccountSlotName(model, stored), "login-2");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5-5-sub" }, stored), "sub");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5-5" }, stored), "default");
+  // 이름 붙인 sub2 가 login-N 보다 먼저다.
+  assert.equal(requiredAccountSlotName(model, [{ name: "default" }, { name: "sub" }, { name: "login-3" }, { name: "sub2" }]), "sub2");
+  // sub 가 없으면 login 들이 번호 순서로 sub, sub2 를 맡는다.
+  const logins = [{ name: "default" }, { name: "login-3" }, { name: "login-2" }];
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: "claude-opus-5-5-sub" }, logins), "login-2");
+  assert.equal(requiredAccountSlotName(model, logins), "login-3");
+  // 세 번째 계정이 없으면 sub2 는 없는 계정을 요구해 닫힌다.
+  assert.equal(requiredAccountSlotName(model, [{ name: "default" }, { name: "sub" }]), "sub2");
+});
+
 test("requiredSlotName beats pin and session affinity", async () => {
   const used = [];
   const repository = new CredentialSlotRepository();

@@ -24,7 +24,7 @@ export const NOTES_ROLLOVER_STRATEGY = "notes-rollover";
 export const SERVER_COMPACTION_STRATEGY = "server-compaction";
 export const HARD_SAFETY_STRATEGY = "hard-safety";
 
-/** Anthropic 서버 컴팩션(compact_20260112)을 쓰는 Claude 모델. `-sub` 는 같은 모델의 두 번째 계정이다. */
+/** Anthropic 서버 컴팩션(compact_20260112)을 쓰는 Claude 모델. `-sub`·`-sub2` 는 같은 모델의 두·세 번째 계정이다. */
 export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
   "claude-opus-5-5",
   "claude-sonnet-5-5",
@@ -55,7 +55,7 @@ const SERVER_COMPACTION_IDS = new Set(ANTHROPIC_SERVER_COMPACTION_MODEL_IDS);
 function wireModelId(model) {
   const id = typeof model?.id === "string" ? model.id : model?.modelId;
   if (typeof id !== "string") return "";
-  return id.endsWith("-sub") ? id.slice(0, -4) : id;
+  return id.replace(/-sub2?$/, "");
 }
 
 export function isAnthropicServerCompactionModel(model) {

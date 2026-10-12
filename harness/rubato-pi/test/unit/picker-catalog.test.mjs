@@ -169,3 +169,38 @@ test("Anthropic [sub] 는 Fable, Opus, Sonnet 만 붙는다", () => {
   assert.equal(stored.includes("claude-sonnet-5-sub"), false);
   assert.equal(stored.includes("claude-haiku-4-5-sub"), false);
 });
+
+test("세 번째 계정이 있으면 Anthropic 에 [sub2] 행을 붙인다", () => {
+  const provider = withSubAccountCopies({
+    id: "anthropic",
+    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-haiku-4-5")],
+    filterModels: (models) => models,
+  });
+  const ids = (accounts) => provider.filterModels(provider.getModels(), { accounts }).map((entry) => entry.id);
+  // 계정이 둘이면 [sub2] 는 없다.
+  assert.equal(ids([{ name: "default" }, { name: "sub" }]).some((id) => id.endsWith("-sub2")), false);
+  // 실제 저장소 모양: 기본·sub·로그인이 붙인 login-2.
+  assert.deepEqual(ids([{ name: "default" }, { name: "sub" }, { name: "login-2" }]), [
+    CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-haiku-4-5",
+    `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`, `${CURRENT_SONNET}-sub`,
+    `${CURRENT_FABLE}-sub2`, `${CURRENT_OPUS}-sub2`, `${CURRENT_SONNET}-sub2`,
+  ]);
+  const opusSub2 = provider.filterModels(provider.getModels(), { accounts: [{ name: "default" }, { name: "sub" }, { name: "sub2" }] })
+    .find((entry) => entry.id === `${CURRENT_OPUS}-sub2`);
+  assert.equal(opusSub2.name, `${CURRENT_OPUS} [sub2]`);
+  assert.ok(provider.getModels().some((entry) => entry.id === `${CURRENT_OPUS}-sub2`));
+});
+
+test("Codex 는 계정이 셋이어도 [sub2] 행이 없다", () => {
+  const provider = withSubAccountCopies({
+    id: "openai-codex",
+    getModels: () => [model(CODEX_SOL), model(CODEX_ASTRA)],
+    filterModels: (models) => models,
+  });
+  const credential = { accounts: [{ name: "default" }, { name: "sub" }, { name: "login-2" }] };
+  assert.deepEqual(
+    provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
+    [CODEX_SOL, CODEX_ASTRA, `${CODEX_SOL}-sub`, `${CODEX_ASTRA}-sub`],
+  );
+  assert.equal(provider.getModels().some((entry) => entry.id.endsWith("-sub2")), false);
+});

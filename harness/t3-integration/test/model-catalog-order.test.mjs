@@ -106,6 +106,7 @@ test('T3 catalogue shows Anthropic account copies next to the base model', () =>
   assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1 [sub]');
   assert.equal(modelPickerLabel(catalog[2]), 'Opus 5.5');
   assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub`, api: 'anthropic-messages' }), true);
+  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub2`, api: 'anthropic-messages' }), true);
 });
 
 test('selection options map T3 TraitsPicker ids onto Pi thinking and /fast', () => {

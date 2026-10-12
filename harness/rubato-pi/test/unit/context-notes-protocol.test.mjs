@@ -27,7 +27,7 @@ test("Astra keeps 90% target, 95% hard and the reminder 6144 tokens before the t
   assert.equal(astra.reminderAt, 238656);
   assert.equal(astra.soft, astra.target);
   // The whole Codex lane shares Astra's lines.
-  for (const id of ["gpt-6-astra-sub", "gpt-5.6-sol", "gpt-5.6-sol-sub", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+  for (const id of ["gpt-6-astra-sub", "gpt-6-astra-sub2", "gpt-5.6-sol", "gpt-5.6-sol-sub", "gpt-5.6-terra", "gpt-5.6-luna"]) {
     const codex = windowBudget({ ...ASTRA, id });
     assert.equal(codex.strategy, "notes-rollover", id);
     assert.deepEqual([codex.reminderAt, codex.target, codex.hard], [astra.reminderAt, astra.target, astra.hard], id);
@@ -53,6 +53,7 @@ test("Claude has no Rubato line; its only line is the server-compaction safety l
   assert.deepEqual([opus.soft, opus.target, opus.hard, opus.reminderAt], [undefined, undefined, undefined, undefined]);
   assert.equal(opus.safetyLine, hardSafetyLine(OPUS));
   assert.equal(opus.nudgeTokens, 200000);
+  assert.equal(windowBudget({ ...OPUS, id: "claude-opus-5-5-sub2" }, contextNotesConfig({})).strategy, "server-compaction");
 });
 
 test("DeepSeek, Gemini and other models only have a computed hard safety line", () => {
