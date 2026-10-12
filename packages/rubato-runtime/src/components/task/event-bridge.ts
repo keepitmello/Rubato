@@ -43,6 +43,12 @@ export function wireEventBridge(
   const unsubscribeTaskSnapshots = engine.onStoreMutation(() => taskRpc.sync())
   wireReloadGuard(pi, engine.manager)
 
+  // A child that finishes once the session started closing must not wake it: the turn would be
+  // refused or killed with the session, yet the completion would count as delivered. Buffered, it
+  // stays undelivered on disk and the next session_start redelivers it. The closing edge comes
+  // before every extension's teardown; session_shutdown below marks it again when none is wired.
+  ctx.onSessionClosing?.(() => transitions.onShutdown(engine.runtime.sessionId()))
+
   pi.on("session_start", async (_payload, eventCtx) => {
     engine.runtime.captureFrom(asLiveContext(eventCtx))
     const sessionId = engine.runtime.sessionId()

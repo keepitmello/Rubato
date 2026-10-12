@@ -29,7 +29,7 @@ import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
 import codemode from "../codemode/src/index.ts";
 import { createRemovedToolHintRegistrar } from "../codemode/src/extension/stock-host-adapter.ts";
-import { createRubatoChildComponentExtension, createRubatoComponentExtension } from "./extensions/rubato.js";
+import { createRubatoChildComponentExtension, createRubatoComponentExtension, createSessionClosing } from "./extensions/rubato.js";
 import { validateBuildReceipt } from "./payload-manifest.mjs";
 import { applyFeatureToggles, readDisabledFeatures } from "./feature-toggles.mjs";
 
@@ -59,13 +59,17 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   const toolSearch = new ToolSearchService();
   const serviceTier = createServiceTierFeature({ agentDir, settingsManagerFactory: () => settings });
   const providerExecution = createProviderExecution({ cursorProviderFactory: providerOptions.routeFactories?.cursor });
-  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, createTaskOptions: ({ createTaskRunnerFactories }) => ({
+  // Pi tears a session down one extension at a time in this list's order. This signal's extension
+  // goes first so the components stop waking the session before anything else starts closing it.
+  const sessionClosing = createSessionClosing();
+  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, sessionClosing, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,
     runnerFactories: createStockTaskRunnerFactories({ agentDir, modelRuntime, createTaskRunnerFactories }),
   }) }), { sourcePath: join(here, "extensions/rubato.js"), registrationCwd: cwd });
   const extensionFactories = [
+    { name: "rubato-session-closing", factory: sessionClosing.extension },
     { name: "rubato-assets", factory: async () => validateRubatoBundleAssets() },
     { name: "rubato-loop-guard", factory: loopGuardExtension },
     { name: "rubato-hooks", factory: createHooksExtension({
@@ -124,7 +128,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   ];
   const toggles = applyFeatureToggles(extensionFactories, readDisabledFeatures({ agentDir, env }));
   return { extensionFactories: toggles.extensionFactories, disabledFeatures: toggles.disabled, unknownDisabledFeatures: toggles.unknown,
-    servers, toolSearch, serviceTier, settingsManager: settings };
+    servers, toolSearch, serviceTier, settingsManager: settings, sessionClosing };
 }
 
 const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));

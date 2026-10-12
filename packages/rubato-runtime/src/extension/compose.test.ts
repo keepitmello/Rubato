@@ -4,7 +4,8 @@ import { describe, expect, it } from "bun:test"
 
 import { FakeExtensionAPI } from "../../test-support/fake-extension-api"
 import { composeRubatoExtension } from "./compose"
-import type { ComponentLogger, RubatoComponent } from "./types"
+import { createSessionClosing } from "./session-closing"
+import type { ComponentContext, ComponentLogger, RubatoComponent } from "./types"
 
 function createRecordingLogger(): ComponentLogger & { entries: Array<{ level: string; message: string; details?: unknown }> } {
   const entries: Array<{ level: string; message: string; details?: unknown }> = []
@@ -255,5 +256,65 @@ describe("composeRubatoExtension", () => {
         },
       },
     ])
+  })
+
+  it("#given a session closing signal #when it fires #then components hear it before any shutdown handler and nothing more is injected", async () => {
+    // given
+    const closing = createSessionClosing()
+    const host = new FakeExtensionAPI()
+    closing.extension(host)
+    const pi = new FakeExtensionAPI()
+    const heard: string[] = []
+    let coordinator: ComponentContext["idleCoordinator"]
+    await composeRubatoExtension(
+      [
+        {
+          name: "alpha",
+          register(api, ctx) {
+            coordinator = ctx.idleCoordinator
+            ctx.onSessionClosing?.(() => heard.push("closing"))
+            api.on("session_shutdown", () => heard.push("alpha shutdown"))
+          },
+        },
+      ],
+      { logger: createRecordingLogger(), sessionClosing: closing },
+    )(pi)
+
+    // when: the host's first extension hears the shutdown; this extension has not torn down yet
+    await host.dispatch("session_shutdown", { type: "session_shutdown", reason: "unload" })
+    coordinator?.enqueue({ key: "late", source: "task-completion", content: "late wake" })
+    coordinator?.flushOnIdle()
+
+    // then
+    expect(heard).toEqual(["closing"])
+    expect(pi.messages).toHaveLength(0)
+
+    // and the extension's own shutdown does not announce it twice
+    await pi.dispatch("session_shutdown", { type: "session_shutdown", reason: "unload" })
+    expect(heard).toEqual(["closing", "alpha shutdown"])
+  })
+
+  it("#given no closing signal #when the extension's own session_shutdown runs #then components hear closing before their shutdown handlers", async () => {
+    // given
+    const pi = new FakeExtensionAPI()
+    const heard: string[] = []
+    await composeRubatoExtension(
+      [
+        {
+          name: "alpha",
+          register(api, ctx) {
+            ctx.onSessionClosing?.(() => heard.push("closing"))
+            api.on("session_shutdown", () => heard.push("alpha shutdown"))
+          },
+        },
+      ],
+      { logger: createRecordingLogger() },
+    )(pi)
+
+    // when
+    await pi.dispatch("session_shutdown", { type: "session_shutdown", reason: "quit" })
+
+    // then
+    expect(heard).toEqual(["closing", "alpha shutdown"])
   })
 })

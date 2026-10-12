@@ -87,6 +87,14 @@ describe("event-bridge session_start recovery chain", () => {
 })
 
 describe("event-bridge session_shutdown", () => {
+  it("#given the session started closing #when no extension has torn down yet #then completions already buffer", () => {
+    const { order, closeSession } = wireHarness("parent-session", { withSessionClosing: true })
+
+    closeSession()
+
+    expect(order).toEqual(["transition"])
+  })
+
   it("#given a session_shutdown with a reason and a captured session id #when the event fires #then it suspends with parentSessionId and reason", async () => {
     const { pi, calls, order } = wireHarness("parent-session")
 

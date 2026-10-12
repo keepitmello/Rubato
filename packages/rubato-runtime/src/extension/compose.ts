@@ -1,9 +1,13 @@
 import { IdleInjectionCoordinator } from "./idle-injection-coordinator"
+import type { SessionClosing } from "./session-closing"
 import { installToolCaptureRegistry } from "./tool-capture-registry"
 import type { ComponentContext, ComponentLogger, RubatoComponent, SenpiExtensionAPI } from "./types"
 
 export interface ComposeRubatoExtensionOptions {
   logger?: ComponentLogger
+  // The host's first-extension closing signal. Without it the session counts as closing only when
+  // this extension's own session_shutdown runs, after every extension loaded before it tore down.
+  sessionClosing?: Pick<SessionClosing, "subscribe">
 }
 
 const REQUIRED_CAPABILITIES = [
@@ -89,6 +93,21 @@ export function composeRubatoExtension(
       { scheduleFlush: (flush) => void setTimeout(flush, 200) },
     )
 
+    const closingListeners: Array<() => void> = []
+    let closed = false
+    const close = (): void => {
+      if (closed) return
+      closed = true
+      idleCoordinator.close()
+      for (const listener of closingListeners) listener()
+    }
+    const unsubscribeClosing = options.sessionClosing?.subscribe(close)
+    // Registered before any component, so within this extension it runs first.
+    pi.on("session_shutdown", () => {
+      unsubscribeClosing?.()
+      close()
+    })
+
     const ctx: ComponentContext = {
       logger,
       config: {
@@ -98,6 +117,9 @@ export function composeRubatoExtension(
       },
       getCapturedTools: () => captureRegistry.getCapturedTools(),
       idleCoordinator,
+      onSessionClosing(listener) {
+        closingListeners.push(listener)
+      },
     }
 
     for (const component of components) {

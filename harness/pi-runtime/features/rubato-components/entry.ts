@@ -1,10 +1,14 @@
 import { composeRubatoExtension } from "../../../../packages/rubato-runtime/src/extension/compose";
 import { createRubatoComponents } from "../../../../packages/rubato-runtime/src/extension/component-list";
+import type { SessionClosing } from "../../../../packages/rubato-runtime/src/extension/session-closing";
 import type { RubatoComponent } from "../../../../packages/rubato-runtime/src/extension/types";
+
+export { createSessionClosing } from "../../../../packages/rubato-runtime/src/extension/session-closing";
 
 type RubatoExtensionOptions = {
   resolveCwd?: () => string;
   createTaskOptions?: (module: any) => any;
+  sessionClosing?: SessionClosing;
 };
 
 // Candidate builds must surface failed registration; the legacy optional startup policy is unchanged.
@@ -30,8 +34,11 @@ function lazyTaskComponent(options: RubatoExtensionOptions): RubatoComponent {
 
 // Existing components remain the implementation owners.
 export const createRubatoComponentExtension = (options: RubatoExtensionOptions = {}) => {
-  const { createTaskOptions: _createTaskOptions, ...componentOptions } = options;
-  return composeRubatoExtension(createRubatoComponents(lazyTaskComponent(options), componentOptions), { logger: candidateLogger });
+  const { createTaskOptions: _createTaskOptions, sessionClosing, ...componentOptions } = options;
+  return composeRubatoExtension(createRubatoComponents(lazyTaskComponent(options), componentOptions), {
+    logger: candidateLogger,
+    ...(sessionClosing === undefined ? {} : { sessionClosing }),
+  });
 };
 
 // A task child's components, by name. What a child leaves out (memory: the lead's identity; task:

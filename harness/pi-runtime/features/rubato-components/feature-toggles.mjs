@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** Factories the candidate cannot run without; a toggle naming them is a configuration error, not a no-op. */
-export const REQUIRED_FACTORIES = Object.freeze(["rubato-assets", "providers", "rubato-components"]);
+export const REQUIRED_FACTORIES = Object.freeze(["rubato-session-closing", "rubato-assets", "providers", "rubato-components"]);
 
 /**
  * Reads the disabled-feature list for a candidate profile.

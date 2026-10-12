@@ -57,6 +57,7 @@ export class IdleInjectionCoordinator {
   readonly #scheduleFlush: FlushScheduler
   #flushScheduled = false
   #soonScheduled = false
+  #closed = false
 
   constructor(deliver: IdleInjectionDelivery, options: IdleInjectionCoordinatorOptions = {}) {
     this.#deliver = deliver
@@ -98,13 +99,20 @@ export class IdleInjectionCoordinator {
     return this.#pending.delete(key)
   }
 
+  // The session is closing: a turn started now dies with it, so nothing more is injected. What is
+  // still queued stays undelivered, which keeps every source's own "not yet delivered" record true
+  // for the next session start to act on.
+  close(): void {
+    this.#closed = true
+  }
+
   // Flush the whole queue as one idle-edge steer. Returns how many queued items were collapsed (0 = no-op).
   flushOnIdle(): number {
     return this.#flush("steer")
   }
 
   #flush(deliverAs: "steer" | "followUp"): number {
-    if (this.#pending.size === 0) return 0
+    if (this.#closed || this.#pending.size === 0) return 0
     const ordered = [...this.#pending.values()].sort(
       (left, right) => SOURCE_RANK[left.source] - SOURCE_RANK[right.source],
     )

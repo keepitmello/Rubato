@@ -24,6 +24,7 @@ type HarnessOptions = {
   readonly resumptionChannelCount?: number
   readonly withRpc?: boolean | "emit-only"
   readonly queuedInjections?: () => number
+  readonly withSessionClosing?: boolean
 }
 
 export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
@@ -53,6 +54,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
   const notifyCalls: Array<{ sessionId: string; parentState: unknown }> = []
   const livenessCalls: string[] = []
   const resumptionCalls: number[] = []
+  const closingListeners: Array<() => void> = []
 
   const engine = {
     runtime: {
@@ -229,6 +231,9 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
     },
     config: { getFlag: () => undefined },
     ...(options.queuedInjections === undefined ? {} : { idleCoordinator: { pendingCount: options.queuedInjections } }),
+    ...(options.withSessionClosing === true
+      ? { onSessionClosing: (listener: () => void) => closingListeners.push(listener) }
+      : {}),
   } as unknown as ComponentContext
 
   wireEventBridge(pi, ctx, engine, statusUi, transitions, state)
@@ -256,6 +261,9 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
       const handler = rpcHandlers.get(name)
       if (handler === undefined) throw new Error(`Missing RPC handler: ${name}`)
       return handler(data)
+    },
+    closeSession: () => {
+      for (const listener of closingListeners) listener()
     },
     emitStoreMutation: () => {
       for (const listener of storeMutationListeners) listener()

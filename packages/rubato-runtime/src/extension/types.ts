@@ -55,6 +55,10 @@ export interface ComponentContext {
   // Single-queue idle-edge injection arbiter (todo 17). When present, ulw-loop continuation and task
   // completion wakes route through it so one idle edge yields exactly one injection.
   idleCoordinator?: IdleInjectionCoordinator
+  // Runs once, as the session starts closing: before any extension's session_shutdown teardown when
+  // the host installed a SessionClosing signal first, otherwise at the start of this extension's own
+  // session_shutdown. Nothing may be injected into the session after it.
+  onSessionClosing?(listener: () => void): void
 }
 
 export interface RubatoComponent {

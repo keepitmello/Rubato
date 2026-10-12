@@ -194,6 +194,39 @@ describe("createSessionTransitionBridge buffered-completion round trip", () => {
   })
 })
 
+describe("createSessionTransitionBridge session closing", () => {
+  it("#given the session started closing #when a child finishes before the process exits #then the lead is not woken and the next process delivers it", () => {
+    // given: the 2026-10-12 shape. An idle lead, a runtime update tearing the server down, and a
+    // child that finishes while the other extensions are still shutting down.
+    const runtime = new TaskRuntimeContext("/project")
+    runtime.captureFrom({ sessionManager: { getSessionId: () => "session-a" } })
+    const store = fakeStore({ ...completedRecord("session-a"), notify_on_terminal: true })
+    const dying = capturingNotifier()
+    const completion = createCompletionNotifier({ notifier: dying, store })
+    const bridge = createSessionTransitionBridge({ runtime, notifier: completion })
+
+    // when
+    bridge.onShutdown(runtime.sessionId())
+    const result = completion.notifyTerminal({ record: store.record(), parentState: runtime.parentState(), runInBackground: true })
+
+    // then: nothing is injected into the closing session and the completion is still owed
+    expect(result.kind).toBe("buffered")
+    expect(dying.enqueued).toHaveLength(0)
+    expect(store.record().notification.notified_epoch).toBe(-1)
+
+    // when the next process opens the session
+    const next = capturingNotifier()
+    createCompletionNotifier({ notifier: next, store }).reconcileUnnotifiedNotifications({
+      sessionId: "session-a",
+      parentState: { kind: "idle" },
+    })
+
+    // then the lead is woken once
+    expect(next.enqueued).toHaveLength(1)
+    expect(store.record().notification.notified_epoch).toBe(0)
+  })
+})
+
 function stubFlusher(): FlushingNotifier {
   return { flushBuffered: () => ({ kind: "empty" }) }
 }

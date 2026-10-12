@@ -92,3 +92,39 @@ test("a hosted summary session gets the summary compaction overlay, and the next
   assert.equal(process.env.RUBATO_CONTEXT_MODE, undefined);
   assert.equal(process.env.RUBATO_CONTEXT_MODE_ORIGIN, undefined);
 });
+
+// Pi tears a session down one extension at a time in list order, and context-notes drops the
+// session's request gate as soon as its turn comes. On 2026-10-12 a child finished in the gap before
+// the task component's own teardown: the lead was woken into a refused turn and never answered.
+// The components must hear "closing" before context-notes tears down.
+test("a hosted session starts closing for the components before context-notes tears down", async () => {
+  const cwd = join(scratch, "closing-order");
+  mkdirSync(cwd, { recursive: true });
+  const settingsManager = sdk.SettingsManager.inMemory();
+  const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: null,
+    allowModelNetwork: false, refreshOnCreate: false });
+  const assembled = createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, env: { PI_OFFLINE: "1" }, hosted: true,
+    codemodeOptions: { complete: async () => { throw new Error("provider calls are forbidden here"); } },
+    providerOptions: { env: { PI_OFFLINE: "1", RUBATO_SPEED_INDEX: "0", RUBATO_NO_KIRO_ENSURE: "1" },
+      kiro: { ensureKiro: async () => { throw new Error("Kiro launch is forbidden here"); } } } });
+  const names = assembled.extensionFactories.map((entry) => entry.name);
+  assert.equal(names[0], "rubato-session-closing");
+
+  const heard = [];
+  assembled.sessionClosing.subscribe(() => heard.push("closing"));
+  const extensionFactories = [...assembled.extensionFactories];
+  extensionFactories.splice(names.indexOf("context-notes") + 1, 0, { name: "probe",
+    factory: (pi) => pi.on("session_shutdown", () => heard.push("context-notes torn down")) });
+  const resourceLoader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true, extensionFactories });
+  await resourceLoader.reload();
+  assert.deepEqual(resourceLoader.getExtensions().errors, []);
+  const { session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, modelRuntime,
+    sessionManager: sdk.SessionManager.inMemory(cwd), model: claude });
+  await session.bindExtensions({ mode: "rpc", uiContext: { notify() {}, setStatus() {}, confirm: async () => false } });
+
+  await session.extensionRunner.emit({ type: "session_shutdown", reason: "unload" });
+  session.dispose();
+
+  assert.deepEqual(heard, ["closing", "context-notes torn down"]);
+});
