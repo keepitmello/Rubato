@@ -673,7 +673,7 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       });
     }
     if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;
-    // Codex: 같은 세션에서 서버가 생각 기록 재전송을 연달아 거절하면 지난 생각 기록을 뺀다
+    // Codex: 같은 세션에서 서버가 생각 기록 재전송을 연달아 거절하면 범인 하나를 찾아 뺀다
     // (codex-reasoning-replay.mjs).
     const replay = options.codexReasoningReplay ?? codexReasoningReplay;
     const sentContext = replay.prepare(model, context, options.sessionId);
@@ -696,7 +696,7 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       throw error;
     }
     Promise.resolve(stream?.result?.())
-      .then((message) => replay.observe(model, sentContext, options.sessionId, message))
+      .then((message) => replay.observe(model, context, options.sessionId, message))
       .catch(() => {});
     return decorateStream(stream, state, options);
   };
