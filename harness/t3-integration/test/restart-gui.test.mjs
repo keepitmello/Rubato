@@ -129,6 +129,7 @@ function harness(t, {
   };
   return {
     home,
+    env,
     run(extraEnv = {}, drop = []) {
       const runEnv = { ...env, ...extraEnv };
       for (const name of drop) delete runEnv[name];
@@ -419,4 +420,16 @@ test('changed dependencies or a failed prepare fall back to building with the ap
     assert.equal(result.status, 0, result.stderr + result.stdout);
     assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nINSTALL-GUI --apply\nSSH-SERVERS\nSTART-GUI\n', `prepare ${prepareStatus}`);
   }
+});
+
+// `rubato restart` runs this while the engine builds, so the web build does not
+// wait for it. It must leave the app alone and let the main run take the lock.
+test('--prepare-only builds beside the open app and touches nothing else', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true });
+  const result = spawnSync('sh', [restartGui, '--prepare-only'], { cwd: h.home, encoding: 'utf8',
+    env: { ...process.env, ...h.env, RUBATO_GUI_PREPARE_LOG: join(h.home, 'prepare.log') } });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n');
+  assert.equal(h.relaunched(), undefined);
+  assert.equal(existsSync(join(h.home, '.rubato-pi', 'gui-update', 'app.lock')), false);
 });

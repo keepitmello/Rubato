@@ -148,6 +148,8 @@ function restartHarness(t, { engineToken = "restarted", engineExit = 0, hubPrese
       fakeInstallGui,
       "#!/bin/sh\n" +
         `printf 'INSTALL-GUI %s\\n' "$*" >> '${log}'\n` +
+        // --prepare runs with the app open: 10 means a new bundle was built beside it.
+        `[ "$1" = --prepare ] && exit ${installGuiExit === 0 ? 10 : installGuiExit}\n` +
         `exit ${installGuiExit}\n`,
     );
   }
@@ -325,8 +327,10 @@ test("restart quits the app gracefully and relaunches through the single launche
   // inconsistent, so the app path never kills. Comments explain the rule, so
   // assert on code lines only.
   assert.doesNotMatch(restartGuiText, /killall|pkill/);
+  // The one signal is SIGTERM to a stray app under T3's name, which Electron
+  // takes as a normal quit (restart-gui.test.mjs holds the details).
   const guiCode = restartGuiText.split("\n").filter((line) => !/^\s*#/.test(line)).join("\n");
-  assert.doesNotMatch(guiCode, /kill/);
+  assert.deepEqual(guiCode.match(/\bkill\b[^\n]*/g), ["kill -TERM $STRAYS 2>/dev/null || true"]);
 });
 
 test("restart relaunches the desktop app last, after engine and hub", (t) => {
@@ -410,17 +414,31 @@ test("restart relaunches even when Electron helpers still match Rubato.app", (t)
 // relaunch alone leaves them stale. `restart` is where a user expects new
 // code to take effect, and the window between quit and relaunch is the only
 // safe place to rebuild — the build replaces the dist a running app reads.
-test("restart rebuilds the bundle while the app is down, then relaunches", (t) => {
+test("restart builds the bundle beside the open app, swaps it in while the app is down, then relaunches", (t) => {
   const harness = restartHarness(t, { guiMode: "running", installGui: true });
   const result = harness.run(["restart"]);
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /✓ 데스크톱 앱/);
   assert.equal(harness.relaunched(), "relaunched");
   const order = harness.calls();
-  assert.match(order, /INSTALL-GUI --apply/);
-  // Strictly between the quit and the relaunch: rebuilding under a live app
-  // would swap the dist it is reading.
-  assert.ok(order.indexOf("INSTALL-GUI") < order.indexOf("START-GUI"), order);
+  // The build runs first, with the app open, into directories beside the ones it
+  // reads; replacing those happens only once the app is down, before the relaunch.
+  assert.ok(order.indexOf("INSTALL-GUI --prepare") < order.indexOf("INSTALL-GUI --apply"), order);
+  assert.ok(order.indexOf("INSTALL-GUI --apply") < order.indexOf("START-GUI"), order);
+  assert.ok(harness.quitCalls().length > 0);
+});
+
+// The bundle is prepared beside the open app while the engine builds, and the
+// app step waits for it, then checks the prepared bundle once more under the lock.
+test("restart prepares the desktop bundle alongside the engine build", (t) => {
+  const harness = restartHarness(t, { guiMode: "running", installGui: true, engineBuild: "stale" });
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  const order = harness.calls();
+  assert.equal(order.match(/INSTALL-GUI --prepare/g)?.length, 2, order);
+  assert.ok(order.lastIndexOf("INSTALL-GUI --prepare") < order.indexOf("INSTALL-GUI --apply"), order);
+  assert.match(launcherText, /sh "\$RESTART_GUI" --prepare-only >\/dev\/null 2>&1 &/);
+  assert.match(launcherText, /wait "\$EARLY_PREPARE_PID"/);
 });
 
 test("restart reports a failed rebuild but still brings the app back", (t) => {

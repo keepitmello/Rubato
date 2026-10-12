@@ -5,19 +5,25 @@
 #
 # 앱에는 성질이 다른 두 가지가 실린다. 브리지(harness/t3-integration/src/)는
 # 앱이 켜질 때 레포에서 읽으므로 다시 켜기만 하면 되고, 핀과 overlay 는 T3 서버
-# 번들에 컴파일돼 들어가므로 다시 만들어야 한다. 그래서 순서가 정해진다:
-# 끄고 → 번들을 맞추고 → 켠다. 빌드가 도는 앱이 읽는 dist 를 갈아끼우기 때문에
-# 앱이 내려간 그 창 말고는 안전한 자리가 없다.
+# 번들에 컴파일돼 들어가므로 다시 만들어야 한다. 번들은 앱을 켜 둔 채 켜진 앱이
+# 읽는 폴더 옆에 빌드하고(install-gui.sh --prepare), 앱이 내려간 사이에는 이름만
+# 바꿔 끼운다. 둘 다 그대로면 앱은 끄지 않는다.
 #
 # 무엇을 다시 만들지는 install-gui.sh 가 핀·overlay 지문으로 판단한다. 이미
 # 맞는 설치는 빌드 없이 지나가므로 평소 재시작은 그대로 빠르다. 여기서 그
 # 판단을 흉내내지 않는다.
+#
+# --prepare-only 는 앱을 건드리지 않고 번들만 옆에 준비한다. `rubato restart` 가
+# 엔진을 빌드하는 동안 이것을 같이 돌려 둔다. 같은 앱 잠금을 잡으므로 다른 재시작과
+# 겹치지 않고, 뒤에 오는 본 실행은 준비된 번들을 1초 남짓에 확인하고 지나간다.
 #
 # 종료 코드로 호출한 쪽에 결과를 말한다 — 셋은 서로 달라 보여야 한다.
 #   0  무언가 했다 (번들을 맞췄거나, 껐다 켰다)
 #   1  하려다 실패했다
 #   2  이 머신에 데스크톱 앱이 없다
 set -u
+PREPARE_ONLY=0
+[ "${1-}" = --prepare-only ] && PREPARE_ONLY=1
 
 HERE="$(CDPATH= cd -- "$(dirname "$0")" && pwd)"
 # 진행 표시. tty 가 아니면 스스로 빠지므로 파이프·테스트가 보는 것은 그대로다.
@@ -183,6 +189,14 @@ fi
 if ! take_app_lock; then
   ui_fail "다른 재시작이나 업데이트가 데스크톱 앱을 다루는 중입니다. 끝난 뒤 다시 하세요 — 잠금: $APP_LOCK"
   exit 1
+fi
+
+if [ "$PREPARE_ONLY" = 1 ]; then
+  [ -f "$INSTALL_GUI" ] || exit 0
+  PREPARE_LOG="${RUBATO_GUI_PREPARE_LOG:-$HOME/.rubato-pi/logs/rubato-gui-prepare.log}"
+  mkdir -p "$(dirname "$PREPARE_LOG")" 2>/dev/null || true
+  bash "$INSTALL_GUI" --prepare >"$PREPARE_LOG" 2>&1
+  exit 0
 fi
 
 if ! app_running; then

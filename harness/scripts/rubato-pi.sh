@@ -106,6 +106,16 @@ case "${1-}" in
     trap 'progress_stop' EXIT INT TERM
     printf '\n'
 
+    # 0. 데스크톱 번들 준비를 엔진 빌드와 같이 돌린다. 앱이 바뀌었으면 웹 빌드가
+    # 20초 남짓인데, 엔진 빌드를 기다렸다가 하면 그만큼 재시작이 길어진다. 준비는
+    # 앱을 건드리지 않고 켜진 앱이 읽는 폴더 옆에만 쓴다(restart-gui.sh --prepare-only).
+    # 아래 4 단계가 시작하기 전에 끝나기를 기다린다.
+    EARLY_PREPARE_PID=''
+    if [ -f "$RESTART_GUI" ]; then
+      sh "$RESTART_GUI" --prepare-only >/dev/null 2>&1 &
+      EARLY_PREPARE_PID=$!
+    fi
+
     # 1. 엔진을 이 워킹트리에 맞춘다.
     #
     # 대화가 실제로 실행하는 코드는 레포가 아니라 ~/.rubato-pi/stock-engine 의
@@ -206,6 +216,11 @@ case "${1-}" in
     # the two verbs cannot drift apart. Its exit code says which happened:
     # 0 did something, 1 tried and failed, 2 no app on this machine.
     if [ -f "$RESTART_GUI" ]; then
+      if [ -n "$EARLY_PREPARE_PID" ]; then
+        progress_start "데스크톱 번들 준비가 끝나기를 기다리는 중"
+        wait "$EARLY_PREPARE_PID" 2>/dev/null || true
+        progress_stop
+      fi
       # `set -e` is on: capture the status instead of letting a non-zero exit
       # end the run before the summary line.
       GUI_STATUS=0
