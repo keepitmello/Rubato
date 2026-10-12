@@ -60,10 +60,16 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
       const deadline = Date.now() + timeoutMs;
       let child;
       let spawnError;
+      let exits = 0;
+      const exited = () => child.exitCode !== null || child.signalCode !== null;
       // Bounded startup/recovery probes only. Once connected, the official
       // session streams carry changes; there is no frontend idle polling loop.
       while (Date.now() < deadline) {
-        if (!child || child.exitCode !== null || child.signalCode !== null) {
+        if (!child || exited()) {
+          // An engine that exits right away usually lost the profile lock to one still shutting
+          // down (a restart). Start the next one soon, backing off so a lock that stays held
+          // does not become a stream of engine starts.
+          if (child) await new Promise(resolve => setTimeout(resolve, Math.min(1000, 100 * 2 ** exits++)));
           const sink = await open(logFile, 'a', 0o600);
           try {
             child = spawn(nodeBin, [serverCli, '--agent-dir', agentDir,
@@ -77,11 +83,12 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
         }
         // A competing client may win startup. Discovery, never child PID,
         // determines which profile engine all presentations attach to.
-        for (let i = 0; i < 20 && Date.now() < deadline; i++) {
-          await new Promise(resolve => setTimeout(resolve, 250));
+        for (let i = 0; i < 100 && Date.now() < deadline; i++) {
+          await new Promise(resolve => setTimeout(resolve, 50));
           if (spawnError) throw spawnError;
           const ready = await liveDescriptor(descriptorPath);
           if (ready) return ready;
+          if (exited()) break;
         }
       }
       let tail = ''; try { tail = (await readFile(logFile, 'utf8')).slice(-800).trim(); } catch {}

@@ -1,4 +1,5 @@
-import { createReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { finished } from 'node:stream/promises';
 import { SIDE_CHAT_ENTRY } from '../../pi-runtime/features/session-link/side-chat.mjs';
@@ -61,3 +62,9 @@ export async function readSessionMetadata(file, stats) {
     await finished(input).catch(() => {});
   }
 }
+
+/** Names what `readSessionMetadata` produces. A saved session index made under another value
+ * is thrown away, so changing this reader, any helper in this file, or the side-chat marker it
+ * looks for invalidates every saved index without anyone remembering to bump a number. */
+export const SESSION_METADATA_VERSION = createHash('sha256')
+  .update(readFileSync(new URL(import.meta.url))).update('\0').update(SIDE_CHAT_ENTRY).digest('hex').slice(0, 16);

@@ -239,9 +239,10 @@ class RuntimeHandle {
 
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
-  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {} } = {}) {
+  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
-  const files = new SessionFiles(sessionsDir);
+  // `sessionIndexPath` keeps parsed session metadata across engine restarts (session-files.mjs).
+  const files = new SessionFiles(sessionsDir, { indexPath: sessionIndexPath, onError });
   const handles = new Map();
   // Prepared SDK inputs are in-process handoffs, never another catalogue or
   // router. The official SessionRouter still owns acquisition and deduplication.
@@ -431,7 +432,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     async close() {
       stopped = true; clearInterval(this.poller);
       await Promise.allSettled([...probes.values()]);
-      await Promise.all([...handles.values()].map((handle) => handle.close()));
+      try { await Promise.all([...handles.values()].map((handle) => handle.close())); }
+      finally { await files.close(); }
     },
   };
   return host;
