@@ -546,11 +546,12 @@ export class RubatoPiBridge {
           // 온 말은 승격된 말뿐이라 지금 턴에 끼어드는 steer 로 보낸다. 예전처럼
           // Pi 의 follow_up 큐에 맡기면 T3 가 못 보는 두 번째 대기열이 생기고,
           // 턴을 멈췄을 때 거기 남은 말을 되돌려줄 자리가 없었다.
-          await context.client.command({
+          const sent = await context.client.command({
             type: running ? 'steer' : 'prompt',
             message,
             ...(images.length ? { images } : {}),
           });
+          if (!running && sent?.disposition === 'handled') await this.settleHandledCommand(context, turnId);
         }
       }
       catch (error) {
@@ -587,6 +588,26 @@ export class RubatoPiBridge {
    * 저장한 뒤에 끝난다. 둘 다 아니면 컷이 시작되지 않은 것이므로 T3 가 완료 이벤트를
    * 10분 기다리다 세션을 타임아웃으로 잠그게 두지 않고 여기서 끊는다.
    */
+  /**
+   * Pi answers `handled` when an extension command (`/new-context`, `/audit`) or an input
+   * handler took the prompt. Such a command runs no model unless it starts one itself
+   * (a checkpoint turn does, through sendMessage), so no agent_settled ever closes the turn
+   * the bridge opened: T3 kept the thread "running" and a later message steered into
+   * nothing (2026-10-12, /new-context). Give a self-started run a moment to appear, then
+   * close the turn. A run that does appear closes it through agent_settled as usual.
+   */
+  async settleHandledCommand(context, turnId) {
+    for (let attempt = 0; attempt < 8; attempt++) {
+      if (context.projection.turnId !== turnId) return;
+      const state = await context.client.command({ type: 'get_state' });
+      if (state?.isStreaming === true || state?.isCompacting === true) return;
+      await delay(250);
+    }
+    if (context.projection.turnId !== turnId) return;
+    context.projection.settle();
+    context.session.status = 'ready';
+    this.stateEvent(context);
+  }
   async requireCutStarted(context) {
     for (let attempt = 0; attempt < 8; attempt++) {
       if (context.projection.sawCompaction) return;

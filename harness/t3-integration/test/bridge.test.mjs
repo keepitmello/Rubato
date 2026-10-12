@@ -800,6 +800,37 @@ test('an extension command typed as composer text still reaches Pi as a prompt',
   await until(() => events.some((event) => event.type==='turn.completed'));
 });
 
+// 2026-10-12: /new-context opened the next window and ran no model, so the turn the bridge
+// opened for it never closed and the thread stayed "running".
+test('an extension command Pi handled without a model run closes its turn', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'handled-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('handled-thread');
+  context.client.command = async (command) => {
+    if (command.type === 'get_state') return { isStreaming: false, isCompacting: false };
+    if (command.type === 'prompt') return { disposition: 'handled' };
+    return { ok: true };
+  };
+  const { turnId } = await bridge.sendTurn({ threadId:'handled-thread', input:'/new-context' });
+  assert.ok(events.some((event) => event.type==='turn.completed' && event.turnId===turnId));
+  assert.equal(context.projection.turnId, undefined);
+  assert.equal(context.session.status, 'ready');
+});
+
+test('an extension command that starts its own model run leaves the turn to that run', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'handled-run', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('handled-run');
+  context.client.command = async (command) => {
+    if (command.type === 'get_state') return { isStreaming: true, isCompacting: false };
+    if (command.type === 'prompt') return { disposition: 'handled' };
+    return { ok: true };
+  };
+  const { turnId } = await bridge.sendTurn({ threadId:'handled-run', input:'/new-context' });
+  assert.equal(events.some((event) => event.type==='turn.completed' && event.turnId===turnId), false);
+  assert.equal(context.projection.turnId, turnId);
+});
+
 test('a control command typed as composer text becomes its RPC command and T3 is told', async (t) => {
   const { root, events, bridge } = await setup(t);
   await bridge.startSession({ threadId:'ctl-thread', runtimeMode:'full-access', cwd:root });
