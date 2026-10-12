@@ -3,6 +3,8 @@
 //
 // Cursor 일곱은 `cursor-picker.mjs` 가 소유한다 (Grok Fast 접힘이 앞에 있다).
 
+import { readFileSync, statSync } from "node:fs";
+
 export const XAI_PICKER_IDS = Object.freeze(["grok-4.7"]);
 
 export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-free"]);
@@ -106,6 +108,33 @@ export function credentialHasSubAccount(credential) {
   return credentialLaneSuffixes(credential).length > 0;
 }
 
+/**
+ * 저장된 자격증명을 동기로 읽는 함수를 만든다. `getModels()` 는 동기라 엔진이 넘겨주는
+ * credential 이 없다 — 이 파일이 그 자리를 채운다. 파일이 바뀔 때만(mtime·크기) 다시 읽는다.
+ *
+ * 돌려주는 값: 그 프로바이더의 자격증명, 저장분이 없으면 `null`, 파일을 못 읽으면 `undefined`
+ * (모름). 쓰는 도중이라 JSON 이 깨져 있으면 직전에 읽은 값을 그대로 쓴다.
+ */
+export function storedCredentialReader(authPath) {
+  let cache;
+  return (providerId) => {
+    let stat;
+    try {
+      stat = statSync(authPath);
+    } catch (error) {
+      return error?.code === "ENOENT" ? null : cache?.data?.[providerId] ?? undefined;
+    }
+    if (!cache || cache.mtimeMs !== stat.mtimeMs || cache.size !== stat.size) {
+      try {
+        cache = { mtimeMs: stat.mtimeMs, size: stat.size, data: JSON.parse(readFileSync(authPath, "utf8")) };
+      } catch {
+        return cache?.data?.[providerId] ?? undefined;
+      }
+    }
+    return cache.data?.[providerId] ?? null;
+  };
+}
+
 function mergeById(models, extras) {
   const seen = new Set(models.map((model) => model.id));
   return [...models, ...extras.filter((model) => !seen.has(model.id))];
@@ -117,18 +146,28 @@ function laneCopies(models, providerId, suffixes) {
 
 /**
  * 두 번째 계정이 있으면 `[sub]`, 세 번째 계정이 있으면 `[sub2]` 행을 피커에 붙인다.
- * getModels 에는 계정과 상관없이 같은 id 를 넣어 에이전트 스폰이 찾게 한다.
+ * getModels 에도 같은 id 를 넣어 에이전트 스폰이 찾게 한다. 다만 **있는 계정만큼만** 넣는다.
+ *
+ * 엔진은 프로바이더를 등록할 때마다 getModels() 를 거르지 않고 "쓸 수 있는 모델" 스냅샷을
+ * 먼저 만들고, 계정으로 거른 목록은 나중에 비동기로 덮어쓴다. T3 피커와 에이전트 모델 목록은
+ * 그 사이 스냅샷을 읽는다 — 그래서 getModels 가 꼬리를 전부 넣으면 계정이 둘뿐인 기기에도
+ * `[sub2]` 가 보이고, 고르면 "Account 'sub2' is unavailable" 로 실패했다(2026-10-13).
+ * `readStoredCredential` 이 없거나 모른다(`undefined`)고 하면 꼬리를 전부 넣는다.
  */
-export function withSubAccountCopies(provider) {
+export function withSubAccountCopies(provider, { readStoredCredential } = {}) {
   if (typeof provider?.getModels !== "function") return provider;
   const nativeGetModels = provider.getModels.bind(provider);
   const nativeFilter = provider.filterModels;
+  const storedLaneSuffixes = () => {
+    const credential = readStoredCredential?.(provider.id);
+    return credential === undefined ? ACCOUNT_LANE_SUFFIXES : credentialLaneSuffixes(credential);
+  };
   return {
     ...provider,
     getModels: () => {
       const models = nativeGetModels();
       const presented = nativeFilter ? nativeFilter(models, undefined) : models;
-      return mergeById(models, laneCopies(presented, provider.id, ACCOUNT_LANE_SUFFIXES));
+      return mergeById(models, laneCopies(presented, provider.id, storedLaneSuffixes()));
     },
     filterModels: (models, credential) => {
       const presented = nativeFilter ? nativeFilter(models, credential) : models;

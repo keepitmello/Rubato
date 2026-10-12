@@ -8,7 +8,9 @@
 // bridge 가 그 기본값이었는데, 이제 돌아갈 기본값 자신이 없다.
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { withClaudeSetupToken } from "./anthropic-setup-token.mjs";
+import { defaultTargetAuthPath } from "./credential-import.mjs";
 import { cursorDirectProvider } from "./cursor-route.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { ensureKiroSidecar, kiroDirectProvider, withKiroSidecarEnsure } from "./kiro-route.mjs";
@@ -18,6 +20,7 @@ import {
   CODEX_PICKER_IDS,
   OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
+  storedCredentialReader,
   withPickerIds,
   withSubAccountCopies,
 } from "./picker-catalog.mjs";
@@ -460,6 +463,7 @@ export async function directProviders({
   speedIndexStore: speedStore = speedIndexStore(env),
   nativeFactoryLoader = loadPinnedFactory,
   routeFactories = {},
+  readStoredCredential = storedCredentialReader(defaultTargetAuthPath(homedir(), env)),
 } = {}) {
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
@@ -529,7 +533,10 @@ export async function directProviders({
 
   const store = speedStore;
   store?.startProbes?.();
-  const wrap = (provider) => wrapProviderStreams(withSubAccountCopies(provider), { speedIndexStore: store });
+  const wrap = (provider) => wrapProviderStreams(
+    withSubAccountCopies(provider, { readStoredCredential }),
+    { speedIndexStore: store },
+  );
 
   return [
     wrap(codex),

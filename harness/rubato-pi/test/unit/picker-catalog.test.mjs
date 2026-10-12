@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import {
   ANTHROPIC_PICKER_IDS,
@@ -7,6 +10,7 @@ import {
   OPENCODE_PICKER_IDS,
   XAI_PICKER_IDS,
   keepPickerIds,
+  storedCredentialReader,
   withPickerIds,
   withSubAccountCopies,
 } from "../../src/picker-catalog.mjs";
@@ -203,4 +207,49 @@ test("Codex 는 계정이 셋이어도 [sub2] 행이 없다", () => {
     [CODEX_SOL, CODEX_ASTRA, `${CODEX_SOL}-sub`, `${CODEX_ASTRA}-sub`],
   );
   assert.equal(provider.getModels().some((entry) => entry.id.endsWith("-sub2")), false);
+});
+
+// 엔진은 등록 직후 getModels() 를 거르지 않고 피커 스냅샷을 만든다. 계정이 둘인 기기에서
+// 그 스냅샷에 [sub2] 가 섞여 T3 와 에이전트 모델 목록에 떴다(2026-10-13).
+test("저장된 계정 수만큼만 getModels 에 계정 행을 넣는다", () => {
+  const stored = { accounts: [{ name: "login-2" }] };
+  const provider = withSubAccountCopies({
+    id: "anthropic",
+    getModels: () => [model(CURRENT_OPUS), model("claude-haiku-4-5")],
+    filterModels: (models) => models,
+  }, { readStoredCredential: (providerId) => (providerId === "anthropic" ? stored : null) });
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-4-5", `${CURRENT_OPUS}-sub`]);
+
+  stored.accounts = [];
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-4-5"]);
+
+  stored.accounts = [{ name: "sub" }, { name: "login-2" }];
+  assert.equal(provider.getModels().some((entry) => entry.id === `${CURRENT_OPUS}-sub2`), true);
+});
+
+test("저장분을 모르면 getModels 는 계정 행을 전부 넣는다", () => {
+  const provider = withSubAccountCopies({
+    id: "anthropic",
+    getModels: () => [model(CURRENT_OPUS)],
+    filterModels: (models) => models,
+  }, { readStoredCredential: () => undefined });
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, `${CURRENT_OPUS}-sub`, `${CURRENT_OPUS}-sub2`]);
+});
+
+test("storedCredentialReader 는 파일이 바뀔 때 다시 읽고, 깨진 파일엔 직전 값을 쓴다", () => {
+  const dir = mkdtempSync(join(tmpdir(), "picker-auth-"));
+  const authPath = join(dir, "auth.json");
+  try {
+    const read = storedCredentialReader(authPath);
+    assert.equal(read("anthropic"), null, "파일이 없으면 저장분 없음");
+    writeFileSync(authPath, JSON.stringify({ anthropic: { accounts: [{ name: "login-2" }] } }));
+    assert.deepEqual(read("anthropic"), { accounts: [{ name: "login-2" }] });
+    assert.equal(read("xai"), null);
+    writeFileSync(authPath, "{ half written");
+    assert.deepEqual(read("anthropic"), { accounts: [{ name: "login-2" }] });
+    writeFileSync(authPath, JSON.stringify({ anthropic: { accounts: [] } }));
+    assert.deepEqual(read("anthropic"), { accounts: [] });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
