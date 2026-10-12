@@ -76,7 +76,9 @@ export function createContextNotesTools(getController, T, notesActive = historyN
       {}, (c) => ({ ...c.usage(), window: c.window, mode: "history-notes" })],
   ];
   return definitions.map(([name, label, description, properties, action, executionMode = "parallel"]) => ({
-    name, label, description, exposure: "search", allowLazyActivation: false, executionMode,
+    // Declared direct: a search-exposed tool is pulled back by tool_search on every
+    // session_start, which switched the notes tools off whenever the app reattached.
+    name, label, description, exposure: "direct", executionMode,
     parameters: T.Object(properties, { additionalProperties: false }),
     async execute(id, params, signal, _onUpdate, ctx) {
       signal?.throwIfAborted();
