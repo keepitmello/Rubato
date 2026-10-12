@@ -411,6 +411,65 @@ test("patched resolve refresh writes mergeRefreshedSlot through to auth.json", a
   assert.equal(stored.accounts[1].expires, future);
 });
 
+// The real Anthropic pool on a user's Mac: two setup-tokens stored as keys, then a browser login
+// appended an OAuth slot. Projected as a key, that slot handed the provider nothing ("Provider is
+// not configured"), and a refresh of it was dropped because the pool's flat type is not oauth.
+test("an OAuth slot inside an API-key pool resolves and its refresh is written to that slot", async () => {
+  const past = Date.now() - 60_000;
+  const future = Date.now() + 60 * 60 * 1000;
+  const { modelRuntime, agentDir } = await createPooledRuntime({
+    xai: {
+      type: "api_key",
+      key: "k1",
+      accounts: [
+        { name: "default", source: "login", key: "k1" },
+        { name: "sub", source: "login", key: "k2" },
+        { name: "login-2", source: "login", access: "a3", refresh: "r3", expires: past },
+      ],
+    },
+  });
+  const seen = [];
+  const provider = mockOauthXai(async (credential) => {
+    seen.push(credential.access);
+    return { type: "oauth", access: `${credential.access}-next`, refresh: `${credential.refresh}-next`, expires: future };
+  });
+  provider.auth.apiKey = { resolve: async ({ credential }) => (credential?.key ? { auth: { apiKey: credential.key }, source: "stored" } : undefined) };
+  modelRuntime.registerNativeProvider(provider);
+  const model = modelRuntime.getModels().find((entry) => entry.provider === "xai");
+  const auth = await modelRuntime.getAuth(model, { slotName: "login-2" });
+  assert.equal(auth.auth.apiKey, "a3-next");
+  assert.deepEqual(seen, ["a3"]);
+  const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8")).xai;
+  assert.equal(stored.type, "api_key");
+  assert.equal(stored.key, "k1");
+  assert.equal(stored.accounts[1].key, "k2");
+  assert.equal(stored.accounts[2].access, "a3-next");
+  assert.equal(stored.accounts[2].refresh, "r3-next");
+  assert.equal(stored.accounts[2].expires, future);
+  // Still fresh: the next request uses the stored token without refreshing again.
+  const again = await modelRuntime.getAuth(model, { slotName: "login-2" });
+  assert.equal(again.auth.apiKey, "a3-next");
+  assert.deepEqual(seen, ["a3"]);
+});
+
+test("projectSlot reads an OAuth slot of an API-key pool as OAuth and a key slot as a key", () => {
+  const pool = {
+    type: "api_key",
+    key: "k1",
+    accounts: [
+      { name: "default", source: "login", key: "k1" },
+      { name: "login-2", source: "login", access: "a3", refresh: "r3", expires: 5 },
+    ],
+  };
+  assert.deepEqual(projectSlot(pool, "login-2"), { type: "oauth", access: "a3", refresh: "r3", expires: 5 });
+  assert.deepEqual(projectSlot(pool, "default"), { type: "api_key", key: "k1" });
+  const merged = mergeRefreshedSlot(pool, "login-2", { type: "oauth", access: "a3-next", refresh: "r3-next", expires: 9 });
+  assert.equal(merged.type, "api_key");
+  assert.equal(merged.key, "k1");
+  assert.deepEqual(merged.accounts[1], { name: "login-2", source: "login", access: "a3-next", refresh: "r3-next", expires: 9 });
+  assert.equal(mergeRefreshedSlot(pool, "", { type: "oauth", access: "x", refresh: "y", expires: 9 }), pool);
+});
+
 test("providers extension requires agentDir and does not invent a legacy path", async () => {
   await assert.rejects(
     () => feature.createProvidersExtension({ env: { HOME: isolatedHome, PI_OFFLINE: "1" } })({

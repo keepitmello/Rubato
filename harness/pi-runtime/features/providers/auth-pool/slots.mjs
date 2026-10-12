@@ -83,11 +83,19 @@ export function projectSlot(credential, name) {
   const slot = findSlot(credential, name);
   if (!slot) return undefined;
   const { accounts: _accounts, pinned: _pinned, ...flat } = credential;
-  if (flat.type === "oauth") {
+  // A browser login appends an OAuth slot even to a pool that began as API keys (Anthropic
+  // setup-tokens are stored as keys). Such a slot carries no `key`; projecting it as a key
+  // handed the provider an empty credential, so the account could never be used.
+  if (flat.type === "oauth" || isOAuthSlot(slot)) {
     if (slot.access === undefined || slot.refresh === undefined || slot.expires === undefined) return undefined;
-    return { ...flat, access: slot.access, refresh: slot.refresh, expires: slot.expires };
+    const { key: _key, ...rest } = flat;
+    return { ...rest, type: "oauth", access: slot.access, refresh: slot.refresh, expires: slot.expires };
   }
   return { ...flat, key: slot.key };
+}
+
+function isOAuthSlot(slot) {
+  return slot.key === undefined && slot.access !== undefined;
 }
 
 function slotFromFlatCredentialNamed(credential, name) {
@@ -158,16 +166,22 @@ export function appendLoginSlot(current, flat) {
 }
 
 export function mergeRefreshedSlot(current, name, refreshed) {
-  if (refreshed.type !== "oauth" || current.type !== "oauth") return current;
-  if (name == null || name === "") return mergeRefreshed(current, refreshed);
-  if (!Array.isArray(current.accounts) || current.accounts.length === 0) return mergeRefreshed(current, refreshed);
+  if (refreshed.type !== "oauth") return current;
+  const named = name != null && name !== "" && Array.isArray(current.accounts) && current.accounts.length > 0;
+  if (current.type !== "oauth") {
+    // An OAuth slot inside an API-key pool: rotate that slot only. Dropping the refresh here
+    // lost the new refresh token after the old one was spent, cutting the account off.
+    if (!named) return current;
+  } else if (!named) {
+    return mergeRefreshed(current, refreshed);
+  }
   const target = current.accounts.find((slot) => slot.name === name);
   if (!target) {
     throw new Error(`Cannot merge refreshed OAuth into missing credential slot '${name}'`);
   }
   const rotated = { access: refreshed.access, refresh: refreshed.refresh, expires: refreshed.expires };
   const accounts = current.accounts.map((slot) => (slot === target ? { ...slot, ...rotated } : slot));
-  const mirrorsFlat = target.access === current.access || target.refresh === current.refresh;
+  const mirrorsFlat = current.type === "oauth" && (target.access === current.access || target.refresh === current.refresh);
   return mirrorsFlat ? { ...current, ...rotated, accounts } : { ...current, accounts };
 }
 
