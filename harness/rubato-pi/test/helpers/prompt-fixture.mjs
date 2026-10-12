@@ -6,8 +6,8 @@ import { spawnSync } from "node:child_process";
 
 export const promptSourceRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "../../../prompts");
 export const promptFragments = [
-  "base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md",
-  "core-teammate.pi.md", "core-agent.pi.md", "voice.md",
+  "preamble.pi.md", "base.pi.md", "brief-exchange.pi.md", "core-lead.pi.md",
+  "core-teammate.pi.md", "core-agent.pi.md", "calm.pi.md", "voice.md", "opening-turn.pi.md",
 ];
 
 // Tests exercise this checkout, never a developer's ~/.agents installation.

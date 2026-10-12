@@ -8,6 +8,8 @@ export const PROJECT_CONTEXT_ENTRY_TYPE = "rubato.project-context";
 
 export const PROJECT_RULES_ENTRY_TYPE = "rubato.project-rules";
 
+export const OPENING_TURN_ENTRY_TYPE = "rubato.opening-turn";
+
 const PROJECT_CONTEXT = /<project_context>[\s\S]*?<\/project_context>/;
 const PROJECT_RULES = /<!--senpi:project-rules:1:start-->[\s\S]*?<!--senpi:project-rules:1:end-->/;
 
@@ -29,7 +31,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
     const promptHref = env.RUBATO_ROLE_PROMPT_MODULE;
     const roleHref = env.RUBATO_ROLE_CONTRACT_MODULE;
     if (!promptHref || !roleHref) return;
-    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf }, { resolveRole }] = await Promise.all([
+    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf, loadOpeningTurn }, { resolveRole }] = await Promise.all([
       import(promptHref),
       import(roleHref),
     ]);
@@ -84,6 +86,42 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       }
       return { systemPrompt: composed };
     });
+    // The opening turn: an assistant turn ahead of the whole conversation, in the model's own
+    // voice, answering the welcome that ends the preamble. Like the role prompt it is pinned to
+    // the session, so it never moves and never changes under a cached prefix. A session that
+    // already has replies when it first meets this code pins it as absent: placing it ahead of
+    // existing history would rewrite that session's whole cached prefix. `/reload` keeps it too,
+    // for the same reason.
+    const openings = new Map();
+    pi.on("context", (event, ctx) => {
+      if (typeof loadOpeningTurn !== "function") return;
+      const id = sessionIdOf(ctx);
+      if (id === undefined) return;
+      let text = openings.get(id) ?? recordedEntry(ctx, OPENING_TURN_ENTRY_TYPE);
+      if (text === undefined) {
+        const started = event.messages.some((message) => message?.role === "assistant");
+        text = started ? "" : loadOpeningTurn({ env });
+        try { pi.appendEntry?.(OPENING_TURN_ENTRY_TYPE, { value: text }); } catch {}
+      }
+      openings.set(id, text);
+      if (!text) return;
+      return { messages: [openingTurnMessage(text), ...event.messages] };
+    });
+  };
+}
+
+/** A finished assistant turn the provider adapters replay as plain text from another model. */
+export function openingTurnMessage(text) {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text }],
+    api: "rubato-opening",
+    provider: "rubato",
+    model: "rubato-opening",
+    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+    stopReason: "stop",
+    timestamp: 0,
   };
 }
 

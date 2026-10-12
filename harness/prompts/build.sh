@@ -44,8 +44,14 @@ fresh() {
   return 0
 }
 
-# 시스템 프롬프트 = 공통 운영 계약 + 역할 + 말투. 말투가 마지막인 것은 의도다. 앞의 영어
-# 산문에 눌리지 않아야 하기 때문이다.
+# 시스템 프롬프트 = 프리앰블 + 공통 운영 계약 + 역할 + 평온함 + 말투.
+#
+# 프리앰블은 맨 앞이다. 이름을 주고 환영하는 자리라 규칙보다 먼저 와야 한다.
+# 대화 맨 앞에 끼우는 모델 턴(opening-turn.pi.md)은 여기 합치지 않는다. 그건
+# 시스템 프롬프트가 아니라 대화 기록의 첫 턴이고, 역할 프롬프트 확장이 원문 그대로 읽는다.
+#
+# 말투가 마지막인 것은 의도다. 앞의 영어 산문에 눌리지 않아야 하기 때문이다.
+# 평온함 문구는 답에 가장 가까운 자리에 두고 싶지만 그 자리는 말투 몫이라 바로 앞에 둔다.
 #
 # 말투 조각은 한 벌이다. 말하는 방식 자체는 역할을 타지 않기 때문이고, 역할마다
 # 달라지는 보고 계약은 core-*.pi.md 가 이미 갖고 있다. 둘로 나눠 두면 같은 문장
@@ -55,12 +61,9 @@ fresh() {
 # 역할 조각에는 그 역할에만 해당하는 문장만 둔다.
 # owner 와 verifier 는 같은 teammate 파일을 쓴다. 검증도 하나의 워크스트림이고,
 # verifier 는 산출물이 판단인 owner 이기 때문이다. 순수 task Agent 는 agent 파일을 쓴다.
-if ! fresh "$OUT/lead.pi.md" base.pi.md brief-exchange.pi.md core-lead.pi.md voice.md; then
-  emit lead.pi.md     base.pi.md brief-exchange.pi.md core-lead.pi.md     voice.md
-fi
-if ! fresh "$OUT/teammate.pi.md" base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md; then
-  emit teammate.pi.md base.pi.md brief-exchange.pi.md core-teammate.pi.md voice.md
-fi
-if ! fresh "$OUT/agent.pi.md" base.pi.md brief-exchange.pi.md core-agent.pi.md voice.md; then
-  emit agent.pi.md    base.pi.md brief-exchange.pi.md core-agent.pi.md    voice.md
-fi
+for role in lead teammate agent; do
+  parts=(preamble.pi.md base.pi.md brief-exchange.pi.md "core-$role.pi.md" calm.pi.md voice.md)
+  if ! fresh "$OUT/$role.pi.md" "${parts[@]}"; then
+    emit "$role.pi.md" "${parts[@]}"
+  fi
+done

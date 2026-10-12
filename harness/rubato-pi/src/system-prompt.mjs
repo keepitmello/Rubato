@@ -88,7 +88,30 @@ export function loadRolePrompt(role, {
         : `rubato-pi role prompt missing: ${path}`,
     );
   }
-  return readPromptFile(path, { readFile, materialize });
+  const text = readPromptFile(path, { readFile, materialize });
+  // build.sh heads each build with a do-not-edit comment for people opening the file. The
+  // model does not need it, and the preamble has to be the first thing it reads.
+  return custom ? text : text.replace(BUILD_HEADER, "");
+}
+
+const BUILD_HEADER = /^<!--[^\n]*-->\s*/;
+
+export const OPENING_TURN_FILE = "opening-turn.pi.md";
+
+/**
+ * The assistant turn placed ahead of the conversation, read as written from the prompt pieces.
+ * A custom prompt file replaces the whole product prompt, so it gets no opening turn; "" means
+ * none.
+ */
+export function loadOpeningTurn({
+  env = process.env,
+  readFile = readFileSync,
+  materialize = materializeLocalFile,
+} = {}) {
+  if (customPromptPath(env)) return "";
+  const path = join(rolePromptsRoot(env), OPENING_TURN_FILE);
+  if (!existsSync(path)) return "";
+  return readPromptFile(path, { readFile, materialize }).trim();
 }
 
 // Owner and verifier share teammate.pi.md, so the runtime says which one this session is.

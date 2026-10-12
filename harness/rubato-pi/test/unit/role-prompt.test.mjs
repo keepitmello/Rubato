@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  assignedRoleSection, loadRolePrompt, promptNameForRole, replaceSystemPrompt,
+  assignedRoleSection, loadOpeningTurn, loadRolePrompt, promptNameForRole, replaceSystemPrompt,
 } from "../../src/system-prompt.mjs";
 import { createPromptFixture, promptSourceRoot } from "../helpers/prompt-fixture.mjs";
 
@@ -29,7 +29,8 @@ test("roles share only the intended source fragments and preserve voice", () => 
   ];
   for (const [role, fragments] of cases) {
     for (const fragment of fragments) assert.ok(built(role).includes(source(fragment).trim()));
-    assert.ok(built(role).trim().endsWith(voice));
+    assert.ok(built(role).startsWith(source("preamble.pi.md").trim()), "the preamble is the first thing read");
+    assert.ok(built(role).trim().endsWith(`${source("calm.pi.md").trim()}\n\n${voice}`), "calm sits right before voice");
   }
   assert.equal(promptNameForRole("owner"), promptNameForRole("verifier"));
   assert.equal(built("owner"), built("verifier"));
@@ -53,4 +54,9 @@ test("runtime assignment is stable, specific, idempotent and independent of mode
   assert.equal(assignedRoleSection("unknown"), "");
   assert.equal(assignedRoleSection("__proto__"), "");
   assert.equal(assignedRoleSection(undefined), "");
+});
+
+test("the opening turn is read as written, and a custom prompt file has none", () => {
+  assert.equal(loadOpeningTurn({ env: fixture.env }), source("opening-turn.pi.md").trim());
+  assert.equal(loadOpeningTurn({ env: { ...fixture.env, RUBATO_SYSTEM_PROMPT_FILE: "/tmp/own.md" } }), "");
 });

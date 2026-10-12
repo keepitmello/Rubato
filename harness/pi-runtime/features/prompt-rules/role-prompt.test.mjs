@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createRolePromptExtensionFactories, ROLE_PROMPT_FACTORY_NAME } from "./role-prompt.mjs";
+import { createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME } from "./role-prompt.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
 import { resolveRole } from "../../../rubato-pi/src/role-contract.mjs";
 
@@ -207,4 +207,62 @@ test("contributions made before the role prompt survive its rebuild", async () =
   assert.match(result.systemPrompt, /EARLIER_GUIDANCE$/);
   assert.equal(result.systemPrompt.match(/Current working directory: \/tmp\/x/g)?.length, 1);
   assert.doesNotMatch(result.systemPrompt, /operating inside pi/);
+});
+
+test("the opening turn leads every request of a new session and stays pinned", async (t) => {
+  // It sits ahead of the whole history, so it must never move or change under a cached prefix:
+  // edits on disk reach new sessions only, and a session that already has replies never gets it.
+  const dir = mkdtempSync(join(tmpdir(), "rubato-opening-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const write = (text) => writeFileSync(join(dir, "opening-turn.pi.md"), `${text}\n`);
+  const env = {
+    RUBATO_PI_ROLE: "lead",
+    RUBATO_PROMPTS_DIR: dir,
+    RUBATO_ROLE_PROMPT_MODULE: promptHref,
+    RUBATO_ROLE_CONTRACT_MODULE: roleHref,
+  };
+  const branches = new Map();
+  let current = "session-a";
+  const ctxFor = (id) => {
+    if (!branches.has(id)) branches.set(id, []);
+    return { sessionManager: { getSessionId: () => id, getBranch: () => branches.get(id) } };
+  };
+  const boot = async (bootEnv = env) => {
+    const handlers = {};
+    await createRolePromptExtensionFactories({ env: bootEnv })[0].factory({
+      on(name, fn) { handlers[name] = fn; },
+      appendEntry(customType, data) { branches.get(current).push({ type: "custom", customType, data }); },
+    });
+    return handlers;
+  };
+  const user = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 };
+  const reply = { role: "assistant", content: [{ type: "text", text: "hello" }], timestamp: 2 };
+  const request = async (handlers, id, messages) => {
+    current = id;
+    return (await handlers.context({ type: "context", messages }, ctxFor(id)))?.messages ?? messages;
+  };
+
+  write("I am Lea. First words.");
+  let handlers = await boot();
+  const first = await request(handlers, "session-a", [user]);
+  assert.deepEqual(first[0], openingTurnMessage("I am Lea. First words."));
+  assert.equal(first[1], user);
+
+  write("I am Lea. Edited words.");
+  const later = await request(handlers, "session-a", [user, reply, user]);
+  assert.deepEqual(later[0], first[0], "a running session keeps its opening turn");
+  assert.equal(later.length, 4);
+
+  handlers = await boot();
+  assert.deepEqual((await request(handlers, "session-a", [user, reply]))[0], first[0], "a restart keeps it");
+
+  const fresh = await request(handlers, "session-b", [user]);
+  assert.equal(fresh[0].content[0].text, "I am Lea. Edited words.", "a new session takes the current file");
+
+  const existing = await request(handlers, "session-c", [user, reply]);
+  assert.deepEqual(existing, [user, reply], "a session that already has replies is left as it was");
+  assert.deepEqual(await request(handlers, "session-c", [user]), [user]);
+
+  const custom = await boot({ ...env, RUBATO_SYSTEM_PROMPT_FILE: join(dir, "own.md") });
+  assert.deepEqual(await request(custom, "session-d", [user]), [user], "a custom prompt file gets no opening turn");
 });
