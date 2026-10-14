@@ -31,6 +31,7 @@ import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
+import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2177,6 +2178,11 @@ for (const [relative, changes] of Object.entries(soundEdits)) {
 // Opening a new conversation on another system prompt (session-prompt-edits.mjs).
 overlays.push(...sessionPromptOverlays);
 for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Rewinding to a finished tool step (step-rewind-edits.mjs).
+overlays.push(...stepRewindOverlays);
+for (const [relative, changes] of Object.entries(stepRewindEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

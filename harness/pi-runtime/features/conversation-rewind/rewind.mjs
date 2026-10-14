@@ -55,3 +55,35 @@ export function findRewindTarget(branch, { keep, skip = 0 } = {}) {
   if (passed < skip) throw new Error("The app keeps prompts this conversation does not have");
   return rest.slice(from).find(isInput)?.id ?? null;
 }
+
+const isAssistant = (entry) => entry.type === "message" && entry.message?.role === "assistant";
+const callsOf = (entry) => (Array.isArray(entry.message?.content) ? entry.message.content : [])
+  .filter((part) => part?.type === "toolCall" && typeof part.id === "string")
+  .map((part) => part.id);
+
+/**
+ * Where a rewind to a finished step lands: the last tool result of the reply that made
+ * `toolCallId`. Calls made together answer together, so the step is the whole batch; the
+ * conversation can never stop between a call and its result.
+ *
+ * Landing on a tool result keeps every byte the model saw up to that point, so the next
+ * request (a continuation, or a message the user adds there) reads the cached prefix.
+ */
+export function findStepTarget(branch, toolCallId) {
+  if (typeof toolCallId !== "string" || toolCallId.length === 0) throw new Error("A step rewind must name a tool call");
+  const at = branch.findIndex((entry) => isAssistant(entry) && callsOf(entry).includes(toolCallId));
+  if (at < 0) throw new Error("This step is not on the current branch");
+  const waiting = new Set(callsOf(branch[at]));
+  let target = null;
+  for (const entry of branch.slice(at + 1)) {
+    if (waiting.size === 0) break;
+    if (entry.type === "message" && entry.message?.role === "toolResult" && waiting.has(entry.message.toolCallId)) {
+      waiting.delete(entry.message.toolCallId);
+      target = entry.id;
+      continue;
+    }
+    if (isInput(entry) || isAssistant(entry)) break;
+  }
+  if (waiting.size > 0) throw new Error("This step has not finished, so there is no result to rewind to");
+  return target;
+}

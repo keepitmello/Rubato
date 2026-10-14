@@ -2,7 +2,7 @@
 // Client, socket and child process transport are never replaced in these tests.
 import { createInterface } from 'node:readline';
 import { SessionManager } from '@earendil-works/pi-coding-agent';
-import { findRewindTarget, REWIND_MARK } from '../../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { findRewindTarget, findStepTarget, REWIND_MARK } from '../../../pi-runtime/features/conversation-rewind/rewind.mjs';
 const args = process.argv.slice(2);
 let manager = SessionManager.open(args[args.indexOf('--session') + 1]);
 let running = false;
@@ -19,6 +19,14 @@ const deliveries = [];
 // Answers a test scripts for the next deliveries, as the real handler words them.
 const scripted = [];
 const emit = (value) => process.stdout.write(JSON.stringify(value) + '\n');
+// Distinct timestamps: a reply's identity is its role, timestamp and model.
+let clock = 0;
+const tick = () => { clock = Math.max(clock + 1, Date.now()); return clock; };
+const answer = (text) => {
+  const message = { role: 'assistant', timestamp: tick(), model: 'fixture', stopReason: 'stop', content: [{ type: 'text', text }] };
+  manager.appendMessage(message);
+  emit({ type: 'message_end', message });
+};
 const settle = () => { clearTimeout(timer); running = false; emit({ type: 'agent_end', messages: [] }); emit({ type: 'agent_settled' }); };
 const lines = createInterface({ input: process.stdin });
 lines.on('line', (line) => {
@@ -33,12 +41,17 @@ lines.on('line', (line) => {
     case 'rewind': {
       // The real rule picks the entry; moving the leaf and marking the landing is what the RPC does.
       let targetId;
-      try { targetId = findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip }); }
+      try {
+        targetId = command.step !== undefined ? findStepTarget(manager.getBranch(), command.step)
+          : findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip });
+      }
       catch (failure) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: failure.message }); return; }
-      if (targetId === null) { data = { cancelled: false, moved: false, leafId: manager.getLeafId() }; break; }
+      if (targetId === null || (command.step !== undefined && targetId === manager.getLeafId())) { data = { cancelled: false, moved: false, leafId: manager.getLeafId() }; break; }
       const from = manager.getLeafId();
       const target = manager.getEntry(targetId);
-      if (target.parentId) manager.branch(target.parentId); else manager.resetLeaf();
+      // A step lands on its last result; a turn rewind lands before the first entry it drops.
+      if (command.step !== undefined) manager.branch(targetId);
+      else if (target.parentId) manager.branch(target.parentId); else manager.resetLeaf();
       manager.appendCustomEntry(REWIND_MARK, { from });
       data = { cancelled: false, moved: true, leafId: manager.getLeafId() };
       break;
@@ -67,14 +80,32 @@ lines.on('line', (line) => {
         pendingWork = command.message === 'busy-children' ? 1 : 0;
         timer = setTimeout(settle, 10);
       }
+      else if (command.message.startsWith('tools:')) {
+        // `tools:a|b,c`: one reply per batch, calling its tools together; each answers, then
+        // a closing answer. Calls made together are one rewind step.
+        // A model call sits between batches, so each batch lands later than the last.
+        timer = setTimeout(async () => {
+          for (const batch of command.message.slice('tools:'.length).split('|')) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+            const ids = batch.split(',');
+            const message = { role: 'assistant', timestamp: tick(), model: 'fixture', stopReason: 'toolUse',
+              content: [{ type: 'text', text: `calling ${batch}` }, ...ids.map((id) => ({ type: 'toolCall', id, name: 'read', arguments: { path: id } }))] };
+            manager.appendMessage(message);
+            emit({ type: 'message_end', message });
+            for (const id of ids) emit({ type: 'tool_execution_start', toolCallId: id, toolName: 'read', args: { path: id } });
+            for (const id of ids) {
+              manager.appendMessage({ role: 'toolResult', toolCallId: id, toolName: 'read', content: [{ type: 'text', text: id }], isError: false, timestamp: tick() });
+              emit({ type: 'tool_execution_end', toolCallId: id, toolName: 'read', result: { content: [{ type: 'text', text: id }] }, isError: false });
+            }
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          answer('tools done');
+          settle();
+        }, 20);
+      }
       else if (command.message.startsWith('reply:') || command.message.startsWith('wake:')) {
         // A turn that answers; `wake:` also has a child finish afterwards and wake the lead
         // without a user message, as a completed task does.
-        const answer = (text) => {
-          const message = { role: 'assistant', timestamp: Date.now(), model: 'fixture', stopReason: 'stop', content: [{ type: 'text', text }] };
-          manager.appendMessage(message);
-          emit({ type: 'message_end', message });
-        };
         const text = command.message.slice(command.message.indexOf(':') + 1);
         timer = setTimeout(() => {
           answer(`answer to ${text}`);
@@ -111,6 +142,14 @@ lines.on('line', (line) => {
       }
       else timer = setTimeout(settle, command.message === 'background' ? 10000 : 350);
       break;
+    case 'continue': {
+      const last = manager.getBranch().filter((item) => item.type === 'message').at(-1)?.message;
+      if (running || last?.role !== 'toolResult') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Only a conversation that stops at a tool result can continue without a message' }); return; }
+      running = true;
+      emit({ type: 'agent_start' });
+      timer = setTimeout(() => { answer('continued'); settle(); }, 20);
+      break;
+    }
     case 'steer': case 'follow_up': running = true; break;
     case 'abort': settle(); break;
     case 'set_session_name': manager.appendSessionInfo(command.name); break;

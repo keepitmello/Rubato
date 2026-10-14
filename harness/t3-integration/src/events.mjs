@@ -361,14 +361,19 @@ export class EventProjection {
     this.text = new Map(); this.thinking = new Map(); this.completed = new Set(); this.questions = new Map();
     this.tasks = new Map(); this.children = new Map(); this.spawns = new Map();
     this.teams = new Map(); this.boards = new Map(); this.toolArgs = new Map();
+    // toolCallId -> the reply that made the call. Calls made together are one rewind step.
+    this.steps = new Map();
     // Session messages the thread already holds. Kept across reset(): a rewind
     // rebinds the session, not the thread, and the thread keeps what it showed.
     this.delivered = new Set();
   }
+  /** Emits one runtime event and answers its createdAt. */
   event(type, payload, fields = {}) {
+    const createdAt = new Date().toISOString();
     this.emit({ eventId: randomUUID(), provider: 'rubato-pi', providerInstanceId: this.instanceId,
-      threadId: this.threadId, createdAt: new Date().toISOString(),
+      threadId: this.threadId, createdAt,
       ...(this.turnId ? { turnId: this.turnId } : {}), ...fields, type, payload: withoutBlankLabels(payload) });
+    return createdAt;
   }
   reset(sessionId = this.sessionId) {
     this.sessionId = sessionId;
@@ -537,6 +542,8 @@ export class EventProjection {
     }
     if (message?.role !== 'assistant') return;
     const itemId = messageKey(this.sessionId, message);
+    for (const part of Array.isArray(message.content) ? message.content : [])
+      if (part?.type === 'toolCall' && nonempty(part.id)) this.steps.set(part.id, itemId);
     // Thinking goes out before text, as Pi orders the content. T3 stamps a row
     // when its first delta lands, and a message often reaches us whole (both
     // blocks in one update): sending text first stored the thought after its
@@ -692,11 +699,12 @@ export class EventProjection {
     this.indexTask(task, task.toolUseId);
     // Title lives on linkage. Repeating it as description made every row say the
     // same sentence twice before anything had happened.
-    this.taskEvent('task.started', { taskId: id, ...this.linkage(task) }, task);
+    // When its row was stamped: a step rewind drops the rows of its turn stamped after the step.
+    task.startedAt = this.taskEvent('task.started', { taskId: id, ...this.linkage(task) }, task);
     return task;
   }
   taskEvent(type, payload, task) {
-    this.event(type, payload, (!this.turnId && task?.turnId) ? { turnId: task.turnId } : {});
+    return this.event(type, payload, (!this.turnId && task?.turnId) ? { turnId: task.turnId } : {});
   }
   progressTask(task, { description, summary, lastToolName, status, error, typedUsage }) {
     const note = nonempty(summary);
@@ -710,13 +718,16 @@ export class EventProjection {
   }
   /**
    * A rewind drops the turns a task was started in, and T3 drops that task's rows with
-   * them. A task still running is not part of the history that was taken back, so it
-   * is announced again without a turn: its row, where it was, and its team's board.
+   * them; a step rewind (`cut`) also drops the rows its turn stamped after the step. A
+   * task still running is not part of the history that was taken back, so it is
+   * announced again without a turn: its row, where it was, and its team's board.
    */
-  reannounce(droppedTurnIds) {
+  reannounce(droppedTurnIds, cut) {
     const live = [];
     for (const task of new Set(this.tasks.values())) {
-      if (!droppedTurnIds.has(task.turnId)) continue;
+      const droppedRow = droppedTurnIds.has(task.turnId) || (cut && task.turnId === cut.turnId
+        && task.startedAt !== undefined && Date.parse(task.startedAt) > Date.parse(cut.after));
+      if (!droppedRow) continue;
       task.turnId = undefined;
       if (!task.done) live.push(task);
     }
@@ -1001,7 +1012,11 @@ export class EventProjection {
         const spawn = SPAWN_TOOLS.has(event.toolName);
         const presentation = toolPresentation(event.toolName, event.args, event.result ?? event.partialResult);
         const type = event.type === 'tool_execution_start' ? 'item.started' : event.type === 'tool_execution_end' ? 'item.completed' : 'item.updated';
-        const data = { ...record(event.result ?? event.partialResult ?? event.args ?? {}), toolCallId: event.toolCallId };
+        // `rubatoStep` names the batch the call belongs to, so the app rewinds after all of it.
+        const step = this.steps.get(event.toolCallId);
+        if (event.type === 'tool_execution_end') this.steps.delete(event.toolCallId);
+        const data = { ...record(event.result ?? event.partialResult ?? event.args ?? {}), toolCallId: event.toolCallId,
+          ...(step ? { rubatoStep: step } : {}) };
         const status = event.type === 'tool_execution_end' ? event.isError ? 'failed' : 'completed' : 'inProgress';
         const itemId = spawn ? event.toolCallId : `pi-tool:${this.sessionId}:${event.toolCallId}`;
         if (spawn) this.event(type, { ...presentation, status, data }, { itemId });
@@ -1020,6 +1035,7 @@ export class EventProjection {
             ...(command && event.type === 'tool_execution_end' ? { command } : {}) } }, { itemId });
           if (event.type === 'tool_execution_start') {
             this.event('item.updated', { ...presentation, status, data: { toolCallId: event.toolCallId, rubatoActivity,
+              ...(step ? { rubatoStep: step } : {}),
               ...(command ? { command } : {}) } }, { itemId });
           }
         }

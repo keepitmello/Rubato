@@ -70,3 +70,33 @@ export function retainUserMessagesAfterRevert(
   }
   return { retained, decided, promptlessTurns };
 }
+
+/** Where a Rubato step rewind cuts its turn: rows of `turnId` stamped after `after` go. */
+export interface RevertCutRef {
+  readonly turnId: string;
+  readonly after: string;
+}
+
+interface RevertCutRow {
+  readonly turnId: string | null;
+  readonly createdAt: string;
+  readonly role?: string;
+}
+
+/**
+ * The rows a step rewind keeps, from those its turn count kept. A step rewind lands after
+ * a finished tool step inside a turn, so that turn's rows stamped after the step go, and
+ * so does a message steered in after it (a user message is stored without a turn). Rows
+ * of no turn that are not user messages, like session notices, stay.
+ */
+export function keptAfterRevertCut<Rows extends ReadonlyArray<RevertCutRow>>(
+  rows: Rows,
+  cut: RevertCutRef | undefined,
+): Rows {
+  if (cut === undefined) return rows;
+  return rows.filter(
+    (row) =>
+      compareDateTimeStrings(row.createdAt, cut.after) <= 0 ||
+      !(row.turnId === cut.turnId || (row.turnId === null && row.role === "user")),
+  ) as unknown as Rows;
+}

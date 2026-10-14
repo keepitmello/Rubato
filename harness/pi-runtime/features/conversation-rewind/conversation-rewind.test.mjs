@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { feature, files, patches, patchRpcRewind } from "./patches.mjs";
-import { findRewindTarget, messageFingerprint } from "./rewind.mjs";
+import { findRewindTarget, findStepTarget, messageFingerprint } from "./rewind.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const stockRpc = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-mode.js");
@@ -23,6 +23,10 @@ test("descriptor is stock-locked, listed on the candidate, and adds the rewind c
   const patched = patchRpcRewind(readFileSync(stockRpc, "utf8"));
   assert.match(patched, /case "rewind": \{/);
   assert.match(patched, /session\.navigateTree\(targetId, \{ summarize: false \}\)/);
+  assert.match(patched, /findStepTarget\(manager\.getBranch\(\), command\.step\)/);
+  assert.match(patched, /case "continue": \{/);
+  // A continuation adds nothing to the history: the run answers the tool results there.
+  assert.match(patched, /session\._runAgentPrompt\(\[\]\)/);
   assert.throws(() => patchRpcRewind(patched), /pristine/);
 });
 
@@ -105,4 +109,49 @@ test("what the app cannot name is refused, not guessed", () => {
   assert.throws(() => findRewindTarget(branch, { keep: ["000000000000000000000000"] }), /not on the current branch/);
   assert.throws(() => findRewindTarget(branch, {}), /must name/);
   assert.throws(() => findRewindTarget(branch, { keep: [], skip: -1 }), /integer >= 0/);
+});
+
+// Entries for a step rewind: replies that call tools, and the results that answer them.
+function steps(items) {
+  let parentId = null;
+  return items.map((item, index) => {
+    const id = `s${index}`;
+    const base = { id, parentId };
+    parentId = id;
+    const [kind, value, extra] = item;
+    if (kind === "user") return { ...base, type: "message", message: { role: "user", content: value, timestamp: index } };
+    if (kind === "calls") return { ...base, type: "message", message: { role: "assistant", timestamp: index, model: "m",
+      content: [{ type: "text", text: "on it" }, ...value.map((callId) => ({ type: "toolCall", id: callId, name: "read", arguments: {} }))] } };
+    if (kind === "result") return { ...base, type: "message", message: { role: "toolResult", toolCallId: value, content: [], timestamp: index } };
+    if (kind === "reply") return { ...base, type: "message", message: { role: "assistant", content: [{ type: "text", text: value }], timestamp: index, model: "m" } };
+    if (kind === "wake") return { ...base, type: "custom_message", customType: "rubato.task.completion", content: value };
+    return { ...base, type: "custom", customType: value, data: extra };
+  });
+}
+
+test("a step rewind lands on the last result of the reply that made the call", () => {
+  const branch = steps([
+    ["user", "fix it"], ["calls", ["a"]], ["result", "a"],
+    ["calls", ["b", "c"]], ["result", "c"], ["result", "b"],
+    ["calls", ["d"]], ["result", "d"], ["reply", "done"],
+  ]);
+  assert.equal(findStepTarget(branch, "a"), "s2");
+  // Calls made together answer together: either one lands after both results.
+  assert.equal(findStepTarget(branch, "b"), "s5");
+  assert.equal(findStepTarget(branch, "c"), "s5");
+  assert.equal(findStepTarget(branch, "d"), "s7");
+});
+
+test("a step rewind drops a message steered in after the step", () => {
+  const branch = steps([["user", "fix it"], ["calls", ["a"]], ["result", "a"], ["user", "steer: not that file"], ["calls", ["b"]], ["result", "b"]]);
+  assert.equal(findStepTarget(branch, "a"), "s2");
+});
+
+test("a step that has not finished, or is not on the branch, is refused", () => {
+  const running = steps([["user", "fix it"], ["calls", ["a", "b"]], ["result", "a"]]);
+  assert.throws(() => findStepTarget(running, "a"), /has not finished/);
+  const interrupted = steps([["user", "fix it"], ["calls", ["a"]], ["user", "stop"], ["result", "a"]]);
+  assert.throws(() => findStepTarget(interrupted, "a"), /has not finished/);
+  assert.throws(() => findStepTarget(running, "zzz"), /not on the current branch/);
+  assert.throws(() => findStepTarget(running, ""), /must name a tool call/);
 });

@@ -58,6 +58,12 @@ export interface PiSessionMessage {
   readonly createdAt: string;
   readonly context: unknown;
 }
+/** A rewind that lands after a finished tool step: its row's call id, its turn, and when it finished. */
+export interface RubatoRevertStep {
+  readonly turnId: string;
+  readonly toolCallId: string;
+  readonly after: string;
+}
 export type PiImportedMessage =
   | {readonly id: string; readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string; readonly context?: undefined}
   | PiSessionMessage;
@@ -67,6 +73,7 @@ export interface PiBridge {
   projectedThread: (threadId: string) => Promise<{
     messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null; createdAt: string}>;
     checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;
+    activities?: ReadonlyArray<{kind: string; turnId: string | null; createdAt: string}>;
   } | null>;
   inventory(): Promise<ReadonlyArray<PiSummary>>;
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
@@ -99,7 +106,10 @@ export interface PiBridge {
   hasSession(threadId: string): boolean;
   ownsSession(sessionId: string): boolean;
   readThread(threadId: string): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
-  rollbackThread(threadId: string, numTurns: number): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
+  /** `step` lands inside a turn, after a finished tool step (bridge stepRewindPlan). */
+  rollbackThread(threadId: string, numTurns: number, step?: RubatoRevertStep): Promise<{threadId: string; turns: ReadonlyArray<{id:string;items:ReadonlyArray<unknown>}>}>;
+  /** Runs again from a step rewind's tool results with no new message. */
+  continueThread(threadId: string): Promise<void>;
   close(): Promise<void>;
 }
 /** 카탈로그 조회 결과. 기계 스냅샷 조립과 워크스페이스 조회가 같은 모양을 쓴다. */
@@ -206,8 +216,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
         const snapshot = await bridge.readThread(id);
         return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
       }),
-      rollbackThread:(id, numTurns) => request("rollbackThread", async () => {
-        const snapshot = await bridge.rollbackThread(id, numTurns);
+      rollbackThread:(id, numTurns, step) => request("rollbackThread", async () => {
+        const snapshot = await bridge.rollbackThread(id, numTurns, step);
         return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
       }),
       stopAll:() => request("stopAll", () => Promise.all(bridge.listSessions().map((value) => decodeSession(value)).map((session) => bridge.stopSession(session.threadId))).then(() => undefined)),

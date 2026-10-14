@@ -177,7 +177,7 @@ class RuntimeHandle {
     if (this.worker.presentationOwner && !command.type.startsWith('get_')) throw invalid('This conversation is controlled by a CLI terminal; detach it before controlling it from another window');
     this.calls++;
     clearTimeout(this.timer);
-    if (INPUT_COMMANDS.has(command.type) || command.type === 'compact') { this.running = true; this.publish(); }
+    if (INPUT_COMMANDS.has(command.type) || command.type === 'compact' || command.type === 'continue') { this.running = true; this.publish(); }
     try {
       const response = await this.worker.request(workerRequest(command));
       if (command.type === 'get_state') this.acceptState(response);

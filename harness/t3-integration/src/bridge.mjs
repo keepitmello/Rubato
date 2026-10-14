@@ -162,6 +162,36 @@ export function rewindPlan(thread, numTurns) {
   }
   return { keep: [...keep], skip, dropped };
 }
+/** The Pi call a T3 tool row names: `pi-tool:<session>:<call>`, or a spawn's bare call id. */
+const piCallOf = (toolCallId) => /^pi-tool:[^:]+:(.+)$/.exec(toolCallId ?? '')?.[1] ?? toolCallId;
+const later = (createdAt, after) => Date.parse(createdAt) > Date.parse(after);
+/**
+ * What a rewind to a finished tool step drops. T3 names the step's row (its call id),
+ * the turn it is in and the instant the step finished (`after`). T3 drops the turns past
+ * that one and, inside it, every row stamped after `after` (rubatoRevertStep.ts); Pi lands
+ * on the step's last tool result and decides alone whether the step finished.
+ */
+export function stepRewindPlan(thread, numTurns, step) {
+  const checkpoints = thread?.checkpoints ?? [];
+  if (checkpoints.length === 0) throw new Error("Rubato could not read this thread's turns to rewind it");
+  const call = piCallOf(step?.toolCallId);
+  if (typeof call !== 'string' || !call || typeof step?.turnId !== 'string' || Number.isNaN(Date.parse(step?.after)))
+    throw new Error('A step rewind must name a finished tool call, its turn and when it finished');
+  const target = Math.max(...checkpoints.map((checkpoint) => checkpoint.checkpointTurnCount)) - numTurns;
+  if (!checkpoints.some((checkpoint) => checkpoint.turnId === step.turnId && checkpoint.checkpointTurnCount === target))
+    throw new Error('This step is not in the turn the rewind keeps');
+  const dropped = checkpoints.filter((checkpoint) => checkpoint.checkpointTurnCount > target).map((checkpoint) => checkpoint.turnId);
+  return { step: call, dropped, cut: { turnId: step.turnId, after: step.after } };
+}
+/** Whether T3 still shows a row a revert removes: a dropped turn, or a row past the step's cut. */
+function revertPending(thread, { dropped, cut }) {
+  if (!thread) return true;
+  const turns = new Set(dropped);
+  if (thread.checkpoints.some((checkpoint) => turns.has(checkpoint.turnId))) return true;
+  if (!cut) return false;
+  return [...thread.messages, ...(thread.activities ?? [])].some((row) => later(row.createdAt, cut.after)
+    && (row.turnId === cut.turnId || (row.role === 'user' && row.turnId == null)));
+}
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession }) {
@@ -717,24 +747,31 @@ export class RubatoPiBridge {
   // teams, and the abandoned branch all stay. (A fork would replace the session and
   // suspend its children under an id nothing resumes.) Where to land is named by
   // what T3 keeps (`rewindPlan`).
-  rollbackThread(threadId, numTurns) {
+  //
+  // A `step` rewind lands inside a turn instead, after a finished tool step
+  // (`stepRewindPlan`), and may keep every turn (numTurns 0).
+  rollbackThread(threadId, numTurns, step) {
     const context = this.require(threadId);
+    const atStep = step !== undefined && step !== null;
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before rewind');
-      if (!Number.isInteger(numTurns) || numTurns < 1) throw new Error('numTurns must be an integer >= 1');
+      const least = atStep ? 0 : 1;
+      if (!Number.isInteger(numTurns) || numTurns < least) throw new Error(`numTurns must be an integer >= ${least}`);
       if (context.syncing) await context.syncing;
       if (context.session.status === 'running') throw new Error('Interrupt the current turn before rewinding');
       let thread;
       try { thread = await this.projectedThread(threadId); }
       catch (error) { throw new Error(`Rubato could not read this thread's turns to rewind it: ${error instanceof Error ? error.message : error}`); }
-      const plan = rewindPlan(thread, numTurns);
+      const plan = atStep ? stepRewindPlan(thread, numTurns, step) : rewindPlan(thread, numTurns);
       // T3 applies the revert after this returns, and it drops every turn past its
       // checkpoint, including one a child's completion opens on the new branch in the
       // meantime. So Pi's events wait until T3 has applied it (releaseAfterRevert).
       this.hold(context);
       let snapshot;
       try {
-        const result = await context.client.command({ type: 'rewind', keep: plan.keep, skip: plan.skip });
+        const result = await context.client.command(atStep
+          ? { type: 'rewind', step: plan.step }
+          : { type: 'rewind', keep: plan.keep, skip: plan.skip });
         if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
         snapshot = await context.client.snapshot();
         await this.afterRewind(context, snapshot);
@@ -742,7 +779,7 @@ export class RubatoPiBridge {
         this.release(context);
         throw error;
       }
-      void this.releaseAfterRevert(context, threadId, new Set(plan.dropped));
+      void this.releaseAfterRevert(context, threadId, plan);
       return { threadId, turns: [{ id: context.projection.turnId ?? `pi-history:${context.sessionId}`, items: snapshot.messages }] };
     });
     context.queue = operation.catch(() => {});
@@ -761,20 +798,35 @@ export class RubatoPiBridge {
     this.stateEvent(context);
   }
   /**
-   * Wait for T3 to apply the revert (its projection no longer holds the dropped turns),
-   * then announce again the live tasks those turns started, since T3 dropped their rows
-   * with the turns, and let Pi's held events through. A revert T3 never applies (it
-   * failed after the rollback) stops holding after a while rather than for good.
+   * Wait for T3 to apply the revert (its projection no longer holds the dropped rows),
+   * then announce again the live tasks started in what it dropped, since T3 dropped their
+   * rows too, and let Pi's held events through. A revert T3 never applies (it failed
+   * after the rollback) stops holding after a while rather than for good.
    */
-  async releaseAfterRevert(context, threadId, dropped, { waitMs = 10_000, pollMs = 50 } = {}) {
+  async releaseAfterRevert(context, threadId, plan, { waitMs = 10_000, pollMs = 50 } = {}) {
     const until = Date.now() + waitMs;
     while (!context.stopped && Date.now() < until) {
       const thread = await this.projectedThread(threadId).catch(() => null);
-      if (thread && !thread.checkpoints.some((checkpoint) => dropped.has(checkpoint.turnId))) break;
+      if (!revertPending(thread, plan)) break;
       await delay(pollMs);
     }
-    if (!context.stopped) context.projection.reannounce(dropped);
+    if (!context.stopped) context.projection.reannounce(new Set(plan.dropped), plan.cut);
     this.release(context);
+  }
+  /**
+   * Run again from where a step rewind left the conversation, adding no message. Pi
+   * starts the run the way a wake does, so its turn opens on agent_start.
+   */
+  continueThread(threadId) {
+    const context = this.require(threadId);
+    const operation = context.queue.then(async () => {
+      if (context.stopped) throw new Error('Attachment closed before continuing');
+      if (context.syncing) await context.syncing;
+      if (context.session.status === 'running') throw new Error('Wait for the current turn to finish before continuing');
+      await context.client.command({ type: 'continue' });
+    });
+    context.queue = operation.catch(() => {});
+    return operation;
   }
   hold(context) {
     context.holds = (context.holds ?? 0) + 1;

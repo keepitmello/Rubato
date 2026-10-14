@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { handleCacheWarmingRequest, rewindPlan, userStartedSession } from '../src/bridge.mjs';
+import { handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -758,6 +758,95 @@ test('rewinding a Rubato thread stays in its Pi session and cuts where T3 does, 
   assert.equal(bridge.sessions.get('rewind-thread').holding, undefined, 'a refused rewind left events held');
   await bridge.recover();
   assert.equal(bridge.sessions.get('rewind-thread').sessionId, sessionId);
+});
+
+// T3's view for a step rewind: messages, checkpoints and finished tool rows. `test.cut`
+// plays T3 applying it: turns past the step's go, and in its turn every row after `after`.
+function t3StepThread(log) {
+  let messages = []; let checkpoints = []; let activities = [];
+  for (const event of log) {
+    if (event.type === 'test.user') messages.push({ id: `user-${messages.length}`, role: 'user', text: event.text, turnId: null, createdAt: event.createdAt });
+    if (event.type === 'item.completed' && event.payload?.itemType === 'assistant_message')
+      messages.push({ id: `assistant:${event.itemId}`, role: 'assistant', text: event.payload.detail ?? '', turnId: event.turnId, createdAt: event.createdAt });
+    if (event.type === 'item.completed' && event.payload?.itemType === 'dynamic_tool_call')
+      activities.push({ kind: 'tool.completed', turnId: event.turnId, createdAt: event.createdAt, toolCallId: event.itemId, step: event.payload.data?.rubatoStep });
+    if (event.type === 'turn.completed') checkpoints.push({ turnId: event.turnId, checkpointTurnCount: checkpoints.length + 1 });
+    if (event.type === 'test.cut') {
+      const keepTurns = new Set(checkpoints.slice(0, event.keep).map((checkpoint) => checkpoint.turnId));
+      const kept = (row) => (row.turnId == null ? row.role === 'user' : keepTurns.has(row.turnId))
+        && !(Date.parse(row.createdAt) > Date.parse(event.after) && (row.turnId === event.turnId || row.turnId == null));
+      messages = messages.filter(kept); activities = activities.filter(kept);
+      checkpoints = checkpoints.slice(0, event.keep);
+    }
+  }
+  return { messages, checkpoints, activities };
+}
+
+test('a step rewind lands after the whole tool batch, keeps the session and the cached history, and continues without a message', async (t) => {
+  const { root, events, bridge } = await setup(t);
+  bridge.projectedThread = async () => t3StepThread(events);
+  const session = await bridge.startSession({ threadId:'step-thread', runtimeMode:'full-access', cwd:root });
+  const sessionId = session.resumeCursor.sessionId;
+  const turns = () => events.filter((event) => event.type==='turn.completed').length;
+  const send = async (input) => {
+    const before = turns();
+    events.push({ type: 'test.user', text: input, createdAt: new Date().toISOString() });
+    await bridge.sendTurn({ threadId:'step-thread', input });
+    await until(() => turns() > before);
+  };
+  await send('tools:a|b,c|d');
+  const tool = (call) => events.findLast((event) => event.type === 'item.completed' && event.itemId === `pi-tool:${sessionId}:${call}`);
+  // Calls made together carry one step; the app rewinds after all of them.
+  assert.equal(tool('b').payload.data.rubatoStep, tool('c').payload.data.rubatoStep);
+  assert.notEqual(tool('a').payload.data.rubatoStep, tool('b').payload.data.rubatoStep);
+  const historyBefore = (await bridge.readThread('step-thread')).turns[0].items;
+  // T3 names the row the person picked (b), its turn and when that batch finished.
+  const after = [tool('b'), tool('c')].map((event) => event.createdAt).sort().at(-1);
+  const step = { toolCallId: tool('b').itemId, turnId: tool('b').turnId, after };
+  const rolled = await bridge.rollbackThread('step-thread', 0, step);
+  const items = rolled.turns[0].items;
+  assert.deepEqual(items.map((message) => message.role), ['user', 'assistant', 'toolResult', 'assistant', 'toolResult', 'toolResult']);
+  // Every message kept is the one the model saw before: the cached prefix stays byte for byte.
+  assert.deepEqual(items, historyBefore.slice(0, items.length));
+  assert.ok(bridge.sessions.get('step-thread').holding, 'released before T3 applied the cut');
+  events.push({ type: 'test.cut', keep: 1, turnId: step.turnId, after });
+  await until(() => !bridge.sessions.get('step-thread').holding);
+  assert.deepEqual(t3StepThread(events).activities.map((row) => row.toolCallId.split(':').at(-1)), ['a', 'b', 'c']);
+  // Continuing adds no message: the next reply answers the kept tool results.
+  const before = turns();
+  await bridge.continueThread('step-thread');
+  await until(() => turns() > before);
+  const continued = (await bridge.readThread('step-thread')).turns[0].items;
+  assert.deepEqual(continued.slice(0, items.length), items);
+  assert.deepEqual(continued.slice(items.length).map((message) => [message.role, userContent(message)]), [['assistant', 'continued']]);
+  // Continuing is only for a conversation stopped at a tool result.
+  await assert.rejects(bridge.continueThread('step-thread'), /stops at a tool result/);
+  // A message added at a step goes right after its results, like a steer would.
+  await send('tools:e|f');
+  const again = { toolCallId: tool('e').itemId, turnId: tool('e').turnId, after: tool('e').createdAt };
+  await bridge.rollbackThread('step-thread', 0, again);
+  events.push({ type: 'test.cut', keep: t3StepThread(events).checkpoints.length, turnId: again.turnId, after: again.after });
+  await until(() => !bridge.sessions.get('step-thread').holding);
+  await send('reply:instead');
+  const tail = (await bridge.readThread('step-thread')).turns[0].items.slice(-3);
+  assert.deepEqual(tail.map((message) => message.role), ['toolResult', 'user', 'assistant']);
+  assert.equal(tail[0].toolCallId, 'e');
+  assert.equal(bridge.sessions.get('step-thread').sessionId, sessionId);
+  // Pi decides whether the step can be rewound, and its reason reaches the app.
+  await assert.rejects(bridge.rollbackThread('step-thread', 1, { ...again, toolCallId: `pi-tool:${sessionId}:zzz` }), /not on the current branch/);
+  assert.equal(bridge.sessions.get('step-thread').holding, undefined, 'a refused rewind left events held');
+});
+
+test('a step rewind plan names the Pi call, keeps the step\'s turn and drops the turns after it', () => {
+  const checkpoints = [{ turnId: 't1', checkpointTurnCount: 1 }, { turnId: 't2', checkpointTurnCount: 2 }, { turnId: 't3', checkpointTurnCount: 3 }];
+  const after = '2026-01-01T00:00:00.000Z';
+  assert.deepEqual(stepRewindPlan({ messages: [], checkpoints }, 1, { toolCallId: 'pi-tool:s1:call_7', turnId: 't2', after }),
+    { step: 'call_7', dropped: ['t3'], cut: { turnId: 't2', after } });
+  // A spawn row carries the bare call id.
+  assert.equal(stepRewindPlan({ messages: [], checkpoints }, 0, { toolCallId: 'toolu_1', turnId: 't3', after }).step, 'toolu_1');
+  assert.throws(() => stepRewindPlan({ messages: [], checkpoints }, 0, { toolCallId: 'pi-tool:s1:x', turnId: 't2', after }), /not in the turn/);
+  assert.throws(() => stepRewindPlan({ messages: [], checkpoints }, 0, { toolCallId: 'pi-tool:s1:x', turnId: 't3' }), /must name/);
+  assert.throws(() => stepRewindPlan({ messages: [], checkpoints: [] }, 0, { toolCallId: 'x', turnId: 't1', after }), /could not read/);
 });
 
 test('a rewind plan pairs each prompt with the reply after it, as T3 keeps them on revert', () => {
