@@ -151,3 +151,12 @@ export const rubatoAgentsRouteLayer = serviceRouteLayer({
   handler: "handleAgentsRequest",
   name: "agents",
 });
+
+// Settings > General > Behavior: the Mac's alert sounds a notification can play (sound-edits.mjs).
+export const rubatoSoundsRouteLayer = serviceRouteLayer({
+  route: "/rubato/sounds",
+  file: "sounds/service.mjs",
+  service: "soundsService",
+  handler: "handleSoundsRequest",
+  name: "sounds",
+});

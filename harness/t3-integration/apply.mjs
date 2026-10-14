@@ -29,6 +29,7 @@ import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-e
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
+import { soundEdits, soundOverlays } from './sound-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2165,6 +2166,11 @@ for (const [relative, changes] of Object.entries(fileLinkEdits)) {
 // The server build can write into a sibling directory while the app runs (staged-build-edits.mjs).
 overlays.push(...stagedBuildOverlays);
 for (const [relative, changes] of Object.entries(stagedBuildEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Which sound a thread notification plays (sound-edits.mjs).
+overlays.push(...soundOverlays);
+for (const [relative, changes] of Object.entries(soundEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

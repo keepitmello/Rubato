@@ -90,6 +90,7 @@
     "tsconfig.base.json": "3c4971bce186971debdd3e817555c65345ec9d7156fd7662270062519c0d203b",
     "packages/client-runtime/src/state/shell.ts": "f5b9ccd3100f6086b9038b3a54e691c412faae047dbbd503102efb03cc9e8bf2",
     "packages/client-runtime/src/markdownLinks.ts": "7fdccfefb8406197339e0aa3ccd215e787325352bd5fcdb0a32d3464999f30e0",
-    "apps/server/scripts/cli.ts": "685b902afd14c37741a8581b94eea11e553ee7703fe40fa04eabc44cde2dc80a"
+    "apps/server/scripts/cli.ts": "685b902afd14c37741a8581b94eea11e553ee7703fe40fa04eabc44cde2dc80a",
+    "apps/web/src/threadNotifications.ts": "fb14d30f386ab6d45dfde3e7057b86bd40f6dce07bb343cef8d790be9fb8a605"
   }
 }
