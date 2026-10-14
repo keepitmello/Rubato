@@ -37,6 +37,14 @@
 // the SessionManager projection and stock's `turn_end` flush appends to the session, so the
 // next request of the same run already carries them right after the latest tool results.
 // That part was deleted in the 1.0.1 migration; session-prompt.test.mjs pins the behavior.
+//
+// A session opened with a replacement prompt (pi-server's create `systemPrompt`) carries it
+// as a `rubato.system-prompt` entry. That text is the whole system prompt of every request,
+// verbatim: no handler composes around it, so no role prose, memory, notes guidance, skills
+// listing or project context reaches it. Forks copy the entry with the history.
+
+/** The custom entry holding a session's replacement system prompt (`data.value`). */
+export const SYSTEM_PROMPT_REPLACEMENT_ENTRY = "rubato.system-prompt";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 import { PI_VERSION as VERSION } from "../../pi-version.mjs";
@@ -195,7 +203,7 @@ export function patchAgentSession(source) {
     `            const forced = this._runSystemPromptOptions?.forceSystemPrompt;
             if (forced === undefined)
                 return transformed;`,
-    `            const forced = this._runSystemPromptOptions?.forceSystemPrompt ?? await this._composeSessionSystemPrompt();
+    `            const forced = this._replacedSessionSystemPrompt() ?? this._runSystemPromptOptions?.forceSystemPrompt ?? await this._composeSessionSystemPrompt();
             if (forced === undefined)
                 return transformed;`,
     "projection-compose",
@@ -245,6 +253,24 @@ export function patchAgentSession(source) {
      * Restore the active tool loadout declared by the session transcript, if it declares one.
 `,
     `    /**
+     * The prompt the session was opened with in place of the composed one, read from its
+     * \`${SYSTEM_PROMPT_REPLACEMENT_ENTRY}\` entry: the whole system prompt, verbatim.
+     */
+    _replacedSessionSystemPrompt() {
+        const branch = this.sessionManager?.getBranch?.() ?? [];
+        for (let index = branch.length - 1; index >= 0; index--) {
+            const entry = branch[index];
+            if (entry?.type !== "custom" || entry.customType !== ${JSON.stringify(SYSTEM_PROMPT_REPLACEMENT_ENTRY)})
+                continue;
+            const value = entry.data?.value;
+            if (typeof value !== "string")
+                return undefined;
+            this._composedSystemPrompt = value;
+            return value;
+        }
+        return undefined;
+    }
+    /**
      * The session's composed prompt for the next request. Every run shape reaches this
      * through the projection, so a wake-started run carries the same prompt as a prompted one.
      */
@@ -280,7 +306,7 @@ export function patchAgentSession(source) {
     `    get systemPrompt() {
         return buildSystemPrompt(this._runSystemPromptOptions ?? this._baseSystemPromptOptions);`,
     `    get systemPrompt() {
-        const forced = this._runSystemPromptOptions?.forceSystemPrompt ?? this._composedSystemPrompt;
+        const forced = this._replacedSessionSystemPrompt() ?? this._runSystemPromptOptions?.forceSystemPrompt ?? this._composedSystemPrompt;
         if (forced !== undefined)
             return forced;
         return buildSystemPrompt(this._runSystemPromptOptions ?? this._baseSystemPromptOptions);`,

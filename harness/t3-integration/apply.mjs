@@ -30,6 +30,7 @@ import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
+import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -2171,6 +2172,11 @@ for (const [relative, changes] of Object.entries(stagedBuildEdits)) {
 // Which sound a thread notification plays (sound-edits.mjs).
 overlays.push(...soundOverlays);
 for (const [relative, changes] of Object.entries(soundEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Opening a new conversation on another system prompt (session-prompt-edits.mjs).
+overlays.push(...sessionPromptOverlays);
+for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

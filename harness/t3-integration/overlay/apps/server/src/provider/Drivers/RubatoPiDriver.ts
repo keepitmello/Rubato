@@ -38,6 +38,18 @@ export interface PiSummary {
   /** The session a side chat was opened from; absent for every other session. */
   readonly sideChatOf?: string;
 }
+/** A prompt file a new conversation can open with (bridge session-prompts.mjs). */
+export interface PiSessionPromptEntry {
+  readonly id: string;
+  readonly label: string;
+  readonly source: string;
+}
+/** The prompt a session runs on instead of Rubato's own; never its text. */
+export interface PiSessionPromptSummary {
+  readonly label?: string;
+  readonly source?: string;
+  readonly createdAt?: string;
+}
 /** A message another conversation sent into a Pi session (bridge events.mjs sessionMessageFrom). */
 export interface PiSessionMessage {
   readonly id: string;
@@ -65,6 +77,13 @@ export interface PiBridge {
   discardSession(id: string): Promise<void>;
   /** Every side chat session, which `inventory()` leaves out. */
   sideChats(): Promise<ReadonlyArray<PiSummary>>;
+  /** The new-thread screen's prompt library (bridge session-prompts.mjs). */
+  sessionPromptLibrary(): Promise<ReadonlyArray<PiSessionPromptEntry>>;
+  openSessionPromptFolder(): Promise<{folder: string}>;
+  /** The thread's session opens with this prompt as its whole system prompt; refused once it started. */
+  prepareSessionPrompt(threadId: string, choice: {id: string} | {text: string; label?: string}): Promise<PiSessionPromptSummary>;
+  /** What the session runs on instead of Rubato's prompt, or null. */
+  sessionPrompt(sessionId: string): Promise<PiSessionPromptSummary | null>;
   /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
   importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
   /** `fresh` drops every cached catalogue first: an explicit refresh must see a key added a moment ago. */

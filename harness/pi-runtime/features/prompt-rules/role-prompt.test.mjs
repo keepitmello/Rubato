@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME } from "./role-prompt.mjs";
+import { createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
+import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from "../session-prompt/patches.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
 import { resolveRole } from "../../../rubato-pi/src/role-contract.mjs";
 
@@ -209,6 +210,10 @@ test("contributions made before the role prompt survive its rebuild", async () =
   assert.doesNotMatch(result.systemPrompt, /operating inside pi/);
 });
 
+test("the replacement entry type matches the session-prompt engine patch", () => {
+  assert.equal(SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE, SYSTEM_PROMPT_REPLACEMENT_ENTRY);
+});
+
 test("the opening turn leads every request of a new session and stays pinned", async (t) => {
   // It sits ahead of the whole history, so it must never move or change under a cached prefix:
   // edits on disk reach new sessions only, and a session that already has replies never gets it.
@@ -265,4 +270,7 @@ test("the opening turn leads every request of a new session and stays pinned", a
 
   const custom = await boot({ ...env, RUBATO_SYSTEM_PROMPT_FILE: join(dir, "own.md") });
   assert.deepEqual(await request(custom, "session-d", [user]), [user], "a custom prompt file gets no opening turn");
+
+  branches.set("session-e", [{ type: "custom", customType: SYSTEM_PROMPT_REPLACEMENT_ENTRY, data: { value: "Own prompt." } }]);
+  assert.deepEqual(await request(handlers, "session-e", [user]), [user], "a session opened with its own whole prompt gets no opening turn");
 });

@@ -5,6 +5,7 @@ import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom,
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
+import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -168,6 +169,9 @@ export class RubatoPiBridge {
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
+    // threadId -> the prompt its session opens with, set by the new-thread screen just before the
+    // first message and taken by open(). session-prompts.mjs.
+    this.pendingPrompts = new Map();
     this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
@@ -215,6 +219,24 @@ export class RubatoPiBridge {
   async forkSession(sessionId, title, { side = false } = {}) { return this.viaInventory((client) => client.fork(sessionId, { title, side })); }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
+  // The new-thread screen's prompt chip (session-prompts.mjs). The library is files on this Mac.
+  sessionPromptLibrary() { return listSessionPrompts(); }
+  openSessionPromptFolder() { return openSessionPromptFolder(); }
+  // The thread's session opens with this prompt as its whole system prompt. Only before the
+  // session exists: a session's prompt never changes after it starts.
+  async prepareSessionPrompt(threadId, choice) {
+    if (typeof threadId !== 'string' || !threadId) throw new SessionPromptError('invalid', 'threadId is missing.');
+    if (this.sessions.has(threadId) || this.openings.has(threadId))
+      throw new SessionPromptError('started', 'This conversation has already started; its prompt cannot change.');
+    const prompt = await resolveSessionPrompt(choice);
+    this.pendingPrompts.set(threadId, prompt);
+    return { label: prompt.label, ...(prompt.source ? { source: prompt.source } : {}) };
+  }
+  // What the session runs on instead of Rubato's prompt (`{ label, source?, createdAt }`), or null.
+  async sessionPrompt(sessionId) {
+    const sessions = await this.viaInventory((client) => client.list());
+    return sessions.find((entry) => entry.sessionId === sessionId)?.systemPrompt ?? null;
+  }
   // Every side chat session, which the inventory leaves out (/rubato/side-chat lists and sweeps them).
   async sideChats() { return (await this.viaInventory((client) => client.list())).filter((entry) => entry.sideChatOf); }
   // `fresh` 는 사용자가 다시 받으라고 한 경우다(키 추가·삭제, Refresh). 그때는 모든 폴더의
@@ -274,7 +296,9 @@ export class RubatoPiBridge {
         throw new Error('Resume cursor does not belong to this Pi server');
       sessionId = cursor.sessionId;
     } else {
-      sessionId = (await inventory.create({ cwd: input.cwd, title: input.title })).sessionId;
+      const systemPrompt = this.pendingPrompts.get(input.threadId);
+      sessionId = (await inventory.create({ cwd: input.cwd, title: input.title, ...(systemPrompt ? { systemPrompt } : {}) })).sessionId;
+      this.pendingPrompts.delete(input.threadId);
     }
     this.claimed.add(sessionId);
     const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();

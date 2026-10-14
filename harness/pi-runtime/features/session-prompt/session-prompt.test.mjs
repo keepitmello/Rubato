@@ -181,3 +181,57 @@ for (const [label, rewrite] of [
     assert.match(textOf(sent[lateIndex + 1]), /^two/, "it stays right before the message it preceded");
   });
 }
+
+// A session opened with a replacement prompt sends exactly that text as its system prompt.
+// The handlers that would compose around it (role prompt, memory, notes guidance) never run.
+test("a session's replacement prompt is the whole system prompt of every request", async () => {
+  const cwd = join(scratchRoot, "replacement");
+  const agentDir = join(cwd, "agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: {
+      "sp-test": {
+        baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "unused",
+        models: [{ id: "fake-model", input: ["text"] }],
+      },
+    },
+  }));
+  const composeCalls = [];
+  const extension = (pi) => {
+    pi.on("system_prompt", (event) => {
+      composeCalls.push(event.systemPrompt);
+      return { systemPrompt: `COMPOSED\n${event.systemPrompt}` };
+    });
+  };
+  const open = async (sessionManager) => {
+    const settingsManager = sdk.SettingsManager.inMemory();
+    const resourceLoader = new sdk.DefaultResourceLoader({
+      cwd, agentDir, settingsManager,
+      extensionFactories: [{ name: "composer", factory: extension }],
+      noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+    });
+    await resourceLoader.reload();
+    const { session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, sessionManager });
+    const systems = [];
+    session.agent.streamFunction = (_model, context) => {
+      systems.push(context.systemPrompt ?? textOf(context.messages.find((message) => message.role === "system") ?? { content: "" }));
+      return streamOf(assistant([{ type: "text", text: "ok" }]));
+    };
+    return { session, systems };
+  };
+
+  const plain = await open(sdk.SessionManager.inMemory(cwd));
+  await plain.session.prompt("hi");
+  assert.match(plain.systems[0], /^COMPOSED\n/, "without a replacement the handlers compose the prompt");
+
+  const replacement = "You are a terse pirate.\nOnly this text.";
+  const manager = sdk.SessionManager.inMemory(cwd);
+  manager.appendCustomEntry("rubato.system-prompt", { value: replacement, label: "pirate" });
+  const replaced = await open(manager);
+  composeCalls.length = 0;
+  await replaced.session.prompt("first");
+  await replaced.session.prompt("second");
+  assert.deepEqual(replaced.systems, [replacement, replacement]);
+  assert.equal(replaced.session.systemPrompt, replacement);
+  assert.deepEqual(composeCalls, [], "no system_prompt handler runs for a replaced session");
+});

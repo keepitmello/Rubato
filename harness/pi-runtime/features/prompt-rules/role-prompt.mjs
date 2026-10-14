@@ -10,6 +10,10 @@ export const PROJECT_RULES_ENTRY_TYPE = "rubato.project-rules";
 
 export const OPENING_TURN_ENTRY_TYPE = "rubato.opening-turn";
 
+// session-prompt's replacement entry (its patches.mjs is the source, not staged with these
+// runtime files): a session holding one runs on that text alone.
+export const SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE = "rubato.system-prompt";
+
 const PROJECT_CONTEXT = /<project_context>[\s\S]*?<\/project_context>/;
 const PROJECT_RULES = /<!--senpi:project-rules:1:start-->[\s\S]*?<!--senpi:project-rules:1:end-->/;
 
@@ -99,8 +103,11 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       if (id === undefined) return;
       let text = openings.get(id) ?? recordedEntry(ctx, OPENING_TURN_ENTRY_TYPE);
       if (text === undefined) {
+        // The opening turn answers the product preamble; a session opened with its own whole
+        // prompt (session-prompt's replacement entry) has no preamble to answer.
         const started = event.messages.some((message) => message?.role === "assistant");
-        text = started ? "" : loadOpeningTurn({ env });
+        const replaced = recordedEntry(ctx, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE) !== undefined;
+        text = started || replaced ? "" : loadOpeningTurn({ env });
         try { pi.appendEntry?.(OPENING_TURN_ENTRY_TYPE, { value: text }); } catch {}
       }
       openings.set(id, text);

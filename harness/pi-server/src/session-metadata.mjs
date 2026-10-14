@@ -3,6 +3,7 @@ import { createReadStream, readFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { finished } from 'node:stream/promises';
 import { SIDE_CHAT_ENTRY } from '../../pi-runtime/features/session-link/side-chat.mjs';
+import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from '../../pi-runtime/features/session-prompt/patches.mjs';
 
 /** The pinned Pi SessionInfo semantics, without retaining allMessagesText.
  * Keep the differential test against SessionManager.listAll when updating Pi.
@@ -12,7 +13,7 @@ export async function readSessionMetadata(file, stats) {
   if (!stats.size) return null;
   const input = createReadStream(file, { encoding: 'utf8', end: Number(stats.size) - 1 });
   const lines = createInterface({ input, crlfDelay: Infinity });
-  let header, name, firstMessage = '', messageCount = 0, lastActivityTime, sideChatOf;
+  let header, name, firstMessage = '', messageCount = 0, lastActivityTime, sideChatOf, systemPrompt;
   try {
     for await (const line of lines) {
       let entry;
@@ -27,6 +28,9 @@ export async function readSessionMetadata(file, stats) {
         if (entry.type === 'session_info') name = entry.name?.trim() || undefined;
         // Not Pi's: a side chat names the conversation it was opened from (side-chat.mjs).
         if (entry.type === 'custom' && entry.customType === SIDE_CHAT_ENTRY && typeof entry.data?.parentSessionId === 'string') sideChatOf = entry.data.parentSessionId;
+        // Not Pi's: the session runs on a replacement prompt (session-prompt). The list names it,
+        // never carries its text.
+        if (entry.type === 'custom' && entry.customType === SYSTEM_PROMPT_REPLACEMENT_ENTRY && typeof entry.data?.value === 'string') systemPrompt = replacementSummary(entry.data);
         if (entry.type !== 'message') continue;
         messageCount++;
         const message = entry.message;
@@ -55,7 +59,7 @@ export async function readSessionMetadata(file, stats) {
       ? new Date(lastActivityTime).getTime() : !Number.isNaN(headerTime) ? headerTime : mtime;
     return { id: header.id, file, cwd: typeof header.cwd === 'string' ? header.cwd : '',
       title: name || firstMessage || '(no messages)', createdAt: new Date(header.timestamp).getTime(), modifiedAt, messageCount,
-      ...(sideChatOf ? { sideChatOf } : {}) };
+      ...(sideChatOf ? { sideChatOf } : {}), ...(systemPrompt ? { systemPrompt } : {}) };
   } finally {
     lines.close();
     input.destroy();
@@ -63,8 +67,13 @@ export async function readSessionMetadata(file, stats) {
   }
 }
 
+function replacementSummary(data) {
+  const pick = (key) => typeof data[key] === 'string' && data[key] ? { [key]: data[key] } : {};
+  return { ...pick('label'), ...pick('source'), ...pick('createdAt') };
+}
+
 /** Names what `readSessionMetadata` produces. A saved session index made under another value
  * is thrown away, so changing this reader, any helper in this file, or the side-chat marker it
  * looks for invalidates every saved index without anyone remembering to bump a number. */
 export const SESSION_METADATA_VERSION = createHash('sha256')
-  .update(readFileSync(new URL(import.meta.url))).update('\0').update(SIDE_CHAT_ENTRY).digest('hex').slice(0, 16);
+  .update(readFileSync(new URL(import.meta.url))).update('\0').update(SIDE_CHAT_ENTRY).update('\0').update(SYSTEM_PROMPT_REPLACEMENT_ENTRY).digest('hex').slice(0, 16);

@@ -77,6 +77,24 @@ test('a side chat fork stays out of the inventory and is the only session the br
   assert.equal((await external.list()).some((entry) => entry.sessionId === side.sessionId), false);
   assert.ok((await bridge.inventory()).some((entry) => entry.sessionId === source.sessionId));
 });
+test('a prompt prepared for a new thread is the system prompt its session opens with, and is fixed once it starts', async (t) => {
+  const { root, service, bridge } = await setup(t);
+  assert.deepEqual(await bridge.prepareSessionPrompt('soul-thread', { text: 'You are SOUL.', label: 'SOUL' }), { label: 'SOUL' });
+  const session = await bridge.startSession({ threadId: 'soul-thread', runtimeMode: 'full-access', cwd: root });
+  const sessionId = session.resumeCursor.sessionId;
+  const listed = await bridge.sessionPrompt(sessionId);
+  assert.equal(listed.label, 'SOUL');
+  const { readFile } = await import('node:fs/promises');
+  const { file } = await service.host.resolveSession(sessionId);
+  const entries = (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  assert.equal(entries.find((entry) => entry.customType === 'rubato.system-prompt')?.data.value, 'You are SOUL.');
+  assert.equal(bridge.pendingPrompts.has('soul-thread'), false);
+  await assert.rejects(bridge.prepareSessionPrompt('soul-thread', { text: 'Too late.' }), /already started/);
+
+  const plain = await bridge.startSession({ threadId: 'plain-thread', runtimeMode: 'full-access', cwd: root });
+  assert.equal(await bridge.sessionPrompt(plain.resumeCursor.sessionId), null);
+  await assert.rejects(bridge.prepareSessionPrompt('empty-thread', { text: '   ' }), /empty/);
+});
 test('T3 creates a new Pi session, forwards questions, reconnects and continues the same worker', async (t) => {
   const { root, service, events, bridge } = await setup(t);
   const session = await bridge.startSession({ threadId:'new-thread', runtimeMode:'full-access', cwd:root });

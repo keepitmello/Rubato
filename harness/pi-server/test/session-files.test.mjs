@@ -31,3 +31,38 @@ test('a title created as locked is one the automatic session title never replace
   const ordinary = await store.create({ cwd: tmpdir(), title: 'New thread' });
   assert.equal(isTitleLocked(await entries(ordinary)), false);
 });
+
+test('a session created with a system prompt carries it as its replacement entry, and a fork keeps it', async (t) => {
+  const { SYSTEM_PROMPT_REPLACEMENT_ENTRY } = await import('../../pi-runtime/features/session-prompt/patches.mjs');
+  const { forkSessionFile } = await import('../src/session-link.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  const entries = async (file) => (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line));
+  const replacements = async (file) => (await entries(file))
+    .filter((entry) => entry.type === 'custom' && entry.customType === SYSTEM_PROMPT_REPLACEMENT_ENTRY);
+
+  const text = 'You are SOUL.\nNothing else.';
+  const created = await store.create({ cwd: tmpdir(), title: 'Soul talk',
+    systemPrompt: { text, label: 'SOUL', source: '/Users/x/Documents/SOUL.md' } });
+  const [entry] = await replacements(created.file);
+  assert.equal(entry.data.value, text);
+  assert.equal(entry.data.label, 'SOUL');
+  assert.equal(entry.data.source, '/Users/x/Documents/SOUL.md');
+  const listed = await store.resolve(created.id);
+  assert.equal(listed.title, 'Soul talk');
+  assert.equal(listed.systemPrompt.label, 'SOUL');
+  assert.equal(listed.systemPrompt.source, '/Users/x/Documents/SOUL.md');
+  assert.equal(listed.systemPrompt.value, undefined, 'the list names the prompt, never carries its text');
+
+  const untitled = await store.create({ cwd: tmpdir(), systemPrompt: { text: 'Inline only.' } });
+  assert.equal((await replacements(untitled.file))[0].data.value, 'Inline only.');
+
+  const { metadata } = await forkSessionFile({ source: created.file, sessionsDir: root, title: 'Soul talk (fork)' });
+  assert.equal((await replacements(metadata.file))[0]?.data.value, text);
+
+  const plain = await store.create({ cwd: tmpdir(), title: 'Plain' });
+  assert.deepEqual(await replacements(plain.file), []);
+  assert.equal((await store.resolve(plain.id)).systemPrompt, undefined);
+  await assert.rejects(store.create({ cwd: tmpdir(), systemPrompt: { text: '  ' } }), /non-empty/);
+});
