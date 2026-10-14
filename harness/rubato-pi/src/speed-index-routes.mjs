@@ -20,6 +20,8 @@ export const SPEED_INDEX_NETWORK_ROUTES = Object.freeze({
     origin: "https://daily-cloudcode-pa.googleapis.com",
   }),
   opencode: Object.freeze({ kind: "probe", origin: "https://opencode.ai/zen/v1" }),
+  // location 이 global 이면 genai SDK 가 지역 접두사 없는 이 호스트로 보낸다.
+  "google-vertex": Object.freeze({ kind: "probe", origin: "https://aiplatform.googleapis.com" }),
   "b-ai": Object.freeze({ kind: "probe", origin: "https://api.b.ai/v1" }),
   opengateway: Object.freeze({ kind: "probe", origin: "https://apis.opengateway.ai/v1" }),
   nanogpt: Object.freeze({ kind: "probe", origin: "https://api.nano-gpt.com/api/v1" }),

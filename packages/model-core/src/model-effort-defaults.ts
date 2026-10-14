@@ -34,6 +34,12 @@ function isAntigravityFlash(model: string): boolean {
   return provider === "google-antigravity" && id === "gemini-3.8-flash"
 }
 
+/** Vertex's own default thinking level for gemini-4-argon is MEDIUM (model card). */
+function isVertexArgon(model: string): boolean {
+  const { provider, id } = providerAndId(model)
+  return provider === "google-vertex" && id === "gemini-4-argon"
+}
+
 /**
  * Seeded model-owned effort. Callers omit effort unless they need a manual override.
  *
@@ -42,7 +48,7 @@ function isAntigravityFlash(model: string): boolean {
  */
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
   if (typeof model !== "string" || model.trim().length === 0) return undefined
-  if (isSolModel(model) || isAntigravityFlash(model)) return "medium"
+  if (isSolModel(model) || isAntigravityFlash(model) || isVertexArgon(model)) return "medium"
   if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model)) return "high"
   return undefined
 }

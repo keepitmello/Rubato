@@ -18,10 +18,10 @@ a token, or making an external provider request:
 
 ## Resulting executable boundary
 
-The admitted product lanes are one ordered value, not seven unrelated conditionals:
+The admitted product lanes are one ordered value, not eight unrelated conditionals:
 
 ```text
-openai-codex -> xai -> cursor -> anthropic -> kiro -> google-antigravity -> opencode
+openai-codex -> xai -> cursor -> anthropic -> kiro -> google-antigravity -> opencode -> google-vertex
 ```
 
 `provider-capabilities.mjs:8-16` owns that value. `provider-ids.mjs` re-exports it, and
@@ -43,7 +43,7 @@ Rubato adapters and the selected Cursor implementation *inside the selected stoc
 Its staged `engine-paths.mjs` resolves only that package; it rejects any nested request except
 `@earendil-works/pi-ai`. `createRubatoProviders()` therefore defaults to the four stock 0.85.1
 factories plus the owned Cursor, Kiro, and Antigravity routes, while
-`createProvidersExtension()` validates and registers the ordered all-seven vector through the
+`createProvidersExtension()` validates and registers the ordered all-eight vector through the
 actual stock ExtensionAPI. The local response tests exercise those defaults, not no-op route
 fixtures. Root-owned feature catalog/bootstrap wiring and the default launcher cutover are still
 pending, so this is an executable staged closure rather than a claim that the shipped default has
@@ -52,7 +52,7 @@ changed.
 The minimum maintained module boundary is therefore:
 
 1. **runtime resolver (root-owned):** supplies one verified `pi-ai` package root and the stock host;
-2. **native factory adapter:** loads Codex/xAI/Anthropic/OpenCode and applies only Rubato model/auth
+2. **native factory adapter:** loads Codex/xAI/Anthropic/OpenCode/Vertex and applies only Rubato model/auth
    presentation policy;
 3. **product route adapters:** Cursor, Kiro, and Antigravity own vendor-specific transport/lifecycle;
 4. **pure admission:** validates the complete ordered provider vector before stateful overlay work;
@@ -62,7 +62,7 @@ The minimum maintained module boundary is therefore:
 
 Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 
-## Current seven-lane map
+## Current eight-lane map
 
 | Product identity | Staged request/stream path | Auth and catalog | Stock 0.85.1 status | Retained Rubato/Senpi behavior |
 |---|---|---|---|---|
@@ -73,6 +73,7 @@ Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 | `kiro/<id>` | owned route uses stock `createProvider()` and stock Anthropic Messages API -> loopback `kiro.rs`; lazy ensure on first stream | stored key, then `KIRO_API_KEY`, then Rubato Kiro config; no OAuth | Provider is absent; stock provider/API primitives are used | loopback-only gate, two-model catalog, lazy sidecar recovery; no `/fast` because it is a gateway path |
 | `google-antigravity/gemini-3.8-flash` | owned Antigravity API/route uses stock Google converter and event stream -> Google internal endpoint | owned Google OAuth; parent-only Keychain import; project id retained in OAuth credential env | Provider is absent; stock provider/auth primitives are used | OAuth/login/refresh, project discovery, request/response hooks, lineage reset on tree/successful compaction |
 | `opencode/muse-spark-1.3-contributor-free` | stock OpenCode provider -> decorator | native env/stored API key, then macOS Keychain fallback; no Rubato OAuth | Native factory/catalog is used | picker restriction and Keychain fallback only |
+| `google-vertex/gemini-4-argon` | stock `googleVertexProvider()` -> stock `@google/genai` Vertex client -> decorator | native stored key, `GOOGLE_CLOUD_API_KEY` or gcloud ADC, then Keychain service `vertex` (service-account JSON or express-mode API key); not the Antigravity subscription | Native factory is used; Argon derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, service-account JSON via request env, Gemini 4 thinking levels (`features/providers/google-vertex.mjs`) |
 
 Evidence anchors:
 
@@ -103,6 +104,7 @@ The current picker policy is explicit (`picker-catalog.mjs:6-25`):
 - Anthropic: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`,
   `claude-haiku-4-5`;
 - OpenCode: `muse-spark-1.3-contributor-free`;
+- Vertex: `gemini-4-argon`;
 - Cursor: `grok-4.7`, `gpt-5.6-sol`, `claude-fable-5-1`, `claude-opus-5`,
   `gemini-3.8-flash`, `kimi-k3`, `composer-2.5` (`cursor-picker.mjs:14-22`).
 
@@ -174,7 +176,7 @@ build all providers
   -> import eligible legacy Codex/xAI entries (never overwrite)
   -> reject only damaged-store blockers; unauthenticated `absent` is allowed
   -> parent-only Antigravity Keychain import/project resolution
-  -> register all seven
+  -> register all eight
   -> register Antigravity lifecycle and Cursor notice
   -> unregister foreign builtins
 ```
@@ -187,7 +189,10 @@ Anthropic, Kiro, Antigravity, or OpenCode credentials. Tests refuse live credent
 Anthropic setup-token resolution is fallback-only: stored/native OAuth or API key and Anthropic env
 win first; otherwise Rubato reads the configured/default setup-token file and then Keychain. It does
 not own login or refresh (`anthropic-setup-token.mjs:209-292`). OpenCode follows the same native-first
-shape, with Keychain service `opencode.ai` (`opencode-keychain.mjs:20-108`). Kiro uses stored key,
+shape, with Keychain service `opencode.ai` (`opencode-keychain.mjs`). Vertex does too, with Keychain
+service `vertex` (account from `RUBATO_VERTEX_KEYCHAIN_ACCOUNT` when set): a service-account JSON
+becomes project/location/credentials in the request env and never touches disk; any other value is an
+express-mode API key (`vertex-keychain.mjs`). Kiro uses stored key,
 then `KIRO_API_KEY`, then its config file and accepts only a loopback endpoint
 (`kiro-route.mjs:133-203,243-291`). Antigravity imports from Keychain only in the parent, resolves a
 project id before write where possible, validates before a locked merge, and thereafter its provider
@@ -274,7 +279,7 @@ needs a combined response-mock test.
 
 Current settings disable `claude-sdk-oauth`, `cursor-cli-oauth`, `anthropic-web-search`, and
 `websearch` while preserving unrelated user keys (`session-defaults.mjs:14-46,112-150`). The overlay
-registers the seven product providers first and then unregisters foreign builtin ids; same-id
+registers the eight product providers first and then unregisters foreign builtin ids; same-id
 last-registration behavior is why the order matters. Stock ModelRuntime provides native and config
 registration/unregistration and an offline refresh (`stock model-runtime.js:549-599`). Current Senpi
 additionally wires registered OAuth handlers into runtime credentials and supports a no-refresh

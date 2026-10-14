@@ -48,7 +48,7 @@ const providerOverlay = (pi, options = {}) => providerOverlayImpl(pi, {
 
 async function opencodeProvider() {
   const providers = await directProviders();
-  const opencode = providers.at(-1);
+  const opencode = providers.find((provider) => provider.id === "opencode");
   assert.equal(opencode.id, "opencode");
   return { providers, opencode };
 }
@@ -77,7 +77,7 @@ test("disabled 로 남은 opencode 는 models.json 갱신 때 회수된다", () 
   assert.ok(next.disabledProviders.includes("vercel-ai-gateway"));
 });
 
-test("directProviders 맨 뒤가 opencode 이고 앞 순서는 그대로다", async () => {
+test("directProviders 에서 opencode 는 Vertex 바로 앞이고 앞 순서는 그대로다", async () => {
   const { providers } = await opencodeProvider();
   assert.deepEqual(providers.map((provider) => provider.id), [...DIRECT_PROVIDER_IDS]);
   assert.equal(providers[0].id, "openai-codex");
@@ -87,6 +87,7 @@ test("directProviders 맨 뒤가 opencode 이고 앞 순서는 그대로다", as
   assert.equal(providers[4].id, "kiro");
   assert.equal(providers[5].id, "google-antigravity");
   assert.equal(providers[6].id, "opencode");
+  assert.equal(providers[7].id, "google-vertex");
 });
 
 test("OpenCode 는 pinned Muse Spark 1.3 Free 를 그대로 싣는다", async () => {
@@ -152,7 +153,7 @@ test("Keychain 키가 있으면 env 없이 OpenCode 가 available 이다", async
   const providers = await directProviders({
     opencode: { keychainLookup: async () => "keychain-zen-key" },
   });
-  const opencode = providers.at(-1);
+  const opencode = providers.find((provider) => provider.id === "opencode");
   const signal = new AbortController().signal;
   const resolved = await opencode.auth.apiKey.resolve({
     ctx: { env: async () => undefined },

@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "./astra-codex.mjs";
 import { patchEventStreamLocalWork, patchLazyLocalWork } from "./lazy-local-work.mjs";
+import { patchGemini4ThinkingLevel, patchVertexServiceAccountJson } from "./google-vertex.mjs";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
 import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
@@ -324,6 +325,7 @@ const rubatoSources = Object.freeze([
   "cursor-grok-fast.mjs",
   "cursor-picker.mjs",
   "cursor-route.mjs",
+  "keychain-secret.mjs",
   "kiro-route.mjs",
   "measurement-recorder.mjs",
   "mid-conversation-effort.mjs",
@@ -344,6 +346,7 @@ const rubatoSources = Object.freeze([
   "speed-index-v2.mjs",
   "speed-index.mjs",
   "upstream-dispatcher.mjs",
+  "vertex-keychain.mjs",
 ]);
 
 // These are the only Senpi pi-ai runtime files retained. They are the exact
@@ -453,6 +456,22 @@ export const patches = Object.freeze([
     path: "dist/utils/retry.js",
     preimageSha256: "8302372246b92d5047bb5715afeee374c672e1652d96a80268dc3b5758a7cae4",
     apply: patchRetrySuppression,
+  }),
+  Object.freeze({
+    id: "providers:vertex-service-account-json",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/google-vertex.js",
+    preimageSha256: "6f6c69ece547a7851a211aa7680e90edd93748992fbc78805918b73254f81b65",
+    apply: patchVertexServiceAccountJson,
+  }),
+  Object.freeze({
+    id: "providers:gemini-4-thinking-level",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/google-shared.js",
+    preimageSha256: "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
+    apply: patchGemini4ThinkingLevel,
   }),
 ]);
 

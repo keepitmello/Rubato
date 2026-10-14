@@ -27,6 +27,7 @@ import {
   ANTHROPIC_PICKER_IDS,
   ANTHROPIC_SUB_PICKER_IDS,
   CODEX_PICKER_IDS,
+  VERTEX_PICKER_IDS,
   XAI_PICKER_IDS,
 } from "../../src/picker-catalog.mjs";
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
@@ -327,7 +328,8 @@ test("xAI: pinned 현재 grok 의 xhigh 가 picker 와 wire 에 남는다", asyn
 test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다", async () => {
   const providers = await directProviders();
   const [codex, xai, , anthropic] = providers;
-  const opencode = providers.at(-1);
+  const opencode = providers.find((provider) => provider.id === "opencode");
+  const vertex = providers.find((provider) => provider.id === "google-vertex");
   // 목록을 손으로 다시 적지 않는다. 여기서 보는 것은 **값이 아니라 파이프라인**이다 —
   // pin 저장분에서 허용 목록만 남고, 목록에 있는데 pin 에 없는 행은 조용히 빠지지 않는가.
   assert.deepEqual(xai.filterModels(xai.getModels()).map((model) => model.id), [...XAI_PICKER_IDS]);
@@ -363,6 +365,9 @@ test("피커는 현재 세대만 남기고 getModels 저장분은 그대로다",
     ["muse-spark-1.3-contributor-free"],
   );
   assert.ok(opencode.getModels().some((model) => model.id === "muse-spark-1.2"), "pin 저장분의 유료 Muse 를 지우면 안 된다");
+
+  assert.deepEqual(vertex.filterModels(vertex.getModels()).map((model) => model.id), [...VERTEX_PICKER_IDS]);
+  assert.ok(vertex.getModels().some((model) => model.id === "gemini-3.8-flash"), "Argon 파생 틀을 지우면 안 된다");
 });
 
 test("직결 provider 는 pinned 의 다른 면을 잃지 않는다", async () => {
@@ -382,6 +387,9 @@ test("직결 provider 는 pinned 의 다른 면을 잃지 않는다", async () =
         models.find((model) => model.id === "muse-spark-1.3-contributor-free")?.baseUrl,
         "https://opencode.ai/zen/v1",
       );
+    } else if (provider.id === "google-vertex") {
+      // Vertex 의 pin factory 도 provider.baseUrl 이 없다. 모델이 지역 틀을 갖고 SDK 가 채운다.
+      assert.ok(provider.getModels().every((model) => model.baseUrl === "https://{location}-aiplatform.googleapis.com"));
     } else {
       assert.ok(provider.baseUrl, `${provider.id} 의 baseUrl 이 사라졌다`);
     }
@@ -390,7 +398,7 @@ test("직결 provider 는 pinned 의 다른 면을 잃지 않는다", async () =
     assert.equal(typeof provider.streamSimple, "function");
     // Kiro 는 로컬 사이드카 key, OpenCode 는 OPENCODE_API_KEY 하나다. 둘 다 oauth 가
     // 없다. 달아 두면 없는 로그인을 제시하게 된다.
-    if (provider.id === "kiro" || provider.id === "opencode") {
+    if (provider.id === "kiro" || provider.id === "opencode" || provider.id === "google-vertex") {
       assert.equal(provider.auth.oauth, undefined);
       assert.equal(typeof provider.auth.apiKey?.resolve, "function");
       continue;
@@ -691,7 +699,7 @@ test("legacy 와 target 이 같은 경로면 아무것도 하지 않는다", asy
 // 예전에는 지원 신원과 활성 등록이 갈라져 있었다: 이 목록은 제품 계약이고, 활성 권위는
 // bridge catalog 에서 유도한 `ourProviderIds(catalog)` 였다. bridge 가 삭제되면서 물을
 // 곳이 없어졌으므로 이 목록이 유일한 권위다.
-test("지원 신원은 일곱 개이고 정적이다", async () => {
+test("지원 신원은 여덟 개이고 정적이다", async () => {
   const { SUPPORTED_PROVIDER_IDS, foreignProviderIds } = await import("../../src/provider-ids.mjs");
   assert.deepEqual([...SUPPORTED_PROVIDER_IDS], [
     "openai-codex",
@@ -701,6 +709,7 @@ test("지원 신원은 일곱 개이고 정적이다", async () => {
     "kiro",
     "google-antigravity",
     "opencode",
+    "google-vertex",
   ]);
   // 등록하는 id 는 어느 것도 foreign 이 아니다 — 정리 단계가 그것을 지우면 안 된다.
   const foreign = foreignProviderIds([...SUPPORTED_PROVIDER_IDS, "vercel-ai-gateway", "ollama"]);

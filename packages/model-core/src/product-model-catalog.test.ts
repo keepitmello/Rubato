@@ -26,6 +26,15 @@ const [SOL] = PRODUCT_MODEL_ORDER["openai-codex"]
 const pick = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`
 
 describe("product model catalog", () => {
+  test("#given the Vertex Argon row #when sorted and labeled #then it follows Antigravity and keeps its full name", () => {
+    const argon = { provider: "google-vertex", id: PRODUCT_MODEL_ORDER["google-vertex"][0] }
+    const flash = { provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0] }
+    const kiro = { provider: "kiro", id: PRODUCT_MODEL_ORDER.kiro[0] }
+    expect(sortProductCatalogItems([kiro, argon, flash]).map(pick)).toEqual([pick(flash), pick(argon), pick(kiro)])
+    expect(isProductCatalogSlug(pick(argon))).toBe(true)
+    expect(productCatalogLabel(argon)).toBe("Gemini 4 Argon")
+  })
+
   test("#given live extras #when admitted #then only curated rows remain unless kept as current", () => {
     const models = [
       { provider: "openai", id: "gpt-6-astra" },

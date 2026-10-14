@@ -19,12 +19,14 @@ import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
   OPENCODE_PICKER_IDS,
+  VERTEX_PICKER_IDS,
   XAI_PICKER_IDS,
   storedCredentialReader,
   withPickerIds,
   withSubAccountCopies,
 } from "./picker-catalog.mjs";
 import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
+import { withVertexKeychain } from "./vertex-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
 import { speedIndexStore } from "./speed-index-store.mjs";
 import { SPEED_INDEX_NETWORK_ROUTES } from "./speed-index-routes.mjs";
@@ -221,6 +223,38 @@ export function grok47Models(nativeModels) {
     ...template,
     id: GROK_47_ID,
     name: "Grok 4.7",
+  }];
+}
+
+const GEMINI_4_ARGON_ID = "gemini-4-argon";
+const GEMINI_4_ARGON_TEMPLATE_ID = "gemini-3.8-flash";
+
+/**
+ * Argon 의 Vertex 정가(global, 백만 토큰당 USD). 2026-11-30 까지는 순지출의 50% 를 크레딧으로
+ * 돌려주는 프로모션이 붙지만 청구는 이 값으로 나가고 12월부터는 프로모션도 없다.
+ * 출처: cloud.google.com/vertex-ai/generative-ai/pricing (2026-10-15).
+ */
+const GEMINI_4_ARGON_COST = Object.freeze({ input: 4, output: 20, cacheRead: 0.2, cacheWrite: 0 });
+
+/**
+ * Gemini 4 Argon 은 pinned google-vertex catalog(pi-ai 1.0.1)에 없어 pin 의 Gemini 3.8 Flash 에서
+ * 파생한다. 모델 카드(docs.cloud.google.com/vertex-ai/generative-ai/docs/models/gemini/4-argon,
+ * 2026-10-15)에서 다른 것은 가격뿐이다: 입출력 합산 1,048,576 창, 동기 요청 하나의 출력 65,536,
+ * thinking 은 LOW·MEDIUM·HIGH 셋(MINIMAL·thinking_budget 은 400)이라 3.8 Flash 의 thinkingLevelMap
+ * 이 그대로 맞고, 텍스트·이미지 입력도 같다. 단계를 thinking_budget 이 아니라 thinking_level 로
+ * 보내게 하는 자리는 pi-runtime providers 기능의 google-shared 패치다.
+ */
+export function gemini4ArgonModels(nativeModels) {
+  if (nativeModels.some((model) => model.id === GEMINI_4_ARGON_ID)) return [];
+  const template = nativeModels.find((model) => model.id === GEMINI_4_ARGON_TEMPLATE_ID);
+  if (!template) throw new Error("pinned google-vertex catalog has no gemini-3.8-flash to derive Gemini 4 Argon from");
+  return [{
+    ...template,
+    id: GEMINI_4_ARGON_ID,
+    name: "Gemini 4 Argon",
+    cost: GEMINI_4_ARGON_COST,
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
   }];
 }
 
@@ -459,6 +493,7 @@ export async function directProviders({
   kiro,
   antigravity,
   opencode: opencodeOptions,
+  vertex: vertexOptions,
   env = process.env,
   speedIndexStore: speedStore = speedIndexStore(env),
   nativeFactoryLoader = loadPinnedFactory,
@@ -468,7 +503,7 @@ export async function directProviders({
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
   const antigravityFactory = routeFactories.antigravity ?? antigravityDirectProvider;
-  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider] = await Promise.all([
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider, vertexProvider] = await Promise.all([
     nativeFactoryLoader("openai-codex.js", "openaiCodexProvider"),
     nativeFactoryLoader("xai.js", "xaiProvider"),
     nativeFactoryLoader("anthropic.js", "anthropicProvider"),
@@ -476,6 +511,7 @@ export async function directProviders({
     antigravityFactory({ env, ...(antigravity ?? {}) }),
     cursorFactory({ env, ...(cursor ?? {}) }),
     nativeFactoryLoader("opencode.js", "opencodeProvider"),
+    nativeFactoryLoader("google-vertex.js", "googleVertexProvider"),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);
@@ -531,6 +567,14 @@ export async function directProviders({
     { env, ...(opencodeOptions ?? {}) },
   );
 
+  // Vertex 는 pinned factory 에 Argon 한 행을 더하고 피커를 그 행으로 줄인다. Antigravity 구독과
+  // 다른 레인이다 — 자격증명은 Keychain `vertex` 의 서비스 계정 JSON 또는 express 모드 API 키다.
+  const vertexNative = vertexProvider();
+  const vertex = withVertexKeychain(
+    withPickerIds(withExtraModels(vertexNative, gemini4ArgonModels(vertexNative.getModels())), VERTEX_PICKER_IDS),
+    { env, ...(vertexOptions ?? {}) },
+  );
+
   const store = speedStore;
   store?.startProbes?.();
   const wrap = (provider) => wrapProviderStreams(
@@ -549,5 +593,6 @@ export async function directProviders({
     )),
     wrap(antigravityDirect.provider),
     wrap(opencode),
+    wrap(vertex),
   ];
 }

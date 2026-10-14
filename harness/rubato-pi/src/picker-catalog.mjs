@@ -9,6 +9,8 @@ export const XAI_PICKER_IDS = Object.freeze(["grok-4.7"]);
 
 export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-free"]);
 
+export const VERTEX_PICKER_IDS = Object.freeze(["gemini-4-argon"]);
+
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-fable-5-1",
   "claude-opus-5-5",
