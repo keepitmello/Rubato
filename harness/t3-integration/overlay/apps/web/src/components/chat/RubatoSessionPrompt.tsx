@@ -1,6 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
-import { ChevronDownIcon, SparklesIcon } from "lucide-react";
+import { ChevronDownIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { postRubato } from "~/state/rubatoHttp";
@@ -18,7 +18,8 @@ import {
 } from "../ui/menu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-// The new-thread screen's "시스템 프롬프트" chip and the badge a started thread keeps.
+// The "시스템 프롬프트" chip above a new conversation's composer, opened with `/prompt`, and the
+// badge a started thread keeps.
 // A Rubato conversation can open with another prompt in place of Rubato's own; that text is
 // its whole system prompt for its whole life. The server half is /rubato/session-prompts
 // (RubatoSessionPrompt.ts); the library is files on the Mac (bridge session-prompts.mjs).
@@ -118,19 +119,52 @@ function choiceLabel(choice: SessionPromptChoice): string {
 }
 const displayPath = (source: string) => source.replace(/^\/Users\/[^/]+/, "~");
 
-export function RubatoSessionPromptChip(props: {
+/**
+ * Whether the composer offers `/prompt`: only a draft that will run on a Rubato model takes a prompt.
+ * Read outside React because the composer builds its slash menu in a memo.
+ */
+export function rubatoSessionPromptAvailable(
+  environmentId: EnvironmentId,
+  draftKey: string | null,
+  instanceId: string | null,
+): boolean {
+  return draftKey !== null && runsOnRubato(appAtomRegistry.get(environmentServerConfigsAtom), environmentId, instanceId);
+}
+
+// `/prompt` opens the picker of the draft it was typed in. The picker is mounted with the composer.
+const menuRequests = new Set<string>();
+/** Open the system prompt menu above the composer of `draftKey`. */
+export function openRubatoSessionPromptMenu(draftKey: string | null) {
+  if (draftKey === null) return;
+  menuRequests.add(draftKey);
+  notify();
+}
+
+/**
+ * Above the composer input of a Rubato draft: a chip naming the system prompt the conversation
+ * will open with, and its menu. Rubato's own prompt shows nothing; the chip appears while the menu
+ * is open (from `/prompt`) or when another prompt is chosen, including the last file chosen, which
+ * a new draft starts on.
+ */
+export function RubatoSessionPromptPicker(props: {
   readonly environmentId: EnvironmentId;
   readonly draftKey: string | null;
   readonly instanceId: string | null;
+  /** Where focus goes once the menu closes on a choice: the composer input. */
+  readonly onReturnFocus?: () => void;
 }) {
-  const { environmentId, draftKey, instanceId } = props;
+  const { environmentId, draftKey, instanceId, onReturnFocus } = props;
   const configs = useAtomValue(environmentServerConfigsAtom);
-  const rubato = runsOnRubato(configs, environmentId, instanceId);
+  const rubato = draftKey !== null && runsOnRubato(configs, environmentId, instanceId);
   const choice = useSyncExternalStore(subscribe, () => sessionPromptChoice(draftKey));
+  const requested = useSyncExternalStore(subscribe, () => draftKey !== null && menuRequests.has(draftKey));
+  const [open, setOpen] = useState(false);
   const [library, setLibrary] = useState<ReadonlyArray<SessionPromptEntry> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [writing, setWriting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  // A menu item that opens a dialog or the file picker keeps focus away from the composer.
+  const focusElsewhere = useRef(false);
 
   const load = async () => {
     if (!instanceId) return null;
@@ -161,7 +195,21 @@ export function RubatoSessionPromptChip(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rubato, draftKey, environmentId, instanceId]);
 
+  useEffect(() => {
+    if (!requested || draftKey === null) return;
+    menuRequests.delete(draftKey);
+    if (!rubato) return;
+    focusElsewhere.current = false;
+    setOpen(true);
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requested, draftKey, rubato]);
+
   if (!rubato || draftKey === null) return null;
+
+  const replaced = choice.kind !== "default";
+  // The file input and the dialog outlive the chip: both are opened from the menu as it closes.
+  const shown = replaced || open || error !== null;
 
   const choose = (value: string) => {
     if (value === DEFAULT_VALUE) return setSessionPromptChoice(draftKey, DEFAULT_CHOICE, true);
@@ -172,67 +220,99 @@ export function RubatoSessionPromptChip(props: {
     if (!file) return;
     const text = await file.text();
     if (!text.trim()) { setError(`${file.name} is empty.`); return; }
+    setError(null);
     setSessionPromptChoice(draftKey, { kind: "text", text, label: file.name.replace(/\.(md|markdown|txt)$/i, ""), source: file.name }, false);
   };
   const openFolder = async () => {
     try { await postRubato(environmentId, ROUTE, "open-folder", { instanceId }, WHAT); }
     catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)); }
   };
-  const replaced = choice.kind !== "default";
 
   return (
-    <div className="pointer-events-auto mt-3 flex flex-col items-center gap-1.5 text-sm" data-rubato-session-prompt="">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <span>시스템 프롬프트</span>
-        <Menu onOpenChange={(open) => { if (open) void load(); }}>
-          <MenuTrigger
-            render={
-              <button
-                type="button"
-                className={cn(
-                  "inline-flex max-w-64 items-center gap-1.5 rounded-full border bg-background/60 px-2.5 py-0.5 text-foreground outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
-                  replaced ? "border-primary/60 ring-2 ring-primary/20" : "border-border",
-                )}
-              />
-            }
+    <>
+      {shown ? (
+        <div className="mb-2 flex flex-wrap items-center gap-2 text-xs" data-rubato-session-prompt="">
+          <Menu
+            open={open}
+            onOpenChange={(next) => {
+              setOpen(next);
+              if (next) { focusElsewhere.current = false; void load(); }
+            }}
           >
-            <SparklesIcon aria-hidden className={cn("size-3.5 shrink-0", replaced ? "text-primary" : "text-muted-foreground")} />
-            <span className="min-w-0 truncate">{choiceLabel(choice)}</span>
-            <ChevronDownIcon aria-hidden className="size-3 shrink-0 text-muted-foreground" />
-          </MenuTrigger>
-          <MenuPopup align="center" className="max-h-96 w-80 overflow-y-auto">
-            <MenuRadioGroup value={choiceValue(choice)} onValueChange={(value) => choose(String(value))}>
-              <MenuRadioItem value={DEFAULT_VALUE} closeOnClick>
-                <span className="grid gap-0.5 py-0.5">
-                  <span>Rubato 기본</span>
-                  <span className="text-muted-foreground text-xs">레아 · 역할별 프롬프트</span>
-                </span>
-              </MenuRadioItem>
-              {(library ?? []).map((entry) => (
-                <MenuRadioItem key={entry.id} value={entry.id} closeOnClick>
-                  <span className="grid min-w-0 gap-0.5 py-0.5">
-                    <span className="truncate">{entry.label}</span>
-                    <span className="truncate font-mono text-muted-foreground text-xs">{displayPath(entry.source)}</span>
+            <MenuTrigger
+              render={
+                <button
+                  type="button"
+                  className={cn(
+                    "inline-flex h-6 max-w-72 items-center gap-1.5 rounded-full border pr-2 pl-2.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                    replaced
+                      ? "border-primary/45 bg-primary/10 text-primary hover:bg-primary/15"
+                      : "border-border bg-background/60 text-muted-foreground hover:bg-accent",
+                  )}
+                />
+              }
+            >
+              <SparklesIcon aria-hidden className="size-3 shrink-0" />
+              <span className="shrink-0 opacity-80">시스템 프롬프트</span>
+              <span aria-hidden className="shrink-0 opacity-50">·</span>
+              <span className="min-w-0 truncate">{choiceLabel(choice)}</span>
+              <ChevronDownIcon aria-hidden className="size-3 shrink-0 opacity-60" />
+            </MenuTrigger>
+            <MenuPopup
+              align="start"
+              side="top"
+              className="max-h-96 w-80 overflow-y-auto"
+              finalFocus={() => {
+                if (!focusElsewhere.current && onReturnFocus) {
+                  requestAnimationFrame(onReturnFocus);
+                  return false;
+                }
+                return !focusElsewhere.current;
+              }}
+            >
+              <MenuRadioGroup value={choiceValue(choice)} onValueChange={(value) => choose(String(value))}>
+                <MenuRadioItem value={DEFAULT_VALUE} closeOnClick>
+                  <span className="grid gap-0.5 py-0.5">
+                    <span>Rubato 기본</span>
+                    <span className="text-muted-foreground text-xs">레아 · 역할별 프롬프트</span>
                   </span>
                 </MenuRadioItem>
-              ))}
-              {choice.kind === "text" ? (
-                <MenuRadioItem value={INLINE_VALUE} closeOnClick>
-                  <span className="grid min-w-0 gap-0.5 py-0.5">
-                    <span className="truncate">{choice.label}</span>
-                    <span className="text-muted-foreground text-xs">이번 대화만</span>
-                  </span>
-                </MenuRadioItem>
-              ) : null}
-            </MenuRadioGroup>
-            <MenuSeparator />
-            <MenuItem onClick={() => setWriting(true)}>이번 대화만 직접 쓰기…</MenuItem>
-            <MenuItem onClick={() => fileInput.current?.click()}>다른 파일 고르기…</MenuItem>
-            <MenuItem onClick={() => void openFolder()}>프롬프트 폴더 열기</MenuItem>
-          </MenuPopup>
-        </Menu>
-      </div>
-      {error ? <p role="alert" className="text-destructive-foreground text-xs">{error}</p> : null}
+                {(library ?? []).map((entry) => (
+                  <MenuRadioItem key={entry.id} value={entry.id} closeOnClick>
+                    <span className="grid min-w-0 gap-0.5 py-0.5">
+                      <span className="truncate">{entry.label}</span>
+                      <span className="truncate font-mono text-muted-foreground text-xs">{displayPath(entry.source)}</span>
+                    </span>
+                  </MenuRadioItem>
+                ))}
+                {choice.kind === "text" ? (
+                  <MenuRadioItem value={INLINE_VALUE} closeOnClick>
+                    <span className="grid min-w-0 gap-0.5 py-0.5">
+                      <span className="truncate">{choice.label}</span>
+                      <span className="text-muted-foreground text-xs">이번 대화만</span>
+                    </span>
+                  </MenuRadioItem>
+                ) : null}
+          </MenuRadioGroup>
+          <MenuSeparator />
+          <MenuItem onClick={() => { focusElsewhere.current = true; setWriting(true); }}>이번 대화만 직접 쓰기…</MenuItem>
+          <MenuItem onClick={() => { focusElsewhere.current = true; fileInput.current?.click(); }}>다른 파일 고르기…</MenuItem>
+          <MenuItem onClick={() => void openFolder()}>프롬프트 폴더 열기</MenuItem>
+        </MenuPopup>
+      </Menu>
+      {replaced ? (
+        <button
+          type="button"
+          aria-label="Rubato 기본 프롬프트로 되돌리기"
+          className="-ml-1 inline-grid size-5 place-items-center rounded-full text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => { setError(null); setSessionPromptChoice(draftKey, DEFAULT_CHOICE, true); onReturnFocus?.(); }}
+        >
+          <XIcon aria-hidden className="size-3" />
+        </button>
+      ) : null}
+      {error ? <span role="alert" className="text-destructive-foreground">{error}</span> : null}
+    </div>
+      ) : null}
       <input
         ref={fileInput}
         type="file"
@@ -247,14 +327,15 @@ export function RubatoSessionPromptChip(props: {
       {writing ? (
         <WriteSessionPromptDialog
           initial={choice.kind === "text" && choice.source === undefined ? choice : null}
-          onClose={() => setWriting(false)}
+          onClose={() => { setWriting(false); onReturnFocus?.(); }}
           onUse={(text, label) => {
             setSessionPromptChoice(draftKey, { kind: "text", text, label }, false);
             setWriting(false);
+            onReturnFocus?.();
           }}
         />
       ) : null}
-    </div>
+    </>
   );
 }
 
