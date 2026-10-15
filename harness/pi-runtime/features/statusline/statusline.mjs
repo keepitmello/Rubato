@@ -161,9 +161,11 @@ export function resolveCachePolicy(model) {
   }
   // 캐시 워머가 Codex 캐시를 30분짜리로 보고 갱신한다(cache-warming 의 RUBATO_CACHE_LIFETIME_MS). 표시도 같은 수명을 쓴다.
   if (provider === "openai-codex" || api === "openai-codex-responses") return { kind: "sliding", ttlSeconds: 1800 };
+  // 캐시 워머가 Vertex Gemini 의 암묵 캐시를 15분짜리로 보고 갱신한다(cache-warming 의 RUBATO_CACHE_LIFETIME_MS).
+  if (provider === "google-vertex") return { kind: "sliding", ttlSeconds: 900 };
   if (
     provider === "xai" || id.includes("grok") || id.includes("gemini") ||
-    provider === "google" || provider === "google-vertex" || provider === "google-antigravity"
+    provider === "google" || provider === "google-antigravity"
   ) return { kind: "opaque" };
   return undefined;
 }

@@ -7,8 +7,10 @@
 // fall past the 30-minute idle limit anyway.
 //
 // Rubato's policy is anchored on the person, not on the last request: keep the cache warm for two
-// hours after the latest user input, refreshing Claude every 40 minutes (1h tier) and Codex every
-// 20 minutes (30m tier). Inside that window every refresh is sent; outside it none is. Other
+// hours after the latest user input, refreshing Claude every 40 minutes (1h tier), Codex every
+// 20 minutes (30m tier) and Gemini on Vertex every 10 minutes. Vertex implicit caching has no
+// declared lifetime: Google's Gemini 4 Argon guide names a 15-20 minute TTL, so the warmer
+// plans on 15. Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
 //
 // The person can also set the end directly ("warm for N hours from now"). The latest action wins:
@@ -65,18 +67,24 @@ export function patchCacheWarmer(source) {
   next = replaceOnce(
     next,
     `/** Refresh at 90% of the TTL while preserving at least ten seconds of margin. */`,
-    `/** How long a cache entry lives once written: Anthropic's 1h tier, Codex's 30m. */
+    `/**
+ * How long a cache entry lives once written: Anthropic's 1h tier, Codex's 30m, and for Gemini on
+ * Vertex the low end of the 15-20 minute TTL the Gemini 4 Argon developer guide gives
+ * (implicit caching only, no explicit TTL to read; the hard ceiling is 24h after creation).
+ */
 export const RUBATO_CACHE_LIFETIME_MS = Object.freeze({
     anthropic: 60 * 60_000,
     "openai-codex": 30 * 60_000,
+    "google-vertex": 15 * 60_000,
 });
 /**
  * Rubato refresh interval per provider. Stock gives a late timer half of the lifetime left
- * after the interval (10m Anthropic, 5m Codex) before it calls the refresh a miss.
+ * after the interval (10m Anthropic, 5m Codex, 2.5m Vertex) before it calls the refresh a miss.
  */
 export const RUBATO_WARMING_INTERVAL_MS = Object.freeze({
     anthropic: 40 * 60_000,
     "openai-codex": 20 * 60_000,
+    "google-vertex": 10 * 60_000,
 });
 /** Rubato keeps warming this long after the latest user input, unless the session set its own end. */
 export const RUBATO_WARMING_HORIZON_MS = 2 * 60 * 60_000;

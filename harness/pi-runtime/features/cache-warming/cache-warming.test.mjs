@@ -278,8 +278,8 @@ test("a session turned off stays off through later inputs until it is turned bac
 
 // Stock (0.87+) gives a late timer half of the lifetime left after the interval, then calls the
 // refresh a miss: a refresh that late would write a new cache at full price instead of warming.
-// Rubato passes the real entry lifetime, so that grace is 10 minutes for Claude and 5 for Codex.
-for (const [provider, intervalMin, graceMin] of [["anthropic", 40, 10], ["openai-codex", 20, 5]]) {
+// Rubato passes the real entry lifetime, so that grace is 10 minutes for Claude, 5 for Codex and 2.5 for Vertex.
+for (const [provider, intervalMin, graceMin] of [["anthropic", 40, 10], ["openai-codex", 20, 5], ["google-vertex", 10, 2.5]]) {
   test(`${provider}: a timer that fires late still warms within ${graceMin} minutes, and stops after`, async (t) => {
     t.after(() => mock.timers.reset());
     // Each lateness on a fresh warmer: after a warm the next one counts from that warm.
@@ -354,4 +354,21 @@ test("the context ring counts Codex's cache for the lifetime the warmer refreshe
   assert.equal(codex.kind, "sliding");
   assert.equal(codex.ttlSeconds * 1000, RUBATO_CACHE_LIFETIME_MS["openai-codex"]);
   assert.equal(resolveCachePolicy({ provider: "anthropic", api: "anthropic-messages" }).ttlSeconds * 1000, RUBATO_CACHE_LIFETIME_MS.anthropic);
+  const vertex = resolveCachePolicy({ provider: "google-vertex", api: "google-vertex", id: "gemini-4-argon" });
+  assert.equal(vertex.kind, "sliding");
+  assert.equal(vertex.ttlSeconds * 1000, RUBATO_CACHE_LIFETIME_MS["google-vertex"]);
+});
+
+test("a Vertex Gemini session is warmed every 10 minutes with a one-token replay", async (t) => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const { warmer, warms, calls } = harness("google-vertex", 0);
+  warmer.start({ model: model("google-vertex"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.nextWarmAt, 10 * MIN);
+  await advance(10 * MIN);
+  assert.equal(warms.length, 1);
+  assert.equal(calls[0].maxTokens, 1);
+  await advance(10 * MIN);
+  assert.equal(warms.length, 2);
 });
