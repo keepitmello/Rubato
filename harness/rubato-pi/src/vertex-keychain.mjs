@@ -8,6 +8,7 @@
 //     pinned google-vertex 는 서비스 계정을 파일 경로로만 받아서, 그 env 를 읽는 자리는
 //     pi-runtime providers 기능의 google-vertex 패치가 연다.
 //   - 그 밖의 문자열: Vertex express 모드 API 키.
+import { execFile } from "node:child_process";
 import { isAbortError, readKeychainSecret } from "./keychain-secret.mjs";
 
 export const VERTEX_PROVIDER_ID = "google-vertex";
@@ -73,6 +74,37 @@ export function readVertexKeychainSecret({ spawnImpl, signal, account } = {}) {
     signal,
     ...(spawnImpl ? { spawnImpl } : {}),
   });
+}
+
+const VERTEX_KEYCHAIN_WRITE_ACCOUNT = "rubato";
+
+function runSecurity(args, execFileImpl = execFile) {
+  return new Promise((resolve) => {
+    execFileImpl("security", args, { stdio: "ignore" }, (error) => resolve(!error));
+  });
+}
+
+/**
+ * 로그인 화면이 넘긴 값을 Keychain 서비스 `vertex` 에 넣는다. 서비스 계정 JSON 이나 express API
+ * 키로 읽히지 않는 값은 거부한다. 같은 서비스의 옛 항목은 지운다 — 남겨 두면 읽는 쪽이
+ * 어느 항목을 집을지 모른다.
+ */
+export async function storeVertexKeychainSecret(raw, { execFileImpl, account = VERTEX_KEYCHAIN_WRITE_ACCOUNT } = {}) {
+  const value = decodeKeychainValue(raw);
+  if (!vertexAuthFromSecret(value)) {
+    throw new Error("서비스 계정 JSON(\"type\": \"service_account\") 이나 Vertex express API 키를 붙여넣어 주세요.");
+  }
+  await deleteVertexKeychainSecret({ execFileImpl });
+  if (!(await runSecurity(["add-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE, "-a", account, "-w", value], execFileImpl))) {
+    throw new Error("Keychain 에 vertex 항목을 저장하지 못했습니다.");
+  }
+}
+
+/** 서비스 `vertex` 의 항목을 모두 지운다. 지운 개수를 돌려준다. */
+export async function deleteVertexKeychainSecret({ execFileImpl } = {}) {
+  let deleted = 0;
+  while (deleted < 8 && (await runSecurity(["delete-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE], execFileImpl))) deleted += 1;
+  return deleted;
 }
 
 async function contextEnv(args, env, name) {

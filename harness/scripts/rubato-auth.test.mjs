@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -17,6 +17,7 @@ import {
   resolveLoginMethod,
   resolveLoginProvider,
   slotPresence,
+  statusJson,
   storeApiKey,
   writeSetupToken,
 } from "./rubato-auth.mjs";
@@ -416,3 +417,93 @@ function existsOrMissing(path) {
     return false;
   }
 }
+
+// ── Vertex: 자격증명이 auth.json 이 아니라 Keychain 서비스 vertex 에 산다 ─────────
+
+const VERTEX_ACCOUNT_JSON = JSON.stringify({
+  type: "service_account",
+  project_id: "demo-project-123",
+  private_key: "-----BEGIN PRIVATE KEY-----\nnot-a-key\n-----END PRIVATE KEY-----\n",
+  client_email: "rubato@demo-project-123.iam.gserviceaccount.com",
+});
+
+/** 진짜 Keychain 을 건드리지 않는 가짜. */
+function fakeVertexKeychain(initial) {
+  const state = { value: initial, removed: 0 };
+  return {
+    state,
+    read: async () => state.value,
+    store: async (value) => { state.value = value; },
+    remove: async () => { state.value = undefined; state.removed += 1; },
+  };
+}
+
+test("vertex resolves from aliases and is a key provider", () => {
+  assert.deepEqual(resolveLoginProvider("vertex"), { id: "google-vertex" });
+  assert.deepEqual(resolveLoginProvider("google-vertex"), { id: "google-vertex" });
+  assert.deepEqual(resolveLoginMethod("google-vertex", "key"), { id: "api_key" });
+});
+
+test("status reports vertex connected only when the Keychain holds a usable secret", async () => {
+  const dir = tempHome();
+  const row = async (secret) => {
+    const body = await statusJson({ env: isolatedEnv(dir), home: dir, vertexKeychain: fakeVertexKeychain(secret) });
+    return body.providers.find((provider) => provider.id === "google-vertex");
+  };
+  const connected = await row(VERTEX_ACCOUNT_JSON);
+  assert.equal(connected.state, "connected");
+  assert.deepEqual(connected.accounts.map((account) => [account.name, account.type, account.removable]), [["keychain", "api_key", true]]);
+  assert.equal((await row("AQ.express-api-key")).state, "connected");
+  assert.equal((await row(undefined)).state, "absent");
+  // JSON 처럼 생겼지만 서비스 계정이 아닌 값은 키로 쓰이지 않으니 연결로 세지 않는다.
+  assert.equal((await row('{"type":"authorized_user"}')).state, "absent");
+});
+
+test("login vertex key stores the secret in the Keychain, not in auth.json", async () => {
+  const dir = tempHome();
+  const keychain = fakeVertexKeychain(undefined);
+  const ctx = { ...capture(), env: isolatedEnv(dir), home: dir, vertexKeychain: keychain, readLine: async () => VERTEX_ACCOUNT_JSON };
+  assert.equal(await handleAuthArgs(["login", "vertex", "key"], ctx), "ok");
+  assert.equal(keychain.state.value, VERTEX_ACCOUNT_JSON);
+  assert.equal(existsSync(join(dir, "auth.json")), false, "no credential file is written");
+});
+
+test("login vertex key reads a service account key file when given its path", async () => {
+  const dir = tempHome();
+  const file = join(dir, "sa.json");
+  writeFileSync(file, VERTEX_ACCOUNT_JSON);
+  const keychain = fakeVertexKeychain(undefined);
+  const ctx = { ...capture(), env: isolatedEnv(dir), home: dir, vertexKeychain: keychain, readLine: async () => file };
+  assert.equal(await handleAuthArgs(["login", "vertex", "key"], ctx), "ok");
+  assert.equal(keychain.state.value, VERTEX_ACCOUNT_JSON);
+});
+
+test("remove vertex clears the Keychain item; an unknown account is refused", async () => {
+  const dir = tempHome();
+  const keychain = fakeVertexKeychain(VERTEX_ACCOUNT_JSON);
+  const ctx = { ...capture(), env: isolatedEnv(dir), home: dir, vertexKeychain: keychain };
+  assert.equal(await handleAuthArgs(["remove", "vertex", "nope"], ctx), "error");
+  assert.equal(keychain.state.removed, 0);
+  assert.equal(await handleAuthArgs(["remove", "vertex", "keychain"], ctx), "ok");
+  assert.equal(keychain.state.value, undefined);
+});
+
+test("storing a Vertex secret replaces old Keychain items and rejects unusable values", async () => {
+  const { storeVertexKeychainSecret, VERTEX_KEYCHAIN_SERVICE } = await import("../rubato-pi/src/vertex-keychain.mjs");
+  const calls = [];
+  let items = 2;
+  const execFileImpl = (_cmd, args, _opts, done) => {
+    calls.push(args);
+    if (args[0] === "delete-generic-password") {
+      if (items > 0) { items -= 1; done(null); } else done(new Error("not found"));
+      return;
+    }
+    done(null);
+  };
+  await assert.rejects(storeVertexKeychainSecret('{"type":"authorized_user"}', { execFileImpl }), /서비스 계정 JSON/);
+  assert.equal(calls.length, 0, "an unusable value touches nothing");
+  await storeVertexKeychainSecret(VERTEX_ACCOUNT_JSON, { execFileImpl });
+  assert.deepEqual(calls.map((args) => args[0]), ["delete-generic-password", "delete-generic-password", "delete-generic-password", "add-generic-password"]);
+  assert.deepEqual(calls.at(-1).slice(0, 5), ["add-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE, "-a", "rubato"]);
+  assert.equal(calls.at(-1).at(-1), VERTEX_ACCOUNT_JSON);
+});

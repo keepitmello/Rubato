@@ -28,6 +28,14 @@ import {
   projectSlot,
 } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
+import {
+  VERTEX_PROVIDER_ID,
+  VERTEX_KEYCHAIN_SOURCE,
+  deleteVertexKeychainSecret,
+  readVertexKeychainSecret,
+  storeVertexKeychainSecret,
+  vertexAuthFromSecret,
+} from "../rubato-pi/src/vertex-keychain.mjs";
 import { BACK, QUIT, SHOW_CURSOR, createKeyReader, runMenu } from "./auth-menu.mjs";
 
 export const PROVIDERS = Object.freeze([
@@ -41,7 +49,38 @@ export const PROVIDERS = Object.freeze([
   { id: "b-ai", label: "DeepSeek", aliases: ["b-ai", "deepseek"], methods: ["api_key"] },
   { id: "opengateway", label: "OpenGateway", aliases: ["opengateway"], methods: ["api_key"] },
   { id: "nanogpt", label: "NanoGPT", aliases: ["nanogpt", "nano-gpt"], methods: ["api_key"] },
+  { id: VERTEX_PROVIDER_ID, label: "Vertex AI", aliases: [VERTEX_PROVIDER_ID, "vertex"], methods: ["api_key"] },
 ]);
+
+// Vertex 자격증명은 auth.json 이 아니라 Keychain 서비스 `vertex` 에 산다. 계정은 그 항목 하나다.
+const VERTEX_ACCOUNT = "keychain";
+
+function vertexKeychainOf(ctx) {
+  return ctx.vertexKeychain ?? {
+    read: () => readVertexKeychainSecret(),
+    store: (value) => storeVertexKeychainSecret(value),
+    remove: () => deleteVertexKeychainSecret(),
+  };
+}
+
+async function vertexAccounts(ctx) {
+  let secret;
+  try {
+    secret = await vertexKeychainOf(ctx).read();
+  } catch {
+    return [];
+  }
+  if (!secret || !vertexAuthFromSecret(secret)) return [];
+  return [{ name: VERTEX_ACCOUNT, source: VERTEX_KEYCHAIN_SOURCE, blocked: false, pinned: false }];
+}
+
+/** 붙여넣은 값이 서비스 계정 키 파일의 경로면 그 파일 내용을 쓴다. 터미널 줄 입력은 여러 줄 JSON 을 못 받는다. */
+function vertexSecretInput(value) {
+  const trimmed = typeof value === "string" ? value.trim().replace(/^['"]|['"]$/g, "") : "";
+  const path = trimmed.startsWith("~/") ? join(homedir(), trimmed.slice(2)) : trimmed;
+  if (path && !path.startsWith("{") && path.startsWith("/") && existsSync(path)) return readFileSync(path, "utf8");
+  return trimmed;
+}
 
 const METHOD_ALIASES = Object.freeze({
   oauth: "oauth",
@@ -260,7 +299,7 @@ export async function collectStatus(ctx) {
     const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
     const accounts = (await listProviderAccounts(provider.id, ctx)).map((account) => ({
       ...account,
-      type: credentialType(slotByName.get(account.name)),
+      type: account.source === VERTEX_KEYCHAIN_SOURCE ? "api_key" : credentialType(slotByName.get(account.name)),
       state: accountState(slotByName.get(account.name), account),
     }));
     rows.push({
@@ -319,6 +358,7 @@ function formatAccount(account) {
 }
 
 export async function listProviderAccounts(providerId, ctx) {
+  if (providerId === VERTEX_PROVIDER_ID) return vertexAccounts(ctx);
   return getCredentialAccounts(credentialsOf(ctx), providerId, ctx.env ?? {}, repositoryOf(ctx));
 }
 
@@ -569,13 +609,23 @@ async function addSetupToken(ctx) {
 }
 
 /** 엔진을 거치지 않고 키를 auth.json 에 바로 넣는 provider. */
-const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai", "opengateway", "nanogpt"]);
+const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai", "opengateway", "nanogpt", VERTEX_PROVIDER_ID]);
+
+/** 키를 auth.json 이 아니라 provider 가 읽는 자리에 넣는 provider. */
+async function saveProviderKey(providerId, key, ctx) {
+  if (providerId === VERTEX_PROVIDER_ID) {
+    await vertexKeychainOf(ctx).store(vertexSecretInput(key));
+    return;
+  }
+  await storeApiKey(credentialsOf(ctx), providerId, key);
+}
 
 function apiKeyNotes(providerId) {
   if (providerId === "kiro") return ["키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh"];
   if (providerId === "opencode") return ["Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다."];
   if (providerId === "b-ai") return ["B.AI 키입니다. 모델은 DeepSeek V4.1 Flash."];
   if (providerId === "opengateway") return ["opengateway.ai 대시보드(API Keys → Create Key)에서 만든 키입니다. 모델은 DeepSeek V4.1 Flash Ultrafast."];
+  if (providerId === VERTEX_PROVIDER_ID) return ["서비스 계정 JSON(키 파일 경로도 됩니다)이나 Vertex express API 키입니다. macOS Keychain 서비스 vertex 에 저장합니다. 모델은 Gemini 4 Argon."];
   if (providerId === "nanogpt") return ["nano-gpt.com/api 에서 만든 키입니다. 모델은 GLM 5.3 Uncensored 와 GLM 5.3 Flash Uncensored."];
   return [];
 }
@@ -589,8 +639,8 @@ async function addStoredApiKey(providerId, ctx) {
     stdout.write("취소했습니다.\n");
     return;
   }
-  await storeApiKey(credentialsOf(ctx), providerId, key);
-  stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 auth.json 에 저장했습니다.\n`);
+  await saveProviderKey(providerId, key, ctx);
+  stdout.write(`${LOGIN_LABELS[providerId] ?? providerId} API 키를 ${providerId === VERTEX_PROVIDER_ID ? "Keychain 에" : "auth.json 에"} 저장했습니다.\n`);
 }
 
 export async function defaultLogin(providerId, method, ctx) {
@@ -639,6 +689,12 @@ async function runPinCommand(providerId, name, ctx) {
 }
 
 async function runRemoveCommand(providerId, name, ctx) {
+  if (providerId === VERTEX_PROVIDER_ID) {
+    if (name !== VERTEX_ACCOUNT || (await vertexAccounts(ctx)).length === 0) throw new Error(`Provider account not found: ${name}`);
+    await vertexKeychainOf(ctx).remove();
+    (ctx.stdout ?? process.stdout).write(`Removed ${providerId} account '${name}'.\n`);
+    return;
+  }
   await removeCredentialAccount(credentialsOf(ctx), providerId, name, ctx.env ?? {}, repositoryOf(ctx));
   (ctx.stdout ?? process.stdout).write(`Removed ${providerId} account '${name}'.\n`);
 }
@@ -850,7 +906,7 @@ export async function runJsonLogin(providerId, method, ctx) {
         type: "secret",
         message: [`${label} API 키를 붙여넣어 주세요.`, ...apiKeyNotes(providerId)].join("\n"),
       });
-      await storeApiKey(credentialsOf(ctx), providerId, key);
+      await saveProviderKey(providerId, key, ctx);
       io.emit({ type: "done", message: `${label} API 키를 저장했습니다.` });
     } else {
       const { runtime } = await engineRuntime(providerId, { ...ctx, stdout: ctx.stderr ?? process.stderr });
