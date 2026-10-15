@@ -13,6 +13,7 @@ import {ProviderSessionDirectory} from "./Services/ProviderSessionDirectory.ts";
 import {ProviderService} from "./Services/ProviderService.ts";
 import {isAbsoluteLocalPath, rubatoBridgeFor, type PiSessionMessage, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
 import type {ProviderInstance} from "./ProviderDriver.ts";
+import {rewindAfterCommand} from "../rubatoRewindCommand.ts";
 import {ProviderAdapterRequestError} from "./Errors.ts";
 
 function cursorMatches(value: unknown, summary: PiSummary): boolean {
@@ -66,6 +67,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   // The bridge calls the thread writer from outside any Effect; it runs with the
   // services the inventory was built with (command ids need Crypto).
   const services = yield* Effect.context<Crypto.Crypto>();
+  const rewindServices = yield* Effect.context<Crypto.Crypto | ProjectionSnapshotQuery | OrchestrationEngineService>();
   // A message another conversation sent into a Pi session. It is a user message
   // that starts no turn (T3's own "append without a turn"), carrying the context
   // record the web timeline draws as the session-message bubble. Its id names the
@@ -84,6 +86,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
         Effect.map((thread) => Option.isSome(thread) ? thread.value.messages : []),
       ));
       bridge.appendSessionMessage = (id, message) => Effect.runPromiseWith(services)(appendSessionMessage(id, message));
+      bridge.rewindConversation = (id, request) => Effect.runPromiseWith(rewindServices)(rewindAfterCommand(id, request));
       // Rewind names what T3 keeps: its messages in order and which turn each checkpoint closed.
       // Finished tool rows too: a step rewind is applied once those past its cut are gone.
       bridge.projectedThread = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id), {activityKinds:["tool.completed"]}).pipe(

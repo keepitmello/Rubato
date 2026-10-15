@@ -573,7 +573,7 @@ export function RubatoStepRewindButton(props: {
             />
           }
         >
-          <Undo2Icon className="size-3 text-warning" />
+          <Undo2Icon className="size-3" />
         </PopoverTrigger>
       </span>
       {card ? (

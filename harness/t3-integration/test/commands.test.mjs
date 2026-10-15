@@ -13,7 +13,7 @@ test('catalogue commands become T3 slash commands and skills; TUI duplicates sta
     { name: 'history', description: 'Terminal-only panel', source: 'extension' },
     { name: 'compact', description: 'Extension compact is ours', source: 'extension' },
   ]);
-  assert.deepEqual(surface.slashCommands.map((item) => item.name), ['compact', 'name', 'reload', 'audit', 'draft']);
+  assert.deepEqual(surface.slashCommands.map((item) => item.name), ['compact', 'name', 'reload', 'rewind', 'audit', 'draft']);
   assert.equal(surface.slashCommands.find((item) => item.name === 'compact').description.includes('context'), true);
   assert.deepEqual(surface.skills, [{
     name: 'ship-it', path: '/tmp/ship-it/SKILL.md', enabled: true,
@@ -43,4 +43,8 @@ test('typed control commands become RPC payloads instead of prompts', () => {
   assert.equal(controlCommandFor('/audit now'), undefined);
   assert.equal(controlCommandFor('not a command'), undefined);
   assert.throws(() => controlCommandFor('/name'), /cannot be empty/);
+  assert.deepEqual(controlCommandFor('/rewind'), { name: 'rewind', args: '', rpc: { turns: 1 } });
+  assert.deepEqual(controlCommandFor('/rewind 3'), { name: 'rewind', args: '3', rpc: { turns: 3 } });
+  assert.throws(() => controlCommandFor('/rewind two'), /how many turns/);
+  assert.throws(() => controlCommandFor('/rewind 0'), /how many turns/);
 });

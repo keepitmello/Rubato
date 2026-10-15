@@ -891,7 +891,7 @@ test('a rewind plan pairs each prompt with the reply after it, as T3 keeps them 
 test('catalogue lists Rubato control commands and hides TUI duplicates', async (t) => {
   const { root, bridge } = await setup(t);
   const catalogue = await bridge.catalogue(root);
-  assert.deepEqual(catalogue.slashCommands.map((item) => item.name), ['compact', 'name', 'reload']);
+  assert.deepEqual(catalogue.slashCommands.map((item) => item.name), ['compact', 'name', 'reload', 'rewind']);
   assert.equal(catalogue.skills.length, 0);
   assert.equal(catalogue.slashCommands.some((item) => item.name === 'model' || item.name === 'fork'), false);
 });
@@ -961,6 +961,28 @@ test('a control command typed as composer text becomes its RPC command and T3 is
   await bridge.sendTurn({ threadId:'ctl-thread', input:'/name Rewound' });
   assert.deepEqual(calls.filter((command) => command.type === 'set_session_name'), [{ type: 'set_session_name', name: 'Rewound' }]);
   assert.ok(events.some((event) => event.type==='thread.metadata.updated' && event.payload.name==='Rewound'));
+});
+
+test('/rewind sends Pi nothing and asks T3 to revert after its own turn, refusing more turns than T3 shows', async (t) => {
+  const { root, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'rw-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('rw-thread');
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  const asked = [];
+  bridge.rewindConversation = async (threadId, request) => { asked.push([threadId, request]); };
+  // Two turns: one with an answer, one only numbered (a turn T3 shows by its checkpoint).
+  bridge.projectedThread = async () => ({
+    messages: [{ id: 'assistant:t1', role: 'assistant', text: 'one', turnId: 't1', createdAt: '2026-01-01T00:00:00.000Z' }],
+    checkpoints: [{ turnId: 't1', checkpointTurnCount: 1 }, { turnId: 't2', checkpointTurnCount: 2 }],
+  });
+  await assert.rejects(bridge.sendTurn({ threadId:'rw-thread', input:'/rewind 3' }), /only 2 turns/);
+  const sent = await bridge.sendTurn({ threadId:'rw-thread', input:'/rewind 2' });
+  await until(() => asked.length === 1);
+  assert.deepEqual(asked, [['rw-thread', { afterTurn: sent.turnId, turns: 2 }]]);
+  assert.deepEqual(calls.filter((command) => ['prompt', 'steer', 'rewind'].includes(command.type)), [], 'Pi rewinds only through T3\'s revert');
+  assert.equal(context.session.status, 'ready', 'the command\'s turn settled');
 });
 
 test('a $skill chip is rewritten to /skill:name so Pi expands it', async (t) => {

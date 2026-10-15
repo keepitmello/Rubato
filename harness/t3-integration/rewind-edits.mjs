@@ -20,6 +20,8 @@ export const rewindOverlays = [
   'packages/shared/src/rubatoRevertRetention.ts',
   'packages/shared/src/rubatoRevertRetention.test.ts',
   'apps/web/src/components/rubatoRewindWait.test.ts',
+  'apps/server/src/rubatoRewindCommand.ts',
+  'apps/server/src/rubatoRewindCommand.test.ts',
 ];
 
 const IMPORT_ANCHOR = 'import { compareDateTimeStrings } from "@t3tools/shared/dateTime";\n';
@@ -182,6 +184,52 @@ const CONVERSATION_CHECKPOINTS_TEST = `  it("numbers Rubato turns in a workspace
 
 `;
 
+// `/rewind [turns]` (rubatoRewindCommand.ts): T3's revert waits for the command's turn.
+const REWIND_COMMAND_TEST = `  it("/rewind reverts the asked turns and its own once its turn is numbered", async () => {
+    const harness = await createHarness({
+      initializeGit: false,
+      seedFilesystemCheckpoints: false,
+      providerName: ProviderDriverKind.make("rubato-pi"),
+    });
+    const threadId = ThreadId.make("thread-1");
+    const complete = async (turn: string) => {
+      harness.provider.emit({
+        type: "turn.completed",
+        eventId: EventId.make(\`turn.completed-\${turn}\`),
+        provider: ProviderDriverKind.make("rubato-pi"),
+        createdAt: "2026-01-01T00:00:05.000Z",
+        threadId,
+        turnId: asTurnId(turn),
+        payload: { state: "completed" },
+      });
+      await harness.drain();
+    };
+    for (const turn of ["turn-1", "turn-2", "turn-3"]) await complete(turn);
+    // The bridge asks as soon as it settles the command's turn; T3 numbers it a moment later.
+    const rewind = (afterTurn: string, turns: number) =>
+      runtime!.runPromise(
+        rewindAfterCommand("thread-1", { afterTurn, turns }).pipe(
+          Effect.provide(NodeServices.layer),
+        ),
+      );
+    const rewound = rewind("command", 2);
+    await complete("command");
+    await rewound;
+    await waitForEvent(harness.engine, (event) => event.type === "thread.reverted");
+    await waitForThread(harness.readModel, (entry) => entry.checkpoints.length === 1);
+    expect(harness.provider.rollbackConversation).toHaveBeenCalledWith({ threadId, numTurns: 3 });
+
+    // More turns than there are is told in the thread, and nothing is reverted.
+    await rewind("turn-1", 1);
+    const thread = (await harness.readModel()).threads[0];
+    expect(
+      thread?.activities.find((activity) => activity.kind === "checkpoint.revert.failed")?.payload,
+    ).toEqual({ detail: "This conversation has only 0 turns to rewind." });
+    expect(harness.provider.rollbackConversation).toHaveBeenCalledTimes(1);
+  });
+
+`;
+
 const countingFor = (id) => [
   `  const retainedUserCount = messages.filter(
     (message) =>
@@ -243,8 +291,10 @@ export const rewindEdits = {
 `, 'replace'],
   ],
   'apps/server/src/orchestration/Layers/CheckpointReactor.test.ts': [
+    ['import { checkpointRefForThreadTurn } from "../../checkpointing/Utils.ts";\n',
+      'import { rewindAfterCommand } from "../../rubatoRewindCommand.ts";\n'],
     ['  it("executes provider revert and emits thread.reverted for claude sessions", async () => {\n',
-      CONVERSATION_CHECKPOINTS_TEST],
+      CONVERSATION_CHECKPOINTS_TEST + REWIND_COMMAND_TEST],
   ],
   // The wait for a rewind to show asked that no checkpoint lie past the rewound point.
   // A child's completion can open a new turn on the rewound branch before the request's

@@ -194,10 +194,15 @@ function revertPending(thread, { dropped, cut }) {
 }
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
-    appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession }) {
+    appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession,
+    rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); } }) {
     // appendSessionMessage(threadId, item) writes a session message into the T3
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
-    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows });
+    // rewindConversation(threadId, { afterTurn, turns }) asks T3 to revert `turns` turns
+    // before the turn `afterTurn` and that turn too (/rewind); T3's revert then comes
+    // back through rollbackThread like a rewind from a button.
+    Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
+      rewindConversation });
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     // threadId -> the prompt its session opens with, set by the new-thread screen just before the
     // first message and taken by open(). session-prompts.mjs.
@@ -547,6 +552,7 @@ export class RubatoPiBridge {
   }
   sendTurn(input) {
     const context = this.require(input.threadId);
+    let rewind;
     const operation = context.queue.then(async () => {
       if (context.stopped) throw new Error('Attachment closed before send');
       await this.restoreSession(context);
@@ -586,12 +592,16 @@ export class RubatoPiBridge {
       const running = beforeSend?.isStreaming === true
         || (context.session.status === 'running' && !context.projection.awaiting);
       if (control && running) throw new Error(`Interrupt the current turn before /${control.name}`);
+      if (control?.name === 'rewind') await this.checkRewindable(input.threadId, control.rpc.turns);
       const turnId = context.projection.begin();
       context.session.status = 'running'; this.stateEvent(context);
       try {
         if (control) {
           context.projection.sawCompaction = false;
-          if (control.name === 'compact' && await this.compactCommandAvailable(context)) {
+          if (control.name === 'rewind') {
+            // Nothing for Pi yet: T3 reverts once this turn has settled (below).
+            rewind = { afterTurn: turnId, turns: control.rpc.turns };
+          } else if (control.name === 'compact' && await this.compactCommandAvailable(context)) {
             // 정리 방식은 확장이 모드를 보고 고른다. 완료는 실제 컷이 만드는
             // compaction_end 가 알리므로 여기서 'compacted' 를 지어내지 않는다.
             await context.client.command({ type: 'prompt', message: slashText(control) });
@@ -621,7 +631,21 @@ export class RubatoPiBridge {
       if (control) { context.projection.settle(); context.session.status = 'ready'; this.stateEvent(context); }
       return { threadId: input.threadId, turnId, resumeCursor: context.session.resumeCursor };
     });
-    context.queue = operation.catch(() => {}); return operation;
+    context.queue = operation.catch(() => {});
+    // Outside the queue: T3's revert comes back as rollbackThread, which queues behind this.
+    void operation.then(() => rewind && this.rewindConversation(input.threadId, rewind)).catch((error) => this.onError?.(error));
+    return operation;
+  }
+  /**
+   * /rewind is refused up front when T3 shows fewer turns than it asks for; the count is
+   * every turn T3 has a row or a checkpoint for. A refusal reaches the app as the send's error.
+   */
+  async checkRewindable(threadId, turns) {
+    const thread = await this.projectedThread(threadId);
+    const known = new Set([...(thread?.checkpoints ?? []).map((checkpoint) => checkpoint.turnId),
+      ...(thread?.messages ?? []).map((message) => message.turnId).filter((turnId) => turnId != null)]);
+    if (turns > known.size)
+      throw new Error(known.size === 0 ? 'There is nothing to rewind yet' : `This conversation has only ${known.size} turn${known.size === 1 ? '' : 's'} to rewind`);
   }
   reportControl(context, control) {
     if (control.name === 'name') context.projection.event('thread.metadata.updated', { name: control.args });

@@ -70,6 +70,8 @@ export type PiImportedMessage =
 export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
+  /** `/rewind`: T3's conversation revert of `turns` turns before `afterTurn`, and that turn (RubatoPiInventory.ts). */
+  rewindConversation: (threadId: string, request: {readonly afterTurn: string; readonly turns: number}) => Promise<void>;
   projectedThread: (threadId: string) => Promise<{
     messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null; createdAt: string}>;
     checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;

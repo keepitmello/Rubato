@@ -31,6 +31,15 @@ export const CONTROL = {
     description: 'Reload extensions, skills, prompts, and context files',
     command: () => ({ type: 'reload' }),
   },
+  // The phone app draws no rewind button, so a rewind is typed there. It sends Pi
+  // nothing: T3 runs its own revert for it (the bridge's rewindConversation), which
+  // rewinds Pi and drops the rows on every screen. `turns` counts back from the turn
+  // before this command.
+  rewind: {
+    description: 'Rewind the last turns of this conversation (files stay)',
+    input: { hint: 'turns, default 1' },
+    command: (args) => ({ turns: args ? Number(args) : 1 }),
+  },
 };
 
 // Same token shape T3 chips and ClaudeSkillDispatch recognise, so a listed
@@ -92,6 +101,8 @@ export function controlCommandFor(text) {
   const spec = parsed && CONTROL[parsed.name];
   if (!spec) return;
   if (parsed.name === 'name' && !parsed.args) throw new Error('Session name cannot be empty');
+  if (parsed.name === 'rewind' && parsed.args && !/^[1-9][0-9]*$/.test(parsed.args))
+    throw new Error('/rewind takes how many turns to rewind, like /rewind 2');
   return { name: parsed.name, args: parsed.args, rpc: spec.command(parsed.args) };
 }
 
