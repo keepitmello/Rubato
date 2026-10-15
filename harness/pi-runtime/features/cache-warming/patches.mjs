@@ -10,7 +10,7 @@
 // hours after the latest user input, refreshing Claude every 40 minutes (1h tier), Codex every
 // 20 minutes (30m tier) and Gemini on Vertex every 10 minutes. Vertex implicit caching has no
 // declared lifetime: Google's Gemini 4 Argon guide names a 15-20 minute TTL, so the warmer
-// plans on 15. Inside that window every refresh is sent; outside it none is. Other
+// plans on 15 and stops at the first refresh that reads nothing (`warmMissedCache`). Inside that window every refresh is sent; outside it none is. Other
 // providers keep stock behaviour.
 //
 // The person can also set the end directly ("warm for N hours from now"). The latest action wins:
@@ -92,6 +92,15 @@ export const RUBATO_WARMING_HORIZON_MS = 2 * 60 * 60_000;
 export const RUBATO_WARMING_MAX_HOURS = 24;
 export function rubatoWarmingIntervalMs(model) {
     return RUBATO_WARMING_INTERVAL_MS[model?.provider];
+}
+/**
+ * Gemini on Vertex has no refreshable lifetime to rely on: Google documents a 15-20 minute TTL and
+ * a 24h ceiling after creation, and says nothing about a read extending it. A refresh that comes
+ * back with nothing read has just paid full input price to write a new entry, and repeating that
+ * every interval costs more than one cold request, so the first miss ends warming.
+ */
+export function warmMissedCache(model, usage) {
+    return model?.provider === "google-vertex" && usage !== undefined && !(usage.cacheRead > 0);
 }
 /** Providers whose replay cannot be capped at one output token; the refresh stops after prefill. */
 function stopsAfterPrefill(model) {
@@ -308,6 +317,10 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
                 if (this.held)
                     this.held.touchedAt = Date.now();
                 this.onWarmed?.(entry);
+                if (!prefillOnly && warmMissedCache(run.model, message.usage)) {
+                    this.stop("refresh missed the cache; a read does not extend its life");
+                    return;
+                }
             }`,
     "refresh",
   );

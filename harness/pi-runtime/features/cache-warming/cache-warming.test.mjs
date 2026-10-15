@@ -26,7 +26,7 @@ function model(provider) {
   return { provider, id: `${provider}-model`, api: provider === "anthropic" ? "anthropic-messages" : "openai-codex-responses", cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 } };
 }
 
-function harness(provider, userAt) {
+function harness(provider, userAt, warmUsage = usage) {
   const branch = [
     { type: "message", message: { role: "user", timestamp: userAt } },
     { type: "message", message: { role: "assistant", usage } },
@@ -37,7 +37,7 @@ function harness(provider, userAt) {
     streamSimple(requestModel, _context, options) {
       calls.push(options);
       const stream = new AssistantMessageEventStream();
-      const message = { role: "assistant", provider: requestModel.provider, model: requestModel.id, usage, stopReason: "stop", content: [] };
+      const message = { role: "assistant", provider: requestModel.provider, model: requestModel.id, usage: warmUsage, stopReason: "stop", content: [] };
       queueMicrotask(() => {
         stream.push({ type: "start", partial: message });
         if (provider === "openai-codex") {
@@ -371,4 +371,37 @@ test("a Vertex Gemini session is warmed every 10 minutes with a one-token replay
   assert.equal(calls[0].maxTokens, 1);
   await advance(10 * MIN);
   assert.equal(warms.length, 2);
+});
+
+test("a Vertex refresh that reads nothing from the cache ends warming; a hit keeps it going", async (t) => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const missed = harness("google-vertex", 0, { ...usage, input: 300_000, cacheRead: 0 });
+  missed.warmer.start({ model: model("google-vertex"), context: {}, options: {} }, () => true);
+  missed.warmer.onAgentSettled();
+  await advance(10 * MIN);
+  assert.equal(missed.warms.length, 1, "the miss is recorded");
+  assert.equal(missed.warmer.status.state, "inactive");
+  assert.match(missed.warmer.status.reason, /refresh missed the cache/);
+  await advance(10 * MIN);
+  assert.equal(missed.warms.length, 1, "and nothing is sent after it");
+
+  mock.timers.reset();
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const hit = harness("google-vertex", 0);
+  hit.warmer.start({ model: model("google-vertex"), context: {}, options: {} }, () => true);
+  hit.warmer.onAgentSettled();
+  await advance(10 * MIN);
+  assert.equal(hit.warmer.status.state, "scheduled");
+});
+
+test("a Claude refresh that reads nothing keeps warming: only Vertex stops on a miss", async (t) => {
+  t.after(() => mock.timers.reset());
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  const { warmer, warms } = harness("anthropic", 0, { ...usage, input: 300_000, cacheRead: 0 });
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+  assert.equal(warmer.status.state, "scheduled");
 });
