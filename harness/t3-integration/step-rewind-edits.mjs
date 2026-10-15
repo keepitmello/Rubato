@@ -14,6 +14,12 @@
 //   that state so the next turn's diff starts from it.
 // - The bridge tags tool rows with the batch they were called in (`rubatoStep`); the
 //   activity projection passes it to clients so the timeline cuts after the whole batch.
+// - Folded rows rewind too, with nothing expanded: "Worked for" and a tool group's row
+//   land after the last step under them, and a reply's action row lands right after the
+//   reply (an ordinary turn revert).
+// - A toast that is limited out of the stack or leaving is invisible, and it no longer
+//   catches the pointer: it covered the top right, where a just-sent message sits, so
+//   hovering that message showed no "Edit from here".
 export const stepRewindOverlays = [
   'packages/shared/src/rubatoStepRewind.ts',
   'apps/server/src/rubatoStepRewind.ts',
@@ -25,6 +31,10 @@ export const stepRewindOverlays = [
 
 const lines = (...parts) => parts.join('\n');
 const CUT_IMPORT = 'import { keptAfterRevertCut } from "@t3tools/shared/rubatoRevertRetention";\n';
+
+// The tool group header as T3 renders it, and the same header with the rewind button.
+const ACTIVITY_GROUP_HEADER = "  return (\n    <div>\n      <button\n        type=\"button\"\n        className=\"group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70\"\n        aria-label={failed ? `${label}, tool call failed` : undefined}\n        aria-expanded={row.expanded}\n        onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}\n      >\n        <DwellingLiveActivityRow\n          dwellKey={row.active ? label : null}\n          label={label}\n          iconName={iconWork ? workEntryIconName(iconWork) : \"brain\"}\n          toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}\n          failed={failed}\n          active={row.active}\n          shimmer={thinking}\n        />\n      </button>\n      {row.expanded ? <div className=\"mt-2\">{details}</div> : null}\n";
+const ACTIVITY_GROUP_HEADER_WITH_REWIND = "  const rubatoGroupActivity = use(TimelineRowActivityCtx);\n  return (\n    <div>\n      <div className=\"group/timeline-row flex items-center gap-1\">\n        <button\n          type=\"button\"\n          className=\"group/live-work flex min-h-6 w-full max-w-full cursor-pointer items-center rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/70\"\n          aria-label={failed ? `${label}, tool call failed` : undefined}\n          aria-expanded={row.expanded}\n          onClick={() => ctx.onToggleWorkGroup(row.groupId, row.id)}\n        >\n          <DwellingLiveActivityRow\n            dwellKey={row.active ? label : null}\n            label={label}\n            iconName={iconWork ? workEntryIconName(iconWork) : \"brain\"}\n            toolIcon={iconWork?.toolIcon ?? iconWork?.toolSource?.icon}\n            failed={failed}\n            active={row.active}\n            shimmer={thinking}\n          />\n        </button>\n        <RubatoStepRewindButton\n          threadKey={ctx.routeThreadKey}\n          threadRef={ctx.threadRef}\n          target={{\n            kind: \"last-step\",\n            turnId: row.turnId,\n            toolCallIds: work.map((entry) => entry.toolCallId),\n          }}\n          label={label}\n          busy={\n            row.active || rubatoGroupActivity.isWorking || rubatoGroupActivity.isRevertingCheckpoint\n          }\n        />\n      </div>\n      {row.expanded ? <div className=\"mt-2\">{details}</div> : null}\n";
 
 export const stepRewindEdits = {
   'packages/shared/package.json': [
@@ -657,8 +667,7 @@ export const stepRewindEdits = {
       '          <RubatoStepRewindButton',
       '            threadKey={rubatoThreadKey}',
       '            threadRef={threadRef}',
-      '            toolCallId={workEntry.toolCallId}',
-      '            turnId={workEntry.turnId}',
+      '            target={{ kind: "step", toolCallId: workEntry.toolCallId, turnId: workEntry.turnId }}',
       '            label={previewText}',
       '            busy={rubatoActivity.isWorking || rubatoActivity.isRevertingCheckpoint}',
       '          />',
@@ -675,11 +684,110 @@ export const stepRewindEdits = {
       '          <pre className={toolCallExpandedBodyClassName}>{expandedBody}</pre>',
       '        </div>',
       '      ) : null}',
-      '      <RubatoStepRewindMarker threadKey={rubatoThreadKey} toolCallId={workEntry.toolCallId} />',
+      '      <RubatoStepRewindMarker threadKey={rubatoThreadKey} anchorId={workEntry.toolCallId} />',
       '    </div>',
       '  );',
       '});',
       ''), 'replace'],
+    // "Worked for": after the turn's last step, with nothing expanded.
+    ['  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;\n', lines(
+      '  const Icon = row.expanded ? ChevronDownIcon : ChevronRightIcon;',
+      '  const rubatoFoldActivity = use(TimelineRowActivityCtx);',
+      ''), 'replace'],
+    [lines(
+      '      <TimelineRowTimestamp',
+      '        createdAt={row.createdAt}',
+      '        timestampFormat={ctx.timestampFormat}',
+      '        className="ms-auto"',
+      '      />',
+      '    </div>',
+      '  );',
+      '}',
+      ''), lines(
+      '      <TimelineRowTimestamp',
+      '        createdAt={row.createdAt}',
+      '        timestampFormat={ctx.timestampFormat}',
+      '        className="ms-auto"',
+      '      />',
+      '      <RubatoStepRewindButton',
+      '        threadKey={ctx.routeThreadKey}',
+      '        threadRef={ctx.threadRef}',
+      '        target={{ kind: "last-step", turnId: row.turnId }}',
+      '        label="this work"',
+      '        busy={rubatoFoldActivity.isWorking || rubatoFoldActivity.isRevertingCheckpoint}',
+      '      />',
+      '    </div>',
+      '  );',
+      '}',
+      ''), 'replace'],
+    // A tool group's row: after its last step. The header is a button, so the rewind
+    // button sits beside it.
+    [ACTIVITY_GROUP_HEADER, ACTIVITY_GROUP_HEADER_WITH_REWIND, 'replace'],
+    // A reply's action row: right after that reply.
+    [lines(
+      '}) {',
+      '  const ctx = use(TimelineRowCtx);',
+      '',
+      '  return (',
+      '    <div',
+      '      className={cn(',
+      '        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",',
+      ''), lines(
+      '}) {',
+      '  const ctx = use(TimelineRowCtx);',
+      '  const rubatoMetaActivity = use(TimelineRowActivityCtx);',
+      '',
+      '  return (',
+      '    <div',
+      '      className={cn(',
+      '        "flex items-center gap-2 text-xs tabular-nums transition-opacity duration-200",',
+      ''), 'replace'],
+    [lines(
+      '      <AssistantCopyButton',
+      '        message={message}',
+      '        showCopyButton={showCopyButton}',
+      '        streaming={copyStreaming}',
+      '      />',
+      ''), lines(
+      '      <AssistantCopyButton',
+      '        message={message}',
+      '        showCopyButton={showCopyButton}',
+      '        streaming={copyStreaming}',
+      '      />',
+      '      <RubatoStepRewindButton',
+      '        threadKey={ctx.routeThreadKey}',
+      '        threadRef={ctx.threadRef}',
+      '        target={{ kind: "reply", turnId: message.turnId, messageId: message.id }}',
+      '        label="this reply"',
+      '        busy={',
+      '          Boolean(message.streaming) ||',
+      '          message.turnId === rubatoMetaActivity.latestTurnId ||',
+      '          rubatoMetaActivity.isWorking ||',
+      '          rubatoMetaActivity.isRevertingCheckpoint',
+      '        }',
+      '        reveal="inherit"',
+      '      />',
+      ''), 'replace'],
+    [lines(
+      '            copyStreaming={row.assistantCopyStreaming}',
+      '          />',
+      '        ) : null}',
+      '      </div>',
+      '    </>',
+      ''), lines(
+      '            copyStreaming={row.assistantCopyStreaming}',
+      '          />',
+      '        ) : null}',
+      '        <RubatoStepRewindMarker threadKey={ctx.routeThreadKey} anchorId={row.message.id} />',
+      '      </div>',
+      '    </>',
+      ''), 'replace'],
+  ],
+  'apps/web/src/components/ui/toast.tsx': [
+    ['                "data-limited:opacity-0",\n',
+      '                "data-limited:pointer-events-none data-limited:opacity-0",\n', 'replace'],
+    ['                "data-ending-style:opacity-0",\n',
+      '                "data-ending-style:pointer-events-none data-ending-style:opacity-0",\n', 'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { appAtomRegistry } from "../rpc/atomRegistry";\n',
@@ -694,7 +802,7 @@ export const stepRewindEdits = {
       '      if (!activeThread) throw new Error("This thread is not loaded.");',
       '      const result = await revertThreadCheckpoint({',
       '        environmentId,',
-      '        input: { threadId: activeThread.id, turnCount, restoreFiles, step },',
+      '        input: { threadId: activeThread.id, turnCount, restoreFiles, ...(step ? { step } : {}) },',
       '      });',
       '      if (result._tag === "Failure") throw squashAtomCommandFailure(result);',
       '    },',

@@ -28,11 +28,22 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 // - "Rewind & continue": rewinds now and runs on from the step's results with no message.
 // The cut is the server's own rule (revertCutFor), so the preview fades exactly what the
 // server drops and the wait ends when exactly that is gone.
+//
+// The same button sits where the steps are folded away: the "Worked for" row and a tool
+// group's row rewind after the last step under them, so nothing has to be expanded. A
+// reply's row rewinds to right after that reply: a turn boundary, so it is T3's ordinary
+// turn revert, and with the reply last there is nothing to continue from.
 
-/** A rewind point: after the step `toolCallId` belongs to, inside turn `turnId`. */
+/**
+ * A rewind point. `step`: after the step `toolCallId` belongs to, inside turn `turnId`.
+ * `turn`: after turn `turnId`, which ends at the reply `anchorId`.
+ */
 export interface StepCut {
+  readonly kind: "step" | "turn";
   readonly turnId: TurnId;
-  readonly toolCallId: string;
+  /** The row the rewind lands after: the step's call, or the reply. */
+  readonly anchorId: string;
+  readonly toolCallId?: string | undefined;
   /** When the step finished; the turn's rows stamped later go. */
   readonly after: string;
   /** The turn's checkpoint count: later turns go. */
@@ -44,10 +55,11 @@ export interface StepRewindHost {
   readonly threadRef: ScopedThreadRef;
   /** Files can be restored only in a thread's own worktree. */
   readonly canRestoreFiles: boolean;
+  /** Without `step`, T3's ordinary turn revert. */
   readonly revert: (input: {
     readonly turnCount: number;
     readonly restoreFiles: boolean;
-    readonly step: { readonly turnId: TurnId; readonly toolCallId: string };
+    readonly step?: { readonly turnId: TurnId; readonly toolCallId: string } | undefined;
   }) => Promise<void>;
   readonly focusComposer: () => void;
 }
@@ -146,7 +158,122 @@ export function stepCutFor(
     activities: thread.activities,
   });
   if (typeof resolved === "string") return resolved;
-  return { ...resolved.cut, turnCount, label };
+  return { ...resolved.cut, kind: "step", anchorId: row.toolCallId, turnCount, label };
+}
+
+const callOf = (activity: { readonly payload: unknown }): string | undefined => {
+  const value = (activity.payload as { toolCallId?: unknown } | null)?.toolCallId;
+  return typeof value === "string" ? value : undefined;
+};
+
+/**
+ * The cut after the last finished Rubato step of a turn, or of the calls `toolCallIds`
+ * when a tool group names them: what a folded row rewinds to.
+ */
+export function lastStepCutFor(
+  thread: ThreadDetail,
+  scope: { readonly turnId: TurnId; readonly toolCallIds?: ReadonlyArray<string | undefined> },
+): StepCut | string {
+  const calls = scope.toolCallIds ? new Set(scope.toolCallIds) : undefined;
+  let last: OrchestrationThreadActivity | undefined;
+  for (const activity of thread.activities as ReadonlyArray<OrchestrationThreadActivity>) {
+    const call = callOf(activity);
+    if (
+      activity.kind !== "tool.completed" ||
+      activity.turnId !== scope.turnId ||
+      !call?.startsWith("pi-tool:") ||
+      (calls !== undefined && !calls.has(call))
+    )
+      continue;
+    if (!last || compareDateTimeStrings(activity.createdAt, last.createdAt) > 0) last = activity;
+  }
+  if (!last) return "There is no finished step to rewind to here.";
+  const title = (last.payload as { title?: unknown } | null)?.title;
+  return stepCutFor(
+    thread,
+    { toolCallId: callOf(last)!, turnId: scope.turnId },
+    typeof title === "string" && title.length > 0 ? title : last.summary,
+  );
+}
+
+/** The cut right after a turn's reply: the turn stays whole and the turns after it go. */
+export function replyCutFor(
+  thread: ThreadDetail,
+  reply: { readonly turnId: TurnId; readonly messageId: string },
+): StepCut | string {
+  const turnCount = thread.checkpoints.find(
+    (checkpoint) => checkpoint.turnId === reply.turnId,
+  )?.checkpointTurnCount;
+  if (turnCount === undefined) return "This turn has not finished yet.";
+  if (!thread.checkpoints.some((checkpoint) => (checkpoint.checkpointTurnCount ?? 0) > turnCount))
+    return "Nothing comes after this reply.";
+  // The turn keeps every row it has, so the cut sits after the latest of them.
+  let after: string | undefined;
+  for (const row of [...thread.messages, ...thread.activities]) {
+    if (row.turnId !== reply.turnId) continue;
+    if (after === undefined || compareDateTimeStrings(row.createdAt, after) > 0)
+      after = row.createdAt;
+  }
+  if (after === undefined) return "This reply is not in the thread any more.";
+  return {
+    kind: "turn",
+    turnId: reply.turnId,
+    anchorId: reply.messageId,
+    after,
+    turnCount,
+    label: "this reply",
+  };
+}
+
+/** Where a rewind button points. */
+export type RewindTarget =
+  | {
+      readonly kind: "step";
+      readonly toolCallId: string | undefined;
+      readonly turnId: TurnId | null | undefined;
+    }
+  | {
+      readonly kind: "last-step";
+      readonly turnId: TurnId | null | undefined;
+      readonly toolCallIds?: ReadonlyArray<string | undefined>;
+    }
+  | {
+      readonly kind: "reply";
+      readonly turnId: TurnId | null | undefined;
+      readonly messageId: string;
+    };
+
+function resolveTarget(
+  thread: ThreadDetail,
+  target: RewindTarget,
+  label: string,
+): StepCut | string {
+  if (!target.turnId) return "This row belongs to no turn.";
+  switch (target.kind) {
+    case "step":
+      return target.toolCallId
+        ? stepCutFor(thread, { toolCallId: target.toolCallId, turnId: target.turnId }, label)
+        : "This row names no tool call.";
+    case "last-step":
+      return lastStepCutFor(thread, {
+        turnId: target.turnId,
+        ...(target.toolCallIds ? { toolCallIds: target.toolCallIds } : {}),
+      });
+    case "reply":
+      return replyCutFor(thread, { turnId: target.turnId, messageId: target.messageId });
+  }
+}
+
+/** Whether a target can be offered at all, before the thread is read. */
+function offered(target: RewindTarget): boolean {
+  if (!target.turnId) return false;
+  if (target.kind === "step") return target.toolCallId?.startsWith("pi-tool:") === true;
+  if (target.kind === "last-step")
+    return (
+      target.toolCallIds === undefined ||
+      target.toolCallIds.some((call) => call?.startsWith("pi-tool:"))
+    );
+  return true;
 }
 
 export interface StepRewindSummary {
@@ -263,7 +390,9 @@ function land(host: StepRewindHost, cut: StepCut, restoreFiles: boolean): Promis
     host.revert({
       turnCount: cut.turnCount,
       restoreFiles,
-      step: { turnId: cut.turnId, toolCallId: cut.toolCallId },
+      ...(cut.kind === "step" && cut.toolCallId
+        ? { step: { turnId: cut.turnId, toolCallId: cut.toolCallId } }
+        : {}),
     }),
   );
 }
@@ -319,26 +448,39 @@ export function useRubatoStepRewindHost(threadKey: string, host: StepRewindHost)
 
 const stop = (event: MouseEvent | PointerEvent) => event.stopPropagation();
 
-/** The rewind button on a finished Rubato tool row, with its card. */
+/**
+ * A rewind button with its card: on a finished Rubato tool row, on a folded row (after its
+ * last step), or on a reply. `reveal: "row"` shows it while its `group/timeline-row` is
+ * hovered; `"inherit"` leaves that to the surrounding row (a reply's action row).
+ */
 export function RubatoStepRewindButton(props: {
   readonly threadKey: string;
   readonly threadRef: ScopedThreadRef | null;
-  readonly toolCallId: string | undefined;
-  readonly turnId: TurnId | null | undefined;
+  readonly target: RewindTarget;
   readonly label: string;
   readonly busy: boolean;
+  readonly reveal?: "row" | "inherit";
 }) {
-  const { threadKey, threadRef, toolCallId, turnId, label, busy } = props;
+  const { threadKey, threadRef, target, label, busy, reveal = "row" } = props;
   const [card, setCard] = useState<{ cut: StepCut; summary: StepRewindSummary } | null>(null);
   const [restoreFiles, setRestoreFiles] = useState(true);
-  const pending = useRewindState(
-    () => states.get(threadKey)?.pending?.cut.toolCallId === toolCallId,
-  );
-  if (!threadRef || !toolCallId?.startsWith("pi-tool:") || !turnId || busy) return null;
-  const row = { toolCallId, turnId };
+  const anchor =
+    target.kind === "step"
+      ? target.toolCallId
+      : target.kind === "reply"
+        ? target.messageId
+        : undefined;
+  const pending = useRewindState(() => {
+    const cut = states.get(threadKey)?.pending?.cut;
+    return (
+      cut !== undefined &&
+      (anchor !== undefined ? cut.anchorId === anchor : cut.turnId === target.turnId)
+    );
+  });
+  if (!threadRef || !offered(target) || busy) return null;
   const resolve = (): StepCut | string => {
     const thread = readThread(threadRef);
-    return thread ? stepCutFor(thread, row, label) : "This thread is not loaded.";
+    return thread ? resolveTarget(thread, target, label) : "This thread is not loaded.";
   };
   const host = hosts.get(threadKey);
   const canRestoreFiles = host?.canRestoreFiles === true;
@@ -391,7 +533,9 @@ export function RubatoStepRewindButton(props: {
     >
       <span
         className={cn(
-          "flex shrink-0 opacity-0 transition-opacity focus-within:opacity-100 group-hover/timeline-row:opacity-100",
+          "flex shrink-0",
+          reveal === "row" &&
+            "opacity-0 transition-opacity focus-within:opacity-100 group-hover/timeline-row:opacity-100",
           (card !== null || pending) && "opacity-100",
         )}
       >
@@ -441,7 +585,7 @@ export function RubatoStepRewindButton(props: {
             restoreFiles={restoreFiles}
             onRestoreFilesChange={setRestoreFiles}
             onInstruct={instruct}
-            onContinue={resume}
+            {...(card.cut.kind === "step" ? { onContinue: resume } : {})}
             onCancel={close}
           />
         </PopoverPopup>
@@ -458,7 +602,8 @@ export function StepRewindCard(props: {
   readonly restoreFiles: boolean;
   readonly onRestoreFilesChange: (restore: boolean) => void;
   readonly onInstruct: () => void;
-  readonly onContinue: () => void;
+  /** Absent where there is nothing to continue from (after a reply). */
+  readonly onContinue?: (() => void) | undefined;
   readonly onCancel: () => void;
 }) {
   return (
@@ -482,7 +627,11 @@ export function StepRewindCard(props: {
       </p>
       <dl className="grid grid-cols-[5.5rem_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-muted-foreground">Conversation</dt>
-        <dd className="min-w-0">Keeps everything up to this result, as the model saw it.</dd>
+        <dd className="min-w-0">
+          {props.cut.kind === "step"
+            ? "Keeps everything up to this result, as the model saw it."
+            : "Keeps this reply and everything before it."}
+        </dd>
         <dt className="text-muted-foreground">Files</dt>
         <dd className="min-w-0">
           {props.canRestoreFiles ? (
@@ -518,9 +667,11 @@ export function StepRewindCard(props: {
         <Button size="xs" autoFocus onClick={props.onInstruct}>
           Rewind &amp; instruct
         </Button>
-        <Button size="xs" variant="outline" onClick={props.onContinue}>
-          Rewind &amp; continue
-        </Button>
+        {props.onContinue ? (
+          <Button size="xs" variant="outline" onClick={props.onContinue}>
+            Rewind &amp; continue
+          </Button>
+        ) : null}
         <Button size="xs" variant="ghost-muted" onClick={props.onCancel}>
           Cancel
         </Button>
@@ -553,11 +704,12 @@ export function StepRewindMarkerLine(props: { readonly onUndo: () => void }) {
 /** Under the row a waiting rewind lands after: where the next message will go. */
 export function RubatoStepRewindMarker(props: {
   readonly threadKey: string;
-  readonly toolCallId: string | undefined;
+  /** The tool call or reply the rewind lands after. */
+  readonly anchorId: string | undefined;
 }) {
   const pending = useRewindState(() => {
     const cut = states.get(props.threadKey)?.pending?.cut;
-    return cut !== undefined && cut.toolCallId === props.toolCallId ? cut : undefined;
+    return cut !== undefined && cut.anchorId === props.anchorId ? cut : undefined;
   });
   if (!pending) return null;
   return <StepRewindMarkerLine onUndo={() => cancelPending(props.threadKey)} />;
