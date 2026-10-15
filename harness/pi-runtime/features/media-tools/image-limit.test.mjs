@@ -62,12 +62,15 @@ test("unresizable oversized images become a text note instead of 400ing the requ
 	});
 });
 
-test("video attachments are not treated as still images", async () => {
-	const clip = { type: "image", data: "aaaa", mimeType: "video/mp4" };
+test("video and audio attachments are not treated as still images", async () => {
 	const process = async () => {
-		throw new Error("must not resize video");
+		throw new Error("must not resize media");
 	};
-	assert.equal(await limitImageBlock(clip, { process }), clip);
+	for (const mimeType of ["video/mp4", "audio/mp3"]) {
+		const clip = { type: "image", data: "aaaa", mimeType };
+		assert.equal(await limitImageBlock(clip, { process }), clip);
+		assert.equal(await compactStoredImage(clip, { process }), clip);
+	}
 });
 
 test("limitInlineImages walks user and toolResult image blocks", async () => {

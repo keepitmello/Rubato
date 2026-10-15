@@ -474,6 +474,131 @@ function convertMessages(transformedMessages, isOAuthToken, cacheControl, allowE
 	return next;
 }
 
+const READ_MEDIA_IMPORT = 'import { readMediaFile } from "../../../../../../rubato-features/media-tools/src/read-media/index.mjs";\n';
+
+/** `read` hands video and audio to read-media before its image and text paths. */
+export function patchReadMedia(source) {
+	let next = replaceOnce(
+		source,
+		'import { processImage } from "../../utils/image-process.js";\n',
+		`${READ_MEDIA_IMPORT}import { processImage } from "../../utils/image-process.js";\n`,
+		"read-media-import",
+	);
+	next = replaceOnce(
+		next,
+		'    offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed)" })),\n    limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read" })),',
+		'    offset: Type.Optional(Type.Number({ description: "Line number to start reading from (1-indexed); for video and audio, the start in seconds" })),\n    limit: Type.Optional(Type.Number({ description: "Maximum number of lines to read; for video and audio, the length in seconds" })),',
+		"read-media-schema",
+	);
+	next = replaceOnce(
+		next,
+		"Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments.",
+		"Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. Video and audio files (mp4, mov, webm, mkv, mp3, wav, m4a, ...) are sent to Gemini models as media, re-encoded to 1 fps with mono audio; Gemini watches the frames and hears the audio.",
+		"read-media-description",
+	);
+	return replaceOnce(
+		next,
+		"                        const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;\n",
+		`                        const media = ops === defaultReadOperations
+                            ? await readMediaFile(absolutePath, ctx?.model, { offset, limit, signal })
+                            : undefined;
+                        if (aborted)
+                            return;
+                        if (media) {
+                            signal?.removeEventListener("abort", onAbort);
+                            resolve({ content: media.content, details: undefined });
+                            return;
+                        }
+                        const mimeType = ops.detectImageMimeType ? await ops.detectImageMimeType(absolutePath) : undefined;\n`,
+		"read-media-dispatch",
+	);
+}
+
+/** Video and audio ride in image blocks; the terminal draws only real images. */
+export function patchToolExecutionMedia(source) {
+	return replaceOnce(
+		source,
+		'            const imageBlocks = this.result.content.filter((c) => c.type === "image");',
+		'            const imageBlocks = this.result.content.filter((c) => c.type === "image" && !/^(video|audio)\\//i.test(String(c.mimeType)));',
+		"tool-execution-media",
+	);
+}
+
+/**
+ * Gemini function responses take images, PDF and text only (Vertex function calling docs,
+ * 2026-10-10). Video next to a functionResponse in the same turn makes Vertex answer 400
+ * "Requests ending with a model turn are not supported" (measured 2026-10-15, Gemini 4 Argon),
+ * so video and audio wait until the run of function responses ends and follow as their own user
+ * turn. Video asks for high media resolution: 280 tokens a frame instead of 70, which Google
+ * names as the setting for reading on-screen text.
+ */
+export function patchGoogleSharedMedia(source) {
+	let next = replaceOnce(
+		source,
+		`    const transformedMessages = transformMessages(conversation, model, normalizeToolCallId);
+    for (const msg of transformedMessages) {
+`,
+		`    const transformedMessages = transformMessages(conversation, model, normalizeToolCallId);
+    let pendingMediaParts = [];
+    const flushMediaParts = () => {
+        if (pendingMediaParts.length === 0)
+            return;
+        contents.push({ role: "user", parts: [{ text: "Tool result media:" }, ...pendingMediaParts] });
+        pendingMediaParts = [];
+    };
+    for (const msg of transformedMessages) {
+        if (msg.role !== "toolResult")
+            flushMediaParts();
+`,
+		"google-media-pending",
+	);
+	next = replaceOnce(
+		next,
+		`            const imageParts = imageContent.map((imageBlock) => ({
+                inlineData: {
+                    mimeType: imageBlock.mimeType,
+                    data: imageBlock.data,
+                },
+            }));`,
+		`            const isTimedMedia = (block) => /^(video|audio)\\//i.test(String(block.mimeType));
+            const imageParts = imageContent.filter((block) => !isTimedMedia(block)).map((imageBlock) => ({
+                inlineData: {
+                    mimeType: imageBlock.mimeType,
+                    data: imageBlock.data,
+                },
+            }));
+            const mediaParts = imageContent.filter(isTimedMedia).map((block) => ({
+                inlineData: {
+                    mimeType: block.mimeType,
+                    data: block.data,
+                },
+                ...(/^video\\//i.test(block.mimeType) ? { mediaResolution: { level: "MEDIA_RESOLUTION_HIGH" } } : {}),
+            }));`,
+		"google-media-parts",
+	);
+	next = replaceOnce(
+		next,
+		"                    ...(hasImages && modelSupportsMultimodalFunctionResponse && { parts: imageParts }),",
+		"                    ...(imageParts.length > 0 && modelSupportsMultimodalFunctionResponse && { parts: imageParts }),",
+		"google-media-nested-images",
+	);
+	next = replaceOnce(
+		next,
+		`            // For Gemini < 3, add images in a separate user message
+            if (hasImages && !modelSupportsMultimodalFunctionResponse) {`,
+		`            pendingMediaParts.push(...mediaParts);
+            // For Gemini < 3, add images in a separate user message
+            if (imageParts.length > 0 && !modelSupportsMultimodalFunctionResponse) {`,
+		"google-media-queue",
+	);
+	return replaceOnce(
+		next,
+		"    return contents;\n}",
+		"    flushMediaParts();\n    return contents;\n}",
+		"google-media-flush",
+	);
+}
+
 function walk(directory) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
 		const path = join(directory, entry.name);
@@ -518,6 +643,30 @@ export const patches = Object.freeze([
 		path: "dist/api/anthropic-messages.js",
 		preimageSha256: "beb7ec1ad646151f73ee0199c2b30b944d4066e9ba0fa47421aa446ab3d7ec96",
 		apply: patchAnthropicMessagesNative,
+	}),
+	Object.freeze({
+		id: "google-shared-media",
+		packageName: "@earendil-works/pi-ai",
+		version: VERSION,
+		path: "dist/api/google-shared.js",
+		preimageSha256: "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
+		apply: patchGoogleSharedMedia,
+	}),
+	Object.freeze({
+		id: "read-media",
+		packageName: "@earendil-works/pi-coding-agent",
+		version: VERSION,
+		path: "dist/core/tools/read.js",
+		preimageSha256: "6be7949968968f42a17ccbe341008db3f061cc1d757b42ff1d269bb0d4cc66f1",
+		apply: patchReadMedia,
+	}),
+	Object.freeze({
+		id: "tool-execution-media",
+		packageName: "@earendil-works/pi-coding-agent",
+		version: VERSION,
+		path: "dist/modes/interactive/components/tool-execution.js",
+		preimageSha256: "84c0b25031d0702f7599f6a779642c3bf7822e1f89919a543901da733e817941",
+		apply: patchToolExecutionMedia,
 	}),
 ]);
 export const files = Object.freeze(

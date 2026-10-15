@@ -1,3 +1,4 @@
+import { isTimedMediaMimeType } from "../read-media/index.mjs";
 import { processImage } from "./image-process.mjs";
 
 /** Anthropic many-image requests (>20 image/document blocks) reject any side over this. */
@@ -13,10 +14,6 @@ export const MANY_IMAGE_MAX_DIMENSION = 2000;
 export const STORED_IMAGE_MAX_DIMENSION = 1568;
 /** Base64 characters. Screenshots land well under this as JPEG and well over it as PNG. */
 export const STORED_IMAGE_MAX_BASE64 = 512 * 1024;
-
-export function isVideoMimeType(mimeType) {
-	return typeof mimeType === "string" && mimeType.toLowerCase().startsWith("video/");
-}
 
 export function readImageDimensions(bytes) {
 	if (!(bytes instanceof Uint8Array) || bytes.byteLength < 24) return null;
@@ -136,7 +133,7 @@ async function storedProcess(bytes, mimeType) {
  */
 export async function compactStoredImage(block, options = {}) {
 	if (block?.type !== "image" || typeof block.data !== "string" || block.data.length === 0) return block;
-	if (isVideoMimeType(block.mimeType)) return block;
+	if (isTimedMediaMimeType(block.mimeType)) return block;
 	const bytes = Buffer.from(block.data, "base64");
 	const dimensions = readImageDimensions(bytes);
 	if (dimensions && !exceedsLimit(dimensions, STORED_IMAGE_MAX_DIMENSION) && block.data.length < STORED_IMAGE_MAX_BASE64) {
@@ -152,12 +149,12 @@ export async function compactStoredImage(block, options = {}) {
 
 /**
  * Downscale one ImageContent block so neither side exceeds Anthropic's
- * many-image cap. Video attachments stay untouched. If resize fails, replace
+ * many-image cap. Video and audio attachments stay untouched. If resize fails, replace
  * the block with a text note so one oversized image cannot 400 the request.
  */
 export async function limitImageBlock(block, options = {}) {
 	if (block?.type !== "image" || typeof block.data !== "string" || block.data.length === 0) return block;
-	if (isVideoMimeType(block.mimeType)) return block;
+	if (isTimedMediaMimeType(block.mimeType)) return block;
 	const maxDimension = options.maxDimension ?? MANY_IMAGE_MAX_DIMENSION;
 	const cache = options.cache;
 	if (cache?.has(block.data)) return cache.get(block.data);
