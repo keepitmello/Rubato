@@ -15,17 +15,23 @@ import { readPreparedConnection } from "~/state/session";
 import { environmentThreadShells } from "~/state/threads";
 
 // "Fork thread" in the sidebar's thread menu (the thread action menu and the legacy
-// sidebar's). The server half is /rubato/thread-fork (RubatoThreadFork.ts): it copies
+// sidebar's), and "Fork into new chat" under a reply (chat/RubatoReplyFork.tsx). The server half is /rubato/thread-fork (RubatoThreadFork.ts): it copies
 // the thread's Rubato conversation into a new one and answers with the thread that shows it.
 
 const FORK_ROUTE = "/rubato/thread-fork";
 
 function rubatoDriverOf(environmentId: EnvironmentId, instanceId: string): boolean {
-  const providers = appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.providers ?? [];
-  return providers.some((provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi");
+  const providers =
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.providers ?? [];
+  return providers.some(
+    (provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi",
+  );
 }
 
-type ForkableThread = { readonly environmentId: EnvironmentId; readonly modelSelection: ModelSelection };
+type ForkableThread = {
+  readonly environmentId: EnvironmentId;
+  readonly modelSelection: ModelSelection;
+};
 
 /** Fork is offered for a thread that runs on Rubato; other providers keep their own history. */
 export function threadRunsOnRubato(
@@ -62,8 +68,14 @@ function waitForThreadShell(ref: ScopedThreadRef, timeoutMs = 10_000): Promise<v
   });
 }
 
-/** Forks the thread and answers with the new thread once the app can open it. */
-export async function forkThread(ref: ScopedThreadRef): Promise<ScopedThreadRef> {
+/**
+ * Forks the thread and answers with the new thread once the app can open it. `at`, a
+ * reply's message id, ends the copy at that reply's turn ("Fork into new chat").
+ */
+export async function forkThread(
+  ref: ScopedThreadRef,
+  options: { readonly at?: string } = {},
+): Promise<ScopedThreadRef> {
   const prepared = readPreparedConnection(ref.environmentId);
   if (!prepared) throw new Error("This Mac is not connected.");
   const access = await rubatoHttpAccess(prepared);
@@ -72,12 +84,17 @@ export async function forkThread(ref: ScopedThreadRef): Promise<ScopedThreadRef>
     method: "POST",
     credentials: access.credentials,
     headers: { ...access.headers, "content-type": "application/json" },
-    body: JSON.stringify({ threadId: ref.threadId }),
+    body: JSON.stringify({
+      threadId: ref.threadId,
+      ...(options.at === undefined ? {} : { at: options.at }),
+    }),
   });
-  const payload = (await response.json().catch(() => null)) as
-    | { threadId?: string; error?: { message?: string } }
-    | null;
-  if (!response.ok || !payload?.threadId) throw new Error(payload?.error?.message ?? `HTTP ${response.status}`);
+  const payload = (await response.json().catch(() => null)) as {
+    threadId?: string;
+    error?: { message?: string };
+  } | null;
+  if (!response.ok || !payload?.threadId)
+    throw new Error(payload?.error?.message ?? `HTTP ${response.status}`);
   const forked = scopeThreadRef(ref.environmentId, ThreadId.make(payload.threadId));
   await waitForThreadShell(forked);
   return forked;

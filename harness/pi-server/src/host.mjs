@@ -380,12 +380,16 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
             },
             // A new conversation from the completed history of `id`'s live branch (a
             // running turn stays behind), idle or running. `title` names the copy; `side`
-            // makes it a side chat (pi-runtime session-link/side-chat.mjs).
-            fork: async (id, { title, side = false } = {}) => {
+            // makes it a side chat (pi-runtime session-link/side-chat.mjs); `at`, a reply's
+            // fingerprint, ends the copy at that reply's turn (session-link forkedHistory).
+            fork: async (id, { title, side = false, at } = {}) => {
               if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw invalid('Invalid title');
               if (typeof side !== 'boolean') throw invalid('Invalid side');
+              if (at !== undefined && (typeof at !== 'string' || !/^[0-9a-f]{24}$/.test(at))) throw invalid('Invalid at');
               const source = handles.get(id)?.metadata.file ?? (await host.resolveSession(id)).file;
-              const { metadata } = await forkSessionFile({ source, sessionsDir, title: title?.trim(), side });
+              const { metadata } = await forkSessionFile({ source, sessionsDir, title: title?.trim(), side, at }).catch((error) => {
+                throw error?.code === 'invalid' ? invalid(error.message) : error;
+              });
               if (refreshing) await refreshing;
               await refresh();
               return directory.value.sessions.find((item) => item.sessionId === metadata.id);

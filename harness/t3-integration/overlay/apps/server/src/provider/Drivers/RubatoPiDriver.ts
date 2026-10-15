@@ -79,7 +79,7 @@ export interface PiBridge {
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
   /** A new session from `id`'s completed history, named `title` (pi-server Management fork). */
-  forkSession(id: string, title: string, options?: {side?: boolean}): Promise<PiSummary | undefined>;
+  forkSession(id: string, title: string, options?: {side?: boolean; at?: string}): Promise<PiSummary | undefined>;
   /** Deletes a side chat's session (pi-server Management discard); refuses any other. */
   discardSession(id: string): Promise<void>;
   /** Every side chat session, which `inventory()` leaves out. */

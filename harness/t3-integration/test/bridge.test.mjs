@@ -63,6 +63,8 @@ test('a fork is a new session the inventory shows under the asked name, not clai
   assert.equal(bridge.ownsSession(forked.sessionId), false, 'the inventory imports it as a thread of its own');
   assert.ok((await bridge.inventory()).some((entry) => entry.sessionId === forked.sessionId));
   await assert.rejects(bridge.forkSession('absent', 'x'), /not found/i);
+  await assert.rejects(bridge.forkSession(source.sessionId, 'x', { at: '0'.repeat(24) }), /not on this conversation/,
+    'a fork point reaches the engine');
 });
 test('a side chat fork stays out of the inventory and is the only session the bridge can discard', async (t) => {
   const { root, bridge, external } = await setup(t);

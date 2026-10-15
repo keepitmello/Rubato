@@ -245,8 +245,11 @@ export class RubatoPiBridge {
   async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
   // A new Pi session holding `sessionId`'s completed history (a running turn stays behind),
   // named `title`. The inventory shows it as a thread like any session started elsewhere.
-  // `side` makes it a side chat (pi-runtime session-link/side-chat.mjs).
-  async forkSession(sessionId, title, { side = false } = {}) { return this.viaInventory((client) => client.fork(sessionId, { title, side })); }
+  // `side` makes it a side chat (pi-runtime session-link/side-chat.mjs). `at`, the Pi
+  // fingerprint of a reply, ends the copy at that reply's turn.
+  async forkSession(sessionId, title, { side = false, at } = {}) {
+    return this.viaInventory((client) => client.fork(sessionId, { title, side, ...(at === undefined ? {} : { at }) }));
+  }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
   // The new-thread screen's prompt chip (session-prompts.mjs). The library is files on this Mac.

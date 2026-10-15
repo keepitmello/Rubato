@@ -222,6 +222,39 @@ test('management fork publishes a titled copy of the completed history and leave
   await assert.rejects(client.fork('absent'), /not found/i);
 });
 
+test('a fork at a reply copies the conversation up to the end of that reply\'s turn', async (t) => {
+  const { messageFingerprint } = await import('../../pi-runtime/features/conversation-rewind/rewind.mjs');
+  const env = await setup(t);
+  const client = await env.client();
+  await mkdir(env.sessionsDir, { recursive: true });
+  const id = '01a10319-8c59-7244-a427-5634c2442bc3';
+  const stamp = new Date().toISOString();
+  const file = path.join(env.sessionsDir, `${stamp.replace(/[:.]/g, '-')}_${id}.jsonl`);
+  let clock = Date.now();
+  const message = (role, text, extra = {}) => ({ type: 'message', message: { role, content: [{ type: 'text', text }], timestamp: clock++, ...extra } });
+  const reply = (text, stopReason = 'stop') => message('assistant', text, { stopReason, provider: 'fixture', model: 'local' });
+  const entries = [
+    message('user', 'first'),
+    reply('looking', 'toolUse'),
+    message('toolResult', 'found', { toolCallId: 'call-1' }),
+    reply('first answer'),
+    { type: 'custom_message', customType: 'rubato.note', content: 'recalled', display: false },
+    message('user', 'second'),
+    reply('second answer'),
+  ].map((entry, index) => ({ id: `e${index}`, parentId: index ? `e${index - 1}` : null, timestamp: stamp, ...entry }));
+  await writeFile(file, [{ type: 'session', version: 3, id, timestamp: stamp, cwd: env.root }, ...entries].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  await until(async () => (await client.list()).some((entry) => entry.sessionId === id));
+  const texts = async (sessionId) => (await client.transcript(sessionId)).messages.map((entry) => entry.content[0].text);
+
+  const atFirst = await client.fork(id, { title: 'Source (fork)', at: messageFingerprint(entries[3].message) });
+  assert.deepEqual(await texts(atFirst.sessionId), ['first', 'looking', 'found', 'first answer'],
+    'the turn ends before the next input, an injected one included');
+  const atLast = await client.fork(id, { at: messageFingerprint(entries[6].message) });
+  assert.deepEqual(await texts(atLast.sessionId), ['first', 'looking', 'found', 'first answer', 'second', 'second answer']);
+  await assert.rejects(client.fork(id, { at: 'not-a-fingerprint' }), /Invalid at/);
+  await assert.rejects(client.fork(id, { at: '0'.repeat(24) }), /not on this conversation/);
+});
+
 test('a side chat fork carries the hidden notice after the copied history and is the only kind discard deletes', async (t) => {
   const env = await setup(t);
   const client = await env.client();

@@ -5,6 +5,7 @@ import { SessionClient } from './client.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
+import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 
 /** Answered by the session-link extension inside the target runtime. */
 export const DELIVER_REQUEST = 'rubato.session-link.deliver';
@@ -147,22 +148,37 @@ export function completedHistory(branch) {
 }
 
 /**
+ * What a fork copies. Without `at`, the completed history. With `at` (the fingerprint of an
+ * assistant message, as the app names a reply), the conversation up to the end of that
+ * reply's turn: everything before the first input after it, the same point an app rewind
+ * to that reply lands on (conversation-rewind findRewindTarget).
+ */
+export function forkedHistory(branch, at) {
+  if (at === undefined) return completedHistory(branch);
+  let drop;
+  try { drop = findRewindTarget(branch, { keep: [at] }); }
+  catch { throw fail('invalid', 'That reply is not on this conversation\'s current branch'); }
+  return completedHistory(drop === null ? branch : branch.slice(0, branch.findIndex((entry) => entry.id === drop)));
+}
+
+/**
  * Writes a new conversation holding the completed history of `source`'s live branch, next to
  * it with Pi's own header and file naming (`parentSession` names the source). The source is
  * never rewritten. `title` names the copy; without one it keeps the source's title.
+ * `at` ends the copy at a reply instead (forkedHistory).
  * `admit(sessionId)` runs before the file exists and returns a release; it may refuse by
  * throwing, so a refused fork leaves nothing behind. The session link's fork and the
  * engine's Management fork (host.mjs) both copy through here.
  * `side` makes the copy a side chat: the history is followed by the marker and the hidden
  * notice of side-chat.mjs, so the model knows where it is and the copied bytes stay as cached.
  */
-export async function forkSessionFile({ source, sessionsDir, title, side = false, admit = () => () => {} }) {
+export async function forkSessionFile({ source, sessionsDir, title, side = false, at, admit = () => () => {} }) {
   const { parseSessionEntries, migrateSessionEntries, SessionManager } = await import('@earendil-works/pi-coding-agent');
   const entries = parseSessionEntries(await readFile(source, 'utf8'));
   const header = entries.find((entry) => entry.type === 'session');
   if (!header) throw fail('invalid', `Conversation ${source} has no session header`);
   migrateSessionEntries(entries);
-  const copied = completedHistory(branchOf(entries).branch);
+  const copied = forkedHistory(branchOf(entries).branch, at);
   if (side) {
     const taken = new Set(entries.map((entry) => entry.id));
     const newId = () => { let id; do id = randomBytes(4).toString('hex'); while (taken.has(id)); taken.add(id); return id; };
