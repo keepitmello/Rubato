@@ -14,7 +14,7 @@
  *   ProjectionStore apply) and every update carries the item's ordinal, so the newest update
  *   alone rebuilds the same row at the same position. A subagent row stores its prompt once and
  *   later rows point at it (`promptSequence`, OrchestrationEventStore appendAgentEvents), so a
- *   row a kept row points at stays. Upstream leaves these events alone; they are most of what a
+ *   row any kept row points at stays. Upstream leaves these events alone; they are most of what a
  *   long tool-heavy conversation writes.
  * - V2 command receipts older than RETENTION.receiptDays. A receipt answers "was this command
  *   handled already" for a retry seconds or minutes later; nothing replays from it. V1 receipts
@@ -146,11 +146,12 @@ export const pruneSupersededTurnItems = Effect.fn("RubatoStateRetention.pruneSup
     for (const row of rows) {
       if (row.item_id === null) continue;
       const key = `${row.stream_id}\u0000${row.item_id}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        // The newest row of the item stays; the prompt it points at stays with it.
-        if (row.prompt_sequence !== null) anchors.add(Number(row.prompt_sequence));
-      } else if (row.occurred_at < cutoff && !anchors.has(row.sequence)) obsolete.push(row.sequence);
+      // The newest row of an item stays, so do recent rows and rows a kept row points at; the
+      // prompt any kept row points at stays with it.
+      const kept = !seen.has(key) || row.occurred_at >= cutoff || anchors.has(row.sequence);
+      seen.add(key);
+      if (!kept) obsolete.push(row.sequence);
+      else if (row.prompt_sequence !== null) anchors.add(Number(row.prompt_sequence));
     }
     if (obsolete.length > 0) {
       deleted += changesOf(yield* sql`DELETE FROM orchestration_events WHERE sequence IN ${sql.in(obsolete)}`.raw);

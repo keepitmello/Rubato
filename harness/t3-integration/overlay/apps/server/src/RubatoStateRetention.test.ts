@@ -120,6 +120,37 @@ it.live("an item's older updates go once they are old; the thread rebuilds to th
     assert.strictEqual(yield* pruneSupersededTurnItems(nowMs), 0);
   }).pipe(Effect.provide(layer)));
 
+it.live("a recent row that points at an old prompt keeps it, even when a newer row has another prompt", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const sql = yield* SqlClient.SqlClient;
+    const nowMs = Date.now();
+    const old = DateTime.makeUnsafe(nowMs - (RETENTION.eventDays + 1) * DAY);
+    const recent = DateTime.makeUnsafe(nowMs - 60_000);
+    const threadId = ThreadId.make("thread:retention-prompts");
+    yield* sink.write({ events: [{ id: EventId.make("event:retention:prompts-create"), type: "thread.created", threadId,
+      providerInstanceId: instanceId, occurredAt: old, payload: threadOf(threadId, old) }] });
+    yield* sink.write({ events: [subagentUpdate(threadId, "prompt A", "started", old)] });
+    yield* sink.write({ events: [subagentUpdate(threadId, "prompt A", "still on A", recent)] });
+    yield* sink.write({ events: [subagentUpdate(threadId, "prompt B", "moved on to B", recent)] });
+    const stored = yield* sql<{ readonly points: number | null }>`
+      SELECT json_extract(payload_json, '$.promptSequence') AS points FROM orchestration_events
+      WHERE stream_id = ${threadId} AND event_type = 'turn-item.updated' ORDER BY sequence`;
+    assert.deepStrictEqual(stored.map((row) => row.points !== null), [false, true, false]);
+
+    assert.strictEqual(yield* pruneSupersededTurnItems(nowMs), 0);
+    // Replaying every kept row, the middle one included, still finds its prompt.
+    const replayed = yield* sql<{ readonly prompt: string | null }>`
+      SELECT json_extract(payload_json, '$.prompt') AS prompt FROM orchestration_events AS event
+      WHERE event.sequence = (SELECT json_extract(payload_json, '$.promptSequence') FROM orchestration_events
+        WHERE stream_id = ${threadId} AND json_type(payload_json, '$.promptSequence') = 'integer')`;
+    assert.strictEqual(replayed[0]?.prompt, "prompt A");
+    assert.isTrue((yield* maintenance.rebuild).valid);
+    const row = (yield* itemRows(threadId)).find((item) => item.id === "subagent-row");
+    assert.strictEqual(JSON.parse(row!.payload).prompt, "prompt B");
+  }).pipe(Effect.provide(layer)));
+
 it.live("only old V2 receipts and the V1 tables nothing reads go; V1 messages and pending V1 receipts stay", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
@@ -166,14 +197,17 @@ it.live("a file switched to incremental auto-vacuum once gives freed pages back 
     assert.isTrue(yield* compactOnce);
     assert.strictEqual(yield* autoVacuumMode, 2);
     assert.isFalse(yield* compactOnce);
-    yield* sql.unsafe("PRAGMA wal_checkpoint(TRUNCATE)").raw;
-    const full = statSync(file).size;
+    // The database's own size, which the file shrinks to at the next checkpoint.
+    const pages = () => sql<{ readonly page_count: number }>`PRAGMA page_count`.pipe(
+      Effect.map((rows) => Number(rows[0]?.page_count ?? 0)));
+    const full = yield* pages();
     yield* pruneUnreadV1Tables;
     assert.isAbove(yield* releaseFreePages, 5_000);
-    yield* sql.unsafe("PRAGMA wal_checkpoint(TRUNCATE)").raw;
     const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
     assert.strictEqual(Number(free[0]?.freelist_count), 0);
-    assert.isBelow(statSync(file).size, full / 4);
+    assert.isBelow(yield* pages(), full / 4);
+    yield* sql.unsafe("PRAGMA wal_checkpoint(TRUNCATE)").raw;
+    assert.isAtMost(statSync(file).size, full * 4096);
   }).pipe(Effect.provide(storesOver(SqlitePersistence.layerFromPath(file).pipe(Layer.provide(NodeServices.layer)))),
     Effect.ensuring(Effect.sync(() => rmSync(folder, { recursive: true, force: true }))));
 });
