@@ -33,7 +33,12 @@ export const scheduleEdits = {
         '',
       ].join('\n')],
   ],
+  // T3's own Scheduled Tasks page (its server scheduler) keeps its route, but the nav
+  // shows only one "Scheduled Tasks": Rubato's. Settings search has no entry for it.
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
+    ['  .filter((to) => to !== "/settings/diagnostics")\n',
+      '  .filter((to) => to !== "/settings/diagnostics" && to !== "/settings/scheduled-tasks")\n',
+      'replace'],
     ['  "/settings/memory": BrainIcon,\n', '  "/settings/memory": BrainIcon,\n  "/settings/scheduled": CalendarClockIcon,\n', 'replace'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [

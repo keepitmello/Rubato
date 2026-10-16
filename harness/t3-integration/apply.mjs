@@ -25,7 +25,7 @@ import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
-import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
+import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -2076,9 +2076,9 @@ overlays.push(...workLogOverlays);
 for (const [relative, changes] of Object.entries(workLogEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// State DB retention and one-time compaction; tsgo checker count (state-retention-edits.mjs).
-overlays.push(...stateRetentionOverlays);
-for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
+// tsgo checker count (tsgo-checkers-edits.mjs).
+overlays.push(...tsgoCheckersOverlays);
+for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
