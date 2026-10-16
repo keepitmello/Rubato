@@ -5,7 +5,6 @@
 // checkout (src/schedule/service.mjs over packages/schedule-core).
 export const scheduleOverlays = [
   'apps/server/src/RubatoSchedule.ts',
-  'apps/server/src/RubatoSchedule.test.ts',
   'apps/web/src/state/rubatoSchedule.ts',
   'apps/web/src/components/settings/RubatoScheduleSettings.tsx',
   'apps/web/src/components/settings/RubatoScheduleSettings.logic.ts',
