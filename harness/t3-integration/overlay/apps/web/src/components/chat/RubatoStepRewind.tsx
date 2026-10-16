@@ -203,8 +203,9 @@ export function stepCutFor(
   const row = thread.items.find((entry) => entry.item.id === itemId)!;
   const runId = row.item.runId!;
   const run = settledRun(thread, runId)!;
-  const last =
-    thread.items.find((entry) => entry.item.id === cutAfterItemId && entry.item.runId === runId) ?? row;
+  // A batch end the thread does not show yet would put the cut in the wrong place: no cut.
+  const last = thread.items.find((entry) => entry.item.id === cutAfterItemId && entry.item.runId === runId);
+  if (!last) return "This step's calls are not all shown yet.";
   return {
     kind: "step",
     runId,

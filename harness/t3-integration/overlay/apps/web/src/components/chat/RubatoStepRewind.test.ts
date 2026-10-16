@@ -90,6 +90,8 @@ describe("step rewind on V2 rows", () => {
     };
     expect(dropped(stepCutFor(adjacent, "a2", "ls", "b2"))).toEqual(["c2", "rep3"]);
     expect(dropped(stepCutFor(adjacent, "c2", "ls", "c2"))).toEqual(["rep3"]);
+    // A batch end the thread does not show is no cut, rather than a guess at the step row.
+    expect(stepCutFor(adjacent, "a2", "ls", "unseen")).toBe("This step's calls are not all shown yet.");
   });
 
   it("drops what follows the step in its run and every later run, messages included", () => {
