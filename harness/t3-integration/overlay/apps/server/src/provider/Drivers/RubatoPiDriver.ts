@@ -82,6 +82,8 @@ export interface PiRpcBridgeConnection {
   close(error?: unknown): Promise<void>;
 }
 export interface PiBridge {
+  /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
+  boundSession?: (threadId: string) => Promise<{readonly sessionId: string; readonly serverId: string | null} | null>;
   openRpc(options: {threadId: string; cwd: string; onRecord: (record: PiRpcRecord) => void;
     onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;

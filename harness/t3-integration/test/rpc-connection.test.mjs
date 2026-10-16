@@ -105,3 +105,35 @@ test('an unloaded session closes the stream with a reason', async () => {
   assert.equal(closed.length, 1);
   assert.match(closed[0].message, /was unloaded/);
 });
+
+// The adapter's first registration sends get_state before any lifecycle command: a
+// `pi --mode rpc` process starts inside a fresh session (provider-pi adapter registerThread).
+test('the first command with nothing attached opens a new session', async () => {
+  const client = fakeClient({ get_state: { sessionId: 'created-1', sessionFile: '/s/created-1.jsonl' } });
+  const { conn } = connection(client);
+  const state = await conn.request({ type: 'get_state' });
+  assert.equal(state.sessionFile, 'created-1');
+  assert.deepEqual(client.attached, ['created-1']);
+});
+
+test('a thread that already ran in a session reattaches to it instead of starting over', async () => {
+  const client = fakeClient({ get_state: { sessionId: 'old-1', sessionFile: '/s/old-1.jsonl' } });
+  let created = 0;
+  const { conn } = connection(client, { descriptor: { serverId: 'engine-a' },
+    boundSession: async (threadId) => (threadId === 't1' ? { sessionId: 'old-1', serverId: 'engine-a' } : null),
+    viaInventory: async (call) => call({ create: async () => { created += 1; return { sessionId: 'created-1' }; } }) });
+  assert.equal((await conn.request({ type: 'get_state' })).sessionFile, 'old-1');
+  assert.deepEqual(client.attached, ['old-1']);
+  assert.equal(created, 0);
+  // A later registration on the same connection asks for a fresh conversation.
+  await conn.request({ type: 'new_session' });
+  assert.deepEqual(client.attached, ['old-1', 'detach', 'created-1']);
+});
+
+test('a binding from another engine profile is not followed', async () => {
+  const client = fakeClient({ get_state: { sessionId: 'created-1' } });
+  const { conn } = connection(client, { descriptor: { serverId: 'engine-b' },
+    boundSession: async () => ({ sessionId: 'old-1', serverId: 'engine-a' }) });
+  await conn.request({ type: 'get_state' });
+  assert.deepEqual(client.attached, ['created-1']);
+});

@@ -15,13 +15,18 @@ import { rewriteSkillMentions } from './commands.mjs';
  *
  * Two Pi commands do not exist on an attached session and are answered here:
  * `new_session` creates one through the engine's Management service, `switch_session`
- * attaches to an existing one. The native thread id the adapter keeps is the engine's
+ * attaches to an existing one. A `pi --mode rpc` process starts inside a fresh session and
+ * the adapter's first registration relies on that (its first command is `get_state`), so
+ * the first command with nothing attached opens the thread's session: the one the thread
+ * already ran in (`boundSession`, a conversation from before T3's V2 orchestrator or one
+ * the inventory imported), or a new one. The native thread id the adapter keeps is the engine's
  * session id: `get_state` reports it as `sessionFile` (the field the adapter reads as
  * the id `switch_session` takes); Pi's real file path rides along as `rubatoSessionFile`.
  */
 export class RubatoRpcConnection {
   constructor(bridge, { threadId, cwd, onRecord, onClosed = () => {}, log = () => {} }) {
     Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log });
+    this.bound = undefined;
     this.sessionId = null;
     this.closed = false;
   }
@@ -73,9 +78,36 @@ export class RubatoRpcConnection {
     if (state.status === 'unloaded' || state.status === 'error')
       void this.close(new Error(`Rubato session ${this.sessionId} ${state.status === 'error' ? 'failed' : 'was unloaded'}`));
   }
-  command(record) {
-    if (this.closed) return Promise.reject(new Error('Rubato connection is closed'));
-    if (!this.sessionId) return Promise.reject(new Error('No Rubato session is attached'));
+  /** The session this thread already runs in, asked once per connection; null when none. */
+  async boundSession() {
+    if (this.bound !== undefined) return this.bound;
+    let bound = null;
+    try { bound = (await this.bridge.boundSession?.(this.threadId)) ?? null; }
+    catch (error) { this.log('binding lookup failed', error); }
+    const serverId = this.bridge.descriptor?.serverId;
+    // A cursor from another engine profile names a session this engine does not have.
+    if (bound && bound.serverId && serverId && bound.serverId !== serverId) {
+      this.log('binding from another engine ignored', `${this.threadId} ${bound.serverId}`);
+      bound = null;
+    }
+    this.bound = bound?.sessionId ?? null;
+    return this.bound;
+  }
+  async createSession() {
+    const systemPrompt = this.bridge.pendingPrompts.get(this.threadId);
+    const created = await this.bridge.viaInventory((client) => client.create({
+      cwd: this.cwd, ...(systemPrompt ? { systemPrompt } : {}) }));
+    this.bridge.pendingPrompts.delete(this.threadId);
+    return created.sessionId;
+  }
+  async openThreadSession() {
+    this.opening ??= (async () => this.attach((await this.boundSession()) ?? await this.createSession()))()
+      .finally(() => { this.opening = undefined; });
+    return this.opening;
+  }
+  async command(record) {
+    if (this.closed) throw new Error('Rubato connection is closed');
+    if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
     if (command.type === 'prompt' && typeof command.message === 'string')
       command.message = rewriteSkillMentions(command.message, this.bridge.skillNames);
@@ -83,14 +115,11 @@ export class RubatoRpcConnection {
   }
   async request(record) {
     switch (record?.type) {
-      case 'new_session': {
-        const systemPrompt = this.bridge.pendingPrompts.get(this.threadId);
-        const created = await this.bridge.viaInventory((client) => client.create({
-          cwd: this.cwd, ...(systemPrompt ? { systemPrompt } : {}) }));
-        this.bridge.pendingPrompts.delete(this.threadId);
-        await this.attach(created.sessionId);
+      case 'new_session':
+        // A second registration on this connection wants a fresh conversation, unless
+        // the thread already has one: that is the thread's, whichever path asked.
+        await this.attach((this.sessionId === null ? await this.boundSession() : null) ?? await this.createSession());
         return { cancelled: false };
-      }
       case 'switch_session':
         await this.attach(record.sessionPath);
         return { cancelled: false };
