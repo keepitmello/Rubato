@@ -178,15 +178,7 @@ export const cacheEdits = {
     ],
   ],
   'apps/server/src/server.ts': [
-    [
-      'import { rubatoMemoryRouteLayer } from "./RubatoMemory.ts";\n',
-      'import { rubatoMemoryRouteLayer } from "./RubatoMemory.ts";\nimport { rubatoCacheWarmingRouteLayer } from "./RubatoCacheWarming.ts";\n',
-      'replace',
-    ],
-    [
-      '    rubatoMemoryRouteLayer,\n',
-      '    rubatoMemoryRouteLayer,\n    rubatoCacheWarmingRouteLayer,\n',
-      'replace',
-    ],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCacheWarmingRouteLayer } from "./RubatoCacheWarming.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoCacheWarmingRouteLayer,\n'],
   ],
 };

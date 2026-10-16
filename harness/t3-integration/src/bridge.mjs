@@ -6,6 +6,7 @@ import { applySelectionOptions, catalogForPicker } from './model-catalog-order.m
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
 import { RubatoRpcConnection, activeBranch, queuedMessagesInOrder, replyBefore } from './rpc-connection.mjs';
+import { SessionStateFold } from './session-state.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
@@ -192,6 +193,8 @@ export class RubatoPiBridge {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation });
     this.rpcConnections = new Set();
+    // threadId -> what /rubato/session-state answers (session-state.mjs), fed by V2 connections.
+    this.sessionStates = new Map();
     // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
     this.resumedSessions = new Set();
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
@@ -243,6 +246,22 @@ export class RubatoPiBridge {
     this.rpcConnections.add(connection);
     try { return await connection.open(); }
     catch (error) { await connection.close(error); throw error; }
+  }
+  /** The thread's session state, created on its first V2 attach (session-state.mjs). */
+  stateFor(threadId, sessionId) {
+    let fold = this.sessionStates.get(threadId);
+    if (!fold) { fold = new SessionStateFold({ threadId, sessionId, instanceId: this.instanceId }); this.sessionStates.set(threadId, fold); }
+    else fold.rebind(sessionId);
+    return fold;
+  }
+  sessionState(threadId) {
+    const fold = this.sessionStates.get(threadId);
+    const snapshot = fold?.snapshot() ?? { speedIndex: null, agents: [], teams: [], cache: null };
+    return { ...snapshot, cache: snapshot.cache ?? this.warmth?.get(threadId) ?? null };
+  }
+  /** The open V2 connection a thread runs in, if any. */
+  rpcFor(threadId) {
+    return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
   }
   // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
   async inventory() {
@@ -950,11 +969,15 @@ export class RubatoPiBridge {
     if (enabled === undefined && hours === undefined) throw new Error('enabled or hours is required');
     const command = { type: 'set_session_cache_warming', ...(enabled !== undefined ? { enabled } : {}),
       ...(hours !== undefined ? { hours } : {}) };
+    const rpc = [...this.rpcConnections].find((connection) => connection.sessionId === sessionId && !connection.closed);
     const open = [...this.sessions.values()].find((context) => context.sessionId === sessionId && !context.stopped);
-    const threadId = open?.session.threadId
+    const threadId = rpc?.threadId ?? open?.session.threadId
       ?? [...(this.warmth ?? [])].find(([, cache]) => cache.sessionId === sessionId)?.[0];
     let value;
-    if (open) {
+    if (rpc) {
+      value = await rpc.command(command);
+      rpc.fold?.setCache(cacheFrom({ ...value, sessionId }));
+    } else if (open) {
       value = await open.client.command(command);
       open.projection.configureCache({ ...value, sessionId });
     } else {
@@ -1004,6 +1027,7 @@ export class RubatoPiBridge {
   }
   /** Whether this thread's session is attached, so its child agents can be stopped or messaged. */
   controlsAgents(threadId) {
+    if (this.rpcFor(threadId)) return true;
     const context = this.sessions.get(threadId);
     return Boolean(context && !context.stopped);
   }
@@ -1013,11 +1037,13 @@ export class RubatoPiBridge {
    * Not queued behind the thread's turns: a child is steered while its lead is busy.
    */
   async controlAgent(threadId, taskId, action, message) {
-    const context = this.sessions.get(threadId);
-    if (!context || context.stopped) throw Object.assign(new Error("This thread's Rubato session is not running."), { status: 409 });
     const command = action === 'stop'
       ? { type: 'task_cancel', taskId, reason: 'Stopped by the user from the Agents panel' }
       : { type: 'task_send', taskId, message };
+    const rpc = this.rpcFor(threadId);
+    if (rpc) return rpc.command(command);
+    const context = this.sessions.get(threadId);
+    if (!context || context.stopped) throw Object.assign(new Error("This thread's Rubato session is not running."), { status: 409 });
     return context.client.command(command);
   }
   async stopSession(threadId) {

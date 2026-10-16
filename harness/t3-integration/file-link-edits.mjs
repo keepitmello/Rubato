@@ -9,14 +9,15 @@
 // file, and the extension itself stays ASCII.
 //
 // rubatoMarkdownLinks.test.ts holds the cases.
-export const fileLinkOverlays = ['packages/client-runtime/src/rubatoMarkdownLinks.test.ts'];
+export const fileLinkOverlays = ['packages/shared/src/rubatoMarkdownLinks.test.ts'];
 
 export const fileLinkEdits = {
-  'packages/client-runtime/src/markdownLinks.ts': [
+  'packages/shared/src/markdownLinks.ts': [
     [
       [
         'const RELATIVE_FILE_PATH_PATTERN =',
         '  /^(?:[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\\/)+[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*(?::\\d+){0,2}$/;',
+        '',
         'const RELATIVE_FILE_NAME_PATTERN =',
         '  /^[A-Za-z0-9._-]+(?: +[A-Za-z0-9._-]+)*\\.[A-Za-z0-9_-]+(?::\\d+){0,2}$/;',
       ].join('\n'),
@@ -24,6 +25,7 @@ export const fileLinkEdits = {
         '// Rubato: any Unicode letter, mark or digit in a name, not only ASCII.',
         'const RELATIVE_FILE_PATH_PATTERN =',
         '  /^(?:[\\p{L}\\p{M}\\p{N}._-]+(?: +[\\p{L}\\p{M}\\p{N}._-]+)*\\/)+[\\p{L}\\p{M}\\p{N}._-]+(?: +[\\p{L}\\p{M}\\p{N}._-]+)*(?::\\d+){0,2}$/u;',
+        '',
         'const RELATIVE_FILE_NAME_PATTERN =',
         '  /^[\\p{L}\\p{M}\\p{N}._-]+(?: +[\\p{L}\\p{M}\\p{N}._-]+)*\\.[A-Za-z0-9_-]+(?::\\d+){0,2}$/u;',
       ].join('\n'),
