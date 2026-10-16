@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventProjection } from '../src/events.mjs';
-import { t3Modules } from './t3-source.mjs';
 
 const members = [
   { name: 'owner', task_id: 'st_owner', role: 'owner', task_summary: 'Implement mobile changes' },
@@ -152,43 +151,6 @@ test('deleting the team settles its row and its resting members', () => {
   assert.equal(completed('call_team').length, 1);
 });
 
-test('the real T3 background banner hides for a resting team and shows for a woken one', {
-  skip: !process.env.T3_SOURCE,
-}, async () => {
-  const { make } = await t3Modules(process.env.T3_SOURCE).source('apps/server/src/orchestration/ThreadBackgroundLiveness.ts');
-  const kinds = { 'task.started': 'started', 'task.progress': 'progress', 'task.updated': 'updated', 'task.completed': 'completed' };
-  const { events, projection, finish } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
-  const liveness = make();
-  let fed = 0;
-  // What ProviderRuntimeIngestion hands the registry for every task row; null is "no banner".
-  const banner = () => {
-    for (const { type, payload } of events.slice(fed)) {
-      if (!kinds[type]) continue;
-      liveness.recordTaskLiveness({ threadId: 'thread', taskId: payload.taskId, taskType: payload.taskType,
-        status: payload.status, agentId: payload.agentId, kind: kinds[type] });
-    }
-    fed = events.length;
-    return liveness.getThreadBackgroundLiveness('thread');
-  };
-  const snapshot = (item) => projection.project({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [item] } });
-  const board = () => projection.project({ type: 'extension_event', name: 'rubato.team.board.updated',
-    data: { teams: [{ team_run_id: 'run_team', team_name: 'mobile-team', tasks: [{ id: '1', subject: 'Ship', status: 'completed' }] }] } });
-  finish();
-  assert.equal(banner(), 'working');
-  board();
-  snapshot(rest('st_owner'));
-  snapshot(rest('st_verifier'));
-  assert.equal(banner(), null);
-  board();
-  assert.equal(banner(), null);
-  snapshot({ task_id: 'st_owner', status: 'running' });
-  assert.equal(banner(), 'working');
-  snapshot(rest('st_owner'));
-  assert.equal(banner(), null);
-  deleteTeam(projection);
-  assert.equal(banner(), null);
-});
-
 test('a schema-rejected team leaves no row, and the retry with the same name gets the board', () => {
   const { events, projection } = setup({ inline_spec: { name: 'mobile-team', members: [] } });
   projection.project({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: true,
@@ -203,41 +165,6 @@ test('a schema-rejected team leaves no row, and the retry with the same name get
     .map(event => event.payload.taskId));
   assert.deepEqual([...teamRows], ['call_retry']);
   assert.ok(events.some(event => event.type === 'task.progress' && event.payload.taskId === 'call_retry' && event.payload.board));
-});
-
-test('real T3 schema and panel fold group members, preserve direct spawns and count completion', {
-  skip: !process.env.T3_SOURCE,
-}, async () => {
-  const modules = t3Modules(process.env.T3_SOURCE);
-  const { ProviderRuntimeEvent } = await modules.source('packages/contracts/src/providerRuntime.ts');
-  const Schema = await modules.effect('Schema');
-  const { foldSubagentActivities, deriveAgentPanelModel } =
-    await modules.source('packages/client-runtime/src/state/subagentRuntime.ts');
-  const decode = Schema.decodeUnknownSync(ProviderRuntimeEvent);
-  for (const earlySnapshots of [false, true]) {
-    const { events, projection, finish, tick } = setup({ inline_spec: { members: [] } });
-    projection.project({ type: 'tool_execution_end', toolName: 'Agent', toolCallId: 'call_direct',
-      result: { details: { agentId: 'st_direct', status: 'running', task_summary: 'Independent work' } } });
-    if (earlySnapshots) tick('st_owner', 'completed');
-    finish();
-    const panel = () => deriveAgentPanelModel({
-      agents: foldSubagentActivities(events.map(decode).filter(event => event.type.startsWith('task.'))
-        .map(event => ({ ...event, kind: event.type })), { sessionLive: true }),
-    });
-    let model = panel();
-    assert.equal(model.workflows.length, 1);
-    assert.equal(model.workflows[0].workflow.workflowName, 'mobile-team');
-    assert.deepEqual(model.workflows[0].unphasedMembers.map(member => member.id).sort(), ['st_owner', 'st_verifier']);
-    assert.deepEqual(model.directAgents.map(agent => agent.id), ['st_direct']);
-    if (!earlySnapshots) tick('st_owner', 'completed');
-    model = panel();
-    assert.equal(model.workflows[0].unphasedMembers.filter(member => member.status === 'completed').length, 1);
-    assert.equal(model.workflows[0].workflow.status, 'running');
-    tick('st_verifier', 'completed');
-    model = panel();
-    assert.equal(model.workflows[0].unphasedMembers.filter(member => member.status === 'completed').length, 2);
-    assert.equal(model.workflows[0].workflow.status, 'completed');
-  }
 });
 
 test('a finished agent revived by AgentSend is working again, and settles again', () => {

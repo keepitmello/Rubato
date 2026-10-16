@@ -14,12 +14,9 @@ import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mj
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<500;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
-let decodeEvent = (value) => value;
-if (process.env.T3_SOURCE) {
-  const { ProviderRuntimeEvent } = await import(`${process.env.T3_SOURCE}/packages/contracts/src/providerRuntime.ts`);
-  const Schema = await t3Modules(process.env.T3_SOURCE).effect('Schema');
-  decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
-}
+// On T3's V2 orchestrator these records feed only the session-state fold (session-state.mjs);
+// T3 itself reads the Pi stream through upstream's adapter, so no T3 schema decodes them.
+const decodeEvent = (value) => value;
 async function setup(t) {
   const root = await mkdtemp(path.join(tmpdir(), 'rb-t3-'));
   const service = await serveProfile({ agentDir: root, idleMs: 60, workerFactory: (metadata) => new RpcWorker(metadata, { cliPath: fixture }) });
@@ -1358,17 +1355,6 @@ test('assistant usage becomes thread.token-usage.updated in the meter shape', as
     usage:{ input:1, output:1, cacheRead:0, cacheWrite:0, totalTokens:2 }}});
   p.project({type:'message_end', message:{role:'assistant', timestamp:3, stopReason:'stop'}});
   assert.equal(events.filter((event) => event.type==='thread.token-usage.updated').length, 1);
-  if (process.env.T3_SOURCE) {
-    const { deriveLatestContextWindowSnapshot } = await import(`${process.env.T3_SOURCE}/apps/web/src/lib/contextWindow.ts`);
-    const meter = deriveLatestContextWindowSnapshot([{
-      kind: 'context-window.updated', payload: usage.payload.usage, createdAt: usage.createdAt,
-    }]);
-    assert.equal(meter.usedTokens, 170);
-    assert.equal(meter.maxTokens, 200000);
-    assert.equal(meter.usedPercentage, 170 / 200000 * 100);
-    assert.equal(meter.compactsAutomatically, true);
-    assert.equal(meter.totalProcessedTokens, null);
-  }
 });
 
 test('attach replays last assistant usage and stays silent after compaction', () => {

@@ -13,6 +13,8 @@ import * as TestProviderHost from "@t3tools/provider-testing/TestProviderHost";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Stream from "effect/Stream";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -24,7 +26,12 @@ export function createBridge() {
   const sent = (globalThis.rubatoDriverTestRecords = []);
   return {
     claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), resumedSessions: new Set(),
-    async catalogue() { return { models: [model], model }; },
+    async catalogue(_cwd, options) {
+      (globalThis.rubatoDriverTestFresh ??= []).push(options?.fresh ?? false);
+      return { models: [model], model, slashCommands: [{ name: "compact" }, { name: "audit", description: "Run an audit" }],
+        skills: [{ name: "ship-it", description: "Ship the change", path: "/skills/ship-it/SKILL.md", enabled: true,
+          displayName: "ship-it", shortDescription: "Ship the change" }] };
+    },
     async close() {},
     async openRpc() {
       return {
@@ -52,6 +59,15 @@ const records = () => (globalThis as unknown as { rubatoDriverTestRecords: Array
 
 const layer = Layer.mergeAll(NodeServices.layer, IdAllocator.layer, McpProviderSessions.layer,
   TestProviderHost.layer().pipe(Layer.provide(NodeServices.layer)));
+
+const instanceFor = () => Effect.gen(function* () {
+  const folder = mkdtempSync(join(tmpdir(), "rubato-driver-"));
+  const bridgeModule = join(folder, "bridge.mjs");
+  writeFileSync(bridgeModule, BRIDGE);
+  const instance = yield* RubatoPiDriver.create({ instanceId: ProviderInstanceId.make("rubato-test"), enabled: true,
+    environment: [], displayName: "Rubato", config: { bridgeModule, descriptorPath: join(folder, "descriptor.json"), catalogueCwd: folder } });
+  return { instance, folder };
+});
 
 const startTurn = (options: ReadonlyArray<{ id: string; value: string | boolean }> | undefined) => Effect.gen(function* () {
   const folder = mkdtempSync(join(tmpdir(), "rubato-driver-"));
@@ -93,4 +109,23 @@ it.effect("a selection without options sends no extra record", () => Effect.gen(
   const sent = yield* startTurn(undefined);
   assert.isFalse(sent.some((record) => record.type === "rubato_selection"));
   assert.isTrue(sent.some((record) => record.type === "prompt"));
+}).pipe(Effect.scoped, Effect.provide(layer)));
+
+it.live("the snapshot carries the commands and skills; a workspace probe neither changes nor publishes it", () => Effect.gen(function* () {
+  (globalThis as unknown as { rubatoDriverTestFresh: boolean[] }).rubatoDriverTestFresh = [];
+  const { instance, folder } = yield* instanceFor();
+  const machine = yield* instance.snapshot.getSnapshot;
+  const workspace = yield* instance.snapshotForCwd!(folder);
+  assert.deepStrictEqual(workspace.slashCommands.map((command) => command.name), ["compact", "audit"]);
+  assert.strictEqual(workspace.skills[0]!.name, "ship-it");
+  // T3's registry merges workspace lists itself; one carried here would wipe other folders'.
+  assert.strictEqual(workspace.workspaceSnapshots, undefined);
+  assert.strictEqual(yield* instance.snapshot.getSnapshot, machine);
+  // Publishing would make every client reload its config and redraw.
+  const published = yield* Stream.runHead(instance.snapshot.streamChanges).pipe(Effect.timeoutOption("100 millis"));
+  assert.isTrue(Option.isNone(published));
+  // A workspace probe may reuse the catalogue; an explicit refresh asks again.
+  yield* instance.refreshModels!();
+  const fresh = (globalThis as unknown as { rubatoDriverTestFresh: boolean[] }).rubatoDriverTestFresh;
+  assert.deepStrictEqual(fresh.slice(-2), [false, true]);
 }).pipe(Effect.scoped, Effect.provide(layer)));
