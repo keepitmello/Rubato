@@ -82,6 +82,8 @@ export interface PiRpcBridgeConnection {
   close(error?: unknown): Promise<void>;
 }
 export interface PiBridge {
+  /** T3's thread.fork: a new engine session cut before `beforeEntryId`; its id. */
+  forkForThread(input: {source: string; beforeEntryId: string | null}): Promise<string>;
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
   /** Sessions a V2 thread reattached to from before V2; their history is native. */
   readonly resumedSessions?: Set<string>;
@@ -145,16 +147,15 @@ const decodeSnapshot = Schema.decodeUnknownSync(ServerProvider);
  * What Rubato can do on T3's V2 orchestrator. It starts from upstream Pi's set (same
  * RPC, same event mapping) and takes away what the shared engine does not offer:
  * T3's permission hook and MCP bridge are Pi extensions T3 injects into a process it
- * spawns, and Rubato sessions run in the engine with Rubato's own tool policy.
+ * spawns, and Rubato sessions run in the engine with Rubato's own tool policy. Rollback
+ * and fork stay on: the engine rewinds in place (bridge rpc-connection.mjs) and forks
+ * through its Management service (bridge forkForThread).
  */
 export const RUBATO_CAPABILITIES_V2: OrchestrationV2ProviderCapabilities = {
   ...PI_CAPABILITIES_V2,
   sessions: { ...PI_CAPABILITIES_V2.sessions, supportsRuntimeModeSwitchInSession: true },
-  threads: { ...PI_CAPABILITIES_V2.threads, canRollbackThread: false, canForkThread: false, canForkFromTurn: false },
   tools: { ...PI_CAPABILITIES_V2.tools, supportsMcpTools: false },
   approvals: { ...PI_CAPABILITIES_V2.approvals, supportsCommandApproval: false, supportsFileChangeApproval: false },
-  checkpointing: { ...PI_CAPABILITIES_V2.checkpointing, providerCanRollbackConversation: false,
-    providerRollbackReturnsSnapshot: false },
 };
 const piSettings = Schema.decodeSync(PiSettings);
 /** Turn items the V1 importer wrote (LegacyV1ThreadImporter IMPORT_EVENT_PREFIX). */
@@ -240,13 +241,17 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       driverKind: kind, capabilities: RUBATO_CAPABILITIES_V2,
       openConnection: (input) => openRubatoConnection(bridge, { threadId: input.threadId, cwd: input.cwd }),
       injectHistory: (input) => Effect.sync(() => alreadyNative(bridge, input)),
+      forkSession: (input) => Effect.tryPromise({
+        try: () => bridge.forkForThread({ source: input.sourceNativeId, beforeEntryId: input.beforeEntryId }),
+        catch: (cause) => new PiRpcError({ operation: "fork", detail: detail(cause), cause }),
+      }),
     });
     let current = decodeSnapshot({instanceId, driver:kind, enabled, installed:false, version:null,
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},
       checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato",
       ...(accentColor ? {accentColor} : {}), continuation:{groupKey:continuationIdentity.continuationKey},
       showInteractionModeToggle:false, supportedRuntimeModes:["full-access"],
-      reportsContextWindow:true, supportsConversationRollback:false, supportsTextGeneration:false,
+      reportsContextWindow:true, supportsConversationRollback:true, supportsTextGeneration:false,
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });

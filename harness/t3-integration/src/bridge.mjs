@@ -5,7 +5,7 @@ import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom,
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
-import { RubatoRpcConnection } from './rpc-connection.mjs';
+import { RubatoRpcConnection, activeBranch, queuedMessagesInOrder, replyBefore } from './rpc-connection.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
@@ -78,19 +78,6 @@ recordLoadedCode();
 const copy = (value) => JSON.parse(JSON.stringify(value));
 const staleQueue = (state) => state && !state.isStreaming && !state.isCompacting
   && Number(state.pendingMessageCount) > 0;
-function queuedMessagesInOrder(state, cleared) {
-  const byDelivery = {
-    steer: [...(cleared?.steering ?? [])],
-    followUp: [...(cleared?.followUp ?? [])],
-  };
-  const ordered = [];
-  for (const pending of state?.requestTimeline?.pendingInputs ?? []) {
-    const queue = byDelivery[pending?.delivery];
-    if (queue?.length) ordered.push(queue.shift());
-  }
-  return [...ordered, ...byDelivery.steer, ...byDelivery.followUp]
-    .filter((message) => typeof message === 'string' && message.trim());
-}
 async function imagesFromAttachments(attachments) {
   const images = [];
   for (const attachment of attachments ?? []) {
@@ -271,6 +258,27 @@ export class RubatoPiBridge {
   // fingerprint of a reply, ends the copy at that reply's turn.
   async forkSession(sessionId, title, { side = false, at } = {}) {
     return this.viaInventory((client) => client.fork(sessionId, { title, side, ...(at === undefined ? {} : { at }) }));
+  }
+  /**
+   * T3's thread.fork on V2 (provider-pi adapter forkThread): a new session holding `source`
+   * up to the end of the turn before `beforeEntryId` (the first user message of the turn the
+   * fork leaves out), or its completed history without one. Returns the new session id.
+   */
+  async forkForThread({ source, beforeEntryId = null }) {
+    let at;
+    if (beforeEntryId) {
+      await this.connection();
+      const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+      try {
+        await client.attach(source);
+        at = replyBefore(activeBranch(await client.command({ type: 'get_entries' })), beforeEntryId);
+      } finally { await client.detach().catch(() => {}); await client.close(); }
+      if (!at) throw new Error('There is no reply before that point to fork from');
+    }
+    const forked = await this.forkSession(source, undefined, at === undefined ? {} : { at });
+    if (!forked?.sessionId) throw new Error('The engine did not create the fork');
+    this.claimed.add(forked.sessionId);
+    return forked.sessionId;
   }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
