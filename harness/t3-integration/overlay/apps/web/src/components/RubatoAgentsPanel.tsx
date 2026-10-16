@@ -10,17 +10,15 @@
  * An agent row opens that agent's whole conversation in place of the list (RubatoAgentSession),
  * where it can also be stopped or told something.
  */
-import type {
-  AgentPanelModel,
-  AgentPanelWorkflowGroup,
-  RuntimeSubagent,
-  SubagentBoard,
-  SubagentBoardTask,
-} from "@t3tools/client-runtime/state/subagentRuntime";
 import {
   formatSpeedLabel,
   formatSubagentModelLabel,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+  type AgentPanelModel,
+  type AgentPanelWorkflowGroup,
+  type RubatoSubagent as RuntimeSubagent,
+  type SubagentBoard,
+  type SubagentBoardTask,
+} from "./rubatoAgentPanelModel";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   Bot,

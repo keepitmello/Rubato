@@ -1,7 +1,4 @@
-import {
-  deriveAgentPanelModel,
-  type RuntimeSubagent,
-} from "@t3tools/client-runtime/state/subagentRuntime";
+import { deriveAgentPanelModel, type RubatoSubagent as RuntimeSubagent } from "./rubatoAgentPanelModel";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -47,6 +44,7 @@ function agent(overrides: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "id">
     workflowName: null,
     phases: [],
     runHandles: null,
+    childThreadId: null,
     recentActivity: [],
     firstSeenAt: AT,
     startedAt: AT,

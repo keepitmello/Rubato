@@ -26,6 +26,7 @@ import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
+import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -37,7 +38,7 @@ import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/web/src/components/RubatoAgentsPanel.tsx', 'apps/web/src/components/RubatoAgentsPanel.test.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -608,8 +609,6 @@ const edits = {
   // "queue" 라 실행 중 보낸 말은 queue_after_active 로 그 턴이 끝난 뒤 제 턴으로 돌고, 대기
   // 행의 ↑ 는 queued-message.promote-to-steer 로 스티어가 된다. 그래서 웹 쪽 패치가 없다.
   'apps/web/src/components/ChatView.tsx': [
-    // The Agents tab renders Rubato's own panel (overlay RubatoAgentsPanel.tsx).
-    ['import { AgentsPanel } from "./AgentsPanel";', 'import { RubatoAgentsPanel as AgentsPanel } from "./RubatoAgentsPanel";', 'replace'],
     ...[10, 12].map((indent) => {
       const spaces = ' '.repeat(indent);
       return [
@@ -646,25 +645,17 @@ const edits = {
       'replace',
     ],
   ],
-  // 슬래시 메뉴가 줄 맨 앞에서만 열렸다. 고른 스킬은 `$name` 칩이 되므로
-  // 그 다음에 `/` 를 쳐도 목록이 안 떴다. 메뉴 쪽은 이미 중간에서도 스킬을
-  // 남긴다. `/usr/bin` 과 `//` 는 경로로 보고 건너뛴다.
-  //
-  // 앵커의 `$` 는 업스트림이 통화 기호 전체(`\p{Sc}`)로 넓혔다. 우리가 더하는
-  // `/` 분기는 그대로 두고, 표지판만 새 모양을 따라간다.
+  // 슬래시 메뉴는 줄 중간의 `/` 에서도 열린다(upstream 이 이제 그렇게 한다). Rubato 는
+  // `/usr/bin` 같은 경로와 `//` 를 명령으로 보지 않는다 — 두 번째 `/` 가 있으면 건너뛴다.
   'apps/web/src/composer-logic.ts': [
-    [
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      'replace',
-    ],
+    ['  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/")) {\n',
+      '  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n',
+      'replace'],
   ],
   'packages/shared/src/composerTrigger.ts': [
-    [
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      'replace',
-    ],
+    ['  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/")) {\n',
+      '  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n',
+      'replace'],
   ],
   'apps/web/src/composer-logic.test.ts': [
     [
@@ -1036,159 +1027,6 @@ const edits = {
     [
       '  durationMs: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
       '  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      'replace',
-    ],
-  ],
-  'packages/client-runtime/src/state/subagentRuntime.ts': [
-    // Agents panel (RubatoAgentsPanel): whole label, picker model name, taskforce board.
-    [
-      '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  /** First retained observation',
-      [
-        '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;',
-        '  /** The spawn\'s own words, uncut (title may carry a phone-sized model tag). */',
-        '  readonly label: string | null;',
-        '  /** The model as the picker names it, with effort: "Opus 5.5 · High". */',
-        '  readonly modelLabel: string | null;',
-        '  /** A taskforce member\'s name in its team: "backend". */',
-        '  readonly memberName: string | null;',
-        '  /** A taskforce\'s shared board, latest snapshot. */',
-        '  readonly board: SubagentBoard | null;',
-        '  /** First retained observation',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      'export interface RuntimeSubagent {',
-      [
-        'export interface SubagentBoardTask {',
-        '  readonly id: string;',
-        '  readonly subject: string;',
-        '  readonly description: string;',
-        '  readonly descriptionTruncated: boolean;',
-        '  readonly status: "pending" | "claimed" | "in_progress" | "completed";',
-        '  readonly owner: string | null;',
-        '  readonly blockedBy: ReadonlyArray<string>;',
-        '  readonly updatedAt: string | null;',
-        '}',
-        '',
-        'export interface SubagentBoard {',
-        '  readonly tasks: ReadonlyArray<SubagentBoardTask>;',
-        '}',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    [
-      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  firstSeenAt: string;',
-      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  label: string | null;\n  modelLabel: string | null;\n  memberName: string | null;\n  board: SubagentBoard | null;\n  firstSeenAt: string;',
-      'replace',
-    ],
-    [
-      '    recentActivity: [],\n    firstSeenAt: at,',
-      '    recentActivity: [],\n    label: asString(payload.label) ?? null,\n    modelLabel: asString(payload.modelLabel) ?? null,\n    memberName: asString(payload.memberName) ?? null,\n    board: null,\n    firstSeenAt: at,',
-      'replace',
-    ],
-    [
-      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;',
-      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;\n  const label = asString(payload.label);\n  if (label) agent.label = label;\n  const modelLabel = asString(payload.modelLabel);\n  if (modelLabel) agent.modelLabel = modelLabel;\n  const memberName = asString(payload.memberName);\n  if (memberName) agent.memberName = memberName;',
-      'replace',
-    ],
-    [
-      '          (payload.usageSnapshot !== true || !existed) &&',
-      '          ((payload.usageSnapshot !== true && payload.boardSnapshot !== true) || !existed) &&',
-      'replace',
-    ],
-    [
-      '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));\n        agent.updatedAt = at;\n        break;\n      }\n      case "task.updated": {',
-      [
-        '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));',
-        '        if (payload.boardSnapshot === true) {',
-        '          agent.board = asBoard(payload.board) ?? agent.board;',
-        '          break;',
-        '        }',
-        '        agent.updatedAt = at;',
-        '        break;',
-        '      }',
-        '      case "task.updated": {',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      'export function formatSubagentModelLabel(',
-      [
-        'const BOARD_TASK_STATUSES = new Set(["pending", "claimed", "in_progress", "completed"]);',
-        '',
-        'function asBoard(value: unknown): SubagentBoard | undefined {',
-        '  if (typeof value !== "object" || value === null) return undefined;',
-        '  const raw = (value as { tasks?: unknown }).tasks;',
-        '  if (!Array.isArray(raw)) return undefined;',
-        '  const tasks: SubagentBoardTask[] = [];',
-        '  for (const entry of raw) {',
-        '    if (typeof entry !== "object" || entry === null) continue;',
-        '    const record = entry as Record<string, unknown>;',
-        '    const id = asString(record.id);',
-        '    const subject = asString(record.subject);',
-        '    const status = record.status;',
-        '    if (!id || !subject || typeof status !== "string" || !BOARD_TASK_STATUSES.has(status)) continue;',
-        '    tasks.push({',
-        '      id,',
-        '      subject,',
-        '      description: typeof record.description === "string" ? record.description : "",',
-        '      descriptionTruncated: record.descriptionTruncated === true,',
-        '      status: status as SubagentBoardTask["status"],',
-        '      owner: asString(record.owner) ?? null,',
-        '      blockedBy: Array.isArray(record.blockedBy)',
-        '        ? record.blockedBy.filter((item): item is string => typeof item === "string")',
-        '        : [],',
-        '      updatedAt: asString(record.updatedAt) ?? null,',
-        '    });',
-        '  }',
-        '  return { tasks };',
-        '}',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    // Completion detail retains the report; summaries and live activity stay bounded.
-    [
-      '        const summary = asString(payload.summary) ?? asString(payload.detail);',
-      '        const summary = asString(payload.detail) ?? asString(payload.summary);',
-      'replace',
-    ],
-    ...[
-      '\n              agent.error = agent.error ?? bounded(summary);',
-      '\n              agent.result = agent.result ?? bounded(summary);',
-      '\n            agent.error = agent.error ?? bounded(summary);',
-      '\n            agent.result = bounded(summary);',
-    ].map((line) => [line, line.replace('bounded(summary)', 'summary'), 'replace']),
-    [
-      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n}',
-      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n  readonly turns?: number;\n}',
-      'replace',
-    ],
-    [
-      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens };',
-      'replace',
-    ],
-    [
-      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  return usage;',
-      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  const speedIndex = asCount(record.speedIndex);\n  if (speedIndex !== undefined) usage.speedIndex = speedIndex;\n  const turns = asCount(record.turns);\n  if (turns !== undefined) usage.turns = turns;\n  return usage;',
-      'replace',
-    ],
-    [
-      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
-      'replace',
-    ],
-    [
-      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  return merged;',
-      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  const speedIndex = incoming.speedIndex !== undefined ? incoming.speedIndex : current.speedIndex;\n  if (speedIndex !== undefined) merged.speedIndex = speedIndex;\n  const turns = pick(current.turns, incoming.turns);\n  if (turns !== undefined) merged.turns = turns;\n  return merged;',
-      'replace',
-    ],
-    [
-      'export function formatSubagentTokenCount(totalTokens: number): string {',
-      'export function formatSpeedLabel(score: number | null | undefined): string {\n  return typeof score === "number" && Number.isFinite(score) ? `Speed ${Math.round(score)}` : "Speed —";\n}\n\nexport function latestSessionSpeed(\n  activities: readonly { kind: string; payload: unknown }[],\n): number | null {\n  for (let index = activities.length - 1; index >= 0; index -= 1) {\n    const activity = activities[index];\n    if (!activity || activity.kind !== "session.speed.updated") continue;\n    const payload = activity.payload;\n    if (!payload || typeof payload !== "object") return null;\n    const score = (payload as { speedIndex?: unknown }).speedIndex;\n    return typeof score === "number" && Number.isFinite(score) ? Math.round(score) : null;\n  }\n  return null;\n}\n\nexport function formatSubagentTokenCount(totalTokens: number): string {',
       'replace',
     ],
   ],
@@ -2079,6 +1917,11 @@ for (const [relative, changes] of Object.entries(workLogEdits)) {
 // tsgo checker count (tsgo-checkers-edits.mjs).
 overlays.push(...tsgoCheckersOverlays);
 for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The right panel's Agents surface, which v0.1.0 dropped (agents-surface-edits.mjs).
+overlays.push(...agentsSurfaceOverlays);
+for (const [relative, changes] of Object.entries(agentsSurfaceEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
