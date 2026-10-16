@@ -10,6 +10,7 @@ import { RubatoSpawnRow, rubatoSpawnFor, spawnCallId } from "./RubatoSpawnRow";
 
 const AT = "2026-10-16T10:00:00.000Z";
 const state: RubatoSessionState = {
+  cache: null,
   speedIndex: null,
   agents: [
     {

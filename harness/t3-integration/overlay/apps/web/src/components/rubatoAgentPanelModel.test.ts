@@ -7,6 +7,7 @@ const AT = "2026-10-16T10:00:00.000Z";
 const LATER = "2026-10-16T10:05:00.000Z";
 
 const state: RubatoSessionState = {
+  cache: null,
   speedIndex: 176,
   agents: [
     {
@@ -93,6 +94,6 @@ describe("Agents panel rows from the server's session state", () => {
   });
 
   it("has no rows when the engine knows no agents", () => {
-    expect(deriveAgentPanelModel({ agents: rubatoAgentsFromSessionState({ speedIndex: null, agents: [], teams: [] }) }).hasAgents).toBe(false);
+    expect(deriveAgentPanelModel({ agents: rubatoAgentsFromSessionState({ speedIndex: null, cache: null, agents: [], teams: [] }) }).hasAgents).toBe(false);
   });
 });
