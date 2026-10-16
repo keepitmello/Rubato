@@ -21,7 +21,17 @@ const VOICE_INTERACTION_MODE = 'default';
  * the command created or changed. Retrying with the same session repeats the same
  * command ids, which T3 answers from its receipt instead of sending twice.
  */
-export function createSubmitter({ dispatch, readThread, readProject, environmentId, now = Date.now }) {
+// What the conversation shows as the voice message moves (V1's in-thread notices).
+const NOTICES = {
+  queued: 'Voice message queued until the current turn finishes.',
+  sent: 'Queued voice message sent.',
+  cancelled: 'Queued voice message cancelled.',
+  failed: 'Voice message was not sent. Check the shortcut status and try again.',
+  expired: 'Queued voice message expired without being sent.',
+};
+
+export function createSubmitter({ dispatch, readThread, readProject, readRun = async () => null,
+  appendNotice = async () => {}, environmentId, now = Date.now }) {
   const deepLinkFor = (threadId) =>
     `t3code://threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`;
   return {
@@ -42,7 +52,8 @@ export function createSubmitter({ dispatch, readThread, readProject, environment
             type: 'thread.create', commandId: voiceCommandId(id, 'create'), threadId, ...VOICE_AUTHOR,
             projectId: session.projectId, title: session.text.trim().slice(0, 80) || 'Voice message',
             modelSelection: project.defaultModelSelection,
-            runtimeMode: project.defaultRuntimeMode ?? VOICE_RUNTIME_MODE,
+            // Always full access, as before: nobody watches a phone-started thread for approvals.
+            runtimeMode: VOICE_RUNTIME_MODE,
             interactionMode: VOICE_INTERACTION_MODE, branch: null, worktreePath: null,
           });
         }
@@ -64,6 +75,16 @@ export function createSubmitter({ dispatch, readThread, readProject, environment
         status: run?.status === 'queued' ? 'queued' : 'sent',
         threadId, runId: run?.id ?? null, deepLink: deepLinkFor(threadId),
       };
+    },
+    // The status of the run a queued message waits as, or null once T3 no longer has it.
+    async runStatus(session) {
+      if (!session.threadId || !session.runId) return null;
+      return readRun(session.threadId, session.runId);
+    },
+    async notice(session, state) {
+      const message = NOTICES[state];
+      if (!session.threadId || !message) return;
+      await appendNotice({ threadId: session.threadId, id: voiceEntityId(session.voiceSessionId, `notice-${state}`), message });
     },
     // Takes a message back out of T3's queue. Resolves false once it already started.
     async withdraw(session) {

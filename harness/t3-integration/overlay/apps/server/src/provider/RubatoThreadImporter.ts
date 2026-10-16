@@ -149,8 +149,32 @@ const make = Effect.gen(function* () {
     yield* eventSink.write({ events }).pipe(Effect.mapError(importFailure("Could not write the step rewind")));
     return cutRunId;
   });
-  return { importPiSessionThread, cutRun };
+  /**
+   * A notice row in a thread outside any turn (the voice service's queued, sent and failed
+   * notices). `ordinal` is the thread's next turn-item ordinal; the caller reads it.
+   */
+  const appendNotice = (input: NoticeInput) => Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const item: OrchestrationV2TurnItem = {
+      id: TurnItemId.make(input.id), threadId: input.threadId, runId: null, nodeId: null, providerThreadId: null,
+      providerTurnId: null, nativeItemRef: null, parentItemId: null, ordinal: input.ordinal, status: "completed",
+      title: null, startedAt: now, completedAt: now, updatedAt: now, type: "system_notice", message: input.message,
+    };
+    const id = yield* idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the notice")));
+    yield* eventSink.write({ events: [{ id, type: "turn-item.updated", threadId: input.threadId, occurredAt: now, payload: item }] })
+      .pipe(Effect.mapError(importFailure("Could not write the notice")));
+  });
+  return { importPiSessionThread, cutRun, appendNotice };
 });
+
+export interface NoticeInput {
+  readonly threadId: ThreadId;
+  /** Stable per notice, so writing it again replaces the same row. */
+  readonly id: string;
+  readonly message: string;
+  readonly ordinal: number;
+}
 
 export interface CutRunInput {
   readonly run: OrchestrationV2Run;
@@ -163,6 +187,7 @@ export interface CutRunInput {
 export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, {
   readonly importPiSessionThread: (input: PiSessionThreadInput) => Effect.Effect<ThreadId, RubatoThreadImportError>;
   readonly cutRun: (input: CutRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
+  readonly appendNotice: (input: NoticeInput) => Effect.Effect<void, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);

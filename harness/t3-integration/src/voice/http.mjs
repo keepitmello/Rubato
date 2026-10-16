@@ -57,7 +57,7 @@ export async function handleVoiceRequest(request, { service, token, desktopAuthe
     if (!route) return json({ error: { code: 'not-found' } }, 404);
     const id = route[1];
     if (!voiceAuthenticated && service.status(id).target !== 'draft') return json({ error: { code: 'forbidden' } }, 403);
-    if (request.method === 'GET' && !route[2]) return json(service.status(id));
+    if (request.method === 'GET' && !route[2]) return json(await service.current(id));
     if (request.method === 'DELETE' && !route[2]) return json(await service.cancel(id));
     if (request.method === 'POST' && route[2] === 'select') {
       const input = await jsonBody(request);

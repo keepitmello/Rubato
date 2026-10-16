@@ -62,8 +62,9 @@ export function createSessionStore({ now = Date.now, filename, newId = randomUUI
     },
     prune() {
       for (const [id, session] of sessions) {
-        // Claims not yet handed to T3 are resolved by the service, not silently lost.
-        if (session.state !== 'pending' && session.expiresAt <= now()) sessions.delete(id);
+        // Claims not yet handed to T3, and messages waiting in its queue, are resolved by the
+        // service, not silently lost.
+        if (!['pending', 'queued'].includes(session.state) && session.expiresAt <= now()) sessions.delete(id);
       }
       persist();
     },

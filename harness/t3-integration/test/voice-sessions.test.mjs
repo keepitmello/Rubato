@@ -159,3 +159,69 @@ test('a missing target fails visibly instead of silently creating another thread
   assert.equal(result.error.code, 'thread-unavailable');
   assert.equal(f.sent().length, 0);
 });
+
+test('a queued message reports sent once its turn starts, and the thread shows both moments', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.view(); f.busy();
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'after this turn' });
+  assert.equal((await f.service.current(s.voiceSessionId)).status, 'queued');
+  f.finishTurn();
+  assert.equal((await f.service.current(s.voiceSessionId)).status, 'sent');
+  assert.deepEqual(f.notices.map((notice) => [notice.threadId, notice.message]), [
+    ['a', 'Voice message queued until the current turn finishes.'],
+    ['a', 'Queued voice message sent.'],
+  ]);
+});
+
+test('a queued message still waiting when its session runs out is taken back out as expired', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.view(); f.busy();
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'too late' });
+  f.advance(VOICE_SESSION_TTL_MS - 1);
+  await f.service.refreshQueued();
+  assert.equal(f.service.status(s.voiceSessionId).status, 'queued');
+  f.advance(1);
+  await f.service.refreshQueued();
+  assert.equal(f.service.status(s.voiceSessionId).status, 'expired');
+  assert.equal(f.runOf(voiceMessageId(s.voiceSessionId)).status, 'cancelled');
+  assert.equal(f.notices.at(-1).message, 'Queued voice message expired without being sent.');
+  // The record outlives its deadline only as long as any finished session does.
+  f.store.prune();
+  assert.ok(f.store.get(s.voiceSessionId));
+});
+
+test('a queued message the person removed in T3 reads as cancelled', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.view(); f.busy();
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'never mind' });
+  f.runOf(voiceMessageId(s.voiceSessionId)).status = 'cancelled';
+  assert.equal((await f.service.current(s.voiceSessionId)).status, 'cancelled');
+});
+
+test('a voice-started conversation runs with full access whatever the project defaults to', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.projects.get('p').defaultRuntimeMode = 'approval-required';
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: '새 대화' });
+  assert.equal(f.commands.find((c) => c.type === 'thread.create').runtimeMode, 'full-access');
+});
+
+test('a claim a restart interrupted that then fails leaves a notice in its conversation', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'voice-state-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const filename = path.join(dir, 'state.json');
+  const f = fixture({ filename });
+  f.view();
+  const s = await f.service.startSession();
+  f.store.update(s.voiceSessionId, { fingerprint: 'x', text: 'persisted claim', state: 'pending' });
+  await f.service.close();
+  const resumed = fixture({ filename, beforeDispatch: async () => { throw new Error('T3 refused'); } });
+  t.after(() => resumed.service.close());
+  await resumed.service.wake();
+  assert.equal(resumed.service.status(s.voiceSessionId).status, 'failed');
+  assert.deepEqual(resumed.notices.map((notice) => [notice.threadId, notice.message]),
+    [['a', 'Voice message was not sent. Check the shortcut status and try again.']]);
+});

@@ -19,6 +19,8 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
+import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
+import { RubatoThreadImporter } from "./provider/RubatoThreadImporter.ts";
 import { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
@@ -86,6 +88,14 @@ export function voiceOrchestrator(orchestrator: OrchestratorV2["Service"]) {
     readThread: (id: string) => Effect.runPromise(
       orchestrator.getThreadShell(ThreadId.make(id)).pipe(Effect.orElseSucceed(() => null)),
     ),
+    // Where a queued voice message is now: its run's status, or null once T3 no longer has it.
+    readRun: (threadId: string, runId: string) => Effect.runPromise(Effect.gen(function* () {
+      const id = ThreadId.make(threadId);
+      const shell = yield* orchestrator.getThreadShell(id).pipe(Effect.orElseSucceed(() => null));
+      if (shell === null) return null;
+      const records = yield* orchestrator.getThreadRecords(id, ["runs"]);
+      return records.runs.find((run) => run.id === runId)?.status ?? null;
+    })),
     listThreads: () => Effect.runPromise(
       orchestrator.getShellSnapshot().pipe(Effect.map((snapshot) => snapshot.threads)),
     ),
@@ -104,7 +114,17 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const configPath = process.env.RUBATO_VOICE_CONFIG ??
     path.join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), ".rubato", "voice.json");
 
-  const { dispatch, readThread, listThreads } = voiceOrchestrator(orchestrator);
+  const { dispatch, readThread, readRun, listThreads } = voiceOrchestrator(orchestrator);
+  // The voice notices (queued, sent, cancelled, failed, expired) as rows in the thread.
+  const importer = yield* Effect.serviceOption(RubatoThreadImporter);
+  const projectionStore = yield* Effect.serviceOption(ProjectionStoreV2);
+  const appendNotice = (notice: { readonly threadId: string; readonly id: string; readonly message: string }) =>
+    Effect.runPromise(Effect.gen(function* () {
+      if (Option.isNone(importer) || Option.isNone(projectionStore)) return;
+      const threadId = ThreadId.make(notice.threadId);
+      const ordinal = yield* projectionStore.value.getNextTurnItemOrdinal(threadId);
+      yield* importer.value.appendNotice({ threadId, id: notice.id, message: notice.message, ordinal });
+    }));
   // The model and permission mode a new thread starts with, resolved the way the
   // apps resolve them: the project's override, else this environment's default.
   const readProject = (id: string) => Effect.runPromise(Effect.gen(function* () {
@@ -136,13 +156,15 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       environmentId: string;
       dispatch(command: unknown): Promise<{ readonly runs: ReadonlyArray<VoiceRun> }>;
       readThread(id: string): Promise<unknown>;
+      readRun(threadId: string, runId: string): Promise<string | null>;
+      appendNotice(notice: { threadId: string; id: string; message: string }): Promise<void>;
       readProject(id: string): Promise<unknown>;
       listThreads(): Promise<ReadonlyArray<unknown>>;
     }) => VoiceRuntime;
     return yield* Effect.try(() => factory({
       config, statePath: path.join(path.dirname(configPath), "voice-state.json"),
       environmentId: environment.environmentId,
-      dispatch, readThread, readProject, listThreads,
+      dispatch, readThread, readRun, appendNotice, readProject, listThreads,
     }));
   }).pipe(Effect.catch(() => Effect.logWarning("Rubato Voice disabled: check the private voice.json configuration").pipe(
     Effect.as(undefined),

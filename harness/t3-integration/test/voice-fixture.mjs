@@ -18,6 +18,7 @@ export function fixture(options = {}) {
   const commands = [];
   const receipts = new Map();
   const runs = new Map();
+  const notices = [];
   const handle = (command) => {
     switch (command.type) {
       case 'thread.create':
@@ -48,6 +49,11 @@ export function fixture(options = {}) {
   const t3 = {
     now, environmentId: 'env',
     readThread: async (id) => threads.get(id) ?? null,
+    readRun: async (threadId, runId) => {
+      const run = runs.get(runId);
+      return run && run.threadId === threadId ? run.status : null;
+    },
+    appendNotice: async (notice) => { notices.push(notice); },
     readProject: async (id) => projects.get(id) ?? null,
     listThreads: async () => [...threads.values()],
     dispatch: async (command) => {
@@ -80,7 +86,7 @@ export function fixture(options = {}) {
     if (next) next.status = 'running';
     thread.activeRunId = next?.id ?? null;
   };
-  return { ...t3, service, store, presence, threads, projects, commands, runs, mobile, view, finishTurn,
+  return { ...t3, service, store, presence, threads, projects, commands, runs, notices, mobile, view, finishTurn,
     advance: (ms) => { time += ms; },
     busy: (threadId = 'a') => { threads.get(threadId).activeRunId = 'run-other'; runs.set('run-other', { id: 'run-other', threadId, status: 'running' }); },
     sent: () => commands.filter((c) => c.type === 'message.dispatch'),
