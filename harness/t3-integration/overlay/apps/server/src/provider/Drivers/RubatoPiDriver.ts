@@ -83,6 +83,8 @@ export interface PiRpcBridgeConnection {
 }
 export interface PiBridge {
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
+  /** Sessions a V2 thread reattached to from before V2; their history is native. */
+  readonly resumedSessions?: Set<string>;
   boundSession?: (threadId: string) => Promise<{readonly sessionId: string; readonly serverId: string | null} | null>;
   openRpc(options: {threadId: string; cwd: string; onRecord: (record: PiRpcRecord) => void;
     onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
@@ -155,6 +157,20 @@ export const RUBATO_CAPABILITIES_V2: OrchestrationV2ProviderCapabilities = {
     providerRollbackReturnsSnapshot: false },
 };
 const piSettings = Schema.decodeSync(PiSettings);
+/** Turn items the V1 importer wrote (LegacyV1ThreadImporter IMPORT_EVENT_PREFIX). */
+const LEGACY_ITEM = "migration:v1:";
+/**
+ * Whether T3's history handoff is already in the model's context. A thread from before V2
+ * that reattached to its Rubato session (rpc-connection.mjs) still gets T3's legacy
+ * handoff, which would replay that history into the same conversation a second time.
+ * Anything else (a provider switch, a fork delta, a mix) goes inline as for any provider.
+ */
+const alreadyNative = (bridge: PiBridge, input: {readonly providerThread: {readonly nativeThreadRef: {readonly nativeId: string | null} | null};
+  readonly messages: ReadonlyArray<{readonly itemId: string}>}) => {
+  const sessionId = input.providerThread.nativeThreadRef?.nativeId;
+  return sessionId != null && bridge.resumedSessions?.has(sessionId) === true && input.messages.length > 0
+    && input.messages.every((message) => String(message.itemId).startsWith(LEGACY_ITEM));
+};
 
 /** A PiRpcConnection (provider-pi rpc.ts) over the bridge's engine attachment. */
 const openRubatoConnection = (bridge: PiBridge, input: {readonly threadId: string; readonly cwd: string}) =>
@@ -223,6 +239,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       instanceId, settings: piSettings({ enabled }), environment: {}, continuationRequests,
       driverKind: kind, capabilities: RUBATO_CAPABILITIES_V2,
       openConnection: (input) => openRubatoConnection(bridge, { threadId: input.threadId, cwd: input.cwd }),
+      injectHistory: (input) => Effect.sync(() => alreadyNative(bridge, input)),
     });
     let current = decodeSnapshot({instanceId, driver:kind, enabled, installed:false, version:null,
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},

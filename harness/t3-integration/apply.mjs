@@ -323,8 +323,9 @@ const edits = {
   // 원본 대화는 두 홈 디렉터리에 그대로 남는다.
   'apps/server/src/project/AgentSessionImporter.ts': [
     [
-      '  const scanner = yield* AgentSessionScanner.AgentSessionScanner;',
-      '  if (!process.env.RUBATO_IMPORT_AGENT_HISTORY) {\n    return { importedCount: 0, skippedCount: 0 } satisfies AgentSessionImportResult;\n  }\n',
+      '    input: AgentSessionImportInput,\n  ) {\n',
+      '    input: AgentSessionImportInput,\n  ) {\n    if (!process.env.RUBATO_IMPORT_AGENT_HISTORY) {\n      return { importedCount: 0, skippedCount: 0 } satisfies AgentSessionImportResult;\n    }\n',
+      'replace',
     ],
   ],
   'apps/web/src/components/chat/ModelPickerContent.tsx': [

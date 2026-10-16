@@ -31,6 +31,8 @@ export const piAdapterEdits = {
         '  ) => Effect.Effect<PiRpcConnection, import("./rpc.ts").PiRpcError, import("effect/Scope").Scope>;',
         '  /** What this provider can do, when it is not upstream Pi. */',
         '  readonly capabilities?: OrchestrationV2ProviderCapabilities;',
+        '  /** Answers T3\'s history handoffs natively (true) or leaves them inline (false). */',
+        '  readonly injectHistory?: ProviderAdapter.ProviderAdapterV2SessionRuntime["injectHistory"];',
         '',
       ].join('\n'),
       'replace',
@@ -68,6 +70,10 @@ export const piAdapterEdits = {
         '',
       ].join('\n'),
       'replace',
+    ],
+    [
+      '        events: Stream.fromQueue(events),\n        hasPendingBackgroundWork:',
+      '        ...(options.injectHistory === undefined ? {} : { injectHistory: options.injectHistory }),\n',
     ],
   ],
   'packages/provider-pi/src/server.ts': [

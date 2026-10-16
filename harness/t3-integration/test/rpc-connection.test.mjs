@@ -137,3 +137,19 @@ test('a binding from another engine profile is not followed', async () => {
   await conn.request({ type: 'get_state' });
   assert.deepEqual(client.attached, ['created-1']);
 });
+
+test('a reattached session is recorded; one the engine lost falls back to a new session', async () => {
+  const resumed = new Set();
+  const client = fakeClient({ get_state: { sessionId: 'x' } });
+  const attach = client.attach;
+  client.attach = async (id) => { if (id === 'gone-1') throw new Error('Unknown session'); return attach(id); };
+  const kept = connection(client, { resumedSessions: resumed, boundSession: async () => ({ sessionId: 'old-1', serverId: null }) });
+  await kept.conn.request({ type: 'get_state' });
+  assert.deepEqual([...resumed], ['old-1']);
+  const lost = connection(fakeClient({ get_state: { sessionId: 'x' } }), { resumedSessions: resumed,
+    boundSession: async () => ({ sessionId: 'gone-1', serverId: null }) });
+  lost.conn.client.attach = client.attach;
+  await lost.conn.request({ type: 'get_state' });
+  assert.deepEqual([...resumed], ['old-1']);
+  assert.deepEqual(client.attached, ['old-1', 'created-1']);
+});

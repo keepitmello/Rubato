@@ -101,8 +101,23 @@ export class RubatoRpcConnection {
     return created.sessionId;
   }
   async openThreadSession() {
-    this.opening ??= (async () => this.attach((await this.boundSession()) ?? await this.createSession()))()
-      .finally(() => { this.opening = undefined; });
+    this.opening ??= (async () => {
+      const bound = await this.boundSession();
+      if (bound) {
+        try {
+          await this.attach(bound);
+          // Its history is already in the model's context: T3's handoff of the same
+          // messages is answered as delivered (RubatoPiDriver injectHistory).
+          this.bridge.resumedSessions?.add(bound);
+          return;
+        } catch (error) {
+          // A conversation the engine no longer has: start over, and T3's handoff
+          // carries the history in the first prompt as it does for any provider.
+          this.log('bound session unavailable', `${this.threadId} ${bound} ${error?.message ?? error}`);
+        }
+      }
+      await this.attach(await this.createSession());
+    })().finally(() => { this.opening = undefined; });
     return this.opening;
   }
   async command(record) {

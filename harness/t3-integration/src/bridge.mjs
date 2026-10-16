@@ -205,6 +205,8 @@ export class RubatoPiBridge {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation });
     this.rpcConnections = new Set();
+    // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
+    this.resumedSessions = new Set();
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     // threadId -> the prompt its session opens with, set by the new-thread screen just before the
     // first message and taken by open(). session-prompts.mjs.
