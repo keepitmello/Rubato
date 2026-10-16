@@ -5,8 +5,6 @@ import { sideChatIsEmpty, sideChatSourceReady } from "./rubatoSideChat";
 describe("Side chat", () => {
   it("is offered for a Rubato thread that has run, and not before", () => {
     const thread = (latestRun: unknown, latestUserMessageAt: string | null) => ({
-      environmentId: "env" as never,
-      providerInstanceId: "rubato",
       latestRun,
       latestUserMessageAt,
     });

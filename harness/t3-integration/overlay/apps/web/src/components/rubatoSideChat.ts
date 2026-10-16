@@ -3,7 +3,6 @@ import { ThreadId, type EnvironmentId, type ScopedThreadRef } from "@t3tools/con
 
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { rubatoHttpAccess } from "~/state/rubatoHttp";
-import { environmentServerConfigsAtom } from "~/state/server";
 import { readPreparedConnection } from "~/state/session";
 import { environmentThreadDetails } from "~/state/threads";
 
@@ -24,33 +23,12 @@ export interface SideChatEntry {
 export const sideChatRef = (environmentId: EnvironmentId, threadId: string): ScopedThreadRef =>
   scopeThreadRef(environmentId, ThreadId.make(threadId));
 
-function rubatoDriverOf(environmentId: EnvironmentId, instanceId: string): boolean {
-  const providers =
-    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.providers ?? [];
-  return providers.some(
-    (provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi",
-  );
-}
-
-type SideChatSource = {
-  readonly environmentId: EnvironmentId;
-  readonly providerInstanceId: string;
-  readonly latestRun: unknown;
-  readonly latestUserMessageAt: string | null;
-};
-
-/** Side chat is offered for a thread that runs on Rubato; other providers keep their own history. */
-export function threadRunsOnRubato(
-  thread: Pick<SideChatSource, "environmentId" | "providerInstanceId">,
-  runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
-): boolean {
-  return runsOnRubato(thread.environmentId, thread.providerInstanceId);
-}
-
 /**
  * A side chat copies a conversation; a thread that never ran has none to copy. A thread imported
  * from the engine has its messages but no run yet.
  */
+type SideChatSource = { readonly latestRun: unknown; readonly latestUserMessageAt: string | null };
+
 export function sideChatSourceReady(thread: SideChatSource | null, runsOnRubato: boolean): boolean {
   return runsOnRubato && thread !== null && (thread.latestRun !== null || thread.latestUserMessageAt !== null);
 }

@@ -9,7 +9,6 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
-import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
 import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";
 import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import { piSessionOfThread, rubatoBridge, threadOfPiSession } from "./provider/RubatoPiSessions.ts";
@@ -80,17 +79,13 @@ export const rubatoSideChatRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth;
     const orchestrator = yield* OrchestratorV2;
-    const projections = yield* ProjectionStoreV2;
     const crypto = yield* Crypto.Crypto;
     const context = yield* Effect.context<SqlClient.SqlClient | ProviderInstanceRegistry>();
     const commandId = crypto.randomUUIDv4().pipe(Effect.map(CommandId.make));
 
-    /** The live thread, or null when it is gone or deleted. */
+    /** The live thread's shell, or null when it is gone or deleted (no shell). */
     const liveThread = (threadId: ThreadId) =>
-      projections.getThread(threadId).pipe(
-        Effect.map((thread) => (thread.deletedAt === null ? thread : null)),
-        Effect.orElseSucceed(() => null),
-      );
+      orchestrator.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
 
     const bound = (threadId: ThreadId) =>
       Effect.gen(function* () {

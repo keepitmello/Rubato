@@ -110,8 +110,8 @@ export const sideChatEdits = {
       '  listSideChats,',
       '  sideChatRef,',
       '  sideChatSourceReady,',
-      '  threadRunsOnRubato,',
       '} from "./rubatoSideChat";',
+      'import { threadRunsOnRubato } from "./sidebar/rubatoThreadFork";',
       '',
     ].join('\n')],
     ['  const addAgentsSurface = useCallback(() => {\n', [
