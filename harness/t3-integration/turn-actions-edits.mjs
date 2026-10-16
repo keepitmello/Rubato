@@ -1,18 +1,10 @@
-// What a message offers under it, as Codex does:
-//
-// - a message of mine has a pencil ("Edit message") instead of T3's "Edit from here". The
-//   bubble becomes an editor, and sending the edit rewinds the conversation to before
-//   that message (files stay) and sends the edited one (chat/RubatoMessageEdit.tsx);
-// - a reply has "Fork into new chat" beside its copy and rewind buttons: a new thread
-//   holding the conversation up to the end of that reply's turn (chat/RubatoReplyFork.tsx,
-//   /rubato/thread-fork with `at`).
-//
-// The reply row's rewind button comes from step-rewind-edits.mjs, so this module
-// registers after it.
+// A message of mine has a pencil ("Edit message") instead of T3's "Edit from here", as
+// Codex does. The bubble becomes an editor, and sending the edit rewinds the conversation
+// to before that message (files stay) and sends the edited one (chat/RubatoMessageEdit.tsx).
+// Forking at a reply is T3's own "Fork from this response".
 export const turnActionsOverlays = [
   'apps/web/src/components/chat/RubatoMessageEdit.tsx',
   'apps/web/src/components/chat/RubatoMessageEdit.test.tsx',
-  'apps/web/src/components/chat/RubatoReplyFork.tsx',
 ];
 
 const lines = (...parts) => parts.join('\n');
@@ -200,7 +192,6 @@ export const turnActionsEdits = {
       '  RubatoMessageEditor,',
       '  useRubatoMessageEditing,',
       '} from "./RubatoMessageEdit";',
-      'import { RubatoReplyForkButton } from "./RubatoReplyFork";',
       '')],
     // A replacement is never empty: removing the overlay finds it by its text.
     ['  Undo2Icon,\n', '  // Rubato: no Undo2Icon, the message edit is a pencil (RubatoMessageEdit.tsx).\n', 'replace'],
@@ -257,21 +248,6 @@ export const turnActionsEdits = {
       '                busy={rubatoEditActivity.isRevertingCheckpoint || rubatoEditActivity.isWorking}',
       '              />',
       '            )}',
-      ''), 'replace'],
-    // Beside the reply's rewind (step-rewind-edits.mjs). The last reply forks too: that is
-    // the whole conversation.
-    ['        reveal="inherit"\n      />\n', lines(
-      '        reveal="inherit"',
-      '      />',
-      '      <RubatoReplyForkButton',
-      '        threadRef={ctx.threadRef}',
-      '        messageId={message.id}',
-      '        busy={',
-      '          Boolean(message.streaming) ||',
-      '          rubatoMetaActivity.isRevertingCheckpoint ||',
-      '          (rubatoMetaActivity.isWorking && message.turnId === rubatoMetaActivity.latestTurnId)',
-      '        }',
-      '      />',
       ''), 'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [

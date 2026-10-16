@@ -93,8 +93,10 @@ export function RubatoPanelComposer({
                 <div className="flex shrink-0 items-center gap-2">
                   <ComposerPrimaryActions
                     compact
+                    canOperateThread={!disabled}
                     pendingAction={null}
                     isRunning={running && onStop !== undefined}
+                    canInterrupt={running && onStop !== undefined}
                     showPlanFollowUpPrompt={false}
                     promptHasText={value.trim().length > 0}
                     isSendBusy={sending}

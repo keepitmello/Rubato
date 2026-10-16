@@ -1,9 +1,11 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ThreadId, type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
 
-import { readThread } from "~/state/entities";
+import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { rubatoHttpAccess } from "~/state/rubatoHttp";
+import { environmentServerConfigsAtom } from "~/state/server";
 import { readPreparedConnection } from "~/state/session";
+import { environmentThreadDetails } from "~/state/threads";
 
 // The right panel's Side chat: forks of the thread's conversation, opened beside it. The server
 // half is /rubato/side-chat (RubatoSideChat.ts); the panel is RubatoSideChatPanel.tsx, which
@@ -22,17 +24,35 @@ export interface SideChatEntry {
 export const sideChatRef = (environmentId: EnvironmentId, threadId: string): ScopedThreadRef =>
   scopeThreadRef(environmentId, ThreadId.make(threadId));
 
+function rubatoDriverOf(environmentId: EnvironmentId, instanceId: string): boolean {
+  const providers =
+    appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.providers ?? [];
+  return providers.some(
+    (provider) => provider.instanceId === instanceId && provider.driver === "rubato-pi",
+  );
+}
+
 type SideChatSource = {
-  readonly latestTurn: unknown;
-  readonly messages: ReadonlyArray<unknown>;
+  readonly environmentId: EnvironmentId;
+  readonly providerInstanceId: string;
+  readonly latestRun: unknown;
+  readonly latestUserMessageAt: string | null;
 };
+
+/** Side chat is offered for a thread that runs on Rubato; other providers keep their own history. */
+export function threadRunsOnRubato(
+  thread: Pick<SideChatSource, "environmentId" | "providerInstanceId">,
+  runsOnRubato: (environmentId: EnvironmentId, instanceId: string) => boolean = rubatoDriverOf,
+): boolean {
+  return runsOnRubato(thread.environmentId, thread.providerInstanceId);
+}
 
 /**
  * A side chat copies a conversation; a thread that never ran has none to copy. A thread imported
- * from the engine has its messages but no T3 turn yet.
+ * from the engine has its messages but no run yet.
  */
 export function sideChatSourceReady(thread: SideChatSource | null, runsOnRubato: boolean): boolean {
-  return runsOnRubato && thread !== null && (thread.latestTurn !== null || thread.messages.length > 0);
+  return runsOnRubato && thread !== null && (thread.latestRun !== null || thread.latestUserMessageAt !== null);
 }
 
 async function post<T>(ref: ScopedThreadRef, route: string): Promise<T> {
@@ -74,5 +94,6 @@ export function sideChatIsEmpty(thread: { readonly messages: ReadonlyArray<unkno
 
 /** Leaving a side chat that was never used deletes it, so the list holds only real ones. */
 export function deleteSideChatIfEmpty(side: ScopedThreadRef): void {
-  if (sideChatIsEmpty(readThread(side))) void deleteSideChat(side).catch(() => undefined);
+  const detail = appAtomRegistry.get(environmentThreadDetails.threadAtom(side));
+  if (sideChatIsEmpty(detail ? detail.projection : null)) void deleteSideChat(side).catch(() => undefined);
 }

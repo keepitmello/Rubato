@@ -19,7 +19,6 @@ import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
 import { officeEdits, officeOverlays } from './office-edits.mjs';
 import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs';
 import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.mjs';
-import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
@@ -1884,11 +1883,6 @@ overlays.push(...agentSessionOverlays);
 for (const [relative, changes] of Object.entries(agentSessionEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Fork thread in the legacy sidebar (thread-fork-edits.mjs) anchors on the pin edits above.
-overlays.push(...threadForkOverlays);
-for (const [relative, changes] of Object.entries(threadForkEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
 // Explorer on the left, back and forward in the file surface (file-explorer-edits.mjs).
 overlays.push(...fileExplorerOverlays);
 for (const [relative, changes] of Object.entries(fileExplorerEdits)) {
@@ -1924,7 +1918,7 @@ overlays.push(...agentsSurfaceOverlays);
 for (const [relative, changes] of Object.entries(agentsSurfaceEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
+// Side chat in the right panel; anchors on the agents-surface, surface-menu and right-panel edits (side-chat-edits.mjs).
 overlays.push(...sideChatOverlays);
 for (const [relative, changes] of Object.entries(sideChatEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];

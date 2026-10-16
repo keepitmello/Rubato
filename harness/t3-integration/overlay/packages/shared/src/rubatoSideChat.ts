@@ -10,14 +10,25 @@ export function isSideChatThreadId(threadId: string): boolean {
   return threadId.startsWith(SIDE_CHAT_THREAD_PREFIX) && threadId.length > SIDE_CHAT_THREAD_PREFIX.length;
 }
 
+type ShellThreads = { readonly id: string };
+
 /** The snapshot without side chat threads; the same object when it has none. */
-export function withoutSideChats<T extends { readonly threads: ReadonlyArray<{ readonly id: string }> }>(snapshot: T): T {
-  return snapshot.threads.some((thread) => isSideChatThreadId(thread.id))
-    ? { ...snapshot, threads: snapshot.threads.filter((thread) => !isSideChatThreadId(thread.id)) }
-    : snapshot;
+export function withoutSideChats<
+  T extends { readonly threads: ReadonlyArray<ShellThreads>; readonly archivedThreads?: ReadonlyArray<ShellThreads> },
+>(snapshot: T): T {
+  const hidden = (threads: ReadonlyArray<ShellThreads> | undefined) =>
+    threads?.some((thread) => isSideChatThreadId(thread.id)) ?? false;
+  if (!hidden(snapshot.threads) && !hidden(snapshot.archivedThreads)) return snapshot;
+  return {
+    ...snapshot,
+    threads: snapshot.threads.filter((thread) => !isSideChatThreadId(thread.id)),
+    ...(snapshot.archivedThreads
+      ? { archivedThreads: snapshot.archivedThreads.filter((thread) => !isSideChatThreadId(thread.id)) }
+      : {}),
+  };
 }
 
 /** A shell event that would put a side chat into the thread list. */
 export function addsSideChat(event: { readonly kind: string; readonly thread?: { readonly id: string } }): boolean {
-  return event.kind === "thread-upserted" && event.thread !== undefined && isSideChatThreadId(event.thread.id);
+  return event.kind === "thread.updated" && event.thread !== undefined && isSideChatThreadId(event.thread.id);
 }

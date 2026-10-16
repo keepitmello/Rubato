@@ -57,27 +57,16 @@ export const sideChatEdits = {
 `],
   ],
   'packages/client-runtime/src/state/shell.ts': [
-    ['import { applyShellStreamEvent } from "./shellReducer.ts";\n',
-      'import { addsSideChat, withoutSideChats } from "@t3tools/shared/rubatoSideChat";\n'],
-    [`        item.kind === "snapshot"
-          ? item.snapshot
-          : Option.match(next.snapshot, {
-              onNone: () => null,
-              onSome: (snapshot) =>
-                item.sequence > snapshot.snapshotSequence
+    ['import {\n  applyShellStreamEvent,\n', 'import { addsSideChat, withoutSideChats } from "@t3tools/shared/rubatoSideChat";\n'],
+    ['              Option.getOrNull(next.snapshot),\n              item.snapshot,\n',
+      '              Option.getOrNull(next.snapshot),\n              withoutSideChats(item.snapshot),\n', 'replace'],
+    [`                item.sequence > snapshot.snapshotSequence
                   ? applyShellStreamEvent(snapshot, item)
-                  : snapshot,
-            });`, `        item.kind === "snapshot"
-          ? withoutSideChats(item.snapshot)
-          : Option.match(next.snapshot, {
-              onNone: () => null,
-              onSome: (snapshot) =>
-                item.sequence > snapshot.snapshotSequence
+                  : snapshot,`, `                item.sequence > snapshot.snapshotSequence
                   ? addsSideChat(item)
                     ? { ...snapshot, snapshotSequence: item.sequence }
                     : applyShellStreamEvent(snapshot, item)
-                  : snapshot,
-            });`, 'replace'],
+                  : snapshot,`, 'replace'],
   ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";',
@@ -115,8 +104,14 @@ export const sideChatEdits = {
     ['import { stackedThreadToast, toastManager } from "./ui/toast";\n', [
       'import { setOpenedInPanel, usePanelViewStore, watchPanelViews } from "../rubatoPanelViews";',
       'import { RubatoSideChatPanel } from "./RubatoSideChatPanel";',
-      'import { createSideChat, deleteSideChatIfEmpty, listSideChats, sideChatRef, sideChatSourceReady } from "./rubatoSideChat";',
-      'import { threadRunsOnRubato } from "./sidebar/rubatoThreadFork";',
+      'import {',
+      '  createSideChat,',
+      '  deleteSideChatIfEmpty,',
+      '  listSideChats,',
+      '  sideChatRef,',
+      '  sideChatSourceReady,',
+      '  threadRunsOnRubato,',
+      '} from "./rubatoSideChat";',
       '',
     ].join('\n')],
     ['  const addAgentsSurface = useCallback(() => {\n', [
@@ -131,8 +126,8 @@ export const sideChatEdits = {
       '    [],',
       '  );',
       '  const sideChatAvailable = sideChatSourceReady(',
-      '    activeServerThread,',
-      '    activeServerThread !== null && threadRunsOnRubato(activeServerThread),',
+      '    activeThreadShell,',
+      '    activeThreadShell !== null && threadRunsOnRubato(activeThreadShell),',
       '  );',
       '  // Side chat shows the side chat that was open, else the list, else starts the first one.',
       '  const addSideChatSurface = useCallback(async () => {',

@@ -13,12 +13,13 @@ describe("side chat threads", () => {
   });
 
   it("stay out of the thread list, from a snapshot and from an event", () => {
-    const snapshot = { snapshotSequence: 3, threads: [{ id: "a" }, { id: side }, { id: "b" }] };
+    const snapshot = { snapshotSequence: 3, threads: [{ id: "a" }, { id: side }, { id: "b" }], archivedThreads: [{ id: side }] };
     expect(withoutSideChats(snapshot).threads.map((thread) => thread.id)).toEqual(["a", "b"]);
+    expect(withoutSideChats(snapshot).archivedThreads).toEqual([]);
     const plain = { snapshotSequence: 3, threads: [{ id: "a" }] };
     expect(withoutSideChats(plain)).toBe(plain);
-    expect(addsSideChat({ kind: "thread-upserted", thread: { id: side } })).toBe(true);
-    expect(addsSideChat({ kind: "thread-upserted", thread: { id: "a" } })).toBe(false);
-    expect(addsSideChat({ kind: "thread-removed" })).toBe(false);
+    expect(addsSideChat({ kind: "thread.updated", thread: { id: side } })).toBe(true);
+    expect(addsSideChat({ kind: "thread.updated", thread: { id: "a" } })).toBe(false);
+    expect(addsSideChat({ kind: "thread.removed" })).toBe(false);
   });
 });

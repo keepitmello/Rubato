@@ -75,8 +75,6 @@
     "apps/web/package.json": "b4ae97b483f8ddff53214b8e3ec82fcec3b8042380089ca30502188936e947bf",
     "pnpm-lock.yaml": "ccba8b74af2cd564dd22c039c356dd415386960d16022e698618961788524a43",
     "apps/web/src/components/RightPanelTabs.keyboard.test.tsx": "e1584fb62fac55b091689a07235dfe1b8032edc8cfe8ed6a7e9c616a4ec2795a",
-    "apps/web/src/components/threadActionMenu.logic.ts": "71eafa53a0a6967775fbdb61d50f435a10a74adc7a5dc7ffd551d00469a7a0f1",
-    "apps/web/src/components/Sidebar.tsx": "07edf16e941252c7e18279bb9e9cfff491e3e73f93f6ea6ba4ca0747cd9a06f6",
     "apps/web/src/rightPanelStore.ts": "ca525f50d5a87080c28c7372f36e00a8d140df29084dc005e033a0fc63a465e5",
     "apps/web/src/components/files/FileBrowserPanel.tsx": "3e86202c68926d9d6d8a96a76cf3655c97bef4288752fa1dda945e29b5a631a3",
     "apps/web/src/rightPanelStore.test.ts": "b042049f4d1a21a05b7edc93bb43654e69c69ebbfc642c03d347e868c557217e",
