@@ -30,6 +30,7 @@ test('closing the last right-panel tab returns to the surface launcher', {
     assert.fail(`${error.stdout ?? ''}\n${error.stderr ?? ''}\n${error.message}`);
   }
   t.diagnostic(result.stdout);
-  assert.match(result.stdout, /src\/rubatoRightPanelLauncher\.test\.ts/);
+  // Both files ran: upstream's store tests and ours.
+  assert.match(result.stdout, /Test Files\s+2 passed/);
   assert.doesNotMatch(result.stdout, /FAIL/);
 });

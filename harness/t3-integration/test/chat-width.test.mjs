@@ -22,8 +22,8 @@ test('chat width scales with the window, the same at every depth and column widt
 }, async () => {
   const source = process.env.T3_SOURCE;
   const css = await readFile(path.join(source, 'apps/web/src/index.css'), 'utf8');
-  const rule = css.match(/:root \{\n  --chat-width-percent: \d+;\n  --chat-max-width: [^\n]+\n\}/)?.[0];
-  assert.ok(rule, 'applied index.css has no --chat-max-width rule');
+  const rule = css.match(/:root \{\n  --chat-width-percent: \d+;\n  --chat-content-max-width: [^\n]+\n\}/)?.[0];
+  assert.ok(rule, 'applied index.css has no --chat-content-max-width rule');
 
   const require = createRequire(path.join(source, 'apps/desktop/package.json'));
   const { chromium } = require('playwright-core');
@@ -36,7 +36,7 @@ test('chat width scales with the window, the same at every depth and column widt
       * { box-sizing: border-box; margin: 0; }
       #shell { container-type: inline-size; }
       .gutter { padding: 0 20px; }
-      .cap { display: block; width: 100%; max-width: var(--chat-max-width); margin: 0 auto; }
+      .cap { display: block; width: 100%; max-width: var(--chat-content-max-width); margin: 0 auto; }
     </style>
     <div id="column">
       <div><div class="gutter"><div class="cap" id="stack"><div class="cap" id="shell"><div><form class="cap" id="form"></form></div></div></div></div></div>
