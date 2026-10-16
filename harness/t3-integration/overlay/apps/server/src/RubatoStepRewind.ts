@@ -97,7 +97,8 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       return typeof nativeId === "string" && batch.includes(nativeId) && !TEXT_ITEMS.has(candidate.type);
     });
     const cutAfter = batchItems.at(-1) ?? item;
-    const hiddenItems = runItems.filter((candidate) => candidate.ordinal > cutAfter.ordinal);
+    // The turn's checkpoint row stays: it is where Edit from here lands for this turn.
+    const hiddenItems = runItems.filter((candidate) => candidate.ordinal > cutAfter.ordinal && candidate.type !== "checkpoint");
     const hiddenMessageIds = new Set(hiddenItems.flatMap((candidate) =>
       "messageId" in candidate && candidate.messageId ? [String(candidate.messageId)] : []));
     const hiddenMessages = projection.messages.filter((message) => hiddenMessageIds.has(String(message.id)));
