@@ -22,7 +22,12 @@ export class SessionStateFold {
     this.projection = new EventProjection({ threadId, sessionId, instanceId, emit: (event) => this.fold(event) });
   }
   rebind(sessionId) {
-    if (this.projection.sessionId !== sessionId) this.projection.reset(sessionId);
+    if (this.projection.sessionId === sessionId) return;
+    // Another conversation now: nothing of the previous one's agents, speed or cache applies.
+    this.projection.reset(sessionId);
+    this.agents.clear();
+    this.speedIndex = null;
+    this.cache = null;
   }
   feed(event) {
     try { this.projection.project(event); } catch { /* a record the panel cannot read changes nothing */ }

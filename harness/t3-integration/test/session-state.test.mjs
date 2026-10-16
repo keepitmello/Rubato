@@ -60,3 +60,12 @@ test('the route answers a thread it has never seen with an empty state', async (
   const bad = await handleSessionStateRequest({ read: () => null }, new Request('http://x/rubato/session-state'));
   assert.equal(bad.status, 400);
 });
+
+test('a thread bound to another session shows nothing of the previous one', () => {
+  const fold = new SessionStateFold({ threadId: 't1', sessionId: 's-before' });
+  fold.feed({ type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [{ task_id: 'st_a', status: 'running' }] } });
+  fold.feed({ type: 'extension_event', name: 'rubato.speed.updated', data: { speed: 50 } });
+  fold.rebind('s-after');
+  assert.deepEqual(fold.snapshot().agents, []);
+  assert.equal(fold.snapshot().speedIndex, null);
+});
