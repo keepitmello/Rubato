@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { setImmediate as nextTurn } from 'node:timers/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { SessionStateFold, handleSessionStateRequest } from '../src/session-state.mjs';
@@ -98,4 +100,40 @@ test('a GUI restart finds every agent row and the speed again, however long the 
   const third = new RubatoPiBridge({ descriptorPath: '/unused', instanceId: 'rubato', sessionStateDir: dir });
   t.after(() => third.close());
   assert.deepEqual(third.sessionState(threadId).agents, []);
+});
+
+const defer = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+test("a graceful GUI close waits for an already-started debounced session-state write", { timeout: 5000 }, async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "state-close-"));
+  const started = defer();
+  const release = defer();
+  const bridge = new RubatoPiBridge({ sessionStateDir: dir });
+  const originalWrite = bridge.writeState.bind(bridge);
+  const writes = [];
+  // Delay the disk boundary, without changing save scheduling or close/flush behavior.
+  bridge.writeState = (...args) => {
+    const write = (async () => { started.resolve(); await release.promise; await originalWrite(...args); })();
+    writes.push(write);
+    return write;
+  };
+  let closing;
+  try {
+    bridge.stateFor("new-v2-thread", "native-session").feed({
+      type: "extension_event", name: "rubato.speed.updated", data: { speed: 61 },
+    });
+    await started.promise;
+    let returned = false;
+    closing = bridge.close().then(() => { returned = true; });
+    await nextTurn();
+    assert.equal(returned, false, "close returned while the last state write was still blocked");
+  } finally {
+    release.resolve();
+    await closing;
+    await Promise.all(writes);
+    await rm(dir, { recursive: true, force: true });
+  }
 });

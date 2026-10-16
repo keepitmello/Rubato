@@ -434,7 +434,8 @@ export class RubatoRpcConnection {
         await this.attach((this.sessionId === null ? await this.boundSession() : null) ?? await this.createSession());
         return { cancelled: false };
       case 'switch_session':
-        this.bridge.stepContinues?.delete(this.threadId);
+        // Not a new conversation: the adapter reattaches the thread's own session this way, as
+        // after a GUI restart, and a Continue on its way must still find its mark.
         await this.attach(record.sessionPath);
         return { cancelled: false };
       case 'get_state': {

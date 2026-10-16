@@ -295,8 +295,18 @@ test('any other prompt or a new conversation drops the continue mark', async () 
   await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
   assert.deepEqual(client.commands.at(-1), { type: 'prompt', message: STEP_CONTINUE_TEXT });
   stepContinues.add('t1');
-  await conn.request({ type: 'switch_session', sessionPath: 's2' });
+  await conn.request({ type: 'new_session' });
   assert.equal(stepContinues.has('t1'), false);
+});
+
+test('reattaching the thread\'s session keeps a Continue on its way', async () => {
+  const stepContinues = new Set(['t1']);
+  const { client, conn } = await attached({ prompt: { disposition: 'started' }, continue: {} });
+  conn.bridge.stepContinues = stepContinues;
+  const { STEP_CONTINUE_TEXT } = await import('../src/rpc-connection.mjs');
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
+  assert.deepEqual(client.commands.at(-1), { type: 'continue' });
 });
 
 test('reattaching to a session restores its agents and speed from the records the engine still holds', async () => {

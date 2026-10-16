@@ -202,6 +202,7 @@ export class RubatoPiBridge {
     // Each is saved under `sessionStateDir` (T3's state dir), so a GUI restart finds it again.
     this.sessionStates = new Map();
     this.stateSaves = new Map();
+    this.stateWrites = new Set();
     // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
     this.resumedSessions = new Set();
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
@@ -281,7 +282,7 @@ export class RubatoPiBridge {
   saveState(threadId) {
     const file = this.stateFile(threadId);
     if (!file || this.stateSaves.has(threadId)) return;
-    const timer = setTimeout(() => { this.stateSaves.delete(threadId); void this.writeState(threadId, file); }, 250);
+    const timer = setTimeout(() => { this.stateSaves.delete(threadId); void this.trackWrite(this.writeState(threadId, file)); }, 250);
     timer.unref?.();
     this.stateSaves.set(threadId, timer);
   }
@@ -295,11 +296,17 @@ export class RubatoPiBridge {
       await rename(temporary, file);
     } catch (error) { this.onError(error); }
   }
+  trackWrite(write) {
+    this.stateWrites.add(write);
+    return write.finally(() => this.stateWrites.delete(write));
+  }
+  // Waits for writes already under way too: a close right after a debounced save keeps it.
   async flushStates() {
     const pending = [...this.stateSaves.keys()];
     for (const threadId of pending) clearTimeout(this.stateSaves.get(threadId));
     this.stateSaves.clear();
-    await Promise.all(pending.map((threadId) => this.writeState(threadId, this.stateFile(threadId))));
+    await Promise.all([...this.stateWrites,
+      ...pending.map((threadId) => this.trackWrite(this.writeState(threadId, this.stateFile(threadId))))]);
   }
   /** The step-rewind continue route is about to send `stepContinueText` for this thread. */
   markStepContinue(threadId) { this.stepContinues.add(threadId); }
