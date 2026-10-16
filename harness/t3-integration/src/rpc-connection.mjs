@@ -60,6 +60,20 @@ export function replyBefore(branch, entryId) {
   return reply ? messageFingerprint(reply.message) : null;
 }
 
+/**
+ * The prompt a step rewind's "continue" sends through T3 (RubatoStepRewind.ts). T3 shows it
+ * as the user's message; Pi gets no message and runs on from the step's tool results, so
+ * every byte the model saw before stays as cached.
+ */
+export const STEP_CONTINUE_TEXT = 'Continue from the rewound step.';
+/** The tool calls answered together with `toolCallId` (one assistant message), on the live branch. */
+export function stepBatch(branch, toolCallId) {
+  const reply = branch.find((entry) => entry.type === 'message' && entry.message?.role === 'assistant'
+    && (entry.message.content ?? []).some((part) => part?.type === 'toolCall' && part.id === toolCallId));
+  if (!reply) throw new Error('This step is not on the conversation\'s current branch');
+  return reply.message.content.filter((part) => part?.type === 'toolCall' && typeof part.id === 'string').map((part) => part.id);
+}
+
 /** The wait that ended starts the agent's next run a moment later; the turn waits that long. */
 export const AWAIT_POLL_MS = 2_000;
 export const AWAIT_GRACE_MS = 3_000;
@@ -118,6 +132,14 @@ export class RubatoRpcConnection {
     this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
     this.fold = this.bridge.stateFor?.(this.threadId, sessionId);
     void this.refreshCache();
+    // A name given while T3 was away (the CLI, a turn T3 did not watch) shows on attach.
+    this.command({ type: 'get_state' }).then((state) => {
+      if (typeof state?.sessionName === 'string' && state.sessionName.trim()) this.mirrorTitle(state.sessionName.trim());
+    }, () => {});
+  }
+  mirrorTitle(name) {
+    Promise.resolve(this.bridge.sessionTitle?.(this.threadId, name))
+      .catch((error) => this.log('title mirror failed', error));
   }
   /** The prompt cache behind the context ring and the sidebar capsule (session-state.mjs). */
   async refreshCache() {
@@ -159,6 +181,10 @@ export class RubatoRpcConnection {
     // rows this stream turns them into.
     this.fold?.feed(event);
     if (cacheMoved(event)) void this.refreshCache();
+    // Rubato's title extension names the session from its topic; the thread shows that name
+    // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
+    if (event?.type === 'session_info_changed' && typeof event.name === 'string' && event.name.trim())
+      this.mirrorTitle(event.name.trim());
     this.enqueue(() => this.process(event));
   }
   enqueue(step) {
@@ -310,6 +336,11 @@ export class RubatoRpcConnection {
     if (this.closed) throw new Error('Rubato connection is closed');
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
+    if (command.type === 'prompt' && command.message === STEP_CONTINUE_TEXT && !command.images?.length) {
+      // A step rewind's continue: no message for Pi, it runs on from the tool results.
+      await this.client.command({ type: 'continue' });
+      return { disposition: 'started' };
+    }
     if (command.type === 'prompt' && typeof command.message === 'string')
       command.message = rewriteSkillMentions(command.message, this.bridge.skillNames);
     return this.client.command(command);

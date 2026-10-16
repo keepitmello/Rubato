@@ -5,7 +5,7 @@ import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom,
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
-import { RubatoRpcConnection, activeBranch, queuedMessagesInOrder, replyBefore } from './rpc-connection.mjs';
+import { RubatoRpcConnection, STEP_CONTINUE_TEXT, activeBranch, queuedMessagesInOrder, replyBefore, stepBatch } from './rpc-connection.mjs';
 import { SessionStateFold } from './session-state.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile } from 'node:fs/promises';
@@ -193,6 +193,8 @@ export class RubatoPiBridge {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation });
     this.rpcConnections = new Set();
+    // What a step rewind's continue sends through T3 (rpc-connection.mjs turns it into Pi's continue).
+    this.stepContinueText = STEP_CONTINUE_TEXT;
     // threadId -> what /rubato/session-state answers (session-state.mjs), fed by V2 connections.
     this.sessionStates = new Map();
     // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
@@ -298,6 +300,28 @@ export class RubatoPiBridge {
     if (!forked?.sessionId) throw new Error('The engine did not create the fork');
     this.claimed.add(forked.sessionId);
     return forked.sessionId;
+  }
+  /** Runs `use(client)` on the thread's open V2 attachment, or a short-lived one to `sessionId`. */
+  async withSession(threadId, sessionId, use) {
+    const rpc = this.rpcFor(threadId);
+    if (rpc && rpc.sessionId === sessionId) return use({ command: (command) => rpc.command(command) });
+    await this.connection();
+    const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+    try { await client.attach(sessionId); return await use(client); }
+    finally { await client.detach().catch(() => {}); await client.close(); }
+  }
+  /**
+   * A step rewind on the engine (RubatoStepRewind.ts): lands the session on the last tool
+   * result of the batch `toolCallId` was called in, in place (pi-runtime conversation-rewind
+   * findStepTarget). Answers that batch's call ids, so T3 cuts after the same rows.
+   */
+  async rewindToStep({ threadId, sessionId, toolCallId }) {
+    return this.withSession(threadId, sessionId, async (client) => {
+      const batch = stepBatch(activeBranch(await client.command({ type: 'get_entries' })), toolCallId);
+      const result = await client.command({ type: 'rewind', step: toolCallId });
+      if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
+      return { batch };
+    });
   }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }

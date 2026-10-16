@@ -6,10 +6,21 @@ export const voiceEntityId = (sessionId, kind) =>
 export const voiceThreadId = (id) => voiceEntityId(id, 'thread');
 export const voiceMessageId = (id) => voiceEntityId(id, 'message');
 export const voiceCommandId = (id, kind) => voiceEntityId(id, `cmd-${kind}`);
-export const threadBusy = (thread) =>
-  ['running', 'starting'].includes(thread.session?.status) ||
-  thread.latestTurn?.state === 'running';
+// T3 decides under its thread lock whether the message starts now or waits
+// behind the running turn. A read here could not: a normal message sent in the
+// same moment would turn ours into steer.
+export const VOICE_DISPATCH_MODE = Object.freeze({ type: 'queue_after_active' });
+// The phone's Shortcut is the author; T3 shows it as the person's own message.
+export const VOICE_AUTHOR = Object.freeze({ createdBy: 'user', creationSource: 'mobile' });
+const VOICE_RUNTIME_MODE = 'full-access';
+const VOICE_INTERACTION_MODE = 'default';
 
+/**
+ * Sends one claimed voice session through T3's orchestrator.
+ * `dispatch(command)` resolves to `{ runs: [{ id, status, userMessageId }] }`, the runs
+ * the command created or changed. Retrying with the same session repeats the same
+ * command ids, which T3 answers from its receipt instead of sending twice.
+ */
 export function createSubmitter({ dispatch, readThread, readProject, environmentId, now = Date.now }) {
   const deepLinkFor = (threadId) =>
     `t3code://threads/${encodeURIComponent(environmentId)}/${encodeURIComponent(threadId)}`;
@@ -17,61 +28,53 @@ export function createSubmitter({ dispatch, readThread, readProject, environment
     deepLinkFor,
     async submit(session) {
       const id = session.voiceSessionId;
+      const newThread = session.target === 'new-thread';
       let threadId = session.threadId;
-      if (session.target === 'new-thread') {
+      if (newThread) {
         threadId = voiceThreadId(id);
-        const project = await readProject(session.projectId);
-        if (!project?.defaultModelSelection) {
-          throw new VoiceSessionError('no-project-model', 'Set a default model for this project in T3');
+        // A retry after the create landed finds the thread; creating again would be refused.
+        if (!(await readThread(threadId))) {
+          const project = await readProject(session.projectId);
+          if (!project?.defaultModelSelection) {
+            throw new VoiceSessionError('no-project-model', 'Set a default model for this project in T3');
+          }
+          await dispatch({
+            type: 'thread.create', commandId: voiceCommandId(id, 'create'), threadId, ...VOICE_AUTHOR,
+            projectId: session.projectId, title: session.text.trim().slice(0, 80) || 'Voice message',
+            modelSelection: project.defaultModelSelection,
+            runtimeMode: project.defaultRuntimeMode ?? VOICE_RUNTIME_MODE,
+            interactionMode: VOICE_INTERACTION_MODE, branch: null, worktreePath: null,
+          });
         }
-        await dispatch({
-          type: 'thread.create', commandId: voiceCommandId(id, 'create'), threadId,
-          projectId: session.projectId, title: session.text.slice(0, 80),
-          modelSelection: project.defaultModelSelection,
-          runtimeMode: 'full-access', interactionMode: 'default',
-          branch: null, worktreePath: null, createdAt: new Date(session.createdAt).toISOString(),
-        });
       }
       const thread = await readThread(threadId);
-      if (!thread || thread.archivedAt) throw new VoiceSessionError('thread-unavailable', 'The target conversation is unavailable');
+      if (!thread || thread.archivedAt || thread.deletedAt) {
+        throw new VoiceSessionError('thread-unavailable', 'The target conversation is unavailable');
+      }
       if (session.expiresAt <= now()) throw new VoiceSessionError('expired-session', 'Voice session expired', 410);
-      if (threadBusy(thread)) return { status: 'queued', threadId, deepLink: deepLinkFor(threadId) };
+      const messageId = voiceMessageId(id);
+      const result = await dispatch({
+        type: 'message.dispatch', commandId: voiceCommandId(id, 'send'), threadId, ...VOICE_AUTHOR,
+        messageId, text: session.text, attachments: [], dispatchMode: VOICE_DISPATCH_MODE,
+        // A new conversation gets its title the way the composer's first message does.
+        ...(newThread ? { titleSeed: session.text.trim().slice(0, 80) || 'Voice message' } : {}),
+      });
+      const run = result?.runs?.find((candidate) => candidate.userMessageId === messageId);
+      return {
+        status: run?.status === 'queued' ? 'queued' : 'sent',
+        threadId, runId: run?.id ?? null, deepLink: deepLinkFor(threadId),
+      };
+    },
+    // Takes a message back out of T3's queue. Resolves false once it already started.
+    async withdraw(session) {
+      if (!session.threadId || !session.runId) return false;
       try {
         await dispatch({
-          type: 'thread.turn.start', commandId: voiceCommandId(id, 'send'), threadId,
-          // The engine checks this inside its serial command worker. A read here
-          // alone cannot prevent a simultaneous normal message turning us into steer.
-          onlyWhenIdle: true,
-          message: { messageId: voiceMessageId(id), role: 'user', text: session.text, attachments: [] },
-          runtimeMode: thread.runtimeMode, interactionMode: thread.interactionMode,
-          createdAt: new Date(session.createdAt).toISOString(),
+          type: 'queued-run.cancel', commandId: voiceCommandId(session.voiceSessionId, 'withdraw'),
+          threadId: session.threadId, runId: session.runId,
         });
-      } catch (error) {
-        if (String(error?.message).includes('RUBATO_VOICE_THREAD_BUSY')) {
-          return { status: 'queued', threadId, deepLink: deepLinkFor(threadId) };
-        }
-        throw error;
-      }
-      return { status: 'sent', threadId, deepLink: deepLinkFor(threadId) };
-    },
-    async notice(session, state) {
-      if (!session.threadId) return;
-      const summary = ({
-        queued: 'Voice message queued until the current turn finishes.',
-        sent: 'Queued voice message sent.',
-        cancelled: 'Queued voice message cancelled.',
-        failed: 'Voice message was not sent. Check the shortcut status and try again.',
-        expired: 'Queued voice message expired without being sent.',
-      })[state];
-      if (!summary) return;
-      const createdAt = new Date(now()).toISOString();
-      await dispatch({
-        type: 'thread.activity.append', commandId: voiceCommandId(session.voiceSessionId, state),
-        threadId: session.threadId, createdAt,
-        activity: { id: voiceEntityId(session.voiceSessionId, state), createdAt,
-          tone: ['failed', 'expired'].includes(state) ? 'error' : 'info',
-          kind: 'runtime.warning', summary, payload: { voiceSessionId: session.voiceSessionId, state }, turnId: null },
-      });
+        return true;
+      } catch { return false; }
     },
   };
 }

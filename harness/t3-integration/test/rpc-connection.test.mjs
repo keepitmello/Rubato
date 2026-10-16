@@ -64,7 +64,7 @@ test('new_session creates through the engine and the native id is the session id
   const state = await conn.request({ type: 'get_state', id: 'x' });
   assert.equal(state.sessionFile, 'created-1');
   assert.equal(state.rubatoSessionFile, '/sessions/x_created-1.jsonl');
-  assert.deepEqual(client.commands, [{ type: 'get_state' }]);
+  assert.ok(client.commands.every((command) => command.type === 'get_state' && command.id === undefined));
 });
 
 test('send answers on the event stream as an id-less response', async () => {
@@ -87,7 +87,7 @@ test('a dialog answer goes to the engine reply, not a command', async () => {
   conn.send({ type: 'extension_ui_response', id: 'q1', confirmed: true });
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(client.replies, [{ id: 'q1', confirmed: true }]);
-  assert.deepEqual(client.commands, []);
+  assert.equal(client.commands.some((command) => command.type === 'extension_ui_response'), false);
 });
 
 test('an unloaded session closes the stream with a reason', async () => {
@@ -249,4 +249,16 @@ test('a rollback rewinds the attached session in place instead of forking it', a
   await conn.request({ type: 'fork', entryId: 'u1' });
   assert.deepEqual(client.commands.at(-1), { type: 'rewind', keep: [], skip: 0 });
   assert.equal(client.commands.some((command) => command.type === 'fork'), false);
+});
+
+test('the session name Rubato gives a conversation becomes the thread title', async () => {
+  const titles = [];
+  const client = fakeClient({ get_state: { sessionName: 'Port the work log' } });
+  const { conn } = connection(client, { sessionTitle: async (threadId, title) => { titles.push([threadId, title]); } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  await new Promise((resolve) => setImmediate(resolve));
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'idle', events: [{ sequence: 1, event: { type: 'session_info_changed', name: ' Renamed by topic ' } }] });
+  await conn.inbound;
+  assert.deepEqual(titles, [['t1', 'Port the work log'], ['t1', 'Renamed by topic']]);
 });
