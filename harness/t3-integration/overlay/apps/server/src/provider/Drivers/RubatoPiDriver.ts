@@ -1,20 +1,28 @@
 import {
-  ProviderDriverKind, ProviderRuntimeEvent, ProviderSession, ProviderTurnStartResult,
-  ServerProvider, TextGenerationError, ThreadId, TurnId,
+  ProviderDriverKind, ServerProvider, TextGenerationError,
 } from "@t3tools/contracts";
+import type { OrchestrationV2ProviderCapabilities } from "@t3tools/contracts";
+import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as PubSub from "effect/PubSub";
+import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 // Imported sessions may use either path syntax, independently of the server OS.
 // @effect-diagnostics-next-line nodeBuiltinImport:off
 import * as NodePath from "node:path";
 import { pathToFileURL } from "node:url";
-import { ProviderAdapterRequestError, ProviderDriverError } from "../Errors.ts";
-import { defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance } from "../ProviderDriver.ts";
-import type { ProviderAdapterShape } from "../Services/ProviderAdapter.ts";
-import type { ProviderAdapterError } from "../Errors.ts";
+import {
+  PI_CAPABILITIES_V2, PiRpcError, makePiAdapterV2, type PiRpcConnection, type PiRpcRecord,
+} from "@t3tools/provider-pi/server";
+import { PiSettings } from "@t3tools/provider-pi/settings";
+import * as ProviderContinuationRequests from "@t3tools/provider-core/server/ProviderContinuationRequests";
+import {
+  defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance,
+} from "@t3tools/provider-core/server/driver";
+import { ProviderDriverError } from "../Errors.ts";
 
 /** Unix, Windows drive-letter, and UNC paths. Host platform must not gate this. */
 export const isAbsoluteLocalPath = (value: string): boolean =>
@@ -67,7 +75,17 @@ export interface RubatoRevertStep {
 export type PiImportedMessage =
   | {readonly id: string; readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string; readonly context?: undefined}
   | PiSessionMessage;
+/** One Pi RPC stream served by the Rubato engine (bridge rpc-connection.mjs). */
+export interface PiRpcBridgeConnection {
+  request(record: PiRpcRecord): Promise<unknown>;
+  send(record: PiRpcRecord): void;
+  close(error?: unknown): Promise<void>;
+}
 export interface PiBridge {
+  /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
+  boundSession?: (threadId: string) => Promise<{readonly sessionId: string; readonly serverId: string | null} | null>;
+  openRpc(options: {threadId: string; cwd: string; onRecord: (record: PiRpcRecord) => void;
+    onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
   /** `/rewind`: T3's conversation revert of `turns` turns before `afterTurn`, and that turn (RubatoPiInventory.ts). */
@@ -119,14 +137,61 @@ export type PiCatalogue = Awaited<ReturnType<PiBridge["catalogue"]>>;
 const bridges = new WeakMap<ProviderInstance, PiBridge>();
 export const rubatoBridgeFor = (instance: ProviderInstance): PiBridge | undefined => bridges.get(instance);
 const detail = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
-const decodeSession = Schema.decodeUnknownSync(ProviderSession);
-const decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
-const decodeTurn = Schema.decodeUnknownSync(ProviderTurnStartResult);
 const decodeSnapshot = Schema.decodeUnknownSync(ServerProvider);
 
-export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
+/**
+ * What Rubato can do on T3's V2 orchestrator. It starts from upstream Pi's set (same
+ * RPC, same event mapping) and takes away what the shared engine does not offer:
+ * T3's permission hook and MCP bridge are Pi extensions T3 injects into a process it
+ * spawns, and Rubato sessions run in the engine with Rubato's own tool policy.
+ */
+export const RUBATO_CAPABILITIES_V2: OrchestrationV2ProviderCapabilities = {
+  ...PI_CAPABILITIES_V2,
+  sessions: { ...PI_CAPABILITIES_V2.sessions, supportsRuntimeModeSwitchInSession: true },
+  threads: { ...PI_CAPABILITIES_V2.threads, canRollbackThread: false, canForkThread: false, canForkFromTurn: false },
+  tools: { ...PI_CAPABILITIES_V2.tools, supportsMcpTools: false },
+  approvals: { ...PI_CAPABILITIES_V2.approvals, supportsCommandApproval: false, supportsFileChangeApproval: false },
+  checkpointing: { ...PI_CAPABILITIES_V2.checkpointing, providerCanRollbackConversation: false,
+    providerRollbackReturnsSnapshot: false },
+};
+const piSettings = Schema.decodeSync(PiSettings);
+
+/** A PiRpcConnection (provider-pi rpc.ts) over the bridge's engine attachment. */
+const openRubatoConnection = (bridge: PiBridge, input: {readonly threadId: string; readonly cwd: string}) =>
+  Effect.gen(function* () {
+    const events = yield* Queue.unbounded<PiRpcRecord, PiRpcError>();
+    const exited = yield* Deferred.make<number, PiRpcError>();
+    const ended = (error: unknown) => {
+      const failure = new PiRpcError({ operation: "transport",
+        detail: error === undefined ? "Rubato attachment closed" : detail(error), cause: error });
+      Queue.failCauseUnsafe(events, Cause.fail(failure));
+      Deferred.doneUnsafe(exited, error === undefined ? Effect.succeed(0) : Effect.fail(failure));
+    };
+    const connection = yield* Effect.tryPromise({
+      try: () => bridge.openRpc({ threadId: input.threadId, cwd: input.cwd,
+        onRecord: (record) => { Queue.offerUnsafe(events, record); }, onClosed: ended }),
+      catch: (cause) => new PiRpcError({ operation: "attach", detail: detail(cause), cause }),
+    });
+    yield* Effect.addFinalizer(() => Effect.promise(() => connection.close()));
+    const result: PiRpcConnection = {
+      send: (record) => Effect.sync(() => connection.send(record)),
+      request: (record) => Effect.tryPromise({
+        try: () => connection.request(record),
+        catch: (cause) => new PiRpcError({ operation: String(record["type"] ?? "request"), detail: detail(cause), cause }),
+      }),
+      events,
+      exited: Deferred.await(exited),
+      // Stop-with-restart: drop this attachment; the engine keeps the session.
+      terminate: Effect.promise(() => connection.close()),
+    };
+    return result;
+  });
+
+export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
   driverKind: kind,
-  metadata: { displayName: "Rubato", supportsMultipleInstances: true },
+  // The one instance is the configured `rubato` (write-gui-settings.mjs); an unconfigured
+  // default would only fail on its empty paths.
+  metadata: { displayName: "Rubato", supportsMultipleInstances: true, hasDefaultInstance: false },
   configSchema: RubatoPiConfig,
   defaultConfig: () => ({ bridgeModule: "", descriptorPath: "", catalogueCwd: "" }),
   create: ({ instanceId, displayName, accentColor, environment, enabled, config }) => Effect.gen(function* () {
@@ -136,35 +201,35 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
       return yield* fail(new Error("bridgeModule must be an absolute local module path"));
     if (!isAbsoluteLocalPath(config.descriptorPath) || !isAbsoluteLocalPath(config.catalogueCwd))
       return yield* fail(new Error("descriptorPath and catalogueCwd must be absolute paths"));
-    const events = yield* PubSub.unbounded<ProviderRuntimeEvent>();
     const updates = yield* PubSub.unbounded<ServerProvider>();
-    yield* Effect.addFinalizer(() => Effect.gen(function* () {
-      yield* PubSub.shutdown(events); yield* PubSub.shutdown(updates);
-    }));
+    yield* Effect.addFinalizer(() => PubSub.shutdown(updates));
     const bridge = yield* Effect.tryPromise({
       try: async () => {
         const moduleHref = config.bridgeModule.startsWith("file:") ? config.bridgeModule : pathToFileURL(config.bridgeModule).href;
         const module: unknown = await import(/* @vite-ignore */ moduleHref);
         if (!module || typeof module !== "object" || !("createBridge" in module) || typeof module.createBridge !== "function")
           throw new Error("bridgeModule must export createBridge");
-        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string; emit:(event:unknown)=>void; projectedMessages:(id:string)=>Promise<never>; appendSessionMessage:()=>Promise<never>}) => PiBridge;
-        return factory({ descriptorPath: config.descriptorPath, instanceId,
-          emit: (event) => { PubSub.publishUnsafe(events, decodeEvent(event)); },
-          projectedMessages: async () => { throw new Error("T3's read-only transcript projection is not bound yet; retry after startup"); },
-          appendSessionMessage: async () => { throw new Error("T3's thread writer is not bound yet; the next attach replays the message"); },
-        });
+        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string}) => PiBridge;
+        return factory({ descriptorPath: config.descriptorPath, instanceId });
       }, catch: fail,
     });
     const request = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({
-      try: action, catch: (cause) => new ProviderAdapterRequestError({provider:kind, method, detail:detail(cause), cause}),
+      try: action, catch: (cause) => fail(new Error(`${method}: ${detail(cause)}`)),
     });
     yield* Effect.addFinalizer(() => request("dispose", () => bridge.close()).pipe(Effect.catch((error) => Effect.logWarning(error.message))));
     const continuationIdentity = defaultProviderContinuationIdentity({driverKind:kind, instanceId});
+    const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
+    const orchestrationAdapter = yield* makePiAdapterV2({
+      instanceId, settings: piSettings({ enabled }), environment: {}, continuationRequests,
+      driverKind: kind, capabilities: RUBATO_CAPABILITIES_V2,
+      openConnection: (input) => openRubatoConnection(bridge, { threadId: input.threadId, cwd: input.cwd }),
+    });
     let current = decodeSnapshot({instanceId, driver:kind, enabled, installed:false, version:null,
       status:enabled ? "warning" : "disabled", auth:{status:"unknown"},
       checkedAt:DateTime.formatIso(yield* DateTime.now), models:[], displayName:displayName ?? "Rubato",
-      ...(accentColor ? {accentColor} : {}), showInteractionModeToggle:false,
-      reportsContextWindow:true, supportsConversationRollback:true, supportsTextGeneration:false,
+      ...(accentColor ? {accentColor} : {}), continuation:{groupKey:continuationIdentity.continuationKey},
+      showInteractionModeToggle:false, supportedRuntimeModes:["full-access"],
+      reportsContextWindow:true, supportsConversationRollback:false, supportsTextGeneration:false,
       requiresNewThreadForModelChange:false, setup:{canAuthenticate:false,canInstall:false},
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });
@@ -199,43 +264,18 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig> = {
     const snapshotForCwd = (cwd: string) => Effect.gen(function* () {
       return snapshotFrom(yield* probeCatalogue(cwd));
     });
-    const adapter: ProviderAdapterShape<ProviderAdapterError> = {
-      provider:kind,
-      capabilities:{sessionModelSwitch:"in-session",supportsConversationRollback:true,promptlessTurnContinuation:true},
-      startSession: (input) => request("startSession", async () => {
-        if (!enabled) throw new Error("Rubato provider is disabled");
-        return decodeSession(await bridge.startSession(input));
-      }),
-      sendTurn:(input) => request("sendTurn", async () => decodeTurn(await bridge.sendTurn(input))),
-      compaction:{type:"native", start:(id) => request("compact", () => bridge.compact(id))},
-      interruptTurn:(id) => request("interruptTurn", () => bridge.interruptTurn(id)),
-      respondToRequest:(id, requestId, decision) => request("respondToRequest", () => bridge.respondToRequest(id,requestId,decision)),
-      respondToUserInput:(id, requestId, answers) => request("respondToUserInput", () => bridge.respondToUserInput(id,requestId,answers)),
-      stopSession:(id) => request("stopSession", () => bridge.stopSession(id)),
-      listSessions:() => Effect.sync(() => bridge.listSessions().map((value) => decodeSession(value))),
-      hasSession:(id) => Effect.sync(() => bridge.hasSession(id)),
-      readThread:(id) => request("readThread", async () => {
-        const snapshot = await bridge.readThread(id);
-        return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
-      }),
-      rollbackThread:(id, numTurns, step) => request("rollbackThread", async () => {
-        const snapshot = await bridge.rollbackThread(id, numTurns, step);
-        return {threadId:ThreadId.make(snapshot.threadId), turns:snapshot.turns.map((turn) => ({id:TurnId.make(turn.id),items:turn.items}))};
-      }),
-      stopAll:() => request("stopAll", () => Promise.all(bridge.listSessions().map((value) => decodeSession(value)).map((session) => bridge.stopSession(session.threadId))).then(() => undefined)),
-      streamEvents:Stream.fromPubSub(events),
-    };
-    const unsupported = (operation: "generateCommitMessage"|"generatePrContent"|"generateBranchName"|"generateThreadTitle") =>
+    const unsupported = (operation: string) =>
       Effect.fail(new TextGenerationError({operation, detail:"Use another T3 provider for background text generation"}));
     const instance: ProviderInstance = {
-      instanceId,driverKind:kind,continuationIdentity,displayName,accentColor,enabled,adapter,
+      instanceId,driverKind:kind,continuationIdentity,displayName,accentColor,enabled,orchestrationAdapter,
       snapshot:{resolveMaintenance:() => Effect.succeed({provider:kind,packageName:null,update:null}),
         getSnapshot:Effect.sync(() => current),refresh:refreshFor(config.catalogueCwd),
         streamChanges:Stream.fromPubSub(updates),applyUsageLimits:() => Effect.void},
       snapshotForCwd,
       refreshModels:() => refreshFor(config.catalogueCwd).pipe(Effect.asVoid),
       textGeneration:{generateCommitMessage:() => unsupported("generateCommitMessage"),generatePrContent:() => unsupported("generatePrContent"),
-        generateBranchName:() => unsupported("generateBranchName"),generateThreadTitle:() => unsupported("generateThreadTitle")},
+        generateBranchName:() => unsupported("generateBranchName"),generateThreadTitle:() => unsupported("generateThreadTitle"),
+        generateReviewGuide:() => unsupported("generateReviewGuide")},
     };
     bridges.set(instance,bridge);
     yield* refreshFor(config.catalogueCwd);

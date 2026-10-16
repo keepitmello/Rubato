@@ -35,10 +35,11 @@ import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edit
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
+import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -257,24 +258,23 @@ const edits = {
     ],
   ],
   'apps/server/src/provider/builtInDrivers.ts': [
-    ['import type { AnyProviderDriver } from "./ProviderDriver.ts";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
-    ['  AntigravityDriver,\n];', '  RubatoPiDriver,\n'],
+    ['import type {\n  AnyProviderDriver,\n  ProviderUsageReaderEnv,\n} from "@t3tools/provider-core/server/driver";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
+    ['  AcpRegistryDriver,\n];', '  RubatoPiDriver,\n'],
   ],
   'apps/server/src/serverRuntimeStartup.ts': [
-    ['import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";', 'import { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\n'],
-    ['      yield* runStartupPhase("provider-sessions.reconcile", reconcileProviderSessions);', '      const rubatoInventory = yield* makeRubatoPiInventory.pipe(Scope.provide(reactorScope));\n'],
-    ['      yield* Effect.logDebug("startup phase: complete");', '      yield* rubatoInventory.start.pipe(Scope.provide(reactorScope));\n'],
+    ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport * as Schedule from "effect/Schedule";\n'],
+    // Before recovery resumes anything, the Rubato bridges learn which session each thread
+    // already runs in, so a conversation from before V2 continues there (RubatoPiSessions.ts).
+    ['      const { recovery, bootstrap: bootstrapTargets } = yield* runOrderedV2StartupPhases({\n',
+      '      yield* runStartupPhase("rubato.session-lookup", bindRubatoSessionLookup);\n'],
     // 데스크톱 백엔드는 자기를 띄운 앱과 수명을 같이한다. 앱은 정상 종료 때만
     // SIGTERM 을 보내서, 앱이 크래시로 죽으면 서버가 launchd 밑에 고아로 남았다.
     // 다시 켠 앱이 새 서버를 띄우면 둘이 같은 state.sqlite 와 같은 Pi 세션에 붙어
     // 모든 이벤트를 제 턴 ID 로 한 번씩 더 썼다(답·생각 중복, 도구 묶음 끊김).
     // 부모가 바뀌면 자기에게 SIGTERM 을 보내 정상 종료 경로로 내려간다.
-    ['import * as Scope from "effect/Scope";', 'import * as Schedule from "effect/Schedule";\n'],
     [
-      '    yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));\n',
+      '    const startup = Effect.gen(function* () {\n',
       [
-        '    yield* Effect.addFinalizer(() => Scope.close(reactorScope, Exit.void));',
-        '',
         '    // Rubato: a desktop backend lives only as long as the app that spawned it.',
         '    // The app sends SIGTERM on a normal quit; after a crash this process was',
         '    // reparented to launchd and kept writing beside the next backend.',
@@ -288,12 +288,12 @@ const edits = {
         '          }),',
         '        ),',
         '        Effect.andThen(Effect.sync(() => process.kill(process.pid, "SIGTERM"))),',
-        '        Effect.forkIn(reactorScope),',
+        '        Effect.forkScoped,',
         '      );',
         '    }',
         '',
+        '',
       ].join('\n'),
-      'replace',
     ],
   ],
   // Rubato 카탈로그는 성공한 discovery 다. Codex/OpenCode 와 같이 취급해야
@@ -1959,6 +1959,13 @@ overlays.push(...turnActionsOverlays);
 for (const [relative, changes] of Object.entries(turnActionsEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// The Rubato provider on T3's V2 orchestrator: upstream's Pi adapter fed by the engine (pi-adapter-edits.mjs).
+overlays.push(...piAdapterOverlays);
+for (const [relative, changes] of Object.entries(piAdapterEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+/** The full edit and overlay tables, for checks that apply part of them. */
+export { edits as integrationEdits, overlays as integrationOverlays };
 function transform(text, changes) {
   for (const [anchor, addition, mode] of changes) {
     if (text.split(anchor).length !== 2) throw new Error(`T3 integration anchor is missing or ambiguous: ${anchor}`);
