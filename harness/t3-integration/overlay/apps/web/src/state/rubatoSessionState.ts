@@ -108,10 +108,10 @@ const subscribe = (listener: () => void) => {
 
 /** The state ChatView last polled for this thread, without polling again. */
 export function usePublishedRubatoSessionState(threadKey: string | null): RubatoSessionState {
-  return useSyncExternalStore(
-    subscribe,
-    () => (threadKey === null ? EMPTY_SESSION_STATE : (published.get(threadKey) ?? EMPTY_SESSION_STATE)),
-  );
+  const read = () =>
+    threadKey === null ? EMPTY_SESSION_STATE : (published.get(threadKey) ?? EMPTY_SESSION_STATE);
+  // Server-rendered timelines (tests) read the same store.
+  return useSyncExternalStore(subscribe, read, read);
 }
 
 /** The thread's Rubato state, polled while mounted; empty for no thread. */

@@ -520,6 +520,13 @@ const edits = {
       'replace',
     ],
   ],
+  // T3 MCP 도구 행의 제품 로고도 같은 워드마크라 Rubato 로 보인다. upstream 테스트는 T3 글리프의
+  // viewBox 를 기대하므로 워드마크의 것으로 맞춘다.
+  'apps/web/src/components/chat/MessagesTimeline.test.tsx': [
+    [`    expect(markup).toContain('viewBox="15.5309 37 94.3941 56.96"');`,
+      `    expect(markup).toContain('viewBox="0 0 3210 760"');`,
+      'replace'],
+  ],
   // 워드마크 옆의 "Code" 글자. 워드마크가 이미 제품 이름을 다 쓴다.
   // 지우는 대신 빈 글자로 둔다 — 치환을 되돌릴 때 빈 문자열은 파일 맨 앞에
   // 원문을 다시 붙여 넣어서, overlay 제거가 원본을 복원하지 못한다.

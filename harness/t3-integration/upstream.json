@@ -35,6 +35,7 @@
     "apps/web/src/components/chat/ModelListRow.tsx": "5061400cdf70e774e24e2893e522e9e3d285a02cb3ff18a1ada686d9cc1c4ef6",
     "apps/web/src/components/chat/ProviderModelPicker.tsx": "1ba451dc127b124314a69c32795a7b1a50abe4e2880672ac6d0c898f2f57b304",
     "apps/web/src/components/T3Wordmark.tsx": "ba20ddca13c7436ca7ad1f25fbc1acc67b95b9242573fd6e70611f389deabf4d",
+    "apps/web/src/components/chat/MessagesTimeline.test.tsx": "8c8f3c9391138daba95e8f4d674f6a85a83a6866d766517b94e56a54564c993d",
     "apps/web/src/components/sidebar/SidebarChrome.tsx": "b8ccfaa1697f4c04a79c327cd88011a8525484938ffd192ae6bd8a2aa3bf29a5",
     "apps/web/src/components/ChatView.tsx": "6751d5564075d9b4410eccba102d5544fd5164aad06ead47c0a91d10def9f875",
     "apps/web/src/composer-logic.ts": "a17f23659f857117b35ff7e01d25ef45941571ce576485064e9b17652d5de1b9",
