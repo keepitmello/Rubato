@@ -11,6 +11,10 @@
 //   from the engine (state/rubatoSessionState.ts): T3's V2 rows see a Rubato spawn as a plain
 //   tool call. The same poll gives the composer its Speed label.
 //
+// - in the conversation, an Agent, task or team_create call is drawn as the agent or
+//   taskforce it started, with the panel's row grammar (chat/RubatoSpawnRow.tsx), joined on
+//   the call id the roster records.
+//
 // side-chat-edits.mjs inserts its own surface beside these lines, so it registers after.
 export const agentsSurfaceOverlays = [
   'apps/web/src/components/rubatoAgentPanelModel.ts',
@@ -18,6 +22,8 @@ export const agentsSurfaceOverlays = [
   'apps/web/src/components/RubatoAgentsPanel.test.tsx',
   'apps/web/src/components/rubatoAgentPanelModel.test.ts',
   'apps/web/src/state/rubatoSessionState.ts',
+  'apps/web/src/components/chat/RubatoSpawnRow.tsx',
+  'apps/web/src/components/chat/RubatoSpawnRow.test.tsx',
 ];
 
 const lines = (...parts) => parts.join('\n');
@@ -130,6 +136,13 @@ export const agentsSurfaceEdits = {
       '            agentsAvailable={props.agentsAvailable}',
       '            liveAgentCount={props.liveAgentCount}',
       '          />'), 'replace'],
+  ],
+  'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    ['import { formatDuration } from "@t3tools/shared/orchestrationTiming";\n',
+      'import { RubatoSpawnRow, useRubatoSpawn } from "./RubatoSpawnRow";\n'],
+    ['const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n',
+      'const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n  // Rubato: a spawn call is drawn as the agent it started (RubatoSpawnRow.tsx).\n  const rubatoSpawn = useRubatoSpawn(ctx.routeThreadKey, item);\n  if (rubatoSpawn) return <RubatoSpawnRow spawn={rubatoSpawn} />;\n',
+      'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";\n', lines(

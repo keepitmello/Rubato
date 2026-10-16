@@ -1,5 +1,6 @@
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ScopedThreadRef } from "@t3tools/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { readPreparedConnection } from "./session";
 import { rubatoHttpAccess } from "./rubatoHttp";
@@ -12,6 +13,8 @@ import { rubatoHttpAccess } from "./rubatoHttp";
  */
 export interface RubatoSessionAgent {
   readonly taskId: string;
+  /** The Agent or task tool call that started it; its timeline row draws this agent. */
+  readonly spawnToolCallId?: string | null;
   readonly label?: string | null;
   readonly title: string;
   readonly modelLabel?: string | null;
@@ -38,6 +41,8 @@ export interface RubatoSessionAgent {
 
 export interface RubatoSessionTeam {
   readonly teamRunId: string;
+  /** The team_create call that started it. */
+  readonly spawnToolCallId?: string | null;
   readonly name: string;
   readonly members: ReadonlyArray<string>;
   readonly board: {
@@ -89,6 +94,26 @@ async function readSessionState(
   };
 }
 
+// The latest state per thread, so rows deep in the timeline read what ChatView polls.
+const published = new Map<string, RubatoSessionState>();
+const listeners = new Set<() => void>();
+function publish(key: string, state: RubatoSessionState) {
+  published.set(key, state);
+  for (const listener of listeners) listener();
+}
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+};
+
+/** The state ChatView last polled for this thread, without polling again. */
+export function usePublishedRubatoSessionState(threadKey: string | null): RubatoSessionState {
+  return useSyncExternalStore(
+    subscribe,
+    () => (threadKey === null ? EMPTY_SESSION_STATE : (published.get(threadKey) ?? EMPTY_SESSION_STATE)),
+  );
+}
+
 /** The thread's Rubato state, polled while mounted; empty for no thread. */
 export function useRubatoSessionState(ref: ScopedThreadRef | null): RubatoSessionState {
   const [state, setState] = useState<RubatoSessionState>(EMPTY_SESSION_STATE);
@@ -102,7 +127,10 @@ export function useRubatoSessionState(ref: ScopedThreadRef | null): RubatoSessio
     const poll = async () => {
       const next = await readSessionState(environmentId, threadId, abort.signal).catch(() => null);
       if (abort.signal.aborted) return;
-      if (next) setState(next);
+      if (next) {
+        setState(next);
+        publish(scopedThreadKey(scopeThreadRef(environmentId, threadId)), next);
+      }
       timer = setTimeout(() => void poll(), POLL_MS);
     };
     void poll();
