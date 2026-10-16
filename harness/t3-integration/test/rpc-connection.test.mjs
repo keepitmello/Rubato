@@ -262,3 +262,43 @@ test('the session name Rubato gives a conversation becomes the thread title', as
   await conn.inbound;
   assert.deepEqual(titles, [['t1', 'Port the work log'], ['t1', 'Renamed by topic']]);
 });
+
+test('the agent\'s own record keeping does not reach T3 as work', async () => {
+  const { client, conn, records } = await attached({});
+  client.listener({ runtimeId: 'r1', sequence: 2, status: 'running', events: [
+    { sequence: 1, event: { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'notes_write_file', args: { path: 'now.md' } } },
+    { sequence: 2, event: { type: 'tool_execution_start', toolCallId: 'c2', toolName: 'bash', args: { command: 'ls' } } },
+  ] });
+  await conn.inbound;
+  assert.deepEqual(records.map((record) => record.toolCallId), ['c2']);
+});
+
+test('the continue words are Pi\'s continue only right after a step rewind of this thread', async () => {
+  const stepContinues = new Set();
+  const { client, conn } = await attached({ prompt: { disposition: 'started' }, continue: {} });
+  conn.bridge.stepContinues = stepContinues;
+  const { STEP_CONTINUE_TEXT } = await import('../src/rpc-connection.mjs');
+  await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
+  assert.deepEqual(client.commands.at(-1), { type: 'prompt', message: STEP_CONTINUE_TEXT });
+  stepContinues.add('t1');
+  await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
+  assert.deepEqual(client.commands.at(-1), { type: 'continue' });
+  assert.equal(stepContinues.has('t1'), false);
+});
+
+test('reattaching to a session restores its agents and speed from the records the engine still holds', async () => {
+  const { SessionStateFold } = await import('../src/session-state.mjs');
+  const folds = new Map();
+  const stateFor = (threadId, sessionId) => { if (!folds.has(threadId)) folds.set(threadId, new SessionStateFold({ threadId, sessionId })); return folds.get(threadId); };
+  const client = fakeClient();
+  const { conn } = connection(client, { stateFor });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 2, status: 'idle', events: [
+    { sequence: 1, event: { type: 'extension_event', name: 'rubato.task.updated', data: { tasks: [{ task_id: 'st_a', status: 'completed', final_response: 'done' }] } } },
+    { sequence: 2, event: { type: 'extension_event', name: 'rubato.speed.updated', data: { speed: 73 } } },
+  ] });
+  await conn.inbound;
+  const state = folds.get('t1').snapshot();
+  assert.equal(state.speedIndex, 73);
+  assert.equal(state.agents[0].result, 'done');
+});

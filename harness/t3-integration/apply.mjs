@@ -23,7 +23,6 @@ import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.m
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
-import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
@@ -41,7 +40,7 @@ import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.m
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -268,7 +267,10 @@ const edits = {
     ['  AcpRegistryDriver,\n];', '  RubatoPiDriver,\n'],
   ],
   'apps/server/src/serverRuntimeStartup.ts': [
-    ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport * as Schedule from "effect/Schedule";\n'],
+    ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\nimport * as Schedule from "effect/Schedule";\n'],
+    // Sessions started elsewhere show as threads once commands are accepted (RubatoPiInventory.ts).
+    ['      yield* Effect.logDebug("startup phase: complete");\n',
+      '      yield* runStartupPhase("rubato.inventory", Effect.flatMap(makeRubatoPiInventory, (inventory) => inventory.start));\n'],
     // Before recovery resumes anything, the Rubato bridges learn which session each thread
     // already runs in, so a conversation from before V2 continues there (RubatoPiSessions.ts).
     ['      const { recovery, bootstrap: bootstrapTargets } = yield* runOrderedV2StartupPhases({\n',
@@ -1624,11 +1626,6 @@ for (const [relative, changes] of Object.entries(chatWidthEdits)) {
 // 레거시 사이드바 스레드 목록의 세로선을 다시 지운다 (sidebar-rail-edits.mjs).
 overlays.push(...sidebarRailOverlays);
 for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// The work log in Codex's shape: live lines, summaries, phase folds (work-log-edits.mjs).
-overlays.push(...workLogOverlays);
-for (const [relative, changes] of Object.entries(workLogEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // tsgo checker count (tsgo-checkers-edits.mjs).

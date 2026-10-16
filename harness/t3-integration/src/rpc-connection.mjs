@@ -2,6 +2,7 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { rewriteSkillMentions } from './commands.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
+import { isBookkeepingTool } from './activity.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -129,8 +130,8 @@ export class RubatoRpcConnection {
     this.bridge.claimed.add(sessionId);
     this.runtimeId = undefined;
     this.sequence = 0;
-    this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
     this.fold = this.bridge.stateFor?.(this.threadId, sessionId);
+    this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
     void this.refreshCache();
     // A name given while T3 was away (the CLI, a turn T3 did not watch) shows on attach.
     this.command({ type: 'get_state' }).then((state) => {
@@ -156,9 +157,11 @@ export class RubatoRpcConnection {
   onState(state) {
     if (this.closed || !state) return;
     if (this.runtimeId === undefined) {
-      // What the session did before we attached is history, not this stream.
+      // What the session did before we attached is history, not this stream. The session
+      // state still reads it (a GUI restart reattaching keeps its agents and Speed Index).
       this.runtimeId = state.runtimeId;
       this.sequence = state.sequence ?? 0;
+      for (const record of state.events ?? []) this.fold?.feed(record.event);
       return;
     }
     if (state.runtimeId !== this.runtimeId) {
@@ -206,6 +209,9 @@ export class RubatoRpcConnection {
       return;
     }
     if (event?.type === 'agent_start' && this.hold) this.endHold(false);
+    // The agent's own records (context notes, task list, tool search) are not work the person
+    // asked for: the turn's work summary leaves them out, as V1's work log did.
+    if (/^tool_execution_(start|update|end)$/.test(event?.type ?? '') && isBookkeepingTool(event.toolName)) return;
     this.emit(event);
   }
   async awaitedLabels() {
@@ -336,7 +342,10 @@ export class RubatoRpcConnection {
     if (this.closed) throw new Error('Rubato connection is closed');
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
-    if (command.type === 'prompt' && command.message === STEP_CONTINUE_TEXT && !command.images?.length) {
+    // Only right after a step rewind of this thread (bridge rewindToStep): the same words typed
+    // by hand stay a prompt.
+    if (command.type === 'prompt' && command.message === STEP_CONTINUE_TEXT && !command.images?.length
+      && this.bridge.stepContinues?.delete(this.threadId)) {
       // A step rewind's continue: no message for Pi, it runs on from the tool results.
       await this.client.command({ type: 'continue' });
       return { disposition: 'started' };

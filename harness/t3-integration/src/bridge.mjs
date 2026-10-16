@@ -195,6 +195,8 @@ export class RubatoPiBridge {
     this.rpcConnections = new Set();
     // What a step rewind's continue sends through T3 (rpc-connection.mjs turns it into Pi's continue).
     this.stepContinueText = STEP_CONTINUE_TEXT;
+    // Threads whose last step rewind may still be continued: only then is that text Pi's continue.
+    this.stepContinues = new Set();
     // threadId -> what /rubato/session-state answers (session-state.mjs), fed by V2 connections.
     this.sessionStates = new Map();
     // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
@@ -320,6 +322,7 @@ export class RubatoPiBridge {
       const batch = stepBatch(activeBranch(await client.command({ type: 'get_entries' })), toolCallId);
       const result = await client.command({ type: 'rewind', step: toolCallId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
+      this.stepContinues.add(threadId);
       return { batch };
     });
   }

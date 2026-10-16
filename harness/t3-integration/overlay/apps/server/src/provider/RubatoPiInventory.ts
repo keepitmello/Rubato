@@ -1,41 +1,31 @@
-import {CommandId, MessageId, OrchestrationMessageContext, ProjectId, ThreadId} from "@t3tools/contracts";
+/**
+ * Rubato sessions started elsewhere (the CLI, the scheduler, another window) show as threads,
+ * on T3's V2 orchestrator. Every few seconds the engine's session list is compared with the
+ * threads: a session no thread shows yet becomes one, in the project of its folder (made if
+ * missing), with its stored history (RubatoThreadImporter importPiSessionThread). Its first
+ * turn from T3 continues that same session. Which sessions count is the bridge's rule
+ * (bridge.mjs inventory: live ones, and ones in an existing folder outside temp dirs).
+ *
+ * It never starts a model turn and never owns Pi workers or conversation files. A thread the
+ * person deleted or archived is not brought back.
+ */
+import { CommandId, ProjectId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
-import * as PubSub from "effect/PubSub";
-import * as Schema from "effect/Schema";
-import {OrchestrationEngineService} from "../orchestration/Services/OrchestrationEngine.ts";
-import {ProjectionSnapshotQuery} from "../orchestration/Services/ProjectionSnapshotQuery.ts";
-import {ProviderInstanceRegistry} from "./Services/ProviderInstanceRegistry.ts";
-import {ProviderSessionDirectory} from "./Services/ProviderSessionDirectory.ts";
-import {ProviderService} from "./Services/ProviderService.ts";
-import {isAbsoluteLocalPath, rubatoBridgeFor, type PiSessionMessage, type PiSummary} from "./Drivers/RubatoPiDriver.ts";
-import type {ProviderInstance} from "./ProviderDriver.ts";
-import {rewindAfterCommand} from "../rubatoRewindCommand.ts";
-import {ProviderAdapterRequestError} from "./Errors.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import { ProjectService } from "../project/ProjectService.ts";
+import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
+import { isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary } from "./Drivers/RubatoPiDriver.ts";
+import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
+import { importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
+import { RubatoThreadImporter } from "./RubatoThreadImporter.ts";
 
-function cursorMatches(value: unknown, summary: PiSummary): boolean {
-  return value !== null && typeof value === "object" && "kind" in value && value.kind === "rubato-pi"
-    && "serverId" in value && value.serverId === summary.serverId
-    && "sessionId" in value && value.sessionId === summary.sessionId;
-}
-// 위저드를 한 번 누른 설치에는 ~/.codex 와 ~/.claude 기록이 스레드로 남아 있다.
-// 새 임포트는 서버에서 막았지만, 이미 만들어진 사본은 그 설치에 그대로 있다.
-// 시작할 때 치운다. 원본 대화는 두 홈 디렉터리에 그대로 있다.
-const FOREIGN_IMPORT = /^import:(?:codex|claudeAgent):/;
-const io = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({try:action,
-  catch:(cause) => new ProviderAdapterRequestError({provider:"rubato-pi",method,
-    detail:cause instanceof Error ? cause.message : String(cause),cause})});
-const decodeContext = Schema.decodeUnknownSync(OrchestrationMessageContext);
-
-/** The thread that shows a Pi session no thread is bound to yet. */
-export const importedPiThreadId = (instanceId: string, serverId: string, sessionId: string) =>
-  ThreadId.make(`import:${instanceId}:${serverId}:${sessionId}`);
-// The loop below passes every five seconds. A fork (RubatoThreadFork.ts) wants its new
-// session shown now: it cuts the wait short, or, asked during a pass that may have listed
-// the sessions before the fork existed, lets the next pass start without waiting.
+// The loop passes every five seconds. A fork wants its new session shown now: it cuts the
+// wait short, or, asked during a pass that may have listed sessions before the fork existed,
+// lets the next pass start without waiting.
 let wake: Deferred.Deferred<void> | undefined;
 let wakePending = false;
 export const syncRubatoInventoryNow = Effect.suspend(() => {
@@ -52,179 +42,70 @@ const nextPass = Effect.gen(function* () {
   );
 });
 
-/** Reuses T3's existing project/thread commands and durable provider bindings.
- * It never starts a model turn and never owns Pi workers or conversation files. */
+/** A folder name for a session's project: the last path part, Unix or Windows. */
+export const projectTitleOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
+
 export const makeRubatoPiInventory = Effect.gen(function* () {
-  const optionalRegistry = yield* Effect.serviceOption(ProviderInstanceRegistry);
-  if (Option.isNone(optionalRegistry)) return {sync:Effect.void,start:Effect.void};
-  const registry = optionalRegistry.value;
-  const directory = yield* ProviderSessionDirectory;
-  const query = yield* ProjectionSnapshotQuery;
-  const engine = yield* OrchestrationEngineService;
-  const service = yield* ProviderService;
-  const crypto = yield* Crypto.Crypto;
-  const commandId = crypto.randomUUIDv4.pipe(Effect.map(CommandId.make));
-  // The bridge calls the thread writer from outside any Effect; it runs with the
-  // services the inventory was built with (command ids need Crypto).
-  const services = yield* Effect.context<Crypto.Crypto>();
-  const rewindServices = yield* Effect.context<Crypto.Crypto | ProjectionSnapshotQuery | OrchestrationEngineService>();
-  // A message another conversation sent into a Pi session. It is a user message
-  // that starts no turn (T3's own "append without a turn"), carrying the context
-  // record the web timeline draws as the session-message bubble. Its id names the
-  // sender's message and this thread, so a replay into the same thread is refused
-  // as a duplicate while a fork's copy lands in the fork's own thread.
-  const appendSessionMessage = (threadId: string, message: PiSessionMessage) => Effect.gen(function* () {
-    yield* engine.dispatch({type:"thread.message.user.append",commandId:yield* commandId,threadId:ThreadId.make(threadId),
-      message:{messageId:MessageId.make(message.id),text:message.text,attachments:[],context:decodeContext(message.context)},
-      createdAt:message.createdAt});
+  // Optional services: the startup layer's requirements stay what upstream declares.
+  const registry = yield* Effect.serviceOption(ProviderInstanceRegistry);
+  const projects = yield* Effect.serviceOption(ProjectService);
+  const importer = yield* Effect.serviceOption(RubatoThreadImporter);
+  const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
+  const crypto = yield* Effect.serviceOption(Crypto.Crypto);
+  if (Option.isNone(registry) || Option.isNone(projects) || Option.isNone(importer) || Option.isNone(sql) || Option.isNone(crypto))
+    return { sync: Effect.void, start: Effect.void };
+  const uuid = crypto.value.randomUUIDv4();
+
+  // A thread row under the import id, kept or deleted: either way the session needs no new one.
+  const knownThread = (threadId: string) => sql.value<{ readonly thread_id: string }>`
+    SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId} LIMIT 1
+  `.pipe(Effect.map((rows) => rows.length > 0));
+
+  const projectFor = (cwd: string) => Effect.gen(function* () {
+    const existing = yield* projects.value.getByWorkspaceRoot(cwd, { includeDeleted: true });
+    if (Option.isSome(existing)) return existing.value.deletedAt ? null : existing.value;
+    return yield* projects.value.create({ commandId: CommandId.make(`rubato-inventory:${yield* uuid}`),
+      projectId: ProjectId.make(yield* uuid), title: projectTitleOf(cwd), workspaceRoot: cwd });
   });
-  const bindReaders = Effect.gen(function* () {
-    for (const instance of yield* registry.listInstances) {
-      const bridge = rubatoBridgeFor(instance);
-      if (!bridge) continue;
-      bridge.projectedMessages = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id)).pipe(
-        Effect.map((thread) => Option.isSome(thread) ? thread.value.messages : []),
-      ));
-      bridge.appendSessionMessage = (id, message) => Effect.runPromiseWith(services)(appendSessionMessage(id, message));
-      bridge.rewindConversation = (id, request) => Effect.runPromiseWith(rewindServices)(rewindAfterCommand(id, request));
-      // Rewind names what T3 keeps: its messages in order and which turn each checkpoint closed.
-      // Finished tool rows too: a step rewind is applied once those past its cut are gone.
-      bridge.projectedThread = (id) => Effect.runPromise(query.getThreadDetailById(ThreadId.make(id), {activityKinds:["tool.completed"]}).pipe(
-        Effect.map((thread) => Option.isSome(thread) ? {
-          messages: thread.value.messages.map(({id, role, text, turnId, createdAt}) => ({id, role, text, turnId, createdAt})),
-          checkpoints: thread.value.checkpoints.map(({turnId, checkpointTurnCount}) => ({turnId, checkpointTurnCount})),
-          activities: thread.value.activities.map(({kind, turnId, createdAt}) => ({kind, turnId, createdAt})),
-        } : null),
-      ));
-    }
-  });
-  // Bind before native restart reconciliation can attempt a provider resume.
-  // Also bind new instances immediately on hot reload, not only every poll.
-  const changes = yield* registry.subscribeChanges;
-  yield* bindReaders;
-  yield* Effect.forkScoped(Effect.forever(Effect.gen(function* () {
-    yield* PubSub.take(changes); yield* bindReaders;
-  })));
-  // Threads whose stored history this server has already checked. The check loads the
-  // whole thread (messages, activities, turns) and the sync repeats every five seconds
-  // over every stored session, so an imported thread — which keeps no turns and no
-  // session — was loaded again on every pass. Its history does not change while idle:
-  // new work makes the session live, and a live attach replays the snapshot instead.
-  const historyChecked = new Set<string>();
+
+  const importSession = (instance: ProviderInstance, entry: PiSummary) => Effect.gen(function* () {
+    // Old sessions without a cwd cannot be assigned an invented project.
+    if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) return;
+    const bridge = rubatoBridgeFor(instance);
+    if (!bridge || bridge.ownsSession(entry.sessionId)) return;
+    if ((yield* threadOfPiSession(entry.sessionId)) !== null) return;
+    const threadId = importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
+    if (yield* knownThread(threadId)) return;
+    const project = yield* projectFor(entry.cwd);
+    if (project === null) return;
+    const saved = yield* Effect.tryPromise(() => bridge.transcript(entry.sessionId));
+    const snapshot = yield* instance.snapshot.getSnapshot;
+    const lastModel = "model" in saved && typeof saved.model === "string" ? saved.model : null;
+    const preferred = snapshot.models.find((model) => model.isDefault) ?? snapshot.models[0];
+    const model = lastModel ?? preferred?.slug;
+    if (!model) return;
+    const modelSelection: ModelSelection = { instanceId: instance.instanceId as ProviderInstanceId, model };
+    const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId).flatMap((message) =>
+      message.context === undefined && (message.role === "user" || message.role === "assistant") && message.text.trim() !== ""
+        ? [{ role: message.role, text: message.text, createdAt: message.createdAt }] : []);
+    yield* importer.value.importPiSessionThread({ threadId, projectId: project.id, title: entry.title || "Rubato session",
+      sessionId: entry.sessionId, modelSelection, runtimeMode: "full-access", interactionMode: "default",
+      createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)), messages, settled: true });
+  }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session projection skipped", { sessionId: entry.sessionId, cause })));
 
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) return;
-    const inventory = yield* io("inventory", () => bridge.inventory());
-    const snapshot = yield* instance.snapshot.getSnapshot;
-    const bindings = yield* directory.listBindings();
-    let readModel = yield* query.getCommandReadModel();
-    for (const entry of inventory) {
-      yield* Effect.gen(function* () {
-        // Old sessions without a cwd cannot be assigned an invented project.
-        if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) return;
-        const binding = bindings.find((item) => item.providerInstanceId === instance.instanceId && cursorMatches(item.resumeCursor,entry));
-        // A T3 composer thread claims the Pi session before its binding lands.
-        // Importing it as a second thread duplicates the sidebar and the reply text.
-        if (!binding && bridge.ownsSession(entry.sessionId)) return;
-        const threadId = binding?.threadId ?? importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
-        let thread = readModel.threads.find((item) => item.id === threadId);
-        if (thread?.deletedAt !== null && thread?.deletedAt !== undefined) return;
-        if (thread?.archivedAt !== null && thread?.archivedAt !== undefined) return;
-        let project = readModel.projects.find((item) => item.workspaceRoot === entry.cwd);
-        if (project?.deletedAt !== null && project?.deletedAt !== undefined) return;
-        if (!project) {
-          const projectId = ProjectId.make(yield* crypto.randomUUIDv4);
-          yield* engine.dispatch({type:"project.create",commandId:yield* commandId,projectId,
-            title:entry.cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? entry.cwd,workspaceRoot:entry.cwd,
-            createdAt:DateTime.formatIso(yield* DateTime.now)});
-          readModel = yield* query.getCommandReadModel();
-          project = readModel.projects.find((item) => item.id===projectId);
-        }
-        if (!project) return;
-        if (thread && thread.projectId!==project.id) return; // Never move a user's thread.
-        if (!thread) {
-          const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
-          const preferred = snapshot.models.find((model) => model.isDefault) ?? snapshot.models[0];
-          // This is an explicit UI sentinel, not a fabricated provider/model.
-          // Input must select a real discovered model before any API call.
-          const selected = "model" in saved && typeof saved.model === "string" ? saved.model : null;
-          const model = selected ?? preferred?.slug ?? "rubato:select-model";
-          yield* directory.upsert({threadId,provider:instance.driverKind,providerInstanceId:instance.instanceId,
-            status:"stopped",runtimeMode:"full-access",resumeCursor:bridge.cursor(entry.sessionId),runtimePayload:{cwd:entry.cwd}},
-            {onConflict:"ignore"});
-          yield* engine.dispatch({type:"thread.create",commandId:yield* commandId,threadId,projectId:project.id,
-            title:entry.title || "Pi session",modelSelection:{instanceId:instance.instanceId,model},runtimeMode:"full-access",
-            interactionMode:"default",branch:null,worktreePath:null,historyImport:true,
-            createdAt:DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt))});
-          readModel = yield* query.getCommandReadModel();
-          thread = readModel.threads.find((item) => item.id===threadId);
-        }
-        if (!thread) return;
-        const live = entry.runtimeId !== null && ["running", "waiting", "starting"].includes(entry.status);
-        // After the profile engine is killed, Pi has no worker but T3 still
-        // has a running turn in SQLite. Attach anyway so the snapshot replay
-        // completes thinking instead of leaving it live with no stream.
-        const t3Live = thread.session != null && (
-          thread.session.status === "running" ||
-          thread.session.status === "starting" ||
-          thread.session.activeTurnId != null
-        );
-        // A session T3 sees for the first time brings its stored history, live or
-        // not. The live attach below replays the snapshot, but that replay carries
-        // assistant messages only (user messages normally come from T3's composer),
-        // so a session started elsewhere — the CLI, the scheduler — lost every
-        // prompt sent before T3 saw it. The attach seeds its projection from these
-        // imported messages and sends no text for them again; only the reply still
-        // in flight streams in.
-        if (thread.latestTurn===null && thread.session===null && !historyChecked.has(threadId)) {
-          const existing = yield* query.getThreadDetailById(threadId);
-          if (Option.isSome(existing) && existing.value.messages.length===0) {
-            const saved = yield* io("transcript", () => bridge.transcript(entry.sessionId));
-            const messages = bridge.importedMessages(entry.sessionId,saved.messages,threadId);
-            const plain = messages.filter((message) => message.context === undefined);
-            if (plain.length) yield* engine.dispatch({type:"thread.history.import",commandId:yield* commandId,
-              threadId,messages:plain.map((message) => ({messageId:MessageId.make(message.id),role:message.role,text:message.text,createdAt:message.createdAt}))});
-            // History import takes no context, so session messages follow it; the
-            // thread orders by createdAt, which is when each one arrived in Pi.
-            for (const message of messages) if (message.context !== undefined)
-              yield* appendSessionMessage(threadId, message);
-          }
-          historyChecked.add(threadId);
-        }
-        if ((live || t3Live) && !bridge.hasSession(threadId) && !bridge.ownsSession(entry.sessionId)) {
-          yield* service.startSession(threadId,{threadId,provider:instance.driverKind,providerInstanceId:instance.instanceId,
-            cwd:entry.cwd,runtimeMode:thread.runtimeMode,resumeCursor:bridge.cursor(entry.sessionId)});
-        }
-      }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session projection skipped",{sessionId:entry.sessionId,cause})));
-    }
-  });
+    const inventory = yield* Effect.tryPromise(() => bridge.inventory());
+    for (const entry of inventory) yield* importSession(instance, entry);
+  }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
+
   const sync = Effect.gen(function* () {
-    yield* bindReaders;
-    for (const instance of yield* registry.listInstances) {
-      yield* syncInstance(instance).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable",{instanceId:instance.instanceId,cause})));
-    }
-  });
-  const dropForeignImports = Effect.gen(function* () {
-    // 서버에서 임포트를 다시 켠 설치라면, 그 사람이 일부러 가져온 것이다. 안 지운다.
-    if (process.env.RUBATO_IMPORT_AGENT_HISTORY) return;
-    const readModel = yield* query.getCommandReadModel();
-    const foreign = readModel.threads.filter((thread) =>
-      FOREIGN_IMPORT.test(thread.id) && (thread.deletedAt === null || thread.deletedAt === undefined));
-    if (foreign.length === 0) return;
-    for (const thread of foreign) {
-      yield* engine.dispatch({type:"thread.delete",commandId:yield* commandId,threadId:thread.id});
-    }
-    yield* Effect.logInfo("Removed imported Codex/Claude threads",{count:foreign.length});
-  });
+    for (const instance of yield* registry.value.listInstances) yield* syncInstance(instance);
+  }).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
   return {
     sync,
-    start:Effect.gen(function* () {
-      // Startup's caller runs this only after the normal command/event runtime
-      // is activated. There is never a hidden synthetic prompt in this loop.
-      yield* dropForeignImports.pipe(Effect.catch((cause) =>
-        Effect.logWarning("Imported Codex/Claude threads could not be removed",{cause})));
-      yield* Effect.forkScoped(Effect.forever(sync.pipe(Effect.andThen(nextPass))));
-    }),
+    // The caller runs this only after the command runtime is active.
+    start: Effect.forkScoped(Effect.forever(sync.pipe(Effect.andThen(nextPass)))).pipe(Effect.asVoid),
   };
 });
