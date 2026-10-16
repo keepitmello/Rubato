@@ -1,6 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { rewriteSkillMentions } from './commands.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { cacheFrom, cacheMoved } from './session-state.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -115,6 +116,20 @@ export class RubatoRpcConnection {
     this.runtimeId = undefined;
     this.sequence = 0;
     this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
+    this.fold = this.bridge.stateFor?.(this.threadId, sessionId);
+    void this.refreshCache();
+  }
+  /** The prompt cache behind the context ring and the sidebar capsule (session-state.mjs). */
+  async refreshCache() {
+    if (!this.fold || this.cacheRefresh) return;
+    this.cacheRefresh = (async () => {
+      try {
+        const value = await this.command({ type: 'get_cache_warming' });
+        const cache = cacheFrom({ ...value, sessionId: this.sessionId });
+        this.fold?.setCache(cache);
+        this.bridge.rememberWarmth?.(this.threadId, cache);
+      } catch { /* an engine without the warmer leaves the ring as it was */ }
+    })().finally(() => { this.cacheRefresh = undefined; });
   }
   onState(state) {
     if (this.closed || !state) return;
@@ -139,7 +154,13 @@ export class RubatoRpcConnection {
     if (state.status === 'unloaded' || state.status === 'error')
       void this.close(new Error(`Rubato session ${this.sessionId} ${state.status === 'error' ? 'failed' : 'was unloaded'}`));
   }
-  deliver(event) { this.enqueue(() => this.process(event)); }
+  deliver(event) {
+    // The Agents panel, Speed Index and cache read the engine's own records, not the
+    // rows this stream turns them into.
+    this.fold?.feed(event);
+    if (cacheMoved(event)) void this.refreshCache();
+    this.enqueue(() => this.process(event));
+  }
   enqueue(step) {
     this.inbound = this.inbound.then(step).catch((error) => this.log('inbound step failed', error));
     return this.inbound;

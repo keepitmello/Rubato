@@ -143,6 +143,16 @@ export const rubatoAppRouteLayer = serviceRouteLayer({
   name: "app",
 });
 
+// The Agents panel's rows, the composer's Speed Index and the context ring's cache, per
+// thread (session-state.mjs): upstream's V2 contract has no place for them.
+export const rubatoSessionStateRouteLayer = serviceRouteLayer({
+  route: "/rubato/session-state",
+  file: "session-state-service.mjs",
+  service: "sessionStateService",
+  handler: "handleSessionStateRequest",
+  name: "session-state",
+});
+
 // The Agents panel: one agent's conversation, and stopping or messaging it.
 export const rubatoAgentsRouteLayer = serviceRouteLayer({
   route: "/rubato/agents",

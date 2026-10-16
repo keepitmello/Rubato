@@ -21,7 +21,7 @@ import { primaryServerProvidersAtom, serverEnvironment } from "../../state/serve
 import { usePrimaryEnvironmentId } from "../../state/environments";
 import { usePreparedConnection } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
-import { iconForProviderModel } from "../chat/providerIconUtils";
+import { iconForProviderModel } from "../chat/rubatoModelIcons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";

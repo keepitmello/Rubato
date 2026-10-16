@@ -90,7 +90,6 @@
     "apps/web/src/components/threadActionMenu.logic.ts": "71eafa53a0a6967775fbdb61d50f435a10a74adc7a5dc7ffd551d00469a7a0f1",
     "apps/web/src/components/Sidebar.tsx": "07edf16e941252c7e18279bb9e9cfff491e3e73f93f6ea6ba4ca0747cd9a06f6",
     "packages/client-runtime/src/state/shell.ts": "867d47d87c7c070cf5dd6443ba9e2a54360b552c00cc04b5ddaf87465fbf72bc",
-    "packages/client-runtime/src/markdownLinks.ts": "7fdccfefb8406197339e0aa3ccd215e787325352bd5fcdb0a32d3464999f30e0",
     "apps/server/scripts/cli.ts": "d4e247bbbd9f134021e982f1a629862fa90dbb09e67e341aa4e48bf5715157c0",
     "apps/web/src/threadNotifications.ts": "fb14d30f386ab6d45dfde3e7057b86bd40f6dce07bb343cef8d790be9fb8a605",
     "apps/web/src/components/chat/ChatHeader.tsx": "9cbf611c6d61193ccd5c7a7cda5d9f3f5bb8b65faf5532a2c06b436e468a34d7",
@@ -102,6 +101,7 @@
     "packages/provider-pi/src/server.ts": "bea54917749903d37b8cc35869dbd1e83bf9abc018c8610e83ec6cd1b319bec2",
     "apps/server/src/orchestration-v2/runtimeLayer.ts": "88d8858abc4835fbc0b2898166a8f2e6209f98035846f631620066109499eae6",
     "apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts": "a13a8ee37ca17036adfde829c186c23321c52364bdcc98586252fbba04a76bac",
-    "apps/server/src/provider/ProviderRegistry.ts": "634700e64cc0242c3d7795b937e157448767f9317f3b35e5ea15c3a35687c56e"
+    "apps/server/src/provider/ProviderRegistry.ts": "634700e64cc0242c3d7795b937e157448767f9317f3b35e5ea15c3a35687c56e",
+    "packages/shared/src/markdownLinks.ts": "de31b00d34c6ecdf0382bcc15dabb779e822b86b32ebd31185fd2a2b1a26c05f"
   }
 }
