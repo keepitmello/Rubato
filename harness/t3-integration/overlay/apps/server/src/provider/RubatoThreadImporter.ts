@@ -1,0 +1,129 @@
+/**
+ * Writes a V2 thread that shows a Rubato session and continues in it. A service inside the V2
+ * runtime (runtimeLayer.ts), like upstream's AgentSessionImporter, because it writes through
+ * the V2 event sink, which the runtime keeps to its own services.
+ */
+import {
+  EventId, MessageId, ProviderDriverKind, TurnItemId,
+  type ModelSelection, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
+  type OrchestrationV2DomainEvent, type OrchestrationV2ProviderThread, type OrchestrationV2TurnItem,
+  type ProjectId, type ProviderInteractionMode, type RuntimeMode, type ThreadId,
+} from "@t3tools/contracts";
+import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
+import * as Context from "effect/Context";
+import * as DateTime from "effect/DateTime";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import * as EventSink from "../orchestration-v2/EventSink.ts";
+
+const DRIVER = "rubato-pi";
+/** Item ids of a Pi session's stored history written into a V2 thread (importPiSessionThread). */
+export const PI_IMPORT_ITEM = (sessionId: string) => `rubato-pi-import:${sessionId}:`;
+
+export class RubatoThreadImportError extends Schema.TaggedError<RubatoThreadImportError>()(
+  "RubatoThreadImportError",
+  { detail: Schema.String, cause: Schema.optional(Schema.Defect()) },
+) {
+  override get message(): string {
+    return this.detail;
+  }
+}
+export const importFailure = (detail: string) => (cause: unknown) =>
+  new RubatoThreadImportError({ detail: `${detail}: ${cause instanceof Error ? cause.message : String(cause)}`, cause });
+
+export interface PiSessionThreadInput {
+  readonly threadId: ThreadId;
+  readonly projectId: ProjectId;
+  readonly title: string;
+  readonly sessionId: string;
+  readonly modelSelection: ModelSelection;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+  readonly createdAt: string;
+  /** Stored history to show; the session keeps it natively, so its first turn replays none. */
+  readonly messages: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string }>;
+  /** False leaves the thread among the active ones (a fork); true files it as settled (an import). */
+  readonly settled?: boolean;
+}
+
+/**
+ * A V2 thread that shows a Rubato session and continues in it, written the way upstream's
+ * AgentSessionImporter writes an imported native thread: the thread, the session's stored
+ * user/assistant messages as imported items, and a provider thread bound to the session.
+ * Its first turn resumes that session (rpc-connection.mjs switch_session), and T3's import
+ * handoff of these items is answered as already delivered (RubatoPiDriver alreadyNative).
+ */
+const make = Effect.gen(function* () {
+  const eventSink = yield* EventSink.EventSinkV2;
+  const idAllocator = yield* IdAllocator.IdAllocatorV2;
+  const importPiSessionThread = (input: PiSessionThreadInput) => Effect.gen(function* () {
+    const driver = ProviderDriverKind.make(DRIVER);
+    const instanceId = input.modelSelection.instanceId;
+    const createdAt = DateTime.makeUnsafe(input.createdAt);
+    const updatedAt = input.messages.length === 0 ? createdAt : DateTime.makeUnsafe(input.messages.at(-1)!.createdAt);
+    const providerThreadId = idAllocator.derive.providerThread({ driver, nativeThreadId: input.sessionId });
+    const prefix = PI_IMPORT_ITEM(input.sessionId);
+    const settled = input.settled === true;
+    const appThread: OrchestrationV2AppThread = {
+      createdBy: "system", creationSource: "server", id: input.threadId, projectId: input.projectId,
+      title: input.title.trim() === "" ? "Rubato session" : input.title, providerInstanceId: instanceId,
+      modelSelection: input.modelSelection, runtimeMode: input.runtimeMode, interactionMode: input.interactionMode,
+      branch: null, worktreePath: null, linkedPullRequest: null, branchPullRequest: null,
+      activeProviderThreadId: providerThreadId, historyOrigin: "v1_import",
+      lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: input.threadId },
+      forkedFrom: null, createdAt, updatedAt, archivedAt: null,
+      settledOverride: settled ? "settled" : null, settledAt: settled ? updatedAt : null, unsettledAt: null,
+      snoozedUntil: null, snoozedAt: null, pinnedAt: null, pinOrderKey: null, activeOrderKey: null,
+      lastVisitedAt: null, deletedAt: null,
+    };
+    const providerThread: OrchestrationV2ProviderThread = {
+      id: providerThreadId, driver, providerInstanceId: instanceId, providerSessionId: null,
+      appThreadId: input.threadId, ownerNodeId: null,
+      nativeThreadRef: { driver, nativeId: input.sessionId, strength: "strong" },
+      nativeConversationHeadRef: null, status: "idle", firstRunOrdinal: null, lastRunOrdinal: null,
+      handoffIds: [], forkedFrom: null, pendingBackgroundTasks: [], createdAt, updatedAt,
+    };
+    const messageEvents = input.messages.flatMap((entry, index): ReadonlyArray<OrchestrationV2DomainEvent> => {
+      const suffix = String(index).padStart(6, "0");
+      const messageId = MessageId.make(`${input.threadId}:${suffix}`);
+      const at = DateTime.makeUnsafe(entry.createdAt);
+      const message: OrchestrationV2ConversationMessage = {
+        createdBy: entry.role === "user" ? "user" : "agent", creationSource: "server", id: messageId,
+        threadId: input.threadId, runId: null, nodeId: null, role: entry.role, text: entry.text,
+        attachments: [], streaming: false, createdAt: at, updatedAt: at,
+      };
+      const common = {
+        id: TurnItemId.make(`${prefix}${input.threadId}:${suffix}`), threadId: input.threadId, runId: null,
+        nodeId: null, providerThreadId: null, providerTurnId: null, nativeItemRef: null, parentItemId: null,
+        ordinal: index + 1, status: "completed" as const, title: null, startedAt: at, completedAt: at, updatedAt: at,
+      };
+      const turnItem: OrchestrationV2TurnItem = entry.role === "user"
+        ? { ...common, createdBy: "user", creationSource: "server", type: "user_message", messageId,
+            inputIntent: "turn_start", text: entry.text, attachments: [] }
+        : { ...common, type: "assistant_message", messageId, text: entry.text, streaming: false };
+      return [
+        { id: EventId.make(`${prefix}message:${input.threadId}:${suffix}`), type: "message.updated",
+          threadId: input.threadId, occurredAt: at, payload: message },
+        { id: EventId.make(`${prefix}turn-item:${input.threadId}:${suffix}`), type: "turn-item.updated",
+          threadId: input.threadId, occurredAt: at, payload: turnItem },
+      ];
+    });
+    yield* eventSink.write({ events: [
+      { id: EventId.make(`${prefix}thread:${input.threadId}:created`), type: "thread.created",
+        threadId: input.threadId, providerInstanceId: instanceId, occurredAt: createdAt, payload: appThread },
+      ...messageEvents,
+      { id: EventId.make(`${prefix}provider-thread:${providerThreadId}`), type: "provider-thread.updated",
+        threadId: input.threadId, driver, providerInstanceId: instanceId, occurredAt: updatedAt, payload: providerThread },
+    ] }).pipe(Effect.mapError(importFailure("Could not write the Rubato thread")));
+    return input.threadId;
+  });
+  return { importPiSessionThread };
+});
+
+export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, {
+  readonly importPiSessionThread: (input: PiSessionThreadInput) => Effect.Effect<ThreadId, RubatoThreadImportError>;
+}>()("t3/provider/RubatoThreadImporter") {}
+
+export const layer = Layer.effect(RubatoThreadImporter, make);
+

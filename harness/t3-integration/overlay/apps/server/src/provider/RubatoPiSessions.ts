@@ -10,11 +10,14 @@
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
 import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import { RubatoThreadImportError, RubatoThreadImporter, importFailure } from "./RubatoThreadImporter.ts";
 import { rubatoBridgeFor, type PiBridge } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
@@ -139,3 +142,46 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   const changes = yield* registry.value.subscribeChanges;
   yield* Effect.forkScoped(Effect.forever(PubSub.take(changes).pipe(Effect.andThen(bind))));
 });
+
+/** The thread that shows a Pi session nothing is bound to (the inventory's id scheme). */
+export const importedPiThreadId = (instanceId: string, serverId: string, sessionId: string) =>
+  ThreadId.make(`import:${instanceId}:${serverId}:${sessionId}`);
+
+/**
+ * The sidebar's "Fork thread": a new Rubato session holding `threadId`'s whole completed
+ * history (the engine counts a final failed or interrupted reply as completed), shown as its
+ * own thread in the same project with the same model and modes. Works for threads from
+ * before V2 too: the source session comes from any of piSessionOfThread's records.
+ */
+export const forkWholeThread = (threadId: ThreadId) =>
+  Effect.gen(function* () {
+    const orchestrator = yield* Orchestrator.OrchestratorV2;
+    const source = (yield* orchestrator.getThreadRecords(threadId, []).pipe(
+      Effect.mapError(importFailure("Could not read the thread to fork")))).thread;
+    const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError(importFailure("Could not find the thread's Rubato session")));
+    if (session === null) return yield* new RubatoThreadImportError({ detail: "This thread has no Rubato session to fork" });
+    const bridge = yield* rubatoBridge(source.modelSelection.instanceId);
+    if (bridge === null) return yield* new RubatoThreadImportError({ detail: "The Rubato provider is not running" });
+    const title = `${source.title} (fork)`;
+    const forked = yield* Effect.tryPromise({
+      try: () => bridge.forkSession(session.sessionId, title),
+      catch: importFailure("The engine could not fork the conversation"),
+    });
+    if (!forked?.sessionId) return yield* new RubatoThreadImportError({ detail: "The engine did not create the fork" });
+    bridge.claimed.add(forked.sessionId);
+    const transcript = yield* Effect.tryPromise({
+      try: () => bridge.transcript(forked.sessionId),
+      catch: importFailure("Could not read the forked conversation"),
+    });
+    const target = importedPiThreadId(source.modelSelection.instanceId, forked.serverId, forked.sessionId);
+    const messages = bridge.importedMessages(forked.sessionId, transcript.messages, target)
+      // A reply that only called tools has no text; the timeline shows text, not calls.
+      .flatMap((message) => message.context === undefined && (message.role === "user" || message.role === "assistant")
+        && message.text.trim() !== "" ? [{ role: message.role, text: message.text, createdAt: message.createdAt }] : []);
+    const importer = yield* RubatoThreadImporter;
+    return yield* importer.importPiSessionThread({
+      threadId: target, projectId: source.projectId, title, sessionId: forked.sessionId,
+      modelSelection: source.modelSelection, runtimeMode: source.runtimeMode, interactionMode: source.interactionMode,
+      createdAt: DateTime.formatIso(yield* DateTime.now), messages,
+    });
+  });

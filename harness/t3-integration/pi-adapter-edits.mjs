@@ -6,7 +6,9 @@
 // attaches to the engine through the bridge (src/bridge.mjs openRpc). These edits
 // only open the adapter to a caller-supplied driver kind, connection and capability
 // set; with none supplied the upstream Pi driver behaves exactly as before.
-export const piAdapterOverlays = [];
+export const piAdapterOverlays = [
+  'apps/server/src/provider/RubatoThreadImporter.ts',
+];
 
 export const piAdapterEdits = {
   'packages/provider-pi/src/server/adapter.ts': [
@@ -108,5 +110,13 @@ export const piAdapterEdits = {
       ].join('\n'),
       'replace',
     ],
+  ],
+  // The Rubato thread writer (RubatoThreadImporter.ts) runs inside the V2 runtime beside
+  // upstream's AgentSessionImporter: both write through the runtime's own event sink.
+  'apps/server/src/orchestration-v2/runtimeLayer.ts': [
+    ['import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";\n',
+      'import * as RubatoThreadImporter from "../provider/RubatoThreadImporter.ts";\n'],
+    ['  layerAgentSessionImporterProvided,\n  EffectOutbox.layerPruneWorker',
+      '  RubatoThreadImporter.layer.pipe(Layer.provide(Layer.mergeAll(layerEventSinkProvided, IdAllocator.layer))),\n'],
   ],
 };

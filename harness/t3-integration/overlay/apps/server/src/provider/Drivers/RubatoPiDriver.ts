@@ -87,6 +87,8 @@ export interface PiBridge {
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
   /** Sessions a V2 thread reattached to from before V2; their history is native. */
   readonly resumedSessions?: Set<string>;
+  /** Sessions a thread of this server shows; the inventory leaves them to that thread. */
+  readonly claimed: Set<string>;
   boundSession?: (threadId: string) => Promise<{readonly sessionId: string; readonly serverId: string | null} | null>;
   openRpc(options: {threadId: string; cwd: string; onRecord: (record: PiRpcRecord) => void;
     onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
@@ -162,14 +164,19 @@ const piSettings = Schema.decodeSync(PiSettings);
 const LEGACY_ITEM = "migration:v1:";
 /**
  * Whether T3's history handoff is already in the model's context. A thread from before V2
- * that reattached to its Rubato session (rpc-connection.mjs) still gets T3's legacy
- * handoff, which would replay that history into the same conversation a second time.
+ * that reattached to its Rubato session (rpc-connection.mjs), or one written from a session's
+ * stored history (a whole-thread fork, the inventory), still gets T3's import handoff,
+ * which would replay that history into the same conversation a second time.
  * Anything else (a provider switch, a fork delta, a mix) goes inline as for any provider.
  */
 const alreadyNative = (bridge: PiBridge, input: {readonly providerThread: {readonly nativeThreadRef: {readonly nativeId: string | null} | null};
   readonly messages: ReadonlyArray<{readonly itemId: string}>}) => {
   const sessionId = input.providerThread.nativeThreadRef?.nativeId;
-  return sessionId != null && bridge.resumedSessions?.has(sessionId) === true && input.messages.length > 0
+  if (sessionId == null || input.messages.length === 0) return false;
+  // History written from this very session (RubatoPiSessions importPiSessionThread).
+  const own = `rubato-pi-import:${sessionId}:`;
+  if (input.messages.every((message) => String(message.itemId).startsWith(own))) return true;
+  return bridge.resumedSessions?.has(sessionId) === true
     && input.messages.every((message) => String(message.itemId).startsWith(LEGACY_ITEM));
 };
 
