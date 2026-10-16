@@ -33,6 +33,7 @@ import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs'
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
+import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
@@ -1673,6 +1674,11 @@ for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
 // Rewinding to a finished tool step (step-rewind-edits.mjs).
 overlays.push(...stepRewindOverlays);
 for (const [relative, changes] of Object.entries(stepRewindEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Its web half: the rewind button, card and fades (step-rewind-ui-edits.mjs).
+overlays.push(...stepRewindUiOverlays);
+for (const [relative, changes] of Object.entries(stepRewindUiEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Editing a sent message and forking at a reply; after step rewind, whose reply button it sits beside (turn-actions-edits.mjs).

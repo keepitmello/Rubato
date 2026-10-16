@@ -87,6 +87,7 @@
     "apps/server/scripts/cli.ts": "d4e247bbbd9f134021e982f1a629862fa90dbb09e67e341aa4e48bf5715157c0",
     "apps/web/src/threadNotifications.ts": "fb14d30f386ab6d45dfde3e7057b86bd40f6dce07bb343cef8d790be9fb8a605",
     "apps/web/src/components/chat/ChatHeader.tsx": "9cbf611c6d61193ccd5c7a7cda5d9f3f5bb8b65faf5532a2c06b436e468a34d7",
+    "apps/web/src/components/ui/toast.tsx": "0fa188773f1b862cff23d6971160c91b62a59ad416de66fe9e8662d1fd587887",
     "packages/provider-pi/src/server/adapter.ts": "f09a15d7c355271cd7ef2fd12b217585a1368faec27b55b11919cb1efc741742",
     "packages/provider-pi/src/server.ts": "bea54917749903d37b8cc35869dbd1e83bf9abc018c8610e83ec6cd1b319bec2",
     "apps/server/src/orchestration-v2/runtimeLayer.ts": "88d8858abc4835fbc0b2898166a8f2e6209f98035846f631620066109499eae6",
