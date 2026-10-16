@@ -11,10 +11,12 @@
 import {
   isActiveSubagentStatus,
   isTerminalSubagentStatus,
-  projectedSubagentsToRuntime,
   type RuntimeSubagent,
+  type RuntimeSubagentStatus,
   type SubagentUsage,
 } from "@t3tools/client-runtime/state/subagentRuntime";
+
+import type { RubatoSessionAgent, RubatoSessionState } from "../state/rubatoSessionState";
 
 export interface SubagentBoardTask {
   readonly id: string;
@@ -189,16 +191,124 @@ export function deriveAgentPanelModel({
   };
 }
 
-/** T3's runtime rows with no Rubato extras yet. */
-export function withoutRubatoExtras(agents: ReadonlyArray<RuntimeSubagent>): RubatoSubagent[] {
-  return agents.map((agent) => ({ ...agent, label: null, modelLabel: null, memberName: null, board: null }));
-}
+const STATUS: Record<RubatoSessionAgent["status"], RuntimeSubagentStatus> = {
+  running: "running",
+  waiting: "waiting",
+  idle: "idle",
+  completed: "completed",
+  failed: "failed",
+  stopped: "cancelled",
+};
 
-/** The thread's subagents as the V2 projection holds them. */
-export function rubatoAgentsFromProjection(
-  projection: { readonly subagents: Parameters<typeof projectedSubagentsToRuntime>[0] } | null,
-): RubatoSubagent[] {
-  return projection ? withoutRubatoExtras(projectedSubagentsToRuntime(projection.subagents)) : [];
+const orNull = <T>(value: T | null | undefined): T | null => value ?? null;
+
+/**
+ * The panel's rows from the server's fold of the engine (state/rubatoSessionState.ts): one row
+ * per agent, and a workflow row per taskforce that its members point at.
+ */
+export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoSubagent[] {
+  const teamOf = new Map<string, string>();
+  for (const team of state.teams) for (const member of team.members) teamOf.set(member, team.teamRunId);
+  const agents = state.agents.map((agent): RubatoSubagent => {
+    const usage: RubatoSubagentUsage | null =
+      agent.speedIndex == null && agent.turns == null && agent.totalTokens == null && agent.toolUses == null
+        ? null
+        : {
+            totalTokens: agent.totalTokens ?? 0,
+            ...(agent.toolUses == null ? {} : { toolUses: agent.toolUses }),
+            ...(agent.speedIndex == null ? {} : { speedIndex: agent.speedIndex }),
+            ...(agent.turns == null ? {} : { turns: agent.turns }),
+          };
+    return {
+      id: agent.taskId,
+      kind: "subagent",
+      title: agent.title,
+      label: orNull(agent.label),
+      modelLabel: orNull(agent.modelLabel),
+      memberName: orNull(agent.memberName),
+      board: null,
+      role: orNull(agent.role),
+      model: orNull(agent.model),
+      effort: orNull(agent.effort),
+      status: STATUS[agent.status] ?? "running",
+      activationCount: agent.activationCount ?? 1,
+      usage,
+      progress: orNull(agent.activity),
+      lastToolName: orNull(agent.lastToolName),
+      result: orNull(agent.result),
+      error: orNull(agent.error),
+      outputFile: null,
+      parentAgentId: teamOf.get(agent.taskId) ?? orNull(agent.teamRunId) ?? orNull(agent.parentAgentId),
+      agentIndex: null,
+      phaseIndex: null,
+      phaseTitle: null,
+      attempt: null,
+      workflowName: null,
+      phases: [],
+      runHandles: null,
+      childThreadId: null,
+      recentActivity: [],
+      firstSeenAt: agent.startedAt,
+      startedAt: agent.startedAt,
+      completedAt: orNull(agent.completedAt),
+      updatedAt: agent.updatedAt,
+    };
+  });
+  const byId = new Map(agents.map((agent) => [agent.id, agent]));
+  const teams = state.teams.map((team): RubatoSubagent => {
+    const members = team.members.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+    const live = members.some((member) => isActiveSubagentStatus(member.status) || member.status === "idle");
+    const first = members.map((member) => member.firstSeenAt).toSorted()[0] ?? new Date(0).toISOString();
+    const last = members.map((member) => member.updatedAt).toSorted().at(-1) ?? first;
+    return {
+      id: team.teamRunId,
+      kind: "workflow",
+      title: team.name,
+      label: team.name,
+      modelLabel: null,
+      memberName: null,
+      board: team.board
+        ? {
+            tasks: team.board.tasks.map((task) => ({
+              id: task.id,
+              subject: task.subject,
+              description: task.description,
+              descriptionTruncated: task.descriptionTruncated === true,
+              status: task.status,
+              owner: orNull(task.owner),
+              blockedBy: task.blockedBy ?? [],
+              updatedAt: orNull(task.updatedAt),
+            })),
+          }
+        : null,
+      role: null,
+      model: null,
+      effort: null,
+      status: live ? "running" : "completed",
+      activationCount: 1,
+      usage: null,
+      progress: null,
+      lastToolName: null,
+      result: null,
+      error: null,
+      outputFile: null,
+      parentAgentId: null,
+      agentIndex: null,
+      phaseIndex: null,
+      phaseTitle: null,
+      attempt: null,
+      workflowName: team.name,
+      phases: [],
+      runHandles: null,
+      childThreadId: null,
+      recentActivity: [],
+      firstSeenAt: first,
+      startedAt: first,
+      completedAt: live ? null : last,
+      updatedAt: last,
+    };
+  });
+  return [...teams, ...agents];
 }
 
 /**

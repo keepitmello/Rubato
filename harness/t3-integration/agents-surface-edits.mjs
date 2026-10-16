@@ -7,13 +7,17 @@
 //   that would otherwise drop it;
 // - Agents in the surface launcher and the "+" menu (shortcut A), its tab title and icon,
 //   and the live-agent badge on the launcher row;
-// - ChatView renders the panel from rubatoAgentPanelModel.ts, over the thread's subagents.
+// - ChatView renders the panel from rubatoAgentPanelModel.ts, over the roster the server folds
+//   from the engine (state/rubatoSessionState.ts): T3's V2 rows see a Rubato spawn as a plain
+//   tool call. The same poll gives the composer its Speed label.
 //
 // side-chat-edits.mjs inserts its own surface beside these lines, so it registers after.
 export const agentsSurfaceOverlays = [
   'apps/web/src/components/rubatoAgentPanelModel.ts',
   'apps/web/src/components/RubatoAgentsPanel.tsx',
   'apps/web/src/components/RubatoAgentsPanel.test.tsx',
+  'apps/web/src/components/rubatoAgentPanelModel.test.ts',
+  'apps/web/src/state/rubatoSessionState.ts',
 ];
 
 const lines = (...parts) => parts.join('\n');
@@ -130,14 +134,22 @@ export const agentsSurfaceEdits = {
   'apps/web/src/components/ChatView.tsx': [
     ['import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";\n', lines(
       'import { RubatoAgentsPanel } from "./RubatoAgentsPanel";',
-      'import { deriveAgentPanelModel, rubatoAgentsFromProjection } from "./rubatoAgentPanelModel";',
+      'import {',
+      '  deriveAgentPanelModel,',
+      '  formatSpeedLabel,',
+      '  rubatoAgentsFromSessionState,',
+      '} from "./rubatoAgentPanelModel";',
+      'import { useRubatoSessionState } from "../state/rubatoSessionState";',
       '')],
     ['  const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(\n', lines(
-      '  // Rubato: the Agents surface (agents-surface-edits.mjs).',
+      '  // Rubato: the Agents surface and the Speed label (agents-surface-edits.mjs).',
+      '  const rubatoSessionState = useRubatoSessionState(isServerThread ? activeThreadRef : null);',
       '  const agentPanelModel = useMemo(',
-      '    () => deriveAgentPanelModel({ agents: rubatoAgentsFromProjection(serverProjection) }),',
-      '    [serverProjection],',
+      '    () => deriveAgentPanelModel({ agents: rubatoAgentsFromSessionState(rubatoSessionState) }),',
+      '    [rubatoSessionState],',
       '  );',
+      '  const sessionSpeedLabel =',
+      '    rubatoSessionState.speedIndex === null ? null : formatSpeedLabel(rubatoSessionState.speedIndex);',
       '  const addAgentsSurface = useCallback(() => {',
       '    if (!activeThreadRef) return;',
       '    useRightPanelStore.getState().open(activeThreadRef, "agents");',
@@ -152,6 +164,8 @@ export const agentsSurfaceEdits = {
       '        cwd={gitCwd}',
       '      />',
       '')],
+    ['                              activeContextWindow={activeContextWindow}\n',
+      '                              activeContextWindow={activeContextWindow}\n                              sessionSpeedLabel={sessionSpeedLabel}\n', 'replace'],
     ['          onAddDevice={addDeviceSurfaceStable}\n          browserAvailable=', panelProps('          ') + '          browserAvailable=', 'replace'],
     ['            onAddDevice={addDeviceSurfaceStable}\n            browserAvailable=', panelProps('            ') + '            browserAvailable=', 'replace'],
   ],
