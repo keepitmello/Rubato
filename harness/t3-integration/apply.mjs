@@ -32,6 +32,7 @@ import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs'
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
+import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
@@ -1689,6 +1690,11 @@ for (const [relative, changes] of Object.entries(soundEdits)) {
 // Opening a new conversation on another system prompt (session-prompt-edits.mjs).
 overlays.push(...sessionPromptOverlays);
 for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The state DB stays bounded (state-retention-edits.mjs).
+overlays.push(...stateRetentionOverlays);
+for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Rewinding to a finished tool step (step-rewind-edits.mjs).
