@@ -3,6 +3,10 @@
  *
  *   POST /rubato/step-rewind           {threadId, itemId, restoreFiles?}  → {runId, cutAfterItemId, hiddenItemIds, hiddenMessageIds, filesRestored}
  *   POST /rubato/step-rewind/continue  {threadId}          → {}
+ *   POST /rubato/step-rewind/batch     {threadId, itemId}  → {cutAfterItemId}
+ *
+ * `batch` changes nothing: it answers where a rewind to the step would cut, so the web preview
+ * fades what the rewind takes. Only the engine knows which calls one model message made.
  *
  * The step is a finished Rubato tool row (its native ref is the Pi tool call). Calls made together
  * answer together, so the cut lands after the whole batch. Later turns go through V2's own rollback
@@ -60,13 +64,13 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     orchestrator.getThreadRecords(threadId, ["runs", "turnItems", "messages", "checkpoints"]).pipe(
       Effect.mapError((cause) => refuse("unknown-thread", describe(cause))));
 
-  const rewind = (threadId: ThreadId, itemId: string, restoreFiles: boolean) => Effect.gen(function* () {
-    let projection = yield* records(threadId);
+  // The step, its run, and its batch as the engine holds it.
+  const stepOf = (projection: Effect.Success<ReturnType<typeof records>>, threadId: ThreadId, itemId: string, rewinding: boolean) => Effect.gen(function* () {
     const item = projection.turnItems.find((candidate) => candidate.id === itemId);
     const toolCallId = item?.nativeItemRef?.driver === "rubato-pi" ? item.nativeItemRef.nativeId : null;
     if (!item || !toolCallId || TEXT_ITEMS.has(item.type) || !FINISHED.has(item.status) || item.runId === null)
       return yield* refuse("not-a-step", "Only a finished Rubato tool step can be rewound to.");
-    if (projection.runs.some((run) => BUSY.has(run.status)))
+    if (rewinding && projection.runs.some((run) => BUSY.has(run.status)))
       return yield* refuse("busy", "Wait for this conversation to stop before rewinding.");
     const runId = item.runId;
     const run = projection.runs.find((candidate) => candidate.id === runId);
@@ -80,6 +84,28 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       try: () => bridge.stepBatch({ threadId, sessionId: session.sessionId, toolCallId }),
       catch: (cause) => refuse("engine-refused", describe(cause)),
     });
+    return { item, run, runId, session, bridge, toolCallId, batch };
+  });
+  /** The run's last row of the step's batch: the rewind lands right after it. */
+  const cutAfterOf = (turnItems: ReadonlyArray<OrchestrationV2TurnItem>, runId: string, item: OrchestrationV2TurnItem, batch: ReadonlyArray<string>) => {
+    const runItems = turnItems.filter((candidate) => candidate.runId === runId)
+      .sort((left, right) => left.ordinal - right.ordinal);
+    const batchItems = runItems.filter((candidate) => {
+      const nativeId = candidate.nativeItemRef?.nativeId;
+      return typeof nativeId === "string" && batch.includes(nativeId) && !TEXT_ITEMS.has(candidate.type);
+    });
+    return { runItems, cutAfter: batchItems.at(-1) ?? item };
+  };
+
+  const preview = (threadId: ThreadId, itemId: string) => Effect.gen(function* () {
+    const projection = yield* records(threadId);
+    const { item, runId, batch } = yield* stepOf(projection, threadId, itemId, false);
+    return { cutAfterItemId: cutAfterOf(projection.turnItems, runId, item, batch).cutAfter.id };
+  }).pipe(Effect.provide(services));
+
+  const rewind = (threadId: ThreadId, itemId: string, restoreFiles: boolean) => Effect.gen(function* () {
+    let projection = yield* records(threadId);
+    const { item, run, runId, session, bridge, toolCallId, batch } = yield* stepOf(projection, threadId, itemId, true);
 
     // Later turns go the way Edit from here takes them: V2's rollback to this turn's checkpoint.
     // It moves the engine and the thread together, so a refusal after it leaves both at that turn.
@@ -99,13 +125,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       }
     }
     const current = projection.runs.find((candidate) => candidate.id === runId) ?? run;
-    const runItems = projection.turnItems.filter((candidate) => candidate.runId === runId)
-      .sort((left, right) => left.ordinal - right.ordinal);
-    const batchItems = runItems.filter((candidate) => {
-      const nativeId = candidate.nativeItemRef?.nativeId;
-      return typeof nativeId === "string" && batch.includes(nativeId) && !TEXT_ITEMS.has(candidate.type);
-    });
-    const cutAfter = batchItems.at(-1) ?? item;
+    const { runItems, cutAfter } = cutAfterOf(projection.turnItems, runId, item, batch);
     // The turn's checkpoint row stays: it is where Edit from here lands for this turn.
     const hiddenItems = runItems.filter((candidate) => candidate.ordinal > cutAfter.ordinal && candidate.type !== "checkpoint");
     const hiddenMessageIds = new Set(hiddenItems.flatMap((candidate) =>
@@ -164,21 +184,24 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     Effect.catchTag("StepRewindRefused", (error) =>
       Effect.succeed(HttpServerResponse.jsonUnsafe({ error: { code: error.code, message: error.message } }, { status: 409 }))),
   );
-  const handle = (continuing: boolean) => Effect.gen(function* () {
+  const handle = (route: "rewind" | "continue" | "batch") => Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
     const json = yield* request.json.pipe(Effect.orElseSucceed(() => ({})));
-    if (continuing) {
+    if (route === "continue") {
       const body = yield* Schema.decodeUnknownEffect(ContinueBody)(json).pipe(Effect.option);
       if (body._tag === "None") return HttpServerResponse.jsonUnsafe({ error: { code: "invalid", message: "threadId is required" } }, { status: 400 });
       return yield* answer(resume(ThreadId.make(body.value.threadId)));
     }
     const body = yield* Schema.decodeUnknownEffect(StepRewindBody)(json).pipe(Effect.option);
     if (body._tag === "None") return HttpServerResponse.jsonUnsafe({ error: { code: "invalid", message: "threadId and itemId are required" } }, { status: 400 });
-    return yield* answer(rewind(ThreadId.make(body.value.threadId), body.value.itemId, body.value.restoreFiles === true));
+    const threadId = ThreadId.make(body.value.threadId);
+    return yield* answer(route === "batch" ? preview(threadId, body.value.itemId)
+      : rewind(threadId, body.value.itemId, body.value.restoreFiles === true));
   });
   return Layer.mergeAll(
-    HttpRouter.add("POST", "/rubato/step-rewind", handle(false)),
-    HttpRouter.add("POST", "/rubato/step-rewind/continue", handle(true)),
+    HttpRouter.add("POST", "/rubato/step-rewind", handle("rewind")),
+    HttpRouter.add("POST", "/rubato/step-rewind/continue", handle("continue")),
+    HttpRouter.add("POST", "/rubato/step-rewind/batch", handle("batch")),
   );
 }));

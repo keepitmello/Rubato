@@ -7,7 +7,9 @@ import { Undo2Icon, XIcon } from "lucide-react";
 import {
   type MouseEvent,
   type PointerEvent,
+  useCallback,
   useEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -32,14 +34,16 @@ import { stackedThreadToast, toastManager } from "../ui/toast";
 //
 // The server does the cut (POST /rubato/step-rewind, RubatoStepRewind.ts): it keeps the
 // step's whole batch — calls made in one model message rewind together — and moves what
-// came after onto a rolled-back run. The preview fades the same rows: in the step's run,
-// what follows the run of tool rows the step sits in, and every later run. The wait ends
-// when the rows the server named are gone from the thread.
+// came after onto a rolled-back run. Only the engine knows which calls one model message
+// made, so the preview asks the server where the batch ends (/rubato/step-rewind/batch)
+// and fades the same rows: in the step's run, what follows that batch, and every later
+// run. The wait ends when the rows the server named are gone from the thread.
 //
 // The same button sits where the steps are folded away: the "Worked for" row and a tool
 // group's row rewind after the last step under them, so nothing has to be expanded. A
 // reply's row rewinds to right after that reply: a run boundary, so it is T3's ordinary
-// revert, and with the reply last there is nothing to continue from.
+// revert, with nothing to continue from. A button shows only where a rewind can land: a
+// reply with rows after it, a folded row with a Rubato step under it.
 
 /** A rewind point, with the rows it drops. */
 export interface StepCut {
@@ -120,8 +124,11 @@ const TOOL_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
   "web_search",
 ]);
 const isTool = (item: OrchestrationV2TurnItem) => TOOL_TYPES.has(item.type);
+// A tool that ended in an error is a finished step too: its result is what the model saw.
 const isStep = (item: OrchestrationV2TurnItem) =>
-  isTool(item) && item.status === "completed" && item.nativeItemRef?.driver === "rubato-pi";
+  isTool(item) &&
+  (item.status === "completed" || item.status === "failed") &&
+  item.nativeItemRef?.driver === "rubato-pi";
 const messageIdOf = (item: OrchestrationV2TurnItem): string | undefined =>
   item.type === "user_message" || item.type === "assistant_message" ? item.messageId : undefined;
 
@@ -172,42 +179,53 @@ function droppedAfter(thread: RewindThread, runId: string, ordinal: number, posi
   return { droppedItemIds, droppedMessageIds };
 }
 
-/** The cut a tool row stands for, or why there is none. */
-export function stepCutFor(thread: RewindThread, itemId: string, label: string): StepCut | string {
-  const index = thread.items.findIndex((row) => row.item.id === itemId);
-  const row = thread.items[index];
+/** Why a tool row cannot be rewound to, or undefined when it can. */
+export function stepRefusal(thread: RewindThread, itemId: string): string | undefined {
+  const row = thread.items.find((entry) => entry.item.id === itemId);
   if (!row) return "This step is not in the thread any more.";
   if (!isStep(row.item)) return "Only a finished Rubato step can be rewound to.";
-  const runId = row.item.runId;
-  const run = runId === null ? undefined : settledRun(thread, runId);
-  if (!run || runId === null) return "This run has not finished yet.";
-  // Calls made together rewind together: the batch runs on while tool rows follow.
-  let last = row;
-  for (const next of thread.items.slice(index + 1)) {
-    if (next.item.runId !== runId || !isTool(next.item)) break;
-    last = next;
-  }
+  if (row.item.runId === null || !settledRun(thread, row.item.runId)) return "This run has not finished yet.";
+  return undefined;
+}
+
+/**
+ * The cut a tool row stands for, or why there is none. `cutAfterItemId` is the last row of
+ * the step's batch, as the server answered it: calls made together rewind together.
+ */
+export function stepCutFor(
+  thread: RewindThread,
+  itemId: string,
+  label: string,
+  cutAfterItemId: string,
+): StepCut | string {
+  const refusal = stepRefusal(thread, itemId);
+  if (refusal !== undefined) return refusal;
+  const row = thread.items.find((entry) => entry.item.id === itemId)!;
+  const runId = row.item.runId!;
+  const run = settledRun(thread, runId)!;
+  const last =
+    thread.items.find((entry) => entry.item.id === cutAfterItemId && entry.item.runId === runId) ?? row;
   return {
     kind: "step",
     runId,
     anchorId: itemId,
     itemId,
-    ...droppedAfter(thread, runId, run.ordinal, last.position),
+    ...droppedAfter(thread, runId, run.ordinal, Math.max(row.position, last.position)),
     label,
   };
 }
 
-/** The cut after the last finished Rubato step of a run, or of the given items. */
-export function lastStepCutFor(
+/** The last finished Rubato step of a run, or of the given items: what a folded row rewinds to. */
+export function lastStepOf(
   thread: RewindThread,
   scope: { readonly runId: string; readonly itemIds?: ReadonlyArray<string | undefined> },
-): StepCut | string {
+): { readonly itemId: string; readonly label: string } | string {
   const within = scope.itemIds ? new Set(scope.itemIds) : undefined;
   const last = thread.items.findLast(
     (row) => row.item.runId === scope.runId && isStep(row.item) && (within === undefined || within.has(row.item.id)),
   );
   if (!last) return "There is no finished step to rewind to here.";
-  return stepCutFor(thread, last.item.id, last.item.title ?? "this step");
+  return { itemId: last.item.id, label: last.item.title ?? "this step" };
 }
 
 /** The cut right after a run's reply: the run stays whole and the runs after it go. */
@@ -243,26 +261,121 @@ export type RewindTarget =
     }
   | { readonly kind: "reply"; readonly runId: string | null | undefined; readonly messageId: string };
 
-function resolveTarget(thread: RewindThread, target: RewindTarget, label: string): StepCut | string {
-  if (!target.runId) return "This row belongs to no run.";
-  switch (target.kind) {
-    case "step":
-      return target.itemId ? stepCutFor(thread, target.itemId, label) : "This row names no step.";
-    case "last-step":
-      return lastStepCutFor(thread, {
-        runId: target.runId,
-        ...(target.itemIds ? { itemIds: target.itemIds } : {}),
-      });
-    case "reply":
-      return replyCutFor(thread, { runId: target.runId, messageId: target.messageId });
-  }
+/** Where each step's batch ends, as the server answered: thread key → step → its last row. */
+const batchEnds = new Map<string, Map<string, Promise<string>>>();
+function batchEndOf(threadKey: string, threadRef: ScopedThreadRef, itemId: string): Promise<string> {
+  const known = batchEnds.get(threadKey) ?? new Map<string, Promise<string>>();
+  batchEnds.set(threadKey, known);
+  const cached = known.get(itemId);
+  if (cached) return cached;
+  const asked = postRubato<{ cutAfterItemId?: string }>(
+    threadRef.environmentId,
+    "/rubato/step-rewind",
+    "batch",
+    { threadId: threadRef.threadId, itemId },
+    "step rewinds",
+  ).then((answer) => answer.cutAfterItemId ?? itemId);
+  // A refusal is asked again next time: the engine may hold the step by then.
+  asked.catch(() => known.delete(itemId));
+  known.set(itemId, asked);
+  return asked;
 }
 
-/** Whether a target can be offered at all: a step row only for a Rubato step. */
-function offered(target: RewindTarget, item?: OrchestrationV2TurnItem): boolean {
+/** The cut a button stands for, or why there is none; a step's batch end comes from the server. */
+async function resolveTarget(
+  threadKey: string,
+  threadRef: ScopedThreadRef,
+  target: RewindTarget,
+  label: string,
+): Promise<StepCut | string> {
+  const thread = readThread(threadRef);
+  if (!thread) return "This thread is not loaded.";
+  if (!target.runId) return "This row belongs to no run.";
+  if (target.kind === "reply")
+    return replyCutFor(thread, { runId: target.runId, messageId: target.messageId });
+  const step =
+    target.kind === "step"
+      ? target.itemId
+        ? { itemId: target.itemId, label }
+        : "This row names no step."
+      : lastStepOf(thread, { runId: target.runId, ...(target.itemIds ? { itemIds: target.itemIds } : {}) });
+  if (typeof step === "string") return step;
+  const refusal = stepRefusal(thread, step.itemId);
+  if (refusal !== undefined) return refusal;
+  const end = await batchEndOf(threadKey, threadRef, step.itemId);
+  const now = readThread(threadRef);
+  return now ? stepCutFor(now, step.itemId, step.label, end) : "This thread is not loaded.";
+}
+
+/** Per visible rows: which steps each run has, and the latest run that has rows. */
+interface OfferIndex {
+  readonly runs: RewindThread["runs"];
+  readonly steps: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly latestOrdinal: number;
+}
+const offerIndexes = new WeakMap<RewindThread["items"], OfferIndex>();
+function offerIndexOf(thread: RewindThread): OfferIndex {
+  const cached = offerIndexes.get(thread.items);
+  if (cached && cached.runs === thread.runs) return cached;
+  const ordinals = new Map(thread.runs.map((run) => [run.id, run.ordinal]));
+  const steps = new Map<string, Set<string>>();
+  let latestOrdinal = Number.NEGATIVE_INFINITY;
+  for (const row of thread.items) {
+    const runId = row.item.runId;
+    if (runId === null) continue;
+    latestOrdinal = Math.max(latestOrdinal, ordinals.get(runId) ?? Number.NEGATIVE_INFINITY);
+    if (!isStep(row.item)) continue;
+    const ids = steps.get(runId) ?? new Set<string>();
+    ids.add(row.item.id);
+    steps.set(runId, ids);
+  }
+  const index = { runs: thread.runs, steps, latestOrdinal };
+  offerIndexes.set(thread.items, index);
+  return index;
+}
+
+/** Whether a button can land anywhere: a Rubato step, a folded row with one, a reply with rows after it. */
+export function rewindOffered(
+  thread: RewindThread | null,
+  target: RewindTarget,
+  item?: OrchestrationV2TurnItem,
+): boolean {
   if (!target.runId) return false;
   if (target.kind === "step") return item !== undefined && isStep(item);
-  return true;
+  if (!thread) return false;
+  const index = offerIndexOf(thread);
+  if (target.kind === "reply") {
+    const ordinal = thread.runs.find((run) => run.id === target.runId)?.ordinal;
+    return ordinal !== undefined && index.latestOrdinal > ordinal;
+  }
+  const steps = index.steps.get(target.runId);
+  if (!steps) return false;
+  return target.itemIds === undefined || target.itemIds.some((id) => id !== undefined && steps.has(id));
+}
+
+const noSubscription = () => () => {};
+function useRewindOffered(
+  threadRef: ScopedThreadRef | null,
+  target: RewindTarget,
+  item?: OrchestrationV2TurnItem,
+): boolean {
+  const environmentId = threadRef?.environmentId;
+  const threadId = threadRef?.threadId;
+  // Steps need no thread: whether the row is a Rubato step is on the row itself.
+  const subscribeThread = useCallback((listener: () => void) => {
+    if (!threadRef) return () => {};
+    const stopItems = appAtomRegistry.subscribe(environmentThreadDetails.visibleTurnItemsAtom(threadRef), listener);
+    const stopDetail = appAtomRegistry.subscribe(environmentThreadDetails.threadAtom(threadRef), listener);
+    return () => {
+      stopItems();
+      stopDetail();
+    };
+    // The ref's identity changes with every render; the thread it names does not.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [environmentId, threadId]);
+  const read = () =>
+    rewindOffered(target.kind === "step" || !threadRef ? null : readThread(threadRef), target, item);
+  return useSyncExternalStore(target.kind === "step" ? noSubscription : subscribeThread, read, read);
 }
 
 export interface StepRewindSummary {
@@ -336,6 +449,7 @@ export function waitForStepRewind(
 }
 
 function land(host: StepRewindHost, cut: StepCut, restoreFiles: boolean): Promise<void> {
+  batchEnds.clear();
   return waitForStepRewind(host.threadRef, async () => {
     if (cut.kind === "turn") {
       await host.revert({ turnCount: cut.turnCount ?? 0, restoreFiles });
@@ -444,11 +558,10 @@ export function RubatoStepRewindButton(props: {
       (anchor !== undefined ? cut.anchorId === anchor : cut.runId === target.runId)
     );
   });
-  if (!threadRef || !offered(target, item) || busy) return null;
-  const resolve = (): StepCut | string => {
-    const thread = readThread(threadRef);
-    return thread ? resolveTarget(thread, target, label) : "This thread is not loaded.";
-  };
+  const isOffered = useRewindOffered(threadRef, target, item);
+  const hovered = useRef(false);
+  if (!threadRef || !isOffered || busy) return null;
+  const resolve = () => resolveTarget(threadKey, threadRef, target, label);
   const host = hosts.get(threadKey);
   const canRestoreFiles = host?.canRestoreFiles === true;
   const close = () => {
@@ -516,26 +629,32 @@ export function RubatoStepRewindButton(props: {
               title="Rewind to here"
               onPointerDown={stop}
               onPointerEnter={() => {
-                const cut = resolve();
-                if (typeof cut !== "string") update(threadKey, { preview: cut });
+                hovered.current = true;
+                void resolve().then(
+                  (cut) => {
+                    if (hovered.current && typeof cut !== "string") update(threadKey, { preview: cut });
+                  },
+                  () => {},
+                );
               }}
-              onPointerLeave={() => update(threadKey, { preview: undefined })}
+              onPointerLeave={() => {
+                hovered.current = false;
+                update(threadKey, { preview: undefined });
+              }}
               onClick={(event: MouseEvent) => {
                 event.stopPropagation();
                 // Open: the trigger closes it.
                 if (card !== null) return;
-                const cut = resolve();
-                const thread = readThread(threadRef);
-                if (typeof cut === "string" || !thread) {
-                  failed(
-                    "Cannot rewind here",
-                    new Error(typeof cut === "string" ? cut : "This thread is not loaded."),
-                  );
-                  return;
-                }
-                setRestoreFiles(true);
-                setCard({ cut, summary: stepRewindSummary(thread, cut) });
-                update(threadKey, { open: cut });
+                void resolve()
+                  .then((cut) => {
+                    const thread = readThread(threadRef);
+                    if (typeof cut === "string" || !thread)
+                      throw new Error(typeof cut === "string" ? cut : "This thread is not loaded.");
+                    setRestoreFiles(true);
+                    setCard({ cut, summary: stepRewindSummary(thread, cut) });
+                    update(threadKey, { open: cut });
+                  })
+                  .catch((error: unknown) => failed("Cannot rewind here", error));
               }}
             />
           }

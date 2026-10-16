@@ -17,7 +17,7 @@ import { RubatoThreadImporter } from "./provider/RubatoThreadImporter.ts";
 import { rubatoStepRewindRouteLayer } from "./RubatoStepRewind.ts";
 
 const state = vi.hoisted(() => ({
-  engineCut: false, nativeStepMissing: false, marks: [] as string[],
+  engineCut: false, nativeStepMissing: false, marks: [] as string[], batch: ["first-call"],
 }));
 vi.mock("./provider/RubatoPiSessions.ts", async () => {
   const Effect = await import("effect/Effect");
@@ -26,7 +26,7 @@ vi.mock("./provider/RubatoPiSessions.ts", async () => {
     rubatoBridge: () => Effect.succeed({
       async stepBatch() {
         if (state.nativeStepMissing) throw new Error("This step is not on the conversation's current branch");
-        return ["first-call"];
+        return state.batch;
       },
       markStepContinue(threadId: string) { state.marks.push(`mark:${threadId}`); },
       async rewindToStep() {
@@ -41,8 +41,9 @@ vi.mock("./provider/RubatoPiSessions.ts", async () => {
 const disposers: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const dispose of disposers.splice(0)) await dispose(); });
 
-function fixture(options: { runStatus?: string; status?: string; later?: boolean; fileError?: boolean; nativeStepMissing?: boolean } = {}) {
+function fixture(options: { runStatus?: string; status?: string; later?: boolean; fileError?: boolean; nativeStepMissing?: boolean; batch?: string[] } = {}) {
   state.engineCut = false;
+  state.batch = options.batch ?? ["first-call"];
   state.nativeStepMissing = options.nativeStepMissing ?? false;
   state.marks = [];
   const effects: string[] = [];
@@ -52,10 +53,13 @@ function fixture(options: { runStatus?: string; status?: string; later?: boolean
   const tool = { id: "item-one", threadId: run.threadId, runId: run.id, type: "command_execution",
     status: options.status ?? "completed", ordinal: 2,
     nativeItemRef: { driver: "rubato-pi", nativeId: "first-call" } };
+  // A second tool-only model message right after the first: no text row between them.
+  const next = { ...tool, id: "item-two", status: "completed", ordinal: 3,
+    nativeItemRef: { driver: "rubato-pi", nativeId: "second-call" } };
   const projection = {
     runs: options.later ? [run, later] : [run],
-    turnItems: [tool, { id: "after", threadId: run.threadId, runId: run.id,
-      type: "assistant_message", status: "completed", ordinal: 3, messageId: "answer" }],
+    turnItems: [tool, next, { id: "after", threadId: run.threadId, runId: run.id,
+      type: "assistant_message", status: "completed", ordinal: 4, messageId: "answer" }],
     messages: [{ id: "answer", threadId: run.threadId, runId: run.id, role: "assistant", text: "after step" }],
     checkpoints: [{ id: "checkpoint-one", scopeId: "scope-one", ref: "refs/test/one" }],
   };
@@ -102,7 +106,22 @@ it("a completed tool cuts both the engine and displayed rows", async () => {
   expect(response.status).toBe(200);
   expect(state.engineCut).toBe(true);
   expect(f.effects).toEqual(["projection-cut"]);
-  expect(((await response.json()) as { error: { code: string }; hiddenItemIds: string[] }).hiddenItemIds).toEqual(["after"]);
+  expect(((await response.json()) as { error: { code: string }; hiddenItemIds: string[] }).hiddenItemIds).toEqual(["item-two", "after"]);
+});
+it("the batch route names where a rewind would cut and changes nothing", async () => {
+  const alone = fixture({ later: true });
+  const one = await alone.post("/rubato/step-rewind/batch", { threadId: "thread-one", itemId: "item-one" });
+  expect({ status: one.status, body: (await one.json()) as unknown }).toEqual({ status: 200, body: { cutAfterItemId: "item-one" } });
+  const together = fixture({ later: true, batch: ["first-call", "second-call"] });
+  const both = await together.post("/rubato/step-rewind/batch", { threadId: "thread-one", itemId: "item-one" });
+  expect((await both.json()) as unknown).toEqual({ cutAfterItemId: "item-two" });
+  expect({ engineCut: state.engineCut, effects: together.effects }).toEqual({ engineCut: false, effects: [] });
+});
+it("the batch route refuses a step the engine no longer holds", async () => {
+  const f = fixture({ nativeStepMissing: true });
+  const response = await f.post("/rubato/step-rewind/batch", { threadId: "thread-one", itemId: "item-one" });
+  expect(response.status).toBe(409);
+  expect(((await response.json()) as { error: { code: string } }).error.code).toBe("engine-refused");
 });
 it("a failed but finished tool is still a step to rewind to", async () => {
   const f = fixture({ status: "failed" });
