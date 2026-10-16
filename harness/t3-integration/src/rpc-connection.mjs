@@ -1,5 +1,6 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
-import { rewriteSkillMentions } from './commands.mjs';
+import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
+import { applySelectionOptions } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { isBookkeepingTool } from './activity.mjs';
@@ -32,6 +33,12 @@ import { isBookkeepingTool } from './activity.mjs';
  *   the engine names an awaited wake, a "Waiting on …" tool row says what for, and the
  *   wake's `agent_start` continues the same turn. A wait that ends without a wake lets the
  *   settle through after a grace; Stop ends it as interrupted.
+ * - Rubato's controls typed in the composer (/name, /reload, /rewind N) are not prompts for
+ *   Pi (commands.mjs CONTROL). /rewind sends Pi nothing: T3 reverts the turns, which rewinds
+ *   the engine through the rollback below and drops the rows on every screen. Upstream's
+ *   compact becomes Rubato's own /compact when the engine has it (the notes-mode cut), and
+ *   the picker's reasoning effort and Fast reach Pi through `rubato_selection`, a record
+ *   the adapter sends after its own model choice (pi-adapter-edits.mjs selectionRecord).
  * - A Stop can strand a steer Pi had not read yet. After the abort it is cleared from Pi's
  *   queue and its text comes back as a warning in the turn instead of surfacing inside an
  *   unrelated later turn (decisions/t3-queued-message-vs-steer.md).
@@ -130,6 +137,10 @@ export class RubatoRpcConnection {
     this.bridge.claimed.add(sessionId);
     this.runtimeId = undefined;
     this.sequence = 0;
+    // What Pi runs with is the session's: ask again rather than carry the last one over.
+    this.thinkingLevel = undefined;
+    this.fastMode = undefined;
+    this.compactCommand = undefined;
     this.fold = this.bridge.stateFor?.(this.threadId, sessionId);
     this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
     void this.refreshCache();
@@ -342,26 +353,88 @@ export class RubatoRpcConnection {
     if (this.closed) throw new Error('Rubato connection is closed');
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
-    // Only right after a step rewind of this thread (bridge rewindToStep): the same words typed
-    // by hand stay a prompt.
-    if (command.type === 'prompt' && command.message === STEP_CONTINUE_TEXT && !command.images?.length
-      && this.bridge.stepContinues?.delete(this.threadId)) {
-      // A step rewind's continue: no message for Pi, it runs on from the tool results.
-      await this.client.command({ type: 'continue' });
-      return { disposition: 'started' };
+    // Only the step-rewind continue route's own message (it marks the thread right before it
+    // sends): the same words typed by hand stay a prompt, and any other prompt drops the mark.
+    if (command.type === 'prompt') {
+      const continuing = this.bridge.stepContinues?.delete(this.threadId)
+        && command.message === STEP_CONTINUE_TEXT && !command.images?.length;
+      if (continuing) {
+        // A step rewind's continue: no message for Pi, it runs on from the tool results.
+        await this.client.command({ type: 'continue' });
+        return { disposition: 'started' };
+      }
     }
-    if (command.type === 'prompt' && typeof command.message === 'string')
+    if ((command.type === 'prompt' || command.type === 'steer') && typeof command.message === 'string') {
+      const control = controlCommandFor(command.message);
+      if (control) {
+        if (command.type === 'steer') throw new Error(`Interrupt the current turn before /${control.name}`);
+        return this.control(control);
+      }
       command.message = rewriteSkillMentions(command.message, this.bridge.skillNames);
+    }
+    if (command.type === 'compact' && await this.compactCommandAvailable()) {
+      // Rubato's compact picks the cut by mode (notes mode starts a new context window);
+      // the cut it makes reports itself through compaction events.
+      await this.client.command({ type: 'prompt', message: command.customInstructions ? `/compact ${command.customInstructions}` : '/compact' });
+      return {};
+    }
+    if (command.type === 'set_model') { this.thinkingLevel = undefined; this.fastMode = undefined; }
     return this.client.command(command);
+  }
+  /** A control typed as a prompt; the adapter's turn for it settles once Pi reads idle. */
+  async control(control) {
+    if (control.name === 'rewind') {
+      // T3 checks the count first so a refusal reaches the composer, then reverts once
+      // this turn has settled (RubatoPiSessions.ts bindRubatoSessionLookup).
+      if (!this.bridge.checkRewind) throw new Error('This server cannot rewind the conversation yet');
+      await this.bridge.checkRewind(this.threadId, control.rpc.turns);
+      void Promise.resolve(this.bridge.rewindConversation(this.threadId, { turns: control.rpc.turns }))
+        .catch((error) => this.log('rewind failed', error));
+      return { disposition: 'handled' };
+    }
+    if (control.name === 'compact') return this.command(control.rpc);
+    await this.client.command(control.rpc);
+    if (control.name === 'name') this.mirrorTitle(control.args);
+    return { disposition: 'handled' };
+  }
+  /** Whether the engine has Rubato's compact command; the command list is fixed for an attach. */
+  async compactCommandAvailable() {
+    if (this.compactCommand !== undefined) return this.compactCommand;
+    try {
+      const { commands } = await this.client.command({ type: 'get_commands' });
+      this.compactCommand = (commands ?? []).some((entry) => entry?.name === 'compact' && entry.source === 'extension');
+    } catch { this.compactCommand = false; }
+    return this.compactCommand;
+  }
+  /**
+   * The picker's options upstream Pi has no field for (model-catalog-order.mjs optionDescriptorsFor).
+   * T3 sends the Fast toggle on every turn, so the toggle is the answer; Pi remembers fast per
+   * model, so compare against what Pi will send rather than the last value (V1 applyFast).
+   */
+  async applySelection(options) {
+    const { thinking, fast } = applySelectionOptions(Array.isArray(options) ? options : []);
+    if (thinking !== undefined && thinking !== this.thinkingLevel) {
+      await this.client.command({ type: 'set_thinking_level', level: thinking });
+      this.thinkingLevel = thinking;
+    }
+    if (fast === undefined) return {};
+    let tier;
+    try { tier = await this.client.command({ type: 'get_service_tier' }); } catch { /* an engine without it */ }
+    const active = tier ? (tier.supported === true ? tier.active === true : fast) : this.fastMode;
+    if (active !== fast) await this.client.command({ type: 'prompt', message: fast ? '/fast on' : '/fast off' });
+    this.fastMode = fast;
+    return {};
   }
   async request(record) {
     switch (record?.type) {
       case 'new_session':
+        this.bridge.stepContinues?.delete(this.threadId);
         // A second registration on this connection wants a fresh conversation, unless
         // the thread already has one: that is the thread's, whichever path asked.
         await this.attach((this.sessionId === null ? await this.boundSession() : null) ?? await this.createSession());
         return { cancelled: false };
       case 'switch_session':
+        this.bridge.stepContinues?.delete(this.threadId);
         await this.attach(record.sessionPath);
         return { cancelled: false };
       case 'get_state': {
@@ -371,6 +444,9 @@ export class RubatoRpcConnection {
       }
       case 'abort':
         return this.abort(record);
+      case 'rubato_selection':
+        if (!this.sessionId) await this.openThreadSession();
+        return this.applySelection(record.options);
       case 'fork': {
         // Upstream rolls back with Pi's fork. On the engine a fork re-keys the runtime every
         // attachment shares, so the session other windows hold would move to the copy. The

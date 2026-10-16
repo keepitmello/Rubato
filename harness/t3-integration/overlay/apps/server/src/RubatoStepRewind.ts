@@ -10,6 +10,9 @@
  * later rows leave the thread (RubatoThreadImporter cutRun) and the turn reads as interrupted. Continue
  * is T3's own resume of an interrupted run; its message reaches the engine as Pi's `continue`, so the
  * model runs on from the tool results with nothing added (rpc-connection.mjs STEP_CONTINUE_TEXT).
+ *
+ * Nothing changes unless the engine still holds the step. The step's files go back before the
+ * engine rewinds (V1's order), so a restore that fails refuses with the conversation unmoved.
  */
 import {
   CommandId, MessageId, ThreadId, TurnItemId,
@@ -39,6 +42,8 @@ const describe = (cause: unknown) => (cause instanceof Error ? cause.message : S
 
 const BUSY: ReadonlySet<OrchestrationV2Run["status"]> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const TEXT_ITEMS: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set(["user_message", "assistant_message", "reasoning"]);
+// A tool that ended in an error is a finished step too: its result is what the model saw.
+const FINISHED: ReadonlySet<OrchestrationV2TurnItem["status"]> = new Set(["completed", "failed"]);
 
 const StepRewindBody = Schema.Struct({ threadId: Schema.String, itemId: Schema.String, restoreFiles: Schema.optional(Schema.Boolean) });
 const ContinueBody = Schema.Struct({ threadId: Schema.String });
@@ -59,7 +64,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     let projection = yield* records(threadId);
     const item = projection.turnItems.find((candidate) => candidate.id === itemId);
     const toolCallId = item?.nativeItemRef?.driver === "rubato-pi" ? item.nativeItemRef.nativeId : null;
-    if (!item || !toolCallId || TEXT_ITEMS.has(item.type) || item.status !== "completed" || item.runId === null)
+    if (!item || !toolCallId || TEXT_ITEMS.has(item.type) || !FINISHED.has(item.status) || item.runId === null)
       return yield* refuse("not-a-step", "Only a finished Rubato tool step can be rewound to.");
     if (projection.runs.some((run) => BUSY.has(run.status)))
       return yield* refuse("busy", "Wait for this conversation to stop before rewinding.");
@@ -70,8 +75,14 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     if (session === null) return yield* refuse("no-session", "This thread has no Rubato session.");
     const bridge = yield* rubatoBridge(run.providerInstanceId);
     if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
+    // The engine must still hold the step before anything is undone.
+    const batch = yield* Effect.tryPromise({
+      try: () => bridge.stepBatch({ threadId, sessionId: session.sessionId, toolCallId }),
+      catch: (cause) => refuse("engine-refused", describe(cause)),
+    });
 
     // Later turns go the way Edit from here takes them: V2's rollback to this turn's checkpoint.
+    // It moves the engine and the thread together, so a refusal after it leaves both at that turn.
     const later = projection.runs.filter((candidate) => candidate.ordinal > run.ordinal && candidate.status !== "rolled_back");
     if (later.length > 0) {
       const checkpoint = projection.checkpoints.find((candidate) => candidate.id === run.checkpointId);
@@ -87,10 +98,6 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
         yield* Effect.sleep("200 millis");
       }
     }
-    const { batch } = yield* Effect.tryPromise({
-      try: () => bridge.rewindToStep({ threadId, sessionId: session.sessionId, toolCallId }),
-      catch: (cause) => refuse("engine-refused", describe(cause)),
-    });
     const current = projection.runs.find((candidate) => candidate.id === runId) ?? run;
     const runItems = projection.turnItems.filter((candidate) => candidate.runId === runId)
       .sort((left, right) => left.ordinal - right.ordinal);
@@ -104,6 +111,8 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     const hiddenMessageIds = new Set(hiddenItems.flatMap((candidate) =>
       "messageId" in candidate && candidate.messageId ? [String(candidate.messageId)] : []));
     const hiddenMessages = projection.messages.filter((message) => hiddenMessageIds.has(String(message.id)));
+
+    // Files first, as V1 did: a restore that fails refuses before the conversation moves.
     // A worktree thread keeps the files each step left (RubatoStepCheckpoints.ts): put the batch's
     // last one back, and make it this turn's checkpoint so the next turn's diff starts there.
     let filesRestored = false;
@@ -120,6 +129,10 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
           .pipe(Effect.mapError((cause) => refuse("files-failed", describe(cause))));
       }
     }
+    yield* Effect.tryPromise({
+      try: () => bridge.rewindToStep({ threadId, sessionId: session.sessionId, toolCallId }),
+      catch: (cause) => refuse("engine-refused", describe(cause)),
+    });
     const importer = yield* RubatoThreadImporter;
     yield* importer.cutRun({ run: current, nextOrdinal: projection.runs.length + 1, items: hiddenItems, messages: hiddenMessages })
       .pipe(Effect.mapError((cause) => refuse("write-failed", cause.message)));
@@ -135,6 +148,9 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     const bridge = yield* rubatoBridge(latest.providerInstanceId);
     if (bridge === null) return yield* refuse("unavailable", "The Rubato provider is not running.");
     const id = yield* uuid;
+    // Only this message becomes the engine's continue (rpc-connection.mjs); a GUI restart in
+    // between changes nothing, since the mark is set right here.
+    bridge.markStepContinue(threadId);
     yield* orchestrator.dispatch({ type: "message.dispatch", createdBy: "user", creationSource: "web",
       commandId: CommandId.make(`rubato-step-continue:${id}`), threadId, messageId: MessageId.make(`rubato-step-continue:${id}`),
       text: bridge.stepContinueText, attachments: [], manualContinuationOfRunId: latest.id,

@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { SessionStateFold, handleSessionStateRequest } from '../src/session-state.mjs';
+import { RubatoPiBridge } from '../src/bridge.mjs';
 
 const members = [
   { name: 'owner', task_id: 'st_owner', role: 'owner', task_summary: 'Implement mobile changes' },
@@ -68,4 +72,30 @@ test('a thread bound to another session shows nothing of the previous one', () =
   fold.rebind('s-after');
   assert.deepEqual(fold.snapshot().agents, []);
   assert.equal(fold.snapshot().speedIndex, null);
+});
+
+test('a GUI restart finds every agent row and the speed again, however long the session ran', async (t) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'rubato-session-state-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const threadId = 'import:rubato:server:session-1';
+  const before = new RubatoPiBridge({ descriptorPath: '/unused', instanceId: 'rubato', sessionStateDir: dir });
+  const fold = before.stateFor(threadId, 's1');
+  for (let index = 0; index < 400; index++) tick(fold, { task_id: `st_${index}`, status: 'completed', final_response: `result ${index}` });
+  fold.feed({ type: 'extension_event', name: 'rubato.speed.updated', data: { speed: 61 } });
+  await before.close();
+
+  const after = new RubatoPiBridge({ descriptorPath: '/unused', instanceId: 'rubato', sessionStateDir: dir });
+  t.after(() => after.close());
+  const shown = after.sessionState(threadId);
+  assert.equal(shown.agents.length, 400);
+  assert.equal(shown.agents[0].result, 'result 0');
+  assert.equal(shown.speedIndex, 61);
+  // The same session reattached keeps them; another session shows nothing of them.
+  assert.equal(after.stateFor(threadId, 's1').snapshot().agents.length, 400);
+  after.stateFor(threadId, 's2');
+  assert.deepEqual(after.sessionState(threadId).agents, []);
+  await after.flushStates();
+  const third = new RubatoPiBridge({ descriptorPath: '/unused', instanceId: 'rubato', sessionStateDir: dir });
+  t.after(() => third.close());
+  assert.deepEqual(third.sessionState(threadId).agents, []);
 });

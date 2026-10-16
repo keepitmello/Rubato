@@ -6,6 +6,7 @@ import * as Cause from "effect/Cause";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
@@ -23,6 +24,7 @@ import {
   defaultProviderContinuationIdentity, type ProviderDriver, type ProviderInstance,
 } from "@t3tools/provider-core/server/driver";
 import { ProviderDriverError } from "../Errors.ts";
+import * as ServerConfig from "../../config.ts";
 
 /** Unix, Windows drive-letter, and UNC paths. Host platform must not gate this. */
 export const isAbsoluteLocalPath = (value: string): boolean =>
@@ -84,8 +86,12 @@ export interface PiRpcBridgeConnection {
 export interface PiBridge {
   /** A step rewind: lands the session after the batch of `toolCallId`; that batch's call ids. */
   rewindToStep(input: {threadId: string; sessionId: string; toolCallId: string}): Promise<{batch: ReadonlyArray<string>}>;
+  /** The call ids made together with `toolCallId`; fails when the engine no longer holds that step. */
+  stepBatch(input: {threadId: string; sessionId: string; toolCallId: string}): Promise<ReadonlyArray<string>>;
   /** The message a step rewind's continue sends; the engine connection runs on without it. */
   readonly stepContinueText: string;
+  /** The continue route sends `stepContinueText` next for this thread: only that one becomes Pi's continue. */
+  markStepContinue(threadId: string): void;
   /** T3's thread.fork: a new engine session cut before `beforeEntryId`; its id. */
   forkForThread(input: {source: string; beforeEntryId: string | null}): Promise<string>;
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
@@ -100,8 +106,10 @@ export interface PiBridge {
     onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
-  /** `/rewind`: T3's conversation revert of `turns` turns before `afterTurn`, and that turn (RubatoPiInventory.ts). */
-  rewindConversation: (threadId: string, request: {readonly afterTurn: string; readonly turns: number}) => Promise<void>;
+  /** A typed `/rewind N`: refuses when the thread has fewer than N turns before the running one. */
+  checkRewind?: (threadId: string, turns: number) => Promise<void>;
+  /** A typed `/rewind N`: once its turn settled, T3 reverts it and the N turns before it (RubatoPiSessions.ts). */
+  rewindConversation?: (threadId: string, request: {readonly turns: number}) => Promise<void>;
   projectedThread: (threadId: string) => Promise<{
     messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null; createdAt: string}>;
     checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;
@@ -231,6 +239,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       return yield* fail(new Error("bridgeModule must be an absolute local module path"));
     if (!isAbsoluteLocalPath(config.descriptorPath) || !isAbsoluteLocalPath(config.catalogueCwd))
       return yield* fail(new Error("descriptorPath and catalogueCwd must be absolute paths"));
+    // Optional: the registry's requirements stay what upstream declares; without it nothing is saved.
+    const serverConfig = yield* Effect.serviceOption(ServerConfig.ServerConfig);
     const updates = yield* PubSub.unbounded<ServerProvider>();
     yield* Effect.addFinalizer(() => PubSub.shutdown(updates));
     const bridge = yield* Effect.tryPromise({
@@ -239,8 +249,10 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
         const module: unknown = await import(/* @vite-ignore */ moduleHref);
         if (!module || typeof module !== "object" || !("createBridge" in module) || typeof module.createBridge !== "function")
           throw new Error("bridgeModule must export createBridge");
-        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string}) => PiBridge;
-        return factory({ descriptorPath: config.descriptorPath, instanceId });
+        const factory = module.createBridge as (options: {descriptorPath:string; instanceId:string; sessionStateDir:string | null}) => PiBridge;
+        // The Agents panel and Speed Index of each thread outlive a GUI restart there (bridge session-state).
+        return factory({ descriptorPath: config.descriptorPath, instanceId,
+          sessionStateDir: Option.isSome(serverConfig) ? NodePath.join(serverConfig.value.stateDir, "rubato-session-state") : null });
       }, catch: fail,
     });
     const request = <A>(method: string, action: () => Promise<A>) => Effect.tryPromise({
@@ -254,6 +266,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       driverKind: kind, capabilities: RUBATO_CAPABILITIES_V2,
       openConnection: (input) => openRubatoConnection(bridge, { threadId: input.threadId, cwd: input.cwd }),
       injectHistory: (input) => Effect.sync(() => alreadyNative(bridge, input)),
+      // The picker's reasoning effort and Fast (bridge rpc-connection.mjs applySelection).
+      selectionRecord: (selection) => (selection.options?.length ? { type: "rubato_selection", options: selection.options } : null),
       forkSession: (input) => Effect.tryPromise({
         try: () => bridge.forkForThread({ source: input.sourceNativeId, beforeEntryId: input.beforeEntryId }),
         catch: (cause) => new PiRpcError({ operation: "fork", detail: detail(cause), cause }),

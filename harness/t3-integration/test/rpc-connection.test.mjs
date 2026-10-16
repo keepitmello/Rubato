@@ -273,7 +273,7 @@ test('the agent\'s own record keeping does not reach T3 as work', async () => {
   assert.deepEqual(records.map((record) => record.toolCallId), ['c2']);
 });
 
-test('the continue words are Pi\'s continue only right after a step rewind of this thread', async () => {
+test('the continue words are Pi\'s continue only when the continue route marked the thread', async () => {
   const stepContinues = new Set();
   const { client, conn } = await attached({ prompt: { disposition: 'started' }, continue: {} });
   conn.bridge.stepContinues = stepContinues;
@@ -283,6 +283,19 @@ test('the continue words are Pi\'s continue only right after a step rewind of th
   stepContinues.add('t1');
   await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
   assert.deepEqual(client.commands.at(-1), { type: 'continue' });
+  assert.equal(stepContinues.has('t1'), false);
+});
+
+test('any other prompt or a new conversation drops the continue mark', async () => {
+  const stepContinues = new Set(['t1']);
+  const { client, conn } = await attached({ prompt: { disposition: 'started' }, continue: {} });
+  conn.bridge.stepContinues = stepContinues;
+  const { STEP_CONTINUE_TEXT } = await import('../src/rpc-connection.mjs');
+  await conn.request({ type: 'prompt', message: 'something else' });
+  await conn.request({ type: 'prompt', message: STEP_CONTINUE_TEXT });
+  assert.deepEqual(client.commands.at(-1), { type: 'prompt', message: STEP_CONTINUE_TEXT });
+  stepContinues.add('t1');
+  await conn.request({ type: 'switch_session', sessionPath: 's2' });
   assert.equal(stepContinues.has('t1'), false);
 });
 
@@ -301,4 +314,54 @@ test('reattaching to a session restores its agents and speed from the records th
   const state = folds.get('t1').snapshot();
   assert.equal(state.speedIndex, 73);
   assert.equal(state.agents[0].result, 'done');
+});
+
+test('the picker\'s reasoning effort and Fast reach Pi; an unchanged choice sends nothing again', async () => {
+  const { client, conn } = await attached({ set_thinking_level: {}, get_service_tier: { supported: true, active: false }, prompt: { disposition: 'handled' } });
+  const options = [{ id: 'reasoningEffort', value: 'high' }, { id: 'fastMode', value: true }];
+  await conn.request({ type: 'rubato_selection', options });
+  const sent = () => client.commands.filter((command) => !['get_service_tier', 'get_state', 'get_cache_warming'].includes(command.type));
+  assert.deepEqual(sent(), [{ type: 'set_thinking_level', level: 'high' }, { type: 'prompt', message: '/fast on' }]);
+  client.commands.length = 0;
+  await conn.request({ type: 'rubato_selection', options: [{ id: 'reasoningEffort', value: 'high' }] });
+  assert.deepEqual(sent(), []);
+});
+
+test('compact is Rubato\'s own /compact when the engine has it, upstream compact otherwise', async () => {
+  const { client, conn } = await attached({
+    get_commands: { commands: [{ name: 'compact', source: 'extension' }] }, prompt: { disposition: 'handled' } });
+  await conn.request({ type: 'compact', customInstructions: 'keep the plan' });
+  assert.deepEqual(client.commands.at(-1), { type: 'prompt', message: '/compact keep the plan' });
+  assert.equal(client.commands.some((command) => command.type === 'compact'), false);
+  const plain = await attached({ get_commands: { commands: [] }, compact: {} });
+  await plain.conn.request({ type: 'compact' });
+  assert.deepEqual(plain.client.commands.at(-1), { type: 'compact' });
+});
+
+test('a typed /rewind sends Pi nothing: T3 checks the count, then reverts the turns', async () => {
+  const calls = [];
+  const client = fakeClient({ prompt: { disposition: 'started' } });
+  const { conn } = connection(client, {
+    checkRewind: async (threadId, turns) => { calls.push(['check', threadId, turns]); if (turns > 2) throw new Error('This conversation has only 2 turns to rewind'); },
+    rewindConversation: async (threadId, request) => { calls.push(['rewind', threadId, request.turns]); },
+  });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  assert.deepEqual(await conn.request({ type: 'prompt', message: '/rewind 2' }), { disposition: 'handled' });
+  await assert.rejects(conn.request({ type: 'prompt', message: '/rewind 3' }), /only 2 turns/);
+  await assert.rejects(conn.request({ type: 'steer', message: '/rewind' }), /Interrupt the current turn/);
+  assert.deepEqual(calls, [['check', 't1', 2], ['rewind', 't1', 2], ['check', 't1', 3]]);
+  assert.equal(client.commands.some((command) => command.type === 'prompt' || command.type === 'steer'), false);
+});
+
+test('/name names the session and the thread; /reload reloads, neither is a prompt', async () => {
+  const titles = [];
+  const client = fakeClient({ set_session_name: {}, reload: {} });
+  const { conn } = connection(client, { sessionTitle: async (threadId, title) => { titles.push([threadId, title]); } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  await conn.request({ type: 'prompt', message: '/name Port review' });
+  await conn.request({ type: 'prompt', message: '/reload' });
+  assert.deepEqual(client.commands.filter((command) => command.type !== 'get_state' && command.type !== 'get_cache_warming'),
+    [{ type: 'set_session_name', name: 'Port review' }, { type: 'reload' }]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(titles, [['t1', 'Port review']]);
 });

@@ -5,6 +5,7 @@
 // rides T3's own resume of an interrupted run. The web hover/card UI is step-rewind-ui-edits.mjs.
 export const stepRewindOverlays = [
   'apps/server/src/RubatoStepRewind.ts',
+  'apps/server/src/RubatoStepRewind.test.ts',
   // The files each finished Rubato tool step left in a worktree thread (git refs beside T3's own).
   'apps/server/src/RubatoStepCheckpoints.ts',
   'apps/server/src/RubatoStepCheckpoints.test.ts',
