@@ -36,6 +36,7 @@ import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
+import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -302,7 +303,7 @@ const edits = {
   ],
   // Rubato 카탈로그는 성공한 discovery 다. Codex/OpenCode 와 같이 취급해야
   // 예전 캐시 extras 가 큐레이트 뒤에 붙어서 /model 순서와 갈라지지 않는다.
-  'apps/server/src/provider/Layers/ProviderRegistry.ts': [
+  'apps/server/src/provider/ProviderRegistry.ts': [
     [
       '  if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {\n    return true;\n  }',
       '  if (\n    !isAntigravity &&\n    !isCodex &&\n    provider.driver !== ProviderDriverKind.make("opencode") &&\n    provider.driver !== ProviderDriverKind.make("rubato-pi")\n  ) {\n    return true;\n  }',
@@ -948,53 +949,6 @@ const edits = {
         '',
       ].join('\n')],
   ],
-  // Speed Index replaces the agent-row token counter, and the lead score sits
-  // in the composer footer. The packed CLI status line stays off the wire.
-  'packages/contracts/src/providerRuntime.ts': [
-    [
-      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
-      '  toolUses: Schema.optional(NonNegativeInt),\n  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  turns: Schema.optional(NonNegativeInt),\n});\nexport type RuntimeTaskUsage = typeof RuntimeTaskUsage.Type;',
-      'replace',
-    ],
-    // Agents panel: the spawn's own words and the picker's model name. `title` stays
-    // the phone's one-line tag + label; the web paints these two on separate lines.
-    [
-      '  timelineBypass: Schema.optional(Schema.Boolean),\n} as const;',
-      '  timelineBypass: Schema.optional(Schema.Boolean),\n  label: Schema.optional(TrimmedNonEmptyStringSchema),\n  modelLabel: Schema.optional(TrimmedNonEmptyStringSchema),\n  memberName: Schema.optional(TrimmedNonEmptyStringSchema),\n} as const;',
-      'replace',
-    ],
-    // A taskforce's shared board rides on its team task as a latest-state snapshot.
-    [
-      'const TaskProgressPayload = Schema.Struct({',
-      [
-        'export const RubatoTeamBoardTask = Schema.Struct({',
-        '  id: TrimmedNonEmptyStringSchema,',
-        '  subject: TrimmedNonEmptyStringSchema,',
-        '  description: Schema.String,',
-        '  descriptionTruncated: Schema.optional(Schema.Boolean),',
-        '  status: Schema.Literals(["pending", "claimed", "in_progress", "completed"]),',
-        '  owner: Schema.optional(TrimmedNonEmptyStringSchema),',
-        '  blockedBy: Schema.Array(TrimmedNonEmptyStringSchema),',
-        '  updatedAt: Schema.optional(Schema.String),',
-        '});',
-        'export type RubatoTeamBoardTask = typeof RubatoTeamBoardTask.Type;',
-        'export const RubatoTeamBoard = Schema.Struct({ tasks: Schema.Array(RubatoTeamBoardTask) });',
-        'export type RubatoTeamBoard = typeof RubatoTeamBoard.Type;',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    [
-      '  error: Schema.optional(TrimmedNonEmptyStringSchema),\n  ...taskAgentLinkageFields,\n});\nexport type TaskProgressPayload',
-      '  error: Schema.optional(TrimmedNonEmptyStringSchema),\n  board: Schema.optional(RubatoTeamBoard),\n  ...taskAgentLinkageFields,\n});\nexport type TaskProgressPayload',
-      'replace',
-    ],
-    [
-      '  durationMs: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      '  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      'replace',
-    ],
-  ],
   'apps/web/src/components/chat/ChatComposer.tsx': [
     [
       '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;',
@@ -1011,88 +965,6 @@ const edits = {
     [
       '                  {showComposerAttachAction ? (',
       '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
-      'replace',
-    ],
-  ],
-  'apps/server/src/orchestration/Layers/ProviderRuntimeIngestion.ts': [
-    [
-      '    "timelineBypass",\n',
-      '    "timelineBypass",\n    "label",\n    "modelLabel",\n    "memberName",\n',
-      'replace',
-    ],
-    // A board snapshot is its own latest-state row (like usage): it must neither
-    // replace the team's activity line nor reopen a settled team.
-    [
-      '      const hasProgressState =\n        event.payload.typedUsage === undefined ||',
-      '      const hasProgressState =\n        (event.payload.typedUsage === undefined && event.payload.board === undefined) ||',
-      'replace',
-    ],
-    [
-      '          : []),\n      ];\n    }\n\n    case "task.updated": {',
-      [
-        '          : []),',
-        '        ...(event.payload.board !== undefined',
-        '          ? [',
-        '              {',
-        '                id: EventId.make(`task-board:${event.threadId}:${event.payload.taskId}`),',
-        '                createdAt: event.createdAt,',
-        '                tone: "info" as const,',
-        '                kind: "task.progress" as const,',
-        '                summary: "Taskforce board updated",',
-        '                payload: {',
-        '                  taskId: event.payload.taskId,',
-        '                  ...identityLinkage,',
-        '                  boardSnapshot: true,',
-        '                  board: event.payload.board,',
-        '                },',
-        '                turnId: toTurnId(event.turnId) ?? null,',
-        '                ...maybeSequence,',
-        '              },',
-        '            ]',
-        '          : []),',
-        '      ];',
-        '    }',
-        '',
-        '    case "task.updated": {',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '        if (thread.titleState?.source !== "manual" && canReplaceThreadTitle(thread.title)) {',
-      [
-        '        // Rubato 의 스레드 제목은 Pi 세션이 짓는다. 그 엔진은 T3 의 배경',
-        '        // 텍스트 생성을 대신 해 주지 않으므로(드라이버가 unsupported) 여기서',
-        '        // 첫 메시지를 제목으로 굳히면 앱에는 영영 지어진 제목이 안 뜬다.',
-        '        // 사용자가 직접 고친 제목은 위 조건이 계속 지킨다.',
-        '        if (',
-        '          thread.titleState?.source !== "manual" &&',
-        '          (canReplaceThreadTitle(thread.title) || String(event.provider) === "rubato-pi")',
-        '        ) {',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '                  summary: truncateDetail(event.payload.summary),\n                  detail: truncateDetail(event.payload.summary),',
-      '                  summary: truncateDetail(event.payload.summary),\n                  detail: event.payload.summary,',
-      'replace',
-    ],
-    [
-      '      const summary =\n        beforeTokens !== undefined && afterTokens !== undefined\n          ? `Compacted context ${formatTokens(beforeTokens)} → ${formatTokens(afterTokens)} tokens`\n          : "Context compacted";',
-      [
-        '      const detail = event.payload.detail;',
-        '      const notesWindow = detail !== null && typeof detail === "object" &&',
-        '        "contextMode" in detail && detail.contextMode === "history-notes";',
-        '      const summary = notesWindow',
-        '        ? "Context Optimized"',
-        '        : beforeTokens !== undefined && afterTokens !== undefined',
-        '          ? `Compacted context ${formatTokens(beforeTokens)} → ${formatTokens(afterTokens)} tokens`',
-        '          : "Context compacted";',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
-      '    case "thread.metadata.updated": {\n      const metadata = event.payload.metadata;\n      if (metadata === undefined || !("speedIndex" in metadata)) return [];\n      const raw = metadata.speedIndex;\n      const speedIndex =\n        typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? Math.round(raw) : null;\n      return [\n        {\n          id: EventId.make(`session-speed:${event.threadId}`),\n          createdAt: event.createdAt,\n          tone: "info",\n          kind: "session.speed.updated",\n          summary: speedIndex === null ? "Speed —" : `Speed ${speedIndex}`,\n          payload: { speedIndex },\n          turnId: toTurnId(event.turnId) ?? null,\n          ...maybeSequence,\n        },\n      ];\n    }\n\n    case "thread.token-usage.updated": {\n      const payload = buildContextWindowActivityPayload(event);',
       'replace',
     ],
   ],
@@ -1588,7 +1460,7 @@ const edits = {
     ['import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";',
       'import { disableTailscaleServe, holdTailscaleServe } from "@t3tools/tailscale";',
       'replace'],
-    ['    const tailscaleServeLayer = config.tailscaleServeEnabled\n      ? Layer.effectDiscard(\n          Effect.acquireRelease(\n            Effect.gen(function* () {\n              yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);\n              yield* awaitActivation;\n              const server = yield* HttpServer.HttpServer;\n              const address = server.address;\n              if (typeof address === "string" || !("port" in address)) {\n                return null;\n              }\n\n              const localPort = address.port;\n              return yield* ensureTailscaleServe({\n                localPort,\n                servePort: config.tailscaleServePort,\n                localHost: "127.0.0.1",\n              }).pipe(\n                Effect.as({ localPort, servePort: config.tailscaleServePort }),\n                Effect.tap(() =>\n                  Effect.logInfo("Tailscale Serve configured", {\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }),\n                ),\n                Effect.catch((cause) =>\n                  Effect.logWarning("Failed to configure Tailscale Serve", {\n                    cause,\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }).pipe(Effect.as(null)),\n                ),\n              );\n            }),\n            (configured) =>\n              configured\n                ? disableTailscaleServe({ servePort: configured.servePort }).pipe(\n                    Effect.tap(() =>\n                      Effect.logInfo("Tailscale Serve disabled", {\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                    Effect.catch((cause) =>\n                      Effect.logWarning("Failed to disable Tailscale Serve", {\n                        cause,\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                  )\n                : Effect.void,\n          ),\n        )\n      : Layer.empty;',
+    ['    const layerTailscaleServe = config.tailscaleServeEnabled\n      ? Layer.effectDiscard(\n          Effect.acquireRelease(\n            Effect.gen(function* () {\n              yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);\n              yield* awaitActivation;\n              const server = yield* HttpServer.HttpServer;\n              const address = server.address;\n              if (typeof address === \"string\" || !(\"port\" in address)) {\n                return null;\n              }\n\n              const localPort = address.port;\n              return yield* ensureTailscaleServe({\n                localPort,\n                servePort: config.tailscaleServePort,\n                localHost: \"127.0.0.1\",\n              }).pipe(\n                Effect.as({ localPort, servePort: config.tailscaleServePort }),\n                Effect.tap(() =>\n                  Effect.logInfo(\"Tailscale Serve configured\", {\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }),\n                ),\n                Effect.catch((cause) =>\n                  Effect.logWarning(\"Failed to configure Tailscale Serve\", {\n                    cause,\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }).pipe(Effect.as(null)),\n                ),\n              );\n            }),\n            (configured) =>\n              configured\n                ? disableTailscaleServe({ servePort: configured.servePort }).pipe(\n                    Effect.tap(() =>\n                      Effect.logInfo(\"Tailscale Serve disabled\", {\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                    Effect.catch((cause) =>\n                      Effect.logWarning(\"Failed to disable Tailscale Serve\", {\n                        cause,\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                  )\n                : Effect.void,\n          ),\n        )\n      : Layer.empty;\n',
       [
         '    // Every T3 backend on the machine shares one Serve `/` handler per port. A',
         '    // backend used to take it at start and clear it at exit, so a second app',
@@ -1598,7 +1470,7 @@ const edits = {
         '    // nothing listens on, and re-checks so it takes it back after another',
         '    // backend\'s exit — or once Tailscale, often still stopped after a reboot,',
         '    // comes up.',
-        '    const tailscaleServeLayer = config.tailscaleServeEnabled',
+        '    const layerTailscaleServe = config.tailscaleServeEnabled',
         '      ? Layer.effectDiscard(',
         '          Effect.gen(function* () {',
         '            yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);',
@@ -1804,6 +1676,11 @@ for (const [relative, changes] of Object.entries(turnActionsEdits)) {
 // The Rubato provider on T3's V2 orchestrator: upstream's Pi adapter fed by the engine (pi-adapter-edits.mjs).
 overlays.push(...piAdapterOverlays);
 for (const [relative, changes] of Object.entries(piAdapterEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Pre-cutover threads: V1 thinking stored as answers stays out of V2 (legacy-import-edits.mjs).
+overlays.push(...legacyImportOverlays);
+for (const [relative, changes] of Object.entries(legacyImportEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
