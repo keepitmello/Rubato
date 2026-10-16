@@ -27,6 +27,7 @@ export interface PiSessionRef {
   readonly serverId: string | null;
 }
 
+const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const IMPORTED_THREAD = /^import:[^:]+:([^:]+):(.+)$/;
 const DRIVER = "rubato-pi";
 
@@ -140,6 +141,42 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     yield* orchestrator.value.dispatch({ type: "thread.metadata.update",
       commandId: CommandId.make(`rubato-title:${threadId}:${yield* Clock.currentTimeMillis}`), threadId: ThreadId.make(threadId), title });
   });
+  // A typed `/rewind N` (bridge rpc-connection.mjs control): T3 reverts the /rewind turn and the
+  // N before it the way the timeline's revert does, which rewinds the engine through the
+  // adapter's rollback. Files stay, as the command says.
+  const liveRuns = (threadId: string) => Effect.gen(function* () {
+    if (Option.isNone(orchestrator)) return yield* new RubatoThreadImportError({ detail: "The conversation is not available" });
+    const records = yield* orchestrator.value.getThreadRecords(ThreadId.make(threadId), ["runs", "checkpoints"]);
+    return { runs: records.runs.filter((run) => run.status !== "rolled_back").sort((left, right) => left.ordinal - right.ordinal),
+      checkpoints: records.checkpoints };
+  });
+  const checkRewind = (threadId: string, turns: number) => Effect.gen(function* () {
+    const settled = (yield* liveRuns(threadId)).runs.filter((run) => !BUSY_RUN.has(run.status)).length;
+    if (turns > settled) return yield* new RubatoThreadImportError({ detail: settled === 0
+      ? "There is nothing to rewind yet" : `This conversation has only ${settled} turn${settled === 1 ? "" : "s"} to rewind` });
+  });
+  const rewindConversation = (threadId: string, turns: number) => Effect.gen(function* () {
+    for (let attempt = 0; ; attempt++) {
+      const { runs, checkpoints } = yield* liveRuns(threadId);
+      if (runs.some((run) => BUSY_RUN.has(run.status))) {
+        if (attempt >= 150) return yield* new RubatoThreadImportError({ detail: "The /rewind turn did not settle" });
+        yield* Effect.sleep("200 millis");
+        continue;
+      }
+      // The last run is the /rewind turn itself; it goes with the N before it.
+      const keep = runs.length - 1 - turns;
+      if (keep < 0) return yield* new RubatoThreadImportError({ detail: "Fewer turns than /rewind asked for" });
+      const target = keep === 0
+        ? checkpoints.findLast((checkpoint) => checkpoint.ordinalWithinScope === 0 && checkpoint.appRunOrdinal === null)
+        : checkpoints.find((checkpoint) => checkpoint.id === runs[keep - 1]!.checkpointId);
+      if (!target || target.status !== "ready") return yield* new RubatoThreadImportError({ detail: "That turn has no checkpoint to rewind to" });
+      if (Option.isNone(orchestrator)) return;
+      yield* orchestrator.value.dispatch({ type: "checkpoint.rollback",
+        commandId: CommandId.make(`rubato-rewind:${threadId}:${yield* Clock.currentTimeMillis}`), threadId: ThreadId.make(threadId),
+        scopeId: target.scopeId, checkpointId: target.id, restoreFiles: false });
+      return;
+    }
+  });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {
       const bridge: PiBridge | undefined = rubatoBridgeFor(instance);
@@ -147,6 +184,9 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       bridge.boundSession = (threadId: string) =>
         Effect.runPromise(piSessionOfThread(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
       bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
+      bridge.checkRewind = (threadId: string, turns: number) => Effect.runPromise(checkRewind(threadId, turns));
+      bridge.rewindConversation = (threadId: string, request: {readonly turns: number}) =>
+        Effect.runPromise(rewindConversation(threadId, request.turns));
     }
   });
   yield* bind;

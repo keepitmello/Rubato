@@ -8,7 +8,7 @@ import { recordLoadedCode } from './code-fingerprint.mjs';
 import { RubatoRpcConnection, STEP_CONTINUE_TEXT, activeBranch, queuedMessagesInOrder, replyBefore, stepBatch } from './rpc-connection.mjs';
 import { SessionStateFold } from './session-state.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
-import { readFile } from 'node:fs/promises';
+import { readFile, rename, writeFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { setTimeout as delay } from 'node:timers/promises';
 function t3BridgeLog(message, extra) {
@@ -184,21 +184,24 @@ function revertPending(thread, { dropped, cut }) {
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession,
-    rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); } }) {
+    rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); }, sessionStateDir = null }) {
     // appendSessionMessage(threadId, item) writes a session message into the T3
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
     // rewindConversation(threadId, { afterTurn, turns }) asks T3 to revert `turns` turns
     // before the turn `afterTurn` and that turn too (/rewind); T3's revert then comes
     // back through rollbackThread like a rewind from a button.
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
-      rewindConversation });
+      rewindConversation, sessionStateDir });
     this.rpcConnections = new Set();
     // What a step rewind's continue sends through T3 (rpc-connection.mjs turns it into Pi's continue).
     this.stepContinueText = STEP_CONTINUE_TEXT;
-    // Threads whose last step rewind may still be continued: only then is that text Pi's continue.
+    // Threads whose step-rewind continue is on its way (RubatoStepRewind.ts marks one right before
+    // it sends the text): only then is that text Pi's continue.
     this.stepContinues = new Set();
     // threadId -> what /rubato/session-state answers (session-state.mjs), fed by V2 connections.
+    // Each is saved under `sessionStateDir` (T3's state dir), so a GUI restart finds it again.
     this.sessionStates = new Map();
+    this.stateSaves = new Map();
     // Sessions a V2 thread reattached to from before V2 (rpc-connection.mjs openThreadSession).
     this.resumedSessions = new Set();
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
@@ -251,15 +254,57 @@ export class RubatoPiBridge {
     try { return await connection.open(); }
     catch (error) { await connection.close(error); throw error; }
   }
-  /** The thread's session state, created on its first V2 attach (session-state.mjs). */
+  /** The thread's session state (session-state.mjs): kept in memory, else saved, else new on attach. */
   stateFor(threadId, sessionId) {
-    let fold = this.sessionStates.get(threadId);
-    if (!fold) { fold = new SessionStateFold({ threadId, sessionId, instanceId: this.instanceId }); this.sessionStates.set(threadId, fold); }
-    else fold.rebind(sessionId);
+    let fold = this.knownState(threadId);
+    if (!fold) {
+      fold = new SessionStateFold({ threadId, sessionId, instanceId: this.instanceId, changed: () => this.saveState(threadId) });
+      this.sessionStates.set(threadId, fold);
+    } else fold.rebind(sessionId);
     return fold;
   }
-  sessionState(threadId) {
+  stateFile(threadId) {
+    return this.sessionStateDir ? path.join(this.sessionStateDir, `${encodeURIComponent(threadId)}.json`) : null;
+  }
+  knownState(threadId) {
+    if (this.sessionStates.has(threadId)) return this.sessionStates.get(threadId);
+    const file = this.stateFile(threadId);
+    if (!file) return undefined;
+    let saved;
+    try { saved = JSON.parse(readFileSync(file, 'utf8')); } catch { return undefined; }
+    if (typeof saved?.sessionId !== 'string') return undefined;
+    const fold = SessionStateFold.restore(saved, { threadId, instanceId: this.instanceId, changed: () => this.saveState(threadId) });
+    this.sessionStates.set(threadId, fold);
+    return fold;
+  }
+  // Records come in bursts; one write per thread per moment is enough.
+  saveState(threadId) {
+    const file = this.stateFile(threadId);
+    if (!file || this.stateSaves.has(threadId)) return;
+    const timer = setTimeout(() => { this.stateSaves.delete(threadId); void this.writeState(threadId, file); }, 250);
+    timer.unref?.();
+    this.stateSaves.set(threadId, timer);
+  }
+  async writeState(threadId, file) {
     const fold = this.sessionStates.get(threadId);
+    if (!fold) return;
+    try {
+      mkdirSync(path.dirname(file), { recursive: true });
+      const temporary = `${file}.${process.pid}.tmp`;
+      await writeFile(temporary, JSON.stringify(fold.saved()));
+      await rename(temporary, file);
+    } catch (error) { this.onError(error); }
+  }
+  async flushStates() {
+    const pending = [...this.stateSaves.keys()];
+    for (const threadId of pending) clearTimeout(this.stateSaves.get(threadId));
+    this.stateSaves.clear();
+    await Promise.all(pending.map((threadId) => this.writeState(threadId, this.stateFile(threadId))));
+  }
+  /** The step-rewind continue route is about to send `stepContinueText` for this thread. */
+  markStepContinue(threadId) { this.stepContinues.add(threadId); }
+  sessionState(threadId) {
+    const fold = this.knownState(threadId);
     const snapshot = fold?.snapshot() ?? { speedIndex: null, agents: [], teams: [], cache: null };
     return { ...snapshot, cache: snapshot.cache ?? this.warmth?.get(threadId) ?? null };
   }
@@ -317,12 +362,16 @@ export class RubatoPiBridge {
    * result of the batch `toolCallId` was called in, in place (pi-runtime conversation-rewind
    * findStepTarget). Answers that batch's call ids, so T3 cuts after the same rows.
    */
+  /** The call ids made together with `toolCallId`; throws when the engine no longer holds that step. */
+  async stepBatch({ threadId, sessionId, toolCallId }) {
+    return this.withSession(threadId, sessionId, async (client) =>
+      stepBatch(activeBranch(await client.command({ type: 'get_entries' })), toolCallId));
+  }
   async rewindToStep({ threadId, sessionId, toolCallId }) {
     return this.withSession(threadId, sessionId, async (client) => {
       const batch = stepBatch(activeBranch(await client.command({ type: 'get_entries' })), toolCallId);
       const result = await client.command({ type: 'rewind', step: toolCallId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
-      this.stepContinues.add(threadId);
       return { batch };
     });
   }
@@ -1090,6 +1139,7 @@ export class RubatoPiBridge {
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
     await Promise.all([...this.rpcConnections].map((connection) => connection.close()));
+    await this.flushStates();
     await this.inventoryClient?.close();
   }
 }

@@ -14,13 +14,26 @@ const nonempty = (value) => (typeof value === 'string' && value.trim() ? value.t
 
 /** One session's state, fed every engine record a V2 connection receives (rpc-connection.mjs). */
 export class SessionStateFold {
-  constructor({ threadId, sessionId, instanceId = 'rubato' }) {
+  // `changed()` runs after anything a GUI restart must find again (the bridge saves the fold).
+  constructor({ threadId, sessionId, instanceId = 'rubato', changed = () => {} }) {
     this.threadId = threadId;
+    this.changed = changed;
     this.agents = new Map();
     this.speedIndex = null;
     this.cache = null;
     this.projection = new EventProjection({ threadId, sessionId, instanceId, emit: (event) => this.fold(event) });
   }
+  get sessionId() { return this.projection.sessionId; }
+  /** A fold saved by `saved()`, for the session it was saved for. */
+  static restore(saved, options) {
+    const fold = new SessionStateFold({ ...options, sessionId: saved.sessionId });
+    for (const row of Array.isArray(saved.agents) ? saved.agents : [])
+      if (row && typeof row.taskId === 'string') fold.agents.set(row.taskId, row);
+    fold.speedIndex = Number.isInteger(saved.speedIndex) ? saved.speedIndex : null;
+    return fold;
+  }
+  /** What a GUI restart restores: the cache is asked again on attach, so it stays out. */
+  saved() { return { sessionId: this.sessionId, speedIndex: this.speedIndex, agents: [...this.agents.values()] }; }
   rebind(sessionId) {
     if (this.projection.sessionId === sessionId) return;
     // Another conversation now: nothing of the previous one's agents, speed or cache applies.
@@ -28,6 +41,7 @@ export class SessionStateFold {
     this.agents.clear();
     this.speedIndex = null;
     this.cache = null;
+    this.changed();
   }
   feed(event) {
     try { this.projection.project(event); } catch { /* a record the panel cannot read changes nothing */ }
@@ -37,6 +51,7 @@ export class SessionStateFold {
     if (event.type === 'thread.metadata.updated' && payload.metadata && 'speedIndex' in payload.metadata) {
       const speed = payload.metadata.speedIndex;
       this.speedIndex = Number.isInteger(speed) ? speed : null;
+      this.changed();
       return;
     }
     if (!['task.started', 'task.updated', 'task.progress', 'task.completed'].includes(event.type)) return;
@@ -69,6 +84,7 @@ export class SessionStateFold {
     row.status ??= 'running';
     row.updatedAt = event.createdAt;
     this.agents.set(taskId, row);
+    this.changed();
   }
   setCache(value) { this.cache = value ?? null; }
   snapshot() {
