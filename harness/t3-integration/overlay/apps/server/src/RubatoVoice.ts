@@ -65,6 +65,33 @@ interface VoiceRun {
   readonly userMessageId: string;
 }
 
+/**
+ * T3's orchestrator in the promise shapes the voice module calls. A command is
+ * decoded against the V2 command schema first, so a malformed one fails here
+ * instead of inside the orchestrator.
+ */
+export function voiceOrchestrator(orchestrator: OrchestratorV2["Service"]) {
+  return {
+    dispatch: (command: unknown) => Effect.runPromise(
+      Schema.decodeUnknownEffect(OrchestrationV2Command)(command).pipe(
+        Effect.flatMap(orchestrator.dispatch),
+        Effect.map((result) => ({
+          runs: result.storedEvents.flatMap(({ event }): VoiceRun[] =>
+            event.type === "run.created" || event.type === "run.updated"
+              ? [{ id: event.payload.id, status: event.payload.status, userMessageId: event.payload.userMessageId }]
+              : []),
+        })),
+      ),
+    ),
+    readThread: (id: string) => Effect.runPromise(
+      orchestrator.getThreadShell(ThreadId.make(id)).pipe(Effect.orElseSucceed(() => null)),
+    ),
+    listThreads: () => Effect.runPromise(
+      orchestrator.getShellSnapshot().pipe(Effect.map((snapshot) => snapshot.threads)),
+    ),
+  };
+}
+
 export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const orchestrator = yield* OrchestratorV2;
   const projects = yield* ProjectStoreV2;
@@ -77,20 +104,7 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const configPath = process.env.RUBATO_VOICE_CONFIG ??
     path.join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), ".rubato", "voice.json");
 
-  const dispatch = (command: unknown) => Effect.runPromise(
-    Schema.decodeUnknownEffect(OrchestrationV2Command)(command).pipe(
-      Effect.flatMap(orchestrator.dispatch),
-      Effect.map((result) => ({
-        runs: result.storedEvents.flatMap(({ event }): VoiceRun[] =>
-          event.type === "run.created" || event.type === "run.updated"
-            ? [{ id: event.payload.id, status: event.payload.status, userMessageId: event.payload.userMessageId }]
-            : []),
-      })),
-    ),
-  );
-  const readThread = (id: string) => Effect.runPromise(
-    orchestrator.getThreadShell(ThreadId.make(id)).pipe(Effect.orElseSucceed(() => null)),
-  );
+  const { dispatch, readThread, listThreads } = voiceOrchestrator(orchestrator);
   // The model and permission mode a new thread starts with, resolved the way the
   // apps resolve them: the project's override, else this environment's default.
   const readProject = (id: string) => Effect.runPromise(Effect.gen(function* () {
@@ -106,9 +120,6 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       defaultRuntimeMode: resolved.defaultRuntimeMode,
     };
   }).pipe(Effect.orElseSucceed(() => null)));
-  const listThreads = () => Effect.runPromise(
-    orchestrator.getShellSnapshot().pipe(Effect.map((snapshot) => snapshot.threads)),
-  );
 
   const initialized = yield* Effect.gen(function* () {
     if (!(yield* fs.exists(configPath))) return undefined;

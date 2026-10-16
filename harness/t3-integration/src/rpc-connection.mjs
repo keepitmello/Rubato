@@ -60,6 +60,20 @@ export function replyBefore(branch, entryId) {
   return reply ? messageFingerprint(reply.message) : null;
 }
 
+/**
+ * The prompt a step rewind's "continue" sends through T3 (RubatoStepRewind.ts). T3 shows it
+ * as the user's message; Pi gets no message and runs on from the step's tool results, so
+ * every byte the model saw before stays as cached.
+ */
+export const STEP_CONTINUE_TEXT = 'Continue from the rewound step.';
+/** The tool calls answered together with `toolCallId` (one assistant message), on the live branch. */
+export function stepBatch(branch, toolCallId) {
+  const reply = branch.find((entry) => entry.type === 'message' && entry.message?.role === 'assistant'
+    && (entry.message.content ?? []).some((part) => part?.type === 'toolCall' && part.id === toolCallId));
+  if (!reply) throw new Error('This step is not on the conversation\'s current branch');
+  return reply.message.content.filter((part) => part?.type === 'toolCall' && typeof part.id === 'string').map((part) => part.id);
+}
+
 /** The wait that ended starts the agent's next run a moment later; the turn waits that long. */
 export const AWAIT_POLL_MS = 2_000;
 export const AWAIT_GRACE_MS = 3_000;
@@ -310,6 +324,11 @@ export class RubatoRpcConnection {
     if (this.closed) throw new Error('Rubato connection is closed');
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
+    if (command.type === 'prompt' && command.message === STEP_CONTINUE_TEXT && !command.images?.length) {
+      // A step rewind's continue: no message for Pi, it runs on from the tool results.
+      await this.client.command({ type: 'continue' });
+      return { disposition: 'started' };
+    }
     if (command.type === 'prompt' && typeof command.message === 'string')
       command.message = rewriteSkillMentions(command.message, this.bridge.skillNames);
     return this.client.command(command);

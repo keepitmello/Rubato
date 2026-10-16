@@ -12,6 +12,18 @@ import {
 import { rubatoHttpAccess, type RubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
 
+// The shared voice controller (written for the phone app) uses Promise.withResolvers.
+// Electron's Chromium has it; the web project's ES2023 lib does not declare it yet.
+declare global {
+  interface PromiseConstructor {
+    withResolvers<T>(): {
+      promise: Promise<T>;
+      resolve: (value: T | PromiseLike<T>) => void;
+      reject: (reason?: unknown) => void;
+    };
+  }
+}
+
 /** The route the Rubato voice service adds to the T3 server on this Mac. */
 const VOICE_ROUTE = "/rubato/voice/session";
 

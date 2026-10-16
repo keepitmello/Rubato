@@ -30,7 +30,7 @@ test('real HTTP: session → recording upload → edited submit → pinned conve
   await fetch(`${base}/${s.voiceSessionId}/submit`, input);
   assert.equal(result.deepLink, 't3code://threads/env/a');
   assert.equal(f.sent().length, 1);
-  assert.equal(f.sent()[0].message.text, '교정된 문장');
+  assert.equal(f.sent()[0].text, '교정된 문장');
 });
 
 test('desktop authentication is limited to draft sessions, never mobile submission', async (t) => {

@@ -4,8 +4,9 @@
  * the V2 event sink, which the runtime keeps to its own services.
  */
 import {
-  EventId, MessageId, ProviderDriverKind, TurnItemId,
+  EventId, MessageId, ProviderDriverKind, RunId, TurnItemId,
   type ModelSelection, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
+  type OrchestrationV2Run,
   type OrchestrationV2DomainEvent, type OrchestrationV2ProviderThread, type OrchestrationV2TurnItem,
   type ProjectId, type ProviderInteractionMode, type RuntimeMode, type ThreadId,
 } from "@t3tools/contracts";
@@ -118,11 +119,50 @@ const make = Effect.gen(function* () {
     ] }).pipe(Effect.mapError(importFailure("Could not write the Rubato thread")));
     return input.threadId;
   });
-  return { importPiSessionThread };
+  /**
+   * A step rewind's cut (RubatoStepRewind.ts): the run ends at the step, as interrupted, so
+   * T3's own resume path can continue it; the rows the cut drops move onto a run recorded
+   * as rolled back. V2 drops a rolled-back run's rows everywhere (its timeline queries, the
+   * web and the phone), so they leave the thread the way a whole-turn rewind's rows do.
+   */
+  const cutRun = (input: CutRunInput) => Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const event = () => idAllocator.allocate.event({ threadId: input.run.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the step rewind's events")));
+    const cutRunId = RunId.make(`${input.run.id}:rubato-step-cut:${DateTime.toEpochMillis(now)}`);
+    // Ranked before the cut run itself, which T3 must find as the latest run to resume it.
+    const cut: OrchestrationV2Run = {
+      ...input.run, id: cutRunId, ordinal: input.nextOrdinal, status: "rolled_back", checkpointId: null,
+      queuePosition: null, completedAt: input.run.completedAt ?? input.run.startedAt ?? now,
+    };
+    const events: Array<OrchestrationV2DomainEvent> = [
+      { id: yield* event(), type: "run.updated", threadId: input.run.threadId, runId: cutRunId,
+        providerInstanceId: input.run.providerInstanceId, occurredAt: now, payload: cut },
+      ...(yield* Effect.forEach(input.items, (item) => Effect.map(event(), (id): OrchestrationV2DomainEvent =>
+        ({ id, type: "turn-item.updated", threadId: input.run.threadId, occurredAt: now, payload: { ...item, runId: cutRunId } })))),
+      ...(yield* Effect.forEach(input.messages, (message) => Effect.map(event(), (id): OrchestrationV2DomainEvent =>
+        ({ id, type: "message.updated", threadId: input.run.threadId, occurredAt: now, payload: { ...message, runId: cutRunId } })))),
+      { id: yield* event(), type: "run.updated", threadId: input.run.threadId, runId: input.run.id,
+        providerInstanceId: input.run.providerInstanceId, occurredAt: now,
+        payload: { ...input.run, status: "interrupted", completedAt: now } },
+    ];
+    yield* eventSink.write({ events }).pipe(Effect.mapError(importFailure("Could not write the step rewind")));
+    return cutRunId;
+  });
+  return { importPiSessionThread, cutRun };
 });
+
+export interface CutRunInput {
+  readonly run: OrchestrationV2Run;
+  /** The thread's next free run ordinal (V2 numbers runs 1..n). */
+  readonly nextOrdinal: number;
+  readonly items: ReadonlyArray<OrchestrationV2TurnItem>;
+  readonly messages: ReadonlyArray<OrchestrationV2ConversationMessage>;
+}
 
 export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, {
   readonly importPiSessionThread: (input: PiSessionThreadInput) => Effect.Effect<ThreadId, RubatoThreadImportError>;
+  readonly cutRun: (input: CutRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);
