@@ -32,6 +32,7 @@ import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs'
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
+import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
@@ -523,6 +524,13 @@ const edits = {
       '    <svg {...props} viewBox="0 0 3210 760" xmlns="http://www.w3.org/2000/svg">',
       'replace',
     ],
+  ],
+  // T3 MCP 도구 행의 제품 로고도 같은 워드마크라 Rubato 로 보인다. upstream 테스트는 T3 글리프의
+  // viewBox 를 기대하므로 워드마크의 것으로 맞춘다.
+  'apps/web/src/components/chat/MessagesTimeline.test.tsx': [
+    [`    expect(markup).toContain('viewBox="15.5309 37 94.3941 56.96"');`,
+      `    expect(markup).toContain('viewBox="0 0 3210 760"');`,
+      'replace'],
   ],
   // 워드마크 옆의 "Code" 글자. 워드마크가 이미 제품 이름을 다 쓴다.
   // 지우는 대신 빈 글자로 둔다 — 치환을 되돌릴 때 빈 문자열은 파일 맨 앞에
@@ -1670,6 +1678,11 @@ for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
 // Rewinding to a finished tool step (step-rewind-edits.mjs).
 overlays.push(...stepRewindOverlays);
 for (const [relative, changes] of Object.entries(stepRewindEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Its web half: the rewind button, card and fades (step-rewind-ui-edits.mjs).
+overlays.push(...stepRewindUiOverlays);
+for (const [relative, changes] of Object.entries(stepRewindUiEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Editing a sent message and forking at a reply; after step rewind, whose reply button it sits beside (turn-actions-edits.mjs).

@@ -47,17 +47,20 @@ test('rejects traversal and links without writing outside the repository', async
   assert.equal(await readFile(path.join(outside, 'keep.md'), 'utf8'), 'keep');
 });
 
-test('new Markdown note uses the real create/read/write RPCs without replacing an existing file', {
+// T3 v0.1.0 has no end-to-end websocket test harness; the RPC handlers are one-line
+// wiring to WorkspaceFileSystem.writeFile({ createOnly }), so the behaviour is checked
+// on the real service inside upstream's own WorkspaceFileSystem test file.
+test('new Markdown note creates through the real workspace file system without replacing an existing file', {
   skip: !process.env.T3_SOURCE, timeout: 120_000,
 }, async (t) => {
   const source = process.env.T3_SOURCE;
-  const directory = path.join(source, 'apps/server/src');
-  const upstream = await readFile(path.join(directory, 'server.test.ts'), 'utf8');
-  const marker = '  it.effect("routes websocket rpc projects.writeFile",';
+  const directory = path.join(source, 'apps/server/src/workspace');
+  const upstream = await readFile(path.join(directory, 'WorkspaceFileSystem.test.ts'), 'utf8');
+  const marker = '  describe("writeFile", () => {\n';
   assert.equal(upstream.split(marker).length, 2);
   const fixture = await readFile(new URL('./fixtures/markdown-notes.ts', import.meta.url), 'utf8');
   const generated = path.join(directory, `RubatoMarkdownNotes.${process.pid}.test.ts`);
-  await writeFile(generated, upstream.replace(marker, fixture + '\n' + marker), { flag: 'wx' });
+  await writeFile(generated, upstream.replace(marker, fixture + marker), { flag: 'wx' });
   t.after(() => unlink(generated));
   try {
     const result = await promisify(execFile)(
@@ -66,6 +69,7 @@ test('new Markdown note uses the real create/read/write RPCs without replacing a
       { cwd: path.join(source, 'apps/server'), timeout: 110_000, maxBuffer: 4 * 1024 * 1024 },
     );
     t.diagnostic(result.stdout);
+    assert.match(result.stdout, /1 passed/);
   } catch (error) {
     assert.fail(`${error.stdout ?? ''}\n${error.stderr ?? ''}\n${error.message}`);
   }

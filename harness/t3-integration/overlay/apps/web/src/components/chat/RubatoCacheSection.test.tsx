@@ -1,4 +1,4 @@
-import { type EnvironmentId, EventId, TurnId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
@@ -20,20 +20,19 @@ const HOUR = 60 * 60_000;
 const switchOf = (markup: string) => markup.match(/<[^>]*data-(checked|unchecked)=""[^>]*role="switch"/)?.[1];
 
 function meterWith(cache: Record<string, unknown>, usedTokens = 10_000) {
-  const usage = deriveLatestContextWindowSnapshot([
-    {
-      id: EventId.make("activity-1"),
-      tone: "info",
-      kind: "context-window.updated",
-      summary: "Context updated",
-      payload: { usedTokens, maxTokens: 200_000, compactsAutomatically: true, cache },
-      turnId: TurnId.make("turn-1"),
-      createdAt: "2026-09-27T03:00:00.000Z",
-    },
-  ]);
+  const usage = deriveLatestContextWindowSnapshot([], {
+    usedTokens,
+    maxTokens: 200_000,
+    updatedAt: "2026-09-27T03:00:00.000Z",
+  });
   if (!usage) throw new Error("The fixture did not produce a snapshot.");
   return renderToStaticMarkup(
-    <ContextWindowMeter usage={usage} modelDisplayName="Opus 5.5" environmentId={"env" as EnvironmentId} />,
+    <ContextWindowMeter
+      usage={usage}
+      modelDisplayName="Opus 5.5"
+      environmentId={"env" as EnvironmentId}
+      rubatoCache={cache as never}
+    />,
   );
 }
 

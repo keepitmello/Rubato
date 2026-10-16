@@ -1,8 +1,9 @@
-// The context ring shows the prompt cache. The bridge adds `cache` to the usage snapshot
-// (events.mjs cacheFrom); these edits let it through the contract and the web reader,
-// turn the ring red when the cache is cold, and put the cache facts and the thread's own
-// warmer switch in the ring's popover where the auto-compaction note used to be. The
-// switch posts to /rubato/cache-warming, which the bridge answers (bridge.mjs).
+// The context ring shows the prompt cache. The cache comes with the thread's Rubato state
+// (GET /rubato/session-state, read by ChatView's useRubatoSessionState) and goes down to
+// the ring through the composer; these edits turn the ring red when the cache is cold and
+// put the cache facts and the thread's own warmer switch in the ring's popover where the
+// auto-compaction note used to be. The switch posts to /rubato/cache-warming, which the
+// bridge answers (bridge.mjs).
 export const cacheOverlays = [
   'apps/web/src/components/sidebar/RubatoCacheCapsule.tsx',
   'apps/web/src/components/sidebar/RubatoCacheCapsule.test.tsx',
@@ -13,56 +14,20 @@ export const cacheOverlays = [
 ];
 
 export const cacheEdits = {
-  'packages/contracts/src/providerRuntime.ts': [
-    [
-      'export const ThreadTokenUsageSnapshot = Schema.Struct({',
-      [
-        '/** Rubato: the prompt cache behind the context ring. Times are epoch ms. */',
-        'export const RubatoCacheSnapshot = Schema.Struct({',
-        '  state: Schema.Literals(["warm", "cold", "unknown"]),',
-        '  sessionId: Schema.optional(Schema.String),',
-        '  hitPercent: Schema.optional(NonNegativeInt),',
-        '  expiresAt: Schema.optional(NonNegativeInt),',
-        '  warming: Schema.Struct({',
-        '    mode: Schema.Literals(["off", "idle", "streaming"]),',
-        '    enabled: Schema.Boolean,',
-        '    from: Schema.optional(NonNegativeInt),',
-        '    active: Schema.Boolean,',
-        '    until: Schema.optional(NonNegativeInt),',
-        '  }),',
-        '});',
-        'export type RubatoCacheSnapshot = typeof RubatoCacheSnapshot.Type;',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    [
-      '  speedIndex: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      '  speedIndex: Schema.optional(NonNegativeInt),\n  cache: Schema.optional(RubatoCacheSnapshot),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      'replace',
-    ],
-  ],
-  'apps/web/src/lib/contextWindow.ts': [
-    [
-      '      speedIndex: asFiniteNumber(payload?.speedIndex),\n',
-      '      speedIndex: asFiniteNumber(payload?.speedIndex),\n      cache: (asRecord(payload?.cache) as ThreadTokenUsageSnapshot["cache"] | null) ?? null,\n',
-      'replace',
-    ],
-  ],
   'apps/web/src/components/chat/ContextWindowMeter.tsx': [
     [
-      'import { formatContextWindowCompactionMessage } from "./ContextWindowMeter.logic";\n',
-      'import { RubatoCacheSection, rubatoCacheIsCold, useRubatoCacheNow } from "./RubatoCacheSection";\n',
+      'import {\n  formatContextWindowCompactionMessage,\n  formatContextWindowCost,\n} from "./ContextWindowMeter.logic";\n',
+      'import { formatContextWindowCost } from "./ContextWindowMeter.logic";\nimport { RubatoCacheSection, rubatoCacheIsCold, useRubatoCacheNow } from "./RubatoCacheSection";\n',
       'replace',
     ],
     [
       'import { composerFloatingLayerProps } from "./composerEventScope";\n',
-      'import { composerFloatingLayerProps } from "./composerEventScope";\nimport type { EnvironmentId } from "@t3tools/contracts";\n',
+      'import { composerFloatingLayerProps } from "./composerEventScope";\nimport type { EnvironmentId } from "@t3tools/contracts";\nimport type { RubatoCacheSnapshot } from "~/state/rubatoSessionState";\n',
       'replace',
     ],
     [
       '  compactDisabledReason?: string | null | undefined;\n}) {\n  const { usage, modelDisplayName, onCompact, compactDisabled, compactDisabledReason } = props;',
-      '  compactDisabledReason?: string | null | undefined;\n  environmentId?: EnvironmentId | undefined;\n}) {\n  const { usage, onCompact, compactDisabled, compactDisabledReason, environmentId } = props;',
+      '  compactDisabledReason?: string | null | undefined;\n  environmentId?: EnvironmentId | undefined;\n  rubatoCache?: RubatoCacheSnapshot | null | undefined;\n}) {\n  const { usage, onCompact, compactDisabled, compactDisabledReason, environmentId } = props;\n  const cache = props.rubatoCache ?? undefined;',
       'replace',
     ],
     [
@@ -77,8 +42,8 @@ export const cacheEdits = {
         '  const usageColor = "color-mix(in oklab, var(--color-muted-foreground) 72%, transparent)";',
         '  // Rubato: red means one thing, a cold prompt cache (a full context compacts on its',
         '  // own). The track turns too, since a nearly empty context leaves almost no arc to see.',
-        '  const cacheNow = useRubatoCacheNow(usage.cache, false);',
-        '  const cacheCold = rubatoCacheIsCold(usage.cache, cacheNow);',
+        '  const cacheNow = useRubatoCacheNow(cache, false);',
+        '  const cacheCold = rubatoCacheIsCold(cache, cacheNow);',
         '  const ringColor = cacheCold ? "var(--color-error)" : usageColor;',
         '  const trackColor = cacheCold',
         '    ? "color-mix(in oklab, var(--color-error) 40%, transparent)"',
@@ -89,7 +54,7 @@ export const cacheEdits = {
     ],
     [
       '        closeDelay={onCompact ? 150 : 0}',
-      '        closeDelay={onCompact || usage.cache ? 150 : 0}',
+      '        closeDelay={onCompact || cache ? 150 : 0}',
       'replace',
     ],
     [
@@ -116,7 +81,7 @@ export const cacheEdits = {
     // Cache on top, context and its optimization below, so the two layers do not mix.
     [
       '        <div className="flex flex-col gap-2 p-(--floating-content-inset)">\n',
-      '        <div className="flex flex-col gap-2 p-(--floating-content-inset)">\n          <RubatoCacheSection cache={usage.cache} environmentId={environmentId} />\n',
+      '        <div className="flex flex-col gap-2 p-(--floating-content-inset)">\n          <RubatoCacheSection cache={cache} environmentId={environmentId} />\n',
       'replace',
     ],
     [
@@ -154,19 +119,23 @@ export const cacheEdits = {
     ],
   ],
   'apps/web/src/components/chat/ChatComposer.tsx': [
+    ['import { ComposerImageThumbnail } from "./ComposerImageThumbnail";\n',
+      'import type { RubatoCacheSnapshot } from "~/state/rubatoSessionState";\n'],
+    ['  sessionSpeedLabel?: string | null;\n', '  sessionSpeedLabel?: string | null;\n  rubatoCache?: RubatoCacheSnapshot | null;\n', 'replace'],
+    ['    sessionSpeedLabel,\n    compactThreadUnavailable,', '    sessionSpeedLabel,\n    rubatoCache,\n    compactThreadUnavailable,', 'replace'],
     [
       '  activeContextWindow: ContextWindowSnapshot | null;\n  reserveContextWindowMeter: boolean;\n',
-      '  activeContextWindow: ContextWindowSnapshot | null;\n  reserveContextWindowMeter: boolean;\n  cacheEnvironmentId?: EnvironmentId | undefined;\n',
+      '  activeContextWindow: ContextWindowSnapshot | null;\n  reserveContextWindowMeter: boolean;\n  cacheEnvironmentId?: EnvironmentId | undefined;\n  rubatoCache?: RubatoCacheSnapshot | null | undefined;\n',
       'replace',
     ],
     [
       '          compactDisabledReason={props.compactDisabledReason}\n        />',
-      '          compactDisabledReason={props.compactDisabledReason}\n          environmentId={props.cacheEnvironmentId}\n        />',
+      '          compactDisabledReason={props.compactDisabledReason}\n          environmentId={props.cacheEnvironmentId}\n          rubatoCache={props.rubatoCache}\n        />',
       'replace',
     ],
     [
       '                    reserveContextWindowMeter={reserveContextWindowMeter}\n',
-      '                    reserveContextWindowMeter={reserveContextWindowMeter}\n                    cacheEnvironmentId={environmentId}\n',
+      '                    reserveContextWindowMeter={reserveContextWindowMeter}\n                    cacheEnvironmentId={environmentId}\n                    rubatoCache={rubatoCache}\n',
       'replace',
     ],
   ],
@@ -207,11 +176,6 @@ export const cacheEdits = {
       '} from "./ThreadStatusIndicators";\nimport { RubatoCacheCapsule, RubatoCacheTooltip } from "./sidebar/RubatoCacheCapsule";\n',
       'replace',
     ],
-  ],
-  // The compact button reads "Optimize context"; T3's own test names the button.
-  'apps/web/src/components/chat/ContextWindowMeter.test.tsx': [
-    ['    expect(markup).toContain("Compact context");', '    expect(markup).toContain("Optimize context");', 'replace'],
-    ['    expect(markup).not.toContain("Compact context");', '    expect(markup).not.toContain("Optimize context");', 'replace'],
   ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCacheWarmingRouteLayer } from "./RubatoCacheWarming.ts";\n'],

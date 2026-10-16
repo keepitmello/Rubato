@@ -1,14 +1,14 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import type { ContextWindowSnapshot } from "~/lib/contextWindow";
+import type { RubatoCacheSnapshot } from "~/state/rubatoSessionState";
 import { cn } from "~/lib/utils";
 import { setSessionCacheWarming } from "~/state/rubatoCacheWarming";
 import { MinusIcon, PlusIcon } from "lucide-react";
 import { Button } from "../ui/button";
 import { Switch } from "../ui/switch";
 
-type RubatoCache = NonNullable<ContextWindowSnapshot["cache"]>;
+type RubatoCache = RubatoCacheSnapshot;
 
 /**
  * The clock the cache facts are read against. It moves when the cache would go cold

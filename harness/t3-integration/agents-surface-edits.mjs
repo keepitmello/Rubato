@@ -178,7 +178,7 @@ export const agentsSurfaceEdits = {
       '      />',
       '')],
     ['                              activeContextWindow={activeContextWindow}\n',
-      '                              activeContextWindow={activeContextWindow}\n                              sessionSpeedLabel={sessionSpeedLabel}\n', 'replace'],
+      '                              activeContextWindow={activeContextWindow}\n                              sessionSpeedLabel={sessionSpeedLabel}\n                              rubatoCache={rubatoSessionState.cache}\n', 'replace'],
     ['          onAddDevice={addDeviceSurfaceStable}\n          browserAvailable=', panelProps('          ') + '          browserAvailable=', 'replace'],
     ['            onAddDevice={addDeviceSurfaceStable}\n            browserAvailable=', panelProps('            ') + '            browserAvailable=', 'replace'],
   ],

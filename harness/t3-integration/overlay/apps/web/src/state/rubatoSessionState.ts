@@ -43,6 +43,10 @@ export interface RubatoSessionTeam {
   readonly teamRunId: string;
   /** The team_create call that started it. */
   readonly spawnToolCallId?: string | null;
+  readonly status?: RubatoSessionAgent["status"];
+  readonly startedAt?: string;
+  readonly updatedAt?: string;
+  readonly completedAt?: string | null;
   readonly name: string;
   readonly members: ReadonlyArray<string>;
   readonly board: {
@@ -59,13 +63,29 @@ export interface RubatoSessionTeam {
   } | null;
 }
 
+/** The prompt cache behind the context ring. Times are epoch ms. */
+export interface RubatoCacheSnapshot {
+  readonly state: "warm" | "cold" | "unknown";
+  readonly sessionId?: string;
+  readonly hitPercent?: number;
+  readonly expiresAt?: number;
+  readonly warming: {
+    readonly mode: "off" | "idle" | "streaming";
+    readonly enabled: boolean;
+    readonly from?: number;
+    readonly active: boolean;
+    readonly until?: number;
+  };
+}
+
 export interface RubatoSessionState {
   readonly speedIndex: number | null;
+  readonly cache: RubatoCacheSnapshot | null;
   readonly agents: ReadonlyArray<RubatoSessionAgent>;
   readonly teams: ReadonlyArray<RubatoSessionTeam>;
 }
 
-export const EMPTY_SESSION_STATE: RubatoSessionState = { speedIndex: null, agents: [], teams: [] };
+export const EMPTY_SESSION_STATE: RubatoSessionState = { speedIndex: null, cache: null, agents: [], teams: [] };
 
 const ROUTE = "/rubato/session-state";
 const POLL_MS = 2_000;
@@ -89,6 +109,7 @@ async function readSessionState(
   const payload = (await response.json().catch(() => null)) as Partial<RubatoSessionState> | null;
   return {
     speedIndex: typeof payload?.speedIndex === "number" ? payload.speedIndex : null,
+    cache: payload?.cache && typeof payload.cache === "object" ? payload.cache : null,
     agents: Array.isArray(payload?.agents) ? payload.agents : [],
     teams: Array.isArray(payload?.teams) ? payload.teams : [],
   };
@@ -108,10 +129,10 @@ const subscribe = (listener: () => void) => {
 
 /** The state ChatView last polled for this thread, without polling again. */
 export function usePublishedRubatoSessionState(threadKey: string | null): RubatoSessionState {
-  return useSyncExternalStore(
-    subscribe,
-    () => (threadKey === null ? EMPTY_SESSION_STATE : (published.get(threadKey) ?? EMPTY_SESSION_STATE)),
-  );
+  const read = () =>
+    threadKey === null ? EMPTY_SESSION_STATE : (published.get(threadKey) ?? EMPTY_SESSION_STATE);
+  // Server-rendered timelines (tests) read the same store.
+  return useSyncExternalStore(subscribe, read, read);
 }
 
 /** The thread's Rubato state, polled while mounted; empty for no thread. */

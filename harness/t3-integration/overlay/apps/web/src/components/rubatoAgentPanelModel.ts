@@ -257,9 +257,14 @@ export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoS
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
   const teams = state.teams.map((team): RubatoSubagent => {
     const members = team.members.flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
-    const live = members.some((member) => isActiveSubagentStatus(member.status) || member.status === "idle");
-    const first = members.map((member) => member.firstSeenAt).toSorted()[0] ?? new Date(0).toISOString();
-    const last = members.map((member) => member.updatedAt).toSorted().at(-1) ?? first;
+    // The server's team status wins; an older answer without one follows the members.
+    const live =
+      team.status !== undefined
+        ? isActiveSubagentStatus(STATUS[team.status] ?? "running")
+        : members.some((member) => isActiveSubagentStatus(member.status) || member.status === "idle");
+    const first =
+      team.startedAt ?? members.map((member) => member.firstSeenAt).toSorted()[0] ?? new Date(0).toISOString();
+    const last = team.updatedAt ?? members.map((member) => member.updatedAt).toSorted().at(-1) ?? first;
     return {
       id: team.teamRunId,
       kind: "workflow",
@@ -284,7 +289,7 @@ export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoS
       role: null,
       model: null,
       effort: null,
-      status: live ? "running" : "completed",
+      status: team.status !== undefined ? (STATUS[team.status] ?? "running") : live ? "running" : "completed",
       activationCount: 1,
       usage: null,
       progress: null,
@@ -304,7 +309,7 @@ export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoS
       recentActivity: [],
       firstSeenAt: first,
       startedAt: first,
-      completedAt: live ? null : last,
+      completedAt: team.completedAt ?? (live ? null : last),
       updatedAt: last,
     };
   });

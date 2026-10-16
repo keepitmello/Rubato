@@ -1,4 +1,5 @@
-import type { EnvironmentId, RubatoCacheSnapshot } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
+import type { RubatoCacheSnapshot } from "./rubatoSessionState";
 
 import { rubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";

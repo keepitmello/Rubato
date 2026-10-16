@@ -1,6 +1,8 @@
-import type { OrchestrationThreadActivity, ScopedThreadRef, TurnId } from "@t3tools/contracts";
-import { compareDateTimeStrings } from "@t3tools/shared/dateTime";
-import { revertCutFor } from "@t3tools/shared/rubatoStepRewind";
+import type {
+  OrchestrationV2ProjectedTurnItem,
+  OrchestrationV2TurnItem,
+  ScopedThreadRef,
+} from "@t3tools/contracts";
 import { Undo2Icon, XIcon } from "lucide-react";
 import {
   type MouseEvent,
@@ -19,35 +21,39 @@ import { Checkbox } from "../ui/checkbox";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 
-// Rewind to a finished tool step (step-rewind-edits.mjs). Every Rubato tool row offers it:
-// hovering the row's rewind button fades what would go, the card says what stays and
-// what goes, and then either
+// Rewind to a finished tool step (step-rewind-ui-edits.mjs). Every Rubato tool row offers it:
+// hovering the row's rewind button fades what would go, the card says what stays and what
+// goes, and then either
 // - "Rewind & instruct": the rewind waits for the next message, so it can still be undone
 //   (the composer tag, the marker under the row, the toast). Sending lands the rewind and
 //   then sends, so the message follows the step's results like a steered message; or
 // - "Rewind & continue": rewinds now and runs on from the step's results with no message.
-// The cut is the server's own rule (revertCutFor), so the preview fades exactly what the
-// server drops and the wait ends when exactly that is gone.
+// In a thread with its own worktree the card can also put the files back to that step.
+//
+// The server does the cut (POST /rubato/step-rewind, RubatoStepRewind.ts): it keeps the
+// step's whole batch — calls made in one model message rewind together — and moves what
+// came after onto a rolled-back run. The preview fades the same rows: in the step's run,
+// what follows the run of tool rows the step sits in, and every later run. The wait ends
+// when the rows the server named are gone from the thread.
 //
 // The same button sits where the steps are folded away: the "Worked for" row and a tool
 // group's row rewind after the last step under them, so nothing has to be expanded. A
-// reply's row rewinds to right after that reply: a turn boundary, so it is T3's ordinary
-// turn revert, and with the reply last there is nothing to continue from.
+// reply's row rewinds to right after that reply: a run boundary, so it is T3's ordinary
+// revert, and with the reply last there is nothing to continue from.
 
-/**
- * A rewind point. `step`: after the step `toolCallId` belongs to, inside turn `turnId`.
- * `turn`: after turn `turnId`, which ends at the reply `anchorId`.
- */
+/** A rewind point, with the rows it drops. */
 export interface StepCut {
+  /** `step`: after a tool step's batch; `turn`: after a whole run (a reply's). */
   readonly kind: "step" | "turn";
-  readonly turnId: TurnId;
-  /** The row the rewind lands after: the step's call, or the reply. */
+  readonly runId: string;
+  /** The row the rewind lands after: the step's item, or the reply's message. */
   readonly anchorId: string;
-  readonly toolCallId?: string | undefined;
-  /** When the step finished; the turn's rows stamped later go. */
-  readonly after: string;
-  /** The turn's checkpoint count: later turns go. */
-  readonly turnCount: number;
+  /** The tool item the server is asked to cut after. */
+  readonly itemId?: string | undefined;
+  /** The run's checkpoint turn count, for a run boundary. */
+  readonly turnCount?: number | undefined;
+  readonly droppedItemIds: ReadonlySet<string>;
+  readonly droppedMessageIds: ReadonlySet<string>;
   readonly label: string;
 }
 
@@ -55,12 +61,8 @@ export interface StepRewindHost {
   readonly threadRef: ScopedThreadRef;
   /** Files can be restored only in a thread's own worktree. */
   readonly canRestoreFiles: boolean;
-  /** Without `step`, T3's ordinary turn revert. */
-  readonly revert: (input: {
-    readonly turnCount: number;
-    readonly restoreFiles: boolean;
-    readonly step?: { readonly turnId: TurnId; readonly toolCallId: string } | undefined;
-  }) => Promise<void>;
+  /** T3's ordinary revert to after `turnCount` runs. */
+  readonly revert: (input: { readonly turnCount: number; readonly restoreFiles: boolean }) => Promise<void>;
   readonly focusComposer: () => void;
 }
 
@@ -89,190 +91,177 @@ const shownCut = (threadKey: string): StepCut | undefined => {
   return state?.pending?.cut ?? state?.open ?? state?.preview;
 };
 
-type RewindRow = {
-  readonly turnId?: string | null | undefined;
-  readonly createdAt: string;
-  readonly role?: string | undefined;
-};
-const readThreadDetail = (threadRef: ScopedThreadRef) =>
-  appAtomRegistry.get(environmentThreadDetails.detailAtom(threadRef));
-type ThreadDetail = NonNullable<ReturnType<typeof readThreadDetail>>;
-
-/**
- * Whether a rewind to `cut` drops a row: a turn after the step's, or a row of the step's
- * turn stamped after it (a message steered in after it too). The server's rule
- * (keptAfterRevertCut); rows of no turn that are not user messages stay.
- */
-export function stepRewindDrops(
-  cut: StepCut,
-  removedTurns: ReadonlySet<string>,
-  row: RewindRow,
-): boolean {
-  const turnId = row.turnId ?? null;
-  if (turnId !== null && removedTurns.has(turnId)) return true;
-  if (compareDateTimeStrings(row.createdAt, cut.after) <= 0) return false;
-  return turnId === cut.turnId || (turnId === null && row.role === "user");
+/** What a cut is computed from: the thread's visible rows, its runs and checkpoints. */
+export interface RewindThread {
+  readonly items: ReadonlyArray<OrchestrationV2ProjectedTurnItem>;
+  readonly runs: ReadonlyArray<{ readonly id: string; readonly ordinal: number; readonly status: string }>;
+  readonly checkpoints: ReadonlyArray<{
+    readonly runId: string | null;
+    readonly appRunOrdinal: number | null;
+    readonly status: string;
+  }>;
 }
 
-const removedTurnsOf = (thread: ThreadDetail, cut: StepCut) =>
-  new Set(
-    thread.checkpoints
-      .filter((checkpoint) => (checkpoint.checkpointTurnCount ?? 0) > cut.turnCount)
-      .map((checkpoint) => checkpoint.turnId as string),
+function readThread(threadRef: ScopedThreadRef): RewindThread | null {
+  const detail = appAtomRegistry.get(environmentThreadDetails.threadAtom(threadRef));
+  if (!detail) return null;
+  return {
+    items: appAtomRegistry.get(environmentThreadDetails.visibleTurnItemsAtom(threadRef)),
+    runs: detail.projection.runs,
+    checkpoints: detail.projection.checkpoints,
+  };
+}
+
+const TOOL_TYPES = new Set<OrchestrationV2TurnItem["type"]>([
+  "command_execution",
+  "file_change",
+  "dynamic_tool",
+  "file_search",
+  "web_search",
+]);
+const isTool = (item: OrchestrationV2TurnItem) => TOOL_TYPES.has(item.type);
+const isStep = (item: OrchestrationV2TurnItem) =>
+  isTool(item) && item.status === "completed" && item.nativeItemRef?.driver === "rubato-pi";
+const messageIdOf = (item: OrchestrationV2TurnItem): string | undefined =>
+  item.type === "user_message" || item.type === "assistant_message" ? item.messageId : undefined;
+
+/** Whether a row is dropped by the shown rewind: by its item, or by its message. */
+export function stepRewindDrops(
+  cut: StepCut,
+  row: { readonly itemId?: string | undefined; readonly messageId?: string | undefined },
+): boolean {
+  return (
+    (row.itemId !== undefined && cut.droppedItemIds.has(row.itemId)) ||
+    (row.messageId !== undefined && cut.droppedMessageIds.has(row.messageId))
   );
+}
 
 /** Fades a timeline row the shown rewind would drop. */
-export function useRubatoStepRewindDropped(threadKey: string, row: RewindRow | undefined): boolean {
+export function useRubatoStepRewindDropped(
+  threadKey: string,
+  row: { readonly itemId?: string | undefined; readonly messageId?: string | undefined } | undefined,
+): boolean {
   return useRewindState(() => {
     const cut = row ? shownCut(threadKey) : undefined;
-    if (!cut || !row) return false;
-    // A later turn is past the cut's instant too, so the instant decides here.
-    if (compareDateTimeStrings(row.createdAt, cut.after) <= 0) return false;
-    return (row.turnId ?? null) !== null || row.role === "user";
+    return cut !== undefined && row !== undefined && stepRewindDrops(cut, row);
   });
 }
 export const RUBATO_STEP_DROPPED_CLASS = "opacity-35 transition-opacity duration-150";
 
-function readThread(threadRef: ScopedThreadRef): ThreadDetail | null {
-  return readThreadDetail(threadRef) ?? null;
+const settledRun = (thread: RewindThread, runId: string) => {
+  const run = thread.runs.find((entry) => entry.id === runId);
+  return run && run.status !== "running" && run.status !== "starting" && run.status !== "preparing" &&
+    run.status !== "waiting" && run.status !== "queued"
+    ? run
+    : undefined;
+};
+
+/** Items after `position` in `runId`, and every item of the runs after it. */
+function droppedAfter(thread: RewindThread, runId: string, ordinal: number, position: number) {
+  const later = new Set(thread.runs.filter((run) => run.ordinal > ordinal).map((run) => run.id));
+  const droppedItemIds = new Set<string>();
+  const droppedMessageIds = new Set<string>();
+  for (const row of thread.items) {
+    const item = row.item;
+    const inRun = item.runId === runId && row.position > position;
+    if (!inRun && !(item.runId !== null && later.has(item.runId))) continue;
+    droppedItemIds.add(item.id);
+    const messageId = messageIdOf(item);
+    if (messageId !== undefined) droppedMessageIds.add(messageId);
+  }
+  return { droppedItemIds, droppedMessageIds };
 }
 
 /** The cut a tool row stands for, or why there is none. */
-export function stepCutFor(
-  thread: ThreadDetail,
-  row: { readonly toolCallId: string; readonly turnId: TurnId },
-  label: string,
-): StepCut | string {
-  const checkpoints = thread.checkpoints.map((checkpoint) => ({
-    turnId: checkpoint.turnId as string,
-    checkpointTurnCount: checkpoint.checkpointTurnCount ?? 0,
-  }));
-  const turnCount = checkpoints.find(
-    (checkpoint) => checkpoint.turnId === row.turnId,
-  )?.checkpointTurnCount;
-  if (turnCount === undefined) return "This turn has not finished yet.";
-  const resolved = revertCutFor({
-    step: { turnId: row.turnId, toolCallId: row.toolCallId },
-    turnCount,
-    checkpoints,
-    activities: thread.activities,
-  });
-  if (typeof resolved === "string") return resolved;
-  return { ...resolved.cut, kind: "step", anchorId: row.toolCallId, turnCount, label };
+export function stepCutFor(thread: RewindThread, itemId: string, label: string): StepCut | string {
+  const index = thread.items.findIndex((row) => row.item.id === itemId);
+  const row = thread.items[index];
+  if (!row) return "This step is not in the thread any more.";
+  if (!isStep(row.item)) return "Only a finished Rubato step can be rewound to.";
+  const runId = row.item.runId;
+  const run = runId === null ? undefined : settledRun(thread, runId);
+  if (!run || runId === null) return "This run has not finished yet.";
+  // Calls made together rewind together: the batch runs on while tool rows follow.
+  let last = row;
+  for (const next of thread.items.slice(index + 1)) {
+    if (next.item.runId !== runId || !isTool(next.item)) break;
+    last = next;
+  }
+  return {
+    kind: "step",
+    runId,
+    anchorId: itemId,
+    itemId,
+    ...droppedAfter(thread, runId, run.ordinal, last.position),
+    label,
+  };
 }
 
-const callOf = (activity: { readonly payload: unknown }): string | undefined => {
-  const value = (activity.payload as { toolCallId?: unknown } | null)?.toolCallId;
-  return typeof value === "string" ? value : undefined;
-};
-
-/**
- * The cut after the last finished Rubato step of a turn, or of the calls `toolCallIds`
- * when a tool group names them: what a folded row rewinds to.
- */
+/** The cut after the last finished Rubato step of a run, or of the given items. */
 export function lastStepCutFor(
-  thread: ThreadDetail,
-  scope: { readonly turnId: TurnId; readonly toolCallIds?: ReadonlyArray<string | undefined> },
+  thread: RewindThread,
+  scope: { readonly runId: string; readonly itemIds?: ReadonlyArray<string | undefined> },
 ): StepCut | string {
-  const calls = scope.toolCallIds ? new Set(scope.toolCallIds) : undefined;
-  let last: OrchestrationThreadActivity | undefined;
-  for (const activity of thread.activities as ReadonlyArray<OrchestrationThreadActivity>) {
-    const call = callOf(activity);
-    if (
-      activity.kind !== "tool.completed" ||
-      activity.turnId !== scope.turnId ||
-      !call?.startsWith("pi-tool:") ||
-      (calls !== undefined && !calls.has(call))
-    )
-      continue;
-    if (!last || compareDateTimeStrings(activity.createdAt, last.createdAt) > 0) last = activity;
-  }
-  if (!last) return "There is no finished step to rewind to here.";
-  const title = (last.payload as { title?: unknown } | null)?.title;
-  return stepCutFor(
-    thread,
-    { toolCallId: callOf(last)!, turnId: scope.turnId },
-    typeof title === "string" && title.length > 0 ? title : last.summary,
+  const within = scope.itemIds ? new Set(scope.itemIds) : undefined;
+  const last = thread.items.findLast(
+    (row) => row.item.runId === scope.runId && isStep(row.item) && (within === undefined || within.has(row.item.id)),
   );
+  if (!last) return "There is no finished step to rewind to here.";
+  return stepCutFor(thread, last.item.id, last.item.title ?? "this step");
 }
 
-/** The cut right after a turn's reply: the turn stays whole and the turns after it go. */
+/** The cut right after a run's reply: the run stays whole and the runs after it go. */
 export function replyCutFor(
-  thread: ThreadDetail,
-  reply: { readonly turnId: TurnId; readonly messageId: string },
+  thread: RewindThread,
+  reply: { readonly runId: string; readonly messageId: string },
 ): StepCut | string {
+  const run = settledRun(thread, reply.runId);
+  if (!run) return "This run has not finished yet.";
   const turnCount = thread.checkpoints.find(
-    (checkpoint) => checkpoint.turnId === reply.turnId,
-  )?.checkpointTurnCount;
-  if (turnCount === undefined) return "This turn has not finished yet.";
-  if (!thread.checkpoints.some((checkpoint) => (checkpoint.checkpointTurnCount ?? 0) > turnCount))
-    return "Nothing comes after this reply.";
-  // The turn keeps every row it has, so the cut sits after the latest of them.
-  let after: string | undefined;
-  for (const row of [...thread.messages, ...thread.activities]) {
-    if (row.turnId !== reply.turnId) continue;
-    if (after === undefined || compareDateTimeStrings(row.createdAt, after) > 0)
-      after = row.createdAt;
-  }
-  if (after === undefined) return "This reply is not in the thread any more.";
+    (checkpoint) => checkpoint.runId === reply.runId && checkpoint.status === "ready",
+  )?.appRunOrdinal;
+  if (turnCount == null) return "This run has no checkpoint to rewind to.";
+  const dropped = droppedAfter(thread, reply.runId, run.ordinal, Number.POSITIVE_INFINITY);
+  if (dropped.droppedItemIds.size === 0) return "Nothing comes after this reply.";
   return {
     kind: "turn",
-    turnId: reply.turnId,
+    runId: reply.runId,
     anchorId: reply.messageId,
-    after,
     turnCount,
+    ...dropped,
     label: "this reply",
   };
 }
 
 /** Where a rewind button points. */
 export type RewindTarget =
-  | {
-      readonly kind: "step";
-      readonly toolCallId: string | undefined;
-      readonly turnId: TurnId | null | undefined;
-    }
+  | { readonly kind: "step"; readonly itemId: string | undefined; readonly runId: string | null | undefined }
   | {
       readonly kind: "last-step";
-      readonly turnId: TurnId | null | undefined;
-      readonly toolCallIds?: ReadonlyArray<string | undefined>;
+      readonly runId: string | null | undefined;
+      readonly itemIds?: ReadonlyArray<string | undefined>;
     }
-  | {
-      readonly kind: "reply";
-      readonly turnId: TurnId | null | undefined;
-      readonly messageId: string;
-    };
+  | { readonly kind: "reply"; readonly runId: string | null | undefined; readonly messageId: string };
 
-function resolveTarget(
-  thread: ThreadDetail,
-  target: RewindTarget,
-  label: string,
-): StepCut | string {
-  if (!target.turnId) return "This row belongs to no turn.";
+function resolveTarget(thread: RewindThread, target: RewindTarget, label: string): StepCut | string {
+  if (!target.runId) return "This row belongs to no run.";
   switch (target.kind) {
     case "step":
-      return target.toolCallId
-        ? stepCutFor(thread, { toolCallId: target.toolCallId, turnId: target.turnId }, label)
-        : "This row names no tool call.";
+      return target.itemId ? stepCutFor(thread, target.itemId, label) : "This row names no step.";
     case "last-step":
       return lastStepCutFor(thread, {
-        turnId: target.turnId,
-        ...(target.toolCallIds ? { toolCallIds: target.toolCallIds } : {}),
+        runId: target.runId,
+        ...(target.itemIds ? { itemIds: target.itemIds } : {}),
       });
     case "reply":
-      return replyCutFor(thread, { turnId: target.turnId, messageId: target.messageId });
+      return replyCutFor(thread, { runId: target.runId, messageId: target.messageId });
   }
 }
 
-/** Whether a target can be offered at all, before the thread is read. */
-function offered(target: RewindTarget): boolean {
-  if (!target.turnId) return false;
-  if (target.kind === "step") return target.toolCallId?.startsWith("pi-tool:") === true;
-  if (target.kind === "last-step")
-    return (
-      target.toolCallIds === undefined ||
-      target.toolCallIds.some((call) => call?.startsWith("pi-tool:"))
-    );
+/** Whether a target can be offered at all: a step row only for a Rubato step. */
+function offered(target: RewindTarget, item?: OrchestrationV2TurnItem): boolean {
+  if (!target.runId) return false;
+  if (target.kind === "step") return item !== undefined && isStep(item);
   return true;
 }
 
@@ -280,121 +269,87 @@ export interface StepRewindSummary {
   readonly steps: number;
   readonly replies: number;
   readonly messages: number;
-  readonly files: ReadonlyArray<string>;
 }
 
 /** What a rewind to `cut` drops, for the card. */
-export function stepRewindSummary(thread: ThreadDetail, cut: StepCut): StepRewindSummary {
-  const removed = removedTurnsOf(thread, cut);
-  const calls = new Set<string>();
-  const files = new Set<string>();
-  for (const activity of thread.activities as ReadonlyArray<OrchestrationThreadActivity>) {
-    if (activity.kind !== "tool.completed" || !stepRewindDrops(cut, removed, activity)) continue;
-    const payload = activity.payload as { toolCallId?: unknown; data?: { files?: unknown } } | null;
-    if (typeof payload?.toolCallId === "string") calls.add(payload.toolCallId);
-    if (Array.isArray(payload?.data?.files))
-      for (const file of payload.data.files as Array<{ path?: unknown }>)
-        if (typeof file?.path === "string") files.add(file.path);
-  }
+export function stepRewindSummary(thread: RewindThread, cut: StepCut): StepRewindSummary {
+  let steps = 0;
   let replies = 0;
   let messages = 0;
-  for (const message of thread.messages) {
-    if (!stepRewindDrops(cut, removed, message)) continue;
-    if (message.role === "assistant") replies += 1;
-    if (message.role === "user") messages += 1;
+  for (const row of thread.items) {
+    if (!cut.droppedItemIds.has(row.item.id)) continue;
+    if (isTool(row.item)) steps += 1;
+    if (row.item.type === "assistant_message") replies += 1;
+    if (row.item.type === "user_message") messages += 1;
   }
-  return { steps: calls.size, replies, messages, files: [...files] };
+  return { steps, replies, messages };
 }
 
-const plural = (count: number, one: string) => `${count} ${one}${count === 1 ? "" : "s"}`;
+const plural = (count: number, one: string, many = `${one}s`) => `${count} ${count === 1 ? one : many}`;
 export function describeDropped(summary: StepRewindSummary): string {
   const parts = [
     summary.steps > 0 ? plural(summary.steps, "step") : null,
     summary.messages > 0 ? plural(summary.messages, "message") : null,
-    summary.replies > 0 ? plural(summary.replies, "reply") : null,
+    summary.replies > 0 ? plural(summary.replies, "reply", "replies") : null,
   ].filter((part) => part !== null);
   return parts.length > 0 ? parts.join(", ") : "Nothing after this step";
 }
 
 /**
- * Lands a rewind and resolves once the thread shows it: the rows it drops are gone.
- * A failure the server records for it rejects with the server's reason.
+ * Lands a rewind and resolves once the thread shows it: the rows it drops are gone. `act`
+ * answers which rows those are (the server's list for a step, the preview's for a run).
  */
 export function waitForStepRewind(
   threadRef: ScopedThreadRef,
-  cut: StepCut,
-  revert: () => Promise<void>,
+  act: () => Promise<ReadonlySet<string>>,
   timeoutMs = 120_000,
 ): Promise<void> {
-  const threadAtom = environmentThreadDetails.detailAtom(threadRef);
-  const initial = appAtomRegistry.get(threadAtom);
-  if (!initial) return Promise.reject(new Error("This thread is not loaded."));
-  const removed = removedTurnsOf(initial, cut);
-  const previousFailures = new Set(
-    initial.activities
-      .filter((activity) => activity.kind === "checkpoint.revert.failed")
-      .map((activity) => activity.id),
-  );
+  const itemsAtom = environmentThreadDetails.visibleTurnItemsAtom(threadRef);
   return new Promise<void>((resolve, reject) => {
     let settled = false;
-    let accepted = false;
+    let hidden: ReadonlySet<string> | null = null;
     let unsubscribe = () => {};
-    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
     const finish = (error?: unknown) => {
       if (settled) return;
       settled = true;
-      if (timeout !== undefined) globalThis.clearTimeout(timeout);
+      globalThis.clearTimeout(timeout);
       unsubscribe();
       if (error !== undefined) reject(error);
       else resolve();
     };
     const inspect = () => {
-      const thread = appAtomRegistry.get(threadAtom);
-      if (!thread) return;
-      const failure = thread.activities.findLast(
-        (activity) =>
-          activity.kind === "checkpoint.revert.failed" && !previousFailures.has(activity.id),
-      );
-      if (failure) {
-        const detail = (failure.payload as { detail?: unknown } | null)?.detail;
-        finish(new Error(typeof detail === "string" ? detail : failure.summary));
-        return;
-      }
-      if (
-        accepted &&
-        !thread.checkpoints.some((checkpoint) => removed.has(checkpoint.turnId)) &&
-        !thread.messages.some((message) => stepRewindDrops(cut, removed, message)) &&
-        !thread.activities.some(
-          (activity) =>
-            activity.kind.startsWith("tool.") && stepRewindDrops(cut, removed, activity),
-        )
-      ) {
-        finish();
-      }
+      if (hidden === null) return;
+      const items = appAtomRegistry.get(itemsAtom);
+      if (!items.some((row) => hidden!.has(row.item.id))) finish();
     };
-    unsubscribe = appAtomRegistry.subscribe(threadAtom, inspect);
-    timeout = globalThis.setTimeout(() => {
+    unsubscribe = appAtomRegistry.subscribe(itemsAtom, inspect);
+    const timeout = globalThis.setTimeout(() => {
       finish(new Error("Timed out waiting for the thread to rewind."));
     }, timeoutMs);
     Promise.resolve()
-      .then(revert)
-      .then(() => {
-        accepted = true;
+      .then(act)
+      .then((ids) => {
+        hidden = ids;
         inspect();
       }, finish);
   });
 }
 
 function land(host: StepRewindHost, cut: StepCut, restoreFiles: boolean): Promise<void> {
-  return waitForStepRewind(host.threadRef, cut, () =>
-    host.revert({
-      turnCount: cut.turnCount,
-      restoreFiles,
-      ...(cut.kind === "step" && cut.toolCallId
-        ? { step: { turnId: cut.turnId, toolCallId: cut.toolCallId } }
-        : {}),
-    }),
-  );
+  return waitForStepRewind(host.threadRef, async () => {
+    if (cut.kind === "turn") {
+      await host.revert({ turnCount: cut.turnCount ?? 0, restoreFiles });
+      return cut.droppedItemIds;
+    }
+    const answer = await postRubato<{ hiddenItemIds?: ReadonlyArray<string> }>(
+      host.threadRef.environmentId,
+      "/rubato",
+      "step-rewind",
+      { threadId: host.threadRef.threadId, itemId: cut.itemId, restoreFiles },
+      "step rewinds",
+    );
+    return new Set(answer.hiddenItemIds ?? []);
+  });
 }
 
 const failed = (title: string, error: unknown) =>
@@ -446,6 +401,20 @@ export function useRubatoStepRewindHost(threadKey: string, host: StepRewindHost)
   }, [threadKey, host]);
 }
 
+/** A run a step rewind cut: upstream's Resume would send a prompt; the card continues instead. */
+export function isStepCutRun(
+  runs: ReadonlyArray<{ readonly id: string; readonly ordinal: number; readonly status: string }>,
+  runId: string,
+): boolean {
+  const run = runs.find((entry) => entry.id === runId);
+  return (
+    run !== undefined &&
+    runs.some(
+      (entry) => entry.ordinal > run.ordinal && entry.status === "rolled_back" && entry.id.includes(":rubato-step-cut:"),
+    )
+  );
+}
+
 const stop = (event: MouseEvent | PointerEvent) => event.stopPropagation();
 
 /**
@@ -457,27 +426,25 @@ export function RubatoStepRewindButton(props: {
   readonly threadKey: string;
   readonly threadRef: ScopedThreadRef | null;
   readonly target: RewindTarget;
+  /** A step row's item, to offer only finished Rubato steps. */
+  readonly item?: OrchestrationV2TurnItem | undefined;
   readonly label: string;
   readonly busy: boolean;
   readonly reveal?: "row" | "inherit";
 }) {
-  const { threadKey, threadRef, target, label, busy, reveal = "row" } = props;
+  const { threadKey, threadRef, target, item, label, busy, reveal = "row" } = props;
   const [card, setCard] = useState<{ cut: StepCut; summary: StepRewindSummary } | null>(null);
   const [restoreFiles, setRestoreFiles] = useState(true);
   const anchor =
-    target.kind === "step"
-      ? target.toolCallId
-      : target.kind === "reply"
-        ? target.messageId
-        : undefined;
+    target.kind === "step" ? target.itemId : target.kind === "reply" ? target.messageId : undefined;
   const pending = useRewindState(() => {
     const cut = states.get(threadKey)?.pending?.cut;
     return (
       cut !== undefined &&
-      (anchor !== undefined ? cut.anchorId === anchor : cut.turnId === target.turnId)
+      (anchor !== undefined ? cut.anchorId === anchor : cut.runId === target.runId)
     );
   });
-  if (!threadRef || !offered(target) || busy) return null;
+  if (!threadRef || !offered(target, item) || busy) return null;
   const resolve = (): StepCut | string => {
     const thread = readThread(threadRef);
     return thread ? resolveTarget(thread, target, label) : "This thread is not loaded.";
@@ -640,18 +607,7 @@ export function StepRewindCard(props: {
                 checked={props.restoreFiles}
                 onCheckedChange={(checked) => props.onRestoreFilesChange(checked === true)}
               />
-              <span className="min-w-0">
-                Restore files to this step
-                {props.summary.files.length > 0 ? (
-                  <span className="mt-0.5 block truncate font-mono text-2xs text-muted-foreground">
-                    {props.summary.files
-                      .slice(0, 3)
-                      .map((file) => file.split("/").at(-1))
-                      .join(", ")}
-                    {props.summary.files.length > 3 ? ` +${props.summary.files.length - 3}` : ""}
-                  </span>
-                ) : null}
-              </span>
+              <span className="min-w-0">Restore files to this step</span>
             </label>
           ) : (
             "Stay as they are: this thread shares the project folder."

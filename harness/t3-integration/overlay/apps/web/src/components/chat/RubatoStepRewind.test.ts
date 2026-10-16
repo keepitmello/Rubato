@@ -1,151 +1,112 @@
-import { TurnId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
   describeDropped,
+  isStepCutRun,
   lastStepCutFor,
   replyCutFor,
-  type StepCut,
-  stepRewindDrops,
+  type RewindThread,
+  stepCutFor,
+  stepRewindSummary,
 } from "./RubatoStepRewind";
 
-const cut: StepCut = {
-  kind: "step",
-  turnId: TurnId.make("turn-2"),
-  anchorId: "pi-tool:s:b",
-  toolCallId: "pi-tool:s:b",
-  after: "2026-09-04T00:00:05.000Z",
-  turnCount: 2,
-  label: "bun test",
-};
-const at = (second: number) => `2026-09-04T00:00:${String(second).padStart(2, "0")}.000Z`;
-
-describe("stepRewindDrops", () => {
-  const removed = new Set(["turn-3"]);
-  it("drops the step's turn after the step, later turns, and a message steered in after it", () => {
-    expect(stepRewindDrops(cut, removed, { turnId: "turn-2", createdAt: at(4) })).toBe(false);
-    expect(stepRewindDrops(cut, removed, { turnId: "turn-2", createdAt: at(5) })).toBe(false);
-    expect(stepRewindDrops(cut, removed, { turnId: "turn-2", createdAt: at(6) })).toBe(true);
-    expect(stepRewindDrops(cut, removed, { turnId: "turn-3", createdAt: at(1) })).toBe(true);
-    expect(stepRewindDrops(cut, removed, { turnId: null, createdAt: at(7), role: "user" })).toBe(
-      true,
-    );
-  });
-
-  it("keeps notices that belong to no turn", () => {
-    expect(stepRewindDrops(cut, removed, { turnId: null, createdAt: at(9), role: "system" })).toBe(
-      false,
-    );
-  });
-});
-
-describe("describeDropped", () => {
-  it("names what goes", () => {
-    expect(describeDropped({ steps: 2, replies: 1, messages: 0, files: ["a.ts"] })).toBe(
-      "2 steps, 1 reply",
-    );
-    expect(describeDropped({ steps: 0, replies: 0, messages: 0, files: [] })).toBe(
-      "Nothing after this step",
-    );
-  });
-});
-
-// A thread as the rewind reads it: its checkpoints, messages and tool rows.
-const thread = (input: {
-  checkpoints: Array<{ turnId: string; checkpointTurnCount: number }>;
-  messages?: Array<{ id: string; role: string; turnId: string | null; createdAt: string }>;
-  activities?: Array<{
-    id: string;
-    kind: string;
-    turnId: string | null;
-    createdAt: string;
-    payload: unknown;
-    summary?: string;
-  }>;
-}) =>
+const AT = new Date("2026-10-16T10:00:00.000Z");
+let position = 0;
+const item = (id: string, runId: string, type: string, extra: Record<string, unknown> = {}) =>
   ({
-    checkpoints: input.checkpoints,
-    messages: input.messages ?? [],
-    activities: (input.activities ?? []).map((activity) => ({
-      tone: "tool",
-      summary: "tool",
-      ...activity,
-    })),
-  }) as unknown as Parameters<typeof lastStepCutFor>[0];
-const tool = (
-  call: string,
-  turnId: string,
-  second: number,
-  step: string,
-  kind = "tool.completed",
-) => ({
-  id: `${call}-${kind}`,
-  kind,
-  turnId,
-  createdAt: at(second),
-  payload: { toolCallId: `pi-tool:s:${call}`, title: `run ${call}`, data: { rubatoStep: step } },
-});
+    position: position++,
+    visibility: "local",
+    sourceThreadId: "t",
+    sourceItemId: id,
+    item: {
+      id,
+      threadId: "t",
+      runId,
+      nodeId: null,
+      providerThreadId: null,
+      providerTurnId: null,
+      nativeItemRef: type === "user_message" || type === "assistant_message" || type === "reasoning"
+        ? null
+        : { driver: "rubato-pi", nativeId: `call-${id}`, strength: "strong" },
+      parentItemId: null,
+      ordinal: position,
+      status: "completed",
+      title: id,
+      startedAt: AT,
+      completedAt: AT,
+      updatedAt: AT,
+      type,
+      ...extra,
+    },
+  }) as never;
 
-describe("lastStepCutFor", () => {
-  const detail = thread({
-    checkpoints: [
-      { turnId: "turn-1", checkpointTurnCount: 1 },
-      { turnId: "turn-2", checkpointTurnCount: 2 },
-    ],
-    activities: [
-      tool("a", "turn-1", 1, "s1"),
-      tool("b", "turn-1", 3, "s2"),
-      tool("c", "turn-1", 4, "s2"),
-      tool("z", "turn-2", 9, "s9"),
-    ],
+// Run 1: user, thought, two calls made together (a, b), a thought, call c, reply.
+// Run 2: user, reply.
+const thread: RewindThread = {
+  items: [
+    item("u1", "r1", "user_message", { messageId: "m-u1" }),
+    item("th1", "r1", "reasoning"),
+    item("a", "r1", "command_execution"),
+    item("b", "r1", "dynamic_tool"),
+    item("th2", "r1", "reasoning"),
+    item("c", "r1", "file_change"),
+    item("rep1", "r1", "assistant_message", { messageId: "m-rep1" }),
+    item("u2", "r2", "user_message", { messageId: "m-u2" }),
+    item("rep2", "r2", "assistant_message", { messageId: "m-rep2" }),
+  ],
+  runs: [
+    { id: "r1", ordinal: 1, status: "completed" },
+    { id: "r2", ordinal: 2, status: "completed" },
+  ],
+  checkpoints: [
+    { runId: "r1", appRunOrdinal: 1, status: "ready" },
+    { runId: "r2", appRunOrdinal: 2, status: "ready" },
+  ],
+};
+
+const dropped = (cut: ReturnType<typeof stepCutFor>) =>
+  typeof cut === "string" ? cut : [...cut.droppedItemIds].toSorted();
+
+describe("step rewind on V2 rows", () => {
+  it("keeps a step's whole batch: calls made together rewind together", () => {
+    // Rewinding to `a` keeps `b`, called in the same model message.
+    expect(dropped(stepCutFor(thread, "a", "bun test"))).toEqual(["c", "rep1", "rep2", "th2", "u2"]);
+    expect(dropped(stepCutFor(thread, "b", "read"))).toEqual(["c", "rep1", "rep2", "th2", "u2"]);
   });
 
-  it("lands after the turn's last finished step when the row names no calls", () => {
-    const cut = lastStepCutFor(detail, { turnId: TurnId.make("turn-1") });
-    expect(cut).toMatchObject({
-      kind: "step",
-      toolCallId: "pi-tool:s:c",
-      after: at(4),
-      turnCount: 1,
-      label: "run c",
-    });
+  it("drops what follows the step in its run and every later run, messages included", () => {
+    const cut = stepCutFor(thread, "c", "edit");
+    expect(dropped(cut)).toEqual(["rep1", "rep2", "u2"]);
+    if (typeof cut === "string") throw new Error(cut);
+    expect([...cut.droppedMessageIds].toSorted()).toEqual(["m-rep1", "m-rep2", "m-u2"]);
+    expect(describeDropped(stepRewindSummary(thread, cut))).toBe("1 message, 2 replies");
   });
 
-  it("lands after the last of the calls a tool group shows", () => {
-    const cut = lastStepCutFor(detail, {
-      turnId: TurnId.make("turn-1"),
-      toolCallIds: ["pi-tool:s:a"],
-    });
-    expect(cut).toMatchObject({ toolCallId: "pi-tool:s:a", after: at(1) });
+  it("a folded run rewinds after its last step", () => {
+    const cut = lastStepCutFor(thread, { runId: "r1" });
+    expect(typeof cut !== "string" && cut.itemId).toBe("c");
   });
 
-  it("says why when the turn has no finished step", () => {
-    expect(lastStepCutFor(detail, { turnId: TurnId.make("turn-3") })).toMatch(/no finished step/);
-  });
-});
-
-describe("replyCutFor", () => {
-  const detail = thread({
-    checkpoints: [
-      { turnId: "turn-1", checkpointTurnCount: 1 },
-      { turnId: "turn-2", checkpointTurnCount: 2 },
-    ],
-    messages: [
-      { id: "ask", role: "user", turnId: null, createdAt: at(0) },
-      { id: "reply-1", role: "assistant", turnId: "turn-1", createdAt: at(2) },
-      { id: "reply-2", role: "assistant", turnId: "turn-2", createdAt: at(8) },
-    ],
-    activities: [tool("a", "turn-1", 3, "s1")],
+  it("a reply rewinds to the run boundary through T3's revert", () => {
+    const cut = replyCutFor(thread, { runId: "r1", messageId: "m-rep1" });
+    if (typeof cut === "string") throw new Error(cut);
+    expect([cut.kind, cut.turnCount]).toEqual(["turn", 1]);
+    expect([...cut.droppedItemIds].toSorted()).toEqual(["rep2", "u2"]);
+    expect(replyCutFor(thread, { runId: "r2", messageId: "m-rep2" })).toBe("Nothing comes after this reply.");
   });
 
-  it("keeps the reply's whole turn and drops the turns after it", () => {
-    const cut = replyCutFor(detail, { turnId: TurnId.make("turn-1"), messageId: "reply-1" });
-    expect(cut).toMatchObject({ kind: "turn", anchorId: "reply-1", turnCount: 1, after: at(3) });
+  it("refuses a step that is not a finished Rubato step, or a run still working", () => {
+    expect(stepCutFor(thread, "rep1", "x")).toBe("Only a finished Rubato step can be rewound to.");
+    const running = { ...thread, runs: [{ id: "r1", ordinal: 1, status: "running" }, thread.runs[1]!] };
+    expect(stepCutFor(running, "a", "x")).toBe("This run has not finished yet.");
   });
 
-  it("offers nothing after the last reply", () => {
-    expect(replyCutFor(detail, { turnId: TurnId.make("turn-2"), messageId: "reply-2" })).toMatch(
-      /Nothing comes after/,
-    );
+  it("knows a run a step rewind cut, so upstream's Resume can step aside", () => {
+    const runs = [
+      { id: "r1", ordinal: 1, status: "interrupted" },
+      { id: "r1:rubato-step-cut:1", ordinal: 2, status: "rolled_back" },
+    ];
+    expect(isStepCutRun(runs, "r1")).toBe(true);
+    expect(isStepCutRun([runs[0]!], "r1")).toBe(false);
   });
 });
