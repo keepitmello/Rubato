@@ -534,76 +534,6 @@ const edits = {
     ],
   ],
 
-  // 이미 저장된 잘못된 사고 행은 본문에서만 제외한다. Pi 원본과 T3 DB는
-  // 건드리지 않고, 우리 브리지가 발급한 reasoning ID만 식별한다.
-  'apps/web/src/session-logic.ts': [
-    [
-      '  const showMessage = (message: ChatMessage) =>\n    message.role !== "user" || !foldedAnswerMessageIds.has(message.id);',
-      '  const showMessage = (message: ChatMessage) =>\n    !/^assistant:pi:[^:]+:[a-f0-9]{24}:reasoning$/.test(message.id) &&\n    (message.role !== "user" || !foldedAnswerMessageIds.has(message.id));',
-      'replace',
-    ],
-    [
-      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "turn.plan.updated") continue;',
-      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "session.speed.updated") continue;\n    if (activity.kind === "turn.plan.updated") continue;',
-      'replace',
-    ],
-    // Pi 메시지 하나의 생각은 그 답 위에 온다. 브리지가 답을 먼저 보내던 시절에
-    // 저장된 행은 생각이 답보다 1ms 늦거나 같은 시각이고, 같은 시각이면 서버가
-    // message_id 순으로 줘서 assistant: 가 reasoning: 을 앞선다. 시각 대신 두 ID 가
-    // 함께 가진 Pi 메시지 키로 짝을 지어, 답 뒤에 놓인 생각을 답 바로 앞으로 옮긴다.
-    [
-      '/** Reuse ordered entries across immutable stream updates. Other changes keep the full sort. */',
-      [
-        '// Rubato: a Pi message\'s thought belongs above its answer. Rows stored while the',
-        '// bridge sent text first carry a createdAt a millisecond after (or equal to) the',
-        '// answer, and ties come back ordered by message id, answer first. Both ids carry',
-        '// the Pi message key, so pair on that instead of on time.',
-        'const PI_ANSWER_ID = /^assistant:pi:([^:]+:[a-f0-9]{24})$/;',
-        'const PI_THOUGHT_ID = /^reasoning:[a-z]+:pi:([^:]+:[a-f0-9]{24}):/;',
-        'function placePiThoughtsBeforeAnswers(entries: TimelineEntry[]): TimelineEntry[] {',
-        '  const answeredKeys = new Set<string>();',
-        '  const lateThoughtsByKey = new Map<string, TimelineEntry[]>();',
-        '  for (const entry of entries) {',
-        '    if (entry.kind !== "message") continue;',
-        '    const answerKey = PI_ANSWER_ID.exec(entry.message.id)?.[1];',
-        '    if (answerKey) {',
-        '      answeredKeys.add(answerKey);',
-        '      continue;',
-        '    }',
-        '    const thoughtKey = PI_THOUGHT_ID.exec(entry.message.id)?.[1];',
-        '    if (!thoughtKey || !answeredKeys.has(thoughtKey)) continue;',
-        '    const late = lateThoughtsByKey.get(thoughtKey) ?? [];',
-        '    late.push(entry);',
-        '    lateThoughtsByKey.set(thoughtKey, late);',
-        '  }',
-        '  if (lateThoughtsByKey.size === 0) return entries;',
-        '  const moved = new Set([...lateThoughtsByKey.values()].flat());',
-        '  const placed: TimelineEntry[] = [];',
-        '  for (const entry of entries) {',
-        '    if (moved.has(entry)) continue;',
-        '    const answerKey =',
-        '      entry.kind === "message" ? PI_ANSWER_ID.exec(entry.message.id)?.[1] : undefined;',
-        '    if (answerKey) placed.push(...(lateThoughtsByKey.get(answerKey) ?? []));',
-        '    placed.push(entry);',
-        '  }',
-        '  return placed;',
-        '}',
-        '',
-        '/** Reuse ordered entries across immutable stream updates. Other changes keep the full sort. */',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '      entries: mergeTimelineEntrySuffix(previous.entries, suffix),',
-      '      entries: placePiThoughtsBeforeAnswers(mergeTimelineEntrySuffix(previous.entries, suffix)),',
-      'replace',
-    ],
-    [
-      '    entries: [...messageRows, ...proposedPlanRows, ...workRows].toSorted(\n      compareTimelineEntriesByCreatedAt,\n    ),\n  };',
-      '    entries: placePiThoughtsBeforeAnswers(\n      [...messageRows, ...proposedPlanRows, ...workRows].toSorted(\n        compareTimelineEntriesByCreatedAt,\n      ),\n    ),\n  };',
-      'replace',
-    ],
-  ],
   // 대기 메시지(팔로업)와 끼어들기(스티어)는 T3 서버 큐가 가른다. 기본 followUpBehavior 가
   // "queue" 라 실행 중 보낸 말은 queue_after_active 로 그 턴이 끝난 뒤 제 턴으로 돌고, 대기
   // 행의 ↑ 는 queued-message.promote-to-steer 로 스티어가 된다. 그래서 웹 쪽 패치가 없다.
@@ -616,33 +546,6 @@ const edits = {
         'replace',
       ];
     }),
-    [
-      'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
-      'import {\n  deriveAgentPanelModel,\n  foldSubagentActivities,\n  formatSpeedLabel,\n  latestSessionSpeed,\n} from "@t3tools/client-runtime/state/subagentRuntime";',
-      'replace',
-    ],
-    [
-      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );',
-      '  const activeContextWindow = useMemo(\n    () => deriveLatestContextWindowSnapshot(threadActivities),\n    [threadActivities],\n  );\n  const sessionSpeedLabel = useMemo(() => {\n    const score = activeContextWindow?.speedIndex ?? latestSessionSpeed(threadActivities);\n    return score === null ? null : formatSpeedLabel(score);\n  }, [activeContextWindow, threadActivities]);',
-      'replace',
-    ],
-    [
-      '                            activeContextWindow={activeContextWindow}',
-      '                            activeContextWindow={activeContextWindow}\n                            sessionSpeedLabel={sessionSpeedLabel}',
-      'replace',
-    ],
-  ],
-  'apps/mobile/src/lib/threadActivity.ts': [
-    [
-      '        .filter((message) => message.role !== "user" || !foldedAnswerMessageIds.has(message.id))',
-      '        .filter((message) =>\n          !/^assistant:pi:[^:]+:[a-f0-9]{24}:reasoning$/.test(message.id) &&\n          (message.role !== "user" || !foldedAnswerMessageIds.has(message.id)))',
-      'replace',
-    ],
-    [
-      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
-      '    if (activity.kind === "context-window.updated") continue;\n    if (activity.kind === "session.speed.updated") continue;\n    if (activity.summary === "Checkpoint captured") continue;',
-      'replace',
-    ],
   ],
   // 슬래시 메뉴는 줄 중간의 `/` 에서도 열린다(upstream 이 이제 그렇게 한다). Rubato 는
   // `/usr/bin` 같은 경로와 `//` 를 명령으로 보지 않는다 — 두 번째 `/` 가 있으면 건너뛴다.
@@ -1080,94 +983,15 @@ const edits = {
       'replace',
     ],
     [
-      '    activeThreadModelSelection,\n    activeContextWindow,\n    compactThreadUnavailable,',
-      '    activeThreadModelSelection,\n    activeContextWindow,\n    sessionSpeedLabel,\n    compactThreadUnavailable,',
+      '    activeProjectId,\n    activeContextWindow,\n    compactThreadUnavailable,',
+      '    activeProjectId,\n    activeContextWindow,\n    sessionSpeedLabel,\n    compactThreadUnavailable,',
       'replace',
     ],
-    // 쉬는 입력창은 액션 묶음을 입력 줄 위에 겹쳐 띄우고, 그만큼 입력 줄에
-    // 오른쪽 여백을 준다. 그 여백이 T3 의 상수(pr-28/20/12)라서 우리가 더한
-    // Speed 라벨과 받아쓰기 마이크가 그 위를 덮었다. 묶음의 실제 폭을 재서
-    // 그만큼 비운다 — 라벨 폭은 점수에 따라 달라지고 마이크는 플랫폼에 따라
-    // 있고 없고 하니, 어떤 상수로도 맞는 값이 나오지 않는다.
-    [
-      '  const composerFormRef = useRef<HTMLFormElement>(null);',
-      [
-        '  const composerFormRef = useRef<HTMLFormElement>(null);',
-        '  // Rubato: the resting composer floats its actions over the prompt row, so the',
-        '  // row has to reserve the room they take. That cluster grows with the Speed',
-        '  // label and the dictation mic, which no fixed padding class covers, so the',
-        '  // reserve is measured from the cluster itself.',
-        '  const [restingReserveWidth, setRestingReserveWidth] = useState<number | null>(null);',
-        '  const restingRowRef = useRef<HTMLDivElement | null>(null);',
-        '  const restingActionsRef = useRef<HTMLDivElement | null>(null);',
-        '  const restingReserveObserverRef = useRef<ResizeObserver | null>(null);',
-        '  const syncRestingReserve = useCallback(() => {',
-        '    restingReserveObserverRef.current?.disconnect();',
-        '    restingReserveObserverRef.current = null;',
-        '    const row = restingRowRef.current;',
-        '    const actions = restingActionsRef.current;',
-        '    if (row === null || actions === null || typeof ResizeObserver === "undefined") return;',
-        '    const measure = () => {',
-        '      const width = Math.ceil(',
-        '        row.getBoundingClientRect().right - actions.getBoundingClientRect().left,',
-        '      );',
-        '      if (!Number.isFinite(width) || width <= 0) return;',
-        '      setRestingReserveWidth((previous) => (previous === width ? previous : width));',
-        '    };',
-        '    measure();',
-        '    const observer = new ResizeObserver(measure);',
-        '    restingReserveObserverRef.current = observer;',
-        '    observer.observe(row);',
-        '    observer.observe(actions);',
-        '  }, []);',
-        '  const setRestingRowRef = useCallback(',
-        '    (node: HTMLDivElement | null) => {',
-        '      restingRowRef.current = node;',
-        '      syncRestingReserve();',
-        '    },',
-        '    [syncRestingReserve],',
-        '  );',
-        '  const setRestingActionsRef = useCallback(',
-        '    (node: HTMLDivElement | null) => {',
-        '      restingActionsRef.current = node;',
-        '      syncRestingReserve();',
-        '    },',
-        '    [syncRestingReserve],',
-        '  );',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '              <div\n                className={cn(\n                  "relative",\n                  isComposerResting && "flex min-w-0 items-center gap-1",',
-      [
-        '              <div',
-        '                ref={setRestingRowRef}',
-        '                style={',
-        '                  isComposerResting && restingReserveWidth !== null',
-        '                    ? { paddingRight: restingReserveWidth }',
-        '                    : undefined',
-        '                }',
-        '                className={cn(',
-        '                  "relative",',
-        '                  isComposerResting && "flex min-w-0 items-center gap-1",',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '                <div\n                  data-chat-composer-actions="right"',
-      '                <div\n                  ref={setRestingActionsRef}\n                  data-chat-composer-actions="right"',
-      'replace',
-    ],
+    // 쉬는 입력창의 오른쪽 여백은 upstream 이 액션 묶음 폭을 재서 잡는다(restingActionsWidth).
+    // 그래서 Speed 라벨이 그 묶음 안에 있으면 따로 비울 것이 없다.
     [
       '                  {showComposerAttachAction ? (',
       '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
-      'replace',
-    ],
-  ],
-  'apps/web/src/lib/contextWindow.ts': [
-    [
-      '      toolUses: asFiniteNumber(payload?.toolUses),\n      durationMs: asFiniteNumber(payload?.durationMs),\n      compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,',
-      '      toolUses: asFiniteNumber(payload?.toolUses),\n      durationMs: asFiniteNumber(payload?.durationMs),\n      speedIndex: asFiniteNumber(payload?.speedIndex),\n      compactsAutomatically: asBoolean(payload?.compactsAutomatically) ?? false,',
       'replace',
     ],
   ],
