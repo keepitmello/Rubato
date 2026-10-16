@@ -334,6 +334,22 @@ const edits = {
       'replace',
     ],
   ],
+  // The importer's own test asks for the import the gate above leaves off.
+  'apps/server/src/project/AgentSessionImporter.test.ts': [
+    [
+      'it.effect("imports messages once and preserves the provider native resume binding", () => {\n',
+      '// Rubato leaves this import off unless asked (the AgentSessionImporter edit above); this test asks.\nprocess.env.RUBATO_IMPORT_AGENT_HISTORY = "1";\n\n',
+    ],
+  ],
+  // Rubato's engine runs outside T3 with no harness version a policy could pin, like the ACP
+  // registry the test already leaves out.
+  'apps/server/src/provider/providerCompatibility.test.ts': [
+    [
+      '      if (builtIn.driverKind === "acpRegistry") continue;\n',
+      '      if (builtIn.driverKind === "acpRegistry") continue;\n      // Rubato: an external engine with no versioned harness (apply.mjs).\n      if (builtIn.driverKind === "rubato-pi") continue;\n',
+      'replace',
+    ],
+  ],
   'apps/web/src/components/chat/ModelPickerContent.tsx': [
     [
       '    return sortProviderModelItems(result, {\n      favoriteModelKeys: favoritesSet,\n      groupFavorites: selectedInstanceId !== "favorites",\n      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],\n    });',
