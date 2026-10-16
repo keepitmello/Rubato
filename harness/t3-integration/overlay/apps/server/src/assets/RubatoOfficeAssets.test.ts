@@ -9,6 +9,7 @@ import * as Path from "effect/Path";
 
 import * as ServerSecretStore from "../auth/ServerSecretStore.ts";
 import * as ServerConfig from "../config.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
@@ -20,6 +21,8 @@ const configLayer = ServerConfig.ServerConfig.layerTest(process.cwd(), {
 });
 const testLayer = Layer.mergeAll(
   NodeHttpPlatform.layer,
+  // Document assets never read a turn item; AssetAccess still needs the service.
+  Layer.mock(Orchestrator.OrchestratorV2)({ getTurnItem: () => Effect.succeed(null) }),
   configLayer,
   WorkspacePaths.layer,
   ProjectFaviconResolver.layer.pipe(

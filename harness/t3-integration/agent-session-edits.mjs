@@ -23,7 +23,7 @@ export const agentSessionEdits = {
     ],
   ],
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoAgentsRouteLayer } from "./RubatoServiceRoute.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoAgentsRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoAgentsRouteLayer } from "./RubatoServiceRoute.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoAgentsRouteLayer,\n'],
   ],
 };

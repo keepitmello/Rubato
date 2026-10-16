@@ -6,9 +6,9 @@ import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
-import * as HttpClient from "effect/unstable/http/HttpClient";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http";
+import * as HttpClient from "effect/http/HttpClient";
+import * as HttpClientRequest from "effect/http/HttpClientRequest";
 
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import * as ServerSecretStore from "./auth/ServerSecretStore.ts";
@@ -20,7 +20,7 @@ import {
   RELAY_ENVIRONMENT_CREDENTIAL_SECRET,
   RELAY_URL_SECRET,
 } from "./cloud/config.ts";
-import { reconcileDesiredCloudLink } from "./cloud/http.ts";
+import * as CloudLink from "./cloud/CloudLink.ts";
 import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
 
@@ -72,6 +72,7 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
     const environment = yield* ServerEnvironment.ServerEnvironment;
     const httpClient = yield* HttpClient.HttpClient;
     const server = yield* HttpServer.HttpServer;
+    const cloudLink = yield* CloudLink.CloudLink;
     // The sign-in outlives the request that starts it, so it runs on the
     // services this layer was built with.
     const context = yield* Effect.context<
@@ -80,7 +81,7 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
       | ServerEnvironment.ServerEnvironment
       | HttpClient.HttpClient
       | EnvironmentAuth
-      | Effect.Services<ReturnType<typeof reconcileDesiredCloudLink>>
+      | Effect.Services<ReturnType<typeof cloudLink.reconcileDesiredLink>>
     >();
     const runFork = Effect.runForkWith(context);
 
@@ -141,7 +142,7 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
         }
         yield* setCliDesiredCloudLink(true, "publish_only");
         yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, new TextEncoder().encode("true"));
-        yield* reconcileDesiredCloudLink(origin);
+        yield* cloudLink.reconcileDesiredLink(origin);
         login = { phase: "idle" };
       }).pipe(
         Effect.catchCause((cause) =>

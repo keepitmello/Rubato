@@ -83,25 +83,21 @@ export const fileExplorerEdits = {
       ].join('\n')],
   ],
   'apps/server/src/auth/RpcAuthorization.ts': [
-    ['  [WS_METHODS.projectsWriteFile]: AuthOrchestrationOperateScope,', '  [WS_METHODS.projectsManageEntry]: AuthOrchestrationOperateScope,\n'],
+    ['  [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,', '  [WS_METHODS.projectsManageEntry]: AuthFilesystemWriteScope,\n'],
   ],
   'apps/server/src/ws.ts': [
     ['import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";', 'import { manageWorkspaceEntry } from "./workspace/manageWorkspaceEntry.ts";\n'],
     ['        [WS_METHODS.projectsWriteFile]: (input) =>',
       [
         '        [WS_METHODS.projectsManageEntry]: (input) =>',
-        '          observeRpcEffect(',
-        '            WS_METHODS.projectsManageEntry,',
-        '            Effect.tryPromise({',
-        '              try: () => manageWorkspaceEntry(input),',
-        '              catch: (cause) => new ProjectWriteFileError({',
-        '                cwd: input.cwd, relativePath: input.relativePath, failure: "operation_failed",',
-        '                message: cause instanceof Error && cause.message.trim() ? cause.message : "The file operation failed.",',
-        '                cause,',
-        '              }),',
-        '            }).pipe(Effect.tap(() => workspaceEntries.refresh(input.cwd))),',
-        '            { "rpc.aggregate": "workspace" },',
-        '          ),',
+        '          Effect.tryPromise({',
+        '            try: () => manageWorkspaceEntry(input),',
+        '            catch: (cause) => new ProjectWriteFileError({',
+        '              cwd: input.cwd, relativePath: input.relativePath, failure: "operation_failed",',
+        '              message: cause instanceof Error && cause.message.trim() ? cause.message : "The file operation failed.",',
+        '              cause,',
+        '            }),',
+        '          }).pipe(Effect.tap(() => workspaceEntries.refresh(input.cwd))),',
         '',
       ].join('\n')],
   ],
@@ -138,6 +134,7 @@ export const fileExplorerEdits = {
     [
       [
         '            return {',
+        '              ...current,',
         '              isOpen: true,',
         '              activeSurfaceId: surface.id,',
         '              surfaces: existing',
@@ -149,6 +146,7 @@ export const fileExplorerEdits = {
       ].join('\n'),
       [
         '            return {',
+        '              ...current,',
         '              isOpen: true,',
         '              activeSurfaceId: surface.id,',
         '              surfaces: placeFileSurface(',
@@ -184,8 +182,8 @@ export const fileExplorerEdits = {
   ],
   // The panel's opener is the explorer's: tree clicks, breadcrumbs, back and forward.
   'apps/web/src/components/ChatView.tsx': [
-    ['      useRightPanelStore.getState().openFile(activeThreadRef, relativePath);\n    },\n    [activeProject, activeThreadRef],',
-      '      useRightPanelStore.getState().openFile(activeThreadRef, relativePath, undefined, {\n        preview: true,\n      });\n    },\n    [activeProject, activeThreadRef],',
+    ['    useRightPanelStore.getState().openFile(activeThreadRef, relativePath);\n  };\n  const openFileSurfaceStable',
+      '    useRightPanelStore.getState().openFile(activeThreadRef, relativePath, undefined, {\n      preview: true,\n    });\n  };\n  const openFileSurfaceStable',
       'replace'],
     // Both tab bars (inline and sheet); the leading newline pins the indentation.
     ['\n          onRenameDevice={(surfaceId, title) => {', pinFileProp('          ')],
@@ -193,8 +191,8 @@ export const fileExplorerEdits = {
   ],
   'apps/web/src/components/RightPanelTabs.tsx': [
     ['  onRenameDevice?: (surfaceId: string, title: string) => void;', '  onPinFile?: (relativePath: string) => void;\n'],
-    ['                            onDoubleClick={() => {\n                              if (surface.kind === "device" && props.onRenameDevice)\n                                setRenamingDevice(surface.id);',
-      '                            onDoubleClick={() => {\n                              if (surface.kind === "file" && surface.preview)\n                                props.onPinFile?.(surface.relativePath);\n                              if (surface.kind === "device" && props.onRenameDevice)\n                                setRenamingDevice(surface.id);',
+    ['                              onDoubleClick={() => {\n                                if (surface.kind === "device" && props.onRenameDevice)\n                                  setRenamingDevice(surface.id);',
+      '                              onDoubleClick={() => {\n                                if (surface.kind === "file" && surface.preview)\n                                  props.onPinFile?.(surface.relativePath);\n                                if (surface.kind === "device" && props.onRenameDevice)\n                                  setRenamingDevice(surface.id);',
       'replace'],
     // A preview tab reads in italics, as in VS Code.
     ['<span className="truncate">{title}</span>',
@@ -240,8 +238,8 @@ export const fileExplorerEdits = {
     ['        {directoryPaths.length > 0 ? (', '        <NewEntryButtons onCreate={(kind) => explorerActions.startCreate(kind, null)} />\n'],
   ],
   'apps/web/src/components/files/FilePreviewPanel.tsx': [
-    ['import { Code2, Eye, FolderTree, Globe2, Table2, WrapTextIcon } from "lucide-react";',
-      'import {\n  ArrowLeft,\n  ArrowRight,\n  Code2,\n  Eye,\n  FolderTree,\n  Globe2,\n  Table2,\n  WrapTextIcon,\n} from "lucide-react";',
+    ['import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";',
+      'import { ArrowLeft, ArrowRight, FolderTree, Globe2, WrapTextIcon } from "lucide-react";',
       'replace'],
     ['import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";', 'import { useRightPanelStore } from "~/rightPanelStore";\n'],
     ['import FileBrowserPanel from "./FileBrowserPanel";',

@@ -13,36 +13,10 @@ export const scheduleOverlays = [
   'apps/web/src/routes/settings.scheduled.tsx',
 ];
 
-// The router plugin writes routeTree.gen.ts from routes/ at dev and build time.
-// These are exactly its lines for settings.scheduled.tsx (checked with
-// @tanstack/router-generator), so a rebuild leaves the file as applied. Three
-// route lists repeat the same neighbours; each anchor runs on to the first
-// line that differs between them.
-const tail = (line) => ['snap-shot', 'source-control', 'storage'].map((name) => line(name)).join('');
-const typed = (name) => {
-  const route = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('');
-  return `  '/settings/${name}': typeof Settings${route}Route\n`;
-};
-const union = (name) => `    | '/settings/${name}'\n`;
-const routeTreeEdits = [
-  ["import { Route as SettingsProvidersRouteImport } from './routes/settings.providers'\n",
-    "import { Route as SettingsScheduledRouteImport } from './routes/settings.scheduled'\n"],
-  ['const SettingsProvidersRoute = SettingsProvidersRouteImport.update({\n',
-    "const SettingsScheduledRoute = SettingsScheduledRouteImport.update({\n  id: '/scheduled',\n  path: '/scheduled',\n  getParentRoute: () => SettingsRoute,\n} as any)\n"],
-  ...["  '/$environmentId/$threadId'", "  '/': typeof ChatIndexRoute", "  '/_chat/': typeof"].map((next) =>
-    [tail(typed) + next, "  '/settings/scheduled': typeof SettingsScheduledRoute\n"]),
-  ...["    | '/$environmentId/$threadId'", "    | '/'\n", "    | '/_chat/'"].map((next) =>
-    [tail(union) + next, "    | '/settings/scheduled'\n"]),
-  ["    '/settings/providers': {\n",
-    "    '/settings/scheduled': {\n      id: '/settings/scheduled'\n      path: '/scheduled'\n      fullPath: '/settings/scheduled'\n      preLoaderRoute: typeof SettingsScheduledRouteImport\n      parentRoute: typeof SettingsRoute\n    }\n"],
-  ['  SettingsSnapShotRoute: typeof SettingsSnapShotRoute\n', '  SettingsScheduledRoute: typeof SettingsScheduledRoute\n'],
-  ['  SettingsSnapShotRoute: SettingsSnapShotRoute,\n', '  SettingsScheduledRoute: SettingsScheduledRoute,\n'],
-];
-
 export const scheduleEdits = {
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoScheduleRouteLayer } from "./RubatoSchedule.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoScheduleRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoScheduleRouteLayer } from "./RubatoSchedule.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoScheduleRouteLayer,\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/memory"\n', '  | "/settings/memory"\n  | "/settings/scheduled"\n', 'replace'],
@@ -60,11 +34,9 @@ export const scheduleEdits = {
       ].join('\n')],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['  BotIcon,\n', '  BotIcon,\n  CalendarClockIcon,\n', 'replace'],
     ['  "/settings/memory": BrainIcon,\n', '  "/settings/memory": BrainIcon,\n  "/settings/scheduled": CalendarClockIcon,\n', 'replace'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/memory",\n]);', '  "/settings/memory",\n  "/settings/scheduled",\n]);', 'replace'],
   ],
-  'apps/web/src/routeTree.gen.ts': routeTreeEdits,
 };

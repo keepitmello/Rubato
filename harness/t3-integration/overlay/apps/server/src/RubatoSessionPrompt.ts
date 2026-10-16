@@ -2,7 +2,7 @@ import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { rubatoBridgeFor } from "./provider/Drivers/RubatoPiDriver.ts";
 import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";

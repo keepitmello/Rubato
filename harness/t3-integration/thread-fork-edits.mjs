@@ -38,9 +38,9 @@ const forkHandler = (indent) => [
 
 export const threadForkEdits = {
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";',
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";',
       'import { rubatoThreadForkRouteLayer } from "./RubatoThreadFork.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoThreadForkRouteLayer,\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoThreadForkRouteLayer,\n'],
   ],
   'apps/web/src/components/threadActionMenu.logic.ts': [
     ['  | "rename"\n', '  | "fork"\n'],

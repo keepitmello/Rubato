@@ -48,36 +48,7 @@ const permissionTypes = [
   '',
 ].join('\n');
 
-// The router plugin writes routeTree.gen.ts from routes/ at build time. These are
-// exactly its lines for settings.permissions.tsx, so a rebuild leaves the file as
-// applied. Three route lists repeat the same neighbours; each anchor runs on to
-// the first line that differs between them.
-const settingsTail = (line) =>
-  ['projects', 'providers', 'snap-shot', 'source-control', 'storage']
-    .map((name) => line(name))
-    .join('');
-const typed = (name) => {
-  const route = name.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('');
-  return `  '/settings/${name}': typeof Settings${route}Route\n`;
-};
-const union = (name) => `    | '/settings/${name}'\n`;
-const routeTreeEdits = [
-  ["import { Route as SettingsOpenSourceLicensesRouteImport } from './routes/settings.open-source-licenses'\n",
-    "import { Route as SettingsPermissionsRouteImport } from './routes/settings.permissions'\n"],
-  ['const SettingsOpenSourceLicensesRoute =\n',
-    "const SettingsPermissionsRoute = SettingsPermissionsRouteImport.update({\n  id: '/permissions',\n  path: '/permissions',\n  getParentRoute: () => SettingsRoute,\n} as any)\n"],
-  ...["  '/$environmentId/$threadId'", "  '/': typeof ChatIndexRoute", "  '/_chat/': typeof"].map((next) =>
-    [settingsTail(typed) + next, "  '/settings/permissions': typeof SettingsPermissionsRoute\n"]),
-  ...["    | '/$environmentId/$threadId'", "    | '/'\n", "    | '/_chat/'"].map((next) =>
-    [settingsTail(union) + next, "    | '/settings/permissions'\n"]),
-  ["    '/settings/open-source-licenses': {\n",
-    "    '/settings/permissions': {\n      id: '/settings/permissions'\n      path: '/permissions'\n      fullPath: '/settings/permissions'\n      preLoaderRoute: typeof SettingsPermissionsRouteImport\n      parentRoute: typeof SettingsRoute\n    }\n"],
-  ['  SettingsProjectsRoute: typeof SettingsProjectsRoute\n', '  SettingsPermissionsRoute: typeof SettingsPermissionsRoute\n'],
-  ['  SettingsProjectsRoute: SettingsProjectsRoute,\n', '  SettingsPermissionsRoute: SettingsPermissionsRoute,\n'],
-];
-
 export const permissionEdits = {
-  'apps/web/src/routeTree.gen.ts': routeTreeEdits,
   'packages/contracts/src/ipc.ts': [
     ['export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);', permissionTypes],
     ['  getPathForFile?: (file: File) => string;',

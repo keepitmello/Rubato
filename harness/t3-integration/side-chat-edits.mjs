@@ -80,9 +80,9 @@ export const sideChatEdits = {
             });`, 'replace'],
   ],
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";',
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";',
       'import { rubatoSideChatRouteLayer } from "./RubatoSideChat.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoSideChatRouteLayer,\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoSideChatRouteLayer,\n'],
   ],
   'apps/web/src/rightPanelStore.ts': [
     ['  "agents",\n] as const;', '  "agents",\n  "side-chat",\n] as const;', 'replace'],

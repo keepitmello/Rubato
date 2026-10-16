@@ -165,7 +165,7 @@ export const soundEdits = {
     ['  {\n    id: "in-app-notifications",\n', SEARCH_ITEMS],
   ],
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoSoundsRouteLayer } from "./RubatoServiceRoute.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoSoundsRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoSoundsRouteLayer } from "./RubatoServiceRoute.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoSoundsRouteLayer,\n'],
   ],
 };

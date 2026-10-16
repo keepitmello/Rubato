@@ -41,7 +41,7 @@ import {
   type MemoryStoreSummary,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
-import { iconForProviderModel } from "../chat/providerIconUtils";
+import { iconForProviderModel } from "../chat/rubatoModelIcons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Checkbox } from "../ui/checkbox";
