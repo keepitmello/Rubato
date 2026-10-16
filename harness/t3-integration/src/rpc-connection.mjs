@@ -1,5 +1,6 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { rewriteSkillMentions } from './commands.mjs';
+import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -22,11 +23,71 @@ import { rewriteSkillMentions } from './commands.mjs';
  * the inventory imported), or a new one. The native thread id the adapter keeps is the engine's
  * session id: `get_state` reports it as `sessionFile` (the field the adapter reads as
  * the id `switch_session` takes); Pi's real file path rides along as `rubatoSessionFile`.
+ *
+ * Two Rubato behaviors live in this stream, because the adapter decides from it:
+ * - A turn stays open while the idle agent waits on a background completion that will
+ *   wake it (decisions/t3-turn-held-on-awaited-wake.md): Pi's `agent_settled` is held while
+ *   the engine names an awaited wake, a "Waiting on …" tool row says what for, and the
+ *   wake's `agent_start` continues the same turn. A wait that ends without a wake lets the
+ *   settle through after a grace; Stop ends it as interrupted.
+ * - A Stop can strand a steer Pi had not read yet. After the abort it is cleared from Pi's
+ *   queue and its text comes back as a warning in the turn instead of surfacing inside an
+ *   unrelated later turn (decisions/t3-queued-message-vs-steer.md).
  */
+/** The active branch of a `get_entries` answer, root first. */
+export function activeBranch({ entries, leafId } = {}) {
+  const byId = new Map((Array.isArray(entries) ? entries : []).map((entry) => [entry.id, entry]));
+  const branch = [];
+  const seen = new Set();
+  for (let id = leafId ?? null; id !== null && byId.has(id) && !seen.has(id); id = byId.get(id).parentId ?? null) {
+    seen.add(id);
+    branch.push(byId.get(id));
+  }
+  return branch.reverse();
+}
+/**
+ * The cut T3 asks for as the engine names it. Upstream's Pi adapter names the first entry a
+ * rollback or fork drops: the first user message of the earliest turn that goes. The engine
+ * names what stays: the fingerprint of the last reply before that entry
+ * (conversation-rewind findRewindTarget, session-link forkedHistory). No reply before it
+ * keeps nothing.
+ */
+export function replyBefore(branch, entryId) {
+  const at = branch.findIndex((entry) => entry.id === entryId);
+  if (at < 0) throw new Error('That point is not on this conversation\'s current branch');
+  const reply = branch.slice(0, at).findLast((entry) => entry.type === 'message' && entry.message?.role === 'assistant');
+  return reply ? messageFingerprint(reply.message) : null;
+}
+
+/** The wait that ended starts the agent's next run a moment later; the turn waits that long. */
+export const AWAIT_POLL_MS = 2_000;
+export const AWAIT_GRACE_MS = 3_000;
+export const AWAIT_TITLE = 'Waiting on background work';
+const nonempty = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
+/** Pi's queued inputs in the order they were sent (`clear_queue` returns them by kind). */
+export function queuedMessagesInOrder(state, cleared) {
+  const byDelivery = {
+    steer: [...(cleared?.steering ?? [])],
+    followUp: [...(cleared?.followUp ?? [])],
+  };
+  const ordered = [];
+  for (const pending of state?.requestTimeline?.pendingInputs ?? []) {
+    const queue = byDelivery[pending?.delivery];
+    if (queue?.length) ordered.push(queue.shift());
+  }
+  return [...ordered, ...byDelivery.steer, ...byDelivery.followUp]
+    .filter((message) => typeof message === 'string' && message.trim());
+}
 export class RubatoRpcConnection {
-  constructor(bridge, { threadId, cwd, onRecord, onClosed = () => {}, log = () => {} }) {
-    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log });
+  constructor(bridge, { threadId, cwd, onRecord, onClosed = () => {}, log = () => {},
+    awaitTimings = { pollMs: AWAIT_POLL_MS, graceMs: AWAIT_GRACE_MS } }) {
+    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log, awaitTimings });
     this.bound = undefined;
+    // Inbound records in order, through the steps that may wait on the engine.
+    this.inbound = Promise.resolve();
+    this.hold = null;
+    this.waits = 0;
+    this.strandedNotices = 0;
     this.sessionId = null;
     this.closed = false;
   }
@@ -73,10 +134,114 @@ export class RubatoRpcConnection {
       this.log('events skipped', `${this.sessionId} ${this.sequence}→${records[0].sequence}`);
     for (const record of records) {
       this.sequence = record.sequence;
-      this.onRecord(record.event);
+      this.deliver(record.event);
     }
     if (state.status === 'unloaded' || state.status === 'error')
       void this.close(new Error(`Rubato session ${this.sessionId} ${state.status === 'error' ? 'failed' : 'was unloaded'}`));
+  }
+  deliver(event) { this.enqueue(() => this.process(event)); }
+  enqueue(step) {
+    this.inbound = this.inbound.then(step).catch((error) => this.log('inbound step failed', error));
+    return this.inbound;
+  }
+  emit(event) { if (!this.closed) this.onRecord(event); }
+  async process(event) {
+    if (event?.type === 'agent_settled') {
+      // A Stop's cleanup writes into the turn, so it goes ahead of the settle that ends it.
+      if (this.aborting) await this.aborting.catch(() => {});
+      if (this.hold) return; // already waiting; the newer settle changes nothing
+      if (event.aborted === true || this.stopping) { this.emit(event); return; }
+      const labels = await this.awaitedLabels();
+      if (labels.length === 0 || this.closed) { this.emit(event); return; }
+      this.hold = { settled: event, id: `rubato-wait:${this.sessionId}:${++this.waits}`, detail: null };
+      this.showHold(this.hold, labels);
+      this.scheduleHoldCheck(this.hold, this.awaitTimings.pollMs);
+      return;
+    }
+    if (event?.type === 'agent_start' && this.hold) this.endHold(false);
+    this.emit(event);
+  }
+  async awaitedLabels() {
+    try {
+      const answer = await this.command({ type: 'get_awaited_wakes' });
+      const items = Array.isArray(answer?.items) ? answer.items : [];
+      return [...new Set(items.map((item) => nonempty(item?.description) || nonempty(item?.id)).filter(Boolean))];
+    } catch { return []; } // a runtime that cannot answer has nothing the turn should wait for
+  }
+  showHold(hold, labels) {
+    const detail = labels.join(' · ');
+    if (hold.detail === detail) return;
+    const started = hold.detail === null;
+    hold.detail = detail;
+    const row = { toolCallId: hold.id, toolName: AWAIT_TITLE, args: { waitingOn: detail } };
+    if (started) this.emit({ type: 'tool_execution_start', ...row });
+    this.emit({ type: 'tool_execution_update', ...row,
+      partialResult: { content: [{ type: 'text', text: `Waiting on ${detail}` }] } });
+  }
+  scheduleHoldCheck(hold, ms) {
+    clearTimeout(hold.timer);
+    hold.timer = setTimeout(() => { this.enqueue(() => this.checkHold(hold)); }, ms);
+    hold.timer.unref?.();
+  }
+  async checkHold(hold) {
+    if (this.hold !== hold || this.closed) return;
+    const labels = await this.awaitedLabels();
+    if (this.hold !== hold) return;
+    if (labels.length > 0) {
+      hold.emptySince = undefined;
+      this.showHold(hold, labels);
+      this.scheduleHoldCheck(hold, this.awaitTimings.pollMs);
+      return;
+    }
+    if (hold.emptySince === undefined) {
+      hold.emptySince = Date.now();
+      this.scheduleHoldCheck(hold, this.awaitTimings.graceMs);
+      return;
+    }
+    this.endHold(false);
+    this.emit(hold.settled);
+  }
+  /** Closes the wait row; the turn carries on (a wake) or the caller lets the settle through. */
+  endHold(interrupted) {
+    const hold = this.hold;
+    if (!hold) return null;
+    clearTimeout(hold.timer);
+    this.hold = null;
+    this.emit({ type: 'tool_execution_end', toolCallId: hold.id, toolName: AWAIT_TITLE, args: { waitingOn: hold.detail },
+      isError: interrupted, result: { content: [{ type: 'text', text: `${interrupted ? 'Stopped waiting' : 'Waited'} on ${hold.detail}` }] } });
+    return hold;
+  }
+  /** Stop: abort, hand back what Pi never read, and end a held wait as interrupted. */
+  async abort(record) {
+    this.stopping = true;
+    const aborting = (async () => {
+      const result = await this.command(record);
+      await this.returnStranded();
+      return result;
+    })();
+    this.aborting = aborting;
+    try { return await aborting; }
+    finally {
+      if (this.aborting === aborting) this.aborting = undefined;
+      await this.enqueue(() => {
+        this.stopping = false;
+        const hold = this.endHold(true);
+        if (hold) this.emit({ ...hold.settled, aborted: true });
+      });
+    }
+  }
+  async returnStranded() {
+    let state;
+    try { state = await this.command({ type: 'get_state' }); } catch { return; }
+    if (!state || state.isStreaming || state.isCompacting || !(Number(state.pendingMessageCount) > 0)) return;
+    const cleared = await this.command({ type: 'clear_queue' }).catch(() => null);
+    const messages = queuedMessagesInOrder(state, cleared);
+    if (messages.length === 0) return;
+    // Straight out, not queued: the settle this Stop caused waits in the queue for this step.
+    this.emit({ type: 'extension_ui_request', id: `rubato-stranded:${this.sessionId}:${++this.strandedNotices}`,
+      method: 'notify', notifyType: 'warning',
+      message: `${messages.length} message${messages.length === 1 ? '' : 's'} never reached the model before the turn stopped:\n${
+        messages.map((text, index) => `${index + 1}. ${text}`).join('\n')}` });
   }
   /** The session this thread already runs in, asked once per connection; null when none. */
   async boundSession() {
@@ -101,8 +266,23 @@ export class RubatoRpcConnection {
     return created.sessionId;
   }
   async openThreadSession() {
-    this.opening ??= (async () => this.attach((await this.boundSession()) ?? await this.createSession()))()
-      .finally(() => { this.opening = undefined; });
+    this.opening ??= (async () => {
+      const bound = await this.boundSession();
+      if (bound) {
+        try {
+          await this.attach(bound);
+          // Its history is already in the model's context: T3's handoff of the same
+          // messages is answered as delivered (RubatoPiDriver injectHistory).
+          this.bridge.resumedSessions?.add(bound);
+          return;
+        } catch (error) {
+          // A conversation the engine no longer has: start over, and T3's handoff
+          // carries the history in the first prompt as it does for any provider.
+          this.log('bound session unavailable', `${this.threadId} ${bound} ${error?.message ?? error}`);
+        }
+      }
+      await this.attach(await this.createSession());
+    })().finally(() => { this.opening = undefined; });
     return this.opening;
   }
   async command(record) {
@@ -128,10 +308,18 @@ export class RubatoRpcConnection {
         return state && typeof state === 'object'
           ? { ...state, sessionFile: this.sessionId, rubatoSessionFile: state.sessionFile } : state;
       }
-      case 'fork':
-        // On the engine a fork re-keys the runtime every attachment shares; the session
-        // other windows hold would move with it.
-        throw new Error('Rubato forks conversations through the engine, not on an attached session');
+      case 'abort':
+        return this.abort(record);
+      case 'fork': {
+        // Upstream rolls back with Pi's fork. On the engine a fork re-keys the runtime every
+        // attachment shares, so the session other windows hold would move to the copy. The
+        // engine rewinds in place instead: same session, its children and teams stay
+        // (bridge rollbackThread did the same on V1).
+        if (typeof record.entryId !== 'string' || !record.entryId) throw new Error('A rollback must name where it cuts');
+        const reply = replyBefore(activeBranch(await this.command({ type: 'get_entries' })), record.entryId);
+        const result = await this.command({ type: 'rewind', keep: reply ? [reply] : [], skip: 0 });
+        return { cancelled: result?.cancelled === true };
+      }
       default:
         return this.command(record);
     }
@@ -151,6 +339,7 @@ export class RubatoRpcConnection {
     if (this.closed) return;
     this.closed = true;
     clearInterval(this.watchdog);
+    clearTimeout(this.hold?.timer);
     try { await this.unsubscribe?.(); } catch { /* the engine may be gone */ }
     if (this.sessionId) await this.client?.detach().catch(() => {});
     await this.client?.close().catch(() => {});

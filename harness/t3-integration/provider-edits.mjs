@@ -45,8 +45,8 @@ const t3Route = [
 
 export const providerEdits = {
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";', 'import { rubatoAppRouteLayer, rubatoAuthRouteLayer } from "./RubatoServiceRoute.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoAuthRouteLayer,\n    rubatoAppRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoAppRouteLayer, rubatoAuthRouteLayer } from "./RubatoServiceRoute.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoAuthRouteLayer,\n    rubatoAppRouteLayer,\n'],
   ],
   'apps/web/src/routes/settings.providers.tsx': [
     [t3Route, 'import { RubatoProvidersSettingsPanel } from "../components/settings/RubatoProvidersSettings";\n', 'replace'],

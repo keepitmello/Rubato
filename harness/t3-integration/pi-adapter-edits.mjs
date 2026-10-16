@@ -6,7 +6,9 @@
 // attaches to the engine through the bridge (src/bridge.mjs openRpc). These edits
 // only open the adapter to a caller-supplied driver kind, connection and capability
 // set; with none supplied the upstream Pi driver behaves exactly as before.
-export const piAdapterOverlays = [];
+export const piAdapterOverlays = [
+  'apps/server/src/provider/RubatoThreadImporter.ts',
+];
 
 export const piAdapterEdits = {
   'packages/provider-pi/src/server/adapter.ts': [
@@ -31,6 +33,15 @@ export const piAdapterEdits = {
         '  ) => Effect.Effect<PiRpcConnection, import("./rpc.ts").PiRpcError, import("effect/Scope").Scope>;',
         '  /** What this provider can do, when it is not upstream Pi. */',
         '  readonly capabilities?: OrchestrationV2ProviderCapabilities;',
+        '  /** Forks through the caller instead of a short-lived `pi --fork` process; returns the new native id. */',
+        '  readonly forkSession?: (input: {',
+        '    readonly sourceNativeId: string;',
+        '    /** The first entry the fork leaves out; null keeps the completed history. */',
+        '    readonly beforeEntryId: string | null;',
+        '    readonly cwd: string;',
+        '  }) => Effect.Effect<string, import("./rpc.ts").PiRpcError>;',
+        '  /** Answers T3\'s history handoffs natively (true) or leaves them inline (false). */',
+        '  readonly injectHistory?: ProviderAdapter.ProviderAdapterV2SessionRuntime["injectHistory"];',
         '',
       ].join('\n'),
       'replace',
@@ -69,6 +80,20 @@ export const piAdapterEdits = {
       ].join('\n'),
       'replace',
     ],
+    [
+      '            const nativeId = yield* Effect.scoped(\n',
+      [
+        '            const nativeId = options.forkSession !== undefined',
+        '              ? yield* options.forkSession({ sourceNativeId: sourceFile, beforeEntryId: beforeEntry, cwd })',
+        '              : yield* Effect.scoped(',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '        events: Stream.fromQueue(events),\n        hasPendingBackgroundWork:',
+      '        ...(options.injectHistory === undefined ? {} : { injectHistory: options.injectHistory }),\n',
+    ],
   ],
   'packages/provider-pi/src/server.ts': [
     [
@@ -85,5 +110,13 @@ export const piAdapterEdits = {
       ].join('\n'),
       'replace',
     ],
+  ],
+  // The Rubato thread writer (RubatoThreadImporter.ts) runs inside the V2 runtime beside
+  // upstream's AgentSessionImporter: both write through the runtime's own event sink.
+  'apps/server/src/orchestration-v2/runtimeLayer.ts': [
+    ['import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";\n',
+      'import * as RubatoThreadImporter from "../provider/RubatoThreadImporter.ts";\n'],
+    ['  layerAgentSessionImporterProvided,\n  EffectOutbox.layerPruneWorker',
+      '  RubatoThreadImporter.layer.pipe(Layer.provide(Layer.mergeAll(layerEventSinkProvided, IdAllocator.layer))),\n'],
   ],
 };
