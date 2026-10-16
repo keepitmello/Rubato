@@ -33,6 +33,7 @@ import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
+import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -259,8 +260,8 @@ const edits = {
     ],
   ],
   'apps/server/src/provider/builtInDrivers.ts': [
-    ['import type { AnyProviderDriver } from "./ProviderDriver.ts";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
-    ['  AntigravityDriver,\n];', '  RubatoPiDriver,\n'],
+    ['import type {\n  AnyProviderDriver,\n  ProviderUsageReaderEnv,\n} from "@t3tools/provider-core/server/driver";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
+    ['  AcpRegistryDriver,\n];', '  RubatoPiDriver,\n'],
   ],
   'apps/server/src/serverRuntimeStartup.ts': [
     ['import * as ProjectionSnapshotQuery from "./orchestration/Services/ProjectionSnapshotQuery.ts";', 'import { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\n'],
@@ -2192,6 +2193,11 @@ for (const [relative, changes] of Object.entries(stepRewindEdits)) {
 // Editing a sent message and forking at a reply; after step rewind, whose reply button it sits beside (turn-actions-edits.mjs).
 overlays.push(...turnActionsOverlays);
 for (const [relative, changes] of Object.entries(turnActionsEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The Rubato provider on T3's V2 orchestrator: upstream's Pi adapter fed by the engine (pi-adapter-edits.mjs).
+overlays.push(...piAdapterOverlays);
+for (const [relative, changes] of Object.entries(piAdapterEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 function transform(text, changes) {

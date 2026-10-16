@@ -5,6 +5,7 @@ import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom,
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
+import { RubatoRpcConnection } from './rpc-connection.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile } from 'node:fs/promises';
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
@@ -203,6 +204,7 @@ export class RubatoPiBridge {
     // back through rollbackThread like a rewind from a button.
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation });
+    this.rpcConnections = new Set();
     this.sessions = new Map(); this.openings = new Map(); this.catalogues = new Map(); this.claimed = new Set(); this.closed = false;
     // threadId -> the prompt its session opens with, set by the new-thread screen just before the
     // first message and taken by open(). session-prompts.mjs.
@@ -239,6 +241,19 @@ export class RubatoPiBridge {
       await stale?.abandon().catch(() => {});
       return call(await this.connection());
     }
+  }
+  /**
+   * One Pi RPC stream for T3's V2 orchestrator (rpc-connection.mjs): the Rubato provider
+   * runs on upstream's Pi adapter, fed by the engine rather than a spawned `pi`.
+   */
+  async openRpc({ threadId, cwd, onRecord, onClosed }) {
+    if (this.closed) throw new Error('T3 bridge is closed');
+    const connection = new RubatoRpcConnection(this, { threadId, cwd, onRecord,
+      onClosed: (error) => { this.rpcConnections.delete(connection); onClosed?.(error); },
+      log: (message, detail) => t3BridgeLog(`rpc ${message}`, String(detail?.message ?? detail ?? '')) });
+    this.rpcConnections.add(connection);
+    try { return await connection.open(); }
+    catch (error) { await connection.close(error); throw error; }
   }
   // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
   async inventory() {
@@ -1011,6 +1026,7 @@ export class RubatoPiBridge {
     await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
+    await Promise.all([...this.rpcConnections].map((connection) => connection.close()));
     await this.inventoryClient?.close();
   }
 }

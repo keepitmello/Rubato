@@ -18,7 +18,7 @@
     "apps/server/src/auth/RpcAuthorization.ts": "c2837f67194fef1684bc17187c3b2ab6b7339ed29a380d20d0b3cef955f7c625",
     "apps/server/src/ws.ts": "ec3883437e18e50dcf516703d721a6c7df30de829e1d806b17a623c81211f3ae",
     "apps/web/src/session-logic.ts": "8dce04481a72bbac3cef133e3060fe8f273a6945708e373a78e3a0474ab5d732",
-    "apps/server/src/provider/builtInDrivers.ts": "0d9d3b5d3add4b49743dc05aba1f96edf29f23e9c24addd55e2a1f81ace4bb16",
+    "apps/server/src/provider/builtInDrivers.ts": "2119e68aa65ecddb4b527dc6ec779d88fadfa75553c827e8488c164aecd27b6e",
     "apps/server/src/serverRuntimeStartup.ts": "16a3871fbf6614afb8af5f278e9025aa0757d0809ded829291b090afa4f02b6f",
     "apps/server/src/provider/Layers/ProviderRegistry.ts": "f9b16c640b451c83168b72984d74c6883d7fea18c2184c17547b097dccc07211",
     "apps/server/src/provider/providerStatusCache.ts": "568f7ca9376f0da71ca7093ba6fd745fd69f285e9db5bda8b3cc2f6e1358eecd",
@@ -98,6 +98,8 @@
     "apps/server/src/provider/Layers/ProviderService.ts": "68fc0378522cf9158b92e5c7bacb65c5282d130e7a85e545db28f77d704b6744",
     "apps/server/src/provider/Services/ProviderAdapter.ts": "78f631a25cf691503ce24d0f47862de982a469e830d9ecebf32a31a873465868",
     "apps/server/src/orchestration/Layers/CheckpointReactor.test.ts": "d597aaa3252d1858539eec4b98ea051fc2c163eb7f5142bf5abc86c4f945e85b",
-    "apps/web/src/components/ui/toast.tsx": "a539745f225e1431722825fb0e66ca8be8cf4e892674eb5d0fe0981e8b0740df"
+    "apps/web/src/components/ui/toast.tsx": "a539745f225e1431722825fb0e66ca8be8cf4e892674eb5d0fe0981e8b0740df",
+    "packages/provider-pi/src/server/adapter.ts": "f09a15d7c355271cd7ef2fd12b217585a1368faec27b55b11919cb1efc741742",
+    "packages/provider-pi/src/server.ts": "bea54917749903d37b8cc35869dbd1e83bf9abc018c8610e83ec6cd1b319bec2"
   }
 }
