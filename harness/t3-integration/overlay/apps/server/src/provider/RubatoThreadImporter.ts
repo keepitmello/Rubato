@@ -16,6 +16,7 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 
 const DRIVER = "rubato-pi";
@@ -218,6 +219,17 @@ const make = Effect.gen(function* () {
     });
   return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage };
 });
+
+/**
+ * The thread's next turn-item ordinal, as ProjectionStoreV2.getNextTurnItemOrdinal reads it.
+ * Read here because the layers that write notices and session messages do not get that store.
+ */
+export const nextTurnItemOrdinal = (threadId: ThreadId) => Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  const rows = yield* sql<{ readonly ordinal: number | null }>`SELECT MAX(ordinal) AS ordinal
+    FROM orchestration_v2_projection_turn_items WHERE thread_id = ${threadId}`;
+  return (rows[0]?.ordinal ?? 0) + 1;
+}).pipe(Effect.mapError(importFailure("Could not read the thread's next item")));
 
 export interface NoticeInput {
   readonly threadId: ThreadId;

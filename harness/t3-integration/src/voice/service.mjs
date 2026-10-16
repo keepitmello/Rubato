@@ -42,7 +42,9 @@ export function createVoiceService({ presence, store, submitter, transcriber,
     store.update(session.voiceSessionId, { ...changes, text: undefined, expiresAt: now() + VOICE_SESSION_TTL_MS });
     if (wasQueued || changes.state !== 'sent') await notify(session, changes.state);
   };
-  const STARTED_GONE = new Set(['cancelled', 'rolled_back']);
+  // Only a run that never started is a message that was not sent; one that ran and was later
+  // rolled back was sent.
+  const NEVER_RAN = new Set(['cancelled']);
   // A queued message keeps its session's deadline (expiresAt) until it leaves T3's queue.
   const settleQueued = async (session) => {
     if (session.state !== 'queued') return;
@@ -50,10 +52,15 @@ export function createVoiceService({ presence, store, submitter, transcriber,
     if (store.get(session.voiceSessionId)?.state !== 'queued') return;
     if (status === 'queued') {
       if (session.expiresAt > now()) return;
-      await finish(session, { state: (await submitter.withdraw(session)) ? 'expired' : 'sent' });
+      if (await submitter.withdraw(session)) { await finish(session, { state: 'expired' }); return; }
+      // The withdraw failed: either the turn just began, or T3 could not answer. Look again;
+      // a message still waiting is retried on the next round, not reported as sent.
+      const after = await submitter.runStatus(session);
+      if (after === 'queued' || store.get(session.voiceSessionId)?.state !== 'queued') return;
+      await finish(session, { state: after === null || NEVER_RAN.has(after) ? 'cancelled' : 'sent' });
       return;
     }
-    await finish(session, { state: status === null || STARTED_GONE.has(status) ? 'cancelled' : 'sent' });
+    await finish(session, { state: status === null || NEVER_RAN.has(status) ? 'cancelled' : 'sent' });
   };
   const watchQueued = () => {
     clearTimeout(watchTimer);

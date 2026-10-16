@@ -19,8 +19,7 @@ import * as PubSub from "effect/PubSub";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
-import { RubatoThreadImportError, RubatoThreadImporter, importFailure } from "./RubatoThreadImporter.ts";
-import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { RubatoThreadImportError, RubatoThreadImporter, importFailure, nextTurnItemOrdinal } from "./RubatoThreadImporter.ts";
 import { rubatoBridgeFor, type PiBridge, type PiSessionMessage } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
@@ -190,16 +189,17 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   // written once, as an agent's message with its sender context and, when the sender is a
   // thread here, a link to it.
   const importer = yield* Effect.serviceOption(RubatoThreadImporter);
-  const projectionStore = yield* Effect.serviceOption(ProjectionStoreV2);
   const appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.gen(function* () {
-    if (Option.isNone(orchestrator) || Option.isNone(importer) || Option.isNone(projectionStore)) return;
+    if (Option.isNone(orchestrator) || Option.isNone(importer)) {
+      return yield* new RubatoThreadImportError({ detail: "The thread writer is not running" });
+    }
     const thread = ThreadId.make(threadId);
     if ((yield* orchestrator.value.getTurnItem({ threadId: thread, itemId: TurnItemId.make(item.id) })) !== null) return;
     const context = Schema.decodeUnknownOption(OrchestrationMessageContext)(item.context);
     const senderSession = senderSessionOf(item.context);
     const senderThreadId = senderSession === null ? null
       : yield* threadOfPiSession(senderSession).pipe(Effect.provideService(SqlClient.SqlClient, sql.value), Effect.orElseSucceed(() => null));
-    const ordinal = yield* projectionStore.value.getNextTurnItemOrdinal(thread);
+    const ordinal = yield* nextTurnItemOrdinal(thread).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
     yield* importer.value.appendSessionMessage({ threadId: thread, ordinal, message: {
       role: "session", id: item.id, text: item.text, createdAt: item.createdAt,
       ...(Option.isSome(context) ? { context: context.value } : {}),

@@ -19,8 +19,8 @@ import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import { ServerEnvironment } from "./environment/ServerEnvironment.ts";
 import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
-import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
-import { RubatoThreadImporter } from "./provider/RubatoThreadImporter.ts";
+import * as SqlClient from "effect/sql/SqlClient";
+import { RubatoThreadImporter, nextTurnItemOrdinal } from "./provider/RubatoThreadImporter.ts";
 import { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
@@ -116,14 +116,14 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
 
   const { dispatch, readThread, readRun, listThreads } = voiceOrchestrator(orchestrator);
   // The voice notices (queued, sent, cancelled, failed, expired) as rows in the thread.
-  const importer = yield* Effect.serviceOption(RubatoThreadImporter);
-  const projectionStore = yield* Effect.serviceOption(ProjectionStoreV2);
+  // Required, not optional: a layer without them would skip every notice without a word.
+  const importer = yield* RubatoThreadImporter;
+  const sql = yield* SqlClient.SqlClient;
   const appendNotice = (notice: { readonly threadId: string; readonly id: string; readonly message: string }) =>
     Effect.runPromise(Effect.gen(function* () {
-      if (Option.isNone(importer) || Option.isNone(projectionStore)) return;
       const threadId = ThreadId.make(notice.threadId);
-      const ordinal = yield* projectionStore.value.getNextTurnItemOrdinal(threadId);
-      yield* importer.value.appendNotice({ threadId, id: notice.id, message: notice.message, ordinal });
+      const ordinal = yield* nextTurnItemOrdinal(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+      yield* importer.appendNotice({ threadId, id: notice.id, message: notice.message, ordinal });
     }));
   // The model and permission mode a new thread starts with, resolved the way the
   // apps resolve them: the project's override, else this environment's default.

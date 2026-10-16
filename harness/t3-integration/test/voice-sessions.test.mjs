@@ -225,3 +225,28 @@ test('a claim a restart interrupted that then fails leaves a notice in its conve
   assert.deepEqual(resumed.notices.map((notice) => [notice.threadId, notice.message]),
     [['a', 'Voice message was not sent. Check the shortcut status and try again.']]);
 });
+
+test('a withdraw T3 could not answer leaves an expiring message queued for the next round, not sent', async (t) => {
+  let refuse = false;
+  const f = fixture({ beforeDispatch: async (command) => { if (refuse && command.type === 'queued-run.cancel') throw new Error('database busy'); } });
+  t.after(() => f.service.close());
+  f.view(); f.busy();
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'still waiting' });
+  f.advance(VOICE_SESSION_TTL_MS);
+  refuse = true;
+  await f.service.refreshQueued();
+  assert.equal(f.service.status(s.voiceSessionId).status, 'queued');
+  refuse = false;
+  await f.service.refreshQueued();
+  assert.equal(f.service.status(s.voiceSessionId).status, 'expired');
+});
+
+test('a message whose turn ran and was then rolled back reads as sent', async (t) => {
+  const f = fixture(); t.after(() => f.service.close());
+  f.view(); f.busy();
+  const s = await f.service.startSession();
+  await f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'ran, then rewound' });
+  f.runOf(voiceMessageId(s.voiceSessionId)).status = 'rolled_back';
+  assert.equal((await f.service.current(s.voiceSessionId)).status, 'sent');
+});
