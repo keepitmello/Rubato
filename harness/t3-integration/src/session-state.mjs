@@ -30,10 +30,16 @@ export class SessionStateFold {
     for (const row of Array.isArray(saved.agents) ? saved.agents : [])
       if (row && typeof row.taskId === 'string') fold.agents.set(row.taskId, row);
     fold.speedIndex = Number.isInteger(saved.speedIndex) ? saved.speedIndex : null;
+    // The links behind the rows too: a resident member's next tick, its team's end and a new
+    // board need them, not only the rows they made.
+    fold.projection.restoreTasks(saved.projection);
     return fold;
   }
   /** What a GUI restart restores: the cache is asked again on attach, so it stays out. */
-  saved() { return { sessionId: this.sessionId, speedIndex: this.speedIndex, agents: [...this.agents.values()] }; }
+  saved() {
+    return { sessionId: this.sessionId, speedIndex: this.speedIndex, agents: [...this.agents.values()],
+      projection: this.projection.savedTasks() };
+  }
   rebind(sessionId) {
     if (this.projection.sessionId === sessionId) return;
     // Another conversation now: nothing of the previous one's agents, speed or cache applies.

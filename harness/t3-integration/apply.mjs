@@ -1070,8 +1070,15 @@ const edits = {
       '  Effect.gen(function* () {',
     ].join('\n'),
       'replace'],
-    ['      const [stderr, exitCode] = yield* Effect.all(\n        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],',
+    // From the spawn's error mapping: readTailscaleOutput already collects stdout the same way,
+    // so only this context tells the two functions apart.
+    ['        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),\n        Effect.catchDefect((cause) =>\n          Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),\n        ),\n      );\n      const [stderr, exitCode] = yield* Effect.all(\n        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],',
       [
+        '        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),',
+        '        Effect.catchDefect((cause) =>',
+        '          Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),',
+        '        ),',
+        '      );',
         '      const [stdout, stderr, exitCode] = yield* Effect.all(',
         '        [',
         '          collectStdout(child.stdout),',

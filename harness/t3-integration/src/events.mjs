@@ -387,6 +387,33 @@ export class EventProjection {
     this.cache = undefined; this.lastRawUsage = undefined;
     this.stopAwaiting();
   }
+  /**
+   * The agents and teams this projection knows, for a GUI restart (session-state.mjs): one task
+   * can sit under several keys and a team row is a task, so tasks are saved once and every map
+   * names them by index.
+   */
+  savedTasks() {
+    const tasks = [...new Set(this.tasks.values())];
+    const index = new Map(tasks.map((task, at) => [task, at]));
+    return {
+      tasks: tasks.map((task) => JSON.parse(JSON.stringify(task))),
+      keys: [...this.tasks].map(([key, task]) => [key, index.get(task)]),
+      children: [...this.children], spawns: [...this.spawns],
+      teams: [...this.teams].map(([teamRunId, task]) => [teamRunId, index.get(task)]),
+      boards: [...this.boards],
+    };
+  }
+  restoreTasks(saved) {
+    if (!saved || !Array.isArray(saved.tasks)) return;
+    const tasks = saved.tasks.map((task) => ({ ...task }));
+    const at = (index) => (Number.isInteger(index) ? tasks[index] : undefined);
+    const pairs = (value) => (Array.isArray(value) ? value.filter((pair) => Array.isArray(pair) && pair.length === 2) : []);
+    for (const [key, index] of pairs(saved.keys)) if (at(index)) this.tasks.set(key, at(index));
+    for (const [id, key] of pairs(saved.children)) this.children.set(id, key);
+    for (const [id, args] of pairs(saved.spawns)) this.spawns.set(id, args);
+    for (const [teamRunId, index] of pairs(saved.teams)) if (at(index)) this.teams.set(teamRunId, at(index));
+    for (const [teamRunId, held] of pairs(saved.boards)) this.boards.set(teamRunId, held);
+  }
   configureUsage({ maxTokens, compactsAutomatically, replaceWindow } = {}) {
     const window = asInt(maxTokens);
     if (window > 0) this.maxTokens = window;
