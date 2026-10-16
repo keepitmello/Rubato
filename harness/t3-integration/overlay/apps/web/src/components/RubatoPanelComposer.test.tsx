@@ -31,9 +31,7 @@ describe("RubatoPanelComposer", () => {
     expect(disabledButton(html, "Submit message")).toBe(false);
   });
 
-  // The thread composer's rule since T3 v0.1.0: Stop while the draft cannot go, the steer
-  // arrow once it can.
-  it("while the conversation runs it offers Stop, and steering once the draft can go", () => {
+  it("while the conversation runs it offers Stop, and the steer arrow beside it once the draft can go", () => {
     const stop = () => undefined;
     const held = renderToStaticMarkup(
       <RubatoPanelComposer {...base} value="next" running onStop={stop} canSend={false} />,
@@ -42,6 +40,7 @@ describe("RubatoPanelComposer", () => {
     expect(held).not.toContain("Steer message");
 
     const told = renderToStaticMarkup(<RubatoPanelComposer {...base} value="next" running onStop={stop} />);
+    expect(told).toContain('aria-label="Stop generation"');
     expect(told).toContain('aria-label="Steer message"');
   });
 

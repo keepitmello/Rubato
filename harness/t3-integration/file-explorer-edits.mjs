@@ -85,6 +85,9 @@ export const fileExplorerEdits = {
   'apps/server/src/auth/RpcAuthorization.ts': [
     ['  [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,', '  [WS_METHODS.projectsManageEntry]: AuthFilesystemWriteScope,\n'],
   ],
+  'apps/server/src/observability/RpcInstrumentation.ts': [
+    ['  [WS_METHODS.projectsWriteFile]: "workspace",', '  [WS_METHODS.projectsManageEntry]: "workspace",\n'],
+  ],
   'apps/server/src/ws.ts': [
     ['import * as WorkspaceEntries from "./workspace/WorkspaceEntries.ts";', 'import { manageWorkspaceEntry } from "./workspace/manageWorkspaceEntry.ts";\n'],
     ['        [WS_METHODS.projectsWriteFile]: (input) =>',
