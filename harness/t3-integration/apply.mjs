@@ -26,6 +26,7 @@ import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs'
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
+import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -1752,6 +1753,11 @@ for (const [relative, changes] of Object.entries(workLogEdits)) {
 // tsgo checker count (tsgo-checkers-edits.mjs).
 overlays.push(...tsgoCheckersOverlays);
 for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Fork thread in the sidebars (thread-fork-edits.mjs) anchors on the pin edits above.
+overlays.push(...threadForkOverlays);
+for (const [relative, changes] of Object.entries(threadForkEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The right panel's Agents surface, which v0.1.0 dropped (agents-surface-edits.mjs).

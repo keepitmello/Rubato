@@ -89,6 +89,8 @@
     "apps/web/src/components/chat/MessagesTimeline.logic.ts": "a017b13b946c3ffac9ec6227fc4192541949cdf28c7fb8743abac0b7229a3d53",
     "apps/mobile/src/lib/threadActivity.ts": "3e8bf239d6ee3654ee6c9013e02880c3fbc9c30460b20ab2bacec656b89d86ea",
     "tsconfig.base.json": "d2d4a7acec31e82783f3d3b27018d9e5233d22b16ab683111147b8df8c2b7caa",
+    "apps/web/src/components/threadActionMenu.logic.ts": "71eafa53a0a6967775fbdb61d50f435a10a74adc7a5dc7ffd551d00469a7a0f1",
+    "apps/web/src/components/Sidebar.tsx": "07edf16e941252c7e18279bb9e9cfff491e3e73f93f6ea6ba4ca0747cd9a06f6",
     "packages/client-runtime/src/state/shell.ts": "867d47d87c7c070cf5dd6443ba9e2a54360b552c00cc04b5ddaf87465fbf72bc",
     "packages/client-runtime/src/markdownLinks.ts": "7fdccfefb8406197339e0aa3ccd215e787325352bd5fcdb0a32d3464999f30e0",
     "apps/server/scripts/cli.ts": "d4e247bbbd9f134021e982f1a629862fa90dbb09e67e341aa4e48bf5715157c0",
