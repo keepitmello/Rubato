@@ -19,13 +19,13 @@ import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
 import { officeEdits, officeOverlays } from './office-edits.mjs';
 import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs';
 import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.mjs';
-import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
-import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
+import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
+import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -33,11 +33,12 @@ import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
+import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
-const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/RubatoAgentsPanel.tsx', 'apps/web/src/components/RubatoAgentsPanel.test.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -196,7 +197,7 @@ const edits = {
       '    createFile: createEnvironmentRpcCommand(runtime, {\n      label: "environment-data:projects:create-file",\n      tag: WS_METHODS.projectsCreateFile,\n      scheduler: fileScheduler,\n      concurrency: {\n        mode: "serial",\n        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.cwd, input.relativePath]),\n      },\n    }),\n'],
   ],
   'apps/server/src/auth/RpcAuthorization.ts': [
-    ['  [WS_METHODS.projectsWriteFile]: AuthOrchestrationOperateScope,', '  [WS_METHODS.projectsCreateFile]: AuthOrchestrationOperateScope,\n'],
+    ['  [WS_METHODS.projectsWriteFile]: AuthFilesystemWriteScope,', '  [WS_METHODS.projectsCreateFile]: AuthFilesystemWriteScope,\n'],
   ],
   'apps/server/src/workspace/WorkspaceFileSystem.ts': [
     ['import * as WorkspaceEntries from "./WorkspaceEntries.ts";', 'import { createWorkspaceFile } from "./createWorkspaceFile.ts";\n'],
@@ -222,18 +223,14 @@ const edits = {
     ['        [WS_METHODS.projectsWriteFile]: (input) =>',
       [
         '        [WS_METHODS.projectsCreateFile]: (input) =>',
-        '          observeRpcEffect(',
-        '            WS_METHODS.projectsCreateFile,',
-        '            workspaceFileSystem.writeFile({ ...input, createOnly: true }).pipe(',
-        '              Effect.mapError((cause) => new ProjectWriteFileError({',
-        '                cwd: input.cwd, relativePath: input.relativePath,',
-        '                ...projectFileFailureContext(cause),',
-        '                message: cause._tag === "WorkspaceFileSystemOperationError" && cause.cause instanceof Error',
-        '                  ? cause.cause.message : cause.message,',
-        '                cause,',
-        '              })),',
-        '            ),',
-        '            { "rpc.aggregate": "workspace" },',
+        '          workspaceFileSystem.writeFile({ ...input, createOnly: true }).pipe(',
+        '            Effect.mapError((cause) => new ProjectWriteFileError({',
+        '              cwd: input.cwd, relativePath: input.relativePath,',
+        '              ...projectFileFailureContext(cause),',
+        '              message: cause._tag === "WorkspaceFileSystemOperationError" && cause.cause instanceof Error',
+        '                ? cause.cause.message : cause.message,',
+        '              cause,',
+        '            })),',
         '          ),',
         '',
       ].join('\n')],
@@ -338,7 +335,7 @@ const edits = {
   // 런타임 번들의 이름·번들 id. 아이콘은 이 파일이 assets 에서 읽어 만든다.
   'apps/desktop/scripts/electron-launcher.mjs': [
     [
-      'const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Alpha)";',
+      'const APP_DISPLAY_NAME = isDevelopment ? "T3 Code (Dev)" : "T3 Code (Beta)";',
       'const APP_DISPLAY_NAME = isDevelopment ? "Rubato (Dev)" : "Rubato";',
       'replace',
     ],
@@ -404,7 +401,7 @@ const edits = {
   // React 가 뜨기 전의 첫 화면. 그림은 /apple-touch-icon.png 를 그대로 쓰고, 그 파일은
   // 설치기가 assets/web 의 Rubato 것으로 깐다. 여기서는 그 앞뒤 글자만 바꾼다.
   'apps/web/index.html': [
-    ['    <title>T3 Code (Alpha)</title>', '    <title>Rubato</title>', 'replace'],
+    ['    <title>T3 Code (Beta)</title>', '    <title>Rubato</title>', 'replace'],
     [
       '        <div id="boot-shell-card" aria-label="T3 Code splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />',
       '        <div id="boot-shell-card" aria-label="Rubato splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Rubato" />',
@@ -441,88 +438,23 @@ const edits = {
   ],
   // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다.
-  'apps/web/src/components/chat/providerIconUtils.ts': [
-    ['import {\n  AntigravityIcon,', 'import { RubatoIcon } from "../RubatoIcon";\nimport { DeepSeekIcon } from "../DeepSeekIcon";\nimport { OpenGatewayIcon } from "../OpenGatewayIcon";\nimport { ZhipuIcon } from "../ZhipuIcon";\nimport { GeminiIcon } from "../GeminiIcon";\n'],
-    [
-      '  CursorIcon,\n  GrokIcon,\n  Icon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
-      '  CursorIcon,\n  GrokIcon,\n  Icon,\n  KiroIcon,\n  OpenAI,\n  OpenCodeIcon,\n} from "../Icons";',
-      'replace',
-    ],
-    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,', '  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n'],
-    [
-      '  isUnavailable?: boolean | undefined;\n};\n\nfunction escapeRegExp(value: string): string {',
-      [
-        '  isUnavailable?: boolean | undefined;',
-        '};',
-        '',
-        'const VENDOR_ICONS: Record<string, Icon> = {',
-        '  "openai-codex": OpenAI,',
-        '  anthropic: ClaudeAI,',
-        '  xai: GrokIcon,',
-        '  "google-antigravity": AntigravityIcon,',
-        '  kiro: KiroIcon,',
-        '  cursor: CursorIcon,',
-        '  opencode: OpenCodeIcon,',
-        '  "b-ai": DeepSeekIcon,',
-        '  opengateway: OpenGatewayIcon,',
-        '  nanogpt: ZhipuIcon,',
-        '  "google-vertex": GeminiIcon,',
-        '};',
-        'const VENDOR_LABELS: Record<string, string> = {',
-        '  "openai-codex": "OpenAI",',
-        '  anthropic: "Claude",',
-        '  xai: "xAI",',
-        '  "google-antigravity": "Antigravity",',
-        '  kiro: "Kiro",',
-        '  cursor: "Cursor",',
-        '  opencode: "OpenCode",',
-        '  "b-ai": "b.ai",',
-        '  opengateway: "OpenGateway",',
-        '  nanogpt: "NanoGPT",',
-        '  "google-vertex": "Vertex AI",',
-        '};',
-        '',
-        'export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {',
-        '  const sub = (model.subProvider ?? "").toLowerCase();',
-        '  if (sub && VENDOR_ICONS[sub]) return sub;',
-        '  const slug = model.slug.toLowerCase();',
-        '  const provider = slug.includes("/") ? slug.slice(0, slug.indexOf("/")) : "";',
-        '  return provider && VENDOR_ICONS[provider] ? provider : undefined;',
-        '}',
-        '',
-        'export function iconForProviderModel(',
-        '  driverKind: ProviderDriverKind,',
-        '  model: Pick<ModelEsque, "slug" | "subProvider">,',
-        '): Icon | null {',
-        '  // 게이트웨이(b.ai·OpenGateway)는 길일 뿐이라 DeepSeek 모델에는 DeepSeek 로고를 쓴다.',
-        '  if (model.slug.toLowerCase().includes("deepseek")) return DeepSeekIcon;',
-        '  if (model.slug.toLowerCase().includes("gemini")) return GeminiIcon;',
-        '  const vendor = vendorForModel(model);',
-        '  return (vendor ? VENDOR_ICONS[vendor] : undefined) ?? PROVIDER_ICON_BY_PROVIDER[driverKind] ?? null;',
-        '}',
-        '',
-        'export function subProviderLabel(',
-        '  subProvider: string,',
-        '  model?: Pick<ModelEsque, "slug" | "subProvider">,',
-        '): string {',
-        '  const vendor = vendorForModel(model ?? { slug: "", subProvider });',
-        '  return VENDOR_LABELS[vendor ?? ""] || VENDOR_LABELS[subProvider.toLowerCase()] || subProvider;',
-        '}',
-        '',
-        'function escapeRegExp(value: string): string {',
-      ].join('\n'),
-      'replace',
-    ],
+  // 모델 선택기와 목록 행의 제공자 글리프. 매핑에 없는 드라이버는 이름 앞
+  // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다. 모델마다 그 레인의 로고와 이름을
+  // 쓰는 매핑은 overlay rubatoModelIcons.tsx 에 있다.
+  'apps/web/src/components/chat/ProviderInstanceIcon.tsx': [
+    ['import { cn } from "~/lib/utils";', 'import { RubatoIcon } from "../RubatoIcon";\n'],
+    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n};', '  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n};', 'replace'],
   ],
   'apps/web/src/components/chat/ModelListRow.tsx': [
+    ['import { ProviderInstanceIcon } from "./ProviderInstanceIcon";', 'import { iconForProviderModel, subProviderLabel } from "./rubatoModelIcons";\n'],
     [
-      '  PROVIDER_ICON_BY_PROVIDER,\n} from "./providerIconUtils";',
-      '  iconForProviderModel,\n  subProviderLabel,\n} from "./providerIconUtils";',
+      '  const providerLabel = getProviderRowLabel(props.providerDisplayName, props.model.subProvider);',
+      '  const ModelVendorIcon = iconForProviderModel(props.driverKind, props.model);\n  const providerLabel = props.model.subProvider\n    ? subProviderLabel(props.model.subProvider, props.model)\n    : getProviderRowLabel(props.providerDisplayName, props.model.subProvider);',
       'replace',
     ],
     [
-      '  const ProviderIcon = PROVIDER_ICON_BY_PROVIDER[props.driverKind] ?? null;\n  const providerLabel = props.model.subProvider\n    ? `${props.providerDisplayName} · ${props.model.subProvider}`\n    : props.providerDisplayName;',
-      '  const ProviderIcon = iconForProviderModel(props.driverKind, props.model);\n  const providerLabel = props.model.subProvider\n    ? subProviderLabel(props.model.subProvider, props.model)\n    : props.providerDisplayName;',
+      '            <ProviderInstanceIcon\n              driverKind={props.driverKind}\n              displayName={props.providerDisplayName}\n              acpRegistryAgentId={props.acpRegistryAgentId}\n              acpRegistryIconUrl={props.acpRegistryIconUrl}\n              className="size-3"\n              iconClassName="size-3"\n            />',
+      '            {ModelVendorIcon ? (\n              <ModelVendorIcon className="size-3 shrink-0" aria-hidden />\n            ) : (\n              <ProviderInstanceIcon\n                driverKind={props.driverKind}\n                displayName={props.providerDisplayName}\n                acpRegistryAgentId={props.acpRegistryAgentId}\n                acpRegistryIconUrl={props.acpRegistryIconUrl}\n                className="size-3"\n                iconClassName="size-3"\n              />\n            )}',
       'replace',
     ],
   ],
@@ -530,7 +462,7 @@ const edits = {
   'apps/web/src/components/chat/ProviderModelPicker.tsx': [
     [
       '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n} from "./providerIconUtils";',
-      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n  iconForProviderModel,\n} from "./providerIconUtils";',
+      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n} from "./providerIconUtils";\nimport { iconForProviderModel } from "./rubatoModelIcons";',
       'replace',
     ],
     [
@@ -589,16 +521,16 @@ const edits = {
   // 원문을 다시 붙여 넣어서, overlay 제거가 원본을 복원하지 못한다.
   'apps/web/src/components/sidebar/SidebarChrome.tsx': [
     [
-      '        <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />',
+      '      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />',
       // 1cap 은 지금 폰트의 캡 높이라 UI 글자 크기 설정을 따라간다. 워드마크는
       // 그 1.2배 — 잉크가 상자의 0.95 라서 실제 잉크는 1.14cap 이고, 인터페이스
       // 20px(글자 0.875rem = 17.5px, 캡 12.5px)에서 14.5px 다. 원래 8px 이었다.
-      '        <T3Wordmark aria-label="Rubato" className="h-[1.2cap] w-auto shrink-0" />',
+      '      <T3Wordmark aria-label="Rubato" className="h-[1.2cap] w-auto shrink-0" />',
       'replace',
     ],
     [
-      '        >\n          Code\n        </span>',
-      '        >\n          {null}\n        </span>',
+      '      >\n        Code\n      </span>',
+      '      >\n        {null}\n      </span>',
       'replace',
     ],
   ],
@@ -673,32 +605,15 @@ const edits = {
       'replace',
     ],
   ],
-  // 큐에 든 말과 끼어드는 말은 다른 물건이다. T3 는 대기 메시지를 첫 툴 경계에서
-  // 내보내므로 ↑(Send now) 와 자동 방출이 같은 결과가 되고, Rubato 에서는 그 말이
-  // Pi 자신의 follow_up 큐로 들어가 T3 가 보여주지도 취소하지도 못했다. 루바토에서는
-  // 대기 메시지를 턴이 끝날 때까지 붙들어 둔다 — 그게 팔로업이고, ↑ 는 승격이다.
-  // 방출은 화면에 없는 스레드까지 맡는 QueuedMessageSender 한 곳에서 한다.
-  'apps/web/src/components/QueuedMessageSender.tsx': [
-    [
-      '  const due =\n    next !== undefined &&\n    !blocked &&\n    isQueuedMessageDue({ message: next, phase, latestToolActivityId });',
-      '  // Rubato: a queued message is a follow-up. It runs as its own turn once this one\n  // ends; releasing it at a tool boundary would make the row\'s Send now arrow, the\n  // promotion to a steer, mean nothing.\n  const heldAsFollowUp = phase === "running" && thread?.session?.providerName === "rubato-pi";\n  const due =\n    next !== undefined &&\n    !blocked &&\n    !heldAsFollowUp &&\n    isQueuedMessageDue({ message: next, phase, latestToolActivityId });',
-      'replace',
-    ],
-  ],
-  'apps/web/src/components/QueuedMessageSender.test.tsx': [
-    [
-      '  it("moves on to the next message after a failed one is cancelled", async () => {\n',
-      '  // Rubato: a queued message is a follow-up, so a tool boundary does not release it.\n  it("holds a Rubato follow-up past tool calls until the turn ends", async () => {\n    const rubato = (status: string, toolActivityIds: string[] = []) => {\n      const base = thread(status, { toolActivityIds });\n      return { ...base, session: { ...base.session, providerName: "rubato-pi" } };\n    };\n    enqueue();\n    io.thread = rubato("running");\n    await render();\n    io.thread = rubato("running", ["tool-1"]);\n    await render();\n    expect(commandsRun()).toEqual([]);\n\n    io.thread = rubato("ready", ["tool-1"]);\n    await render();\n    expect(commandsRun()).toEqual(["start"]);\n  });\n\n',
-    ],
-  ],
+  // 대기 메시지(팔로업)와 끼어들기(스티어)는 T3 서버 큐가 가른다. 기본 followUpBehavior 가
+  // "queue" 라 실행 중 보낸 말은 queue_after_active 로 그 턴이 끝난 뒤 제 턴으로 돌고, 대기
+  // 행의 ↑ 는 queued-message.promote-to-steer 로 스티어가 된다. 그래서 웹 쪽 패치가 없다.
   'apps/web/src/components/ChatView.tsx': [
-    // The Agents tab renders Rubato's own panel (overlay RubatoAgentsPanel.tsx).
-    ['import { AgentsPanel } from "./AgentsPanel";', 'import { RubatoAgentsPanel as AgentsPanel } from "./RubatoAgentsPanel";', 'replace'],
     ...[10, 12].map((indent) => {
       const spaces = ' '.repeat(indent);
       return [
-        `\n${spaces}onAddFiles={addFilesSurface}`,
-        `\n${spaces}noteTarget={activeWorkspaceRoot ? { threadRef: activeThreadRef, cwd: activeWorkspaceRoot } : undefined}\n${spaces}onAddFiles={addFilesSurface}`,
+        `\n${spaces}onAddFiles={addFilesSurfaceStable}`,
+        `\n${spaces}noteTarget={activeWorkspaceRoot ? { threadRef: activeThreadRef, cwd: activeWorkspaceRoot } : undefined}\n${spaces}onAddFiles={addFilesSurfaceStable}`,
         'replace',
       ];
     }),
@@ -730,25 +645,17 @@ const edits = {
       'replace',
     ],
   ],
-  // 슬래시 메뉴가 줄 맨 앞에서만 열렸다. 고른 스킬은 `$name` 칩이 되므로
-  // 그 다음에 `/` 를 쳐도 목록이 안 떴다. 메뉴 쪽은 이미 중간에서도 스킬을
-  // 남긴다. `/usr/bin` 과 `//` 는 경로로 보고 건너뛴다.
-  //
-  // 앵커의 `$` 는 업스트림이 통화 기호 전체(`\p{Sc}`)로 넓혔다. 우리가 더하는
-  // `/` 분기는 그대로 두고, 표지판만 새 모양을 따라간다.
+  // 슬래시 메뉴는 줄 중간의 `/` 에서도 열린다(upstream 이 이제 그렇게 한다). Rubato 는
+  // `/usr/bin` 같은 경로와 `//` 를 명령으로 보지 않는다 — 두 번째 `/` 가 있으면 건너뛴다.
   'apps/web/src/composer-logic.ts': [
-    [
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      'replace',
-    ],
+    ['  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/")) {\n',
+      '  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n',
+      'replace'],
   ],
   'packages/shared/src/composerTrigger.ts': [
-    [
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      '  const skillPrefix = /^\\p{Sc}/u.exec(token);\n  if (skillPrefix) {\n    return {\n      kind: "skill",\n      query: token.slice(skillPrefix[0].length),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n    return {\n      kind: "slash-command",\n      query: token.slice(1),\n      rangeStart: tokenStart,\n      rangeEnd: cursor,\n    };\n  }\n  if (!token.startsWith("@")) {\n    return null;\n  }',
-      'replace',
-    ],
+    ['  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/")) {\n',
+      '  const token = text.slice(tokenStart, cursor);\n  if (token.startsWith("/") && !token.includes("/", 1)) {\n',
+      'replace'],
   ],
   'apps/web/src/composer-logic.test.ts': [
     [
@@ -1120,159 +1027,6 @@ const edits = {
     [
       '  durationMs: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
       '  durationMs: Schema.optional(NonNegativeInt),\n  speedIndex: Schema.optional(NonNegativeInt),\n  compactsAutomatically: Schema.optional(Schema.Boolean),',
-      'replace',
-    ],
-  ],
-  'packages/client-runtime/src/state/subagentRuntime.ts': [
-    // Agents panel (RubatoAgentsPanel): whole label, picker model name, taskforce board.
-    [
-      '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  /** First retained observation',
-      [
-        '  readonly recentActivity: ReadonlyArray<SubagentActivityEntry>;',
-        '  /** The spawn\'s own words, uncut (title may carry a phone-sized model tag). */',
-        '  readonly label: string | null;',
-        '  /** The model as the picker names it, with effort: "Opus 5.5 · High". */',
-        '  readonly modelLabel: string | null;',
-        '  /** A taskforce member\'s name in its team: "backend". */',
-        '  readonly memberName: string | null;',
-        '  /** A taskforce\'s shared board, latest snapshot. */',
-        '  readonly board: SubagentBoard | null;',
-        '  /** First retained observation',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      'export interface RuntimeSubagent {',
-      [
-        'export interface SubagentBoardTask {',
-        '  readonly id: string;',
-        '  readonly subject: string;',
-        '  readonly description: string;',
-        '  readonly descriptionTruncated: boolean;',
-        '  readonly status: "pending" | "claimed" | "in_progress" | "completed";',
-        '  readonly owner: string | null;',
-        '  readonly blockedBy: ReadonlyArray<string>;',
-        '  readonly updatedAt: string | null;',
-        '}',
-        '',
-        'export interface SubagentBoard {',
-        '  readonly tasks: ReadonlyArray<SubagentBoardTask>;',
-        '}',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    [
-      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  firstSeenAt: string;',
-      '  recentActivity: ReadonlyArray<SubagentActivityEntry>;\n  label: string | null;\n  modelLabel: string | null;\n  memberName: string | null;\n  board: SubagentBoard | null;\n  firstSeenAt: string;',
-      'replace',
-    ],
-    [
-      '    recentActivity: [],\n    firstSeenAt: at,',
-      '    recentActivity: [],\n    label: asString(payload.label) ?? null,\n    modelLabel: asString(payload.modelLabel) ?? null,\n    memberName: asString(payload.memberName) ?? null,\n    board: null,\n    firstSeenAt: at,',
-      'replace',
-    ],
-    [
-      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;',
-      '  const effort = asString(payload.effort);\n  if (effort) agent.effort = effort;\n  const label = asString(payload.label);\n  if (label) agent.label = label;\n  const modelLabel = asString(payload.modelLabel);\n  if (modelLabel) agent.modelLabel = modelLabel;\n  const memberName = asString(payload.memberName);\n  if (memberName) agent.memberName = memberName;',
-      'replace',
-    ],
-    [
-      '          (payload.usageSnapshot !== true || !existed) &&',
-      '          ((payload.usageSnapshot !== true && payload.boardSnapshot !== true) || !existed) &&',
-      'replace',
-    ],
-    [
-      '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));\n        agent.updatedAt = at;\n        break;\n      }\n      case "task.updated": {',
-      [
-        '        agent.usage = mergeUsageMax(agent.usage, asUsage(payload.typedUsage));',
-        '        if (payload.boardSnapshot === true) {',
-        '          agent.board = asBoard(payload.board) ?? agent.board;',
-        '          break;',
-        '        }',
-        '        agent.updatedAt = at;',
-        '        break;',
-        '      }',
-        '      case "task.updated": {',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      'export function formatSubagentModelLabel(',
-      [
-        'const BOARD_TASK_STATUSES = new Set(["pending", "claimed", "in_progress", "completed"]);',
-        '',
-        'function asBoard(value: unknown): SubagentBoard | undefined {',
-        '  if (typeof value !== "object" || value === null) return undefined;',
-        '  const raw = (value as { tasks?: unknown }).tasks;',
-        '  if (!Array.isArray(raw)) return undefined;',
-        '  const tasks: SubagentBoardTask[] = [];',
-        '  for (const entry of raw) {',
-        '    if (typeof entry !== "object" || entry === null) continue;',
-        '    const record = entry as Record<string, unknown>;',
-        '    const id = asString(record.id);',
-        '    const subject = asString(record.subject);',
-        '    const status = record.status;',
-        '    if (!id || !subject || typeof status !== "string" || !BOARD_TASK_STATUSES.has(status)) continue;',
-        '    tasks.push({',
-        '      id,',
-        '      subject,',
-        '      description: typeof record.description === "string" ? record.description : "",',
-        '      descriptionTruncated: record.descriptionTruncated === true,',
-        '      status: status as SubagentBoardTask["status"],',
-        '      owner: asString(record.owner) ?? null,',
-        '      blockedBy: Array.isArray(record.blockedBy)',
-        '        ? record.blockedBy.filter((item): item is string => typeof item === "string")',
-        '        : [],',
-        '      updatedAt: asString(record.updatedAt) ?? null,',
-        '    });',
-        '  }',
-        '  return { tasks };',
-        '}',
-        '',
-        '',
-      ].join('\n'),
-    ],
-    // Completion detail retains the report; summaries and live activity stay bounded.
-    [
-      '        const summary = asString(payload.summary) ?? asString(payload.detail);',
-      '        const summary = asString(payload.detail) ?? asString(payload.summary);',
-      'replace',
-    ],
-    ...[
-      '\n              agent.error = agent.error ?? bounded(summary);',
-      '\n              agent.result = agent.result ?? bounded(summary);',
-      '\n            agent.error = agent.error ?? bounded(summary);',
-      '\n            agent.result = bounded(summary);',
-    ].map((line) => [line, line.replace('bounded(summary)', 'summary'), 'replace']),
-    [
-      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n}',
-      '  readonly toolUses?: number;\n  readonly durationMs?: number;\n  readonly speedIndex?: number;\n  readonly turns?: number;\n}',
-      'replace',
-    ],
-    [
-      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens };',
-      'replace',
-    ],
-    [
-      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  return usage;',
-      '  const durationMs = asCount(record.durationMs);\n  if (durationMs !== undefined) usage.durationMs = durationMs;\n  const speedIndex = asCount(record.speedIndex);\n  if (speedIndex !== undefined) usage.speedIndex = speedIndex;\n  const turns = asCount(record.turns);\n  if (turns !== undefined) usage.turns = turns;\n  return usage;',
-      'replace',
-    ],
-    [
-      '    toolUses?: number;\n    durationMs?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
-      '    toolUses?: number;\n    durationMs?: number;\n    speedIndex?: number;\n    turns?: number;\n  } = { totalTokens: Math.max(current.totalTokens, incoming.totalTokens) };',
-      'replace',
-    ],
-    [
-      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  return merged;',
-      '  const durationMs = pick(current.durationMs, incoming.durationMs);\n  if (durationMs !== undefined) merged.durationMs = durationMs;\n  const speedIndex = incoming.speedIndex !== undefined ? incoming.speedIndex : current.speedIndex;\n  if (speedIndex !== undefined) merged.speedIndex = speedIndex;\n  const turns = pick(current.turns, incoming.turns);\n  if (turns !== undefined) merged.turns = turns;\n  return merged;',
-      'replace',
-    ],
-    [
-      'export function formatSubagentTokenCount(totalTokens: number): string {',
-      'export function formatSpeedLabel(score: number | null | undefined): string {\n  return typeof score === "number" && Number.isFinite(score) ? `Speed ${Math.round(score)}` : "Speed —";\n}\n\nexport function latestSessionSpeed(\n  activities: readonly { kind: string; payload: unknown }[],\n): number | null {\n  for (let index = activities.length - 1; index >= 0; index -= 1) {\n    const activity = activities[index];\n    if (!activity || activity.kind !== "session.speed.updated") continue;\n    const payload = activity.payload;\n    if (!payload || typeof payload !== "object") return null;\n    const score = (payload as { speedIndex?: unknown }).speedIndex;\n    return typeof score === "number" && Number.isFinite(score) ? Math.round(score) : null;\n  }\n  return null;\n}\n\nexport function formatSubagentTokenCount(totalTokens: number): string {',
       'replace',
     ],
   ],
@@ -2110,6 +1864,11 @@ overlays.push(...phoneOverlays);
 for (const [relative, changes] of Object.entries(phoneEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// The settings pages above (memory, permissions, phone, scheduled) in the generated route tree (route-tree-edits.mjs).
+edits['apps/web/src/routeTree.gen.ts'] = [
+  ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
+  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled']),
+];
 // Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
 overlays.push(...officeOverlays);
 for (const [relative, changes] of Object.entries(officeEdits)) {
@@ -2123,11 +1882,6 @@ for (const [relative, changes] of Object.entries(surfaceMenuEdits)) {
 // One agent's conversation in the Agents panel (agent-session-edits.mjs).
 overlays.push(...agentSessionOverlays);
 for (const [relative, changes] of Object.entries(agentSessionEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// Fork thread in the legacy sidebar (thread-fork-edits.mjs) anchors on the pin edits above.
-overlays.push(...threadForkOverlays);
-for (const [relative, changes] of Object.entries(threadForkEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Explorer on the left, back and forward in the file surface (file-explorer-edits.mjs).
@@ -2155,12 +1909,17 @@ overlays.push(...workLogOverlays);
 for (const [relative, changes] of Object.entries(workLogEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// State DB retention and one-time compaction; tsgo checker count (state-retention-edits.mjs).
-overlays.push(...stateRetentionOverlays);
-for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
+// tsgo checker count (tsgo-checkers-edits.mjs).
+overlays.push(...tsgoCheckersOverlays);
+for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Side chat in the right panel; anchors on the thread-fork, surface-menu and right-panel edits (side-chat-edits.mjs).
+// The right panel's Agents surface, which v0.1.0 dropped (agents-surface-edits.mjs).
+overlays.push(...agentsSurfaceOverlays);
+for (const [relative, changes] of Object.entries(agentsSurfaceEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Side chat in the right panel; anchors on the agents-surface, surface-menu and right-panel edits (side-chat-edits.mjs).
 overlays.push(...sideChatOverlays);
 for (const [relative, changes] of Object.entries(sideChatEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];

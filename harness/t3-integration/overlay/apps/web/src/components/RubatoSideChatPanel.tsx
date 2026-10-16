@@ -15,6 +15,7 @@ import {
 } from "@t3tools/client-runtime/state/runtime";
 import { ThreadId, type EnvironmentId, type ScopedThreadRef } from "@t3tools/contracts";
 import type { LegendListRef } from "@legendapp/list/react";
+import * as DateTime from "effect/DateTime";
 import { ArrowLeft, MessagesSquare, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -23,14 +24,22 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { useTheme } from "~/hooks/useTheme";
 import { useClientSettings } from "~/hooks/useSettings";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
-import { useThread } from "~/state/entities";
+import {
+  deriveThreadActivityRun,
+  deriveThreadRuntime,
+} from "@t3tools/client-runtime/state/thread-execution";
+import { useAtomValue } from "@effect/atom-react";
+import { useThreadProjection, useThreadVisibleTurnItems } from "~/state/entities";
+import { environmentServerConfigsAtom } from "~/state/server";
 import { threadEnvironment } from "~/state/threads";
 import { newMessageId } from "~/lib/utils";
 import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
-import { deriveActiveWorkStartedAt, derivePhase, deriveTimelineEntries, deriveWorkLogEntries } from "../session-logic";
+import {
+  deriveActiveWorkStartedAt,
+  derivePhase,
+  deriveTimelineEntriesFromVisibleTurnItems,
+} from "../session-logic";
 import { formatRelativeTimeLabel } from "../timestampFormat";
-import type { ChatMessage } from "../types";
-import { buildThreadTurnInterruptInput } from "./ChatView.logic";
 import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { RubatoPanelComposer } from "./RubatoPanelComposer";
 import {
@@ -42,7 +51,10 @@ import {
 } from "./rubatoSideChat";
 
 const NO_TURN_DIFFS: never[] = [];
+const NO_RUNS: never[] = [];
+const NO_PROVIDERS: never[] = [];
 const ignore = () => undefined;
+const ignoreAsync = async () => undefined;
 const message = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
 
 async function run<W, A, E>(command: AtomCommand<W, A, E>, input: W): Promise<A> {
@@ -169,10 +181,14 @@ function SideChatRow({
   onOpen: () => void;
   onDelete: () => void;
 }) {
-  const thread = useThread(side);
-  const first = thread?.messages.find((item) => item.role === "user")?.text.trim();
-  const last = thread?.messages.at(-1)?.updatedAt ?? createdAt;
-  const working = derivePhase(thread?.session ?? null) === "running";
+  const projection = useThreadProjection(side)?.projection ?? null;
+  const first = projection?.messages.find((item) => item.role === "user")?.text.trim();
+  const lastAt = projection?.messages.at(-1)?.updatedAt;
+  const last = lastAt ? DateTime.formatIso(lastAt) : createdAt;
+  const working = useMemo(
+    () => projection !== null && derivePhase(deriveThreadRuntime(projection)) === "running",
+    [projection],
+  );
   return (
     <li className="group flex items-center gap-1 rounded-(--control-radius) hover:bg-accent">
       <button type="button" onClick={onOpen} className="flex min-w-0 flex-1 flex-col items-start gap-0.5 px-2 py-1.5 text-left">
@@ -210,7 +226,11 @@ function SideChatConversation({
 }) {
   const ref = side;
   const environmentId = side.environmentId;
-  const thread = useThread(ref);
+  const detail = useThreadProjection(ref);
+  const projection = detail?.projection ?? null;
+  const thread = projection?.thread ?? null;
+  const visibleTurnItems = useThreadVisibleTurnItems(ref);
+  const providers = useAtomValue(environmentServerConfigsAtom).get(environmentId)?.providers ?? NO_PROVIDERS;
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<"send" | "stop" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -219,24 +239,22 @@ function SideChatConversation({
   const timestampFormat = useClientSettings((settings) => settings.timestampFormat);
   const threadKey = scopedThreadKey(ref);
 
-  const messages = thread?.messages;
-  const activities = thread?.activities;
-  const proposedPlans = thread?.proposedPlans;
   const entries = useMemo(
     () =>
-      deriveTimelineEntries(
-        (messages ?? []).map(({ attachments: _attachments, ...message }) => message as ChatMessage),
-        proposedPlans ?? [],
-        deriveWorkLogEntries(activities ?? []),
-      ),
-    [messages, activities, proposedPlans],
+      deriveTimelineEntriesFromVisibleTurnItems({
+        visibleTurnItems,
+        optimisticMessages: [],
+        ...(projection === null
+          ? {}
+          : { attempts: projection.attempts, nodes: projection.nodes, plans: projection.plans }),
+      }),
+    [visibleTurnItems, projection],
   );
-  const session = thread?.session ?? null;
-  const latestTurn = thread?.latestTurn ?? null;
-  const working = derivePhase(session) === "running" || derivePhase(session) === "connecting" || busy === "send";
-  const runningTurnId =
-    (session?.status === "running" ? session.activeTurnId : null) ??
-    (latestTurn?.state === "running" ? latestTurn.turnId : null);
+  const activityRun = useMemo(() => (projection ? deriveThreadActivityRun(projection) : null), [projection]);
+  const runtime = useMemo(() => (projection ? deriveThreadRuntime(projection) : null), [projection]);
+  const phase = derivePhase(runtime);
+  const working = phase === "running" || phase === "connecting" || busy === "send";
+  const runningRunId = runtime?.activeRunId ?? null;
 
   const send = async () => {
     const text = draft.trim();
@@ -252,7 +270,7 @@ function SideChatConversation({
           modelSelection: thread.modelSelection,
           runtimeMode: thread.runtimeMode,
           interactionMode: thread.interactionMode,
-          createdAt: new Date().toISOString(),
+          dispatchMode: "start",
         },
       });
       setDraft("");
@@ -269,7 +287,10 @@ function SideChatConversation({
     setBusy("stop");
     setError(null);
     try {
-      await run(threadEnvironment.interruptTurn, { environmentId, input: buildThreadTurnInterruptInput(thread) });
+      await run(threadEnvironment.interruptTurn, {
+        environmentId,
+        input: { threadId: thread.id, ...(runningRunId ? { runId: runningRunId } : {}) },
+      });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -286,7 +307,7 @@ function SideChatConversation({
       setError(message(cause));
     }
   };
-  const first = messages?.find((item) => item.role === "user")?.text.trim();
+  const first = projection?.messages.find((item) => item.role === "user")?.text.trim();
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -321,10 +342,11 @@ function SideChatConversation({
           <MessagesTimeline
             listRef={listRef}
             timelineEntries={entries}
-            latestTurn={latestTurn}
-            runningTurnId={runningTurnId}
+            latestRun={activityRun}
+            runningRunId={runningRunId}
             isWorking={working}
-            activeTurnStartedAt={deriveActiveWorkStartedAt(latestTurn, session, null)}
+            activeTurnInProgress={working}
+            activeTurnStartedAt={deriveActiveWorkStartedAt(activityRun, runtime, null)}
             turnDiffSummaries={NO_TURN_DIFFS}
             routeThreadKey={threadKey}
             displayThreadKey={threadKey}
@@ -333,13 +355,19 @@ function SideChatConversation({
             workspaceRoot={workspaceRoot}
             resolvedTheme={resolvedTheme}
             timestampFormat={timestampFormat}
+            providerStatuses={providers}
+            runs={projection?.runs ?? NO_RUNS}
             supportsConversationRollback={false}
             isRevertingCheckpoint={false}
             onOpenTurnDiff={ignore}
+            onOpenThread={ignore}
+            onForkFromRun={ignoreAsync}
+            onRollbackCheckpoint={ignore}
             onRevertToTurnCount={ignore}
             onImageExpand={ignore}
             anchorMessageId={null}
             onAnchorReady={ignore}
+            onAnchorSizeChanged={ignore}
             contentInsetEndAdjustment={0}
             liveFollowEnabled
             onIsAtEndChange={ignore}

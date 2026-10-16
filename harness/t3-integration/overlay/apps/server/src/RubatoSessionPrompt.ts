@@ -1,15 +1,12 @@
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import * as SqlClient from "effect/sql/SqlClient";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
-import { rubatoBridgeFor } from "./provider/Drivers/RubatoPiDriver.ts";
 import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";
-import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
-import { ProviderSessionDirectory } from "./provider/Services/ProviderSessionDirectory.ts";
+import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
+import { piSessionOfThread, rubatoBridge } from "./provider/RubatoPiSessions.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
-import { piSessionOf } from "./RubatoThreadFork.ts";
 
 // The new-thread screen's "시스템 프롬프트" chip: a new conversation can open with another prompt
 // in place of Rubato's own, as its whole system prompt. The library and the reading live in the
@@ -35,15 +32,10 @@ const text = (body: Body, key: string) =>
 export const rubatoSessionPromptRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth;
-    const registry = yield* ProviderInstanceRegistry;
-    const directory = yield* ProviderSessionDirectory;
+    const context = yield* Effect.context<SqlClient.SqlClient | ProviderInstanceRegistry>();
 
     const bridgeOf = (instanceId: string | undefined) =>
-      Effect.gen(function* () {
-        if (!instanceId) return undefined;
-        const instance = yield* registry.getInstance(ProviderInstanceId.make(instanceId));
-        return instance ? rubatoBridgeFor(instance) : undefined;
-      });
+      rubatoBridge(instanceId).pipe(Effect.provide(context));
 
     // The bridge refuses with a `code` (session-prompts.mjs SessionPromptError); it goes back as is.
     const call = <A>(run: () => Promise<A>, answer: (value: A) => Body) =>
@@ -90,16 +82,15 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
       Effect.gen(function* () {
         const threadId = text(body, "threadId");
         if (!threadId) return failure(400, "invalid", "threadId is missing.");
-        // `started: false` until the thread's first message binds a session; the badge asks again.
-        const binding = yield* directory
-          .getBinding(ThreadId.make(threadId))
-          .pipe(Effect.orElseSucceed(() => Option.none()));
-        if (Option.isNone(binding)) return HttpServerResponse.jsonUnsafe({ prompt: null, started: false });
-        const sessionId = piSessionOf(binding.value.resumeCursor);
-        if (sessionId === null) return HttpServerResponse.jsonUnsafe({ prompt: null, started: true });
-        const bridge = yield* bridgeOf(binding.value.providerInstanceId);
+        // `started: false` until the thread's first message opens a session; the badge asks again.
+        const session = yield* piSessionOfThread(threadId).pipe(
+          Effect.provide(context),
+          Effect.orElseSucceed(() => null),
+        );
+        if (session === null) return HttpServerResponse.jsonUnsafe({ prompt: null, started: false });
+        const bridge = yield* bridgeOf(text(body, "instanceId"));
         if (!bridge) return HttpServerResponse.jsonUnsafe({ prompt: null, started: true });
-        return yield* call(() => bridge.sessionPrompt(sessionId), (prompt) => ({ prompt, started: true }));
+        return yield* call(() => bridge.sessionPrompt(session.sessionId), (prompt) => ({ prompt, started: true }));
       });
 
     const route = (action: string, handle: (body: Body) => Effect.Effect<HttpServerResponse.HttpServerResponse>) =>

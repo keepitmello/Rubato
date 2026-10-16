@@ -36,8 +36,8 @@ function rows(items: AgentTranscriptItem[], live: boolean) {
   const timeline = agentTimeline(items, { taskId: "st_a", live });
   return deriveMessagesTimelineRows({
     timelineEntries: timeline.entries,
-    latestTurn: timeline.latestTurn,
-    runningTurnId: timeline.runningTurnId,
+    latestRun: timeline.latestRun,
+    runningRunId: timeline.runningRunId,
     isWorking: live,
     activeTurnStartedAt: timeline.activeTurnStartedAt,
     turnDiffSummaries: [],
@@ -64,18 +64,22 @@ describe("agentTimeline", () => {
     expect(rows(WORKING, true).map(shape)).toEqual([
       "user: Review Q1",
       "working",
-      "activity-group",
+      "work",
       "assistant: Reading the draft.",
       "work-live",
     ]);
   });
 
-  it("tool rows carry the item type and title the bridge gives the lead's calls", () => {
+  // The Pi adapter's shapes for the lead's own calls: bash is a command, other tools a
+  // tool call, thoughts a reasoning row.
+  it("tool rows take the item type the lead's calls get", () => {
     const { entries } = agentTimeline(SETTLED, { taskId: "st_a", live: false });
     const work = entries.flatMap((entry) => (entry.kind === "work" ? [entry.entry] : []));
     expect(work.map((entry) => [entry.label, entry.itemType, entry.toolLifecycleStatus])).toEqual([
-      ["read", "dynamic_tool_call", "completed"],
+      ["Thinking", "reasoning", "completed"],
+      ["read", "dynamic_tool", "completed"],
       ["bash", "command_execution", "completed"],
+      ["Thinking", "reasoning", "completed"],
     ]);
   });
 

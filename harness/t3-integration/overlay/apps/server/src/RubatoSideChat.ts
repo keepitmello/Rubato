@@ -1,28 +1,27 @@
-import { CommandId, ThreadId } from "@t3tools/contracts";
+import { CommandId, ProviderDriverKind, ThreadId } from "@t3tools/contracts";
 import { isSideChatThreadId, SIDE_CHAT_THREAD_PREFIX } from "@t3tools/shared/rubatoSideChat";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schedule from "effect/Schedule";
-import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+import * as SqlClient from "effect/sql/SqlClient";
+import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
-import { OrchestrationEngineService } from "./orchestration/Services/OrchestrationEngine.ts";
-import { ProjectionSnapshotQuery } from "./orchestration/Services/ProjectionSnapshotQuery.ts";
-import { rubatoBridgeFor } from "./provider/Drivers/RubatoPiDriver.ts";
-import { ProviderInstanceRegistry } from "./provider/Services/ProviderInstanceRegistry.ts";
-import { ProviderService } from "./provider/Services/ProviderService.ts";
-import { ProviderSessionDirectory } from "./provider/Services/ProviderSessionDirectory.ts";
-import { authorized } from "./RubatoServiceRoute.ts";
-import { piSessionOf } from "./RubatoThreadFork.ts";
+import { OrchestratorV2 } from "./orchestration-v2/Orchestrator.ts";
+import { ProjectionStoreV2 } from "./orchestration-v2/ProjectionStore.ts";
 import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";
+import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
+import { piSessionOfThread, rubatoBridge, threadOfPiSession } from "./provider/RubatoPiSessions.ts";
+import { authorized } from "./RubatoServiceRoute.ts";
 
 // The right panel's Side chat: a fork of the thread's Rubato conversation, opened beside it.
 //
 // POST /rubato/side-chat `{ threadId }` forks the thread's Pi session as a side chat (the engine
 // adds a hidden notice after the copied history; pi-runtime session-link/side-chat.mjs) and makes
-// the thread that shows it here, not through the inventory, which skips side chats. Its id carries
+// the thread that shows it here, not through the inventory, which skips side chats. V2's own
+// thread.fork has no notion of a side chat, so the thread is created already bound to the forked
+// session (thread.create's importedNativeThread), and its first turn resumes that session. Its id carries
 // the side chat prefix, which keeps it out of the client's thread list (packages/shared
 // rubatoSideChat.ts). It is not archived: archived threads have no detail to subscribe to. It
 // imports no history, so it starts empty at the fork while the model has the whole copy. It keeps
@@ -31,8 +30,9 @@ import type { PiBridge } from "./provider/Drivers/RubatoPiDriver.ts";
 // POST /rubato/side-chat/list `{ threadId }` answers the thread's side chats, newest first, so the
 // panel can go back to one after its tab was closed.
 //
-// POST /rubato/side-chat/close `{ threadId }` deletes one: the provider session stops, the engine
-// deletes the Pi session (it refuses anything that is not a side chat) and the thread is deleted.
+// POST /rubato/side-chat/close `{ threadId }` deletes one: the thread is deleted (which detaches
+// its provider session) and the engine deletes the Pi session (it refuses anything that is not a
+// side chat).
 // Side chats of a thread that was deleted are swept the same way when this server starts.
 
 const TITLE_LIMIT = 512;
@@ -74,66 +74,58 @@ export function sideChatsToSweep(
 const failure = (status: number, code: string, message: string) =>
   HttpServerResponse.jsonUnsafe({ error: { code, message } }, { status });
 const reason = (cause: unknown) => (cause instanceof Error ? cause.message : String(cause));
+const RUBATO = ProviderDriverKind.make("rubato-pi");
 
 export const rubatoSideChatRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth;
-    const directory = yield* ProviderSessionDirectory;
-    const registry = yield* ProviderInstanceRegistry;
-    const providers = yield* ProviderService;
-    const query = yield* ProjectionSnapshotQuery;
-    const engine = yield* OrchestrationEngineService;
+    const orchestrator = yield* OrchestratorV2;
+    const projections = yield* ProjectionStoreV2;
     const crypto = yield* Crypto.Crypto;
-    const commandId = crypto.randomUUIDv4.pipe(Effect.map(CommandId.make));
+    const context = yield* Effect.context<SqlClient.SqlClient | ProviderInstanceRegistry>();
+    const commandId = crypto.randomUUIDv4().pipe(Effect.map(CommandId.make));
+
+    /** The live thread, or null when it is gone or deleted. */
+    const liveThread = (threadId: ThreadId) =>
+      projections.getThread(threadId).pipe(
+        Effect.map((thread) => (thread.deletedAt === null ? thread : null)),
+        Effect.orElseSucceed(() => null),
+      );
 
     const bound = (threadId: ThreadId) =>
       Effect.gen(function* () {
-        const binding = yield* directory.getBinding(threadId);
-        if (Option.isNone(binding)) return null;
-        const sessionId = piSessionOf(binding.value.resumeCursor);
-        const instanceId = binding.value.providerInstanceId;
-        if (sessionId === null || instanceId === undefined) return null;
-        const instance = yield* registry.getInstance(instanceId);
-        const bridge = instance ? rubatoBridgeFor(instance) : undefined;
-        return instance && bridge ? { sessionId, instance, bridge } : null;
-      });
+        const session = yield* piSessionOfThread(threadId);
+        if (session === null) return null;
+        const bridge = yield* rubatoBridge();
+        return bridge ? { sessionId: session.sessionId, bridge } : null;
+      }).pipe(Effect.provide(context), Effect.orElseSucceed(() => null));
 
     const open = (threadId: ThreadId) =>
       Effect.gen(function* () {
-        const source = yield* query.getThreadShellById(threadId);
-        if (Option.isNone(source)) return failure(404, "not-found", "This thread no longer exists.");
+        const source = yield* liveThread(threadId);
+        if (source === null) return failure(404, "not-found", "This thread no longer exists.");
         const from = yield* bound(threadId);
         if (!from) return failure(409, "not-rubato", "This thread has no Rubato conversation to open a side chat from yet.");
         const forked = yield* Effect.tryPromise({
-          try: () => from.bridge.forkSession(from.sessionId, sideChatTitle(source.value.title), { side: true }),
+          try: () => from.bridge.forkSession(from.sessionId, sideChatTitle(source.title), { side: true }),
           catch: reason,
         });
         if (!forked) return failure(500, "failed", "Rubato made no side chat.");
-        const sideThreadId = ThreadId.make(`${SIDE_CHAT_THREAD_PREFIX}${yield* crypto.randomUUIDv4}`);
-        yield* directory.upsert(
-          {
-            threadId: sideThreadId,
-            provider: from.instance.driverKind,
-            providerInstanceId: from.instance.instanceId,
-            status: "stopped",
-            runtimeMode: source.value.runtimeMode,
-            resumeCursor: from.bridge.cursor(forked.sessionId),
-            runtimePayload: { cwd: forked.cwd },
-          },
-          { onConflict: "ignore" },
-        );
-        yield* engine.dispatch({
+        const sideThreadId = ThreadId.make(`${SIDE_CHAT_THREAD_PREFIX}${yield* crypto.randomUUIDv4()}`);
+        yield* orchestrator.dispatch({
           type: "thread.create",
           commandId: yield* commandId,
+          createdBy: "user",
+          creationSource: "server",
           threadId: sideThreadId,
-          projectId: source.value.projectId,
-          title: sideChatTitle(source.value.title),
-          modelSelection: source.value.modelSelection,
-          runtimeMode: source.value.runtimeMode,
-          interactionMode: source.value.interactionMode,
-          branch: source.value.branch,
-          worktreePath: source.value.worktreePath,
-          createdAt: DateTime.formatIso(yield* DateTime.now),
+          projectId: source.projectId,
+          title: sideChatTitle(source.title),
+          modelSelection: source.modelSelection,
+          runtimeMode: source.runtimeMode,
+          interactionMode: source.interactionMode,
+          branch: source.branch,
+          worktreePath: source.worktreePath,
+          importedNativeThread: { ref: { driver: RUBATO, nativeId: forked.sessionId, strength: "strong" } },
         });
         return HttpServerResponse.jsonUnsafe({ threadId: sideThreadId });
       }).pipe(Effect.catch((cause) => Effect.succeed(failure(500, "failed", `Could not open a side chat: ${reason(cause)}`))));
@@ -142,21 +134,16 @@ export const rubatoSideChatRouteLayer = Layer.unwrap(
     // it is gone, or the engine's reason it was not deleted.
     const discard = (threadId: ThreadId | null, target: { readonly sessionId: string; readonly bridge: PiBridge } | null) =>
       Effect.gen(function* () {
-        if (target) {
-          // Stopping detaches this app; the engine's discard ends a turn that is still running.
-          if (threadId) yield* providers.stopSession({ threadId }).pipe(Effect.ignore);
-          const refused = yield* Effect.tryPromise({
-            try: () => target.bridge.discardSession(target.sessionId),
-            catch: reason,
-          }).pipe(Effect.match({ onFailure: (message) => message, onSuccess: () => null }));
-          // A session already gone is what deleting wants; any other refusal keeps the thread.
-          if (refused !== null && !/No such conversation/i.test(refused)) return refused;
-        }
-        if (threadId === null) return null;
-        const model = yield* query.getCommandReadModel();
-        if (model.threads.some((thread) => thread.id === threadId && thread.deletedAt === null))
-          yield* engine.dispatch({ type: "thread.delete", commandId: yield* commandId, threadId });
-        return null;
+        // Deleting the thread first detaches this app; the engine's discard ends a turn still running.
+        if (threadId !== null && (yield* liveThread(threadId)) !== null)
+          yield* orchestrator.dispatch({ type: "thread.delete", commandId: yield* commandId, threadId });
+        if (!target) return null;
+        const refused = yield* Effect.tryPromise({
+          try: () => target.bridge.discardSession(target.sessionId),
+          catch: reason,
+        }).pipe(Effect.match({ onFailure: (message) => message, onSuccess: () => null }));
+        // A session already gone is what deleting wants.
+        return refused !== null && !/No such conversation/i.test(refused) ? refused : null;
       });
 
     const close = (threadId: ThreadId) =>
@@ -169,27 +156,26 @@ export const rubatoSideChatRouteLayer = Layer.unwrap(
           : failure(409, "not-discarded", `The side chat was not deleted: ${refused}`);
       }).pipe(Effect.catch((cause) => Effect.succeed(failure(500, "failed", `Could not close the side chat: ${reason(cause)}`))));
 
-    /** The live (not deleted) thread bound to each Pi session. */
-    const threadsBySession = Effect.gen(function* () {
-      const live = new Set(
-        (yield* query.getCommandReadModel()).threads.filter((thread) => thread.deletedAt === null).map((thread) => thread.id),
-      );
-      const bySession = new Map<string, string[]>();
-      for (const binding of yield* directory.listBindings()) {
-        const sessionId = piSessionOf(binding.resumeCursor);
-        if (sessionId === null || !live.has(binding.threadId)) continue;
-        bySession.set(sessionId, [...(bySession.get(sessionId) ?? []), binding.threadId]);
-      }
-      return bySession;
-    });
+    /** The live thread of each session in `sessions` and of the sessions they came from. */
+    const threadsBySession = (sessions: ReadonlyArray<SideChatSession>) =>
+      Effect.gen(function* () {
+        const ids = new Set(sessions.flatMap((session) => [session.sessionId, ...(session.sideChatOf ? [session.sideChatOf] : [])]));
+        const bySession = new Map<string, string[]>();
+        for (const sessionId of ids) {
+          const threadId = yield* threadOfPiSession(sessionId);
+          if (threadId !== null) bySession.set(sessionId, [threadId]);
+        }
+        return bySession;
+      }).pipe(Effect.provide(context));
 
     const list = (threadId: ThreadId) =>
       Effect.gen(function* () {
         const from = yield* bound(threadId);
         if (!from) return HttpServerResponse.jsonUnsafe({ sideChats: [] });
-        const sessions = yield* Effect.tryPromise({ try: () => from.bridge.sideChats(), catch: reason });
-        const bySession = yield* threadsBySession;
-        const sideChats = sideChatsOf(from.sessionId, sessions, bySession).map((entry) => ({
+        const sessions = (yield* Effect.tryPromise({ try: () => from.bridge.sideChats(), catch: reason })).filter(
+          (session) => session.sideChatOf === from.sessionId,
+        );
+        const sideChats = sideChatsOf(from.sessionId, sessions, yield* threadsBySession(sessions)).map((entry) => ({
           threadId: entry.threadId,
           createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)),
         }));
@@ -199,16 +185,13 @@ export const rubatoSideChatRouteLayer = Layer.unwrap(
     // A side chat goes with the thread it came from. Deleting a thread does not reach the engine,
     // so the side chats whose source thread is gone are deleted here, once the providers are up.
     const sweep = Effect.gen(function* () {
-      for (const instance of yield* registry.listInstances) {
-        const bridge = rubatoBridgeFor(instance);
-        if (!bridge || !instance.enabled) continue;
-        const sessions = yield* Effect.tryPromise({ try: () => bridge.sideChats(), catch: reason });
-        const bySession = yield* threadsBySession;
-        for (const orphan of sideChatsToSweep(sessions, bySession)) {
-          const target = { sessionId: orphan.sessionId, bridge };
-          if (orphan.threadIds.length === 0) yield* discard(null, target);
-          for (const sideThreadId of orphan.threadIds) yield* discard(ThreadId.make(sideThreadId), target);
-        }
+      const bridge = yield* rubatoBridge().pipe(Effect.provide(context));
+      if (!bridge) return;
+      const sessions = yield* Effect.tryPromise({ try: () => bridge.sideChats(), catch: reason });
+      for (const orphan of sideChatsToSweep(sessions, yield* threadsBySession(sessions))) {
+        const target = { sessionId: orphan.sessionId, bridge };
+        if (orphan.threadIds.length === 0) yield* discard(null, target);
+        for (const sideThreadId of orphan.threadIds) yield* discard(ThreadId.make(sideThreadId), target);
       }
     });
     yield* Effect.forkScoped(

@@ -33,7 +33,7 @@ export const sidebarPinEdits = {
       '          {thread.pinnedAt != null ? (\n            <PinIcon aria-label="Pinned" className="size-3 shrink-0 text-muted-foreground" />\n          ) : null}\n'],
     ['  const handleThreadContextMenu = useCallback(\n    async (threadRef: ScopedThreadRef, position: { x: number; y: number }) => {\n',
       '  const { pinThread, confirmAndUnpinThread } = useThreadActions();\n'],
-    ['          { id: "rename", label: "Rename thread" },\n',
+    ['          { id: "rename", label: "Rename thread", disabled: !canOperateThread },\n',
       '          ...pinMenuItems(thread),\n'],
     ['      if (clicked === "rename") {\n',
       [

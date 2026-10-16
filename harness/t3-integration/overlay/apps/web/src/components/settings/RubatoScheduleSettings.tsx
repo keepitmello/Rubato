@@ -45,7 +45,7 @@ import {
 import { primaryServerProvidersAtom } from "../../state/server";
 import { usePreparedConnection } from "../../state/session";
 import { cn } from "../../lib/utils";
-import { iconForProviderModel } from "../chat/providerIconUtils";
+import { iconForProviderModel } from "../chat/rubatoModelIcons";
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "../ui/alert";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";

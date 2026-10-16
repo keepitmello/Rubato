@@ -1,18 +1,10 @@
-// What a message offers under it, as Codex does:
-//
-// - a message of mine has a pencil ("Edit message") instead of T3's "Edit from here". The
-//   bubble becomes an editor, and sending the edit rewinds the conversation to before
-//   that message (files stay) and sends the edited one (chat/RubatoMessageEdit.tsx);
-// - a reply has "Fork into new chat" beside its copy and rewind buttons: a new thread
-//   holding the conversation up to the end of that reply's turn (chat/RubatoReplyFork.tsx,
-//   /rubato/thread-fork with `at`).
-//
-// The reply row's rewind button comes from step-rewind-edits.mjs, so this module
-// registers after it.
+// A message of mine has a pencil ("Edit message") instead of T3's "Edit from here", as
+// Codex does. The bubble becomes an editor, and sending the edit rewinds the conversation
+// to before that message (files stay) and sends the edited one (chat/RubatoMessageEdit.tsx).
+// Forking at a reply is T3's own "Fork from this response".
 export const turnActionsOverlays = [
   'apps/web/src/components/chat/RubatoMessageEdit.tsx',
   'apps/web/src/components/chat/RubatoMessageEdit.test.tsx',
-  'apps/web/src/components/chat/RubatoReplyFork.tsx',
 ];
 
 const lines = (...parts) => parts.join('\n');
@@ -60,7 +52,7 @@ const EDIT_HOST = lines(
   '  // prompt. If the send fails after the rewind, the edited text waits in the composer.',
   '  useRubatoMessageEditHost(routeThreadKey, async (edit: RubatoMessageEdit) => {',
   '    if (!activeThread) throw new Error("This thread is not loaded.");',
-  '    const original = activeThread.messages.find((message) => message.id === edit.messageId);',
+  '    const original = serverProjection?.messages.find((message) => message.id === edit.messageId);',
   '    if (!original || original.role !== "user")',
   '      throw new Error("This message is no longer in the thread.");',
   '    if (!supportsConversationRollback)',
@@ -80,7 +72,17 @@ const EDIT_HOST = lines(
   '    if (!connection) throw new Error("The environment is not connected.");',
   '    const threadId = activeThread.id;',
   '    const files = await prepareRevertedMessageAttachments({',
-  '      message: { ...original, attachments: edit.attachments },',
+  '      message: {',
+  '        id: original.id,',
+  '        role: original.role,',
+  '        text: original.text,',
+  '        attachments: edit.attachments,',
+  '        context: original.context,',
+  '        runId: original.runId,',
+  '        streaming: false,',
+  '        createdAt: DateTime.formatIso(original.createdAt),',
+  '        updatedAt: DateTime.formatIso(original.updatedAt),',
+  '      },',
   '      environmentId,',
   '      httpBaseUrl: connection.httpBaseUrl,',
   '      createAssetUrl: createAttachmentAssetUrl,',
@@ -94,10 +96,11 @@ const EDIT_HOST = lines(
   '      rewindingThreadKeys: new Set(store.rewindingThreadKeys).add(routeThreadKey),',
   '    }));',
   '    try {',
-  '      await waitForRevertedMessage(routeThreadRef, edit.messageId, edit.turnCount, async () => {',
+  '      const commandId = CommandId.make(randomUUID());',
+  '      await waitForRevertedMessage(routeThreadRef, edit.messageId, edit.turnCount, commandId, async () => {',
   '        const result = await revertThreadCheckpoint({',
   '          environmentId,',
-  '          input: { threadId, turnCount: edit.turnCount, restoreFiles: false },',
+  '          input: { commandId, threadId, turnCount: edit.turnCount, restoreFiles: false },',
   '        });',
   '        if (result._tag === "Failure") throw squashAtomCommandFailure(result);',
   '      });',
@@ -123,7 +126,7 @@ const EDIT_HOST = lines(
   '        role: "user",',
   '        text: edit.text,',
   '        attachments: [...uploaded],',
-  '        turnId: null,',
+  '        runId: null,',
   '        createdAt,',
   '        updatedAt: createdAt,',
   '        streaming: false,',
@@ -134,7 +137,6 @@ const EDIT_HOST = lines(
   '      const settingsResult = await persistThreadSettingsForNextTurn({',
   '        threadId,',
   '        createdAt,',
-  '        modelSelection: sendContext.selectedModelSelection,',
   '        ...(localCheckoutBranchMismatch',
   '          ? { branch: localCheckoutBranchMismatch.currentBranch }',
   '          : {}),',
@@ -158,6 +160,7 @@ const EDIT_HOST = lines(
   '                modelSelection: sendContext.selectedModelSelection,',
   '                runtimeMode,',
   '                interactionMode: sendContext.interactionMode,',
+  '                dispatchMode: "start",',
   '                createdAt,',
   '              },',
   '            });',
@@ -189,7 +192,6 @@ export const turnActionsEdits = {
       '  RubatoMessageEditor,',
       '  useRubatoMessageEditing,',
       '} from "./RubatoMessageEdit";',
-      'import { RubatoReplyForkButton } from "./RubatoReplyFork";',
       '')],
     // A replacement is never empty: removing the overlay finds it by its text.
     ['  Undo2Icon,\n', '  // Rubato: no Undo2Icon, the message edit is a pencil (RubatoMessageEdit.tsx).\n', 'replace'],
@@ -247,21 +249,6 @@ export const turnActionsEdits = {
       '              />',
       '            )}',
       ''), 'replace'],
-    // Beside the reply's rewind (step-rewind-edits.mjs). The last reply forks too: that is
-    // the whole conversation.
-    ['        reveal="inherit"\n      />\n', lines(
-      '        reveal="inherit"',
-      '      />',
-      '      <RubatoReplyForkButton',
-      '        threadRef={ctx.threadRef}',
-      '        messageId={message.id}',
-      '        busy={',
-      '          Boolean(message.streaming) ||',
-      '          rubatoMetaActivity.isRevertingCheckpoint ||',
-      '          (rubatoMetaActivity.isWorking && message.turnId === rubatoMetaActivity.latestTurnId)',
-      '        }',
-      '      />',
-      ''), 'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { appAtomRegistry } from "../rpc/atomRegistry";\n', lines(
@@ -273,6 +260,6 @@ export const turnActionsEdits = {
       '  withUploadedAttachments,',
       '} from "./chat/RubatoMessageEdit";',
       '')],
-    ['  const onCompactContext = async () => {\n', EDIT_HOST],
+    ['  const onCompactContext = () => {\n', EDIT_HOST],
   ],
 };

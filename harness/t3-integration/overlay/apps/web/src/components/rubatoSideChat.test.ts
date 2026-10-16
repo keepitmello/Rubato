@@ -4,11 +4,17 @@ import { sideChatIsEmpty, sideChatSourceReady } from "./rubatoSideChat";
 
 describe("Side chat", () => {
   it("is offered for a Rubato thread that has run, and not before", () => {
-    expect(sideChatSourceReady({ latestTurn: { turnId: "t" }, messages: [] }, true)).toBe(true);
-    // A thread imported from the engine has messages but no T3 turn yet.
-    expect(sideChatSourceReady({ latestTurn: null, messages: [{ id: "m" }] }, true)).toBe(true);
-    expect(sideChatSourceReady({ latestTurn: null, messages: [] }, true)).toBe(false);
-    expect(sideChatSourceReady({ latestTurn: { turnId: "t" }, messages: [] }, false)).toBe(false);
+    const thread = (latestRun: unknown, latestUserMessageAt: string | null) => ({
+      environmentId: "env" as never,
+      providerInstanceId: "rubato",
+      latestRun,
+      latestUserMessageAt,
+    });
+    expect(sideChatSourceReady(thread({ runId: "r" }, null), true)).toBe(true);
+    // A thread imported from the engine has messages but no run yet.
+    expect(sideChatSourceReady(thread(null, "2026-10-16T00:00:00.000Z"), true)).toBe(true);
+    expect(sideChatSourceReady(thread(null, null), true)).toBe(false);
+    expect(sideChatSourceReady(thread({ runId: "r" }, null), false)).toBe(false);
     expect(sideChatSourceReady(null, true)).toBe(false);
   });
 

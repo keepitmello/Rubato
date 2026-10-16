@@ -19,9 +19,9 @@ export const sessionPromptOverlays = [
 
 export const sessionPromptEdits = {
   'apps/server/src/server.ts': [
-    ['import { deviceHubProxyRouteLayer } from "./device/DeviceHubProxy.ts";',
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";',
       'import { rubatoSessionPromptRouteLayer } from "./RubatoSessionPrompt.ts";\n'],
-    ['    deviceHubProxyRouteLayer,\n', '    rubatoSessionPromptRouteLayer,\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoSessionPromptRouteLayer,\n'],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";\n',
@@ -74,24 +74,22 @@ export const sessionPromptEdits = {
       '          : []),',
       '',
     ].join('\n')],
-    ['    compactSlashCommandAvailable,\n    composerTrigger,\n    exactPullRequestLookup.data,\n',
-      '    draftId,\n    environmentId,\n    selectedProviderEntry,\n'],
-    ['        if (!planModeUiEnabled) return;\n        void handleInteractionModeChange(', [
-      '        if (item.command === "prompt") {',
-      '          const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {',
-      '            expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),',
-      '            focusEditorAfterReplace: false,',
-      '          });',
-      '          if (applied) {',
-      '            setComposerHighlightedItemId(null);',
-      '            openRubatoSessionPromptMenu(draftId);',
-      '          }',
-      '          return;',
+    ['    compactSlashCommandAvailable,\n    composerTrigger,\n    environmentId,\n',
+      '    draftId,\n    selectedProviderEntry,\n'],
+    ['      if (!planModeUiEnabled) return;\n      void handleInteractionModeChange(', [
+      '      if (item.command === "prompt") {',
+      '        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {',
+      '          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),',
+      '          focusEditorAfterReplace: false,',
+      '        });',
+      '        if (applied) {',
+      '          setComposerHighlightedItemId(null);',
+      '          openRubatoSessionPromptMenu(draftId);',
       '        }',
+      '        return;',
+      '      }',
       '',
     ].join('\n')],
-    ['      planModeUiEnabled,\n      onUsageLimitsCommand,\n      resolveActiveComposerTrigger,\n    ],\n',
-      '      draftId,\n'],
     [[
       '              {!isComposerCollapsedMobile &&',
       '                !isComposerApprovalState &&',
@@ -109,7 +107,7 @@ export const sessionPromptEdits = {
     ].join('\n')],
   ],
   'apps/web/src/components/chat/ChatHeader.tsx': [
-    ['import { Button } from "../ui/button";\n',
+    ['import { cn } from "~/lib/utils";\n',
       'import { RubatoSessionPromptBadge } from "./RubatoSessionPrompt";\n'],
     ['        </WorkspaceBreadcrumbItem>\n      </WorkspaceBreadcrumb>\n', [
       '          {isServerThread ? (',

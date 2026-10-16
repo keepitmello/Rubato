@@ -9,6 +9,22 @@ export const surfaceMenuOverlays = [
 ];
 
 export const surfaceMenuEdits = {
+  // Upstream's keyboard test counts three arrow presses to Files in its flat order; in the
+  // grouped order Files sits elsewhere, so the test walks until it reaches Files.
+  'apps/web/src/components/RightPanelTabs.keyboard.test.tsx': [
+    ['    await press("t", { metaKey: true });\n    await press("ArrowDown");\n    await press("ArrowDown");\n    await press("ArrowDown");\n    expect(document.activeElement?.textContent).toContain("Files");\n',
+      [
+        '    await press("t", { metaKey: true });',
+        '    // Rubato: the menu is grouped (rubatoSurfaceGroups.ts), so walk to Files.',
+        '    for (let step = 0; step < 12; step += 1) {',
+        '      await press("ArrowDown");',
+        '      if (document.activeElement?.textContent?.includes("Files")) break;',
+        '    }',
+        '    expect(document.activeElement?.textContent).toContain("Files");',
+        '',
+      ].join('\n'),
+      'replace'],
+  ],
   'apps/web/src/components/RightPanelTabs.tsx': [
     ['import { cn } from "~/lib/utils";\n',
       'import { orderSurfaceActions, surfaceGroupStartClass } from "./rubatoSurfaceGroups";\n'],
