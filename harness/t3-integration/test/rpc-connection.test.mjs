@@ -262,3 +262,13 @@ test('the session name Rubato gives a conversation becomes the thread title', as
   await conn.inbound;
   assert.deepEqual(titles, [['t1', 'Port the work log'], ['t1', 'Renamed by topic']]);
 });
+
+test('the agent\'s own record keeping does not reach T3 as work', async () => {
+  const { client, conn, records } = await attached({});
+  client.listener({ runtimeId: 'r1', sequence: 2, status: 'running', events: [
+    { sequence: 1, event: { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'notes_write_file', args: { path: 'now.md' } } },
+    { sequence: 2, event: { type: 'tool_execution_start', toolCallId: 'c2', toolName: 'bash', args: { command: 'ls' } } },
+  ] });
+  await conn.inbound;
+  assert.deepEqual(records.map((record) => record.toolCallId), ['c2']);
+});

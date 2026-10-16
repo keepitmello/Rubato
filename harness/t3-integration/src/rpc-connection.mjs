@@ -2,6 +2,7 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { rewriteSkillMentions } from './commands.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
+import { isBookkeepingTool } from './activity.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -206,6 +207,9 @@ export class RubatoRpcConnection {
       return;
     }
     if (event?.type === 'agent_start' && this.hold) this.endHold(false);
+    // The agent's own records (context notes, task list, tool search) are not work the person
+    // asked for: the turn's work summary leaves them out, as V1's work log did.
+    if (/^tool_execution_(start|update|end)$/.test(event?.type ?? '') && isBookkeepingTool(event.toolName)) return;
     this.emit(event);
   }
   async awaitedLabels() {

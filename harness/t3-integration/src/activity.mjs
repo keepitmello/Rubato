@@ -260,6 +260,8 @@ const WEB_TOOLS = new Set(['webfetch', 'web_fetch', 'websearch', 'web_search']);
 // turns on. An agent often writes its answer and then saves notes or ticks its list in
 // the same message; that message ended in a tool call, but no work for the user followed.
 const BOOKKEEPING_TOOLS = new Set([...CONTEXT_NOTES_TOOL_NAMES, 'todo', TOOL_SEARCH_TOOL_NAME]);
+/** A call that only keeps the agent's own records (notes, task list, tool search). */
+export const isBookkeepingTool = (name) => BOOKKEEPING_TOOLS.has(name);
 
 const patchedFiles = (input) => {
   if (typeof input !== 'string') return [];
