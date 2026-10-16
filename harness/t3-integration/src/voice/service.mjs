@@ -5,11 +5,12 @@ export function createVoiceService({ presence, store, submitter, transcriber,
   readThread, readProject, listThreads, defaultProjectId, now = Date.now } = {}) {
   let drainPromise;
   let wakeAgain = false;
-  let timer;
   let closed = false;
   const publicState = (s) => ({
     voiceSessionId: s.voiceSessionId, target: s.target, threadId: s.threadId ?? null,
-    projectId: s.projectId ?? null, label: s.label, status: s.state,
+    projectId: s.projectId ?? null, label: s.label,
+    // 'pending' is a claim on its way to T3; clients have always called that 'sending'.
+    status: s.state === 'pending' ? 'sending' : s.state,
     deepLink: s.deepLink ?? null, expiresAt: s.expiresAt, candidates: s.candidates,
     ...(s.error ? { error: s.error } : {}),
   });
@@ -24,24 +25,10 @@ export function createVoiceService({ presence, store, submitter, transcriber,
     if (session.state !== 'open') throw new VoiceSessionError('session-closed', 'This voice session is no longer open');
     return session;
   };
-  const notify = async (session, state) => {
-    // Notification failure must not turn a successful send into a second send.
-    try { await submitter.notice(session, state); } catch { /* status remains available over HTTP */ }
-  };
-  const finish = async (session, state, error) => {
-    const queuedNotice = session.queuedNotice;
-    store.update(session.voiceSessionId, {
-      state, error, text: undefined, expiresAt: now() + VOICE_SESSION_TTL_MS,
-    });
-    if (queuedNotice || state !== 'sent') await notify(session, state);
-  };
-  const scheduleExpiry = () => {
-    clearTimeout(timer);
-    const deadlines = store.all().filter((s) => s.state === 'queued').map((s) => s.expiresAt);
-    if (deadlines.length && !closed) {
-      timer = setTimeout(() => { void service.wake(); }, Math.max(1, Math.min(...deadlines) - now()));
-      timer.unref?.();
-    }
+  // The text leaves private state as soon as T3 holds it or it will never be sent.
+  const available = (thread) => thread && !thread.archivedAt && !thread.deletedAt;
+  const finish = (session, changes) => {
+    store.update(session.voiceSessionId, { ...changes, text: undefined, expiresAt: now() + VOICE_SESSION_TTL_MS });
   };
   const service = {
     async rememberMobileProject() {
@@ -58,7 +45,7 @@ export function createVoiceService({ presence, store, submitter, transcriber,
       const decision = resolveTarget({ presence: presence.snapshot(), now: now() });
       if (decision.target === 'existing-thread') {
         const thread = await readThread(decision.threadId);
-        if (thread && !thread.archivedAt) {
+        if (available(thread)) {
           store.rememberProject(thread.projectId);
           return publicState(store.start({
             target: 'existing-thread', threadId: thread.id, projectId: thread.projectId, label: thread.title,
@@ -67,7 +54,7 @@ export function createVoiceService({ presence, store, submitter, transcriber,
         decision.target = 'ambiguous';
       }
       if (decision.target === 'ambiguous') {
-        const candidates = (await listThreads()).filter((t) => !t.archivedAt).slice(0, 100)
+        const candidates = (await listThreads()).filter(available).slice(0, 100)
           .map((t) => ({ threadId: t.id, projectId: t.projectId, label: t.title }));
         return publicState(store.start({ target: 'ambiguous', label: 'Choose a conversation', candidates }));
       }
@@ -83,7 +70,7 @@ export function createVoiceService({ presence, store, submitter, transcriber,
       if (session.target !== 'ambiguous') throw new VoiceSessionError('target-pinned', 'This target is already pinned');
       const choice = session.candidates.find((candidate) => candidate.threadId === threadId);
       const thread = choice && await readThread(threadId);
-      if (!thread || thread.archivedAt) throw new VoiceSessionError('invalid-target', 'Choose an available conversation from the list');
+      if (!available(thread)) throw new VoiceSessionError('invalid-target', 'Choose an available conversation from the list');
       store.rememberProject(thread.projectId);
       return publicState(store.update(id, { target: 'existing-thread', ...choice, candidates: undefined }));
     },
@@ -102,6 +89,7 @@ export function createVoiceService({ presence, store, submitter, transcriber,
       const fingerprint = textFingerprint(text);
       if (session.fingerprint) {
         if (session.fingerprint !== fingerprint) throw new VoiceSessionError('different-text', 'This session already submitted different text');
+        await drainPromise;
         return publicState(session);
       }
       open(voiceSessionId);
@@ -109,7 +97,7 @@ export function createVoiceService({ presence, store, submitter, transcriber,
         throw new VoiceSessionError('invalid-target', 'This session cannot send messages');
       }
       // Synchronous durable claim excludes concurrent submissions with other text.
-      store.update(voiceSessionId, { fingerprint, text, state: 'queued' });
+      store.update(voiceSessionId, { fingerprint, text, state: 'pending' });
       await service.wake();
       return publicState(session);
     },
@@ -122,51 +110,46 @@ export function createVoiceService({ presence, store, submitter, transcriber,
     },
     async cancel(id) {
       const session = required(id);
-      if (['sending', 'sent'].includes(session.state)) {
+      if (session.state === 'queued') {
+        // Waiting in T3's queue: take it back out unless its turn already began.
+        if (!(await submitter.withdraw(session))) {
+          throw new VoiceSessionError('already-sending', 'This message is already being sent');
+        }
+      } else if (['pending', 'sent'].includes(session.state)) {
         throw new VoiceSessionError('already-sending', 'This message is already being sent');
       }
-      await finish(session, 'cancelled');
+      finish(session, { state: 'cancelled' });
       return publicState(session);
     },
+    // Hands every pending claim to T3. Runs at submit and once at startup, for
+    // claims a restart interrupted.
     wake() {
       if (closed) return Promise.resolve();
       if (drainPromise) { wakeAgain = true; return drainPromise; }
       drainPromise = (async () => {
         do {
           wakeAgain = false;
-          const blockedThreads = new Set();
           for (const session of store.all()) {
-            if (closed || session.state !== 'queued') continue;
-            if (session.expiresAt <= now()) { await finish(session, 'expired'); continue; }
-            if (blockedThreads.has(session.threadId)) continue;
-            store.update(session.voiceSessionId, { state: 'sending' });
+            if (closed || session.state !== 'pending') continue;
+            if (session.expiresAt <= now()) { finish(session, { state: 'expired' }); continue; }
             try {
               const result = await submitter.submit(session);
-              store.update(session.voiceSessionId, {
-                threadId: result.threadId, deepLink: result.deepLink, state: result.status,
+              finish(session, {
+                state: result.status, threadId: result.threadId, runId: result.runId, deepLink: result.deepLink,
               });
-              if (result.status === 'sent') await finish(session, 'sent');
-              else {
-                blockedThreads.add(result.threadId);
-                if (!session.queuedNotice) {
-                  store.update(session.voiceSessionId, { queuedNotice: true });
-                  await notify(session, 'queued');
-                }
-              }
             } catch (error) {
-              await finish(session, 'failed', {
+              finish(session, { state: 'failed', error: {
                 code: error instanceof VoiceSessionError ? error.code : 'send-failed',
                 message: error instanceof VoiceSessionError ? error.message : 'T3 could not accept the message',
-              });
+              } });
             }
           }
         } while (wakeAgain && !closed);
-      })().finally(() => { drainPromise = undefined; scheduleExpiry(); });
+      })().finally(() => { drainPromise = undefined; });
       return drainPromise;
     },
     async close() {
       closed = true;
-      clearTimeout(timer);
       await drainPromise;
     },
   };

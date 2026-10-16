@@ -14,7 +14,8 @@ export class VoiceSessionError extends Error {
 }
 
 // Persist the claim BEFORE dispatch. The T3 command ids are stable, so a restart
-// after dispatch but before the receipt retries the same engine command.
+// after dispatch but before the receipt retries the same command and T3 answers
+// it from its receipt.
 export function createSessionStore({ now = Date.now, filename, newId = randomUUID,
   ttlMs = VOICE_SESSION_TTL_MS } = {}) {
   let saved = { version: 1, lastMobileProject: null, sessions: [] };
@@ -26,8 +27,12 @@ export function createSessionStore({ now = Date.now, filename, newId = randomUUI
       if (error.code !== 'ENOENT') throw error;
     }
   }
+  // A claim that had not reached T3 is sent again. Files from before T3 kept the
+  // queue held such claims as 'sending' or as 'queued' with their text still present.
+  const unsent = (session) => session.state === 'sending' ||
+    (session.state === 'queued' && session.text !== undefined);
   const sessions = new Map(saved.sessions.map((session) => [session.voiceSessionId, {
-    ...session, state: session.state === 'sending' ? 'queued' : session.state,
+    ...session, state: unsent(session) ? 'pending' : session.state,
   }]));
   const persist = () => {
     if (!filename) return;
@@ -57,8 +62,8 @@ export function createSessionStore({ now = Date.now, filename, newId = randomUUI
     },
     prune() {
       for (const [id, session] of sessions) {
-        // Queued/sending entries are resolved by the service, not silently lost.
-        if (!['queued', 'sending'].includes(session.state) && session.expiresAt <= now()) sessions.delete(id);
+        // Claims not yet handed to T3 are resolved by the service, not silently lost.
+        if (session.state !== 'pending' && session.expiresAt <= now()) sessions.delete(id);
       }
       persist();
     },

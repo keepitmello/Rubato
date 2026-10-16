@@ -102,6 +102,7 @@
     "apps/server/src/orchestration-v2/runtimeLayer.ts": "88d8858abc4835fbc0b2898166a8f2e6209f98035846f631620066109499eae6",
     "apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts": "a13a8ee37ca17036adfde829c186c23321c52364bdcc98586252fbba04a76bac",
     "apps/server/src/provider/ProviderRegistry.ts": "634700e64cc0242c3d7795b937e157448767f9317f3b35e5ea15c3a35687c56e",
-    "packages/shared/src/markdownLinks.ts": "de31b00d34c6ecdf0382bcc15dabb779e822b86b32ebd31185fd2a2b1a26c05f"
+    "packages/shared/src/markdownLinks.ts": "de31b00d34c6ecdf0382bcc15dabb779e822b86b32ebd31185fd2a2b1a26c05f",
+    "apps/server/src/orchestration-v2/CheckpointService.ts": "c4bc532f3b85d3c68f2ac3e6f9427774c0dae5c24466765d8e464cd4132e9472"
   }
 }
