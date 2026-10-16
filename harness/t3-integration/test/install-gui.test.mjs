@@ -137,7 +137,7 @@ test('install-macos-app removes other app bundles from the runtime directory', (
 //   fail        언제나 실패한다 (서명 키가 낡은 corepack 같은 것)
 //   rejectArch  --cpu/--os 를 거절한다 (전역 vp 0.3.x 가 실제로 그랬다)
 // 받기에 성공하면 T3 의 devDependency 처럼 node_modules/.bin/vp 가 생긴다.
-function installCalls(hostOs, tools) {
+function installCalls(hostOs, tools, { staged = null } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'rb-install-gui-deps-'));
   try {
     const bin = path.join(root, 'bin');
@@ -145,6 +145,10 @@ function installCalls(hostOs, tools) {
     mkdirSync(bin);
     mkdirSync(t3);
     writeFileSync(path.join(t3, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
+    if (staged) {
+      mkdirSync(path.join(t3, 'apps/server/scripts'), { recursive: true });
+      writeFileSync(path.join(t3, 'apps/server/scripts/cli.ts'), 'process.env.RUBATO_T3_OUT_SUFFIX\n');
+    }
     const log = path.join(root, 'calls');
     writeFileSync(log, '');
     writeFileSync(path.join(bin, 'node'), `#!/bin/bash\nexec '${process.execPath}' "$@"\n`);
@@ -172,6 +176,8 @@ function installCalls(hostOs, tools) {
       `T3_DIR='${t3}'`,
       `NODE='${path.join(bin, 'node')}'`,
       `DEPS_STAMP='${path.join(t3, '.rubato-gui-deps')}'`,
+      `staged_build() { echo 'staged_build' >> '${log}'; ${staged === 'fail' ? 'return 1' : 'return 0'}; }`,
+      `swap_staged() { echo 'swap_staged' >> '${log}'; }`,
       fn,
       'build_desktop',
     ].join('\n');
@@ -186,18 +192,19 @@ function installCalls(hostOs, tools) {
   }
 }
 const arch = `--cpu=${process.arch} --os=darwin`;
+const purge = '--config.confirm-modules-purge=false';
 
 test('Darwin installs T3 dependencies for this machine only', () => {
   const run = installCalls('Darwin', { corepack: 'ok' });
   assert.equal(run.status, 0, run.output);
-  assert.equal(run.calls[0], `corepack pnpm install ${arch}`);
+  assert.equal(run.calls[0], `corepack pnpm install ${purge} ${arch}`);
 });
 
 test('non-Darwin installs keep upstream supportedArchitectures', () => {
   for (const host of ['Linux', 'MINGW64_NT-10.0-19045']) {
     const run = installCalls(host, { vp: 'ok' });
     assert.equal(run.status, 0, run.output);
-    assert.equal(run.calls[0], 'vp i');
+    assert.equal(run.calls[0], `vp i -- ${purge}`);
   }
 });
 
@@ -210,7 +217,7 @@ test('corepack is preferred over a global vp that rejects the arch options', () 
 test('an old global vp alone still installs, without the arch limit', () => {
   const run = installCalls('Darwin', { vp: 'rejectArch' });
   assert.equal(run.status, 0, run.output);
-  assert.deepEqual(run.calls.slice(0, 2), [`vp i -- ${arch}`, 'vp i']);
+  assert.deepEqual(run.calls.slice(0, 2), [`vp i -- ${purge} ${arch}`, `vp i -- ${purge}`]);
   assert.match(run.output, /모든 아키텍처로 다시 받는다/);
   assert.equal(run.calls.at(-1), 'local-vp run --filter @t3tools/desktop --filter t3 build');
 });
@@ -218,7 +225,34 @@ test('an old global vp alone still installs, without the arch limit', () => {
 test('a broken corepack falls through to the next tool', () => {
   const run = installCalls('Darwin', { corepack: 'fail', vp: 'ok' });
   assert.equal(run.status, 0, run.output);
-  assert.deepEqual(run.calls.slice(0, 2), [`corepack pnpm install ${arch}`, `vp i -- ${arch}`]);
+  assert.deepEqual(run.calls.slice(0, 2), [`corepack pnpm install ${purge} ${arch}`, `vp i -- ${purge} ${arch}`]);
+});
+
+// A pin that changes pnpm's hoist settings (v0.0.45 -> v0.1.0) makes pnpm want to
+// remove node_modules first. Without a terminal it asks nobody and aborts with
+// ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY, so the app's update button could never
+// get past the dependency install. Every attempt, with every tool, says not to ask.
+test('no dependency install stops to ask before replacing node_modules', () => {
+  const run = installCalls('Darwin', { corepack: 'fail', vp: 'rejectArch', pnpm: 'fail' });
+  const installs = run.calls.filter((line) => / (install|i)( |$)/.test(line));
+  assert.ok(installs.length >= 4, run.calls.join('\n'));
+  for (const line of installs) assert.ok(line.includes(purge), line);
+});
+
+// Building in place left a mix when the build stopped part way: a new web and a
+// half-written server beside the old desktop main, which is what the old bundle then
+// opened. With the staged-build edit in the tree, it builds beside and swaps whole.
+test('a build with the app closed still builds beside the live outputs and swaps them in whole', () => {
+  const run = installCalls('Darwin', { corepack: 'ok' }, { staged: 'ok' });
+  assert.equal(run.status, 0, run.output);
+  assert.deepEqual(run.calls.slice(-2), ['staged_build', 'swap_staged']);
+  assert.ok(!run.calls.some((line) => line.includes(' build')), run.calls.join('\n'));
+});
+
+test('a failed staged build swaps nothing in and fails', () => {
+  const run = installCalls('Darwin', { corepack: 'ok' }, { staged: 'fail' });
+  assert.notEqual(run.status, 0);
+  assert.equal(run.calls.at(-1), 'staged_build');
 });
 
 test('an install that fails with every tool stops the build', () => {
@@ -362,7 +396,7 @@ test('the app runtime bundle is emptied only when its icon, name or bundle id in
   writeFileSync(path.join(t3, 'apps/desktop/scripts/electron-launcher.mjs'), 'const APP_DISPLAY_NAME = "Rubato";');
   writeFileSync(path.join(t3, 'apps/desktop/package.json'), '{}');
   const runtime = path.join(t3, 'apps/desktop/.electron-runtime');
-  const run = () => runShell([`HERE='${here}'`, `T3_DIR='${t3}'`, `RUNTIME_STAMP='${t3}/.rubato-gui-runtime'`,
+  const run = (built = 1) => runShell([`HERE='${here}'`, `T3_DIR='${t3}'`, `RUNTIME_STAMP='${t3}/.rubato-gui-runtime'`, `built=${built}`,
     slice('runtime_fingerprint() {', '\n}\n') + '\n}',
     slice('RUNTIME_WANT="$(runtime_fingerprint)"', '\n# 맥 앱 번들은')]);
   mkdirSync(runtime);
@@ -374,6 +408,14 @@ test('the app runtime bundle is emptied only when its icon, name or bundle id in
   writeFileSync(path.join(t3, 'apps/desktop/scripts/electron-launcher.mjs'), 'const APP_DISPLAY_NAME = "Rubato 2";');
   assert.equal(run().status, 0);
   assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), false, 'the name changed');
+  // A failed build keeps the old bundle: it is the only way the app still opens, and
+  // emptying it before the next launch remade it left /Applications/Rubato.app dangling.
+  mkdirSync(runtime);
+  writeFileSync(path.join(t3, 'apps/desktop/scripts/electron-launcher.mjs'), 'const APP_DISPLAY_NAME = "Rubato 3";');
+  assert.equal(run(0).status, 0);
+  assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), true, 'the build failed');
+  assert.equal(run(1).status, 0);
+  assert.equal(readdirSync(path.join(t3, 'apps/desktop')).includes('.electron-runtime'), false, 'the next good build still renews it');
 });
 
 test('the copied launcher icon keeps the repository icon\'s time, so the runtime bundle is not remade', () => {

@@ -170,10 +170,17 @@ build_desktop() {
     # 때마다(락파일이 바뀌어 여기로 온다) 멈췄다. 그래서 있는 도구를 차례로 쓴다.
     # 핀이 정한 pnpm 을 그대로 받는 corepack 이 먼저다. 아키텍처 제한은 받는 양만
     # 줄이는 최적화라, 어느 도구도 그 옵션으로 못 받으면 제한 없이 한 번 더 받는다.
+    #
+    # 핀이 hoist 설정을 바꾸면(v0.0.45 → v0.1.0 의 publicHoistPattern) pnpm 은
+    # node_modules 를 통째로 지우고 다시 깔려고 확인을 묻는다. 터미널이 없으면
+    # ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY 로 그만둔다 — 앱의 업데이트 버튼
+    # 경로가 그렇다. 지우는 것은 핀이 정한 설치로 되돌리는 것이라 묻지 않는다.
+    # 환경변수(npm_config_/pnpm_config_)로는 pnpm 11 이 이 설정을 안 읽는다.
     install_deps() {
+      set -- --config.confirm-modules-purge=false "$@"
       if command -v corepack >/dev/null 2>&1 && corepack pnpm install "$@"; then return 0; fi
-      if [ -x node_modules/.bin/vp ] && ./node_modules/.bin/vp i ${1+--} "$@"; then return 0; fi
-      if command -v vp >/dev/null 2>&1 && vp i ${1+--} "$@"; then return 0; fi
+      if [ -x node_modules/.bin/vp ] && ./node_modules/.bin/vp i -- "$@"; then return 0; fi
+      if command -v vp >/dev/null 2>&1 && vp i -- "$@"; then return 0; fi
       if command -v pnpm >/dev/null 2>&1 && pnpm install "$@"; then return 0; fi
       return 1
     }
@@ -191,7 +198,12 @@ build_desktop() {
       fi
       [ -n "$want_deps" ] && printf '%s\n' "$want_deps" > "$DEPS_STAMP"
     fi
-    if [ -x node_modules/.bin/vp ]; then
+    # 앱이 꺼져 있어도 제자리에 바로 쓰지 않는다. 빌드가 도중에 실패하거나 끊기면
+    # 세 폴더 중 일부만 새것이 되고, 옛 번들로 다시 켠 앱은 그 섞인 것을 읽는다.
+    # 옆에 다 만든 뒤에만 바꿔 끼우면 실패해도 옛 번들이 통째로 남는다.
+    if [ -x node_modules/.bin/vp ] && grep -q 'RUBATO_T3_OUT_SUFFIX' apps/server/scripts/cli.ts 2>/dev/null; then
+      staged_build && swap_staged
+    elif [ -x node_modules/.bin/vp ]; then
       ./node_modules/.bin/vp run --filter @t3tools/desktop --filter t3 build
     elif command -v corepack >/dev/null 2>&1; then
       corepack pnpm --filter @t3tools/desktop --filter t3 build
@@ -376,8 +388,10 @@ fi
 # T3 런처는 아이콘을 mtime 으로만 판단해서, 원본을 Rubato 것으로 바꿔도 먼저 만들어
 # 둔 icns 를 그대로 쓸 수 있다. 이름이 바뀌면 옛 이름의 런타임 번들도 옆에 남는다.
 # 그 입력이 바뀌었을 때만 비우고 다음 실행에서 다시 만들게 한다.
+# 빌드가 실패했으면 비우지 않는다. 옛 번들이 앱을 켤 유일한 길이고, 비운 뒤 다시
+# 만들기 전에 끊기면 /Applications/Rubato.app 은 아무것도 안 가리킨다.
 RUNTIME_WANT="$(runtime_fingerprint)"
-if [ "$(cat "$RUNTIME_STAMP" 2>/dev/null || true)" != "$RUNTIME_WANT" ]; then
+if [ "$built" = 1 ] && [ "$(cat "$RUNTIME_STAMP" 2>/dev/null || true)" != "$RUNTIME_WANT" ]; then
   rm -rf "$T3_DIR/apps/desktop/.electron-runtime"
   printf '%s\n' "$RUNTIME_WANT" > "$RUNTIME_STAMP"
 fi
@@ -396,7 +410,11 @@ if is_darwin; then
     ok "응용 프로그램: $APP  (더블클릭으로 켠다)"
     exit 0
   fi
-  err "$APP 은 만들었지만 데스크톱이 없어서 아직 안 켜진다"
+  if [ -f "$BUNDLE" ]; then
+    err "새 데스크톱을 빌드하지 못해 앱은 옛 번들로 켜진다. 다시: bash $HERE/install-gui.sh --apply"
+  else
+    err "$APP 은 만들었지만 데스크톱이 없어서 아직 안 켜진다. 다시: bash $HERE/install-gui.sh --apply"
+  fi
   exit 1
 fi
 
@@ -404,5 +422,9 @@ if [ "$built" = 1 ]; then
   ok "데스크톱. 실행: sh $HERE/start-gui.sh"
   exit 0
 fi
-err "데스크톱이 없어서 아직 안 켜진다"
+if [ -f "$BUNDLE" ]; then
+  err "새 데스크톱을 빌드하지 못해 앱은 옛 번들로 켜진다. 다시: bash $HERE/install-gui.sh --apply"
+else
+  err "데스크톱이 없어서 아직 안 켜진다. 다시: bash $HERE/install-gui.sh --apply"
+fi
 exit 1
