@@ -98,6 +98,43 @@ test('a target that left the list across a pin bump is the new pin original, not
   await assert.rejects(applyIntegration({t3:root}),/local changes: .*DroppedAcrossPins/);
 });
 
+// The V1 → V2 update on a real machine (2026-10-17): a V1 overlay file renamed only in case
+// (rubatoStepRewind.ts → RubatoStepRewind.ts) and V1 edit targets whose folders V2 dropped
+// stopped the install, each refused or written into a missing folder.
+test('an update finds a file renamed only in case, and leaves paths the new pin dropped absent', {skip:!process.env.T3_SOURCE}, async(t)=>{
+  const source=process.env.T3_SOURCE;
+  const pin=JSON.parse(await readFile(new URL('../upstream.json',import.meta.url),'utf8'));
+  const root=await mkdtemp(path.join(tmpdir(),'rb-overlay-v1-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const git=(...args)=>execFileSync('git',['-C',root,...args],{encoding:'utf8'});
+  for(const relative of Object.keys(pin.targets)) {
+    await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
+    await writeFile(path.join(root,relative),execFileSync('git',['-C',source,'show',`${pin.upstreamCommit}:${relative}`]));
+  }
+  const overlay=fileURLToPath(new URL('../overlay/',import.meta.url));
+  for(const relative of execFileSync('find',['.','-type','f'],{cwd:overlay,encoding:'utf8'}).split('\n').filter(Boolean))
+    await mkdir(path.dirname(path.join(root,relative)),{recursive:true});
+  git('init','-q'); git('add','-A'); git('-c','user.email=t@t','-c','user.name=t','commit','-qm','pin');
+  const sha=(text)=>createHash('sha256').update(text).digest('hex');
+  // What the V1 install left: its overlay file under the old name, and a record of an edit to a
+  // file in a folder the new pin no longer has.
+  const oldName='apps/server/src/rubatoStepRewind.ts';
+  await writeFile(path.join(root,oldName),'v1 overlay\n');
+  const dropped='apps/server/src/provider/Layers/DroppedInV2.ts';
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify({version:1,files:{
+    [oldName]:{original:null,installedHash:sha('v1 overlay\n')},
+    [dropped]:{original:'v1 original\n',installedHash:sha('v1 edited\n')},
+  }}));
+  await applyIntegration({t3:root});
+  const fresh=await readFile(new URL('../overlay/apps/server/src/RubatoStepRewind.ts',import.meta.url),'utf8');
+  assert.equal(await readFile(path.join(root,'apps/server/src/RubatoStepRewind.ts'),'utf8'),fresh);
+  // A case-sensitive disk keeps two files: the old one goes like any dropped overlay file.
+  const names=execFileSync('ls',[path.join(root,'apps/server/src')],{encoding:'utf8'}).split('\n');
+  assert.equal(names.filter((name)=>name.toLowerCase()==='rubatosteprewind.ts').length,1);
+  await assert.rejects(readFile(path.join(root,dropped),'utf8'),/ENOENT/);
+  assert.deepEqual((await applyIntegration({t3:root,check:true})).changes,[]);
+});
+
 // The launcher that names the app is read from the tree at every start. A tree
 // left between the pin checkout and the overlay has T3's own launcher, which
 // made and opened "T3 Code (Alpha).app". start-gui.sh asks this before using it.

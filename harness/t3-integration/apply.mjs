@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, writeFile, lstat, realpath, rename, unlink, mkdir, copyFile, readdir } from 'node:fs/promises';
+import { readFile, writeFile, lstat, realpath, rename, unlink, mkdir, copyFile, readdir, stat } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1747,6 +1747,13 @@ async function atomic(file, content) {
   try { await writeFile(temporary,content,{flag:'wx',mode:0o644}); await rename(temporary,file); }
   finally { await unlink(temporary).catch((error) => { if (error.code!=='ENOENT') throw error; }); }
 }
+/** Whether two paths are one file (a case-insensitive disk); false when either is missing. */
+async function sameFile(a, b) {
+  try {
+    const [left, right] = await Promise.all([stat(a), stat(b)]);
+    return left.dev === right.dev && left.ino === right.ino;
+  } catch (error) { if (error.code === 'ENOENT') return false; throw error; }
+}
 // The file as the checked-out T3 commit has it, or null when untracked or no git.
 function checkedOut(target, relative) {
   try { return execFileSync('git',['-C',target,'show',`HEAD:${relative}`],{encoding:'utf8',stdio:['ignore','pipe','ignore'],maxBuffer:64*1024*1024}); }
@@ -1762,6 +1769,10 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   if (old.version!==1) throw new Error('Unsupported previous overlay manifest');
   const planned = [];
   const manifest = {version:1,upstreamCommit:upstream.upstreamCommit,files:{}};
+  // A file renamed only in case (V1's rubatoStepRewind.ts, V2's RubatoStepRewind.ts) is the
+  // same file on a case-insensitive disk (macOS, Windows): its record is under the old name.
+  const oldByLower = new Map(Object.keys(old.files).map((key) => [key.toLowerCase(), key]));
+  const priorOf = (relative) => old.files[relative] ?? old.files[oldByLower.get(relative.toLowerCase())];
   // An edit is applied only to a file listed in upstream.json. One that is not
   // listed was skipped without a word, and the staged build then wrote into the
   // output the open app was reading.
@@ -1780,7 +1791,7 @@ export async function applyIntegration({t3,check=false,remove=false}) {
       // A previous overlay can have different replacements. Only trust its
       // recorded original when the installed file still matches its hash;
       // user edits must continue to fail before any writes.
-      const prior = old.files[relative];
+      const prior = priorOf(relative);
       const recorded = prior?.original !== null && typeof prior?.original === 'string'
         && hash(current) === prior.installedHash;
       original = recorded ? prior.original : untransform(current,edits[relative]);
@@ -1788,15 +1799,16 @@ export async function applyIntegration({t3,check=false,remove=false}) {
       next = transform(original,edits[relative]);
       if (!recorded && current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
     } else {
-      original = old.files[relative]?.original ?? null;
+      original = priorOf(relative)?.original ?? null;
       next = await readFile(path.join(root,'overlay',relative),'utf8');
-      if (current!==null && current!==next && hash(current)!==old.files[relative]?.installedHash)
+      if (current!==null && current!==next && hash(current)!==priorOf(relative)?.installedHash)
         throw new Error(`Refusing to overwrite a different provider file: ${relative}`);
     }
     if (remove) {
-      if (!old.files[relative]) throw new Error(`No installation record for ${relative}`);
-      if (current===null || hash(current)!==old.files[relative].installedHash) throw new Error(`Installed file has local changes: ${relative}`);
-      next = old.files[relative].original;
+      const prior = priorOf(relative);
+      if (!prior) throw new Error(`No installation record for ${relative}`);
+      if (current===null || hash(current)!==prior.installedHash) throw new Error(`Installed file has local changes: ${relative}`);
+      next = prior.original;
     }
     manifest.files[relative] = {original,installedHash:next===null?null:hash(next)};
     planned.push({relative,destination,current,next});
@@ -1806,6 +1818,9 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   for (const [relative,record] of Object.entries(old.files)) {
     if (manifest.files[relative]) continue;
     const destination = path.join(target,relative);
+    // The same file under a name that differs only in case belongs to its new entry now.
+    const renamed = Object.keys(manifest.files).find((key) => key.toLowerCase() === relative.toLowerCase());
+    if (renamed && await sameFile(destination, path.join(target, renamed))) continue;
     const current = await existing(destination);
     // Already back to its original: install-gui.sh checks out the pin before this
     // runs, which restores every tracked file. Refusing it here stopped every
@@ -1813,7 +1828,8 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     // bundle id came back).
     // After a pin bump that checkout is the *new* pin's original, which the
     // manifest (written under the previous pin) does not know. Keep it as is.
-    if (current!==null && current===checkedOut(target,relative)) {
+    // A file this pin no longer has, and the disk neither (a V1 path V2 moved), stays absent.
+    if (current===checkedOut(target,relative)) {
       planned.push({relative,destination,current,next:current});
       continue;
     }
