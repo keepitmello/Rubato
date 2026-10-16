@@ -69,14 +69,19 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
       projectId: ProjectId.make(yield* uuid), title: projectTitleOf(cwd), workspaceRoot: cwd });
   });
 
+  // Sessions a thread already shows, or that can never get one, are settled for this server's
+  // life: a pass over a thousand old sessions then reads nothing for them. Without this every
+  // five-second pass asked the database about each one again (the live V2 server spent ~70% CPU).
+  const settledSessions = new Set<string>();
   const importSession = (instance: ProviderInstance, entry: PiSummary) => Effect.gen(function* () {
+    if (settledSessions.has(entry.sessionId)) return;
     // Old sessions without a cwd cannot be assigned an invented project.
-    if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) return;
+    if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) { settledSessions.add(entry.sessionId); return; }
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || bridge.ownsSession(entry.sessionId)) return;
-    if ((yield* threadOfPiSession(entry.sessionId)) !== null) return;
+    if ((yield* threadOfPiSession(entry.sessionId)) !== null) { settledSessions.add(entry.sessionId); return; }
     const threadId = importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
-    if (yield* knownThread(threadId)) return;
+    if (yield* knownThread(threadId)) { settledSessions.add(entry.sessionId); return; }
     const project = yield* projectFor(entry.cwd);
     if (project === null) return;
     const saved = yield* Effect.tryPromise(() => bridge.transcript(entry.sessionId));
@@ -99,6 +104,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     yield* importer.value.importPiSessionThread({ threadId, projectId: project.id, title: entry.title || "Rubato session",
       sessionId: entry.sessionId, modelSelection, runtimeMode: "full-access", interactionMode: "default",
       createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)), messages, settled: true });
+    settledSessions.add(entry.sessionId);
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session projection skipped", { sessionId: entry.sessionId, cause })));
 
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
