@@ -44,6 +44,16 @@ constraints, failed attempts, and acceptance criteria that can change the
 answer. Scan for secrets. Ask for a natural Korean report; leave structure
 and terms to the consultant.
 
+What the packet buys is a judgment. The consultant's habit is to treat a
+missing official statement as missing evidence and to fill the answer with
+"no public evidence" and "cannot be ruled out"; the custom instructions alone
+do not stop it. A request to "separate confirmed facts from inference" feeds
+that habit, so do not write one. Ask instead for the conclusion first, as
+its own call with a stated confidence, and say that companies rarely announce
+what they filter, cut, or throttle, so community measurements, firsthand
+reports, and insider accounts count as evidence to be weighed, not dismissed
+as anecdote.
+
 To receive a generated zip back, add `--artifact .outpost/<run>/artifact.zip`.
 To upload extra input files with the packet, add `--attach <path>` (repeatable).
 Non-ASCII upload names, including names inside a zip, are renamed to ASCII
