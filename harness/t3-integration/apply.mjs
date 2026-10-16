@@ -23,7 +23,6 @@ import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.m
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
 import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
-import { workLogEdits, workLogOverlays } from './work-log-edits.mjs';
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
@@ -1619,11 +1618,6 @@ for (const [relative, changes] of Object.entries(chatWidthEdits)) {
 // 레거시 사이드바 스레드 목록의 세로선을 다시 지운다 (sidebar-rail-edits.mjs).
 overlays.push(...sidebarRailOverlays);
 for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// The work log in Codex's shape: live lines, summaries, phase folds (work-log-edits.mjs).
-overlays.push(...workLogOverlays);
-for (const [relative, changes] of Object.entries(workLogEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // tsgo checker count (tsgo-checkers-edits.mjs).
