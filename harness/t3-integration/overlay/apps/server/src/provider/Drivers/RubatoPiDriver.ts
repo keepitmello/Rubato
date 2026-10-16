@@ -89,6 +89,8 @@ export interface PiBridge {
   /** T3's thread.fork: a new engine session cut before `beforeEntryId`; its id. */
   forkForThread(input: {source: string; beforeEntryId: string | null}): Promise<string>;
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
+  /** Puts a session's own name on its thread (RubatoPiSessions.ts binds it at startup). */
+  sessionTitle?: (threadId: string, title: string) => Promise<void>;
   /** Sessions a V2 thread reattached to from before V2; their history is native. */
   readonly resumedSessions?: Set<string>;
   /** Sessions a thread of this server shows; the inventory leaves them to that thread. */

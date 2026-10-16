@@ -9,7 +9,8 @@
  *   3. the thread id itself for a session the inventory imported:
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
-import { ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { CommandId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
@@ -129,13 +130,23 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   // Optional services: the startup layer's requirements stay what upstream declares.
   const registry = yield* Effect.serviceOption(ProviderInstanceRegistry);
   const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
+  const orchestrator = yield* Effect.serviceOption(Orchestrator.OrchestratorV2);
   if (Option.isNone(registry) || Option.isNone(sql)) return;
+  // The session's own name becomes the thread's title (rpc-connection.mjs mirrorTitle).
+  const retitle = (threadId: string, title: string) => Effect.gen(function* () {
+    if (Option.isNone(orchestrator)) return;
+    const shell = yield* orchestrator.value.getThreadShell(ThreadId.make(threadId));
+    if (shell === null || shell.title === title) return;
+    yield* orchestrator.value.dispatch({ type: "thread.metadata.update",
+      commandId: CommandId.make(`rubato-title:${threadId}:${yield* Clock.currentTimeMillis}`), threadId: ThreadId.make(threadId), title });
+  });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {
       const bridge: PiBridge | undefined = rubatoBridgeFor(instance);
       if (!bridge) continue;
       bridge.boundSession = (threadId: string) =>
         Effect.runPromise(piSessionOfThread(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
+      bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
     }
   });
   yield* bind;

@@ -132,6 +132,14 @@ export class RubatoRpcConnection {
     this.unsubscribe = await this.client.subscribeSession((state) => this.onState(state));
     this.fold = this.bridge.stateFor?.(this.threadId, sessionId);
     void this.refreshCache();
+    // A name given while T3 was away (the CLI, a turn T3 did not watch) shows on attach.
+    this.command({ type: 'get_state' }).then((state) => {
+      if (typeof state?.sessionName === 'string' && state.sessionName.trim()) this.mirrorTitle(state.sessionName.trim());
+    }, () => {});
+  }
+  mirrorTitle(name) {
+    Promise.resolve(this.bridge.sessionTitle?.(this.threadId, name))
+      .catch((error) => this.log('title mirror failed', error));
   }
   /** The prompt cache behind the context ring and the sidebar capsule (session-state.mjs). */
   async refreshCache() {
@@ -173,6 +181,10 @@ export class RubatoRpcConnection {
     // rows this stream turns them into.
     this.fold?.feed(event);
     if (cacheMoved(event)) void this.refreshCache();
+    // Rubato's title extension names the session from its topic; the thread shows that name
+    // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
+    if (event?.type === 'session_info_changed' && typeof event.name === 'string' && event.name.trim())
+      this.mirrorTitle(event.name.trim());
     this.enqueue(() => this.process(event));
   }
   enqueue(step) {

@@ -1,7 +1,7 @@
 /**
  * Rewinding to a finished tool step inside a turn (step-rewind-edits.mjs), on T3's V2 orchestrator.
  *
- *   POST /rubato/step-rewind           {threadId, itemId}  → {runId, cutAfterItemId, hiddenItemIds, hiddenMessageIds}
+ *   POST /rubato/step-rewind           {threadId, itemId, restoreFiles?}  → {runId, cutAfterItemId, hiddenItemIds, hiddenMessageIds, filesRestored}
  *   POST /rubato/step-rewind/continue  {threadId}          → {}
  *
  * The step is a finished Rubato tool row (its native ref is the Pi tool call). Calls made together
@@ -27,6 +27,8 @@ import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts
 import { piSessionOfThread, rubatoBridge } from "./provider/RubatoPiSessions.ts";
 import { RubatoThreadImporter } from "./provider/RubatoThreadImporter.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
+import { restoreStepCheckpoint } from "./RubatoStepCheckpoints.ts";
+import * as CheckpointStore from "./checkpointing/CheckpointStore.ts";
 
 class StepRewindRefused extends Schema.TaggedError<StepRewindRefused>()("StepRewindRefused", {
   code: Schema.String,
@@ -38,14 +40,14 @@ const describe = (cause: unknown) => (cause instanceof Error ? cause.message : S
 const BUSY: ReadonlySet<OrchestrationV2Run["status"]> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const TEXT_ITEMS: ReadonlySet<OrchestrationV2TurnItem["type"]> = new Set(["user_message", "assistant_message", "reasoning"]);
 
-const StepRewindBody = Schema.Struct({ threadId: Schema.String, itemId: Schema.String });
+const StepRewindBody = Schema.Struct({ threadId: Schema.String, itemId: Schema.String, restoreFiles: Schema.optional(Schema.Boolean) });
 const ContinueBody = Schema.Struct({ threadId: Schema.String });
 
 export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const auth = yield* EnvironmentAuth;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const crypto = yield* Crypto.Crypto;
-  const services = yield* Effect.context<RubatoThreadImporter | SqlClient.SqlClient | ProviderInstanceRegistry>();
+  const services = yield* Effect.context<RubatoThreadImporter | SqlClient.SqlClient | ProviderInstanceRegistry | CheckpointStore.CheckpointStore>();
   const uuid = crypto.randomUUIDv4().pipe(Effect.mapError((cause) => refuse("internal", describe(cause))));
   const commandId = Effect.map(uuid, (id) => CommandId.make(`rubato-step-rewind:${id}`));
 
@@ -53,7 +55,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     orchestrator.getThreadRecords(threadId, ["runs", "turnItems", "messages", "checkpoints"]).pipe(
       Effect.mapError((cause) => refuse("unknown-thread", describe(cause))));
 
-  const rewind = (threadId: ThreadId, itemId: string) => Effect.gen(function* () {
+  const rewind = (threadId: ThreadId, itemId: string, restoreFiles: boolean) => Effect.gen(function* () {
     let projection = yield* records(threadId);
     const item = projection.turnItems.find((candidate) => candidate.id === itemId);
     const toolCallId = item?.nativeItemRef?.driver === "rubato-pi" ? item.nativeItemRef.nativeId : null;
@@ -75,7 +77,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       const checkpoint = projection.checkpoints.find((candidate) => candidate.id === run.checkpointId);
       if (!checkpoint) return yield* refuse("no-checkpoint", "This turn has no checkpoint to rewind to.");
       yield* orchestrator.dispatch({ type: "checkpoint.rollback", commandId: yield* commandId, threadId,
-        scopeId: checkpoint.scopeId, checkpointId: checkpoint.id, restoreFiles: false })
+        scopeId: checkpoint.scopeId, checkpointId: checkpoint.id, restoreFiles })
         .pipe(Effect.mapError((cause) => refuse("rollback-failed", describe(cause))));
       for (let attempt = 0; ; attempt++) {
         projection = yield* records(threadId);
@@ -102,11 +104,27 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     const hiddenMessageIds = new Set(hiddenItems.flatMap((candidate) =>
       "messageId" in candidate && candidate.messageId ? [String(candidate.messageId)] : []));
     const hiddenMessages = projection.messages.filter((message) => hiddenMessageIds.has(String(message.id)));
+    // A worktree thread keeps the files each step left (RubatoStepCheckpoints.ts): put the batch's
+    // last one back, and make it this turn's checkpoint so the next turn's diff starts there.
+    let filesRestored = false;
+    const shell = yield* orchestrator.getThreadShell(threadId).pipe(Effect.orElseSucceed(() => null));
+    const worktree = shell?.worktreePath ?? null;
+    const lastCall = cutAfter.nativeItemRef?.nativeId;
+    if (restoreFiles && worktree !== null && typeof lastCall === "string") {
+      filesRestored = yield* restoreStepCheckpoint({ threadId, toolCallId: lastCall, cwd: worktree })
+        .pipe(Effect.mapError((cause) => refuse("files-failed", describe(cause))));
+      const checkpoint = projection.checkpoints.find((candidate) => candidate.id === current.checkpointId);
+      if (filesRestored && checkpoint) {
+        const store = yield* CheckpointStore.CheckpointStore;
+        yield* store.captureCheckpoint({ cwd: worktree, checkpointRef: checkpoint.ref })
+          .pipe(Effect.mapError((cause) => refuse("files-failed", describe(cause))));
+      }
+    }
     const importer = yield* RubatoThreadImporter;
     yield* importer.cutRun({ run: current, nextOrdinal: projection.runs.length + 1, items: hiddenItems, messages: hiddenMessages })
       .pipe(Effect.mapError((cause) => refuse("write-failed", cause.message)));
     return { runId, cutAfterItemId: cutAfter.id, hiddenItemIds: hiddenItems.map((candidate) => candidate.id),
-      hiddenMessageIds: hiddenMessages.map((message) => message.id) };
+      hiddenMessageIds: hiddenMessages.map((message) => message.id), filesRestored };
   }).pipe(Effect.provide(services));
 
   const resume = (threadId: ThreadId) => Effect.gen(function* () {
@@ -141,7 +159,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     }
     const body = yield* Schema.decodeUnknownEffect(StepRewindBody)(json).pipe(Effect.option);
     if (body._tag === "None") return HttpServerResponse.jsonUnsafe({ error: { code: "invalid", message: "threadId and itemId are required" } }, { status: 400 });
-    return yield* answer(rewind(ThreadId.make(body.value.threadId), body.value.itemId));
+    return yield* answer(rewind(ThreadId.make(body.value.threadId), body.value.itemId, body.value.restoreFiles === true));
   });
   return Layer.mergeAll(
     HttpRouter.add("POST", "/rubato/step-rewind", handle(false)),

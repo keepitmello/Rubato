@@ -45,8 +45,10 @@ const layerEngine = (
     getThreadShell: (threadId: ThreadId) =>
       Effect.succeed(
         worktrees.has(threadId)
-          ? ({ id: threadId, worktreePath: worktrees.get(threadId) ?? null } as
-              | OrchestrationV2ThreadShell)
+          ? ({
+              id: threadId,
+              worktreePath: worktrees.get(threadId) ?? null,
+            } as OrchestrationV2ThreadShell)
           : null,
       ),
     streamDomainEvents: events,
@@ -188,32 +190,38 @@ it.layer(layerCheckpointStore)("RubatoStepCheckpoints", (it) => {
     }),
   );
 
-  it.effect("keeps nothing for another provider, a running step, or a thread without a worktree", () =>
-    Effect.gen(function* () {
-      const cwd = yield* makeRepo;
-      const engine = layerEngine(
-        new Map<ThreadId, string | null>([
-          [WORKTREE_THREAD, cwd],
-          [SHARED_THREAD, null],
-        ]),
-      );
-      const events = [
-        toolItemEvent({ threadId: WORKTREE_THREAD, toolCallId: "call-codex", driver: "codex" }),
-        toolItemEvent({ threadId: WORKTREE_THREAD, toolCallId: "call-running", status: "running" }),
-        toolItemEvent({ threadId: SHARED_THREAD, toolCallId: "call-shared" }),
-      ];
-      for (const event of events) {
-        yield* RubatoStepCheckpoints.handleStepEvent(event).pipe(Effect.provide(engine));
-      }
-      expect(yield* refExists(cwd, WORKTREE_THREAD, "call-codex")).toBe(false);
-      expect(yield* refExists(cwd, WORKTREE_THREAD, "call-running")).toBe(false);
-      expect(yield* refExists(cwd, SHARED_THREAD, "call-shared")).toBe(false);
-      expect(
-        RubatoStepCheckpoints.stepCompletionOf(
+  it.effect(
+    "keeps nothing for another provider, a running step, or a thread without a worktree",
+    () =>
+      Effect.gen(function* () {
+        const cwd = yield* makeRepo;
+        const engine = layerEngine(
+          new Map<ThreadId, string | null>([
+            [WORKTREE_THREAD, cwd],
+            [SHARED_THREAD, null],
+          ]),
+        );
+        const events = [
+          toolItemEvent({ threadId: WORKTREE_THREAD, toolCallId: "call-codex", driver: "codex" }),
+          toolItemEvent({
+            threadId: WORKTREE_THREAD,
+            toolCallId: "call-running",
+            status: "running",
+          }),
           toolItemEvent({ threadId: SHARED_THREAD, toolCallId: "call-shared" }),
-        ),
-      ).toEqual({ threadId: SHARED_THREAD, toolCallId: "call-shared" });
-    }),
+        ];
+        for (const event of events) {
+          yield* RubatoStepCheckpoints.handleStepEvent(event).pipe(Effect.provide(engine));
+        }
+        expect(yield* refExists(cwd, WORKTREE_THREAD, "call-codex")).toBe(false);
+        expect(yield* refExists(cwd, WORKTREE_THREAD, "call-running")).toBe(false);
+        expect(yield* refExists(cwd, SHARED_THREAD, "call-shared")).toBe(false);
+        expect(
+          RubatoStepCheckpoints.stepCompletionOf(
+            toolItemEvent({ threadId: SHARED_THREAD, toolCallId: "call-shared" }),
+          ),
+        ).toEqual({ threadId: SHARED_THREAD, toolCallId: "call-shared" });
+      }),
   );
 
   it.effect("answers false when the step has no snapshot", () =>
