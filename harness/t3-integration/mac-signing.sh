@@ -90,9 +90,10 @@ codesign_with_identity() {
     line="${line#"${line%%[![:space:]]*}"}"; line="${line#\"}"; line="${line%\"}"
     [ -n "$line" ] && original+=("$line")
   done < <("$SECURITY" list-keychains -d user)
-  "$SECURITY" list-keychains -d user -s "${original[@]}" "$KEYCHAIN" >/dev/null 2>&1 || return 1
+  # 목록이 비면 macOS 기본 bash 3.2 는 set -u 에서 "${original[@]}" 를 unbound 로 죽는다.
+  "$SECURITY" list-keychains -d user -s ${original[@]+"${original[@]}"} "$KEYCHAIN" >/dev/null 2>&1 || return 1
   "$CODESIGN" --force --deep --sign "$IDENTITY" --keychain "$KEYCHAIN" --timestamp=none "$bundle" >/dev/null 2>&1 || status=$?
-  "$SECURITY" list-keychains -d user -s "${original[@]}" >/dev/null 2>&1 || true
+  "$SECURITY" list-keychains -d user -s ${original[@]+"${original[@]}"} >/dev/null 2>&1 || true
   return "$status"
 }
 

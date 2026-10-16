@@ -50,3 +50,16 @@ test('signs with the local certificate and leaves the keychain search list as it
   assert.doesNotMatch(run.stderr, /애드혹/);
   assert.equal(readFileSync(f.list, 'utf8'), '    "/login.keychain-db"\n');
 });
+
+// macOS's own bash is 3.2, where "${a[@]}" of an empty array is unbound under set -u.
+// An empty search list killed the script before it signed at all, ad hoc included.
+test('an empty keychain search list still signs and stays empty', { skip: process.platform !== 'darwin' }, () => {
+  const f = fixture();
+  writeFileSync(f.list, '');
+  const run = spawnSync('/bin/bash', [script, 'sign', f.bundle], { encoding: 'utf8',
+    env: { ...process.env, RUBATO_SIGNING_DIR: f.signDir, RUBATO_SECURITY_BIN: f.security, RUBATO_CODESIGN_BIN: f.codesign } });
+  assert.equal(run.status, 0, run.stderr);
+  assert.doesNotMatch(run.stderr, /unbound/);
+  assert.equal(readFileSync(f.log, 'utf8'), 'identity\n');
+  assert.equal(readFileSync(f.list, 'utf8'), '');
+});
