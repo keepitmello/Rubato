@@ -1,4 +1,4 @@
-// @effect-diagnostics nodeBuiltinImport:off
+// @effect-diagnostics nodeBuiltinImport:off globalDateInEffect:off -- fixtures are dated against the real clock
 // The state DB retention (RubatoStateRetention.ts): what goes, that a thread replays to the same
 // rows after it, that freed space reaches the disk, and that the server's layer runs it at
 // startup and every interval.

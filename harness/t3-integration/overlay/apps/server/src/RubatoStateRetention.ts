@@ -145,7 +145,7 @@ export const pruneSupersededTurnItems = Effect.fn("RubatoStateRetention.pruneSup
     const obsolete: Array<number> = [];
     for (const row of rows) {
       if (row.item_id === null) continue;
-      const key = JSON.stringify([row.stream_id, row.item_id]);
+      const key = `${row.stream_id}\u0000${row.item_id}`;
       if (!seen.has(key)) {
         seen.add(key);
         // The newest row of the item stays; the prompt it points at stays with it.
