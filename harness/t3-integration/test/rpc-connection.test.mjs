@@ -375,3 +375,19 @@ test('/name names the session and the thread; /reload reloads, neither is a prom
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(titles, [['t1', 'Port review']]);
 });
+
+test('a message another conversation sent reaches the thread once, from the attach history or live', async () => {
+  const { SESSION_MESSAGE_TYPE } = await import('../src/events.mjs');
+  const written = [];
+  const client = fakeClient();
+  const { conn } = connection(client, { appendSessionMessage: async (threadId, item) => { written.push([threadId, item]); } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  const sent = (messageId, text) => ({ type: 'message_end', message: { role: 'custom', customType: SESSION_MESSAGE_TYPE, display: true,
+    timestamp: 5, content: text, details: { messageId, text, kind: 'message', from: { sessionId: 'sender', title: 'Planner' } } } });
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'idle', events: [{ sequence: 1, event: sent('m1', 'from history') }] });
+  client.listener({ runtimeId: 'r1', sequence: 3, status: 'running', events: [
+    { sequence: 2, event: sent('m1', 'from history') }, { sequence: 3, event: sent('m2', 'live one') }] });
+  await conn.inbound;
+  assert.deepEqual(written.map(([threadId, item]) => [threadId, item.text, item.role]), [['t1', 'from history', 'user'], ['t1', 'live one', 'user']]);
+  assert.equal(written[1][1].context.records[0].payload.from.sessionId, 'sender');
+});

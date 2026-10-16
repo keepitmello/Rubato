@@ -3,6 +3,7 @@ import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
 import { applySelectionOptions } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
+import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
 
 /**
@@ -108,6 +109,8 @@ export class RubatoRpcConnection {
     this.bound = undefined;
     // Inbound records in order, through the steps that may wait on the engine.
     this.inbound = Promise.resolve();
+    // Session messages handed to T3 on this connection (sessionMessage).
+    this.sessionMessages = new Set();
     this.hold = null;
     this.waits = 0;
     this.strandedNotices = 0;
@@ -172,7 +175,7 @@ export class RubatoRpcConnection {
       // state still reads it (a GUI restart reattaching keeps its agents and Speed Index).
       this.runtimeId = state.runtimeId;
       this.sequence = state.sequence ?? 0;
-      for (const record of state.events ?? []) this.fold?.feed(record.event);
+      for (const record of state.events ?? []) { this.fold?.feed(record.event); this.sessionMessage(record.event); }
       return;
     }
     if (state.runtimeId !== this.runtimeId) {
@@ -190,10 +193,27 @@ export class RubatoRpcConnection {
     if (state.status === 'unloaded' || state.status === 'error')
       void this.close(new Error(`Rubato session ${this.sessionId} ${state.status === 'error' ? 'failed' : 'was unloaded'}`));
   }
+  /**
+   * A message another conversation sent into this session shows in the thread as that agent's
+   * message (V1 appendSessionMessage). Upstream's adapter has no row for Pi's custom messages,
+   * so T3 writes it (RubatoPiSessions.ts); a replay after reattaching finds it there already.
+   */
+  sessionMessage(event) {
+    if (event?.type !== 'message_end') return;
+    let item;
+    try { item = sessionMessageFrom(event.message, this.threadId); } catch { return; }
+    if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
+    this.sessionMessages.add(item.id);
+    Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
+      this.sessionMessages.delete(item.id);
+      this.log('session message not written', error);
+    });
+  }
   deliver(event) {
     // The Agents panel, Speed Index and cache read the engine's own records, not the
     // rows this stream turns them into.
     this.fold?.feed(event);
+    this.sessionMessage(event);
     if (cacheMoved(event)) void this.refreshCache();
     // Rubato's title extension names the session from its topic; the thread shows that name
     // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.

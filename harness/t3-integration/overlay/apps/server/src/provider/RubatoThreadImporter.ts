@@ -6,7 +6,7 @@
 import {
   EventId, MessageId, ProviderDriverKind, RunId, TurnItemId,
   type ModelSelection, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
-  type OrchestrationV2Run,
+  type OrchestrationMessageContext, type OrchestrationV2Run,
   type OrchestrationV2DomainEvent, type OrchestrationV2ProviderThread, type OrchestrationV2TurnItem,
   type ProjectId, type ProviderInteractionMode, type RuntimeMode, type ThreadId,
 } from "@t3tools/contracts";
@@ -42,8 +42,11 @@ export interface PiSessionThreadInput {
   readonly runtimeMode: RuntimeMode;
   readonly interactionMode: ProviderInteractionMode;
   readonly createdAt: string;
-  /** Stored history to show; the session keeps it natively, so its first turn replays none. */
-  readonly messages: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string }>;
+  /**
+   * Stored history to show; the session keeps it natively, so its first turn replays none. A
+   * message another conversation sent carries its id and context (bridge events.mjs sessionMessageFrom).
+   */
+  readonly messages: ReadonlyArray<{ readonly role: "user" | "assistant"; readonly text: string; readonly createdAt: string } | SessionMessage>;
   /** False leaves the thread among the active ones (a fork); true files it as settled (an import). */
   readonly settled?: boolean;
 }
@@ -55,6 +58,34 @@ export interface PiSessionThreadInput {
  * Its first turn resumes that session (rpc-connection.mjs switch_session), and T3's import
  * handoff of these items is answered as already delivered (RubatoPiDriver alreadyNative).
  */
+/** A message another conversation sent into the session, shown as an agent's message. */
+export interface SessionMessage {
+  readonly role: "session";
+  readonly id: string;
+  readonly text: string;
+  readonly createdAt: string;
+  readonly context?: OrchestrationMessageContext;
+  readonly senderThreadId?: ThreadId;
+}
+/** The message and turn item of a session message, both keyed by its id (a replay replaces them). */
+export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage, ordinal: number) => {
+  const at = DateTime.makeUnsafe(entry.createdAt);
+  const messageId = MessageId.make(entry.id);
+  // Upstream marks a message another agent sent this way ("Sent by another agent").
+  const author = { createdBy: "agent" as const, creationSource: "provider" as const,
+    ...(entry.senderThreadId === undefined ? {} : { senderThreadId: entry.senderThreadId }) };
+  const context = entry.context === undefined ? {} : { context: entry.context };
+  const message: OrchestrationV2ConversationMessage = { ...author, id: messageId, threadId, runId: null, nodeId: null,
+    role: "user", text: entry.text, ...context, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+  const turnItem: OrchestrationV2TurnItem = {
+    id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
+    nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
+    updatedAt: at, ...author, type: "user_message", messageId, inputIntent: "turn_start", text: entry.text, ...context,
+    attachments: [],
+  };
+  return { message, turnItem, at };
+};
+
 const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
@@ -87,6 +118,15 @@ const make = Effect.gen(function* () {
     };
     const messageEvents = input.messages.flatMap((entry, index): ReadonlyArray<OrchestrationV2DomainEvent> => {
       const suffix = String(index).padStart(6, "0");
+      if (entry.role === "session") {
+        const { message, turnItem, at } = sessionMessageRecords(input.threadId, entry, index + 1);
+        return [
+          { id: EventId.make(`${prefix}message:${input.threadId}:${suffix}`), type: "message.updated",
+            threadId: input.threadId, occurredAt: at, payload: message },
+          { id: EventId.make(`${prefix}turn-item:${input.threadId}:${suffix}`), type: "turn-item.updated",
+            threadId: input.threadId, occurredAt: at, payload: turnItem },
+        ];
+      }
       const messageId = MessageId.make(`${input.threadId}:${suffix}`);
       const at = DateTime.makeUnsafe(entry.createdAt);
       const message: OrchestrationV2ConversationMessage = {
@@ -165,7 +205,18 @@ const make = Effect.gen(function* () {
     yield* eventSink.write({ events: [{ id, type: "turn-item.updated", threadId: input.threadId, occurredAt: now, payload: item }] })
       .pipe(Effect.mapError(importFailure("Could not write the notice")));
   });
-  return { importPiSessionThread, cutRun, appendNotice };
+  /** A session message that arrived while the thread was open (bridge rpc-connection.mjs). */
+  const appendSessionMessage = (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
+    Effect.gen(function* () {
+      const { message, turnItem, at } = sessionMessageRecords(input.threadId, input.message, input.ordinal);
+      const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+        Effect.mapError(importFailure("Could not number the session message")));
+      yield* eventSink.write({ events: [
+        { id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: at, payload: message },
+        { id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: at, payload: turnItem },
+      ] }).pipe(Effect.mapError(importFailure("Could not write the session message")));
+    });
+  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage };
 });
 
 export interface NoticeInput {
@@ -188,6 +239,8 @@ export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, 
   readonly importPiSessionThread: (input: PiSessionThreadInput) => Effect.Effect<ThreadId, RubatoThreadImportError>;
   readonly cutRun: (input: CutRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
   readonly appendNotice: (input: NoticeInput) => Effect.Effect<void, RubatoThreadImportError>;
+  readonly appendSessionMessage: (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
+    Effect.Effect<void, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);

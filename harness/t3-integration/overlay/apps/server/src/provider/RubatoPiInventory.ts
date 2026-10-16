@@ -9,7 +9,8 @@
  * It never starts a model turn and never owns Pi workers or conversation files. A thread the
  * person deleted or archived is not brought back.
  */
-import { CommandId, ProjectId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
+import { CommandId, OrchestrationMessageContext, ProjectId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
@@ -21,7 +22,7 @@ import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import { isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary } from "./Drivers/RubatoPiDriver.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import { importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
-import { RubatoThreadImporter } from "./RubatoThreadImporter.ts";
+import { RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
 
 // The loop passes every five seconds. A fork wants its new session shown now: it cuts the
 // wait short, or, asked during a pass that may have listed sessions before the fork existed,
@@ -85,9 +86,16 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const model = lastModel ?? preferred?.slug;
     if (!model) return;
     const modelSelection: ModelSelection = { instanceId: instance.instanceId as ProviderInstanceId, model };
-    const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId).flatMap((message) =>
-      message.context === undefined && (message.role === "user" || message.role === "assistant") && message.text.trim() !== ""
-        ? [{ role: message.role, text: message.text, createdAt: message.createdAt }] : []);
+    const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId).flatMap((message): PiSessionThreadInput["messages"] => {
+      if (message.text.trim() === "") return [];
+      // A message another conversation sent keeps its sender context (bridge sessionMessageFrom).
+      if (message.context !== undefined) {
+        const context = Schema.decodeUnknownOption(OrchestrationMessageContext)(message.context);
+        return [{ role: "session" as const, id: message.id, text: message.text, createdAt: message.createdAt,
+          ...(Option.isSome(context) ? { context: context.value } : {}) }];
+      }
+      return [{ role: message.role, text: message.text, createdAt: message.createdAt }];
+    });
     yield* importer.value.importPiSessionThread({ threadId, projectId: project.id, title: entry.title || "Rubato session",
       sessionId: entry.sessionId, modelSelection, runtimeMode: "full-access", interactionMode: "default",
       createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)), messages, settled: true });

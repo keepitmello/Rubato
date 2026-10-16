@@ -8,6 +8,7 @@
 // set; with none supplied the upstream Pi driver behaves exactly as before.
 export const piAdapterOverlays = [
   'apps/server/src/provider/RubatoThreadImporter.ts',
+  'apps/server/src/provider/RubatoThreadImporter.test.ts',
 ];
 
 export const piAdapterEdits = {

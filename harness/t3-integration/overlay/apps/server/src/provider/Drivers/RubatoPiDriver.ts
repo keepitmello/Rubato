@@ -105,6 +105,7 @@ export interface PiBridge {
   openRpc(options: {threadId: string; cwd: string; onRecord: (record: PiRpcRecord) => void;
     onClosed: (error: unknown) => void}): Promise<PiRpcBridgeConnection>;
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
+  /** Writes a message another conversation sent into the thread's session (RubatoPiSessions.ts binds it). */
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
   /** A typed `/rewind N`: refuses when the thread has fewer than N turns before the running one. */
   checkRewind?: (threadId: string, turns: number) => Promise<void>;
@@ -176,6 +177,8 @@ export const RUBATO_CAPABILITIES_V2: OrchestrationV2ProviderCapabilities = {
 const piSettings = Schema.decodeSync(PiSettings);
 /** Turn items the V1 importer wrote (LegacyV1ThreadImporter IMPORT_EVENT_PREFIX). */
 const LEGACY_ITEM = "migration:v1:";
+/** A message another conversation sent into the session (bridge events.mjs sessionMessageId): Pi holds it already. */
+const SESSION_MESSAGE_ITEM = "rubato-session:";
 /**
  * Whether T3's history handoff is already in the model's context. A thread from before V2
  * that reattached to its Rubato session (rpc-connection.mjs), or one written from a session's
@@ -189,7 +192,8 @@ const alreadyNative = (bridge: PiBridge, input: {readonly providerThread: {reado
   if (sessionId == null || input.messages.length === 0) return false;
   // History written from this very session (RubatoPiSessions importPiSessionThread).
   const own = `rubato-pi-import:${sessionId}:`;
-  if (input.messages.every((message) => String(message.itemId).startsWith(own))) return true;
+  if (input.messages.every((message) => String(message.itemId).startsWith(own) || String(message.itemId).startsWith(SESSION_MESSAGE_ITEM)))
+    return true;
   return bridge.resumedSessions?.has(sessionId) === true
     && input.messages.every((message) => String(message.itemId).startsWith(LEGACY_ITEM));
 };

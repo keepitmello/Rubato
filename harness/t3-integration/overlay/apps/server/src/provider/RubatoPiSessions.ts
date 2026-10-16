@@ -9,7 +9,8 @@
  *   3. the thread id itself for a session the inventory imported:
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
-import { CommandId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import { CommandId, OrchestrationMessageContext, ProviderInstanceId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
@@ -19,7 +20,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { RubatoThreadImportError, RubatoThreadImporter, importFailure } from "./RubatoThreadImporter.ts";
-import { rubatoBridgeFor, type PiBridge } from "./Drivers/RubatoPiDriver.ts";
+import { ProjectionStoreV2 } from "../orchestration-v2/ProjectionStore.ts";
+import { rubatoBridgeFor, type PiBridge, type PiSessionMessage } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
   readonly sessionId: string;
@@ -27,6 +29,13 @@ export interface PiSessionRef {
   readonly serverId: string | null;
 }
 
+/** The Rubato session that sent a session message, from its context record (bridge events.mjs). */
+const senderSessionOf = (context: unknown): string | null => {
+  const record = (context as { readonly records?: ReadonlyArray<{ readonly payload?: { readonly from?: { readonly sessionId?: unknown } } }> } | null)
+    ?.records?.[0];
+  const sessionId = record?.payload?.from?.sessionId;
+  return typeof sessionId === "string" && sessionId !== "" ? sessionId : null;
+};
 const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 const IMPORTED_THREAD = /^import:[^:]+:([^:]+):(.+)$/;
 const DRIVER = "rubato-pi";
@@ -177,6 +186,26 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       return;
     }
   });
+  // A message another conversation sent while the thread was open (bridge rpc-connection.mjs):
+  // written once, as an agent's message with its sender context and, when the sender is a
+  // thread here, a link to it.
+  const importer = yield* Effect.serviceOption(RubatoThreadImporter);
+  const projectionStore = yield* Effect.serviceOption(ProjectionStoreV2);
+  const appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.gen(function* () {
+    if (Option.isNone(orchestrator) || Option.isNone(importer) || Option.isNone(projectionStore)) return;
+    const thread = ThreadId.make(threadId);
+    if ((yield* orchestrator.value.getTurnItem({ threadId: thread, itemId: TurnItemId.make(item.id) })) !== null) return;
+    const context = Schema.decodeUnknownOption(OrchestrationMessageContext)(item.context);
+    const senderSession = senderSessionOf(item.context);
+    const senderThreadId = senderSession === null ? null
+      : yield* threadOfPiSession(senderSession).pipe(Effect.provideService(SqlClient.SqlClient, sql.value), Effect.orElseSucceed(() => null));
+    const ordinal = yield* projectionStore.value.getNextTurnItemOrdinal(thread);
+    yield* importer.value.appendSessionMessage({ threadId: thread, ordinal, message: {
+      role: "session", id: item.id, text: item.text, createdAt: item.createdAt,
+      ...(Option.isSome(context) ? { context: context.value } : {}),
+      ...(senderThreadId === null ? {} : { senderThreadId: ThreadId.make(senderThreadId) }),
+    } });
+  });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {
       const bridge: PiBridge | undefined = rubatoBridgeFor(instance);
@@ -185,6 +214,7 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
         Effect.runPromise(piSessionOfThread(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
       bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
       bridge.checkRewind = (threadId: string, turns: number) => Effect.runPromise(checkRewind(threadId, turns));
+      bridge.appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.runPromise(appendSessionMessage(threadId, item));
       bridge.rewindConversation = (threadId: string, request: {readonly turns: number}) =>
         Effect.runPromise(rewindConversation(threadId, request.turns));
     }
