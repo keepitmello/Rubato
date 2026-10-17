@@ -56,6 +56,14 @@
     inset 0 0 0 0.5px var(--rb-hairline-strong),
     inset 0 0.5px 0 var(--rb-rim);
 }
+/* The project window opens over the thread cards, and their titles showed
+   through the glass between its rows. It is a long list read row by row, so it
+   is solid; the rim and shadow above still lift it off the sidebar. */
+[data-rubato-project-window] {
+  background: var(--popover);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
 
 /* ---- Thread details: a popover hanging from its toolbar button ---- */
 

@@ -59,11 +59,11 @@ export function RubatoThreadLine(props: {
         "group/line flex w-full min-w-0 items-center gap-2 rounded-[7px] text-left outline-hidden",
         "focus-visible:ring-2 focus-visible:ring-ring",
         props.density === "sidebar"
-          ? "h-8 px-2 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          ? "h-8 px-2 text-sm text-sidebar-foreground/85 hover:bg-sidebar-row-hover hover:text-sidebar-foreground"
           : "h-8 px-2.5 text-sm text-foreground/85 hover:bg-accent hover:text-foreground",
         props.active &&
           (props.density === "sidebar"
-            ? "bg-sidebar-accent text-sidebar-foreground"
+            ? "bg-sidebar-row-active text-sidebar-foreground"
             : "bg-accent text-foreground"),
       )}
     >

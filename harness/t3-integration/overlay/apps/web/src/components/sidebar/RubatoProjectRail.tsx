@@ -64,13 +64,15 @@ function SignalDot({ signal, className }: { signal: RubatoSignal | null; classNa
   );
 }
 
+// Hover and the current page are a tint of the rail's own text color, so they
+// read the same over an opaque sidebar and over the see-through material.
 const RAIL_BUTTON_CLASS = cn(
-  "group/rail relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color] duration-150",
-  "hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+  "group/rail relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color,scale] duration-150",
+  "hover:bg-sidebar-foreground/12 hover:text-sidebar-foreground active:scale-94 focus-visible:ring-2 focus-visible:ring-ring",
   "[&_svg:not([class*='size-'])]:size-[18px]",
 );
 const RAIL_ACTIVE_CLASS =
-  "bg-sidebar-accent text-sidebar-foreground before:absolute before:top-2 before:bottom-2 before:-left-[8px] before:w-[3px] before:rounded-r-full before:bg-sidebar-foreground";
+  "bg-sidebar-foreground/16 text-sidebar-foreground hover:bg-sidebar-foreground/16 before:absolute before:top-2 before:bottom-2 before:-left-[8px] before:w-[3px] before:rounded-r-full before:bg-sidebar-foreground";
 
 function RailButton(props: {
   label: string;
@@ -236,7 +238,13 @@ export function RubatoProjectRail() {
             />
             <TooltipPopup side="right">{projectsLabel}</TooltipPopup>
           </Tooltip>
-          <PopoverPopup side="right" align="start" sideOffset={10} padding="none">
+          <PopoverPopup
+            side="right"
+            align="start"
+            sideOffset={10}
+            padding="none"
+            data-rubato-project-window=""
+          >
             <RubatoProjectPicker
               list={list}
               signals={signals}

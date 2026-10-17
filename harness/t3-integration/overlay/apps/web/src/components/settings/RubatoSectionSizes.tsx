@@ -65,7 +65,7 @@ function PreviewCard(props: { title: string; detail: string; active?: boolean })
         style={zoomOf("cards")}
         className={cn(
           "flex h-[4.875rem] flex-col justify-center gap-1 rounded-lg px-2.5",
-          props.active ? "bg-sidebar-accent" : null,
+          props.active ? "bg-sidebar-row-active" : null,
         )}
       >
         <span className="truncate text-sm font-medium text-foreground/90">{props.title}</span>
@@ -80,7 +80,7 @@ function PreviewRailButton(props: { children: ReactNode; active?: boolean }) {
     <span
       className={cn(
         "flex size-9 items-center justify-center rounded-lg text-sidebar-muted-foreground [&_svg]:size-[18px]",
-        props.active && "bg-sidebar-accent text-sidebar-foreground",
+        props.active && "bg-sidebar-foreground/16 text-sidebar-foreground",
       )}
     >
       {props.children}

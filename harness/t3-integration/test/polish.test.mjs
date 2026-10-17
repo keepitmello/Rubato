@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 // Rubato polish on T3's surfaces (polish-edits.mjs, overlay rubatoPolish.css).
@@ -90,4 +90,35 @@ test('New thread leads the sidebar header and New project follows in the muted c
   assert.match(rule(`${actions} > svg`), /color: var\(--color-sidebar-muted-foreground\)/);
   assert.match(rule(`${actions}:last-child > svg`), /color: var\(--color-sidebar-foreground\);[\s\S]*stroke-width: 2\.25/);
   assert.match(rule(`${actions}:hover > svg`), /color: var\(--color-sidebar-foreground\)/);
+});
+
+test('the project window is solid, so thread cards do not show between its rows', async () => {
+  const css = (await polishCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = /\[data-rubato-project-window\] \{([^}]*)\}/.exec(css)?.[1] ?? '';
+  assert.match(rule, /background: var\(--popover\);/);
+  assert.match(rule, /(?:^|\s)backdrop-filter: none;/);
+  // It must come after the glass rule it overrides, which has the same specificity.
+  assert.ok(css.indexOf('[data-rubato-project-window]') > css.indexOf('.dropdown-glass,'));
+
+  const rail = await readFile(path.join(overlayComponents, 'sidebar/RubatoProjectRail.tsx'), 'utf8');
+  assert.match(rail, /<PopoverPopup\b[^>]*\bdata-rubato-project-window=""/);
+});
+
+const overlayComponents = path.join(here, '../overlay/apps/web/src/components');
+
+test('every sidebar color a Rubato component paints with exists in the app theme', { skip: !process.env.T3_SOURCE }, async () => {
+  // Tailwind emits nothing for a color the theme does not define. Upstream renamed
+  // sidebar-accent to sidebar-row-hover/-active, and the rail's hover went blank.
+  const index = await applied('apps/web/src/index.css');
+  const defined = new Set([...index.matchAll(/--color-(sidebar[a-z-]*):/g)].map((match) => match[1]));
+  assert.ok(defined.has('sidebar-foreground'), 'the theme lost its sidebar colors');
+  const files = (await readdir(overlayComponents, { recursive: true })).filter((file) => file.endsWith('.tsx'));
+  const missing = [];
+  for (const file of files) {
+    const text = await readFile(path.join(overlayComponents, file), 'utf8');
+    for (const [, name] of text.matchAll(/\b(?:bg|text|border|ring|fill|stroke|outline|from|to|via)-(sidebar(?:-[a-z]+)*)/g)) {
+      if (!defined.has(name)) missing.push(`${file}: ${name}`);
+    }
+  }
+  assert.deepEqual(missing, []);
 });
