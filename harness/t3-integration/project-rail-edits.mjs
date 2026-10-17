@@ -134,13 +134,13 @@ export const projectRailEdits = {
         '          ) : null}',
         '',
       ].join('\n')],
-    // Projects are off the rail, so the narrowed list names its project under
-    // the search field, with a way back to all projects.
+    // Projects are off the rail, so the narrowed list carries its project's
+    // name as a title under the search field.
     [
       '          </SidebarGroup>\n        }\n      >\n        <SidebarGroup className="flex-1" role="presentation">\n',
       [
         '            {!isMobile && scopedProjectGroup !== null ? (',
-        '              <RubatoScopeLabel group={scopedProjectGroup} onClear={() => setProjectScopeKey(null)} />',
+        '              <RubatoScopeLabel group={scopedProjectGroup} />',
         '            ) : null}',
         '',
       ].join('\n'),

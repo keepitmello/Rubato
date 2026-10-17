@@ -22,7 +22,6 @@ import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
 import { useUiStateStore } from "../../uiStateStore";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
@@ -226,11 +225,8 @@ export function RubatoProjectRail() {
                       data-rubato-projects-button=""
                       className={cn(RAIL_BUTTON_CLASS, (pickerOpen || scopedGroup) && RAIL_ACTIVE_CLASS)}
                     >
-                      {scopedGroup ? (
-                        <ProjectFavicon project={scopedGroup} className="size-5" />
-                      ) : (
-                        <FoldersIcon />
-                      )}
+                      {/* Always the folder: the list's title names the chosen project. */}
+                      <FoldersIcon />
                       <SignalDot signal={projectsSignal} className="top-1 right-1" />
                     </button>
                   }

@@ -140,7 +140,7 @@ function ProjectTab(props: {
         aria-pressed={props.selected}
         onClick={props.onSelect}
         className={cn(
-          "flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[13px] whitespace-nowrap outline-hidden",
+          "flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-sm whitespace-nowrap outline-hidden",
           "focus-visible:ring-2 focus-visible:ring-ring",
           props.selected
             ? "bg-accent text-foreground"
@@ -420,7 +420,7 @@ export function RubatoHomeProjects(props: {
               })}
             </div>
           ) : (
-            <p className="flex h-24 items-center px-2.5 text-[13px] text-muted-foreground">
+            <p className="flex h-24 items-center px-2.5 text-sm text-muted-foreground">
               No threads here yet.
             </p>
           )}

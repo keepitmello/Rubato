@@ -1,4 +1,6 @@
-// One thread on one line: the Recent box and the home list use it. The
+// One thread on one line: the Recent box and the home list use it. Its title
+// is the cards' title size (text-sm), so both lists follow the interface font
+// size together. The
 // sidebar's own rows are three-line cards; five of them would turn a glance
 // into a scroll, so these keep only the title and the time, or a word when the
 // thread asks the user to act.
@@ -57,8 +59,8 @@ export function RubatoThreadLine(props: {
         "group/line flex w-full min-w-0 items-center gap-2 rounded-[7px] text-left outline-hidden",
         "focus-visible:ring-2 focus-visible:ring-ring",
         props.density === "sidebar"
-          ? "h-7 px-2 text-[13px] text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-foreground"
-          : "h-8 px-2.5 text-[13px] text-foreground/85 hover:bg-accent hover:text-foreground",
+          ? "h-8 px-2 text-sm text-sidebar-foreground/85 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+          : "h-8 px-2.5 text-sm text-foreground/85 hover:bg-accent hover:text-foreground",
         props.active &&
           (props.density === "sidebar"
             ? "bg-sidebar-accent text-sidebar-foreground"
@@ -70,11 +72,11 @@ export function RubatoThreadLine(props: {
       ) : null}
       <span className="min-w-0 flex-1 truncate">{thread.title}</span>
       {signal ? (
-        <span className={cn("shrink-0 text-[11px] font-medium", SIGNAL_TEXT[signal])}>
+        <span className={cn("shrink-0 text-xs font-medium", SIGNAL_TEXT[signal])}>
           {RUBATO_SIGNAL_LABEL[signal]}
         </span>
       ) : (
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80">
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/80">
           {rubatoThreadTimeLabel(thread)}
         </span>
       )}

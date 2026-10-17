@@ -75,7 +75,7 @@ function ProjectRow(props: {
       data-highlighted={props.highlighted ? "" : undefined}
       onContextMenu={props.onContextMenu}
       className={cn(
-        "group/row relative flex h-8 items-center gap-2.5 rounded-md pr-1.5 pl-2.5 text-[13px] outline-hidden",
+        "group/row relative flex h-8 items-center gap-2.5 rounded-md pr-1.5 pl-2.5 text-sm outline-hidden",
         props.listed ? "text-foreground/90" : "text-muted-foreground",
         props.selected && "bg-accent text-foreground",
         props.highlighted && !props.selected && "bg-accent/60",
@@ -105,7 +105,7 @@ function ProjectRow(props: {
             className={cn("size-1.5 shrink-0 rounded-full", RUBATO_SIGNAL_DOT[props.signal])}
           />
         ) : null}
-        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground/80 group-hover/row:hidden">
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/80 group-hover/row:hidden">
           {props.activity}
         </span>
       </button>
@@ -209,7 +209,7 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
 
   return (
     <div className="flex w-[17rem] flex-col p-1.5" data-rubato-project-picker="">
-      <label className="mb-1 flex h-8 items-center gap-2 rounded-md bg-black/15 px-2.5 text-[13px] dark:bg-black/20">
+      <label className="mb-1 flex h-8 items-center gap-2 rounded-md bg-black/15 px-2.5 text-sm dark:bg-black/20">
         <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
         <input
           autoFocus
@@ -231,7 +231,7 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
             aria-selected={props.scopeKey === null}
             onClick={() => props.onChoose(null)}
             className={cn(
-              "flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-[13px] text-foreground/90",
+              "flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-sm text-foreground/90",
               props.scopeKey === null ? "bg-accent text-foreground" : "hover:bg-accent/60",
               highlight === 0 && props.scopeKey !== null && "bg-accent/60",
             )}
@@ -242,7 +242,7 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
         )}
         {visible.listed.length > 0 ? (
           <>
-            <div className="px-2.5 pt-2.5 pb-1 text-[11px] font-medium text-muted-foreground">
+            <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
               My projects
             </div>
             <DndContext
@@ -262,21 +262,21 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
         ) : null}
         {visible.quiet.length > 0 ? (
           <>
-            <div className="px-2.5 pt-2.5 pb-1 text-[11px] font-medium text-muted-foreground">
+            <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
               Other projects
             </div>
             {visible.quiet.map((group) => renderRow(group, false))}
           </>
         ) : null}
         {searching && rows.length === 0 ? (
-          <p className="px-2.5 py-3 text-[13px] text-muted-foreground">No matching projects.</p>
+          <p className="px-2.5 py-3 text-sm text-muted-foreground">No matching projects.</p>
         ) : null}
       </div>
       <div aria-hidden="true" className="mx-1 my-1 h-px bg-border" />
       <button
         type="button"
         onClick={props.onAddProject}
-        className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-[13px] text-muted-foreground outline-hidden hover:bg-accent/60 hover:text-foreground"
+        className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground outline-hidden hover:bg-accent/60 hover:text-foreground"
       >
         <PlusIcon className="size-4 shrink-0" />
         Add project
