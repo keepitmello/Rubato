@@ -196,8 +196,28 @@ const EDIT_HOST = lines(
   '',
   '');
 
+// T3's "Copy prompt link" under a message of mine links to T3's hosted app
+// (app.t3.codes/new?prompt=...), which opens the prompt there, not in Rubato. It also sat
+// beside the copy button with a near-identical look, so it is gone.
+const NO_PROMPT_LINK = '// Rubato: no "Copy prompt link"; it opens T3\'s hosted app (turn-actions-edits.mjs).\n';
+
 export const turnActionsEdits = {
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    ['import { ChevronDown, ChevronRight, Link as LinkIconNode } from "lucide";\n',
+      'import { ChevronDown, ChevronRight } from "lucide";\n', 'replace'],
+    ['import { promptLinkFor } from "../promptLinks/copyPromptLink";\n', NO_PROMPT_LINK, 'replace'],
+    ['  const promptLink = useMemo(() => promptLinkFor(plainText), [plainText]);\n',
+      '  ' + NO_PROMPT_LINK, 'replace'],
+    [lines(
+      '            {promptLink !== null && (',
+      '              <MessageCopyButton',
+      '                text={promptLink}',
+      '                label="Copy prompt link"',
+      '                icon={LinkIconNode}',
+      '                variant="ghost"',
+      '              />',
+      '            )}',
+      ''), '            {/* Rubato: no "Copy prompt link" (turn-actions-edits.mjs). */}\n', 'replace'],
     ['import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";\n', lines(
       'import {',
       '  RubatoEditMessageButton,',
@@ -216,11 +236,10 @@ export const turnActionsEdits = {
     ['      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">\n', lines(
       '      <div',
       '        className={cn(',
-      '          "relative max-w-[80%] rounded-2xl p-3",',
       '          // Rubato: the bubble being edited reads as an input, on the composer\'s raised surface.',
       '          rubatoEditing',
-      '            ? "w-full border border-input bg-card text-foreground shadow-composer transition-colors focus-within:border-ring dark:bg-surface-raised dark:shadow-composer-dark"',
-      '            : "bg-message text-message-foreground",',
+      '            ? "relative w-full max-w-[80%] rounded-2xl border border-input bg-card p-3 text-foreground shadow-composer transition-colors focus-within:border-ring dark:bg-surface-raised dark:shadow-composer-dark"',
+      '            : "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground",',
       '        )}',
       '      >',
       ''), 'replace'],
