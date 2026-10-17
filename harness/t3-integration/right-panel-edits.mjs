@@ -14,9 +14,24 @@
 // Upstream's store tests asserted the removed contract ("closes the panel"); each
 // of the three now asserts the launcher, and rubatoRightPanelLauncher.test.ts
 // holds what they do not cover: a hidden panel stays hidden.
+//
+// The panel's width is one width for the whole app. Upstream stores it per
+// thread (`t3code:preview-panel-width:<thread>`), so every new thread and every
+// other project opened it at the 540px default again, and the user dragged it
+// back each time. The chat view now passes one key: a drag anywhere is the width
+// the panel opens at everywhere, and the 540px default holds until the first
+// drag. The width hook keeps its clamp to the window, so a width saved on a wide
+// window still opens inside a narrow one.
 export const rightPanelOverlays = ['apps/web/src/rubatoRightPanelLauncher.test.ts'];
 
 export const rightPanelEdits = {
+  'apps/web/src/components/ChatView.tsx': [
+    [
+      '    widthStorageKey: `t3code:preview-panel-width:${activeThreadKey}`,\n',
+      '    // Rubato: one width for every thread (right-panel-edits.mjs).\n    widthStorageKey: "rubato:right-panel-width",\n',
+      'replace',
+    ],
+  ],
   'apps/web/src/rightPanelStore.ts': [
     [
       [
