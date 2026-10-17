@@ -125,6 +125,7 @@
     "apps/web/src/routes/settings.integrations.tsx": "955546c0461ad29e47a88cff3b98ef7426b2f965deae52dc08b24de3f7edebdf",
     "apps/web/src/routes/settings.connections.tsx": "532c2a4723195cd393bfb531bb0567eddb839d7c6b53a51dee4869433fe213e1",
     "apps/web/src/routes/settings.storage.tsx": "756ec9b2e971cf96afec6570c837ebc476fe9078583b06d14cbccef31ba53b99",
-    "apps/web/src/themePalette.ts": "dceec5fa428edb95cf373f34c61bab9afd5dcda342f6037130c52d5e7dd05fd1"
+    "apps/web/src/themePalette.ts": "dceec5fa428edb95cf373f34c61bab9afd5dcda342f6037130c52d5e7dd05fd1",
+    "apps/web/src/main.tsx": "e8a6b644470d7f466b9352bc6ca54fd69cdc68532e156a5c0a98a12fb511394d"
   }
 }

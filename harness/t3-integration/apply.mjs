@@ -50,6 +50,7 @@ import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs'
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
 import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
+import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1794,6 +1795,10 @@ for (const [relative, changes] of Object.entries(sectionScaleEdits)) {
 // Settings regrouped into Rubato's layout; last, since it anchors on the sidebar and search other modules edit (settings-layout-edits.mjs).
 overlays.push(...settingsLayoutOverlays);
 for (const [relative, changes] of Object.entries(settingsLayoutEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+overlays.push(...i18nOverlays);
+for (const [relative, changes] of Object.entries(i18nEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
