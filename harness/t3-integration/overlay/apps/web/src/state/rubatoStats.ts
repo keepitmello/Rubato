@@ -55,6 +55,19 @@ export interface StatsPeriod {
     readonly teams: number;
     readonly models: ReadonlyArray<{ readonly model: string; readonly count: number }>;
   };
+  /**
+   * Time the agents worked. `seconds` is wall-clock time with at least one session working;
+   * `agentSeconds` adds every session's time, so parallel work counts once per session.
+   * `daily` rows are [day, seconds, agentSeconds] for every day of the period.
+   */
+  readonly work: {
+    readonly seconds: number;
+    readonly agentSeconds: number;
+    readonly activeDays: number;
+    readonly averageSeconds: number;
+    readonly longestDay: { readonly day: string; readonly seconds: number } | null;
+    readonly daily: ReadonlyArray<readonly [string, number, number]>;
+  };
   readonly run: (StatsRecordMeta & { readonly calls: number; readonly seconds: number }) | null;
   readonly longestSession: (StatsRecordMeta & { readonly turns: number; readonly seconds: number }) | null;
   readonly think:

@@ -8,7 +8,7 @@
 //   {type:"message", message:{role:"user"|"assistant", ...}}
 // Tool results are the bulk of a log and are never parsed.
 
-export const SUMMARY_VERSION = 1;
+export const SUMMARY_VERSION = 3;
 
 /** Local calendar day of an epoch ms, YYYY-MM-DD. */
 export function dayKey(ms) {
@@ -58,10 +58,19 @@ export function createSessionSummarizer() {
     teams: [],
     thinks: {},
     runs: {},
+    // [start, end] of each stretch the agent worked: from something reaching it (a typed
+    // message, a system wake, a runtime notice or completion) to its last reply before the
+    // next one. Waiting is not in it.
+    work: [],
   };
   let first = true;
   let level = null;
   let run = null;
+  let stretch = null;
+  const closeStretch = () => {
+    if (stretch && stretch.end > stretch.start) summary.work.push([stretch.start, stretch.end]);
+    stretch = null;
+  };
   const closeRun = () => {
     if (run && run.calls > 0) keepTop(summary.runs, dayKey(run.start), [run.calls, Math.round((run.last - run.start) / 1000), run.start]);
     run = null;
@@ -78,6 +87,17 @@ export function createSessionSummarizer() {
       summary.cwd = typeof head.cwd === 'string' ? head.cwd : null;
       const at = Date.parse(head.timestamp ?? '');
       if (Number.isFinite(at)) summary.start = summary.end = at;
+      return true;
+    }
+    // A runtime notice or completion can wake an idle session. It starts a stretch; its
+    // body can be large, so only the timestamp (written last) is read.
+    if (line.startsWith('{"type":"custom_message"')) {
+      const mark = line.lastIndexOf('"timestamp":"');
+      const at = mark < 0 ? NaN : Date.parse(line.slice(mark + 13, line.indexOf('"', mark + 13)));
+      if (Number.isFinite(at)) {
+        closeStretch();
+        stretch = { start: at, end: at };
+      }
       return true;
     }
     // Cheap gates before JSON.parse: tool results and custom entries are most of the bytes.
@@ -99,14 +119,18 @@ export function createSessionSummarizer() {
     }
     const message = entry.message;
     if (!message) return true;
-    if (message.role === 'user') {
-      if (!isTypedUserText(textOf(message.content))) return true;
+    if (message.role === 'user' || message.role === 'system') {
+      closeStretch();
+      stretch = { start: at, end: at };
+      if (message.role === 'system' || !isTypedUserText(textOf(message.content))) return true;
       closeRun();
       summary.turns.push(at);
       summary.levels.push(level);
       return true;
     }
     if (message.role !== 'assistant') return true;
+    if (stretch) stretch.end = at;
+    else stretch = { start: at, end: at };
     const model = typeof message.model === 'string' && message.model ? message.model : 'unknown';
     const usage = message.usage ?? {};
     const key = `${dayKey(at)}|${model}`;
@@ -132,6 +156,7 @@ export function createSessionSummarizer() {
   };
   const finish = () => {
     closeRun();
+    closeStretch();
     if (rejected || first || summary.start === null) return null;
     return summary;
   };

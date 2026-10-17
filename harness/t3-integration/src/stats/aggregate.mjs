@@ -46,6 +46,62 @@ function longestRun(days) {
   return best;
 }
 
+/** Seconds per local day of [start, end) intervals, split at midnight. */
+function secondsByDay(intervals, into) {
+  for (const [start, end] of intervals) {
+    let cursor = start;
+    while (cursor < end) {
+      const midnight = addDays(startOfDay(cursor), 1);
+      const stop = Math.min(end, midnight);
+      const day = dayKey(cursor);
+      into.set(day, (into.get(day) ?? 0) + (stop - cursor) / 1000);
+      cursor = stop;
+    }
+  }
+  return into;
+}
+
+/** Overlapping intervals merged, so time two sessions shared counts once. */
+export function unionIntervals(intervals) {
+  const sorted = intervals.toSorted((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const [start, end] of sorted) {
+    const last = merged.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else merged.push([start, end]);
+  }
+  return merged;
+}
+
+/**
+ * Time the agents worked in the period, per day. `seconds` counts wall-clock time with at
+ * least one session working; `agentSeconds` adds every session's time, so two sessions
+ * working side by side for an hour count one hour and two.
+ */
+function workTime(sessions, fromMs, now, days) {
+  const clipped = [];
+  for (const [, s] of sessions) for (const [start, end] of s.work ?? []) {
+    const a = Math.max(start, fromMs);
+    const b = Math.min(end, now);
+    if (b > a) clipped.push([a, b]);
+  }
+  const wall = secondsByDay(unionIntervals(clipped), new Map());
+  const agent = secondsByDay(clipped, new Map());
+  const daily = days.map((day) => [day, Math.round(wall.get(day) ?? 0), Math.round(agent.get(day) ?? 0)]);
+  const seconds = daily.reduce((sum, row) => sum + row[1], 0);
+  const agentSeconds = daily.reduce((sum, row) => sum + row[2], 0);
+  const worked = daily.filter((row) => row[1] > 0);
+  const longest = worked.reduce((best, row) => (!best || row[1] > best[1] ? row : best), null);
+  return {
+    seconds,
+    agentSeconds,
+    activeDays: worked.length,
+    averageSeconds: worked.length ? Math.round(seconds / worked.length) : 0,
+    longestDay: longest ? { day: longest[0], seconds: longest[1] } : null,
+    daily,
+  };
+}
+
 function projectOf(cwd, home) {
   if (!cwd) return { path: null, name: 'Unknown' };
   const clean = cwd.replace(/\/+$/, '');
@@ -144,8 +200,14 @@ function aggregatePeriod(sessions, speed, { days, now, home }) {
     if (touched) projects.set(project.path, projectRow);
   }
 
-  const start = from ?? firstDay ?? today;
-  out.daily = daysBetween(start, today).map((day) => [day, daily.get(day) ?? 0]);
+  const firstWork = sessions.reduce((first, [, s]) => {
+    const at = s.work?.[0]?.[0];
+    return at !== undefined && at >= fromMs && (first === null || at < first) ? at : first;
+  }, null);
+  const start = from ?? [firstDay, firstWork === null ? null : dayKey(firstWork)].filter(Boolean).toSorted()[0] ?? today;
+  const periodDays = daysBetween(start, today);
+  out.daily = periodDays.map((day) => [day, daily.get(day) ?? 0]);
+  out.work = workTime(sessions, fromMs, now, periodDays);
   out.hourly = out.heat[0].map((_, hour) => out.heat.reduce((sum, row) => sum + row[hour], 0));
   out.nightShare = out.turns ? out.hourly.slice(0, 6).reduce((a, b) => a + b, 0) / out.turns : 0;
   const busiest = [...daily.entries()].reduce((best, entry) => (!best || entry[1] > best[1] ? entry : best), null);

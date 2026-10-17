@@ -28,7 +28,15 @@ export function wholeNumber(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
+/** Seconds as hours: "6.9h" under a hundred, "381h" above. */
+export function hours(seconds: number): string {
+  const value = seconds / 3600;
+  return value >= 100 ? `${Math.round(value).toLocaleString("en-US")}h` : `${value.toFixed(1)}h`;
+}
+
+/** A share as a whole percent; a sliver that is not zero reads "<1%", not "0%". */
 export function percent(share: number): string {
+  if (share > 0 && share < 0.005) return "<1%";
   return `${Math.round(share * 100)}%`;
 }
 
@@ -145,11 +153,6 @@ export function totalTokens(period: StatsPeriod): number {
   return input + cacheRead + cacheWrite + output;
 }
 
-export function cacheShare(period: StatsPeriod): number {
-  const total = totalTokens(period);
-  return total ? period.tokens.cacheRead / total : 0;
-}
-
 /** A novel of about 150k tokens: the unit for "the model wrote N books". */
 export const TOKENS_PER_BOOK = 150_000;
 
@@ -211,6 +214,22 @@ export function highlights(period: StatsPeriod, known: ReadonlyArray<KnownModel>
       label: "Longest conversation",
       headline: `“${period.longestSession.title ?? period.longestSession.project}”`,
       detail: `Started ${shortDate(period.longestSession.at)} and ran for ${duration(period.longestSession.seconds)}.`,
+    });
+  }
+  const longestDay = period.work.longestDay;
+  if (longestDay && longestDay.seconds >= 3600) {
+    const agentSeconds = period.work.daily.find(([day]) => day === longestDay.day)?.[2] ?? longestDay.seconds;
+    out.push({
+      key: "workday",
+      color: "#3fcfb8",
+      value: Math.round(longestDay.seconds / 3600),
+      unit: "hours of work",
+      label: "Longest workday",
+      headline: `${weekday(longestDay.day)}, ${shortDate(longestDay.day)}: busy for ${hours(longestDay.seconds)}`,
+      detail:
+        agentSeconds > longestDay.seconds * 1.05
+          ? `Sessions running side by side added up to ${hours(agentSeconds)} of agent time that day.`
+          : "At least one session was working the whole time.",
     });
   }
   const models = mergeModels(period.models, known);

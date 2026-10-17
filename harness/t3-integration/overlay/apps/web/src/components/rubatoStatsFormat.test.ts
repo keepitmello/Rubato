@@ -7,6 +7,8 @@ import {
   daysSinceFirst,
   duration,
   highlights,
+  hours,
+  percent,
   hourLabel,
   mergeModels,
   modelFamily,
@@ -42,6 +44,14 @@ function period(overrides: Partial<StatsPeriod> = {}): StatsPeriod {
     speed: [],
     projects: [],
     delegation: { agents: 0, teams: 0, models: [] },
+    work: {
+      seconds: 9 * 3600,
+      agentSeconds: 14 * 3600,
+      activeDays: 2,
+      averageSeconds: 4.5 * 3600,
+      longestDay: { day: "2026-10-16", seconds: 7 * 3600 },
+      daily: [["2026-10-16", 7 * 3600, 12 * 3600], ["2026-10-17", 2 * 3600, 2 * 3600]],
+    },
     run: { calls: 40, seconds: 3600, at: "2026-10-16T09:00:00.000Z", title: "Fix the ledger", project: "app" },
     longestSession: null,
     think: {
@@ -72,6 +82,11 @@ describe("rubatoStatsFormat", () => {
     expect(hourLabel(0)).toBe("12 AM");
     expect(hourLabel(23)).toBe("11 PM");
     expect(shortDate("2026-10-15")).toBe("Oct 15");
+    expect(hours(24_840)).toBe("6.9h");
+    expect(hours(1_371_240)).toBe("381h");
+    expect(percent(70.6e6 / 20.7e9)).toBe("<1%");
+    expect(percent(0)).toBe("0%");
+    expect(percent(0.97)).toBe("97%");
   });
 
   it("names a logged model id with the picker's name, through prefixes and -sub", () => {
@@ -94,10 +109,24 @@ describe("rubatoStatsFormat", () => {
 
   it("plays the card's summary first, and only the highlights the period has", () => {
     const items = highlights(period(), KNOWN);
-    expect(items.map((item) => item.key)).toEqual(["think", "run", "busiest", "favorite", "books", "night"]);
+    expect(items.map((item) => item.key)).toEqual(["think", "run", "busiest", "workday", "favorite", "books", "night"]);
+    const workday = items.find((item) => item.key === "workday")!;
+    expect(workday.value).toBe(7);
+    expect(workday.detail).toContain("12.0h of agent time");
     expect(items[0]!.headline).toBe("Where did −1,931,467 come from?");
     expect(items.find((item) => item.key === "books")!.value).toBe(2);
-    const bare = highlights(period({ think: null, run: null, busiest: null, turns: 0, tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 }, models: [] }), KNOWN);
+    const bare = highlights(
+      period({
+        think: null,
+        run: null,
+        busiest: null,
+        turns: 0,
+        tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+        models: [],
+        work: { seconds: 0, agentSeconds: 0, activeDays: 0, averageSeconds: 0, longestDay: null, daily: [] },
+      }),
+      KNOWN,
+    );
     expect(bare).toEqual([]);
   });
 

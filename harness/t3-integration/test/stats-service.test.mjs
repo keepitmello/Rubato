@@ -51,6 +51,21 @@ test('a session log reduces to typed turns, levels, usage, the longest think and
   assert.deepEqual(s.runs[dayKey(at(1, 0))], [3, 18 * 60, at(1, 23, 2)], 'a run ends at its last call, not when the person comes back');
   assert.deepEqual(s.agents, [[at(1, 23, 2), 'openai-codex/gpt-6-astra']]);
   assert.deepEqual(s.teams, [at(1, 23, 20)]);
+  assert.deepEqual(s.work, [[at(1, 23, 1), at(1, 23, 20)], [at(0, 2, 0), at(0, 2, 1)]], 'a notice with no reply is no work');
+});
+
+test('a system wake or a runtime notice starts a new stretch, so idle time between is not work', () => {
+  const s = summarizeSession([
+    header(at(3, 9), '/Users/me/work/app'),
+    user(at(3, 9, 0), 'start'),
+    assistant(at(3, 9, 5)),
+    line({ type: 'message', id: 'sys', timestamp: iso(at(1, 9, 0)), message: { role: 'system', content: [{ type: 'text', text: 'wake' }] } }),
+    assistant(at(1, 9, 3)),
+    line({ type: 'custom_message', customType: 'senpi-task.completion', content: 'x'.repeat(5000), display: false, id: 'c1', timestamp: iso(at(0, 9, 0)) }),
+    assistant(at(0, 9, 2)),
+  ]);
+  assert.deepEqual(s.work, [[at(3, 9, 0), at(3, 9, 5)], [at(1, 9, 0), at(1, 9, 3)], [at(0, 9, 0), at(0, 9, 2)]]);
+  assert.deepEqual(s.turns, [at(3, 9, 0)], 'a wake is not a typed message');
 });
 
 test('a file without a session header is not counted', () => {
@@ -95,8 +110,27 @@ test('periods count by calendar day, skip scratch folders and score speed like t
   assert.equal(stats.bestStreak, 2);
   assert.equal(stats.attendance[dayKey(NOW)], 1);
   assert.equal(all.daily[0][0], dayKey(at(40, 0)), 'all time starts at the first active day');
+  assert.equal(week.work.seconds, 20 * 60, 'Friday 23:01–23:20 and Saturday 02:00–02:01');
+  assert.equal(week.work.agentSeconds, 20 * 60);
+  assert.deepEqual(week.work.longestDay, { day: dayKey(at(1, 0)), seconds: 19 * 60 });
+  assert.equal(week.work.activeDays, 2);
+  assert.equal(week.work.averageSeconds, 10 * 60);
+  assert.equal(week.work.daily.length, 7);
   assert.equal(isScratchFolder('/tmp'), true);
   assert.equal(isScratchFolder('/Users/me/tmp'), false);
+});
+
+test('time two sessions worked side by side counts once on the clock and twice for the agents, split at midnight', () => {
+  const work = (startDay, startHour, endDay, endHour) => summarizeSession([
+    header(at(startDay, startHour), '/Users/me/x'),
+    user(at(startDay, startHour), 'go'),
+    assistant(at(endDay, endHour)),
+  ]);
+  const stats = aggregateStats({ 'a.jsonl': work(1, 22, 1, 23), 'b.jsonl': work(1, 22, 0, 1) }, [], { now: NOW, home: '/Users/me' });
+  const { work: time } = stats.periods.week;
+  assert.equal(time.seconds, 3 * 3600);
+  assert.equal(time.agentSeconds, 4 * 3600);
+  assert.deepEqual(time.daily.slice(-2), [[dayKey(at(1, 0)), 2 * 3600, 3 * 3600], [dayKey(NOW), 3600, 3600]]);
 });
 
 test('the explain prompt carries counts the model cannot do, and replies parse into a card', () => {
