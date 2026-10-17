@@ -1,9 +1,10 @@
 import type { EnvironmentId } from "@t3tools/contracts";
-import { FlameIcon } from "lucide-react";
-import { useCallback, useId, useSyncExternalStore } from "react";
+import { TimerIcon } from "lucide-react";
+import { useCallback, useEffect, useId, useState, useSyncExternalStore } from "react";
 
 import {
   type CachedThread,
+  readCacheExpired,
   readCachedThread,
   subscribeCachedThreads,
 } from "~/state/rubatoCacheWarming";
@@ -116,8 +117,8 @@ export function RubatoCacheTooltip(props: { environmentId: EnvironmentId; thread
 }
 
 /**
- * The hover card's one line: until when the warmer holds the cache, or, with the warmer
- * not holding it, how long the cache lasts on its own. A cold cache adds no line.
+ * The hover card's one line while the cache is warm: until when the warmer holds it, or,
+ * with the warmer not holding it, how long it lasts on its own.
  */
 export function cacheHoverLine(cached: CachedThread, now: number): string {
   return cached.warmer === "on" && cached.until != null
@@ -125,17 +126,34 @@ export function cacheHoverLine(cached: CachedThread, now: number): string {
     : `Cache warm · ${formatRemaining(cached.expiresAt - now)} left`;
 }
 
-/** The cache row in the new sidebar's thread hover card, laid out like its other rows. */
+export const CACHE_EXPIRED_LINE = "Cache expired";
+
+/**
+ * The cache row in the new sidebar's thread hover card, laid out like its other rows. A
+ * thread missing from the warm list is asked about once the card opens: its cache may have
+ * run out ("Cache expired"), or the server may not have known it yet. A thread with no
+ * Rubato session gets no row.
+ */
 export function RubatoCacheHoverRow(props: { environmentId: EnvironmentId; threadId: string }) {
   const cached = useCachedThread(props.environmentId, props.threadId);
-  if (!cached) return null;
+  const [expired, setExpired] = useState(false);
+  const warm = cached !== null;
+  useEffect(() => {
+    if (warm) return;
+    let current = true;
+    void readCacheExpired(props.environmentId, props.threadId).then((answer) => {
+      if (current) setExpired(answer);
+    });
+    return () => {
+      current = false;
+    };
+  }, [warm, props.environmentId, props.threadId]);
+  const line = cached ? cacheHoverLine(cached, Date.now()) : expired ? CACHE_EXPIRED_LINE : null;
+  if (!line) return null;
   return (
     <div className="flex min-w-0 items-center gap-2">
-      <FlameIcon
-        aria-hidden
-        className={cached.warmer === "on" ? "size-3 shrink-0 text-warning" : "size-3 shrink-0 stroke-muted-foreground"}
-      />
-      <div className="min-w-0 truncate tabular-nums text-foreground/75">{cacheHoverLine(cached, Date.now())}</div>
+      <TimerIcon aria-hidden className="size-3 shrink-0 stroke-muted-foreground" />
+      <div className="min-w-0 truncate tabular-nums text-foreground/75">{line}</div>
     </div>
   );
 }

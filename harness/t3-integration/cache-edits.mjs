@@ -178,7 +178,8 @@ export const cacheEdits = {
     ],
   ],
   // The new sidebar has no capsule; its thread hover card carries one cache line under
-  // the model row instead: until when the warmer holds the cache (RubatoCacheHoverRow).
+  // the model row instead: until when the warmer holds the cache, how long it lasts on its
+  // own, or that it has expired (RubatoCacheHoverRow).
   'apps/web/src/components/Sidebar.tsx': [
     [
       'import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";\n',

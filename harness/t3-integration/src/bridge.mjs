@@ -28,6 +28,9 @@ import os from 'node:os';
 const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)|DisconnectedError|Client is disconnected|not supported on Windows/i;
 // How long a failed cache probe waits before the ring's next poll asks again (probeCache).
 const CACHE_PROBE_RETRY_MS = 5 * 60_000;
+// The longest a provider keeps a prompt cache without a refresh (Anthropic's hour; the
+// engine's policies are in pi-runtime statusline.mjs resolveCachePolicy).
+const LONGEST_CACHE_MS = 60 * 60_000;
 // 세션 디렉터리에는 사람이 연 대화만 쌓이지 않는다. 벤치·프로브·스모크가
 // 임시 폴더에서 같은 엔진을 돌리고, 그 폴더는 곧 사라진다. T3 는 세션의 cwd
 // 로 프로젝트를 만들기 때문에, 그것을 그대로 넘기면 사이드바에 열 수도 없는
@@ -316,7 +319,7 @@ export class RubatoPiBridge {
     const fold = this.knownState(threadId);
     const snapshot = fold?.snapshot() ?? { speedIndex: null, agents: [], teams: [], cache: null };
     const cache = snapshot.cache ?? this.warmth?.get(threadId) ?? null;
-    if (!cache && fold?.sessionId) this.probeCache(threadId, fold.sessionId);
+    if (!cache && fold?.sessionId) void this.probeCache(threadId, fold.sessionId);
     return { ...snapshot, cache };
   }
   /**
@@ -329,16 +332,38 @@ export class RubatoPiBridge {
    */
   probeCache(threadId, sessionId) {
     // Only through an engine already connected: a read must not start one.
-    if (this.closed || !this.inventoryClient?.client.connected) return;
+    if (this.closed || !this.inventoryClient?.client.connected) return Promise.resolve(undefined);
     this.cacheProbes ??= new Map();
     const asked = this.cacheProbes.get(threadId);
-    if (asked !== undefined && Date.now() - asked < CACHE_PROBE_RETRY_MS) return;
-    this.cacheProbes.set(threadId, Date.now());
-    void this.attachedCommand(sessionId, { type: 'get_cache_warming' }).then((value) => {
+    if (asked && Date.now() - asked.at < CACHE_PROBE_RETRY_MS) return asked.answer;
+    const answer = this.attachedCommand(sessionId, { type: 'get_cache_warming' }).then((value) => {
       const cache = cacheFrom({ ...value, sessionId });
       // A live connection that answered meanwhile knows better.
       if (cache && !this.warmth?.has(threadId) && !this.knownState(threadId)?.cache) this.rememberWarmth(threadId, cache);
-    }, () => {});
+      return this.warmth?.get(threadId) ?? cache;
+    }, () => undefined);
+    this.cacheProbes.set(threadId, { at: Date.now(), answer });
+    return answer;
+  }
+  /**
+   * Whether the thread's prompt cache has run out, for the sidebar's hover card. A runtime
+   * the engine has not loaded runs no warmer, so once its file has gone untouched longer
+   * than any provider keeps a cache, the cache is gone without asking; anything else is
+   * asked once (probeCache). A thread with no Rubato session, or no answer, is not expired.
+   */
+  async cacheExpired(threadId) {
+    let cache = this.warmth?.get(threadId) ?? this.knownState(threadId)?.cache;
+    if (!cache) {
+      const sessionId = this.knownState(threadId)?.sessionId;
+      if (!sessionId || !this.inventoryClient?.client.connected) return false;
+      const entry = (await this.viaInventory((client) => client.list()).catch(() => []))
+        .find((session) => session.sessionId === sessionId);
+      if (!entry) return false;
+      if (!entry.runtimeId && typeof entry.touchedAt === 'number' && Date.now() - entry.touchedAt > LONGEST_CACHE_MS) return true;
+      cache = await this.probeCache(threadId, sessionId);
+      if (!cache) return false;
+    }
+    return cache.state === 'cold' || (cache.state === 'warm' && typeof cache.expiresAt === 'number' && cache.expiresAt <= Date.now());
   }
   /** One command to a session T3 holds no attachment to, through a short-lived one. */
   async attachedCommand(sessionId, command) {
@@ -1198,14 +1223,20 @@ export const liveBridge = () => [...liveBridges].find((item) => !item.closed);
  * `/rubato/cache-warming` on the T3 server lands here (RubatoCacheWarming.ts imports this
  * module by the path the Rubato provider is wired to, so it is the same module instance
  * and sees the provider's bridge). GET lists the threads whose cache is still warm (the
- * sidebar's capsules);
+ * sidebar's capsules), and with `?threadId=` also whether that thread's cache has run out
+ * (`expired`, the hover card's line);
  * POST `{ sessionId, enabled?, hours? }` sets that session's warmer (`hours` from now).
  */
 export async function handleCacheWarmingRequest(request) {
   const bridge = liveBridge();
   if (!bridge) return Response.json({ error: { code: 'unavailable', message: 'The Rubato provider is not running.' } }, { status: 503 });
   try {
-    if (request.method === 'GET') return Response.json({ threads: bridge.cachedThreads() });
+    if (request.method === 'GET') {
+      // `?threadId=` is one hover card asking whether that thread's cache has run out.
+      const threadId = new URL(request.url).searchParams.get('threadId');
+      const expired = threadId ? await bridge.cacheExpired(threadId) : undefined;
+      return Response.json({ threads: bridge.cachedThreads(), ...(threadId ? { expired } : {}) });
+    }
     const body = await request.json().catch(() => ({}));
     return Response.json({ cache: await bridge.setSessionCacheWarming(body?.sessionId, { enabled: body?.enabled, hours: body?.hours }) });
   } catch (error) {

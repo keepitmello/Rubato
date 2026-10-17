@@ -273,7 +273,10 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     published = sessions;
     directory.change(BACKGROUND_CONTEXT, (draft) => { draft.sessions = sessions; draft.revision += 1; });
   };
-  const refresh = () => refreshing ??= (async () => { metrics.lists++; records = wire(await files.list()); publish(); return directory.value; })()
+  // `touchedAt` tells a presentation how long a stored session's prompt cache can still live.
+  const refresh = () => refreshing ??= (async () => { metrics.lists++;
+    records = wire((await files.list()).map((item) => ({ ...item, touchedAt: files.touchedAt(item.file) ?? null })));
+    publish(); return directory.value; })()
     .finally(() => { refreshing = undefined; });
   const catalogue = (cwd) => {
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw invalid('Catalogue cwd must be absolute');

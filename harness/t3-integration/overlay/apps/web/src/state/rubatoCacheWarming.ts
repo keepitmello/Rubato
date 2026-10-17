@@ -113,3 +113,27 @@ export function subscribeCachedThreads(environmentId: EnvironmentId, listener: (
 export function readCachedThread(environmentId: EnvironmentId, threadId: string): CachedThread | null {
   return stores.get(environmentId)?.threads[threadId] ?? null;
 }
+
+/**
+ * Whether one thread's cache has run out, for its hover card. The answer also refreshes the
+ * warm list, so a thread the server just asked the engine about shows its warm line.
+ */
+export async function readCacheExpired(environmentId: EnvironmentId, threadId: string): Promise<boolean> {
+  const prepared = readPreparedConnection(environmentId);
+  const access = prepared ? await rubatoHttpAccess(prepared).catch(() => null) : null;
+  if (!access) return false;
+  const response = await fetch(`${access.baseUrl}${CACHE_WARMING_ROUTE}?threadId=${encodeURIComponent(threadId)}`, {
+    credentials: access.credentials,
+    headers: access.headers,
+  }).catch(() => null);
+  const payload = response?.ok
+    ? ((await response.json().catch(() => null)) as { threads?: CacheMap; expired?: boolean } | null)
+    : null;
+  if (!payload) return false;
+  if (payload.threads) {
+    const store = storeOf(environmentId);
+    store.threads = payload.threads;
+    for (const listener of store.listeners) listener();
+  }
+  return payload.expired === true;
+}

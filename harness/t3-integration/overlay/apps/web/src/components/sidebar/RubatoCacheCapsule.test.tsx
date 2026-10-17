@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { CachedThread } from "~/state/rubatoCacheWarming";
-import { CacheCapsuleGlyph, cacheHoverLine, cacheTooltipLines } from "./RubatoCacheCapsule";
+import { CACHE_EXPIRED_LINE, CacheCapsuleGlyph, cacheHoverLine, cacheTooltipLines } from "./RubatoCacheCapsule";
 
 const HOUR = 3_600_000;
 const now = Date.parse("2026-09-27T12:00:00Z");
@@ -52,5 +52,6 @@ describe("the sidebar's cache capsule", () => {
       "Cache warm · 12m left",
     );
     expect(cacheHoverLine(thread({ warmer: "off" }), now)).toBe("Cache warm · 1h 0m left");
+    expect(CACHE_EXPIRED_LINE).toBe("Cache expired");
   });
 });

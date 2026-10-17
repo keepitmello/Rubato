@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1308,6 +1308,42 @@ test('a thread T3 holds no attachment to asks the engine for its cache once the 
   bridge.sessionState('settled-thread');
   await delay(50);
   assert.equal(service.host.metrics.runtimeStarts, starts);
+});
+
+test('the hover card learns a run-out cache without loading a runtime the engine let go of', async (t) => {
+  const { root, service, bridge, external } = await setup(t);
+  const stale = await external.create({ cwd: root, title: 'Old' });
+  const recent = await external.create({ cwd: root, title: 'Recent' });
+  bridge.stateFor('stale-thread', stale.sessionId);
+  bridge.stateFor('recent-thread', recent.sessionId);
+  // The stale session's file was last written two hours ago, longer than any cache lives.
+  const [file] = (await readdir(root, { recursive: true })).filter((name) => name.endsWith(`${stale.sessionId}.jsonl`));
+  const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+  await utimes(path.join(root, file), twoHoursAgo, twoHoursAgo);
+  await bridge.inventory();
+  const starts = service.host.metrics.runtimeStarts;
+  assert.equal(await bridge.cacheExpired('stale-thread'), true);
+  assert.equal(service.host.metrics.runtimeStarts, starts, 'no runtime was loaded to answer');
+  // A session written just now is asked; the fixture's cache ran out in 2026-09.
+  assert.equal(await bridge.cacheExpired('recent-thread'), true);
+  assert.equal(bridge.sessionState('recent-thread').cache.sessionId, recent.sessionId);
+  assert.ok(service.host.metrics.runtimeStarts > starts, 'asking a stored session loads it');
+  // A thread with no Rubato session has no cache to report.
+  assert.equal(await bridge.cacheExpired('another-provider'), false);
+  const response = await handleCacheWarmingRequest(new Request('http://t3/rubato/cache-warming?threadId=stale-thread'));
+  assert.equal((await response.json()).expired, true);
+});
+
+test('a cache the bridge already knows is expired once its lifetime is past, and warm before', async () => {
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.knownState = () => undefined;
+  const warming = { mode: 'idle', enabled: true, active: false };
+  bridge.rememberWarmth('past', { state: 'warm', sessionId: 's', expiresAt: Date.now() - 1, warming });
+  bridge.rememberWarmth('ahead', { state: 'warm', sessionId: 's', expiresAt: Date.now() + 60_000, warming });
+  bridge.rememberWarmth('cold', { state: 'cold', sessionId: 's', warming });
+  assert.equal(await bridge.cacheExpired('past'), true);
+  assert.equal(await bridge.cacheExpired('ahead'), false);
+  assert.equal(await bridge.cacheExpired('cold'), true);
 });
 
 test('a woken cold session turns warm on its first model reply, while the turn still runs', async () => {

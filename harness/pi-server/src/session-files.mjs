@@ -81,6 +81,7 @@ const decodeDates = (metadata) => {
  */
 export class SessionFiles {
   #cache = new Map();
+  #touched = new Map();
   #refreshing;
   #index;
   #indexLoad;
@@ -160,6 +161,12 @@ export class SessionFiles {
     // Callers must not mutate cached metadata or a concurrent caller's result.
     return records.map((record) => ({ ...record }));
   }
+  /**
+   * When the file was last written, as the latest scan saw it (epoch ms). Pi's listing has
+   * no such field, so it stays beside the metadata: a warmer's cache refresh writes the file
+   * without adding a message, which `modifiedAt` does not count.
+   */
+  touchedAt(file) { return this.#touched.get(file); }
   async #read(file, canonicalRoot, seen) {
     try {
       file = await realpath(file);
@@ -167,6 +174,7 @@ export class SessionFiles {
       const before = await stat(file, { bigint: true });
       if (!before.isFile()) return null;
       seen?.add(file);
+      this.#touched.set(file, Number(before.mtimeMs));
       const key = fingerprint(before);
       const cached = this.#cache.get(file);
       if (cached?.key === key) return cached.metadata;
@@ -208,6 +216,7 @@ export class SessionFiles {
     });
     // Discard deleted entries and failed discovery; no cache of full history.
     for (const file of [...this.#cache.keys()]) if (!present.has(file)) this.#forget(file);
+    for (const file of [...this.#touched.keys()]) if (!present.has(file)) this.#touched.delete(file);
     this.#scheduleSave();
     return result.sort(newestFirst);
   }
