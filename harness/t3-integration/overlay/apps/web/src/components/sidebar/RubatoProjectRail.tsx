@@ -1,6 +1,6 @@
 // The rail left of the thread list holds app controls only: home, one Projects
 // button, and below a hairline the pages (scheduled tasks, memory, pull
-// requests, usage, settings), which replace the sidebar's footer row. Projects
+// requests, usage, stats, settings), which replace the sidebar's footer row. Projects
 // are never bare icons here; the Projects button opens a window that lists them
 // by name and edits the shared list (RubatoProjectPicker.tsx). Choosing a
 // project narrows the thread list and leaves the main area alone; a page
@@ -9,6 +9,7 @@
 import {
   BrainIcon,
   CalendarClockIcon,
+  ActivityIcon,
   ChartNoAxesColumnIcon,
   FoldersIcon,
   HouseIcon,
@@ -184,7 +185,7 @@ export function RubatoProjectRail() {
     if (key !== null && !open) void setOpen(true);
   };
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
-  const onRailPage = ["/scheduled", "/memory", "/pull-requests", "/usage", "/settings"].some(onPage);
+  const onRailPage = ["/scheduled", "/memory", "/pull-requests", "/usage", "/stats", "/settings"].some(onPage);
 
   // Phones get the sidebar as a sheet with its own footer; the rail is a desktop column.
   if (isMobile) return null;
@@ -283,6 +284,9 @@ export function RubatoProjectRail() {
         ) : null}
         <RailButton label="Usage" active={onPage("/usage")} onClick={() => void navigate({ to: "/usage" })}>
           <ChartNoAxesColumnIcon />
+        </RailButton>
+        <RailButton label="Stats" active={onPage("/stats")} onClick={() => void navigate({ to: "/stats" })}>
+          <ActivityIcon />
         </RailButton>
         <RailButton label="Settings" active={onPage("/settings")} onClick={() => void navigate({ to: "/settings" })}>
           <SettingsIcon />

@@ -10,7 +10,7 @@ import { bridgeModuleOf } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 // Settings pages that talk to the Rubato checkout: Providers (`rubato auth`),
-// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts), and
+// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts), Stats, and
 // the Agents panel's conversations (`/rubato/agents`). The work happens in a module found
 // next to the bridge module the Rubato provider is wired to: the checkout that
 // runs the sessions answers for them. A route only authenticates and hands the
@@ -169,4 +169,13 @@ export const rubatoSoundsRouteLayer = serviceRouteLayer({
   service: "soundsService",
   handler: "handleSoundsRequest",
   name: "sounds",
+});
+
+// The Stats page (stats-edits.mjs): what the local session logs say, read off the event loop.
+export const rubatoStatsRouteLayer = serviceRouteLayer({
+  route: "/rubato/stats",
+  file: "stats/service.mjs",
+  service: "statsService",
+  handler: "handleStatsRequest",
+  name: "stats",
 });

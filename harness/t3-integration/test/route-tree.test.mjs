@@ -8,8 +8,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from '../route-tree-edits.mjs';
 
-const PAGES = ['memory', 'permissions', 'phone', 'scheduled'];
-const TOP_LEVEL = ['memory', 'scheduled'];
+const PAGES = ['memory', 'permissions', 'phone', 'scheduled', 'stats'];
+const TOP_LEVEL = ['memory', 'scheduled', 'stats'];
 
 // The router plugin regenerates routeTree.gen.ts at every build. The applied file
 // must be exactly what it writes, or the build rewrites the overlay under the app.

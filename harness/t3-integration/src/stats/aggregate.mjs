@@ -1,0 +1,218 @@
+// File summaries (scan.mjs) → what the Stats page draws, for each period at once.
+// Pure: the clock, the home folder and the summaries come in as arguments.
+import path from 'node:path';
+import { dayKey } from './scan.mjs';
+import { scoreFromRatios } from '../../../rubato-pi/src/speed-index.mjs';
+
+export const PERIODS = Object.freeze({ week: 7, month: 30, all: null });
+// Benchmarks and evaluations run in throwaway folders; they are not the person's work.
+const SCRATCH_ROOTS = ['/tmp/', '/private/tmp/', '/private/var/folders/', '/var/folders/'];
+const MIN_SPEED_SAMPLES = 15;
+const TOP_MODELS = 8;
+const TOP_PROJECTS = 8;
+
+export function isScratchFolder(cwd) {
+  return typeof cwd === 'string' && SCRATCH_ROOTS.some((root) => cwd === root.slice(0, -1) || cwd.startsWith(root));
+}
+
+function startOfDay(ms) {
+  const d = new Date(ms);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+function addDays(ms, days) {
+  const d = new Date(ms);
+  d.setDate(d.getDate() + days);
+  return d.getTime();
+}
+
+/** Calendar days from `from` through `to`, both YYYY-MM-DD. */
+export function daysBetween(from, to) {
+  const out = [];
+  for (let ms = Date.parse(`${from}T12:00:00`); dayKey(ms) <= to; ms = addDays(ms, 1)) out.push(dayKey(ms));
+  return out;
+}
+
+function longestRun(days) {
+  let best = 0;
+  let current = 0;
+  let previous = null;
+  for (const day of days) {
+    current = previous && daysBetween(previous, day).length === 2 ? current + 1 : 1;
+    if (current > best) best = current;
+    previous = day;
+  }
+  return best;
+}
+
+function projectOf(cwd, home) {
+  if (!cwd) return { path: null, name: 'Unknown' };
+  const clean = cwd.replace(/\/+$/, '');
+  if (clean === home.replace(/\/+$/, '')) return { path: clean, name: '~' };
+  return { path: clean, name: path.basename(clean) || clean };
+}
+
+function topBy(map, size, score) {
+  return [...map.entries()].toSorted((a, b) => score(b[1]) - score(a[1])).slice(0, size);
+}
+
+function aggregatePeriod(sessions, speed, { days, now, home }) {
+  const today = dayKey(now);
+  const fromMs = days ? startOfDay(addDays(now, -(days - 1))) : -Infinity;
+  const from = days ? dayKey(fromMs) : null;
+  const inDay = (day) => from === null || day >= from;
+  const out = {
+    days,
+    sessions: 0,
+    turns: 0,
+    calls: 0,
+    tokens: { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+    heat: Array.from({ length: 7 }, () => Array(24).fill(0)),
+    levels: {},
+  };
+  const daily = new Map();
+  const models = new Map();
+  const projects = new Map();
+  const agentModels = new Map();
+  let agents = 0;
+  let teams = 0;
+  let run = null;
+  let think = null;
+  let longest = null;
+  let firstDay = null;
+  for (const [name, s] of sessions) {
+    const project = projectOf(s.cwd, home);
+    const meta = { title: s.title, project: project.name };
+    const projectRow = projects.get(project.path) ?? { name: project.name, sessions: 0, turns: 0, tokens: 0, models: new Map() };
+    let touched = false;
+    if (s.start >= fromMs) {
+      out.sessions += 1;
+      projectRow.sessions += 1;
+      touched = true;
+      if (s.turns.length > 0 && (!longest || s.turns.length > longest.turns)) {
+        longest = { turns: s.turns.length, seconds: Math.round((s.end - s.start) / 1000), at: new Date(s.start).toISOString(), ...meta };
+      }
+      teams += s.teams.length;
+    }
+    s.turns.forEach((at, index) => {
+      if (at < fromMs) return;
+      const day = dayKey(at);
+      firstDay = firstDay === null || day < firstDay ? day : firstDay;
+      out.turns += 1;
+      projectRow.turns += 1;
+      touched = true;
+      daily.set(day, (daily.get(day) ?? 0) + 1);
+      const d = new Date(at);
+      out.heat[(d.getDay() + 6) % 7][d.getHours()] += 1;
+      const level = s.levels[index];
+      if (level) out.levels[level] = (out.levels[level] ?? 0) + 1;
+    });
+    for (const [key, [calls, input, cacheRead, cacheWrite, output]] of Object.entries(s.usage)) {
+      const [day, model] = [key.slice(0, 10), key.slice(11)];
+      if (!inDay(day)) continue;
+      out.calls += calls;
+      out.tokens.input += input;
+      out.tokens.cacheRead += cacheRead;
+      out.tokens.cacheWrite += cacheWrite;
+      out.tokens.output += output;
+      const row = models.get(model) ?? { model, calls: 0, input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+      row.calls += calls;
+      row.input += input;
+      row.cacheRead += cacheRead;
+      row.cacheWrite += cacheWrite;
+      row.output += output;
+      models.set(model, row);
+      const total = input + cacheRead + cacheWrite + output;
+      projectRow.tokens += total;
+      projectRow.models.set(model, (projectRow.models.get(model) ?? 0) + total);
+      touched = true;
+    }
+    for (const [at, model] of s.agents) {
+      if (at < fromMs) continue;
+      agents += 1;
+      agentModels.set(model, (agentModels.get(model) ?? 0) + 1);
+    }
+    for (const [day, [calls, seconds, at]] of Object.entries(s.runs)) {
+      if (inDay(day) && (!run || calls > run.calls)) run = { calls, seconds, at: new Date(at).toISOString(), ...meta };
+    }
+    for (const [day, [chars, model, at, entryId]] of Object.entries(s.thinks)) {
+      if (inDay(day) && (!think || chars > think.chars)) {
+        think = { chars, model, at: new Date(at).toISOString(), ...meta, key: entryId ? `${name}#${entryId}` : null };
+      }
+    }
+    if (touched) projects.set(project.path, projectRow);
+  }
+
+  const start = from ?? firstDay ?? today;
+  out.daily = daysBetween(start, today).map((day) => [day, daily.get(day) ?? 0]);
+  out.hourly = out.heat[0].map((_, hour) => out.heat.reduce((sum, row) => sum + row[hour], 0));
+  out.nightShare = out.turns ? out.hourly.slice(0, 6).reduce((a, b) => a + b, 0) / out.turns : 0;
+  const busiest = [...daily.entries()].reduce((best, entry) => (!best || entry[1] > best[1] ? entry : best), null);
+  out.busiest = busiest ? { day: busiest[0], turns: busiest[1] } : null;
+  out.bestStreak = longestRun([...daily.keys()].toSorted());
+  const tokensOf = (row) => row.input + row.cacheRead + row.cacheWrite + row.output;
+  out.models = topBy(models, TOP_MODELS, tokensOf).map(([, row]) => row);
+  out.projects = topBy(projects, TOP_PROJECTS, (row) => row.turns)
+    .filter(([, row]) => row.turns > 0)
+    .map(([key, row]) => ({
+      path: key,
+      name: row.name,
+      sessions: row.sessions,
+      turns: row.turns,
+      tokens: row.tokens,
+      topModel: topBy(row.models, 1, (value) => value)[0]?.[0] ?? null,
+    }));
+  out.delegation = {
+    agents,
+    teams,
+    models: topBy(agentModels, 5, (count) => count).map(([model, count]) => ({ model, count })),
+  };
+  const ratios = new Map();
+  for (const [day, model, ratio] of speed) {
+    if (!inDay(day)) continue;
+    const list = ratios.get(model) ?? [];
+    list.push(ratio);
+    ratios.set(model, list);
+  }
+  out.speed = [...ratios.entries()]
+    .filter(([, list]) => list.length >= MIN_SPEED_SAMPLES)
+    .map(([model, list]) => ({ model, score: scoreFromRatios(list), samples: list.length }))
+    .toSorted((a, b) => b.samples - a.samples)
+    .slice(0, TOP_MODELS);
+  out.run = run;
+  out.longestSession = longest;
+  out.think = think;
+  return out;
+}
+
+/**
+ * @param {Record<string, object>} summaries  file name → summarizeSession() result
+ * @param {Array<[string, string, number]>} speed  summarizeSpeedSamples() rows
+ * @param {{ now: number, home: string }} context
+ */
+export function aggregateStats(summaries, speed, { now, home }) {
+  const sessions = Object.entries(summaries).filter(([, s]) => s && !isScratchFolder(s.cwd));
+  const attendance = {};
+  for (const [, s] of sessions) for (const at of s.turns) {
+    const day = dayKey(at);
+    attendance[day] = (attendance[day] ?? 0) + 1;
+  }
+  const activeDays = Object.keys(attendance).toSorted();
+  const today = dayKey(now);
+  let currentStreak = 0;
+  let cursor = attendance[today] ? now : addDays(now, -1);
+  while (attendance[dayKey(cursor)]) { currentStreak += 1; cursor = addDays(cursor, -1); }
+  const periods = {};
+  for (const [name, days] of Object.entries(PERIODS)) periods[name] = aggregatePeriod(sessions, speed, { days, now, home });
+  return {
+    generatedAt: new Date(now).toISOString(),
+    today,
+    firstDay: activeDays[0] ?? null,
+    activeDays: activeDays.length,
+    currentStreak,
+    bestStreak: longestRun(activeDays),
+    attendance,
+    periods,
+  };
+}

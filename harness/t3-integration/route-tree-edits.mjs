@@ -75,8 +75,8 @@ export function settingsRouteTreeEdits(pages) {
   return edits;
 }
 
-// Top-level pages Rubato adds beside Usage: Memory and Scheduled Tasks, which the
-// rail opens outside Settings (project-rail-edits.mjs). Upstream has only a few
+// Top-level pages Rubato adds beside Usage: Memory, Scheduled Tasks and Stats, which the
+// rail opens outside Settings (project-rail-edits.mjs, stats-edits.mjs). Upstream has only a few
 // top-level routes, so the generator's output is spelled out here; the same test
 // checks it. Each list is anchored on its own head, because the three interfaces
 // and the three unions otherwise repeat the same lines.
@@ -89,48 +89,51 @@ export function topLevelRouteTreeEdits() {
   return [
     ["import { Route as PairRouteImport } from './routes/pair'\n", "import { Route as ScheduledRouteImport } from './routes/scheduled'\n"],
     ["import { Route as ConnectAgentRouteImport } from './routes/connect-agent'\n", "import { Route as MemoryRouteImport } from './routes/memory'\n"],
+    ["import { Route as SettingsRouteImport } from './routes/settings'\n", "import { Route as StatsRouteImport } from './routes/stats'\n"],
     ['const PairRoute = PairRouteImport.update({\n', routeConst('Scheduled', 'scheduled')],
     ['const ConnectAgentRoute = ConnectAgentRouteImport.update({\n', routeConst('Memory', 'memory')],
+    ['const SettingsRoute = SettingsRouteImport.update({\n', routeConst('Stats', 'stats')],
     [
-      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
-      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
+      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
       'replace',
     ],
     [
-      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
-      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
+      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
       'replace',
     ],
     [
-      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
-      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
+      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
       'replace',
     ],
     [
-      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
-      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
+      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
       'replace',
     ],
     [
-      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
-      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
+      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
       'replace',
     ],
     [
-      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
-      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
+      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
       'replace',
     ],
     [
-      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  PairRoute: typeof PairRoute\n',
-      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  MemoryRoute: typeof MemoryRoute\n  PairRoute: typeof PairRoute\n  ScheduledRoute: typeof ScheduledRoute\n',
+      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  PairRoute: typeof PairRoute\n  SettingsRoute: typeof SettingsRouteWithChildren\n',
+      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  MemoryRoute: typeof MemoryRoute\n  PairRoute: typeof PairRoute\n  ScheduledRoute: typeof ScheduledRoute\n  SettingsRoute: typeof SettingsRouteWithChildren\n  StatsRoute: typeof StatsRoute\n',
       'replace',
     ],
     ["    '/pair': {\n", routeByPath('Scheduled', 'scheduled')],
     ["    '/connect-agent': {\n", routeByPath('Memory', 'memory')],
+    ["    '/settings': {\n", routeByPath('Stats', 'stats')],
     [
-      '  ConnectAgentRoute: ConnectAgentRoute,\n  PairRoute: PairRoute,\n',
-      '  ConnectAgentRoute: ConnectAgentRoute,\n  MemoryRoute: MemoryRoute,\n  PairRoute: PairRoute,\n  ScheduledRoute: ScheduledRoute,\n',
+      '  ConnectAgentRoute: ConnectAgentRoute,\n  PairRoute: PairRoute,\n  SettingsRoute: SettingsRouteWithChildren,\n',
+      '  ConnectAgentRoute: ConnectAgentRoute,\n  MemoryRoute: MemoryRoute,\n  PairRoute: PairRoute,\n  ScheduledRoute: ScheduledRoute,\n  SettingsRoute: SettingsRouteWithChildren,\n  StatsRoute: StatsRoute,\n',
       'replace',
     ],
   ];

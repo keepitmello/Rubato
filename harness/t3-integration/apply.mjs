@@ -37,6 +37,7 @@ import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-e
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from './route-tree-edits.mjs';
+import { statsEdits, statsOverlays } from './stats-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
@@ -1622,11 +1623,16 @@ overlays.push(...phoneOverlays);
 for (const [relative, changes] of Object.entries(phoneEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// The settings pages above (memory, permissions, phone, scheduled) in the generated route tree (route-tree-edits.mjs).
+// The Stats page (stats-edits.mjs) anchors on the phone edits above.
+overlays.push(...statsOverlays);
+for (const [relative, changes] of Object.entries(statsEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The settings pages above (memory, permissions, phone, scheduled, stats) in the generated route tree (route-tree-edits.mjs).
 edits['apps/web/src/routeTree.gen.ts'] = [
   ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
-  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled']),
-  // Memory and Scheduled Tasks as their own pages, opened from the rail (project-rail-edits.mjs).
+  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats']),
+  // Memory, Scheduled Tasks and Stats as their own pages, opened from the rail (project-rail-edits.mjs).
   ...topLevelRouteTreeEdits(),
 ];
 // Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
