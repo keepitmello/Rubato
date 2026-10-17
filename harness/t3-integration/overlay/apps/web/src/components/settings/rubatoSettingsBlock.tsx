@@ -5,6 +5,7 @@
 import { createContext, useContext, type ReactNode } from "react";
 
 import {
+  RUBATO_SECTION_TITLES,
   rubatoRowVisible,
   rubatoSectionMode,
   type RubatoSettingsFilter,
@@ -54,14 +55,16 @@ export function RubatoSettingsSectionGate({
 }: {
   id: string | undefined;
   children: ReactNode;
-  section: () => ReactNode;
+  /** Draws T3's section, with Rubato's heading when it renames one. */
+  section: (title?: string) => ReactNode;
 }) {
   const filter = useRubatoSettingsBlock();
   if (filter === null) return section();
   const mode = rubatoSectionMode(filter, id);
   if (mode === "hidden") return null;
   if (mode === "unwrapped") return children;
-  return <RubatoSettingsBlockScope value={mode.inner}>{section()}</RubatoSettingsBlockScope>;
+  const title = id === undefined ? undefined : RUBATO_SECTION_TITLES[id];
+  return <RubatoSettingsBlockScope value={mode.inner}>{section(title)}</RubatoSettingsBlockScope>;
 }
 
 /**

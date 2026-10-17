@@ -17,6 +17,7 @@ export type RubatoSettingsSource =
   | "phone"
   | "about"
   | "homeProjects"
+  | "titleModels"
   | "permissionsLink";
 
 export interface RubatoSettingsBlock {
@@ -102,13 +103,8 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
         rows: ["default-model", "default-permissions"],
         sources: ["general"],
       },
-      {
-        key: "text-generation",
-        title: "Text generation",
-        anchor: "text-generation",
-        rows: ["text-generation-model"],
-        sources: ["general"],
-      },
+      // Rubato's own section: the models that write session titles and summaries.
+      { key: "titles", sources: ["titleModels"] },
       {
         key: "usage-limits",
         title: "Usage limits",
@@ -269,6 +265,28 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
   { path: "/settings/archived", label: "Archive", group: "More" },
 ];
 
+/**
+ * Rows no page shows. They configure T3's text generation (commit messages,
+ * PR text, generated branch names, thread titles, review guides), which the
+ * Rubato driver declines: the main session writes commits and PRs, and Rubato
+ * titles sessions with its own models (Agents > Titles and summaries).
+ */
+export const RUBATO_HIDDEN_ROWS: readonly string[] = [
+  "text-generation-model",
+  "source-control-writer-model",
+  "source-control-writing-style",
+  "follow-change-request-templates",
+  "review-guides",
+  "review-guide-model",
+  "review-guide-instructions",
+];
+
+/** T3 section headings renamed on a Rubato page, by section id. */
+export const RUBATO_SECTION_TITLES: Readonly<Record<string, string>> = {
+  // With the writer rows hidden, only branch naming is left in it.
+  "source-control-text-generation": "Branch names",
+};
+
 /** Pages Rubato adds; each has a route file of its own. */
 export const RUBATO_ADDED_SETTINGS_PATHS = [
   "/settings/notifications",
@@ -311,14 +329,17 @@ export function rubatoBlockId(page: RubatoSettingsPage, block: RubatoSettingsBlo
   return `${page.path.replace("/settings/", "")}/${block.key}`;
 }
 
-/** Row id or settings key → the block that picks it. */
-export const RUBATO_PLACED_ROWS: ReadonlyMap<string, string> = new Map(
-  RUBATO_SETTINGS_PAGES.flatMap((page) =>
+const HIDDEN_BLOCK = "hidden";
+
+/** Row id or settings key → the block that picks it, or HIDDEN_BLOCK. */
+export const RUBATO_PLACED_ROWS: ReadonlyMap<string, string> = new Map([
+  ...RUBATO_SETTINGS_PAGES.flatMap((page) =>
     (page.blocks ?? []).flatMap((block) =>
       (block.rows ?? []).map((row) => [row, rubatoBlockId(page, block)] as const),
     ),
   ),
-);
+  ...RUBATO_HIDDEN_ROWS.map((row) => [row, HIDDEN_BLOCK] as const),
+]);
 
 /** Section id, or a row inside it → the block that shows it. */
 const PLACED_SECTIONS: ReadonlyMap<string, string> = new Map(
@@ -377,7 +398,14 @@ export function rubatoSearchItem<Item extends SettingsSearchItem>(item: Item): I
 
 /** Search, minus results that have no row to land on. */
 export function rubatoSearchItems<Item extends SettingsSearchItem>(items: readonly Item[]): Item[] {
-  return items.filter((item) => !RUBATO_UNRENDERED_SEARCH_IDS.has(item.id)).map(rubatoSearchItem);
+  return items
+    .filter(
+      (item) =>
+        !RUBATO_UNRENDERED_SEARCH_IDS.has(item.id) &&
+        RUBATO_PLACED_ROWS.get(item.id) !== HIDDEN_BLOCK &&
+        RUBATO_PLACED_ROWS.get(item.targetId ?? item.id) !== HIDDEN_BLOCK,
+    )
+    .map(rubatoSearchItem);
 }
 
 /** What a block shows of the panels inside it. */

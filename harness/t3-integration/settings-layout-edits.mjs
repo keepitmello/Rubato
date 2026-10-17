@@ -13,6 +13,10 @@
 //
 // Providers stays its own page: it edits one environment at a time, while the
 // defaults on Agents follow the project and environment scope.
+//
+// Rows for T3's text generation (writer, review guide and title models) show
+// nowhere: the Rubato driver declines those requests, the main session writes
+// commits and PRs, and Agents carries Rubato's own title models instead.
 export const settingsLayoutOverlays = [
   'apps/web/src/components/settings/rubatoSettingsLayout.ts',
   'apps/web/src/components/settings/rubatoSettingsLayout.test.ts',
@@ -51,7 +55,10 @@ export const settingsLayoutEdits = {
         + 'export function SettingsSection(props: Parameters<typeof SettingsSectionBody>[0]) {\n'
         + '  // Rubato: on a Rubato settings page the block decides whether it shows (settings-layout-edits.mjs).\n'
         + '  return (\n'
-        + '    <RubatoSettingsSectionGate id={props.id} section={() => <SettingsSectionBody {...props} />}>\n'
+        + '    <RubatoSettingsSectionGate\n'
+        + '      id={props.id}\n'
+        + '      section={(title) => <SettingsSectionBody {...props} title={title ?? props.title} />}\n'
+        + '    >\n'
         + '      {props.children}\n'
         + '    </RubatoSettingsSectionGate>\n'
         + '  );\n'
@@ -104,6 +111,17 @@ export const settingsLayoutEdits = {
         + '  "/settings/chat": "Chat",\n'
         + '  "/settings/threads": "Threads & Projects",\n'
         + '  "/settings/advanced": "Advanced",\n'],
+    // Rubato's title models, now on Agents (settings/RubatoTitleModels.tsx).
+    ['  {\n    id: "project-grouping",\n',
+      [
+        '  {',
+        '    id: "rubato-title-models",',
+        '    title: "Titles and summaries",',
+        '    to: "/settings/agents",',
+        '    searchTerms: ["session title model fallback summary stats longest think text generation 제목 요약 모델"],',
+        '  },',
+        '',
+      ].join('\n')],
     ['  "/settings/storage": "project-defaults",\n',
       '  "/settings/notifications": null,\n'
         + '  "/settings/agents": null,\n'

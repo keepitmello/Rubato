@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   RUBATO_FOLDED_SETTINGS_PATHS,
+  RUBATO_HIDDEN_ROWS,
   RUBATO_PLACED_ROWS,
   RUBATO_SETTINGS_DETAIL_PAGES,
   RUBATO_SETTINGS_PAGES,
@@ -17,6 +18,8 @@ import { SETTINGS_SEARCH_ITEMS, type SettingsSearchItem } from "./settingsSearch
 
 const ITEMS: readonly SettingsSearchItem[] = SETTINGS_SEARCH_ITEMS;
 const anchors = new Set(ITEMS.map((item) => item.targetId ?? item.id));
+// Row ids search knows: a result's own id, and the row it lands on.
+const knownRows = new Set(ITEMS.flatMap((item) => [item.id, item.targetId ?? item.id]));
 const byId = (id: string) => ITEMS.find((item) => item.id === id)!;
 
 // Pages that open from the rail or from a row rather than from the sidebar.
@@ -36,7 +39,7 @@ describe("Rubato settings layout", () => {
 
   it("places only rows that exist", () => {
     const unknown = [...RUBATO_PLACED_ROWS.keys()].filter(
-      (key) => !anchors.has(key) && !(key in DEFAULT_SERVER_SETTINGS),
+      (key) => !knownRows.has(key) && !(key in DEFAULT_SERVER_SETTINGS),
     );
     expect(unknown).toEqual([]);
   });
@@ -77,6 +80,15 @@ describe("Rubato settings layout", () => {
   it("drops search results with no row to land on", () => {
     expect(rubatoSearchItems(ITEMS).some((item) => item.id === "cli-command")).toBe(false);
   });
+
+  it("hides T3's text generation rows everywhere, search included", () => {
+    const shown = new Set(rubatoSearchItems(ITEMS).map((item) => item.id));
+    for (const id of RUBATO_HIDDEN_ROWS) {
+      expect(knownRows.has(id)).toBe(true);
+      expect(shown.has(id)).toBe(false);
+    }
+    expect(rubatoSearchItem(byId("rubato-title-models")).to).toBe("/settings/agents");
+  });
 });
 
 describe("Rubato settings blocks", () => {
@@ -104,6 +116,12 @@ describe("Rubato settings blocks", () => {
     expect(rubatoRowVisible(integrations, "browser-link-target", [])).toBe(true);
     expect(rubatoRowVisible(integrations, "pull-request-links-open-in-app", [])).toBe(false);
     expect(rubatoSectionMode(integrations, "browser")).toEqual({ inner: integrations });
+  });
+
+  it("leaves the hidden rows out of a whole panel", () => {
+    const sourceControl = block("/settings/source-control", "source-control");
+    expect(rubatoRowVisible(sourceControl, "source-control-writer-model", [])).toBe(false);
+    expect(rubatoRowVisible(sourceControl, "worktree-branch-naming", [])).toBe(true);
   });
 
   it("draws only the named sections of a split panel", () => {
