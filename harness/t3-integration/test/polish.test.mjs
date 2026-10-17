@@ -50,3 +50,12 @@ test('"Open a surface" fills the right panel with larger rows', { skip: !process
   assert.equal(launcher.match(/"flex h-10 w-full cursor-(?:pointer|default) items-center gap-3/g)?.length, 2);
   assert.doesNotMatch(launcher, /"flex h-8 w-full/);
 });
+
+test('an unsent draft keeps the normal sidebar row instead of a warning-yellow box', { skip: !process.env.T3_SOURCE }, async () => {
+  const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
+  const surface = /const draftSurfaceClassName = "([^"]*)";/.exec(sidebar)?.[1];
+  const pen = /const draftPenClassName = "([^"]*)";/.exec(sidebar)?.[1];
+  assert.ok(surface !== undefined && pen !== undefined, 'draft row classes not found');
+  assert.doesNotMatch(`${surface} ${pen}`, /warning/);
+  assert.match(surface, /hover:bg-sidebar-row-hover/);
+});

@@ -13,12 +13,26 @@
 //   only in this panel, so they wait for a wider canvas too.
 // - The details show their section headings (Workspace, Version Control).
 // - "Open a surface" in the empty right panel fills the panel width with larger rows.
+// - An unsent draft is a state, not a warning: its sidebar row keeps the normal
+//   surface and the pen turns the sidebar's muted color instead of warning yellow.
 export const polishOverlays = [
   'apps/web/src/rubatoPolish.css',
   'apps/web/src/components/chat/rubatoDetailsCaret.ts',
 ];
 
 export const polishEdits = {
+  'apps/web/src/components/Sidebar.tsx': [
+    [
+      'const draftSurfaceClassName = "bg-warning/4 hover:bg-warning/8";\nconst draftPenClassName = "size-3 shrink-0 text-warning-foreground";\n',
+      [
+        '// Rubato: an unsent draft is a state, not a warning (polish-edits.mjs).',
+        'const draftSurfaceClassName = "bg-transparent hover:bg-sidebar-row-hover";',
+        'const draftPenClassName = "size-3 shrink-0 text-sidebar-muted-foreground";',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+  ],
   'apps/web/src/index.css': [
     ['@import "tailwindcss";\n', '@import "tailwindcss";\n@import "./rubatoPolish.css";\n', 'replace'],
   ],
