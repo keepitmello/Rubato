@@ -86,6 +86,8 @@
     "packages/provider-pi/src/server.ts": "bea54917749903d37b8cc35869dbd1e83bf9abc018c8610e83ec6cd1b319bec2",
     "apps/server/src/orchestration-v2/runtimeLayer.ts": "88d8858abc4835fbc0b2898166a8f2e6209f98035846f631620066109499eae6",
     "apps/server/src/orchestration-v2/legacy/LegacyV1ThreadImporter.ts": "a13a8ee37ca17036adfde829c186c23321c52364bdcc98586252fbba04a76bac",
+    "apps/server/src/orchestration-v2/ProviderTurnStartService.ts": "7801ea01efcdc5b4ce99f3e96db18d0b760b6aee8c4cf917f04efe268b492285",
+    "apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts": "73ff081da513b1c3608b5d8f042add1b2e3797224c99b019f7f5a8195664f3fa",
     "apps/server/src/project/AgentSessionImporter.test.ts": "02cadb7e6833adf7f25d2b9b78748a676971941af39177b5242d9fd658e2b88d",
     "apps/server/src/provider/providerCompatibility.test.ts": "5177ab47b48d057fb19a3e3766a46929a7ed721a94dffde0a37a6266cf3ff310",
     "apps/web/src/session-logic.ts": "398f19a7ba26acfbd01d76f6b3bc055762e68554bdd2f235d5c963703c0c8d1f",

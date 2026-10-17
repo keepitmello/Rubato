@@ -223,8 +223,9 @@ test('a steer Pi never read comes back as a warning before the stopped turn sett
   assert.ok(client.commands.some((command) => command.type === 'clear_queue'));
 });
 
-import { activeBranch, replyBefore } from '../src/rpc-connection.mjs';
+import { activeBranch, replyBefore, stepBatch } from '../src/rpc-connection.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { outlineEntry } from '../../pi-server/src/session-worker.mjs';
 // Root → leaf: u1 a1 u2 a2 (a dropped side branch hangs off a1).
 const tree = { leafId: 'a2', entries: [
   { id: 'u1', parentId: null, type: 'message', message: { role: 'user', timestamp: 1 } },
@@ -240,6 +241,18 @@ test('the cut T3 names by its first dropped entry is the reply before it, on the
   assert.equal(replyBefore(branch, 'u2'), messageFingerprint(tree.entries[1].message));
   assert.equal(replyBefore(branch, 'u1'), null);
   assert.throws(() => replyBefore(branch, 'x1'), /not on this conversation's current branch/);
+});
+
+test('the engine\'s outline of a long session still names the rollback cut and the step batch', () => {
+  const instructions = [{ type: 'thinking', thinking: 'x'.repeat(4096) }];
+  const full = { leafId: tree.leafId, entries: tree.entries.map((entry) => entry.message?.role === 'assistant'
+    ? { ...entry, message: { ...entry.message, content: [...instructions,
+      { type: 'toolCall', id: `${entry.id}-call`, name: 'bash', arguments: { command: 'y'.repeat(4096) } }] } }
+    : { ...entry }) };
+  const outlined = { leafId: full.leafId, entries: full.entries.map(outlineEntry) };
+  assert.equal(replyBefore(activeBranch(outlined), 'u2'), replyBefore(activeBranch(full), 'u2'));
+  assert.deepEqual(stepBatch(activeBranch(outlined), 'a2-call'), ['a2-call']);
+  assert.ok(JSON.stringify(outlined).length < JSON.stringify(full).length / 4);
 });
 
 test('a rollback rewinds the attached session in place instead of forking it', async () => {

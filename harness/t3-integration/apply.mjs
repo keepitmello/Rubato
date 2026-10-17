@@ -38,6 +38,7 @@ import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs'
 import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
+import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1720,6 +1721,10 @@ for (const [relative, changes] of Object.entries(piAdapterEdits)) {
 // Pre-cutover threads: V1 thinking stored as answers stays out of V2 (legacy-import-edits.mjs).
 overlays.push(...legacyImportOverlays);
 for (const [relative, changes] of Object.entries(legacyImportEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// A provider that keeps its native thread through the uncertain-delivery fallback re-delivers instead of failing every turn (handoff-recovery-edits.mjs).
+for (const [relative, changes] of Object.entries(handoffRecoveryEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
