@@ -22,6 +22,7 @@ import {
 } from "~/lib/attachmentUploadQueue";
 import { resolveUserMessageContext } from "~/lib/composerContextRecords";
 import { randomUUID } from "~/lib/utils";
+import { postRubato } from "~/state/rubatoHttp";
 import { type ChatAttachment, type ChatMessage, isImageAttachment } from "~/types";
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
@@ -36,17 +37,41 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 // in the text). The editor shows each link as a numbered placeholder, so it can be moved
 // or deleted, and the send puts the links back. The rewind prunes the files of the
 // messages it drops, so the attachments are uploaded again before it.
+//
+// Where the rewind lands is the server's answer (RubatoMessageRewind.ts): the latest turn
+// before the message that kept a checkpoint. The timeline only knows the checkpoints of
+// the turns it has loaded, and some turns keep none.
 
 type ContextRecord = OrchestrationMessageContext["records"][number];
 
 export interface RubatoMessageEdit {
   readonly messageId: MessageId;
-  /** The checkpoint count to rewind to: the turns before this message. */
-  readonly turnCount: number;
   readonly text: string;
   readonly records: ReadonlyArray<ContextRecord>;
   /** The original attachments the edited message keeps, in their order. */
   readonly attachments: ReadonlyArray<ChatAttachment>;
+}
+
+/** The checkpoint an edit of this message rewinds to, as the server picks it. */
+export interface RubatoMessageRewindTarget {
+  /** The turn the conversation goes back to; 0 is the thread start. */
+  readonly turnCount: number;
+  readonly checkpointId: string;
+  readonly scopeId: string;
+}
+
+export function messageRewindTarget(
+  environmentId: EnvironmentId,
+  threadId: string,
+  messageId: MessageId,
+): Promise<RubatoMessageRewindTarget> {
+  return postRubato<RubatoMessageRewindTarget>(
+    environmentId,
+    "/rubato/message-rewind",
+    "target",
+    { threadId, messageId },
+    "message edits",
+  );
 }
 
 export interface EditableText {
@@ -248,9 +273,8 @@ const fitHeight = (element: HTMLTextAreaElement) => {
 export function RubatoMessageEditor(props: {
   readonly threadKey: string;
   readonly message: ChatMessage;
-  readonly turnCount: number;
 }) {
-  const { threadKey, message, turnCount } = props;
+  const { threadKey, message } = props;
   const [initial] = useState(() => {
     const resolved = resolveUserMessageContext(message);
     return { ...toEditableText(resolved.text), records: resolved.records };
@@ -273,7 +297,7 @@ export function RubatoMessageEditor(props: {
     const kept = keptContext(text, initial.records, message.attachments ?? []);
     setSending(true);
     try {
-      await host.current({ messageId: message.id, turnCount, text, ...kept });
+      await host.current({ messageId: message.id, text, ...kept });
       setEditing(threadKey, undefined);
     } catch (error) {
       toastManager.add(

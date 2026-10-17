@@ -5,6 +5,9 @@
 export const turnActionsOverlays = [
   'apps/web/src/components/chat/RubatoMessageEdit.tsx',
   'apps/web/src/components/chat/RubatoMessageEdit.test.tsx',
+  // Where an edit rewinds to: the server holds every checkpoint, the timeline only its window's.
+  'apps/server/src/RubatoMessageRewind.ts',
+  'apps/server/src/RubatoMessageRewind.test.ts',
 ];
 
 const lines = (...parts) => parts.join('\n');
@@ -45,6 +48,7 @@ const T3_REVERT_BUTTON = lines(
 
 // The edit's rewind and send. It sends the way /compact does (onCompactContext), with the
 // message's attachments uploaded again and its context records moved to the new uploads.
+// The server picks the checkpoint the rewind lands on (RubatoMessageRewind.ts).
 const EDIT_HOST = lines(
   '  // Rubato: a sent message edited in place (chat/RubatoMessageEdit.tsx). Its attachments',
   '  // are uploaded again first, since the rewind prunes the files of the messages it drops;',
@@ -71,6 +75,7 @@ const EDIT_HOST = lines(
   '    const connection = readPreparedConnection(environmentId);',
   '    if (!connection) throw new Error("The environment is not connected.");',
   '    const threadId = activeThread.id;',
+  '    const target = await messageRewindTarget(environmentId, threadId, edit.messageId);',
   '    const files = await prepareRevertedMessageAttachments({',
   '      message: {',
   '        id: original.id,',
@@ -97,10 +102,17 @@ const EDIT_HOST = lines(
   '    }));',
   '    try {',
   '      const commandId = CommandId.make(randomUUID());',
-  '      await waitForRevertedMessage(routeThreadRef, edit.messageId, edit.turnCount, commandId, async () => {',
+  '      await waitForRevertedMessage(routeThreadRef, edit.messageId, target.turnCount, commandId, async () => {',
   '        const result = await revertThreadCheckpoint({',
   '          environmentId,',
-  '          input: { commandId, threadId, turnCount: edit.turnCount, restoreFiles: false },',
+  '          input: {',
+  '            commandId,',
+  '            threadId,',
+  '            checkpointId: target.checkpointId,',
+  '            scopeId: target.scopeId,',
+  '            turnCount: target.turnCount,',
+  '            restoreFiles: false,',
+  '          },',
   '        });',
   '        if (result._tag === "Failure") throw squashAtomCommandFailure(result);',
   '      });',
@@ -220,11 +232,7 @@ export const turnActionsEdits = {
       '        </div>',
       ''), lines(
       '        {rubatoEditing && typeof revertTurnCount === "number" ? (',
-      '          <RubatoMessageEditor',
-      '            threadKey={ctx.routeThreadKey}',
-      '            message={row.message}',
-      '            turnCount={revertTurnCount}',
-      '          />',
+      '          <RubatoMessageEditor threadKey={ctx.routeThreadKey} message={row.message} />',
       '        ) : (',
       '          <div onCopyCapture={onBodyCopyCapture}>',
       '            <CollapsibleUserMessageBody',
@@ -253,6 +261,7 @@ export const turnActionsEdits = {
   'apps/web/src/components/ChatView.tsx': [
     ['import { appAtomRegistry } from "../rpc/atomRegistry";\n', lines(
       'import {',
+      '  messageRewindTarget,',
       '  plainTextOf,',
       '  type RubatoMessageEdit,',
       '  uploadAgain,',
@@ -261,5 +270,10 @@ export const turnActionsEdits = {
       '} from "./chat/RubatoMessageEdit";',
       '')],
     ['  const onCompactContext = () => {\n', EDIT_HOST],
+  ],
+  'apps/server/src/server.ts': [
+    ['import * as NetService from "@t3tools/shared/Net";\n',
+      'import { rubatoMessageRewindRouteLayer } from "./RubatoMessageRewind.ts";\n'],
+    ['    ServerBrowserStream.routeLayer,\n', '    rubatoMessageRewindRouteLayer,\n'],
   ],
 };

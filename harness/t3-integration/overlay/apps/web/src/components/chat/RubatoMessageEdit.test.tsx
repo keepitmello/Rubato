@@ -75,7 +75,7 @@ describe("editing a sent message", () => {
       streaming: false,
     } as unknown as ChatMessage;
     const html = renderToStaticMarkup(
-      <RubatoMessageEditor threadKey="thread" message={message} turnCount={0} />,
+      <RubatoMessageEditor threadKey="thread" message={message} />,
     );
     expect(html).toContain("고쳐줘 ⟦image.png #1⟧</textarea>");
     expect(html).toContain(">Cancel<");
