@@ -46,84 +46,23 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
 import { RubatoAgentSession } from "./RubatoAgentSession";
+import {
+  AgentElapsed,
+  STATUS_VISUALS,
+  StatusDot,
+  agentTaskLabel,
+  isLive,
+  isSettled,
+  teamMembers,
+} from "./rubatoAgentStatus";
+
+export { agentTaskLabel, formatElapsedSeconds } from "./rubatoAgentStatus";
 
 /** A row opens its agent's conversation in place of the list. */
 const OpenAgentContext = createContext<(agentId: string) => void>(() => undefined);
 
-/** In-flight states all read as Working; only settled states differ. */
-const STATUS_VISUALS: Record<RuntimeSubagent["status"], { dotClass: string; label: string }> = {
-  pending: { dotClass: "bg-info", label: "Working" },
-  running: { dotClass: "bg-info", label: "Working" },
-  waiting: { dotClass: "bg-info", label: "Working" },
-  idle: { dotClass: "bg-transparent ring-1 ring-inset ring-muted-foreground", label: "Idle · resumable" },
-  completed: { dotClass: "bg-success", label: "Completed" },
-  failed: { dotClass: "bg-destructive", label: "Failed" },
-  cancelled: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
-  interrupted: { dotClass: "bg-muted-foreground/60", label: "Stopped" },
-};
-
 /** A live agent with no update for this long shows how long it has been quiet. */
 export const QUIET_AFTER_MS = 120_000;
-
-function isLive(status: RuntimeSubagent["status"]): boolean {
-  return status === "pending" || status === "running" || status === "waiting";
-}
-
-function isSettled(status: RuntimeSubagent["status"]): boolean {
-  return (
-    status === "completed" ||
-    status === "failed" ||
-    status === "cancelled" ||
-    status === "interrupted"
-  );
-}
-
-function StatusDot({ status }: { status: RuntimeSubagent["status"] }) {
-  return (
-    <span
-      aria-hidden
-      className={cn("size-1.5 shrink-0 rounded-full", STATUS_VISUALS[status].dotClass)}
-    />
-  );
-}
-
-export function formatElapsedSeconds(totalSeconds: number): string {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  if (minutes === 0) return `${seconds}s`;
-  const hours = Math.floor(minutes / 60);
-  if (hours === 0) return `${minutes}m ${String(seconds % 60).padStart(2, "0")}s`;
-  return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
-}
-
-function elapsedBetween(startedAt: string, endIso: string | null): string {
-  const start = Date.parse(startedAt);
-  const end = endIso ? Date.parse(endIso) : Date.now();
-  if (Number.isNaN(start) || Number.isNaN(end)) return "";
-  return formatElapsedSeconds((end - start) / 1000);
-}
-
-/** Live agents self-tick through DOM writes (no React commit per second). */
-function AgentElapsed({ agent }: { agent: RuntimeSubagent }) {
-  const textRef = useRef<HTMLSpanElement>(null);
-  const live = agent.status === "running" || agent.status === "waiting";
-  const startedAt = agent.startedAt;
-  useEffect(() => {
-    if (!live || !startedAt) return;
-    const update = () => {
-      if (textRef.current) textRef.current.textContent = elapsedBetween(startedAt, null);
-    };
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [live, startedAt]);
-  if (!startedAt) return null;
-  return (
-    <span ref={textRef} className="tabular-nums">
-      {elapsedBetween(startedAt, live ? null : (agent.completedAt ?? agent.updatedAt))}
-    </span>
-  );
-}
 
 /** "quiet 3m" once a live agent has sent nothing for QUIET_AFTER_MS; null otherwise. */
 export function quietLabel(agent: RuntimeSubagent, now: number): string | null {
@@ -164,11 +103,6 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
 
 function capitalize(value: string): string {
   return value.length === 0 ? value : value[0]!.toLocaleUpperCase() + value.slice(1);
-}
-
-/** First line: the task alone. Old rows without `label` fall back to the title. */
-export function agentTaskLabel(agent: RuntimeSubagent): string {
-  return agent.label ?? agent.title;
 }
 
 /** Third line without the quiet tag: role · model · Speed · turn N · run N. */
@@ -256,10 +190,6 @@ function SectionLabel({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
-}
-
-function teamMembers(group: AgentPanelWorkflowGroup): ReadonlyArray<RuntimeSubagent> {
-  return [...group.phases.flatMap((phase) => phase.members), ...group.unphasedMembers];
 }
 
 /** "2 working · 1 idle · 1 done", nonzero parts only. */

@@ -47,6 +47,7 @@ import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
 import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs';
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
+import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1770,6 +1771,11 @@ for (const [relative, changes] of Object.entries(projectRailEdits)) {
 // Subscription bars for Rubato's own accounts on the Usage page (usage-limits-edits.mjs).
 overlays.push(...usageLimitsOverlays);
 for (const [relative, changes] of Object.entries(usageLimitsEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The floating thread details: workspace label, no empty script row, Team and Agents sections (floating-menu-edits.mjs).
+overlays.push(...floatingMenuOverlays);
+for (const [relative, changes] of Object.entries(floatingMenuEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Per-part sizes for the rail, the sidebar, the home row and the conversation; last, since it reads text project-rail-edits adds (section-scale-edits.mjs).
