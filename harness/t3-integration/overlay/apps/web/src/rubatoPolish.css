@@ -192,3 +192,21 @@
   border-radius: var(--rb-radius-card);
   box-shadow: inset 0 0 0 0.5px var(--rb-hairline-strong);
 }
+
+/* ---- Sidebar header: New thread leads, New project follows ---- */
+
+/* T3 paints both icons in --sidebar-icon-color, the muted color mixed into the
+   opaque sidebar color. Over the see-through material that mix sank into the
+   wallpaper. New thread is the header's one primary action; the buttons before
+   it (New project, the project scope) keep the plain muted color. Position, not
+   the label, picks the button, so a translated label keeps the rule. */
+[data-rubato-thread-header] > div > div:last-child > button > svg {
+  color: var(--color-sidebar-muted-foreground);
+}
+[data-rubato-thread-header] > div > div:last-child > button:last-child > svg {
+  color: var(--color-sidebar-foreground);
+  stroke-width: 2.25;
+}
+[data-rubato-thread-header] > div > div:last-child > button:hover > svg {
+  color: var(--color-sidebar-foreground);
+}

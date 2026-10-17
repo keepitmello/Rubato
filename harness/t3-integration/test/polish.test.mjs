@@ -67,3 +67,27 @@ test('an unsent draft keeps the normal sidebar row instead of a warning-yellow b
   assert.doesNotMatch(`${surface} ${pen}`, /warning/);
   assert.match(surface, /hover:bg-sidebar-row-hover/);
 });
+
+test('sidebar cards stay readable over the see-through material', { skip: !process.env.T3_SOURCE }, async () => {
+  const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
+  // A read or background thread's card title sits one step below an unread one.
+  const card = sidebar.slice(sidebar.indexOf('variant === "card"'), sidebar.indexOf('isRegeneratingTitle && "opacity-55"'));
+  assert.match(card, /shouldRecede\n\s+\? "text-foreground\/80"\n\s+: isUnread \|\| isWoke \|\| status === "input"\n\s+\? "text-foreground"/);
+  assert.doesNotMatch(card, /\? "text-secondary-label"\n/);
+  // A working row no longer fades as a whole.
+  assert.doesNotMatch(sidebar, /status === "working" &&\n\s+"opacity-70/);
+  // The default branch goes unnamed; the third line and its model logo stay.
+  assert.match(sidebar, /\{thread\.branch && !isDefaultBranchName\(thread\.branch\) \? \(\n\s+<>\n\s+<ThreadWorktreeIndicator/);
+  assert.match(sidebar, /<SidebarProviderStack\n/);
+  // The header carries the marker the New thread rule in rubatoPolish.css selects on.
+  assert.match(sidebar, /<SidebarGroup className="z-\[1\]" data-rubato-thread-header>\n\s+<SidebarThreadHeader\n/);
+});
+
+test('New thread leads the sidebar header and New project follows in the muted color', async () => {
+  const css = (await polishCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = (selector) => new RegExp(`${selector.replace(/[[\]>:().-]/g, '\\$&')} \\{([^}]*)\\}`).exec(css)?.[1] ?? '';
+  const actions = '[data-rubato-thread-header] > div > div:last-child > button';
+  assert.match(rule(`${actions} > svg`), /color: var\(--color-sidebar-muted-foreground\)/);
+  assert.match(rule(`${actions}:last-child > svg`), /color: var\(--color-sidebar-foreground\);[\s\S]*stroke-width: 2\.25/);
+  assert.match(rule(`${actions}:hover > svg`), /color: var\(--color-sidebar-foreground\)/);
+});

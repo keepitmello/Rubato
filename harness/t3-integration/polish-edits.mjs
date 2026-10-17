@@ -15,9 +15,21 @@
 // - "Open a surface" in the empty right panel fills the panel width with larger rows.
 // - An unsent draft is a state, not a warning: its sidebar row keeps the normal
 //   surface and the pen turns the sidebar's muted color instead of warning yellow.
+// - Sidebar cards read over the see-through material. A read or background
+//   thread's title was the muted gray and a working row faded to 70% on top, so
+//   over a bright wallpaper the titles sank into it. The title now takes the
+//   foreground one step below an unread one (80% against 90-100%), and a working
+//   row keeps full opacity; its blue status already says it runs on its own.
+// - The card's third line leaves the default branch unnamed (rubatoDefaultBranch.ts)
+//   and keeps its height, so the model logo stays under the title.
+// - The header's New thread button carries the sidebar's foreground and a firmer
+//   stroke, and New project its muted color; both were the muted color mixed 40%
+//   into the opaque sidebar color, which the material no longer paints.
 export const polishOverlays = [
   'apps/web/src/rubatoPolish.css',
   'apps/web/src/components/chat/rubatoDetailsCaret.ts',
+  'apps/web/src/components/sidebar/rubatoDefaultBranch.ts',
+  'apps/web/src/components/sidebar/rubatoDefaultBranch.test.ts',
 ];
 
 export const polishEdits = {
@@ -32,6 +44,26 @@ export const polishEdits = {
       ].join('\n'),
       'replace',
     ],
+    ['import { MiddleTruncate } from "./ui/middle-truncate";\n',
+      'import { isDefaultBranchName } from "./sidebar/rubatoDefaultBranch";\n'],
+    [
+      '                shouldRecede\n                  ? "text-secondary-label"\n                  : isUnread || isWoke || status === "input"\n',
+      '                shouldRecede\n                  ? "text-foreground/80"\n                  : isUnread || isWoke || status === "input"\n',
+      'replace',
+    ],
+    [
+      '    // Background work fades as a whole row, status label included, so it\n    // takes less attention than rows that need a human (input, approval).\n    shouldRecede &&\n      status === "working" &&\n      "opacity-70 transition-opacity hover:opacity-100 focus-within:opacity-100 motion-reduce:transition-none",\n',
+      '    // Rubato: a working row keeps full opacity; its status says it runs (polish-edits.mjs).\n',
+      'replace',
+    ],
+    [
+      '              {thread.branch ? (\n                <>\n                  <ThreadWorktreeIndicator thread={thread} />\n',
+      '              {thread.branch && !isDefaultBranchName(thread.branch) ? (\n                <>\n                  <ThreadWorktreeIndicator thread={thread} />\n',
+      'replace',
+    ],
+    ['          <SidebarGroup className="z-[1]">\n            <SidebarThreadHeader\n',
+      '          <SidebarGroup className="z-[1]" data-rubato-thread-header>\n            <SidebarThreadHeader\n',
+      'replace'],
   ],
   'apps/web/src/index.css': [
     ['@import "tailwindcss";\n', '@import "tailwindcss";\n@import "./rubatoPolish.css";\n', 'replace'],
