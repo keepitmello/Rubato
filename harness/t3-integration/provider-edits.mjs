@@ -9,6 +9,8 @@ export const providerOverlays = [
   'apps/server/src/RubatoServiceRoute.ts',
   'apps/web/src/state/rubatoAuth.ts',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
+  // Titles and summaries: the session-title ladder the Stats card shares.
+  'apps/web/src/components/settings/RubatoTitleModels.tsx',
 ];
 
 const t3Route = [

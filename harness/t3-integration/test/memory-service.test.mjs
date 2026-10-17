@@ -198,6 +198,19 @@ test('settings writes keep the user file and commit the self store', async (t) =
   await f.service.handle('config', { models: [{ model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast' }] });
   assert.deepEqual(jsoncModels(await readFile(configFile, 'utf8')), [{ model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast' }]);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7' }, { model: 'xai/grok-4.7' }] }), /twice/);
+  // The title ladder shares the writer: built-in until set, the user's after, built-in again on null.
+  const builtIn = await f.service.handle('title-models', {});
+  assert.equal(builtIn.custom, false);
+  assert.deepEqual(builtIn.models[0], { model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast', reasoning: null });
+  await f.service.handle('config', { titleModels: [{ model: 'anthropic/claude-haiku-4-5', reasoning: 'off' }, { model: 'xai/grok-4.7' }] });
+  assert.deepEqual(await f.service.handle('title-models', {}), {
+    models: [{ model: 'anthropic/claude-haiku-4-5', reasoning: 'off' }, { model: 'xai/grok-4.7', reasoning: null }],
+    custom: true,
+  });
+  assert.match(await readFile(configFile, 'utf8'), /\/\/ 사용자 주석은 남아야 한다/);
+  await assert.rejects(f.service.handle('config', { titleModels: [] }), /Titles and summaries needs 1 to 8 models/);
+  await f.service.handle('config', { titleModels: null });
+  assert.equal((await f.service.handle('title-models', {})).custom, false);
   await assert.rejects(f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'huge' }] }), /Reasoning/);
   await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /No memory store/);
 

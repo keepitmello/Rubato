@@ -16,6 +16,8 @@ export { installSessionTitle } from "./extension.mjs";
 export {
   TITLE_ENTRY,
   TITLE_MODELS,
+  loadTitleModels,
+  titleLadder,
   parseTitle,
   sanitizeTitle,
   shouldRetitle,

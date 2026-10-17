@@ -29,6 +29,7 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
+import { RubatoTitleModelsSection } from "./RubatoTitleModels";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -226,6 +227,7 @@ export function RubatoProvidersSettingsPanel() {
           </SettingsGroup>
         ) : null}
       </SettingsSection>
+      <RubatoTitleModelsSection />
     </SettingsPageContainer>
   );
 }

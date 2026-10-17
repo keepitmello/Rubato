@@ -8,6 +8,7 @@ import { RubatoModelCatalogLayerSchema, RubatoModelCatalogSchema } from "./model
 import { RubatoTaskSettingsLayerSchema, RubatoTaskSettingsSchema } from "./task"
 import { RubatoTeamsConfigLayerSchema, RubatoTeamsConfigSchema } from "./team"
 import { RubatoTelemetrySettingsLayerSchema, RubatoTelemetrySettingsSchema } from "./telemetry"
+import { RubatoTitlesSettingsLayerSchema, RubatoTitlesSettingsSchema } from "./titles"
 
 export type { RubatoHarnessId }
 export { RubatoHarnessIdSchema }
@@ -55,6 +56,7 @@ export const RubatoConfigSchema = z.preprocess(dropLegacyCategories, z.object({
   models: RubatoModelCatalogSchema.optional(),
   memory: RubatoMemorySettingsSchema.optional(),
   telemetry: RubatoTelemetrySettingsSchema.optional(),
+  titles: RubatoTitlesSettingsSchema.optional(),
   "[opencode]": RubatoOpenCodeHarnessConfigSchema.optional(),
   "[senpi]": RubatoTypedHarnessConfigSchema.optional(),
   "[codex]": RubatoTypedHarnessConfigSchema.optional(),
@@ -72,6 +74,7 @@ export const RubatoConfigLayerSchema = z.preprocess(dropLegacyCategories, z.obje
   models: RubatoModelCatalogLayerSchema.optional(),
   memory: RubatoMemorySettingsLayerSchema.optional(),
   telemetry: RubatoTelemetrySettingsLayerSchema.optional(),
+  titles: RubatoTitlesSettingsLayerSchema.optional(),
   "[opencode]": RubatoOpenCodeHarnessConfigSchema.optional(),
   "[senpi]": RubatoTypedHarnessConfigSchema.optional(),
   "[codex]": RubatoTypedHarnessConfigSchema.optional(),

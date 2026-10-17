@@ -1,10 +1,54 @@
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { parse as parseJsonc } from "jsonc-parser";
+
 // 제목은 짧은 문장 하나라 값싼 모델이면 충분하다. 앞에서부터 인증이 서 있는
-// 후보를 쓰고, 다 없으면 세션 모델로 떨어진다. CLI 탭 제목과 앱 스레드 제목이
-// 같은 값을 쓰므로 이 사슬 하나가 정본이다.
+// 후보를 쓰고, 다 없으면 세션 모델로 떨어진다. CLI 탭 제목과 앱 스레드 제목,
+// Stats 페이지의 "가장 길게 생각한 순간" 카드가 같은 사슬을 쓴다.
+// 사용자가 ~/.rubato/rubato.jsonc 의 titles.models 로 바꾸면 그쪽이 이긴다 (loadTitleModels).
 export const TITLE_MODELS = Object.freeze([
-  Object.freeze({ provider: "b-ai", id: "deepseek-v4.1-flash", reasoning: "low" }),
-  Object.freeze({ provider: "openai-codex", id: "gpt-6-luna" }),
+  Object.freeze({ provider: "opengateway", id: "deepseek/deepseek-v4.1-flash-ultrafast" }),
+  Object.freeze({ provider: "anthropic", id: "claude-haiku-4-5", reasoning: "off" }),
 ]);
+
+/**
+ * `titles.models` 의 rung("<provider>/<id>" 또는 {model, reasoning}) → {provider, id, reasoning?}.
+ * 프로바이더는 첫 슬래시에서만 가른다 (opengateway 의 id 는 슬래시를 품는다). 잘못된 rung 과 중복은 버린다.
+ */
+export function titleLadder(models) {
+  const ladder = [];
+  for (const entry of Array.isArray(models) ? models : []) {
+    const model = typeof entry === "string" ? entry : entry?.model;
+    if (typeof model !== "string") continue;
+    const slash = model.indexOf("/");
+    if (slash <= 0 || slash === model.length - 1) continue;
+    const rung = { provider: model.slice(0, slash), id: model.slice(slash + 1) };
+    if (ladder.some((held) => held.provider === rung.provider && held.id === rung.id)) continue;
+    const reasoning = typeof entry === "object" && typeof entry.reasoning === "string" ? entry.reasoning : undefined;
+    ladder.push(Object.freeze(reasoning ? { ...rung, reasoning } : rung));
+  }
+  return Object.freeze(ladder);
+}
+
+/** 설정 파일 자리: rubato.jsonc, 그게 없고 rubato.json 만 있으면 그쪽. */
+export function titleConfigPath(home = homedir()) {
+  const jsonc = join(home, ".rubato", "rubato.jsonc");
+  const json = join(home, ".rubato", "rubato.json");
+  return !existsSync(jsonc) && existsSync(json) ? json : jsonc;
+}
+
+/** 지금 쓰는 사슬: 사용자의 titles.models, 없거나 비었거나 못 읽으면 TITLE_MODELS. */
+export function loadTitleModels({ home = process.env.HOME || homedir(), readFile = readFileSync } = {}) {
+  try {
+    const config = parseJsonc(readFile(titleConfigPath(home), "utf8"), [], { allowTrailingComma: true });
+    const ladder = titleLadder(config?.titles?.models);
+    if (ladder.length > 0) return ladder;
+  } catch {
+    // 파일이 없거나 깨졌으면 기본 사슬로 간다. 제목 하나 때문에 세션을 막지 않는다.
+  }
+  return TITLE_MODELS;
+}
 export const TITLE_ENTRY = "rubato-pi.session-title";
 
 export const TITLE_SYSTEM_PROMPT = `Name this coding-agent session.

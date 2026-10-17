@@ -6,6 +6,9 @@ import {
   buildTitlePrompt,
   isTitleLocked,
   lastAutoTitle,
+  loadTitleModels,
+  titleConfigPath,
+  titleLadder,
   parseTitle,
   sanitizeTitle,
   shouldRetitle,
@@ -22,8 +25,8 @@ import {
 } from "./extension.mjs";
 import { PRODUCT_MODEL_ORDER } from "../model-picker/product-model-catalog.mjs";
 
-// 제목 체인의 b-ai 행은 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
-const TITLE_FLASH_ID = PRODUCT_MODEL_ORDER["b-ai"][0];
+// 제목 체인의 opengateway 행은 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
+const TITLE_FLASH_ID = PRODUCT_MODEL_ORDER.opengateway[0];
 
 function userEntry(text) {
   return { type: "message", message: { role: "user", content: [{ type: "text", text }] } };
@@ -348,41 +351,54 @@ test("session.rename locks later auto titles and survives resume", () => {
 });
 
 test("pickTitleModel walks the model chain and titleFromResponse reads complete() output", () => {
-  // 사슬을 손으로 베끼지 않는다. 값싼 1순위는 b-ai, 2순위는 카탈로그에 실제로 있는
-  // codex 행이어야 한다 — 등록되지 않은 id 를 적으면 그 rung 은 조용히 죽는다.
-  assert.equal(TITLE_MODELS[0].provider, "b-ai");
+  // 사슬을 손으로 베끼지 않는다. 기본 1순위는 opengateway DeepSeek, 2순위는 카탈로그에 실제로 있는
+  // Haiku 여야 한다 — 등록되지 않은 id 를 적으면 그 rung 은 조용히 죽는다.
+  assert.equal(TITLE_MODELS[0].provider, "opengateway");
   assert.equal(TITLE_MODELS[0].id, TITLE_FLASH_ID);
-  assert.equal(TITLE_MODELS[0].reasoning, "low");
-  assert.equal(TITLE_MODELS[1].provider, "openai-codex");
+  assert.equal(TITLE_MODELS[0].reasoning, undefined);
+  assert.equal(TITLE_MODELS[1].provider, "anthropic");
+  assert.equal(TITLE_MODELS[1].reasoning, "off");
   assert.ok(
-    PRODUCT_MODEL_ORDER["openai-codex"].includes(TITLE_MODELS[1].id),
+    PRODUCT_MODEL_ORDER.anthropic.includes(TITLE_MODELS[1].id),
     `${TITLE_MODELS[1].id} 가 카탈로그에 없다`,
   );
-  const flash = { provider: "b-ai", id: TITLE_FLASH_ID };
-  const luna = { provider: "openai-codex", id: TITLE_MODELS[1].id };
+  const flash = { provider: "opengateway", id: TITLE_FLASH_ID };
+  const haiku = { provider: "anthropic", id: TITLE_MODELS[1].id };
   const seen = [];
   const byId = (provider, id) => {
     seen.push([provider, id]);
-    return id === TITLE_FLASH_ID ? flash : luna;
+    return id === TITLE_FLASH_ID ? flash : haiku;
   };
-  // 값싼 1순위가 인증까지 서 있으면 그것을 쓰고, 추론 강도를 함께 넘긴다.
-  assert.deepEqual(pickTitleModel({ find: byId }, { id: "fallback" }), {
-    model: flash,
-    reasoning: "low",
-  });
-  assert.deepEqual(seen, [["b-ai", TITLE_FLASH_ID]]);
-  // 자격 없는 후보는 건너뛴다. luna 는 추론 강도를 지정하지 않는다.
+  // 값싼 1순위가 인증까지 서 있으면 그것을 쓴다.
+  assert.deepEqual(pickTitleModel({ find: byId }, { id: "fallback" }, TITLE_MODELS), { model: flash });
+  assert.deepEqual(seen, [["opengateway", TITLE_FLASH_ID]]);
+  // 자격 없는 후보는 건너뛰고, 다음 rung 의 추론 강도를 함께 넘긴다.
   const noAuthForFlash = { find: byId, hasConfiguredAuth: (model) => model !== flash };
-  assert.deepEqual(pickTitleModel(noAuthForFlash, { id: "fallback" }), { model: luna });
+  assert.deepEqual(pickTitleModel(noAuthForFlash, { id: "fallback" }, TITLE_MODELS), { model: haiku, reasoning: "off" });
   // 사슬에 아무것도 없거나 전부 자격이 없으면 세션 모델로 떨어진다.
   const fallback = { id: "fallback" };
-  assert.deepEqual(pickTitleModel({ find: () => undefined }, fallback), { model: fallback });
+  assert.deepEqual(pickTitleModel({ find: () => undefined }, fallback, TITLE_MODELS), { model: fallback });
   assert.deepEqual(
-    pickTitleModel({ find: () => flash, hasConfiguredAuth: () => false }, fallback),
+    pickTitleModel({ find: () => flash, hasConfiguredAuth: () => false }, fallback, TITLE_MODELS),
     { model: fallback },
   );
   assert.equal(titleFromResponse({ content: [{ type: "text", text: "<title>Ok</title>" }] }), "Ok");
   paintTabTitle({ cwd: "/tmp/repo", ui: { setTitle: (title) => assert.equal(title, "repo") } });
+});
+
+test("the user's titles.models replaces the built-in ladder", () => {
+  assert.deepEqual(
+    titleLadder(["xai/grok-4.7", { model: "opengateway/deepseek/deepseek-v4.1-flash-ultrafast", reasoning: "low" }, "xai/grok-4.7", "no-slash", "/x", 7]),
+    [{ provider: "xai", id: "grok-4.7" }, { provider: "opengateway", id: "deepseek/deepseek-v4.1-flash-ultrafast", reasoning: "low" }],
+  );
+  const read = (text) => () => text;
+  assert.deepEqual(
+    loadTitleModels({ home: "/h", readFile: read('{\n  // mine\n  "titles": { "models": ["anthropic/claude-haiku-4-5",] },\n}') }),
+    [{ provider: "anthropic", id: "claude-haiku-4-5" }],
+  );
+  assert.equal(loadTitleModels({ home: "/h", readFile: read('{"titles":{"models":[]}}') }), TITLE_MODELS, "an empty ladder keeps the default");
+  assert.equal(loadTitleModels({ home: "/h", readFile: () => { throw new Error("ENOENT"); } }), TITLE_MODELS);
+  assert.equal(titleConfigPath("/nowhere"), "/nowhere/.rubato/rubato.jsonc");
 });
 
 test("the title completion carries the candidate reasoning level", async () => {
@@ -402,7 +418,8 @@ test("the title completion carries the candidate reasoning level", async () => {
     },
     sessionManager: { getEntries: () => entries },
   };
-  await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false });
+  const ladder = [{ provider: "opengateway", id: TITLE_FLASH_ID, reasoning: "low" }];
+  await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false }, { loadModels: () => ladder });
   assert.equal(calls.length, 1);
   assert.equal(calls[0][0].id, TITLE_FLASH_ID);
   assert.equal(calls[0][2].reasoning, "low");

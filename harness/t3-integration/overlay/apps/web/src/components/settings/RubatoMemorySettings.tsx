@@ -1679,9 +1679,16 @@ function ModelIcon({ slug }: { slug: string }) {
 export function DreamModelsEditor({
   models,
   onChange,
+  title = "Models",
+  description = "The dream tries these in order and uses the first one that answers.",
+  subject = "the dream",
 }: {
   models: readonly DreamModel[];
   onChange: (next: readonly DreamModel[]) => void;
+  title?: string;
+  description?: ReactNode;
+  /** What the ladder runs, for the labels: "the dream", "titles". */
+  subject?: string;
 }) {
   const catalogue = useRubatoModels();
   const nameOf = (slug: string) => catalogue.find((model) => model.slug === slug)?.name ?? slug;
@@ -1697,10 +1704,7 @@ export function DreamModelsEditor({
   const remove = (index: number) => onChange(models.filter((_, at) => at !== index));
 
   return (
-    <SettingsRow
-      title="Models"
-      description="The dream tries these in order and uses the first one that answers."
-    >
+    <SettingsRow title={title} description={description}>
       <ol className="mt-3 space-y-1.5">
         {models.map((entry, index) => (
           <li
@@ -1751,7 +1755,7 @@ export function DreamModelsEditor({
               variant="ghost"
               disabled={models.length === 1}
               aria-label={`Remove ${nameOf(entry.model)}`}
-              title={models.length === 1 ? "The dream needs at least one model" : undefined}
+              title={models.length === 1 ? `${subject[0]!.toUpperCase()}${subject.slice(1)} needs at least one model` : undefined}
               onClick={() => remove(index)}
             >
               <XIcon />
@@ -1767,7 +1771,7 @@ export function DreamModelsEditor({
               if (typeof next === "string" && next) onChange([...models, { model: next, reasoning: null }]);
             }}
           >
-            <SelectTrigger size="sm" aria-label="Add a model to the dream">
+            <SelectTrigger size="sm" aria-label={`Add a model to ${subject}`}>
               <SelectValue>
                 <span className="inline-flex items-center gap-1.5 text-muted-foreground">
                   <PlusIcon className="size-3.5" /> Add model

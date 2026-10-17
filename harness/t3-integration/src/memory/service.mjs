@@ -7,7 +7,9 @@
 //   rubato dream <store> --json          run now (minutes to tens of minutes: detached)
 //   <memory>/agents/<store>/runtime/dream/runs/<runId>/{run.json,out/report.md,out/user-candidates.md}
 //   <memory>/agents/<store>/repo                          the store's git repository
-//   ~/.rubato/rubato.jsonc  memory.dream.{models,stores.<name>.enabled}
+//   ~/.rubato/rubato.jsonc  memory.dream.{models,stores.<name>.enabled}, titles.models
+//                           (titles.models is not memory: it is the session-title ladder, which the
+//                           Stats card shares. It lives here because this module owns the config writer.)
 //   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
 //   <memory>/self/dismissed-suggestions.json             {lines}: dream suggestions the user waved off
 import { execFile, spawn } from 'node:child_process';
@@ -18,6 +20,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
+import { TITLE_MODELS, titleLadder } from '../../../pi-runtime/features/session-title/session-title.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
@@ -353,8 +356,8 @@ export function createMemoryService(options = {}) {
     }
   }
 
-  function ladderInput(models) {
-    if (!Array.isArray(models) || models.length === 0 || models.length > LADDER_MAX) throw bad(`The dream needs 1 to ${LADDER_MAX} models.`);
+  function ladderInput(models, subject = 'The dream') {
+    if (!Array.isArray(models) || models.length === 0 || models.length > LADDER_MAX) throw bad(`${subject} needs 1 to ${LADDER_MAX} models.`);
     const seen = new Set();
     return models.map((entry) => {
       const model = entry?.model;
@@ -388,6 +391,9 @@ export function createMemoryService(options = {}) {
   async function setConfig(input) {
     const edits = [];
     if (input.models !== undefined) edits.push([['memory', 'dream', 'models'], ladderInput(input.models)]);
+    // null puts titles back on the built-in ladder.
+    if (input.titleModels === null) edits.push([['titles', 'models'], undefined]);
+    else if (input.titleModels !== undefined) edits.push([['titles', 'models'], ladderInput(input.titleModels, 'Titles and summaries')]);
     if (input.store !== undefined || input.enabled !== undefined) {
       assertStore(input.store);
       if (typeof input.enabled !== 'boolean') throw bad('Enabled must be true or false.');
@@ -396,6 +402,16 @@ export function createMemoryService(options = {}) {
     if (edits.length === 0) throw bad('Nothing to change.');
     await editJsonc(configPath(), edits);
     return { saved: edits.map(([keyPath, value]) => ({ key: keyPath.join('.'), value })) };
+  }
+
+  // The session-title ladder in effect: the user's titles.models, else the built-in one.
+  async function titleModels() {
+    const configured = titleLadder(parseConfig((await readConfigText()).text)?.titles?.models);
+    const ladder = configured.length > 0 ? configured : TITLE_MODELS;
+    return {
+      models: ladder.map((rung) => ({ model: `${rung.provider}/${rung.id}`, reasoning: rung.reasoning ?? null })),
+      custom: configured.length > 0,
+    };
   }
 
   async function ensureSelfRepo() {
@@ -765,6 +781,7 @@ export function createMemoryService(options = {}) {
     run: (input) => runDetail(input),
     dream: (input) => startDream(input),
     config: (input) => setConfig(input),
+    'title-models': () => titleModels(),
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
     suggestions: () => suggestions(),
