@@ -272,6 +272,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       injectHistory: (input) => Effect.sync(() => alreadyNative(bridge, input)),
       // The picker's reasoning effort and Fast (bridge rpc-connection.mjs applySelection).
       selectionRecord: (selection) => (selection.options?.length ? { type: "rubato_selection", options: selection.options } : null),
+      // Restarting Rubato closes every connection: idle threads just stop, a cut-off reply says so.
+      transportClosedMessage: "Rubato restarted or disconnected while writing this reply, so it was cut off. Send your message again to continue.",
       forkSession: (input) => Effect.tryPromise({
         try: () => bridge.forkForThread({ source: input.sourceNativeId, beforeEntryId: input.beforeEntryId }),
         catch: (cause) => new PiRpcError({ operation: "fork", detail: detail(cause), cause }),
