@@ -111,6 +111,7 @@
     "apps/web/src/components/BranchToolbar.panel.test.tsx": "09e00a33e04ceca88a7aa9bbdacb2b9da57109962a991d09358da026cd393bf1",
     "apps/desktop/src/ipc/methods/clientSettings.ts": "7b9b895448a9f1a6b7fffb5940a93cda6ed6a6507aac99e5e0b40babd298fe33",
     "apps/desktop/package.json": "b242b730648407bffd6c67f643f9b1f88a9f779c05be1b82fc8032daf2ce90dc",
+    "apps/web/src/components/preview/PreviewPanelShell.tsx": "5e0cda77d09f7f833914f5f731236803a974d828328f43207801435333630348",
     "apps/web/src/routes/_chat.tsx": "69d7fa92fbb911e99acc0bb980d09f78bd1a5f4d7004c1f9e10dc078cffb3d2c",
     "packages/contracts/src/providerUsageLimits.ts": "916762ee780a3274b67c30ea9522184964093d00c4fe6cf52389f842676f835c",
     "apps/server/src/usage/UsageLimitSources.ts": "4491fa9328bc1e4e1a166d8ea608d4fe47430afc29d174616667ba2730c41ce5",

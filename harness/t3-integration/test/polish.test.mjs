@@ -23,6 +23,14 @@ test('the polish takes every color from the active theme, so all Rubato themes g
   assert.match(css, /^\.dark \{[\s\S]*?--rb-rim:/m);
 });
 
+test('the polish stays off :has(), which re-ran style on every streamed message', async () => {
+  // Measured on a long thread: 300 appended paragraphs cost ~12% more style recalc
+  // with the :has() rules than without any Rubato CSS. State comes from markers instead.
+  const css = (await polishCss()).replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /:has\(/);
+  assert.match(css, /\[data-right-panel-surface-content\]:not\(\[data-surface-empty\]\)/);
+});
+
 test('the polish loads with the app styles', { skip: !process.env.T3_SOURCE }, async () => {
   const index = await applied('apps/web/src/index.css');
   assert.match(index, /^@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n/);

@@ -145,6 +145,18 @@ test('the material CSS takes its colors from the theme and leaves the chat colum
   assert.doesNotMatch(css, /data-right-panel-surface-content/);
 });
 
+test('the material CSS uses no :has(), which rechecked style on every DOM change while a reply streamed', async () => {
+  const css = await overlay('apps/web/src/rubatoWindowMaterial.css');
+  assert.equal(css.includes(':has('), false);
+  // The inline panel marks its workspace and row from code instead.
+  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.match(stripped, /\[data-rubato-inline-panel-workspace\]/);
+  assert.match(stripped, /\[data-rubato-inline-panel-row\]\s*> :not\(/);
+  const web = await overlay('apps/web/src/rubatoInlinePanelMarkers.ts');
+  assert.match(web, /"data-rubato-inline-panel-row"/);
+  assert.match(web, /"data-rubato-inline-panel-workspace"/);
+});
+
 test('the setting is a client setting the desktop window is made from', { skip: !process.env.T3_SOURCE }, async () => {
   const { source, effect } = t3Modules(process.env.T3_SOURCE);
   const Schema = await effect('Schema');
@@ -186,6 +198,8 @@ test('the web app marks the live material and imports its CSS after the polish',
   assert.match(index, /^@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n@import "\.\/rubatoWindowMaterial\.css";\n/);
   assert.match(await applied('apps/web/src/routes/__root.tsx'), /function GlassAppearanceSync\(\) \{\n  useRubatoWindowMaterialSync\(\);/);
   assert.match(await applied('apps/web/src/components/settings/SettingsPanels.tsx'), /<SidebarMaterialSettingsRow \/>/);
+  const shell = await applied('apps/web/src/components/preview/PreviewPanelShell.tsx');
+  assert.match(shell, /const hostRef = props\.hostRef \?\? localHostRef;\n  useRubatoInlinePanelMarkers\(hostRef, isInline\);/);
   const search = await applied('apps/web/src/components/settings/settingsSearch.ts');
   assert.match(search, /id: "sidebar-material",\n    title: "Sidebar material",[\s\S]*?desktopOnly: true,\n    macOnly: true,/);
 });

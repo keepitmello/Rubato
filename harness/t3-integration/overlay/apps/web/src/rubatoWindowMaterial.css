@@ -38,18 +38,16 @@
 
 /* The workspace keeps its solid sheet unless an inline right panel sits in it.
    Then the sheet and the row holding the panel step aside, and the chat column
-   beside the panel carries the sheet instead. */
+   beside the panel carries the sheet instead. The panel marks both elements
+   from code (rubatoInlinePanelMarkers.ts); a has-selector here made the browser
+   recheck style on every DOM change, streaming included. */
 :root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
-  [data-slot="sidebar-inset"]:has([data-preview-panel-mode="inline"]),
-:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
-  [data-slot="sidebar-inset"]
-  :has(> [data-preview-panel-mode="inline"]) {
+  :is([data-rubato-inline-panel-workspace], [data-rubato-inline-panel-row]) {
   background-color: transparent;
   background-image: none;
 }
 :root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
-  [data-slot="sidebar-inset"]
-  :has(> [data-preview-panel-mode="inline"])
+  [data-rubato-inline-panel-row]
   > :not([data-preview-panel-mode], [data-workspace-titlebar-controls]) {
   background-color: var(--background);
   background-image: var(--surface-grain);

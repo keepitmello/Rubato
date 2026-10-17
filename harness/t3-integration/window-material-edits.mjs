@@ -19,6 +19,7 @@ export const windowMaterialOverlays = [
   'apps/desktop/src/window/rubatoWindowMaterial.ts',
   'apps/desktop/src/rubatoWindowMaterialPreload.ts',
   'apps/web/src/rubatoWindowMaterial.ts',
+  'apps/web/src/rubatoInlinePanelMarkers.ts',
   'apps/web/src/rubatoWindowMaterial.css',
   'apps/web/src/components/settings/RubatoSidebarMaterialRow.tsx',
 ];
@@ -222,6 +223,16 @@ export const windowMaterialEdits = {
         '  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);',
         '',
       ].join('\n'),
+      'replace',
+    ],
+  ],
+  // The inline right panel marks the workspace and row it sits in, so the CSS
+  // needs no :has() (see useRubatoInlinePanelMarkers).
+  'apps/web/src/components/preview/PreviewPanelShell.tsx': [
+    ['import { RightPanelResizeHandle } from "./RightPanelResizeHandle";\n', 'import { useRubatoInlinePanelMarkers } from "~/rubatoInlinePanelMarkers";\n'],
+    [
+      '  const hostRef = props.hostRef ?? localHostRef;\n',
+      '  const hostRef = props.hostRef ?? localHostRef;\n  useRubatoInlinePanelMarkers(hostRef, isInline);\n',
       'replace',
     ],
   ],

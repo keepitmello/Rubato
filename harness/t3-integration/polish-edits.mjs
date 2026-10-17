@@ -157,6 +157,13 @@ export const polishEdits = {
     ],
   ],
   'apps/web/src/components/RightPanelTabs.tsx': [
+    // The content card is drawn only around an opened surface. Marking the empty state
+    // here keeps the CSS off :has(), which re-ran style on every streamed message.
+    [
+      '      <div className="flex min-h-0 flex-1 flex-col" data-right-panel-surface-content>\n',
+      '      <div\n        className="flex min-h-0 flex-1 flex-col"\n        data-right-panel-surface-content\n        data-surface-empty={props.activeSurfaceId === null ? "" : undefined}\n      >\n',
+      'replace',
+    ],
     [
       [
         '      <div className="w-full max-w-xs py-6">',
