@@ -49,6 +49,7 @@ import { useEnvironments } from "~/state/environments";
 import { useUiStateStore } from "~/uiStateStore";
 import { RubatoThreadLine } from "../sidebar/RubatoThreadLine";
 import { useRubatoProjectList } from "../sidebar/rubatoProjectList";
+import { useSectionScaleFactor } from "../sidebar/RubatoSectionScale";
 import {
   anyNeedsUser,
   resolveThreadSignal,
@@ -118,17 +119,22 @@ function ProjectTab(props: {
   group: SidebarProjectSnapshot;
   selected: boolean;
   signal: RubatoSignal | null;
+  /** The row's section scale: dnd-kit's offsets are window pixels, the tab moves in zoomed ones. */
+  zoom: number;
   onSelect: () => void;
   onRemove: () => void;
 }) {
   const sortable = useSortable({ id: props.group.projectKey });
+  const offset = sortable.transform;
   return (
     <div
       ref={sortable.setNodeRef}
       data-rubato-home-tab={props.group.projectKey}
       className="group/tab relative shrink-0"
       style={{
-        transform: CSS.Translate.toString(sortable.transform),
+        transform: CSS.Translate.toString(
+          offset && { ...offset, x: offset.x / props.zoom, y: offset.y / props.zoom },
+        ),
         transition: sortable.transition,
         zIndex: sortable.isDragging ? 1 : undefined,
       }}
@@ -216,6 +222,7 @@ export function RubatoHomeProjects(props: {
 }) {
   const { isMobile } = useSidebar();
   const { groups, threads, list, signals, remove, add, move } = useRubatoProjectList();
+  const tabsZoom = useSectionScaleFactor("homeTabs");
   const projects = useProjects();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);
   const selectProject = useSelectDraftProject(props.draftId);
@@ -334,7 +341,7 @@ export function RubatoHomeProjects(props: {
     >
       <div className="chat-composer-lane w-full">
         <div className="pointer-events-auto mx-auto w-full max-w-(--chat-content-max-width) @container">
-          <div className="flex h-8 items-center gap-1">
+          <div data-rubato-section="home-tabs" className="flex h-8 items-center gap-1">
             <div
               ref={viewportRef}
               onScroll={readEdges}
@@ -366,6 +373,7 @@ export function RubatoHomeProjects(props: {
                       group={group}
                       selected={activeGroup?.projectKey === group.projectKey}
                       signal={urgentSignal(signals.get(group.projectKey))}
+                      zoom={tabsZoom}
                       onSelect={() => {
                         const entry = pickerEntries.find(
                           (candidate) => candidate.group.projectKey === group.projectKey,
@@ -400,7 +408,10 @@ export function RubatoHomeProjects(props: {
           </div>
           <div aria-hidden="true" className="mt-1.5 mb-1 h-px bg-border" />
           {homeThreads.length > 0 ? (
-            <div className="grid grid-flow-col grid-cols-1 grid-rows-3 gap-x-5 @[34rem]:grid-cols-2">
+            <div
+              data-rubato-section="home-threads"
+              className="grid grid-flow-col grid-cols-1 grid-rows-3 gap-x-5 @[34rem]:grid-cols-2"
+            >
               {homeThreads.map((thread, index) => {
                 const key = threadKeyOf(thread);
                 return (
@@ -420,7 +431,10 @@ export function RubatoHomeProjects(props: {
               })}
             </div>
           ) : (
-            <p className="flex h-24 items-center px-2.5 text-sm text-muted-foreground">
+            <p
+              data-rubato-section="home-threads"
+              className="flex h-24 items-center px-2.5 text-sm text-muted-foreground"
+            >
               No threads here yet.
             </p>
           )}
