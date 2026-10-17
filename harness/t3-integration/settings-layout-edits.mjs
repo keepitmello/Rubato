@@ -1,4 +1,4 @@
-// Settings layout (intent settings-layout): Settings regrouped by what a person
+// Settings layout: Settings regrouped by what a person
 // comes to change, in four sidebar groups. General had 48 rows of every kind;
 // they now sit on Agents, Chat, Threads & Projects, Notifications & Sounds,
 // Git & Worktrees and Advanced, and Storage and Phone fold into their neighbours.
