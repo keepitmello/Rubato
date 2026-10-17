@@ -1,0 +1,62 @@
+/*
+ * Rubato sidebar material (harness/t3-integration/window-material-edits.mjs).
+ *
+ * When the window has a material behind the page (macOS vibrancy or Liquid
+ * Glass), <html data-window-material> names it and these rules stop painting
+ * over it where it belongs: the project rail, the sidebar and the right panel's
+ * frame. The chat column and the right panel's content card stay opaque. With
+ * "opaque" (or outside the desktop app) nothing here applies.
+ *
+ * The wash over the material is the theme's own sidebar color, so each Rubato
+ * theme keeps its hue in light and dark; no literal colors.
+ */
+
+:root[data-window-material="vibrancy"] {
+  --rb-material-wash: color-mix(in srgb, var(--sidebar) 30%, transparent);
+}
+:root[data-window-material="liquid-glass"] {
+  --rb-material-wash: color-mix(in srgb, var(--sidebar) 35%, transparent);
+}
+
+/* The page itself paints nothing; every opaque surface brings its own color.
+   !important because useTheme.ts sets both colors inline to avoid a flash. */
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"]),
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"]) body {
+  background-color: transparent !important;
+  background-image: none;
+}
+
+/* ---- Left: the project rail and the sidebar ---- */
+
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  :is([data-rubato-rail], [data-slot="sidebar-inner"]) {
+  background-color: var(--rb-material-wash);
+  background-image: none;
+}
+
+/* ---- Right: the panel's frame, around an opaque content card ---- */
+
+/* The workspace keeps its solid sheet unless an inline right panel sits in it.
+   Then the sheet and the row holding the panel step aside, and the chat column
+   beside the panel carries the sheet instead. */
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-slot="sidebar-inset"]:has([data-preview-panel-mode="inline"]),
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-slot="sidebar-inset"]
+  :has(> [data-preview-panel-mode="inline"]) {
+  background-color: transparent;
+  background-image: none;
+}
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-slot="sidebar-inset"]
+  :has(> [data-preview-panel-mode="inline"])
+  > :not([data-preview-panel-mode], [data-workspace-titlebar-controls]) {
+  background-color: var(--background);
+  background-image: var(--surface-grain);
+  background-repeat: repeat;
+  background-size: var(--surface-grain-size);
+}
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-preview-panel-mode="inline"] {
+  background: var(--rb-material-wash);
+}

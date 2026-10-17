@@ -104,6 +104,8 @@
     "apps/web/src/components/AppSidebarLayout.tsx": "7dcb98ce20a2c2fcaf1c65aa27ce46020cd9983263df5c08771efe8b54ada4c5",
     "apps/web/src/components/chat/ThreadDetailsCard.tsx": "ab5a4b8e5b9fe6c6cfd4d48c0cfcc47520017b1c5485fcb3282592adb689bfa8",
     "apps/web/src/components/chat/PanelLayoutControls.tsx": "5c52b3e951915f3f6777939a4e6cbcf32cd5a9edf194e6b23cb85ad23013f86e",
-    "apps/web/src/components/chat/ThreadDetailsPanel.tsx": "58003955184b64db77ae561bcdaf13bf3b5a02f5d6d506cf6bcd60ca711d4b82"
+    "apps/web/src/components/chat/ThreadDetailsPanel.tsx": "58003955184b64db77ae561bcdaf13bf3b5a02f5d6d506cf6bcd60ca711d4b82",
+    "apps/desktop/src/ipc/methods/clientSettings.ts": "7b9b895448a9f1a6b7fffb5940a93cda6ed6a6507aac99e5e0b40babd298fe33",
+    "apps/desktop/package.json": "b242b730648407bffd6c67f643f9b1f88a9f779c05be1b82fc8032daf2ce90dc"
   }
 }
