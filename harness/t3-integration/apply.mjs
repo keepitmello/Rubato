@@ -39,6 +39,7 @@ import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
+import { themeEdits, themeOverlays } from './theme-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1725,6 +1726,11 @@ for (const [relative, changes] of Object.entries(legacyImportEdits)) {
 }
 // A provider that keeps its native thread through the uncertain-delivery fallback re-delivers instead of failing every turn (handoff-recovery-edits.mjs).
 for (const [relative, changes] of Object.entries(handoffRecoveryEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Rubato's theme library in place of T3's built-in themes (theme-edits.mjs).
+overlays.push(...themeOverlays);
+for (const [relative, changes] of Object.entries(themeEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
