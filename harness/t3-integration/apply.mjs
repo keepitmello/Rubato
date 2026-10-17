@@ -26,6 +26,7 @@ import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs'
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
+import { sidebarModelIconEdits, sidebarModelIconOverlays } from './sidebar-model-icon-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -1668,6 +1669,11 @@ for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
 // Fork thread in the sidebars (thread-fork-edits.mjs) anchors on the pin edits above.
 overlays.push(...threadForkOverlays);
 for (const [relative, changes] of Object.entries(threadForkEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Thread card icon shows the model's company, not the Rubato mark (sidebar-model-icon-edits.mjs).
+overlays.push(...sidebarModelIconOverlays);
+for (const [relative, changes] of Object.entries(sidebarModelIconEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The right panel's Agents surface, which v0.1.0 dropped (agents-surface-edits.mjs).
