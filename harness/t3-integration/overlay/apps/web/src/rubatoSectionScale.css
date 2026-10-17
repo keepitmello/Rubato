@@ -1,0 +1,56 @@
+/*
+ * Section sizes (section-scale-edits.mjs): each part is zoomed by its own
+ * factor, --rubato-scale-<part> on <html> (RubatoSectionScale.tsx), on top of
+ * the interface font size. Zoom scales text, icons, padding and row heights
+ * together, so a part keeps its proportions. Unset, every factor is 1 and
+ * nothing changes.
+ *
+ * Zoom sits inside the elements that dnd-kit and the list virtualizer move or
+ * measure, never on them: a translate inside a zoomed box would travel zoom
+ * times as far as the pointer, and a measured row must report its zoomed size
+ * in the list's own pixels.
+ */
+
+/* The rail: its buttons zoom, its column widens, and the sidebar moves over by as much. */
+[data-rubato-rail] {
+  width: calc(52px * var(--rubato-scale-rail, 1));
+}
+[data-rubato-rail] > div {
+  zoom: var(--rubato-scale-rail, 1);
+}
+@media (width >= 48rem) {
+  [data-slot="sidebar-wrapper"]:has(> [data-rubato-rail]) {
+    --sidebar-offset-left: calc(52px * var(--rubato-scale-rail, 1));
+  }
+}
+
+/* The narrowed project's title and the Recent box above the thread list. */
+[data-rubato-scope-label] {
+  zoom: var(--rubato-scale-title, 1);
+}
+[data-rubato-recent] {
+  zoom: var(--rubato-scale-recent, 1);
+}
+
+/* The sidebar's thread cards and section headers; each <li> is a sortable item. */
+[data-rubato-section="cards"] > li > * {
+  zoom: var(--rubato-scale-cards, 1);
+}
+
+/* The home screen's project tabs (ProjectTab divides its drag offset back) and threads. */
+[data-rubato-section="home-tabs"] {
+  zoom: var(--rubato-scale-home-tabs, 1);
+}
+[data-rubato-section="home-threads"] {
+  zoom: var(--rubato-scale-home-threads, 1);
+}
+
+/*
+ * The conversation: inside each virtualized row. The column keeps its width,
+ * so the messages stay as wide as the composer below them and the text wraps
+ * sooner instead.
+ */
+[data-rubato-section="messages"] .messages-timeline-row-frame > .chat-content-lane {
+  zoom: var(--rubato-scale-messages, 1);
+  max-width: calc(var(--chat-content-max-width) / var(--rubato-scale-messages, 1));
+}

@@ -45,6 +45,7 @@ import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { windowMaterialEdits, windowMaterialOverlays } from './window-material-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
+import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1763,6 +1764,11 @@ for (const [relative, changes] of Object.entries(readOpenEdits)) {
 // The project rail, the Recent box and the home row; after schedule-edits, whose Settings nav line it extends (project-rail-edits.mjs).
 overlays.push(...projectRailOverlays);
 for (const [relative, changes] of Object.entries(projectRailEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Per-part sizes for the rail, the sidebar, the home row and the conversation; last, since it reads text project-rail-edits adds (section-scale-edits.mjs).
+overlays.push(...sectionScaleOverlays);
+for (const [relative, changes] of Object.entries(sectionScaleEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
