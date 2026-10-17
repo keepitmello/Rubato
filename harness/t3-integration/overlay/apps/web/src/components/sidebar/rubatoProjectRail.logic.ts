@@ -8,6 +8,8 @@
 // follows activity: projects touched in the last week are listed, newest
 // first, and the rest are quiet. The first remove, add or move freezes that
 // order into the stored state, and from then on the user's order holds.
+// Projects under a temporary folder (eval runs make them by the dozen) start
+// quiet either way; the user can still add one.
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { effectiveSnoozed } from "@t3tools/client-runtime/state/thread-settled";
 import { scopeThreadRef, scopedThreadKey } from "@t3tools/client-runtime/environment";
@@ -42,6 +44,15 @@ interface ProjectRefLike {
 export interface RubatoGroupLike {
   readonly projectKey: string;
   readonly memberProjectRefs: readonly ProjectRefLike[];
+  readonly workspaceRoot?: string;
+}
+
+const TEMPORARY_ROOTS = ["/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/"];
+
+/** A project in a throwaway folder, which never earns a place on the list by itself. */
+export function isTemporaryProject(group: Pick<RubatoGroupLike, "workspaceRoot">): boolean {
+  const root = group.workspaceRoot;
+  return root !== undefined && TEMPORARY_ROOTS.some((prefix) => root.startsWith(prefix));
 }
 
 export interface RubatoProjectList<G> {
@@ -108,11 +119,13 @@ export function resolveProjectList<G extends RubatoGroupLike>(input: {
   if (state.order === null) {
     const hidden = new Set(state.hidden);
     const sorted = groups.toSorted(newestFirst);
-    const isRecent = (group: G) =>
+    const isListed = (group: G) =>
+      !hidden.has(group.projectKey) &&
+      !isTemporaryProject(group) &&
       now - (lastActivity.get(group.projectKey) ?? 0) <= RUBATO_QUIET_AFTER_MS;
     return {
-      listed: sorted.filter((group) => !hidden.has(group.projectKey) && isRecent(group)),
-      quiet: sorted.filter((group) => hidden.has(group.projectKey) || !isRecent(group)),
+      listed: sorted.filter(isListed),
+      quiet: sorted.filter((group) => !isListed(group)),
     };
   }
   const placed = new Set([...state.order, ...state.hidden]);
@@ -122,9 +135,12 @@ export function resolveProjectList<G extends RubatoGroupLike>(input: {
       return group ? [group] : [];
     });
   // A project added after the last edit is listed at the end: it is new, so
-  // it is probably where the user is about to work.
+  // it is probably where the user is about to work. A temporary one is not.
   const unplaced = groups.filter((group) => !placed.has(group.projectKey)).toSorted(newestFirst);
-  return { listed: [...pick(state.order), ...unplaced], quiet: pick(state.hidden) };
+  return {
+    listed: [...pick(state.order), ...unplaced.filter((group) => !isTemporaryProject(group))],
+    quiet: [...pick(state.hidden), ...unplaced.filter(isTemporaryProject)],
+  };
 }
 
 const keysOf = (groups: readonly RubatoGroupLike[]) => groups.map((group) => group.projectKey);
@@ -183,6 +199,22 @@ export const RUBATO_SIGNAL_DOT: Record<RubatoSignal, string> = {
   working: "bg-info",
 };
 const SIGNAL_RANK: Record<RubatoSignal, number> = { attention: 4, failed: 3, done: 2, working: 1 };
+
+/**
+ * What earns a dot or a word on the rail, the tabs and the one-line rows: only
+ * what asks the user to act. Work in progress and unread finishes stay with
+ * the sidebar's own cards, so the compact surfaces stay quiet.
+ */
+export function isUrgentSignal(
+  signal: RubatoSignal | null | undefined,
+): signal is "attention" | "failed" {
+  return signal === "attention" || signal === "failed";
+}
+
+/** The signal a compact surface shows, or null. */
+export function urgentSignal(signal: RubatoSignal | null | undefined): RubatoSignal | null {
+  return isUrgentSignal(signal) ? signal : null;
+}
 
 export function strongerSignal(
   a: RubatoSignal | null,
@@ -285,5 +317,5 @@ export function selectHomeThreads(input: {
 
 /** Whether any of the given tabs carries a signal the user should act on. */
 export function anyNeedsUser(signals: readonly (RubatoSignal | null | undefined)[]): boolean {
-  return signals.some((signal) => signal === "attention" || signal === "failed" || signal === "done");
+  return signals.some(isUrgentSignal);
 }

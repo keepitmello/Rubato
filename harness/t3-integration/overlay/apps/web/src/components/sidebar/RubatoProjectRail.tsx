@@ -27,7 +27,12 @@ import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { useRubatoProjectList } from "./rubatoProjectList";
-import { RUBATO_SIGNAL_DOT, RUBATO_SIGNAL_LABEL, type RubatoSignal } from "./rubatoProjectRail.logic";
+import {
+  RUBATO_SIGNAL_DOT,
+  RUBATO_SIGNAL_LABEL,
+  urgentSignal,
+  type RubatoSignal,
+} from "./rubatoProjectRail.logic";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 
 export const RUBATO_RAIL_WIDTH = "52px";
@@ -79,7 +84,7 @@ function RailButton(props: {
             onClick={props.onClick}
             onContextMenu={props.onContextMenu}
             className={cn(
-              "relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color,opacity] duration-150",
+              "group/rail relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color,opacity] duration-150",
               "hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
               "[&_svg:not([class*='size-'])]:size-[18px]",
               props.active &&
@@ -116,9 +121,9 @@ function useScheduleSignal(): RubatoSignal | null {
         lastRevision = revision;
         const list = await rubatoSchedule.list(null);
         if (cancelled) return;
-        const running = list.tasks.some((task) => task.running);
+        // Only a failure asks for the user; a run in progress needs nothing.
         const failed = list.tasks.some((task) => task.enabled && task.lastRun?.status === "failed");
-        setSignal(failed ? "failed" : running ? "working" : null);
+        setSignal(failed ? "failed" : null);
       } catch {
         // No scheduler on this server: the icon simply carries no dot.
       }
@@ -176,11 +181,20 @@ export function RubatoProjectRail() {
       label={group.displayName}
       active={scopeKey === group.projectKey}
       dim={!listed}
-      signal={signals.get(group.projectKey) ?? null}
+      signal={urgentSignal(signals.get(group.projectKey))}
       onClick={() => showProject(group.projectKey)}
       onContextMenu={(event) => void showProjectMenu(event, group, listed)}
     >
-      <ProjectFavicon project={group} className="size-5" />
+      {/* Project colors only where the eye is: the selected project and the hovered one. */}
+      <span
+        className={cn(
+          "flex transition-[filter,opacity] duration-150",
+          scopeKey !== group.projectKey &&
+            "opacity-70 grayscale group-hover/rail:opacity-100 group-hover/rail:grayscale-0",
+        )}
+      >
+        <ProjectFavicon project={group} className="size-5" />
+      </span>
     </RailButton>
   );
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);

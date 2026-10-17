@@ -47,7 +47,6 @@ import { buildSidebarProjectPickerEntries, type SidebarProjectSnapshot } from "~
 import { useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useUiStateStore } from "~/uiStateStore";
-import { ProjectFavicon } from "../ProjectFavicon";
 import { RubatoThreadLine } from "../sidebar/RubatoThreadLine";
 import { useRubatoProjectList } from "../sidebar/rubatoProjectList";
 import {
@@ -55,6 +54,7 @@ import {
   resolveThreadSignal,
   selectHomeThreads,
   threadKeyOf,
+  urgentSignal,
   RUBATO_SIGNAL_DOT,
   RUBATO_SIGNAL_LABEL,
   type RubatoSignal,
@@ -140,7 +140,7 @@ function ProjectTab(props: {
         aria-pressed={props.selected}
         onClick={props.onSelect}
         className={cn(
-          "flex h-8 items-center gap-2 rounded-[7px] px-2.5 text-[13px] whitespace-nowrap outline-hidden",
+          "flex h-8 items-center gap-1.5 rounded-[7px] px-2.5 text-[13px] whitespace-nowrap outline-hidden",
           "focus-visible:ring-2 focus-visible:ring-ring",
           props.selected
             ? "bg-accent text-foreground"
@@ -148,7 +148,6 @@ function ProjectTab(props: {
           sortable.isDragging && "cursor-grabbing",
         )}
       >
-        <ProjectFavicon project={props.group} className="size-4 shrink-0" />
         <span>{props.group.displayName}</span>
         {props.signal ? (
           <span
@@ -366,7 +365,7 @@ export function RubatoHomeProjects(props: {
                       key={group.projectKey}
                       group={group}
                       selected={activeGroup?.projectKey === group.projectKey}
-                      signal={signals.get(group.projectKey) ?? null}
+                      signal={urgentSignal(signals.get(group.projectKey))}
                       onSelect={() => {
                         const entry = pickerEntries.find(
                           (candidate) => candidate.group.projectKey === group.projectKey,

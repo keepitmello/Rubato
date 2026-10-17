@@ -15,6 +15,7 @@ import {
   selectRecentThreads,
   signalByGroup,
   strongerSignal,
+  urgentSignal,
 } from "./rubatoProjectRail.logic";
 
 const NOW = Date.parse("2026-10-17T12:00:00.000Z");
@@ -95,6 +96,28 @@ describe("the shared project list", () => {
     expect(moveInProjectList(addedList, "a", "c")).toEqual({ order: ["b", "c", "a"], hidden: [] });
   });
 
+  it("keeps projects in temporary folders quiet, before and after the first edit", () => {
+    const temp = { ...group("t"), workspaceRoot: "/private/tmp/ww-eval/new/E1" };
+    const groupsWithTemp = [...groups, temp];
+    const activity = new Map([...lastActivity, ["t", NOW]]);
+    const before = resolveProjectList({
+      groups: groupsWithTemp,
+      state: EMPTY_PROJECT_LIST_STATE,
+      lastActivity: activity,
+      now: NOW,
+    });
+    expect(before.listed.map((g) => g.projectKey)).toEqual(["a", "b"]);
+    expect(before.quiet.map((g) => g.projectKey)).toEqual(["t", "c"]);
+    const after = resolveProjectList({
+      groups: groupsWithTemp,
+      state: { order: ["a"], hidden: [] },
+      lastActivity: activity,
+      now: NOW,
+    });
+    expect(after.listed.map((g) => g.projectKey)).toEqual(["a", "b", "c"]);
+    expect(after.quiet.map((g) => g.projectKey)).toEqual(["t"]);
+  });
+
   it("lists a project created after the last edit, and drops projects that are gone", () => {
     const state = { order: ["b", "gone"], hidden: ["a"] };
     const list = resolveProjectList({ groups, state, lastActivity, now: NOW });
@@ -149,8 +172,16 @@ describe("signals", () => {
   });
 
   it("marks a hidden page only for what the user should act on", () => {
-    expect(anyNeedsUser(["working", null])).toBe(false);
-    expect(anyNeedsUser(["working", "done"])).toBe(true);
+    expect(anyNeedsUser(["working", "done", null])).toBe(false);
+    expect(anyNeedsUser(["working", "failed"])).toBe(true);
+    expect(anyNeedsUser(["attention"])).toBe(true);
+  });
+
+  it("keeps compact surfaces to requests and failures", () => {
+    expect(urgentSignal("attention")).toBe("attention");
+    expect(urgentSignal("failed")).toBe("failed");
+    expect(urgentSignal("done")).toBeNull();
+    expect(urgentSignal("working")).toBeNull();
   });
 });
 

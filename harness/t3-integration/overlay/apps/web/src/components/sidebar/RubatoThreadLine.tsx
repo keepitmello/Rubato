@@ -1,6 +1,7 @@
 // One thread on one line: the Recent box and the home list use it. The
 // sidebar's own rows are three-line cards; five of them would turn a glance
-// into a scroll, so these keep only the title, the signal and the time.
+// into a scroll, so these keep only the title and the time, or a word when the
+// thread asks the user to act.
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import { useRouter } from "@tanstack/react-router";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
@@ -9,7 +10,7 @@ import { cn } from "../../lib/utils";
 import { buildThreadRouteParams } from "../../threadRoutes";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ProjectFavicon, type ProjectFaviconProject } from "../ProjectFavicon";
-import { RUBATO_SIGNAL_LABEL, type RubatoSignal } from "./rubatoProjectRail.logic";
+import { RUBATO_SIGNAL_LABEL, urgentSignal, type RubatoSignal } from "./rubatoProjectRail.logic";
 
 const SIGNAL_TEXT: Record<RubatoSignal, string> = {
   attention: "text-warning-foreground",
@@ -36,7 +37,9 @@ export function RubatoThreadLine(props: {
   onNavigate?: () => void;
 }) {
   const router = useRouter();
-  const { thread, signal } = props;
+  const { thread } = props;
+  // A word only for what asks the user to act; everything else shows its time.
+  const signal = urgentSignal(props.signal);
   return (
     <button
       type="button"

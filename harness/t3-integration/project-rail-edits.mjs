@@ -77,6 +77,18 @@ export const projectRailEdits = {
     ['      {isOnUtilityPage ? (\n', '      {rubatoRailShown ? null : isOnUtilityPage ? (\n', 'replace'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
+    // The rail narrows the list on desktop, so the project filter beside the
+    // search field would be a second control for the same thing. Phones keep it.
+    [
+      '              projectScope={\n                <Combobox\n',
+      '              projectScope={\n                // Rubato: the rail narrows the list on desktop (project-rail-edits.mjs).\n                isMobile ? (\n                <Combobox\n',
+      'replace',
+    ],
+    [
+      '                </Combobox>\n              }\n              onNewProject={openAddProjectCommandPalette}\n',
+      '                </Combobox>\n                ) : null\n              }\n              onNewProject={openAddProjectCommandPalette}\n',
+      'replace',
+    ],
     ['import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";\n',
       [
         'import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";',
