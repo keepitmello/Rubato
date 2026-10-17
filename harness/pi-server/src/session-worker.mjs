@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { PiCommandRejected } from './contracts.mjs';
 import { trimRequestImages } from '../../rubato-pi/src/context-notes/request-images.mjs';
+import { FRAME_BUDGET } from './wire.mjs';
 
 // get_messages carries every image the session ever saw as inline base64, and the
 // frame limit below stops the whole session when a response crosses it. A session
@@ -15,6 +16,48 @@ const trimHistoryImages = (value) => {
   const trimmed = trimRequestImages(messages);
   if (trimmed === messages) return value;
   return { ...value, data: Array.isArray(data) ? trimmed : { ...data, messages: trimmed } };
+};
+
+/** One frame: what this boundary and the presentation transport carry (host.mjs maxFrameLength). */
+const FRAME_LIMIT = 32 * 1024 * 1024;
+
+// get_entries lists every entry the session file holds: every branch, every tool output and
+// image. A 222MB session answered with 222MB, the frame limit stopped the session, and T3's
+// Pi adapter asks for that listing whenever it binds a thread, so every turn on it died
+// within a second. The listing's readers walk the tree: entry ids, parents and kinds, the
+// role, timestamp and model a reply's fingerprint hashes (conversation-rewind
+// messageFingerprint), and tool call ids (T3 step rewind). A listing over one frame's
+// budget therefore comes as that outline of every entry, marked `rubatoOutlined`.
+/** Longest string an outline keeps. Ids measured at most 92 chars; payloads run to megabytes. */
+const OUTLINE_STRING = 256;
+const scalar = (value) => value === null || typeof value === 'number' || typeof value === 'boolean'
+  || (typeof value === 'string' && value.length <= OUTLINE_STRING);
+const scalars = (record) => Object.fromEntries(Object.entries(record).filter(([, value]) => scalar(value)));
+
+/** One entry as its tree position, kind, message identity and tool call ids. */
+export function outlineEntry(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const outline = scalars(entry);
+  const message = entry.message;
+  if (message && typeof message === 'object' && !Array.isArray(message)) {
+    outline.message = scalars(message);
+    if (Array.isArray(message.content)) outline.message.content = message.content
+      .filter((part) => part?.type === 'toolCall')
+      .map(({ type, id, name }) => ({ type, id, name }));
+  }
+  return outline;
+}
+
+/** The listing whole while it fits one reply's budget; past it, every entry outlined. */
+const outlineEntries = (value) => {
+  const entries = value.data?.entries;
+  if (!Array.isArray(entries)) return value;
+  let bytes = 0;
+  for (const entry of entries) {
+    bytes += Buffer.byteLength(JSON.stringify(entry) ?? 'null') + 1;
+    if (bytes > FRAME_BUDGET) return { ...value, data: { ...value.data, entries: entries.map(outlineEntry), rubatoOutlined: true } };
+  }
+  return value;
 };
 
 /** Same host contract as RpcWorker, but the SDK runtime lives in this process.
@@ -51,17 +94,26 @@ export class SessionWorker extends EventEmitter {
   output(value) {
     if (this.closed) return;
     // Keep the existing RPC value boundary: no shared mutable session objects.
+    const pendingCall = value?.type === 'response' ? this.pending.get(value.id) : undefined;
     let record;
     try {
-      const pendingType = value?.type === 'response' ? this.pending.get(value.id)?.type : undefined;
-      const encoded = JSON.stringify(pendingType === 'get_messages' && value.success ? trimHistoryImages(value) : value);
-      if (Buffer.byteLength(encoded) > 32 * 1024 * 1024) throw new Error('Pi RPC frame exceeds limit');
+      const answer = !pendingCall || !value.success ? value
+        : pendingCall.type === 'get_messages' ? trimHistoryImages(value)
+        : pendingCall.type === 'get_entries' ? outlineEntries(value) : value;
+      const encoded = JSON.stringify(answer);
+      if (Buffer.byteLength(encoded) > FRAME_LIMIT) throw new Error(`Pi RPC frame exceeds limit${pendingCall ? `: ${pendingCall.type}` : ''}`);
       record = JSON.parse(encoded);
       if (!record || typeof record !== 'object' || Array.isArray(record) || typeof record.type !== 'string') {
         throw new Error('Invalid Pi RPC frame');
       }
     }
-    catch (error) { void this.stop(error); return; }
+    catch (error) {
+      // An answer that cannot cross never left this process, so the session behind it is
+      // intact: only the request that asked for it fails. An event cannot be dropped without
+      // breaking the stream every presentation replays, so it still stops the session.
+      if (pendingCall) { this.pending.delete(value.id); clearTimeout(pendingCall.timer); pendingCall.reject(error); return; }
+      void this.stop(error); return;
+    }
     if (record.type !== 'response') {
       this.eventSequence++;
       this.emit('event', record);

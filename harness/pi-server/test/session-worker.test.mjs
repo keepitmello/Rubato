@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { SessionWorker } from '../src/session-worker.mjs';
+import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 function fixture(id, extra = {}) {
@@ -20,6 +21,13 @@ function fixture(id, extra = {}) {
   });
   return { worker, runtime, aborts: () => aborts, disposals: () => disposals };
 }
+
+/** A worker whose Pi answers each command type from `answers`; get_state names the session. */
+const answering = (id, answers) => fixture(id, { runRpcMode: async (_runtime, transport) => ({
+  dispatch: async (command) => transport.output({ type: 'response', id: command.id, success: true,
+    data: command.type === 'get_state' ? { sessionId: id } : answers[command.type] }),
+  close: async () => transport.onClose(),
+}) });
 
 test('in-process worker preserves the host request/event boundary and isolates peers', async () => {
   const a = fixture('a'), b = fixture('b');
@@ -137,4 +145,63 @@ test('history whose text leaves too little room for its images still fits one fr
   assert.equal(data.messages[1].content[1].type, 'text', 'the oldest image gives way');
   assert.equal(f.worker.closed, false);
   await f.worker.stop();
+});
+
+test('a session listing larger than one frame comes back as its outline and the session stays alive', async () => {
+  const at = '2026-10-17T00:00:00.000Z';
+  const entries = [
+    { id: 'u1', parentId: null, type: 'message', timestamp: at, message: { role: 'user', content: 'hi', timestamp: 1 } },
+    { id: 'a1', parentId: 'u1', type: 'message', timestamp: at, message: { role: 'assistant', timestamp: 2, model: 'm', provider: 'p',
+      usage: { input: 1 }, content: [{ type: 'thinking', thinking: 't'.repeat(1000) },
+        { type: 'toolCall', id: 'call-1', name: 'read', arguments: { path: 'x'.repeat(1000) } }] } },
+    { id: 'r1', parentId: 'a1', type: 'message', timestamp: at, message: { role: 'toolResult', toolCallId: 'call-1', toolName: 'read',
+      timestamp: 3, content: [{ type: 'text', text: 'y'.repeat(40 * 1024 * 1024) }] } },
+    { id: 'c1', parentId: 'r1', type: 'compaction', timestamp: at, summary: 's'.repeat(2000), firstKeptEntryId: 'u1', tokensBefore: 10 },
+    { id: 'k1', parentId: 'c1', type: 'custom', timestamp: at, customType: 'rubato.context-note.v1', data: { text: 'z'.repeat(1000) } },
+  ];
+  const f = answering('long', { get_entries: { entries, leafId: 'k1' } });
+  await f.worker.start();
+  const data = await f.worker.request({ type: 'get_entries' });
+  assert.equal(data.rubatoOutlined, true);
+  assert.equal(data.leafId, 'k1');
+  assert.deepEqual(data.entries.map(({ id, parentId, type }) => [id, parentId, type]),
+    entries.map(({ id, parentId, type }) => [id, parentId, type]));
+  assert.deepEqual(data.entries[1].message, { role: 'assistant', timestamp: 2, model: 'm', provider: 'p',
+    content: [{ type: 'toolCall', id: 'call-1', name: 'read' }] });
+  assert.deepEqual(data.entries[2].message, { role: 'toolResult', toolCallId: 'call-1', toolName: 'read', timestamp: 3, content: [] });
+  assert.equal(data.entries[3].summary, undefined);
+  assert.equal(data.entries[3].firstKeptEntryId, 'u1');
+  assert.equal(data.entries[4].customType, 'rubato.context-note.v1');
+  assert.equal(data.entries[4].data, undefined);
+  assert.equal(messageFingerprint(data.entries[1].message), messageFingerprint(entries[1].message));
+  assert.equal(entries[2].message.content[0].text.length, 40 * 1024 * 1024, 'the live session entries are not mutated');
+  assert.equal(f.worker.closed, false);
+  assert.equal((await f.worker.request({ type: 'get_state' })).sessionId, 'long');
+  await f.worker.stop();
+});
+
+test('a listing that fits one frame comes back whole', async () => {
+  const at = '2026-10-17T00:00:00.000Z';
+  const entries = [
+    { id: 'u1', parentId: null, type: 'message', timestamp: at, message: { role: 'user', content: 'hi', timestamp: 1 } },
+    { id: 'a1', parentId: 'u1', type: 'message', timestamp: at, message: { role: 'assistant', timestamp: 2, model: 'm',
+      content: [{ type: 'text', text: 'ok' }] } },
+    { id: 'u2', parentId: 'a1', type: 'message', timestamp: at, message: { role: 'user', content: 'again', timestamp: 3 } },
+  ];
+  const f = answering('short', { get_entries: { entries, leafId: 'u2' } });
+  await f.worker.start();
+  const data = await f.worker.request({ type: 'get_entries' });
+  assert.deepEqual(data, { entries, leafId: 'u2' });
+  await f.worker.stop();
+});
+
+test('an answer too large for a frame fails only its request, an event that large still stops the session', async () => {
+  const f = answering('overflow', { get_tree: { text: 'x'.repeat(33 * 1024 * 1024) } });
+  await f.worker.start();
+  await assert.rejects(f.worker.request({ type: 'get_tree' }), /Pi RPC frame exceeds limit: get_tree/);
+  assert.equal(f.worker.closed, false);
+  assert.equal(f.worker.pending.size, 0);
+  assert.equal((await f.worker.request({ type: 'get_state' })).sessionId, 'overflow');
+  f.worker.output({ type: 'fixture_event', text: 'x'.repeat(33 * 1024 * 1024) });
+  assert.match((await f.worker.terminated).message, /Pi RPC frame exceeds limit/);
 });
