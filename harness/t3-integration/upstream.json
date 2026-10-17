@@ -90,6 +90,7 @@
     "apps/server/src/provider/providerCompatibility.test.ts": "5177ab47b48d057fb19a3e3766a46929a7ed721a94dffde0a37a6266cf3ff310",
     "apps/web/src/session-logic.ts": "398f19a7ba26acfbd01d76f6b3bc055762e68554bdd2f235d5c963703c0c8d1f",
     "apps/server/src/auth/SessionStore.ts": "205d3d60910d346f6a6d563736e63dc90fc9e3a0917d0a9159463ad2fbf4b768",
-    "apps/server/src/auth/SessionStore.test.ts": "85871d030eec3e623f4aec459c044569e0ad402c04088b83dc0dce13e235de8a"
+    "apps/server/src/auth/SessionStore.test.ts": "85871d030eec3e623f4aec459c044569e0ad402c04088b83dc0dce13e235de8a",
+    "packages/provider-pi/src/server/adapter.test.ts": "7ffa3b56808fc2a73e814ce7b4496de3a10cb44e7a2722d8be6409e15b2746a9"
   }
 }
