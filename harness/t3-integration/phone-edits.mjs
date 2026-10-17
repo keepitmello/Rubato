@@ -4,7 +4,8 @@
 // links this Mac to T3's relay so the T3 app on a phone gets notifications.
 //
 // A phone paired on a server before T3 split its permissions reads files again
-// (RubatoLegacyGrants.ts): every verified session passes through it.
+// (RubatoLegacyGrants.ts): every verified session passes through it. A session's
+// permissions are its stored row's, so a connected phone's grant can change in place.
 export const phoneOverlays = [
   'apps/server/src/RubatoLegacyGrants.ts',
   'apps/server/src/RubatoLegacyGrants.test.ts',
@@ -18,6 +19,14 @@ export const phoneEdits = {
   'apps/server/src/auth/SessionStore.ts': [
     ['import * as ServerSecretStore from "./ServerSecretStore.ts";\n',
       'import { restoreLegacyFileRead } from "../RubatoLegacyGrants.ts";\n'],
+    // The stored session decides what a token may do, as the websocket ticket's check already
+    // does: a phone's grant can then be widened or narrowed in place, without pairing again.
+    ['        subject: claims.sub,\n        scopes: claims.scopes,\n        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),\n',
+      '        subject: claims.sub,\n'
+        + '        // Rubato: the stored grant, not the one signed into the token (phone-edits.mjs).\n'
+        + '        scopes: row.value.scopes,\n'
+        + '        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),\n',
+      'replace'],
     ['    verify,\n    issueWebSocketToken,\n    verifyWebSocketToken,\n',
       '    // Rubato: an old-only grant reads files again (RubatoLegacyGrants.ts, phone-edits.mjs).\n'
         + '    verify: (token) => Effect.map(verify(token), restoreLegacyFileRead),\n'
