@@ -26,6 +26,8 @@ import os from 'node:os';
 // 소켓이 끊기면 pi-client 는 이 문구들로 던진다. 서버가 다시 떠도 이미 만들어 둔
 // 클라이언트는 되살아나지 않으니, 붙잡고 있던 것을 버리고 새 연결로 한 번 더 친다.
 const TRANSPORT_FAILURE = /transport closed|not connected|ECONNREFUSED|ECONNRESET|EPIPE|socket (?:closed|hang)|DisconnectedError|Client is disconnected|not supported on Windows/i;
+// How long a failed cache probe waits before the ring's next poll asks again (probeCache).
+const CACHE_PROBE_RETRY_MS = 5 * 60_000;
 // 세션 디렉터리에는 사람이 연 대화만 쌓이지 않는다. 벤치·프로브·스모크가
 // 임시 폴더에서 같은 엔진을 돌리고, 그 폴더는 곧 사라진다. T3 는 세션의 cwd
 // 로 프로젝트를 만들기 때문에, 그것을 그대로 넘기면 사이드바에 열 수도 없는
@@ -313,7 +315,39 @@ export class RubatoPiBridge {
   sessionState(threadId) {
     const fold = this.knownState(threadId);
     const snapshot = fold?.snapshot() ?? { speedIndex: null, agents: [], teams: [], cache: null };
-    return { ...snapshot, cache: snapshot.cache ?? this.warmth?.get(threadId) ?? null };
+    const cache = snapshot.cache ?? this.warmth?.get(threadId) ?? null;
+    if (!cache && fold?.sessionId) this.probeCache(threadId, fold.sessionId);
+    return { ...snapshot, cache };
+  }
+  /**
+   * A thread T3 is not attached to (settled, or let go after its idle half hour) has no
+   * cache facts once the GUI restarts: the saved fold leaves them out and only an attach
+   * re-reads them. The ring asking for it is the moment to ask the engine once, through a
+   * short-lived attachment. The engine answers from the session's own history, so the
+   * answer stands until the thread runs again, which re-reads it on its own; a failed ask
+   * waits a few minutes before the next.
+   */
+  probeCache(threadId, sessionId) {
+    // Only through an engine already connected: a read must not start one.
+    if (this.closed || !this.inventoryClient?.client.connected) return;
+    this.cacheProbes ??= new Map();
+    const asked = this.cacheProbes.get(threadId);
+    if (asked !== undefined && Date.now() - asked < CACHE_PROBE_RETRY_MS) return;
+    this.cacheProbes.set(threadId, Date.now());
+    void this.attachedCommand(sessionId, { type: 'get_cache_warming' }).then((value) => {
+      const cache = cacheFrom({ ...value, sessionId });
+      // A live connection that answered meanwhile knows better.
+      if (cache && !this.warmth?.has(threadId) && !this.knownState(threadId)?.cache) this.rememberWarmth(threadId, cache);
+    }, () => {});
+  }
+  /** One command to a session T3 holds no attachment to, through a short-lived one. */
+  async attachedCommand(sessionId, command) {
+    await this.connection();
+    const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
+    try {
+      await client.attach(sessionId);
+      return await client.command(command);
+    } finally { await client.detach().catch(() => {}); await client.close(); }
   }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
@@ -1063,14 +1097,7 @@ export class RubatoPiBridge {
     } else if (open) {
       value = await open.client.command(command);
       open.projection.configureCache({ ...value, sessionId });
-    } else {
-      await this.connection();
-      const client = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
-      try {
-        await client.attach(sessionId);
-        value = await client.command(command);
-      } finally { await client.detach().catch(() => {}); await client.close(); }
-    }
+    } else value = await this.attachedCommand(sessionId, command);
     const cache = cacheFrom({ ...value, sessionId });
     this.rememberWarmth(threadId, cache);
     return cache;

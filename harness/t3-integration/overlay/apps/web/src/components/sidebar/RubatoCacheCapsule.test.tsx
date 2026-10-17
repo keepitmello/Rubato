@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vite-plus/test";
 
 import type { CachedThread } from "~/state/rubatoCacheWarming";
-import { CacheCapsuleGlyph, cacheTooltipLines } from "./RubatoCacheCapsule";
+import { CacheCapsuleGlyph, cacheHoverLine, cacheTooltipLines } from "./RubatoCacheCapsule";
 
 const HOUR = 3_600_000;
 const now = Date.parse("2026-09-27T12:00:00Z");
@@ -42,5 +42,15 @@ describe("the sidebar's cache capsule", () => {
     expect(cache).toBe("Cache warm · 2h 18m left");
     expect(warmer).toMatch(/^Warmer on until [^·]+$/);
     expect(cacheTooltipLines(thread({ warmer: "off" }), now)[1]).toBe("Warmer off");
+  });
+
+  it("gives the hover card one line: the warmer's end while it holds the cache, else the cache's own time", () => {
+    expect(cacheHoverLine(thread({ warmer: "on", until: now + HOUR, expiresAt: now + 2 * HOUR }), now)).toMatch(
+      /^Warming until [^·]+$/,
+    );
+    expect(cacheHoverLine(thread({ warmer: "ended", until: now - 1, expiresAt: now + 12 * 60_000 }), now)).toBe(
+      "Cache warm · 12m left",
+    );
+    expect(cacheHoverLine(thread({ warmer: "off" }), now)).toBe("Cache warm · 1h 0m left");
   });
 });

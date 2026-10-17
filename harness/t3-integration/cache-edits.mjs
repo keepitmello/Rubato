@@ -177,6 +177,19 @@ export const cacheEdits = {
       'replace',
     ],
   ],
+  // The new sidebar has no capsule; its thread hover card carries one cache line under
+  // the model row instead: until when the warmer holds the cache (RubatoCacheHoverRow).
+  'apps/web/src/components/Sidebar.tsx': [
+    [
+      'import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";\n',
+      'import { ThreadHoverCard, ThreadHoverCardPopup } from "./ThreadHoverCard";\nimport { RubatoCacheHoverRow } from "./sidebar/RubatoCacheCapsule";\n',
+      'replace',
+    ],
+    [
+      '        {previousProviderNames.length > 0 ? (\n',
+      '        <RubatoCacheHoverRow environmentId={thread.environmentId} threadId={thread.id} />\n',
+    ],
+  ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCacheWarmingRouteLayer } from "./RubatoCacheWarming.ts";\n'],
     ['    DeviceHubProxy.layer,\n', '    rubatoCacheWarmingRouteLayer,\n'],

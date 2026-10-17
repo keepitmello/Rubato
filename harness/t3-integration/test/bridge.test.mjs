@@ -1291,6 +1291,25 @@ test('the meter carries the cache and the warmer, and the switch turns off only 
   assert.equal(back.warming.until, 1_790_000_000_000 + 8 * 3_600_000);
 });
 
+test('a thread T3 holds no attachment to asks the engine for its cache once the ring reads it', async (t) => {
+  const { root, service, bridge, external } = await setup(t);
+  const created = await external.create({ cwd: root, title: 'Settled' });
+  // After a GUI restart the saved fold knows the session but not its cache.
+  bridge.stateFor('settled-thread', created.sessionId);
+  await bridge.inventory();
+  assert.equal(bridge.sessionState('settled-thread').cache, null);
+  await until(() => bridge.sessionState('settled-thread').cache !== null);
+  const { cache } = bridge.sessionState('settled-thread');
+  assert.equal(cache.state, 'warm');
+  assert.equal(cache.sessionId, created.sessionId);
+  assert.equal(cache.expiresAt, 1_790_000_000_000);
+  // The answer is kept: later reads do not attach again.
+  const starts = service.host.metrics.runtimeStarts;
+  bridge.sessionState('settled-thread');
+  await delay(50);
+  assert.equal(service.host.metrics.runtimeStarts, starts);
+});
+
 test('a woken cold session turns warm on its first model reply, while the turn still runs', async () => {
   const bridge = Object.create(RubatoPiBridge.prototype);
   const events = [];

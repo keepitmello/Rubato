@@ -1,4 +1,5 @@
 import type { EnvironmentId } from "@t3tools/contracts";
+import { FlameIcon } from "lucide-react";
 import { useCallback, useId, useSyncExternalStore } from "react";
 
 import {
@@ -111,5 +112,30 @@ export function RubatoCacheTooltip(props: { environmentId: EnvironmentId; thread
       <span className="block font-medium">{cache}</span>
       <span className="block opacity-80">{warmer}</span>
     </span>
+  );
+}
+
+/**
+ * The hover card's one line: until when the warmer holds the cache, or, with the warmer
+ * not holding it, how long the cache lasts on its own. A cold cache adds no line.
+ */
+export function cacheHoverLine(cached: CachedThread, now: number): string {
+  return cached.warmer === "on" && cached.until != null
+    ? `Warming until ${formatClock(cached.until)}`
+    : `Cache warm · ${formatRemaining(cached.expiresAt - now)} left`;
+}
+
+/** The cache row in the new sidebar's thread hover card, laid out like its other rows. */
+export function RubatoCacheHoverRow(props: { environmentId: EnvironmentId; threadId: string }) {
+  const cached = useCachedThread(props.environmentId, props.threadId);
+  if (!cached) return null;
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <FlameIcon
+        aria-hidden
+        className={cached.warmer === "on" ? "size-3 shrink-0 text-warning" : "size-3 shrink-0 stroke-muted-foreground"}
+      />
+      <div className="min-w-0 truncate tabular-nums text-foreground/75">{cacheHoverLine(cached, Date.now())}</div>
+    </div>
   );
 }
