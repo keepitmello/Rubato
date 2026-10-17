@@ -16,6 +16,7 @@ export type RubatoSettingsSource =
   | "connections"
   | "phone"
   | "about"
+  | "homeProjects"
   | "permissionsLink";
 
 export interface RubatoSettingsBlock {
@@ -162,8 +163,8 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
       {
         key: "starting",
         title: "Starting work",
-        rows: ["new-threads", "add-project-starts-in"],
-        sources: ["general"],
+        rows: ["new-threads", "add-project-starts-in", "rubato-home-projects"],
+        sources: ["general", "homeProjects"],
       },
       {
         key: "sidebar",

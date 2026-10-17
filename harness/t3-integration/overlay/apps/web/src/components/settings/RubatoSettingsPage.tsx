@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 import { RubatoAboutSection } from "./RubatoAboutSection";
+import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
 import { RubatoPhoneSettingsPanel } from "./RubatoPhoneSettings";
 import { RubatoSettingsBlockScope } from "./rubatoSettingsBlock";
 import {
@@ -51,6 +52,7 @@ const SOURCES: Readonly<Record<RubatoSettingsSource, ComponentType>> = {
   connections: ConnectionsSettings,
   phone: RubatoPhoneSettingsPanel,
   about: RubatoAboutSection,
+  homeProjects: RubatoHomeProjectsSettingsRow,
   permissionsLink: PermissionsLinkRow,
 };
 

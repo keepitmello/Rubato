@@ -16,7 +16,9 @@
 //   selected, the head of the all-projects inbox stays above the narrowed list.
 // - The home row (chat/RubatoHomeProjects.tsx): on the new-thread screen, the
 //   project tabs and the selected project's newest threads along the bottom,
-//   inside the composer's width; the composer stays centered.
+//   inside the composer's width; the composer stays centered. Off by default:
+//   the client setting rubatoHomeProjects turns it on (Settings > Threads &
+//   Projects, settings/RubatoHomeProjectsSetting.tsx).
 // - New thread inside a project: while the list is narrowed to one project,
 //   the sidebar's new-thread button and chat.new open the thread in that
 //   project instead of the "New thread in..." picker
@@ -38,6 +40,8 @@ export const projectRailOverlays = [
   'apps/web/src/components/sidebar/RubatoThreadLine.tsx',
   'apps/web/src/components/sidebar/RubatoRecentBox.tsx',
   'apps/web/src/components/chat/RubatoHomeProjects.tsx',
+  'apps/web/src/components/settings/RubatoHomeProjectsSetting.tsx',
+  'apps/web/src/components/settings/RubatoHomeProjectsSetting.test.ts',
   'apps/web/src/components/RubatoStandalonePage.tsx',
   'apps/web/src/routes/memory.tsx',
   'apps/web/src/routes/scheduled.tsx',
@@ -247,6 +251,27 @@ export const projectRailEdits = {
   ],
   // Memory and Scheduled Tasks have their own pages now; their Settings
   // addresses only redirect. Anchored on schedule-edits.mjs's version of the line.
+  // The home row's switch: a device setting, off until turned on.
+  'packages/contracts/src/settings.ts': [
+    ['  composerCollapseOnScroll: Schema.Boolean.pipe(',
+      '  // Rubato: the project row on the new-thread screen (project-rail-edits.mjs).\n'
+        + '  rubatoHomeProjects: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'],
+    ['  composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),\n',
+      '  rubatoHomeProjects: Schema.optionalKey(Schema.Boolean),\n'],
+  ],
+  'apps/web/src/components/settings/settingsSearch.ts': [
+    ['  {\n    id: "project-grouping",\n',
+      [
+        '  {',
+        '    // Rubato: the project row on the new-thread screen (project-rail-edits.mjs).',
+        '    id: "rubato-home-projects",',
+        '    title: "Projects on the new-thread screen",',
+        '    to: "/settings/threads",',
+        '    searchTerms: ["home new thread draft project tabs recent threads list bottom row 새 스레드 프로젝트 목록 세션"],',
+        '  },',
+        '',
+      ].join('\n')],
+  ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
     [
       '  .filter((to) => to !== "/settings/diagnostics" && to !== "/settings/scheduled-tasks")\n',

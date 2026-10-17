@@ -41,6 +41,7 @@ import type { DraftId } from "~/composerDraftStore";
 import { composerDraftHasUserContent, useComposerDraftStore } from "~/composerDraftStore";
 import { useNewThreadHandler } from "~/hooks/useHandleNewThread";
 import { hasExplicitComposerModelSelection } from "~/lib/chatThreadActions";
+import { useClientSettings } from "~/hooks/useSettings";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { buildSidebarProjectPickerEntries, type SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
@@ -216,7 +217,13 @@ function RowButton(props: {
   );
 }
 
-export function RubatoHomeProjects(props: {
+/** Off until Settings > Threads & Projects turns it on (RubatoHomeProjectsSetting.tsx). */
+export function RubatoHomeProjects(props: Parameters<typeof RubatoHomeProjectsRow>[0]) {
+  const visible = useClientSettings((settings) => settings.rubatoHomeProjects);
+  return visible ? <RubatoHomeProjectsRow {...props} /> : null;
+}
+
+function RubatoHomeProjectsRow(props: {
   draftId: DraftId | null;
   activeProjectRef: ScopedProjectRef | null;
 }) {
