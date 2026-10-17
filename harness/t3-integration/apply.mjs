@@ -45,6 +45,7 @@ import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { windowMaterialEdits, windowMaterialOverlays } from './window-material-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
+import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1763,6 +1764,11 @@ for (const [relative, changes] of Object.entries(readOpenEdits)) {
 // The project rail, the Recent box and the home row; after schedule-edits, whose Settings nav line it extends (project-rail-edits.mjs).
 overlays.push(...projectRailOverlays);
 for (const [relative, changes] of Object.entries(projectRailEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Subscription bars for Rubato's own accounts on the Usage page (usage-limits-edits.mjs).
+overlays.push(...usageLimitsOverlays);
+for (const [relative, changes] of Object.entries(usageLimitsEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

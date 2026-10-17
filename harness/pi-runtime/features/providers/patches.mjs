@@ -492,6 +492,7 @@ export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/auth-pool/affinity.mjs", source("./auth-pool/affinity.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/setup-token-slots.mjs", source("./auth-pool/setup-token-slots.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/multi-account.mjs", source("./auth-pool/multi-account.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/usage-observed.mjs", source("./auth-pool/usage-observed.mjs")),
   codingAgentFile("dist/rubato-features/providers/auth-pool/runtime-pool.mjs", source("./auth-pool/coding-agent-runtime-pool.mjs")),
   ownedFile(
     "dist/rubato-features/providers/cursor-event-stream.mjs",

@@ -311,6 +311,99 @@ test("429 의 서버 리셋 시각이 그대로 계정 쉬는 시간이 된다",
   assert.ok(cooldown >= 7_200_000 && cooldown < 7_200_000 + 60_000, `2시간이어야 하는데 ${cooldown}ms`);
 });
 
+// The Usage page reads a setup-token account only from what its replies said, so the pool
+// must file each reply's quota headers under the account that answered.
+function mockAnthropicProvider(hits, utilizationByKey) {
+  const ZERO_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const model = (id) => ({
+    provider: "anthropic", id, name: id, api: "anthropic-messages", reasoning: false,
+    input: ["text"], contextWindow: 1000, maxTokens: 16, cost: ZERO_COST,
+  });
+  return {
+    id: "anthropic",
+    name: "Anthropic",
+    models: [model("claude-usage-test"), model("claude-usage-test-sub")],
+    auth: {
+      apiKey: {
+        resolve: async ({ credential }) => credential?.key
+          ? { auth: { apiKey: credential.key }, source: "api_key" }
+          : undefined,
+      },
+    },
+    streamSimple(_model, _context, options) {
+      hits.push(options.apiKey);
+      // rubato-stream 이 fetch 에서 하는 일: 응답 헤더를 넘긴다.
+      options.onResponseHeaders?.(new Headers({
+        "anthropic-ratelimit-unified-5h-utilization": String(utilizationByKey[options.apiKey]),
+        "anthropic-ratelimit-unified-5h-reset": "1792267200",
+        "anthropic-ratelimit-unified-7d-utilization": "0.72",
+        "anthropic-ratelimit-unified-7d-reset": "1792404000",
+      }));
+      return (async function* () {
+        yield { type: "start" };
+        yield { type: "done", reason: "stop", message: { role: "assistant", content: [], stopReason: "stop" } };
+      })();
+    },
+    stream(model, context, options) {
+      return this.streamSimple(model, context, options);
+    },
+    getModels() {
+      return this.models;
+    },
+  };
+}
+
+// No setup-token from this machine's file or Keychain may join the pool under test.
+const NO_SETUP_TOKEN_ENV = {
+  RUBATO_CLAUDE_ACCOUNT: "usage-test-none",
+  RUBATO_CLAUDE_SETUP_TOKEN_FILE: join(scratchRoot, "no-setup-token"),
+};
+
+test("a reply's quota headers are filed under the account that answered", async () => {
+  const hits = [];
+  const { agentDir, modelRuntime } = await createPooledRuntime({
+    anthropic: {
+      type: "api_key",
+      key: "ant-key-a",
+      accounts: [
+        { name: "default", source: "login", key: "ant-key-a" },
+        { name: "login-2", source: "login", key: "ant-key-b" },
+      ],
+    },
+  });
+  modelRuntime.registerNativeProvider(mockAnthropicProvider(hits, { "ant-key-a": 0.1, "ant-key-b": 0.5 }));
+  for (const id of ["claude-usage-test", "claude-usage-test-sub"]) {
+    await modelRuntime.streamSimple(
+      modelRuntime.getModel("anthropic", id),
+      { messages: [{ role: "user", content: "hi" }] },
+      { sessionId: `usage-${id}`, env: NO_SETUP_TOKEN_ENV },
+    ).result();
+  }
+  assert.deepEqual(hits, ["ant-key-a", "ant-key-b"]);
+  const observed = JSON.parse(readFileSync(join(agentDir, "usage-observed.json"), "utf8")).accounts;
+  assert.deepEqual(Object.keys(observed).sort(), ["anthropic/default", "anthropic/login-2"]);
+  const session = (key) => observed[key].windows.find((window) => window.id === "five_hour");
+  assert.equal(session("anthropic/default").usedPercent, 10);
+  assert.equal(session("anthropic/login-2").usedPercent, 50);
+  assert.equal(session("anthropic/login-2").resetsAt, "2026-10-17T20:00:00.000Z");
+});
+
+test("a single stored account is the one a reply is filed under", async () => {
+  const hits = [];
+  const { agentDir, modelRuntime } = await createPooledRuntime({
+    anthropic: { type: "api_key", key: "ant-key-only" },
+  });
+  modelRuntime.registerNativeProvider(mockAnthropicProvider(hits, { "ant-key-only": 0.3 }));
+  await modelRuntime.streamSimple(
+    modelRuntime.getModel("anthropic", "claude-usage-test"),
+    { messages: [{ role: "user", content: "hi" }] },
+    { sessionId: "usage-single", env: NO_SETUP_TOKEN_ENV },
+  ).result();
+  assert.deepEqual(hits, ["ant-key-only"]);
+  const observed = JSON.parse(readFileSync(join(agentDir, "usage-observed.json"), "utf8")).accounts;
+  assert.deepEqual(Object.keys(observed), ["anthropic/default"]);
+});
+
 test("서버 리셋 시각은 retry-after, HTTP 날짜, Anthropic 구독 리셋 순서로 읽는다", () => {
   const now = Date.parse("2026-10-13T00:00:00Z");
   assert.equal(serverRetryAfterMs(new Headers({ "retry-after-ms": "1500", "retry-after": "9" }), now), 1_500);

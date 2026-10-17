@@ -164,6 +164,8 @@ export function createAuthService(options = {}) {
 
   async function handle(action, input = {}) {
     if (action === 'status') return runJson(['status']);
+    // The Usage page's Rubato rows (overlay/apps/server/src/usage/RubatoUsageLimits.ts).
+    if (action === 'usage') return runJson(['usage']);
     if (action === 'check') {
       return runJson(['check', need(input.provider, PROVIDER, 'provider'), need(input.account, ACCOUNT, 'account')], 120_000);
     }

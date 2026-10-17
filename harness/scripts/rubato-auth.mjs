@@ -28,6 +28,8 @@ import {
   projectSlot,
 } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
+import { readObservedUsage, usageObservedPath } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
+import { collectUsage } from "./rubato-usage.mjs";
 import {
   VERTEX_PROVIDER_ID,
   VERTEX_KEYCHAIN_SOURCE,
@@ -342,7 +344,7 @@ export function printUsage(stdout = process.stdout) {
   stdout.write("       rubato auth unpin <provider>\n");
   stdout.write("       rubato auth remove <provider> <name>\n");
   stdout.write("       rubato auth check <provider> <name>\n");
-  stdout.write("       add --json to status, login, check, pin, unpin, remove for the GUI contract\n");
+  stdout.write("       add --json to status, usage, login, check, pin, unpin, remove for the GUI contract\n");
   stdout.write(`providers: ${PROVIDERS.map((provider) => provider.id).join(", ")}\n`);
   stdout.write("Anthropic: oauth or token (sk-ant-oat setup-token). Token stays in ~/.claude, not auth.json.\n");
 }
@@ -766,6 +768,7 @@ export function describeCheck(result) {
 //
 // T3 설정의 Providers 화면이 서는 자리다. 화면은 경로도 파일도 모르고 이 계약만 안다:
 //   status --json                     공급자별 상태와 계정 한 덩어리
+//   usage --json                      계정별 구독 사용량 한 덩어리 (rubato-usage.mjs)
 //   check|pin|unpin|remove ... --json  결과 한 덩어리 ({ ok } 또는 { error })
 //   login <provider> <method> --json   stdout 으로 이벤트를 한 줄씩, stdin 으로 답을 한 줄씩
 //     out  {type:"auth_url",url,instructions} {type:"device_code",userCode,verificationUri}
@@ -793,6 +796,24 @@ export async function statusJson(ctx) {
     })),
     setupToken: { path: claudeSetupTokenPath(ctx.env, ctx.home), account: claudeAccount(ctx.env) },
   };
+}
+
+/** 연결된 계정마다 구독 사용량. GUI 의 Usage 화면이 서는 자리다 (rubato-usage.mjs). */
+export async function usageJson(ctx, overrides = {}) {
+  const env = ctx.env ?? process.env;
+  const credentials = credentialsOf(ctx);
+  return collectUsage({
+    providers: PROVIDERS,
+    accountsOf: (providerId) => listProviderAccounts(providerId, ctx),
+    credentialOf: (providerId) => credentials.read(providerId),
+    slotOf: (credential, name) => findSlot(credential, name),
+    observed: readObservedUsage(usageObservedPath(authJsonPath(env, ctx.home))),
+    renewAntigravity: async (credential) => {
+      const { antigravityOAuth } = await import("../rubato-pi/src/antigravity-route.mjs");
+      return antigravityOAuth({ env }).refresh(credential);
+    },
+    ...overrides,
+  });
 }
 
 export function createJsonInteraction({ stdin = process.stdin, stdout = process.stdout } = {}) {
@@ -931,11 +952,15 @@ export async function handleJsonArgs(argv, ctx) {
     return code === "usage" ? "usage" : "error";
   };
   const [cmd, ...rest] = argv;
-  const commands = new Set(["status", "list", "login", "add", "check", "pin", "unpin", "remove"]);
+  const commands = new Set(["status", "list", "usage", "login", "add", "check", "pin", "unpin", "remove"]);
   if (cmd !== undefined && !commands.has(cmd)) return fail("usage", `Unknown command: ${cmd}`);
   try {
     if (cmd === "status" || cmd === "list" || cmd === undefined) {
       reply(await statusJson(ctx));
+      return "ok";
+    }
+    if (cmd === "usage") {
+      reply(await usageJson(ctx));
       return "ok";
     }
     const resolved = resolveLoginProvider(rest[0]);

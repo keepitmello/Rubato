@@ -257,6 +257,41 @@ test("onRateLimitResponse 가 있으면 고른 fetch 위에서 429 응답 헤더
   assert.equal(seen[0], caller, "Google 계열은 바뀐 fetch 를 거절하므로 감싸지 않는다");
 });
 
+test("onResponseHeaders 는 모든 응답 헤더를 받고, 호출자 fetch 가 없어도 붙는다", async () => {
+  const seen = [];
+  const inner = (_model, _context, options) => {
+    seen.push(options.fetch);
+    return scriptedStream([{ type: "done", reason: "stop", message: assistant({ stopReason: "stop" }) }])();
+  };
+  const wrapped = wrapProviderStreams({ id: "anthropic", stream: inner, streamSimple: inner });
+  const statuses = [200, 429];
+  const caller = async () => new Response("", {
+    status: statuses.shift(),
+    headers: { "anthropic-ratelimit-unified-5h-utilization": "0.5" },
+  });
+  const observed = [];
+  await drain(wrapped.streamSimple(model, context, {
+    env: {},
+    fetch: caller,
+    onResponseHeaders: (headers) => observed.push(headers.get("anthropic-ratelimit-unified-5h-utilization")),
+  }));
+  await seen[0]("https://example.test/a");
+  await seen[0]("https://example.test/b");
+  assert.deepEqual(observed, ["0.5", "0.5"], "성공 응답도 넘긴다");
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(model, context, { env: { RUBATO_UPSTREAM_DISPATCHER: "0" }, onResponseHeaders: () => {} }));
+  assert.equal(typeof seen[0], "function", "dispatcher 가 꺼져도 기본 fetch 위에 얹는다");
+
+  seen.length = 0;
+  await drain(wrapped.streamSimple(
+    { api: "google-generative-ai", provider: "google", id: "gemini-3-flash" },
+    context,
+    { env: {}, fetch: caller, onResponseHeaders: () => {} },
+  ));
+  assert.equal(seen[0], caller, "Google 계열은 바뀐 fetch 를 거절하므로 감싸지 않는다");
+});
+
 test("upstreamFetch 는 global Request 의 method+headers+body 를 전달한다", async () => {
   const seen = { method: "", headers: {}, body: "" };
   const server = createServer((req, res) => {

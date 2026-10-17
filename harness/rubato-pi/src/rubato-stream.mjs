@@ -102,6 +102,21 @@ export function observeRateLimitResponses(fetchImpl, onRateLimitResponse) {
   };
 }
 
+/**
+ * 모든 응답 헤더를 `onResponseHeaders` 로 건넨다. 응답은 그대로 돌려준다.
+ * Anthropic 은 응답마다 그 계정의 구독 사용률을 헤더로 싣는다 — Usage 화면이 setup-token
+ * 계정을 읽을 수 있는 곳은 여기뿐이다 (auth-pool/usage-observed.mjs).
+ */
+export function observeResponseHeaders(fetchImpl, onResponseHeaders) {
+  return async (...args) => {
+    const response = await fetchImpl(...args);
+    if (response?.headers) {
+      try { onResponseHeaders(response.headers); } catch { /* 관측이 요청을 깨지 않는다 */ }
+    }
+    return response;
+  };
+}
+
 function isTerminal(event) {
   return event?.type === "done" || event?.type === "error";
 }
@@ -690,6 +705,10 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // Google 계열은 바뀐 fetch 를 거절하므로 관측을 얹지 않는다.
     if (fetchImpl && !GOOGLE_FETCH_BLOCKED_APIS.has(model?.api) && typeof options.onRateLimitResponse === "function") {
       fetchImpl = observeRateLimitResponses(fetchImpl, options.onRateLimitResponse);
+    }
+    // 사용률 관측은 dispatcher 가 꺼져 있어도 붙어야 하므로 기본 fetch 위에도 얹는다.
+    if (!GOOGLE_FETCH_BLOCKED_APIS.has(model?.api) && typeof options.onResponseHeaders === "function") {
+      fetchImpl = observeResponseHeaders(fetchImpl ?? globalThis.fetch, options.onResponseHeaders);
     }
     if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;
     // Codex: 같은 세션에서 서버가 생각 기록 재전송을 연달아 거절하면 범인 하나를 찾아 뺀다

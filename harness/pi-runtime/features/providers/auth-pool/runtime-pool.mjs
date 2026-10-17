@@ -6,11 +6,21 @@ import { listSlots } from "./slots.mjs";
 import { CredentialSlotRepository } from "./state-store.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./rotation-stream.mjs";
 import { serverRetryAfterMs } from "./classify.mjs";
+import { createUsageObserver, observesUsage, usageObservedPath } from "./usage-observed.mjs";
 
 function poolStatePathFor(runtime) {
   const authPath = runtime.credentials?.store?.authPath;
   if (typeof authPath === "string" && authPath.length > 0) return join(dirname(authPath), "credential-pool-state.json");
   return undefined;
+}
+
+function usageObserverFor(runtime) {
+  if (runtime._rubatoUsageObserver !== undefined) return runtime._rubatoUsageObserver;
+  const authPath = runtime.credentials?.store?.authPath;
+  runtime._rubatoUsageObserver = typeof authPath === "string" && authPath.length > 0
+    ? createUsageObserver({ path: usageObservedPath(authPath) })
+    : null;
+  return runtime._rubatoUsageObserver;
 }
 
 function envLookup(options) {
@@ -85,6 +95,32 @@ export function withRateLimitObserver(prepared, onRetryAfterMs, now = Date.now) 
   };
 }
 
+/**
+ * 이 시도의 응답 헤더를 계정 이름과 함께 사용량 관측(usage-observed.mjs)으로 넘긴다.
+ * 어느 계정이 답했는지 아는 곳이 여기뿐이라 rubato-stream 은 헤더만 건넨다.
+ */
+export function withUsageObserver(prepared, providerId, accountName, observe) {
+  if (!observe || !accountName || !observesUsage(providerId)) return prepared;
+  return {
+    ...prepared,
+    options: {
+      ...prepared?.options,
+      onResponseHeaders: (headers) => observe(providerId, accountName, headers),
+    },
+  };
+}
+
+/** 계정 묶음을 돌지 않는 요청이 쓰는 계정. 저장된 계정이 하나면 그것, 없으면 setup-token. */
+function singleAccountName(runtime, providerId, options) {
+  if (options?.apiKey !== undefined) return undefined;
+  const stored = storedCredentialSync(runtime, providerId);
+  if (stored) {
+    const slots = listSlots(stored);
+    return typeof stored.pinned === "string" ? stored.pinned : slots.length === 1 ? slots[0].name : undefined;
+  }
+  return providerId === "anthropic" ? "setup-token" : undefined;
+}
+
 // 계정 행 꼬리. 순서가 곧 계정 순서다: `-sub` 는 두 번째, `-sub2` 는 세 번째 계정.
 // 꼬리 목록은 packages/model-core/src/product-model-catalog.mjs `ACCOUNT_LANE_SUFFIXES` 와 같다.
 const ACCOUNT_LANES = Object.freeze([
@@ -153,13 +189,24 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
       runAttempt: async (slot) => {
         retryAfterBySlot.delete(slot.name);
         const prepared = await runtime.prepareRequest(wire, slotRequestOptions(streamOptions, slot));
-        const observed = withRateLimitObserver(prepared, (ms) => retryAfterBySlot.set(slot.name, ms));
+        const observed = withUsageObserver(
+          withRateLimitObserver(prepared, (ms) => retryAfterBySlot.set(slot.name, ms)),
+          model.provider,
+          slot.name,
+          usageObserverFor(runtime),
+        );
         return callProviderStream(observed, method, context, runtime);
       },
     });
   }
   const prepared = await runtime.prepareRequest(wire, options);
-  return callProviderStream(prepared, method, context, runtime);
+  const observed = withUsageObserver(
+    prepared,
+    model.provider,
+    singleAccountName(runtime, model.provider, options),
+    usageObserverFor(runtime),
+  );
+  return callProviderStream(observed, method, context, runtime);
 }
 
 export { listSlots };
