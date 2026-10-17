@@ -28,6 +28,7 @@ import {
   projectSlot,
 } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
+import { readDisabledProviders, setProviderDisabled } from "../pi-runtime/features/providers/provider-switch.mjs";
 import { readObservedUsage, usageObservedPath } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import { collectUsage } from "./rubato-usage.mjs";
 import {
@@ -294,8 +295,14 @@ function methodHint(id) {
  * 에 있고 그쪽이 더 센 증거다 — 파일에 멀쩡한 토큰이 있어도 pool 이 차단한 계정은
  * 아무 요청에도 쓰이지 않는다.
  */
+/** 사용자 설정 자리의 홈. 테스트는 ctx.home 으로 격리한다. */
+function homeOf(ctx) {
+  return ctx.home ?? ctx.env?.HOME ?? homedir();
+}
+
 export async function collectStatus(ctx) {
   const rows = [];
+  const disabled = readDisabledProviders({ home: homeOf(ctx) });
   for (const provider of PROVIDERS) {
     const entry = await credentialsOf(ctx).read(provider.id);
     const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
@@ -309,6 +316,8 @@ export async function collectStatus(ctx) {
       accounts,
       state: bestState(accounts.map((account) => account.state)),
       blockedCount: accounts.filter((account) => account.state === "blocked").length,
+      // 꺼진 프로바이더: 인증은 그대로이고 모델만 피커와 Agent 목록에서 빠진다 (provider-switch.mjs).
+      disabled: disabled.has(provider.id),
     });
   }
   return rows;
@@ -316,6 +325,7 @@ export async function collectStatus(ctx) {
 
 function summaryOf(row) {
   const parts = [describeState(row.state)];
+  if (row.disabled) parts.push("꺼짐 (목록에서 숨김)");
   if (row.state === "connected" && row.blockedCount > 0) parts.push(`${row.blockedCount}개 차단됨`);
   if (row.accounts.length > 1) parts.push(`계정 ${row.accounts.length}`);
   return parts.join(" · ");
@@ -344,7 +354,8 @@ export function printUsage(stdout = process.stdout) {
   stdout.write("       rubato auth unpin <provider>\n");
   stdout.write("       rubato auth remove <provider> <name>\n");
   stdout.write("       rubato auth check <provider> <name>\n");
-  stdout.write("       add --json to status, usage, login, check, pin, unpin, remove for the GUI contract\n");
+  stdout.write("       rubato auth disable|enable <provider>   hide or show its models; the login stays\n");
+  stdout.write("       add --json to status, usage, login, check, pin, unpin, remove, disable, enable for the GUI contract\n");
   stdout.write(`providers: ${PROVIDERS.map((provider) => provider.id).join(", ")}\n`);
   stdout.write("Anthropic: oauth or token (sk-ant-oat setup-token). Token stays in ~/.claude, not auth.json.\n");
 }
@@ -701,6 +712,14 @@ async function runRemoveCommand(providerId, name, ctx) {
   (ctx.stdout ?? process.stdout).write(`Removed ${providerId} account '${name}'.\n`);
 }
 
+/** 프로바이더 끄기·켜기. 인증은 건드리지 않는다. */
+function runSwitchCommand(providerId, disabled, ctx) {
+  setProviderDisabled(providerId, disabled, { home: homeOf(ctx) });
+  (ctx.stdout ?? process.stdout).write(disabled
+    ? `${providerId} 를 껐습니다. 로그인은 그대로이고, 모델은 피커와 Agent 목록에서 빠집니다.\n`
+    : `${providerId} 를 켰습니다.\n`);
+}
+
 async function resolveProviderArg(name, ctx) {
   const resolved = resolveLoginProvider(name);
   if (!resolved?.id) {
@@ -742,6 +761,12 @@ export async function handleAuthArgs(argv, ctx) {
       await runRemoveCommand(id, rest[1], ctx);
       return "ok";
     }
+    if (cmd === "disable" || cmd === "enable") {
+      const id = await resolveProviderArg(rest[0], ctx);
+      if (!id) return "usage";
+      runSwitchCommand(id, cmd === "disable", ctx);
+      return "ok";
+    }
     if (cmd === "check") {
       const id = await resolveProviderArg(rest[0], ctx);
       if (!id || rest[1] === undefined) return "usage";
@@ -770,6 +795,7 @@ export function describeCheck(result) {
 //   status --json                     공급자별 상태와 계정 한 덩어리
 //   usage --json                      계정별 구독 사용량 한 덩어리 (rubato-usage.mjs)
 //   check|pin|unpin|remove ... --json  결과 한 덩어리 ({ ok } 또는 { error })
+//   disable|enable <provider> --json   { ok, disabled: [꺼진 프로바이더 id] }
 //   login <provider> <method> --json   stdout 으로 이벤트를 한 줄씩, stdin 으로 답을 한 줄씩
 //     out  {type:"auth_url",url,instructions} {type:"device_code",userCode,verificationUri}
 //          {type:"info",message} {type:"prompt",id,kind,message,placeholder?,options?}
@@ -785,6 +811,7 @@ export async function statusJson(ctx) {
       label: row.provider.label,
       methods: row.provider.methods,
       state: row.state,
+      disabled: row.disabled,
       accounts: row.accounts.map((account) => ({
         name: account.name,
         source: account.source,
@@ -952,7 +979,7 @@ export async function handleJsonArgs(argv, ctx) {
     return code === "usage" ? "usage" : "error";
   };
   const [cmd, ...rest] = argv;
-  const commands = new Set(["status", "list", "usage", "login", "add", "check", "pin", "unpin", "remove"]);
+  const commands = new Set(["status", "list", "usage", "login", "add", "check", "pin", "unpin", "remove", "disable", "enable"]);
   if (cmd !== undefined && !commands.has(cmd)) return fail("usage", `Unknown command: ${cmd}`);
   try {
     if (cmd === "status" || cmd === "list" || cmd === undefined) {
@@ -974,6 +1001,10 @@ export async function handleJsonArgs(argv, ctx) {
     if (cmd === "unpin") {
       await runPinCommand(id, null, quietly(ctx));
       reply({ ok: true });
+      return "ok";
+    }
+    if (cmd === "disable" || cmd === "enable") {
+      reply({ ok: true, disabled: setProviderDisabled(id, cmd === "disable", { home: homeOf(ctx) }) });
       return "ok";
     }
     if (rest[1] === undefined) return fail("usage", `${cmd} needs an account name`);
@@ -1146,8 +1177,12 @@ async function providerScreen(providerId, ctx) {
     for (const method of spec.methods) {
       items.push({ label: METHOD_LABELS[method] ?? method, value: { kind: "add", method } });
     }
+    items.push(separator(), row?.disabled
+      ? { label: "켜기 (모델을 피커와 Agent 목록에 다시 보이기)", value: { kind: "switch", disabled: false } }
+      : { label: "끄기 (로그인은 두고 모델만 피커와 Agent 목록에서 숨기기)", value: { kind: "switch", disabled: true } });
     items.push(separator(), { label: "뒤로", value: BACK });
     const header = accounts.length === 0 ? [`  ${DIM}등록된 계정이 없습니다.${RST}`] : [];
+    if (row?.disabled) header.push(`  ${DIM}꺼져 있습니다. 로그인은 그대로이고 모델만 목록에서 빠져 있습니다.${RST}`);
     if (providerId === "anthropic" && !accounts.some((account) => account.source === "setup-token")) {
       header.push(`  ${DIM}setup-token 파일: ${claudeSetupTokenPath(ctx.env, ctx.home)} (계정 ${claudeAccount(ctx.env)})${RST}`);
     }
@@ -1165,6 +1200,10 @@ async function providerScreen(providerId, ctx) {
     index = items.findIndex((item) => item.value === choice);
     if (choice.kind === "add") {
       await runGuarded(ctx, () => loginProvider(providerId, choice.method, ctx));
+      continue;
+    }
+    if (choice.kind === "switch") {
+      await runGuarded(ctx, () => runSwitchCommand(providerId, choice.disabled, quietly(ctx)));
       continue;
     }
     if (choice.kind === "account") {

@@ -24,6 +24,8 @@ export interface ProviderStatus {
   readonly methods: readonly LoginMethod[];
   readonly state: ConnectionState;
   readonly accounts: readonly ProviderAccount[];
+  /** Switched off: the login stays, its models are out of the pickers and the Agent lists. */
+  readonly disabled?: boolean;
 }
 
 export interface AuthStatus {
@@ -67,6 +69,8 @@ export const rubatoAuth = {
     call<CheckResult>(env, "check", { provider, account }),
   pin: (env: EnvironmentId | null, provider: string, account: string | null) =>
     call<{ ok: true }>(env, "pin", { provider, account }),
+  setEnabled: (env: EnvironmentId | null, provider: string, enabled: boolean) =>
+    call<{ ok: true; disabled: readonly string[] }>(env, "enabled", { provider, enabled }),
   remove: (env: EnvironmentId | null, provider: string, account: string) =>
     call<{ ok: true }>(env, "remove", { provider, account }),
   login: (env: EnvironmentId | null, provider: string, method: LoginMethod) =>

@@ -88,3 +88,15 @@ test('the HTTP surface rejects malformed input and unknown jobs', async (t) => {
   assert.equal(status.status, 200);
   assert.ok((await status.json()).providers.length >= 8);
 });
+
+test('a provider switched off keeps its login and comes back when switched on', async (t) => {
+  const f = await fixture(t);
+  assert.equal(provider(await f.service.handle('status'), 'cursor').disabled, false);
+  assert.deepEqual(await f.service.handle('enabled', { provider: 'cursor', enabled: false }), { ok: true, disabled: ['cursor'] });
+  assert.equal(provider(await f.service.handle('status'), 'cursor').disabled, true);
+  // The switch lives in the user's settings, where the engine reads it.
+  assert.match(await readFile(path.join(f.home, '.rubato', 'rubato.jsonc'), 'utf8'), /"disabled": \[\s*"cursor"\s*\]/);
+  assert.deepEqual(await f.service.handle('enabled', { provider: 'cursor', enabled: true }), { ok: true, disabled: [] });
+  assert.equal(provider(await f.service.handle('status'), 'cursor').disabled, false);
+  await assert.rejects(f.service.handle('enabled', { provider: 'cursor', enabled: 'no' }), /enabled must be true or false/);
+});

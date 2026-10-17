@@ -182,8 +182,39 @@ function patchModelRuntimePool(sourceText) {
   let next = replaceOnce(
     sourceText,
     'import { RuntimeCredentials } from "./runtime-credentials.js";\n',
-    'import { RuntimeCredentials } from "./runtime-credentials.js";\nimport { streamWithCredentialPool } from "../rubato-features/providers/auth-pool/runtime-pool.mjs";\n',
+    'import { RuntimeCredentials } from "./runtime-credentials.js";\nimport { streamWithCredentialPool } from "../rubato-features/providers/auth-pool/runtime-pool.mjs";\nimport { withoutDisabledProviders } from "../rubato-features/providers/provider-switch.mjs";\n',
     "runtime-pool-import",
+  );
+  // A provider the user switched off (provider-switch.mjs) leaves the available list that
+  // every picker and the Agent/team model lists read. getModel and auth stay as they are,
+  // so a session already on that model keeps running.
+  next = replaceOnce(
+    next,
+    `                const available = await this.models.getAvailable(providerId, options);
+                if (errorSeq === this.availabilityErrorSeq)
+                    this.availabilityError = undefined;
+                return available;`,
+    `                const available = await this.models.getAvailable(providerId, options);
+                if (errorSeq === this.availabilityErrorSeq)
+                    this.availabilityError = undefined;
+                return withoutDisabledProviders(available);`,
+    "provider-switch-available",
+  );
+  next = replaceOnce(
+    next,
+    `        await this.queueAvailabilityRefresh(options?.signal);
+        return this.snapshot.available;
+    }
+    getAvailableSnapshot() {
+        return this.snapshot.available;
+    }`,
+    `        await this.queueAvailabilityRefresh(options?.signal);
+        return withoutDisabledProviders(this.snapshot.available);
+    }
+    getAvailableSnapshot() {
+        return withoutDisabledProviders(this.snapshot.available);
+    }`,
+    "provider-switch-snapshot",
   );
   next = replaceOnce(
     next,
@@ -494,6 +525,7 @@ export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/auth-pool/multi-account.mjs", source("./auth-pool/multi-account.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/usage-observed.mjs", source("./auth-pool/usage-observed.mjs")),
   codingAgentFile("dist/rubato-features/providers/auth-pool/runtime-pool.mjs", source("./auth-pool/coding-agent-runtime-pool.mjs")),
+  codingAgentFile("dist/rubato-features/providers/provider-switch.mjs", source("./provider-switch.mjs")),
   ownedFile(
     "dist/rubato-features/providers/cursor-event-stream.mjs",
     source("./vendor/pi-ai/utils/event-stream.js"),

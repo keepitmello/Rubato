@@ -371,6 +371,27 @@ test("status --json reports every provider with typed accounts", async () => {
   assert.match(status.setupToken.path, /missing-setup-token$/);
 });
 
+test("disable --json hides a provider without touching its login, and enable brings it back", async () => {
+  const dir = tempHome();
+  const authPath = join(dir, "auth.json");
+  const auth = JSON.stringify({ xai: { type: "oauth", access: "a", refresh: "r" } });
+  writeFileSync(authPath, auth);
+  const run = async (...args) => {
+    const { stdout, text } = capture();
+    await main([...args, "--json"], { stdout, env: isolatedEnv(dir), home: dir });
+    return JSON.parse(text().trim().split("\n").at(-1));
+  };
+  assert.deepEqual(await run("disable", "xai"), { ok: true, disabled: ["xai"] });
+  const status = await run("status");
+  const xai = status.providers.find((provider) => provider.id === "xai");
+  assert.equal(xai.disabled, true);
+  assert.equal(xai.state, "connected", "the login stays");
+  assert.equal(readFileSync(authPath, "utf8"), auth, "auth.json is untouched");
+  assert.equal(status.providers.find((provider) => provider.id === "anthropic").disabled, false);
+  assert.deepEqual(await run("enable", "xai"), { ok: true, disabled: [] });
+  assert.equal((await run("status")).providers.find((provider) => provider.id === "xai").disabled, false);
+});
+
 test("login --json asks for the key over the line contract and stores it", async () => {
   const dir = tempHome();
   const env = isolatedEnv(dir);

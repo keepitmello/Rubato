@@ -108,6 +108,7 @@ function useReadyEnvironmentId(): EnvironmentId {
 
 function summary(provider: ProviderStatus): string {
   const parts = [STATE_VIEW[provider.state].label];
+  if (provider.disabled) parts.push("Off");
   if (provider.accounts.length > 1) parts.push(`${provider.accounts.length} accounts`);
   return parts.join(" · ");
 }
@@ -202,6 +203,7 @@ export function RubatoProvidersSettingsPanel() {
                   className={cn(
                     "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40",
                     provider.id === selected.id && "bg-accent/60",
+                    provider.disabled && "opacity-60",
                   )}
                 >
                   <ProviderIcon id={provider.id} className="size-5" />
@@ -242,7 +244,21 @@ function ProviderDetail({
   onChanged: () => void;
 }) {
   const [job, setJob] = useState<LoginJob | null>(null);
+  const [switching, setSwitching] = useState(false);
   const name = displayName(provider);
+  const enabled = provider.disabled !== true;
+
+  const setEnabled = async (next: boolean) => {
+    setSwitching(true);
+    try {
+      await rubatoAuth.setEnabled(environmentId, provider.id, next);
+      onChanged();
+    } catch (error) {
+      reportError(`Could not turn ${name} ${next ? "on" : "off"}`, error);
+    } finally {
+      setSwitching(false);
+    }
+  };
 
   const start = async (method: LoginMethod) => {
     try {
@@ -259,6 +275,25 @@ function ProviderDetail({
         <h3 className="flex-1 text-base font-medium">{name}</h3>
         <Badge variant={STATE_VIEW[provider.state].badge}>{STATE_VIEW[provider.state].label}</Badge>
       </div>
+
+      <SettingsGroup>
+        <SettingsRow
+          title="Use this provider"
+          description={
+            enabled
+              ? "Off hides its models from the model pickers and from the models the main session can launch as agents and teammates. The login stays."
+              : `${name} is off. Its login stays; its models are out of the pickers and the agent lists until you turn it back on.`
+          }
+          control={
+            <Switch
+              checked={enabled}
+              disabled={switching}
+              onCheckedChange={(checked) => void setEnabled(Boolean(checked))}
+              aria-label={`Use ${name}`}
+            />
+          }
+        />
+      </SettingsGroup>
 
       <div className="space-y-2">
         <h4 className="px-1 text-sm text-foreground/70">Accounts</h4>

@@ -776,3 +776,31 @@ test("anthropic stored oauth plus setup-token are both rotation slots", async ()
   }, { acquireLeases: false });
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });
+
+test("a switched-off provider leaves the available list but keeps its auth and its models by id", async () => {
+  const { modelRuntime } = await createPooledRuntime({
+    xai: { type: "api_key", key: "xai-key" },
+    anthropic: { type: "api_key", key: "anthropic-key" },
+  });
+  const home = mkdtempSync(join(scratchRoot, "switch-home-"));
+  mkdirSync(join(home, ".rubato"));
+  const previousHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    const providersOf = (models) => [...new Set(models.map((model) => model.provider))].sort();
+    const before = providersOf(await modelRuntime.getAvailable());
+    assert.ok(before.includes("xai") && before.includes("anthropic"), `both providers start available: ${before}`);
+
+    writeFileSync(join(home, ".rubato", "rubato.jsonc"), '{ "providers": { "disabled": ["xai"] } }\n');
+    assert.ok(!providersOf(modelRuntime.getAvailableSnapshot()).includes("xai"), "the snapshot every picker reads drops xai");
+    assert.ok(providersOf(modelRuntime.getAvailableSnapshot()).includes("anthropic"));
+    assert.deepEqual(await modelRuntime.getAvailable("xai"), []);
+    assert.ok(modelRuntime.getModel("xai", "grok-4.7"), "a session already on the model still resolves it");
+    assert.equal(modelRuntime.hasConfiguredAuth("xai"), true, "auth stays");
+
+    writeFileSync(join(home, ".rubato", "rubato.jsonc"), "{}\n");
+    assert.ok(providersOf(modelRuntime.getAvailableSnapshot()).includes("xai"), "switching it back on brings it back");
+  } finally {
+    process.env.HOME = previousHome;
+  }
+});

@@ -174,6 +174,13 @@ export function createAuthService(options = {}) {
       if (input.account === null) return runJson(['unpin', provider]);
       return runJson(['pin', provider, need(input.account, ACCOUNT, 'account')]);
     }
+    // Switch a provider off or on: its login stays, its models leave or rejoin the lists
+    // the pickers and the Agent/team model lists read (pi-runtime providers/provider-switch.mjs).
+    if (action === 'enabled') {
+      const provider = need(input.provider, PROVIDER, 'provider');
+      if (typeof input.enabled !== 'boolean') throw bad('enabled must be true or false.');
+      return runJson([input.enabled ? 'enable' : 'disable', provider]);
+    }
     if (action === 'remove') {
       return runJson(['remove', need(input.provider, PROVIDER, 'provider'), need(input.account, ACCOUNT, 'account')]);
     }

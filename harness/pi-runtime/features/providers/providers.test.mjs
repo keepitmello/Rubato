@@ -237,7 +237,10 @@ test("feature stages one stock-bound closure and its default factory builds the 
   assert.ok(providersFeature.files.every((entry) =>
     entry.packageName === "@earendil-works/pi-ai"
     || (entry.packageName === "@earendil-works/pi-coding-agent"
-      && entry.path === "dist/rubato-features/providers/auth-pool/runtime-pool.mjs")
+      && [
+        "dist/rubato-features/providers/auth-pool/runtime-pool.mjs",
+        "dist/rubato-features/providers/provider-switch.mjs",
+      ].includes(entry.path))
   ));
   assert.ok(providersFeature.files.every((entry) => !entry.sourcePath.includes("/rubato/node_modules/")));
   assert.match(readFileSync(join(piAiRoot, "dist/rubato-features/providers/THIRD_PARTY_NOTICES.md"), "utf8"), /MIT License/);
