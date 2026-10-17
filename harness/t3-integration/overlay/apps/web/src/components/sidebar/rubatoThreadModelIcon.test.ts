@@ -19,6 +19,10 @@ describe("threadModelIcon", () => {
     expect(threadModelIcon(rubato, "bare-slug")).toBeNull();
   });
 
+  it("returns null while the thread's provider is not loaded yet", () => {
+    expect(threadModelIcon(null, "anthropic/claude-opus-5-5")).toBeNull();
+  });
+
   it("leaves other drivers on their own icon", () => {
     expect(threadModelIcon(ProviderDriverKind.make("codex"), "anthropic/claude-opus-5-5")).toBeNull();
   });

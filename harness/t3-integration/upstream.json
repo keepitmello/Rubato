@@ -74,6 +74,8 @@
     "tsconfig.base.json": "d2d4a7acec31e82783f3d3b27018d9e5233d22b16ab683111147b8df8c2b7caa",
     "apps/web/src/components/threadActionMenu.logic.ts": "71eafa53a0a6967775fbdb61d50f435a10a74adc7a5dc7ffd551d00469a7a0f1",
     "apps/web/src/components/Sidebar.tsx": "07edf16e941252c7e18279bb9e9cfff491e3e73f93f6ea6ba4ca0747cd9a06f6",
+    "apps/web/src/components/CommandPalette.tsx": "c386322d28bcddc995f77dcd7a1affdcc970563912398aee38ba1016e0a2a403",
+    "apps/web/src/components/ThreadCommandSubtitle.tsx": "60b58e20e3656936b5206145843ba170b0fabf720eba6b39287ab4fe59fa7ef1",
     "packages/shared/package.json": "3e32c9a0212082aef5ca8332f7c8a4d00b1054853fd3866d88b912d0026001e8",
     "packages/client-runtime/src/state/shell.ts": "867d47d87c7c070cf5dd6443ba9e2a54360b552c00cc04b5ddaf87465fbf72bc",
     "packages/shared/src/markdownLinks.ts": "de31b00d34c6ecdf0382bcc15dabb779e822b86b32ebd31185fd2a2b1a26c05f",
