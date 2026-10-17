@@ -40,6 +40,7 @@ import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
 import { themeEdits, themeOverlays } from './theme-edits.mjs';
+import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1731,6 +1732,11 @@ for (const [relative, changes] of Object.entries(handoffRecoveryEdits)) {
 // Rubato's theme library in place of T3's built-in themes (theme-edits.mjs).
 overlays.push(...themeOverlays);
 for (const [relative, changes] of Object.entries(themeEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// "Open" on a tool row that read a file (read-open-edits.mjs).
+overlays.push(...readOpenOverlays);
+for (const [relative, changes] of Object.entries(readOpenEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
