@@ -701,10 +701,11 @@ export const MANUSCRIPT_THEME: ThemeDefinition = {
   sidebarArtwork: true,
 };
 
+// Ocean first (the default look), Ink beside it (theme-edits.mjs).
 export const RUBATO_THEMES: ReadonlyArray<ThemeDefinition> = [
   OCEAN_THEME,
+  INK_THEME,
   OCEAN_REVERSE_THEME,
   NOCTURNE_THEME,
-  INK_THEME,
   MANUSCRIPT_THEME,
 ];

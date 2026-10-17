@@ -10,7 +10,13 @@
 //
 // Ocean keeps the id "ocean", so a saved Ocean preference (and the legacy
 // "t3-ocean" alias) lands on Rubato's Ocean. A saved T3 Chat, Grove, Ember or
-// Iris preference no longer names a theme and falls back to the standard palette.
+// Iris preference no longer names a theme and falls back to the default look.
+//
+// Ocean is that default look: T3's standard palette ("T3 Code") is not offered.
+// The bare preferences that meant it (no preference, "system", "light", "dark")
+// resolve to Ocean in the given mode, in the runtime (themeIdFromPreference) and
+// in the boot copy alike, and neither the theme cards nor the command palette
+// list the standard card. The list order puts Ink right after Ocean.
 //
 // The boot copy is built from the overlay file here, so the colors the page
 // paints before React mounts cannot drift from the runtime palettes.
@@ -194,6 +200,27 @@ const PERSISTED_PREFERENCE_TEST = [
 ].join('\n');
 
 export const themeEdits = {
+  'apps/web/src/themePalette.ts': [
+    [
+      'function themeIdFromPreference(theme: ThemePreference): string {\n  return normalizeThemeId(theme);\n}\n',
+      [
+        '// Rubato: Ocean is the look when no theme is chosen (theme-edits.mjs).',
+        'function themeIdFromPreference(theme: ThemePreference): string {',
+        '  if (theme === "system" || theme === "light" || theme === "dark") return OCEAN_THEME_ID;',
+        '  return normalizeThemeId(theme);',
+        '}',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+  ],
+  'apps/web/src/components/CommandPalette.tsx': [
+    [
+      '      ...STANDARD_THEME_CARDS.map((card) => ({ ...card, id: null })),\n',
+      "      // Rubato: Ocean stands in for T3's standard look, so it is not offered (theme-edits.mjs).\n",
+      'replace',
+    ],
+  ],
   'packages/shared/src/themePalettes.ts': [
     [
       'export const BUILT_IN_THEME_IDS = ["t3-chat", "grove", "ocean", "ember", "iris"] as const;\n',
@@ -224,9 +251,30 @@ export const themeEdits = {
       '// The theme library offers Rubato\'s themes (theme-edits.mjs).\nconst MAINTAINER_THEMES: ReadonlyArray<ThemeDefinition> = BUILT_IN_THEMES;\n',
       'replace',
     ],
+    [
+      '        {STANDARD_THEME_CARDS.map((standardTheme) => (\n',
+      "        {/* Rubato: Ocean stands in for T3's standard look, so none is offered (theme-edits.mjs). */}\n"
+        + '        {([] as typeof STANDARD_THEME_CARDS).map((standardTheme) => (\n',
+      'replace',
+    ],
   ],
   'apps/web/index.html': [
     ['        const BUILT_IN_THEME_PALETTES = {\n          "t3-chat": {\n', bootPalettes, 'replace'],
+    [
+      '          const themeId =\n            storedTheme === null ? "" : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);\n',
+      [
+        '          // Rubato: Ocean is the look when no theme is chosen (theme-edits.mjs).',
+        '          const themeId =',
+        '            storedTheme === null ||',
+        '            storedTheme === "system" ||',
+        '            storedTheme === "light" ||',
+        '            storedTheme === "dark"',
+        '              ? "ocean"',
+        '              : (LEGACY_THEME_IDS[storedTheme] ?? storedTheme);',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
     [
       '        const RESERVED_THEME_IDS = [\n          "system",\n          "light",\n          "dark",\n          "t3-chat",\n          "grove",\n          "ocean",\n          "ember",\n          "iris",\n',
       [
@@ -268,6 +316,20 @@ export const themeEdits = {
       'replace',
     ],
     [BOOT_MIX_TESTS, renameExamples(BOOT_MIX_TESTS), 'replace'],
+    [
+      '  it("applies the matching half of an automatic mix to the splash", () => {\n',
+      [
+        '  // Rubato: Ocean is the look when no theme is chosen (theme-edits.mjs).',
+        '  it("paints Ocean when no theme is chosen", () => {',
+        '    for (const stored of [null, "system", "light", "dark"]) {',
+        '      const storage = stored === null ? {} : { [THEME_STORAGE_KEY]: stored };',
+        '      expect(runBootScript({ storage, prefersDark: true }).themeId).toBe("ocean");',
+        '    }',
+        '  });',
+        '',
+        '',
+      ].join('\n'),
+    ],
   ],
   'apps/web/src/themePalette.test.ts': [
     ['  getThemePreviewSidebarArtwork,\n  getThemePreferenceMode,\n  isKnownThemePreference,\n',
@@ -285,6 +347,14 @@ export const themeEdits = {
         '      expect(getThemeDefinition(id)).toBeNull();',
         '      expect(isKnownThemePreference(id)).toBe(false);',
         '    }',
+        '  });',
+        '',
+        '  it("resolves the bare preferences to Ocean, the default look, and lists Ink beside it", () => {',
+        '    const ocean = BUILT_IN_THEMES.find((theme) => theme.id === "ocean")!;',
+        '    for (const preference of ["system", "light", "dark"]) {',
+        '      expect(getThemeDefinition(preference)).toBe(ocean);',
+        '    }',
+        '    expect(BUILT_IN_THEMES.slice(0, 2).map((theme) => theme.id)).toEqual(["ocean", "ink"]);',
         '  });',
         '',
         '  it("resolves the legacy t3-ocean id onto Rubato\'s Ocean", () => {',

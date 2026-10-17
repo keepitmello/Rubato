@@ -11,8 +11,9 @@ const byId = Object.fromEntries(RUBATO_THEMES.map((theme) => [theme.id, theme]))
 const lightness = (color) => Number(/^oklch\(([\d.]+) /.exec(color)[1]);
 const T3_STOCK_IDS = ['t3-chat', 'grove', 'ember', 'iris'];
 
-test('the library is Ocean, Ocean Reverse, Nocturne, Ink and Manuscript, each light and dark', () => {
-  assert.deepEqual(RUBATO_THEMES.map((theme) => theme.label), ['Ocean', 'Ocean Reverse', 'Nocturne', 'Ink', 'Manuscript']);
+test('the library is Ocean, Ink, Ocean Reverse, Nocturne and Manuscript, each light and dark', () => {
+  // Ocean is the default look and comes first; Ink sits beside it.
+  assert.deepEqual(RUBATO_THEMES.map((theme) => theme.label), ['Ocean', 'Ink', 'Ocean Reverse', 'Nocturne', 'Manuscript']);
   // Ocean keeps its id so a saved Ocean preference lands on Rubato's Ocean.
   assert.equal(byId.ocean.label, 'Ocean');
   for (const theme of RUBATO_THEMES) {
