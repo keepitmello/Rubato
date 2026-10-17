@@ -39,6 +39,21 @@ test('SIGTERM of a spawned profile engine releases the socket; the next client r
   await restartProfileEngine({ descriptorPath, waitMs: 4000 });
 });
 
+test('a restart that handed work over starts the next engine at once', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-restart-handover-'));
+  t.after(() => rm(root, { force: true, recursive: true }));
+  const descriptorPath = path.join(root, 'server', 'connection.json');
+  const env = { ...process.env, HOME: root, RUBATO_STOCK_ENGINE_DIR: path.join(root, 'no-engine') };
+  await ensureProfileEngine({ descriptorPath, runtimeRoot: null, env, timeoutMs: 20000 });
+  // What a draining engine leaves for the next one (drain.mjs).
+  await writeFile(path.join(root, 'server', 'resume.json'), JSON.stringify({ version: 1, writtenAt: Date.now(), sessions: [] }));
+  const started = [];
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 8000, startEngine: async (target) => { started.push(target); } });
+  assert.equal(result.restarted, true, JSON.stringify(result));
+  assert.equal(result.handedOver, true);
+  assert.deepEqual(started, [descriptorPath]);
+});
+
 test('restart is a no-op when no profile engine is listening', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'rb-restart-none-'));
   const descriptorPath = path.join(root, 'server', 'connection.json');

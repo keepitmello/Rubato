@@ -635,8 +635,9 @@ if [ "$need_hub" = 1 ]; then
   fi
 fi
 
-# 프로필 엔진. SIGTERM 으로 죽인다 — cli.mjs 가 락을 풀고 끝낸다. kill -9 는
-# 쓰지 않는다. 진행 중인 턴이 있으면 이름을 알리고 끊는다.
+# 프로필 엔진. SIGTERM 으로 내린다 — cli.mjs 가 진행 중인 도구 호출을 마치게 한 뒤
+# 락을 풀고 끝내고, 새 엔진이 그 대화를 이어 간다(pi-server/src/drain.mjs). kill -9 는
+# 쓰지 않는다.
 if [ "$need_profile" = 1 ]; then
   if [ -z "$NODE" ]; then
     warn "node 가 없어 프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다"

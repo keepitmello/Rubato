@@ -440,6 +440,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       await refresh();
       if (pollMs > 0) { this.poller = setInterval(() => { if (!stopped) void refresh().catch(onError); }, pollMs); this.poller.unref?.(); }
     },
+    /** The loaded runtimes: a restart tells from them which runs the next engine takes up (drain.mjs). */
+    liveRuntimes() { return [...handles.values()].filter((handle) => !handle.closed); },
     async close() {
       stopped = true; clearInterval(this.poller);
       await Promise.allSettled([...probes.values()]);

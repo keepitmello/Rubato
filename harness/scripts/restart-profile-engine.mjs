@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { realpathSync } from 'node:fs';
+import { access } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readDescriptor } from '../pi-server/src/descriptor.mjs';
-import { socketAlive } from '../pi-server/src/discovery.mjs';
+import { ensureProfileEngine, socketAlive } from '../pi-server/src/discovery.mjs';
 import { SessionClient } from '../pi-server/src/client.mjs';
+import { DRAIN_TIMEOUT_MS, resumeFilePath } from '../pi-server/src/drain.mjs';
 import { resolveLaunchAgentDir } from '../rubato-pi/src/launch.mjs';
 // Process lookup lives apart so a test can reach it without the pi-server client above.
 import { ancestorPids, listenerPid } from './profile-engine-pid.mjs';
@@ -16,7 +18,10 @@ async function runningTurns(descriptor) {
   } finally { await client.close(); }
 }
 
-export async function restartProfileEngine({ descriptorPath, waitMs = 8000 } = {}) {
+// The engine lets running tool calls finish before it closes (pi-server drain.mjs), so the wait
+// covers its drain and the close after it.
+export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIMEOUT_MS + 30_000,
+  startEngine = (path) => ensureProfileEngine({ descriptorPath: path }) } = {}) {
   descriptorPath ??= path.join(resolveLaunchAgentDir(), 'server', 'connection.json');
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('descriptorPath must be absolute');
   let descriptor;
@@ -35,7 +40,14 @@ export async function restartProfileEngine({ descriptorPath, waitMs = 8000 } = {
   process.kill(pid, 'SIGTERM');
   const deadline = Date.now() + waitMs;
   while (Date.now() < deadline) {
-    if (!await socketAlive(descriptor.socketPath)) return { restarted: true, pid, running, inspectError };
+    if (!await socketAlive(descriptor.socketPath)) {
+      // Work the old engine handed over is taken up by the next one (drain.mjs). Start it now
+      // rather than when some window reconnects: a terminal-only machine has none that will.
+      const handedOver = await access(resumeFilePath(path.dirname(descriptorPath))).then(() => true, () => false);
+      let resumeError;
+      if (handedOver) await startEngine(descriptorPath).catch((error) => { resumeError = error; });
+      return { restarted: true, pid, running, inspectError, handedOver, ...(resumeError ? { resumeError } : {}) };
+    }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return { restarted: false, reason: 'timeout', pid, running, inspectError };
@@ -55,14 +67,17 @@ export async function profileEngineHostsCaller({ descriptorPath, ancestors = anc
   return Boolean(pid) && ancestors().has(pid);
 }
 
-/** Names the conversations being cut on `stderr` and returns the one-word stdout token
+/** Names the conversations the restart carries over on `stderr` and returns the one-word stdout token
  * (`restarted`, `missing`, `dead`, `no-pid`, `timeout <pid>`) the shell callers key on. */
 export function reportRestart(result, stderr = process.stderr) {
+  if (result.resumeError) {
+    stderr.write(`새 엔진을 바로 띄우지 못했습니다. 다음에 Rubato 를 열면 이어 갑니다: ${result.resumeError.message ?? result.resumeError}\n`);
+  }
   if (result.inspectError) {
     stderr.write('진행 중인 대화를 확인하지 못했습니다. 프로필 엔진을 재시작합니다.\n');
   } else if (result.running?.length) {
     const names = result.running.map((item) => item.title || item.sessionId || 'untitled').join(', ');
-    stderr.write(`진행 중인 대화 ${result.running.length}개를 끊습니다: ${names}\n`);
+    stderr.write(`진행 중인 대화 ${result.running.length}개는 하던 도구 호출을 마치고 새 엔진에서 이어 갑니다: ${names}\n`);
   }
   return result.restarted ? 'restarted' : result.reason === 'timeout' && result.pid
     ? `timeout ${result.pid}` : (result.reason ?? 'unknown');

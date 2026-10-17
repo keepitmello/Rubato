@@ -24,14 +24,17 @@ try {
     // running engine and re-sent the signal, which the exit guard refuses. A signal that comes
     // during startup closes the engine as soon as it is up. `on`, not `once`: a second signal
     // must still find our handler.
+    // A stop drains first: running work reaches the drain gate and the next engine continues
+    // it (drain.mjs). A second stop signal cuts the wait short.
     let service;
     let stopRequested = false;
     let closing = false;
     const stop = async () => {
       stopRequested = true;
-      if (!service || closing) return;
+      if (!service) return;
+      if (closing) { service.stopDraining?.(); return; }
       closing = true;
-      try { await service.close(); } catch (error) { console.error(error); process.exitCode = 1; }
+      try { await service.close({ drain: true }); } catch (error) { console.error(error); process.exitCode = 1; }
     };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);

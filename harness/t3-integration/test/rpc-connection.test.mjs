@@ -404,3 +404,113 @@ test('a message another conversation sent reaches the thread once, from the atta
   assert.deepEqual(written.map(([threadId, item]) => [threadId, item.text, item.role]), [['t1', 'from history', 'user'], ['t1', 'live one', 'user']]);
   assert.equal(written[1][1].context.records[0].payload.from.sessionId, 'sender');
 });
+
+// pi-server drain.mjs: the engine says `restarting`, lets running tool calls finish, closes; the
+// next engine continues the run and this stream carries the same turn across.
+const pause = () => new Promise((resolve) => setTimeout(resolve, 20));
+const restartTimings = { reconnectMs: 1000, retryMs: 5, resumeGraceMs: 30 };
+async function runningStream(answers = {}) {
+  const client = fakeClient(answers);
+  const harness = connection(client, {}, { restartTimings });
+  await harness.conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } }] });
+  await harness.conn.inbound;
+  return { client, ...harness };
+}
+
+test('a restart keeps the turn open and carries it to the next engine', async () => {
+  const { client, conn, records, closed } = await runningStream();
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', restarting: true, events: [] });
+  await conn.inbound;
+  const row = records.find((record) => record.type === 'tool_execution_start' && record.toolName === 'Restarting Rubato');
+  assert.ok(row, 'the turn says Rubato is restarting');
+  // A message sent now waits for the next engine instead of reaching the closing one.
+  conn.send({ type: 'prompt', message: 'later', streamingBehavior: 'steer' });
+  await pause();
+  assert.equal(client.commands.some((command) => command.type === 'prompt'), false);
+
+  const next = fakeClient({ prompt: { disposition: 'started' } });
+  conn.connectClient = async () => next;
+  client.client.connected = false;
+  await conn.reconnect();
+  assert.deepEqual(next.attached, ['s1']);
+  // The next engine continued the run: everything its new runtime published is this turn.
+  next.listener({ runtimeId: 'r2', sequence: 2, status: 'running', events: [
+    { sequence: 1, event: { type: 'agent_start' } }, { sequence: 2, event: { type: 'message_start' } }] });
+  await pause();
+  await conn.inbound;
+  const types = records.map((record) => record.type);
+  const end = records.findIndex((record) => record.type === 'tool_execution_end' && record.toolCallId === row.toolCallId);
+  assert.ok(end > 0, 'the restart row closes');
+  assert.match(records[end].result.content[0].text, /continues/);
+  // The row closes, then the continued run arrives in the same turn.
+  assert.deepEqual(types.slice(end).filter((type) => type !== 'response'), ['tool_execution_end', 'agent_start', 'message_start']);
+  assert.ok(next.commands.some((command) => command.type === 'prompt' && command.message === 'later'), 'the waiting message went to the next engine');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.deepEqual(closed, []);
+});
+
+test('a run the next engine did not continue ends the turn with a reason', async () => {
+  const { client, conn, closed } = await runningStream();
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', restarting: true, events: [] });
+  const next = fakeClient({ get_state: { isStreaming: false, isCompacting: false, pendingMessageCount: 0 } });
+  conn.connectClient = async () => next;
+  await conn.reconnect();
+  next.listener({ runtimeId: 'r2', sequence: 0, status: 'idle', events: [] });
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await conn.inbound;
+  assert.equal(closed.length, 1);
+  assert.match(closed[0].message, /did not pick up this reply/);
+});
+
+test('a turn that ends during the drain closes its row and is not waited on', async () => {
+  const { client, conn, records, closed } = await runningStream();
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', restarting: true, events: [] });
+  client.listener({ runtimeId: 'r1', sequence: 2, status: 'idle', restarting: true, events: [{ sequence: 2, event: { type: 'agent_settled' } }] });
+  await conn.inbound;
+  const types = records.map((record) => record.type);
+  assert.ok(types.indexOf('tool_execution_end') < types.indexOf('agent_settled'), 'the row closes before the turn does');
+  const next = fakeClient({ get_state: { isStreaming: false } });
+  conn.connectClient = async () => next;
+  await conn.reconnect();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.deepEqual(closed, []);
+});
+
+test('the next engine not answering in time closes the stream with the reason', async () => {
+  const { client, conn, closed } = await runningStream();
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', restarting: true, events: [] });
+  conn.restartTimings = { ...restartTimings, reconnectMs: 30 };
+  conn.connectClient = async () => { throw new Error('engine did not start'); };
+  await conn.reconnect();
+  assert.equal(closed.length, 1);
+  assert.match(closed[0].message, /could not reach the new engine: engine did not start/);
+});
+
+test('T3\'s continuation after an app restart adopts a run still going instead of adding a message', async () => {
+  const client = fakeClient({ get_state: { isStreaming: true }, prompt: { disposition: 'started' } });
+  const { conn, records } = connection(client);
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 3, status: 'running', events: [
+    { sequence: 1, event: { type: 'agent_start' } },
+    { sequence: 2, event: { type: 'message_start', message: { role: 'assistant' } } },
+    { sequence: 3, event: { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'bash', args: {} } }] });
+  conn.send({ type: 'prompt', message: 'Continue where you left off.', streamingBehavior: 'steer' });
+  await pause();
+  await conn.inbound;
+  assert.equal(client.commands.some((command) => command.type === 'prompt'), false, 'no extra message reaches the model');
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type),
+    ['agent_start', 'message_start', 'tool_execution_start']);
+  assert.deepEqual(records.find((record) => record.type === 'response'), { type: 'response', command: 'prompt', success: true, data: { disposition: 'started' } });
+});
+
+test('T3\'s continuation on a session that is not running is an ordinary prompt', async () => {
+  const client = fakeClient({ get_state: { isStreaming: false }, prompt: { disposition: 'started' } });
+  const { conn } = connection(client);
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  conn.send({ type: 'prompt', message: 'Continue where you left off.', streamingBehavior: 'steer' });
+  await pause();
+  assert.ok(client.commands.some((command) => command.type === 'prompt' && command.message === 'Continue where you left off.'));
+});

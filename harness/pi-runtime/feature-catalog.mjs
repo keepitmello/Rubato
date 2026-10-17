@@ -57,6 +57,8 @@ const catalog = Object.freeze({
   "transcript-cache": { requires: [], load: () => import("./features/transcript-cache/patches.mjs") },
   "title-guard": { requires: [], load: () => import("./features/title-guard/patches.mjs") },
   "conversation-rewind": { requires: [], load: () => import("./features/conversation-rewind/patches.mjs") },
+  // A restart waits for running work at the next model request instead of cutting it (pi-server drain.mjs).
+  "drain-gate": { requires: [], load: () => import("./features/drain-gate/patches.mjs") },
   // 1.0 defaults the user froze (2026-10-03): built-ins off, regular TUI, old theme, no install telemetry.
   "stock-defaults": { requires: [], load: () => import("./features/stock-defaults/patches.mjs") },
 });

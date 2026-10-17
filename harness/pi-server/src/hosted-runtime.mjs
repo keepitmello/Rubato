@@ -69,6 +69,11 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
     bindHost(host) { sessionHost = host; },
     sessionLink,
     runRpcMode,
+    /** The process gate every agent loop of this build waits at during a restart; none in an older build. */
+    async loadDrainGate() {
+      try { return (await load('node_modules/@earendil-works/pi-agent-core/dist/rubato-features/drain-gate/gate.mjs')).rubatoDrainGate; }
+      catch (error) { if (error?.code === 'ERR_MODULE_NOT_FOUND') return undefined; throw error; }
+    },
     async loadTerminalApi() {
       const context = await load('rubato-features/session-ui/context.mjs');
       const theme = await load(base + 'modes/interactive/theme/theme.js');

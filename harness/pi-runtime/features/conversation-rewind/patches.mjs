@@ -11,11 +11,18 @@
 // `continue` then runs again from those results with no new message: the same run a
 // woken session starts, so the system prompt and tools are composed exactly as they were
 // and the request reads the cached prefix.
+//
+// `continue` with `resume: true` is how the next engine picks up a run a restart stopped
+// (pi-server drain.mjs). A drained run stopped at the gate before a model request, so the
+// session ends at tool results or at the prompt that started it. A run the drain had to cut
+// can end at a call that never got its result: that call gets one saying so, and the model
+// decides whether to run it again. A reply cut while it streamed is skipped by the request
+// the way every aborted reply is. A run that had already ended is not run again.
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 import { PI_VERSION as VERSION } from "../../pi-version.mjs";
-const IMPORT = 'import { findRewindTarget, findStepTarget, REWIND_MARK } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
+const IMPORT = 'import { findRewindTarget, findStepTarget, REWIND_MARK, unansweredToolCalls, RESTART_TOOL_RESULT } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
 const ANCHOR = '            case "get_fork_messages": {';
 
 function replaceOnce(source, before, after, label) {
@@ -64,6 +71,20 @@ export function patchRpcRewind(source) {
                 if (session.isStreaming || session.isCompacting)
                     return error(id, "continue", "Wait for the current turn to finish before continuing");
                 const last = session.sessionManager.buildSessionContext().messages.at(-1);
+                if (command.resume === true) {
+                    const cut = unansweredToolCalls(session.sessionManager.buildSessionContext().messages);
+                    if (!last || (last.role === "assistant" && cut.length === 0
+                        && last.stopReason !== "aborted" && last.stopReason !== "error"))
+                        return success(id, "continue", { continued: false });
+                    for (const call of cut) {
+                        session.sessionManager.appendMessage({ role: "toolResult", toolCallId: call.id, toolName: call.name,
+                            content: [{ type: "text", text: RESTART_TOOL_RESULT }], isError: true, timestamp: Date.now() });
+                    }
+                    if (cut.length > 0)
+                        session._refreshFinalizedContext();
+                    void session._runAgentPrompt([]).catch(() => {});
+                    return success(id, "continue", { continued: true });
+                }
                 if (last?.role !== "toolResult")
                     return error(id, "continue", "Only a conversation that stops at a tool result can continue without a message");
                 // No message is added: the loop answers the tool results already there.

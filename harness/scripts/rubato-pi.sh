@@ -145,10 +145,12 @@ case "${1-}" in
     fi
 
     # 2. 프로필 엔진. SIGTERM 만 쓴다 — kill -9 는 프로필 락을 15초 동안 stale 로
-    # 남긴다. pid 는 살아 있는 소켓이 가리키는 --agent-dir 로 찾는다.
-    # 이 helper 의 stderr 는 끊기는 대화 이름을 말하므로 그대로 사람에게 준다.
+    # 남긴다. pid 는 살아 있는 소켓이 가리키는 --agent-dir 로 찾는다. 엔진은 진행 중인
+    # 도구 호출을 마치고 내려가며(최대 2분), 새 엔진이 그 대화를 이어 간다
+    # (pi-server/src/drain.mjs). 이 helper 의 stderr 는 이어 갈 대화 이름을 말하므로
+    # 그대로 사람에게 준다.
     ENGINE_ERR="$(mktemp "${TMPDIR:-/tmp}/rubato-restart.XXXXXX" 2>/dev/null)" || ENGINE_ERR=""
-    progress_start "프로필 엔진을 다시 띄우는 중"
+    progress_start "프로필 엔진을 다시 띄우는 중 (진행 중인 도구 호출이 끝나기를 기다려요)"
     ENGINE_RC=0
     if [ -n "$ENGINE_ERR" ]; then
       ENGINE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs" 2>"$ENGINE_ERR")" || ENGINE_RC=$?
@@ -237,7 +239,7 @@ case "${1-}" in
     # 사람이 해야 할 일은 하나뿐이고, 마지막에 한 번만 말한다. 단계마다 붙이면
     # 같은 말이 세 번 나오고, 정작 무엇을 하라는 것인지는 안 남는다.
     if [ "$ENGINE_DONE" = 1 ]; then
-      printf '\n  대화는 그대로 있어요. 열어 둔 창은 연결이 끊겼으니 %srubato%s 를 다시 실행해 이어가세요.\n' \
+      printf '\n  대화는 그대로 있고, 진행 중이던 일은 새 엔진에서 이어져요. 터미널에 열어 둔 창은 연결이 끊겼으니 %srubato%s 를 다시 실행해 붙으세요.\n' \
         "$PROGRESS_DIM" "$PROGRESS_RST"
     fi
     if [ "$BUILD_DONE" = 0 ] && [ "$ENGINE_DONE" = 0 ] && [ "$HUB_DONE" = 0 ] && [ "$GUI_DONE" = 0 ] && [ "$RESTART_FAIL" = 0 ]; then

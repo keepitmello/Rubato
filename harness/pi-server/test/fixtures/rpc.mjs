@@ -144,6 +144,15 @@ lines.on('line', (line) => {
       break;
     case 'continue': {
       const last = manager.getBranch().filter((item) => item.type === 'message').at(-1)?.message;
+      if (command.resume === true) {
+        // A restart's resume (drain.mjs): the run the last engine stopped carries on.
+        if (running) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Wait for the current turn to finish before continuing' }); return; }
+        running = true;
+        emit({ type: 'agent_start' });
+        timer = setTimeout(() => { answer('resumed after restart'); settle(); }, 20);
+        data = { continued: true };
+        break;
+      }
       if (running || last?.role !== 'toolResult') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Only a conversation that stops at a tool result can continue without a message' }); return; }
       running = true;
       emit({ type: 'agent_start' });

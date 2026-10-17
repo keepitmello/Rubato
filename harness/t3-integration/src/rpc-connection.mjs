@@ -43,6 +43,13 @@ import { isBookkeepingTool } from './activity.mjs';
  * - A Stop can strand a steer Pi had not read yet. After the abort it is cleared from Pi's
  *   queue and its text comes back as a warning in the turn instead of surfacing inside an
  *   unrelated later turn (decisions/t3-queued-message-vs-steer.md).
+ * - A restart does not end the turn. The engine says `restarting` on the session state while
+ *   it lets running tool calls finish (pi-server drain.mjs); the turn shows a "Restarting
+ *   Rubato" row, and when the engine's socket closes this stream attaches to the next engine,
+ *   which continues the run, and goes on delivering it as the same turn. A prompt sent in the
+ *   meantime goes to the next engine. When the app itself restarted, T3 sends its own
+ *   continuation prompt; a session that is still running takes it as "show me the run" and
+ *   gets no extra message.
  */
 /** The active branch of a `get_entries` answer, root first. */
 export function activeBranch({ entries, leafId } = {}) {
@@ -87,6 +94,16 @@ export function stepBatch(branch, toolCallId) {
 export const AWAIT_POLL_MS = 2_000;
 export const AWAIT_GRACE_MS = 3_000;
 export const AWAIT_TITLE = 'Waiting on background work';
+/** The row a turn shows while the engine restarts under it. */
+export const RESTART_TITLE = 'Restarting Rubato';
+/** How long to keep trying to reach the next engine once the old one closed. */
+export const RESTART_RECONNECT_MS = 90_000;
+/** After the reattach, how long a run the engine should have continued may stay silent. */
+export const RESTART_RESUME_GRACE_MS = 5_000;
+/** The prompt T3 sends a turn the app restart cut (T3 orchestration-v2 RestartContinuation.ts). */
+export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
+/** Inputs that start or extend a run: during a restart they wait for the next engine. */
+const RUN_INPUTS = new Set(['prompt', 'steer', 'follow_up', 'continue', 'compact']);
 const nonempty = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 /** Pi's queued inputs in the order they were sent (`clear_queue` returns them by kind). */
 export function queuedMessagesInOrder(state, cleared) {
@@ -104,8 +121,9 @@ export function queuedMessagesInOrder(state, cleared) {
 }
 export class RubatoRpcConnection {
   constructor(bridge, { threadId, cwd, onRecord, onClosed = () => {}, log = () => {},
-    awaitTimings = { pollMs: AWAIT_POLL_MS, graceMs: AWAIT_GRACE_MS } }) {
-    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log, awaitTimings });
+    awaitTimings = { pollMs: AWAIT_POLL_MS, graceMs: AWAIT_GRACE_MS },
+    restartTimings = { reconnectMs: RESTART_RECONNECT_MS, retryMs: 500, resumeGraceMs: RESTART_RESUME_GRACE_MS } }) {
+    Object.assign(this, { bridge, threadId, cwd, onRecord, onClosed, log, awaitTimings, restartTimings });
     this.bound = undefined;
     // Inbound records in order, through the steps that may wait on the engine.
     this.inbound = Promise.resolve();
@@ -114,16 +132,28 @@ export class RubatoRpcConnection {
     this.hold = null;
     this.waits = 0;
     this.strandedNotices = 0;
+    // The engine restart this stream is carried across, if any (see the class comment).
+    this.restart = null;
+    this.restarts = 0;
+    // The run going on now, from its agent_start (noteRun): a turn that adopts it replays it.
+    this.run = null;
     this.sessionId = null;
     this.closed = false;
   }
-  async open() {
+  /** A client on the engine that listens now; the bridge's own connection starts one if none does. */
+  async connectClient() {
     await this.bridge.connection();
-    this.client = await new SessionClient({ ...this.bridge.descriptor, onError: (error) => this.log('client error', error) }).connect();
-    // A dead engine socket surfaces as `connected` turning false; the adapter then sees the
-    // transport fail and the orchestrator opens a new session on the next turn.
+    return new SessionClient({ ...this.bridge.descriptor, onError: (error) => this.log('client error', error) }).connect();
+  }
+  async open() {
+    this.client = await this.connectClient();
+    // A dead engine socket surfaces as `connected` turning false. During a restart this stream
+    // moves to the next engine; otherwise the adapter sees the transport fail and the
+    // orchestrator opens a new session on the next turn.
     this.watchdog = setInterval(() => {
-      if (!this.closed && this.client && !this.client.client.connected) void this.close(new Error('Rubato engine connection closed'));
+      if (this.closed || this.reconnecting || !this.client || this.client.client.connected) return;
+      if (this.restart) void this.reconnect();
+      else void this.close(new Error('Rubato engine connection closed'));
     }, 1000);
     this.watchdog.unref?.();
     return this;
@@ -175,11 +205,16 @@ export class RubatoRpcConnection {
       // state still reads it (a GUI restart reattaching keeps its agents and Speed Index).
       this.runtimeId = state.runtimeId;
       this.sequence = state.sequence ?? 0;
-      for (const record of state.events ?? []) { this.fold?.feed(record.event); this.sessionMessage(record.event); }
+      this.run = null;
+      for (const record of state.events ?? []) { this.fold?.feed(record.event); this.sessionMessage(record.event); this.noteRun(record.event); }
+      if (state.status !== 'running') this.run = null;
+      if (state.restarting === true) this.beginRestart(state);
       return;
     }
     if (state.runtimeId !== this.runtimeId) {
       // The engine reloaded the session under a new worker; its sequence starts over.
+      // After a restart that is the next engine, and everything it published is the run it
+      // continued.
       this.runtimeId = state.runtimeId;
       this.sequence = 0;
     }
@@ -188,10 +223,128 @@ export class RubatoRpcConnection {
       this.log('events skipped', `${this.sessionId} ${this.sequence}→${records[0].sequence}`);
     for (const record of records) {
       this.sequence = record.sequence;
+      if (this.resumeWatch && record.event?.type === 'agent_start') this.resumeWatch.resumed = true;
+      // A run that ends during the drain is not one the next engine has to continue.
+      if (this.restart && !this.restart.reattached && record.event?.type === 'agent_settled') this.restart.inTurn = false;
       this.deliver(record.event);
     }
+    if (state.restarting === true) this.beginRestart(state);
     if (state.status === 'unloaded' || state.status === 'error')
       void this.close(new Error(`Rubato session ${this.sessionId} ${state.status === 'error' ? 'failed' : 'was unloaded'}`));
+  }
+  /**
+   * The engine is restarting (pi-server drain.mjs). A running turn shows a row until the next
+   * engine has it; inputs for a new run wait for that engine (command()).
+   */
+  beginRestart(state) {
+    if (this.restart || this.closed) return;
+    const restart = this.restart = { id: `rubato-restart:${this.sessionId}:${++this.restarts}`,
+      inTurn: state.status === 'running', shown: false, ended: false, resumed: false };
+    restart.ready = new Promise((resolve) => { restart.resolve = resolve; });
+    this.enqueue(() => {
+      if (this.restart !== restart || !(restart.inTurn || this.hold)) return;
+      restart.shown = true;
+      const row = { toolCallId: restart.id, toolName: RESTART_TITLE, args: {} };
+      this.emit({ type: 'tool_execution_start', ...row });
+      this.emit({ type: 'tool_execution_update', ...row, partialResult: { content: [{ type: 'text',
+        text: 'Rubato is restarting. Running tool calls finish first, then this turn continues on the new engine.' }] } });
+    });
+  }
+  /** The old engine closed: attach this stream's session on the next one, which continues the run. */
+  reconnect() {
+    if (this.reconnecting) return this.reconnecting;
+    const restart = this.restart;
+    let failure;
+    this.reconnecting = (async () => {
+      const stale = this.client;
+      this.unsubscribe = undefined;
+      await stale?.abandon?.().catch(() => {});
+      const deadline = Date.now() + this.restartTimings.reconnectMs;
+      while (!this.closed) {
+        try {
+          const client = await this.connectClient();
+          try {
+            await client.attach(this.sessionId);
+            // From here on, a run the next engine continued shows itself by its agent_start.
+            restart.reattached = true;
+            if (restart.inTurn) this.resumeWatch = restart;
+            this.client = client;
+            this.unsubscribe = await client.subscribeSession((state) => this.onState(state));
+          } catch (error) { await client.close?.().catch(() => {}); throw error; }
+          return true;
+        } catch (error) {
+          failure = error;
+          if (Date.now() >= deadline) break;
+          await new Promise((resolve) => setTimeout(resolve, this.restartTimings.retryMs));
+        }
+      }
+      if (!this.closed) this.log('restart reconnect failed', failure);
+      return false;
+    })().then(async (reattached) => {
+      if (!reattached) {
+        await this.close(new Error(`Rubato restarted, but this conversation could not reach the new engine: ${failure?.message ?? 'closed'}`));
+        return;
+      }
+      this.endRestart(restart);
+    }).finally(() => { this.reconnecting = undefined; });
+    return this.reconnecting;
+  }
+  /** The next engine has the session: close the row, and make sure the run it took up is moving. */
+  endRestart(restart) {
+    if (this.restart !== restart) return;
+    this.restart = null;
+    restart.resolve();
+    this.enqueue(() => this.endRestartRow(restart, 'continued'));
+    // A turn held on an awaited wake is the hold's to end. A run the engine should have
+    // continued must show that it did, or the turn would wait forever.
+    if (!restart.inTurn) return;
+    const check = setTimeout(() => {
+      this.enqueue(async () => {
+        if (this.resumeWatch === restart) this.resumeWatch = null;
+        if (this.closed || restart.resumed || this.hold) return;
+        let state;
+        try { state = await this.client.command({ type: 'get_state' }); } catch { state = null; }
+        if (state && (state.isStreaming || state.isCompacting || Number(state.pendingMessageCount) > 0)) return;
+        await this.close(new Error('Rubato restarted, but the new engine did not pick up this reply'));
+      });
+    }, this.restartTimings.resumeGraceMs);
+    check.unref?.();
+  }
+  endRestartRow(restart, outcome) {
+    if (!restart.shown || restart.ended) return;
+    restart.ended = true;
+    this.emit({ type: 'tool_execution_end', toolCallId: restart.id, toolName: RESTART_TITLE, args: {}, isError: false,
+      result: { content: [{ type: 'text', text: outcome === 'continued'
+        ? 'Rubato restarted; this turn continues.' : 'The turn ended before Rubato restarted.' }] } });
+  }
+  /** Inputs wait while the engine restarts: nothing reaches a closed engine, and a new run starts on the next one. */
+  async engineReady(type) {
+    if (this.reconnecting) await this.reconnecting;
+    if (this.restart && RUN_INPUTS.has(type)) await this.restart.ready;
+    if (this.closed) throw new Error('Rubato connection is closed');
+  }
+  /** The run going on now, from its start: what a turn that adopts it shows first. */
+  noteRun(event) {
+    if (event?.type === 'agent_start') this.run = [event];
+    else if (event?.type === 'agent_settled') this.run = null;
+    else if (this.run) {
+      this.run.push(event);
+      // Live text deltas are most of a long run; the replay keeps its start and its latest part.
+      if (this.run.length > 2000) this.run.splice(1, this.run.length - 1500);
+    }
+  }
+  /**
+   * T3 restarted and sent its continuation prompt. A session still running gets no extra
+   * message: the turn adopts the run, starting with what it did while the app was away.
+   */
+  async adoptRunningRun() {
+    let state;
+    try { state = await this.client.command({ type: 'get_state' }); } catch { return false; }
+    if (!state?.isStreaming) return false;
+    const replay = this.run ?? [];
+    this.run = null;
+    for (const event of replay) this.enqueue(() => this.process(event));
+    return true;
   }
   /**
    * A message another conversation sent into this session shows in the thread as that agent's
@@ -210,6 +363,7 @@ export class RubatoRpcConnection {
     });
   }
   deliver(event) {
+    this.noteRun(event);
     // The Agents panel, Speed Index and cache read the engine's own records, not the
     // rows this stream turns them into.
     this.fold?.feed(event);
@@ -227,6 +381,8 @@ export class RubatoRpcConnection {
   }
   emit(event) { if (!this.closed) this.onRecord(event); }
   async process(event) {
+    // A turn that ends while the engine restarts (it finished, or Stop) closes its restart row first.
+    if (event?.type === 'agent_settled' && this.restart?.shown && !this.restart.ended) this.endRestartRow(this.restart, this.restart.reattached ? 'continued' : 'finished');
     if (event?.type === 'agent_settled') {
       // A Stop's cleanup writes into the turn, so it goes ahead of the settle that ends it.
       if (this.aborting) await this.aborting.catch(() => {});
@@ -371,6 +527,7 @@ export class RubatoRpcConnection {
   }
   async command(record) {
     if (this.closed) throw new Error('Rubato connection is closed');
+    await this.engineReady(record?.type);
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
     // Only the step-rewind continue route's own message (it marks the thread right before it
@@ -383,6 +540,8 @@ export class RubatoRpcConnection {
         await this.client.command({ type: 'continue' });
         return { disposition: 'started' };
       }
+      if (typeof command.message === 'string' && command.message.trim().endsWith(T3_RESTART_CONTINUE_TEXT)
+        && !command.images?.length && await this.adoptRunningRun()) return { disposition: 'started' };
     }
     if ((command.type === 'prompt' || command.type === 'steer') && typeof command.message === 'string') {
       const control = controlCommandFor(command.message);
@@ -446,6 +605,7 @@ export class RubatoRpcConnection {
     return {};
   }
   async request(record) {
+    await this.engineReady(record?.type);
     switch (record?.type) {
       case 'new_session':
         this.bridge.stepContinues?.delete(this.threadId);
@@ -496,6 +656,7 @@ export class RubatoRpcConnection {
   async close(error) {
     if (this.closed) return;
     this.closed = true;
+    this.restart?.resolve();
     clearInterval(this.watchdog);
     clearTimeout(this.hold?.timer);
     try { await this.unsubscribe?.(); } catch { /* the engine may be gone */ }

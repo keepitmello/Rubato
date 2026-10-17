@@ -87,3 +87,27 @@ export function findStepTarget(branch, toolCallId) {
   if (waiting.size > 0) throw new Error("This step has not finished, so there is no result to rewind to");
   return target;
 }
+
+/** What a call the restart cut short answers with (pi-server drain.mjs, `continue` with `resume`). */
+export const RESTART_TOOL_RESULT = "Rubato restarted while this tool was running, so it did not finish and its result is lost. Run it again if you still need it.";
+
+const unreplayed = (message) => message?.role === "assistant" && (message.stopReason === "aborted" || message.stopReason === "error");
+
+/**
+ * The calls of the last reply that never got a result, in the model's context order. A reply
+ * cut while it streamed is not replayed (pi-ai drops it), so it is passed over; system
+ * messages are transparent the same way. Anything else after the reply means its turn moved on.
+ */
+export function unansweredToolCalls(messages) {
+  const answered = new Set();
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (unreplayed(message) || message?.role === "system") continue;
+    if (message?.role === "toolResult") { answered.add(message.toolCallId); continue; }
+    if (message?.role !== "assistant") return [];
+    return (Array.isArray(message.content) ? message.content : [])
+      .filter((part) => part?.type === "toolCall" && typeof part.id === "string" && !answered.has(part.id))
+      .map(({ id, name }) => ({ id, name }));
+  }
+  return [];
+}

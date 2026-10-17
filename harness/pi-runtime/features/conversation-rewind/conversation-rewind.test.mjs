@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { feature, files, patches, patchRpcRewind } from "./patches.mjs";
-import { findRewindTarget, findStepTarget, messageFingerprint } from "./rewind.mjs";
+import { findRewindTarget, findStepTarget, messageFingerprint, RESTART_TOOL_RESULT, unansweredToolCalls } from "./rewind.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const stockRpc = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-mode.js");
@@ -27,6 +27,10 @@ test("descriptor is stock-locked, listed on the candidate, and adds the rewind c
   assert.match(patched, /case "continue": \{/);
   // A continuation adds nothing to the history: the run answers the tool results there.
   assert.match(patched, /session\._runAgentPrompt\(\[\]\)/);
+  // A restart's resume answers the calls it cut and runs on; a finished run stays finished.
+  assert.match(patched, /command\.resume === true/);
+  assert.match(patched, /content: \[\{ type: "text", text: RESTART_TOOL_RESULT \}\], isError: true/);
+  assert.match(patched, /return success\(id, "continue", \{ continued: false \}\)/);
   assert.throws(() => patchRpcRewind(patched), /pristine/);
 });
 
@@ -154,4 +158,21 @@ test("a step that has not finished, or is not on the branch, is refused", () => 
   assert.throws(() => findStepTarget(interrupted, "a"), /has not finished/);
   assert.throws(() => findStepTarget(running, "zzz"), /not on the current branch/);
   assert.throws(() => findStepTarget(running, ""), /must name a tool call/);
+});
+
+test("a restart's resume answers only the calls the last reply never got a result for", () => {
+  const call = (id, name = "bash") => ({ type: "toolCall", id, name, arguments: {} });
+  const assistant = (content, stopReason = "toolUse") => ({ role: "assistant", content, stopReason });
+  const result = (toolCallId) => ({ role: "toolResult", toolCallId, content: [] });
+  // Drained: every call answered, nothing to add.
+  assert.deepEqual(unansweredToolCalls([{ role: "user" }, assistant([call("a")]), result("a")]), []);
+  // Cut mid-batch: the call still running gets the restart's result.
+  assert.deepEqual(unansweredToolCalls([{ role: "user" }, assistant([call("a"), call("b", "read")]), result("a")]),
+    [{ id: "b", name: "read" }]);
+  // A reply cut while it streamed is not replayed, so the calls before it are what count.
+  assert.deepEqual(unansweredToolCalls([assistant([call("a")]), { role: "system" }, assistant([], "aborted")]), [{ id: "a", name: "bash" }]);
+  // A finished reply, or a prompt after the calls, has nothing open.
+  assert.deepEqual(unansweredToolCalls([{ role: "user" }, assistant([{ type: "text", text: "done" }], "stop")]), []);
+  assert.deepEqual(unansweredToolCalls([assistant([call("a")]), { role: "user" }]), []);
+  assert.match(RESTART_TOOL_RESULT, /did not finish/);
 });

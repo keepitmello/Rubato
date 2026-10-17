@@ -6,10 +6,16 @@ import { startSessionServer } from './host.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
 import { SessionWorker } from './session-worker.mjs';
 import { readDescriptor } from './descriptor.mjs';
+import { drainForRestart, resumeAfterRestart, resumeFilePath } from './drain.mjs';
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from '../../rubato-pi/src/session-defaults.mjs';
 export { readDescriptor } from './descriptor.mjs';
 
-export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runtimeRoot, workerFactory, onError = console.error } = {}) {
+/**
+ * `drainGate` and `drainTimeoutMs` are test seams: a hosted engine drains through the gate its
+ * runtime build ships (drain.mjs); an engine without one closes at once, as before.
+ */
+export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runtimeRoot, workerFactory, onError = console.error,
+  drainGate, drainTimeoutMs } = {}) {
   if (!path.isAbsolute(agentDir ?? '')) throw new TypeError('agentDir must be absolute');
   await mkdir(agentDir, { recursive: true, mode: 0o700 });
   agentDir = await realpath(agentDir);
@@ -70,11 +76,22 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     const temporary = `${descriptorPath}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(descriptor, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
     await rename(temporary, descriptorPath);
+    // What the previous engine was running when a restart closed it (drain.mjs).
+    const resumeFile = resumeFilePath(serverDir);
+    const resumed = resumeAfterRestart({ descriptor, resumeFile, onError }).catch((error) => { onError(error); return []; });
+    const gate = drainGate ?? await hosted?.loadDrainGate();
     let closing;
-    return { ...service, descriptorPath, descriptor, close: () => closing ??= (async () => {
+    const drainStop = new AbortController();
+    return { ...service, descriptorPath, descriptor, resumed, close: ({ drain = false } = {}) => closing ??= (async () => {
+      // A restart lets running work reach the gate first; a second stop signal ends the wait.
+      if (drain && !compromised) {
+        await Promise.race([resumed, new Promise((resolve) => setTimeout(resolve, 10_000).unref?.())]);
+        await drainForRestart({ host: service.host, gate, resumeFile, signal: drainStop.signal, onError,
+          ...(drainTimeoutMs === undefined ? {} : { timeoutMs: drainTimeoutMs }) }).catch(onError);
+      }
       hosted?.sessionLink.close();
       try { await terminalServer?.close(); await service.close(); } finally { if (!compromised) await release(); }
-    })() };
+    })(), stopDraining: () => drainStop.abort() };
   } catch (error) {
     hosted?.sessionLink.close();
     await terminalServer?.close().catch(() => {});
