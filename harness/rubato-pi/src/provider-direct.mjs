@@ -203,6 +203,24 @@ export function sonnet55Models(nativeModels) {
   }];
 }
 
+const HAIKU_55_ID = "claude-haiku-5-5";
+const HAIKU_55_TEMPLATE_ID = "claude-haiku-4-5";
+
+/**
+ * Haiku 5.5 는 pinned anthropic catalog 에 없어 pin 의 Haiku 4.5 에서 파생한다.
+ * 창·가격은 4.5 값을 그대로 쓰고 id 와 표시명만 덮는다.
+ */
+export function haiku55Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === HAIKU_55_ID)) return [];
+  const template = nativeModels.find((model) => model.id === HAIKU_55_TEMPLATE_ID);
+  if (!template) throw new Error("pinned anthropic catalog has no claude-haiku-4-5 to derive Haiku 5.5 from");
+  return [{
+    ...template,
+    id: HAIKU_55_ID,
+    name: "Haiku 5.5",
+  }];
+}
+
 const GROK_47_ID = "grok-4.7";
 const GROK_47_TEMPLATE_ID = "grok-4.6";
 
@@ -539,15 +557,16 @@ export async function directProviders({
   );
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
-  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1·Opus 5.5·Sonnet 5.5 는 pin 에 없어
-  // 각각 Fable 5·Opus 5·Sonnet 5 에서 파생한다.
-  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5.5, haiku 4.5)로 줄인다.
+  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1·Opus 5.5·Sonnet 5.5·Haiku 5.5 는 pin 에 없어
+  // 각각 Fable 5·Opus 5·Sonnet 5·Haiku 4.5 에서 파생한다.
+  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5.5, haiku 5.5)로 줄인다.
   const anthropicBase = withClaudeSetupToken(anthropicProvider(), anthropic ?? { env });
   const anthropicNative = withPickerIds(
     withExtraModels(anthropicBase, [
       ...fable51Models(anthropicBase.getModels()),
       ...opus55Models(anthropicBase.getModels()),
       ...sonnet55Models(anthropicBase.getModels()),
+      ...haiku55Models(anthropicBase.getModels()),
     ]),
     ANTHROPIC_PICKER_IDS,
   );
