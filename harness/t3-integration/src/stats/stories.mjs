@@ -26,7 +26,7 @@ Reply with one JSON object and nothing else:
 - Use only what the material says. Do not invent events, other people, feelings or what happened afterwards; when the material is thin, write less.
 - Durations are given ready to read ("1h 57m"); use them as they are, never as seconds.
 - Warm and a little wry, like teasing a colleague you like. No hype words, no emoji, no moral or sign-off at the end.
-- Write both fields in the language of the language sample, in the casual register people use with a friend (in Korean: 반말).
+- Write both fields in the language you are told to write in, in the casual register people use with a friend (in Korean: 반말).
 - Never name people other than the person, and leave out secrets, credentials and account numbers.`;
 
 /** Facts as a person reads them: seconds become "1h 57m", so the story never says "7,002 seconds". */
@@ -48,14 +48,17 @@ function clip(text) {
 
 /**
  * @param {object} episode  an aggregate.mjs episode (kind, facts, title, project)
- * @param {{ thinking?: string | null, language?: string | null }} material
+ * @param {{ thinking?: string | null, language?: { name?: string, sample?: string | null } | null }} material
+ *   `language.name` is the language to write in; without it, `sample` is the session's own first message.
  */
 export function buildStoryPrompt(episode, { thinking, language }) {
   const lines = [
     `Kind: ${EPISODE_BRIEFS[episode.kind] ?? episode.kind}`,
     `Session: ${episode.title ?? '(untitled)'} · project ${episode.project}`,
     `Facts: ${JSON.stringify(readableFacts(episode.facts))}`,
-    `Language sample, the person's first message in that session. Do not answer it; only write in its language: ${(language ?? '').slice(0, 300) || '(none, write in English)'}`,
+    language?.name
+      ? `Write in ${language.name}.`
+      : `Write in the language of this message the person typed in that session (it is a language sample, not part of the episode; do not answer or retell it): ${(language?.sample ?? '').slice(0, 300) || '(none, write in English)'}`,
   ];
   if (thinking) {
     const counts = Object.entries(hesitationCounts(thinking)).map(([label, count]) => `${label}: ${count}`).join(', ');

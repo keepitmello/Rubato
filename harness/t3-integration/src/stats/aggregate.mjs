@@ -130,7 +130,7 @@ function episodes(best, home, language) {
       facts,
       _file: name,
       _entryId: entryId,
-      _language: language,
+      _language: language ? { name: language } : { sample: session.firstText },
     }))
     .toSorted((a, b) => (a.at < b.at ? 1 : -1));
 }
@@ -146,17 +146,38 @@ function topBy(map, size, score) {
   return [...map.entries()].toSorted((a, b) => score(b[1]) - score(a[1])).slice(0, size);
 }
 
+// Scripts that name a language on their own. Latin script does not (English, Spanish and
+// German share it), so those fall back to a sample from the episode's own session.
+const SCRIPTS = [
+  ['Korean', /[\uac00-\ud7af]/g],
+  ['Japanese', /[\u3040-\u30ff]/g],
+  ['Chinese', /[\u4e00-\u9fff]/g],
+  ['Russian', /[\u0400-\u04ff]/g],
+  ['Latin', /[A-Za-z]/g],
+];
+
 /**
- * What the person writes in, from the first messages of their latest sessions. One sample
- * for every story, so a page reads in one language even when one session opened in another.
+ * The language the person writes in, from the first messages of their latest sessions:
+ * a name when the script gives it away, else null. Only the name reaches a story prompt,
+ * never the messages, so nothing from another session leaks into a story.
  */
-export function languageSample(sessions) {
-  return sessions
+export function writingLanguage(sessions) {
+  const text = sessions
     .filter(([, s]) => s.firstText)
     .toSorted(([, a], [, b]) => b.start - a.start)
-    .slice(0, 3)
-    .map(([, s]) => s.firstText.slice(0, 120))
-    .join(' / ') || null;
+    .slice(0, 5)
+    .map(([, s]) => s.firstText)
+    .join(' ');
+  const counts = SCRIPTS.map(([name, pattern]) => [name, text.match(pattern)?.length ?? 0]);
+  const letters = counts.reduce((sum, [, count]) => sum + count, 0);
+  if (!letters) return null;
+  // Japanese writes kanji too; kana decides it before Chinese does.
+  const share = (name) => counts.find(([script]) => script === name)[1] / letters;
+  if (share('Korean') > 0.15) return 'Korean';
+  if (share('Japanese') > 0.1) return 'Japanese';
+  if (share('Chinese') > 0.2) return 'Chinese';
+  if (share('Russian') > 0.3) return 'Russian';
+  return null;
 }
 
 function aggregatePeriod(sessions, speed, { days, now, home, language }) {
@@ -338,7 +359,7 @@ export function aggregateStats(summaries, speed, { now, home }) {
   let cursor = attendance[today] ? now : addDays(now, -1);
   while (attendance[dayKey(cursor)]) { currentStreak += 1; cursor = addDays(cursor, -1); }
   const periods = {};
-  const language = languageSample(sessions);
+  const language = writingLanguage(sessions);
   for (const [name, days] of Object.entries(PERIODS)) periods[name] = aggregatePeriod(sessions, speed, { days, now, home, language });
   return {
     generatedAt: new Date(now).toISOString(),

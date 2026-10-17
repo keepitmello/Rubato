@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { EPISODE_MINIMUMS, aggregateStats, isScratchFolder } from '../src/stats/aggregate.mjs';
+import { EPISODE_MINIMUMS, aggregateStats, isScratchFolder, writingLanguage } from '../src/stats/aggregate.mjs';
 import { fallbackStory, readableError } from '../src/stats/episodes.mjs';
 import { STORY_SYSTEM_PROMPT, buildStoryPrompt, createStoryWriter, parseStory, readThinking } from '../src/stats/stories.mjs';
 import { dayKey, hesitationCounts, summarizeSession } from '../src/stats/scan.mjs';
@@ -107,7 +107,7 @@ test('periods count by calendar day, skip scratch folders and score speed like t
   const mind = week.episodes.find((episode) => episode.kind === 'mind');
   assert.equal(mind.id, `mind|a.jsonl|think-1`);
   assert.equal(mind.title, 'Settlement fix');
-  assert.equal(mind._language, 'fix the settlement total / hello', 'the first messages of the latest sessions, the same for every story');
+  assert.deepEqual(mind._language, { sample: 'fix the settlement total' }, 'Latin script names no language: the session\'s own message is the sample');
   assert.deepEqual(all.episodes.at(-1).kind, 'first');
   assert.equal(all.episodes.at(-1).value, 41, 'day 41 of the history');
   assert.deepEqual(week.delegation, { agents: 1, teams: 1, models: [{ model: 'openai-codex/gpt-6-astra', count: 1 }] });
@@ -194,10 +194,19 @@ test('every kind reads in plain English before a model writes its story', () => 
 
 test('a story prompt carries the kind, the facts, the language sample and, for thinking, the counts', () => {
   const episode = { kind: 'mind', title: 'Rebate', project: 'app', facts: { hesitations: 3 } };
-  const prompt = buildStoryPrompt(episode, { thinking: 'Hmm. hmm wait, 음, x', language: '정산 고쳐줘' });
+  const prompt = buildStoryPrompt(episode, { thinking: 'Hmm. hmm wait, 음, x', language: { sample: '정산 고쳐줘' } });
   assert.match(prompt, /second-guessed itself/);
   assert.match(prompt, /"hesitations":3/);
-  assert.match(prompt, /Do not answer it; only write in its language: 정산 고쳐줘/);
+  assert.match(prompt, /not part of the episode; do not answer or retell it\): 정산 고쳐줘/);
+  const named = buildStoryPrompt(episode, { language: { name: 'Korean' } });
+  assert.match(named, /Write in Korean\./);
+  assert.doesNotMatch(named, /정산/, 'a named language sends no message along');
+  const session = (text, start) => ['x', { firstText: text, start }];
+  assert.equal(writingLanguage([session('fix the bug', 1), session('정산 고쳐줘 rubato-pi 에서', 2)]), 'Korean');
+  assert.equal(writingLanguage([session('このバグを直して', 1)]), 'Japanese');
+  assert.equal(writingLanguage([session('修复这个错误', 1)]), 'Chinese');
+  assert.equal(writingLanguage([session('arregla el error', 1)]), null, 'Latin script leaves it to the sample');
+  assert.equal(writingLanguage([]), null);
   assert.match(prompt, /Counted in the thinking: Hmm: 2, Wait: 1, 음: 1\./);
   assert.match(prompt, /<thinking>/);
   assert.doesNotMatch(buildStoryPrompt({ ...episode, kind: 'cost' }, { language: null }), /<thinking>/);
@@ -289,7 +298,7 @@ test('episodes show plain English at once, and stories are written in the backgr
   assert.deepEqual(new Set(kinds).size, kinds.length, 'one story per moment, even when several periods show it');
   const thinking = asked.find(([kind]) => kind === 'mind')[1];
   assert.equal(thinking.thinking, HESITANT);
-  assert.equal(thinking.language, 'fix the settlement total');
+  assert.deepEqual(thinking.language, { sample: 'fix the settlement total' });
   const later = await service.handle('summary');
   const written = later.periods.all.episodes.find((episode) => episode.kind === 'mind');
   assert.equal(written.storyState, 'written');
