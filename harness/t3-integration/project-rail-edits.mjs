@@ -44,13 +44,16 @@ export const projectRailOverlays = [
 ];
 
 export const projectRailEdits = {
-  // The fixed sidebar starts at --sidebar-offset-left instead of the window edge,
-  // and slides under the rail when it collapses. Unset, the offset is 0 and the
-  // sidebar behaves as upstream's.
+  // The fixed sidebar starts at --sidebar-offset-left instead of the window edge.
+  // Collapsed, it parks a full width off-screen as upstream's does, not at
+  // offset - width: that left its last 52px behind the rail, and the rail's
+  // translucent window material showed the thread list's times and icons
+  // through the rail's own buttons. Unset, the offset is 0 and the sidebar
+  // behaves as upstream's.
   'apps/web/src/components/ui/sidebar.tsx': [
     [
       '              ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"\n',
-      '              ? "left-[var(--sidebar-offset-left,0px)] group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-offset-left,0px)-var(--sidebar-width))]"\n',
+      '              ? "left-[var(--sidebar-offset-left,0px)] group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"\n',
       'replace',
     ],
   ],
