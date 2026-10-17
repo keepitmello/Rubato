@@ -68,8 +68,9 @@ export function createSessionTools(getLink) {
       name: "session_list",
       label: "List conversations",
       description: "List other Rubato conversations on this Mac: live (loaded) ones first, then the most recently updated. " +
-        "Use query to find one by title, folder or session id before reading or messaging it. " +
-        "Each row carries sessionId, title, cwd, status and messageCount.",
+        "Use query to find one by title, folder or session id before reading or messaging it; to find one by what was said in it, use session_search. " +
+        "Each row carries sessionId, title, cwd, status and messageCount. Subagents and team members are not listed here: " +
+        "session_read of the conversation that started them lists them with their st_ ids.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -91,7 +92,8 @@ export function createSessionTools(getLink) {
     define({
       name: "session_read",
       label: "Read conversation",
-      description: "Read another conversation, or a subagent or team member by its st_ id, without opening it. " +
+      description: "Read another session without opening it: a conversation, or a subagent or team member by its st_ id " +
+        "(the agentId the Agent tool returned, also shown per member by team_create). " +
         "By default: its status and recent messages (user and assistant text, messages from other conversations, and the names of tools " +
         "each assistant message used), plus the subagents and team runs a conversation started, each with its st_ id. " +
         "entryId (from session_search or an earlier read) reads the one turn holding that entry instead. includeTools adds each tool call's " +
@@ -104,7 +106,7 @@ export function createSessionTools(getLink) {
         additionalProperties: false,
         required: ["sessionId"],
         properties: {
-          sessionId: { type: "string", minLength: 1, description: "Session id from session_list or session_search, or a subagent's st_ id." },
+          sessionId: { type: "string", minLength: 1, description: "A conversation's session id from session_list or session_search, or a subagent's or team member's st_ id: the agentId Agent returned goes here." },
           view: { type: "string", enum: ["messages", "notes", "board"], description: "messages (default), notes or board." },
           entryId: { type: "string", minLength: 1, description: "Read the turn holding this entry instead of the recent messages." },
           includeTools: { type: "boolean", description: "Include tool call inputs and tool output, each clipped to maxCharsPerMessage." },
@@ -129,7 +131,7 @@ export function createSessionTools(getLink) {
     define({
       name: "session_search",
       label: "Search conversations",
-      description: "Search what was said in other conversations on this Mac and in their subagents' and team members' transcripts. " +
+      description: "Search what was said in other sessions on this Mac: conversations and the transcripts of their subagents and team members. " +
         "Every whitespace-separated term must appear in one message (case-insensitive). Results are grouped by conversation or subagent, " +
         "newest first, with a few short snippets each; every hit carries the sessionId or st_ id and an entryId for session_read. " +
         "Tool calls and tool output are searched only with includeTools. This conversation is left out unless sessionId names it.",
@@ -140,7 +142,7 @@ export function createSessionTools(getLink) {
         properties: {
           query: { type: "string", minLength: 1, description: "Words that must all appear in one message, at most 200 characters." },
           cwd: { type: "string", minLength: 1, description: "Only conversations and subagents of this absolute folder." },
-          sessionId: { type: "string", minLength: 1, description: "Only this conversation and its subagents, or only this st_ subagent." },
+          sessionId: { type: "string", minLength: 1, description: "Only this conversation and its subagents, or only this subagent or team member by its st_ id (the agentId Agent returned)." },
           includeTools: { type: "boolean", description: "Also search tool call inputs and tool output." },
           limit: integer("Maximum conversations or subagents (default 8, max 30).", 1, 30),
         },

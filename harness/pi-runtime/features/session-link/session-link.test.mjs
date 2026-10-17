@@ -98,6 +98,11 @@ test("the conversation tools carry the frozen names and descriptions that state 
   assert.match(describe("session_send"), /instead of polling/);
   assert.match(describe("session_send"), /cursor this tool returns as that target's afterCursor/);
   assert.match(describe("session_create"), /only when the user explicitly asked/);
+  // A subagent's id arrives from Agent as agentId; the read and search tools say where it goes.
+  assert.match(describe("session_read"), /a subagent or team member by its st_ id \(the agentId the Agent tool returned/);
+  assert.match(pi.tools.get("session_read").parameters.properties.sessionId.description, /the agentId Agent returned goes here/);
+  assert.match(pi.tools.get("session_search").parameters.properties.sessionId.description, /the agentId Agent returned/);
+  assert.match(describe("session_list"), /Subagents and team members are not listed here/);
 });
 
 test("each tool calls its sessionLink method with this conversation's ids and renders the answer for the model", async () => {
