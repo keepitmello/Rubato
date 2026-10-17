@@ -74,3 +74,64 @@ export function settingsRouteTreeEdits(pages) {
   }
   return edits;
 }
+
+// Top-level pages Rubato adds beside Usage: Memory and Scheduled Tasks, which the
+// rail opens outside Settings (project-rail-edits.mjs). Upstream has only a few
+// top-level routes, so the generator's output is spelled out here; the same test
+// checks it. Each list is anchored on its own head, because the three interfaces
+// and the three unions otherwise repeat the same lines.
+const routeConst = (name, slug) =>
+  `const ${name}Route = ${name}RouteImport.update({\n  id: '/${slug}',\n  path: '/${slug}',\n  getParentRoute: () => rootRouteImport,\n} as any)\n`;
+const routeByPath = (name, slug) =>
+  `    '/${slug}': {\n      id: '/${slug}'\n      path: '/${slug}'\n      fullPath: '/${slug}'\n      preLoaderRoute: typeof ${name}RouteImport\n      parentRoute: typeof rootRouteImport\n    }\n`;
+
+export function topLevelRouteTreeEdits() {
+  return [
+    ["import { Route as PairRouteImport } from './routes/pair'\n", "import { Route as ScheduledRouteImport } from './routes/scheduled'\n"],
+    ["import { Route as ConnectAgentRouteImport } from './routes/connect-agent'\n", "import { Route as MemoryRouteImport } from './routes/memory'\n"],
+    ['const PairRoute = PairRouteImport.update({\n', routeConst('Scheduled', 'scheduled')],
+    ['const ConnectAgentRoute = ConnectAgentRouteImport.update({\n', routeConst('Memory', 'memory')],
+    [
+      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
+      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      'replace',
+    ],
+    [
+      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
+      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      'replace',
+    ],
+    [
+      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n",
+      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n",
+      'replace',
+    ],
+    [
+      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
+      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      'replace',
+    ],
+    [
+      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
+      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      'replace',
+    ],
+    [
+      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n",
+      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n",
+      'replace',
+    ],
+    [
+      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  PairRoute: typeof PairRoute\n',
+      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  MemoryRoute: typeof MemoryRoute\n  PairRoute: typeof PairRoute\n  ScheduledRoute: typeof ScheduledRoute\n',
+      'replace',
+    ],
+    ["    '/pair': {\n", routeByPath('Scheduled', 'scheduled')],
+    ["    '/connect-agent': {\n", routeByPath('Memory', 'memory')],
+    [
+      '  ConnectAgentRoute: ConnectAgentRoute,\n  PairRoute: PairRoute,\n',
+      '  ConnectAgentRoute: ConnectAgentRoute,\n  MemoryRoute: MemoryRoute,\n  PairRoute: PairRoute,\n  ScheduledRoute: ScheduledRoute,\n',
+      'replace',
+    ],
+  ];
+}

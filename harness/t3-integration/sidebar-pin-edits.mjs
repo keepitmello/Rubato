@@ -1,7 +1,7 @@
-// Pinning in the legacy sidebar. Rubato turns the legacy (per-project tree)
-// sidebar on (write-gui-settings.mjs), but T3 only built pinning into the new
-// sidebar, so a Rubato app had no way to pin a thread. The server already
-// speaks thread.pin / thread.unpin; this adds the other half:
+// Pinning in the legacy sidebar. Rubato opens on the new sidebar
+// (write-gui-settings.mjs), but the legacy (per-project tree) sidebar stays one
+// switch away in Settings, and T3 only built pinning into the new sidebar. The
+// server already speaks thread.pin / thread.unpin; this adds the other half:
 //
 // - the thread's right-click menu offers Pin thread / Unpin thread, through the
 //   same useThreadActions calls the new sidebar uses (an unpin asks first when

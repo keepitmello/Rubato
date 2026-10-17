@@ -99,6 +99,8 @@
     "apps/web/src/themeBoot.test.ts": "e41903743e29603aa21583ba4b3f73f22e0d078d6a25bbf6a06d15f7e255d2b1",
     "apps/web/src/themePalette.test.ts": "bbc7758a93d12204b181d414b7b666b5334e90f98ddc0f804d5e751f3c3051fd",
     "apps/web/src/hooks/useTheme.test.ts": "84ba7f242172c2e4c0f87e84b82e106b4fba34bef7b8d77dc063a1ec8b39dddf",
-    "apps/web/src/vscodeThemeImport.test.ts": "361e6c492f350631f31fc1869bf1b19ab533264f82f2bebc1ecf4431becd2d40"
+    "apps/web/src/vscodeThemeImport.test.ts": "361e6c492f350631f31fc1869bf1b19ab533264f82f2bebc1ecf4431becd2d40",
+    "apps/web/src/components/ui/sidebar.tsx": "227405b712e3277c7326c738f1596ff3fd9bc564578c5408cb9933ea9e60a92d",
+    "apps/web/src/components/AppSidebarLayout.tsx": "7dcb98ce20a2c2fcaf1c65aa27ce46020cd9983263df5c08771efe8b54ada4c5"
   }
 }

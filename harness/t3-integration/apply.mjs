@@ -35,12 +35,13 @@ import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
-import { settingsRouteTreeEdits } from './route-tree-edits.mjs';
+import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from './route-tree-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
 import { themeEdits, themeOverlays } from './theme-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
+import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1619,6 +1620,8 @@ for (const [relative, changes] of Object.entries(phoneEdits)) {
 edits['apps/web/src/routeTree.gen.ts'] = [
   ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
   ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled']),
+  // Memory and Scheduled Tasks as their own pages, opened from the rail (project-rail-edits.mjs).
+  ...topLevelRouteTreeEdits(),
 ];
 // Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
 overlays.push(...officeOverlays);
@@ -1737,6 +1740,11 @@ for (const [relative, changes] of Object.entries(themeEdits)) {
 // "Open" on a tool row that read a file (read-open-edits.mjs).
 overlays.push(...readOpenOverlays);
 for (const [relative, changes] of Object.entries(readOpenEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The project rail, the Recent box and the home row; after schedule-edits, whose Settings nav line it extends (project-rail-edits.mjs).
+overlays.push(...projectRailOverlays);
+for (const [relative, changes] of Object.entries(projectRailEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

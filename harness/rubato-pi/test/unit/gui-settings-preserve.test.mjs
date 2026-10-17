@@ -111,28 +111,59 @@ test("a reordered model list survives, and new models join the end", (t) => {
   assert.deepEqual(settings.providerModelPreferences.rubato.hiddenModels, ["xai/grok-4.7"]);
 });
 
-// Fonts, themes and the rest of client-settings.json are values we never set.
-// Rewriting a file we did not change has nothing to gain and a reader/writer
-// race to lose.
-test("client settings are not rewritten once the recommended set was applied", (t) => {
-  const first = writeSettings(t, null);
-  const before = readFileSync(first.clientPath, "utf8");
-  const stamped = JSON.parse(before);
-  assert.equal(stamped.legacySidebarEnabled, true);
-  writeFileSync(first.clientPath, JSON.stringify({ ...stamped, fontSizeTerminal: 18, legacySidebarEnabled: false }));
+function rerun(clientPath) {
   const result = spawnSync(process.execPath, [script], {
     encoding: "utf8",
     env: {
       ...process.env,
-      RUBATO_GUI_T3_HOME: first.clientPath.replace("/userdata/client-settings.json", ""),
+      RUBATO_GUI_T3_HOME: clientPath.replace("/userdata/client-settings.json", ""),
       RUBATO_GUI_BRIDGE: "/repo/harness/t3-integration/src/bridge.mjs",
       RUBATO_GUI_DESCRIPTOR: "/home/.rubato-pi/agent/server/connection.json",
       RUBATO_GUI_CATALOGUE: "/home",
     },
   });
   assert.equal(result.status, 0, result.stderr);
-  const after = JSON.parse(readFileSync(first.clientPath, "utf8"));
+  return JSON.parse(readFileSync(clientPath, "utf8"));
+}
+
+// A first install opens on the new sidebar, where the project rail and the home
+// project row live (project-rail-edits.mjs), with running threads folded into
+// the Working shelf.
+test("a first install gets the new sidebar with the Working shelf", (t) => {
+  const first = writeSettings(t, null);
+  const client = JSON.parse(readFileSync(first.clientPath, "utf8"));
+  assert.equal(client.legacySidebarEnabled, false);
+  assert.equal(client.sidebarWorkingShelfEnabled, true);
+  assert.equal(client.contextWindowMeterEnabled, true);
+});
+
+// An install that took revision 1 had the legacy sidebar turned on; revision 2
+// moves it to the new sidebar once and leaves its other values alone.
+test("an install on revision 1 moves to the new sidebar once", (t) => {
+  const first = writeSettings(t, null);
+  const stamp = first.clientPath.replace("client-settings.json", ".rubato-gui-settings");
+  writeFileSync(stamp, JSON.stringify({ revision: 1 }));
+  writeFileSync(
+    first.clientPath,
+    JSON.stringify({ legacySidebarEnabled: true, contextWindowMeterEnabled: false, fontSizeTerminal: 18 }),
+  );
+  const upgraded = rerun(first.clientPath);
+  assert.equal(upgraded.legacySidebarEnabled, false);
+  assert.equal(upgraded.sidebarWorkingShelfEnabled, true);
+  // Revision 1's values are not pushed again: the user had turned the meter off.
+  assert.equal(upgraded.contextWindowMeterEnabled, false);
+  assert.equal(upgraded.fontSizeTerminal, 18);
+});
+
+// Fonts, themes and the rest of client-settings.json are values we never set.
+// Rewriting a file we did not change has nothing to gain and a reader/writer
+// race to lose.
+test("client settings are not rewritten once the recommended set was applied", (t) => {
+  const first = writeSettings(t, null);
+  const stamped = JSON.parse(readFileSync(first.clientPath, "utf8"));
+  writeFileSync(first.clientPath, JSON.stringify({ ...stamped, fontSizeTerminal: 18, legacySidebarEnabled: true }));
+  const after = rerun(first.clientPath);
   assert.equal(after.fontSizeTerminal, 18);
-  // Turned off on purpose; an update does not turn it back on.
-  assert.equal(after.legacySidebarEnabled, false);
+  // Turned back on on purpose; an update does not turn it off again.
+  assert.equal(after.legacySidebarEnabled, true);
 });

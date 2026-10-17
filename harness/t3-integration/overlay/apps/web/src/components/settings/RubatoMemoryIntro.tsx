@@ -70,10 +70,10 @@ export function RubatoMemoryIntro() {
             variant="outline"
             onClick={() => {
               close();
-              void navigate({ to: "/settings/memory" });
+              void navigate({ to: "/memory" });
             }}
           >
-            Open Memory settings
+            Open Memory
           </Button>
           <Button onClick={close}>Done</Button>
         </DialogFooter>

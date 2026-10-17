@@ -6,19 +6,20 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { settingsRouteTreeEdits } from '../route-tree-edits.mjs';
+import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from '../route-tree-edits.mjs';
 
 const PAGES = ['memory', 'permissions', 'phone', 'scheduled'];
+const TOP_LEVEL = ['memory', 'scheduled'];
 
 // The router plugin regenerates routeTree.gen.ts at every build. The applied file
 // must be exactly what it writes, or the build rewrites the overlay under the app.
-test('settings route tree edits equal the router generator output', {skip: !process.env.T3_SOURCE, timeout: 60_000}, async (t) => {
+test('settings and top-level route tree edits equal the router generator output', {skip: !process.env.T3_SOURCE, timeout: 60_000}, async (t) => {
   const source = process.env.T3_SOURCE;
   const pin = JSON.parse(await readFile(new URL('../upstream.json', import.meta.url), 'utf8'));
   const show = (relative) => execFileSync('git', ['-C', source, 'show', `${pin.upstreamCommit}:${relative}`], {encoding: 'utf8', maxBuffer: 64 * 1024 * 1024});
 
   let applied = show('apps/web/src/routeTree.gen.ts');
-  for (const [anchor, addition, mode] of settingsRouteTreeEdits(PAGES)) {
+  for (const [anchor, addition, mode] of [...settingsRouteTreeEdits(PAGES), ...topLevelRouteTreeEdits()]) {
     assert.equal(applied.split(anchor).length, 2, `anchor must occur once: ${anchor.slice(0, 80)}`);
     applied = mode === 'replace' ? applied.replace(anchor, addition) : applied.replace(anchor, addition + anchor);
   }
@@ -31,6 +32,7 @@ test('settings route tree edits equal the router generator output', {skip: !proc
     await writeFile(path.join(routes, path.basename(relative)), show(relative));
   }
   for (const page of PAGES) await cp(new URL(`../overlay/apps/web/src/routes/settings.${page}.tsx`, import.meta.url), path.join(routes, `settings.${page}.tsx`));
+  for (const page of TOP_LEVEL) await cp(new URL(`../overlay/apps/web/src/routes/${page}.tsx`, import.meta.url), path.join(routes, `${page}.tsx`));
 
   // The generator comes with the router plugin the web build runs.
   const plugin = createRequire(path.join(source, 'apps/web/package.json')).resolve('@tanstack/router-plugin/package.json');

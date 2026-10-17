@@ -1,4 +1,10 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { RubatoScheduleSettingsPanel } from "../components/settings/RubatoScheduleSettings";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
-export const Route = createFileRoute("/settings/scheduled")({ component: RubatoScheduleSettingsPanel });
+// Scheduled tasks moved out of Settings to their own page on the rail
+// (routes/scheduled.tsx). The old address stays so settings search and older
+// links still land there.
+export const Route = createFileRoute("/settings/scheduled")({
+  beforeLoad: () => {
+    throw redirect({ to: "/scheduled", replace: true });
+  },
+});
