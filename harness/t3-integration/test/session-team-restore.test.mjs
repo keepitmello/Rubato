@@ -29,13 +29,13 @@ function restored(fold) {
 test("control: a resident team member waits instead of finishing before a GUI restart", () => {
   const fold = runningTeam();
   tick(fold, { task_id: names.first, status: "completed", residency_state: "resident", final_response: "Waiting for feedback." });
-  assert.equal(fold.snapshot().agents.find((agent) => agent.taskId === names.first).status, "waiting");
+  assert.equal(fold.snapshot().agents.find((agent) => agent.taskId === names.first).status, "idle");
 });
 test("after a GUI restart, a resident member still waits and keeps the real spawn-row linkage", () => {
   const fold = restored(runningTeam());
   tick(fold, { task_id: names.first, status: "completed", residency_state: "resident", final_response: "Waiting for feedback." });
   const member = fold.snapshot().agents.find((agent) => agent.taskId === names.first);
-  assert.equal(member.status, "waiting");
+  assert.equal(member.status, "idle");
   assert.equal(member.spawnToolCallId, names.call);
 });
 test("after a GUI restart, the team still follows its members to their final state", () => {
@@ -52,4 +52,12 @@ test("after a GUI restart, new board snapshots replace the saved team board", ()
         owner: "owner", blocked_by: [] }] }],
   } });
   assert.equal(fold.snapshot().teams[0].board.tasks[0]?.subject, "Board after restart");
+});
+test("a member saved as waiting before resting became idle comes back idle", () => {
+  const fold = runningTeam();
+  tick(fold, { task_id: names.first, status: "completed", residency_state: "resident", final_response: "Waiting for feedback." });
+  const saved = JSON.parse(JSON.stringify(fold.saved()));
+  for (const row of saved.agents) if (row.taskId === names.first) row.status = "waiting";
+  const back = SessionStateFold.restore(saved, names);
+  assert.equal(back.snapshot().agents.find((agent) => agent.taskId === names.first).status, "idle");
 });

@@ -4,12 +4,14 @@
 // a tool named `subagent`), so the panel reads them here.
 //
 // The agent rules are V1's (events.mjs EventProjection): a resident team member that ends its
-// turn is waiting, not done; an agent revived by AgentSend works again; a team follows its
+// turn rests (`idle`: the panel reads it as Waiting, and as not working), not done; an agent revived by AgentSend works again; a team follows its
 // members; boards ride on the team. Rather than restate them, a headless projection is fed
 // the same engine records and its task events are folded into rows.
 import { EventProjection, cacheFrom } from './events.mjs';
 
-const STATUS_OF_PROGRESS = { idle: 'waiting', running: 'running', pending: 'running' };
+// T3's `waiting` is work that needs the person, so the panel draws it as working; a member
+// resting until its mail is `idle`.
+const STATUS_OF_PROGRESS = { idle: 'idle', running: 'running', pending: 'running' };
 const nonempty = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
 
 /** One session's state, fed every engine record a V2 connection receives (rpc-connection.mjs). */
@@ -27,8 +29,9 @@ export class SessionStateFold {
   /** A fold saved by `saved()`, for the session it was saved for. */
   static restore(saved, options) {
     const fold = new SessionStateFold({ ...options, sessionId: saved.sessionId });
+    // A fold saved before resting became `idle` named it `waiting`; nothing else did.
     for (const row of Array.isArray(saved.agents) ? saved.agents : [])
-      if (row && typeof row.taskId === 'string') fold.agents.set(row.taskId, row);
+      if (row && typeof row.taskId === 'string') fold.agents.set(row.taskId, row.status === 'waiting' ? { ...row, status: 'idle' } : row);
     fold.speedIndex = Number.isInteger(saved.speedIndex) ? saved.speedIndex : null;
     // The links behind the rows too: a resident member's next tick, its team's end and a new
     // board need them, not only the rows they made.

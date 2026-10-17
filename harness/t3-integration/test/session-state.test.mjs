@@ -38,18 +38,32 @@ test('a team and its members fold into rows the Agents panel joins by team id an
   assert.equal(owner.spawnToolCallId, 'call_team');
 });
 
-test('a resident member that ends its turn waits; the team follows its members to the end', () => {
+test('a resident member that ends its turn rests; the team follows its members to the end', () => {
   const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
   fold.feed({ type: 'agent_start' });
   fold.feed({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: false,
     result: { details: { kind: 'created', team_name: 'mobile-team', team_run_id: 'run_team', members } } });
   tick(fold, { task_id: 'st_owner', status: 'completed', residency_state: 'resident', final_response: 'Done porting.' });
-  assert.equal(fold.snapshot().agents.find((agent) => agent.taskId === 'st_owner').status, 'waiting');
+  // Not `waiting`: T3 reads that as work in progress, and the panel drew a resting member thinking.
+  assert.equal(fold.snapshot().agents.find((agent) => agent.taskId === 'st_owner').status, 'idle');
   tick(fold, { task_id: 'st_owner', status: 'completed', final_response: 'Done porting.' });
   tick(fold, { task_id: 'st_verifier', status: 'failed', error: 'Build broke' });
   const state = fold.snapshot();
   assert.equal(state.agents.find((agent) => agent.taskId === 'st_owner').status, 'completed');
   assert.equal(state.teams[0].status, 'failed');
+});
+
+test('a team whose members all rest is idle, and a wake makes it and the member run again', () => {
+  const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
+  fold.feed({ type: 'agent_start' });
+  fold.feed({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: false,
+    result: { details: { kind: 'created', team_name: 'mobile-team', team_run_id: 'run_team', members } } });
+  const status = (id) => fold.snapshot().agents.find((agent) => agent.taskId === id).status;
+  tick(fold, { task_id: 'st_owner', status: 'completed', residency_state: 'resident', final_response: 'Waiting on review.' });
+  tick(fold, { task_id: 'st_verifier', status: 'completed', residency_state: 'resident', final_response: 'Nothing to check yet.' });
+  assert.deepEqual([status('st_owner'), status('st_verifier'), fold.snapshot().teams[0].status], ['idle', 'idle', 'idle']);
+  tick(fold, { task_id: 'st_owner', status: 'running', residency_state: 'resident' });
+  assert.deepEqual([status('st_owner'), fold.snapshot().teams[0].status], ['running', 'running']);
 });
 
 test('the session speed score comes from the engine and clears with null', () => {
