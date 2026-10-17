@@ -269,12 +269,16 @@ const fitHeight = (element: HTMLTextAreaElement) => {
   element.style.height = `${element.scrollHeight}px`;
 };
 
-/** The bubble's editor: Enter sends (rewinding to before the message), Escape cancels. */
+/**
+ * The bubble's editor: Enter sends (rewinding to before the message), Escape cancels. While a
+ * turn runs (`busy`) the draft stays and only sending waits.
+ */
 export function RubatoMessageEditor(props: {
   readonly threadKey: string;
   readonly message: ChatMessage;
+  readonly busy?: boolean;
 }) {
-  const { threadKey, message } = props;
+  const { threadKey, message, busy = false } = props;
   const [initial] = useState(() => {
     const resolved = resolveUserMessageContext(message);
     return { ...toEditableText(resolved.text), records: resolved.records };
@@ -293,7 +297,7 @@ export function RubatoMessageEditor(props: {
   const text = fromEditableText(draft, initial.links).trim();
   const send = async () => {
     const host = hosts.get(threadKey);
-    if (sending || text.length === 0 || !host) return;
+    if (sending || busy || text.length === 0 || !host) return;
     const kept = keptContext(text, initial.records, message.attachments ?? []);
     setSending(true);
     try {
@@ -337,10 +341,17 @@ export function RubatoMessageEditor(props: {
         className="max-h-[50vh] w-full resize-none overflow-y-auto bg-transparent text-sm leading-relaxed outline-none"
       />
       <div className="flex items-center justify-end gap-2">
+        {busy && !sending ? (
+          <span className="me-auto text-muted-foreground text-xs">Stop the turn to send</span>
+        ) : null}
         <Button size="xs" variant="ghost-muted" disabled={sending} onClick={cancel}>
           Cancel
         </Button>
-        <Button size="xs" disabled={sending || text.length === 0} onClick={() => void send()}>
+        <Button
+          size="xs"
+          disabled={sending || busy || text.length === 0}
+          onClick={() => void send()}
+        >
           {sending ? "Sending…" : "Send"}
         </Button>
       </div>

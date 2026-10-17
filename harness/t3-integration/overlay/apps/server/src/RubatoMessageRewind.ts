@@ -8,10 +8,12 @@
  * checkpoint: the web client loads a long thread a window at a time, with the checkpoints of
  * the turns in that window only.
  *
- * Some turns before the message leave no checkpoint and are skipped, dropped with the rest: a
- * message queued during a turn and then sent into it cancels its queued turn before it starts,
- * and a failed or cancelled turn captures nothing. A finished or stopped turn without a ready
- * checkpoint refuses instead, so the rewind never goes further back than the user asked.
+ * Turns the model never saw a reply from are skipped and dropped with the rest: a message
+ * queued during a turn and then sent into it cancels its queued turn before it starts, Stop
+ * before the model starts ends a turn with nothing sent, and a failed turn captures nothing.
+ * A turn the model answered without a ready checkpoint refuses instead, so the rewind never
+ * goes further back than the user asked. Messages held in the queue after Stop stay queued,
+ * as with any message sent then. A turn still settling (saving its checkpoint) is waited for.
  */
 import {
   MessageId,
@@ -20,7 +22,9 @@ import {
   type CheckpointScopeId,
   type OrchestrationV2Checkpoint,
   type OrchestrationV2ConversationMessage,
+  type OrchestrationV2ProviderTurn,
   type OrchestrationV2Run,
+  type OrchestrationV2RunAttempt,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -43,8 +47,10 @@ export interface MessageRewindRefusal {
 
 export interface MessageRewindRecords {
   readonly runs: ReadonlyArray<
-    Pick<OrchestrationV2Run, "id" | "ordinal" | "status" | "userMessageId">
+    Pick<OrchestrationV2Run, "id" | "ordinal" | "status" | "userMessageId" | "queueHeld">
   >;
+  readonly attempts: ReadonlyArray<Pick<OrchestrationV2RunAttempt, "id" | "runId">>;
+  readonly providerTurns: ReadonlyArray<Pick<OrchestrationV2ProviderTurn, "runAttemptId">>;
   readonly messages: ReadonlyArray<Pick<OrchestrationV2ConversationMessage, "id" | "role" | "runId">>;
   readonly checkpoints: ReadonlyArray<
     Pick<
@@ -61,7 +67,7 @@ const UNSETTLED: ReadonlySet<OrchestrationV2Run["status"]> = new Set([
   "running",
   "waiting",
 ]);
-// Turns that may leave no checkpoint: the rewind drops them with the edited turn.
+// Turns that may end without a checkpoint; the rewind drops them with the edited turn.
 const SKIPPABLE: ReadonlySet<OrchestrationV2Run["status"]> = new Set(["failed", "cancelled"]);
 
 export function messageRewindTarget(
@@ -82,9 +88,18 @@ export function messageRewindTarget(
   if (run.userMessageId !== message.id) {
     return refuse("not-a-turn", "Only a message that started a turn can be edited.");
   }
+  if (run.status === "queued") {
+    return refuse("not-a-turn", "This message is still in the queue; edit it there.");
+  }
   // A queued or running turn would outlive the rollback, and a turn still saving its
   // checkpoint is not yet a place to go back to.
-  if (records.runs.some((candidate) => UNSETTLED.has(candidate.status))) {
+  if (
+    records.runs.some(
+      (candidate) =>
+        UNSETTLED.has(candidate.status) &&
+        !(candidate.status === "queued" && candidate.queueHeld === true),
+    )
+  ) {
     return refuse("busy", "Stop the current turn before editing a message.");
   }
   const ready = (candidate: MessageRewindRecords["checkpoints"][number]) =>
@@ -92,7 +107,16 @@ export function messageRewindTarget(
   const earlier = records.runs
     .filter((candidate) => candidate.ordinal < run.ordinal && candidate.status !== "rolled_back")
     .sort((left, right) => right.ordinal - left.ordinal);
+  const answered = new Set(
+    records.attempts
+      .filter((attempt) =>
+        records.providerTurns.some((turn) => turn.runAttemptId === attempt.id),
+      )
+      .map((attempt) => attempt.runId),
+  );
   for (const candidate of earlier) {
+    // The model never got this turn: going back past it loses nothing it holds.
+    if (!answered.has(candidate.id)) continue;
     const checkpoint = records.checkpoints.find(
       (entry) =>
         ready(entry) && entry.runId === candidate.id && entry.appRunOrdinal === candidate.ordinal,
@@ -120,6 +144,9 @@ export function messageRewindTarget(
   return { turnCount: 0, checkpointId: threadStart.id, scopeId: threadStart.scopeId };
 }
 
+const SETTLE_ATTEMPTS = 20;
+const SETTLE_INTERVAL = "250 millis";
+
 const TargetBody = Schema.Struct({ threadId: Schema.String, messageId: Schema.String });
 
 export const rubatoMessageRewindRouteLayer = Layer.unwrap(
@@ -137,21 +164,37 @@ export const rubatoMessageRewindRouteLayer = Layer.unwrap(
           { status: 400 },
         );
       }
-      const records = yield* orchestrator
-        .getThreadRecords(ThreadId.make(body.value.threadId), ["runs", "messages", "checkpoints"], {
-          messageRoles: ["user"],
-        })
-        .pipe(Effect.option);
-      if (records._tag === "None") {
+      const threadId = ThreadId.make(body.value.threadId);
+      const messageId = MessageId.make(body.value.messageId);
+      const answer = orchestrator
+        .getThreadRecords(
+          threadId,
+          ["runs", "attempts", "providerTurns", "messages", "checkpoints"],
+          { messageRoles: ["user"] },
+        )
+        .pipe(Effect.map((records) => messageRewindTarget(records, messageId)));
+      // Stop leaves a turn saving its checkpoint for a moment; ask again until it settles.
+      let target = yield* Effect.option(answer);
+      for (
+        let attempt = 0;
+        attempt < SETTLE_ATTEMPTS &&
+        target._tag === "Some" &&
+        "refused" in target.value &&
+        target.value.refused.code !== "not-a-turn";
+        attempt++
+      ) {
+        yield* Effect.sleep(SETTLE_INTERVAL);
+        target = yield* Effect.option(answer);
+      }
+      if (target._tag === "None") {
         return HttpServerResponse.jsonUnsafe(
           { error: { code: "unknown-thread", message: "This thread is not on this server." } },
           { status: 404 },
         );
       }
-      const target = messageRewindTarget(records.value, MessageId.make(body.value.messageId));
-      return "refused" in target
-        ? HttpServerResponse.jsonUnsafe({ error: target.refused }, { status: 409 })
-        : HttpServerResponse.jsonUnsafe(target);
+      return "refused" in target.value
+        ? HttpServerResponse.jsonUnsafe({ error: target.value.refused }, { status: 409 })
+        : HttpServerResponse.jsonUnsafe(target.value);
     });
     return HttpRouter.add("POST", "/rubato/message-rewind/target", handle);
   }),

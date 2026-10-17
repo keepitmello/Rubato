@@ -81,4 +81,24 @@ describe("editing a sent message", () => {
     expect(html).toContain(">Cancel<");
     expect(html).toContain(">Send<");
   });
+
+  it("keeps the draft but waits to send while a turn runs", () => {
+    const message = {
+      id: "message-1",
+      role: "user",
+      text: "고쳐줘",
+      runId: null,
+      createdAt: "2026-10-15T00:00:00.000Z",
+      updatedAt: "2026-10-15T00:00:00.000Z",
+      streaming: false,
+    } as unknown as ChatMessage;
+    const idle = renderToStaticMarkup(<RubatoMessageEditor threadKey="thread" message={message} />);
+    const busy = renderToStaticMarkup(
+      <RubatoMessageEditor threadKey="thread" message={message} busy />,
+    );
+    expect(idle).not.toContain("Stop the turn to send");
+    expect(busy).toContain("Stop the turn to send");
+    expect(busy).toContain("고쳐줘</textarea>");
+    expect(busy).toMatch(/<button[^>]*disabled=""[^>]*>Send<\/button>/);
+  });
 });

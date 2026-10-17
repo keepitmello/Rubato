@@ -31,10 +31,20 @@ const baseline = (ordinal: number): Checkpoint => ({
   status: "ready",
 });
 
-function records(runs: Run[], checkpoints: Checkpoint[]): MessageRewindRecords {
+/** A thread whose turns all reached the model, except the ordinals in `unanswered`. */
+function records(
+  runs: Run[],
+  checkpoints: Checkpoint[],
+  unanswered: ReadonlyArray<number> = [],
+): MessageRewindRecords {
+  const attemptOf = (entry: Run) => `attempt-${entry.ordinal}` as MessageRewindRecords["attempts"][number]["id"];
   return {
     runs,
     checkpoints,
+    attempts: runs.map((entry) => ({ id: attemptOf(entry), runId: entry.id })),
+    providerTurns: runs
+      .filter((entry) => !unanswered.includes(entry.ordinal))
+      .map((entry) => ({ runAttemptId: attemptOf(entry) })),
     messages: runs.map((entry) => ({ id: entry.userMessageId, role: "user", runId: entry.id })),
   };
 }
@@ -59,6 +69,7 @@ describe("where editing a message rewinds to", () => {
     const thread = records(
       [run(23), run(24, "cancelled"), run(25)],
       [baseline(0), checkpoint(23), baseline(24), checkpoint(25)],
+      [24],
     );
     expect(messageRewindTarget(thread, promptId(25))).toMatchObject({
       turnCount: 23,
@@ -81,6 +92,29 @@ describe("where editing a message rewinds to", () => {
       [baseline(0), checkpoint(1), checkpoint(2), checkpoint(3)],
     );
     expect(messageRewindTarget(thread, promptId(3))).toMatchObject({ turnCount: 2 });
+  });
+
+  it("skips a turn stopped before the model started", () => {
+    // Stop during preparing or starting ends the turn interrupted, with nothing sent and no
+    // checkpoint captured.
+    const thread = records(
+      [run(1), run(2, "interrupted"), run(3)],
+      [baseline(0), checkpoint(1), checkpoint(3)],
+      [2],
+    );
+    expect(messageRewindTarget(thread, promptId(3))).toMatchObject({ turnCount: 1 });
+  });
+
+  it("rewinds with messages held in the queue after Stop, and leaves them queued", () => {
+    const thread = records(
+      [run(1), run(2, "interrupted"), { ...run(3, "queued"), queueHeld: true }],
+      [baseline(0), checkpoint(1), checkpoint(2)],
+      [3],
+    );
+    expect(messageRewindTarget(thread, promptId(2))).toMatchObject({ turnCount: 1 });
+    expect(messageRewindTarget(thread, promptId(3))).toMatchObject({
+      refused: { code: "not-a-turn" },
+    });
   });
 
   it("ignores turns an earlier rewind already removed", () => {
