@@ -52,6 +52,12 @@ const NEIGHBOURS = [
   [childValue, 'forward'],
 ];
 
+// What follows the settings children in the two forward lists.
+const FORWARD_ENDS = [
+  '}\n\nconst SettingsRouteChildren: SettingsRouteChildren = {\n',
+  '}\n\nconst SettingsRouteWithChildren = SettingsRoute._addFileChildren(',
+];
+
 export function settingsRouteTreeEdits(pages) {
   const all = [...UPSTREAM_SETTINGS, ...pages].toSorted(byName);
   const edits = [];
@@ -60,9 +66,18 @@ export function settingsRouteTreeEdits(pages) {
   const rendered = [importLine, constBlock, byPathBlock, childType, childValue];
   for (const [index, [neighbour, order]] of NEIGHBOURS.entries()) {
     const sequence = order === 'forward' ? all : all.toReversed();
+    // The entry each page past the upstream range follows, so the next one can follow it.
+    let previous = sequence.findLast((slug) => UPSTREAM_SETTINGS.includes(slug));
     for (const page of order === 'forward' ? pages.toSorted(byName) : pages.toSorted(byName).toReversed()) {
       const after = sequence.slice(sequence.indexOf(page) + 1).find((slug) => UPSTREAM_SETTINGS.includes(slug));
-      edits.push([neighbour(after), rendered[index](page)]);
+      if (after !== undefined) edits.push([neighbour(after), rendered[index](page)]);
+      // Past the last upstream route of a forward list: before the list's closing line.
+      else if (order === 'forward') edits.push([FORWARD_ENDS[index - 3], rendered[index](page)]);
+      // Past the last upstream route of a reverse list: right after the entry before it.
+      else {
+        edits.push([rendered[index](previous), rendered[index](previous) + rendered[index](page), 'replace']);
+        previous = page;
+      }
     }
   }
   const firstPage = pages.toSorted(byName)[0];

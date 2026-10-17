@@ -117,6 +117,13 @@
     "apps/server/src/usage/UsageLimitSources.ts": "4491fa9328bc1e4e1a166d8ea608d4fe47430afc29d174616667ba2730c41ce5",
     "packages/shared/src/usageLimits.ts": "51b3cf4a9246882d0e0227166e4ad34854cf8c0a4b4fbc5067df23eccfa0e903",
     "apps/web/src/components/usage/UsageLimitsPooled.tsx": "a594ecc0b0b133e8320fd19b77b90de72caa84b043c41c665e364707e9f7a3f2",
-    "apps/web/src/components/usage/UsagePage.refresh.test.tsx": "df69997a3653d85494e17f62e093dc5b347d605fa9ee6ead40ab98af9b1112e0"
+    "apps/web/src/components/usage/UsagePage.refresh.test.tsx": "df69997a3653d85494e17f62e093dc5b347d605fa9ee6ead40ab98af9b1112e0",
+    "apps/web/src/components/settings/settingsLayout.tsx": "21e30ae295ab62bc22aa3841be327e1c49b438ff8d2ac2011a4a437e8be6dff0",
+    "apps/web/src/components/settings/useAvailableSettingsSearchItems.ts": "f1368e21f5e91d687725cb9098798f99bcacb6bf89b298e736bfaf96761144f0",
+    "apps/web/src/routes/settings.general.tsx": "0282d289ca52a6222cdc04b5fa92f064ed91c163548eddd0913e5cd9df5ce99a",
+    "apps/web/src/routes/settings.source-control.tsx": "d5a24f7d206ff4ffe1a48721ae764aed771271e061691330f17703a4e213c9ca",
+    "apps/web/src/routes/settings.integrations.tsx": "955546c0461ad29e47a88cff3b98ef7426b2f965deae52dc08b24de3f7edebdf",
+    "apps/web/src/routes/settings.connections.tsx": "532c2a4723195cd393bfb531bb0567eddb839d7c6b53a51dee4869433fe213e1",
+    "apps/web/src/routes/settings.storage.tsx": "756ec9b2e971cf96afec6570c837ebc476fe9078583b06d14cbccef31ba53b99"
   }
 }

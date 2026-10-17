@@ -49,6 +49,7 @@ import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs'
 import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs';
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
+import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1628,10 +1629,11 @@ overlays.push(...statsOverlays);
 for (const [relative, changes] of Object.entries(statsEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// The settings pages above (memory, permissions, phone, scheduled, stats) in the generated route tree (route-tree-edits.mjs).
+// The settings pages above (memory, permissions, phone, scheduled, stats) and the Settings layout's
+// own pages (settings-layout-edits.mjs) in the generated route tree (route-tree-edits.mjs).
 edits['apps/web/src/routeTree.gen.ts'] = [
   ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
-  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats']),
+  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats', ...settingsLayoutPages]),
   // Memory, Scheduled Tasks and Stats as their own pages, opened from the rail (project-rail-edits.mjs).
   ...topLevelRouteTreeEdits(),
 ];
@@ -1787,6 +1789,11 @@ for (const [relative, changes] of Object.entries(floatingMenuEdits)) {
 // Per-part sizes for the rail, the sidebar, the home row and the conversation; last, since it reads text project-rail-edits adds (section-scale-edits.mjs).
 overlays.push(...sectionScaleOverlays);
 for (const [relative, changes] of Object.entries(sectionScaleEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Settings regrouped into Rubato's layout; last, since it anchors on the sidebar and search other modules edit (settings-layout-edits.mjs).
+overlays.push(...settingsLayoutOverlays);
+for (const [relative, changes] of Object.entries(settingsLayoutEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

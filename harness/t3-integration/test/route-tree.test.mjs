@@ -7,8 +7,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from '../route-tree-edits.mjs';
+import { settingsLayoutPages } from '../settings-layout-edits.mjs';
 
-const PAGES = ['memory', 'permissions', 'phone', 'scheduled', 'stats'];
+const PAGES = ['memory', 'permissions', 'phone', 'scheduled', 'stats', ...settingsLayoutPages];
 const TOP_LEVEL = ['memory', 'scheduled', 'stats'];
 
 // The router plugin regenerates routeTree.gen.ts at every build. The applied file
