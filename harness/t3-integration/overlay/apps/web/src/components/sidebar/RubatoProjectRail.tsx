@@ -22,6 +22,7 @@ import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
+import { useStatsWarmup } from "../../state/rubatoStats";
 import { useUiStateStore } from "../../uiStateStore";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
@@ -152,6 +153,7 @@ function isProjectWindowShortcut(event: KeyboardEvent): boolean {
 }
 
 export function RubatoProjectRail() {
+  useStatsWarmup();
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { open, setOpen, isMobile } = useSidebar();

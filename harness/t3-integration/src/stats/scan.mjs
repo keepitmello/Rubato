@@ -8,7 +8,35 @@
 //   {type:"message", message:{role:"user"|"assistant", ...}}
 // Tool results are the bulk of a log and are never parsed.
 
-export const SUMMARY_VERSION = 3;
+export const SUMMARY_VERSION = 4;
+
+/**
+ * Words a model uses when it stops, doubts or turns around mid-thought. Their count in one
+ * thinking block is how the "most second-guessing" episode is picked, and the story prompt
+ * gets the same breakdown (models cannot count over 30k characters themselves).
+ */
+export const HESITATION_MARKERS = Object.freeze([
+  ['Hmm', /\bhmm+\b/gi],
+  ['Wait', /\bwait\b[,.!—-]/gi],
+  ['Actually', /\bactually\b/gi],
+  ['What if', /\bwhat if\b/gi],
+  ['Hold on', /\bhold on\b/gi],
+  ['On second thought', /\b(?:on second thought|let me reconsider|scratch that)\b/gi],
+  ['음', /(?:^|[\s(])음[,.…]/g],
+  ['잠깐', /잠깐/g],
+]);
+
+/** Each marker that occurs, with its count. */
+export function hesitationCounts(text) {
+  const counts = {};
+  for (const [label, pattern] of HESITATION_MARKERS) {
+    const found = text.match(pattern)?.length ?? 0;
+    if (found > 0) counts[label] = found;
+  }
+  return counts;
+}
+
+const hesitationTotal = (text) => Object.values(hesitationCounts(text)).reduce((sum, count) => sum + count, 0);
 
 /** Local calendar day of an epoch ms, YYYY-MM-DD. */
 export function dayKey(ms) {
@@ -56,8 +84,12 @@ export function createSessionSummarizer() {
     usage: {},
     agents: [],
     teams: [],
-    thinks: {},
-    runs: {},
+    // Per day, the one entry that tops each episode kind (see aggregate.mjs episodes()).
+    minds: {},   // [hesitations, chars, model, at, entryId]  the most second-guessing thinking block
+    costs: {},   // [usd, at, seconds, message]               the priciest typed turn
+    outages: {}, // [failures, start, end, lastError]         the longest run of failed calls
+    runs: {},    // [calls, seconds, start]                    the longest run without a typed message
+    firstText: null,
     // [start, end] of each stretch the agent worked: from something reaching it (a typed
     // message, a system wake, a runtime notice or completion) to its last reply before the
     // next one. Waiting is not in it.
@@ -67,6 +99,16 @@ export function createSessionSummarizer() {
   let level = null;
   let run = null;
   let stretch = null;
+  let turn = null;
+  let failing = null;
+  const closeTurn = () => {
+    if (turn && turn.cost > 0) keepTop(summary.costs, dayKey(turn.start), [Math.round(turn.cost * 100) / 100, turn.start, Math.round((turn.last - turn.start) / 1000), turn.text]);
+    turn = null;
+  };
+  const closeFailing = () => {
+    if (failing && failing.count > 1) keepTop(summary.outages, dayKey(failing.start), [failing.count, failing.start, failing.end, failing.error]);
+    failing = null;
+  };
   const closeStretch = () => {
     if (stretch && stretch.end > stretch.start) summary.work.push([stretch.start, stretch.end]);
     stretch = null;
@@ -122,8 +164,12 @@ export function createSessionSummarizer() {
     if (message.role === 'user' || message.role === 'system') {
       closeStretch();
       stretch = { start: at, end: at };
-      if (message.role === 'system' || !isTypedUserText(textOf(message.content))) return true;
+      const typed = message.role === 'user' ? textOf(message.content) : '';
+      if (message.role === 'system' || !isTypedUserText(typed)) return true;
       closeRun();
+      closeTurn();
+      turn = { start: at, last: at, cost: 0, text: typed.trim().slice(0, 200) };
+      summary.firstText ??= typed.trim().slice(0, 200);
       summary.turns.push(at);
       summary.levels.push(level);
       return true;
@@ -141,11 +187,22 @@ export function createSessionSummarizer() {
     row[3] += num(usage.cacheWrite);
     row[4] += num(usage.output);
     if (run) { run.calls += 1; run.last = at; } else run = { calls: 1, start: at, last: at };
+    if (turn) {
+      turn.last = at;
+      turn.cost += num(usage.cost?.total);
+    }
+    if (message.stopReason === 'error') {
+      if (!failing) failing = { count: 0, start: at, end: at, error: '' };
+      failing.count += 1;
+      failing.end = at;
+      failing.error = String(message.errorMessage ?? '').slice(0, 160);
+    } else closeFailing();
     if (!Array.isArray(message.content)) return true;
     for (const part of message.content) {
       if (!part) continue;
       if (part.type === 'thinking' && typeof part.thinking === 'string' && part.thinking.length > 0) {
-        keepTop(summary.thinks, dayKey(at), [part.thinking.length, model, at, entry.id ?? null]);
+        const hesitations = hesitationTotal(part.thinking);
+        if (hesitations > 0) keepTop(summary.minds, dayKey(at), [hesitations, part.thinking.length, model, at, entry.id ?? null]);
       } else if (part.type === 'toolCall') {
         const args = part.arguments ?? {};
         if (part.name === 'Agent') summary.agents.push([at, typeof args.model === 'string' ? args.model : typeof args.preset === 'string' ? `preset:${args.preset}` : 'default']);
@@ -157,6 +214,8 @@ export function createSessionSummarizer() {
   const finish = () => {
     closeRun();
     closeStretch();
+    closeTurn();
+    closeFailing();
     if (rejected || first || summary.start === null) return null;
     return summary;
   };

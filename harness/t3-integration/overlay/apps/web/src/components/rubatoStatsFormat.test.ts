@@ -6,6 +6,7 @@ import {
   compactNumber,
   daysSinceFirst,
   duration,
+  episodeNumber,
   highlights,
   hours,
   percent,
@@ -54,15 +55,7 @@ function period(overrides: Partial<StatsPeriod> = {}): StatsPeriod {
     },
     run: { calls: 40, seconds: 3600, at: "2026-10-16T09:00:00.000Z", title: "Fix the ledger", project: "app" },
     longestSession: null,
-    think: {
-      chars: 33_325,
-      model: "claude-opus-5-5",
-      at: "2026-10-16T12:34:00.000Z",
-      title: "Rebate Settlement Fix",
-      project: "app",
-      card: { headline: "Where did −1,931,467 come from?", body: "It chased the gap.", chips: ["Hmm ×285"] },
-      cardState: "ready",
-    },
+    episodes: [],
     ...overrides,
   };
 }
@@ -109,15 +102,13 @@ describe("rubatoStatsFormat", () => {
 
   it("plays the card's summary first, and only the highlights the period has", () => {
     const items = highlights(period(), KNOWN);
-    expect(items.map((item) => item.key)).toEqual(["think", "run", "busiest", "workday", "favorite", "books", "night"]);
+    expect(items.map((item) => item.key)).toEqual(["busiest", "workday", "favorite", "books", "night"]);
     const workday = items.find((item) => item.key === "workday")!;
     expect(workday.value).toBe(7);
     expect(workday.detail).toContain("12.0h of agent time");
-    expect(items[0]!.headline).toBe("Where did −1,931,467 come from?");
     expect(items.find((item) => item.key === "books")!.value).toBe(2);
     const bare = highlights(
       period({
-        think: null,
         run: null,
         busiest: null,
         turns: 0,
@@ -128,6 +119,12 @@ describe("rubatoStatsFormat", () => {
       KNOWN,
     );
     expect(bare).toEqual([]);
+  });
+
+  it("leads each episode with its number", () => {
+    expect(episodeNumber({ kind: "cost", value: 72.95 })).toBe("$73");
+    expect(episodeNumber({ kind: "cost", value: 4.5 })).toBe("$4.50");
+    expect(episodeNumber({ kind: "solo", value: 1586 })).toBe("1,586");
   });
 
   it("lays the attendance grid from the Monday before the first day through today", () => {

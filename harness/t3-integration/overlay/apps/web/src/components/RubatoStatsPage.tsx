@@ -2,7 +2,18 @@
 // with Rubato. The server half (Rubato's src/stats/service.mjs) does the reading
 // and counting; this file only draws, and moves things when the numbers change.
 import { useAtomValue } from "@effect/atom-react";
-import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CircleDollarSignIcon,
+  FootprintsIcon,
+  LightbulbIcon,
+  type LucideIcon,
+  MoonIcon,
+  NetworkIcon,
+  SproutIcon,
+  UnplugIcon,
+} from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
@@ -16,11 +27,23 @@ import {
 
 import { cn } from "../lib/utils";
 import { primaryServerProvidersAtom } from "../state/server";
-import { type StatsAnswer, type StatsPeriod, type StatsPeriodName, type StatsReady, rubatoStats } from "../state/rubatoStats";
+import {
+  type StatsAnswer,
+  type StatsEpisode,
+  type StatsEpisodeKind,
+  type StatsPeriod,
+  type StatsPeriodName,
+  type StatsReady,
+  rubatoStats,
+} from "../state/rubatoStats";
 import { useReadyEnvironmentId } from "./settings/RubatoMemorySettings";
 import { Toggle, ToggleGroup } from "./ui/toggle-group";
 import {
+  EPISODE_GROUPS,
+  EPISODE_KINDS,
+  type EpisodeGroup,
   FAMILY_COLORS,
+  episodeNumber,
   type Highlight,
   type KnownModel,
   WEEKDAYS_MONDAY_FIRST,
@@ -28,7 +51,6 @@ import {
   clock,
   compactNumber,
   daysSinceFirst,
-  duration,
   highlights,
   hourLabel,
   hours,
@@ -65,6 +87,7 @@ const KEYFRAMES = `
 @keyframes rubato-stats-run { from { left: 0 } to { left: calc(var(--to, 100%) - 7px) } }
 @keyframes rubato-stats-progress { from { transform: scaleX(0) } to { transform: scaleX(1) } }
 @keyframes rubato-stats-rise { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: none } }
+@keyframes rubato-stats-breathe { 0%,100% { opacity: .45 } 50% { opacity: 1 } }
 @keyframes rubato-stats-flicker { 0%,100% { transform: scale(1) rotate(-2deg) } 50% { transform: scale(1.1) rotate(3deg) } }
 @media (prefers-reduced-motion: reduce) { .rubato-stats * { animation: none !important; transition: none !important } }
 `;
@@ -97,7 +120,8 @@ function useStats() {
   useEffect(() => {
     if (!answer) return;
     const writing =
-      answer.status === "ready" && Object.values(answer.periods).some((period) => period.think?.cardState === "writing");
+      answer.status === "ready" &&
+      Object.values(answer.periods).some((period) => period.episodes.some((episode) => episode.storyState === "writing"));
     const delay = answer.status === "scanning" ? 800 : answer.refreshing || writing ? 4000 : null;
     if (delay === null) return;
     const timer = setTimeout(() => setTick((value) => value + 1), delay);
@@ -577,7 +601,7 @@ function DayBars(props: { series: DaySeries; width: number; tip: ShowTip }) {
         avg {format(average)}
       </text>
       {rows.map(([day, value, behind], index) => {
-        const barHeight = Math.max(2, (value / max) * (base - 10));
+        const barHeight = value > 0 ? Math.max(2, (value / max) * (base - 10)) : 0;
         const behindHeight = behind ? Math.max(2, (behind / max) * (base - 10)) : 0;
         return (
           <g
@@ -838,56 +862,106 @@ function Subhead(props: { title: string; hint?: string }) {
 
 /* -------------------------------------------------------------- thinking */
 
-function Thinking(props: { period: StatsPeriod; known: KnownModel[] }) {
-  const think = props.period.think;
-  if (!think) return <p className="text-sm text-muted-foreground">No thinking recorded in this period.</p>;
-  const name = modelName(think.model, props.known);
+/** Messages by the thinking level they went out with, as one bar. */
+function ThinkingBar(props: { period: StatsPeriod }) {
+  const entered = useEntered();
+  const levels = LEVEL_ORDER.filter((level) => props.period.levels[level]);
+  const total = levels.reduce((sum, level) => sum + (props.period.levels[level] ?? 0), 0);
+  if (!total) return <p className="pt-5 text-sm text-muted-foreground">No messages in this period.</p>;
   return (
-    <div>
-      <div className="text-[11.5px] text-[#a78bfa]">Longest think · {wholeNumber(think.chars)} characters</div>
-      {think.card ? (
-        <>
-          <div className="mt-2 text-xl font-bold tracking-[-0.4px]">{think.card.headline}</div>
-          <p className="mt-2 max-w-[620px] text-[13.3px] leading-[1.75] text-foreground/80">{think.card.body}</p>
-        </>
-      ) : (
-        <>
-          <div className="mt-2 text-xl font-bold tracking-[-0.4px]">“{think.title ?? think.project}”</div>
-          <p className="mt-2 text-[13.3px] text-muted-foreground">
-            {think.cardState === "writing" ? "Reading it to tell you what it was about…" : "No summary for this one."}
-          </p>
-        </>
-      )}
-      <div className="mt-3 text-[11.5px] text-muted-foreground/70">
-        {think.card?.chips.length ? <span className="text-[#c4b5fd]">{think.card.chips.join(" · ")}</span> : null}
-        {think.card?.chips.length ? <span className="mx-2">—</span> : null}
-        {name} · {shortDate(think.at)} {clock(think.at)} · {think.title ?? think.project}
+    <div className="pt-5">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-foreground/[0.06]">
+        {levels.map((level, index) => (
+          <i
+            key={level}
+            className="block h-full"
+            style={{
+              width: entered ? `${((props.period.levels[level] ?? 0) / total) * 100}%` : 0,
+              minWidth: entered ? 2 : 0,
+              background: LEVEL_COLORS[level],
+              transition: `width 1.1s ${EASE} ${0.08 + index * 0.06}s`,
+            }}
+          />
+        ))}
+      </div>
+      <div className="mt-2.5 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-muted-foreground/80">
+        {levels.map((level) => (
+          <span key={level} className="whitespace-nowrap">
+            <b className="font-semibold" style={{ color: LEVEL_COLORS[level] }}>{level}</b> {wholeNumber(props.period.levels[level] ?? 0)}
+            <span className="text-muted-foreground/60"> · {percent((props.period.levels[level] ?? 0) / total)}</span>
+          </span>
+        ))}
       </div>
     </div>
   );
 }
 
-function Levels(props: { period: StatsPeriod }) {
-  const levels = LEVEL_ORDER.filter((level) => props.period.levels[level]);
-  const counts = levels.map((level) => props.period.levels[level] ?? 0);
-  const max = Math.max(1, ...counts);
-  const total = counts.reduce((sum, count) => sum + count, 0);
-  const top = levels.toSorted((a, b) => (props.period.levels[b] ?? 0) - (props.period.levels[a] ?? 0))[0];
+/* -------------------------------------------------------------- episodes */
+
+const EPISODE_ICONS: Record<StatsEpisodeKind, LucideIcon> = {
+  mind: LightbulbIcon,
+  cost: CircleDollarSignIcon,
+  swarm: NetworkIcon,
+  night: MoonIcon,
+  solo: FootprintsIcon,
+  outage: UnplugIcon,
+  first: SproutIcon,
+};
+
+function episodeSource(episode: StatsEpisode, known: KnownModel[]): string {
+  const parts = [episode.project];
+  if (episode.title) parts.push(episode.title);
+  if (episode.kind === "mind") {
+    if (typeof episode.facts.model === "string") parts.push(modelName(episode.facts.model, known));
+    if (typeof episode.facts.chars === "number") parts.push(`${wholeNumber(episode.facts.chars)} characters`);
+  }
+  return parts.join(" · ");
+}
+
+/** Moments from the period, newest first, one row each: when, what happened, and its number. */
+function Episodes(props: { episodes: ReadonlyArray<StatsEpisode>; known: KnownModel[]; group: EpisodeGroup | "All" }) {
+  const shown = props.episodes.filter((episode) => props.group === "All" || EPISODE_KINDS[episode.kind].group === props.group);
+  if (!shown.length) return <p className="pt-5 text-sm text-muted-foreground">No episodes in this period yet.</p>;
   return (
     <div>
-      <Subhead title="Messages by thinking level" hint="The level each message went out with" />
-      {levels.map((level, index) => (
-        <div key={level} className="grid grid-cols-[58px_1fr_48px] items-center gap-2.5 py-[5px] text-xs">
-          <div className="font-semibold" style={{ color: LEVEL_COLORS[level] }}>{level}</div>
-          <Bar share={(props.period.levels[level] ?? 0) / max} color={LEVEL_COLORS[level]!} delay={0.08 + index * 0.08} height={10} />
-          <div className="text-right text-muted-foreground">{wholeNumber(props.period.levels[level] ?? 0)}</div>
-        </div>
-      ))}
-      {top && total ? (
-        <div className="mt-3 text-[11.5px] text-muted-foreground/70">
-          <b className="font-semibold text-foreground">{percent((props.period.levels[top] ?? 0) / total)}</b> of {wholeNumber(total)} messages went out on <b className="font-semibold text-foreground">{top}</b>
-        </div>
-      ) : null}
+      {shown.map((episode, index) => {
+        const kind = EPISODE_KINDS[episode.kind];
+        const Icon = EPISODE_ICONS[episode.kind];
+        return (
+          <div
+            key={episode.id}
+            className="grid grid-cols-[92px_28px_minmax(0,1fr)_140px] items-start gap-[18px] border-b border-border/40 py-5 last:border-0"
+            style={{ animation: `rubato-stats-rise .7s ${EASE} ${index * 0.06}s both` }}
+          >
+            <div className="pt-0.5 text-xs leading-snug text-muted-foreground">
+              {shortDate(episode.at)}
+              <small className="block text-[11px] text-muted-foreground/60">
+                {weekday(episode.at.slice(0, 10)).slice(0, 3)} · {clock(episode.at)}
+              </small>
+            </div>
+            <div className="grid size-7 place-items-center rounded-lg" style={{ color: kind.color, background: `${kind.color}22` }}>
+              <Icon className="size-[15px]" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                {kind.group}
+                {episode.storyState === "writing" ? (
+                  <span className="text-muted-foreground/60" style={{ animation: "rubato-stats-breathe 1.8s ease-in-out infinite" }}>
+                    · writing the story…
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1 text-[17px] font-bold leading-snug tracking-[-0.3px]">{episode.headline}</div>
+              <p className="mt-1.5 max-w-[660px] text-[13.2px] leading-[1.7] text-foreground/75">{episode.story}</p>
+              <div className="mt-2 truncate text-[11.5px] text-muted-foreground/60">{episodeSource(episode, props.known)}</div>
+            </div>
+            <div className="text-right leading-none" style={{ color: kind.color }}>
+              <span className="text-[34px] font-extrabold tracking-[-1.2px]">{episodeNumber(episode)}</span>
+              <small className="mt-1.5 block text-[11px] font-semibold tracking-normal text-muted-foreground">{kind.unit(episode.value)}</small>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -919,7 +993,7 @@ function Projects(props: { period: StatsPeriod; known: KnownModel[]; tip: ShowTi
 }
 
 function Delegation(props: { period: StatsPeriod; known: KnownModel[] }) {
-  const { delegation, run } = props.period;
+  const { delegation } = props.period;
   const merged = new Map<string, { id: string; count: number }>();
   for (const row of delegation.models) {
     const name = modelName(row.model, props.known);
@@ -953,14 +1027,32 @@ function Delegation(props: { period: StatsPeriod; known: KnownModel[] }) {
           ))}
         </>
       ) : null}
-      {run ? (
-        <div className="mt-4 border-t border-border/50 pt-3.5 text-[12.5px] leading-relaxed text-muted-foreground">
-          Longest solo run: <b className="text-foreground">{wholeNumber(run.calls)} calls</b> in a row over{" "}
-          <b className="text-foreground">{duration(run.seconds)}</b>, with no message from you
-          <span className="text-muted-foreground/70"> · {shortDate(run.at)} · {run.title ?? run.project}</span>
-        </div>
-      ) : null}
     </div>
+  );
+}
+
+/** All, then only the groups the period has episodes in. */
+function EpisodeFilter(props: { episodes: ReadonlyArray<StatsEpisode>; value: EpisodeGroup | "All"; onChange: (next: EpisodeGroup | "All") => void }) {
+  const present = EPISODE_GROUPS.filter((group) => props.episodes.some((episode) => EPISODE_KINDS[episode.kind].group === group));
+  if (present.length < 2) return null;
+  const value = props.value === "All" || present.includes(props.value) ? props.value : "All";
+  return (
+    <ToggleGroup
+      aria-label="Episode kind"
+      variant="segmented"
+      value={[value]}
+      onValueChange={(next) => {
+        const picked = next[0] as EpisodeGroup | "All" | undefined;
+        if (picked) props.onChange(picked);
+      }}
+    >
+      <Toggle value="All">All</Toggle>
+      {present.map((group) => (
+        <Toggle key={group} value={group}>
+          {group}
+        </Toggle>
+      ))}
+    </ToggleGroup>
   );
 }
 
@@ -984,6 +1076,7 @@ export function RubatoStatsPanel() {
   const known = useKnownModels();
   const [periodName, setPeriodName] = useState<StatsPeriodName>("month");
   const [mode, setMode] = useState<RhythmMode>("day");
+  const [group, setGroup] = useState<EpisodeGroup | "All">("All");
   const [tip, setTip] = useState<TipState | null>(null);
   const showTip = useCallback<ShowTip>((event, content) => setTip({ x: event.clientX, y: event.clientY, content }), []);
   const stats = answer?.status === "ready" ? answer : null;
@@ -1022,7 +1115,9 @@ export function RubatoStatsPanel() {
         {error && !stats ? <p className="mt-10 text-sm text-destructive">{error}</p> : null}
         {answer?.status === "scanning" || (!answer && !error) ? <Scanning progress={answer?.status === "scanning" ? answer.progress : null} /> : null}
 
-        {stats && period ? (
+        {stats && !stats.firstDay ? <NoHistory /> : null}
+
+        {stats && stats.firstDay && period ? (
           <>
             <Strip period={period} />
             <Ticker items={items} />
@@ -1051,6 +1146,17 @@ export function RubatoStatsPanel() {
               <Rhythm period={period} mode={mode} tip={showTip} />
             </Section>
 
+            <Section
+              title="Episodes"
+              caption="Moments worth retelling from this period"
+              delay={0.23}
+              aside={
+                <EpisodeFilter episodes={period.episodes} value={group} onChange={setGroup} />
+              }
+            >
+              <Episodes episodes={period.episodes} known={known} group={group} />
+            </Section>
+
             <Section title="Models" caption="Who you worked with, and how fast they were" delay={0.26}>
               <TokenLead period={period} />
               <Columns>
@@ -1059,11 +1165,8 @@ export function RubatoStatsPanel() {
               </Columns>
             </Section>
 
-            <Section title="Thinking" caption="What the models worked through before answering" delay={0.32}>
-              <Columns wide>
-                <Thinking period={period} known={known} />
-                <Levels period={period} />
-              </Columns>
+            <Section title="Thinking" caption="The thinking level each message went out with" delay={0.32}>
+              <ThinkingBar period={period} />
             </Section>
 
             <Section title="Projects and delegation" delay={0.38}>
@@ -1083,6 +1186,19 @@ export function RubatoStatsPanel() {
           {tip.content}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** A machine with no session logs yet: say where the numbers will come from. */
+function NoHistory() {
+  return (
+    <div className="mx-auto mt-24 max-w-md text-center" style={{ animation: `rubato-stats-rise .8s ${EASE} both` }}>
+      <div className="text-sm font-medium">Nothing to count yet</div>
+      <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+        Stats reads the session logs Rubato keeps on this computer. Start a conversation, and your sessions, rhythm,
+        models and episodes fill in here.
+      </p>
     </div>
   );
 }

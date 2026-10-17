@@ -6,7 +6,11 @@
 //   <agentDir>/speed-index/samples/*.jsonl       speed samples, scored like the composer's Speed index
 // What it keeps:
 //   <agentDir>/cache/stats/scan-v1.json          one summary per file, reused while size and mtime hold
-//   <agentDir>/cache/stats/explanations-v1.json  the longest-think cards, written once per record
+//   <agentDir>/cache/stats/stories-v1.json       episode stories, written once per moment
+//
+// Nothing here makes the page wait on a model: a `summary` answers with every episode in
+// plain English and starts the stories in the background, one at a time, which the page
+// picks up on its next poll. `warm` only reads the logs, so the first visit is quick.
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -15,13 +19,14 @@ import { Worker } from 'node:worker_threads';
 import { resolveSpeedIndexAgentDir } from '../../../rubato-pi/src/speed-index-store.mjs';
 import { loadTitleModels } from '../../../pi-runtime/features/session-title/session-title.mjs';
 import { aggregateStats } from './aggregate.mjs';
-import { createExplainer, readThinking, runPrint, stockEngineLaunch } from './explain.mjs';
+import { fallbackStory } from './episodes.mjs';
+import { createStoryWriter, readThinking, runPrint, stockEngineLaunch } from './stories.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
 // A summary request waits this long for a rescan before answering with the last result.
 const FRESH_WAIT_MS = 1500;
-// A record whose card failed is tried again after this long, not on every visit.
+// A moment whose story failed is tried again after this long, not on every visit.
 const RETRY_FAILED_MS = 6 * 60 * 60 * 1000;
 
 export class StatsRequestError extends Error {
@@ -34,21 +39,21 @@ export class StatsRequestError extends Error {
 
 /**
  * @param {{ env?: NodeJS.ProcessEnv, agentDir?: string, now?: () => number,
- *   explain?: (input: object) => Promise<object>, scan?: () => Promise<{sessions: object, speed: Array}> }} [options]
- *   `scan` replaces the worker (tests); `explain` replaces the model call.
+ *   write?: (episode: object, material: object) => Promise<object>, scan?: () => Promise<{sessions: object, speed: Array}> }} [options]
+ *   `scan` replaces the worker (tests); `write` replaces the model call.
  */
 export function createStatsService(options = {}) {
   const env = options.env ?? process.env;
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const agentDir = options.agentDir ?? resolveSpeedIndexAgentDir(env, home) ?? path.join(home, '.rubato-pi', 'agent');
   const cacheDir = path.join(agentDir, 'cache', 'stats');
-  const explanationsFile = path.join(cacheDir, 'explanations-v1.json');
+  const storiesFile = path.join(cacheDir, 'stories-v1.json');
   const now = options.now ?? (() => Date.now());
   const childEnv = { ...env, PATH: [
     path.join(home, '.bun', 'bin'), path.join(home, '.local', 'share', 'vite-plus', 'bin'), path.join(home, '.local', 'bin'),
     '/opt/homebrew/bin', '/usr/local/bin', env.PATH ?? '/usr/bin:/bin',
   ].join(path.delimiter) };
-  const explain = options.explain ?? createExplainer({
+  const write = options.write ?? createStoryWriter({
     run: async (request) => runPrint({ launch: await stockEngineLaunch(repoRoot, childEnv), env: childEnv, ...request }),
     models: () => loadTitleModels({ home }),
   });
@@ -57,20 +62,21 @@ export function createStatsService(options = {}) {
 
   let result = null;
   let scanning = null;
-  let explanations = null;
-  const explaining = new Set();
+  let stories = null;
+  const queue = [];
+  let writing = null;
   const failed = new Map();
 
-  const loadExplanations = async () => {
-    if (explanations) return explanations;
-    try { explanations = JSON.parse(await readFile(explanationsFile, 'utf8')); } catch { explanations = {}; }
-    return explanations;
+  const loadStories = async () => {
+    if (stories) return stories;
+    try { stories = JSON.parse(await readFile(storiesFile, 'utf8')); } catch { stories = {}; }
+    return stories;
   };
-  const saveExplanations = async () => {
+  const saveStories = async () => {
     await mkdir(cacheDir, { recursive: true });
-    const tmp = `${explanationsFile}.${process.pid}.tmp`;
-    await writeFile(tmp, JSON.stringify(explanations, null, 1));
-    await rename(tmp, explanationsFile);
+    const tmp = `${storiesFile}.${process.pid}.tmp`;
+    await writeFile(tmp, JSON.stringify(stories, null, 1));
+    await rename(tmp, storiesFile);
   };
 
   const scan = () => {
@@ -83,51 +89,68 @@ export function createStatsService(options = {}) {
     return scanning;
   };
 
-  const writeCard = async (key, think) => {
-    explaining.add(key);
-    try {
-      const [name, entryId] = [key.slice(0, key.lastIndexOf('#')), key.slice(key.lastIndexOf('#') + 1)];
-      const source = await readThinking(path.join(agentDir, 'sessions', name), entryId);
-      if (!source) throw new Error('the thinking block is gone');
-      const card = await explain({ ...source, title: think.title, model: think.model });
-      (await loadExplanations())[key] = { ...card, writtenAt: new Date(now()).toISOString() };
-      await saveExplanations();
-      failed.delete(key);
-    } catch (error) {
-      failed.set(key, now());
-      console.warn(`[rubato stats] longest-think card for ${key} failed: ${error instanceof Error ? error.message : String(error)}`);
-    } finally {
-      explaining.delete(key);
+  const writeStory = async (episode) => {
+    const material = { language: episode._language };
+    if (episode.kind === 'mind' && episode._entryId) {
+      material.thinking = await readThinking(path.join(agentDir, 'sessions', episode._file), episode._entryId);
+      if (!material.thinking) throw new Error('the thinking block is gone');
     }
+    const story = await write(episode, material);
+    (await loadStories())[episode.id] = { headline: story.headline, story: story.story, model: story.model, writtenAt: new Date(now()).toISOString() };
+    await saveStories();
   };
 
-  /** Attaches each period's card, and starts writing the ones that are missing. */
-  const withCards = async (stats) => {
-    const cards = await loadExplanations();
+  /** Writes queued stories one at a time, so a page full of episodes is one model call at a time. */
+  const drain = () => {
+    writing ??= (async () => {
+      while (queue.length > 0) {
+        const episode = queue[0];
+        try {
+          await writeStory(episode);
+          failed.delete(episode.id);
+        } catch (error) {
+          failed.set(episode.id, now());
+          console.warn(`[rubato stats] story for ${episode.id} failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        queue.shift();
+      }
+    })().finally(() => { writing = null; });
+  };
+
+  /** Gives every episode its words: the written story when there is one, else plain English, and queues the rest. */
+  const withStories = async (stats) => {
+    const written = await loadStories();
     const periods = {};
     for (const [name, period] of Object.entries(stats.periods)) {
-      const think = period.think;
-      if (!think) { periods[name] = period; continue; }
-      let state = 'unavailable';
-      const card = think.key ? cards[think.key] ?? null : null;
-      if (card) state = 'ready';
-      else if (think.key) {
-        const lastFailure = failed.get(think.key);
-        if (explaining.has(think.key)) state = 'writing';
-        else if (lastFailure === undefined || now() - lastFailure > RETRY_FAILED_MS) {
-          state = 'writing';
-          void writeCard(think.key, think);
+      const shown = period.episodes.map((episode) => {
+        const story = written[episode.id];
+        let storyState = story ? 'written' : 'plain';
+        if (!story) {
+          const lastFailure = failed.get(episode.id);
+          if (queue.some((queued) => queued.id === episode.id)) storyState = 'writing';
+          else if (lastFailure === undefined || now() - lastFailure > RETRY_FAILED_MS) {
+            queue.push(episode);
+            storyState = 'writing';
+          }
         }
-      }
-      const { key: _key, ...shown } = think;
-      periods[name] = { ...period, think: { ...shown, card: card ? { headline: card.headline, body: card.body, chips: card.chips } : null, cardState: state } };
+        const { _file, _entryId, _language, ...visible } = episode;
+        const words = story ? { headline: story.headline, story: story.story } : fallbackStory(episode);
+        return { ...visible, ...words, storyState };
+      });
+      periods[name] = { ...period, episodes: shown };
     }
+    if (queue.length > 0) drain();
     return { ...stats, periods };
   };
 
   return {
     agentDir,
     async handle(action) {
+      if (action === 'warm') {
+        // Read the logs ahead of the first visit; no model calls happen here.
+        scan().catch(() => {});
+        return { status: result ? 'ready' : 'scanning' };
+      }
       if (action !== 'summary') throw new StatsRequestError(404, 'unknown-action', `Unknown stats action: ${action}`);
       let fresh = null;
       let failure = null;
@@ -139,7 +162,7 @@ export function createStatsService(options = {}) {
         if (failure) throw new StatsRequestError(500, 'scan-failed', failure instanceof Error ? failure.message : String(failure));
         return { status: 'scanning', progress: { ...progress } };
       }
-      return { status: 'ready', refreshing: !fresh, ...(await withCards(fresh ?? result)) };
+      return { status: 'ready', refreshing: !fresh, ...(await withStories(fresh ?? result)) };
     },
   };
 }

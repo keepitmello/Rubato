@@ -1,5 +1,5 @@
 // Words and numbers for the Stats page. Pure, so the page stays about drawing.
-import type { StatsPeriod, StatsReady } from "../state/rubatoStats";
+import type { StatsEpisode, StatsEpisodeKind, StatsPeriod, StatsReady } from "../state/rubatoStats";
 
 export interface KnownModel {
   readonly slug: string;
@@ -169,29 +169,6 @@ export interface Highlight {
 /** The ticker's cards for one period, in the order they play. */
 export function highlights(period: StatsPeriod, known: ReadonlyArray<KnownModel>): Highlight[] {
   const out: Highlight[] = [];
-  const think = period.think;
-  if (think) {
-    out.push({
-      key: "think",
-      color: "#a78bfa",
-      value: think.chars,
-      unit: "characters",
-      label: "Longest think",
-      headline: think.card?.headline ?? `${modelName(think.model, known)} thought it through`,
-      detail: `${modelName(think.model, known)} · ${shortDate(think.at)}. ${think.card?.body ?? `In “${think.title ?? think.project}”.`}`,
-    });
-  }
-  if (period.run) {
-    out.push({
-      key: "run",
-      color: "#ffb86b",
-      value: period.run.calls,
-      unit: "calls in a row",
-      label: "Longest solo run",
-      headline: `Kept going for ${duration(period.run.seconds)} on its own`,
-      detail: `${shortDate(period.run.at)} · ${period.run.title ?? period.run.project}. Not one message from you in between.`,
-    });
-  }
   if (period.busiest) {
     const activeDays = period.daily.filter(([, count]) => count > 0).length || 1;
     const average = period.turns / activeDays;
@@ -292,4 +269,25 @@ export function attendanceWeeks(stats: Pick<StatsReady, "attendance" | "firstDay
 export function daysSinceFirst(stats: Pick<StatsReady, "firstDay" | "today">): number {
   if (!stats.firstDay) return 0;
   return Math.round((localDate(stats.today).getTime() - localDate(stats.firstDay).getTime()) / 86_400_000) + 1;
+}
+
+export type EpisodeGroup = "Thinking" | "Work" | "Mishaps" | "Milestones";
+
+/** How each episode kind is filed, colored and counted on the Episodes list. */
+export const EPISODE_KINDS: Readonly<Record<StatsEpisodeKind, { group: EpisodeGroup; color: string; unit: (value: number) => string }>> = {
+  mind: { group: "Thinking", color: "#c4b5fd", unit: () => "second-guesses" },
+  cost: { group: "Work", color: "#ffb86b", unit: () => "one turn" },
+  swarm: { group: "Work", color: "#3fcfb8", unit: () => "subagents" },
+  night: { group: "Work", color: "#a78bfa", unit: () => "before dawn" },
+  solo: { group: "Work", color: "#6aa7ff", unit: () => "calls in a row" },
+  outage: { group: "Mishaps", color: "#f87171", unit: () => "failures in a row" },
+  first: { group: "Milestones", color: "#5fe0d0", unit: (value) => (value === 1 ? "day in" : "days in") },
+};
+
+export const EPISODE_GROUPS: ReadonlyArray<EpisodeGroup> = ["Thinking", "Work", "Mishaps", "Milestones"];
+
+/** The number an episode leads with: dollars for a costly turn, a count for the rest. */
+export function episodeNumber(episode: Pick<StatsEpisode, "kind" | "value">): string {
+  if (episode.kind === "cost") return `$${episode.value >= 100 ? Math.round(episode.value) : episode.value.toFixed(episode.value >= 10 ? 0 : 2)}`;
+  return wholeNumber(episode.value);
 }

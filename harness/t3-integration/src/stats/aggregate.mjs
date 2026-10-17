@@ -10,6 +10,8 @@ const SCRATCH_ROOTS = ['/tmp/', '/private/tmp/', '/private/var/folders/', '/var/
 const MIN_SPEED_SAMPLES = 15;
 const TOP_MODELS = 8;
 const TOP_PROJECTS = 8;
+// An episode below these is not a story: a handful of subagents or two failed calls happen every day.
+export const EPISODE_MINIMUMS = Object.freeze({ mind: 20, cost: 1, swarm: 5, night: 10, outage: 3, solo: 50 });
 
 export function isScratchFolder(cwd) {
   return typeof cwd === 'string' && SCRATCH_ROOTS.some((root) => cwd === root.slice(0, -1) || cwd.startsWith(root));
@@ -102,6 +104,37 @@ function workTime(sessions, fromMs, now, days) {
   };
 }
 
+/** The first message typed into the first session: where the history starts. */
+function firstTurn(sessions) {
+  let first = null;
+  for (const [name, s] of sessions) {
+    const at = s.turns[0];
+    if (at !== undefined && (!first || at < first.at)) first = { at, session: s, name };
+  }
+  return first;
+}
+
+/**
+ * Episodes, newest first. `id` names the moment for the story cache; fields that start with
+ * an underscore stay on the server (the file, the entry, the language sample).
+ */
+function episodes(best, home, language) {
+  return Object.values(best)
+    .map(({ kind, value, at, session, name, facts, entryId }) => ({
+      id: `${kind}|${name}|${entryId ?? at}`,
+      kind,
+      at: new Date(at).toISOString(),
+      value,
+      title: session.title,
+      project: projectOf(session.cwd, home).name,
+      facts,
+      _file: name,
+      _entryId: entryId,
+      _language: language,
+    }))
+    .toSorted((a, b) => (a.at < b.at ? 1 : -1));
+}
+
 function projectOf(cwd, home) {
   if (!cwd) return { path: null, name: 'Unknown' };
   const clean = cwd.replace(/\/+$/, '');
@@ -113,7 +146,20 @@ function topBy(map, size, score) {
   return [...map.entries()].toSorted((a, b) => score(b[1]) - score(a[1])).slice(0, size);
 }
 
-function aggregatePeriod(sessions, speed, { days, now, home }) {
+/**
+ * What the person writes in, from the first messages of their latest sessions. One sample
+ * for every story, so a page reads in one language even when one session opened in another.
+ */
+export function languageSample(sessions) {
+  return sessions
+    .filter(([, s]) => s.firstText)
+    .toSorted(([, a], [, b]) => b.start - a.start)
+    .slice(0, 3)
+    .map(([, s]) => s.firstText.slice(0, 120))
+    .join(' / ') || null;
+}
+
+function aggregatePeriod(sessions, speed, { days, now, home, language }) {
   const today = dayKey(now);
   const fromMs = days ? startOfDay(addDays(now, -(days - 1))) : -Infinity;
   const from = days ? dayKey(fromMs) : null;
@@ -134,8 +180,13 @@ function aggregatePeriod(sessions, speed, { days, now, home }) {
   let agents = 0;
   let teams = 0;
   let run = null;
-  let think = null;
   let longest = null;
+  // The strongest moment of each episode kind in the period; see episodes() for the shape.
+  const best = {};
+  const offer = (kind, value, at, s, name, facts, entryId = null) => {
+    if (value < EPISODE_MINIMUMS[kind] || (best[kind] && best[kind].value >= value)) return;
+    best[kind] = { kind, value, at, session: s, name, facts, entryId };
+  };
   let firstDay = null;
   for (const [name, s] of sessions) {
     const project = projectOf(s.cwd, home);
@@ -190,13 +241,30 @@ function aggregatePeriod(sessions, speed, { days, now, home }) {
       agentModels.set(model, (agentModels.get(model) ?? 0) + 1);
     }
     for (const [day, [calls, seconds, at]] of Object.entries(s.runs)) {
-      if (inDay(day) && (!run || calls > run.calls)) run = { calls, seconds, at: new Date(at).toISOString(), ...meta };
+      if (!inDay(day)) continue;
+      if (!run || calls > run.calls) run = { calls, seconds, at: new Date(at).toISOString(), ...meta };
+      offer('solo', calls, at, s, name, { calls, seconds });
     }
-    for (const [day, [chars, model, at, entryId]] of Object.entries(s.thinks)) {
-      if (inDay(day) && (!think || chars > think.chars)) {
-        think = { chars, model, at: new Date(at).toISOString(), ...meta, key: entryId ? `${name}#${entryId}` : null };
-      }
+    for (const [day, [hesitations, chars, model, at, entryId]] of Object.entries(s.minds ?? {})) {
+      if (inDay(day)) offer('mind', hesitations, at, s, name, { hesitations, chars, model }, entryId);
     }
+    for (const [day, [usd, at, seconds, message]] of Object.entries(s.costs ?? {})) {
+      if (inDay(day)) offer('cost', usd, at, s, name, { usd, seconds, message });
+    }
+    for (const [day, [failures, start, end, error]] of Object.entries(s.outages ?? {})) {
+      if (inDay(day)) offer('outage', failures, start, s, name, { failures, seconds: Math.round((end - start) / 1000), error });
+    }
+    const delegated = s.agents.filter(([at]) => at >= fromMs);
+    if (delegated.length) offer('swarm', delegated.length, delegated[0][0], s, name, { agents: delegated.length, teams: s.teams.filter((at) => at >= fromMs).length });
+    const nights = new Map();
+    for (const at of s.turns) {
+      if (at < fromMs || new Date(at).getHours() >= 6) continue;
+      const night = dayKey(at);
+      const held = nights.get(night) ?? { messages: 0, at };
+      held.messages += 1;
+      nights.set(night, held);
+    }
+    for (const [night, { messages, at }] of nights) offer('night', messages, at, s, name, { messages, night });
     if (touched) projects.set(project.path, projectRow);
   }
 
@@ -242,9 +310,13 @@ function aggregatePeriod(sessions, speed, { days, now, home }) {
     .map(([model, list]) => ({ model, score: scoreFromRatios(list), samples: list.length }))
     .toSorted((a, b) => b.samples - a.samples)
     .slice(0, TOP_MODELS);
+  const first = firstTurn(sessions);
+  if (first && first.at >= fromMs) {
+    best.first = { kind: 'first', value: daysBetween(dayKey(first.at), today).length, at: first.at, session: first.session, name: first.name, facts: { message: first.session.firstText } };
+  }
   out.run = run;
   out.longestSession = longest;
-  out.think = think;
+  out.episodes = episodes(best, home, language);
   return out;
 }
 
@@ -266,7 +338,8 @@ export function aggregateStats(summaries, speed, { now, home }) {
   let cursor = attendance[today] ? now : addDays(now, -1);
   while (attendance[dayKey(cursor)]) { currentStreak += 1; cursor = addDays(cursor, -1); }
   const periods = {};
-  for (const [name, days] of Object.entries(PERIODS)) periods[name] = aggregatePeriod(sessions, speed, { days, now, home });
+  const language = languageSample(sessions);
+  for (const [name, days] of Object.entries(PERIODS)) periods[name] = aggregatePeriod(sessions, speed, { days, now, home, language });
   return {
     generatedAt: new Date(now).toISOString(),
     today,

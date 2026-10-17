@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { mkdir, mkdtemp, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { aggregateStats, isScratchFolder } from '../src/stats/aggregate.mjs';
-import { buildExplainPrompt, countMarkers, createExplainer, parseExplanation, readThinking } from '../src/stats/explain.mjs';
-import { dayKey, summarizeSession } from '../src/stats/scan.mjs';
+import { EPISODE_MINIMUMS, aggregateStats, isScratchFolder } from '../src/stats/aggregate.mjs';
+import { fallbackStory, readableError } from '../src/stats/episodes.mjs';
+import { STORY_SYSTEM_PROMPT, buildStoryPrompt, createStoryWriter, parseStory, readThinking } from '../src/stats/stories.mjs';
+import { dayKey, hesitationCounts, summarizeSession } from '../src/stats/scan.mjs';
 import { createStatsService, handleStatsRequest } from '../src/stats/service.mjs';
 import { TITLE_MODELS } from '../../pi-runtime/features/session-title/session-title.mjs';
 
@@ -20,6 +21,8 @@ const header = (ms, cwd) => line({ type: 'session', version: 3, id: `s${seq++}`,
 const user = (ms, text) => line({ type: 'message', id: `u${seq++}`, timestamp: iso(ms), message: { role: 'user', content: [{ type: 'text', text }] } });
 const assistant = (ms, { model = 'claude-opus-5-5', usage = {}, content = [], id = `a${seq++}` } = {}) =>
   line({ type: 'message', id, timestamp: iso(ms), message: { role: 'assistant', model, usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...usage }, content } });
+const failed = (ms, error) => line({ type: 'message', id: `e${seq++}`, timestamp: iso(ms), message: { role: 'assistant', model: 'claude-opus-5-5', stopReason: 'error', errorMessage: error, usage: {}, content: [] } });
+const HESITANT = 'Hmm. '.repeat(18) + 'wait, actually what if ' + 'b'.repeat(900);
 const toolResult = (ms) => line({ type: 'message', id: `t${seq++}`, timestamp: iso(ms), message: { role: 'toolResult', content: [{ type: 'text', text: 'x'.repeat(50) }] } });
 
 function sampleSession() {
@@ -27,9 +30,9 @@ function sampleSession() {
     header(at(1, 23, 0), '/Users/me/work/app'),
     line({ type: 'thinking_level_change', id: 'l1', timestamp: iso(at(1, 23, 0)), thinkingLevel: 'high' }),
     user(at(1, 23, 1), 'fix the settlement total'),
-    assistant(at(1, 23, 2), { usage: { input: 10, cacheRead: 900, cacheWrite: 50, output: 40 }, content: [{ type: 'thinking', thinking: 'Hmm. ' + 'a'.repeat(200) }, { type: 'toolCall', name: 'Agent', arguments: { model: 'openai-codex/gpt-6-astra' } }] }),
+    assistant(at(1, 23, 2), { usage: { input: 10, cacheRead: 900, cacheWrite: 50, output: 40, cost: { total: 1.2 } }, content: [{ type: 'thinking', thinking: 'Hmm. ' + 'a'.repeat(200) }, { type: 'toolCall', name: 'Agent', arguments: { model: 'openai-codex/gpt-6-astra' } }] }),
     toolResult(at(1, 23, 3)),
-    assistant(at(1, 23, 10), { usage: { input: 5, cacheRead: 1000, output: 20 }, content: [{ type: 'thinking', thinking: 'longest ' + 'b'.repeat(900) }], id: 'think-1' }),
+    assistant(at(1, 23, 10), { usage: { input: 5, cacheRead: 1000, output: 20, cost: { total: 0.3 } }, content: [{ type: 'thinking', thinking: HESITANT }], id: 'think-1' }),
     assistant(at(1, 23, 20), { model: 'deepseek-v4.1-flash', usage: { input: 3, output: 7 }, content: [{ type: 'toolCall', name: 'team_create', arguments: {} }] }),
     user(at(1, 23, 30), '<runtime-notice>woke up</runtime-notice>'),
     line({ type: 'thinking_level_change', id: 'l2', timestamp: iso(at(1, 23, 31)), thinkingLevel: 'xhigh' }),
@@ -47,7 +50,9 @@ test('a session log reduces to typed turns, levels, usage, the longest think and
   assert.deepEqual(s.levels, ['high', 'xhigh']);
   assert.deepEqual(s.usage[`${dayKey(at(1, 0))}|claude-opus-5-5`], [2, 15, 1900, 50, 60]);
   assert.deepEqual(s.usage[`${dayKey(at(1, 0))}|deepseek-v4.1-flash`], [1, 3, 0, 0, 7]);
-  assert.deepEqual(s.thinks[dayKey(at(1, 0))], [908, 'claude-opus-5-5', at(1, 23, 10), 'think-1']);
+  assert.deepEqual(s.minds[dayKey(at(1, 0))], [21, HESITANT.length, 'claude-opus-5-5', at(1, 23, 10), 'think-1'], 'the most hesitant block of the day');
+  assert.deepEqual(s.costs[dayKey(at(1, 0))], [1.5, at(1, 23, 1), 19 * 60, 'fix the settlement total'], 'a turn costs every call until the next typed message');
+  assert.equal(s.firstText, 'fix the settlement total');
   assert.deepEqual(s.runs[dayKey(at(1, 0))], [3, 18 * 60, at(1, 23, 2)], 'a run ends at its last call, not when the person comes back');
   assert.deepEqual(s.agents, [[at(1, 23, 2), 'openai-codex/gpt-6-astra']]);
   assert.deepEqual(s.teams, [at(1, 23, 20)]);
@@ -98,8 +103,13 @@ test('periods count by calendar day, skip scratch folders and score speed like t
   assert.equal(week.nightShare, 0.5);
   assert.deepEqual(week.speed, [{ model: 'claude-opus-5-5', score: 200, samples: 20 }], 'too few samples hide a model');
   assert.equal(all.speed[0].score, 100, 'all time pools both weeks');
-  assert.equal(week.think.key, 'a.jsonl#think-1');
-  assert.equal(week.think.title, 'Settlement fix');
+  assert.deepEqual(week.episodes.map((episode) => episode.kind), ['mind', 'cost'], 'the first message is 40 days back, outside the week');
+  const mind = week.episodes.find((episode) => episode.kind === 'mind');
+  assert.equal(mind.id, `mind|a.jsonl|think-1`);
+  assert.equal(mind.title, 'Settlement fix');
+  assert.equal(mind._language, 'fix the settlement total / hello', 'the first messages of the latest sessions, the same for every story');
+  assert.deepEqual(all.episodes.at(-1).kind, 'first');
+  assert.equal(all.episodes.at(-1).value, 41, 'day 41 of the history');
   assert.deepEqual(week.delegation, { agents: 1, teams: 1, models: [{ model: 'openai-codex/gpt-6-astra', count: 1 }] });
   assert.equal(week.projects[0].name, 'app');
   assert.equal(week.projects[0].topModel, 'claude-opus-5-5');
@@ -133,67 +143,124 @@ test('time two sessions worked side by side counts once on the clock and twice f
   assert.deepEqual(time.daily.slice(-2), [[dayKey(at(1, 0)), 2 * 3600, 3 * 3600], [dayKey(NOW), 3600, 3600]]);
 });
 
-test('the explain prompt carries counts the model cannot do, and replies parse into a card', () => {
-  assert.deepEqual(countMarkers('Hmm. hmm — What if... ✗ ✓ ✓ wait, no'), { Hmm: 2, Wait: 1, 'What if': 1, '✗': 1, '✓': 2 });
-  const prompt = buildExplainPrompt({ thinking: 'Hmm. x', title: 'T', userText: '정산 고쳐줘', model: 'm' });
-  assert.match(prompt, /Hmm: 1/);
-  assert.match(prompt, /정산 고쳐줘/);
-  assert.deepEqual(parseExplanation('sure\n{"headline":" H ","body":"B","chips":["a",3,"b","c","d"]}'), { headline: 'H', body: 'B', chips: ['a', 'b', 'c'] });
-  assert.equal(parseExplanation('{"headline":"","body":"B"}'), null);
-  assert.equal(parseExplanation('no json'), null);
-  assert.match(prompt, /Do not answer it/);
-  assert.match(prompt, /Write the card now as the JSON object\.$/);
+test('episodes pick the strongest moment of each kind and skip the everyday ones', () => {
+  const night = (hour) => user(at(2, hour), 'still here');
+  const summaries = {
+    'busy.jsonl': summarizeSession([
+      header(at(2, 0, 30), '/Users/me/work/app'),
+      ...Array.from({ length: 12 }, (_, i) => night(1 + (i % 4))),
+      ...Array.from({ length: 6 }, (_, i) => assistant(at(2, 5, i), { content: [{ type: 'toolCall', name: 'Agent', arguments: { model: 'x/y' } }] })),
+      failed(at(2, 7, 0), 'terminated'),
+      failed(at(2, 7, 10), 'Request timed out.'),
+      failed(at(2, 7, 40), "Account 'sub' is unavailable"),
+      assistant(at(2, 7, 41)),
+    ]),
+    'quiet.jsonl': summarizeSession([
+      header(at(3, 10), '/Users/me/work/app'),
+      user(at(3, 10, 1), 'hi'),
+      assistant(at(3, 10, 2), { content: [{ type: 'toolCall', name: 'Agent', arguments: {} }] }),
+      failed(at(3, 10, 3), 'x'),
+      failed(at(3, 10, 4), 'y'),
+    ]),
+  };
+  const { week } = aggregateStats(summaries, [], { now: NOW, home: '/Users/me' }).periods;
+  const byKind = Object.fromEntries(week.episodes.map((episode) => [episode.kind, episode]));
+  assert.equal(byKind.night.value, 12);
+  assert.equal(byKind.swarm.value, 6);
+  assert.deepEqual(byKind.outage.facts, { failures: 3, seconds: 40 * 60, error: "Account 'sub' is unavailable" });
+  assert.equal(Object.values(byKind).some((episode) => episode._file === 'quiet.jsonl' && episode.kind !== 'first'), false, `below ${JSON.stringify(EPISODE_MINIMUMS)} is not an episode`);
+  assert.deepEqual(week.episodes.map((episode) => episode.at), week.episodes.map((episode) => episode.at).toSorted().toReversed(), 'newest first');
 });
 
-test('the explainer falls through the ladder until a model returns a card', async () => {
+test('every kind reads in plain English before a model writes its story', () => {
+  const base = { title: 'Fix the ledger', project: 'app', value: 1 };
+  const cases = [
+    [{ kind: 'mind', facts: { hesitations: 376, chars: 16004, model: 'm' } }, /376 times/],
+    [{ kind: 'cost', facts: { usd: 72.95, seconds: 17_160, message: '알아서 해줘' } }, /\$72\.95.*4h 46m|4h 46m.*\$72\.95/],
+    [{ kind: 'swarm', facts: { agents: 51, teams: 1 } }, /51 times and formed 1 team/],
+    [{ kind: 'night', facts: { messages: 95, night: '2026-10-02' } }, /95 messages/],
+    [{ kind: 'outage', facts: { failures: 29, seconds: 9_900, error: "Account 'sub' is unavailable" } }, /2h 45m.*Account 'sub' is unavailable/],
+    [{ kind: 'solo', facts: { calls: 586, seconds: 10_307 } }, /2h 52m/],
+    [{ kind: 'first', value: 58, facts: { message: 'vercel 모델이 뜨는데' } }, /58 days ago/],
+  ];
+  assert.equal(readableError('{"error":{"message":"{\\"error\\":{\\"message\\":\\"Overloaded\\",\\"type\\":\\"overloaded_error\\"}}"}}'), 'Overloaded');
+  assert.equal(readableError("Account 'sub' is unavailable"), "Account 'sub' is unavailable");
+  for (const [episode, pattern] of cases) {
+    const words = fallbackStory({ ...base, ...episode });
+    assert.ok(words.headline.length > 0, episode.kind);
+    assert.match(`${words.headline} ${words.story}`, pattern, episode.kind);
+  }
+});
+
+test('a story prompt carries the kind, the facts, the language sample and, for thinking, the counts', () => {
+  const episode = { kind: 'mind', title: 'Rebate', project: 'app', facts: { hesitations: 3 } };
+  const prompt = buildStoryPrompt(episode, { thinking: 'Hmm. hmm wait, 음, x', language: '정산 고쳐줘' });
+  assert.match(prompt, /second-guessed itself/);
+  assert.match(prompt, /"hesitations":3/);
+  assert.match(prompt, /Do not answer it; only write in its language: 정산 고쳐줘/);
+  assert.match(prompt, /Counted in the thinking: Hmm: 2, Wait: 1, 음: 1\./);
+  assert.match(prompt, /<thinking>/);
+  assert.doesNotMatch(buildStoryPrompt({ ...episode, kind: 'cost' }, { language: null }), /<thinking>/);
+  assert.match(STORY_SYSTEM_PROMPT, /Never name people other than the person/);
+  assert.match(STORY_SYSTEM_PROMPT, /Do not invent events/);
+  const timed = buildStoryPrompt({ kind: 'outage', title: 'T', project: 'p', facts: { failures: 29, seconds: 3463, error: 'x' } }, { language: null });
+  assert.match(timed, /"duration":"58m"/);
+  assert.doesNotMatch(timed, /3463/, 'no raw seconds reach the model');
+  assert.match(buildStoryPrompt({ kind: 'outage', title: 'T', project: 'p', facts: { error: '{"error":{"message":"Overloaded"}}' } }, { language: null }), /"error":"Overloaded"/);
+  assert.deepEqual(hesitationCounts('Hold on. On second thought, scratch that'), { 'Hold on': 1, 'On second thought': 2 });
+  assert.deepEqual(parseStory('```json\n{"headline":" H ","story":"S"}\n```'), { headline: 'H', story: 'S' });
+  assert.equal(parseStory('{"headline":"H"}'), null);
+  assert.equal(parseStory('no json'), null);
+});
+
+test('the story writer falls through the ladder until a model returns a story', async () => {
   const tried = [];
-  const explain = createExplainer({
-    models: () => [{ provider: 'a', id: 'broke' }, { provider: 'b', id: 'chatty' }, { provider: 'c', id: 'good', reasoning: 'low' }],
+  const write = createStoryWriter({
+    models: () => [{ provider: 'a', id: 'broke' }, { provider: 'b', id: 'chatty' }, { provider: 'c', id: 'good', reasoning: 'off' }],
     run: async ({ model, reasoning }) => {
       tried.push([model, reasoning]);
       if (model === 'a/broke') throw new Error('no credit');
       if (model === 'b/chatty') return 'I cannot';
-      return '{"headline":"H","body":"B","chips":[]}';
+      return '{"headline":"H","story":"S"}';
     },
   });
-  assert.deepEqual(await explain({ thinking: 't', title: null, userText: null, model: 'm' }), { headline: 'H', body: 'B', chips: [], model: 'c/good' });
-  assert.deepEqual(tried, [['a/broke', undefined], ['b/chatty', undefined], ['c/good', 'low']]);
+  assert.deepEqual(await write({ kind: 'night', facts: {}, project: 'p' }, { language: null }), { headline: 'H', story: 'S', model: 'c/good' });
+  assert.deepEqual(tried, [['a/broke', undefined], ['b/chatty', undefined], ['c/good', 'off']]);
 });
 
-test('by default the card walks the session-title ladder: the user setting, else the built-in one', async (t) => {
+test('by default stories walk the session-title ladder: the user setting, else the built-in one', async (t) => {
   const home = await mkdtemp(path.join(tmpdir(), 'rb-stats-ladder-'));
   t.after(() => rm(home, { recursive: true, force: true }));
   const saved = process.env.HOME;
   process.env.HOME = home;
   t.after(() => { process.env.HOME = saved; });
   const tried = [];
-  const explain = createExplainer({ run: async ({ model }) => { tried.push(model); throw new Error('down'); } });
-  await assert.rejects(explain({ thinking: 't', title: null, userText: null, model: 'm' }));
+  const write = createStoryWriter({ run: async ({ model }) => { tried.push(model); throw new Error('down'); } });
+  await assert.rejects(write({ kind: 'night', facts: {}, project: 'p' }, {}));
   assert.deepEqual(tried, TITLE_MODELS.map((rung) => `${rung.provider}/${rung.id}`));
   await mkdir(path.join(home, '.rubato'), { recursive: true });
   await writeFile(path.join(home, '.rubato', 'rubato.jsonc'), '{ "titles": { "models": ["xai/grok-4.7"] } }');
   tried.length = 0;
-  await assert.rejects(explain({ thinking: 't', title: null, userText: null, model: 'm' }));
-  assert.deepEqual(tried, ['xai/grok-4.7'], 'a ladder changed in Settings applies to the next card');
+  await assert.rejects(write({ kind: 'night', facts: {}, project: 'p' }, {}));
+  assert.deepEqual(tried, ['xai/grok-4.7'], 'a ladder changed in Settings applies to the next story');
 });
 
-test('readThinking finds the block by entry id and the first typed message', async (t) => {
+test('readThinking finds the block by entry id', async (t) => {
   const dir = await mkdtemp(path.join(tmpdir(), 'rb-stats-read-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const file = path.join(dir, 's.jsonl');
   await writeFile(file, sampleSession().join('\n'));
-  const found = await readThinking(file, 'think-1');
-  assert.equal(found.userText, 'fix the settlement total');
-  assert.equal(found.thinking.length, 908);
+  assert.equal(await readThinking(file, 'think-1'), HESITANT);
   assert.equal(await readThinking(file, 'missing'), null);
 });
 
-test('the service answers from the scan, writes each card once and serves it after', async (t) => {
+test('episodes show plain English at once, and stories are written in the background one at a time', async (t) => {
   const agentDir = await mkdtemp(path.join(tmpdir(), 'rb-stats-svc-'));
   t.after(() => rm(agentDir, { recursive: true, force: true }));
   await mkdir(path.join(agentDir, 'sessions'), { recursive: true });
   await writeFile(path.join(agentDir, 'sessions', 'a.jsonl'), sampleSession().join('\n'));
   const asked = [];
+  let inFlight = 0;
   let release;
   const gate = new Promise((resolve) => { release = resolve; });
   const service = createStatsService({
@@ -201,27 +268,37 @@ test('the service answers from the scan, writes each card once and serves it aft
     agentDir,
     now: () => NOW,
     scan: async () => ({ sessions: { 'a.jsonl': summarizeSession(sampleSession()) }, speed: [] }),
-    explain: async (input) => { asked.push(input); await gate; return { headline: 'Settlement puzzle', body: 'It worked it out.', chips: ['Hmm ×1'], model: 'x/y' }; },
+    write: async (episode, material) => {
+      inFlight += 1;
+      assert.equal(inFlight, 1, 'one model call at a time');
+      asked.push([episode.kind, material]);
+      await gate;
+      inFlight -= 1;
+      return { headline: `${episode.kind} story`, story: 'Told well.', model: 'x/y' };
+    },
   });
   const first = await service.handle('summary');
   assert.equal(first.status, 'ready');
-  assert.equal(first.periods.week.think.cardState, 'writing');
-  assert.equal(first.periods.week.think.card, null);
-  assert.equal('key' in first.periods.week.think, false, 'file paths stay on the server');
-  const second = await service.handle('summary');
-  assert.equal(second.periods.week.think.cardState, 'writing');
+  const mind = first.periods.week.episodes.find((episode) => episode.kind === 'mind');
+  assert.equal(mind.storyState, 'writing');
+  assert.match(mind.headline, /Second-guessed itself 21 times/, 'plain English while the story is written');
+  assert.equal(Object.keys(mind).some((key) => key.startsWith('_')), false, 'files and entries stay on the server');
   release();
-  await new Promise((resolve) => setTimeout(resolve, 50));
-  assert.equal(asked.length, 1, 'one card per record, even with three periods and two visits');
-  assert.equal(asked[0].userText, 'fix the settlement total');
-  const third = await service.handle('summary');
-  assert.equal(third.periods.month.think.cardState, 'ready');
-  assert.deepEqual(third.periods.month.think.card, { headline: 'Settlement puzzle', body: 'It worked it out.', chips: ['Hmm ×1'] });
-  const saved = JSON.parse(await readFile(path.join(agentDir, 'cache', 'stats', 'explanations-v1.json'), 'utf8'));
-  assert.equal(saved['a.jsonl#think-1'].headline, 'Settlement puzzle');
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  const kinds = asked.map(([kind]) => kind);
+  assert.deepEqual(new Set(kinds).size, kinds.length, 'one story per moment, even when several periods show it');
+  const thinking = asked.find(([kind]) => kind === 'mind')[1];
+  assert.equal(thinking.thinking, HESITANT);
+  assert.equal(thinking.language, 'fix the settlement total');
+  const later = await service.handle('summary');
+  const written = later.periods.all.episodes.find((episode) => episode.kind === 'mind');
+  assert.equal(written.storyState, 'written');
+  assert.equal(written.headline, 'mind story');
+  const saved = JSON.parse(await readFile(path.join(agentDir, 'cache', 'stats', 'stories-v1.json'), 'utf8'));
+  assert.equal(saved['mind|a.jsonl|think-1'].story, 'Told well.');
 });
 
-test('a failed card is not retried on every visit', async (t) => {
+test('a failed story keeps the plain English and is not retried on every visit', async (t) => {
   const agentDir = await mkdtemp(path.join(tmpdir(), 'rb-stats-fail-'));
   t.after(() => rm(agentDir, { recursive: true, force: true }));
   await mkdir(path.join(agentDir, 'sessions'), { recursive: true });
@@ -231,14 +308,32 @@ test('a failed card is not retried on every visit', async (t) => {
   const service = createStatsService({
     env: { HOME: '/Users/me' }, agentDir, now: () => NOW,
     scan: async () => ({ sessions: { 'a.jsonl': summarizeSession(sampleSession()) }, speed: [] }),
-    explain: async () => { calls += 1; throw new Error('all models down'); },
+    write: async () => { calls += 1; throw new Error('all models down'); },
   });
-  await service.handle('summary');
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  const first = await service.handle('summary');
+  const count = first.periods.all.episodes.length;
+  await new Promise((resolve) => setTimeout(resolve, 30));
   const after = await service.handle('summary');
-  assert.equal(calls, 1);
-  assert.equal(after.periods.week.think.cardState, 'unavailable');
-  assert.equal(warn.mock.callCount(), 1);
+  assert.equal(calls, count);
+  assert.equal(after.periods.all.episodes.every((episode) => episode.storyState === 'plain'), true);
+  assert.equal(warn.mock.callCount(), count);
+});
+
+test('warm reads the logs ahead without writing stories, and an empty machine still answers', async (t) => {
+  const agentDir = await mkdtemp(path.join(tmpdir(), 'rb-stats-empty-'));
+  t.after(() => rm(agentDir, { recursive: true, force: true }));
+  let writes = 0;
+  const service = createStatsService({ env: { HOME: '/Users/new' }, agentDir, now: () => NOW, write: async () => { writes += 1; return {}; } });
+  assert.deepEqual(await service.handle('warm'), { status: 'scanning' });
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  assert.deepEqual(await service.handle('warm'), { status: 'ready' });
+  const answer = await service.handle('summary');
+  assert.equal(answer.status, 'ready');
+  assert.equal(answer.firstDay, null);
+  assert.equal(answer.periods.all.turns, 0);
+  assert.deepEqual(answer.periods.all.episodes, []);
+  assert.equal(answer.periods.week.daily.length, 7);
+  assert.equal(writes, 0);
 });
 
 test('the worker reads changed files only and keeps its cache across scans', async (t) => {
@@ -250,7 +345,7 @@ test('the worker reads changed files only and keeps its cache across scans', asy
   const file = path.join(sessions, 'a.jsonl');
   await writeFile(file, sampleSession().join('\n'));
   await writeFile(path.join(agentDir, 'sessions', 'not-a-session.jsonl'), line({ objective: 'x' }));
-  const service = createStatsService({ env: { HOME: '/Users/me' }, agentDir, now: () => NOW, explain: async () => ({ headline: 'H', body: 'B', chips: [], model: 'm' }) });
+  const service = createStatsService({ env: { HOME: '/Users/me' }, agentDir, now: () => NOW, write: async () => ({ headline: 'H', story: 'S', model: 'm' }) });
   const first = await service.handle('summary');
   assert.equal(first.status, 'ready');
   assert.equal(first.periods.all.turns, 2);
