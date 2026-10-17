@@ -28,6 +28,12 @@ export function wholeNumber(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
+/** Seconds as hours: "6.9h" under a hundred, "381h" above. */
+export function hours(seconds: number): string {
+  const value = seconds / 3600;
+  return value >= 100 ? `${Math.round(value).toLocaleString("en-US")}h` : `${value.toFixed(1)}h`;
+}
+
 export function percent(share: number): string {
   return `${Math.round(share * 100)}%`;
 }
@@ -211,6 +217,22 @@ export function highlights(period: StatsPeriod, known: ReadonlyArray<KnownModel>
       label: "Longest conversation",
       headline: `“${period.longestSession.title ?? period.longestSession.project}”`,
       detail: `Started ${shortDate(period.longestSession.at)} and ran for ${duration(period.longestSession.seconds)}.`,
+    });
+  }
+  const longestDay = period.work.longestDay;
+  if (longestDay && longestDay.seconds >= 3600) {
+    const agentSeconds = period.work.daily.find(([day]) => day === longestDay.day)?.[2] ?? longestDay.seconds;
+    out.push({
+      key: "workday",
+      color: "#3fcfb8",
+      value: Math.round(longestDay.seconds / 3600),
+      unit: "hours of work",
+      label: "Longest workday",
+      headline: `${weekday(longestDay.day)}, ${shortDate(longestDay.day)}: busy for ${hours(longestDay.seconds)}`,
+      detail:
+        agentSeconds > longestDay.seconds * 1.05
+          ? `Sessions running side by side added up to ${hours(agentSeconds)} of agent time that day.`
+          : "At least one session was working the whole time.",
     });
   }
   const models = mergeModels(period.models, known);

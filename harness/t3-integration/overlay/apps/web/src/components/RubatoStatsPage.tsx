@@ -32,6 +32,7 @@ import {
   duration,
   highlights,
   hourLabel,
+  hours,
   mergeModels,
   modelFamily,
   modelName,
@@ -235,7 +236,7 @@ function Strip(props: { stats: StatsReady; period: StatsPeriod; name: StatsPerio
   const values = period.daily.map(([, count]) => count);
   return (
     <div
-      className="mt-4 grid grid-cols-[1fr_1fr_1.25fr_1.7fr] border-y border-border max-lg:grid-cols-2"
+      className="mt-4 grid grid-cols-[0.9fr_1fr_1.1fr_1.1fr_1.6fr] border-y border-border max-xl:grid-cols-3 max-lg:grid-cols-2"
       style={{ animation: `rubato-stats-rise .8s ${EASE} .05s both` }}
     >
       <div className="py-5 pe-5">
@@ -248,7 +249,18 @@ function Strip(props: { stats: StatsReady; period: StatsPeriod; name: StatsPerio
         <Counter value={period.turns} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
         <Sparkline values={values} color="#ff8a5b" />
       </div>
-      <div className="border-s border-border px-5 py-5 max-lg:border-s-0 max-lg:border-t max-lg:ps-0">
+      <div className="border-s border-border px-5 py-5">
+        <div className="text-xs text-muted-foreground">Time worked</div>
+        <Counter value={period.work.seconds} format={hours} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
+        <div className="mt-2 whitespace-nowrap text-[11.5px] text-muted-foreground/80">
+          <b className="font-semibold text-foreground">{hours(period.work.averageSeconds)}</b>/day
+          {period.work.seconds > 0 && period.work.agentSeconds > period.work.seconds * 1.05 ? (
+            <> · <b className="font-semibold text-foreground">{(period.work.agentSeconds / period.work.seconds).toFixed(1)}×</b> parallel</>
+          ) : null}
+        </div>
+        <Sparkline values={period.work.daily.map(([, seconds]) => seconds)} color="#5fe0d0" />
+      </div>
+      <div className="border-s border-border px-5 py-5">
         <div className="text-xs text-muted-foreground">Tokens processed</div>
         <Counter value={totalTokens(period)} format={compactNumber} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
         <div className="mt-3 flex h-1 overflow-hidden rounded bg-foreground/[0.06]">
@@ -257,10 +269,9 @@ function Strip(props: { stats: StatsReady; period: StatsPeriod; name: StatsPerio
         </div>
         <div className="mt-2 text-[11.5px] text-muted-foreground/80">
           <span className="text-[#3fcfb8]">●</span> Cached <Counter value={share * 100} format={(v) => `${Math.round(v)}%`} className="font-semibold text-foreground" />
-          <span className="ms-3 text-[#ff8a5b]">●</span> New + output
         </div>
       </div>
-      <div className="flex items-start gap-5 border-s border-border px-5 py-5 max-lg:border-t">
+      <div className="flex items-start gap-5 border-s border-border px-5 py-5">
         <div>
           <div className="text-xs text-muted-foreground">Streak</div>
           <div className="mt-1.5 text-[32px] font-bold leading-tight tracking-tight">
@@ -273,7 +284,7 @@ function Strip(props: { stats: StatsReady; period: StatsPeriod; name: StatsPerio
             ) : null}
           </div>
           <div className="mt-2 text-[11.5px] text-muted-foreground/80">
-            {stats.activeDays} of {daysSinceFirst(stats)} days · best {stats.bestStreak}
+            {stats.activeDays}/{daysSinceFirst(stats)} days · best {stats.bestStreak}
           </div>
         </div>
         <Attendance stats={stats} days={period.days} tip={props.tip} />
@@ -408,7 +419,7 @@ function TickerCard(props: { item: Highlight; active: boolean }) {
 
 /* ---------------------------------------------------------------- rhythm */
 
-type RhythmMode = "day" | "hour";
+type RhythmMode = "day" | "work" | "hour";
 
 function Rhythm(props: { period: StatsPeriod; mode: RhythmMode; tip: ShowTip }) {
   const box = useRef<HTMLDivElement>(null);
@@ -422,12 +433,17 @@ function Rhythm(props: { period: StatsPeriod; mode: RhythmMode; tip: ShowTip }) 
     return () => observer.disconnect();
   }, []);
   const cell = Math.min((width - 26) / 24, 40);
-  const height = props.mode === "day" ? 230 : 74 + 7 * cell + 22;
+  const height = props.mode !== "hour" ? 230 : 74 + 7 * cell + 22;
   return (
     <div ref={box} className="relative mt-4" style={{ height: width ? height : 230, transition: `height .6s ${EASE}` }}>
       {width > 0 ? (
-        props.mode === "day" ? (
-          <DayBars key={`${props.period.days}-day`} period={props.period} width={width} tip={props.tip} />
+        props.mode !== "hour" ? (
+          <DayBars
+            key={`${props.period.days}-${props.mode}`}
+            series={props.mode === "work" ? workSeries(props.period) : messageSeries(props.period)}
+            width={width}
+            tip={props.tip}
+          />
         ) : (
           <HourGrid key={`${props.period.days}-hour`} period={props.period} width={width} cell={cell} tip={props.tip} />
         )
@@ -436,49 +452,108 @@ function Rhythm(props: { period: StatsPeriod; mode: RhythmMode; tip: ShowTip }) 
   );
 }
 
-function DayBars(props: { period: StatsPeriod; width: number; tip: ShowTip }) {
+interface DaySeries {
+  /** [day, value, value behind it] — the second bar is drawn lighter, behind the first. */
+  readonly rows: ReadonlyArray<readonly [string, number, number?]>;
+  readonly format: (value: number) => string;
+  readonly unit: string;
+  readonly colors: readonly [string, string];
+  readonly highlight: string | null;
+  readonly behindLabel?: string;
+}
+
+/** Messages per day, from the period. */
+function messageSeries(period: StatsPeriod): DaySeries {
+  return {
+    rows: period.daily,
+    format: (value) => wholeNumber(value),
+    unit: "messages",
+    colors: ["#ffb86b", "#ff7a59"],
+    highlight: period.busiest?.day ?? null,
+  };
+}
+
+/** Hours worked per day: on the clock in front, all sessions added up behind. */
+function workSeries(period: StatsPeriod): DaySeries {
+  return {
+    rows: period.work.daily,
+    format: (value) => hours(value),
+    unit: "worked",
+    colors: ["#5fe0d0", "#3f9fd0"],
+    highlight: period.work.longestDay?.day ?? null,
+    behindLabel: "all sessions added",
+  };
+}
+
+function DayBars(props: { series: DaySeries; width: number; tip: ShowTip }) {
   const entered = useEntered();
-  const { daily, busiest } = props.period;
+  const { rows, format, colors, highlight } = props.series;
+  const gradient = `rubato-stats-bar-${colors[0].slice(1)}`;
   const height = 230;
   const base = height - 22;
-  const max = Math.max(1, ...daily.map(([, count]) => count));
-  const n = daily.length;
+  const max = Math.max(1, ...rows.map(([, value, behind]) => Math.max(value, behind ?? 0)));
+  const n = rows.length;
   const gap = n > 40 ? 3 : n > 10 ? 5 : 14;
   const barWidth = Math.max(1, (props.width - gap * (n - 1)) / n);
-  const activeDays = daily.filter(([, count]) => count > 0).length || 1;
-  const average = props.period.turns / activeDays;
+  const active = rows.filter(([, value]) => value > 0);
+  const average = active.reduce((sum, [, value]) => sum + value, 0) / (active.length || 1);
   const averageY = base - (average / max) * (base - 10);
   const every = Math.ceil(n / 8);
+  const grow = (index: number) => `y .8s ${EASE} ${index * (n > 40 ? 10 : 40)}ms, height .8s ${EASE} ${index * (n > 40 ? 10 : 40)}ms`;
   return (
     <svg className="absolute inset-0 overflow-visible" width={props.width} height={height}>
       <defs>
-        <linearGradient id="rubato-stats-bar" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="#ffb86b" />
-          <stop offset="1" stopColor="#ff7a59" />
+        <linearGradient id={gradient} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor={colors[0]} />
+          <stop offset="1" stopColor={colors[1]} />
         </linearGradient>
       </defs>
       <line x1={0} x2={props.width} y1={base + 0.5} y2={base + 0.5} className="stroke-border" />
       <line x1={0} x2={props.width} y1={averageY} y2={averageY} stroke="currentColor" strokeOpacity={0.18} strokeDasharray="3 4" />
       <text x={2} y={averageY - 5} className="fill-muted-foreground/70 text-[10.5px]">
-        avg {Math.round(average)}
+        avg {format(average)}
       </text>
-      {daily.map(([day, count], index) => {
-        const barHeight = Math.max(2, (count / max) * (base - 10));
+      {rows.map(([day, value, behind], index) => {
+        const barHeight = Math.max(2, (value / max) * (base - 10));
+        const behindHeight = behind ? Math.max(2, (behind / max) * (base - 10)) : 0;
         return (
-          <rect
+          <g
             key={day}
-            x={index * (barWidth + gap)}
-            y={entered ? base - barHeight : base}
-            width={barWidth}
-            height={entered ? barHeight : 0}
-            rx={Math.min(3, barWidth / 2)}
-            fill={busiest?.day === day ? "#ffd29a" : "url(#rubato-stats-bar)"}
-            style={{ transition: `y .8s ${EASE} ${index * (n > 40 ? 10 : 40)}ms, height .8s ${EASE} ${index * (n > 40 ? 10 : 40)}ms` }}
-            onMouseMove={(event) => props.tip(event, <>{weekday(day).slice(0, 3)}, {shortDate(day)} · <b>{wholeNumber(count)}</b> messages</>)}
-          />
+            onMouseMove={(event) =>
+              props.tip(
+                event,
+                <>
+                  {weekday(day).slice(0, 3)}, {shortDate(day)} · <b>{format(value)}</b> {props.series.unit}
+                  {behind && behind > value ? <> · {format(behind)} {props.series.behindLabel}</> : null}
+                </>,
+              )
+            }
+          >
+            {behindHeight > 0 ? (
+              <rect
+                x={index * (barWidth + gap)}
+                y={entered ? base - behindHeight : base}
+                width={barWidth}
+                height={entered ? behindHeight : 0}
+                rx={Math.min(3, barWidth / 2)}
+                fill={colors[1]}
+                opacity={0.22}
+                style={{ transition: grow(index) }}
+              />
+            ) : null}
+            <rect
+              x={index * (barWidth + gap)}
+              y={entered ? base - barHeight : base}
+              width={barWidth}
+              height={entered ? barHeight : 0}
+              rx={Math.min(3, barWidth / 2)}
+              fill={highlight === day ? "#ffd29a" : `url(#${gradient})`}
+              style={{ transition: grow(index) }}
+            />
+          </g>
         );
       })}
-      {daily.map(([day], index) =>
+      {rows.map(([day], index) =>
         index === n - 1 || (index % every === 0 && n - 1 - index >= every * 0.6) ? (
           <text key={`label-${day}`} x={index * (barWidth + gap) + barWidth / 2} y={height - 4} textAnchor="middle" className="fill-muted-foreground/70 text-[10.5px]">
             {shortDate(day)}
@@ -581,6 +656,17 @@ function HourGrid(props: { period: StatsPeriod; width: number; cell: number; tip
 }
 
 function rhythmCaption(period: StatsPeriod, mode: RhythmMode): ReactNode {
+  if (mode === "work") {
+    const { work } = period;
+    if (!work.longestDay) return null;
+    return (
+      <>
+        Longest <b className="font-semibold text-foreground">{weekday(work.longestDay.day).slice(0, 3)}, {shortDate(work.longestDay.day)} · {hours(work.longestDay.seconds)}</b>
+        <span className="mx-2">·</span>Daily average <b className="font-semibold text-foreground">{hours(work.averageSeconds)}</b>
+        <span className="mx-2">·</span>Total <b className="font-semibold text-foreground">{hours(work.seconds)}</b>
+      </>
+    );
+  }
   if (mode === "day") {
     if (!period.busiest) return null;
     const activeDays = period.daily.filter(([, count]) => count > 0).length || 1;
@@ -893,6 +979,7 @@ export function RubatoStatsPanel() {
                   }}
                 >
                   <Toggle value="day">By day</Toggle>
+                  <Toggle value="work">Work hours</Toggle>
                   <Toggle value="hour">By hour</Toggle>
                 </ToggleGroup>
               }
