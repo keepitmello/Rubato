@@ -8,6 +8,7 @@ import {
   duration,
   highlights,
   hours,
+  percent,
   hourLabel,
   mergeModels,
   modelFamily,
@@ -83,6 +84,9 @@ describe("rubatoStatsFormat", () => {
     expect(shortDate("2026-10-15")).toBe("Oct 15");
     expect(hours(24_840)).toBe("6.9h");
     expect(hours(1_371_240)).toBe("381h");
+    expect(percent(70.6e6 / 20.7e9)).toBe("<1%");
+    expect(percent(0)).toBe("0%");
+    expect(percent(0.97)).toBe("97%");
   });
 
   it("names a logged model id with the picker's name, through prefixes and -sub", () => {

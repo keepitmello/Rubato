@@ -25,7 +25,6 @@ import {
   type KnownModel,
   WEEKDAYS_MONDAY_FIRST,
   attendanceWeeks,
-  cacheShare,
   clock,
   compactNumber,
   daysSinceFirst,
@@ -201,8 +200,8 @@ function Dot(props: { color: string }) {
 }
 
 function Sparkline(props: { values: ReadonlyArray<number>; color: string }) {
-  const width = 120;
-  const height = 26;
+  const width = 200;
+  const height = 28;
   const max = Math.max(1, ...props.values);
   const points = props.values.map((value, index) => [
     (index / Math.max(1, props.values.length - 1)) * width,
@@ -230,64 +229,128 @@ function Sparkline(props: { values: ReadonlyArray<number>; color: string }) {
 
 /* ------------------------------------------------------------------ strip */
 
-function Strip(props: { stats: StatsReady; period: StatsPeriod; name: StatsPeriodName; tip: ShowTip }) {
-  const { stats, period } = props;
-  const share = cacheShare(period);
-  const values = period.daily.map(([, count]) => count);
+function StripCell(props: { label: string; children: ReactNode; first?: boolean }) {
   return (
-    <div
-      className="mt-4 grid grid-cols-[0.9fr_1fr_1.1fr_1.1fr_1.6fr] border-y border-border max-xl:grid-cols-3 max-lg:grid-cols-2"
-      style={{ animation: `rubato-stats-rise .8s ${EASE} .05s both` }}
-    >
-      <div className="py-5 pe-5">
-        <div className="text-xs text-muted-foreground">Sessions</div>
-        <Counter value={period.sessions} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
+    <div className={cn("min-w-0 py-5", props.first ? "pe-6" : "border-s border-border px-6")}>
+      <div className="text-xs text-muted-foreground">{props.label}</div>
+      {props.children}
+    </div>
+  );
+}
+
+const STRIP_NUMBER = "mt-1.5 block text-[34px] font-bold leading-tight tracking-tight";
+
+/** How much work the period held: sessions, messages, and time worked. */
+function Strip(props: { period: StatsPeriod }) {
+  const { period } = props;
+  const values = period.daily.map(([, count]) => count);
+  const activeDays = period.daily.filter(([, count]) => count > 0).length || 1;
+  const parallel = period.work.seconds > 0 ? period.work.agentSeconds / period.work.seconds : 0;
+  return (
+    <div className="mt-4 grid grid-cols-3 border-y border-border" style={{ animation: `rubato-stats-rise .8s ${EASE} .05s both` }}>
+      <StripCell label="Sessions" first>
+        <Counter value={period.sessions} className={STRIP_NUMBER} />
+        <StripFoot>
+          <b className="font-semibold text-foreground">{(period.sessions / activeDays).toFixed(1)}</b> a day
+        </StripFoot>
         <Sparkline values={values} color="#6aa7ff" />
-      </div>
-      <div className="border-s border-border px-5 py-5">
-        <div className="text-xs text-muted-foreground">Messages you sent</div>
-        <Counter value={period.turns} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
+      </StripCell>
+      <StripCell label="Messages you sent">
+        <Counter value={period.turns} className={STRIP_NUMBER} />
+        <StripFoot>
+          <b className="font-semibold text-foreground">{wholeNumber(period.calls)}</b> model calls
+        </StripFoot>
         <Sparkline values={values} color="#ff8a5b" />
-      </div>
-      <div className="border-s border-border px-5 py-5">
-        <div className="text-xs text-muted-foreground">Time worked</div>
-        <Counter value={period.work.seconds} format={hours} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
-        <div className="mt-2 whitespace-nowrap text-[11.5px] text-muted-foreground/80">
-          <b className="font-semibold text-foreground">{hours(period.work.averageSeconds)}</b>/day
-          {period.work.seconds > 0 && period.work.agentSeconds > period.work.seconds * 1.05 ? (
-            <> · <b className="font-semibold text-foreground">{(period.work.agentSeconds / period.work.seconds).toFixed(1)}×</b> parallel</>
+      </StripCell>
+      <StripCell label="Time worked">
+        <Counter value={period.work.seconds} format={hours} className={STRIP_NUMBER} />
+        <StripFoot>
+          <b className="font-semibold text-foreground">{hours(period.work.averageSeconds)}</b> a day
+          {parallel > 1.05 ? (
+            <> · <b className="font-semibold text-foreground">{parallel.toFixed(1)}×</b> in parallel</>
+          ) : null}
+        </StripFoot>
+        <Sparkline values={period.work.daily.map(([, seconds]) => seconds)} color="#5fe0d0" />
+      </StripCell>
+    </div>
+  );
+}
+
+function StripFoot(props: { children: ReactNode }) {
+  return <div className="mt-1.5 truncate text-[11.5px] text-muted-foreground/80">{props.children}</div>;
+}
+
+/** Top of Rhythm: the streak and every day since the first one. */
+function StreakRow(props: { stats: StatsReady; days: number | null; tip: ShowTip }) {
+  const { stats } = props;
+  return (
+    <div className="flex items-center gap-8 border-b border-border/50 py-5">
+      <div className="shrink-0">
+        <div className="text-xs text-muted-foreground">Streak</div>
+        <div className="mt-1 text-[30px] font-bold leading-tight tracking-tight">
+          <Counter value={stats.currentStreak} />
+          <small className="ms-1 text-sm font-semibold tracking-normal text-muted-foreground">{stats.currentStreak === 1 ? "day" : "days"}</small>
+          {stats.currentStreak >= 3 ? (
+            <span className="ms-1 inline-block text-xl" style={{ animation: "rubato-stats-flicker 1.6s ease-in-out infinite", transformOrigin: "50% 90%" }}>
+              🔥
+            </span>
           ) : null}
         </div>
-        <Sparkline values={period.work.daily.map(([, seconds]) => seconds)} color="#5fe0d0" />
+        <div className="mt-1 text-[11.5px] text-muted-foreground/80">
+          {stats.activeDays} of {daysSinceFirst(stats)} days · best {stats.bestStreak}
+        </div>
       </div>
-      <div className="border-s border-border px-5 py-5">
+      <div className="min-w-0 overflow-x-auto">
+        <Attendance stats={stats} days={props.days} tip={props.tip} />
+      </div>
+      <div className="ms-auto hidden shrink-0 items-center gap-1 text-[10.5px] text-muted-foreground/70 md:flex">
+        Less
+        {[0, 0.25, 0.5, 0.75, 1].map((level) => (
+          <i
+            key={level}
+            className="block size-3 rounded-[3px]"
+            style={{ background: level ? `rgba(63,207,150,${(0.22 + level * 0.78).toFixed(2)})` : "color-mix(in srgb, currentColor 7%, transparent)" }}
+          />
+        ))}
+        More
+      </div>
+    </div>
+  );
+}
+
+/** Top of Models: every token the period processed, split into cache, new input and output. */
+function TokenLead(props: { period: StatsPeriod }) {
+  const { tokens } = props.period;
+  const total = totalTokens(props.period) || 1;
+  const parts = [
+    { label: "From cache", value: tokens.cacheRead, color: "linear-gradient(90deg,#3fcfb8,#6aa7ff)", dot: "#3fcfb8" },
+    { label: "New input", value: tokens.input + tokens.cacheWrite, color: "#a78bfa", dot: "#a78bfa" },
+    { label: "Output", value: tokens.output, color: "#ff8a5b", dot: "#ff8a5b" },
+  ];
+  return (
+    <div className="flex items-center gap-8 pt-5">
+      <div className="shrink-0">
         <div className="text-xs text-muted-foreground">Tokens processed</div>
-        <Counter value={totalTokens(period)} format={compactNumber} className="mt-1.5 block text-[32px] font-bold leading-tight tracking-tight" />
-        <div className="mt-3 flex h-1 overflow-hidden rounded bg-foreground/[0.06]">
-          <i className="block h-full" style={{ width: `${share * 100}%`, background: "linear-gradient(90deg,#3fcfb8,#6aa7ff)", transition: `width 1.3s ${EASE}` }} />
-          <i className="block h-full bg-[#ff8a5b]" style={{ width: `${(1 - share) * 100}%`, transition: `width 1.3s ${EASE}` }} />
-        </div>
-        <div className="mt-2 text-[11.5px] text-muted-foreground/80">
-          <span className="text-[#3fcfb8]">●</span> Cached <Counter value={share * 100} format={(v) => `${Math.round(v)}%`} className="font-semibold text-foreground" />
-        </div>
+        <Counter value={totalTokens(props.period)} format={compactNumber} className="mt-1 block text-[30px] font-bold leading-tight tracking-tight" />
       </div>
-      <div className="flex items-start gap-5 border-s border-border px-5 py-5">
-        <div>
-          <div className="text-xs text-muted-foreground">Streak</div>
-          <div className="mt-1.5 text-[32px] font-bold leading-tight tracking-tight">
-            <Counter value={stats.currentStreak} />
-            <small className="ms-1 text-sm font-semibold tracking-normal text-muted-foreground">{stats.currentStreak === 1 ? "day" : "days"}</small>
-            {stats.currentStreak >= 3 ? (
-              <span className="ms-1 inline-block text-xl" style={{ animation: "rubato-stats-flicker 1.6s ease-in-out infinite", transformOrigin: "50% 90%" }}>
-                🔥
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-2 text-[11.5px] text-muted-foreground/80">
-            {stats.activeDays}/{daysSinceFirst(stats)} days · best {stats.bestStreak}
-          </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex h-2 overflow-hidden rounded-full bg-foreground/[0.06]">
+          {parts.map((part) => (
+            <i
+              key={part.label}
+              className="block h-full"
+              style={{ width: `${(part.value / total) * 100}%`, minWidth: part.value ? 2 : 0, background: part.color, transition: `width 1.3s ${EASE}` }}
+            />
+          ))}
         </div>
-        <Attendance stats={stats} days={period.days} tip={props.tip} />
+        <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-[11.5px] text-muted-foreground/80">
+          {parts.map((part) => (
+            <span key={part.label} className="whitespace-nowrap">
+              <span style={{ color: part.dot }}>●</span> {part.label}{" "}
+              <b className="font-semibold text-foreground">{percent(part.value / total)}</b> · {compactNumber(part.value)}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -301,7 +364,7 @@ function Attendance(props: { stats: StatsReady; days: number | null; tip: ShowTi
   const high = counts[Math.floor(counts.length * 0.9)] ?? 1;
   const today = new Date(`${props.stats.today}T12:00:00`).getTime();
   return (
-    <div className="grid grid-flow-col grid-rows-[repeat(7,10px)] gap-[3px]">
+    <div className="grid grid-flow-col grid-rows-[repeat(7,12px)] gap-[3px]">
       {days.map(({ day, count }, index) => {
         const age = (today - new Date(`${day}T12:00:00`).getTime()) / 86_400_000;
         const outside = props.days !== null && age >= props.days;
@@ -309,7 +372,7 @@ function Attendance(props: { stats: StatsReady; days: number | null; tip: ShowTi
         return (
           <i
             key={day}
-            className="block size-2.5 rounded-[2.5px]"
+            className="block size-3 rounded-[3px]"
             onMouseMove={(event) => props.tip(event, <>{shortDate(day)} · <b>{wholeNumber(count)}</b> messages</>)}
             style={{
               background: count ? `rgba(63,207,150,${(0.22 + level * 0.78).toFixed(2)})` : "color-mix(in srgb, currentColor 7%, transparent)",
@@ -961,7 +1024,7 @@ export function RubatoStatsPanel() {
 
         {stats && period ? (
           <>
-            <Strip stats={stats} period={period} name={periodName} tip={showTip} />
+            <Strip period={period} />
             <Ticker items={items} />
 
             <Section
@@ -984,10 +1047,12 @@ export function RubatoStatsPanel() {
                 </ToggleGroup>
               }
             >
+              <StreakRow stats={stats} days={period.days} tip={showTip} />
               <Rhythm period={period} mode={mode} tip={showTip} />
             </Section>
 
             <Section title="Models" caption="Who you worked with, and how fast they were" delay={0.26}>
+              <TokenLead period={period} />
               <Columns>
                 <Models period={period} known={known} tip={showTip} />
                 <Speed period={period} known={known} tip={showTip} />

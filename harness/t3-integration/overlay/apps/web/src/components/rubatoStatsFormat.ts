@@ -34,7 +34,9 @@ export function hours(seconds: number): string {
   return value >= 100 ? `${Math.round(value).toLocaleString("en-US")}h` : `${value.toFixed(1)}h`;
 }
 
+/** A share as a whole percent; a sliver that is not zero reads "<1%", not "0%". */
 export function percent(share: number): string {
+  if (share > 0 && share < 0.005) return "<1%";
   return `${Math.round(share * 100)}%`;
 }
 
@@ -149,11 +151,6 @@ export function mergeModels(rows: StatsPeriod["models"], known: ReadonlyArray<Kn
 export function totalTokens(period: StatsPeriod): number {
   const { input, cacheRead, cacheWrite, output } = period.tokens;
   return input + cacheRead + cacheWrite + output;
-}
-
-export function cacheShare(period: StatsPeriod): number {
-  const total = totalTokens(period);
-  return total ? period.tokens.cacheRead / total : 0;
 }
 
 /** A novel of about 150k tokens: the unit for "the model wrote N books". */
