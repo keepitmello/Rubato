@@ -32,6 +32,20 @@ export async function atomicJson(file, value) {
   try { await rename(temporary, file); } finally { await unlink(temporary).catch(() => {}); }
 }
 
+// A scheduled update or restart lets running work finish first (pi-server drain.mjs) while the
+// person keeps working. "Now", a second press, asks the job to stop waiting: the engine restart
+// cuts running work at once (restart-profile-engine.mjs). The stage tells the page what the job
+// is waiting on. Both name the job's token, so a file a past job left answers nothing.
+const nowPath = (directory) => path.join(directory, 'now.json');
+const stagePath = (directory) => path.join(directory, 'stage.json');
+export const requestNow = (directory, token) => atomicJson(nowPath(directory), { token, at: Date.now() });
+export const nowRequested = async (directory, token) => Boolean(token) && (await readJson(nowPath(directory)))?.token === token;
+export const markStage = (directory, token, stage) => atomicJson(stagePath(directory), { token, stage, at: Date.now() });
+export const jobStage = async (directory, token) => {
+  const saved = await readJson(stagePath(directory));
+  return token && saved?.token === token ? saved.stage : null;
+};
+
 // An interrupted worker can leave its lock. Recover only a dead owner's lock;
 // malformed/new locks are not assumed free while another process is creating one.
 async function lock(directory, token) {

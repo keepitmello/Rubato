@@ -14,7 +14,7 @@ vi.mock("./session", async (importOriginal) => {
 
 const { __resetRubatoUpdateCheckForTests, checkRubatoUpdate, useRubatoUpdateCheck } = await import("./rubatoApp");
 const { renderToStaticMarkup } = await import("react-dom/server");
-const { RubatoUpdateDot, waitForRestart } = await import("../components/settings/RubatoAboutSection");
+const { RubatoUpdateDot, jobDescription, runningJob, waitForRestart } = await import("../components/settings/RubatoAboutSection");
 
 const mac = "mac" as EnvironmentId;
 const update = { available: true, commits: 2, changes: [] };
@@ -102,5 +102,33 @@ describe("following a restart from About", () => {
     const outcome = waitForRestart(mac, "mine", 1_000);
     await vi.advanceTimersByTimeAsync(20_000);
     await expect(outcome).resolves.toMatchObject({ failed: true, message: expect.stringContaining("did not start") });
+  });
+});
+
+// An update or restart is scheduled, not waited on: the page shows what the job waits for and
+// offers the second press that stops the wait.
+describe("a scheduled update or restart", () => {
+  type Status = Parameters<typeof runningJob>[0];
+  const job = (stage: "building" | "draining", now = false) => ({ token: "j1", stage, now });
+  const status = (running: NonNullable<Status["job"]> | null, result: Status["result"] = null, busy = true): Status =>
+    ({ busy, job: running, result, log: "/logs/update.log" });
+
+  it("reads the running job and its kind from the updater", () => {
+    expect(runningJob(status(job("building"), { token: "j1", kind: "update", status: "running", message: null })))
+      .toEqual({ token: "j1", kind: "update", stage: "building", now: false });
+    // Too new to have written its result yet: a restart from this page.
+    expect(runningJob(status(job("draining"), { token: "older", kind: "update", status: "succeeded", message: null })))
+      .toMatchObject({ kind: "restart", stage: "draining" });
+    expect(runningJob(status(job("building"), null, false))).toBeNull();
+    expect(runningJob(status(null))).toBeNull();
+  });
+
+  it("says the person can keep working, and what the second press changes", () => {
+    const restart = { token: "j1", kind: "restart" as const, stage: "building" as const, now: false };
+    expect(jobDescription(restart)).toContain("keep working");
+    expect(jobDescription({ ...restart, kind: "update" })).toContain("Downloading");
+    expect(jobDescription({ ...restart, stage: "draining" })).toContain("Waiting for running tool calls");
+    expect(jobDescription({ ...restart, now: true })).toContain("without waiting");
+    expect(jobDescription({ ...restart, stage: "draining", now: true })).toContain("cut off");
   });
 });

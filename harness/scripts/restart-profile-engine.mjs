@@ -8,6 +8,7 @@ import { ensureProfileEngine, socketAlive } from '../pi-server/src/discovery.mjs
 import { SessionClient } from '../pi-server/src/client.mjs';
 import { DRAIN_TIMEOUT_MS, resumeFilePath } from '../pi-server/src/drain.mjs';
 import { resolveLaunchAgentDir } from '../rubato-pi/src/launch.mjs';
+import { markStage, nowRequested, stateDirectory } from '../t3-integration/gui-update.mjs';
 // Process lookup lives apart so a test can reach it without the pi-server client above.
 import { ancestorPids, listenerPid } from './profile-engine-pid.mjs';
 
@@ -19,9 +20,12 @@ async function runningTurns(descriptor) {
 }
 
 // The engine lets running tool calls finish before it closes (pi-server drain.mjs), so the wait
-// covers its drain and the close after it.
+// covers its drain and the close after it. `onDraining` hears once that the engine is still
+// finishing work after the stop; `cutShort` is asked while it does, and when it answers true the
+// engine gets a second stop, which ends its wait and cuts what still runs.
 export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIMEOUT_MS + 30_000,
-  startEngine = (path) => ensureProfileEngine({ descriptorPath: path }) } = {}) {
+  startEngine = (path) => ensureProfileEngine({ descriptorPath: path }),
+  onDraining = async () => {}, cutShort = async () => false, pollMs = 50 } = {}) {
   descriptorPath ??= path.join(resolveLaunchAgentDir(), 'server', 'connection.json');
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('descriptorPath must be absolute');
   let descriptor;
@@ -39,6 +43,8 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
   if (!pid) return { restarted: false, reason: 'no-pid', running, inspectError };
   process.kill(pid, 'SIGTERM');
   const deadline = Date.now() + waitMs;
+  let draining = false;
+  let cut = false;
   while (Date.now() < deadline) {
     if (!await socketAlive(descriptor.socketPath)) {
       // Work the old engine handed over is taken up by the next one (drain.mjs). Start it now
@@ -46,9 +52,14 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
       const handedOver = await access(resumeFilePath(path.dirname(descriptorPath))).then(() => true, () => false);
       let resumeError;
       if (handedOver) await startEngine(descriptorPath).catch((error) => { resumeError = error; });
-      return { restarted: true, pid, running, inspectError, handedOver, ...(resumeError ? { resumeError } : {}) };
+      return { restarted: true, pid, running, inspectError, handedOver, cut, ...(resumeError ? { resumeError } : {}) };
     }
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    if (!draining) { draining = true; await onDraining().catch(() => {}); }
+    if (!cut && await cutShort().catch(() => false)) {
+      cut = true;
+      try { process.kill(pid, 'SIGTERM'); } catch { /* gone meanwhile */ }
+    }
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
   return { restarted: false, reason: 'timeout', pid, running, inspectError };
 }
@@ -92,7 +103,12 @@ function isCli() {
 }
 
 if (isCli()) {
-  const result = await restartProfileEngine({ descriptorPath: process.argv[2] });
+  // Run by the app's Update or Restart (gui-update.mjs): the page shows the wait, and its
+  // second press cuts it short.
+  const token = process.env.RUBATO_GUI_UPDATE_TOKEN;
+  const jobs = token ? stateDirectory(process.env) : null;
+  const result = await restartProfileEngine({ descriptorPath: process.argv[2],
+    ...(jobs ? { onDraining: () => markStage(jobs, token, 'draining'), cutShort: () => nowRequested(jobs, token) } : {}) });
   process.stdout.write(`${reportRestart(result)}\n`);
   process.exit(restartSucceeded(result) ? 0 : 1);
 }

@@ -6,7 +6,10 @@
 //   check     rubato update --check (via gui-update.mjs) and what the update brings
 //   restart   `rubato restart` through the one-shot updater (gui-update.mjs), detached:
 //             it quits and reopens this very app, under the updater's lock
-//   restart-status  that job's result, so the page can tell a failed restart
+//   restart-status  that job's result, so the page can tell a failed restart, and what a
+//             running job waits on (its build, or running work finishing)
+//   restart-now     the running update or restart stops waiting for running work and
+//             restarts the engine at once (gui-update.mjs requestNow)
 //
 // Updating is not here: the desktop updater owns it (token, ready handshake, the
 // in-app confirm), and the page asks it over IPC.
@@ -137,19 +140,35 @@ export function createAppService(options = {}) {
   // The updater's last result and whether a job holds its lock. The page matches
   // the token it got from restart; a result for another token is not its answer.
   async function restartStatus() {
-    const { stateDirectory, readJson, alive } = await updater();
+    const { stateDirectory, readJson, alive, jobStage, nowRequested } = await updater();
     const directory = stateDirectory(env);
     const owner = await readJson(path.join(directory, 'lock.json'));
     const result = await readJson(path.join(directory, 'result.json'));
+    const busy = Boolean(owner && alive(owner.pid));
     return {
-      busy: Boolean(owner && alive(owner.pid)),
+      busy,
+      // The running job: what it waits on, and whether "now" was already asked.
+      job: busy ? { token: owner.token ?? null, stage: (await jobStage(directory, owner.token)) ?? 'building',
+        now: await nowRequested(directory, owner.token) } : null,
       result: result ? { token: result.token ?? null, kind: result.kind ?? 'update', status: result.status ?? null,
         message: result.message ?? null } : null,
       log: path.join(directory, 'update.log'),
     };
   }
 
-  const actions = { version, check, restart, 'restart-status': restartStatus };
+  // A second press: the running job stops waiting for running work. Without a job there is
+  // nothing to hurry, and the page starts one instead.
+  async function restartNow() {
+    const { stateDirectory, readJson, alive, requestNow } = await updater();
+    const directory = stateDirectory(env);
+    const owner = await readJson(path.join(directory, 'lock.json'));
+    if (!owner || !alive(owner.pid) || typeof owner.token !== 'string')
+      throw new AppRequestError(409, 'not-running', 'No update or restart is running.');
+    await requestNow(directory, owner.token);
+    return { token: owner.token };
+  }
+
+  const actions = { version, check, restart, 'restart-status': restartStatus, 'restart-now': restartNow };
   return {
     async handle(action) {
       const handler = Object.hasOwn(actions, action) ? actions[action] : undefined;

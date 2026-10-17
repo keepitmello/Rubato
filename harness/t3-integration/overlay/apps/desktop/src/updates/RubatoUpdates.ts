@@ -187,7 +187,7 @@ export function createRubatoUpdater(
       const answer = await message({
         type: "info", title: "Rubato Update",
         message: "A Rubato update is available",
-        detail: `${update.commits ?? 1} new ${(update.commits ?? 1) === 1 ? "change" : "changes"}.\nUpdating closes and reopens the app, which can interrupt running work. Finish it first.`,
+        detail: `${update.commits ?? 1} new ${(update.commits ?? 1) === 1 ? "change" : "changes"}.\nIt downloads and rebuilds in the background while you keep working, then restarts once running tool calls finish; they continue afterwards.`,
         buttons: ["Update", "Later"],
       });
       if (answer.response !== UPDATE || stopped) {
@@ -359,8 +359,8 @@ export function attachRubatoUpdates(window: BrowserWindow, electron: ElectronSer
             ...(notice.detail ? { detail: notice.detail } : {}), buttons: ["OK"],
           });
         },
-        // A running update covers the app ("Updating Rubato"). A restart does not:
-        // it builds before it quits the app, so work can go on until then.
+        // A running update shows as running (Settings > About), never as a cover over the app:
+        // it builds in the background and restarts once running tool calls finish.
         progress: (value, kind) => {
           if (!pending) publish({ phase: value === 2 && kind !== "restart" ? "running" : "idle" });
         },

@@ -96,3 +96,21 @@ test('restart-status reports the job result the page waits for', async (t) => {
   assert.equal(status.busy, false);
   assert.deepEqual(status.result, { token: 't1', kind: 'restart', status: 'failed', message: 'The restart did not finish (1). Check the log.' });
 });
+
+// A scheduled job lets running work finish; the page's second press tells it to stop waiting.
+test('restart-now asks the running job to stop waiting, and the status shows what it waits on', async (t) => {
+  const f = await checkout(t);
+  const service = createAppService({ root: f.root, env: { ...process.env, HOME: f.home } });
+  await assert.rejects(service.handle('restart-now'), /No update or restart is running/);
+  const directory = path.join(f.home, '.rubato-pi', 'gui-update');
+  await mkdir(directory, { recursive: true });
+  await writeFile(path.join(directory, 'lock.json'), JSON.stringify({ pid: process.pid, token: 'job-1' }));
+  assert.deepEqual((await service.handle('restart-status')).job, { token: 'job-1', stage: 'building', now: false });
+  // restart-profile-engine.mjs marks the wait for running work.
+  await writeFile(path.join(directory, 'stage.json'), JSON.stringify({ token: 'job-1', stage: 'draining' }));
+  assert.deepEqual(await service.handle('restart-now'), { token: 'job-1' });
+  assert.deepEqual((await service.handle('restart-status')).job, { token: 'job-1', stage: 'draining', now: true });
+  // A file a past job left names another token and answers nothing.
+  await writeFile(path.join(directory, 'lock.json'), JSON.stringify({ pid: process.pid, token: 'job-2' }));
+  assert.deepEqual((await service.handle('restart-status')).job, { token: 'job-2', stage: 'building', now: false });
+});

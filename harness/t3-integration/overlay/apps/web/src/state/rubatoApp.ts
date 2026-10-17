@@ -30,6 +30,11 @@ export interface RubatoUpdateCheck {
 export interface RubatoRestartStatus {
   /** A job holds the updater's lock. */
   readonly busy: boolean;
+  /**
+   * The running job: `building` until it restarts the engine, then `draining` while running
+   * work finishes; `now` once the person asked it not to wait.
+   */
+  readonly job?: { readonly token: string | null; readonly stage: "building" | "draining"; readonly now: boolean } | null;
   readonly result: {
     readonly token: string | null;
     readonly kind: "update" | "restart";
@@ -48,6 +53,8 @@ export const rubatoApp = {
   check: (env: EnvironmentId | null) => call<RubatoUpdateCheck>(env, "check"),
   restart: (env: EnvironmentId | null) => call<{ token: string; startedAt: string; log: string }>(env, "restart"),
   restartStatus: (env: EnvironmentId | null) => call<RubatoRestartStatus>(env, "restart-status"),
+  /** The running update or restart stops waiting for running work. */
+  restartNow: (env: EnvironmentId | null) => call<{ token: string }>(env, "restart-now"),
 };
 
 export interface RubatoUpdateCheckState {

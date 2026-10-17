@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -52,6 +52,36 @@ test('a restart that handed work over starts the next engine at once', async (t)
   assert.equal(result.restarted, true, JSON.stringify(result));
   assert.equal(result.handedOver, true);
   assert.deepEqual(started, [descriptorPath]);
+});
+
+// An engine still finishing running work after the stop (drain.mjs) gets a second stop when the
+// person asks for the restart now; that one ends its wait.
+test('a restart cut short sends the second stop that ends the engine\'s wait', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-restart-now-'));
+  t.after(() => rm(root, { force: true, recursive: true }));
+  const server = path.join(root, 'server');
+  await mkdir(server, { recursive: true });
+  const socketPath = path.join(server, 'pi.sock');
+  const descriptorPath = path.join(server, 'connection.json');
+  await writeFile(descriptorPath, JSON.stringify({ version: 1, serverId: 'x', socketPath }));
+  // Named like the engine so the pid lookup finds it: it ignores the first stop, as a drain does.
+  const fake = path.join(root, 'fake', 'cli.mjs');
+  await mkdir(path.dirname(fake), { recursive: true });
+  await writeFile(fake, `import net from 'node:net';
+let stops = 0;
+const server = net.createServer((socket) => socket.end()).listen(${JSON.stringify(socketPath)});
+process.on('SIGTERM', () => { stops += 1; if (stops === 2) server.close(() => process.exit(0)); });`);
+  const child = spawn(process.execPath, [fake, '--agent-dir', root], { stdio: 'ignore' });
+  t.after(() => { try { child.kill('SIGKILL'); } catch {} });
+  for (let i = 0; i < 100 && !(await socketAlive(socketPath)); i++) await new Promise((r) => setTimeout(r, 20));
+  const seen = [];
+  let asked = false;
+  setTimeout(() => { asked = true; }, 300);
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 8000, startEngine: async () => {},
+    onDraining: async () => { seen.push('draining'); }, cutShort: async () => asked });
+  assert.equal(result.restarted, true, JSON.stringify(result));
+  assert.equal(result.cut, true);
+  assert.deepEqual(seen, ['draining']);
 });
 
 test('restart is a no-op when no profile engine is listening', async () => {

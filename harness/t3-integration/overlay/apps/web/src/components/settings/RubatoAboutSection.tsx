@@ -3,9 +3,8 @@ import * as Option from "effect/Option";
 import { useEffect, useState } from "react";
 
 import { APP_VERSION } from "../../branding";
-import { requestConfirmDialog } from "../../confirmDialog";
 import { usePrimaryEnvironmentId } from "../../state/environments";
-import { rubatoApp, useRubatoUpdateCheck, type RubatoVersion } from "../../state/rubatoApp";
+import { rubatoApp, useRubatoUpdateCheck, type RubatoRestartStatus, type RubatoVersion } from "../../state/rubatoApp";
 import { usePreparedConnection } from "../../state/session";
 import { RubatoIcon } from "../RubatoIcon";
 import { Badge } from "../ui/badge";
@@ -78,6 +77,62 @@ export async function waitForRestart(
   }
 }
 
+/** An update or restart running on the Mac: what it waits on, and whether "now" was asked. */
+export interface RubatoJob {
+  readonly token: string;
+  readonly kind: "update" | "restart";
+  readonly stage: "building" | "draining";
+  readonly now: boolean;
+}
+
+/** The job holding the updater, as the page shows it; null when none runs. */
+export function runningJob(status: RubatoRestartStatus): RubatoJob | null {
+  const job = status.busy ? status.job : null;
+  if (!job?.token) return null;
+  // The job writes its kind into the result as it starts; a job too new to have written it is a restart.
+  const kind = status.result?.token === job.token ? status.result.kind : "restart";
+  return { token: job.token, kind, stage: job.stage, now: job.now };
+}
+
+/**
+ * What a scheduled job tells the person. It runs in the background: the app stays usable, and
+ * the engine restarts only once running tool calls have finished (they continue afterwards).
+ */
+export function jobDescription(job: RubatoJob): string {
+  if (job.now) {
+    return job.stage === "draining"
+      ? "Restarting now. Work that was still running is cut off."
+      : "Restarts as soon as the rebuild is done, without waiting for running work.";
+  }
+  if (job.stage === "draining") {
+    return "Waiting for running tool calls to finish (up to 2 minutes). Rubato then restarts and they continue.";
+  }
+  return job.kind === "update"
+    ? "Scheduled. Downloading and rebuilding in the background; keep working. Rubato restarts once running tool calls finish."
+    : "Scheduled. Rebuilding in the background; keep working. Rubato restarts once running tool calls finish.";
+}
+
+const JOB_POLL_MS = 3_000;
+
+/** Follows the job the updater runs, so the page shows it after it was left and opened again. */
+function useRubatoJob(environmentId: Parameters<typeof rubatoApp.restartStatus>[0]) {
+  const [job, setJob] = useState<RubatoJob | null>(null);
+  useEffect(() => {
+    if (environmentId === null) return;
+    let stopped = false;
+    const read = () => {
+      rubatoApp.restartStatus(environmentId).then(
+        (status) => { if (!stopped) setJob(runningJob(status)); },
+        () => undefined,
+      );
+    };
+    read();
+    const timer = setInterval(read, JOB_POLL_MS);
+    return () => { stopped = true; clearInterval(timer); };
+  }, [environmentId]);
+  return [job, setJob] as const;
+}
+
 /** The Mac's environment once its connection is ready; null before that. */
 function useRubatoEnvironment() {
   const primary = usePrimaryEnvironmentId();
@@ -104,8 +159,9 @@ export function RubatoAboutSection() {
   const [version, setVersion] = useState<RubatoVersion | null>(null);
   const [versionError, setVersionError] = useState<string | null>(null);
   const { check, error: checkError, checking, refresh: runCheck } = useRubatoUpdateCheck(environmentId);
-  const [restarting, setRestarting] = useState(false);
+  const [job, setJob] = useRubatoJob(environmentId);
   const [restartError, setRestartError] = useState<string | null>(null);
+  const [hurrying, setHurrying] = useState(false);
   const [showChanges, setShowChanges] = useState(false);
 
   useEffect(() => {
@@ -129,34 +185,46 @@ export function RubatoAboutSection() {
     }
   };
 
+  // One press schedules it: the restart runs in the background and waits for running tool calls,
+  // which continue on the new engine. No confirmation, since nothing is lost by it.
   const restart = async () => {
-    const message =
-      "Restart Rubato? This rebuilds from this Mac's checkout and restarts the engine, the remote hub and this app. Running work is interrupted.";
-    const answer = requestConfirmDialog(message, { variant: "destructive" });
-    if (!(answer ? await answer : window.confirm(message))) return;
-    setRestarting(true);
     setRestartError(null);
     let started: Awaited<ReturnType<typeof rubatoApp.restart>>;
     try {
       started = await rubatoApp.restart(environmentId);
     } catch (error) {
-      setRestarting(false);
       reportError("Could not restart Rubato", error);
       return;
     }
+    setJob({ token: started.token, kind: "restart", stage: "building", now: false });
     toastManager.add({
       type: "info",
-      title: "Restarting Rubato",
-      description: "The app closes and reopens by itself. A rebuild can take a few minutes.",
+      title: "Restart scheduled",
+      description: "Rubato rebuilds in the background and restarts once running tool calls finish. Keep working, or press Restart now to skip the wait.",
     });
     const outcome = await waitForRestart(environmentId, started.token);
     // A restart that reopens the app never gets here: this page goes with the app.
-    setRestarting(false);
+    setJob(null);
     if (outcome.failed) setRestartError(`${outcome.message} Log: ${outcome.log}`);
     else toastManager.add({ type: "success", title: "Rubato restarted" });
   };
 
-  const updating = updater?.state.phase === "running";
+  // The second press: stop waiting for running work and restart as soon as the job can.
+  const hurry = async () => {
+    setHurrying(true);
+    try {
+      await rubatoApp.restartNow(environmentId);
+      setJob((current) => (current ? { ...current, now: true } : current));
+    } catch (error) {
+      reportError("Could not restart now", error);
+    } finally {
+      setHurrying(false);
+    }
+  };
+
+  const updateJob = job?.kind === "update" ? job : null;
+  const restartJob = job?.kind === "restart" ? job : null;
+  const updating = updateJob !== null || updater?.state.phase === "running";
   const updateStatus = checkError
     ? checkError
     : checking && !check
@@ -197,15 +265,20 @@ export function RubatoAboutSection() {
       />
       <SettingsRow
         title="Updates"
-        description={updating ? "Updating… the app closes and reopens when it is done." : updateStatus}
+        description={updateJob ? jobDescription(updateJob) : updating ? "Updating in the background…" : updateStatus}
         control={
           <span className="flex items-center gap-2">
             <Button size="sm" variant="outline" disabled={checking || environmentId === null} onClick={runCheck}>
               {checking ? <Spinner className="size-3.5" /> : null}
               Check
             </Button>
-            {check?.available && updater?.bridge.checkNow ? (
-              <Button size="sm" disabled={updating} onClick={() => void update()}>
+            {updateJob ? (
+              <Button size="sm" variant="destructive-outline" disabled={updateJob.now || hurrying} onClick={() => void hurry()}>
+                {updateJob.now ? <Spinner className="size-3.5" /> : null}
+                Update now
+              </Button>
+            ) : check?.available && updater?.bridge.checkNow ? (
+              <Button size="sm" disabled={updating || job !== null} onClick={() => void update()}>
                 Update
               </Button>
             ) : null}
@@ -249,17 +322,23 @@ export function RubatoAboutSection() {
         description={
           restartError ? (
             <span className="text-destructive">{restartError}</span>
-          ) : restarting ? (
-            "Restarting… the app closes and reopens when the rebuild is done."
+          ) : restartJob ? (
+            jobDescription(restartJob)
           ) : (
             "Rebuild from this Mac's checkout and restart the engine, the remote hub and the app. Use it after changing Rubato's code; it does not download anything."
           )
         }
         control={
-          <Button size="sm" variant="outline" disabled={restarting || environmentId === null} onClick={() => void restart()}>
-            {restarting ? <Spinner className="size-3.5" /> : null}
-            Restart
-          </Button>
+          restartJob ? (
+            <Button size="sm" variant="destructive-outline" disabled={restartJob.now || hurrying} onClick={() => void hurry()}>
+              {restartJob.now ? <Spinner className="size-3.5" /> : null}
+              Restart now
+            </Button>
+          ) : (
+            <Button size="sm" variant="outline" disabled={job !== null || environmentId === null} onClick={() => void restart()}>
+              Restart
+            </Button>
+          )
         }
       />
     </>
