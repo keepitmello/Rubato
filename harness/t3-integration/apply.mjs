@@ -40,6 +40,7 @@ import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
 import { themeEdits, themeOverlays } from './theme-edits.mjs';
+import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
 
@@ -1735,6 +1736,11 @@ for (const [relative, changes] of Object.entries(handoffRecoveryEdits)) {
 // Rubato's theme library in place of T3's built-in themes (theme-edits.mjs).
 overlays.push(...themeOverlays);
 for (const [relative, changes] of Object.entries(themeEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Glass, hairlines and layered shadows on T3's floating surfaces (polish-edits.mjs).
+overlays.push(...polishOverlays);
+for (const [relative, changes] of Object.entries(polishEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // "Open" on a tool row that read a file (read-open-edits.mjs).

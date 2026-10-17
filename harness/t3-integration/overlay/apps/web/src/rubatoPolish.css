@@ -1,0 +1,188 @@
+/*
+ * Rubato polish (harness/t3-integration/polish-edits.mjs): hairlines, a rim of light
+ * and layered shadows on the surfaces that float above content, a quieter timeline
+ * minimap, and a right panel that pairs with the left sidebar.
+ *
+ * Every color here comes from the active theme's roles (--foreground, --background,
+ * --sidebar, --popover), so each Rubato theme gets the same treatment in light and
+ * dark. The rules are unlayered on purpose: Tailwind keeps its utilities in a
+ * layer, so these win over T3's utility classes without !important.
+ */
+
+:root {
+  /* 0.5px reads as one device pixel on a Retina display. */
+  --rb-hairline: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --rb-hairline-strong: color-mix(in oklab, var(--foreground) 15%, transparent);
+  /* Light catching the top edge of a raised surface. */
+  --rb-rim: rgb(255 255 255 / 70%);
+  /* The contact line where a floating surface meets what is under it. */
+  --rb-edge: rgb(0 0 0 / 8%);
+  /* A short, dark shadow for contact plus a long, faint one for height. */
+  --rb-shadow-float: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px -8px rgb(0 0 0 / 14%);
+  --rb-shadow-pop: 0 2px 6px rgb(0 0 0 / 8%), 0 18px 44px -12px rgb(0 0 0 / 22%);
+  /* T3 sets --glass-blur to 0 when Glass opacity is 100%; the polish follows. */
+  --rb-glass-blur: calc(var(--glass-blur) * 2.2);
+  --rb-glass-saturate: 1.8;
+  --rb-radius-pop: 14px;
+  --rb-radius-card: 12px;
+}
+
+.dark {
+  --rb-hairline: color-mix(in oklab, var(--foreground) 9%, transparent);
+  --rb-hairline-strong: color-mix(in oklab, var(--foreground) 13%, transparent);
+  --rb-rim: rgb(255 255 255 / 9%);
+  --rb-edge: rgb(0 0 0 / 55%);
+  --rb-shadow-float: 0 1px 3px rgb(0 0 0 / 24%), 0 10px 30px -10px rgb(0 0 0 / 45%);
+  --rb-shadow-pop: 0 4px 12px rgb(0 0 0 / 24%), 0 22px 54px -14px rgb(0 0 0 / 60%);
+}
+
+/* ---- Glass that floats above content: menus, popovers, dialogs, toasts ---- */
+
+.dropdown-glass,
+.dialog-glass,
+.alert-glass {
+  border-color: transparent;
+  -webkit-backdrop-filter: blur(var(--rb-glass-blur)) saturate(var(--rb-glass-saturate));
+  backdrop-filter: blur(var(--rb-glass-blur)) saturate(var(--rb-glass-saturate));
+  box-shadow:
+    0 0 0 0.5px var(--rb-edge),
+    inset 0 0 0 0.5px var(--rb-hairline-strong),
+    inset 0 0.5px 0 var(--rb-rim),
+    var(--rb-shadow-pop);
+}
+
+/* ---- Thread details: a popover hanging from its toolbar button ---- */
+
+[data-thread-details-card] {
+  border-radius: var(--rb-radius-pop);
+}
+[data-thread-details-card] .text-xs {
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+[data-thread-details-card] section.border-t {
+  border-top-width: 0.5px;
+  border-color: var(--rb-hairline);
+}
+[data-thread-details-card] section h3 {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+[data-rubato-popover-caret] {
+  position: absolute;
+  top: -5px;
+  z-index: 1;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  rotate: 45deg;
+  border-radius: 2px 0 0 0;
+  pointer-events: none;
+  background: color-mix(
+    in srgb,
+    var(--popover) 18%,
+    color-mix(in srgb, var(--popover) var(--glass-opacity), transparent)
+  );
+  -webkit-backdrop-filter: blur(var(--rb-glass-blur)) saturate(var(--rb-glass-saturate));
+  backdrop-filter: blur(var(--rb-glass-blur)) saturate(var(--rb-glass-saturate));
+  box-shadow:
+    -0.5px -0.5px 0 0 var(--rb-edge),
+    inset 0.5px 0.5px 0 0 var(--rb-hairline-strong);
+}
+
+/* ---- Toolbar buttons grouped into one glass capsule ---- */
+
+[data-panel-layout-controls] {
+  height: auto;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 5%, transparent);
+  box-shadow:
+    inset 0 0 0 0.5px var(--rb-hairline),
+    inset 0 0.5px 0 var(--rb-rim);
+}
+[data-panel-layout-controls] [data-slot="toggle"] {
+  border-radius: 999px;
+}
+/* The right panel's maximize button stands alone beside that capsule (both sit in
+   the window's top-right corner, outside the panel's own tab bar). */
+:is([aria-label="Maximize panel"], [aria-label="Restore panel size"]) {
+  width: 2.125rem;
+  height: 2.125rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--foreground) 5%, transparent);
+  box-shadow:
+    inset 0 0 0 0.5px var(--rb-hairline),
+    inset 0 0.5px 0 var(--rb-rim);
+}
+
+/* ---- Composer: T3's outline at 0.5px, a rim and a two-step shadow ---- */
+
+[data-slot="composer-shell"] {
+  --chat-composer-outline: var(--rb-hairline-strong);
+}
+[data-slot="composer-shell"]::after {
+  border-width: 0.5px;
+}
+[data-slot="composer-shell"]:not([data-with-context]) {
+  border-radius: 1.5rem;
+  box-shadow:
+    inset 0 0.5px 0 var(--rb-rim),
+    var(--rb-shadow-float);
+}
+
+/* ---- Right panel: the same sheet as the left sidebar, content in a card ---- */
+
+[data-preview-panel-mode="inline"] {
+  background: var(--sidebar);
+  border-left-color: transparent;
+  box-shadow: inset 0.5px 0 0 var(--rb-hairline-strong);
+}
+[data-right-panel-surface-content]:not(:has([aria-label="Open a surface"])) {
+  margin: 0 8px 8px;
+  overflow: hidden;
+  border-radius: var(--rb-radius-card);
+  background: var(--background);
+  box-shadow:
+    0 0 0 0.5px var(--rb-edge),
+    inset 0 0.5px 0 var(--rb-rim),
+    var(--rb-shadow-float);
+}
+[data-right-panel-tab-list] > div {
+  gap: 2px;
+}
+[data-right-panel-tabbar] [data-active-tab] {
+  border-radius: 999px;
+  height: 1.625rem;
+  padding-inline: 0.5rem 0.75rem;
+  font-size: 0.8125rem;
+}
+[aria-label="Open a surface"] [data-slot="kbd"] {
+  min-width: 1.375rem;
+  height: 1.375rem;
+  border-radius: 6px;
+  background: color-mix(in oklab, var(--foreground) 7%, transparent);
+  box-shadow:
+    inset 0 0 0 0.5px var(--rb-hairline-strong),
+    inset 0 0.5px 0 var(--rb-rim);
+}
+
+/* ---- Timeline minimap: present, not loud; clear on hover ---- */
+
+[data-testid="timeline-minimap"] {
+  opacity: 0.5;
+  transition: opacity 180ms ease-out;
+}
+[data-testid="timeline-minimap"]:hover,
+[data-testid="timeline-minimap"]:focus-within {
+  opacity: 1;
+}
+
+/* ---- Changed files card in the timeline ---- */
+
+[class*="@container/changed-files"] {
+  border-radius: var(--rb-radius-card);
+  box-shadow: inset 0 0 0 0.5px var(--rb-hairline-strong);
+}
