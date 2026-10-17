@@ -122,7 +122,7 @@ test("the wire stays off when a required transform did not apply", () => {
 });
 
 test("haiku 4.5 is untouched", async () => {
-  const { raw, init, seen } = await send("claude-haiku-4-5");
+  const { raw, init, seen } = await send("claude-haiku-5-5");
   assert.equal(seen.init.body, raw);
   assert.equal(seen.init.headers, init.headers);
   assert.equal(JSON.parse(seen.init.body).context_management, undefined);

@@ -57,7 +57,7 @@ test("Claude has no Rubato line; its only line is the server-compaction safety l
 });
 
 test("DeepSeek, Gemini and other models only have a computed hard safety line", () => {
-  const HAIKU = { provider: "anthropic", id: "claude-haiku-4-5", contextWindow: 200000, maxTokens: 64000 };
+  const HAIKU = { provider: "anthropic", id: "claude-haiku-5-5", contextWindow: 200000, maxTokens: 64000 };
   for (const model of [DEEPSEEK, GEMINI, HAIKU]) {
     const budget = windowBudget(model, contextNotesConfig({}));
     assert.equal(budget.strategy, "hard-safety");

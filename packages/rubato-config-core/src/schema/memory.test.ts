@@ -12,7 +12,7 @@ describe("RubatoMemorySettingsSchema", () => {
     expect(parsed.dream.models).toEqual([
       { model: "b-ai/deepseek-v4.1-flash", reasoning: "medium" },
       { model: "xai/grok-4.7", reasoning: "medium" },
-      { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
+      { model: "anthropic/claude-haiku-5-5", reasoning: "off" },
     ])
     expect(parsed.dream.stores).toEqual({})
   })
@@ -57,7 +57,7 @@ describe("RubatoMemorySettingsSchema", () => {
 
   test("#given dream models as bare ids and as model/reasoning pairs #when parsed #then both forms stay as written", () => {
     // given
-    const models = ["xai/grok-4.7", { model: "anthropic/claude-haiku-4-5", reasoning: "off" as const }]
+    const models = ["xai/grok-4.7", { model: "anthropic/claude-haiku-5-5", reasoning: "off" as const }]
 
     // when
     const parsed = RubatoMemorySettingsSchema.parse({ dream: { models } })

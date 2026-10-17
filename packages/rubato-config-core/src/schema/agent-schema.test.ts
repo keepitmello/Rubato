@@ -30,7 +30,7 @@ describe("agent model entries", () => {
     // given
     const definition = {
       model: "kimi-coding/kimi-for-coding-highspeed",
-      models: ["quotio-openai/gpt-5.6-luna-fast", { model: "anthropic/claude-haiku-4-5", variant: "low" }],
+      models: ["quotio-openai/gpt-5.6-luna-fast", { model: "anthropic/claude-haiku-5-5", variant: "low" }],
     }
 
     // when

@@ -42,8 +42,8 @@ test("Anthropic 이전 세대와 dated id 는 빠진다", () => {
       model("claude-opus-4-8"),
       model(CURRENT_OPUS),
       model(CURRENT_SONNET),
-      model("claude-haiku-4-5-20251001"),
-      model("claude-haiku-4-5"),
+      model("claude-haiku-5-5-20251001"),
+      model("claude-haiku-5-5"),
       model("claude-fable-5"),
       model(CURRENT_FABLE),
     ],
@@ -158,26 +158,26 @@ test("Codex [sub] 는 Sol 과 Astra 만 붙는다", () => {
 test("Anthropic [sub] 는 Fable, Opus, Sonnet 만 붙는다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-sonnet-5"), model("claude-haiku-4-5")],
+    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-sonnet-5"), model("claude-haiku-5-5")],
     filterModels: (models) => models,
   });
   const credential = { accounts: [{ name: "default" }, { name: "sub" }] };
   assert.deepEqual(
     provider.filterModels(provider.getModels(), credential).map((entry) => entry.id),
     [
-      CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-sonnet-5", "claude-haiku-4-5",
+      CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-sonnet-5", "claude-haiku-5-5",
       `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`, `${CURRENT_SONNET}-sub`,
     ],
   );
   const stored = provider.getModels().map((entry) => entry.id);
   assert.equal(stored.includes("claude-sonnet-5-sub"), false);
-  assert.equal(stored.includes("claude-haiku-4-5-sub"), false);
+  assert.equal(stored.includes("claude-haiku-5-5-sub"), false);
 });
 
 test("세 번째 계정이 있으면 Anthropic 에 [sub2] 행을 붙인다", () => {
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-haiku-4-5")],
+    getModels: () => [model(CURRENT_FABLE), model(CURRENT_OPUS), model(CURRENT_SONNET), model("claude-haiku-5-5")],
     filterModels: (models) => models,
   });
   const ids = (accounts) => provider.filterModels(provider.getModels(), { accounts }).map((entry) => entry.id);
@@ -185,7 +185,7 @@ test("세 번째 계정이 있으면 Anthropic 에 [sub2] 행을 붙인다", () 
   assert.equal(ids([{ name: "default" }, { name: "sub" }]).some((id) => id.endsWith("-sub2")), false);
   // 실제 저장소 모양: 기본·sub·로그인이 붙인 login-2.
   assert.deepEqual(ids([{ name: "default" }, { name: "sub" }, { name: "login-2" }]), [
-    CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-haiku-4-5",
+    CURRENT_FABLE, CURRENT_OPUS, CURRENT_SONNET, "claude-haiku-5-5",
     `${CURRENT_FABLE}-sub`, `${CURRENT_OPUS}-sub`, `${CURRENT_SONNET}-sub`,
     `${CURRENT_FABLE}-sub2`, `${CURRENT_OPUS}-sub2`, `${CURRENT_SONNET}-sub2`,
   ]);
@@ -215,13 +215,13 @@ test("저장된 계정 수만큼만 getModels 에 계정 행을 넣는다", () =
   const stored = { accounts: [{ name: "login-2" }] };
   const provider = withSubAccountCopies({
     id: "anthropic",
-    getModels: () => [model(CURRENT_OPUS), model("claude-haiku-4-5")],
+    getModels: () => [model(CURRENT_OPUS), model("claude-haiku-5-5")],
     filterModels: (models) => models,
   }, { readStoredCredential: (providerId) => (providerId === "anthropic" ? stored : null) });
-  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-4-5", `${CURRENT_OPUS}-sub`]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-5-5", `${CURRENT_OPUS}-sub`]);
 
   stored.accounts = [];
-  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-4-5"]);
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, "claude-haiku-5-5"]);
 
   stored.accounts = [{ name: "sub" }, { name: "login-2" }];
   assert.equal(provider.getModels().some((entry) => entry.id === `${CURRENT_OPUS}-sub2`), true);

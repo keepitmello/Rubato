@@ -34,16 +34,16 @@ describe("rubato dream --json status", () => {
       models: [
         { model: "b-ai/deepseek-v4.1-flash", thinking: "medium" },
         { model: "xai/grok-4.7", thinking: "medium" },
-        { model: "anthropic/claude-haiku-4-5", thinking: "off" },
+        { model: "anthropic/claude-haiku-5-5", thinking: "off" },
       ],
       stores: [],
     })
   })
 
   test("#given memory.dream.models in the user config #when status is read #then that ladder is reported in order", () => {
-    const config = JSON.stringify({ memory: { dream: { models: ["xai/grok-4.7", { model: "anthropic/claude-haiku-4-5", reasoning: "off" }] } } })
+    const config = JSON.stringify({ memory: { dream: { models: ["xai/grok-4.7", { model: "anthropic/claude-haiku-5-5", reasoning: "off" }] } } })
     expect(dreamStatus(config)).toEqual({
-      models: [{ model: "xai/grok-4.7" }, { model: "anthropic/claude-haiku-4-5", thinking: "off" }],
+      models: [{ model: "xai/grok-4.7" }, { model: "anthropic/claude-haiku-5-5", thinking: "off" }],
       stores: [],
     })
   })

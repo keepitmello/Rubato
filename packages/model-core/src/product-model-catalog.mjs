@@ -31,7 +31,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
     "claude-fable-5-1",
     "claude-opus-5-5",
     "claude-sonnet-5-5",
-    "claude-haiku-4-5",
+    "claude-haiku-5-5",
   ]),
   xai: Object.freeze(["grok-4.7"]),
   "google-antigravity": Object.freeze(["gemini-3.8-flash"]),

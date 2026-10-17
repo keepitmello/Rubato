@@ -99,7 +99,7 @@ test("Haiku 4.5 는 전체 스택에서도 서버 컴팩션이 붙지 않는다"
   const anthropic = await anthropicProvider(t);
   const captured = {};
   await drain(anthropic.streamSimple(
-    model(anthropic, "claude-haiku-4-5"),
+    model(anthropic, "claude-haiku-5-5"),
     { systemPrompt: "우리 지침", messages: [{ role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 }] },
     { fetch: (i, init) => sse(compactionSse().slice(0, 1).concat(compactionSse().slice(4)))(i, init, captured), apiKey: SETUP_TOKEN, maxRetries: 0, env: {}, sessionId: "s2" },
   ));

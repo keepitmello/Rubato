@@ -524,7 +524,7 @@ describe("resolveModelWithFallback", () => {
       const cacheSpy = spyOn(connectedProvidersCache, "readConnectedProvidersCache").mockReturnValue(["anthropic"])
       const input: ExtendedModelResolutionInput = {
         fallbackChain: [
-          { providers: ["openai", "opencode"], model: "claude-haiku-4-5" },
+          { providers: ["openai", "opencode"], model: "claude-haiku-5-5" },
         ],
         availableModels: new Set(),
         systemDefaultModel: "anthropic/claude-opus-4-7-20251101",

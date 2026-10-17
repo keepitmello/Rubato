@@ -73,7 +73,7 @@ describe("fallbackNote", () => {
   it("names the models that failed before the one that answered, or that all failed", () => {
     const deepseek = { model: "b-ai/deepseek-v4.1-flash", ok: false, error: "credit insufficient" };
     const grok = { model: "xai/grok-4.7", ok: false, error: "Internal error" };
-    expect(fallbackNote([deepseek, grok, { model: "anthropic/claude-haiku-4-5", ok: true }])).toBe(
+    expect(fallbackNote([deepseek, grok, { model: "anthropic/claude-haiku-5-5", ok: true }])).toBe(
       "Fell back after b-ai/deepseek-v4.1-flash, xai/grok-4.7 failed",
     );
     expect(fallbackNote([deepseek, grok])).toBe("Every model failed: b-ai/deepseek-v4.1-flash, xai/grok-4.7");
@@ -141,13 +141,13 @@ describe("overviewStatus", () => {
 
   it("asks for a look at a dream that failed or had to fall back", () => {
     const deepseek = { model: "b-ai/deepseek-v4.1-flash", ok: false, error: "credit insufficient" };
-    const haiku = { model: "anthropic/claude-haiku-4-5", ok: true };
+    const haiku = { model: "anthropic/claude-haiku-5-5", ok: true };
     const status = overviewStatus([
       store("rubato", { lastRun: run({ attempts: [deepseek, haiku] }) }),
       store("home", { lastRun: run({ status: "failed", landed: false, reason: "merge failed: conflict\nmore", attempts: [haiku] }) }),
     ]);
     expect(status.attention).toEqual([
-      { store: "rubato", runId: "r", title: "rubato's dream fell back to anthropic/claude-haiku-4-5", detail: "b-ai/deepseek-v4.1-flash: credit insufficient" },
+      { store: "rubato", runId: "r", title: "rubato's dream fell back to anthropic/claude-haiku-5-5", detail: "b-ai/deepseek-v4.1-flash: credit insufficient" },
       { store: "home", runId: "r", title: "home's last dream failed", detail: "merge failed: conflict" },
     ]);
   });

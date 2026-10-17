@@ -183,12 +183,12 @@ test('run now is detached and its result is read back', { skip: !bunAvailable &&
 test('settings writes keep the user file and commit the self store', async (t) => {
   const f = await fixture(t);
   const configFile = path.join(f.home, '.rubato', 'rubato.jsonc');
-  await f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }] });
+  await f.service.handle('config', { models: [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-5-5' }] });
   await f.service.handle('config', { store: 'scratch', enabled: false });
   const text = await readFile(configFile, 'utf8');
   assert.match(text, /\/\/ 사용자 주석은 남아야 한다/);
   assert.match(text, /\/\/ 꼬리 주석/);
-  assert.deepEqual(jsoncModels(text), [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-4-5' }]);
+  assert.deepEqual(jsoncModels(text), [{ model: 'xai/grok-4.7', reasoning: 'high' }, { model: 'anthropic/claude-haiku-5-5' }]);
   assert.match(text, /"scratch": \{ "enabled": false \}|"scratch": \{\s*"enabled": false\s*\}/);
   assert.match(text, /"_migrations": \["2026-08-reasoning-unification"\]/);
   await assert.rejects(f.service.handle('config', { publish: 'review' }), /Nothing to change/);
@@ -202,9 +202,9 @@ test('settings writes keep the user file and commit the self store', async (t) =
   const builtIn = await f.service.handle('title-models', {});
   assert.equal(builtIn.custom, false);
   assert.deepEqual(builtIn.models[0], { model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast', reasoning: null });
-  await f.service.handle('config', { titleModels: [{ model: 'anthropic/claude-haiku-4-5', reasoning: 'off' }, { model: 'xai/grok-4.7' }] });
+  await f.service.handle('config', { titleModels: [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }, { model: 'xai/grok-4.7' }] });
   assert.deepEqual(await f.service.handle('title-models', {}), {
-    models: [{ model: 'anthropic/claude-haiku-4-5', reasoning: 'off' }, { model: 'xai/grok-4.7', reasoning: null }],
+    models: [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }, { model: 'xai/grok-4.7', reasoning: null }],
     custom: true,
   });
   assert.match(await readFile(configFile, 'utf8'), /\/\/ 사용자 주석은 남아야 한다/);

@@ -1027,12 +1027,12 @@ test('a model Pi cannot serve fast gets no Fast command either way', async (t) =
   const { root, bridge } = await setup(t);
   await bridge.startSession({ threadId:'plain-thread', runtimeMode:'full-access', cwd:root });
   const context = bridge.sessions.get('plain-thread');
-  context.session.model = 'anthropic/claude-haiku-4-5';
+  context.session.model = 'anthropic/claude-haiku-5-5';
   await context.client.command({ type:'prompt', message:'__fast_unsupported' });
   const calls = [];
   const original = context.client.command.bind(context.client);
   context.client.command = async (command) => { calls.push(command); return original(command); };
-  const selection = (fast) => ({ model:'anthropic/claude-haiku-4-5', options:[{ id:'fastMode', value:fast }] });
+  const selection = (fast) => ({ model:'anthropic/claude-haiku-5-5', options:[{ id:'fastMode', value:fast }] });
   await bridge.selectModel(context, selection(false));
   await bridge.selectModel(context, selection(true));
   assert.deepEqual(calls.filter((command) => command.type === 'prompt'), []);

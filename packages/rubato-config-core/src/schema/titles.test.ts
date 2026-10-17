@@ -4,7 +4,7 @@ import { RubatoConfigLayerSchema, RubatoConfigSchema } from "./config"
 
 describe("titles", () => {
   test("a title ladder parses in the config and in a layer", () => {
-    const titles = { models: ["opengateway/deepseek/deepseek-v4.1-flash-ultrafast", { model: "anthropic/claude-haiku-4-5", reasoning: "off" }] }
+    const titles = { models: ["opengateway/deepseek/deepseek-v4.1-flash-ultrafast", { model: "anthropic/claude-haiku-5-5", reasoning: "off" }] }
     expect(RubatoConfigSchema.parse({ titles }).titles).toEqual(titles)
     expect(RubatoConfigLayerSchema.parse({ titles }).titles).toEqual(titles)
   })

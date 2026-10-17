@@ -9,7 +9,7 @@ import { parse as parseJsonc } from "jsonc-parser";
 // 사용자가 ~/.rubato/rubato.jsonc 의 titles.models 로 바꾸면 그쪽이 이긴다 (loadTitleModels).
 export const TITLE_MODELS = Object.freeze([
   Object.freeze({ provider: "opengateway", id: "deepseek/deepseek-v4.1-flash-ultrafast" }),
-  Object.freeze({ provider: "anthropic", id: "claude-haiku-4-5", reasoning: "off" }),
+  Object.freeze({ provider: "anthropic", id: "claude-haiku-5-5", reasoning: "off" }),
 ]);
 
 /**

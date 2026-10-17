@@ -365,5 +365,5 @@ test("account rows [sub] and [sub2] are judged on the model, not the account suf
     assert.equal(isMidConversationEffortModel(`${id}-sub`), true);
     assert.equal(isMidConversationEffortModel(`${id}-sub2`), true);
   }
-  assert.equal(isMidConversationEffortModel("claude-haiku-4-5-sub2"), false);
+  assert.equal(isMidConversationEffortModel("claude-haiku-5-5-sub2"), false);
 });

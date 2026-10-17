@@ -68,7 +68,7 @@ test("a reinstall keeps the model the user chose, options and all", (t) => {
 });
 
 test("a reinstall keeps an errand model the user set by hand", (t) => {
-  const mine = { instanceId: "rubato", model: "anthropic/claude-haiku-4-5" };
+  const mine = { instanceId: "rubato", model: "anthropic/claude-haiku-5-5" };
   const { settings } = writeSettings(t, { textGenerationModelSelection: mine });
   assert.deepEqual(settings.textGenerationModelSelection, mine);
 });

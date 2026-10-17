@@ -40,7 +40,7 @@ describe("resolveModelForDelegateTask", () => {
 
   test("#given user primary is unreachable #when fallback_models has a reachable model #then promotes fallback with variant", () => {
     const result = resolveModelForDelegateTask({
-      userModel: "quotio/claude-haiku-4-5-unavailable",
+      userModel: "quotio/claude-haiku-5-5-unavailable",
       userFallbackModels: ["openai/gpt-5.4 high"],
       availableModels: new Set(["openai/gpt-5.4-preview"]),
     }, noCacheDeps)

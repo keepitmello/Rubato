@@ -26,7 +26,7 @@ const LEGACY_USER_CONFIG = `{
       "grok": {
         "models": [
           { "model": "b-ai/deepseek-v4.1-flash", "reasoning": "medium" },
-          { "model": "anthropic/claude-haiku-4-5", "reasoning": "off" }
+          { "model": "anthropic/claude-haiku-5-5", "reasoning": "off" }
         ]
       }
     },
@@ -66,7 +66,7 @@ describe("dream models migration", () => {
           stores: { rubato: { enabled: true } },
           models: [
             { model: "b-ai/deepseek-v4.1-flash", reasoning: "medium" },
-            { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
+            { model: "anthropic/claude-haiku-5-5", reasoning: "off" },
           ],
         },
       },
@@ -130,7 +130,7 @@ describe("dream models migration", () => {
     const document = {
       categories: { grok: { model: "xai/grok-4.7" } },
       task: { warnings: { unavailable_categories: false } },
-      memory: { dream: { category: "grok", models: ["anthropic/claude-haiku-4-5"] } },
+      memory: { dream: { category: "grok", models: ["anthropic/claude-haiku-5-5"] } },
       profiles: { work: { categories: { deep: {} }, "[codex]": { categories: {} } } },
     }
 
@@ -139,7 +139,7 @@ describe("dream models migration", () => {
 
     // then
     expect(migrated.document).toEqual({
-      memory: { dream: { models: ["anthropic/claude-haiku-4-5"] } },
+      memory: { dream: { models: ["anthropic/claude-haiku-5-5"] } },
       profiles: { work: {} },
     })
   })

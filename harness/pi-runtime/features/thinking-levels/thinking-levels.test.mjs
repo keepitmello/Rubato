@@ -27,7 +27,7 @@ test("descriptor is stock-locked and listed on the candidate", async () => {
 
 test("Shift+Tab cycle skips off/minimal", () => {
   assert.deepEqual(supportedThinkingLevels({ id: "gpt-4.1", reasoning: false }), ["off"]);
-  assert.deepEqual(supportedThinkingLevels({ id: "claude-haiku-4-5", reasoning: true }), ["low", "medium", "high"]);
+  assert.deepEqual(supportedThinkingLevels({ id: "claude-haiku-5-5", reasoning: true }), ["low", "medium", "high"]);
   assert.deepEqual(supportedThinkingLevels({
     id: "gpt-5.6-sol",
     reasoning: true,

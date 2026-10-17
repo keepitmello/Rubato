@@ -393,8 +393,8 @@ test("the user's titles.models replaces the built-in ladder", () => {
   );
   const read = (text) => () => text;
   assert.deepEqual(
-    loadTitleModels({ home: "/h", readFile: read('{\n  // mine\n  "titles": { "models": ["anthropic/claude-haiku-4-5",] },\n}') }),
-    [{ provider: "anthropic", id: "claude-haiku-4-5" }],
+    loadTitleModels({ home: "/h", readFile: read('{\n  // mine\n  "titles": { "models": ["anthropic/claude-haiku-5-5",] },\n}') }),
+    [{ provider: "anthropic", id: "claude-haiku-5-5" }],
   );
   assert.equal(loadTitleModels({ home: "/h", readFile: read('{"titles":{"models":[]}}') }), TITLE_MODELS, "an empty ladder keeps the default");
   assert.equal(loadTitleModels({ home: "/h", readFile: () => { throw new Error("ENOENT"); } }), TITLE_MODELS);

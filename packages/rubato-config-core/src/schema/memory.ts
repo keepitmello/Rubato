@@ -73,7 +73,7 @@ export const RubatoMemoryDreamModelSchema = z.union([
 export const DEFAULT_DREAM_MODELS: readonly { readonly model: string; readonly reasoning: ReasoningLevel }[] = Object.freeze([
   { model: "b-ai/deepseek-v4.1-flash", reasoning: "medium" },
   { model: "xai/grok-4.7", reasoning: "medium" },
-  { model: "anthropic/claude-haiku-4-5", reasoning: "off" },
+  { model: "anthropic/claude-haiku-5-5", reasoning: "off" },
 ])
 
 const defaultDreamModels = (): RubatoMemoryDreamModel[] => DEFAULT_DREAM_MODELS.map((rung) => ({ ...rung }))

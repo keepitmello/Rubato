@@ -102,7 +102,7 @@ The current picker policy is explicit (`picker-catalog.mjs:6-25`):
   `gpt-daybreak-blue-latest`;
 - xAI: `grok-4.7`;
 - Anthropic: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`,
-  `claude-haiku-4-5`;
+  `claude-haiku-5-5`;
 - OpenCode: `muse-spark-1.3-contributor-free`;
 - Vertex: `gemini-4-argon`;
 - Cursor: `grok-4.7`, `gpt-5.6-sol`, `claude-fable-5-1`, `claude-opus-5`,

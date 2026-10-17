@@ -53,7 +53,7 @@ describe("memory profile and harness deep-merge", () => {
     // given
     const config = {
       memory: { enabled: true, dream: { min_hours_between: 12, models: ["xai/grok-4.7"] } },
-      "[senpi]": { memory: { dream: { models: [{ model: "anthropic/claude-haiku-4-5", reasoning: "off" }] } } },
+      "[senpi]": { memory: { dream: { models: [{ model: "anthropic/claude-haiku-5-5", reasoning: "off" }] } } },
     }
 
     // when
@@ -63,7 +63,7 @@ describe("memory profile and harness deep-merge", () => {
     expect(result.diagnostics).toEqual([])
     expect(result.config["memory"]).toEqual({
       enabled: true,
-      dream: { min_hours_between: 12, models: [{ model: "anthropic/claude-haiku-4-5", reasoning: "off" }] },
+      dream: { min_hours_between: 12, models: [{ model: "anthropic/claude-haiku-5-5", reasoning: "off" }] },
     })
   })
 
