@@ -17,6 +17,11 @@
 // - The home row (chat/RubatoHomeProjects.tsx): on the new-thread screen, the
 //   project tabs and the selected project's newest threads along the bottom,
 //   inside the composer's width; the composer stays centered.
+// - New thread inside a project: while the list is narrowed to one project,
+//   the sidebar's new-thread button and chat.new open the thread in that
+//   project instead of the "New thread in..." picker
+//   (rubatoProjectRail.logic.ts scopedNewThreadProjectRef). Shift+click and
+//   chat.newLocal keep T3's "current thread's project".
 // - Memory and Scheduled Tasks leave Settings for their own pages
 //   (routes/memory.tsx, routes/scheduled.tsx; the route tree in
 //   route-tree-edits.mjs). Their Settings addresses redirect there, so the
@@ -81,6 +86,31 @@ export const projectRailEdits = {
     ['      {isOnUtilityPage ? (\n', '      {rubatoRailShown ? null : isOnUtilityPage ? (\n', 'replace'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
+    [
+      '      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {\n',
+      [
+        '      // Rubato: inside the selected project, open the thread there instead',
+        '      // of asking which project (project-rail-edits.mjs).',
+        '      const rubatoScopedRef = event?.shiftKey',
+        '        ? null',
+        '        : scopedNewThreadProjectRef({',
+        '            group: scopedProjectGroup,',
+        '            contextProjectRef:',
+        '              newThreadContext.activeThread ?? newThreadContext.activeDraftThread ?? null,',
+        '          });',
+        '      if (rubatoScopedRef !== null) {',
+        '        if (isMobile) setOpenMobile(false);',
+        '        void newThreadContext.handleNewThread(rubatoScopedRef);',
+        '        return;',
+        '      }',
+        '',
+      ].join('\n'),
+    ],
+    [
+      '    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],\n',
+      '    [isMobile, newThreadContext, projectGroups.length, scopedProjectGroup, setOpenMobile],\n',
+      'replace',
+    ],
     // The rail narrows the list on desktop, so the project filter beside the
     // search field would be a second control for the same thing. Phones keep it.
     [
@@ -97,7 +127,7 @@ export const projectRailEdits = {
       [
         'import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";',
         'import { RubatoScopeLabel } from "./sidebar/RubatoScopeLabel";',
-        'import { selectRecentThreads } from "./sidebar/rubatoProjectRail.logic";',
+        'import { scopedNewThreadProjectRef, selectRecentThreads } from "./sidebar/rubatoProjectRail.logic";',
         '',
       ].join('\n')],
     ['  const threadSearchInputRef = useRef<HTMLInputElement>(null);\n',
@@ -158,6 +188,59 @@ export const projectRailEdits = {
         '              ) : null}',
         '',
       ].join('\n')],
+  ],
+  // chat.new follows the sidebar's new-thread button: inside the selected
+  // project it opens the thread there. The legacy sidebar has no selection.
+  'apps/web/src/routes/_chat.tsx': [
+    [
+      'import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";\n',
+      [
+        'import { buildSidebarProjectSnapshots, resolveSidebarProjectScopeKey } from "../sidebarProjectGrouping";',
+        'import { useUiStateStore } from "../uiStateStore";',
+        'import { scopedNewThreadProjectRef } from "../components/sidebar/rubatoProjectRail.logic";',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    ['  const projectGroupCount = useMemo(\n', '  const projectGroups = useMemo(\n', 'replace'],
+    [
+      '      }).length,\n    [primaryEnvironmentId, projectGroupingSettings, projects],\n  );\n',
+      [
+        '      }),',
+        '    [primaryEnvironmentId, projectGroupingSettings, projects],',
+        '  );',
+        '  const projectGroupCount = projectGroups.length;',
+        '  // Rubato: the project the sidebar is narrowed to (project-rail-edits.mjs).',
+        '  const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);',
+        '  const scopedProjectGroup = useMemo(() => {',
+        '    const key = resolveSidebarProjectScopeKey({',
+        '      groups: projectGroups,',
+        '      key: persistedProjectScopeKey,',
+        '      settings: projectGroupingSettings,',
+        '    });',
+        '    return key === null ? null : (projectGroups.find((group) => group.projectKey === key) ?? null);',
+        '  }, [persistedProjectScopeKey, projectGroupingSettings, projectGroups]);',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '        if (!legacySidebarEnabled && projectGroupCount > 1) {\n',
+      [
+        '        const rubatoScopedRef = legacySidebarEnabled',
+        '          ? null',
+        '          : scopedNewThreadProjectRef({',
+        '              group: scopedProjectGroup,',
+        '              contextProjectRef: activeThread ?? activeDraftThread ?? null,',
+        '            });',
+        '        if (rubatoScopedRef !== null) {',
+        '          void handleNewThread(rubatoScopedRef);',
+        '          return;',
+        '        }',
+        '',
+      ].join('\n'),
+    ],
+    ['    projectGroupCount,\n', '    projectGroupCount,\n    scopedProjectGroup,\n', 'replace'],
   ],
   // Memory and Scheduled Tasks have their own pages now; their Settings
   // addresses only redirect. Anchored on schedule-edits.mjs's version of the line.

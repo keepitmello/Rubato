@@ -341,3 +341,31 @@ export function selectHomeThreads(input: {
 export function anyNeedsUser(signals: readonly (RubatoSignal | null | undefined)[]): boolean {
   return signals.some(isUrgentSignal);
 }
+
+/**
+ * Where a new thread goes while the sidebar is narrowed to one project: the
+ * current thread's own project when it belongs to that group, else the
+ * group's member on the current thread's machine, else the group's own
+ * project. Null with no project selected, so the caller keeps T3's flow.
+ */
+export function scopedNewThreadProjectRef<R extends ProjectRefLike>(input: {
+  readonly group: {
+    readonly environmentId: string;
+    readonly id: string;
+    readonly memberProjectRefs: readonly R[];
+  } | null;
+  readonly contextProjectRef: ProjectRefLike | null;
+}): R | null {
+  const group = input.group;
+  if (group === null) return null;
+  const context = input.contextProjectRef;
+  const members = group.memberProjectRefs;
+  return (
+    (context &&
+      (members.find((ref) => memberKey(ref) === memberKey(context)) ??
+        members.find((ref) => ref.environmentId === context.environmentId))) ||
+    members.find((ref) => ref.environmentId === group.environmentId && ref.projectId === group.id) ||
+    members[0] ||
+    null
+  );
+}

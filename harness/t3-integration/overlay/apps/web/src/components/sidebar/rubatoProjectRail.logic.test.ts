@@ -11,6 +11,7 @@ import {
   removeFromProjectList,
   resolveProjectList,
   resolveThreadSignal,
+  scopedNewThreadProjectRef,
   selectHomeThreads,
   selectRecentThreads,
   signalByGroup,
@@ -261,5 +262,30 @@ describe("the project window", () => {
   it("lights the button with the most pressing project, if any", () => {
     expect(strongestUrgentSignal(new Map([["a", "working"], ["b", "done"]]))).toBeNull();
     expect(strongestUrgentSignal(new Map([["a", "failed"], ["b", "attention"]]))).toBe("attention");
+  });
+});
+
+describe("a new thread while one project is selected", () => {
+  const local = { environmentId: "mac", projectId: "p-mac" };
+  const remote = { environmentId: "box", projectId: "p-box" };
+  const scoped = { environmentId: "mac", id: "p-mac", memberProjectRefs: [remote, local] };
+
+  it("opens in the selected project, not the picker", () => {
+    expect(scopedNewThreadProjectRef({ group: scoped, contextProjectRef: null })).toBe(local);
+  });
+
+  it("keeps the current thread's copy of that project", () => {
+    expect(scopedNewThreadProjectRef({ group: scoped, contextProjectRef: remote })).toBe(remote);
+  });
+
+  it("stays on the current thread's machine when that thread is elsewhere", () => {
+    const elsewhere = { environmentId: "box", projectId: "other" };
+    expect(scopedNewThreadProjectRef({ group: scoped, contextProjectRef: elsewhere })).toBe(remote);
+    const otherMachine = { environmentId: "cloud", projectId: "other" };
+    expect(scopedNewThreadProjectRef({ group: scoped, contextProjectRef: otherMachine })).toBe(local);
+  });
+
+  it("leaves T3's flow alone with no project selected", () => {
+    expect(scopedNewThreadProjectRef({ group: null, contextProjectRef: local })).toBeNull();
   });
 });
