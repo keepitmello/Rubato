@@ -26,6 +26,7 @@ import {
   messageAgent,
   readAgentTranscript,
   stopAgent,
+  withWriting,
   type AgentTarget,
   type AgentTranscriptItem,
 } from "../state/rubatoAgents";
@@ -33,12 +34,20 @@ import { MessagesTimeline } from "./chat/MessagesTimeline";
 import { RubatoPanelComposer } from "./RubatoPanelComposer";
 import { agentTimeline } from "./rubatoAgentTimeline";
 
-/** How often a working agent's conversation is read again. */
-export const LIVE_REFRESH_MS = 2_500;
+/** How often a working agent's conversation, and the message it is writing, is read again. */
+export const LIVE_REFRESH_MS = 1_000;
+/**
+ * After an agent settles, when its conversation is read again: its last message can land in the
+ * file a moment after the settle is reported, and a single read then missed the final answer.
+ */
+export const SETTLE_REREADS_MS = [1_500, 4_000] as const;
 
 interface TranscriptState {
   /** The target this state was read for; another target starts from EMPTY. */
   readonly key: string;
+  /** What the session file holds. */
+  readonly fileItems: ReadonlyArray<AgentTranscriptItem>;
+  /** The file's items and the message being written. */
   readonly items: ReadonlyArray<AgentTranscriptItem>;
   readonly version: string;
   readonly found: boolean;
@@ -49,6 +58,7 @@ interface TranscriptState {
 
 const EMPTY: TranscriptState = {
   key: "",
+  fileItems: [],
   items: [],
   version: "",
   found: false,
@@ -57,34 +67,42 @@ const EMPTY: TranscriptState = {
   error: null,
 };
 
-/** Reads the transcript once, then every LIVE_REFRESH_MS while the agent works. */
+/**
+ * Reads the transcript once, then every LIVE_REFRESH_MS while the agent works, with the message
+ * it is writing; once it settles, again at SETTLE_REREADS_MS.
+ */
 export function useAgentTranscript(target: AgentTarget | null, live: boolean, revision: string) {
   const [state, setState] = useState<TranscriptState>(EMPTY);
   const key = target
     ? `${target.environmentId}|${target.threadId}|${target.cwd}|${target.taskId}`
     : "";
-  const targetRef = useRef({ key, target });
-  targetRef.current = { key, target };
+  const targetRef = useRef({ key, target, live });
+  targetRef.current = { key, target, live };
   // The version last read, for the target it was read for.
   const heldRef = useRef({ key: "", version: "" });
 
   const refresh = useCallback(async () => {
-    const { key: asked, target: current } = targetRef.current;
+    const { key: asked, target: current, live: working } = targetRef.current;
     if (!current) return;
     try {
       const held = heldRef.current.key === asked ? heldRef.current.version : undefined;
-      const answer = await readAgentTranscript(current, held);
+      const answer = await readAgentTranscript(current, held, working);
       if (targetRef.current.key !== asked) return;
       heldRef.current = { key: asked, version: answer.version };
-      setState((previous) => ({
-        key: asked,
-        items: answer.unchanged && previous.key === asked ? previous.items : (answer.items ?? []),
-        version: answer.version,
-        found: answer.found,
-        controllable: answer.controllable,
-        loaded: true,
-        error: null,
-      }));
+      setState((previous) => {
+        const fileItems =
+          answer.unchanged && previous.key === asked ? previous.fileItems : (answer.items ?? []);
+        return {
+          key: asked,
+          fileItems,
+          items: withWriting(fileItems, answer.writing),
+          version: answer.version,
+          found: answer.found,
+          controllable: answer.controllable,
+          loaded: true,
+          error: null,
+        };
+      });
     } catch (error) {
       if (targetRef.current.key !== asked) return;
       setState((previous) => ({
@@ -99,9 +117,12 @@ export function useAgentTranscript(target: AgentTarget | null, live: boolean, re
   useEffect(() => {
     if (!key) return;
     void refresh();
-    if (!live) return;
-    const id = setInterval(() => void refresh(), LIVE_REFRESH_MS);
-    return () => clearInterval(id);
+    if (live) {
+      const id = setInterval(() => void refresh(), LIVE_REFRESH_MS);
+      return () => clearInterval(id);
+    }
+    const timers = SETTLE_REREADS_MS.map((delay) => setTimeout(() => void refresh(), delay));
+    return () => timers.forEach(clearTimeout);
   }, [key, live, revision, refresh]);
 
   return { ...(state.key === key ? state : EMPTY), refresh };

@@ -7,7 +7,8 @@ const AGENTS_ROUTE = "/rubato/agents";
 
 /**
  * One piece of a child agent's conversation, in the order it happened. `at` is the epoch
- * time of the entry it came from; pieces of one model message share `message`.
+ * time of the entry it came from; pieces of one model message share `message`. `writing`
+ * marks the message the agent is still writing, which its session file does not hold yet.
  */
 export type AgentTranscriptItem =
   | { readonly kind: "user"; readonly text: string; readonly at?: number }
@@ -16,12 +17,14 @@ export type AgentTranscriptItem =
       readonly text: string;
       readonly message: number;
       readonly at?: number;
+      readonly writing?: boolean;
     }
   | {
       readonly kind: "thinking";
       readonly text: string;
       readonly message: number;
       readonly at?: number;
+      readonly writing?: boolean;
     }
   | {
       readonly kind: "tool";
@@ -36,6 +39,7 @@ export type AgentTranscriptItem =
       readonly isError?: boolean;
       readonly message: number;
       readonly at?: number;
+      readonly writing?: boolean;
     }
   | { readonly kind: "compaction"; readonly text: string; readonly at?: number }
   | {
@@ -43,6 +47,7 @@ export type AgentTranscriptItem =
       readonly text: string;
       readonly message: number;
       readonly at?: number;
+      readonly writing?: boolean;
     };
 
 export interface AgentTranscript {
@@ -53,6 +58,8 @@ export interface AgentTranscript {
   /** Absent when `unchanged`. */
   readonly items?: ReadonlyArray<AgentTranscriptItem>;
   readonly unchanged?: boolean;
+  /** For a working agent asked with `live`: the message it is writing now, after `items`. */
+  readonly writing?: ReadonlyArray<AgentTranscriptItem>;
   /** Whether the thread's session is attached, so the agent can be stopped or messaged. */
   readonly controllable: boolean;
 }
@@ -65,18 +72,34 @@ export interface AgentTarget {
   readonly taskId: string;
 }
 
+/** `live` also asks for the message a working agent is writing now. */
 export function readAgentTranscript(
   target: AgentTarget,
   version?: string,
+  live = false,
 ): Promise<AgentTranscript> {
   const { environmentId, ...body } = target;
   return postRubato<AgentTranscript>(
     environmentId,
     AGENTS_ROUTE,
     "transcript",
-    { ...body, ...(version ? { version } : {}) },
+    { ...body, ...(version ? { version } : {}), ...(live ? { live } : {}) },
     "agent sessions",
   );
+}
+
+/**
+ * The file's items, then the message being written, numbered after the file's last message
+ * so the finished message takes its place when it lands.
+ */
+export function withWriting(
+  items: ReadonlyArray<AgentTranscriptItem>,
+  writing: ReadonlyArray<AgentTranscriptItem> | undefined,
+): ReadonlyArray<AgentTranscriptItem> {
+  if (!writing || writing.length === 0) return items;
+  let next = 0;
+  for (const item of items) if ("message" in item) next = Math.max(next, item.message + 1);
+  return [...items, ...writing.map((item) => ("message" in item ? { ...item, message: next } : item))];
 }
 
 export function stopAgent({

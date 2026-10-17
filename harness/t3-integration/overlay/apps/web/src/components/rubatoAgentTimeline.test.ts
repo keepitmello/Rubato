@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { AgentTranscriptItem } from "../state/rubatoAgents";
+import { withWriting, type AgentTranscriptItem } from "../state/rubatoAgents";
 import { deriveMessagesTimelineRows } from "./chat/MessagesTimeline.logic";
 import { agentTimeline } from "./rubatoAgentTimeline";
 
@@ -97,5 +97,31 @@ describe("agentTimeline", () => {
       "working",
       "work-live",
     ]);
+  });
+
+  it("the message an agent is still writing streams after its file, and its finished copy takes its place", () => {
+    const writing: AgentTranscriptItem[] = [
+      { kind: "thinking", text: "Q2 next", message: 0, at: t0 + 2_000, writing: true },
+      { kind: "assistant", text: "Q2 reads fine, but", message: 0, at: t0 + 2_000, writing: true },
+    ];
+    const items = withWriting(WORKING, writing);
+    // Numbered after the file's last message, as the file will number it.
+    expect(items.slice(-2).map((item) => ("message" in item ? item.message : null))).toEqual([1, 1]);
+    const { entries } = agentTimeline(items, { taskId: "st_a", live: true });
+    const said = entries.flatMap((entry) => (entry.kind === "message" ? [entry.message] : []));
+    expect(said.at(-1)).toMatchObject({ text: "Q2 reads fine, but", streaming: true });
+    const landed = withWriting(
+      [...WORKING, ...writing.map((item) => ({ ...item, message: 1, writing: false }))],
+      undefined,
+    );
+    const after = agentTimeline(landed, { taskId: "st_a", live: true }).entries.flatMap((entry) =>
+      entry.kind === "message" ? [entry.message] : [],
+    );
+    expect(after.at(-1)).toMatchObject({ id: said.at(-1)?.id, streaming: false });
+  });
+
+  it("nothing being written leaves the file's items as they are", () => {
+    expect(withWriting(WORKING, undefined)).toBe(WORKING);
+    expect(withWriting(WORKING, [])).toBe(WORKING);
   });
 });

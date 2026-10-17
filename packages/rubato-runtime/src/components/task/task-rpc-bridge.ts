@@ -15,6 +15,7 @@ import {
   invalidArguments,
   liveProgressSnapshot,
   parseTaskCancel,
+  parseTaskLiveMessage,
   parseTaskOutput,
   parseTaskSend,
   taskSnapshot,
@@ -35,6 +36,12 @@ export const PENDING_WORK_REQUEST = "rubato.task.pending-work"
  * own context, without a turn of its own: it reads the note on whatever turn comes next.
  */
 export const USER_CHILD_MESSAGE_TYPE = "rubato.task.user-message"
+/**
+ * The assistant message a running child is writing right now, which its session file only gets
+ * once the message ends. A host panel reads it to show the child's words as they come; `message`
+ * is null between messages.
+ */
+export const LIVE_MESSAGE_REQUEST = "rubato.task.live-message"
 const DELIVERED_SEND_KINDS = new Set(["steered", "revived", "queued"])
 const NOTIFYING_TERMINAL_STATUSES = new Set<TaskRecord["status"]>(["completed", "error", "lost"])
 const MAX_TASK_SNAPSHOTS = 256
@@ -53,6 +60,7 @@ export function wireTaskRpcBridge(
 ): TaskRpcBridge {
   const subscriptions = new Map<string, () => void>()
   const liveProgress = new Map<string, TaskLiveProgressSnapshot>()
+  const writing = new Map<string, unknown>()
   let activeSessionId: string | undefined
   let lastSnapshot: string | undefined
   let disposed = false
@@ -97,6 +105,7 @@ export function wireTaskRpcBridge(
     subscriptions.get(taskId)?.()
     subscriptions.delete(taskId)
     liveProgress.delete(taskId)
+    writing.delete(taskId)
   }
 
   const syncSubscriptions = (records: readonly TaskRecord[]): void => {
@@ -123,12 +132,19 @@ export function wireTaskRpcBridge(
         Date.parse(record.created_at),
       )
       const unsubscribe = engine.manager.subscribeChild(record.task_id, (event: ManagedChildEvent) => {
+        holdWriting(record.task_id, event)
         if (!progress.accept(event)) return
         liveProgress.set(record.task_id, liveProgressSnapshot(progress.details()))
         emit()
       })
       subscriptions.set(record.task_id, unsubscribe)
     }
+  }
+
+  const holdWriting = (taskId: string, event: ManagedChildEvent): void => {
+    if (event.type === "message_end" || event.type === "agent_end") writing.delete(taskId)
+    else if ((event.type === "message_start" || event.type === "message_update") && isAssistant(event.message))
+      writing.set(taskId, event.message)
   }
 
   const detach = (): void => {
@@ -146,6 +162,15 @@ export function wireTaskRpcBridge(
   }
 
   registerTaskHandlers(pi, engine, () => (disposed ? undefined : activeSessionId), coordinator)
+  pi.rpc?.handle?.(LIVE_MESSAGE_REQUEST, async (data) => {
+    const sessionId = disposed ? undefined : activeSessionId
+    if (sessionId === undefined) return unavailable()
+    const input = parseTaskLiveMessage(data)
+    if ("error" in input) return invalidArguments(input.error)
+    const record = engine.manager.get(input.value.task_id)
+    if (record === undefined || record.parent_session_id !== sessionId) return notFound()
+    return { kind: "live-message", task_id: record.task_id, message: writing.get(record.task_id) ?? null }
+  })
 
   return {
     attach() {
@@ -245,6 +270,10 @@ function toRpcChildControlDetails(details: { readonly kind: string; readonly age
     ...(agentId === undefined ? {} : { task_id: agentId }),
     ...(known_agents === undefined ? {} : { known_tasks: known_agents }),
   }
+}
+
+function isAssistant(message: unknown): boolean {
+  return typeof message === "object" && message !== null && (message as { role?: unknown }).role === "assistant"
 }
 
 function isLive(record: TaskRecord): boolean {

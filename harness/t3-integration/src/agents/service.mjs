@@ -1,9 +1,10 @@
 // The Agents panel's server half: `/rubato/agents/<action>` on the T3 server lands here
-// (RubatoServiceRoute.ts). `transcript` reads a child's conversation from its session file;
+// (RubatoServiceRoute.ts). `transcript` reads a child's conversation from its session file, and
+// for a working child the message it is writing now, which the file gets only when it ends;
 // `stop` and `send` go to the thread's live session through the provider's bridge. This
 // module imports bridge.mjs by its own path, the same module instance the provider runs.
 import { liveBridge } from '../bridge.mjs';
-import { readChildTranscript, TASK_ID } from './transcript.mjs';
+import { readChildTranscript, TASK_ID, writingItems } from './transcript.mjs';
 
 const fail = (status, code, message) => Object.assign(new Error(message), { status, code });
 
@@ -29,9 +30,13 @@ export function createAgentsService({ bridge = liveBridge, read = readChildTrans
   return {
     async handle(action, input) {
       if (action === 'transcript') {
-        const transcript = await read({ cwd: input.cwd, taskId: taskOf(input), version: input.version });
+        const taskId = taskOf(input);
+        const transcript = await read({ cwd: input.cwd, taskId, version: input.version });
         const threadId = typeof input.threadId === 'string' ? input.threadId : '';
-        return { ...transcript, controllable: Boolean(threadId && bridge()?.controlsAgents(threadId)) };
+        const live = threadId ? bridge() : undefined;
+        // Asked after the file: a message that ends in between is already in the file, never in both.
+        const writing = input.live === true && live?.childWriting ? writingItems(await live.childWriting(threadId, taskId)) : [];
+        return { ...transcript, ...(writing.length ? { writing } : {}), controllable: Boolean(live?.controlsAgents(threadId)) };
       }
       if (action === 'stop') return control(input, 'stop');
       if (action === 'send') {

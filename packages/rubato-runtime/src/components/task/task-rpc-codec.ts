@@ -100,6 +100,16 @@ export function parseTaskCancel(
   }
 }
 
+export function parseTaskLiveMessage(
+  value: unknown,
+): { readonly value: { readonly task_id: string } } | { readonly error: string } {
+  if (!isRecord(value) || typeof value.task_id !== "string" || value.task_id.trim().length === 0) {
+    return { error: "task_id is required." }
+  }
+  if (!validTaskId(value.task_id)) return { error: "task_id must be a task id of at most 256 characters." }
+  return { value: { task_id: value.task_id } }
+}
+
 export function parseTaskOutput(
   value: unknown,
 ):

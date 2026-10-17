@@ -90,7 +90,8 @@ export function agentTimeline(
   };
   // One answer and one thought per model message, as the adapter streams them.
   const said = new Map<string, number>();
-  const say = (type: "assistant_message" | "reasoning", key: string, body: string, createdAt: string) => {
+  // A message still being written streams, as the lead's own reply does while it comes in.
+  const say = (type: "assistant_message" | "reasoning", key: string, body: string, createdAt: string, writing: boolean) => {
     const held = said.get(key);
     const run = runAt(createdAt);
     if (held !== undefined) {
@@ -101,10 +102,11 @@ export function agentTimeline(
       return;
     }
     said.set(key, turnItems.length);
+    const status = writing ? "running" : "completed";
     turnItems.push(
       type === "assistant_message"
-        ? { ...base(key, createdAt, run.id, true), status: "completed", type, messageId: MessageId.make(key), text: body, streaming: false }
-        : { ...base(key, createdAt, run.id, true), status: "completed", type, text: body, streaming: false },
+        ? { ...base(key, createdAt, run.id, !writing), status, type, messageId: MessageId.make(key), text: body, streaming: writing }
+        : { ...base(key, createdAt, run.id, !writing), status, type, text: body, streaming: writing },
     );
   };
 
@@ -129,10 +131,10 @@ export function agentTimeline(
         break;
       }
       case "assistant":
-        say("assistant_message", `agent-assistant:${taskId}:${item.message}`, item.text, createdAt);
+        say("assistant_message", `agent-assistant:${taskId}:${item.message}`, item.text, createdAt, item.writing === true);
         break;
       case "thinking":
-        say("reasoning", `agent-reasoning:${taskId}:${item.message}`, item.text, createdAt);
+        say("reasoning", `agent-reasoning:${taskId}:${item.message}`, item.text, createdAt, item.writing === true);
         break;
       case "tool": {
         const done = item.output !== undefined;

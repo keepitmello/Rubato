@@ -19,9 +19,11 @@ export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
 // live state so a presentation can see what the next request will carry.
 export const SERVICE_TIER_REQUEST = 'rubato.service-tier.status';
 export const AWAITED_WAKES_REQUEST = 'rubato.terminal.awaited-wakes';
+/** Answered by the task extension: the message one of the session's children is writing now. */
+export const TASK_LIVE_MESSAGE_REQUEST = 'rubato.task.live-message';
 /**
  * The Pi request an attached command becomes. `get_service_tier`, `get_awaited_wakes`,
- * `task_send` and `task_cancel` are not Pi RPC commands: they ask the extensions that own
+ * `task_send`, `task_cancel` and `task_live_message` are not Pi RPC commands: they ask the extensions that own
  * them. The task ones reach the session's own children only (the task extension checks the parent).
  */
 export function workerRequest(command) {
@@ -29,6 +31,8 @@ export function workerRequest(command) {
   if (command.type === 'get_awaited_wakes') return { type: 'extension_request', name: AWAITED_WAKES_REQUEST };
   if (command.type === 'task_send')
     return { type: 'extension_request', name: 'rubato.task.send', data: { to: command.taskId, message: command.message } };
+  if (command.type === 'task_live_message')
+    return { type: 'extension_request', name: TASK_LIVE_MESSAGE_REQUEST, data: { task_id: command.taskId } };
   if (command.type === 'task_cancel')
     return { type: 'extension_request', name: 'rubato.task.cancel',
       data: { task_id: command.taskId, ...(command.reason ? { reason: command.reason } : {}) } };

@@ -152,3 +152,54 @@ test('without the provider running, controls say so and reading still works', as
   const read = await handleAgentsRequest(service, request('transcript', { threadId: 't', cwd: '/p', taskId: 'st_a' }));
   assert.deepEqual(await read.json(), { found: true, version: 'v', items: [], controllable: false });
 });
+
+test('a working child shows the message it is writing, after the file and numbered by the panel', async () => {
+  const writing = { role: 'assistant', timestamp: 1_792_000_000_000, content: [
+    { type: 'thinking', thinking: 'Weighing Q2' },
+    { type: 'text', text: 'Q2 reads fine, but' },
+    { type: 'toolCall', id: 'call_9', name: 'read', arguments: { path: 'q2' } },
+  ] };
+  const asked = [];
+  const order = [];
+  const bridge = {
+    controlsAgents: () => true,
+    async childWriting(threadId, taskId) { order.push('live'); asked.push([threadId, taskId]); return writing; },
+  };
+  const service = createAgentsService({ bridge: () => bridge,
+    read: async () => { order.push('file'); return { found: true, version: 'v', unchanged: true }; } });
+  const answer = await service.handle('transcript', { threadId: 'thread-1', cwd: '/p', taskId: 'st_a', version: 'v', live: true });
+  assert.deepEqual(order, ['file', 'live']);
+  assert.deepEqual(asked, [['thread-1', 'st_a']]);
+  assert.equal(answer.unchanged, true);
+  assert.deepEqual(answer.writing.map((item) => [item.kind, item.writing, item.at]),
+    [['thinking', true, writing.timestamp], ['assistant', true, writing.timestamp], ['tool', true, writing.timestamp]]);
+  assert.equal(answer.writing[2].output, undefined);
+  // A settled child is not asked: its words are all in the file.
+  const settled = await service.handle('transcript', { threadId: 'thread-1', cwd: '/p', taskId: 'st_a' });
+  assert.equal(settled.writing, undefined);
+  assert.equal(asked.length, 1);
+  // Between messages there is nothing being written.
+  bridge.childWriting = async () => null;
+  assert.equal((await service.handle('transcript', { threadId: 'thread-1', cwd: '/p', taskId: 'st_a', live: true })).writing, undefined);
+});
+
+test('the bridge asks the thread\'s attached session for what a child is writing, and stays quiet otherwise', async () => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/connection.json', instanceId: 'rubato' });
+  try {
+    const sent = [];
+    const message = { role: 'assistant', content: [{ type: 'text', text: 'Half' }] };
+    bridge.rpcConnections.add({ threadId: 'thread-1', closed: false, sessionId: 's1',
+      async command(command) { sent.push(command); return { kind: 'live-message', message }; } });
+    assert.deepEqual(await bridge.childWriting('thread-1', 'st_a'), message);
+    assert.deepEqual(sent, [{ type: 'task_live_message', taskId: 'st_a' }]);
+    assert.equal(await bridge.childWriting('thread-2', 'st_a'), null);
+    // An engine that does not know the command yet answers with an error: nothing is being written.
+    bridge.rpcConnections.add({ threadId: 'thread-3', closed: false, sessionId: 's3',
+      async command() { throw new Error('Unsupported command: task_live_message'); } });
+    assert.equal(await bridge.childWriting('thread-3', 'st_a'), null);
+  } finally {
+    bridge.rpcConnections.clear();
+    await bridge.close();
+  }
+});

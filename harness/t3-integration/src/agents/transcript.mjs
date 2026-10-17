@@ -68,6 +68,36 @@ const timeOf = (entry) => {
   return Number.isFinite(at) ? at : undefined;
 };
 
+/** One model message's pieces; its tool calls are kept in `tools` so their results can land on them. */
+function assistantItems(message, from, tools) {
+  const items = [];
+  for (const part of message.content) {
+    if (part?.type === 'text' && part.text?.trim()) items.push({ kind: 'assistant', text: bounded(part.text, LIMITS.text), ...from });
+    else if (part?.type === 'thinking' && part.thinking?.trim()) items.push({ kind: 'thinking', text: bounded(part.thinking, LIMITS.thinking), ...from });
+    else if (part?.type === 'toolCall') {
+      const name = String(part.name ?? 'tool');
+      const tool = { kind: 'tool', id: String(part.id ?? ''), name, ...toolPresentation(name, part.arguments),
+        input: bounded(inputOf(part.arguments), LIMITS.toolInput), ...from };
+      items.push(tool);
+      if (tool.id) tools?.set(tool.id, { tool, args: part.arguments });
+    }
+  }
+  if (message.stopReason === 'error' && message.errorMessage)
+    items.push({ kind: 'error', text: bounded(String(message.errorMessage), LIMITS.toolOutput), ...from });
+  return items;
+}
+
+/**
+ * The message a running child is writing now (the task extension's `rubato.task.live-message`),
+ * as the pieces it will have once it lands in the file. They carry `writing`; the panel numbers
+ * them after the file's messages, so the finished message takes their place.
+ */
+export function writingItems(message) {
+  if (message?.role !== 'assistant' || !Array.isArray(message.content)) return [];
+  const at = typeof message.timestamp === 'number' && Number.isFinite(message.timestamp) ? message.timestamp : undefined;
+  return assistantItems(message, { message: 0, writing: true, ...(at ? { at } : {}) });
+}
+
 /**
  * The conversation in file order: what the child was told (`user`: the brief, then any
  * follow-up), its words (`assistant`), its reasoning (`thinking`), each tool call with its
@@ -95,20 +125,7 @@ export function transcriptItems(text) {
       const body = briefOf(textOf(message.content));
       if (body.trim()) items.push({ kind: 'user', text: bounded(body, LIMITS.text), ...(at ? { at } : {}) });
     } else if (message.role === 'assistant' && Array.isArray(message.content)) {
-      const from = { message: messages++, ...(at ? { at } : {}) };
-      for (const part of message.content) {
-        if (part?.type === 'text' && part.text?.trim()) items.push({ kind: 'assistant', text: bounded(part.text, LIMITS.text), ...from });
-        else if (part?.type === 'thinking' && part.thinking?.trim()) items.push({ kind: 'thinking', text: bounded(part.thinking, LIMITS.thinking), ...from });
-        else if (part?.type === 'toolCall') {
-          const name = String(part.name ?? 'tool');
-          const tool = { kind: 'tool', id: String(part.id ?? ''), name, ...toolPresentation(name, part.arguments),
-            input: bounded(inputOf(part.arguments), LIMITS.toolInput), ...from };
-          items.push(tool);
-          if (tool.id) tools.set(tool.id, { tool, args: part.arguments });
-        }
-      }
-      if (message.stopReason === 'error' && message.errorMessage)
-        items.push({ kind: 'error', text: bounded(String(message.errorMessage), LIMITS.toolOutput), ...from });
+      items.push(...assistantItems(message, { message: messages++, ...(at ? { at } : {}) }, tools));
     } else if (message.role === 'toolResult') {
       const call = tools.get(String(message.toolCallId ?? ''));
       if (!call) continue;

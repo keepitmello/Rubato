@@ -22,6 +22,7 @@ export const agentsSurfaceOverlays = [
   'apps/web/src/components/RubatoAgentsPanel.test.tsx',
   'apps/web/src/components/rubatoAgentPanelModel.test.ts',
   'apps/web/src/state/rubatoSessionState.ts',
+  'apps/web/src/state/rubatoSessionState.test.ts',
   'apps/web/src/components/chat/RubatoSpawnRow.tsx',
   'apps/web/src/components/chat/RubatoSpawnRow.test.tsx',
 ];

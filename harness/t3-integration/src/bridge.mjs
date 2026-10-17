@@ -1129,6 +1129,20 @@ export class RubatoPiBridge {
     if (!context || context.stopped) throw Object.assign(new Error("This thread's Rubato session is not running."), { status: 409 });
     return context.client.command(command);
   }
+  /**
+   * The message one child agent of this thread's session is writing now, which its session file
+   * gets only when the message ends (agents/service.mjs). Null between messages, for a thread
+   * that is not attached, and for an engine that cannot tell.
+   */
+  async childWriting(threadId, taskId) {
+    const context = this.sessions.get(threadId);
+    const client = this.rpcFor(threadId) ?? (context && !context.stopped ? context.client : null);
+    if (!client) return null;
+    try {
+      const answer = await client.command({ type: 'task_live_message', taskId });
+      return answer?.message && typeof answer.message === 'object' ? answer.message : null;
+    } catch { return null; }
+  }
   async stopSession(threadId) {
     await this.openings.get(threadId)?.catch(() => {});
     const context = this.sessions.get(threadId);

@@ -5,7 +5,7 @@ import type { TaskRunStats } from "@rubato/task"
 
 import { taskRecord } from "./event-bridge.test-fixtures"
 import { wireHarness } from "./event-bridge.test-harness"
-import { USER_CHILD_MESSAGE_TYPE } from "./task-rpc-bridge"
+import { LIVE_MESSAGE_REQUEST, USER_CHILD_MESSAGE_TYPE } from "./task-rpc-bridge"
 import { boundedTaskOutput } from "./task-rpc-codec"
 
 describe("event-bridge native task telemetry and controls", () => {
@@ -185,6 +185,7 @@ describe("event-bridge native task telemetry and controls", () => {
 
     expect([...rpcHandlers.keys()].sort()).toEqual([
       "rubato.task.cancel",
+      "rubato.task.live-message",
       "rubato.task.output",
       "rubato.task.pending-work",
       "rubato.task.send",
@@ -300,6 +301,34 @@ describe("event-bridge native task telemetry and controls", () => {
     const content = String(pi.messages[0]?.message.content)
     expect(content).toContain("st_current (Review the draft)")
     expect(content).toContain("Skip Q3, focus on Q4")
+  })
+
+  it("#given a child writing a message #when a panel asks for it #then it gets the partial message until the message ends", async () => {
+    const running = taskRecord({ task_id: "st_writing", status: "running" })
+    const foreign = taskRecord({
+      task_id: "st_other",
+      status: "running",
+      parent_session_id: "other-session",
+      root_session_id: "other-session",
+    })
+    const { pi, invokeRpc, emitChildEvent } = wireHarness("parent-session", {
+      records: { [running.task_id]: running, [foreign.task_id]: foreign },
+      withRpc: true,
+    })
+    await pi.dispatch("session_start", {}, {})
+    const ask = (task_id: string) => invokeRpc(LIVE_MESSAGE_REQUEST, { task_id })
+
+    await expect(ask(running.task_id)).resolves.toMatchObject({ kind: "live-message", message: null })
+    const partial = { role: "assistant", content: [{ type: "text", text: "Half a sen" }] }
+    emitChildEvent(running.task_id, { type: "message_start", message: { role: "assistant", content: [] } })
+    emitChildEvent(running.task_id, { type: "message_update", message: partial })
+    await expect(ask(running.task_id)).resolves.toMatchObject({ message: partial })
+    // A user message or a tool result is not the child's writing.
+    emitChildEvent(running.task_id, { type: "message_start", message: { role: "toolResult", content: [] } })
+    await expect(ask(running.task_id)).resolves.toMatchObject({ message: partial })
+    emitChildEvent(running.task_id, { type: "message_end", message: partial })
+    await expect(ask(running.task_id)).resolves.toMatchObject({ message: null })
+    await expect(ask(foreign.task_id)).resolves.toMatchObject({ kind: "not_found" })
   })
 
   it("#given a live child subscription #when the task settles #then the bridge unsubscribes and ignores later child events", async () => {

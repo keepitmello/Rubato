@@ -89,6 +89,15 @@ export const EMPTY_SESSION_STATE: RubatoSessionState = { speedIndex: null, cache
 
 const ROUTE = "/rubato/session-state";
 const POLL_MS = 2_000;
+/** While an agent works, so its row and its open conversation settle when it does. */
+const WORKING_POLL_MS = 1_000;
+
+/** How long until the thread's state is read again. */
+export function nextPollMs(state: RubatoSessionState): number {
+  return state.agents.some((agent) => agent.status === "running" || agent.status === "waiting")
+    ? WORKING_POLL_MS
+    : POLL_MS;
+}
 
 async function readSessionState(
   environmentId: EnvironmentId,
@@ -145,14 +154,16 @@ export function useRubatoSessionState(ref: ScopedThreadRef | null): RubatoSessio
     if (environmentId === null || threadId === null) return;
     const abort = new AbortController();
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let delay = POLL_MS;
     const poll = async () => {
       const next = await readSessionState(environmentId, threadId, abort.signal).catch(() => null);
       if (abort.signal.aborted) return;
       if (next) {
         setState(next);
         publish(scopedThreadKey(scopeThreadRef(environmentId, threadId)), next);
+        delay = nextPollMs(next);
       }
-      timer = setTimeout(() => void poll(), POLL_MS);
+      timer = setTimeout(() => void poll(), delay);
     };
     void poll();
     return () => {
