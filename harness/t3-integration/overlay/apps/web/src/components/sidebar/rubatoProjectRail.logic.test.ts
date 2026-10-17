@@ -14,7 +14,9 @@ import {
   selectHomeThreads,
   selectRecentThreads,
   signalByGroup,
+  filterProjectList,
   strongerSignal,
+  strongestUrgentSignal,
   urgentSignal,
 } from "./rubatoProjectRail.logic";
 
@@ -239,5 +241,25 @@ describe("the home list", () => {
       "b0",
       "a0",
     ]);
+  });
+});
+
+describe("the project window", () => {
+  const named = (projectKey: string, displayName: string) => ({ ...group(projectKey), displayName });
+  const list = {
+    listed: [named("a", "rubato-lab"), named("b", "writing-workbench")],
+    quiet: [named("c", "Rubato Docs")],
+  };
+
+  it("finds projects by name in both sections, ignoring case", () => {
+    const found = filterProjectList(list, "rub");
+    expect(found.listed.map((g) => g.projectKey)).toEqual(["a"]);
+    expect(found.quiet.map((g) => g.projectKey)).toEqual(["c"]);
+    expect(filterProjectList(list, "  ")).toBe(list);
+  });
+
+  it("lights the button with the most pressing project, if any", () => {
+    expect(strongestUrgentSignal(new Map([["a", "working"], ["b", "done"]]))).toBeNull();
+    expect(strongestUrgentSignal(new Map([["a", "failed"], ["b", "attention"]]))).toBe("attention");
   });
 });

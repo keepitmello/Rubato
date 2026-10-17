@@ -66,5 +66,5 @@ export function useRubatoProjectList() {
     (key: string, overKey: string) => setState(moveInProjectList(list, key, overKey)),
     [list, setState],
   );
-  return { groups, threads, list, signals, remove, add, move };
+  return { groups, threads, list, signals, lastActivity, remove, add, move };
 }

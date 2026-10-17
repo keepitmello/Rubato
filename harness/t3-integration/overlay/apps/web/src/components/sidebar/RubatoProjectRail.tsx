@@ -1,22 +1,23 @@
-// The rail left of the thread list. The top group is the shared project list
-// (rubatoProjectList.ts): a project narrows the thread list and leaves the main
-// area alone; the dimmed group below a hairline holds the projects the user
-// took off the list. The bottom group opens pages in the main area and leaves
-// the thread list alone. AppSidebarLayout renders it beside the new sidebar
-// only; the legacy tree keeps its own layout.
+// The rail left of the thread list holds app controls only: home, one Projects
+// button, and below a hairline the pages (scheduled tasks, memory, pull
+// requests, usage, settings), which replace the sidebar's footer row. Projects
+// are never bare icons here; the Projects button opens a window that lists them
+// by name and edits the shared list (RubatoProjectPicker.tsx). Choosing a
+// project narrows the thread list and leaves the main area alone; a page
+// opens in the main area and leaves the list alone. AppSidebarLayout renders
+// the rail beside the new sidebar only; the legacy tree keeps its layout.
 import {
   BrainIcon,
   CalendarClockIcon,
   ChartNoAxesColumnIcon,
+  FoldersIcon,
   HouseIcon,
-  PlusIcon,
   SettingsIcon,
 } from "lucide-react";
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { openCommandPalette } from "../../commandPaletteBus";
-import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
@@ -24,16 +25,17 @@ import { useUiStateStore } from "../../uiStateStore";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { readPullRequestListPreferences } from "../pullRequest/pullRequestListPreferences";
 import { PullRequestGlyph } from "../pullRequest/pullRequestIcons";
+import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
+import { RubatoProjectPicker } from "./RubatoProjectPicker";
 import { useRubatoProjectList } from "./rubatoProjectList";
 import {
   RUBATO_SIGNAL_DOT,
   RUBATO_SIGNAL_LABEL,
-  urgentSignal,
+  strongestUrgentSignal,
   type RubatoSignal,
 } from "./rubatoProjectRail.logic";
-import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 
 export const RUBATO_RAIL_WIDTH = "52px";
 
@@ -62,13 +64,19 @@ function SignalDot({ signal, className }: { signal: RubatoSignal | null; classNa
   );
 }
 
+const RAIL_BUTTON_CLASS = cn(
+  "group/rail relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color] duration-150",
+  "hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
+  "[&_svg:not([class*='size-'])]:size-[18px]",
+);
+const RAIL_ACTIVE_CLASS =
+  "bg-sidebar-accent text-sidebar-foreground before:absolute before:top-2 before:bottom-2 before:-left-[8px] before:w-[3px] before:rounded-r-full before:bg-sidebar-foreground";
+
 function RailButton(props: {
   label: string;
   active?: boolean;
-  dim?: boolean;
   signal?: RubatoSignal | null;
   onClick: () => void;
-  onContextMenu?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
 }) {
   const tooltip = props.signal ? `${props.label} · ${RUBATO_SIGNAL_LABEL[props.signal]}` : props.label;
@@ -82,15 +90,7 @@ function RailButton(props: {
             aria-current={props.active ? "true" : undefined}
             data-rubato-rail-item=""
             onClick={props.onClick}
-            onContextMenu={props.onContextMenu}
-            className={cn(
-              "group/rail relative flex size-9 shrink-0 items-center justify-center rounded-lg text-sidebar-muted-foreground outline-hidden transition-[background-color,color,opacity] duration-150",
-              "hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-ring",
-              "[&_svg:not([class*='size-'])]:size-[18px]",
-              props.active &&
-                "bg-sidebar-accent text-sidebar-foreground before:absolute before:top-2 before:bottom-2 before:-left-[8px] before:w-[3px] before:rounded-r-full before:bg-sidebar-foreground",
-              props.dim && !props.active && "opacity-45 hover:opacity-100",
-            )}
+            className={cn(RAIL_BUTTON_CLASS, props.active && RAIL_ACTIVE_CLASS)}
           >
             {props.children}
             <SignalDot signal={props.signal ?? null} className="top-1 right-1" />
@@ -138,6 +138,17 @@ function useScheduleSignal(): RubatoSignal | null {
   return signal;
 }
 
+/** ⌘G (Ctrl+G off the Mac) toggles the project window from anywhere in the app. */
+function isProjectWindowShortcut(event: KeyboardEvent): boolean {
+  return (
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === "g" &&
+    !(event.target instanceof HTMLElement && event.target.closest("[data-keybinding-capture]"))
+  );
+}
+
 export function RubatoProjectRail() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
@@ -146,78 +157,55 @@ export function RubatoProjectRail() {
   const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
   const pullRequestsSupported = usePullRequestsSupported();
   const scheduleSignal = useScheduleSignal();
-  const { list, signals, remove, add } = useRubatoProjectList();
+  const { list, signals, lastActivity, remove, add, move } = useRubatoProjectList();
+  const [pickerOpen, setPickerOpen] = useState(false);
 
-  const showProject = (key: string) => {
-    setScopeKey(scopeKey === key ? null : key);
-    if (!open) void setOpen(true);
+  useEffect(() => {
+    if (isMobile) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || !isProjectWindowShortcut(event)) return;
+      event.preventDefault();
+      setPickerOpen((value) => !value);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [isMobile]);
+
+  const scopedGroup =
+    scopeKey === null
+      ? null
+      : ([...list.listed, ...list.quiet].find((group) => group.projectKey === scopeKey) ?? null);
+  const projectsSignal = strongestUrgentSignal(signals);
+  const projectsLabel = scopedGroup
+    ? `Projects: ${scopedGroup.displayName} (⌘G)`
+    : "Projects (⌘G)";
+  const choose = (key: string | null) => {
+    setScopeKey(key);
+    setPickerOpen(false);
+    if (key !== null && !open) void setOpen(true);
   };
-  const showProjectMenu = async (
-    event: MouseEvent<HTMLButtonElement>,
-    group: SidebarProjectSnapshot,
-    listed: boolean,
-  ) => {
-    event.preventDefault();
-    const api = readLocalApi();
-    if (!api) return;
-    const clicked = await api.contextMenu.show(
-      [
-        listed
-          ? { id: "remove", label: "Remove from list" }
-          : { id: "add", label: "Add to list" },
-        { id: "settings", label: "Project settings" },
-      ],
-      { x: event.clientX, y: event.clientY },
-    );
-    if (clicked === "remove") remove(group.projectKey);
-    else if (clicked === "add") add(group.projectKey);
-    else if (clicked === "settings") {
-      void navigate({ to: "/projects/$projectKey", params: { projectKey: group.projectKey } });
-    }
-  };
-  const renderProject = (group: SidebarProjectSnapshot, listed: boolean) => (
-    <RailButton
-      key={group.projectKey}
-      label={group.displayName}
-      active={scopeKey === group.projectKey}
-      dim={!listed}
-      signal={urgentSignal(signals.get(group.projectKey))}
-      onClick={() => showProject(group.projectKey)}
-      onContextMenu={(event) => void showProjectMenu(event, group, listed)}
-    >
-      {/* Project colors only where the eye is: the selected project and the hovered one. */}
-      <span
-        className={cn(
-          "flex transition-[filter,opacity] duration-150",
-          scopeKey !== group.projectKey &&
-            "opacity-70 grayscale group-hover/rail:opacity-100 group-hover/rail:grayscale-0",
-        )}
-      >
-        <ProjectFavicon project={group} className="size-5" />
-      </span>
-    </RailButton>
-  );
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
+  const onRailPage = ["/scheduled", "/memory", "/pull-requests", "/usage", "/settings"].some(onPage);
 
   // Phones get the sidebar as a sheet with its own footer; the rail is a desktop column.
   if (isMobile) return null;
 
   return (
     <nav
-      aria-label="Projects and pages"
+      aria-label="App"
       data-rubato-rail=""
       className={cn(
-        "relative z-20 flex h-svh w-[52px] shrink-0 flex-col bg-sidebar surface-grain text-sidebar-foreground",
+        "relative z-20 flex h-svh w-[52px] shrink-0 flex-col items-center bg-sidebar surface-grain text-sidebar-foreground",
         "pt-[var(--workspace-topbar-height)]",
         // The hairline starts under the titlebar row, so the window controls
         // sit on one unbroken surface across the rail and the sidebar header.
         "after:pointer-events-none after:absolute after:top-[var(--workspace-topbar-height)] after:right-0 after:bottom-0 after:w-px after:bg-sidebar-border",
       )}
     >
-      <div className="flex min-h-0 flex-1 flex-col items-center gap-1 overflow-y-auto overscroll-contain px-2 pt-1 pb-2 [scrollbar-width:none]">
+      <div className="flex flex-1 flex-col items-center gap-1 px-2 pt-1">
         <RailButton
           label="All projects"
-          active={scopeKey === null}
+          active={scopeKey === null && !onRailPage}
           onClick={() => {
             setScopeKey(null);
             void navigate({ to: "/" });
@@ -225,13 +213,53 @@ export function RubatoProjectRail() {
         >
           <HouseIcon />
         </RailButton>
-        {list.listed.length > 0 ? <RailSeparator /> : null}
-        {list.listed.map((group) => renderProject(group, true))}
-        {list.quiet.length > 0 ? <RailSeparator /> : null}
-        {list.quiet.map((group) => renderProject(group, false))}
-        <RailButton label="Add project" onClick={() => openCommandPalette({ open: "add-project" })}>
-          <PlusIcon />
-        </RailButton>
+        <Popover open={pickerOpen} onOpenChange={setPickerOpen}>
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <PopoverTrigger
+                  render={
+                    <button
+                      type="button"
+                      aria-label={projectsLabel}
+                      data-rubato-rail-item=""
+                      data-rubato-projects-button=""
+                      className={cn(RAIL_BUTTON_CLASS, (pickerOpen || scopedGroup) && RAIL_ACTIVE_CLASS)}
+                    >
+                      {scopedGroup ? (
+                        <ProjectFavicon project={scopedGroup} className="size-5" />
+                      ) : (
+                        <FoldersIcon />
+                      )}
+                      <SignalDot signal={projectsSignal} className="top-1 right-1" />
+                    </button>
+                  }
+                />
+              }
+            />
+            <TooltipPopup side="right">{projectsLabel}</TooltipPopup>
+          </Tooltip>
+          <PopoverPopup side="right" align="start" sideOffset={10} padding="none">
+            <RubatoProjectPicker
+              list={list}
+              signals={signals}
+              lastActivity={lastActivity}
+              scopeKey={scopeKey}
+              onChoose={choose}
+              onRemove={remove}
+              onAdd={add}
+              onMove={move}
+              onAddProject={() => {
+                setPickerOpen(false);
+                openCommandPalette({ open: "add-project" });
+              }}
+              onProjectSettings={(group) => {
+                setPickerOpen(false);
+                void navigate({ to: "/projects/$projectKey", params: { projectKey: group.projectKey } });
+              }}
+            />
+          </PopoverPopup>
+        </Popover>
       </div>
       <div className="flex shrink-0 flex-col items-center gap-1 px-2 pt-2 pb-3">
         <RailSeparator />

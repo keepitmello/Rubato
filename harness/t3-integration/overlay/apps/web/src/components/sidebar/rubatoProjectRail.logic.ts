@@ -143,6 +143,28 @@ export function resolveProjectList<G extends RubatoGroupLike>(input: {
   };
 }
 
+/** The project window's search: names containing the query, either section. */
+export function filterProjectList<G extends RubatoGroupLike & { readonly displayName: string }>(
+  list: RubatoProjectList<G>,
+  query: string,
+): RubatoProjectList<G> {
+  const needle = query.trim().toLocaleLowerCase();
+  if (needle.length === 0) return list;
+  const matches = (group: G) => group.displayName.toLocaleLowerCase().includes(needle);
+  return { listed: list.listed.filter(matches), quiet: list.quiet.filter(matches) };
+}
+
+/** The strongest signal the user should act on, over every project. */
+export function strongestUrgentSignal(
+  signals: ReadonlyMap<string, RubatoSignal>,
+): RubatoSignal | null {
+  let strongest: RubatoSignal | null = null;
+  for (const signal of signals.values()) {
+    if (isUrgentSignal(signal)) strongest = strongerSignal(strongest, signal);
+  }
+  return strongest;
+}
+
 const keysOf = (groups: readonly RubatoGroupLike[]) => groups.map((group) => group.projectKey);
 
 /** Takes `key` out of the list; it joins the front of the quiet group. */

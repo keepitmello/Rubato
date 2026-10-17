@@ -3,13 +3,15 @@
 // T3's new sidebar is one time-ordered list; the legacy tree groups by project
 // but loses recency. Rubato keeps the new sidebar and adds a rail to its left:
 //
-// - The rail (sidebar/RubatoProjectRail.tsx): projects on top, narrowing the
-//   list through the scope key T3's own project filter already persists
-//   (uiStateStore.sidebarProjectScopeKey); pages at the bottom (scheduled
-//   tasks, memory, pull requests, usage, settings), which replace the
-//   sidebar's footer row. AppSidebarLayout places it before the sidebar and
-//   moves the fixed sidebar one rail to the right; collapsing the sidebar
-//   leaves the rail. Only with the new sidebar: the legacy tree keeps its layout.
+// - The rail (sidebar/RubatoProjectRail.tsx): app controls only. Home, one
+//   Projects button whose window lists projects by name and edits the list
+//   (sidebar/RubatoProjectPicker.tsx), narrowing the thread list through the
+//   scope key T3's own project filter already persists
+//   (uiStateStore.sidebarProjectScopeKey); then the pages (scheduled tasks,
+//   memory, pull requests, usage, settings), which replace the sidebar's
+//   footer row. AppSidebarLayout places it before the sidebar and moves the
+//   fixed sidebar one rail to the right; collapsing the sidebar leaves the
+//   rail. Only with the new sidebar: the legacy tree keeps its layout.
 // - The Recent box (sidebar/RubatoRecentBox.tsx): while one project is
 //   selected, the head of the all-projects inbox stays above the narrowed list.
 // - The home row (chat/RubatoHomeProjects.tsx): on the new-thread screen, the
@@ -20,12 +22,14 @@
 //   route-tree-edits.mjs). Their Settings addresses redirect there, so the
 //   Settings nav drops them.
 //
-// The rail and the home tabs share one project list (sidebar/rubatoProjectList.ts).
+// The project window and the home tabs share one project list (sidebar/rubatoProjectList.ts).
 export const projectRailOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectRail.logic.ts',
   'apps/web/src/components/sidebar/rubatoProjectRail.logic.test.ts',
   'apps/web/src/components/sidebar/rubatoProjectList.ts',
   'apps/web/src/components/sidebar/RubatoProjectRail.tsx',
+  'apps/web/src/components/sidebar/RubatoProjectPicker.tsx',
+  'apps/web/src/components/sidebar/RubatoScopeLabel.tsx',
   'apps/web/src/components/sidebar/RubatoThreadLine.tsx',
   'apps/web/src/components/sidebar/RubatoRecentBox.tsx',
   'apps/web/src/components/chat/RubatoHomeProjects.tsx',
@@ -92,6 +96,7 @@ export const projectRailEdits = {
     ['import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";\n',
       [
         'import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";',
+        'import { RubatoScopeLabel } from "./sidebar/RubatoScopeLabel";',
         'import { selectRecentThreads } from "./sidebar/rubatoProjectRail.logic";',
         '',
       ].join('\n')],
@@ -129,6 +134,17 @@ export const projectRailEdits = {
         '          ) : null}',
         '',
       ].join('\n')],
+    // Projects are off the rail, so the narrowed list names its project under
+    // the search field, with a way back to all projects.
+    [
+      '          </SidebarGroup>\n        }\n      >\n        <SidebarGroup className="flex-1" role="presentation">\n',
+      [
+        '            {!isMobile && scopedProjectGroup !== null ? (',
+        '              <RubatoScopeLabel group={scopedProjectGroup} onClear={() => setProjectScopeKey(null)} />',
+        '            ) : null}',
+        '',
+      ].join('\n'),
+    ],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";\n',
