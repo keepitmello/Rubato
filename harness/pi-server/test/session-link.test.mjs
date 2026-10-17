@@ -76,9 +76,9 @@ async function writeSession(dir, cwd, entries) {
   return { id, file, entries: chained };
 }
 
-test('the extension-facing object has exactly the six methods and refuses until the engine binds it', async () => {
+test('the extension-facing object has exactly its seven methods and refuses until the engine binds it', async () => {
   const link = createSessionLink();
-  assert.deepEqual(keys(link.api), ['create', 'fork', 'list', 'read', 'send', 'wait']);
+  assert.deepEqual(keys(link.api), ['create', 'fork', 'list', 'read', 'search', 'send', 'wait']);
   assert.ok(Object.isFrozen(link.api));
   for (const name of Object.keys(link.api)) {
     await assert.rejects(link.api[name]({}), /session link is not available in this process/);
@@ -597,4 +597,189 @@ test("send reports the target handler's answer, and null where the handler said 
   assert.deepEqual([written.duplicate, written.state], [false, 'written']);
   await script({ messageId: 'm-3', duplicate: false, state: 'delivered-ish' });
   assert.equal((await env.api.send({ from: a.id, to: b.id, text: 'third', messageId: 'm-3' })).state, null, 'an unknown state is not passed on');
+});
+
+// What a subagent, a team run and context notes leave on disk, in the task store's own layout.
+async function writeAgent(stateDir, agentId, { parent, root = parent, summary, status = 'completed', entries = [], result } = {}) {
+  const { mkdir } = await import('node:fs/promises');
+  await mkdir(path.join(stateDir, 'tasks'), { recursive: true });
+  await writeFile(path.join(stateDir, 'tasks', `${agentId}.json`), JSON.stringify({ task_id: agentId, status, parent_session_id: parent,
+    root_session_id: root, name: agentId, task_summary: summary, model: 'fixture/local',
+    resolved_model: { provider: 'fixture', model_id: 'local', display: 'fixture/local', reasoning_effort: 'high' },
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString() }));
+  const dir = path.join(stateDir, 'children', agentId, 'sessions', agentId);
+  await mkdir(dir, { recursive: true });
+  const session = await writeSession(dir, path.dirname(path.dirname(stateDir)), entries);
+  if (result !== undefined) {
+    await mkdir(path.join(stateDir, 'completion-results', agentId), { recursive: true });
+    await writeFile(path.join(stateDir, 'completion-results', agentId, '1.txt'), result);
+  }
+  return session;
+}
+
+async function writeTeam(stateDir, runId, { lead, name, members, tasks = [], messages = [] }) {
+  const { mkdir } = await import('node:fs/promises');
+  const dir = path.join(stateDir, 'teams', 'runtime', runId);
+  await mkdir(path.join(dir, 'tasks'), { recursive: true });
+  await writeFile(path.join(dir, 'state.json'), JSON.stringify({ version: 1, teamRunId: runId, teamName: name, status: 'active', leadSessionId: lead,
+    createdAt: Date.now(), members: Object.keys(members).map((member) => ({ name: member, kind: member === 'verifier' ? 'verifier' : 'owner', status: 'running' })) }));
+  await writeFile(path.join(dir, 'task-members.json'), JSON.stringify(members));
+  for (const task of tasks) {
+    await writeFile(path.join(dir, 'tasks', `${task.id}.json`), JSON.stringify({ version: 1, blocks: [], blockedBy: [], createdAt: Date.now(), updatedAt: Date.now(), ...task }));
+  }
+  for (const message of messages) {
+    const box = path.join(dir, 'inboxes', message.to, 'processed');
+    await mkdir(box, { recursive: true });
+    await writeFile(path.join(box, `${message.messageId}.json`), JSON.stringify({ version: 1, kind: 'message', ...message }));
+  }
+}
+
+const idOf = (result) => result.sessionId ?? result.agentId;
+
+test('search: every term in one message, grouped per conversation and subagent, tool output only when asked', async (t) => {
+  const env = await setup(t);
+  const stateDir = path.join(env.root, '.rubato', 'task');
+  const lead = await writeSession(env.sessionsDir, env.root, [
+    { type: 'session_info', name: 'Lead' },
+    user('the rewind bug eats edits'),
+    assistant('checking', { stopReason: 'toolUse', tools: ['bash'] }),
+    toolResult('rewind stacktrace in tool output'),
+    assistant('found the rewind cause in the edit path'),
+  ]);
+  const other = await writeSession(env.sessionsDir, env.root, [user('unrelated rewind talk'), assistant('ok')]);
+  await env.listed(lead.id);
+  await env.listed(other.id);
+  await writeAgent(stateDir, 'st_aaa1', { parent: lead.id, summary: 'diagnose rewind',
+    entries: [user('brief: find the rewind bug'), assistant('the edit is dropped by rewind')] });
+  await writeTeam(stateDir, 'run-1', { lead: lead.id, name: 'fixers', members: { server: 'st_aaa1' } });
+
+  const found = await env.api.search({ query: 'REWIND edit' });
+  assert.deepEqual(keys(found), ['results', 'truncated']);
+  assert.deepEqual(new Set(found.results.map(idOf)), new Set([lead.id, 'st_aaa1']), 'only messages holding every term');
+  const conversation = found.results.find((result) => result.sessionId === lead.id);
+  assert.deepEqual([conversation.kind, conversation.title, conversation.cwd, conversation.matches], ['conversation', 'Lead', env.root, 2]);
+  assert.deepEqual(conversation.hits.map((hit) => hit.entryId).sort(), ['e1', 'e4']);
+  assert.deepEqual(keys(conversation.hits[0]), ['at', 'entryId', 'role', 'snippet']);
+  const member = found.results.find((result) => result.agentId === 'st_aaa1');
+  assert.deepEqual([member.kind, member.name, member.parentSessionId], ['team-member', 'diagnose rewind', lead.id]);
+  assert.deepEqual(member.team, { teamRunId: 'run-1', teamName: 'fixers', member: 'server' });
+  assert.deepEqual(member.hits.map((hit) => hit.entryId), ['e1'], 'the brief lacks "edit"; the answer has both');
+
+  assert.equal((await env.api.search({ query: 'stacktrace' })).results.length, 0, 'tool output is not searched by default');
+  const withTools = await env.api.search({ query: 'stacktrace', includeTools: true });
+  assert.deepEqual(withTools.results.map((result) => [result.sessionId, result.hits[0].role, result.hits[0].name]), [[lead.id, 'tool', 'read']]);
+
+  assert.deepEqual((await env.api.search({ query: 'rewind', exclude: lead.id })).results.map(idOf).sort(), [other.id, 'st_aaa1'].sort());
+  assert.deepEqual((await env.api.search({ query: 'rewind', sessionId: lead.id })).results.map(idOf).sort(), [lead.id, 'st_aaa1'].sort(),
+    'a conversation is searched with its subagents');
+  assert.deepEqual((await env.api.search({ query: 'rewind', sessionId: 'st_aaa1' })).results.map(idOf), ['st_aaa1']);
+  assert.equal((await env.api.search({ query: 'rewind', cwd: path.join(env.root, 'elsewhere') })).results.length, 0);
+  const limited = await env.api.search({ query: 'rewind', limit: 1 });
+  assert.deepEqual([limited.results.length, limited.truncated], [1, true]);
+  await assert.rejects(env.api.search({ query: '   ' }), { code: 'invalid' });
+  await assert.rejects(env.api.search({ query: 'x'.repeat(201) }), { code: 'too_long' });
+  await assert.rejects(env.api.search({ query: 'x', sessionId: 'st_nope' }), { code: 'unknown_session' });
+  await assert.rejects(env.api.search({ query: 'x', sessionId: 'missing' }), { code: 'unknown_session' });
+  assert.equal(env.host.metrics.runtimeStarts, 0, 'searching never loads a conversation');
+});
+
+test('read: entryId reads the turn holding it, includeTools adds clipped tool input and output', async (t) => {
+  const env = await setup(t);
+  const session = await writeSession(env.sessionsDir, env.root, [
+    user('first question'),
+    assistant('first answer'),
+    user('second question'),
+    assistant('looking', { stopReason: 'toolUse', tools: ['bash'] }),
+    toolResult('TOOL OUTPUT ' + 'y'.repeat(100)),
+    assistant('second answer'),
+    user('third question'),
+    assistant('third answer'),
+  ]);
+  await env.listed(session.id);
+  const turn = await env.api.read({ sessionId: session.id, entryId: 'e4' });
+  assert.deepEqual(keys(turn), ['around', 'messages', 'session', 'truncated']);
+  assert.deepEqual(turn.messages.map((message) => message.entryId), ['e2', 'e3', 'e5'], 'from its input to its answer');
+  assert.equal(turn.truncated, false);
+
+  const tools = await env.api.read({ sessionId: session.id, entryId: 'e5', includeTools: true, maxCharsPerMessage: 20 });
+  assert.deepEqual(tools.messages.map((message) => message.role), ['user', 'assistant', 'tool', 'assistant']);
+  assert.deepEqual(tools.messages[1].toolCalls, [{ name: 'bash', input: '{}' }]);
+  assert.deepEqual([tools.messages[2].name, tools.messages[2].text], ['read', 'TOOL OUTPUT ' + 'y'.repeat(8) + '…']);
+
+  const narrow = await env.api.read({ sessionId: session.id, entryId: 'e3', includeTools: true, messages: 3 });
+  assert.deepEqual([narrow.messages.map((message) => message.entryId), narrow.truncated], [['e2', 'e3', 'e5'], true],
+    'a long turn keeps its input, the entry and its answer');
+  const recent = await env.api.read({ sessionId: session.id, messages: 3, includeTools: true });
+  assert.deepEqual(recent.messages.map((message) => message.entryId), ['e5', 'e6', 'e7']);
+  await assert.rejects(env.api.read({ sessionId: session.id, entryId: 'nope' }), { code: 'invalid' });
+  await assert.rejects(env.api.read({ sessionId: session.id, view: 'other' }), { code: 'invalid' });
+  await assert.rejects(env.api.read({ sessionId: session.id, includeTools: 'yes' }), { code: 'invalid' });
+});
+
+test('read: a conversation lists its subagents and team runs; an st_ id reads the subagent and its team board', async (t) => {
+  const env = await setup(t);
+  const stateDir = path.join(env.root, '.rubato', 'senpi-task');
+  const lead = await writeSession(env.sessionsDir, env.root, [user('start the team'), assistant('started')]);
+  await env.listed(lead.id);
+  const child = await writeAgent(stateDir, 'st_b1', { parent: lead.id, summary: 'server work', status: 'running',
+    entries: [user('brief'), assistant('working on it')], result: 'done: server' });
+  await writeAgent(stateDir, 'st_b2', { parent: child.id, root: lead.id, summary: 'nested helper', entries: [user('help'), assistant('helped')] });
+  await writeAgent(stateDir, 'st_c9', { parent: 'someone-else', summary: 'not ours', entries: [user('x')] });
+  await writeTeam(stateDir, 'run-7', { lead: lead.id, name: 'porters', members: { server: 'st_b1' },
+    tasks: [{ id: '1', subject: 'port server', status: 'in_progress', owner: 'server', description: 'long '.repeat(200) }],
+    messages: [{ messageId: 'm1', from: 'server', to: 'lead', body: 'disk is nearly full', summary: 'disk', timestamp: 1 }] });
+
+  const overview = await env.api.read({ sessionId: lead.id });
+  assert.deepEqual(overview.agents.map((agent) => agent.agentId), ['st_b1', 'st_b2']);
+  assert.deepEqual(overview.agents[0].team, { teamRunId: 'run-7', teamName: 'porters', member: 'server' });
+  assert.equal(overview.agents[0].parentSessionId, undefined, 'a direct subagent does not repeat its parent');
+  assert.equal(overview.agents[1].parentSessionId, child.id, 'a nested subagent names the subagent that started it');
+  assert.deepEqual(overview.teams.map((team) => [team.teamRunId, team.teamName, team.members]),
+    [['run-7', 'porters', [{ name: 'server', kind: 'owner', status: 'running', agentId: 'st_b1' }]]]);
+
+  const agent = await env.api.read({ sessionId: 'st_b1' });
+  assert.deepEqual(keys(agent), ['agent', 'messages', 'truncated']);
+  assert.deepEqual([agent.agent.name, agent.agent.status, agent.agent.parentSessionId, agent.agent.cwd], ['server work', 'running', lead.id, env.root]);
+  assert.equal(agent.agent.model, 'fixture/local:high', 'the model reads as team_create prints it');
+  assert.equal(typeof agent.agent.createdAt, 'number', 'record times read as milliseconds like every other time here');
+  assert.ok(agent.agent.resultFile.endsWith(path.join('completion-results', 'st_b1', '1.txt')));
+  assert.deepEqual(agent.messages.map((message) => message.text), ['brief', 'working on it']);
+  assert.deepEqual((await env.api.read({ sessionId: 'st_b1', entryId: 'e1' })).messages.map((message) => message.entryId), ['e0', 'e1']);
+
+  const board = await env.api.read({ sessionId: 'st_b1', view: 'board' });
+  assert.equal(board.teams.length, 1);
+  assert.deepEqual(board.teams[0].tasks.map((task) => [task.id, task.subject, task.status, task.owner]), [['1', 'port server', 'in_progress', 'server']]);
+  assert.ok(board.teams[0].tasks[0].description.length <= 401, 'board text is clipped');
+  assert.deepEqual(board.teams[0].messages.map((message) => [message.from, message.to, message.summary, message.text]),
+    [['server', 'lead', 'disk', 'disk is nearly full']]);
+  assert.deepEqual((await env.api.read({ sessionId: lead.id, view: 'board' })).teams.map((team) => team.teamRunId), ['run-7']);
+  assert.deepEqual((await env.api.read({ sessionId: 'st_b2', view: 'board' })).teams, [], 'a subagent outside any team has no board');
+  await assert.rejects(env.api.read({ sessionId: 'st_missing' }), { code: 'unknown_session' });
+  assert.equal(env.host.metrics.runtimeStarts, 0);
+});
+
+test('read view notes: the current version of each context note, one note by path, none when it kept none', async (t) => {
+  const env = await setup(t);
+  const { mkdir } = await import('node:fs/promises');
+  const { DatabaseSync } = await import('node:sqlite');
+  const { notesDatabasePath } = await import('../src/session-inspect.mjs');
+  const session = await writeSession(env.sessionsDir, env.root, [user('q'), assistant('a')]);
+  await env.listed(session.id);
+  const empty = await env.api.read({ sessionId: session.id, view: 'notes' });
+  assert.deepEqual([empty.available, empty.notes, empty.session.sessionId], [false, [], session.id]);
+
+  const file = notesDatabasePath(env.root, session.id);
+  await mkdir(path.dirname(file), { recursive: true });
+  const db = new DatabaseSync(file);
+  db.exec('CREATE TABLE notes (id TEXT PRIMARY KEY, path TEXT NOT NULL, text TEXT NOT NULL, window_id TEXT NOT NULL, through_user_id TEXT, ordinal INTEGER NOT NULL, operation_id TEXT)');
+  const put = db.prepare('INSERT INTO notes VALUES (?, ?, ?, ?, NULL, ?, NULL)');
+  put.run('n1', 'now.md', 'old goal', 'w1', 1);
+  put.run('n2', 'log.md', 'tried X', 'w1', 2);
+  put.run('n3', 'now.md', 'new goal', 'w2', 3);
+  db.close();
+  const notes = await env.api.read({ sessionId: session.id, view: 'notes' });
+  assert.equal(notes.available, true);
+  assert.deepEqual(notes.notes.map((note) => [note.path, note.text, note.windowId]), [['log.md', 'tried X', 'w1'], ['now.md', 'new goal', 'w2']]);
+  const one = await env.api.read({ sessionId: session.id, view: 'notes', notePath: 'now.md' });
+  assert.deepEqual([one.notes.map((note) => note.text), one.paths], [['new goal'], ['log.md', 'now.md']]);
 });

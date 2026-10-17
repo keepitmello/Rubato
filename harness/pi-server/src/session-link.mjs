@@ -6,6 +6,7 @@ import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
 import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { createInspector, isAgentId, readEntries, searchTerms, turnAround, windowTurn, INSPECT_LIMITS } from './session-inspect.mjs';
 
 /** Answered by the session-link extension inside the target runtime. */
 export const DELIVER_REQUEST = 'rubato.session-link.deliver';
@@ -14,8 +15,9 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   // Receiver side, across all senders.
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
-  waitTargets: 8, waitMaxMs: 120000 });
-const METHODS = ['list', 'read', 'wait', 'send', 'create', 'fork'];
+  waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
+const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork'];
+const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
 // The last size is the ceiling: an entry larger than it is never parsed from a tail.
@@ -97,7 +99,8 @@ async function readBranch(file, enough) {
   return result;
 }
 
-function summarize(entry, maxChars) {
+/** One entry as a reader sees it. `tools` adds each call's input and the tool results. */
+function summarize(entry, maxChars, { tools = false } = {}) {
   const at = timeOf(entry);
   if (isSessionMessage(entry)) {
     const text = typeof entry.details?.text === 'string' ? entry.details.text : textOf(entry.content);
@@ -106,8 +109,18 @@ function summarize(entry, maxChars) {
   if (entry.type !== 'message') return;
   const { role, content } = entry.message ?? {};
   if (role === 'user') return { entryId: entry.id, role, text: clip(textOf(content), maxChars), at, toolCalls: [], isFinal: false };
+  if (tools && role === 'toolResult') {
+    return { entryId: entry.id, role: 'tool', name: entry.message.toolName ?? null, text: clip(textOf(content), maxChars), at,
+      toolCalls: [], isFinal: false, ...(entry.message.isError ? { isError: true } : {}) };
+  }
+  if (tools && role === 'bashExecution') {
+    return { entryId: entry.id, role: 'tool', name: 'bash', text: clip(`${entry.message.command ?? ''}\n${entry.message.output ?? ''}`, maxChars), at,
+      toolCalls: [], isFinal: false };
+  }
   if (role !== 'assistant') return;
-  const toolCalls = Array.isArray(content) ? content.filter((part) => part?.type === 'toolCall').map((part) => part.name) : [];
+  const calls = Array.isArray(content) ? content.filter((part) => part?.type === 'toolCall') : [];
+  const toolCalls = tools ? calls.map((part) => ({ name: part.name, input: clip(JSON.stringify(part.arguments ?? {}), maxChars) }))
+    : calls.map((part) => part.name);
   const text = textOf(content);
   if (!text && !toolCalls.length) return;
   return { entryId: entry.id, role, text: clip(text, maxChars), at, toolCalls, isFinal: isFinal(entry) };
@@ -124,6 +137,37 @@ function progressOf(branch) {
     latestAssistant: latest ? { entryId: latest.id, text: clip(textOf(latest.message.content), LIMITS.charsDefault) } : undefined,
     latestTool: tool ? { entryId: tool.id, name: toolName } : undefined,
   };
+}
+
+/** The model a transcript last used: its newest model change, else its newest answer's model. */
+function modelOf(entries) {
+  const selected = entries.findLast((entry) => entry.type === 'model_change');
+  const answer = entries.findLast((entry) => isAssistant(entry) && entry.message.model);
+  return selected ? `${selected.provider}/${selected.modelId}`
+    : answer ? [answer.message.provider, answer.message.model].filter(Boolean).join('/') : null;
+}
+
+/** The newest `count` readable messages of a transcript's live branch, oldest first. */
+async function recentMessages(file, id, { count, chars, tools }) {
+  const visible = (entry) => summarize(entry, chars, { tools });
+  const { branch, rooted, unreadable } = await readBranch(file, (entries) => entries.filter(visible).length > count);
+  if (unreadable) throw fail('unreadable', `The newest entry of conversation ${id} is larger than ${TAIL_BYTES.at(-1) / 1024 / 1024} MiB, so its recent messages cannot be read`);
+  const summaries = branch.map(visible).filter(Boolean);
+  return { model: modelOf(branch), messages: summaries.slice(-count), truncated: summaries.length > count || !rooted };
+}
+
+/** The turn holding `entryId`, from the newest transcript file that has it. */
+async function turnMessages(files, id, entryId, { count, chars, tools }) {
+  for (const file of [...files].reverse()) {
+    const entries = await readEntries(file);
+    const turn = turnAround(entries, entryId);
+    if (!turn) continue;
+    const pairs = turn.entries.map((entry, index) => ({ index, summary: summarize(entry, chars, { tools }) })).filter((pair) => pair.summary);
+    const target = Math.max(0, pairs.findLastIndex((pair) => pair.index <= turn.targetIndex));
+    const { messages, truncated } = windowTurn(pairs.map((pair) => pair.summary), target, count);
+    return { model: modelOf(entries), messages, truncated, around: entryId };
+  }
+  throw fail('invalid', `No entry ${entryId} in ${id}; pass an entryId that session_read or session_search returned for it`);
 }
 
 const encodeCursor = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
@@ -385,26 +429,82 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
         status: item.status, live: live(item), updatedAt: item.modifiedAt ?? null, messageCount: item.messageCount ?? 0 })),
       truncated: ordered.length > max };
     },
-    async read({ sessionId, messages, maxCharsPerMessage } = {}) {
+    /**
+     * One conversation, or one subagent or team member by its st_ id. `view` picks what to read:
+     * its messages (the recent ones, or with `entryId` the turn holding that entry), its context
+     * notes, or the shared board of its team runs. The messages overview also lists the subagents
+     * and team runs a conversation started, when it has any.
+     */
+    async read({ sessionId, messages, maxCharsPerMessage, entryId, includeTools, view, notePath } = {}) {
       requireId(sessionId, 'sessionId');
-      const count = clamp(messages, LIMITS.readDefault, 1, LIMITS.readMax, 'messages');
+      const shown = view ?? 'messages';
+      if (!VIEWS.has(shown)) throw fail('invalid', 'view must be messages, notes or board');
+      if (includeTools !== undefined && typeof includeTools !== 'boolean') throw fail('invalid', 'includeTools must be a boolean');
+      if (entryId !== undefined && (typeof entryId !== 'string' || !entryId)) throw fail('invalid', 'entryId must be an entry id from session_read or session_search');
+      if (notePath !== undefined && (typeof notePath !== 'string' || !notePath)) throw fail('invalid', 'notePath must be a note path');
+      const count = clamp(messages, entryId === undefined ? LIMITS.readDefault : LIMITS.readMax, 1, LIMITS.readMax, 'messages');
       const chars = clamp(maxCharsPerMessage, LIMITS.charsDefault, 1, LIMITS.charsMax, 'maxCharsPerMessage');
+      const tools = includeTools === true;
+      const { inspector } = need();
+
+      if (isAgentId(sessionId)) {
+        const found = await inspector.agent(sessionId);
+        if (!found) throw fail('unknown_session', `No conversation or subagent with id ${sessionId}`);
+        const head = { agent: found.info };
+        if (shown === 'notes') return { ...head, ...(found.sessionUuid ? await inspector.notes(found.sessionUuid, { chars, notePath }) : { available: false, notes: [] }) };
+        if (shown === 'board') return { ...head, teams: await inspector.boards({ agentId: sessionId }) };
+        if (!found.files.length) return { ...head, messages: [], truncated: false };
+        const read = entryId === undefined
+          ? await recentMessages(found.files.at(-1), sessionId, { count, chars, tools })
+          : await turnMessages(found.files, sessionId, entryId, { count, chars, tools });
+        return { ...head, messages: read.messages, ...(read.around ? { around: read.around } : {}), truncated: read.truncated };
+      }
+
       const described = await describe(sessionId);
+      const session = { sessionId, title: described.title, cwd: described.cwd, status: described.status };
+      if (shown === 'notes') return { session, ...await inspector.notes(sessionId, { chars, notePath }) };
+      if (shown === 'board') return { session, teams: await inspector.boards({ sessionId, cwd: described.cwd }) };
       const file = await locate(sessionId);
-      const visible = (entry) => summarize(entry, chars);
-      const { branch, rooted, unreadable } = await readBranch(file, (entries) => entries.filter(visible).length > count);
-      if (unreadable) throw fail('unreadable', `The newest entry of conversation ${sessionId} is larger than ${TAIL_BYTES.at(-1) / 1024 / 1024} MiB, so its recent messages cannot be read`);
-      const summaries = branch.map(visible).filter(Boolean);
-      const selected = branch.findLast((entry) => entry.type === 'model_change');
-      const answer = branch.findLast((entry) => isAssistant(entry) && entry.message.model);
-      const model = selected ? `${selected.provider}/${selected.modelId}`
-        : answer ? [answer.message.provider, answer.message.model].filter(Boolean).join('/') : null;
-      return {
-        session: { sessionId, title: described.title, cwd: described.cwd, status: described.status, model,
-          updatedAt: described.updatedAt, messageCount: described.messageCount },
-        messages: summaries.slice(-count),
-        truncated: summaries.length > count || !rooted,
+      const read = entryId === undefined
+        ? await recentMessages(file, sessionId, { count, chars, tools })
+        : await turnMessages([file], sessionId, entryId, { count, chars, tools });
+      const result = {
+        session: { ...session, model: read.model, updatedAt: described.updatedAt, messageCount: described.messageCount },
+        messages: read.messages,
+        ...(read.around ? { around: read.around } : {}),
+        truncated: read.truncated,
       };
+      if (entryId === undefined) {
+        // Only what exists: a conversation that started no subagent or team reads exactly as before.
+        const { agents, agentsTruncated, teams } = await inspector.related(sessionId, described.cwd);
+        if (agents.length) result.agents = agents;
+        if (agentsTruncated) result.agentsTruncated = true;
+        if (teams.length) result.teams = teams;
+      }
+      return result;
+    },
+    /**
+     * Full-text search over conversations and the transcripts of their subagents and team members.
+     * Every whitespace-separated term must appear in one message; tool calls and output count only
+     * with `includeTools`. `exclude` drops one conversation (the caller's own) from a broad search.
+     */
+    async search({ query, cwd, sessionId, includeTools, limit, exclude } = {}) {
+      const { inspector } = need();
+      if (typeof query !== 'string' || !searchTerms(query).length) throw fail('invalid', 'query must be a non-empty string');
+      if (query.length > LIMITS.queryChars) throw fail('too_long', `query is ${query.length} characters; the limit is ${LIMITS.queryChars}`);
+      if (cwd !== undefined && (typeof cwd !== 'string' || !path.isAbsolute(cwd))) throw fail('invalid', 'cwd must be an absolute path');
+      if (includeTools !== undefined && typeof includeTools !== 'boolean') throw fail('invalid', 'includeTools must be a boolean');
+      if (exclude !== undefined) requireId(exclude, 'exclude');
+      if (sessionId !== undefined) {
+        requireId(sessionId, 'sessionId');
+        if (!isAgentId(sessionId)) await describe(sessionId);
+      }
+      const max = clamp(limit, INSPECT_LIMITS.searchDefault, 1, INSPECT_LIMITS.searchMax, 'limit');
+      const result = await inspector.search({ query, ...(cwd === undefined ? {} : { cwd: path.resolve(cwd) }), sessionId,
+        tools: includeTools === true, limit: max, exclude });
+      if (result.unknown) throw fail('unknown_session', `No conversation or subagent with id ${sessionId}`);
+      delete result.unknown;
+      return result;
     },
     async wait({ targets, timeoutMs, signal } = {}) {
       need();
@@ -548,7 +648,10 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
       if (bound) throw new Error('session link is already bound');
       if (!host?.directory || typeof host.getSessionWorker !== 'function') throw new TypeError('session link requires a session host');
       if (!path.isAbsolute(sessionsDir ?? '') || !socketPath || !serverId) throw new TypeError('session link requires sessionsDir, socketPath and serverId');
-      bound = { host, sessionsDir, socketPath, serverId, onError };
+      // Context notes and the runtime's own tools live next to the sessions folder (agentDir).
+      const inspector = createInspector({ agentDir: path.dirname(sessionsDir), sessionsDir,
+        cwds: () => rows().map((item) => item.cwd).filter(Boolean), titleOf: (id) => row(id)?.title, locate });
+      bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
     },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
     close() { bound = undefined; for (const waiter of waiters) waiter.stop?.(); },

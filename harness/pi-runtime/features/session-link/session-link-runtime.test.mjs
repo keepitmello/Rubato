@@ -44,7 +44,7 @@ after(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-const SIX = ["session_list", "session_read", "session_wait", "session_send", "session_create", "session_fork"];
+const SESSION_TOOLS = ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork"];
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 async function openSession(name, sessionLink) {
@@ -142,7 +142,7 @@ const lastUserText = (messages) => {
 test("bootstrap without the engine's sessionLink registers no conversation tool", async () => {
   const { session, api } = await openSession("no-link");
   const names = api.getAllTools().map(({ name }) => name);
-  for (const name of SIX) assert.ok(!names.includes(name), name);
+  for (const name of SESSION_TOOLS) assert.ok(!names.includes(name), name);
   await close(session);
 });
 
@@ -153,12 +153,12 @@ test("in the staged candidate the tools are catalogued for tool_search, and a de
   try {
     assert.deepEqual(errors, []);
     const tools = new Map(api.getAllTools().map((tool) => [tool.name, tool]));
-    for (const name of SIX) {
+    for (const name of SESSION_TOOLS) {
       assert.ok(tools.has(name), name);
       assert.equal(tools.get(name).exposure, "search", `${name} is catalogued, not in the prefix`);
     }
     const active = session.getActiveToolNames();
-    for (const name of SIX) assert.ok(!active.includes(name), `${name} starts inactive`);
+    for (const name of SESSION_TOOLS) assert.ok(!active.includes(name), `${name} starts inactive`);
     const found = assembled.toolSearch.search("send a message to another conversation", 10).map((match) => match.name);
     assert.ok(found.includes("session_send"), found.join(", "));
 

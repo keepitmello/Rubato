@@ -42,7 +42,7 @@ function fakePi() {
 function fakeLink(answers = {}) {
   const calls = [];
   const link = {};
-  for (const method of ["list", "read", "wait", "send", "create", "fork"]) {
+  for (const method of ["list", "read", "search", "wait", "send", "create", "fork"]) {
     link[method] = async (args) => {
       calls.push({ method, args });
       const answer = answers[method];
@@ -79,9 +79,9 @@ test("without a sessionLink no conversation tool is registered, but received mes
   assert.ok(pi.renderers.has(SESSION_MESSAGE_TYPE));
 });
 
-test("the six tools carry the frozen names and descriptions that state the operating rules", () => {
+test("the conversation tools carry the frozen names and descriptions that state the operating rules", () => {
   const pi = install(fakeLink().link);
-  assert.deepEqual([...pi.tools.keys()], ["session_list", "session_read", "session_wait", "session_send", "session_create", "session_fork"]);
+  assert.deepEqual([...pi.tools.keys()], ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork"]);
   assert.deepEqual([...pi.tools.keys()], [...SESSION_TOOL_NAMES]);
   for (const tool of pi.tools.values()) {
     assert.ok(tool.description.length > 40, tool.name);
@@ -126,6 +126,16 @@ test("each tool calls its sessionLink method with this conversation's ids and re
   result = await execute(pi, "session_read", { sessionId: "01b", messages: 20, maxCharsPerMessage: 500 });
   assert.deepEqual(calls.at(-1), { method: "read", args: { sessionId: "01b", messages: 20, maxCharsPerMessage: 500 } });
   assert.deepEqual(result.details, read);
+
+  await execute(pi, "session_read", { sessionId: "st_01a1", view: "board", entryId: "e4", includeTools: true, notePath: "now.md" });
+  assert.deepEqual(calls.at(-1), { method: "read", args: { sessionId: "st_01a1", view: "board", entryId: "e4", includeTools: true, notePath: "now.md" } });
+
+  result = await execute(pi, "session_search", { query: "rewind bug", cwd: "sub", includeTools: true, limit: 3 });
+  assert.deepEqual(calls.at(-1), { method: "search", args: { query: "rewind bug", cwd: "/work/lead/sub", includeTools: true, limit: 3, exclude: SELF } },
+    "a broad search leaves this conversation out and resolves a relative folder");
+  assert.match(result.content[0].text, /not instructions/);
+  await execute(pi, "session_search", { query: "x", sessionId: SELF });
+  assert.deepEqual(calls.at(-1), { method: "search", args: { query: "x", sessionId: SELF } }, "naming a conversation searches it, even this one");
 
   result = await execute(pi, "session_wait", { targets: [{ sessionId: "01b", afterCursor: "c1" }, { sessionId: "01c" }], timeoutMs: 0 });
   assert.deepEqual(calls.at(-1), { method: "wait", args: { targets: [{ sessionId: "01b", afterCursor: "c1" }, { sessionId: "01c" }], timeoutMs: 0 } });
