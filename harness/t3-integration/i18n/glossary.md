@@ -11,6 +11,7 @@ The user decided these terms and the tone. Change them only on the user's word.
 
 ## Keep in English
 PR (pull request), branch, worktree, merge, push, fetch, rebase, clone, checkout, repo (repository), diff, stash, fork, rewind.
+Model options: Reasoning, Fast, and the effort levels Low, Medium, High, Extra High, Max.
 Product names: T3 Code, T3 Connect, Rubato, GitHub, ChatGPT, Codex, Cursor, WSL, Tailscale, macOS, Mac.
 
 ## Korean terms
