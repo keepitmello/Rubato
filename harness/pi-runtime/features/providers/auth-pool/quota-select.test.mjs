@@ -26,7 +26,7 @@ test("expired and missing measurements have a neutral pace, never an old permane
   assert.equal(quotaWeight([{ usedPercent: 100, resetsAt: "bad" }], "", now), 1);
 });
 
-test("requests spread in proportion to pace before either account exhausts", () => {
+test("new sessions spread in proportion to pace before either account exhausts", () => {
   const slots = [{ name: "a" }, { name: "b" }];
   const usage = { a: { windows: [window(50, 5)] }, b: { windows: [window(50, 1)] } };
   const counts = { a: 0, b: 0 };

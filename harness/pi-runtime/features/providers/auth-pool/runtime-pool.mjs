@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { sessionAffinityStore } from "./affinity.mjs";
+import { sessionAffinityStore, readSessionBinding } from "./affinity.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
 import { discoverSetupTokenSlots } from "./setup-token-slots.mjs";
 import { listSlots } from "./slots.mjs";
@@ -70,10 +70,16 @@ export async function credentialRotationSources(runtime, model, options) {
     discoverExtraSlots: () => discoverSetupTokenSlots(model.provider, env, { signal: options?.signal }),
   };
   const slots = await listRotationSlots(sources, { acquireLeases: false });
-  if (slots.length <= 1 && accountLaneOf(model) < 0) return undefined;
+  const sessionId = options?.sessionId ?? options?.affinityKey;
+  const existing = model.provider === "anthropic" && sessionId
+    ? await readSessionBinding(sessionAffinityStore(runtime), repository, model.provider, sessionId)
+    : undefined;
+  if (slots.length <= 1 && accountLaneOf(model) < 0
+    && !existing && !(model.provider === "anthropic" && sessionId && slots.length === 1)) return undefined;
   sources.loadBalancing = model.provider === "anthropic" && accountLaneOf(model) < 0
     && readAccountLoadBalancing({ home: env("HOME") }).has(model.provider);
-  if (sources.loadBalancing && slots.length > 1 && !credential?.pinned) {
+  if (sources.loadBalancing && !sessionId) throw new Error("Account load balancing requires a session id.");
+  if (sources.loadBalancing && slots.length > 1 && !credential?.pinned && !existing) {
     const authPath = runtime.credentials?.store?.authPath;
     const readUsage = runtime._rubatoQuotaUsage ??= createQuotaUsageReader({
       path: typeof authPath === "string" ? usageObservedPath(authPath) : undefined,
@@ -180,12 +186,15 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
     return streamWithCredentialRotation({
       sources,
       affinityStore: sessionAffinityStore(runtime),
-      requiredSlotName: streamOptions?.slotName ?? (sources.loadBalancing ? undefined : requiredAccountSlotName(model, slots)),
+      requiredSlotName: streamOptions?.slotName ?? (accountLaneOf(model) >= 0
+        ? requiredAccountSlotName(model, slots)
+        : sources.loadBalancing || sources.credential?.pinned ? undefined : requiredAccountSlotName(model, slots)),
+      explicitSlotName: streamOptions?.slotName ?? (accountLaneOf(model) >= 0 ? requiredAccountSlotName(model, slots) : undefined),
       serverRetryAfterMs: (slot) => retryAfterBySlot.get(slot?.name),
-      ...(streamOptions?.affinityKey !== undefined
-        ? { affinityKey: streamOptions.affinityKey }
-        : streamOptions?.sessionId !== undefined
-          ? { affinityKey: streamOptions.sessionId }
+      ...(streamOptions?.sessionId !== undefined
+        ? { affinityKey: streamOptions.sessionId }
+        : streamOptions?.affinityKey !== undefined
+          ? { affinityKey: streamOptions.affinityKey }
           : {}),
       runAttempt: async (slot) => {
         retryAfterBySlot.delete(slot.name);

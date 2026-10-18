@@ -288,6 +288,7 @@ test("429 의 서버 리셋 시각이 그대로 계정 쉬는 시간이 된다",
   const statePath = join(agentDir, "credential-pool-state.json");
   writeFileSync(statePath, `${JSON.stringify({
     schemaVersion: 1,
+    installationKey: await new CredentialSlotRepository(statePath).installationKey(),
     providers: { xai: { lanes: { stored: { slots: { default: { failureCount: 18, stateVersion: 1 } } } } } },
   })}\n`);
   const provider = mockXaiProvider(hits, "never");

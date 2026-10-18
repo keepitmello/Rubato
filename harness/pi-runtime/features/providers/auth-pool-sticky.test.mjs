@@ -211,7 +211,7 @@ test("sub2 model ids wire to the base model and require the third account", () =
   assert.equal(requiredAccountSlotName(model, [{ name: "default" }, { name: "sub" }]), "sub2");
 });
 
-test("requiredSlotName beats pin and session affinity", async () => {
+test("an initial required account beats the pin for a new session", async () => {
   const used = [];
   const repository = new CredentialSlotRepository();
   const sources = {

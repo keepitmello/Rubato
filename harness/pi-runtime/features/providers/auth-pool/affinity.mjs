@@ -16,3 +16,11 @@ export function bindSessionSlot(store, providerId, affinityKey, slot) {
   store.set(affinityStoreKey(providerId, affinityKey), { name: slot.name, lane: slot.lane });
   return slot;
 }
+
+export async function readSessionBinding(store, repository, providerId, sessionId) {
+  const memory = boundSessionSlot(store, providerId, sessionId);
+  if (memory || sessionId === undefined) return memory;
+  const saved = await repository.sessionBinding(providerId, sessionId);
+  if (saved) bindSessionSlot(store, providerId, sessionId, saved);
+  return saved;
+}

@@ -1,5 +1,5 @@
 import { createHmac, randomBytes, randomUUID } from "node:crypto";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 
 export const CREDENTIAL_POOL_STATE_FILENAME = "credential-pool-state.json";
@@ -13,11 +13,11 @@ function parseDocument(content) {
   try {
     const parsed = JSON.parse(content);
     if (!parsed || parsed.schemaVersion !== 1 || typeof parsed.installationKey !== "string" || typeof parsed.providers !== "object") {
-      return freshDocument();
+      throw new Error("Invalid credential-pool state");
     }
     return parsed;
-  } catch {
-    return freshDocument();
+  } catch (cause) {
+    throw new Error("Cannot read credential-pool state; refusing to reassign session accounts.", { cause });
   }
 }
 
@@ -62,7 +62,13 @@ export class CredentialSlotRepository {
       const { result, next } = fn(current);
       if (next) {
         mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
-        writeFileSync(this.path, JSON.stringify(next, null, 2), FILE_WRITE_OPTIONS);
+        const temporary = `${this.path}.${randomUUID()}.tmp`;
+        try {
+          writeFileSync(temporary, JSON.stringify(next, null, 2), FILE_WRITE_OPTIONS);
+          renameSync(temporary, this.path);
+        } finally {
+          try { unlinkSync(temporary); } catch { /* already renamed */ }
+        }
       }
       return result;
     } finally {
@@ -86,6 +92,34 @@ export class CredentialSlotRepository {
     }));
   }
 
+  async sessionBinding(providerId, sessionId) {
+    return this.withDocument((document) => ({
+      result: document.providers[providerId]?.sessions?.[this.sessionKey(document, sessionId)],
+    }));
+  }
+
+  sessionKey(document, sessionId) {
+    return createHmac("sha256", document.installationKey).update(sessionId).digest("hex");
+  }
+
+  /** First assignment wins, including concurrent callers and other processes. */
+  async bindSessionSlot(providerId, sessionId, choose) {
+    return this.withDocument((document) => {
+      const provider = document.providers[providerId] ?? { lanes: {} };
+      const key = this.sessionKey(document, sessionId);
+      const existing = provider.sessions?.[key];
+      if (existing) return { result: existing };
+      const slot = choose();
+      const binding = { name: slot.name, lane: slot.lane };
+      return {
+        result: binding,
+        next: { ...document, providers: { ...document.providers,
+          [providerId]: { ...provider, sessions: { ...provider.sessions, [key]: binding } },
+        } },
+      };
+    });
+  }
+
   async mutateSlotState(providerId, laneId, slotId, fn) {
     return this.withDocument((document) => {
       const provider = document.providers[providerId] ?? { lanes: {} };
@@ -104,7 +138,7 @@ export class CredentialSlotRepository {
         ...document,
         providers: {
           ...document.providers,
-          [providerId]: { lanes: { ...provider.lanes, [laneId]: { slots } } },
+          [providerId]: { ...provider, lanes: { ...provider.lanes, [laneId]: { slots } } },
         },
       };
       return { result, next };

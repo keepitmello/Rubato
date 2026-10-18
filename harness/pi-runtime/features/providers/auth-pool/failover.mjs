@@ -104,7 +104,7 @@ export async function* runCredentialFailover(options) {
           ...(retryAt === undefined ? {} : { retryAt }),
         });
     }
-    const slot = options.select(candidates, slots);
+    const slot = await options.select(candidates, slots);
     let committedOutput = false;
     // 소비자에게 event 를 하나라도(`start` 포함) 넘겼는가. 커밋(텍스트·도구)과는 다른
     // 질문이다: agent loop 는 `start` 마다 partial 을 context 에 하나씩 넣으므로

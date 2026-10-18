@@ -312,7 +312,7 @@ function ProviderDetail({
         <SettingsGroup>
           <SettingsRow
             title="Account load balancing"
-            description="On spreads requests by remaining quota and time to reset. Off uses the account you pick: the regular model or [sub]. Picking [sub] or pinning an account always keeps that account."
+            description="On assigns new sessions by remaining quota and time to reset. Off uses the regular model, [sub], or pinned account for new sessions. Each session keeps its first account, even after reconnecting or hitting a limit. Start a new session to change accounts."
             control={
               <Switch
                 checked={provider.loadBalancing === true}
@@ -344,7 +344,9 @@ function ProviderDetail({
         </SettingsGroup>
         {provider.accounts.length > 1 ? (
           <p className="px-1 text-xs text-muted-foreground">
-            Pick a [sub] model for another account, or pin an account to use only that one.
+            {provider.id === "anthropic"
+              ? "To use another account, pick a [sub] model or pin an account before starting a new session."
+              : "Pick a [sub] model for another account, or pin an account to use only that one."}
           </p>
         ) : null}
       </div>

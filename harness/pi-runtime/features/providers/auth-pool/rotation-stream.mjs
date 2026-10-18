@@ -5,7 +5,7 @@ import { classifyCredentialFailure } from "./classify.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
 import { runCredentialFailover } from "./failover.mjs";
 import { acquireHalfOpenLease } from "./state-store.mjs";
-import { bindSessionSlot, boundSessionSlot } from "./affinity.mjs";
+import { bindSessionSlot, boundSessionSlot, readSessionBinding } from "./affinity.mjs";
 import { selectQuotaSlot } from "./quota-select.mjs";
 
 function overlayState(slot, state) {
@@ -170,39 +170,51 @@ export function streamWithCredentialRotation(options) {
   const now = sources.now ?? Date.now;
   const store = options.affinityStore;
   const providerId = sources.providerId;
+  const fixedSession = providerId === "anthropic" && options.affinityKey !== undefined;
   const readBound = () => boundSessionSlot(store, providerId, affinityKey);
+  const initialSlot = (candidates, slots) => {
+    if (options.requiredSlotName) {
+      const required = candidates.find((slot) => slot.name === options.requiredSlotName);
+      if (!required) throw new Error(requiredSlotUnavailableMessage(
+        options.requiredSlotName, slots.find((slot) => slot.name === options.requiredSlotName), now()));
+      return required;
+    }
+    const pinned = slots.find((slot) => slot.pinned === true);
+    if (pinned) {
+      const available = candidates.find((slot) => slot.name === pinned.name);
+      if (!available) throw new Error(requiredSlotUnavailableMessage(pinned.name, pinned, now()));
+      return available;
+    }
+    if (sources.loadBalancing) {
+      return selectQuotaSlot(candidates, {
+        usage: sources.quotaUsage, modelId: sources.modelId, now: now(), random: options.random,
+      });
+    }
+    const bound = readBound();
+    const match = bound && candidates.find((slot) => slot.name === bound.name);
+    if (match) return match;
+    const winner = (useAffinity ? rendezvousOrder(affinityKey, candidates, hasher) : candidates)[0];
+    if (!winner) throw new Error("credential rotation selected from an empty candidate set");
+    return winner;
+  };
   return runCredentialFailover({
-    listSlots: () => listRotationSlots(sources),
-    stickySlotName: () => sources.loadBalancing ? undefined : readBound()?.name,
-    select: (candidates, slots = candidates) => {
-      if (options.requiredSlotName) {
-        const required = candidates.find((candidate) => candidate.name === options.requiredSlotName);
-        if (!required) {
-          const known = slots.find((slot) => slot.name === options.requiredSlotName);
-          throw new Error(requiredSlotUnavailableMessage(options.requiredSlotName, known, now()));
-        }
-        return bindSessionSlot(store, providerId, affinityKey, required);
+    listSlots: async () => {
+      if (fixedSession) await readSessionBinding(store, sources.repository, providerId, affinityKey);
+      return listRotationSlots(sources);
+    },
+    stickySlotName: () => readBound()?.name,
+    select: async (candidates, slots = candidates) => {
+      if (!fixedSession) return bindSessionSlot(store, providerId, affinityKey, initialSlot(candidates, slots));
+      const bound = readBound() ?? await sources.repository.bindSessionSlot(
+        providerId, affinityKey, () => initialSlot(candidates, slots));
+      bindSessionSlot(store, providerId, affinityKey, bound);
+      if (options.explicitSlotName && options.explicitSlotName !== bound.name) {
+        throw new Error(`This session uses account '${bound.name}'. Start a new session to use '${options.explicitSlotName}'.`);
       }
-      const pinned = slots.find((candidate) => candidate.pinned === true);
-      if (pinned) {
-        const available = candidates.find((candidate) => candidate.name === pinned.name);
-        if (!available) throw new Error(requiredSlotUnavailableMessage(pinned.name, pinned, now()));
-        return bindSessionSlot(store, providerId, affinityKey, available);
-      }
-      if (sources.loadBalancing) {
-        return selectQuotaSlot(candidates, {
-          usage: sources.quotaUsage, modelId: sources.modelId, now: now(), random: options.random,
-        });
-      }
-      const bound = readBound();
-      if (bound) {
-        const match = candidates.find((candidate) => candidate.name === bound.name);
-        if (match) return match;
-      }
-      const ordered = useAffinity ? rendezvousOrder(affinityKey, candidates, hasher) : candidates;
-      const winner = ordered[0];
-      if (!winner) throw new Error("credential rotation selected from an empty candidate set");
-      return bindSessionSlot(store, providerId, affinityKey, winner);
+      const locked = candidates.find((slot) => slot.name === bound.name && slot.lane === bound.lane);
+      if (!locked) throw new Error(requiredSlotUnavailableMessage(
+        bound.name, slots.find((slot) => slot.name === bound.name && slot.lane === bound.lane), now()));
+      return locked;
     },
     runAttempt,
     isCommittedOutput,

@@ -1,4 +1,4 @@
-// Allocate each new request, not a whole session, in proportion to the pace
+// Allocate a new session once, in proportion to the pace
 // each account can sustain until its next resets. Explicit account choices
 // bypass this allocator. Percentages from different windows are normalized by
 // window length; the tightest applicable window sets the account's pace.
