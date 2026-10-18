@@ -1,0 +1,60 @@
+# Regression cases for what goes in a table cell.
+#
+# What this guards: harness/prompts/voice.md, the sentence that keeps table
+# cells to numbers, names and short phrases and moves sentences into a
+# heading per option with a list under it.
+#
+# Failure this suite exists for (2026-10-19 rubato-lab session, 01a15084):
+# a resume thread answered "고를 길" with a two-column table, 얻는 것 and
+# 잃는 것, whose cells were one or two full sentences each. The chat cut
+# every cell to one line and scrolled the table sideways; the user said a
+# table that needs a sideways scroll does not read at a glance. The chat
+# now wraps cells (harness/t3-integration/chat-table-edits.mjs), but a
+# sentence table still turns into blocks of three or four lines per cell.
+#
+# How to run (manual, no runner yet): start a fresh rubato-pi lead session in
+# a scratch workspace, seed it with `state`, paste `user`, and grade the
+# reply against `expect`. Run each case `trials` times on each model in
+# `models`; one pass is not evidence.
+
+version: 1
+suite: voice-tables
+prompt_files:
+  - harness/prompts/voice.md
+models:
+  - anthropic/claude-opus-5-5
+  - openai-codex/gpt-6.1-sol
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  no-sentence-cells: >
+    No table cell in the reply holds a full sentence. Options whose
+    gains and costs need sentences each get a heading (or a bold lead) with
+    a short list under it.
+  table-stays-for-values: >
+    A comparison of short values (numbers, names, yes/no, a few words) is
+    still a table; the sentence rule does not push the reply into prose.
+
+cases:
+  - id: tradeoff-between-options
+    category: no-sentence-cells
+    user: >
+      1번 소개 문단이랑 3번 소개 문단 중에 뭘 고를지 모르겠어. 각각 얻는 거랑 잃는 거 정리해줘.
+    state: >
+      A resume repo with stored summary paragraphs; the earlier turn listed
+      three candidate summary paragraphs with their content spelled out.
+    expect: no-sentence-cells
+    why: >
+      the observed table was a gains-and-costs comparison of this kind.
+
+  - id: short-value-comparison
+    category: table-stays-for-values
+    user: >
+      Postgres, SQLite, DuckDB를 동시 쓰기, 파일 하나로 배포, 분석 쿼리 속도로만 비교해줘.
+    state: >
+      An empty scratch workspace.
+    expect: table-stays-for-values
+    why: >
+      the fix must not drop tables where every cell is a short value.
