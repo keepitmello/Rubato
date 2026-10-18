@@ -9,6 +9,7 @@ import { ConnectionsSettings } from "./ConnectionsSettings";
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 import { RubatoAboutSection } from "./RubatoAboutSection";
 import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
+import { RubatoSidebarSectionsSettingsRows } from "./RubatoSidebarSectionsSetting";
 import { RubatoTitleModelsSection } from "./RubatoTitleModels";
 import { RubatoPhoneSettingsPanel } from "./RubatoPhoneSettings";
 import { RubatoSettingsBlockScope } from "./rubatoSettingsBlock";
@@ -54,6 +55,7 @@ const SOURCES: Readonly<Record<RubatoSettingsSource, ComponentType>> = {
   phone: RubatoPhoneSettingsPanel,
   about: RubatoAboutSection,
   homeProjects: RubatoHomeProjectsSettingsRow,
+  sidebarSections: RubatoSidebarSectionsSettingsRows,
   titleModels: RubatoTitleModelsSection,
   permissionsLink: PermissionsLinkRow,
 };

@@ -13,7 +13,10 @@
 //   fixed sidebar one rail to the right; collapsing the sidebar leaves the
 //   rail. Only with the new sidebar: the legacy tree keeps its layout.
 // - The Recent box (sidebar/RubatoRecentBox.tsx): while one project is
-//   selected, the head of the all-projects inbox stays above the narrowed list.
+//   selected, the head of the all-projects inbox stays in the sidebar, as many
+//   rows as the client setting rubatoRecentLimit. It and the project's title
+//   are sections of the thread list (sidebar-blocks-edits.mjs); only an empty
+//   list shows them here, above where the list would be.
 // - The home row (chat/RubatoHomeProjects.tsx): on the new-thread screen, the
 //   project tabs and the selected project's newest threads along the bottom,
 //   inside the composer's width; the composer stays centered. Off by default:
@@ -135,12 +138,14 @@ export const projectRailEdits = {
         'import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";',
         'import { RubatoScopeLabel } from "./sidebar/RubatoScopeLabel";',
         'import { scopedNewThreadProjectRef, selectRecentThreads } from "./sidebar/rubatoProjectRail.logic";',
+        'import { clampRecentLimit } from "./sidebar/rubatoSidebarBlocks";',
         '',
       ].join('\n')],
     ['  const threadSearchInputRef = useRef<HTMLInputElement>(null);\n',
       [
-        '  // Rubato: the head of the all-projects inbox, kept above the list while one',
+        '  // Rubato: the head of the all-projects inbox, kept in the sidebar while one',
         '  // project is selected (RubatoRecentBox, project-rail-edits.mjs).',
+        '  const rubatoRecentLimit = useClientSettings((settings) => settings.rubatoRecentLimit);',
         '  const rubatoRecentThreads = useMemo(() => {',
         '    void nowMinute;',
         '    if (scopedProjectKeys === null) return [];',
@@ -153,35 +158,33 @@ export const projectRailEdits = {
         '      workingShelfEnabled,',
         '      returnedAt: workingShelfEnabled ? inboxReturns.returnedAt : undefined,',
         '      now: new Date().toISOString(),',
+        '      limit: clampRecentLimit(rubatoRecentLimit),',
         '    });',
-        '  }, [nowMinute, scopedProjectKeys, serverConfigs, threads, workingShelfEnabled]);',
+        '  }, [nowMinute, rubatoRecentLimit, scopedProjectKeys, serverConfigs, threads, workingShelfEnabled]);',
         '',
       ].join('\n')],
     ['          {!isSearchingThreads ? (\n            <TooltipProvider\n              key="sidebar-thread-tooltips-150"\n',
       [
-        '          {!isSearchingThreads && rubatoRecentThreads.length > 0 ? (',
-        '            <RubatoRecentBox',
-        '              threads={rubatoRecentThreads}',
-        '              projectFor={(thread) =>',
-        '                projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null',
-        '              }',
-        '              activeThreadKey={routeThreadKey}',
-        '              {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})}',
-        '            />',
+        '          {/* Rubato: with no thread list to sit in, Recent and the title stand here (sidebar-blocks-edits.mjs). */}',
+        '          {!isSearchingThreads && sidebarListItems.length === 0 ? (',
+        '            <>',
+        '              {rubatoRecentThreads.length > 0 ? (',
+        '                <RubatoRecentBox',
+        '                  threads={rubatoRecentThreads}',
+        '                  projectFor={(thread) =>',
+        '                    projectByKey.get(`${thread.environmentId}:${thread.projectId}`) ?? null',
+        '                  }',
+        '                  activeThreadKey={routeThreadKey}',
+        '                  {...(isMobile ? { onNavigate: () => setOpenMobile(false) } : {})}',
+        '                />',
+        '              ) : null}',
+        '              {!isMobile && scopedProjectGroup !== null ? (',
+        '                <RubatoScopeLabel group={scopedProjectGroup} />',
+        '              ) : null}',
+        '            </>',
         '          ) : null}',
         '',
       ].join('\n')],
-    // Projects are off the rail, so the narrowed list carries its project's
-    // name as a title under the search field.
-    [
-      '          </SidebarGroup>\n        }\n      >\n        <SidebarGroup className="flex-1" role="presentation">\n',
-      [
-        '            {!isMobile && scopedProjectGroup !== null ? (',
-        '              <RubatoScopeLabel group={scopedProjectGroup} />',
-        '            ) : null}',
-        '',
-      ].join('\n'),
-    ],
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";\n',
@@ -251,13 +254,17 @@ export const projectRailEdits = {
   ],
   // Memory and Scheduled Tasks have their own pages now; their Settings
   // addresses only redirect. Anchored on schedule-edits.mjs's version of the line.
-  // The home row's switch: a device setting, off until turned on.
+  // The home row's switch, off until turned on, and how many rows Recent
+  // shows (1-15, sidebar/rubatoSidebarBlocks.ts clamps it): device settings.
   'packages/contracts/src/settings.ts': [
     ['  composerCollapseOnScroll: Schema.Boolean.pipe(',
       '  // Rubato: the project row on the new-thread screen (project-rail-edits.mjs).\n'
-        + '  rubatoHomeProjects: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'],
+        + '  rubatoHomeProjects: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'
+        + '  // Rubato: how many threads the Recent box shows (project-rail-edits.mjs).\n'
+        + '  rubatoRecentLimit: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(5))),\n'],
     ['  composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),\n',
-      '  rubatoHomeProjects: Schema.optionalKey(Schema.Boolean),\n'],
+      '  rubatoHomeProjects: Schema.optionalKey(Schema.Boolean),\n'
+        + '  rubatoRecentLimit: Schema.optionalKey(Schema.Number),\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  {\n    id: "project-grouping",\n',

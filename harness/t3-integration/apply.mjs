@@ -48,6 +48,7 @@ import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
 import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs';
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
+import { sidebarBlocksEdits, sidebarBlocksOverlays } from './sidebar-blocks-edits.mjs';
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
 import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
@@ -1790,6 +1791,11 @@ for (const [relative, changes] of Object.entries(floatingMenuEdits)) {
 // Per-part sizes for the rail, the sidebar, the home row and the conversation; last, since it reads text project-rail-edits adds (section-scale-edits.mjs).
 overlays.push(...sectionScaleOverlays);
 for (const [relative, changes] of Object.entries(sectionScaleEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The sidebar's sections in the user's order; after section-scale-edits, whose drag-offset line it sits beside (sidebar-blocks-edits.mjs).
+overlays.push(...sidebarBlocksOverlays);
+for (const [relative, changes] of Object.entries(sidebarBlocksEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Settings regrouped into Rubato's layout; last, since it anchors on the sidebar and search other modules edit (settings-layout-edits.mjs).

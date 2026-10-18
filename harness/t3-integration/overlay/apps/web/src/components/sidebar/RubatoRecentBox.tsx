@@ -1,8 +1,10 @@
-// The Recent box above the thread list while one project is selected: the
-// head of the all-projects inbox (selectRecentThreads), so narrowing the list
-// to one project does not hide where the rest of the work moved. It may
-// repeat threads the narrowed list also shows; the user chose to keep that.
-// Collapsing it leaves one line.
+// The Recent box while one project is selected: the head of the all-projects
+// inbox (selectRecentThreads), so narrowing the list to one project does not
+// hide where the rest of the work moved. It may repeat threads the narrowed
+// list also shows; the user chose to keep that. Collapsing it leaves one line.
+// It is one of the sidebar's sections: above the project's threads until the
+// user drags its header elsewhere (sidebar/rubatoSidebarBlocks.ts), and as many
+// rows as Settings > Threads & Projects says.
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import * as Schema from "effect/Schema";
 
@@ -27,7 +29,11 @@ export function RubatoRecentBox(props: {
   return (
     <section aria-label="Recent threads in all projects" data-rubato-recent="" className="mx-0.5 mb-1 flex flex-col">
       {/* The same header as the sidebar's own shelves (Settled, Snoozed). */}
-      <CollapsibleSectionHeader expanded={expanded} onClick={() => setExpanded(!expanded)}>
+      <CollapsibleSectionHeader
+        expanded={expanded}
+        onClick={() => setExpanded(!expanded)}
+        data-rubato-block-handle="recent"
+      >
         Recent
       </CollapsibleSectionHeader>
       {expanded ? (

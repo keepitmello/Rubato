@@ -36,6 +36,13 @@
 [data-rubato-section="cards"] > li > * {
   zoom: var(--rubato-scale-cards, 1);
 }
+/* The title and Recent are list items too (sidebar-blocks-edits.mjs) and keep their own parts. */
+[data-rubato-section="cards"] > li > [data-rubato-scope-label] {
+  zoom: var(--rubato-scale-title, 1);
+}
+[data-rubato-section="cards"] > li > [data-rubato-recent] {
+  zoom: var(--rubato-scale-recent, 1);
+}
 
 /* The home screen's project tabs (ProjectTab divides its drag offset back) and threads. */
 [data-rubato-section="home-tabs"] {

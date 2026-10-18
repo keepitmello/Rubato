@@ -17,6 +17,7 @@ export type RubatoSettingsSource =
   | "phone"
   | "about"
   | "homeProjects"
+  | "sidebarSections"
   | "titleModels"
   | "permissionsLink";
 
@@ -165,8 +166,14 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
       {
         key: "sidebar",
         title: "Sidebar",
-        rows: ["project-grouping", "project-order", "working-shelf"],
-        sources: ["general"],
+        rows: [
+          "project-grouping",
+          "project-order",
+          "working-shelf",
+          "rubato-recent-limit",
+          "rubato-sidebar-blocks",
+        ],
+        sources: ["general", "sidebarSections"],
       },
       {
         key: "auto-settle",
