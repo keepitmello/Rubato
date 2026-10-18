@@ -28,7 +28,6 @@ import {
   projectSlot,
 } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
-import { accountModelSuffix } from "../rubato-pi/src/account-lanes.mjs";
 import { readDisabledProviders, setProviderDisabled, readAccountLoadBalancing, setAccountLoadBalancing } from "../pi-runtime/features/providers/provider-switch.mjs";
 import { readObservedUsage, usageObservedPath } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import { collectUsage } from "./rubato-usage.mjs";
@@ -343,7 +342,7 @@ export async function printStatus(ctx = {}) {
     write(stdout, `${index + 1}) ${row.provider.label} — ${summaryOf(row)}`);
     if (row.state !== "connected") hint(stdout, methodHint(row.provider.id));
     for (const account of row.accounts) {
-      hint(stdout, `${accountRoleLabel(account)}${account.name} | ${account.source} | ${describeState(account.state)}${account.pinned ? " | 고정됨" : ""}`);
+      hint(stdout, `${account.name} | ${account.source} | ${describeState(account.state)}${account.pinned ? " | 고정됨" : ""}`);
     }
   });
   stdout.write("\n");
@@ -369,16 +368,9 @@ export function printLoginUsage(stdout = process.stdout) {
 }
 
 function formatAccount(account) {
-  const states = [`${accountRoleLabel(account)}${account.name}`, account.source, account.blocked ? "blocked" : "available"];
+  const states = [account.name, account.source, account.blocked ? "blocked" : "available"];
   if (account.pinned) states.push("pinned");
   return states.join(" | ");
-}
-
-function accountRoleLabel(account) {
-  if (account.modelSuffix === "") return "메인 계정 · ";
-  if (account.modelSuffix === "-sub") return "서브 계정 [sub] · ";
-  if (account.modelSuffix === "-sub2") return "서브 계정 2 [sub2] · ";
-  return "";
 }
 
 export async function listProviderAccounts(providerId, ctx) {
@@ -844,15 +836,6 @@ export async function statusJson(ctx) {
     })),
     setupToken: { path: claudeSetupTokenPath(ctx.env, ctx.home), account: claudeAccount(ctx.env) },
   };
-}
-
-/** Read-only identity of the account already assigned to this conversation. */
-export async function sessionAccountJson(sessionId, ctx = {}) {
-  if (typeof sessionId !== "string" || !sessionId) return null;
-  const bound = await repositoryOf(ctx).sessionBinding("anthropic", sessionId);
-  if (!bound) return null;
-  return { provider: "anthropic", name: bound.name,
-    modelSuffix: accountModelSuffix(await listProviderAccounts("anthropic", ctx), bound.name) };
 }
 
 /** 연결된 계정마다 구독 사용량. GUI 의 Usage 화면이 서는 자리다 (rubato-usage.mjs). */

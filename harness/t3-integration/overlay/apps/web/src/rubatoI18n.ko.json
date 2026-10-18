@@ -3053,11 +3053,6 @@
   "Main account": "메인 계정",
   "Sub account": "서브 계정",
   "Sub account 2": "서브 계정 2",
-  "Claude · Main account": "Claude · 메인 계정",
-  "Claude · Sub account [sub]": "Claude · 서브 계정 [sub]",
-  "Claude · Sub account 2 [sub2]": "Claude · 서브 계정 2 [sub2]",
-  "Codex · Main account": "Codex · 메인 계정",
-  "Codex · Sub account [sub]": "Codex · 서브 계정 [sub]",
   "On assigns new sessions by remaining quota and time to reset. Off uses the regular model, [sub], or pinned account for new sessions. Each session keeps its first account, even after reconnecting or hitting a limit. Start a new session to change accounts.": "켜면 남은 한도와 초기화 시간에 맞춰 새 세션에 계정을 배정합니다. 끄면 새 세션에서 일반 모델·[sub]·고정한 계정을 씁니다. 재연결하거나 한도에 도달해도 같은 세션은 처음 계정만 씁니다. 계정을 바꾸려면 새 세션을 시작하세요.",
   "Pick a [sub] model for another account, or pin an account to use only that one.": "다른 계정은 [sub] 모델로 고를 수 있습니다. 특정 계정만 쓰려면 고정하세요.",
   "To use another account, pick a [sub] model or pin an account before starting a new session.": "다른 계정을 쓰려면 [sub] 모델을 고르거나 계정을 고정한 뒤 새 세션을 시작하세요.",
@@ -7634,10 +7629,6 @@
   [
    "Your {0} account",
    "내 {0} 계정"
-  ],
-  [
-   "{0} · Fixed for this session",
-   "{0} · 이 세션에서 고정"
   ],
   [
    "이 대화는 {0} 프롬프트로 시작했어",

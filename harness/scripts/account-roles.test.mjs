@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { accountModelSuffix } from "../rubato-pi/src/account-lanes.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
-import { createFileCredentials, printStatus, sessionAccountJson, statusJson, usageJson } from "./rubato-auth.mjs";
+import { createFileCredentials, statusJson } from "./rubato-auth.mjs";
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), "rubato-account-roles-"));
@@ -18,7 +18,7 @@ function fixture(t) {
   const credential = { type: "oauth", access: "secret", refresh: "secret-refresh", expires: Date.now() + 99_999 };
   writeFileSync(env.RUBATO_AUTH_PATH, JSON.stringify({ anthropic: credential }));
   return {
-    env, home, credential, credentials: createFileCredentials(env.RUBATO_AUTH_PATH),
+    env, credentials: createFileCredentials(env.RUBATO_AUTH_PATH),
     repository: new CredentialSlotRepository(env.RUBATO_AUTH_POOL_STATE),
     vertexKeychain: { read: async () => undefined },
   };
@@ -40,7 +40,7 @@ test("account roles follow the same mapping as model requests, never the interna
   }
 });
 
-test("settings and terminal expose setup-token as main and flat OAuth default as sub", async (t) => {
+test("settings expose setup-token as main and flat OAuth default as sub independently of pinning", async (t) => {
   const ctx = fixture(t);
   await ctx.credentials.modify("anthropic", async (credential) => ({ ...credential, pinned: "default" }));
   const claude = (await statusJson(ctx)).providers.find((provider) => provider.id === "anthropic");
@@ -48,48 +48,4 @@ test("settings and terminal expose setup-token as main and flat OAuth default as
     { name: "default", modelSuffix: "-sub", pinned: true },
     { name: "setup-token", modelSuffix: "", pinned: false },
   ], "pinning changes placement policy, never which model row names an account");
-  let out = "";
-  await printStatus({ ...ctx, stdout: { write: (chunk) => { out += chunk; } } });
-  assert.match(out, /메인 계정 · setup-token/);
-  assert.match(out, /서브 계정 \[sub\] · default/);
-  assert.ok(!out.includes(ctx.credential.access));
-});
-
-test("usage rows retain main/sub identities even when their measurements fail", async (t) => {
-  const ctx = fixture(t);
-  const result = await usageJson(ctx, {
-    providers: [{ id: "anthropic", label: "Anthropic" }],
-    fetchImpl: async () => new Response("unavailable", { status: 503 }),
-  });
-  assert.deepEqual(result.accounts.map(({ account, modelSuffix }) => ({ account, modelSuffix })), [
-    { account: "default", modelSuffix: "-sub" },
-    { account: "setup-token", modelSuffix: "" },
-  ]);
-  assert.ok(result.accounts.every((account) => account.usageLimits.unavailable));
-});
-
-test("conversation identity comes from the persisted assignment and survives reload without allocating", async (t) => {
-  const ctx = fixture(t);
-  assert.equal(await sessionAccountJson("unassigned", ctx), null);
-  await ctx.repository.bindSessionSlot("anthropic", "thread", () => ({
-    name: "default", lane: "stored",
-  }));
-  const expected = { provider: "anthropic", name: "default", modelSuffix: "-sub" };
-  assert.deepEqual(await sessionAccountJson("thread", ctx), expected);
-  await ctx.credentials.modify("anthropic", async (credential) => ({ ...credential, pinned: "setup-token" }));
-  assert.deepEqual(await sessionAccountJson("thread", { ...ctx,
-    repository: new CredentialSlotRepository(ctx.env.RUBATO_AUTH_POOL_STATE) }), expected);
-  assert.equal(await ctx.repository.sessionBinding("anthropic", "unassigned"), undefined);
-  assert.ok(!JSON.stringify(expected).includes(ctx.credential.access));
-});
-
-test("new accounts update the displayed model mapping without moving the conversation account", async (t) => {
-  const ctx = fixture(t);
-  await ctx.repository.bindSessionSlot("anthropic", "legacy", () => ({ name: "default", lane: "stored" }));
-  assert.deepEqual(await sessionAccountJson("legacy", ctx), { provider: "anthropic", name: "default", modelSuffix: "-sub" });
-  await ctx.credentials.modify("anthropic", async (credential) => ({
-    ...credential, accounts: [{ name: "default", ...credential }, { name: "sub", access: "second", refresh: "r", expires: Date.now() + 99_999 }],
-  }));
-  assert.deepEqual(await sessionAccountJson("legacy", ctx), { provider: "anthropic", name: "default", modelSuffix: "-sub2" });
-  assert.deepEqual(await ctx.repository.sessionBinding("anthropic", "legacy"), { name: "default", lane: "stored" });
 });

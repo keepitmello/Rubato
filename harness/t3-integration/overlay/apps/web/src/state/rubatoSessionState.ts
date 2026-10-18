@@ -78,14 +78,7 @@ export interface RubatoCacheSnapshot {
   };
 }
 
-export interface RubatoSessionAccount {
-  readonly provider: string;
-  readonly name: string;
-  readonly modelSuffix: "" | "-sub" | "-sub2" | null;
-}
-
 export interface RubatoSessionState {
-  readonly account?: RubatoSessionAccount | null;
   readonly speedIndex: number | null;
   readonly cache: RubatoCacheSnapshot | null;
   readonly agents: ReadonlyArray<RubatoSessionAgent>;

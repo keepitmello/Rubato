@@ -30,6 +30,23 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   const first=await applyIntegration({t3:root});
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
   assert.equal(first.changes.length,Object.keys(installed.files).length);
+  // Account roles belong in settings, not in the conversation composer.
+  for (const relative of [
+    'apps/web/src/components/chat/ChatComposer.tsx',
+    'apps/web/src/components/ChatView.tsx',
+  ]) {
+    assert.doesNotMatch(await readFile(path.join(root,relative),'utf8'), /RubatoSessionAccountBadge|rubatoAccount\b/);
+  }
+  await assert.rejects(readFile(path.join(root,'apps/web/src/components/chat/RubatoSessionAccountBadge.tsx')), {code:'ENOENT'});
+  assert.equal((await applyIntegration({t3:root})).changes.length,0);
+  // Upgrading the previous overlay removes its composer account badge too.
+  const oldBadge='apps/web/src/components/chat/RubatoSessionAccountBadge.tsx';
+  const oldBadgeText='// previous account badge\n';
+  installed.files[oldBadge]={original:null,installedHash:createHash('sha256').update(oldBadgeText).digest('hex')};
+  await writeFile(path.join(root,oldBadge),oldBadgeText);
+  await writeFile(path.join(root,'.rubato-pi-overlay.json'),JSON.stringify(installed));
+  assert.deepEqual((await applyIntegration({t3:root})).changes,[oldBadge]);
+  await assert.rejects(readFile(path.join(root,oldBadge)), {code:'ENOENT'});
   assert.equal((await applyIntegration({t3:root})).changes.length,0);
   // An intact old replacement must upgrade even when the new transform can no
   // longer reverse it. The manifest hash distinguishes it from a user's edit.

@@ -5,7 +5,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { setImmediate as nextTurn } from 'node:timers/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { SessionStateFold, createSessionStateService, handleSessionStateRequest } from '../src/session-state.mjs';
+import { SessionStateFold, handleSessionStateRequest } from '../src/session-state.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 
 const members = [
@@ -79,53 +79,6 @@ test('the route answers a thread it has never seen with an empty state', async (
   assert.deepEqual(await response.json(), { speedIndex: null, agents: [], teams: [], cache: null });
   const bad = await handleSessionStateRequest({ read: () => null }, new Request('http://x/rubato/session-state'));
   assert.equal(bad.status, 400);
-});
-
-test('the conversation account is read by persisted engine session id, not thread id or selected model', async () => {
-  let current = 'engine-session';
-  const reads = [];
-  const account = { provider: 'anthropic', name: 'default', modelSuffix: '-sub' };
-  const service = createSessionStateService({
-    bridge: () => ({
-      knownState: () => current ? { sessionId: current } : undefined,
-      sessionState: () => ({ speedIndex: null, agents: [], teams: [], cache: null }),
-    }),
-    readAccount: async (id) => { reads.push(id); return account; },
-  });
-  const response = await handleSessionStateRequest(service, new Request('http://x/rubato/session-state?threadId=t3-thread'));
-  assert.deepEqual((await response.json()).account, account);
-  assert.deepEqual(reads, ['engine-session']);
-  current = null;
-  assert.equal((await service.read('t3-thread')).account, null);
-  assert.deepEqual(reads, ['engine-session'], 'unassigned conversations are not guessed');
-});
-
-test('an account read cannot paint the previous conversation after a session rebind', async () => {
-  let current = 'old';
-  const service = createSessionStateService({
-    bridge: () => ({
-      knownState: () => ({ sessionId: current }),
-      sessionState: () => ({ speedIndex: current === 'old' ? 40 : 60, agents: [], teams: [], cache: null }),
-    }),
-    readAccount: async () => {
-      current = 'new';
-      return { provider: 'anthropic', name: 'old-account', modelSuffix: '-sub' };
-    },
-  });
-  const state = await service.read('t3-thread');
-  assert.equal(state.account, null);
-  assert.equal(state.speedIndex, 60);
-});
-
-test('an unreadable account remains unknown without hiding other conversation state', async () => {
-  const service = createSessionStateService({
-    bridge: () => ({
-      knownState: () => ({ sessionId: 'engine-session' }),
-      sessionState: () => ({ speedIndex: 71, agents: [], teams: [], cache: null }),
-    }),
-    readAccount: async () => { throw new Error('unreadable'); },
-  });
-  assert.deepEqual(await service.read('t3-thread'), { speedIndex: 71, agents: [], teams: [], cache: null, account: null });
 });
 
 test('a thread bound to another session shows nothing of the previous one', () => {

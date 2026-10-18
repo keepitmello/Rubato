@@ -10,7 +10,6 @@ export const providerOverlays = [
   'apps/web/src/state/rubatoAuth.ts',
   'apps/web/src/rubatoAccountModelOrder.ts',
   'apps/web/src/rubatoAccountLabel.ts',
-  'apps/web/src/components/chat/RubatoSessionAccountBadge.tsx',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
   // Titles and summaries: the session-title ladder the Stats card shares.
   'apps/web/src/components/settings/RubatoTitleModels.tsx',
@@ -56,16 +55,6 @@ const t3Route = [
 ].join('\n');
 
 export const providerEdits = {
-  'apps/web/src/components/chat/ChatComposer.tsx': [
-    ['import { ComposerImageThumbnail } from "./ComposerImageThumbnail";',
-      'import { RubatoSessionAccountBadge } from "./RubatoSessionAccountBadge";\n'],
-    ['  sessionSpeedLabel?: string | null;\n',
-      '  sessionSpeedLabel?: string | null;\n  rubatoAccount?: import("~/state/rubatoSessionState").RubatoSessionAccount | null | undefined;\n', 'replace'],
-    ['    sessionSpeedLabel,\n    compactThreadUnavailable,',
-      '    sessionSpeedLabel,\n    rubatoAccount,\n    compactThreadUnavailable,', 'replace'],
-    ['                  {sessionSpeedLabel ? (',
-      '                  <RubatoSessionAccountBadge account={rubatoAccount} model={selectedModel} />\n'],
-  ],
   'apps/web/src/modelOrdering.ts': [
     ['import * as Arr from "effect/Array";', 'import { rubatoAccountModelRank } from "./rubatoAccountModelOrder";\n'],
     ['  return Arr.sort(models, Order.combineAll(orders));', '  return Arr.sort(models, Order.combineAll([Order.mapInput(Order.Number, (model: T) => rubatoAccountModelRank(model.slug)), ...orders]));', 'replace'],
