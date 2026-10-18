@@ -1,7 +1,9 @@
 /**
  * The Team and Agents sections of the thread details, between Workspace and Version Control
  * (floating-menu-edits.mjs). They answer "what is running for this thread" at a glance:
- * - Team: every taskforce that has not ended, one row each, its members as a strip of pips.
+ * - Team: every taskforce that has not ended, one row each, its members as a strip of glyphs.
+ *   Shape says the role (circle owner, diamond verifier, owners first); fill and motion say the
+ *   state with the Agents surface's colors, so a role never borrows a state's color.
  * - Agents: agents working outside a team, up to AGENT_ROW_LIMIT rows, the rest counted. A row
  *   gives the task its own line and puts the model and elapsed time under it.
  * A section shows only while something in it is running; finished work is a count that opens
@@ -11,13 +13,15 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { ArrowUpRightIcon, UsersIcon } from "lucide-react";
-import { useCallback } from "react";
+import { Fragment, useCallback } from "react";
 
 import { cn } from "~/lib/utils";
 import { useRightPanelStore } from "../../rightPanelStore";
 import { setOpenedInPanel } from "../../rubatoPanelViews";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
   AgentElapsed,
+  STATUS_VISUALS,
   StatusDot,
   agentTaskLabel,
   isLive,
@@ -40,11 +44,23 @@ export const AGENT_ROW_LIMIT = 3;
 
 type Status = RubatoSubagent["status"];
 
+export type TeamMemberRole = "owner" | "verifier";
+
+export interface ThreadDetailsTeamMember {
+  readonly id: string;
+  readonly name: string;
+  readonly role: TeamMemberRole;
+  readonly status: Status;
+}
+
 export interface ThreadDetailsTeamRow {
   readonly id: string;
   readonly name: string;
-  readonly memberStatuses: ReadonlyArray<Status>;
-  readonly doneCount: number;
+  /** Owners, then verifiers; each group keeps the team's order. */
+  readonly members: ReadonlyArray<ThreadDetailsTeamMember>;
+  readonly workingCount: number;
+  readonly idleCount: number;
+  readonly failedCount: number;
 }
 
 export interface ThreadDetailsAgentsSummary {
@@ -55,6 +71,11 @@ export interface ThreadDetailsAgentsSummary {
   readonly finishedAgentCount: number;
 }
 
+/** A member without a role (an older answer) draws as an owner. */
+function memberRole(member: RubatoSubagent): TeamMemberRole {
+  return member.role === "verifier" ? "verifier" : "owner";
+}
+
 /** The rows both sections draw: running teams, then at most `limit` working direct agents. */
 export function summarizeThreadDetailsAgents(
   model: AgentPanelModel,
@@ -62,12 +83,23 @@ export function summarizeThreadDetailsAgents(
 ): ThreadDetailsAgentsSummary {
   const running = model.workflows.filter((group) => !isSettled(group.workflow.status));
   const teams = running.map((group) => {
-    const members = teamMembers(group);
+    const all = teamMembers(group).map((member) => ({
+      id: member.id,
+      name: member.memberName ?? agentTaskLabel(member),
+      role: memberRole(member),
+      status: member.status,
+    }));
+    const members = [
+      ...all.filter((member) => member.role === "owner"),
+      ...all.filter((member) => member.role === "verifier"),
+    ];
     return {
       id: group.workflow.id,
       name: group.workflow.workflowName ?? agentTaskLabel(group.workflow),
-      memberStatuses: members.map((member) => member.status),
-      doneCount: members.filter((member) => member.status === "completed").length,
+      members,
+      workingCount: members.filter((member) => isLive(member.status)).length,
+      idleCount: members.filter((member) => member.status === "idle").length,
+      failedCount: members.filter((member) => member.status === "failed").length,
     };
   });
   const live = model.directAgents.filter((agent) => isLive(agent.status));
@@ -93,11 +125,17 @@ export function overflowLabel(more: number, finished: number): string | null {
   return shown.length > 0 ? shown.join(" · ") : null;
 }
 
-/** Same colors as the Agents surface's dots; a waiting member is a hollow ring there too. */
-const PIP_CLASS: Record<Status, string> = {
-  pending: "bg-info animate-pulse",
-  running: "bg-info animate-pulse",
-  waiting: "bg-info animate-pulse",
+/** Circle for an owner; a verifier's square turned on its corner reads as the same size. */
+const GLYPH_SHAPE_CLASS: Record<TeamMemberRole, string> = {
+  owner: "size-2.5 rounded-full",
+  verifier: "size-2 rotate-45 rounded-[2px]",
+};
+
+/** Same colors as the Agents surface's dots: filled and breathing works, a hollow ring rests. */
+const GLYPH_STATUS_CLASS: Record<Status, string> = {
+  pending: "bg-info ring-2 ring-info/25 animate-pulse",
+  running: "bg-info ring-2 ring-info/25 animate-pulse",
+  waiting: "bg-info ring-2 ring-info/25 animate-pulse",
   idle: "bg-transparent ring-1 ring-inset ring-muted-foreground/70",
   completed: "bg-success",
   failed: "bg-destructive",
@@ -133,24 +171,84 @@ function OverflowRow({ label, onOpen }: { label: string; onOpen: () => void }) {
 }
 
 function TeamRow({ team, onOpen }: { team: ThreadDetailsTeamRow; onOpen: () => void }) {
-  const total = team.memberStatuses.length;
+  const total = team.members.length;
+  const firstVerifier = team.members.findIndex((member) => member.role === "verifier");
   return (
     <ThreadDetailsControl multiline onClick={onOpen} aria-label={`${team.name}: open Agents`}>
       <UsersIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
       <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
         <span className={cn("block truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>{team.name}</span>
-        {total > 0 ? (
-          <span aria-hidden className="flex gap-0.75">
-            {team.memberStatuses.map((status, index) => (
-              <span key={index} className={cn("h-1 w-3.5 rounded-full", PIP_CLASS[status])} />
-            ))}
-          </span>
-        ) : null}
-      </span>
-      <span className="shrink-0 font-mono text-[.7rem] font-normal text-muted-foreground tabular-nums">
-        {total > 0 ? `${team.doneCount}/${total} done` : "starting"}
+        {/* Counts sit beside the glyphs, not the name, and wrap under them when a big team fills the line. */}
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+          {total > 0 ? (
+            <span aria-hidden className="flex shrink-0 items-center gap-1.5 px-0.5 py-0.5">
+              {team.members.map((member, index) => (
+                <Fragment key={member.id}>
+                  {index === firstVerifier && index > 0 ? (
+                    <span className="mx-0.5 h-2.5 w-px bg-border" />
+                  ) : null}
+                  <MemberGlyph member={member} />
+                </Fragment>
+              ))}
+            </span>
+          ) : null}
+          <TeamCounts team={team} />
+        </span>
       </span>
     </ThreadDetailsControl>
+  );
+}
+
+/** One member; hovering it names the member and its state, since the strip only draws them. */
+function MemberGlyph({ member }: { member: ThreadDetailsTeamMember }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <span
+            data-role={member.role}
+            data-status={member.status}
+            data-name={member.name}
+            className={cn(
+              "shrink-0",
+              GLYPH_SHAPE_CLASS[member.role],
+              GLYPH_STATUS_CLASS[member.status],
+            )}
+          />
+        }
+      />
+      <TooltipPopup side="top">
+        <span className="flex items-center gap-1.5">
+          <span className="font-medium">{member.name}</span>
+          <span className="text-muted-foreground">{STATUS_VISUALS[member.status].label}</span>
+        </span>
+      </TooltipPopup>
+    </Tooltip>
+  );
+}
+
+const TEAM_COUNTS_CLASS =
+  "ms-auto flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[.7rem] font-normal text-muted-foreground tabular-nums";
+
+/** "2 working · 1 idle", nonzero parts only, each its own text so it reads like the Agents surface. */
+function TeamCounts({ team }: { team: ThreadDetailsTeamRow }) {
+  if (team.members.length === 0) {
+    return <span className={TEAM_COUNTS_CLASS}>starting</span>;
+  }
+  const parts = [
+    { key: "working", count: team.workingCount, className: "text-info-foreground" },
+    { key: "idle", count: team.idleCount, className: undefined },
+    { key: "failed", count: team.failedCount, className: "text-destructive-foreground" },
+  ].filter((part) => part.count > 0);
+  return (
+    <span className={TEAM_COUNTS_CLASS}>
+      {parts.map((part, index) => (
+        <Fragment key={part.key}>
+          {index > 0 ? <span>·</span> : null}
+          <span className={part.className}>{`${part.count} ${part.key}`}</span>
+        </Fragment>
+      ))}
+    </span>
   );
 }
 
