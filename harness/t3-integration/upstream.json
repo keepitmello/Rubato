@@ -132,6 +132,8 @@
     "apps/web/src/main.tsx": "e8a6b644470d7f466b9352bc6ca54fd69cdc68532e156a5c0a98a12fb511394d",
     "apps/web/src/hooks/useSidebarProjectGroups.ts": "c565bc2cd67ede763070be0d3c41a012cf154e993dc8ac3ff64b20a962027935",
     "apps/web/src/components/chat/DraftHeroHeadline.tsx": "33cf0a5a6c651f16232eb8e54ed07cc388d4ac98107e5231f0fc48da36490019",
-    "apps/web/src/components/settings/ProjectsSettings.tsx": "68ad19d3338024fa60d11522d4cc79ebff59633f85114b9a3e43021b95e49854"
+    "apps/web/src/components/settings/ProjectsSettings.tsx": "68ad19d3338024fa60d11522d4cc79ebff59633f85114b9a3e43021b95e49854",
+    "apps/web/src/assets/assetUrls.ts": "2f54c6ad606937dacbb2ec4973e42080dbf110db445a835f7c09c9193a8da330",
+    "apps/web/src/assets/assetUrls.test.ts": "902ba5254012297f1f0565adb7eff7dd5416819577fb461f85acff55592903aa"
   }
 }

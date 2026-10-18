@@ -17,6 +17,7 @@ import { rewindEdits, rewindOverlays } from './rewind-edits.mjs';
 import { sessionMessageEdits, sessionMessageOverlays } from './session-message-edits.mjs';
 import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
 import { officeEdits, officeOverlays } from './office-edits.mjs';
+import { assetRevisionEdits, assetRevisionOverlays } from './asset-revision-edits.mjs';
 import { surfaceMenuEdits, surfaceMenuOverlays } from './surface-menu-edits.mjs';
 import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.mjs';
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
@@ -1643,6 +1644,11 @@ edits['apps/web/src/routeTree.gen.ts'] = [
 // Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
 overlays.push(...officeOverlays);
 for (const [relative, changes] of Object.entries(officeEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// A host file a session rewrites and shows again shows as it is now (asset-revision-edits.mjs).
+overlays.push(...assetRevisionOverlays);
+for (const [relative, changes] of Object.entries(assetRevisionEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Grouped surface launcher and "+" menu (surface-menu-edits.mjs).
