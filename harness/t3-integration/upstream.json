@@ -72,6 +72,7 @@
     "packages/contracts/src/settings.ts": "9920a3d09738357eca10ad67a38e392eb6a3b5f7fcc2c77314e05a0712bedbbf",
     "packages/contracts/src/settings.test.ts": "7b66311a96eea3650c0b8a68b23e2f7d65df983d7308dea89be37d132efe7eb1",
     "apps/web/src/index.css": "b391a47112e8f1b380178b92d9cf75512a2aa7dc6ff5986b0b143b6ac5dd95bc",
+    "apps/web/src/components/ChatMarkdown.tsx": "93fcfd38ae5a7f4837cda8e5c0378bad31cb90083c82c83b54f44772ce3f84a2",
     "tsconfig.base.json": "d2d4a7acec31e82783f3d3b27018d9e5233d22b16ab683111147b8df8c2b7caa",
     "apps/web/src/components/threadActionMenu.logic.ts": "71eafa53a0a6967775fbdb61d50f435a10a74adc7a5dc7ffd551d00469a7a0f1",
     "apps/web/src/components/Sidebar.tsx": "07edf16e941252c7e18279bb9e9cfff491e3e73f93f6ea6ba4ca0747cd9a06f6",
