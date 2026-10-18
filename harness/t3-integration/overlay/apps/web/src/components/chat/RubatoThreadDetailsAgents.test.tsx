@@ -92,9 +92,6 @@ describe("summarizeThreadDetailsAgents", () => {
           { id: "m3", name: "m3", role: "owner", status: "completed" },
           { id: "m2", name: "m2", role: "verifier", status: "idle" },
         ],
-        workingCount: 1,
-        idleCount: 1,
-        failedCount: 0,
       },
     ]);
     expect(summary.agents.map((row) => row.id)).toEqual(["solo"]);
@@ -164,8 +161,7 @@ describe("RubatoThreadDetailsAgents", () => {
     expect(teamAt).toBeGreaterThan(-1);
     expect(agentsAt).toBeGreaterThan(teamAt);
     expect(html.slice(teamAt, agentsAt)).toContain("v13.4 revision");
-    expect(html.slice(teamAt, agentsAt)).toContain("1 working");
-    expect(html.slice(teamAt, agentsAt)).not.toContain("done");
+    expect(html.slice(teamAt, agentsAt)).not.toMatch(/working|idle|done/);
     expect(html.slice(agentsAt)).toContain("Fix workspace label");
     expect(html.slice(agentsAt)).toContain("1 working");
     expect(html.slice(agentsAt)).not.toContain("Task m1");
@@ -202,8 +198,7 @@ describe("RubatoThreadDetailsAgents", () => {
     expect(classOf("verify")).toContain("rotate-45");
     expect(classOf("backend")).toContain("bg-info");
     expect(classOf("schema")).toContain("bg-transparent");
-    expect(html).toContain("1 working");
-    expect(html).toContain("2 idle");
+    expect(html).not.toMatch(/\d (working|idle|failed)/);
   });
 
   it("puts a divider between owners and verifiers only when both are there", () => {

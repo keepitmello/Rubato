@@ -3,7 +3,8 @@
  * (floating-menu-edits.mjs). They answer "what is running for this thread" at a glance:
  * - Team: every taskforce that has not ended, one row each, its members as a strip of glyphs.
  *   Shape says the role (circle owner, diamond verifier, owners first); fill and motion say the
- *   state with the Agents surface's colors, so a role never borrows a state's color.
+ *   state with the Agents surface's colors, so a role never borrows a state's color. The strip is
+ *   the whole summary: no count text beside it.
  * - Agents: agents working outside a team, up to AGENT_ROW_LIMIT rows, the rest counted. A row
  *   gives the task its own line and puts the model and elapsed time under it.
  * A section shows only while something in it is running; finished work is a count that opens
@@ -58,9 +59,6 @@ export interface ThreadDetailsTeamRow {
   readonly name: string;
   /** Owners, then verifiers; each group keeps the team's order. */
   readonly members: ReadonlyArray<ThreadDetailsTeamMember>;
-  readonly workingCount: number;
-  readonly idleCount: number;
-  readonly failedCount: number;
 }
 
 export interface ThreadDetailsAgentsSummary {
@@ -97,9 +95,6 @@ export function summarizeThreadDetailsAgents(
       id: group.workflow.id,
       name: group.workflow.workflowName ?? agentTaskLabel(group.workflow),
       members,
-      workingCount: members.filter((member) => isLive(member.status)).length,
-      idleCount: members.filter((member) => member.status === "idle").length,
-      failedCount: members.filter((member) => member.status === "failed").length,
     };
   });
   const live = model.directAgents.filter((agent) => isLive(agent.status));
@@ -178,22 +173,18 @@ function TeamRow({ team, onOpen }: { team: ThreadDetailsTeamRow; onOpen: () => v
       <UsersIcon className={THREAD_DETAILS_PANEL_ICON_CLASS} />
       <span className="flex min-w-0 flex-1 flex-col gap-1.5 py-1">
         <span className={cn("block truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>{team.name}</span>
-        {/* Counts sit beside the glyphs, not the name, and wrap under them when a big team fills the line. */}
-        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-          {total > 0 ? (
-            <span aria-hidden className="flex shrink-0 items-center gap-1.5 px-0.5 py-0.5">
-              {team.members.map((member, index) => (
-                <Fragment key={member.id}>
-                  {index === firstVerifier && index > 0 ? (
-                    <span className="mx-0.5 h-2.5 w-px bg-border" />
-                  ) : null}
-                  <MemberGlyph member={member} />
-                </Fragment>
-              ))}
-            </span>
-          ) : null}
-          <TeamCounts team={team} />
-        </span>
+        {total > 0 ? (
+          <span aria-hidden className="flex items-center gap-1.5 px-0.5 py-0.5">
+            {team.members.map((member, index) => (
+              <Fragment key={member.id}>
+                {index === firstVerifier && index > 0 ? (
+                  <span className="mx-0.5 h-2.5 w-px bg-border" />
+                ) : null}
+                <MemberGlyph member={member} />
+              </Fragment>
+            ))}
+          </span>
+        ) : null}
       </span>
     </ThreadDetailsControl>
   );
@@ -224,31 +215,6 @@ function MemberGlyph({ member }: { member: ThreadDetailsTeamMember }) {
         </span>
       </TooltipPopup>
     </Tooltip>
-  );
-}
-
-const TEAM_COUNTS_CLASS =
-  "ms-auto flex shrink-0 items-center gap-1 whitespace-nowrap font-mono text-[.7rem] font-normal text-muted-foreground tabular-nums";
-
-/** "2 working · 1 idle", nonzero parts only, each its own text so it reads like the Agents surface. */
-function TeamCounts({ team }: { team: ThreadDetailsTeamRow }) {
-  if (team.members.length === 0) {
-    return <span className={TEAM_COUNTS_CLASS}>starting</span>;
-  }
-  const parts = [
-    { key: "working", count: team.workingCount, className: "text-info-foreground" },
-    { key: "idle", count: team.idleCount, className: undefined },
-    { key: "failed", count: team.failedCount, className: "text-destructive-foreground" },
-  ].filter((part) => part.count > 0);
-  return (
-    <span className={TEAM_COUNTS_CLASS}>
-      {parts.map((part, index) => (
-        <Fragment key={part.key}>
-          {index > 0 ? <span>·</span> : null}
-          <span className={part.className}>{`${part.count} ${part.key}`}</span>
-        </Fragment>
-      ))}
-    </span>
   );
 }
 
