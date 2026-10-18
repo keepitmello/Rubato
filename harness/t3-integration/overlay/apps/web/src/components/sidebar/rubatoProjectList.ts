@@ -1,33 +1,24 @@
-// The shared project list as React state: the rail and the home tabs both read
-// it through useRubatoProjectList, so a remove, add or move in one shows in
-// the other at once (useLocalStorage notifies every reader in the window).
+// The shared project list as React state for the surfaces that edit it in
+// place: the rail's Projects window, the home tabs and Settings > Projects
+// read it through useRubatoProjectList, so a remove, add or move in one shows
+// in the others at once. The order itself, and the surfaces that only read
+// it, are in rubatoProjectOrder.ts.
 import { useCallback, useMemo } from "react";
-import * as Schema from "effect/Schema";
 
 import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 
-import { useLocalStorage } from "../../hooks/useLocalStorage";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { useThreadShells } from "../../state/entities";
 import { useUiStateStore } from "../../uiStateStore";
+import { useRubatoProjectOrder } from "./rubatoProjectOrder";
 import {
   EMPTY_PROJECT_LIST_STATE,
   addToProjectList,
-  lastActivityByGroup,
   moveInProjectList,
   removeFromProjectList,
-  resolveProjectList,
   signalByGroup,
-  type RubatoProjectListState,
 } from "./rubatoProjectRail.logic";
-
-export const RUBATO_PROJECT_LIST_KEY = "rubato:project-list:v1";
-
-const ProjectListStateSchema = Schema.Struct({
-  order: Schema.NullOr(Schema.Array(Schema.String)),
-  hidden: Schema.Array(Schema.String),
-});
 
 export function useRubatoProjectList() {
   const allGroups = useSidebarProjectGroups();
@@ -46,16 +37,7 @@ export function useRubatoProjectList() {
   );
   const threads = useThreadShells();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);
-  const [state, setState] = useLocalStorage<RubatoProjectListState, unknown>(
-    RUBATO_PROJECT_LIST_KEY,
-    EMPTY_PROJECT_LIST_STATE,
-    ProjectListStateSchema as unknown as Schema.Codec<RubatoProjectListState, unknown>,
-  );
-  const lastActivity = useMemo(() => lastActivityByGroup(groups, threads), [groups, threads]);
-  const list = useMemo(
-    () => resolveProjectList({ groups, state, lastActivity, now: Date.now() }),
-    [groups, lastActivity, state],
-  );
+  const { list, lastActivity, state, setState } = useRubatoProjectOrder(groups);
   const signals = useMemo(
     () => signalByGroup(groups, threads, localLastVisitedAt),
     [groups, localLastVisitedAt, threads],
@@ -66,5 +48,8 @@ export function useRubatoProjectList() {
     (key: string, overKey: string) => setState(moveInProjectList(list, key, overKey)),
     [list, setState],
   );
-  return { groups, threads, list, signals, lastActivity, remove, add, move };
+  /** Back to following activity, as before the first edit. */
+  const reset = useCallback(() => setState(EMPTY_PROJECT_LIST_STATE), [setState]);
+  const edited = state.order !== null || state.hidden.length > 0;
+  return { groups, threads, list, signals, lastActivity, remove, add, move, reset, edited };
 }

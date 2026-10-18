@@ -32,7 +32,8 @@ import {
   type RubatoSignal,
 } from "./rubatoProjectRail.logic";
 
-function activityLabel(ms: number | undefined): string {
+/** "3m", "2d": how long since a project last moved. */
+export function activityLabel(ms: number | undefined): string {
   if (!ms) return "";
   const label = formatRelativeTimeLabel(new Date(ms).toISOString());
   if (label === "just now") return "now";

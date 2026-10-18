@@ -1221,8 +1221,10 @@
   "Edit description": "설명 편집하기",
   "Edit device host": "기기 호스트 편집",
   "Edit from here?": "여기부터 수정할까요?",
+  "Edit list": "목록 편집하기",
   "Edit message": "메시지 수정하기",
   "Edit name and options": "이름 및 옵션 편집하기",
+  "Edit project list…": "프로젝트 목록 편집하기…",
   "Edit queued message": "큐에 있는 메시지 수정하기",
   "Edit shortcut for Composer: Send and Start New Thread: ⌥⌘Enter": "입력창: 보내고 새 스레드 시작 단축키 편집: ⌥⌘Enter",
   "Edit task": "작업 수정",
@@ -2166,6 +2168,7 @@
   "No project": "프로젝트 없음",
   "No project folder recorded yet": "아직 기록된 프로젝트 폴더 없음",
   "No project for this memory": "이 기억에 연결된 프로젝트가 없습니다",
+  "No projects here. Add one from other projects with +.": "여기에 프로젝트가 없습니다. 다른 프로젝트에서 +로 추가하세요.",
   "No projects in this workspace": "이 작업 공간에 프로젝트가 없습니다",
   "No projects yet": "아직 프로젝트가 없습니다",
   "No provider available": "사용 가능한 프로바이더 없음",
@@ -2257,6 +2260,8 @@
   "One literal argument per row, in launch order.": "실행 순서대로 한 줄에 리터럴 인수 하나씩 입력합니다.",
   "One moment while this environment verifies the agent's request.": "이 환경에서 에이전트의 요청을 확인하는 동안 잠시만 기다려 주세요.",
   "One or two letters or numbers.": "글자나 숫자 1~2자.",
+  "One order for every place that lists projects: the Projects window, the home tabs and the new-thread pickers. Drag to reorder, and choose a project to open its settings.": "프로젝트가 나오는 모든 곳이 이 순서를 따릅니다. 프로젝트 창, 홈 탭, 새 스레드 선택기가 모두 같습니다. 끌어서 순서를 바꾸고, 프로젝트를 누르면 그 프로젝트의 설정이 열립니다.",
+  "One order for every project list: the Projects window, the home tabs and the new-thread pickers.": "프로젝트 창, 홈 탭, 새 스레드 선택기가 함께 따르는 하나의 순서입니다.",
   "Only available in the desktop app.": "데스크톱 앱에서만 사용할 수 있습니다.",
   "Only invited people": "초대된 사람만",
   "Only the box you write prompts in. Mono works well here.": "프롬프트를 입력하는 상자에만 적용됩니다. 고정폭 글꼴이 잘 어울립니다.",
@@ -3411,6 +3416,7 @@
   "Some workspace entries are not shown.": "일부 작업 공간 항목이 표시되지 않았습니다.",
   "Something went wrong.": "문제가 발생했습니다.",
   "Sort": "정렬",
+  "Sort by recent activity": "최근 활동순으로 되돌리기",
   "Sort projects": "프로젝트 정렬",
   "Sort pull requests": "PR 정렬",
   "Sort pull requests: Merge readiness": "PR 정렬: merge 준비 상태",
@@ -6809,6 +6815,10 @@
   [
    "Rename {0}",
    "{0} 이름 변경"
+  ],
+  [
+   "Reorder {0}",
+   "{0} 순서 바꾸기"
   ],
   [
    "Reorder {0}, position {1}",

@@ -1,10 +1,11 @@
-// The project list the rail and the home tabs share, and what each project
-// signals. Pure functions only; RubatoProjectRail.tsx, RubatoRecentBox.tsx and
-// chat/RubatoHomeProjects.tsx render them.
+// The project list every project-ordering surface shares, and what each
+// project signals. Pure functions only; RubatoProjectRail.tsx, RubatoRecentBox.tsx,
+// chat/RubatoHomeProjects.tsx and the surfaces in project-order-edits.mjs render them.
 //
-// One list, two places: the rail's top group and the home screen's tab row
-// show the same projects in the same order, and removing a tab drops the
-// project into the rail's dimmed group. Until the user first edits the list it
+// One list, every place: the rail's top group, the home screen's tab row, the
+// command palette's new-thread picker and the headline's picker show the same
+// projects in the same order, and removing a project from one drops it into
+// the others' "other projects". Until the user first edits the list it
 // follows activity: projects touched in the last week are listed, newest
 // first, and the rest are quiet. The first remove, add or move freezes that
 // order into the stored state, and from then on the user's order holds.
@@ -58,6 +59,11 @@ export function isTemporaryProject(group: Pick<RubatoGroupLike, "workspaceRoot">
 export interface RubatoProjectList<G> {
   readonly listed: readonly G[];
   readonly quiet: readonly G[];
+}
+
+/** The whole list in one line, as a surface without sections shows it: listed, then quiet. */
+export function projectListInOrder<G>(list: RubatoProjectList<G>): G[] {
+  return [...list.listed, ...list.quiet];
 }
 
 type ThreadShell = EnvironmentThreadShell;
@@ -189,19 +195,29 @@ export function addToProjectList(
   };
 }
 
-/** Moves `key` to the position `overKey` holds, as a drag ending over it does. */
+/**
+ * Moves `key` to the position `overKey` holds, as a drag ending over it does.
+ * The two can sit in different sections (the legacy sidebar shows both as one
+ * list): `key` then joins `overKey`'s section.
+ */
 export function moveInProjectList(
   list: RubatoProjectList<RubatoGroupLike>,
   key: string,
   overKey: string,
 ): RubatoProjectListState {
   const order = keysOf(list.listed);
-  const from = order.indexOf(key);
-  const to = order.indexOf(overKey);
-  if (from === -1 || to === -1 || from === to) return { order, hidden: keysOf(list.quiet) };
-  const [moved] = order.splice(from, 1);
-  order.splice(to, 0, moved!);
-  return { order, hidden: keysOf(list.quiet) };
+  const hidden = keysOf(list.quiet);
+  const known = (candidate: string) => order.includes(candidate) || hidden.includes(candidate);
+  if (key === overKey || !known(key) || !known(overKey)) return { order, hidden };
+  const toSection = order.includes(overKey) ? order : hidden;
+  const fromSection = order.includes(key) ? order : hidden;
+  const to = toSection.indexOf(overKey);
+  // Dragged down within its own section, it lands after `overKey`; across
+  // sections it takes `overKey`'s place.
+  const after = fromSection === toSection && fromSection.indexOf(key) < to;
+  fromSection.splice(fromSection.indexOf(key), 1);
+  toSection.splice(after ? toSection.indexOf(overKey) + 1 : toSection.indexOf(overKey), 0, key);
+  return { order, hidden };
 }
 
 /** What a thread or a project shows as a dot, strongest first. */

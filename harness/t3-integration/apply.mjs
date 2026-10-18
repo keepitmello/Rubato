@@ -46,6 +46,7 @@ import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { windowMaterialEdits, windowMaterialOverlays } from './window-material-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
+import { projectOrderEdits, projectOrderOverlays } from './project-order-edits.mjs';
 import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs';
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
@@ -1775,6 +1776,11 @@ for (const [relative, changes] of Object.entries(readOpenEdits)) {
 // The project rail, the Recent box and the home row; after schedule-edits, whose Settings nav line it extends (project-rail-edits.mjs).
 overlays.push(...projectRailOverlays);
 for (const [relative, changes] of Object.entries(projectRailEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// One project order for every project list, edited in Settings > Projects; after the rail, whose list it extends (project-order-edits.mjs).
+overlays.push(...projectOrderOverlays);
+for (const [relative, changes] of Object.entries(projectOrderEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Subscription bars for Rubato's own accounts on the Usage page (usage-limits-edits.mjs).

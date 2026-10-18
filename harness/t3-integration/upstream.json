@@ -126,6 +126,9 @@
     "apps/web/src/routes/settings.connections.tsx": "532c2a4723195cd393bfb531bb0567eddb839d7c6b53a51dee4869433fe213e1",
     "apps/web/src/routes/settings.storage.tsx": "756ec9b2e971cf96afec6570c837ebc476fe9078583b06d14cbccef31ba53b99",
     "apps/web/src/themePalette.ts": "dceec5fa428edb95cf373f34c61bab9afd5dcda342f6037130c52d5e7dd05fd1",
-    "apps/web/src/main.tsx": "e8a6b644470d7f466b9352bc6ca54fd69cdc68532e156a5c0a98a12fb511394d"
+    "apps/web/src/main.tsx": "e8a6b644470d7f466b9352bc6ca54fd69cdc68532e156a5c0a98a12fb511394d",
+    "apps/web/src/hooks/useSidebarProjectGroups.ts": "c565bc2cd67ede763070be0d3c41a012cf154e993dc8ac3ff64b20a962027935",
+    "apps/web/src/components/chat/DraftHeroHeadline.tsx": "33cf0a5a6c651f16232eb8e54ed07cc388d4ac98107e5231f0fc48da36490019",
+    "apps/web/src/components/settings/ProjectsSettings.tsx": "68ad19d3338024fa60d11522d4cc79ebff59633f85114b9a3e43021b95e49854"
   }
 }
