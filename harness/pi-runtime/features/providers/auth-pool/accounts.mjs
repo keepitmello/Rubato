@@ -2,6 +2,7 @@ import { listSlots, pinSlot, removeSlot } from "./slots.mjs";
 import { discoverEnvSlots } from "./env-slots.mjs";
 import { discoverSetupTokenSlots } from "./setup-token-slots.mjs";
 import { CredentialSlotRepository, slotHealth } from "./state-store.mjs";
+import { accountModelSuffix } from "./account-lanes.mjs";
 
 const ACCOUNT_NAME_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
@@ -59,7 +60,11 @@ export async function summarizeCredentialAccounts(provider, stored, env = {}, re
       pinned: pinned === slot.name,
     });
   }
-  return summaries;
+  return summaries.map((account) => ({
+    ...account,
+    modelSuffix: provider === "anthropic" || provider === "openai-codex"
+      ? accountModelSuffix(summaries, account.name) : null,
+  }));
 }
 
 export async function getCredentialAccounts(credentials, provider, env = {}, repository) {

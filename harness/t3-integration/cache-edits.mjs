@@ -122,7 +122,7 @@ export const cacheEdits = {
     ['import { ComposerImageThumbnail } from "./ComposerImageThumbnail";\n',
       'import type { RubatoCacheSnapshot } from "~/state/rubatoSessionState";\n'],
     ['  sessionSpeedLabel?: string | null;\n', '  sessionSpeedLabel?: string | null;\n  rubatoCache?: RubatoCacheSnapshot | null;\n', 'replace'],
-    ['    sessionSpeedLabel,\n    compactThreadUnavailable,', '    sessionSpeedLabel,\n    rubatoCache,\n    compactThreadUnavailable,', 'replace'],
+    ['    sessionSpeedLabel,\n    rubatoAccount,\n    compactThreadUnavailable,', '    sessionSpeedLabel,\n    rubatoAccount,\n    rubatoCache,\n    compactThreadUnavailable,', 'replace'],
     [
       '  activeContextWindow: ContextWindowSnapshot | null;\n  reserveContextWindowMeter: boolean;\n',
       '  activeContextWindow: ContextWindowSnapshot | null;\n  reserveContextWindowMeter: boolean;\n  cacheEnvironmentId?: EnvironmentId | undefined;\n  rubatoCache?: RubatoCacheSnapshot | null | undefined;\n',

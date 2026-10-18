@@ -39,6 +39,7 @@ const PROVIDERS: Readonly<Record<string, { readonly driver: string; readonly lab
 interface RubatoUsageRow {
   readonly provider?: unknown;
   readonly account?: unknown;
+  readonly modelSuffix?: unknown;
   readonly email?: unknown;
   readonly plan?: unknown;
   readonly usageLimits?: unknown;
@@ -69,9 +70,12 @@ async function readUsage(bridgeModule: string): Promise<unknown> {
   return module.authService().handle("usage");
 }
 
-/** One stable row id per account: the provider's name, and the account's when it is not the only one. */
-export function rubatoAccountId(provider: string, account: string): string {
+/** The Usage page uses this row id as its visible account name. */
+export function rubatoAccountId(provider: string, account: string, modelSuffix?: unknown): string {
   const label = PROVIDERS[provider]?.label ?? provider;
+  if (modelSuffix === "") return `${label} · Main account`;
+  if (modelSuffix === "-sub") return `${label} · Sub account [sub]`;
+  if (modelSuffix === "-sub2") return `${label} · Sub account 2 [sub2]`;
   return account === "default" ? label : `${label} · ${account}`;
 }
 
@@ -84,7 +88,7 @@ export function rubatoUsageAccounts(answer: unknown): ReadonlyArray<UsageLimitSo
     const provider = PROVIDERS[row.provider];
     if (!provider) return [];
     const decoded = decodeAccount({
-      id: rubatoAccountId(row.provider, row.account),
+      id: rubatoAccountId(row.provider, row.account, row.modelSuffix),
       driver: ProviderDriverKind.make(provider.driver),
       ...(typeof row.email === "string" && row.email.trim() ? { email: row.email } : {}),
       ...(typeof row.plan === "string" && row.plan.trim() ? { plan: row.plan } : {}),

@@ -124,12 +124,20 @@ export const cacheMoved = (event) => event?.type === 'agent_settled'
 export { cacheFrom };
 
 /** GET /rubato/session-state?threadId=… (RubatoServiceRoute.ts hands authenticated requests here). */
-export function createSessionStateService({ bridge }) {
+export function createSessionStateService({ bridge, readAccount }) {
   return {
-    read(threadId) {
+    async read(threadId) {
       const live = bridge();
       if (!live) return null;
-      return live.sessionState(threadId);
+      const state = live.sessionState(threadId);
+      if (!readAccount) return state;
+      const sessionId = live.knownState(threadId)?.sessionId;
+      let account = null;
+      try { if (sessionId) account = await readAccount(sessionId); } catch { /* Unknown is not a guessed account. */ }
+      if (live.knownState(threadId)?.sessionId !== sessionId) {
+        return { ...live.sessionState(threadId), account: null };
+      }
+      return { ...state, account };
     },
   };
 }
@@ -137,5 +145,5 @@ export async function handleSessionStateRequest(service, request) {
   if (request.method !== 'GET') return Response.json({ error: { code: 'method', message: 'Use GET.' } }, { status: 405 });
   const threadId = new URL(request.url).searchParams.get('threadId');
   if (!threadId) return Response.json({ error: { code: 'invalid', message: 'threadId is required' } }, { status: 400 });
-  return Response.json(service.read(threadId) ?? { speedIndex: null, agents: [], teams: [], cache: null });
+  return Response.json(await service.read(threadId) ?? { speedIndex: null, agents: [], teams: [], cache: null });
 }

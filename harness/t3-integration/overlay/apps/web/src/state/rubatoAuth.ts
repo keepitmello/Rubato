@@ -10,6 +10,8 @@ export type LoginMethod = "oauth" | "api_key" | "setup-token";
 
 export interface ProviderAccount {
   readonly name: string;
+  /** Manual model mapping; null means this account has no dedicated model row. */
+  readonly modelSuffix?: "" | "-sub" | "-sub2" | null;
   /** Where the credential lives: `login` (auth.json), `setup-token` (~/.claude) or `env`. */
   readonly source: string;
   readonly type: "oauth" | "api_key" | "setup-token" | null;

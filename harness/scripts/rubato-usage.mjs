@@ -372,6 +372,7 @@ export async function collectUsage({
             providerLabel: provider.label,
             account: account.name,
             source: account.source,
+            modelSuffix: account.modelSuffix ?? null,
             usageLimits: {
               checkedAt,
               windows: [],
@@ -385,6 +386,7 @@ export async function collectUsage({
           providerLabel: provider.label,
           account: account.name,
           source: account.source,
+          modelSuffix: account.modelSuffix ?? null,
           ...(result.email ? { email: result.email } : {}),
           ...(result.plan ? { plan: result.plan } : {}),
           usageLimits: { checkedAt: result.checkedAt ?? checkedAt, windows: result.windows },

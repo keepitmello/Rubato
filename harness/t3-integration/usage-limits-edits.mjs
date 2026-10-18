@@ -179,5 +179,7 @@ export const usageLimitsEdits = {
   ],
   'packages/shared/src/usageLimits.ts': [
     ['        sourceLabel: "CLI Proxy",', '        sourceLabel: source.kind === "rubato" ? "Rubato" : "CLI Proxy",', 'replace'],
+    ['          displayName: account.email ? null : account.id.replace(/\\.json$/i, ""),',
+      '          displayName: source.kind === "rubato" || !account.email ? account.id.replace(/\\.json$/i, "") : null,', 'replace'],
   ],
 };

@@ -19,3 +19,15 @@ export function credentialAccountLanes(credential, hasSetupToken = false) {
     : credential?.type ? [{ name: "default" }] : [];
   return accountLaneSlotNames([...stored, ...(hasSetupToken ? [{ name: "setup-token" }] : [])]);
 }
+
+/** The manual model row that selects this account, not its pin or current usage. */
+export function accountModelSuffix(slots, name) {
+  if (!slots.some((slot) => slot.name === name)) return null;
+  const lanes = accountLaneSlotNames(slots);
+  const index = lanes.indexOf(name);
+  if (index >= 0) return index < 2 ? `-sub${index === 0 ? "" : index + 1}` : null;
+  if (lanes.length === 0 && slots.length > 1) return null;
+  const main = slots.find((slot) => slot.name === "setup-token" || slot.lane === "setup-token")
+    ?? slots.find((slot) => !lanes.includes(slot.name));
+  return main?.name === name ? "" : null;
+}

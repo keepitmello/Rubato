@@ -26,6 +26,7 @@ import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 import { Spinner } from "../ui/spinner";
+import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel";
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
@@ -331,7 +332,7 @@ function ProviderDetail({
           {provider.accounts.length === 0 ? (
             <SettingsRow title="No account yet" description={`Connect ${name} below to use its models in Rubato.`} />
           ) : (
-            provider.accounts.map((account) => (
+            provider.accounts.toSorted((a, b) => rubatoAccountOrder(a.modelSuffix) - rubatoAccountOrder(b.modelSuffix)).map((account) => (
               <AccountRow
                 key={account.name}
                 environmentId={environmentId}
@@ -410,6 +411,7 @@ function AccountRow({
 }) {
   const [busy, setBusy] = useState<"check" | "pin" | "remove" | null>(null);
   const state = STATE_VIEW[account.state];
+  const label = rubatoAccountLabel(account.modelSuffix);
 
   const run = async (kind: "check" | "pin" | "remove", work: () => Promise<void>) => {
     setBusy(kind);
@@ -460,7 +462,8 @@ function AccountRow({
     <SettingsRow
       title={
         <span className="inline-flex flex-wrap items-center gap-2">
-          {account.name}
+          {label ?? account.name}
+          {account.modelSuffix ? <Badge variant="outline">[{account.modelSuffix.slice(1)}]</Badge> : null}
           {account.type ? <Badge variant="outline">{TYPE_LABEL[account.type] ?? account.type}</Badge> : null}
           {account.pinned ? <Badge variant="info">Pinned</Badge> : null}
         </span>
@@ -468,7 +471,7 @@ function AccountRow({
       description={
         <span className="inline-flex items-center gap-1.5">
           <span className={cn("size-1.5 rounded-full", state.dot)} aria-hidden />
-          {state.label}
+          {label ? `${account.name} · ` : null}{state.label}
           {account.source === "setup-token" ? " · replace it by pasting a new token" : null}
           {account.source === "env" ? " · from an environment variable" : null}
         </span>
