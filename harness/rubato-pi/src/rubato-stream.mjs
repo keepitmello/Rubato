@@ -14,7 +14,7 @@
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
 import { cacheAudit, isCacheAuditModel, isCodexResponsesModel } from "./cache-audit.mjs";
-import { codexReasoningReplay } from "./codex-reasoning-replay.mjs";
+import { assertRequestWireBytes, assertRequestWireByteCount } from "./context-notes/request-budget.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
 import { wrapAnthropicServerCompactionFetch } from "./anthropic-server-compaction-wire.mjs";
@@ -644,14 +644,22 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       // were 1h. The provider layer owns it now; only an explicit "none" (titles) opts out.
       cacheRetention: options.cacheRetention === "none" ? "none" : "long",
       [kRubatoCallActive]: true,
-      ...(state.speedIndexStore ? { onPayload: (payload, requestModel) => {
+      onPayload: (payload, requestModel) => {
         const observe = (replacement) => {
-          observeSpeedRequestTier(state.speedTier, replacement === undefined ? payload : replacement, requestModel ?? model);
+          const sent = replacement === undefined ? payload : replacement;
+          // Cursor passes a protobuf object here (BigInt/Uint8Array), not JSON.
+          // Its native encoder reports the actual binary length below instead.
+          if (model?.api !== "cursor-agent") assertRequestWireBytes(sent);
+          if (state.speedIndexStore) observeSpeedRequestTier(state.speedTier, sent, requestModel ?? model);
           return replacement;
         };
         const result = options.onPayload?.(payload, requestModel);
         return result && typeof result.then === "function" ? result.then(observe) : observe(result);
-      } } : {}),
+      },
+      onRubatoWireBytes: (bytes) => {
+        assertRequestWireByteCount(bytes);
+        options.onRubatoWireBytes?.(bytes);
+      },
       onResolvedCall: (identity) => {
         if (identity && typeof identity === "object") {
           state.identity = { ...state.identity, ...identity };
@@ -711,10 +719,6 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       fetchImpl = observeResponseHeaders(fetchImpl ?? globalThis.fetch, options.onResponseHeaders);
     }
     if (fetchImpl !== options.fetch) innerOptions.fetch = fetchImpl;
-    // Codex: 같은 세션에서 서버가 생각 기록 재전송을 연달아 거절하면 범인 하나를 찾아 뺀다
-    // (codex-reasoning-replay.mjs).
-    const replay = options.codexReasoningReplay ?? codexReasoningReplay;
-    const sentContext = replay.prepare(model, context, options.sessionId);
     // wire body 를 알려주지 않는 provider 는 요청을 보내기 전에 시작해야 model.send
     // 시각이 실제 전송 시점이다. 알려주는 transport 만 첫 event 까지 기다린다.
     state.ensureStarted = () => {
@@ -723,7 +727,7 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     if (!reportsRequest) state.ensureStarted();
     let stream;
     try {
-      stream = inner(model, sentContext, innerOptions);
+      stream = inner(model, context, innerOptions);
     } catch (error) {
       // setup 이 동기적으로 던지면 stream 자체가 없다 — 종단 event 도, 그것을
       // 보고 닫을 기회도 없다. 그러나 `model.send` 는 이미 찍혔으므로 여기서
@@ -733,9 +737,6 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
       // 오류 객체는 가공하지 않고 그대로 올린다. decorator 는 진단을 바꾸지 않는다.
       throw error;
     }
-    Promise.resolve(stream?.result?.())
-      .then((message) => replay.observe(model, context, options.sessionId, message))
-      .catch(() => {});
     return decorateStream(stream, state, options);
   };
   Object.defineProperty(decorated, kRubatoStream, { value: true });

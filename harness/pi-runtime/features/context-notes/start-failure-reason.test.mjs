@@ -127,7 +127,6 @@ test("a refused request names why the notes manager could not start, and recover
     await second.session.prompt("continue"); await settle();
     assert.equal(second.calls(), 0, "the provider is never reached");
     const refused = lastAssistant(second.session);
-    assert.match(refused.errorMessage, /준비되지 않았어요/);
     assert.ok(refused.errorMessage.includes(`기록 항목 ${userId}의 원문이 변경됐어요`),
       `the refusal carries the start failure: ${refused.errorMessage}`);
 

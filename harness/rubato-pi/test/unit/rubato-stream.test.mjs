@@ -562,7 +562,8 @@ test("stream 제어면과 options 가 원본으로 그대로 간다", async () =
   assert.equal(seen.signal, signal);
   assert.equal(seen.execHandlers, execHandlers);
   assert.equal(seen.onToolResult, onToolResult);
-  assert.equal(seen.onPayload, onPayload);
+  const payload = { input: "small" };
+  assert.equal(seen.onPayload(payload, model), payload, "caller payload callback runs inside the byte guard");
   assert.equal(seen.sessionId, "session-9");
   assert.equal(seen.thinkingSelection, "xhigh", "provider 고유 옵션(xhigh)도 손대지 않는다");
 });

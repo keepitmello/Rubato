@@ -1,7 +1,6 @@
 // Prompt-cache / Codex WS continuation needs request N to be a verbatim
-// prefix of request N+1. Remap and Astra effort rewrite are allowed to
-// move bytes once (notice-after-user hoist, Shift+Tab update insert);
-// after that, appends must not reshuffle earlier items.
+// prefix of request N+1. Explicit effort changes insert an anchored update;
+// ordinary notice delivery never moves or merges previously sent items.
 //
 // Session 01a070da (2026-09-05): hidden wakes were pulled to a tail on
 // every tool turn, so cacheRead stuck at tools+instructions (14976).
@@ -58,7 +57,7 @@ function assertExtends(previous, next, label) {
   }
 }
 
-function play(steps, { allowRewriteAt } = {}) {
+function play(steps) {
   const session = [];
   let previous = null;
   const snapshots = [];
@@ -67,7 +66,7 @@ function play(steps, { allowRewriteAt } = {}) {
     session.push(...items);
     const current = remap(session);
     const label = items.map((item) => item.role || item.customType).join("+");
-    if (previous && !allowRewriteAt?.has(snapshots.length)) {
+    if (previous) {
       assertExtends(previous, current, `after ${label} (#${snapshots.length})`);
     }
     previous = current;
@@ -106,8 +105,8 @@ test("#given a tool loop with interleaved wakes #when each turn remaps #then eve
     "assistant",
     "toolResult",
   ]);
-  assert.equal(last[3].content[0].text, "<peer_message from=\"runtime\">map</peer_message>");
-  assert.equal(last[6].content[0].text, "<peer_message from=\"shell\">bound</peer_message>");
+  assert.equal(last[3].content[1].text, "<peer_message from=\"runtime\">map</peer_message>");
+  assert.equal(last[6].content[1].text, "<peer_message from=\"shell\">bound</peer_message>");
 });
 
 test("#given two wakes in a row mid-loop #when the second arrives #then it appends instead of merging the previous wake", () => {
@@ -121,11 +120,11 @@ test("#given two wakes in a row mid-loop #when the second arrives #then it appen
     toolResult("out2", 7),
   ]);
   assert.deepEqual(snaps[4].map((message) => message.role), ["user", "assistant", "toolResult", "user", "user"]);
-  assert.equal(snaps[4][3].content[0].text, "wake-1");
-  assert.equal(snaps[4][4].content[0].text, "wake-2");
+  assert.equal(snaps[4][3].content[1].text, "wake-1");
+  assert.equal(snaps[4][4].content[1].text, "wake-2");
 });
 
-test("#given a memory notice right after the user #when later tools append #then the hoist happens once and then the prefix is stable", () => {
+test("#given a memory notice right after an already-sent user #when later tools append #then no prefix rewrite is allowed", () => {
   const snaps = play(
     [
       user("ㅇㅇ 해봐."),
@@ -136,12 +135,11 @@ test("#given a memory notice right after the user #when later tools append #then
       assistant("eval", 6),
       toolResult("ok2", 7),
     ],
-    { allowRewriteAt: new Set([1]) },
   );
-  assert.deepEqual(snaps[1].map((message) => message.role), ["assistant", "user"]);
-  assert.equal(snaps[1][1].content[0].text, "ㅇㅇ 해봐.");
+  assert.deepEqual(snaps[1].map((message) => message.role), ["user", "user"]);
+  assert.equal(snaps[1][0].content[0].text, "ㅇㅇ 해봐.");
   assert.deepEqual(snaps.at(-1).map((message) => message.role), [
-    "assistant",
+    "user",
     "user",
     "assistant",
     "toolResult",
@@ -151,7 +149,7 @@ test("#given a memory notice right after the user #when later tools append #then
   ]);
 });
 
-test("#given restoration then notice after the user #when they hoist #then they become one assistant before the user and later turns append", () => {
+test("#given restoration then notice after the user #when they arrive #then each appends independently without any rewrite exemption", () => {
   const snaps = play(
     [
       user("continue"),
@@ -160,10 +158,10 @@ test("#given restoration then notice after the user #when they hoist #then they 
       assistant("eval", 4),
       toolResult("ok", 5),
     ],
-    { allowRewriteAt: new Set([1, 2]) },
   );
-  assert.deepEqual(snaps[2].map((message) => message.role), ["assistant", "user"]);
-  assert.deepEqual(snaps[2][0].content.map((block) => block.text), ["[restored]", "<memory_notice>"]);
+  assert.deepEqual(snaps[2].map((message) => message.role), ["user", "user", "user"]);
+  assert.equal(snaps[2][1].content[1].text, "[restored]");
+  assert.equal(snaps[2][2].content[1].text, "<memory_notice>");
   assertExtends(snaps[2], snaps.at(-1), "after tools");
 });
 

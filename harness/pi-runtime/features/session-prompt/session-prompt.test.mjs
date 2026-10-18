@@ -8,6 +8,7 @@ import test, { after } from "node:test";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { sessionPromptFeature } from "./patches.mjs";
+import { installToolOutputPreviews } from "../adapter-hooks/tool-output.mjs";
 
 const scratchRoot = mkdtempSync(join(tmpdir(), "rubato-session-prompt-"));
 after(() => rmSync(scratchRoot, { recursive: true, force: true }));
@@ -42,6 +43,38 @@ function streamOf(message) {
 const textOf = (message) => typeof message.content === "string"
   ? message.content
   : (message.content ?? []).map((part) => part.text ?? "").join("");
+
+test("actual staged SDK never sends raw fallback when a request projection fails", async () => {
+  const cwd = join(scratchRoot, "projection-failure");
+  const agentDir = join(cwd, "agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: { "sp-test": { baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "unused",
+      models: [{ id: "fake-model", input: ["text"] }] } },
+  }));
+  const sessionManager = sdk.SessionManager.create(cwd, join(cwd, "sessions"));
+  const settingsManager = sdk.SettingsManager.inMemory({ retry: { enabled: false } });
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd, agentDir, settingsManager,
+    extensionFactories: [{ name: "output-previews", factory: (pi) => installToolOutputPreviews(pi) }],
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+  });
+  await resourceLoader.reload();
+  const { session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader, sessionManager });
+  try {
+    // A regular persisted result, then an artifact path that cannot be a directory.
+    sessionManager.appendMessage({ role: "toolResult", toolName: "bash", toolCallId: "synthetic",
+      content: [{ type: "text", text: "x".repeat(20000) }], timestamp: 1 });
+    const artifactRoot = `${sessionManager.getSessionFile().replace(/\.jsonl$/, "")}-artifacts`;
+    mkdirSync(join(cwd, "sessions"), { recursive: true });
+    writeFileSync(artifactRoot, "not a directory");
+    let sends = 0;
+    session.agent.streamFunction = () => { sends++; return streamOf(assistant([{ type: "text", text: "unexpected" }])); };
+    await session.prompt("continue").catch(() => {});
+    assert.equal(sends, 0);
+    assert.ok(sessionManager.getBranch().some((entry) => entry.message?.toolCallId === "synthetic"));
+  } finally { await session.dispose(); }
+});
 
 // 0.86 handed held custom messages to the running loop as prepared messages, because the
 // loop built requests from its own copy of the context. 0.87 made the SessionManager

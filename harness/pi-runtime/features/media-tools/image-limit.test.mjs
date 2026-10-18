@@ -8,7 +8,46 @@ import {
 	limitImageBlock,
 	limitInlineImages,
 	readImageDimensions,
+	pinnedImageBlock,
+	IMAGE_PROJECTION_ENTRY,
 } from "./src/host/image-limit.mjs";
+
+test("request image normalization remains byte-identical after restart even when codec availability changes", async () => {
+	const journal = [];
+	const pins = new Map();
+	const block = image(pngHeader(4000, 3000));
+	const before = structuredClone(block);
+	const first = await pinnedImageBlock(block, pins, { process: async () => ({ ok: false }),
+		savePin: async (record) => journal.push(structuredClone(record)) });
+	assert.equal(first.type, "text");
+	const resumedPins = new Map(journal.map((record) => [record.source, record]));
+	const resumed = await pinnedImageBlock(block, resumedPins, { process: async () => {
+		throw new Error("a pinned projection must not run the codec again");
+	} });
+	assert.deepEqual(resumed, first);
+	assert.deepEqual(block, before, "the original image remains available in history");
+	journal[0].sha256 = "corrupt";
+	await assert.rejects(pinnedImageBlock(block, resumedPins), /corrupt/);
+});
+
+test("installed context hook replays image decisions from the selected journal branch", async () => {
+	const entries = [];
+	const ctx = { sessionManager: { getBranch: () => entries } };
+	const handlers = {};
+	const pi = {
+		on: (event, handler) => { handlers[event] = handler; },
+		appendEntry: (customType, data) => entries.push({ type: "custom", customType, data }),
+	};
+	const messages = [{ role: "user", content: [image(pngHeader(4000, 3000))] }];
+	installImageLimit(pi, { process: async () => ({ ok: true, data: "c21hbGw=", mimeType: "image/jpeg" }) });
+	const first = await handlers.context({ messages }, ctx);
+	assert.equal(entries.length, 1);
+	assert.equal(entries[0].customType, IMAGE_PROJECTION_ENTRY);
+	installImageLimit(pi, { process: async () => { throw new Error("must replay the journal"); } });
+	assert.deepEqual(await handlers.context({ messages }, ctx), first);
+	assert.equal(entries.length, 1, "resume does not append another decision");
+	assert.equal(messages[0].content[0].mimeType, "image/png");
+});
 
 function pngHeader(width, height) {
 	const bytes = Buffer.alloc(24);

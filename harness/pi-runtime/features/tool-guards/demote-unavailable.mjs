@@ -195,14 +195,25 @@ export function demoteUnavailableToolReferences(params) {
   }
   params = hoistAdditionsForCalls(params, initialNames);
   const discoveredNames = new Set();
-  collectToolReferenceNames(params.messages, discoveredNames);
   const definedNames = new Set(initialNames);
   const everDefinedNames = new Set(initialNames);
   const demotedCallNames = new Map();
+  const danglingReferences = new Map();
   for (const message of params.messages) {
     if (!Array.isArray(message.content)) continue;
     for (const block of message.content) {
       applyToolChange(block, definedNames, everDefinedNames);
+      // A later search result/declaration must never resurrect a call (or a
+      // dangling reference) already sent as text. Resolve availability at this
+      // point of the transcript, not against the whole growing request.
+      const references = new Set();
+      collectToolReferenceNames(block, references);
+      const dangling = new Set();
+      for (const name of references) {
+        if (everDefinedNames.has(name)) discoveredNames.add(name);
+        else dangling.add(name);
+      }
+      if (dangling.size) danglingReferences.set(block, dangling);
       if (
         message.role === "assistant" &&
         isRecord(block) &&
@@ -216,11 +227,7 @@ export function demoteUnavailableToolReferences(params) {
       }
     }
   }
-  const danglingReferenceNames = new Set();
-  for (const name of discoveredNames) {
-    if (!everDefinedNames.has(name)) danglingReferenceNames.add(name);
-  }
-  if (demotedCallNames.size === 0 && danglingReferenceNames.size === 0) return params;
+  if (demotedCallNames.size === 0 && danglingReferences.size === 0) return params;
 
   let changed = false;
   const seenDemotedCallNames = new Set();
@@ -253,7 +260,8 @@ export function demoteUnavailableToolReferences(params) {
           content.push({ type: "text", text: demotedToolResultText(demotedName, toolResultText(block.content)) });
           continue;
         }
-        if (danglingReferenceNames.size > 0 && Array.isArray(block.content)) {
+        const danglingReferenceNames = danglingReferences.get(block);
+        if (danglingReferenceNames?.size > 0 && Array.isArray(block.content)) {
           const kept = [];
           const omitted = [];
           for (const item of block.content) {

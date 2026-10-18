@@ -65,7 +65,7 @@ function patch(id, path, preimageSha256, apply) {
 // 0.87 stopped showing system messages to \`context\` handlers. When a handler changes the
 // conversation, stock replaces every system message with one replayed head that carries the
 // current prompt and ALL current tools. Rubato's context handlers change messages on most
-// requests (large tool output previews, history-notes markers, image limits), so a tool that
+// requests (large tool output previews, history-notes markers, image normalization), so a tool that
 // tool_search loaded mid-session moved into the leading tool list and the provider prefix
 // changed from token 0 (audit 2026-10-03, checks/collapse.mjs). This puts each system
 // message back in front of the conversation message it preceded. A returned message is matched
@@ -187,6 +187,7 @@ export function patchRunner(source) {
                         error: message,
                         stack,
                     });
+                    throw err;
                 }
             }
         }
@@ -315,7 +316,7 @@ export function patchAgentSession(source) {
 }
 
 export const patches = Object.freeze([
-  patch("session-prompt:core/extensions/runner.js", "dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", (source) => patchRunnerSystemSlots(patchRunner(source))),
+  patch("session-prompt:core/extensions/runner.js", "dist/core/extensions/runner.js", "258f142bc56cc84d953ef6146222e5ff3a94cc908592a1b3d075d34bbcd68b36", (source) => patchRequestTransformFailures(patchRunnerSystemSlots(patchRunner(source)))),
   patch("session-prompt:core/agent-session.js", "dist/core/agent-session.js", "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab", patchAgentSession),
 ]);
 
@@ -323,3 +324,18 @@ export const files = Object.freeze([]);
 export const sessionPromptFeature = Object.freeze({ id: "session-prompt", patches, files });
 export const feature = sessionPromptFeature;
 export default sessionPromptFeature;
+
+// Retrying after an extension failure must not silently switch from its usual
+// projection to stock/raw input. Apply in every context mode, not only notes mode.
+export function patchRequestTransformFailures(source) {
+  let next = source;
+  for (const event of ["context", "context_with_system", "before_provider_request"]) {
+    const before = `                        event: "${event}",
+                        error: message,
+                        stack,
+                    });`;
+    next = replaceOnce(next, before, `${before}
+                    throw err;`, `fail-closed-${event}`);
+  }
+  return next;
+}

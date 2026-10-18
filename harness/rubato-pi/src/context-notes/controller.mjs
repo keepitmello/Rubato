@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import { NUDGE_TEXT, findNudges, findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
+import { BYTE_NUDGE_TEXT, NUDGE_TEXT, findNudges, findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
 import { assertCheckpointFresh, CheckpointRefreshRequired } from "./checkpoint.mjs";
 import { readAuthoritativeBranch } from "./history-source.mjs";
 import { flushSessionJournal } from "./journal.mjs";
 import { contextNotesConfig, contextStrategy, windowBudget } from "./config.mjs";
 import { assertEngineParts, registerSessionGate } from "./engine-gate.mjs";
 import { ContextNotesStore, databasePath } from "./store.mjs";
-import { trimRequestImages } from "./request-images.mjs";
+import { requestByteSize, REQUEST_BYTE_WARNING, REQUEST_BYTE_CHECKPOINT, REQUEST_BYTE_LIMIT,
+  REQUEST_BYTE_REFUSAL } from "./request-budget.mjs";
 import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
@@ -50,17 +51,19 @@ context compaction. Notes are your durable working memory: they survive compacti
 window changes exactly as written, while a compaction summary does not.
 ${NOTES_TOOLS_TEXT}
 Keep notes current while you work; a periodic notice asks you to refresh them. Nothing
-starts a new window automatically. At a natural boundary you may save a current note
-and call new_context to start a fresh window without a summary.
+in the token budget starts a new window automatically. Request byte limits are separate:
+on a byte warning, save notes and call new_context before another large read or image task.
+If a request cannot safely be sent, the harness preserves it in history and starts an
+explicit fresh window. At a natural boundary you may also save a current note and call new_context.
 ${NEW_WINDOW_TEXT}`;
 
 const HARD_SAFETY_GUIDANCE = `# Working across context windows
 This session uses history and working notes instead of conversation summarization.
 ${NOTES_TOOLS_TEXT}
-Keep notes current while you work; a periodic notice asks you to refresh them. Nothing
-starts a new window automatically. When a unit of work is done and a fresh window would
-help, save a current note and call new_context. Close to the physical limit the harness
-asks for a checkpoint-only turn, then starts a new window without a summary.
+Keep notes current while you work; a periodic notice asks you to refresh them. When a
+unit of work is done and a fresh window would help, save a current note and call new_context.
+Close to the physical token or serialized request-byte limit the harness asks for a
+checkpoint-only turn, then starts a new window without a summary.
 ${NEW_WINDOW_TEXT}`;
 
 /**
@@ -106,6 +109,7 @@ class HardLineRefusal extends Error {}
 // Over the physical window no request fits. The run ends as an error, not an abort, so
 // turn_end can open the next window without a model call and carry on with the request.
 class FullWindowRefusal extends Error {}
+class RequestByteRefusal extends Error {}
 
 export class ContextNotesController {
   constructor(pi, ctx, options = {}) {
@@ -126,6 +130,8 @@ export class ContextNotesController {
     this.leaf = undefined;
     this.transitioning = false;
     this.closed = false;
+    this.byteRefusal = null;
+    this.lastByteRescueUser = undefined;
     try {
       let branch = this.readBranch(ctx.sessionManager);
       if (!branchWindow(branch)) {
@@ -208,12 +214,16 @@ export class ContextNotesController {
   }
 
   usage(messages = this.activeMessages) {
-    let toolDefinitions = "";
+    let tools = [];
     if (typeof this.pi.getAllTools === "function" && typeof this.pi.getActiveTools === "function") {
       const active = new Set(this.pi.getActiveTools());
-      toolDefinitions = JSON.stringify(this.pi.getAllTools().filter((t) => active.has(t.name))
-        .map(({ name, description, parameters }) => ({ name, description, parameters })));
+      tools = this.pi.getAllTools().filter((t) => active.has(t.name))
+        .map(({ name, description, parameters }) => ({ name, description, parameters }));
     }
+    const toolDefinitions = JSON.stringify(tools);
+    const systemPrompt = this.ctx.getSystemPrompt?.() ?? "";
+    const requestBytes = requestByteSize(messages, systemPrompt, tools);
+    const fixedBytes = requestByteSize([], systemPrompt, tools);
     const estimated = estimate(messages, (this.ctx.getSystemPrompt?.() ?? "") + toolDefinitions);
     const live = Number(this.ctx.getContextUsage?.()?.tokens);
     const sampled = Number.isFinite(live) && live > 0 ? live : 0;
@@ -222,7 +232,7 @@ export class ContextNotesController {
     // declare the window full while the footer still shows it half-empty.
     const tokens = sampled > 0 ? sampled : estimated;
     const budget = windowBudget(this.ctx.model, this.config);
-    return { tokens, estimated, ...budget, remaining: Math.max(0, (budget.target ?? budget.full) - tokens),
+    return { tokens, estimated, ...budget, requestBytes, fixedBytes, remaining: Math.max(0, (budget.target ?? budget.full) - tokens),
       sampled: sampled > 0 };
   }
 
@@ -273,7 +283,16 @@ export class ContextNotesController {
       throw new Error("이 연결은 외부 실행기가 문맥을 관리해요. 새 문맥 실험에는 직접 모델 연결을 사용하거나 summary 모드로 다시 시작해 주세요.");
     }
     if (!messages) return;
-    const usage = this.usage();
+    const usage = this.usage(messages);
+    if (usage.fixedBytes >= REQUEST_BYTE_WARNING) {
+      throw new Error("시스템 프롬프트와 도구 정의만으로 요청 바이트 한도에 가까워요. 기록을 줄이거나 새 창을 반복하지 않고 멈췄어요. 프롬프트나 활성 도구를 줄여 주세요.");
+    }
+    if (usage.requestBytes >= REQUEST_BYTE_LIMIT) {
+      // A fresh window cannot repair an oversized fixed prompt/tool catalog.
+      // Stop rather than scheduling an unbounded sequence of empty windows.
+      this.byteRefusal = this.window.windowId;
+      throw new RequestByteRefusal(`${REQUEST_BYTE_REFUSAL} 요청이 ${usage.requestBytes}바이트예요. 이전 입력과 이미지는 바꾸지 않았어요. 모델을 부르지 않고 기록을 보존한 새 창에서 이어가요.`);
+    }
     if (usage.tokens >= usage.full) {
       this.showStatus({ ...usage, remaining: 0 });
       throw new FullWindowRefusal("문맥 창이 가득 찼어요. 기록은 보존했어요. 모델을 부르지 않고 새 창으로 넘어간 뒤 하던 요청을 이어가요.");
@@ -288,6 +307,16 @@ export class ContextNotesController {
     this.refresh(ctx);
     this.admit(event.messages);
     const before = this.usage(event.messages);
+    if (before.requestBytes >= REQUEST_BYTE_WARNING && event.messages.length &&
+        !this.anchoredEntries.some((entry) => entry.data.text === BYTE_NUDGE_TEXT)) {
+      this.pi.appendEntry(NUDGE_ENTRY, { ...reminderAnchor(event.messages, this.window.windowId, BYTE_NUDGE_TEXT),
+        atTokens: before.tokens, requestBytes: before.requestBytes });
+      this.refresh(ctx, true);
+      const saved = this.anchoredEntries.find((entry) => entry.data.text === BYTE_NUDGE_TEXT);
+      if (!saved) throw new Error("요청 크기 안내를 저장하지 못했어요.");
+      this.flush(ctx.sessionManager, saved.id);
+      this.record("byte_nudge_recorded", { window_id: this.window.windowId, request_bytes: before.requestBytes });
+    }
     if (!this.reminderEntry && before.reminderAt !== undefined && before.tokens >= before.reminderAt && event.messages.length) {
       this.pi.appendEntry(REMINDER_ENTRY, reminderAnchor(event.messages, this.window.windowId));
       this.refresh(ctx, true);
@@ -315,8 +344,8 @@ export class ContextNotesController {
       anchored.set(index, [...(anchored.get(index) ?? []), entry]);
     }
     const occurrences = new Map();
-    // Resolve history references on the original messages: trimming changes the content
-    // the identity lookup keys on.
+    // References and images are properties of the original message, never selected
+    // again according to how much newer history happens to fit.
     const refs = event.messages.map((message) => {
       if (message.role !== "user" && message.role !== "toolResult") return undefined;
       if (messageText(message) === this.bootstrap) return undefined;
@@ -331,12 +360,7 @@ export class ContextNotesController {
       return ref;
     });
     const refText = (ref) => `window_id=${JSON.stringify(ref.windowId)} item_id=${JSON.stringify(ref.itemId)}`;
-    // Anthropic caps a request by bytes and every guard here counts tokens, so the pixels of
-    // the oldest images go before the request is assembled. The record keeps them; only the
-    // request loses them, and the placeholder says where to read them back.
-    const carried = trimRequestImages(event.messages, undefined, (_message, index) =>
-      refs[index] ? refText(refs[index]) : undefined);
-    const annotated = carried.map((message, index) => {
+    const annotated = event.messages.map((message, index) => {
       const ref = refs[index];
       if (!ref) return message; // Never manufacture a reference we cannot read.
       // Every message carries one, so the current window's id (the bootstrap names it, and
@@ -356,7 +380,7 @@ export class ContextNotesController {
     this.admit(messages);
     const usage = this.usage(messages);
     this.record("request_prepared", { window_id: this.window.windowId, tokens_estimated: usage.tokens,
-      budget: usage.target, remaining: usage.remaining, billable_request: false });
+      budget: usage.target, remaining: usage.remaining, request_bytes: usage.requestBytes, billable_request: false });
     this.showStatus(usage);
     return { messages };
   }
@@ -373,7 +397,8 @@ export class ContextNotesController {
     this.showStatus();
     // A hard-line refusal ends the run as an error, not an abort: turn_end then asks for
     // the checkpoint turn, the only way forward from past the line.
-    if ((this.checkpointRequested || error instanceof HardLineRefusal || error instanceof FullWindowRefusal) && !fatal) return;
+    if ((this.checkpointRequested || error instanceof HardLineRefusal || error instanceof FullWindowRefusal ||
+        error instanceof RequestByteRefusal) && !fatal) return;
     this.checkpointRequested = false;
     this.ctx.abort?.("system");
   }
@@ -511,6 +536,7 @@ export class ContextNotesController {
       this.pending = null;
       this.checkpointRequested = false;
       this.checkpointRetried = false;
+      this.byteRefusal = null;
       if (applyError || outcome?.applied !== true) {
         // The disk boundary may be committed while the engine's live state or
         // provider reset failed. Never run a second cut or claim success.
@@ -530,6 +556,24 @@ export class ContextNotesController {
 
   async turnEnd(_event, ctx) {
     try {
+      // A single large result can jump over every advisory line. The gate refused
+      // that request without changing a byte of old input. Archive the complete tool
+      // round and continue from an explicit boundary, not a trimmed retry.
+      const wireRefusal = _event?.message?.errorMessage?.includes(REQUEST_BYTE_REFUSAL);
+      if (!this.fatal && !ctx.signal?.aborted &&
+          (this.byteRefusal === this.window.windowId || wireRefusal)) {
+        this.refresh(ctx, true);
+        if (this.lastByteRescueUser === this.lastUser && !this.hasSample) {
+          throw new Error("새 창의 첫 요청도 바이트 한도를 넘었어요. 같은 전환을 반복하지 않고 멈췄어요. 프롬프트나 활성 도구를 줄여 주세요. 원문과 노트는 보존했어요.");
+        }
+        if (this.usage().fixedBytes >= REQUEST_BYTE_WARNING) {
+          throw new Error("시스템 프롬프트와 도구 정의가 너무 커서 새 문맥으로도 요청을 보낼 수 없어요. 기록은 보존했어요.");
+        }
+        this.lastByteRescueUser = this.lastUser;
+        await this.rescue(ctx, this.usage(), "request_bytes");
+        this.continueInNewWindow();
+        return;
+      }
       if (ctx.signal?.aborted || ["aborted", "error"].includes(_event?.message?.stopReason)) {
         this.pending = null;
         this.record("transition_cancelled");
@@ -549,6 +593,9 @@ export class ContextNotesController {
         return;
       }
       this.refresh(ctx, true);
+      if (ctx.model?.contextWindow && this.usage().fixedBytes >= REQUEST_BYTE_WARNING) {
+        throw new Error("시스템 프롬프트와 도구 정의가 너무 커서 새 문맥으로도 요청을 보낼 수 없어요. 프롬프트나 활성 도구를 줄여 주세요. 기록은 보존했어요.");
+      }
       if (this.pending) {
         const pending = this.pending;
         this.pending = null;
@@ -574,7 +621,8 @@ export class ContextNotesController {
             // that has not received it is not a failed checkpoint attempt.
             throw new CheckpointRefreshRequired("체크포인트 전용 턴에 최신 작업 노트가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.");
           }
-        } else if (ctx.model?.contextWindow && (past(usage.hard) || past(usage.target))) {
+        } else if (usage.requestBytes >= REQUEST_BYTE_CHECKPOINT ||
+            (ctx.model?.contextWindow && (past(usage.hard) || past(usage.target)))) {
           // Rollover-only buffer: from the target line the window only serves a note
           // update and new_context. A fresh note rolls now; a stale one gets a
           // checkpoint-only turn first, also at the hard line (the stale cut below is
@@ -603,7 +651,8 @@ export class ContextNotesController {
           // From the target line the window only serves the hand-over; past it a failed
           // repair turn cuts too (2026-10-12: aborted at 255k, 3k under the hard line).
           const line = usage.target ?? usage.hard;
-          if (noRepairTurn && line !== undefined && usage.tokens >= line) {
+          if (noRepairTurn && ((line !== undefined && usage.tokens >= line) ||
+              usage.requestBytes >= REQUEST_BYTE_CHECKPOINT)) {
             await this.rescue(ctx, usage, note ? "repair_failed" : "repair_failed_no_note");
             return;
           }
@@ -670,6 +719,7 @@ export class ContextNotesController {
     this.pending = null;
     this.checkpointRequested = false;
     this.checkpointRetried = false;
+    this.byteRefusal = null;
   }
 
   close() {

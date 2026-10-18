@@ -7,6 +7,7 @@ export const REMINDER_TEXT = "<context_window_reminder>This window is nearing it
 // that was last when it was recorded, in every later request of the same window, with
 // fixed text. It never moves, never changes and never touches an earlier message.
 export const NUDGE_TEXT = "<context_notes_nudge>Your notes may be behind. If a user requirement, correction, decision or the work state changed, update them now, then continue. Otherwise just continue.</context_notes_nudge>";
+export const BYTE_NUDGE_TEXT = "<context_request_bytes_reminder>This request is nearing its serialized byte limit, even if the token window has room. Finish the current tool round, save current goals, decisions, progress, failed approaches, next steps and original window/item references with the notes tools, then call new_context. Do not start another large read or image task. History and original images remain available through the history tools.</context_request_bytes_reminder>";
 // Stored nudges keep the text they were sent with; a request must repeat it byte for byte.
 const LEGACY_NUDGE_TEXTS = new Set([
   "<context_notes_nudge>Your notes may be behind. If a user requirement, correction, decision or the work state changed, update them now (tool_search \"notes history\" activates the notes tools), then continue. Otherwise just continue.</context_notes_nudge>",
@@ -19,7 +20,7 @@ export function findNudges(branch, windowId) {
     const data = entry.data;
     if (typeof data.fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(data.fingerprint) ||
         !Number.isSafeInteger(data.occurrence) || data.occurrence < 0 ||
-        (data.text !== NUDGE_TEXT && !LEGACY_NUDGE_TEXTS.has(data.text))) {
+        (data.text !== NUDGE_TEXT && data.text !== BYTE_NUDGE_TEXT && !LEGACY_NUDGE_TEXTS.has(data.text))) {
       throw new Error("저장된 노트 갱신 안내 기록이 잘못됐어요.");
     }
   }

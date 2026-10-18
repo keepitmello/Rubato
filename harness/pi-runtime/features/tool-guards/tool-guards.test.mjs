@@ -172,6 +172,27 @@ test("unavailable history tool_use names are demoted to text with matching resul
   assert.equal(demoteUnavailableToolReferences(alreadyAvailable), alreadyAvailable);
 });
 
+test("future search references and declarations cannot resurrect previously demoted history", () => {
+  const original = {
+    tools: [{ name: "read" }],
+    messages: [
+      { role: "assistant", content: [{ type: "tool_use", id: "old", name: "late", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "old", content: "not found" }] },
+      { role: "assistant", content: [{ type: "tool_use", id: "search", name: "read", input: {} }] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "search",
+        content: [{ type: "tool_reference", tool_name: "late" }] }] },
+    ],
+  };
+  const beforeSearch = demoteUnavailableToolReferences({ ...original, messages: original.messages.slice(0, 2) });
+  const searched = demoteUnavailableToolReferences(original);
+  assert.deepEqual(searched.messages.slice(0, 2), beforeSearch.messages);
+  const declared = demoteUnavailableToolReferences({ ...original, messages: [...original.messages,
+    { role: "system", content: [{ type: "tool_addition",
+      tool: { type: "tool_definition", definition: { name: "late" } } }] },
+  ] });
+  assert.deepEqual(declared.messages.slice(0, searched.messages.length), searched.messages);
+});
+
 // pi-ai 1.0.1 (inline-tools) keeps top-level `tools` fixed and defines tools loaded later
 // (tool_search) by value in `tool_addition` blocks inside messages. Feed the real payload the
 // staged Anthropic provider builds, for API-key and OAuth (Claude Code names) auth.

@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { PiCommandRejected } from './contracts.mjs';
-import { trimRequestImages } from '../../rubato-pi/src/context-notes/request-images.mjs';
+import { trimHistoryImagePixels } from './history-images.mjs';
 import { FRAME_BUDGET } from './wire.mjs';
 
 // get_messages carries every image the session ever saw as inline base64, and the
@@ -13,7 +13,7 @@ const trimHistoryImages = (value) => {
   const data = value.data;
   const messages = Array.isArray(data) ? data : data?.messages;
   if (!Array.isArray(messages)) return value;
-  const trimmed = trimRequestImages(messages);
+  const trimmed = trimHistoryImagePixels(messages);
   if (trimmed === messages) return value;
   return { ...value, data: Array.isArray(data) ? trimmed : { ...data, messages: trimmed } };
 };

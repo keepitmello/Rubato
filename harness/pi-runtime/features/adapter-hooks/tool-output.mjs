@@ -55,10 +55,11 @@ export function installToolOutputPreviews(pi) {
           }
           content.push({ ...block, text: previewToolText(block.text, message.toolName, path) });
           messageChanged = true;
-        } catch {
-          // Storage failure must not discard evidence or turn tool success into
-          // failure. Leave this block byte-for-byte intact, without a dead link.
-          content.push(block);
+        } catch (cause) {
+          // Returning raw output here used to change old messages when storage
+          // recovered (or a preview artifact disappeared). Stop request preparation
+          // instead. The successful tool result and original journal stay untouched.
+          throw new Error("Tool-output preview storage is unavailable or corrupt. Request not sent; original output is retained in session history. Restore artifact storage and retry.", { cause });
         }
       }
       messages.push(messageChanged ? { ...message, content } : message);

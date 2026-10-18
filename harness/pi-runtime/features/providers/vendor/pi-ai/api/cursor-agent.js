@@ -4040,6 +4040,7 @@ async function buildGrpcRequest(model, context, options, state) {
         message: { case: "runRequest", value: runRequest },
     });
     const requestBytes = toBinary(AgentClientMessageSchema, clientMessage);
+    options?.onRubatoWireBytes?.(requestBytes.byteLength);
     log("info", "builtRunRequest", {
         bytes: requestBytes.length,
         tools: context.tools?.length ?? 0,

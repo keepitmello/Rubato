@@ -16,7 +16,7 @@ function texts(message) {
   return (message.content ?? []).map((block) => block.text);
 }
 
-test("#given a user follow-up then a hidden memory notice #when remapped #then the notice is an assistant turn and the user text stays last", () => {
+test("#given a user follow-up then a hidden memory notice #when remapped #then chronology stays intact and the notice identifies harness speech", () => {
   const remapped = remapHiddenCustomTurns(
     [
       { role: "user", content: [{ type: "text", text: "ㅇㅇ 해봐." }], timestamp: 1 },
@@ -31,10 +31,23 @@ test("#given a user follow-up then a hidden memory notice #when remapped #then t
     convertOne,
   );
   assert.equal(remapped.length, 2);
-  assert.equal(remapped[0].role, "assistant");
-  assert.match(texts(remapped[0])[0], /after compaction/);
+  assert.equal(remapped[0].role, "user");
+  assert.equal(texts(remapped[0])[0], "ㅇㅇ 해봐.");
   assert.equal(remapped[1].role, "user");
-  assert.equal(texts(remapped[1])[0], "ㅇㅇ 해봐.");
+  assert.match(texts(remapped[1])[0], /not a new user request/);
+  assert.match(texts(remapped[1])[1], /after compaction/);
+});
+
+test("appending hidden notices never moves a sent user or merges earlier notice content", () => {
+  const user = { role: "user", content: [{ type: "text", text: "continue work" }], timestamp: 1 };
+  const notice = (n) => ({ role: "custom", display: false, content: `notice ${n}`, timestamp: n + 1 });
+  const messages = [user];
+  for (let n = 1; n <= 3; n++) {
+    const before = remapHiddenCustomTurns(messages, convertOne);
+    messages.push(notice(n));
+    const after = remapHiddenCustomTurns(messages, convertOne);
+    assert.deepEqual(after.slice(0, before.length), before);
+  }
 });
 
 test("#given assistant then hidden custom #when remapped #then the notice stays a user tail so the request is not assistant prefill", () => {

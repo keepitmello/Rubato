@@ -383,7 +383,7 @@ test("actual terminal renders notes transitions, not the model's raw window carr
   } finally { status.dispose(); }
 });
 
-test("staged convertToLlm remaps a trailing hidden custom to assistant before the user", async () => {
+test("staged convertToLlm keeps hidden notices chronological and identifies harness speech", async () => {
   const { convertToLlm } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/messages.js")).href);
   const converted = convertToLlm([
     { role: "user", content: [{ type: "text", text: "ㅇㅇ 해봐." }], timestamp: 1 },
@@ -396,10 +396,11 @@ test("staged convertToLlm remaps a trailing hidden custom to assistant before th
     },
   ]);
   assert.equal(converted.length, 2);
-  assert.equal(converted[0].role, "assistant");
-  assert.match(converted[0].content[0].text, /after compaction/);
+  assert.equal(converted[0].role, "user");
+  assert.equal(converted[0].content[0].text, "ㅇㅇ 해봐.");
   assert.equal(converted[1].role, "user");
-  assert.equal(converted[1].content[0].text, "ㅇㅇ 해봐.");
+  assert.match(converted[1].content[0].text, /not a new user request/);
+  assert.match(converted[1].content[1].text, /after compaction/);
 });
 
 test("actual SDK commits new_context once and the immediate provider turn uses only the live window", async (t) => {

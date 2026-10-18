@@ -12,7 +12,7 @@ import { basename, extname, join } from "node:path";
  * model sees before it enters the session: the history re-sends it on every turn.
  *
  * The clip rides in an `image` content block with a video/audio MIME type. That is the shape
- * every layer already carries (session record, request image trimming, the Gemini encoder); the
+ * every layer already carries (session record, request byte admission, the Gemini encoder); the
  * media-tools image limits skip non-image MIME types, and the Gemini encoder sends these as
  * sibling parts because function responses take only images, PDF and text.
  */
@@ -29,9 +29,8 @@ export const MEDIA_SHORT_SIDE = 1080;
 export const VIDEO_CRF = 26;
 export const AUDIO_BITRATE = "32k";
 /**
- * Encoded clip cap. Request preparation keeps at most 16MB of image blocks
- * (rubato-pi context-notes/request-images.mjs); a clip over that would be dropped from the very
- * request that reads it, so one clip stays well under it.
+ * Encoded clip cap. Base64 adds a third, so a clip leaves room for history and tools
+ * below request-budget.mjs's warning/stop lines. Request admission never trims old clips.
  */
 export const MEDIA_BYTE_LIMIT = 12 * 1024 * 1024;
 

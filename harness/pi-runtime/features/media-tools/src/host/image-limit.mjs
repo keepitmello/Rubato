@@ -1,5 +1,6 @@
 import { isTimedMediaMimeType } from "../read-media/index.mjs";
 import { processImage } from "./image-process.mjs";
+import { createHash } from "node:crypto";
 
 /** Anthropic many-image requests (>20 image/document blocks) reject any side over this. */
 export const MANY_IMAGE_MAX_DIMENSION = 2000;
@@ -199,7 +200,7 @@ export async function limitInlineImages(messages, options = {}) {
 		const content = [];
 		let messageChanged = false;
 		for (const block of message.content) {
-			const limited = await limitImageBlock(block, options);
+			const limited = await (options.project ?? limitImageBlock)(block, options);
 			if (limited !== block) messageChanged = true;
 			pushLimited(content, limited);
 		}
@@ -209,7 +210,32 @@ export async function limitInlineImages(messages, options = {}) {
 	return changed ? next : messages;
 }
 
-export function installImageLimit(pi) {
+export const IMAGE_PROJECTION_ENTRY = "rubato.image-projection.v1";
+
+// Persist request-only normalization alongside (never instead of) the original. Otherwise a
+// codec failure/success after restart can silently replace pixels already sent (or
+// resurrect a previously omitted image). No codec invocation is needed to replay a pin.
+export async function pinnedImageBlock(block, pins = new Map(), options = {}) {
+	if (block?.type !== "image" || !block.data || isTimedMediaMimeType(block.mimeType)) return block;
+	const dimensions = readImageDimensions(Buffer.from(block.data, "base64"));
+	if (dimensions && !exceedsLimit(dimensions, options.maxDimension ?? MANY_IMAGE_MAX_DIMENSION)) return block;
+	const hash = (value) => createHash("sha256").update(value).digest("hex");
+	const source = hash(JSON.stringify([block.mimeType, block.data, options.maxDimension ?? MANY_IMAGE_MAX_DIMENSION]));
+	if (pins.has(source)) {
+		const saved = pins.get(source);
+		if (saved.source !== source || saved.sha256 !== hash(JSON.stringify(saved.result))) {
+			throw new Error("Stored image projection is corrupt; original image is retained in session history.");
+		}
+		return saved.result;
+	}
+	const result = await limitImageBlock(block, options);
+	const record = { source, result, sha256: hash(JSON.stringify(result)) };
+	await options.savePin?.(record);
+	pins.set(source, record);
+	return result;
+}
+
+export function installImageLimit(pi, options = {}) {
 	const cache = new Map();
 	for (const event of ["session_start", "session_shutdown"]) {
 		pi.on(event, () => cache.clear());
@@ -225,8 +251,21 @@ export function installImageLimit(pi) {
 		}
 		if (changed) return { content };
 	});
-	pi.on("context", async (event) => {
-		const messages = await limitInlineImages(event.messages, { cache });
+	pi.on("context", async (event, ctx) => {
+		const manager = ctx?.sessionManager;
+		const branch = manager?.getBranch?.() ?? [];
+		const pins = new Map(branch.filter((entry) => entry.customType === IMAGE_PROJECTION_ENTRY)
+			.map((entry) => [entry.data.source, entry.data]));
+		const savePin = manager ? (record) => {
+			pi.appendEntry(IMAGE_PROJECTION_ENTRY, record);
+			const saved = manager.getBranch().findLast((entry) => entry.customType === IMAGE_PROJECTION_ENTRY &&
+				entry.data?.source === record.source);
+			if (!saved || saved.data.sha256 !== record.sha256) {
+				throw new Error("Image projection was not saved; request not sent. Original image is retained.");
+			}
+		} : undefined;
+		const messages = await limitInlineImages(event.messages, { ...options, cache, savePin,
+			project: (block, settings) => pinnedImageBlock(block, pins, settings) });
 		if (messages === event.messages) return;
 		return { messages };
 	});

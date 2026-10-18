@@ -114,11 +114,11 @@ test("no persistent session path means no preview and no invented storage locati
     { sessionManager: { getSessionFile: () => "relative.jsonl" } }), undefined);
 });
 
-test("unwritable artifact path preserves full evidence without a dead recovery link", async (t) => {
+test("unwritable artifact path refuses preparation rather than sending a different representation", async (t) => {
   const h = await harness(t);
   await writeFile(join(h.dir, "session-artifacts"), "not a directory");
   const message = result();
-  assert.equal(await h.run([message]), undefined);
+  await assert.rejects(h.run([message]), /Request not sent/);
   assert.equal(message.content[0].text, large);
 });
 
@@ -128,7 +128,7 @@ test("an existing corrupt artifact is not advertised as the original", async (t)
   const hash = createHash("sha256").update(large).digest("hex");
   await writeFile(join(h.artifacts, `${hash}.txt`), "partial");
   h.handlers.get("session_start")();
-  assert.equal(await h.run([result()]), undefined);
+  await assert.rejects(h.run([result()]), /Request not sent/);
 });
 
 test("cached pointers recreate an artifact removed during the same session", async (t) => {
@@ -145,7 +145,7 @@ test("cached pointers do not advertise an artifact changed during the same sessi
   await h.run([result()]);
   const [file] = await readdir(h.artifacts);
   await writeFile(join(h.artifacts, file), "changed");
-  assert.equal(await h.run([result()]), undefined);
+  await assert.rejects(h.run([result()]), /Request not sent/);
 });
 
 test("multiple text blocks and nontext metadata are retained independently", async (t) => {
