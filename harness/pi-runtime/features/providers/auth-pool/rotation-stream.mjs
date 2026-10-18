@@ -6,6 +6,7 @@ import { discoverEnvSlots } from "./env-slots.mjs";
 import { runCredentialFailover } from "./failover.mjs";
 import { acquireHalfOpenLease } from "./state-store.mjs";
 import { bindSessionSlot, boundSessionSlot } from "./affinity.mjs";
+import { selectQuotaSlot } from "./quota-select.mjs";
 
 function overlayState(slot, state) {
   if (!state) return slot;
@@ -172,7 +173,7 @@ export function streamWithCredentialRotation(options) {
   const readBound = () => boundSessionSlot(store, providerId, affinityKey);
   return runCredentialFailover({
     listSlots: () => listRotationSlots(sources),
-    stickySlotName: () => readBound()?.name,
+    stickySlotName: () => sources.loadBalancing ? undefined : readBound()?.name,
     select: (candidates, slots = candidates) => {
       if (options.requiredSlotName) {
         const required = candidates.find((candidate) => candidate.name === options.requiredSlotName);
@@ -182,8 +183,17 @@ export function streamWithCredentialRotation(options) {
         }
         return bindSessionSlot(store, providerId, affinityKey, required);
       }
-      const pinned = candidates.find((candidate) => candidate.pinned === true);
-      if (pinned) return bindSessionSlot(store, providerId, affinityKey, pinned);
+      const pinned = slots.find((candidate) => candidate.pinned === true);
+      if (pinned) {
+        const available = candidates.find((candidate) => candidate.name === pinned.name);
+        if (!available) throw new Error(requiredSlotUnavailableMessage(pinned.name, pinned, now()));
+        return bindSessionSlot(store, providerId, affinityKey, available);
+      }
+      if (sources.loadBalancing) {
+        return selectQuotaSlot(candidates, {
+          usage: sources.quotaUsage, modelId: sources.modelId, now: now(), random: options.random,
+        });
+      }
       const bound = readBound();
       if (bound) {
         const match = candidates.find((candidate) => candidate.name === bound.name);

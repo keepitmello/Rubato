@@ -245,6 +245,7 @@ function ProviderDetail({
 }) {
   const [job, setJob] = useState<LoginJob | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [balancing, setBalancing] = useState(false);
   const name = displayName(provider);
   const enabled = provider.disabled !== true;
 
@@ -265,6 +266,18 @@ function ProviderDetail({
       setJob(await rubatoAuth.login(environmentId, provider.id, method));
     } catch (error) {
       reportError(`Could not start ${name} sign-in`, error);
+    }
+  };
+
+  const setLoadBalancing = async (next: boolean) => {
+    setBalancing(true);
+    try {
+      await rubatoAuth.setLoadBalancing(environmentId, provider.id, next);
+      onChanged();
+    } catch (error) {
+      reportError("Could not change account load balancing", error);
+    } finally {
+      setBalancing(false);
     }
   };
 
@@ -295,6 +308,23 @@ function ProviderDetail({
         />
       </SettingsGroup>
 
+      {provider.id === "anthropic" ? (
+        <SettingsGroup>
+          <SettingsRow
+            title="Account load balancing"
+            description="On spreads requests by remaining quota and time to reset. Off uses the account you pick: the regular model or [sub]. Picking [sub] or pinning an account always keeps that account."
+            control={
+              <Switch
+                checked={provider.loadBalancing === true}
+                disabled={balancing}
+                onCheckedChange={(checked) => void setLoadBalancing(Boolean(checked))}
+                aria-label="Account load balancing"
+              />
+            }
+          />
+        </SettingsGroup>
+      ) : null}
+
       <div className="space-y-2">
         <h4 className="px-1 text-sm text-foreground/70">Accounts</h4>
         <SettingsGroup>
@@ -314,7 +344,7 @@ function ProviderDetail({
         </SettingsGroup>
         {provider.accounts.length > 1 ? (
           <p className="px-1 text-xs text-muted-foreground">
-            Rubato rotates between accounts when one hits its limit. Pin one to use only that account.
+            Pick a [sub] model for another account, or pin an account to use only that one.
           </p>
         ) : null}
       </div>

@@ -100,3 +100,14 @@ test('a provider switched off keeps its login and comes back when switched on', 
   assert.equal(provider(await f.service.handle('status'), 'cursor').disabled, false);
   await assert.rejects(f.service.handle('enabled', { provider: 'cursor', enabled: 'no' }), /enabled must be true or false/);
 });
+
+test('account load balancing persists through the real CLI and is off by default', async (t) => {
+  const f = await fixture(t);
+  assert.equal(provider(await f.service.handle('status'), 'anthropic').loadBalancing, false);
+  assert.deepEqual(await f.service.handle('load-balancing', { provider: 'anthropic', enabled: true }), { ok: true, loadBalancing: true });
+  assert.equal(provider(await f.service.handle('status'), 'anthropic').loadBalancing, true);
+  assert.deepEqual(await f.service.handle('load-balancing', { provider: 'anthropic', enabled: false }), { ok: true, loadBalancing: false });
+  assert.equal(provider(await f.service.handle('status'), 'anthropic').loadBalancing, false);
+  await assert.rejects(f.service.handle('load-balancing', { provider: 'anthropic', enabled: 'yes' }), /enabled must be true or false/);
+  await assert.rejects(f.service.handle('load-balancing', { provider: 'cursor', enabled: true }), /supported for Anthropic/);
+});

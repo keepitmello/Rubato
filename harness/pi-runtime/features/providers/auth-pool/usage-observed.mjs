@@ -78,6 +78,23 @@ export function anthropicUsageWindows(headers) {
   return windows.length > 0 ? windows.sort((a, b) => a.id.localeCompare(b.id)) : undefined;
 }
 
+/** OAuth usage endpoint and inference headers share one window vocabulary. */
+export function anthropicEndpointWindows(body) {
+  const windows = [];
+  for (const [id, value] of Object.entries(body ?? {})) {
+    if (!/^five_hour$|^seven_day(?:_[a-z0-9]+)?$/.test(id)) continue;
+    if (typeof value?.utilization !== "number" || !Number.isFinite(value.utilization)) continue;
+    const claim = id === "five_hour" ? "5h" : id.replace("seven_day", "7d");
+    const reset = Date.parse(value.resets_at);
+    windows.push({
+      ...claimWindow(claim),
+      usedPercent: clampPercent(value.utilization),
+      ...(Number.isFinite(reset) ? { resetsAt: new Date(reset).toISOString() } : {}),
+    });
+  }
+  return windows;
+}
+
 const PARSERS = Object.freeze({ anthropic: anthropicUsageWindows });
 
 /** Whether responses from this provider can carry usage worth observing. */
@@ -103,7 +120,19 @@ export function observedAccountUsage(observed, providerId, accountName) {
 }
 
 function resetsOf(windows) {
-  return windows.map((window) => `${window.id}@${window.resetsAt ?? ""}`).join(",");
+  return windows.map((window) => `${window.id}@${window.resetsAt ?? ""}:${window.usedPercent >= 100}`).join(",");
+}
+
+export function recordObservedUsage(path, providerId, accountName, windows, at = Date.now()) {
+  if (!path) return;
+  const current = readObservedUsage(path);
+  current.version = 1;
+  const entry = { provider: providerId, account: accountName, observedAt: new Date(at).toISOString(), windows };
+  current.accounts[`${providerId}/${accountName}`] = entry;
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temporary = `${path}.${process.pid}.${at}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(current, null, 2)}\n`, { mode: 0o600 });
+  renameSync(temporary, path);
 }
 
 /**
@@ -126,13 +155,7 @@ export function createUsageObserver({ path, now = Date.now } = {}) {
     if (previous && at - previous.at < WRITE_INTERVAL_MS && previous.resets === resetsOf(windows)) return;
     last.set(key, { at, resets: resetsOf(windows) });
     try {
-      const current = readObservedUsage(path);
-      current.version = 1;
-      current.accounts[key] = { provider: providerId, account: accountName, observedAt: new Date(at).toISOString(), windows };
-      mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-      const temporary = `${path}.${process.pid}.${at}.tmp`;
-      writeFileSync(temporary, `${JSON.stringify(current, null, 2)}\n`, { mode: 0o600 });
-      renameSync(temporary, path);
+      recordObservedUsage(path, providerId, accountName, windows, at);
     } catch {
       // Observation is best effort.
     }

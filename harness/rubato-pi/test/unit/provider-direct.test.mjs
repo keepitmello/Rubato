@@ -15,7 +15,7 @@ import {
   DIRECT_PROVIDER_IDS,
   PROVIDER_DIRECT_FLAG,
   daybreakModels,
-  directProviders,
+  directProviders as nativeDirectProviders,
   fable51Models,
   gpt6CodexModels,
   nativeProviderFactoryLoader,
@@ -33,6 +33,11 @@ import {
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import { kRubatoStream } from "../../src/rubato-stream.mjs";
 import { senpiNested } from "../../src/engine-paths.mjs";
+
+const directProviders = (options = {}) => nativeDirectProviders({
+  readSetupToken: async () => undefined, setupTokenPresence: () => false,
+  readStoredCredential: () => undefined, ...options,
+});
 
 // 현재 세대 id 는 소스/카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
 const FABLE_ID = ANTHROPIC_PICKER_IDS[0];

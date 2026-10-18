@@ -28,7 +28,7 @@ import {
   projectSlot,
 } from "../pi-runtime/features/providers/auth-pool/slots.mjs";
 import { CredentialSlotRepository } from "../pi-runtime/features/providers/auth-pool/state-store.mjs";
-import { readDisabledProviders, setProviderDisabled } from "../pi-runtime/features/providers/provider-switch.mjs";
+import { readDisabledProviders, setProviderDisabled, readAccountLoadBalancing, setAccountLoadBalancing } from "../pi-runtime/features/providers/provider-switch.mjs";
 import { readObservedUsage, usageObservedPath } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import { collectUsage } from "./rubato-usage.mjs";
 import {
@@ -303,6 +303,7 @@ function homeOf(ctx) {
 export async function collectStatus(ctx) {
   const rows = [];
   const disabled = readDisabledProviders({ home: homeOf(ctx) });
+  const balanced = readAccountLoadBalancing({ home: homeOf(ctx) });
   for (const provider of PROVIDERS) {
     const entry = await credentialsOf(ctx).read(provider.id);
     const slotByName = new Map(listSlots(entry).map((slot) => [slot.name, slot]));
@@ -318,6 +319,7 @@ export async function collectStatus(ctx) {
       blockedCount: accounts.filter((account) => account.state === "blocked").length,
       // 꺼진 프로바이더: 인증은 그대로이고 모델만 피커와 Agent 목록에서 빠진다 (provider-switch.mjs).
       disabled: disabled.has(provider.id),
+      loadBalancing: balanced.has(provider.id),
     });
   }
   return rows;
@@ -355,7 +357,8 @@ export function printUsage(stdout = process.stdout) {
   stdout.write("       rubato auth remove <provider> <name>\n");
   stdout.write("       rubato auth check <provider> <name>\n");
   stdout.write("       rubato auth disable|enable <provider>   hide or show its models; the login stays\n");
-  stdout.write("       add --json to status, usage, login, check, pin, unpin, remove, disable, enable for the GUI contract\n");
+  stdout.write("       rubato auth balance anthropic on|off   automatic quota-aware account allocation\n");
+  stdout.write("       add --json to status, usage, login, check, pin, unpin, remove, disable, enable, balance for the GUI contract\n");
   stdout.write(`providers: ${PROVIDERS.map((provider) => provider.id).join(", ")}\n`);
   stdout.write("Anthropic: oauth or token (sk-ant-oat setup-token). Token stays in ~/.claude, not auth.json.\n");
 }
@@ -767,6 +770,13 @@ export async function handleAuthArgs(argv, ctx) {
       runSwitchCommand(id, cmd === "disable", ctx);
       return "ok";
     }
+    if (cmd === "balance") {
+      const id = await resolveProviderArg(rest[0], ctx);
+      if (!id || !["on", "off"].includes(rest[1])) return "usage";
+      setAccountLoadBalancing(id, rest[1] === "on", { home: homeOf(ctx) });
+      (ctx.stdout ?? process.stdout).write(`Account load balancing ${rest[1]} for ${id}.\n`);
+      return "ok";
+    }
     if (cmd === "check") {
       const id = await resolveProviderArg(rest[0], ctx);
       if (!id || rest[1] === undefined) return "usage";
@@ -796,6 +806,7 @@ export function describeCheck(result) {
 //   usage --json                      계정별 구독 사용량 한 덩어리 (rubato-usage.mjs)
 //   check|pin|unpin|remove ... --json  결과 한 덩어리 ({ ok } 또는 { error })
 //   disable|enable <provider> --json   { ok, disabled: [꺼진 프로바이더 id] }
+//   balance anthropic on|off --json   { ok, loadBalancing }
 //   login <provider> <method> --json   stdout 으로 이벤트를 한 줄씩, stdin 으로 답을 한 줄씩
 //     out  {type:"auth_url",url,instructions} {type:"device_code",userCode,verificationUri}
 //          {type:"info",message} {type:"prompt",id,kind,message,placeholder?,options?}
@@ -812,6 +823,7 @@ export async function statusJson(ctx) {
       methods: row.provider.methods,
       state: row.state,
       disabled: row.disabled,
+      loadBalancing: row.loadBalancing,
       accounts: row.accounts.map((account) => ({
         name: account.name,
         source: account.source,
@@ -979,7 +991,7 @@ export async function handleJsonArgs(argv, ctx) {
     return code === "usage" ? "usage" : "error";
   };
   const [cmd, ...rest] = argv;
-  const commands = new Set(["status", "list", "usage", "login", "add", "check", "pin", "unpin", "remove", "disable", "enable"]);
+  const commands = new Set(["status", "list", "usage", "login", "add", "check", "pin", "unpin", "remove", "disable", "enable", "balance"]);
   if (cmd !== undefined && !commands.has(cmd)) return fail("usage", `Unknown command: ${cmd}`);
   try {
     if (cmd === "status" || cmd === "list" || cmd === undefined) {
@@ -1005,6 +1017,11 @@ export async function handleJsonArgs(argv, ctx) {
     }
     if (cmd === "disable" || cmd === "enable") {
       reply({ ok: true, disabled: setProviderDisabled(id, cmd === "disable", { home: homeOf(ctx) }) });
+      return "ok";
+    }
+    if (cmd === "balance") {
+      if (!["on", "off"].includes(rest[1])) return fail("usage", "balance needs on or off");
+      reply({ ok: true, loadBalancing: setAccountLoadBalancing(id, rest[1] === "on", { home: homeOf(ctx) }) });
       return "ok";
     }
     if (rest[1] === undefined) return fail("usage", `${cmd} needs an account name`);

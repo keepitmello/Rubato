@@ -20,6 +20,7 @@
 // 값을 우리가 소유한 것처럼 보이게 된다.
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -85,6 +86,20 @@ function validToken(text) {
   return token.startsWith(CLAUDE_SETUP_TOKEN_PREFIX) && token.length > CLAUDE_SETUP_TOKEN_PREFIX.length
     ? token
     : undefined;
+}
+
+/** getModels is synchronous. Recheck the owned file on each catalogue read;
+ * retain a discovered Keychain fallback without opening Keychain on every read. */
+export function setupTokenPresenceReader({ env = process.env, home = homedir(), found, readFileImpl = readFileSync } = {}) {
+  const file = claudeSetupTokenPath(env, home);
+  const keychainPresent = Boolean(found?.token && found.source === CLAUDE_SETUP_TOKEN_SOURCES.keychain);
+  return () => {
+    try {
+      return Boolean(validToken(readFileImpl(file, "utf8"))) || keychainPresent;
+    } catch {
+      return keychainPresent;
+    }
+  };
 }
 
 /**

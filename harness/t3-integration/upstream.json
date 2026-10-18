@@ -24,6 +24,7 @@
     "apps/server/src/provider/providerStatusCache.ts": "f7128f6b4e9e8e135a7857b0efd139a3e2489a5bb35caf3b37b7ff10cff774ad",
     "apps/server/src/project/AgentSessionImporter.ts": "1f5dc3d2322ae956b126dd56399614a9681af9761122bd9a781c175b3a60ee31",
     "apps/web/src/components/chat/ModelPickerContent.tsx": "3765e296ae56dc1565643f9222b97c50ec217f493d62e9bba3bdf5f88ec71002",
+    "apps/web/src/modelOrdering.ts": "2131d1562b30a354bacc0011884932c498fc2205f745aa07b4407c17f032f0f0",
     "apps/desktop/scripts/electron-launcher.mjs": "383c1c3c472bd6974e8159d6ec639d9ad56a6ea669c35e82702f70726821cfdf",
     "apps/desktop/src/app/DesktopStatePaths.ts": "ae9704d2e66e0033c853750368faea0fea7aa898681ee4931c296891915e510a",
     "apps/server/vite.config.ts": "bbe145c419b7d72738193d9203e733f3cac59259e91fd23fd432e63539faf0c5",

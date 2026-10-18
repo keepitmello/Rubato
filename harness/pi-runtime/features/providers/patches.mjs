@@ -335,6 +335,7 @@ function patchRunnerFlushUnregister(sourceText) {
 }
 
 const rubatoSources = Object.freeze([
+  "account-lanes.mjs",
   "anthropic-server-compaction-wire.mjs",
   "anthropic-server-compaction.mjs",
   "anthropic-setup-token.mjs",
@@ -508,6 +509,7 @@ export const patches = Object.freeze([
 
 export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/extension.mjs", source("./extension.mjs")),
+  ownedFile("dist/rubato-features/providers/provider-switch.mjs", source("./provider-switch.mjs")),
   ownedFile("dist/rubato-features/providers/src/engine-paths.mjs", source("./engine-paths.mjs")),
   ownedFile("dist/rubato-features/providers/cursor-lazy.mjs", source("./cursor-lazy.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/slots.mjs", source("./auth-pool/slots.mjs")),
@@ -524,6 +526,9 @@ export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/auth-pool/setup-token-slots.mjs", source("./auth-pool/setup-token-slots.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/multi-account.mjs", source("./auth-pool/multi-account.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/usage-observed.mjs", source("./auth-pool/usage-observed.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/account-lanes.mjs", source("../../../rubato-pi/src/account-lanes.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/quota-select.mjs", source("./auth-pool/quota-select.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/quota-usage.mjs", source("./auth-pool/quota-usage.mjs")),
   codingAgentFile("dist/rubato-features/providers/auth-pool/runtime-pool.mjs", source("./auth-pool/coding-agent-runtime-pool.mjs")),
   codingAgentFile("dist/rubato-features/providers/provider-switch.mjs", source("./provider-switch.mjs")),
   ownedFile(

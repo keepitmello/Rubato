@@ -11,6 +11,29 @@ import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser";
 // `rubato auth disable|enable` 이다 (scripts/rubato-auth.mjs, 앱의 Providers 화면).
 
 export const DISABLED_PROVIDERS_PATH = Object.freeze(["providers", "disabled"]);
+export const LOAD_BALANCING_PATH = Object.freeze(["providers", "loadBalancing"]);
+
+/** Opt-in: absent settings preserve explicit base/sub account selection. */
+export function readAccountLoadBalancing({ home = process.env.HOME || homedir() } = {}) {
+  try {
+    const config = parseJsonc(readFileSync(providerConfigPath(home), "utf8"), [], { allowTrailingComma: true });
+    return new Set(Array.isArray(config?.providers?.loadBalancing) ? config.providers.loadBalancing : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function setAccountLoadBalancing(providerId, enabled, options = {}) {
+  if (providerId !== "anthropic") throw new Error("Account load balancing is supported for Anthropic.");
+  if (typeof enabled !== "boolean") throw new Error("enabled must be true or false");
+  editProviderSetting(LOAD_BALANCING_PATH, (config) => {
+    const providers = new Set(config?.providers?.loadBalancing ?? []);
+    if (enabled) providers.add(providerId);
+    else providers.delete(providerId);
+    return [...providers].sort();
+  }, options);
+  return enabled;
+}
 
 /** 설정 파일 자리: rubato.jsonc, 그게 없고 rubato.json 만 있으면 그쪽 (titleConfigPath 와 같은 규칙). */
 export function providerConfigPath(home = process.env.HOME || homedir()) {
@@ -71,21 +94,27 @@ export function withoutDisabledProviders(models, disabled = currentDisabledProvi
 /** providers.disabled 를 고친다. 주석·다른 키·순서는 사용자가 쓴 그대로 둔다. 새 목록을 돌려준다. */
 export function setProviderDisabled(providerId, disabled, { home = process.env.HOME || homedir() } = {}) {
   if (typeof providerId !== "string" || providerId.trim() === "") throw new Error("provider id is missing");
+  return editProviderSetting(DISABLED_PROVIDERS_PATH, (config) => {
+    const next = new Set(disabledProviderList(config));
+    if (disabled) next.add(providerId.trim());
+    else next.delete(providerId.trim());
+    return [...next].sort();
+  }, { home });
+}
+
+function editProviderSetting(settingPath, nextValue, { home = process.env.HOME || homedir() } = {}) {
   const file = providerConfigPath(home);
   let symlink = false;
   try { symlink = lstatSync(file).isSymbolicLink(); } catch { /* 없으면 새로 만든다 */ }
-  if (symlink) throw new Error(`${file} is a symlink; edit providers.disabled there directly.`);
+  if (symlink) throw new Error(`${file} is a symlink; edit ${settingPath.join(".")} there directly.`);
   const text = existsSync(file) ? readFileSync(file, "utf8") : "";
   const errors = [];
   const config = text.trim() === "" ? {} : parseJsonc(text, errors, { allowTrailingComma: true });
   if (errors.length > 0) throw new Error(`${file} does not parse. Fix it before changing providers.`);
-  const next = new Set(disabledProviderList(config));
-  if (disabled) next.add(providerId.trim());
-  else next.delete(providerId.trim());
-  const list = [...next].sort();
+  const list = nextValue(config);
   const base = text.trim() === "" ? "{\n}\n" : text;
   // 빈 목록이면 키를 지운다. providers 가 비면 그것도 지운다.
-  let edited = applyEdits(base, modify(base, [...DISABLED_PROVIDERS_PATH], list.length > 0 ? list : undefined, {
+  let edited = applyEdits(base, modify(base, [...settingPath], list.length > 0 ? list : undefined, {
     formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" },
   }));
   const providers = parseJsonc(edited, [], { allowTrailingComma: true })?.providers;

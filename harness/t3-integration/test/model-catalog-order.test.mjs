@@ -88,7 +88,7 @@ test('reasoning models expose effort, and fast-capable models expose Fast', () =
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-1', api: 'anthropic-messages' }), false);
 });
 
-test('T3 catalogue shows Anthropic account copies next to the base model', () => {
+test('T3 catalogue shows manual Anthropic account copies after all base models', () => {
   const [fable, opus] = MODEL_ORDER.anthropic;
   const catalog = catalogForPicker([
     { provider: 'anthropic', id: opus, name: 'Claude Opus', reasoning: true, api: 'anthropic-messages' },
@@ -98,13 +98,13 @@ test('T3 catalogue shows Anthropic account copies next to the base model', () =>
   ]);
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
     `anthropic/${fable}`,
-    `anthropic/${fable}-sub`,
     `anthropic/${opus}`,
+    `anthropic/${fable}-sub`,
     `anthropic/${opus}-sub`,
   ]);
   assert.equal(modelPickerLabel(catalog[0]), 'Fable 5.1');
-  assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1 [sub]');
-  assert.equal(modelPickerLabel(catalog[2]), 'Opus 5.5');
+  assert.equal(modelPickerLabel(catalog[1]), 'Opus 5.5');
+  assert.equal(modelPickerLabel(catalog[2]), 'Fable 5.1 [sub]');
   assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub`, api: 'anthropic-messages' }), true);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub2`, api: 'anthropic-messages' }), true);
 });

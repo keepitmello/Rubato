@@ -136,6 +136,8 @@ export function admitProductCatalogItems(models, options = {}) {
 
 export function sortProductCatalogItems(models) {
   return [...models].sort((a, b) => {
+    const accountRank = Number(Boolean(accountLaneSuffix(a.id))) - Number(Boolean(accountLaneSuffix(b.id)));
+    if (accountRank !== 0) return accountRank;
     const providerRank = rankedIndex(PRODUCT_PROVIDER_ORDER, a.provider) - rankedIndex(PRODUCT_PROVIDER_ORDER, b.provider);
     if (providerRank !== 0) return providerRank;
     const providerCompare = a.provider.localeCompare(b.provider);
@@ -181,13 +183,14 @@ export function availableProductModelIds(entries) {
     }
   }
   const ids = [];
+  const accountIds = [];
   for (const slug of catalogSlugs()) {
     if (productCatalogAliases(slug).some((alias) => raw.has(alias))) ids.push(slug);
     for (const suffix of ACCOUNT_LANE_SUFFIXES) {
-      if (raw.has(`${slug}${suffix}`)) ids.push(`${slug}${suffix}`);
+      if (raw.has(`${slug}${suffix}`)) accountIds.push(`${slug}${suffix}`);
     }
   }
-  return ids;
+  return [...ids, ...accountIds];
 }
 
 export function expandProductCatalogVisibility(visible) {

@@ -3,7 +3,11 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { DIRECT_PROVIDER_IDS, directProviders } from "../../src/provider-direct.mjs";
+import { DIRECT_PROVIDER_IDS, directProviders as nativeDirectProviders } from "../../src/provider-direct.mjs";
+const directProviders = (options = {}) => nativeDirectProviders({
+  readSetupToken: async () => undefined, setupTokenPresence: () => false,
+  readStoredCredential: () => undefined, ...options,
+});
 import { SUPPORTED_PROVIDER_IDS, foreignProviderIds } from "../../src/provider-ids.mjs";
 import { OPENCODE_PICKER_IDS } from "../../src/picker-catalog.mjs";
 import { ensureModelsConfig } from "../../src/session-defaults.mjs";

@@ -143,10 +143,10 @@ describe("product model catalog", () => {
       { provider: "openai-codex", id: `${SOL}-sub` },
     ])).toEqual([
       `openai-codex/${SOL}`,
-      `openai-codex/${SOL}-sub`,
       `anthropic/${FABLE}`,
-      `anthropic/${FABLE}-sub`,
       `anthropic/${OPUS}`,
+      `openai-codex/${SOL}-sub`,
+      `anthropic/${FABLE}-sub`,
     ])
   })
 
@@ -162,8 +162,8 @@ describe("product model catalog", () => {
       { provider: "anthropic", id: FABLE },
     ]).map(pick)).toEqual([
       `anthropic/${FABLE}`,
-      `anthropic/${FABLE}-sub2`,
       `anthropic/${OPUS}`,
+      `anthropic/${FABLE}-sub2`,
       `anthropic/${OPUS}-sub`,
       `anthropic/${OPUS}-sub2`,
     ])
@@ -172,5 +172,20 @@ describe("product model catalog", () => {
       { provider: "anthropic", id: `${OPUS}-sub` },
       { provider: "anthropic", id: `${OPUS}-sub2` },
     ])).toEqual([`anthropic/${OPUS}`, `anthropic/${OPUS}-sub`, `anthropic/${OPUS}-sub2`])
+  })
+
+  test("#given base and sub models across providers #when sorted #then every sub row comes last", () => {
+    const [cursor] = PRODUCT_MODEL_ORDER.cursor
+    expect(sortProductCatalogItems([
+      { provider: "anthropic", id: `${OPUS}-sub` },
+      { provider: "cursor", id: cursor },
+      { provider: "openai-codex", id: `${SOL}-sub` },
+      { provider: "anthropic", id: OPUS },
+    ]).map(pick)).toEqual([
+      `anthropic/${OPUS}`,
+      `cursor/${cursor}`,
+      `openai-codex/${SOL}-sub`,
+      `anthropic/${OPUS}-sub`,
+    ])
   })
 })

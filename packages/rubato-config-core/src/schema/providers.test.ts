@@ -12,4 +12,11 @@ describe("providers", () => {
   test("unknown keys under providers still fail", () => {
     expect(() => RubatoConfigSchema.parse({ providers: { off: ["cursor"] } })).toThrow()
   })
+
+  test("Claude account load balancing parses as an opt-in setting", () => {
+    const providers = { loadBalancing: ["anthropic"] }
+    expect(RubatoConfigSchema.parse({ providers }).providers).toEqual(providers)
+    expect(RubatoConfigLayerSchema.parse({ providers }).providers).toEqual(providers)
+    expect(() => RubatoConfigSchema.parse({ providers: { loadBalancing: true } })).toThrow()
+  })
 })

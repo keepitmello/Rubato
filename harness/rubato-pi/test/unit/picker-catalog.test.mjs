@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   ANTHROPIC_PICKER_IDS,
+  ANTHROPIC_SUB_PICKER_IDS,
   CODEX_PICKER_IDS,
   CODEX_SUB_PICKER_IDS,
   OPENCODE_PICKER_IDS,
@@ -236,6 +237,38 @@ test("저장분을 모르면 getModels 는 계정 행을 전부 넣는다", () =
   assert.deepEqual(provider.getModels().map((entry) => entry.id), [CURRENT_OPUS, `${CURRENT_OPUS}-sub`, `${CURRENT_OPUS}-sub2`]);
 });
 
+test("flat OAuth plus an external setup-token exposes exactly one manual sub lane", () => {
+  const credential = { type: "oauth", access: "oauth", refresh: "refresh", expires: 1 };
+  const provider = withSubAccountCopies({
+    id: "anthropic",
+    getModels: () => ANTHROPIC_PICKER_IDS.map(model),
+  }, { readStoredCredential: () => credential, hasSetupToken: true });
+  const expected = [...ANTHROPIC_PICKER_IDS, ...ANTHROPIC_SUB_PICKER_IDS.map((id) => `${id}-sub`)];
+  assert.deepEqual(provider.getModels().map((entry) => entry.id), expected);
+  assert.deepEqual(provider.filterModels(provider.getModels(), credential).map((entry) => entry.id), expected);
+  const alone = withSubAccountCopies({ id: "anthropic", getModels: () => [model(CURRENT_OPUS)] }, {
+    readStoredCredential: () => credential,
+  });
+  assert.deepEqual(alone.getModels().map((entry) => entry.id), [CURRENT_OPUS]);
+  const setupOnly = withSubAccountCopies({ id: "anthropic", getModels: () => [model(CURRENT_OPUS)] }, {
+    readStoredCredential: () => null, hasSetupToken: true,
+  });
+  assert.deepEqual(setupOnly.getModels().map((entry) => entry.id), [CURRENT_OPUS]);
+});
+
+test("a live setup-token presence change updates both catalogue snapshots and filtering", () => {
+  let present = false;
+  const credential = { type: "oauth" };
+  const provider = withSubAccountCopies({
+    id: "anthropic", getModels: () => [model(CURRENT_OPUS)],
+  }, { readStoredCredential: () => credential, hasSetupToken: () => present });
+  assert.equal(provider.getModels().length, 1);
+  present = true;
+  assert.equal(provider.getModels().length, 2);
+  assert.equal(provider.filterModels(provider.getModels(), credential).length, 2);
+  present = false;
+  assert.equal(provider.getModels().length, 1);
+});
 test("storedCredentialReader 는 파일이 바뀔 때 다시 읽고, 깨진 파일엔 직전 값을 쓴다", () => {
   const dir = mkdtempSync(join(tmpdir(), "picker-auth-"));
   const authPath = join(dir, "auth.json");

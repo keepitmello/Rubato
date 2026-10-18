@@ -50,6 +50,11 @@ Esc 뒤로, q 종료. 명령어를 칠 일은 API 키와 setup-token 붙여넣�
 GUI 계약이 된다 — GUI 설정 → **Providers**가 이 계약 위에서 같은 상태·로그인·연결
 확인·고정·삭제를 보여 준다. 계약 정의는 `harness/scripts/rubato-auth.mjs`의 GUI 계약 절이다.
 
+Claude의 **계정 로드밸런싱**은 설정 → Providers → Claude에서 켜고 끈다. 기본은 꺼짐이다.
+켜면 남은 한도와 초기화까지의 시간에 맞춰 요청을 나눠 쓰고, 끄면 일반 모델은 기본 계정,
+`[sub]` 모델은 두 번째 계정을 쓴다. `[sub]` 직접 선택과 계정 고정은 자동 분산보다 우선한다.
+터미널에서는 `rubato auth balance anthropic on|off`로 바꾸며, 앱과 CLI에 즉시 반영된다.
+
 ## 실행
 
 ```bash

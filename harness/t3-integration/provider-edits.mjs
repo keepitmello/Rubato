@@ -8,6 +8,7 @@ export const providerOverlays = [
   // Also serves Settings > General > About (/rubato/app); about-edits.mjs holds its page.
   'apps/server/src/RubatoServiceRoute.ts',
   'apps/web/src/state/rubatoAuth.ts',
+  'apps/web/src/rubatoAccountModelOrder.ts',
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
   // Titles and summaries: the session-title ladder the Stats card shares.
   'apps/web/src/components/settings/RubatoTitleModels.tsx',
@@ -53,6 +54,16 @@ const t3Route = [
 ].join('\n');
 
 export const providerEdits = {
+  'apps/web/src/modelOrdering.ts': [
+    ['import * as Arr from "effect/Array";', 'import { rubatoAccountModelRank } from "./rubatoAccountModelOrder";\n'],
+    ['  return Arr.sort(models, Order.combineAll(orders));', '  return Arr.sort(models, Order.combineAll([Order.mapInput(Order.Number, (model: T) => rubatoAccountModelRank(model.slug)), ...orders]));', 'replace'],
+    ['  return Arr.sort(items, Order.combineAll(orders));', '  return Arr.sort(items, Order.combineAll([Order.mapInput(Order.Number, (item: T) => rubatoAccountModelRank(item.slug)), ...orders]));', 'replace'],
+  ],
+  'apps/web/src/components/chat/ModelPickerContent.tsx': [
+    ['import { resolveSelectableModel } from "@t3tools/shared/model";', 'import { rubatoAccountModelRank } from "../../rubatoAccountModelOrder";\n'],
+    ['      return rankModelPickerSearch(candidates, searchQuery, (model) => ({', '      const ranked = rankModelPickerSearch(candidates, searchQuery, (model) => ({', 'replace'],
+    ['        isFavorite: favoritesSet.has(providerModelKey(model.instanceId, model.slug)),\n      }));', '        isFavorite: favoritesSet.has(providerModelKey(model.instanceId, model.slug)),\n      }));\n      return ranked.toSorted((a, b) => rubatoAccountModelRank(a.slug) - rubatoAccountModelRank(b.slug));', 'replace'],
+  ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoAppRouteLayer, rubatoAuthRouteLayer, rubatoSessionStateRouteLayer } from "./RubatoServiceRoute.ts";\n'],
     ['    DeviceHubProxy.layer,\n', '    rubatoAuthRouteLayer,\n    rubatoAppRouteLayer,\n    rubatoSessionStateRouteLayer,\n'],

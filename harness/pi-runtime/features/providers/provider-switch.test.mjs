@@ -9,6 +9,8 @@ import {
   readDisabledProviders,
   setProviderDisabled,
   withoutDisabledProviders,
+  readAccountLoadBalancing,
+  setAccountLoadBalancing,
 } from "./provider-switch.mjs";
 
 function home(text) {
@@ -77,5 +79,19 @@ test("a change to the file is seen without a restart", () => {
     writeFileSync(file, '{ "providers": { "disabled": ["cursor", "kiro"] } }');
     utimesSync(file, new Date(), new Date(Date.now() + 5_000));
     assert.deepEqual([...currentDisabledProviders(dir)], ["cursor", "kiro"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("account load balancing is opt-in, persists, and keeps other provider settings", () => {
+  const dir = home('{\n // keep me\n "providers": { "disabled": ["cursor"] }\n}');
+  try {
+    assert.equal(readAccountLoadBalancing({ home: dir }).has("anthropic"), false);
+    setAccountLoadBalancing("anthropic", true, { home: dir });
+    assert.equal(readAccountLoadBalancing({ home: dir }).has("anthropic"), true);
+    assert.deepEqual([...readDisabledProviders({ home: dir })], ["cursor"]);
+    setAccountLoadBalancing("anthropic", false, { home: dir });
+    assert.equal(readAccountLoadBalancing({ home: dir }).has("anthropic"), false);
+    assert.match(readFileSync(join(dir, ".rubato", "rubato.jsonc"), "utf8"), /keep me/);
+    assert.throws(() => setAccountLoadBalancing("cursor", true, { home: dir }), /supported for Anthropic/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

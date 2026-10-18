@@ -14,7 +14,7 @@
 // scope, and the endpoint rate-limits them for an hour). Their windows come from the last
 // real call's response headers, which the credential pool records
 // (pi-runtime/features/providers/auth-pool/usage-observed.mjs).
-import { observedAccountUsage } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
+import { observedAccountUsage, anthropicEndpointWindows } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const SESSION_MINS = 5 * 60;
@@ -130,25 +130,8 @@ async function readCodex({ slot, fetchImpl }) {
 
 // ── Anthropic ───────────────────────────────────────────────────────────────
 
-const ANTHROPIC_WINDOWS = Object.freeze({
-  five_hour: { kind: "session", label: "Session", windowDurationMins: SESSION_MINS },
-  seven_day: { kind: "weekly", label: "Weekly", windowDurationMins: WEEK_MINS },
-  seven_day_opus: { kind: "weekly", label: "Weekly · Opus", windowDurationMins: WEEK_MINS },
-  seven_day_sonnet: { kind: "weekly", label: "Weekly · Sonnet", windowDurationMins: WEEK_MINS },
-});
-
 /** `api.anthropic.com/api/oauth/usage` → windows. `utilization` is already a percentage. */
-export function anthropicUsageWindows(body) {
-  const windows = [];
-  for (const [id, shape] of Object.entries(ANTHROPIC_WINDOWS)) {
-    const entry = body?.[id];
-    const used = Number(entry?.utilization);
-    if (!entry || !Number.isFinite(used)) continue;
-    const resetsAt = isoFromText(entry.resets_at);
-    windows.push({ id, ...shape, usedPercent: clampPercent(used), ...(resetsAt ? { resetsAt } : {}) });
-  }
-  return windows;
-}
+export const anthropicUsageWindows = anthropicEndpointWindows;
 
 async function readAnthropic({ slot, account, observed, fetchImpl }) {
   const seen = observedAccountUsage(observed, "anthropic", account.name);

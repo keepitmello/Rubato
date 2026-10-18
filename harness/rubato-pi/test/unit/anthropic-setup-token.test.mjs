@@ -18,12 +18,31 @@ import {
   LEGACY_CLAUDE_ACCOUNT_ENV,
   LEGACY_CLAUDE_SETUP_TOKEN_FILE_ENV,
   claudeAccount,
+  setupTokenPresenceReader,
   claudeSetupTokenPath,
   claudeSetupTokenService,
   readClaudeSetupToken,
   spawnKeychainLookup,
   withClaudeSetupToken,
 } from "../../src/anthropic-setup-token.mjs";
+
+test("picker presence follows setup-token file creation and removal without restarting", () => {
+  const root = mkdtempSync(join(tmpdir(), "rb-setup-presence-"));
+  const file = join(root, "setup-token");
+  const present = setupTokenPresenceReader({ env: { RUBATO_CLAUDE_SETUP_TOKEN_FILE: file } });
+  try {
+    assert.equal(present(), false);
+    writeFileSync(file, `${CLAUDE_SETUP_TOKEN_PREFIX}-fixture\n`);
+    assert.equal(present(), true);
+    rmSync(file);
+    assert.equal(present(), false);
+    const keychain = setupTokenPresenceReader({
+      env: { RUBATO_CLAUDE_SETUP_TOKEN_FILE: file },
+      found: { token: `${CLAUDE_SETUP_TOKEN_PREFIX}-fixture`, source: CLAUDE_SETUP_TOKEN_SOURCES.keychain },
+    });
+    assert.equal(keychain(), true);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 import { senpiNested } from "../../src/engine-paths.mjs";
 
 /** 실제 token 과 겹칠 수 없는 값. 접두만 진짜와 같게 둔다. */

@@ -13,7 +13,11 @@ import zlib from "node:zlib";
 import { pathToFileURL } from "node:url";
 import { senpiNested } from "../../src/engine-paths.mjs";
 import { XAI_PICKER_IDS } from "../../src/picker-catalog.mjs";
-import { directProviders } from "../../src/provider-direct.mjs";
+import { directProviders as nativeDirectProviders } from "../../src/provider-direct.mjs";
+const directProviders = (options = {}) => nativeDirectProviders({
+  readSetupToken: async () => undefined, setupTokenPresence: () => false,
+  readStoredCredential: () => undefined, ...options,
+});
 
 // xai 피커 행의 현재 세대 id 는 `picker-catalog.mjs` 가 소유한다.
 const XAI_GROK = XAI_PICKER_IDS[0];

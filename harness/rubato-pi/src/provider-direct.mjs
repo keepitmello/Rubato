@@ -9,7 +9,7 @@
 import { pathToFileURL } from "node:url";
 import { join, resolve } from "node:path";
 import { homedir } from "node:os";
-import { withClaudeSetupToken } from "./anthropic-setup-token.mjs";
+import { withClaudeSetupToken, readClaudeSetupToken, setupTokenPresenceReader } from "./anthropic-setup-token.mjs";
 import { defaultTargetAuthPath } from "./credential-import.mjs";
 import { cursorDirectProvider } from "./cursor-route.mjs";
 import { senpiNested } from "./engine-paths.mjs";
@@ -517,6 +517,8 @@ export async function directProviders({
   nativeFactoryLoader = loadPinnedFactory,
   routeFactories = {},
   readStoredCredential = storedCredentialReader(defaultTargetAuthPath(homedir(), env)),
+  readSetupToken = readClaudeSetupToken,
+  setupTokenPresence,
 } = {}) {
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
@@ -595,9 +597,12 @@ export async function directProviders({
   );
 
   const store = speedStore;
+  const setupOptions = { env, ...(anthropic ?? {}) };
+  const foundSetupToken = await readSetupToken(setupOptions);
+  const hasSetupToken = setupTokenPresence ?? setupTokenPresenceReader({ ...setupOptions, found: foundSetupToken });
   store?.startProbes?.();
   const wrap = (provider) => wrapProviderStreams(
-    withSubAccountCopies(provider, { readStoredCredential }),
+    withSubAccountCopies(provider, { readStoredCredential, hasSetupToken: provider.id === "anthropic" && hasSetupToken }),
     { speedIndexStore: store },
   );
 

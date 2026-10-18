@@ -5,6 +5,7 @@ import * as z from "zod"
 // harness/pi-runtime/features/providers/provider-switch.mjs, and `rubato auth disable|enable` writes it.
 export const RubatoProvidersSettingsSchema = z.object({
   disabled: z.array(z.string().min(1)).optional(),
+  loadBalancing: z.array(z.literal("anthropic")).optional(),
 }).strict()
 
 export const RubatoProvidersSettingsLayerSchema = RubatoProvidersSettingsSchema

@@ -181,6 +181,12 @@ export function createAuthService(options = {}) {
       if (typeof input.enabled !== 'boolean') throw bad('enabled must be true or false.');
       return runJson([input.enabled ? 'enable' : 'disable', provider]);
     }
+    if (action === 'load-balancing') {
+      const provider = need(input.provider, PROVIDER, 'provider');
+      if (provider !== 'anthropic') throw bad('Account load balancing is supported for Anthropic.');
+      if (typeof input.enabled !== 'boolean') throw bad('enabled must be true or false.');
+      return runJson(['balance', provider, input.enabled ? 'on' : 'off']);
+    }
     if (action === 'remove') {
       return runJson(['remove', need(input.provider, PROVIDER, 'provider'), need(input.account, ACCOUNT, 'account')]);
     }

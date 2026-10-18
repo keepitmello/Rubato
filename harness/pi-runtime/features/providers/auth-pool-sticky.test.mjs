@@ -5,6 +5,7 @@ import { listRotationSlots, streamWithCredentialRotation } from "./auth-pool/rot
 import { CredentialSlotRepository } from "./auth-pool/state-store.mjs";
 import { requiredAccountSlotName, wireAccountModel } from "./auth-pool/runtime-pool.mjs";
 import { invokeProviderStream } from "./auth-pool/runtime-pool.mjs";
+import { ANTHROPIC_SUB_PICKER_IDS } from "../../../rubato-pi/src/picker-catalog.mjs";
 
 test("429 does not hop to another credential slot", async () => {
   const used = [];
@@ -148,6 +149,13 @@ test("stored oauth plus setup-token list as one pool", async () => {
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });
 
+test("a flat OAuth login is the sub lane beside the external setup-token", () => {
+  const modelId = ANTHROPIC_SUB_PICKER_IDS[0];
+  const slots = [{ name: "default", lane: "stored" }, { name: "setup-token", lane: "setup-token" }];
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: `${modelId}-sub` }, slots), "default");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: `${modelId}-sub2` }, slots), "sub2");
+  assert.equal(requiredAccountSlotName({ provider: "anthropic", id: modelId }, slots), "setup-token");
+});
 test("pinned setup-token wins over stored oauth in the same pool", async () => {
   const slots = await listRotationSlots({
     providerId: "anthropic",

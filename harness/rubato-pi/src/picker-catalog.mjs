@@ -4,6 +4,8 @@
 // Cursor 일곱은 `cursor-picker.mjs` 가 소유한다 (Grok Fast 접힘이 앞에 있다).
 
 import { readFileSync, statSync } from "node:fs";
+import { accountLaneSlotNames, credentialAccountLanes } from "./account-lanes.mjs";
+export { accountLaneSlotNames };
 
 export const XAI_PICKER_IDS = Object.freeze(["grok-4.7"]);
 
@@ -87,22 +89,8 @@ function subCopyBases(models, providerId, suffix) {
   return bases.filter((model) => allow.includes(model.id));
 }
 
-/**
- * 기본 계정 다음 계정들의 슬롯 이름. 순서가 곧 행 꼬리다: 0번은 `-sub`, 1번은 `-sub2`.
- * `sub`·`sub2` 로 이름 붙인 슬롯이 먼저고, 로그인이 붙인 `login-N` 은 번호 순서로 뒤에 선다.
- * auth-pool/runtime-pool.mjs `accountLaneSlotNames` 와 같은 규칙이다 — 하나를 바꾸면 둘 다 바꾼다.
- */
-export function accountLaneSlotNames(slots) {
-  const names = (Array.isArray(slots) ? slots : []).map((slot) => slot?.name).filter((name) => typeof name === "string");
-  const named = ["sub", "sub2"].filter((name) => names.includes(name));
-  const logins = names
-    .filter((name) => /^login-\d+$/.test(name))
-    .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
-  return [...named, ...logins];
-}
-
-function credentialLaneSuffixes(credential) {
-  const count = accountLaneSlotNames(credential?.accounts).length;
+function credentialLaneSuffixes(credential, hasSetupToken = false) {
+  const count = credentialAccountLanes(credential, hasSetupToken).length;
   return ACCOUNT_LANE_SUFFIXES.slice(0, count);
 }
 
@@ -156,13 +144,14 @@ function laneCopies(models, providerId, suffixes) {
  * `[sub2]` 가 보이고, 고르면 "Account 'sub2' is unavailable" 로 실패했다(2026-10-13).
  * `readStoredCredential` 이 없거나 모른다(`undefined`)고 하면 꼬리를 전부 넣는다.
  */
-export function withSubAccountCopies(provider, { readStoredCredential } = {}) {
+export function withSubAccountCopies(provider, { readStoredCredential, hasSetupToken = false } = {}) {
   if (typeof provider?.getModels !== "function") return provider;
   const nativeGetModels = provider.getModels.bind(provider);
   const nativeFilter = provider.filterModels;
+  const setupPresent = () => typeof hasSetupToken === "function" ? hasSetupToken() : hasSetupToken;
   const storedLaneSuffixes = () => {
     const credential = readStoredCredential?.(provider.id);
-    return credential === undefined ? ACCOUNT_LANE_SUFFIXES : credentialLaneSuffixes(credential);
+    return credential === undefined ? ACCOUNT_LANE_SUFFIXES : credentialLaneSuffixes(credential, setupPresent());
   };
   return {
     ...provider,
@@ -174,7 +163,7 @@ export function withSubAccountCopies(provider, { readStoredCredential } = {}) {
     filterModels: (models, credential) => {
       const presented = nativeFilter ? nativeFilter(models, credential) : models;
       const kept = presented.filter((model) => !isSubModelId(model?.id));
-      return [...kept, ...laneCopies(kept, provider.id, credentialLaneSuffixes(credential))];
+      return [...kept, ...laneCopies(kept, provider.id, credentialLaneSuffixes(credential, setupPresent()))];
     },
   };
 }

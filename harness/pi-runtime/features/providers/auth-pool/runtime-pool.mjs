@@ -7,6 +7,10 @@ import { CredentialSlotRepository } from "./state-store.mjs";
 import { listRotationSlots, streamWithCredentialRotation } from "./rotation-stream.mjs";
 import { serverRetryAfterMs } from "./classify.mjs";
 import { createUsageObserver, observesUsage, usageObservedPath } from "./usage-observed.mjs";
+import { accountLaneSlotNames } from "./account-lanes.mjs";
+import { createQuotaUsageReader } from "./quota-usage.mjs";
+import { readAccountLoadBalancing } from "../provider-switch.mjs";
+export { accountLaneSlotNames };
 
 function poolStatePathFor(runtime) {
   const authPath = runtime.credentials?.store?.authPath;
@@ -66,7 +70,18 @@ export async function credentialRotationSources(runtime, model, options) {
     discoverExtraSlots: () => discoverSetupTokenSlots(model.provider, env, { signal: options?.signal }),
   };
   const slots = await listRotationSlots(sources, { acquireLeases: false });
-  return slots.length > 1 ? sources : undefined;
+  if (slots.length <= 1 && accountLaneOf(model) < 0) return undefined;
+  sources.loadBalancing = model.provider === "anthropic" && accountLaneOf(model) < 0
+    && readAccountLoadBalancing({ home: env("HOME") }).has(model.provider);
+  if (sources.loadBalancing && slots.length > 1 && !credential?.pinned) {
+    const authPath = runtime.credentials?.store?.authPath;
+    const readUsage = runtime._rubatoQuotaUsage ??= createQuotaUsageReader({
+      path: typeof authPath === "string" ? usageObservedPath(authPath) : undefined,
+    });
+    sources.quotaUsage = await readUsage(credential, options?.signal);
+    sources.modelId = wireAccountModel(model).id;
+  }
+  return sources;
 }
 
 function slotRequestOptions(options, slot) {
@@ -140,20 +155,6 @@ export function wireAccountModel(model) {
   return { ...model, id: model.id.slice(0, -ACCOUNT_LANES[lane].suffix.length) };
 }
 
-/**
- * 기본 계정 다음 계정들의 슬롯 이름. 순서가 곧 행 꼬리다: 0번은 `-sub`, 1번은 `-sub2`.
- * `sub`·`sub2` 로 이름 붙인 슬롯이 먼저고, 로그인이 붙인 `login-N` 은 번호 순서로 뒤에 선다.
- * rubato-pi/src/picker-catalog.mjs `accountLaneSlotNames` 와 같은 규칙이다 — 하나를 바꾸면 둘 다 바꾼다.
- */
-export function accountLaneSlotNames(slots) {
-  const names = slots.map((slot) => slot.name);
-  const named = ["sub", "sub2"].filter((name) => names.includes(name));
-  const logins = names
-    .filter((name) => /^login-\d+$/.test(name))
-    .sort((a, b) => Number(a.slice(6)) - Number(b.slice(6)));
-  return [...named, ...logins];
-}
-
 export function subAccountName(slots) {
   return accountLaneSlotNames(slots)[0];
 }
@@ -179,7 +180,7 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
     return streamWithCredentialRotation({
       sources,
       affinityStore: sessionAffinityStore(runtime),
-      requiredSlotName: requiredAccountSlotName(model, slots),
+      requiredSlotName: streamOptions?.slotName ?? (sources.loadBalancing ? undefined : requiredAccountSlotName(model, slots)),
       serverRetryAfterMs: (slot) => retryAfterBySlot.get(slot?.name),
       ...(streamOptions?.affinityKey !== undefined
         ? { affinityKey: streamOptions.affinityKey }
