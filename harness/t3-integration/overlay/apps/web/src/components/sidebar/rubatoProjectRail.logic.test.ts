@@ -8,6 +8,7 @@ import {
   anyNeedsUser,
   lastActivityByGroup,
   moveInProjectList,
+  projectListInOrder,
   removeFromProjectList,
   resolveProjectList,
   resolveThreadSignal,
@@ -97,6 +98,26 @@ describe("the shared project list", () => {
     const addedList = resolveProjectList({ groups, state: added, lastActivity, now: NOW });
     expect(moveInProjectList(addedList, "c", "a")).toEqual({ order: ["c", "a", "b"], hidden: [] });
     expect(moveInProjectList(addedList, "a", "c")).toEqual({ order: ["b", "c", "a"], hidden: [] });
+  });
+
+  it("moves across sections when a drag ends on a project in the other one", () => {
+    const list = resolveProjectList({ groups, state: EMPTY_PROJECT_LIST_STATE, lastActivity, now: NOW });
+    // c is quiet; dropped on a it joins the user's projects in a's place.
+    expect(moveInProjectList(list, "c", "a")).toEqual({ order: ["c", "a", "b"], hidden: [] });
+    // b dropped on quiet c leaves the user's projects.
+    expect(moveInProjectList(list, "b", "c")).toEqual({ order: ["a"], hidden: ["b", "c"] });
+    // An unknown key leaves the list as it is.
+    expect(moveInProjectList(list, "gone", "a")).toEqual({ order: ["a", "b"], hidden: ["c"] });
+  });
+
+  it("reads as one line for surfaces without sections: the user's projects, then the others", () => {
+    const list = resolveProjectList({
+      groups,
+      state: { order: ["b"], hidden: ["c", "a"] },
+      lastActivity,
+      now: NOW,
+    });
+    expect(projectListInOrder(list).map((g) => g.projectKey)).toEqual(["b", "c", "a"]);
   });
 
   it("keeps projects in temporary folders quiet, before and after the first edit", () => {

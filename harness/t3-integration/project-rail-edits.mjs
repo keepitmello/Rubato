@@ -32,7 +32,8 @@
 //   route-tree-edits.mjs). Their Settings addresses redirect there, so the
 //   Settings nav drops them.
 //
-// The project window and the home tabs share one project list (sidebar/rubatoProjectList.ts).
+// The project window and the home tabs share one project list (sidebar/rubatoProjectList.ts),
+// whose order every other project list follows too (project-order-edits.mjs).
 export const projectRailOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectRail.logic.ts',
   'apps/web/src/components/sidebar/rubatoProjectRail.logic.test.ts',
