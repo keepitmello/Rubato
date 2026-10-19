@@ -118,6 +118,7 @@ export function readState(env = process.env) {
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
     ...(typeof state?.dailyReportOn === 'string' ? { dailyReportOn: state.dailyReportOn } : {}),
+    ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
   };
 }
 

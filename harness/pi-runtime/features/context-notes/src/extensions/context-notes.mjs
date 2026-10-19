@@ -4,7 +4,7 @@ import {
   HISTORY_NOTES_MODE, SUMMARY_MODE, contextMode, historyNotesEnabled,
   isUserExplicitContextMode, setContextMode,
 } from "../context-notes/config.mjs";
-import { ContextNotesController, guidanceFor } from "../context-notes/controller.mjs";
+import { ContextNotesController, guidanceFor, periodicNotesNudge } from "../context-notes/controller.mjs";
 import { assertEngineParts, recordSessionFailure } from "../context-notes/engine-gate.mjs";
 import {
   NOTES_RESUME_IN_SUMMARY,
@@ -204,8 +204,9 @@ export async function installContextNotes(pi, options = {}) {
     if (!notesActive()) return;
     const base = event.systemPrompt ?? ctx.getSystemPrompt?.() ?? "";
     // The text follows the model's context strategy (Astra's is unchanged); it is a pure
-    // function of the model, so every request of a session sees the same prompt.
-    const guidance = guidanceFor(ctx.model);
+    // function of the model (and of whether this runtime gets the periodic nudge), so every
+    // request of a session sees the same prompt.
+    const guidance = guidanceFor(ctx.model, undefined, { periodicNudge: periodicNotesNudge(liveEnv) });
     return { systemPrompt: base.includes(guidance) ? base : `${base}\n\n${guidance}` };
   });
   pi.on("context", async (event, ctx) => {

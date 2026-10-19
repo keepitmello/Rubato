@@ -535,3 +535,14 @@ test("a wake is classified by what it is, not by the words it carries", async (t
   assert.ok(box.fake.sent.some((row) => row.text.includes('오늘 리포트')), 'the daily report reached the person');
   assert.equal(box.fake.sent.filter((row) => row.text.includes('조용해')).length, 0, 'the heartbeat stayed in the app');
 });
+
+test('the answer to the sleep wake stays in the app', async (t) => {
+  const box = await paired(t);
+  const before = box.fake.sent.length;
+  transcript(box, [
+    wakeEntry('z1', 'sleep', 'Time to sleep.'),
+    answerEntry('z2', '오늘 기록 쓰고 노트 정리했어. 잘 자.'),
+  ]);
+  await settle(box.service);
+  assert.equal(box.fake.sent.length, before, 'sleep is Segno\'s own rhythm; the phone gets nothing');
+});
