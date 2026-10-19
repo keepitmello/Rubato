@@ -184,6 +184,7 @@ test('a restart reloads a job whose definition changed, through launchd rather t
   const { reloadEngineJob } = await import('../src/launchd.mjs');
   let reloads = 0;
   const result = await restartProfileEngine({ descriptorPath: box.descriptorPath, waitMs: 30_000, launchdJob: stale,
+    startEngine: (descriptorPath) => ensureProfileEngine({ descriptorPath, env: box.env, runtimeRoot: null, timeoutMs: 40_000 }),
     reload: async () => { reloads++; await reloadEngineJob({ env: box.env }); }, jobPid: () => engineJobPid({ env: box.env }) });
   assert.deepEqual([result.restarted, result.reloaded, result.pid, reloads], [true, true, running, 1]);
   const next = await until(() => { const pids = engineProcesses(box.agentDir); return pids.length === 1 && pids[0] !== running && pids[0]; }, 'reloaded engine');
