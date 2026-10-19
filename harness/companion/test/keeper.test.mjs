@@ -1,15 +1,25 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { COMPANION_TITLE, companionPaths, personalPiecePath, readState, writeSettings, writeState } from '../companion.mjs';
+import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
+  readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
 import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT, SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, lastUserMessageAt, localDate, startCompanionKeeper } from '../keeper.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 /** A keeper whose default pieces are the ones in this repository, not whatever this Mac has. */
 const startKeeper = (options) => startCompanionKeeper({ defaultsDir, ...options });
+
+/** Rubato's defaults, copied so a test can change one the way an update would. */
+function defaultsCopy(t, edits = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(dir, `${id}.pi.md`));
+  for (const [id, text] of Object.entries(edits)) writeFileSync(path.join(dir, `${id}.pi.md`), text);
+  return dir;
+}
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-keeper-'));
@@ -410,4 +420,76 @@ test('lastUserMessageAt reads the newest user message, in the app or from Telegr
   assert.equal(await lastUserMessageAt(file), 5000);
   lines([{ type: 'session' }, telegram(5000, true), userMessage(7000), 'not json']);
   assert.equal(await lastUserMessageAt(file), 7000);
+});
+
+test('a default that moved wakes Segno once at engine start, with where to look, and the base moves', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  seedPromptPieces({ defaultsDir, env });
+  const moved = defaultsCopy(t, { soul: '# I am Segno\n\nA new default voice.\n' });
+  const engine = fakeEngine();
+  const notices = [];
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: moved,
+    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.deepEqual(notices.map((notice) => notice.what), ['persona-review']);
+  assert.match(notices[0].text, /Rubato's default soul changed/);
+  assert.match(notices[0].text, new RegExp(path.join(moved, 'soul.pi.md').replace(/[.[\]{}()*+?^$|\\]/g, '\\$&')));
+  assert.match(notices[0].text, /prompt\/\.base\/soul\.md/);
+  assert.doesNotMatch(notices[0].text, /identity/, 'only the piece that moved');
+  assert.doesNotMatch(notices[0].text, /A new default voice/, 'the wake does not carry the default text');
+  assert.equal(readFileSync(basePiecePath(env, 'soul'), 'utf8').trim(), '# I am Segno\n\nA new default voice.',
+    'the base moved to the default Segno was told about');
+  await keeper.poke();
+  assert.equal(notices.length, 1, 'the same default does not wake it twice');
+  const again = defaultsCopy(t, { soul: '# I am Segno\n\nA third default voice.\n' });
+  const next = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: again,
+    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => next.close());
+  await next.ready;
+  await next.poke();
+  assert.deepEqual(notices.map((notice) => notice.what), ['persona-review', 'persona-review'],
+    'a newer default is a new review');
+});
+
+test('a default that changes while the engine runs waits for the next engine start', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  const under = defaultsCopy(t);
+  seedPromptPieces({ defaultsDir: under, env });
+  const engine = fakeEngine();
+  const notices = [];
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: under,
+    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.deepEqual(notices, []);
+  // The defaults folder changes under a running engine: no polling, so nothing is sent.
+  writeFileSync(path.join(under, 'soul.pi.md'), '# changed while running\n');
+  await keeper.poke();
+  assert.deepEqual(notices, []);
+});
+
+test('the page can ask Segno to review even when no default moved', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  const engine = fakeEngine();
+  const notices = [];
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir,
+    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.deepEqual(notices, []);
+  requestPersonaReview(env);
+  await keeper.poke();
+  assert.deepEqual(notices.map((notice) => notice.what), ['persona-review']);
+  assert.match(notices[0].text, /The user asked you to look over who you are/);
+  assert.match(notices[0].text, new RegExp(defaultsDir.replace(/[.[\]{}()*+?^$|\\]/g, '\\$&')));
+  assert.equal(readPersonaReviewRequest(env), undefined, 'the request is cleared once Segno is told');
+  await keeper.poke();
+  assert.equal(notices.length, 1, 'a request does not repeat by itself');
 });

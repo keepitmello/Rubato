@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, SEEDED_PIECES, basePiecePath, composeCompanionPrompt, companionPaths, personalPiecePath,
-  readPieces, readSettings, seedPromptPieces, writePiece, writeSettings,
+  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
+  companionPaths, moveBaseToDefault, pendingDefaultChanges, personalPiecePath, readPersonaReviewRequest, readPieces,
+  readSettings, requestPersonaReview, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -15,6 +16,15 @@ function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
+}
+
+/** Rubato's defaults, copied so a test can change one the way an update would. */
+function defaultsSandbox(t, edits = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-defaults-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(dir, `${id}.pi.md`));
+  for (const [id, text] of Object.entries(edits)) writeFileSync(path.join(dir, `${id}.pi.md`), text);
+  return dir;
 }
 
 test('every piece has a product default, and only the tools piece has no personal version', () => {
@@ -204,4 +214,55 @@ test("Segno's art is one swappable file per expression: the person's own, else t
   writeFileSync(path.join(companionPaths(env).art, 'stage-night.webp'), 'webp');
   assert.equal(stageArtFile(env, 'night'), path.join(dir, 'art', 'stage-night.webp'));
   assert.equal(stageArtFile(env, 'idle'), path.join(dir, 'art', 'stage.png'));
+});
+
+test('a default that moved away from the base is a review; moving the base settles it', (t) => {
+  const env = sandbox(t);
+  const before = defaultsSandbox(t);
+  seedPromptPieces({ defaultsDir: before, env });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: before, env }), [], 'nothing moved yet');
+  const after = defaultsSandbox(t, { soul: '# I am Segno\n\nA new default voice.\n' });
+  const pending = pendingDefaultChanges({ defaultsDir: after, env });
+  assert.deepEqual(pending.map((change) => change.id), ['soul']);
+  assert.equal(pending[0].defaultPath, path.join(after, 'soul.pi.md'), 'the wake names the file Segno reads');
+  const piece = readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul');
+  assert.equal(piece.defaultChanged, true, 'the page marks it');
+  assert.ok(piece.baseText.length > 0);
+  moveBaseToDefault('soul', { defaultsDir: after, env });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }), [], 'the same change does not wake again');
+  assert.equal(readFileSync(basePiecePath(env, 'soul'), 'utf8').trim(), '# I am Segno\n\nA new default voice.');
+  assert.equal(readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul').defaultChanged, undefined);
+  const later = defaultsSandbox(t, { soul: '# I am Segno\n\nA third default voice.\n' });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: later, env }).map((change) => change.id), ['soul'],
+    'a newer default is a new review');
+});
+
+test('a copy with no base is compared but never reviewed on its own', (t) => {
+  const env = sandbox(t);
+  const after = defaultsSandbox(t);
+  mkdirSync(companionPaths(env).prompt, { recursive: true });
+  writeFileSync(personalPiecePath(env, 'soul'), 'my own soul\n');
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }), [], 'no base, nothing to compare with');
+  const piece = readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul');
+  assert.equal(piece.baseUnknown, true);
+  assert.equal(piece.defaultChanged, undefined);
+});
+
+test('a copy the person already edited is still reviewed from the base it was seeded from', (t) => {
+  const env = sandbox(t);
+  const before = defaultsSandbox(t);
+  seedPromptPieces({ defaultsDir: before, env });
+  writePiece('soul', 'my own soul', { defaultsDir: before, env });
+  const after = defaultsSandbox(t, { soul: '# A new default soul\n' });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }).map((change) => change.id), ['soul']);
+  assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8').trim(), 'my own soul', 'their file is not touched');
+});
+
+test('the page asks for a review with a request the keeper can read and clear', (t) => {
+  const env = sandbox(t);
+  assert.equal(readPersonaReviewRequest(env), undefined);
+  requestPersonaReview(env, { at: Date.parse('2026-10-20T05:00:00.000Z') });
+  assert.equal(readPersonaReviewRequest(env), '2026-10-20T05:00:00.000Z');
+  clearPersonaReviewRequest(env);
+  assert.equal(readPersonaReviewRequest(env), undefined);
 });

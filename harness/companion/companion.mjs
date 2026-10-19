@@ -234,6 +234,8 @@ export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${p
 export const personalPiecePath = (env, id) => path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`);
 /** Where the default text a personal copy was seeded from is kept; never read by the composer. */
 export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
+/** The settings page's "have Segno look at it" request; the keeper reads it and wakes Segno. */
+const reviewRequestPath = (env) => path.join(companionPaths(env).home, 'persona-review.json');
 
 /** Writes text as a new file, refusing to replace one already there. */
 function writeTextNew(file, text) {
@@ -282,6 +284,50 @@ export function seedPromptPieces({ defaultsDir, env = process.env } = {}) {
 }
 
 /**
+ * The product defaults that moved away from the base a person's copy was seeded from. A copy with no
+ * base (an older home) is not reviewed automatically: there is nothing to compare it to, so the
+ * person asks for that review from the Settings page.
+ */
+export function pendingDefaultChanges({ defaultsDir, env = process.env } = {}) {
+  if (!defaultsDir) throw new TypeError('a review needs the folder the default pieces live in');
+  const pending = [];
+  for (const id of SEEDED_PIECES) {
+    const base = readOptional(basePiecePath(env, id), (file) => readFileSync(file, 'utf8'));
+    if (base === undefined) continue;
+    const defaultText = readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim();
+    if (defaultText === base) continue;
+    pending.push({ id, baseText: base, defaultText, defaultPath: defaultPiecePath(defaultsDir, id) });
+  }
+  return pending;
+}
+
+/**
+ * The base moves to the default Segno was just told about, whether or not the person takes anything:
+ * one default change wakes Segno once, and the next update compares from this default.
+ */
+export function moveBaseToDefault(id, { defaultsDir, env = process.env } = {}) {
+  const defaultText = readFileSync(defaultPiecePath(defaultsDir, pieceOf(id).id), 'utf8').trim();
+  mkdirSync(path.dirname(basePiecePath(env, id)), { recursive: true, mode: 0o700 });
+  writeFileSync(basePiecePath(env, id), defaultText + '\n', { mode: 0o600 });
+  return { id: pieceOf(id).id, baseText: defaultText };
+}
+
+/** The page's on-demand review: a request file the keeper picks up on its next pass. */
+export function requestPersonaReview(env = process.env, { at = Date.now() } = {}) {
+  writeJson(reviewRequestPath(env), { at: new Date(at).toISOString() });
+}
+
+/** The waiting request's time, or undefined when nobody asked. */
+export function readPersonaReviewRequest(env = process.env) {
+  const value = readJson(reviewRequestPath(env));
+  return typeof value?.at === 'string' && value.at ? value.at : undefined;
+}
+
+export function clearPersonaReviewRequest(env = process.env) {
+  rmSync(reviewRequestPath(env), { force: true });
+}
+
+/**
  * Every piece for the settings page: its default text, the person's version if any, whether it can
  * have one, and for a copy that exists, the default it was seeded from (`baseText`) or
  * `baseUnknown` when the file predates seeding.
@@ -292,8 +338,10 @@ export function readPieces({ defaultsDir, env = process.env, readFile = (file) =
     const personal = editable ? readOptional(personalPiecePath(env, id), readFile) : undefined;
     if (personal === undefined) return { id, editable, defaultText };
     const base = readOptional(basePiecePath(env, id), readFile);
+    const changed = base !== undefined && base !== defaultText;
     return { id, editable, defaultText, personalText: personal,
-      ...(base === undefined ? { baseUnknown: true } : { baseText: base }) };
+      ...(base === undefined ? { baseUnknown: true } : { baseText: base }),
+      ...(changed ? { defaultChanged: true } : {}) };
   });
 }
 

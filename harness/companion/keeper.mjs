@@ -21,7 +21,9 @@
 // in its prompt (harness/prompts/companion).
 import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
-import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, seedPromptPieces, writePanel, writeState } from './companion.mjs';
+import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
+  pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
+  writeState } from './companion.mjs';
 import { ensureSegnoHome } from './home.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
@@ -35,6 +37,23 @@ export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s repo
 export const SLEEP_TEXT = 'Time to sleep. The user has been quiet for hours and your context is long. ' +
   'Get ready for sleep as your instructions say: today\'s records, your notes rewritten to the current state, ' +
   'then compaction or a new window. This turn is not for the user; nothing goes to their phone.';
+/**
+ * The review wake for a default that moved: where the new default is and where the copy came from, so
+ * Segno reads both with its ordinary file tools. What changed is for Segno to find and report.
+ */
+export function changedDefaultsText(pending) {
+  return pending.map(({ id, defaultPath }) => `Rubato's default ${id} changed. The new default is at ${defaultPath}; ` +
+    `the one your file was copied from is prompt/.base/${id}.md in your home. Compare them with your own ` +
+    `prompt/${id}.md and tell the user briefly what changed, whether it clashes with yours, and what you ` +
+    'recommend, with the reason. Change your file only after the user says which changes to take.').join('\n\n');
+}
+
+/** The review the Settings button asks for: the four files against the defaults folder, no change needed. */
+export function requestedReviewText(defaultsDir) {
+  return `The user asked you to look over who you are against Rubato's defaults, which are in ${defaultsDir}. ` +
+    'Compare them with your own files in prompt/ and tell the user briefly where they differ and what you would ' +
+    'take, with the reason. Change your files only after the user says which changes to take.';
+}
 
 /** The local hours the companion may be put to sleep in: from 01:00 up to 07:00. */
 export const SLEEP_HOURS = Object.freeze({ from: 1, to: 7 });
@@ -107,6 +126,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   let lastBeat;
   let homeReady;
   let lastSleepCheck;
+  let reviewChecked = false;
 
   /**
    * The home's setup, once per keeper (the engine starts it again after a restart): Segno's own
@@ -203,6 +223,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       lastBeat = at;
       return;
     }
+    if (await personaReviewDue(sessionId)) { lastBeat = at; return; }
     if (reportDue) {
       await notify(sessionId, DAILY_REPORT_TEXT, 'daily-report');
       writeState({ dailyReportOn: today }, env);
@@ -213,6 +234,30 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       lastBeat = at;
       await notify(sessionId, HEARTBEAT_TEXT, 'heartbeat');
     }
+  }
+
+  /**
+   * Whether Rubato should hand Segno its own prompt files to review. The page's request comes first
+   * (the user pressed the button). Otherwise a default that moved is checked once per engine start:
+   * defaults only change with an update, and an update restarts the engine. Either way the base moves
+   * to the default Segno was just told about, so the same change never wakes it twice.
+   */
+  async function personaReviewDue(sessionId) {
+    const requested = readPersonaReviewRequest(env);
+    if (requested !== undefined) {
+      await notify(sessionId, requestedReviewText(defaultsDir), 'persona-review');
+      for (const change of pendingDefaultChanges({ defaultsDir, env })) moveBaseToDefault(change.id, { defaultsDir, env });
+      clearPersonaReviewRequest(env);
+      reviewChecked = true;
+      return true;
+    }
+    if (reviewChecked) return false;
+    const pending = pendingDefaultChanges({ defaultsDir, env });
+    if (!pending.length) { reviewChecked = true; return false; }
+    await notify(sessionId, changedDefaultsText(pending), 'persona-review');
+    for (const change of pending) moveBaseToDefault(change.id, { defaultsDir, env });
+    reviewChecked = true;
+    return true;
   }
 
   const run = () => ticking ??= tick().finally(() => { ticking = undefined; });

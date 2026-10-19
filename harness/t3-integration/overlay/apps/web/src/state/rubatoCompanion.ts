@@ -77,6 +77,8 @@ export interface CompanionPiece {
   readonly baseText?: string;
   /** True for a copy that predates seeding: Rubato has no record of the default it came from. */
   readonly baseUnknown?: boolean;
+  /** Rubato's default moved since this copy was made. */
+  readonly defaultChanged?: boolean;
 }
 
 export interface CompanionSettingsPatch {
@@ -145,6 +147,9 @@ export const rubatoCompanion = {
   /** An empty text, or the default itself, returns the piece to the default. */
   savePiece: (env: EnvironmentId | null, id: CompanionPieceId, text: string) =>
     call<{ pieces: CompanionPiece[] }>(env, "save-piece", { id, text }),
+  /** Asks Segno to review the defaults that moved; the engine's keeper wakes it. */
+  reviewPersona: (env: EnvironmentId | null) =>
+    call<{ pieces: CompanionPiece[]; reviewRequested: string | null }>(env, "review-persona"),
   telegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram"),
   saveTelegramSettings: (env: EnvironmentId | null, patch: { readonly enabled?: boolean }) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-settings", { patch }),

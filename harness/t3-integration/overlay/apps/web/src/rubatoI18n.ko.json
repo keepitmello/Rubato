@@ -4461,7 +4461,20 @@
   "Paste the token @BotFather gave you": "@BotFather 가 준 토큰 붙여넣기",
   "In Telegram, open @BotFather, send /newbot, answer its two questions, and paste the token it sends back here.": "텔레그램에서 @BotFather 를 열고 /newbot 을 보내 두 가지 질문에 답한 뒤, 돌아온 토큰을 여기에 붙여넣으세요.",
   "Telegram bot token": "텔레그램 봇 토큰",
-  "Or let Rubato make it": "아니면 루바토가 만들게"
+  "Or let Rubato make it": "아니면 루바토가 만들게",
+  "Default update available": "기본값 업데이트 있음",
+  "Have Segno review it": "세뇨한테 검토 맡기기",
+  "Reviewing": "검토 중",
+  "Rubato's defaults": "루바토 기본값",
+  "When Rubato changes who Segno is by default, Segno compares it with your own file and tells you what it recommends. Nothing is merged without you.": "루바토가 세뇨의 기본값을 바꾸면, 세뇨가 내 파일과 비교해서 뭘 권하는지 알려줍니다. 내 허락 없이 합치지 않습니다.",
+  "What Rubato changed": "루바토가 바꾼 것",
+  "Rubato has no record of the default this copy came from, so only your version and the current default are compared.": "루바토에 이 사본이 어디서 왔는지 기록이 없어서, 내 것과 지금 기본값만 비교합니다.",
+  "Rubato's default has not changed since this copy.": "이 사본을 뜬 뒤로 루바토 기본값은 그대로입니다.",
+  "Mine": "내 것",
+  "New default": "새 기본값",
+  "Segno will look at it": "세뇨가 곧 볼 거야",
+  "It reads your file and Rubato's, then tells you what it recommends. Nothing changes until you say so.": "내 파일과 루바토 기본값을 읽고 뭘 권하는지 알려줍니다. 내가 말하기 전에는 아무것도 바뀌지 않습니다.",
+  "Could not ask Segno to review": "세뇨에게 검토를 맡길 수 없습니다"
  },
  "templates": [
   [

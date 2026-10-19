@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
+import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCompanionService, handleCompanionRequest } from '../src/companion/service.mjs';
-import { seedPromptPieces, writeState } from '../../companion/companion.mjs';
+import { PIECES, readPersonaReviewRequest, seedPromptPieces, writeState } from '../../companion/companion.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 
@@ -189,4 +190,34 @@ test('a pasted token is handed to the messenger, and the page learns whether a t
   assert.equal(store.readIntent(env).token, '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh',
     'the service checks it and stores it; the page never keeps it');
   assert.equal((await post('telegram-set-token', { token: '  ' })).status, 400);
+});
+
+test('the page marks a default that moved and asks Segno to look at it', async (t) => {
+  const { env, post } = await setup(t);
+  seedPromptPieces({ defaultsDir, env });
+  // The defaults folder an update would leave behind: one piece moved.
+  const after = mkdtempSync(path.join(tmpdir(), 'rubato-companion-defaults-'));
+  t.after(() => rmSync(after, { recursive: true, force: true }));
+  for (const { id } of PIECES) copyFileSync(path.join(defaultsDir, `${id}.pi.md`), path.join(after, `${id}.pi.md`));
+  writeFileSync(path.join(after, 'soul.pi.md'), '# A new default soul\n');
+  const service = createCompanionService({ env, defaultsDir: after });
+  const ask = async (action, body = {}) => {
+    const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
+      { method: 'POST', body: JSON.stringify(body) }));
+    return { status: response.status, body: await response.json() };
+  };
+
+  const pieces = (await ask('pieces')).body.pieces;
+  const soul = pieces.find((piece) => piece.id === 'soul');
+  assert.equal(soul.defaultChanged, true);
+  assert.equal(soul.defaultChanged, true, 'the page shows the mark');
+  assert.equal(soul.baseText, soul.personalText, 'the copy came from the default it is compared with');
+  assert.equal(pieces.find((piece) => piece.id === 'identity').defaultChanged, undefined);
+
+  const asked = await ask('review-persona');
+  assert.equal(asked.status, 200);
+  assert.ok(asked.body.reviewRequested, 'the keeper has something to read');
+  assert.equal(readPersonaReviewRequest(env), asked.body.reviewRequested);
+  assert.equal(asked.body.pieces.find((piece) => piece.id === 'soul').defaultChanged, true,
+    'the mark stays until the engine moves the base under it');
 });

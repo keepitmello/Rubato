@@ -164,6 +164,12 @@ export function createCompanionService(options = {}) {
         if (typeof input.id !== 'string') throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => companion.writePiece(input.id, input.text, { defaultsDir, env }));
         return { pieces: companion.readPieces({ defaultsDir, env }) };
+      // "Have Segno review it": a request file the engine's keeper wakes Segno for. The page never
+      // wakes a conversation itself, and it never merges a default into the person's file.
+      case 'review-persona':
+        invalid(() => companion.requestPersonaReview(env));
+        return { pieces: companion.readPieces({ defaultsDir, env }),
+          reviewRequested: companion.readPersonaReviewRequest(env) ?? null };
       default:
         throw new CompanionRequestError(404, 'unknown-action', `Unknown action: ${action}`);
     }

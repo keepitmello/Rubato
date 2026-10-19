@@ -4,12 +4,13 @@
 // the mobile app cannot be changed, so the run never reaches the thread at all. A run is quiet
 // when the first input it takes is a clock wake; it stays quiet until it settles, unless an input
 // that is not a clock wake joins it (then it shows from there, as any run would).
-import { SESSION_MESSAGE_TYPE } from './events.mjs';
+import { QUIET_WAKES, SESSION_MESSAGE_TYPE } from './events.mjs';
 
 const isSessionMessage = (message) => message?.role === 'custom' && message.customType === SESSION_MESSAGE_TYPE;
 
-/** A clock wake: Rubato's own session message of kind `wake`. */
-export const isClockWake = (message) => isSessionMessage(message) && message.details?.kind === 'wake';
+/** A clock wake: Rubato's own session message of kind `wake` for its rhythm (QUIET_WAKES). */
+export const isClockWake = (message) => isSessionMessage(message) && message.details?.kind === 'wake'
+  && QUIET_WAKES.includes(message.details.what);
 
 /** An input a run takes: the person's message, or a message from another conversation, a messenger or Rubato. */
 const isInput = (message) => message?.role === 'user' || isSessionMessage(message);

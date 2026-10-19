@@ -15,11 +15,15 @@ export const importedId = (instanceId, sessionId, message) => `import:${instance
 // role for it, so it travels as a user message with one context record of an
 // open kind; the web timeline draws that record as its own bubble, and T3's
 // contract keeps unknown record kinds intact. Every other custom message
-// (Pi's wakes, notes) stays out of the thread, and so does Rubato's clock (`wake`):
-// the run it starts reaches no client either (quiet-runs.mjs).
+// (Pi's wakes, notes) stays out of the thread, and so does Rubato's clock (QUIET_WAKES):
+// the run it starts reaches no client either (quiet-runs.mjs). Any other wake (Segno asked
+// to review its prompt for the user) goes to the thread: it opens its turn there, so T3 does
+// not label the turn "background activity", and the web timeline draws no row for it.
 export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const SESSION_MESSAGE_CONTEXT_KIND = 'rubato-session';
 export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
+/** The wakes of Rubato's clock (harness/companion keeper.mjs) whose runs no client sees. */
+export const QUIET_WAKES = Object.freeze(['heartbeat', 'daily-report', 'sleep']);
 const CONTEXT_LABEL_MAX = 200;
 export const isSessionMessage = (message) => message?.role === 'custom'
   && message.customType === SESSION_MESSAGE_TYPE && (message.display !== false || message.details?.kind === 'wake');
@@ -40,7 +44,7 @@ export function sessionMessageFrom(message, threadId) {
   if (!isSessionMessage(message)) return;
   if (typeof threadId !== 'string' || !threadId) throw new TypeError('A session message needs the T3 thread it goes to');
   const details = message.details && typeof message.details === 'object' ? message.details : {};
-  if (details.kind === 'wake') return;
+  if (details.kind === 'wake' && QUIET_WAKES.includes(details.what)) return;
   const messageId = typeof details.messageId === 'string' ? details.messageId.trim() : '';
   if (!messageId || typeof details.text !== 'string') return;
   const from = details.from && typeof details.from === 'object' ? details.from : {};
@@ -53,7 +57,8 @@ export function sessionMessageFrom(message, threadId) {
     context: { version: 1, records: [{
       version: 1, contextId: SESSION_MESSAGE_CONTEXT_KIND, kind: SESSION_MESSAGE_CONTEXT_KIND, label: title,
       // `notice`: Rubato's own word, such as a followed lead ending; the app draws it as one quiet line.
-      payload: { v: 1, kind: ['create', 'notice'].includes(details.kind) ? details.kind : 'message', messageId,
+      // `wake`: a wake the person should see the answer to; the app draws nothing for the wake itself.
+      payload: { v: 1, kind: ['create', 'notice', 'wake'].includes(details.kind) ? details.kind : 'message', messageId,
         from: {
           ...(typeof from.sessionId === 'string' ? { sessionId: from.sessionId } : {}),
           title,

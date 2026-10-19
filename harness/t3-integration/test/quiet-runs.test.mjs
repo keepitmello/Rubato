@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createQuietRuns, quietMessages } from '../src/quiet-runs.mjs';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
+import { QUIET_WAKES, sessionMessageFrom } from '../src/events.mjs';
+import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 
 const wake = (what) => ({ role: 'custom', customType: 'rubato-session-message', display: false, content: '<rubato_wake>',
   details: { v: 1, messageId: `w-${what}`, kind: 'wake', what, from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'tick' }, timestamp: 1 });
@@ -105,4 +107,14 @@ test('on the stream: a heartbeat run reaches T3 as nothing, and a message sent m
   await conn.inbound;
   assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type), reply.map((event) => event.type),
     'the person\'s run arrives whole');
+});
+
+test("the quiet wakes are Rubato's clock; a wake meant for the person still opens a turn the app shows", () => {
+  for (const what of QUIET_WAKES) assert.ok(WAKES.includes(what), what);
+  assert.deepEqual([...QUIET_WAKES].sort(), ['daily-report', 'heartbeat', 'sleep']);
+  const review = wake('persona-review');
+  const events = run(review, answer);
+  assert.deepEqual(pass(createQuietRuns(), events), events);
+  assert.equal(sessionMessageFrom(review, 't1')?.context.records[0].payload.kind, 'wake', 'its row opens the turn, drawn as nothing');
+  assert.equal(sessionMessageFrom(wake('heartbeat'), 't1'), undefined);
 });
