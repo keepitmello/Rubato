@@ -3,9 +3,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { COMPANION_TITLE, companionPaths, personalPiecePath, readState, writeSettings, writeState } from '../companion.mjs';
 import { fileURLToPath } from 'node:url';
-import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT, localDate, startCompanionKeeper } from '../keeper.mjs';
+import { COMPANION_TITLE, companionPaths, personalPiecePath, readState, writeSettings, writeState } from '../companion.mjs';
+import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT, SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, lastUserMessageAt, localDate, startCompanionKeeper } from '../keeper.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 /** A keeper whose default pieces are the ones in this repository, not whatever this Mac has. */
@@ -20,7 +20,7 @@ function sandbox(t) {
 /** An engine with sessions and attachments, seen through session clients. */
 function fakeEngine() {
   const sessions = new Map();
-  const engine = { sessions, created: [], clients: 0,
+  const engine = { sessions, created: [], clients: 0, contextTokens: null, sessionFile: undefined,
     attached(id) { return sessions.get(id)?.attachments ?? 0; },
     crash(id) { const row = sessions.get(id); row.status = 'stored'; row.runtimeId = null; row.attachments = 0; },
   };
@@ -41,6 +41,11 @@ function fakeEngine() {
         Object.assign(row, { status: 'idle', runtimeId: `r-${id}` });
         row.attachments++;
         attachedTo = id;
+      },
+      async command(command) {
+        if (!attachedTo) throw new Error('No session is attached');
+        if (command.type !== 'get_session_stats') throw new Error(`unexpected command ${command.type}`);
+        return { sessionId: attachedTo, sessionFile: engine.sessionFile, contextUsage: { tokens: engine.contextTokens, contextWindow: 1_000_000 } };
       },
       async close() {
         const row = attachedTo && sessions.get(attachedTo);
@@ -250,4 +255,159 @@ test('the keeper leaves a prompt piece the person already has exactly as it is',
   await keeper.ready;
   assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8'), 'my own soul\n');
   assert.ok(existsSync(personalPiecePath(env, 'preamble')), 'the pieces they have not touched are copied');
+});
+
+// ── sleep ─────────────────────────────────────────────────────────────────────────────────
+
+const HOUR = 60 * 60_000;
+const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
+const userMessage = (time) => ({ type: 'message', timestamp: new Date(time).toISOString(), message: { role: 'user', content: 'hi', timestamp: time } });
+const assistantMessage = (time) => ({ type: 'message', timestamp: new Date(time).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }], timestamp: time } });
+const sessionMessage = (time, details) => ({ type: 'custom_message', customType: 'rubato-session-message', display: details.kind !== 'wake',
+  content: details.text ?? '', details, timestamp: new Date(time).toISOString() });
+const telegram = (time, isUser) => sessionMessage(time, { v: 1, kind: 'channel', from: { channel: 'telegram', chatId: '7', isUser, ...(isUser ? {} : { name: 'Mina' }) }, text: 'hello' });
+const wake = (time, what) => sessionMessage(time, { v: 1, kind: 'wake', what, from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'tick' });
+const leadEnded = (time) => sessionMessage(time, { v: 1, kind: 'notice', from: { sessionId: 'lead-1', title: 'Login bug', cwd: '/w' }, text: 'Finished its turn.' });
+
+/** A sleepy night: Segno's context is long and the user last wrote in the app at `lastUser`. */
+async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } = {}) {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  const engine = fakeEngine();
+  engine.contextTokens = tokens;
+  engine.sessionFile = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl');
+  const write = (list) => writeFileSync(engine.sessionFile, [{ type: 'session', id: 'segno' }, ...list].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  write(entries);
+  const clock = { at: start };
+  const notices = [];
+  const errors = [];
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, sleepCheckMs,
+    onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  const poke = async (time) => { clock.at = time; await keeper.poke(); };
+  t.after(() => assert.deepEqual(errors, []));
+  return { env, engine, keeper, notices, poke, write, sleeps: () => notices.filter((notice) => notice.what === 'sleep').length };
+}
+
+test('sleep: at night, three quiet hours and a long context put Segno to sleep, as a wake', async (t) => {
+  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 22)), assistantMessage(at(20, 22, 1))] });
+  await n.poke(at(21, 2));
+  assert.deepEqual(n.notices, [{ text: SLEEP_TEXT, what: 'sleep' }]);
+  assert.equal(readState(n.env).sleptOn, '2026-10-21');
+});
+
+test('sleep: once per night, and again the next night', async (t) => {
+  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  await n.poke(at(21, 1, 30));
+  await n.poke(at(21, 3));
+  await n.poke(at(21, 6, 59));
+  assert.equal(n.sleeps(), 1, 'one sleep however long the night');
+  await n.poke(at(22, 1, 30));
+  assert.equal(n.sleeps(), 2);
+});
+
+test('sleep: once per night holds across a keeper restart (the night is stored)', async (t) => {
+  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  await n.poke(at(21, 2));
+  await n.keeper.close();
+  const again = [];
+  const keeper = startCompanionKeeper({ connect: n.engine.connect, env: n.env, pollMs: 60_000, now: () => at(21, 4), sleepCheckMs: 0,
+    notify: async (_sessionId, text, what) => { again.push(what); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.deepEqual(again, []);
+});
+
+test('sleep: the user must have been quiet for three hours — the boundary is inclusive', async (t) => {
+  const last = at(21, 0, 30);
+  const n = await night(t, { start: at(21, 1), entries: [userMessage(last)] });
+  await n.poke(last + SLEEP_QUIET_MS - 1);
+  assert.equal(n.sleeps(), 0, 'one millisecond short of three hours');
+  await n.poke(last + SLEEP_QUIET_MS);
+  assert.equal(n.sleeps(), 1);
+});
+
+test('sleep: only from 01:00 up to 07:00 local time', async (t) => {
+  const n = await night(t, { start: at(20, 18), entries: [userMessage(at(20, 12))] });
+  await n.poke(at(21, 0, 59));
+  await n.poke(at(21, 7, 0));
+  await n.poke(at(21, 12, 0));
+  assert.equal(n.sleeps(), 0);
+  const m = await night(t, { start: at(20, 18), entries: [userMessage(at(20, 12))] });
+  await m.poke(at(21, 1, 0));
+  assert.equal(m.sleeps(), 1);
+});
+
+test('sleep: only with a context of 500k tokens or more', async (t) => {
+  const short = await night(t, { tokens: SLEEP_CONTEXT_TOKENS - 1, start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  await short.poke(at(21, 2));
+  assert.equal(short.sleeps(), 0);
+  const unknown = await night(t, { tokens: null, start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  await unknown.poke(at(21, 2));
+  assert.equal(unknown.sleeps(), 0, 'right after a compaction the size is unknown: not long');
+  const exact = await night(t, { tokens: SLEEP_CONTEXT_TOKENS, start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  await exact.poke(at(21, 2));
+  assert.equal(exact.sleeps(), 1);
+});
+
+test('sleep: not while Segno is mid-turn; it sleeps once the turn ends', async (t) => {
+  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  const { sessionId } = readState(n.env);
+  n.engine.sessions.get(sessionId).status = 'running';
+  await n.poke(at(21, 2));
+  assert.equal(n.sleeps(), 0);
+  n.engine.sessions.get(sessionId).status = 'idle';
+  await n.poke(at(21, 2, 5));
+  assert.equal(n.sleeps(), 1);
+});
+
+test('sleep: heartbeats, lead endings, other wakes and other people do not count as the user', async (t) => {
+  const quiet = at(20, 22);
+  const n = await night(t, { start: at(20, 23), entries: [
+    userMessage(quiet), assistantMessage(quiet + 60_000),
+    wake(at(21, 0), 'heartbeat'), assistantMessage(at(21, 0, 1)),
+    leadEnded(at(21, 0, 30)), wake(at(21, 0, 40), 'daily-report'), telegram(at(21, 1, 50), false),
+  ] });
+  await n.poke(at(21, 2));
+  assert.equal(n.sleeps(), 1, 'the user last wrote at 22:00; nothing after that is the user');
+});
+
+test('sleep: a Telegram message from the user counts like one in the app', async (t) => {
+  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20)), telegram(at(21, 0, 30), true)] });
+  await n.poke(at(21, 2));
+  assert.equal(n.sleeps(), 0, 'the user wrote on Telegram at 00:30');
+  await n.poke(at(21, 3, 30));
+  assert.equal(n.sleeps(), 1);
+});
+
+test('sleep: the keeper asks the engine at most every ten minutes at night, and never by day', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  const engine = fakeEngine();
+  engine.contextTokens = 100_000;
+  let asked = 0;
+  const connect = async () => { const client = await engine.connect(); const command = client.command; client.command = (c) => { asked++; return command(c); }; return client; };
+  let now = at(20, 12);
+  const keeper = startCompanionKeeper({ connect, env, pollMs: 60_000, now: () => now, notify: async () => {} });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.equal(asked, 0, 'by day the keeper does not ask');
+  for (const minute of [0, 3, 9, 10, 15]) { now = at(21, 2, minute); await keeper.poke(); }
+  assert.equal(asked, 2, 'at 02:00 and 02:10');
+});
+
+test('lastUserMessageAt reads the newest user message, in the app or from Telegram', async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-last-user-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 's.jsonl');
+  const lines = (list) => writeFileSync(file, list.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  lines([{ type: 'session' }, assistantMessage(1000)]);
+  assert.equal(await lastUserMessageAt(file), undefined);
+  lines([{ type: 'session' }, userMessage(1000), telegram(5000, true), wake(9000, 'heartbeat'), telegram(9500, false)]);
+  assert.equal(await lastUserMessageAt(file), 5000);
+  lines([{ type: 'session' }, telegram(5000, true), userMessage(7000), 'not json']);
+  assert.equal(await lastUserMessageAt(file), 7000);
 });

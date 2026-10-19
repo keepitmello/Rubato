@@ -7,10 +7,10 @@ export const DELIVER_REQUEST = "rubato.session-link.deliver";
 // `channel` is a person's words arriving from a messenger (harness/companion/messenger): `from`
 // names the messenger, the chat and who wrote, and says whether that is the user.
 // `wake` is Rubato's own clock waking the conversation (harness/companion keeper.mjs): `what` is
-// the heartbeat or the daily report, and the text is Rubato's fixed instruction for it.
+// the heartbeat, the daily report or sleep, and the text is Rubato's fixed instruction for it.
 export const SESSION_MESSAGE_KINDS = Object.freeze(["message", "create", "notice", "channel", "wake"]);
 /** What Rubato's clock wakes a conversation for. */
-export const WAKES = Object.freeze(["heartbeat", "daily-report"]);
+export const WAKES = Object.freeze(["heartbeat", "daily-report", "sleep"]);
 /**
  * The user message that opens a place for a system message where none is open (a system message
  * cannot follow an answer). Fixed, with nothing from the event in it, so every request carries the

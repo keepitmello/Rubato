@@ -18,6 +18,10 @@ export const COMPANION_ROLE = "companion";
 // runtime files): a session holding one runs on that text alone.
 export const SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE = "rubato.system-prompt";
 
+// What a server compaction leaves in an answer (compaction/anthropic-server-compaction.mjs
+// isAnthropicCompactionBlock; a persisted session contract, not staged with these files).
+export const SERVER_COMPACTION_BLOCK = Object.freeze({ type: "providerNative", subtype: "compaction" });
+
 const PROJECT_CONTEXT = /<project_context>[\s\S]*?<\/project_context>/;
 const PROJECT_RULES = /<!--senpi:project-rules:1:start-->[\s\S]*?<!--senpi:project-rules:1:end-->/;
 
@@ -33,6 +37,12 @@ const PROJECT_RULES = /<!--senpi:project-rules:1:start-->[\s\S]*?<!--senpi:proje
  * sessions only. `/reload` (session_start reason "reload") takes the current files. Skill bodies
  * are read from disk when used, so a pinned description only delays what the model sees in the
  * index, never which instructions it follows.
+ *
+ * The companion is one conversation that never ends, so "new sessions only" would mean never. Its
+ * role prompt is pinned the same way, and pinned again when the conversation crosses a compaction
+ * or a new window (a server compaction, compact_context, new_context): the cached prefix is
+ * rewritten there anyway, so the pieces as they are on disk then cost nothing extra. A piece
+ * edited in between, by an update or in Settings › Companion, waits for that point.
  */
 export function createRolePromptExtension({ env = process.env } = {}) {
   return async (pi) => {
@@ -58,24 +68,32 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       if (event?.reason === "reload") repin.add(id);
     });
     // The pinned value of one entry type for this session; `live` supplies it the first time.
-    // `follow` re-pins whenever `live` reads something else: the companion is one conversation
-    // that never ends, so the prompt pieces a person edits in Settings › Companion reach it on
-    // its next request instead of waiting for a new session. Only such an edit costs the cache.
-    const pin = (id, ctx, type, live, { follow = false } = {}) => {
+    const pin = (id, ctx, type, live) => {
       if (!pinned.has(id)) pinned.set(id, new Map());
       const session = pinned.get(id);
       let value = repin.has(id) ? undefined : session.get(type) ?? recordedEntry(ctx, type);
-      let current;
-      if (value === undefined) current = live();
-      else if (follow) {
-        try { current = live(); } catch { current = undefined; }
-      }
+      const current = value === undefined ? live() : undefined;
       if (current !== undefined && current !== value) {
         value = current;
         try { pi.appendEntry?.(type, { value }); } catch {}
       }
       session.set(type, value);
       return value;
+    };
+    // The companion's role prompt: pinned with the last compaction or new window it was read
+    // after (`boundary`, that entry's id, null before the first). Crossing another one reads the
+    // pieces again. A pin recorded before this rule has no boundary and is read again once.
+    const pinAtBoundary = (id, ctx, type, live) => {
+      if (!pinned.has(id)) pinned.set(id, new Map());
+      const session = pinned.get(id);
+      const boundary = lastBoundary(ctx);
+      let held = repin.has(id) ? undefined : session.get(type) ?? recordedData(ctx, type);
+      if (held === undefined || held.boundary !== boundary) {
+        held = { value: live(), boundary };
+        try { pi.appendEntry?.(type, held); } catch {}
+      }
+      session.set(type, held);
+      return held.value;
     };
     pi.on("system_prompt", async (event, ctx) => {
       // The role prompt rebuilds the whole prompt from the engine rendering. Handlers that ran
@@ -87,8 +105,8 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       const id = sessionIdOf(ctx);
       const hooks = id === undefined || typeof loadRolePrompt !== "function"
         ? {}
-        : { loadRolePrompt: () => pin(id, ctx, ROLE_PROMPT_ENTRY_TYPE, () => loadRolePrompt(role, { env }),
-          { follow: role === COMPANION_ROLE }) };
+        : { loadRolePrompt: () => (role === COMPANION_ROLE ? pinAtBoundary : pin)(id, ctx, ROLE_PROMPT_ENTRY_TYPE,
+          () => loadRolePrompt(role, { env })) };
       const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, hooks);
       let composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
       if (id !== undefined) {
@@ -164,6 +182,13 @@ function sessionIdOf(ctx) {
 
 // Skills-listing entries in existing sessions carry the text under `listing`.
 function recordedEntry(ctx, customType) {
+  const data = recordedData(ctx, customType);
+  const value = data?.value ?? data?.listing;
+  return typeof value === "string" ? value : undefined;
+}
+
+/** The latest entry of `customType` on this branch whose value is text: `{ value, boundary? }`. */
+function recordedData(ctx, customType) {
   let branch;
   try { branch = ctx?.sessionManager?.getBranch?.(); } catch { return undefined; }
   if (!Array.isArray(branch)) return undefined;
@@ -171,9 +196,30 @@ function recordedEntry(ctx, customType) {
     const entry = branch[index];
     if (entry?.type !== "custom" || entry.customType !== customType) continue;
     const value = entry.data?.value ?? entry.data?.listing;
-    if (typeof value === "string") return value;
+    if (typeof value === "string") return { value, ...(entry.data && "boundary" in entry.data ? { boundary: entry.data.boundary } : {}) };
   }
   return undefined;
+}
+
+/**
+ * The id of the last point on this branch where the conversation's prefix was rewritten: a
+ * compaction entry (a new window, or a summary) or an answer carrying a server compaction. null
+ * when there is none yet.
+ */
+export function lastBoundary(ctx) {
+  let branch;
+  try { branch = ctx?.sessionManager?.getBranch?.(); } catch { return null; }
+  if (!Array.isArray(branch)) return null;
+  for (let index = branch.length - 1; index >= 0; index -= 1) {
+    const entry = branch[index];
+    if (entry?.type === "compaction") return entry.id ?? null;
+    const content = entry?.type === "message" && entry.message?.role === "assistant" ? entry.message.content : undefined;
+    if (Array.isArray(content) && content.some((block) => block?.type === SERVER_COMPACTION_BLOCK.type
+      && block.subtype === SERVER_COMPACTION_BLOCK.subtype && typeof block.raw?.content === "string" && block.raw.content.length > 0)) {
+      return entry.id ?? null;
+    }
+  }
+  return null;
 }
 
 export function createRolePromptExtensionFactories({ env = process.env } = {}) {

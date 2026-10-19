@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { COMPANION_ROLE as ROLE_PROMPT_COMPANION_ROLE, createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
+import { COMPANION_ROLE as ROLE_PROMPT_COMPANION_ROLE, createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SERVER_COMPACTION_BLOCK, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
+import { isAnthropicCompactionBlock } from "../compaction/anthropic-server-compaction.mjs";
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from "../session-prompt/patches.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
 import { resolveRole } from "../../../rubato-pi/src/role-contract.mjs";
@@ -276,20 +277,19 @@ test("the opening turn leads every request of a new session and stays pinned", a
   assert.deepEqual(await request(handlers, "session-e", [user]), [user], "a session opened with its own whole prompt gets no opening turn");
 });
 
-test("the companion's prompt is its pieces, the person's versions first, and an edit reaches its next request", async (t) => {
-  // The companion is one conversation that never ends, so its role prompt follows the pieces
-  // instead of staying pinned; the person edits them in Settings › Companion.
+/** Segno's conversation with its pieces in a sandbox; `compose` is one request's system prompt. */
+async function companionSession(t) {
   const dir = mkdtempSync(join(tmpdir(), "rubato-companion-prompt-"));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const prompts = join(dir, "prompts");
-  const home = join(dir, "home");
-  mkdirSync(join(prompts, "companion"), { recursive: true });
-  for (const { id } of PIECES) writeFileSync(join(prompts, "companion", `${id}.pi.md`), `default ${id}\n`);
+  const defaultsDir = join(prompts, "companion");
+  mkdirSync(defaultsDir, { recursive: true });
+  for (const { id } of PIECES) writeFileSync(join(defaultsDir, `${id}.pi.md`), `default ${id}\n`);
   writeFileSync(join(prompts, "opening-turn.pi.md"), "I am Lea.\n");
   const env = {
     RUBATO_PI_ROLE: COMPANION_ROLE,
     RUBATO_PROMPTS_DIR: prompts,
-    RUBATO_COMPANION_HOME: home,
+    RUBATO_COMPANION_HOME: join(dir, "home"),
     RUBATO_ROLE_PROMPT_MODULE: promptHref,
     RUBATO_ROLE_CONTRACT_MODULE: roleHref,
   };
@@ -301,31 +301,93 @@ test("the companion's prompt is its pieces, the person's versions first, and an 
   const handlers = {};
   await createRolePromptExtensionFactories({ env })[0].factory({
     on(name, fn) { handlers[name] = fn; },
-    appendEntry(customType, data) { branch.push({ type: "custom", customType, data }); },
+    appendEntry(customType, data) { branch.push({ type: "custom", id: `e${branch.length}`, customType, data }); },
   });
-  const compose = async () => (await handlers.system_prompt({ systemPrompt: "" }, ctx)).systemPrompt;
-  const pinned = () => branch.filter((entry) => entry.customType === "rubato.role-prompt").length;
+  return {
+    env, branch, ctx, handlers, defaultsDir,
+    compose: async () => (await handlers.system_prompt({ systemPrompt: "" }, ctx)).systemPrompt,
+    pinned: () => branch.filter((entry) => entry.customType === "rubato.role-prompt").length,
+    editDefault: (id, text) => writeFileSync(join(defaultsDir, `${id}.pi.md`), text),
+    editPersonal: (id, text) => writePiece(id, text, { defaultsDir, env }),
+    say: (role, content) => branch.push({ type: "message", id: `e${branch.length}`, message: { role, content, timestamp: branch.length } }),
+    newWindow: () => branch.push({ type: "compaction", id: `e${branch.length}`, summary: "", firstKeptEntryId: "", tokensBefore: 0 }),
+    serverCompaction: (summary = "what came before") => branch.push({ type: "message", id: `e${branch.length}`, message: { role: "assistant",
+      content: [{ type: "providerNative", subtype: "compaction", raw: { type: "compaction", content: summary } }, { type: "text", text: "ok" }], timestamp: branch.length } }),
+  };
+}
 
-  const first = await compose();
+test("the companion's prompt is its pieces, the person's versions first", async (t) => {
+  const s = await companionSession(t);
+  const first = await s.compose();
   assert.ok(first.startsWith(PIECES.map(({ id }) => `default ${id}`).join("\n\n")), "the pieces in order, ahead of everything else");
   assert.match(first, /Role: companion/);
   assert.doesNotMatch(first, /# Working agreement/);
-  assert.equal(await compose(), first);
-  assert.equal(pinned(), 1, "an unchanged composition is not written again");
-
-  writePiece("soul", "my own soul", { defaultsDir: join(prompts, "companion"), env });
-  const edited = await compose();
-  assert.ok(edited.startsWith("default preamble\n\nmy own soul\n\ndefault identity"));
-  assert.doesNotMatch(edited, /default soul/);
-  assert.equal(pinned(), 2);
-  assert.throws(() => writePiece("tools", "other tools", { defaultsDir: join(prompts, "companion"), env }), /no personal version/);
-
-  writePiece("soul", "", { defaultsDir: join(prompts, "companion"), env });
-  assert.match(await compose(), /default soul/, "clearing a piece returns it to the default");
+  assert.equal(await s.compose(), first);
+  assert.equal(s.pinned(), 1, "an unchanged composition is not written again");
+  assert.throws(() => s.editPersonal("tools", "other tools"), /no personal version/);
 
   const user = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 };
-  assert.deepEqual((await handlers.context({ type: "context", messages: [user] }, ctx))?.messages ?? [user], [user],
+  assert.deepEqual((await s.handlers.context({ type: "context", messages: [user] }, s.ctx))?.messages ?? [user], [user],
     "the companion's preamble is its own, so the leads' opening turn does not answer it");
+});
+
+test("a piece edit waits for the companion's next new window; until then every request is the same", async (t) => {
+  const s = await companionSession(t);
+  const first = await s.compose();
+  s.say("user", "hi"); s.say("assistant", [{ type: "text", text: "hey" }]);
+  s.editDefault("companion", "default companion\n\n## Sleep\nnew lines\n");
+  s.editPersonal("soul", "my own soul");
+  assert.equal(await s.compose(), first, "an update's piece and a Settings edit do not touch the cached prefix");
+  assert.equal(s.pinned(), 1);
+
+  s.newWindow();
+  const after = await s.compose();
+  assert.match(after, /## Sleep\nnew lines/);
+  assert.match(after, /my own soul/);
+  assert.equal(s.pinned(), 2);
+  assert.equal(await s.compose(), after, "and it holds from there");
+  assert.equal(s.pinned(), 2);
+});
+
+test("a server compaction (compact_context, or the safety line) also takes the pieces as they are then", async (t) => {
+  const s = await companionSession(t);
+  const first = await s.compose();
+  s.editPersonal("soul", "my own soul");
+  s.serverCompaction(null);
+  s.branch.at(-1).message.content[0].raw.content = null;
+  assert.equal(await s.compose(), first, "a compaction the server failed to summarize rewrote nothing");
+  s.serverCompaction();
+  assert.match(await s.compose(), /my own soul/);
+  assert.equal(s.pinned(), 2);
+});
+
+test("a companion pinned before this rule takes its pieces once, then holds", async (t) => {
+  const s = await companionSession(t);
+  s.branch.push({ type: "custom", id: "old", customType: "rubato.role-prompt", data: { value: "an old prompt" } });
+  const now = await s.compose();
+  assert.doesNotMatch(now, /an old prompt/);
+  assert.match(now, /default soul/);
+  s.editPersonal("soul", "my own soul");
+  assert.equal(await s.compose(), now);
+  assert.equal(s.pinned(), 2);
+});
+
+test("a restart keeps the companion's pin: it is read from the session, not from disk", async (t) => {
+  const s = await companionSession(t);
+  const first = await s.compose();
+  s.editPersonal("soul", "my own soul");
+  const handlers = {};
+  await createRolePromptExtensionFactories({ env: s.env })[0].factory({
+    on(name, fn) { handlers[name] = fn; },
+    appendEntry(customType, data) { s.branch.push({ type: "custom", id: `e${s.branch.length}`, customType, data }); },
+  });
+  assert.equal((await handlers.system_prompt({ systemPrompt: "" }, s.ctx)).systemPrompt, first);
+});
+
+test("the role prompt reads a server compaction the way the compaction feature writes it", () => {
+  const block = { type: "providerNative", subtype: "compaction", raw: { type: "compaction", content: "x" } };
+  assert.equal(isAnthropicCompactionBlock(block), true);
+  assert.deepEqual({ type: block.type, subtype: block.subtype }, { ...SERVER_COMPACTION_BLOCK });
 });
 
 test("the role prompt names the companion's role the way harness/companion does", () => {

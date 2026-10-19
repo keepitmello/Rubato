@@ -94,7 +94,9 @@ export function triggerOf(entries, index, { companionSessionId } = {}) {
         };
       }
       if (details.kind === 'wake') {
-        return { kind: 'notice', own: true, text: typeof details.text === 'string' ? details.text : '', messageId: entry.id };
+        // Rubato's clock says which wake it is; the text is for the model, not for classifying.
+        return { kind: 'notice', own: true, what: typeof details.what === 'string' ? details.what : undefined,
+          text: typeof details.text === 'string' ? details.text : '', messageId: entry.id };
       }
       if (details.kind === 'notice') {
         // Rubato's own word is sent from 'rubato' (sessionLink.notice); a followed conversation's

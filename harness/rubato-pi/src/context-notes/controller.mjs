@@ -66,12 +66,30 @@ Close to the physical token or serialized request-byte limit the harness asks fo
 checkpoint-only turn, then starts a new window without a summary.
 ${NEW_WINDOW_TEXT}`;
 
+const PERIODIC_NUDGE_CLAUSE = "; a periodic notice asks you to refresh them";
+
+/**
+ * Whether this runtime gets the periodic "notes may be behind" nudge. The companion (role
+ * `companion`, rubato-pi role-contract.mjs; the engine sets it in that runtime's env) runs for
+ * days and rewrites its notes when it goes to sleep (harness/prompts/companion), so a nudge every
+ * so many tokens is noise there. The reminder near the window's end and the byte warning stay.
+ */
+export function periodicNotesNudge(env = process.env) {
+  return env?.RUBATO_PI_ROLE !== "companion";
+}
+
 /**
  * System-prompt guidance for the model's context strategy. A pure function of the model:
  * a lowered window target (RUBATO_CONTEXT_WINDOW_TOKENS) moves the lines, not the model's
- * strategy, so the text is chosen from the model's own lines.
+ * strategy, so the text is chosen from the model's own lines. Without the periodic nudge the
+ * text does not promise one.
  */
-export function guidanceFor(model, config = contextNotesConfig()) {
+export function guidanceFor(model, config = contextNotesConfig(), { periodicNudge = true } = {}) {
+  const text = strategyGuidance(model, config);
+  return periodicNudge ? text : text.replace(PERIODIC_NUDGE_CLAUSE, "");
+}
+
+function strategyGuidance(model, config) {
   const strategy = contextStrategy(model);
   if (strategy === "server-compaction") return SERVER_COMPACTION_GUIDANCE;
   if (strategy === "hard-safety") return HARD_SAFETY_GUIDANCE;
@@ -115,6 +133,7 @@ export class ContextNotesController {
   constructor(pi, ctx, options = {}) {
     this.pi = pi;
     this.config = options.config ?? contextNotesConfig();
+    this.periodicNudge = periodicNotesNudge(options.env ?? process.env);
     this.requireEngine = options.requireEngine !== false;
     this.flushJournal = options.flushJournal ?? flushSessionJournal;
     if (this.requireEngine) assertEngineParts();
@@ -323,7 +342,7 @@ export class ContextNotesController {
       if (!this.reminderEntry) throw new Error("문맥 안내를 저장하지 못했어요.");
       this.flush(ctx.sessionManager, this.reminderEntry.id);
       this.record("reminder_recorded", { window_id: this.window.windowId });
-    } else if (!this.reminderEntry && !this.checkpointRequested && before.nudgeTokens && event.messages.length) {
+    } else if (this.periodicNudge && !this.reminderEntry && !this.checkpointRequested && before.nudgeTokens && event.messages.length) {
       const { growth, userTurns } = this.noteGrowth(before.tokens);
       if (growth >= before.nudgeTokens ||
           (userTurns >= before.nudgeUserTurns && growth >= before.nudgeUserTokens)) {
