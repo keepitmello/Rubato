@@ -749,7 +749,7 @@ test("anthropic stored oauth plus setup-token are both rotation slots", async ()
       key: "sk-ant-oat-test",
       source: "setup-token",
     }],
-  }, { acquireLeases: false });
+  });
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });
 
@@ -774,7 +774,7 @@ test("anthropic stored oauth plus setup-token are both rotation slots", async ()
       key: "sk-ant-oat-test",
       source: "setup-token",
     }],
-  }, { acquireLeases: false });
+  });
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });
 

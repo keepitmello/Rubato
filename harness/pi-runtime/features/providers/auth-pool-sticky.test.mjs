@@ -145,7 +145,7 @@ test("stored oauth plus setup-token list as one pool", async () => {
       key: "sk-ant-oat-test",
       source: "setup-token",
     }],
-  }, { acquireLeases: false });
+  });
   assert.deepEqual(slots.map((slot) => `${slot.lane}:${slot.name}`), ["stored:default", "setup-token:setup-token"]);
 });
 
@@ -176,7 +176,7 @@ test("pinned setup-token wins over stored oauth in the same pool", async () => {
       key: "sk-ant-oat-test",
       source: "setup-token",
     }],
-  }, { acquireLeases: false });
+  });
   const setup = slots.find((slot) => slot.name === "setup-token");
   const stored = slots.find((slot) => slot.name === "default");
   assert.equal(setup.pinned, true);

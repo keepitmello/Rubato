@@ -25,8 +25,11 @@ async function discoveredExtraSlots(sources) {
   return Array.isArray(extra) ? extra : [];
 }
 
-export async function listRotationSlots(sources, options = {}) {
-  const acquireLeases = options.acquireLeases !== false;
+/**
+ * 이 요청이 고를 수 있는 계정 칸 전부. 시험 임대는 잡지 않는다 — 임대는 실제로 보낼 칸에만
+ * `streamWithCredentialRotation` 의 선택이 잡는다.
+ */
+export async function listRotationSlots(sources) {
   const { providerId, credential, env, repository } = sources;
   const policySlots = Object.entries(sources.policy?.slots ?? {}).flatMap(([name, ref]) => {
     const envVarName = ref.env ?? `models.json:${name}`;
@@ -37,33 +40,21 @@ export async function listRotationSlots(sources, options = {}) {
   const extraSlots = await discoveredExtraSlots(sources);
   if (credential) {
     const state = await repository.listSlots(providerId, "stored");
-    const slots = [];
-    for (const slot of listCredentialSlots(credential)) {
-      const current = state[slot.name];
-      if (acquireLeases && current?.blockedUntil !== undefined && current.blockedUntil <= (sources.now ?? Date.now)()) {
-        const lease = await acquireHalfOpenLease(repository, providerId, "stored", slot.name, {
-          now: (sources.now ?? Date.now)(),
-        });
-        if (!lease) continue;
-        const leased = await repository.listSlots(providerId, "stored");
-        slots.push(overlayState({ name: slot.name, lane: "stored", pinned: credential.pinned === slot.name }, leased[slot.name]));
-        continue;
-      }
-      slots.push(overlayState({ name: slot.name, lane: "stored", pinned: credential.pinned === slot.name }, current));
-    }
+    const slots = listCredentialSlots(credential).map((slot) =>
+      overlayState({ name: slot.name, lane: "stored", pinned: credential.pinned === slot.name }, state[slot.name]));
     const discovered = [...policySlots, ...extraSlots];
     if (discovered.length === 0) return slots;
-    const namedSlots = await listEnvRotationSlots({ ...sources, credential: undefined, policy: { ...sources.policy, slots: {} } }, discovered, acquireLeases);
+    const namedSlots = await listEnvRotationSlots({ ...sources, credential: undefined, policy: { ...sources.policy, slots: {} } }, discovered);
     return [...slots, ...namedSlots.map((slot) => ({
       ...slot,
       pinned: credential.pinned === slot.name,
     }))];
   }
   const envSlots = [...discoverEnvSlots(providerId, env), ...policySlots, ...extraSlots];
-  return listEnvRotationSlots(sources, envSlots, acquireLeases);
+  return listEnvRotationSlots(sources, envSlots);
 }
 
-async function listEnvRotationSlots(sources, envSlots, acquireLeases = true) {
+async function listEnvRotationSlots(sources, envSlots) {
   if (envSlots.length === 0) return [];
   const { providerId, repository } = sources;
   const stateByLane = {};
@@ -74,19 +65,10 @@ async function listEnvRotationSlots(sources, envSlots, acquireLeases = true) {
   const slots = [];
   for (const slot of envSlots) {
     const lane = slot.lane ?? (slot.source === "setup-token" ? "setup-token" : "env");
-    let state = await stateOf(lane);
+    const state = await stateOf(lane);
     const persisted = state[slot.name];
     const revision = await repository.envCredentialRevision(slot.envVarName, slot.key);
-    let applicable = persisted?.credentialRevision === revision ? persisted : undefined;
-    if (acquireLeases && applicable?.blockedUntil !== undefined && applicable.blockedUntil <= (sources.now ?? Date.now)()) {
-      const lease = await acquireHalfOpenLease(repository, providerId, lane, slot.name, {
-        now: (sources.now ?? Date.now)(),
-      });
-      if (!lease) continue;
-      stateByLane[lane] = await repository.listSlots(providerId, lane);
-      const leased = stateByLane[lane];
-      applicable = leased[slot.name];
-    }
+    const applicable = persisted?.credentialRevision === revision ? persisted : undefined;
     slots.push(overlayState({
       name: slot.name,
       lane,
@@ -197,6 +179,27 @@ export function streamWithCredentialRotation(options) {
     if (!winner) throw new Error("credential rotation selected from an empty candidate set");
     return winner;
   };
+  // 잠금이 끝난 칸은 요청 하나로 먼저 되는지 본다. 그 시험 임대는 이 요청이 실제로 보낼 칸에만
+  // 잡는다. 실측(2026-10-19): 목록을 뽑을 때 잠금 끝난 칸마다 임대를 걸었더니, `default` 를
+  // 쓰는 다른 세션 요청들이 setup-token 임대를 쓰지도 않고 30초마다 다시 잡았다. 성공도 실패도
+  // 기록되지 않아 잠금이 풀리지 않았고, 임대를 못 잡은 메인 모델 요청은 그 칸이 목록에서 빠져
+  // "Account 'setup-token' is unavailable" 로만 실패했다.
+  const claimProbe = async (slot) => {
+    if (slot.blockedUntil === undefined || slot.blockedUntil > now()) return true;
+    const lease = await acquireHalfOpenLease(sources.repository, providerId, slot.lane, slot.name, { now: now() });
+    return lease !== undefined;
+  };
+  // 골라도 되는 칸이 여럿이면 남이 시험 중인 칸은 비켜 간다. 정해진 칸이면 그냥 보낸다 —
+  // 갈 곳이 없고, 시험 요청이 하나 더 나가는 값은 429 한 번이다.
+  const freeChoice = async (candidates, slots) => {
+    const forced = options.requiredSlotName !== undefined || slots.some((slot) => slot.pinned === true);
+    let pool = candidates;
+    for (;;) {
+      const slot = initialSlot(pool, slots);
+      if (await claimProbe(slot) || forced || pool.length === 1) return slot;
+      pool = pool.filter((candidate) => candidate !== slot);
+    }
+  };
   return runCredentialFailover({
     listSlots: async () => {
       if (fixedSession) await readSessionBinding(store, sources.repository, providerId, affinityKey);
@@ -204,7 +207,7 @@ export function streamWithCredentialRotation(options) {
     },
     stickySlotName: () => readBound()?.name,
     select: async (candidates, slots = candidates) => {
-      if (!fixedSession) return bindSessionSlot(store, providerId, affinityKey, initialSlot(candidates, slots));
+      if (!fixedSession) return bindSessionSlot(store, providerId, affinityKey, await freeChoice(candidates, slots));
       const bound = readBound() ?? await sources.repository.bindSessionSlot(
         providerId, affinityKey, () => initialSlot(candidates, slots));
       bindSessionSlot(store, providerId, affinityKey, bound);
@@ -214,6 +217,7 @@ export function streamWithCredentialRotation(options) {
       const locked = candidates.find((slot) => slot.name === bound.name && slot.lane === bound.lane);
       if (!locked) throw new Error(requiredSlotUnavailableMessage(
         bound.name, slots.find((slot) => slot.name === bound.name && slot.lane === bound.lane), now()));
+      await claimProbe(locked);
       return locked;
     },
     runAttempt,

@@ -69,7 +69,7 @@ export async function credentialRotationSources(runtime, model, options) {
     policy,
     discoverExtraSlots: () => discoverSetupTokenSlots(model.provider, env, { signal: options?.signal }),
   };
-  const slots = await listRotationSlots(sources, { acquireLeases: false });
+  const slots = await listRotationSlots(sources);
   const sessionId = options?.sessionId ?? options?.affinityKey;
   const existing = model.provider === "anthropic" && sessionId
     ? await readSessionBinding(sessionAffinityStore(runtime), repository, model.provider, sessionId)
@@ -181,7 +181,7 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
     ? await credentialRotationSources(runtime, model, streamOptions)
     : undefined;
   if (sources) {
-    const slots = await listRotationSlots(sources, { acquireLeases: false });
+    const slots = await listRotationSlots(sources);
     const retryAfterBySlot = new Map();
     return streamWithCredentialRotation({
       sources,
