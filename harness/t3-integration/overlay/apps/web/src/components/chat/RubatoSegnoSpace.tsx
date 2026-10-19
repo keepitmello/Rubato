@@ -19,6 +19,7 @@ import {
   type SegnoStageState,
 } from "../../state/rubatoCompanion";
 import { Button } from "../ui/button";
+import { useSidebar } from "../ui/sidebar";
 import "./RubatoSegnoSpace.css";
 
 /** How often the panel looks again; the engine rewrites it within seconds of a change. */
@@ -177,7 +178,27 @@ function useStageWidth(space: RefObject<HTMLDivElement | null>) {
   return width;
 }
 
+/**
+ * Segno's space starts with the thread list folded, so the stage gets that room; the rail stays and
+ * the sidebar toggle still opens the list here. Leaving for any other route puts the list back as
+ * it was when the person came in, so their choice for ordinary routes is never overwritten.
+ */
+export function useThreadListFoldedHere() {
+  const { isMobile, open, setOpen } = useSidebar();
+  const latest = useRef({ open, setOpen });
+  latest.current = { open, setOpen };
+  useEffect(() => {
+    if (isMobile) return;
+    const before = latest.current.open;
+    if (before) void latest.current.setOpen(false);
+    return () => {
+      if (latest.current.open !== before) void latest.current.setOpen(before);
+    };
+  }, [isMobile]);
+}
+
 export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
+  useThreadListFoldedHere();
   const environmentId = useReadyEnvironmentId();
   const { panel, refresh } = usePanel(environmentId);
   const now = useNow();
