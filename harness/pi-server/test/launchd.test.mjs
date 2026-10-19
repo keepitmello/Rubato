@@ -124,10 +124,14 @@ test('with launchd keeping the engine: killed, it comes back; starters ask launc
   await until(() => store.schedulerStatus().running, 'scheduler beats');
   assert.equal(store.schedulerStatus().pid, firstPid);
 
-  // Killed: launchd starts it again. The new one waits for the dead engine's lock to go stale.
+  // Killed: launchd starts it again, and the new one takes over the lock nobody holds now instead
+  // of waiting 15 s for it to go stale.
+  const killedAt = Date.now();
   process.kill(firstPid, 'SIGKILL');
   await until(() => !alive(firstPid), 'killed');
   const second = await ensureProfileEngine(options);
+  assert.ok(Date.now() - killedAt < 8000, `back in ${Date.now() - killedAt} ms`);
+  assert.match(readFileSync(path.join(box.agentDir, 'logs', 'pi-server.log'), 'utf8'), /the engine that held this profile is gone; taking over its lock/);
   assert.equal(second.serverId, first.serverId);
   const afterKill = engineProcesses(box.agentDir);
   assert.equal(afterKill.length, 1, `one engine: ${afterKill}`);
