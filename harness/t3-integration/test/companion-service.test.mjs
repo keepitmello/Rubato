@@ -111,6 +111,16 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   assert.equal(listOutbox(env).length, 2);
   const art = await post('art');
   assert.match(art.body.art.url, /^data:image\/webp;base64,/);
+  // Open inbox items without a lead are rows; one a lead took is that lead's row instead.
+  const { openInbox } = await import('../../companion/inbox.mjs');
+  const box = openInbox({ env });
+  box.add({ title: '앱이 자꾸 죽어요', source: 'telegram', sourceRef: 'telegram:-1:7', reporter: 'Gildong' });
+  box.add({ title: '로그인 버그', source: 'telegram', sourceRef: 'telegram:-1:8', leadSessionId: 'run' });
+  box.add({ title: '끝난 일', source: 'user' });
+  box.update('S-3', { status: 'done' });
+  box.close();
+  const withInbox = await post('panel');
+  assert.deepEqual(withInbox.body.inbox.map((item) => [item.title, item.source, item.reporter]), [['앱이 자꾸 죽어요', 'telegram', 'Gildong']]);
 });
 
 test('the Segno space asks the server for the inbox and gets the open work with counts', async (t) => {

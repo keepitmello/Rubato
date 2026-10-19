@@ -65,13 +65,23 @@ export function createCompanionService(options = {}) {
     }
   };
 
-  function panel(companion, messenger) {
+  function panel(companion, messenger, inbox) {
     const { leads, finished } = companion.readPanel(env);
+    // Open inbox items no lead took yet; one with a lead already shows as that lead's row.
+    let unassigned = [];
+    try {
+      const box = inbox.openInbox({ env });
+      try {
+        unassigned = box.list({ status: 'open' }).filter((item) => !item.leadSessionId)
+          .map((item) => ({ id: item.id, title: item.title, source: item.source, reporter: item.reporter ?? null,
+            status: item.status, createdAt: item.createdAt }));
+      } finally { box.close(); }
+    } catch { /* no inbox yet, or this Node has no SQLite: the panel goes on without it */ }
     const held = messenger.listOutbox(env).filter((row) => row.state === 'held')
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
       .map((row) => ({ id: row.id, text: row.text, createdAt: row.createdAt,
         to: row.target === 'user' ? null : { chatId: row.target.chatId, name: row.target.name ?? null } }));
-    return { leads, finished, held };
+    return { leads, finished, held, inbox: unassigned };
   }
 
   async function handle(action, input) {
@@ -108,7 +118,7 @@ export function createCompanionService(options = {}) {
       // The task panel beside Segno's chat: what it follows (the keeper's panel.json) and the
       // messages to other people that wait for the person.
       case 'panel':
-        return panel(companion, messenger);
+        return panel(companion, messenger, inbox);
       // Segno's art for its space, as a data URL (the route answers JSON to authenticated calls).
       case 'art': {
         const file = companion.stageArtFile(env);
