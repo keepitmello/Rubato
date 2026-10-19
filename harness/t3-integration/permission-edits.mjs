@@ -109,9 +109,7 @@ export const permissionEdits = {
       'replace'],
     ['    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),\n',
       [
-        '    (item) =>',
-        '      (item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch)) &&',
-        '      (item.to !== "/settings/permissions" || window.desktopBridge?.getClientPlatform?.() === "darwin"),',
+        '    (item) => item.to !== "/settings/permissions" || window.desktopBridge?.getClientPlatform?.() === "darwin",',
         '',
       ].join('\n'),
       'replace'],

@@ -4,7 +4,7 @@
 // list also shows; the user chose to keep that. Collapsing it leaves one line.
 // It is one of the sidebar's sections: above the project's threads until the
 // user drags its header elsewhere (sidebar/rubatoSidebarBlocks.ts), and as many
-// rows as Settings > Threads & Projects says.
+// rows as Settings > Threads says.
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import * as Schema from "effect/Schema";
 

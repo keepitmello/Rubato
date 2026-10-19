@@ -1,8 +1,9 @@
-// Settings > Projects before a project is chosen: the one place that edits the
-// project order every surface follows (sidebar/rubatoProjectOrder.ts,
-// project-order-edits.mjs). Rows reorder by drag (or the keyboard), − moves a
-// project to the others, + brings one back, and a name opens that project's
-// own settings, where removing it from Rubato spells out what is deleted.
+// Settings > Projects before a project is chosen: the one place that adds,
+// orders and puts away projects for every surface that lists them
+// (sidebar/rubatoProjectOrder.ts, project-order-edits.mjs). Rows reorder by
+// drag (or the keyboard), − moves a project to the others, + brings one back,
+// Add project opens the command palette's add flow, and a name opens that
+// project's own settings, where removing it from Rubato spells out what is deleted.
 import {
   DndContext,
   KeyboardSensor,
@@ -21,9 +22,10 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "@tanstack/react-router";
-import { GripVerticalIcon, MinusIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { FolderPlusIcon, GripVerticalIcon, MinusIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback } from "react";
 
+import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
@@ -33,30 +35,17 @@ import { Button } from "../ui/button";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
-/**
- * Opens the list from anywhere (the command palette, the legacy sidebar's
- * menu, Settings > Threads & Projects). Clearing the chosen project is what
- * shows the list instead of one project's settings.
- */
+/** Search that leaves the chosen project, which is what shows the list instead of one project's settings. */
+export function rubatoProjectListSearch<Search extends object>(previous: Search) {
+  return { ...previous, project: undefined, checkout: undefined };
+}
+
+/** Opens the list from anywhere: the command palette, the legacy sidebar's menu. */
 export function useOpenRubatoProjectList() {
   const navigate = useNavigate();
   return useCallback(
-    () =>
-      navigate({
-        to: "/settings/projects",
-        search: (previous) => ({ ...previous, project: undefined, checkout: undefined }),
-      }),
+    () => navigate({ to: "/settings/projects", search: rubatoProjectListSearch }),
     [navigate],
-  );
-}
-
-/** Settings > Threads & Projects > Project order: the way to the list. */
-export function RubatoProjectOrderButton() {
-  const open = useOpenRubatoProjectList();
-  return (
-    <Button size="sm" variant="outline" onClick={() => void open()}>
-      Edit list
-    </Button>
   );
 }
 
@@ -158,18 +147,25 @@ export function RubatoProjectListSettings() {
     <SettingsPageContainer>
       <p className="px-3 text-sm text-muted-foreground sm:px-4">
         One order for every place that lists projects: the Projects window, the home tabs and the
-        new-thread pickers. Drag to reorder, and choose a project to open its settings.
+        new-thread pickers. Drag to reorder, and choose a project to open its settings, where you
+        can remove it.
       </p>
       <SettingsSection
         id="rubato-project-list"
         title="My projects"
         headerAction={
-          edited ? (
-            <Button size="xs" variant="ghost" onClick={reset}>
-              <RotateCcwIcon className="size-3.5" />
-              Sort by recent activity
+          <div className="flex items-center gap-1">
+            {edited ? (
+              <Button size="xs" variant="ghost" onClick={reset}>
+                <RotateCcwIcon className="size-3.5" />
+                Sort by recent activity
+              </Button>
+            ) : null}
+            <Button size="xs" variant="outline" onClick={() => openCommandPalette({ open: "add-project" })}>
+              <FolderPlusIcon className="size-3.5" />
+              Add project
             </Button>
-          ) : null
+          </div>
         }
       >
         {list.listed.length > 0 ? (

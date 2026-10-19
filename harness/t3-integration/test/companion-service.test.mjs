@@ -112,3 +112,19 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   const art = await post('art');
   assert.match(art.body.art.url, /^data:image\/webp;base64,/);
 });
+
+test('the Segno space asks the server for the inbox and gets the open work with counts', async (t) => {
+  const { env, post } = await setup(t);
+  const { openInbox } = await import('../../companion/inbox.mjs');
+  const box = openInbox({ env });
+  box.add({ title: '로그인이 안 돼요', source: 'telegram', sourceRef: 'telegram:-1:1', reporter: 'Gildong' });
+  box.add({ title: '끝난 일', source: 'user' });
+  box.update('S-2', { status: 'done' });
+  box.close();
+  const { status, body } = await post('inbox');
+  assert.equal(status, 200);
+  assert.deepEqual(body.inbox.items.map((item) => item.title), ['로그인이 안 돼요']);
+  assert.equal(body.inbox.counts.open, 1);
+  assert.ok(body.inbox.counts.done >= 1);
+  assert.equal((await post('inbox', { status: 'done' })).body.inbox.items[0].title, '끝난 일');
+});

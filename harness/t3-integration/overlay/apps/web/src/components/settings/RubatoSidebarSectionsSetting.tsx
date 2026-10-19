@@ -1,4 +1,4 @@
-// Rubato (sidebar-blocks-edits.mjs): Settings > Threads & Projects > Sidebar:
+// Rubato (sidebar-blocks-edits.mjs): Settings > Threads > Sidebar:
 // how many threads Recent shows, and putting the sidebar's sections back in
 // their first order. The order itself is set by dragging a section's header in
 // the sidebar (sidebar/RubatoSidebarBlockDrag.tsx). Both are device settings.

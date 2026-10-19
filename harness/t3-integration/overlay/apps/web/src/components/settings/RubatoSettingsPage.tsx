@@ -10,6 +10,7 @@ import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 import { RubatoAboutSection } from "./RubatoAboutSection";
 import { RubatoCompanionSettingsPanel } from "./RubatoCompanionSettings";
 import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
+import { RubatoProjectListSettings } from "./RubatoProjectListSettings";
 import { RubatoSidebarSectionsSettingsRows } from "./RubatoSidebarSectionsSetting";
 import { RubatoTitleModelsSection } from "./RubatoTitleModels";
 import { RubatoPhoneSettingsPanel } from "./RubatoPhoneSettings";
@@ -57,6 +58,7 @@ const SOURCES: Readonly<Record<RubatoSettingsSource, ComponentType>> = {
   phone: RubatoPhoneSettingsPanel,
   about: RubatoAboutSection,
   homeProjects: RubatoHomeProjectsSettingsRow,
+  projectList: RubatoProjectListSettings,
   sidebarSections: RubatoSidebarSectionsSettingsRows,
   titleModels: RubatoTitleModelsSection,
   voice: RubatoVoiceSettingsSection,

@@ -274,7 +274,7 @@ export const projectRailEdits = {
         '    // Rubato: the project row on the new-thread screen (project-rail-edits.mjs).',
         '    id: "rubato-home-projects",',
         '    title: "Projects on the new-thread screen",',
-        '    to: "/settings/threads",',
+        '    to: "/settings/projects",',
         '    searchTerms: ["home new thread draft project tabs recent threads list bottom row 새 스레드 프로젝트 목록 세션"],',
         '  },',
         '',

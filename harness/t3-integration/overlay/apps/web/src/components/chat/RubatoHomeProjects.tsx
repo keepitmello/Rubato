@@ -217,7 +217,7 @@ function RowButton(props: {
   );
 }
 
-/** Off until Settings > Threads & Projects turns it on (RubatoHomeProjectsSetting.tsx). */
+/** Off until Settings > Projects turns it on (RubatoHomeProjectsSetting.tsx). */
 export function RubatoHomeProjects(props: Parameters<typeof RubatoHomeProjectsRow>[0]) {
   const visible = useClientSettings((settings) => settings.rubatoHomeProjects);
   return visible ? <RubatoHomeProjectsRow {...props} /> : null;

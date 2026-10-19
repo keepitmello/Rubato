@@ -15,6 +15,7 @@
 // companion. A companion in the middle of a turn is not interrupted; the beat waits for it.
 import { mkdirSync } from 'node:fs';
 import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, writePanel, writeState } from './companion.mjs';
+import { ensureSegnoHome } from './home.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -64,6 +65,9 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (sessionId && rows.some((row) => row.sessionId === sessionId)) return { sessionId, rows };
     const { home } = companionPaths(env);
     mkdirSync(home, { recursive: true, mode: 0o700 });
+    // Segno's own places exist before its conversation starts: the memory store its folder writes to
+    // is decided from this folder's config, which the session reads when it loads.
+    ensureSegnoHome(env);
     const created = await active.create({ cwd: home, title: COMPANION_TITLE, titleLocked: true, companion: true });
     if (!created?.sessionId) throw new Error('The engine did not return the companion conversation it created');
     writeState({ sessionId: created.sessionId }, env);
