@@ -219,7 +219,7 @@
   color: var(--color-sidebar-foreground);
 }
 
-/* Rubato's clock (a heartbeat, the daily report) opens its turn in the thread but shows
+/* A wake whose answer is for the person (Segno asked to review its prompt) opens its turn but shows
    nothing (RubatoSessionMessage.tsx); its row gives back the room a message row keeps. */
 [data-rubato-wake-row] {
   padding: 0;

@@ -84,13 +84,13 @@ describe("a notice from Rubato about a followed conversation", () => {
   });
 });
 
-describe("Rubato's clock (a heartbeat, the daily report)", () => {
+describe("a wake that opens a turn for the person (a prompt review)", () => {
   it("is a session message of its own kind that draws nothing but a marker for its row", () => {
     const link = rubatoSessionMessageOf({ role: "user", context: sessionContext("wake", "Rubato") });
     expect(link?.kind).toBe("wake");
     const html = renderToStaticMarkup(
-      <RubatoSessionMessageBubble link={link!} text="Heartbeat.">
-        <p>Heartbeat.</p>
+      <RubatoSessionMessageBubble link={link!} text="The user asked you to look over who you are.">
+        <p>The user asked you to look over who you are.</p>
       </RubatoSessionMessageBubble>,
     );
     expect(html).toBe('<span data-rubato-wake="" hidden=""></span>');

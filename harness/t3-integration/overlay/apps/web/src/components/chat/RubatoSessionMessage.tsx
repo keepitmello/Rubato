@@ -15,7 +15,8 @@ export interface RubatoSessionMessageLink {
   /**
    * `create`: the sender started this conversation with it. `notice`: Rubato's own word about
    * the sender (a lead Segno follows ended or asked the person); one quiet line. `wake`:
-   * Rubato's own clock (a heartbeat, the daily report); it has no row, only its turn shows.
+   * Rubato waking Segno for an answer the person sees (a prompt review); it has no row, only its
+   * turn shows. Rubato's clock (heartbeat, daily report, sleep) never reaches the thread.
    */
   readonly kind: "message" | "create" | "notice" | "wake";
   readonly fromSessionId: string | null;
@@ -93,7 +94,7 @@ export function RubatoSessionMessageBubble(props: {
   /** The message text; a notice reads it for the one line it shows. */
   text?: string;
 }) {
-  // Rubato's clock opens its turn and shows nothing; its timeline row takes no room
+  // A wake opens its turn and shows nothing; its timeline row takes no room
   // (rubatoPolish.css), so only the turn it starts appears.
   if (props.link.kind === "wake") return <span data-rubato-wake="" hidden />;
   const heading = rubatoSessionMessageHeading(props.link);
