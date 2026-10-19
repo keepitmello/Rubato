@@ -79,3 +79,16 @@ test('the inbox survives a restart and refuses what it cannot store', (t) => {
   assert.deepEqual(INBOX_STATUSES, ['open', 'in-progress', 'waiting', 'done', 'dropped']);
 });
 
+
+test('the items no lead holds yet are their own list: what still waits to be handed over', (t) => {
+  const env = sandbox(t);
+  const inbox = openInbox({ env, now: clock() });
+  t.after(() => inbox.close());
+  inbox.add({ title: '아직 아무도 안 맡았어', source: 'telegram', sourceRef: 'telegram:1:1' });
+  inbox.add({ title: '리드가 맡았어' });
+  inbox.update('S-2', { status: 'in-progress', leadSessionId: 'lead-1' });
+  assert.deepEqual(inbox.list({ unlinked: true }).map((item) => item.title), ['아직 아무도 안 맡았어']);
+  assert.equal(inbox.list({ unlinked: true, status: 'open' }).length, 1);
+  inbox.update('S-1', { leadSessionId: 'lead-2' });
+  assert.deepEqual(inbox.list({ unlinked: true }), []);
+});
