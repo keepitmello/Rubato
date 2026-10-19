@@ -65,6 +65,98 @@ function minutesLabel(minutes: number): string {
   return hours === 1 ? "Every hour" : `Every ${hours} hours`;
 }
 
+interface DiffRow {
+  readonly kind: "same" | "removed" | "added";
+  readonly text: string;
+}
+
+/** The lines Rubato removed and added, in order; unchanged lines are left out of the compare view. */
+function lineDiff(before: string, after: string): DiffRow[] {
+  const a = before.split("\n");
+  const b = after.split("\n");
+  let start = 0;
+  while (start < a.length && start < b.length && a[start] === b[start]) start += 1;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+    endA -= 1;
+    endB -= 1;
+  }
+  const head = a.slice(0, start);
+  const tail = a.slice(endA);
+  const A = a.slice(start, endA);
+  const B = b.slice(start, endB);
+  const table: number[][] = Array.from({ length: A.length + 1 }, () => new Array<number>(B.length + 1).fill(0));
+  for (let i = A.length - 1; i >= 0; i -= 1) {
+    for (let j = B.length - 1; j >= 0; j -= 1) {
+      table[i][j] = A[i] === B[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+    }
+  }
+  const rows: DiffRow[] = head.map((text) => ({ kind: "same", text }));
+  let i = 0;
+  let j = 0;
+  while (i < A.length && j < B.length) {
+    if (A[i] === B[j]) {
+      rows.push({ kind: "same", text: A[i] });
+      i += 1;
+      j += 1;
+    } else if (table[i + 1][j] >= table[i][j + 1]) {
+      rows.push({ kind: "removed", text: A[i] });
+      i += 1;
+    } else {
+      rows.push({ kind: "added", text: B[j] });
+      j += 1;
+    }
+  }
+  while (i < A.length) rows.push({ kind: "removed", text: A[i++] });
+  while (j < B.length) rows.push({ kind: "added", text: B[j++] });
+  rows.push(...tail.map((text) => ({ kind: "same", text })));
+  return rows.filter((row) => row.kind !== "same");
+}
+
+/** Rubato's changes base → new, and the person's copy beside the new default. Nothing merges here. */
+function PieceCompare({ piece }: { piece: CompanionPiece }) {
+  const changes = piece.baseText === undefined ? [] : lineDiff(piece.baseText, piece.defaultText);
+  return (
+    <div className="mt-3 flex flex-col gap-3 rounded-md border border-border/60 p-3">
+      <div className="flex flex-col gap-1">
+        <span className="text-xs font-medium text-muted-foreground">What Rubato changed</span>
+        {piece.baseUnknown ? (
+          <p className="text-xs text-muted-foreground">
+            Rubato has no record of the default this copy came from, so only your version and the current
+            default are compared.
+          </p>
+        ) : changes.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Rubato&apos;s default has not changed since this copy.</p>
+        ) : (
+          <pre className="max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs whitespace-pre-wrap">
+            {changes.map((row, index) => (
+              <div key={`${row.kind}-${index}`} className={row.kind === "added" ? "text-emerald-600" : "text-rose-600"}>
+                {row.kind === "added" ? "+ " : "− "}
+                {row.text}
+              </div>
+            ))}
+          </pre>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">Mine</span>
+          <pre className="max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs whitespace-pre-wrap">
+            {piece.personalText ?? ""}
+          </pre>
+        </div>
+        <div className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-muted-foreground">New default</span>
+          <pre className="max-h-48 overflow-auto rounded bg-muted/40 p-2 text-xs whitespace-pre-wrap">
+            {piece.defaultText}
+          </pre>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function PieceEditor({
   piece,
   busy,
@@ -85,7 +177,12 @@ function PieceEditor({
       id={`rubato-companion-piece-${piece.id}`}
       title={copy.title}
       description={copy.description}
-      status={piece.personalText !== undefined ? <Badge variant="outline">Yours</Badge> : null}
+      status={
+        <span className="flex items-center gap-1">
+          {piece.reviewDue ? <Badge variant="warning">Default update available</Badge> : null}
+          {piece.personalText !== undefined ? <Badge variant="outline">Yours</Badge> : null}
+        </span>
+      }
       control={
         <Button size="sm" variant="outline" onClick={() => setOpen((value) => !value)}>
           {open ? "Close" : piece.editable ? "Edit" : "View"}
@@ -94,6 +191,9 @@ function PieceEditor({
     >
       {open ? (
         <div className="mt-3 flex flex-col gap-2">
+          {piece.personalText !== undefined && (piece.defaultChanged === true || piece.baseUnknown === true) ? (
+            <PieceCompare piece={piece} />
+          ) : null}
           <Textarea
             className="min-h-48"
             value={draft}
@@ -325,6 +425,7 @@ export function RubatoCompanionSettingsPanel() {
   const [pieces, setPieces] = useState<CompanionPiece[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reviewPending, setReviewPending] = useState(false);
 
   const loadPieces = useCallback(async () => {
     if (environmentId === null) return;
@@ -359,6 +460,33 @@ export function RubatoCompanionSettingsPanel() {
       setBusy(false);
     }
   };
+  const reviewPersona = async () => {
+    setBusy(true);
+    try {
+      const next = await rubatoCompanion.reviewPersona(environmentId);
+      setPieces(next.pieces);
+      setReviewPending(true);
+      toastManager.add({
+        type: "info",
+        title: "Segno will look at it",
+        description: "It reads your file and Rubato's, then tells you what it recommends. Nothing changes until you say so.",
+      });
+    } catch (cause) {
+      reportError("Could not ask Segno to review", cause);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // While a review is on its way, read the pieces again until Segno has seen the new default.
+  useEffect(() => {
+    if (!reviewPending) return;
+    const timer = window.setInterval(() => void loadPieces(), 3_000);
+    return () => window.clearInterval(timer);
+  }, [reviewPending, loadPieces]);
+  useEffect(() => {
+    if (reviewPending && pieces !== null && !pieces.some((piece) => piece.reviewDue)) setReviewPending(false);
+  }, [pieces, reviewPending]);
 
   const settings = status?.settings;
   const enabled = settings?.enabled === true;
@@ -487,6 +615,23 @@ export function RubatoCompanionSettingsPanel() {
         {pieces === null && !error ? (
           <SettingsRow title="Reading the prompt" control={<Spinner className="size-4" />} />
         ) : null}
+        <SettingsRow
+          id="rubato-companion-review"
+          title="Rubato's defaults"
+          description="When Rubato changes who Segno is by default, Segno compares it with your own file and tells you what it recommends. Nothing is merged without you."
+          status={
+            pieces?.some((piece) => piece.reviewDue) ? (
+              <Badge variant="warning">Default update available</Badge>
+            ) : reviewPending ? (
+              <Badge variant="outline">Reviewing</Badge>
+            ) : null
+          }
+          control={
+            <Button size="sm" variant="outline" disabled={busy || pieces === null} onClick={() => void reviewPersona()}>
+              Have Segno review it
+            </Button>
+          }
+        />
         {pieces?.map((piece) => (
           <PieceEditor
             key={`${piece.id}:${piece.personalText ?? ""}`}
