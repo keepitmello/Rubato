@@ -90,7 +90,7 @@ test('a throw, a rejection, an exit, a self-kill, a hang or a failed start in a 
   assert.ok(errors.some((line) => /bare-kill: .*process\.kill\(\d+, SIGKILL\) refused/s.test(line)));
   assert.ok(errors.some((line) => /bare-hang: did not answer/.test(line)));
   // The keeper is back on the same companion conversation; the scheduler beats again.
-  const state = JSON.parse(await readFile(path.join(companionHome, 'state.json'), 'utf8'));
+  const state = await until(async () => JSON.parse(await readFile(path.join(companionHome, 'state.json'), 'utf8').catch(() => 'null')), 'the keeper saved its conversation');
   assert.ok((await client.list()).some((item) => item.sessionId === state.sessionId), 'the companion conversation is kept');
   await until(() => createScheduleStore({ env: process.env }).schedulerStatus().running, 'the scheduler beats');
   assert.equal(createScheduleStore({ env: process.env }).schedulerStatus().pid, process.pid, 'the scheduler runs inside the engine');
@@ -128,6 +128,8 @@ test('a service that owns a child process: the child failing is the service\'s t
     return pids.length >= 2 ? pids : undefined;
   }, 'thread-dies started again');
   await until(() => !alive(record[0]), 'the first child ended with its thread');
+  // Reaped, not left a zombie: the engine's main thread started it.
+  await until(() => spawnSync('ps', ['-o', 'stat=', '-p', String(record[0])], { encoding: 'utf8' }).stdout.trim() === '', 'the first child is reaped');
   assert.equal(alive(record.at(-1)), true);
   assert.equal(engine.residents.status().find((item) => item.name === 'thread-dies').starts >= 2, true);
   await until(async () => (await client.command({ type: 'get_state' })).isStreaming === false, 'the turn ends');

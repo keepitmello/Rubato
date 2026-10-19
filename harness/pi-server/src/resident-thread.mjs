@@ -4,6 +4,7 @@
 //
 // Two calls would still reach the whole process from here, so they are refused: a signal to our
 // own pid, and `process.abort` (Node refuses that one in a thread already).
+import { EventEmitter } from 'node:events';
 import { parentPort, workerData } from 'node:worker_threads';
 import { pathToFileURL } from 'node:url';
 
@@ -29,6 +30,10 @@ const host = Object.fromEntries(hostMethods.map((method) => [method, (...args) =
   post({ type: 'host', id, method, args: JSON.parse(JSON.stringify(args)) });
 })]));
 
+// Processes started through ctx.spawn: the engine's main thread owns them (so it reaps them when
+// they end; a process a thread started stays a zombie once that thread is gone), and this side
+// gets a ChildProcess-like handle.
+const children = new Map();
 const stop = new AbortController();
 const ctx = {
   name,
@@ -52,6 +57,21 @@ const ctx = {
     post({ type: 'own', pid });
     if (typeof child === 'object') child.once?.('exit', () => post({ type: 'disown', pid }));
   },
+  /**
+   * Starts a process owned by the engine's main thread, which reaps it and stops it when this
+   * service's thread ends. `options`: `cwd`, `env`, `stdio` (each 'ignore', 'ipc', or a file
+   * descriptor this thread opened — keep it open until this resolves). Resolves to a handle with
+   * `pid`, `kill(signal)`, `exitCode`, `signalCode` and 'exit' (code, signal) / 'error' events.
+   */
+  spawn(command, args = [], options = {}) {
+    const id = ++nextId;
+    const handle = Object.assign(new EventEmitter(), { pid: undefined, exitCode: null, signalCode: null,
+      kill(signal = 'SIGTERM') { post({ type: 'child-kill', id, signal }); return true; } });
+    return new Promise((resolve, reject) => {
+      children.set(id, { handle, resolve, reject });
+      post({ type: 'spawn', id, command, args, options: { cwd: options.cwd, env: options.env, stdio: options.stdio } });
+    });
+  },
   async connect(clientOptions = {}) {
     const { SessionClient } = await import('./client.mjs');
     return new SessionClient({ socketPath: context.socketPath, serverId: context.serverId, onError: ctx.onError, ...clientOptions }).connect();
@@ -63,6 +83,22 @@ let closing;
 parentPort.on('message', async (message) => {
   switch (message?.type) {
     case 'ping': post({ type: 'pong' }); return;
+    case 'spawned': {
+      const entry = children.get(message.id);
+      if (!entry) return;
+      if (message.error) { children.delete(message.id); entry.reject(Object.assign(new Error(message.error.message), { code: message.error.code })); return; }
+      entry.handle.pid = message.pid;
+      entry.resolve(entry.handle);
+      return;
+    }
+    case 'child-exit': {
+      const entry = children.get(message.id);
+      if (!entry) return;
+      children.delete(message.id);
+      Object.assign(entry.handle, { exitCode: message.code, signalCode: message.signal });
+      entry.handle.emit('exit', message.code, message.signal);
+      return;
+    }
     case 'host-result': {
       const call = pending.get(message.id);
       if (!call) return;
