@@ -1,14 +1,12 @@
 import { homedir } from "node:os";
 import { pathToFileURL } from "node:url";
 import {
-  AuthOrchestrationOperateScope,
   OrchestrationV2Command,
   ProjectId,
   ThreadId,
   type AuthSessionId,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -24,15 +22,21 @@ import { RubatoThreadImporter, nextTurnItemOrdinal } from "./provider/RubatoThre
 import { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
+import { bridgeModuleOf } from "./RubatoMemory.ts";
+import { authorized } from "./RubatoServiceRoute.ts";
 
 // The Mac's voice service (`/rubato/voice/*`, harness/t3-integration/voice-input.md).
-// The work lives in the private module voice.json names; this file authenticates,
-// hands requests over, and gives that module T3's orchestrator in plain shapes.
+// The work lives in the Rubato checkout's voice module, found next to the bridge
+// module the Rubato provider runs, so each Mac loads its own checkout. This file
+// authenticates, hands requests over, and gives that module T3's orchestrator in
+// plain shapes. The module reads voice.json itself whenever it changes.
 interface VoiceRuntime {
   noteActivity(input: unknown): void;
   noteSubscription(input: unknown): () => void;
   acceptsToken(header: string | undefined): boolean;
   handle(request: Request, desktopAuthenticated: boolean): Promise<Response>;
+  /** Settings › Chat › Voice input. Absent in a checkout older than the settings page. */
+  handleSettings?(request: Request): Promise<Response>;
   wake(): Promise<void>;
   close(): Promise<void>;
 }
@@ -48,17 +52,6 @@ export const noteVoiceSubscription = (input: {
     Effect.sync(() => voice?.noteSubscription(input) ?? (() => {})),
     (release) => Effect.sync(release),
   );
-
-const VoiceConfig = Schema.Struct({
-  module: Schema.String,
-  token: Schema.String,
-  model: Schema.String,
-  defaultProjectId: Schema.optional(Schema.String),
-  openaiApiKey: Schema.optional(Schema.String),
-});
-class VoiceConfigurationError extends Data.TaggedError("VoiceConfigurationError")<{
-  readonly message: string;
-}> {}
 
 /** A run the dispatched command created or changed, as the voice module reads it. */
 interface VoiceRun {
@@ -141,57 +134,87 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
     };
   }).pipe(Effect.orElseSucceed(() => null)));
 
-  const initialized = yield* Effect.gen(function* () {
-    if (!(yield* fs.exists(configPath))) return undefined;
-    const config = yield* fs.readFileString(configPath).pipe(
-      Effect.flatMap(Schema.decodeUnknownEffect(Schema.fromJsonString(VoiceConfig))),
+  const statePath = path.join(path.dirname(configPath), "voice-state.json");
+  const runtimeOptions = {
+    configPath,
+    statePath,
+    environmentId: environment.environmentId,
+    dispatch, readThread, readRun, appendNotice, readProject, listThreads,
+  };
+
+  // The checkout's voice module: next to the Rubato provider's bridge module. A
+  // voice.json written before that names the module itself.
+  const locateModule = async (): Promise<string | undefined> => {
+    const settings = await Effect.runPromise(serverSettings.getSettings.pipe(Effect.option));
+    const bridge = Option.isSome(settings) ? bridgeModuleOf(settings.value, path) : undefined;
+    if (bridge) return path.join(path.dirname(bridge), "voice", "runtime.mjs");
+    const legacy = await Effect.runPromise(fs.readFileString(configPath).pipe(
+      Effect.map((text) => (JSON.parse(text) as { module?: unknown }).module),
+      Effect.orElseSucceed(() => undefined),
+    ));
+    return typeof legacy === "string" && path.isAbsolute(legacy) ? legacy : undefined;
+  };
+
+  // Loaded once; a failed load (no provider yet, a broken checkout) is tried again on the next request.
+  let loading: Promise<VoiceRuntime | undefined> | undefined;
+  const loadRuntime = (): Promise<VoiceRuntime | undefined> => {
+    loading ??= (async () => {
+      const file = await locateModule();
+      if (!file) return undefined;
+      const module: unknown = await import(/* @vite-ignore */ pathToFileURL(file).href);
+      if (!module || typeof module !== "object" || !("createVoiceRuntime" in module) ||
+          typeof module.createVoiceRuntime !== "function") throw new Error(`Invalid voice module: ${file}`);
+      const runtime = (module.createVoiceRuntime as (options: typeof runtimeOptions) => VoiceRuntime)(runtimeOptions);
+      voice = runtime;
+      // Sends claims a restart interrupted. T3 queues new sends itself, so nothing waits here.
+      void Effect.runPromise(startup.awaitCommandReady).then(() => runtime.wake()).catch(() => {});
+      return runtime;
+    })().then(
+      (runtime) => {
+        if (!runtime) loading = undefined;
+        return runtime;
+      },
+      (cause: unknown) => {
+        loading = undefined;
+        void Effect.runPromise(Effect.logWarning("Rubato Voice could not load the checkout's voice module", cause));
+        return undefined;
+      },
     );
-    if (!path.isAbsolute(config.module)) return yield* new VoiceConfigurationError({ message: "Voice module path must be absolute" });
-    const module: unknown = yield* Effect.tryPromise(() => import(/* @vite-ignore */ pathToFileURL(config.module).href));
-    if (!module || typeof module !== "object" || !("createVoiceRuntime" in module) ||
-        typeof module.createVoiceRuntime !== "function") return yield* new VoiceConfigurationError({ message: "Invalid voice module" });
-    const factory = module.createVoiceRuntime as (options: {
-      config: typeof VoiceConfig.Type;
-      statePath: string;
-      environmentId: string;
-      dispatch(command: unknown): Promise<{ readonly runs: ReadonlyArray<VoiceRun> }>;
-      readThread(id: string): Promise<unknown>;
-      readRun(threadId: string, runId: string): Promise<string | null>;
-      appendNotice(notice: { threadId: string; id: string; message: string }): Promise<void>;
-      readProject(id: string): Promise<unknown>;
-      listThreads(): Promise<ReadonlyArray<unknown>>;
-    }) => VoiceRuntime;
-    return yield* Effect.try(() => factory({
-      config, statePath: path.join(path.dirname(configPath), "voice-state.json"),
-      environmentId: environment.environmentId,
-      dispatch, readThread, readRun, appendNotice, readProject, listThreads,
-    }));
-  }).pipe(Effect.catch(() => Effect.logWarning("Rubato Voice disabled: check the private voice.json configuration").pipe(
-    Effect.as(undefined),
-  )));
-  voice = initialized;
-  if (initialized) {
-    yield* Effect.addFinalizer(() => Effect.promise(async () => {
-      voice = undefined;
-      await initialized.close();
-    }));
-    // Sends claims a restart interrupted. T3 queues new sends itself, so nothing waits here.
-    yield* startup.awaitCommandReady.pipe(
-      Effect.andThen(Effect.promise(() => initialized.wake())),
-      Effect.forkScoped,
-    );
-  }
+    return loading;
+  };
+  // Load at start, so a phone's presence counts before the first recording.
+  yield* startup.awaitCommandReady.pipe(
+    Effect.andThen(Effect.promise(loadRuntime)),
+    Effect.forkScoped,
+  );
+  yield* Effect.addFinalizer(() => Effect.promise(async () => {
+    const runtime = voice;
+    voice = undefined;
+    await runtime?.close();
+  }));
+
+  const unavailable = (code: string) => HttpServerResponse.jsonUnsafe({ error: { code } }, { status: 503 });
   return HttpRouter.add("*", "/rubato/voice/*", Effect.gen(function* () {
-    if (!initialized) return HttpServerResponse.jsonUnsafe({ error: { code: "voice-not-configured" } }, { status: 503 });
     const request = yield* HttpServerRequest.HttpServerRequest;
+    const runtime = yield* Effect.promise(loadRuntime);
+    const webRequest = yield* HttpServerRequest.toWeb(request);
+    // Settings: this Mac's signed-in window only, never the phone's voice token.
+    if (new URL(webRequest.url).pathname.startsWith("/rubato/voice/settings/")) {
+      if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
+      const handleSettings = runtime?.handleSettings;
+      if (!runtime || !handleSettings) return unavailable("voice-unavailable");
+      const response = yield* Effect.tryPromise(() => handleSettings(webRequest)).pipe(
+        Effect.orElseSucceed(() => Response.json({ error: { code: "voice-settings-failed" } }, { status: 500 })),
+      );
+      return HttpServerResponse.fromWeb(response);
+    }
+    if (!runtime) return unavailable("voice-not-configured");
     let desktopAuthenticated = false;
-    if (!initialized.acceptsToken(request.headers.authorization)) {
-      const session = yield* auth.authenticateHttpRequest(request).pipe(Effect.option);
-      desktopAuthenticated = Option.isSome(session) && session.value.scopes.includes(AuthOrchestrationOperateScope);
+    if (!runtime.acceptsToken(request.headers.authorization)) {
+      desktopAuthenticated = yield* authorized(auth, request);
       if (!desktopAuthenticated) return HttpServerResponse.empty({ status: 401 });
     }
-    const webRequest = yield* HttpServerRequest.toWeb(request);
-    const response = yield* Effect.tryPromise(() => initialized.handle(webRequest, desktopAuthenticated)).pipe(
+    const response = yield* Effect.tryPromise(() => runtime.handle(webRequest, desktopAuthenticated)).pipe(
       Effect.orElseSucceed(() => Response.json({ error: { code: "voice-failed" } }, { status: 500 })),
     );
     return HttpServerResponse.fromWeb(response);

@@ -2,8 +2,11 @@
 export const voiceOverlays = [
   'apps/server/src/RubatoVoice.ts',
   'apps/web/src/state/rubatoVoice.ts',
+  'apps/web/src/state/rubatoVoice.test.ts',
   'apps/web/src/components/chat/useRubatoVoiceInput.ts',
   'apps/web/src/components/chat/RubatoVoiceControl.tsx',
+  'apps/web/src/state/rubatoVoiceSettings.ts',
+  'apps/web/src/components/settings/RubatoVoiceSettings.tsx',
 ];
 
 // Dictation in the Mac composer: a microphone beside the attach control, and
@@ -55,6 +58,19 @@ export const voiceEdits = {
       'import { RubatoVoiceControl } from "./RubatoVoiceControl";\nimport { useRubatoVoiceInput } from "./useRubatoVoiceInput";\nimport { isElectron } from "../../env";\n'],
     ['  const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {', composerVoiceWiring],
     ['                  {showComposerAttachAction ? (', composerVoiceControl, 'replace'],
+  ],
+  // Settings › Chat › Voice input (settings/RubatoVoiceSettings.tsx), found by search.
+  'apps/web/src/components/settings/settingsSearch.ts': [
+    ['  {\n    id: "project-grouping",\n',
+      [
+        '  {',
+        '    id: "rubato-voice",',
+        '    title: "Voice input",',
+        '    to: "/settings/chat",',
+        '    searchTerms: ["voice dictation microphone speech to text stt transcription openai api key whisper shortcut 음성 입력 받아쓰기 마이크 전사 키"],',
+        '  },',
+        '',
+      ].join('\n')],
   ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoVoiceRouteLayer } from "./RubatoVoice.ts";\n'],

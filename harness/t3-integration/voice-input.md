@@ -12,20 +12,25 @@
 | `overlay/apps/server/src/RubatoVoice.ts` | T3 서버에 `/rubato/voice/*` 라우트를 얹는 자리 |
 | `voice-edits.mjs` | 서버·웹에 넣는 최소 수정(라우트 등록, 폰의 대화 구독·활동 보고 연결, 입력창 마이크) |
 | `overlay/apps/web/src/state/rubatoVoice.ts` | 맥 입력창의 녹음기와 전사 클라이언트 |
-| `voice-setup.mjs` | `~/.rubato/voice.json` 을 만드는 설정 도구 |
+| `src/voice/settings.mjs` | `~/.rubato/voice.json` 을 읽고 쓰는 규칙. 설정 화면과 `voice-setup.mjs` 가 같이 쓴다 |
+| `overlay/apps/web/src/components/settings/RubatoVoiceSettings.tsx` | 설정 › 채팅 › 음성 입력 |
+| `voice-setup.mjs` | 같은 설정을 터미널에서 심는 도구 |
 
 ## 맥
 
-1. 설정을 심는다. 모델 id와 OpenAI 키는 여기서만 들어간다.
+1. **설정 › 채팅 › 음성 입력**에서 OpenAI API 키를 넣는다. 모델은 기본값
+   `gpt-transcribe` 그대로 두면 된다. 저장하면 앱을 다시 켜지 않아도 다음 녹음부터
+   쓴다 — 서버가 요청마다 `voice.json` 이 바뀌었는지 보고 다시 읽는다.
+
+   터미널에서 하려면:
 
    ```sh
-   node rubato/harness/t3-integration/voice-setup.mjs --model gpt-transcribe
+   node rubato/harness/t3-integration/voice-setup.mjs
    ```
 
-   키는 `--key` → 환경변수 `OPENAI_API_KEY` → 로그인 셸 순으로 찾는다. 셸이
-   `~/.zshrc`에서 소스하는 키를 그대로 쓰므로 보통은 붙일 게 없다. 어디서 읽었는지는
-   실행 결과에 (가린 값과 함께) 찍힌다. 설정 파일은 0600으로 쓰고, `--show`는 키와
-   토큰을 가려서 보여준다.
+   키는 `--key` → 환경변수 `OPENAI_API_KEY` → 로그인 셸 순으로 찾는다. 설정에 키가
+   없으면 앱 환경의 `OPENAI_API_KEY` 를 쓴다. 설정 파일은 0600으로 쓰고, `--show`
+   는 키와 토큰을 가려서 보여준다.
 
    `gpt-transcribe` 가 지금의 파일 전사 권장 모델이다(2026-07-28 출시). 옛
    `whisper-1`·`gpt-4o-transcribe` 계열은 2027-02-26 API 에서 빠질 예정이고,
@@ -35,20 +40,28 @@
    새 대화를 만들 때 쓸 프로젝트를 미리 정해두려면 `--project <projectId>` 를 붙인다.
    대화를 연 채로 한 번 쓰면 그 프로젝트를 기억하므로 보통은 나중에 필요 없다.
 
-2. T3 데스크톱 앱을 다시 시작한다. 라우트와 입력창은 앱 번들에 들어가므로
-   다시 만들고 다시 켜야 보인다.
+2. 서버는 음성 모듈을 Rubato 프로바이더가 쓰는 체크아웃(`bridgeModule` 옆
+   `voice/runtime.mjs`)에서 찾는다. 그래서 `voice.json` 에는 기기별 경로가 없고,
+   어느 맥이든 그 맥의 체크아웃을 쓴다. 예전 설정의 `module` 은 프로바이더가 없을
+   때만 본다.
 
 3. 입력창 오른쪽 마이크 → 말하기 → 정지 → 전사문이 **그때 커서가 있던 자리**에
    들어온다. 고친 뒤 평소처럼 전송한다. 맥에서는 자동으로 보내지 않는다.
 
    녹음 중에는 `녹음 0:12` 와 정지·취소가 보이고, 끝나면 `전사 중` 이 보인다.
-   다른 대화로 옮기면 진행 중이던 녹음은 버려진다.
+   다른 대화로 옮기면 진행 중이던 녹음은 버려진다. 실패하면 이유가 마이크 옆에
+   보이고, 키·모델·미설정처럼 설정에서 고칠 수 있는 것이면 설정으로 가는 버튼이
+   같이 뜬다.
+
+   입력창은 T3 서버의 CORS 가 허용하는 메서드(GET·POST)와 헤더만 쓴다. 파일 이름은
+   서버가 녹음 형식(`content-type`)으로 정하고, 세션 닫기는 `POST …/cancel` 이다.
+   `rubatoVoice.test.ts` 가 T3 의 허용 목록을 직접 읽어 이걸 확인한다.
 
 ## 아이폰 단축어
 
 설치형 `.shortcut` 파일은 아직 만들지 않았다. 아래 단계를 단축어 앱에서 그대로
 따라 만들면 된다. 주소의 `<맥>`·`<포트>` 는 **아이폰 T3가 연결하는 그 주소**와
-같다. 토큰은 `voice-setup.mjs` 가 마지막에 찍어준다.
+같다. 토큰은 설정 › 채팅 › 음성 입력의 **iPhone 단축어 토큰**에서 복사한다.
 
 1. **Get Contents of URL** — `POST http://<맥>:<포트>/rubato/voice/session`
    - Headers: `Authorization` = `Bearer <토큰>`, `Content-Type` = `application/json`
@@ -85,7 +98,8 @@
 | `POST /rubato/voice/session/:id/transcribe` (오디오 본문) | 전사한다. `{text}` 를 돌려준다 |
 | `POST /rubato/voice/session/:id/submit` `{text}` | 그 대화로 보낸다. `{status, deepLink}` |
 | `GET /rubato/voice/session/:id` | 지금 상태를 본다 |
-| `DELETE /rubato/voice/session/:id` | 아직 안 보낸 세션을 접는다. T3 대기열에서 기다리는 메시지면 대기열에서 뺀다 |
+| `DELETE /rubato/voice/session/:id` 또는 `POST …/:id/cancel` | 아직 안 보낸 세션을 접는다. T3 대기열에서 기다리는 메시지면 대기열에서 뺀다 |
+| `POST /rubato/voice/settings/{status,save,rotate-token}` | 설정 화면. 이 맥에 로그인된 창만 쓴다(단축어 토큰으로는 안 된다). 키는 응답에 가려서만 나간다 |
 
 - 인증은 두 갈래다. 아이폰은 `Authorization: Bearer <토큰>`, 맥 입력창은 T3에
   이미 로그인된 세션을 쓴다. 맥 쪽은 `draft` 만 다룰 수 있고 모바일 세션은
@@ -95,7 +109,9 @@
   메시지와 똑같이 보이고, 고치거나 지우거나 Stop 뒤에 Resume 할 수 있다. 바로
   시작되면 `sent`(200)다. 보내지 못한 이유는 대화 안이 아니라 응답의 `error` 에 온다.
 - 같은 세션으로 같은 글을 다시 보내면 **다시 보내지 않고** 앞의 결과를 돌려준다.
-- 설정 파일이 없으면 라우트는 꺼진 채 503을 돌려준다. 서버는 그대로 뜬다.
+- 설정 파일이 없거나 모델·토큰이 비면 세션 라우트는 503 `voice-not-configured` 를
+  돌려주고 설정 라우트만 동작한다. 키가 없으면 전사가 503 `missing-api-key`, OpenAI 가
+  키를 거부하면 502 `api-key-rejected` 다. 서버는 그대로 뜬다.
 
 ## 확인한 것과 아직 아닌 것
 
@@ -107,5 +123,5 @@
 - 격리 서버에서 단축어의 HTTP 단계를 curl 로, 폰의 구독·활동 보고를 WebSocket
   클라이언트로 흉내 내 대상 고정·고르기·작업 중 대기·대기열에서 빼기와 실제
   Rubato 턴을 확인했다.
-- **아직 아닌 것**: 아이폰 단축어 실사용, 맥 마이크 실사용, 실제 OpenAI 전사
-  호출. 이 셋은 실기기에서 확인해야 한다.
+- 실제 OpenAI 전사: 떠 있는 맥 서버에 `say` 로 만든 한국어 녹음을 올려 전사문을 받았다.
+- **아직 아닌 것**: 아이폰 단축어 실사용, 맥 마이크 실사용. 실기기에서 확인해야 한다.

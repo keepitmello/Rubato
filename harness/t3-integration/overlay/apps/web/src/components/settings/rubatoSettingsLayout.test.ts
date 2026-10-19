@@ -70,6 +70,7 @@ describe("Rubato settings layout", () => {
     );
     expect(rubatoSearchItem(byId("storage-delete-now")).to).toBe("/settings/advanced");
     expect(rubatoSearchItem(byId("rubato-phone")).to).toBe("/settings/connections");
+    expect(rubatoSearchItem(byId("rubato-voice")).to).toBe("/settings/chat");
     expect(rubatoSearchItem(byId("theme")).to).toBe("/settings/appearance");
     expect(rubatoSearchItem(byId("app-version"))).toMatchObject({
       to: "/settings/general",

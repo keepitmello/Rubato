@@ -2,6 +2,7 @@ import http from 'node:http';
 import { Readable } from 'node:stream';
 import { timingSafeEqual } from 'node:crypto';
 import { VoiceSessionError } from './sessions.mjs';
+import { TranscriptionError } from './transcribe.mjs';
 
 export function bearerMatches(header, token) {
   if (!token || !header?.startsWith('Bearer ')) return false;
@@ -41,13 +42,37 @@ async function jsonBody(request) {
   return parsed;
 }
 
+/**
+ * The provider reads the audio format from the filename. A browser cannot send
+ * `x-audio-filename` (T3's CORS list allows only its own headers), so the name
+ * follows the bytes' content type unless the caller gave one.
+ */
+export function audioFilenameFor(contentType) {
+  const type = String(contentType ?? '').toLowerCase();
+  if (type.includes('webm')) return 'voice.webm';
+  if (type.includes('ogg')) return 'voice.ogg';
+  if (type.includes('wav')) return 'voice.wav';
+  if (type.includes('mpeg') || type.includes('mp3')) return 'voice.mp3';
+  return 'voice.m4a';
+}
+
+/** Transcription failures a person can fix, by code. Provider bodies are never reflected. */
+function transcriptionFailure(error) {
+  if (error.code === 'missing-api-key' || error.code === 'missing-model') return json({ error: { code: error.code } }, 503);
+  if (error.code === 'transcription-rejected' && (error.status === 401 || error.status === 403)) {
+    return json({ error: { code: 'api-key-rejected' } }, 502);
+  }
+  if (error.code === 'transcription-rejected' && error.status === 404) return json({ error: { code: 'model-not-found' } }, 502);
+  return json({ error: { code: error.code ?? 'voice-failed' } }, 502);
+}
+
 // Same handler in T3's authenticated HTTP layer and the isolated real-HTTP test.
 // The desktop may only use draft transcription with its existing T3 credential.
 export async function handleVoiceRequest(request, { service, token, desktopAuthenticated = false }) {
   const voiceAuthenticated = bearerMatches(request.headers.get('authorization'), token);
   if (!voiceAuthenticated && !desktopAuthenticated) return json({ error: { code: 'unauthorized' } }, 401);
   const path = new URL(request.url).pathname;
-  const route = /^\/rubato\/voice\/session\/([^/]+)(?:\/(transcribe|submit|select))?$/.exec(path);
+  const route = /^\/rubato\/voice\/session\/([^/]+)(?:\/(transcribe|submit|select|cancel))?$/.exec(path);
   try {
     if (request.method === 'POST' && path === '/rubato/voice/session') {
       const input = await jsonBody(request);
@@ -58,7 +83,10 @@ export async function handleVoiceRequest(request, { service, token, desktopAuthe
     const id = route[1];
     if (!voiceAuthenticated && service.status(id).target !== 'draft') return json({ error: { code: 'forbidden' } }, 403);
     if (request.method === 'GET' && !route[2]) return json(await service.current(id));
-    if (request.method === 'DELETE' && !route[2]) return json(await service.cancel(id));
+    // DELETE for clients outside a browser; POST …/cancel because T3's CORS allows no DELETE.
+    if ((request.method === 'DELETE' && !route[2]) || (request.method === 'POST' && route[2] === 'cancel')) {
+      return json(await service.cancel(id));
+    }
     if (request.method === 'POST' && route[2] === 'select') {
       const input = await jsonBody(request);
       return json(await service.select(id, input.threadId));
@@ -72,7 +100,7 @@ export async function handleVoiceRequest(request, { service, token, desktopAuthe
       // Raw files work in Shortcuts without constructing multipart by hand.
       let audio = await limitedBody(request, 25 * 1024 * 1024);
       let contentType = request.headers.get('content-type') ?? 'audio/mp4';
-      let filename = request.headers.get('x-audio-filename') ?? 'voice.m4a';
+      let filename = request.headers.get('x-audio-filename') ?? audioFilenameFor(contentType);
       if (contentType.startsWith('multipart/form-data')) {
         let form;
         try { form = await new Response(audio, { headers: { 'content-type': contentType } }).formData(); }
@@ -88,6 +116,7 @@ export async function handleVoiceRequest(request, { service, token, desktopAuthe
     return json({ error: { code: 'not-found' } }, 404);
   } catch (error) {
     if (error instanceof VoiceSessionError) return json({ error: { code: error.code, message: error.message } }, error.status);
+    if (error instanceof TranscriptionError) return transcriptionFailure(error);
     // Never reflect upstream responses, tokens or arbitrary exception messages.
     return json({ error: { code: 'voice-failed', message: 'Voice service could not complete the request' } }, 502);
   }

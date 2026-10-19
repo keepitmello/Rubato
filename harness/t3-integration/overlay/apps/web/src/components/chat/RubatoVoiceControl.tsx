@@ -1,5 +1,6 @@
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
-import { MicIcon, SquareIcon, XIcon } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import { MicIcon, SettingsIcon, SquareIcon, XIcon } from "lucide-react";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -33,15 +34,28 @@ export function RubatoVoiceControl(props: {
   readonly onCancel: () => void;
 }) {
   const { state } = props;
+  const navigate = useNavigate();
 
   if (state.phase === "idle" || state.phase === "error") {
     return (
       <div className="flex min-w-0 items-center gap-1">
         {state.error === null ? null : (
-          <span className="max-w-52 truncate text-destructive-foreground text-xs">
+          <span className="max-w-52 truncate text-destructive-foreground text-xs" title={state.error}>
             {state.error}
           </span>
         )}
+        {state.errorAction === "settings" ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            onPointerDown={(event) => event.preventDefault()}
+            onClick={() => void navigate({ to: "/settings/chat", hash: "rubato-voice" })}
+          >
+            <SettingsIcon />
+            Voice settings
+          </Button>
+        ) : null}
         <Tooltip>
           <TooltipTrigger
             render={

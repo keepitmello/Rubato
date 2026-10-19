@@ -38,11 +38,6 @@ function recordingType(): string | null {
   return null;
 }
 
-/** The provider reads the format from the filename, so it must match the bytes. */
-function audioFilename(contentType: string): string {
-  return contentType.includes("mp4") ? "voice.m4a" : "voice.webm";
-}
-
 /**
  * MediaRecorder in the shape the shared voice controller expects: prepare the
  * microphone, record for a bounded duration, stop, and hand back a URL the
@@ -141,25 +136,59 @@ async function resolveVoiceConnection(environmentId: EnvironmentId | null): Prom
   return access;
 }
 
+/**
+ * Why the last step failed, for the composer. T3's shared controller shows only a
+ * generic line for every failure, so the hook puts this back in its place.
+ */
+export interface RubatoVoiceFailure {
+  readonly message: string;
+  /** Settings › Chat › Voice input can fix it (key, model, not set up). */
+  readonly fixInSettings: boolean;
+}
+
+const SETTINGS_FAILURES = new WeakSet<object>();
+
 /** Server codes mapped to something a person can act on. Never the raw body. */
-async function failureMessage(response: Response): Promise<string> {
+async function failureFrom(
+  response: Response,
+  kind: "preparation-failed" | "transcription-failed",
+): Promise<VoiceTranscriptionError> {
   const payload = (await response.json().catch(() => null)) as {
     readonly error?: { readonly code?: unknown };
   } | null;
   const code = typeof payload?.error?.code === "string" ? payload.error.code : "";
-  if (response.status === 503 || code === "voice-not-configured") {
-    return "Voice input is not set up on this Mac yet.";
+  const inSettings = (message: string) => {
+    const error = new VoiceTranscriptionError(kind, message);
+    SETTINGS_FAILURES.add(error);
+    return error;
+  };
+  if (code === "missing-api-key") return inSettings("Add an OpenAI API key for voice input.");
+  if (code === "api-key-rejected") return inSettings("OpenAI did not accept the voice input API key.");
+  if (code === "model-not-found") return inSettings("OpenAI does not know the voice input model.");
+  if (response.status === 503 || code === "voice-not-configured" || code === "missing-model") {
+    return inSettings("Voice input is not set up yet.");
   }
   if (code === "expired-session" || code === "session-closed") {
-    return "The recording took too long. Start again.";
+    return new VoiceTranscriptionError(kind, "The recording took too long. Start again.");
   }
   if (response.status === 401 || response.status === 403) {
-    return "This window is not allowed to use voice input.";
+    return new VoiceTranscriptionError(kind, "This window is not allowed to use voice input.");
   }
-  if (code === "missing-api-key" || code === "missing-model") {
-    return "The transcription service is not configured on this Mac.";
-  }
-  return "The Mac could not transcribe this recording.";
+  return new VoiceTranscriptionError(kind, "The Mac could not transcribe this recording.");
+}
+
+/** Reports a failure the person should read, then lets it go on to the controller. */
+function reporting<T>(
+  onFailure: ((failure: RubatoVoiceFailure) => void) | undefined,
+  signal: AbortSignal | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  return run().catch((error: unknown) => {
+    if (error instanceof VoiceTranscriptionError && signal?.aborted !== true) {
+      onFailure?.({ message: error.message, fixInSettings: SETTINGS_FAILURES.has(error) });
+    }
+    throw error;
+  });
 }
 
 /**
@@ -169,6 +198,7 @@ async function failureMessage(response: Response): Promise<string> {
  */
 export function createRubatoVoiceTranscriber(
   readEnvironmentId: () => EnvironmentId | null,
+  onFailure?: (failure: RubatoVoiceFailure) => void,
 ): VoiceTranscriber {
   let session: { readonly connection: RubatoHttpAccess; readonly sessionId: string } | null = null;
   let spokenLanguage = "ko";
@@ -177,14 +207,18 @@ export function createRubatoVoiceTranscriber(
     const current = session;
     session = null;
     if (!current) return;
-    void fetch(`${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}`, {
-      method: "DELETE",
+    // POST …/cancel, not DELETE: T3's CORS answers GET, POST and OPTIONS only.
+    void fetch(`${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}/cancel`, {
+      method: "POST",
       credentials: current.connection.credentials,
       headers: current.connection.headers,
     }).catch(() => {});
   };
 
-  const transcribe = async (
+  const transcribe = (uri: string, options: VoiceTranscriptionOptions): Promise<string> =>
+    reporting(onFailure, options.signal, () => transcribeOnce(uri, options));
+
+  const transcribeOnce = async (
     uri: string,
     options: VoiceTranscriptionOptions,
   ): Promise<string> => {
@@ -201,11 +235,8 @@ export function createRubatoVoiceTranscriber(
       {
         method: "POST",
         credentials: current.connection.credentials,
-        headers: {
-          ...current.connection.headers,
-          "content-type": contentType,
-          "x-audio-filename": audioFilename(contentType),
-        },
+        // Only headers T3's CORS allows: the server names the file from the content type.
+        headers: { ...current.connection.headers, "content-type": contentType },
         body: audio,
         signal: options.signal,
       },
@@ -217,7 +248,7 @@ export function createRubatoVoiceTranscriber(
       );
     });
     if (!response.ok) {
-      throw new VoiceTranscriptionError("transcription-failed", await failureMessage(response));
+      throw await failureFrom(response, "transcription-failed");
     }
     const payload = (await response.json().catch(() => null)) as {
       readonly text?: unknown;
@@ -232,46 +263,48 @@ export function createRubatoVoiceTranscriber(
   };
 
   return {
-    async prepare({ signal }): Promise<PreparedVoiceTranscription> {
-      const connection = await resolveVoiceConnection(readEnvironmentId());
-      endSession();
-      const response = await fetch(`${connection.baseUrl}${VOICE_ROUTE}`, {
-        method: "POST",
-        credentials: connection.credentials,
-        headers: { ...connection.headers, "content-type": "application/json" },
-        body: JSON.stringify({ mode: "draft" }),
-        signal,
-      }).catch((cause: unknown) => {
-        throw new VoiceTranscriptionError(
-          "preparation-failed",
-          "This Mac could not be reached.",
-          { cause },
-        );
-      });
-      if (!response.ok) {
-        throw new VoiceTranscriptionError("preparation-failed", await failureMessage(response));
-      }
-      const payload = (await response.json().catch(() => null)) as {
-        readonly voiceSessionId?: unknown;
-      } | null;
-      const sessionId =
-        typeof payload?.voiceSessionId === "string" ? payload.voiceSessionId : null;
-      if (sessionId === null) {
-        throw new VoiceTranscriptionError(
-          "preparation-failed",
-          "This Mac did not open a recording.",
-        );
-      }
-      session = { connection, sessionId };
-      return {
-        // The controller reads the locale after the transcript exists, and the
-        // spoken language is only known then: an English dictation needs a word
-        // boundary, a Korean one does not.
-        get locale(): string {
-          return spokenLanguage;
-        },
-        transcribe,
-      };
-    },
+    prepare: ({ signal }) => reporting(onFailure, signal, () => prepareOnce(signal)),
   };
+
+  async function prepareOnce(signal: AbortSignal): Promise<PreparedVoiceTranscription> {
+    const connection = await resolveVoiceConnection(readEnvironmentId());
+    endSession();
+    const response = await fetch(`${connection.baseUrl}${VOICE_ROUTE}`, {
+      method: "POST",
+      credentials: connection.credentials,
+      headers: { ...connection.headers, "content-type": "application/json" },
+      body: JSON.stringify({ mode: "draft" }),
+      signal,
+    }).catch((cause: unknown) => {
+      throw new VoiceTranscriptionError(
+        "preparation-failed",
+        "This Mac could not be reached.",
+        { cause },
+      );
+    });
+    if (!response.ok) {
+      throw await failureFrom(response, "preparation-failed");
+    }
+    const payload = (await response.json().catch(() => null)) as {
+      readonly voiceSessionId?: unknown;
+    } | null;
+    const sessionId =
+      typeof payload?.voiceSessionId === "string" ? payload.voiceSessionId : null;
+    if (sessionId === null) {
+      throw new VoiceTranscriptionError(
+        "preparation-failed",
+        "This Mac did not open a recording.",
+      );
+    }
+    session = { connection, sessionId };
+    return {
+      // The controller reads the locale after the transcript exists, and the
+      // spoken language is only known then: an English dictation needs a word
+      // boundary, a Korean one does not.
+      get locale(): string {
+        return spokenLanguage;
+      },
+      transcribe,
+    };
+  }
 }

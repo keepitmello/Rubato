@@ -6,9 +6,26 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createRubatoVoiceTranscriber, RubatoWebVoiceRecorder } from "../../state/rubatoVoice";
+import {
+  createRubatoVoiceTranscriber,
+  RubatoWebVoiceRecorder,
+  type RubatoVoiceFailure,
+} from "../../state/rubatoVoice";
 
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
+
+/**
+ * T3's controller replaces every preparation and transcription failure with one
+ * generic line. The failure our transcriber saw says what to do instead, and
+ * `settings` marks the ones Settings › Chat › Voice input fixes.
+ */
+export function withVoiceFailure(
+  state: VoiceInputState,
+  failure: RubatoVoiceFailure | null,
+): VoiceInputState {
+  if (state.phase !== "error" || failure === null) return state;
+  return { ...state, error: failure.message, errorAction: failure.fixInSettings ? "settings" : state.errorAction };
+}
 
 /** The part of a composer draft dictation needs: its text and where the caret is. */
 export type RubatoVoiceDraft = {
@@ -39,6 +56,7 @@ export function useRubatoVoiceInput(input: {
   });
   const recorderRef = useRef<RubatoWebVoiceRecorder | null>(null);
   const controllerRef = useRef<VoiceInputController | null>(null);
+  const lastFailure = useRef<RubatoVoiceFailure | null>(null);
 
   if (!controllerRef.current) {
     const recorder = new RubatoWebVoiceRecorder((status) =>
@@ -47,7 +65,13 @@ export function useRubatoVoiceInput(input: {
     recorderRef.current = recorder;
     controllerRef.current = new VoiceInputController({
       recorder,
-      getTranscriber: () => createRubatoVoiceTranscriber(() => latest.current.environmentId),
+      getTranscriber: () =>
+        createRubatoVoiceTranscriber(
+          () => latest.current.environmentId,
+          (failure) => {
+            lastFailure.current = failure;
+          },
+        ),
       requestPermission: async () => {
         const media = navigator.mediaDevices;
         if (media?.getUserMedia === undefined) return { granted: false, canAskAgain: false };
@@ -87,7 +111,11 @@ export function useRubatoVoiceInput(input: {
         };
       },
       commitDraft: (text, selection) => latest.current.commitDraft(text, selection.start),
-      onStateChange: setState,
+      onStateChange: (next) => {
+        // A new attempt starts clean; an error keeps the reason this attempt failed.
+        if (next.phase === "preparing") lastFailure.current = null;
+        setState(withVoiceFailure(next, lastFailure.current));
+      },
     });
   }
 

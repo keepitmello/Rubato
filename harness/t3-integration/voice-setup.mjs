@@ -6,16 +6,11 @@
 //   node voice-setup.mjs --show
 //   node voice-setup.mjs --rotate-token
 
-import { randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
+import { DEFAULT_VOICE_MODEL, maskSecret, updateVoiceConfig, voiceConfigPath } from './src/voice/settings.mjs';
 
-const root = path.dirname(fileURLToPath(import.meta.url));
-const configPath = process.env.RUBATO_VOICE_CONFIG
-  ?? path.join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), '.rubato', 'voice.json');
+const configPath = voiceConfigPath();
 
 const args = process.argv.slice(2);
 const value = (name) => {
@@ -26,7 +21,7 @@ const has = (name) => args.includes(`--${name}`);
 
 const usage = `맥 음성 입력 설정
 
-  --model <id>        전사에 쓸 OpenAI 모델 id (필수, 설정에 남는다)
+  --model <id>        전사에 쓸 OpenAI 모델 id (없으면 지금 값, 그것도 없으면 ${DEFAULT_VOICE_MODEL})
   --key <key>         OpenAI API 키. 없으면 환경변수 → 로그인 셸 순으로 찾는다
   --project <id>      새 대화를 만들 때 쓸 T3 프로젝트 id (선택)
   --rotate-token      단축어가 쓰는 토큰을 새로 만든다
@@ -44,9 +39,7 @@ const existing = await readFile(configPath, 'utf8')
   .then((raw) => JSON.parse(raw))
   .catch(() => ({}));
 
-const mask = (secret) => (typeof secret === 'string' && secret.length > 8
-  ? `${secret.slice(0, 6)}…(${secret.length}자)`
-  : secret);
+const mask = maskSecret;
 
 /**
  * 셸이 이미 알고 있는 키를 쓴다. 키는 보통 `~/.zshrc` 가 소스하는 파일에 있고,
@@ -80,11 +73,8 @@ if (has('show')) {
   process.exit(0);
 }
 
-const model = value('model') ?? existing.model;
-const project = value('project') ?? existing.defaultProjectId;
-const token = has('rotate-token') || typeof existing.token !== 'string'
-  ? randomBytes(32).toString('base64url')
-  : existing.token;
+const model = value('model') ?? existing.model ?? DEFAULT_VOICE_MODEL;
+const project = value('project');
 
 const givenKey = value('key');
 const environmentKey = process.env.OPENAI_API_KEY;
@@ -96,39 +86,34 @@ const keySource = givenKey ? '--key'
       : existing.openaiApiKey ? '이전 설정 파일'
         : null;
 
-if (typeof model !== 'string' || model.trim() === '') {
-  process.stderr.write('전사 모델 id가 필요하다: --model <id>\n');
-  process.exit(1);
-}
 if (typeof apiKey !== 'string' || apiKey.trim() === '') {
-  process.stderr.write('OpenAI 키를 찾지 못했다: --key <key> 로 주거나 셸에 OPENAI_API_KEY 를 두어라\n');
+  process.stderr.write('OpenAI 키를 찾지 못했다: --key <key> 로 주거나 셸에 OPENAI_API_KEY 를 두어라. 앱의 설정 › 채팅 › 음성 입력에서 넣어도 된다\n');
   process.exit(1);
 }
 
-const config = {
-  module: path.join(root, 'src', 'voice', 'runtime.mjs'),
-  token,
-  model,
-  openaiApiKey: apiKey,
-  ...(project ? { defaultProjectId: project } : {}),
-};
-
-await mkdir(path.dirname(configPath), { recursive: true, mode: 0o700 });
-await writeFile(configPath, `${JSON.stringify(config, null, 2)}\n`, { mode: 0o600 });
-await chmod(configPath, 0o600);
+let config;
+try {
+  config = updateVoiceConfig(configPath, {
+    model, openaiApiKey: apiKey, defaultProjectId: project, rotateToken: has('rotate-token'),
+  });
+} catch (error) {
+  process.stderr.write(`${error.message}\n`);
+  process.exit(1);
+}
+const { token } = config;
 
 process.stdout.write([
   `설정을 썼다: ${configPath} (0600)`,
   '',
   `전사 모델: ${model}`,
   `OpenAI 키: ${keySource} 에서 읽음 (${mask(apiKey)})`,
-  `프로젝트: ${project ?? '아직 없음 — 대화를 연 채로 음성 입력을 한 번 쓰면 그 프로젝트를 기억한다'}`,
+  `프로젝트: ${config.defaultProjectId ?? '아직 없음 — 대화를 연 채로 음성 입력을 한 번 쓰면 그 프로젝트를 기억한다'}`,
   '',
   '아이폰 단축어에 넣을 토큰:',
   token,
   '',
   '다음:',
-  '  1. T3 데스크톱 앱을 다시 시작해야 이 설정을 읽는다.',
+  '  1. 앱은 다음 녹음부터 이 설정을 읽는다. 다시 켤 필요 없다.',
   '  2. 단축어 설정은 같은 폴더의 voice-input.md 를 따라.',
   '',
 ].join('\n'));

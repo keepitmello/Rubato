@@ -19,6 +19,7 @@ export type RubatoSettingsSource =
   | "homeProjects"
   | "sidebarSections"
   | "titleModels"
+  | "voice"
   | "permissionsLink";
 
 export interface RubatoSettingsBlock {
@@ -150,6 +151,8 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
         rows: ["hide-whitespace-changes", "default-diff-file-state", "diff-layout"],
         sources: ["general"],
       },
+      // Rubato's own section: the composer microphone's key and model (voice-edits.mjs).
+      { key: "voice", sources: ["voice"] },
     ],
   },
   {

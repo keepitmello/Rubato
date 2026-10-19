@@ -12,6 +12,7 @@ import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
 import { RubatoSidebarSectionsSettingsRows } from "./RubatoSidebarSectionsSetting";
 import { RubatoTitleModelsSection } from "./RubatoTitleModels";
 import { RubatoPhoneSettingsPanel } from "./RubatoPhoneSettings";
+import { RubatoVoiceSettingsSection } from "./RubatoVoiceSettings";
 import { RubatoSettingsBlockScope } from "./rubatoSettingsBlock";
 import {
   RUBATO_FALLBACK_BLOCK,
@@ -57,6 +58,7 @@ const SOURCES: Readonly<Record<RubatoSettingsSource, ComponentType>> = {
   homeProjects: RubatoHomeProjectsSettingsRow,
   sidebarSections: RubatoSidebarSectionsSettingsRows,
   titleModels: RubatoTitleModelsSection,
+  voice: RubatoVoiceSettingsSection,
   permissionsLink: PermissionsLinkRow,
 };
 

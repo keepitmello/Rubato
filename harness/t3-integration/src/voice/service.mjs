@@ -98,7 +98,9 @@ export function createVoiceService({ presence, store, submitter, transcriber,
           .map((t) => ({ threadId: t.id, projectId: t.projectId, label: t.title }));
         return publicState(store.start({ target: 'ambiguous', label: 'Choose a conversation', candidates }));
       }
-      for (const projectId of [store.lastMobileProject, defaultProjectId].filter(Boolean)) {
+      // A function reads the setting as it is now; voice.json can change while the app runs.
+      const fallbackProject = typeof defaultProjectId === 'function' ? defaultProjectId() : defaultProjectId;
+      for (const projectId of [store.lastMobileProject, fallbackProject].filter(Boolean)) {
         const project = await readProject(projectId);
         if (project) return publicState(store.start({ target: 'new-thread', projectId,
           label: `New conversation · ${project.title}` }));

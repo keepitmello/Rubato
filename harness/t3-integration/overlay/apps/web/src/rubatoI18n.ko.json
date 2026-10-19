@@ -3743,7 +3743,6 @@
   "The task is in the composer — read it over, then send.": "작업이 입력창에 들어갔습니다 — 내용을 확인한 뒤 보내세요.",
   "The thread list in the sidebar.": "사이드바의 스레드 목록입니다.",
   "The title could not be saved": "제목을 저장할 수 없습니다",
-  "The transcription service is not configured on this Mac.": "이 Mac에 음성 변환 서비스가 설정되지 않았습니다.",
   "The URL appears after you save.": "저장하면 URL이 표시됩니다.",
   "the workspace": "작업 공간",
   "The workspace folder could not be accessed.": "작업 공간 폴더에 접근할 수 없습니다.",
@@ -4214,7 +4213,6 @@
   "Visibility": "공개 범위",
   "Visible thread count": "표시할 스레드 개수",
   "Visible threads": "표시할 스레드 수",
-  "Voice input is not set up on this Mac yet.": "이 Mac에 아직 음성 입력이 설정되지 않았습니다.",
   "VoiceOver": "VoiceOver",
   "Vue": "Vue",
   "Wait for file uploads before stashing this prompt": "파일 업로드가 끝난 뒤 이 프롬프트를 임시 저장하세요",
@@ -4367,7 +4365,37 @@
   "Threads in Recent": "최근 스레드 수",
   "How many threads from all projects Recent shows while the sidebar is narrowed to one project.": "사이드바를 한 프로젝트로 좁혀 볼 때 최근에 보여 줄 전체 프로젝트 스레드 수입니다.",
   "Sidebar section order": "사이드바 섹션 순서",
-  "Drag a section's header in the sidebar to move it: Recent, the project's threads, Working, Snoozed or Settled.": "사이드바에서 섹션 머리줄을 끌어 옮깁니다. 최근, 프로젝트 스레드, 작업 중, 미뤄짐, 정리됨을 옮길 수 있습니다."
+  "Drag a section's header in the sidebar to move it: Recent, the project's threads, Working, Snoozed or Settled.": "사이드바에서 섹션 머리줄을 끌어 옮깁니다. 최근, 프로젝트 스레드, 작업 중, 미뤄짐, 정리됨을 옮길 수 있습니다.",
+  "Voice input": "음성 입력",
+  "Reading the voice settings": "음성 설정을 읽는 중",
+  "Could not read the voice settings": "음성 설정을 읽을 수 없습니다",
+  "The voice settings file is broken": "음성 설정 파일이 깨졌습니다",
+  "Dictation": "받아쓰기",
+  "The microphone beside the composer records on this Mac. OpenAI turns the recording into text at the cursor.": "입력창 옆 마이크로 이 Mac에서 녹음합니다. OpenAI가 녹음을 글로 바꿔 커서 자리에 넣습니다.",
+  "Needs an API key": "API 키 필요",
+  "OpenAI API key": "OpenAI API 키",
+  "Transcription needs an OpenAI API key. It stays on this Mac.": "음성을 글로 바꾸려면 OpenAI API 키가 필요합니다. 키는 이 Mac에만 저장됩니다.",
+  "Change key": "키 바꾸기",
+  "Add key": "키 추가하기",
+  "Remove the saved OpenAI API key from this Mac?": "이 Mac에 저장한 OpenAI API 키를 지울까요?",
+  "Transcription model": "전사 모델",
+  "iPhone Shortcut token": "iPhone 단축어 토큰",
+  "The iPhone Shortcut sends recordings to this Mac with this token. A new token stops the old Shortcut.": "iPhone 단축어는 이 토큰으로 이 Mac에 녹음을 보냅니다. 새 토큰을 만들면 예전 단축어는 동작하지 않습니다.",
+  "New token": "새 토큰 만들기",
+  "Make a new Shortcut token? The Shortcut with the old one stops working.": "단축어 토큰을 새로 만들까요? 예전 토큰을 쓰는 단축어는 동작하지 않게 됩니다.",
+  "Could not save the API key": "API 키를 저장할 수 없습니다",
+  "Could not remove the API key": "API 키를 지울 수 없습니다",
+  "Could not save the model": "모델을 저장할 수 없습니다",
+  "Could not rotate the token": "토큰을 새로 만들 수 없습니다",
+  "Voice settings": "음성 설정",
+  "Add an OpenAI API key for voice input.": "음성 입력에 쓸 OpenAI API 키를 넣어 주세요.",
+  "OpenAI did not accept the voice input API key.": "OpenAI가 음성 입력 API 키를 받아들이지 않습니다.",
+  "OpenAI does not know the voice input model.": "OpenAI에 없는 음성 입력 모델입니다.",
+  "Voice input is not set up yet.": "음성 입력이 아직 설정되지 않았습니다.",
+  "This Mac could not be reached.": "이 Mac에 연결할 수 없습니다.",
+  "No speech was detected.": "말소리가 감지되지 않았습니다.",
+  "Paste the whole OpenAI API key.": "OpenAI API 키 전체를 붙여 넣으세요.",
+  "Enter a model id without spaces.": "공백 없이 모델 id를 입력하세요."
  },
  "templates": [
   [
@@ -7633,6 +7661,22 @@
   [
    "이 대화는 {0} 프롬프트로 시작했어",
    "이 대화는 {0} 프롬프트로 시작했어"
+  ],
+  [
+   "Saved on this Mac: {0}. Only this Mac sends it, to OpenAI.",
+   "이 Mac에 저장됨: {0}. 이 Mac만 이 키를 OpenAI로 보냅니다."
+  ],
+  [
+   "Using OPENAI_API_KEY from the app's environment: {0}. A key saved here takes its place.",
+   "앱 환경의 OPENAI_API_KEY를 쓰는 중: {0}. 여기서 키를 저장하면 그 키를 대신 씁니다."
+  ],
+  [
+   "OpenAI model id. Default: {0}.",
+   "OpenAI 모델 id. 기본값: {0}."
+  ],
+  [
+   "{0} is not valid JSON. Fix or remove it, then refresh.",
+   "{0} 파일이 올바른 JSON이 아닙니다. 고치거나 지운 뒤 새로고침하세요."
   ]
  ]
 }
