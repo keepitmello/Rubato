@@ -485,7 +485,11 @@ export function startCompanionMessenger({
       const own = trigger.own === true;
       const heartbeat = own && String(trigger.text ?? '').startsWith(HEARTBEAT_PREFIX);
       const daily = own && String(trigger.text ?? '').startsWith(DAILY_PREFIX);
-      if (heartbeat || daily || !own) await sendToUser(client, answer.text);
+      // Silence by default: a heartbeat's answer stays in the app. Segno speaks to the phone only
+      // when something needs the user, and then it says it with `telegram_send` — one act, not a
+      // side effect of thinking out loud on a timer (Roo's model).
+      if (heartbeat) return;
+      if (daily || !own) await sendToUser(client, answer.text);
     }
   }
 

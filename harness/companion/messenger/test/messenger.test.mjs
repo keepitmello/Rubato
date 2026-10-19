@@ -235,7 +235,7 @@ test('an answer in the app is not mirrored to Telegram', async (t) => {
   assert.equal(readState(box.env).transcript.seen, 2, 'the transcript position moved past it');
 });
 
-test('the daily report, a lead ending and a heartbeat answer reach the person', async (t) => {
+test('the daily report and a lead ending reach the person; a heartbeat answer does not', async (t) => {
   const box = await paired(t);
   transcript(box, [
     noticeEntry('e1', 'Daily report time. Send the user today\'s report.'),
@@ -260,7 +260,8 @@ test('the daily report, a lead ending and a heartbeat answer reach the person', 
     answerEntry('e10', '아직 진행 중인 리드 하나 있어요.'),
   ], { append: true });
   await settle(box.service);
-  assert.ok(box.fake.sent.some((row) => row.text.includes('진행 중인 리드')), 'a heartbeat answer is read on the phone');
+  assert.equal(box.fake.sent.filter((row) => row.text.includes('진행 중인 리드')).length, 0,
+    'a heartbeat answer stays in the app: thinking on a timer is not a message to the phone');
 });
 
 test("Segno's answer to another person is held, not sent", async (t) => {
@@ -472,4 +473,31 @@ test('a token Telegram refuses is not kept, and the page is told why', async (t)
   assert.equal(errors.length, 1);
   assert.equal(readSecret(box.env), undefined, 'no token was stored');
   assert.match(readHandoff(box.env).error ?? '', /Unauthorized/);
+});
+
+test('on a heartbeat, Segno speaks to the phone only when it decides to', async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    channelEntry('h1'),
+    answerEntry('h2', '네.'),
+    noticeEntry('h3', 'Heartbeat. Look over the conversations you follow.'),
+    answerEntry('h4', '아직 조용해. 내 노트만 남긴다.'),
+  ], { append: true });
+  // What telegram_send does during that same turn when something does need the user.
+  enqueueMessage({ text: '확인할 게 하나 있어요. 잠깐 봐줄래요?', target: 'user', source: 'tool' }, box.env);
+  await settle(box.service);
+  const sent = box.fake.sent.map((row) => row.text);
+  assert.equal(sent.filter((text) => text.includes('확인할 게 하나')).length, 1, 'the tool message went out once');
+  assert.equal(sent.filter((text) => text.includes('내 노트만')).length, 0, 'the heartbeat note did not ride along');
+});
+
+test('a heartbeat answer never goes out on its own, even when nothing else does', async (t) => {
+  const box = await paired(t);
+  const before = box.fake.sent.length;
+  transcript(box, [
+    noticeEntry('i3', 'Heartbeat. Look over the conversations you follow.'),
+    answerEntry('i4', 'Heartbeat: same as before. No leads of mine and nothing new came in.'),
+  ]);
+  await settle(box.service);
+  assert.equal(box.fake.sent.length, before, 'silence: the phone gets nothing');
 });
