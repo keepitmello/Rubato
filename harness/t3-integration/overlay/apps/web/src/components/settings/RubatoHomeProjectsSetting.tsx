@@ -1,4 +1,4 @@
-// Rubato (project-rail-edits.mjs): Settings > Threads & Projects > the project
+// Rubato (project-rail-edits.mjs): Settings > Projects > the project
 // row on the new-thread screen (chat/RubatoHomeProjects.tsx). Off by default.
 import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
 import { Switch } from "../ui/switch";

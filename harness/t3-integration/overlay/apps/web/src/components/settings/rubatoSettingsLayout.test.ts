@@ -8,6 +8,7 @@ import {
   RUBATO_SETTINGS_DETAIL_PAGES,
   RUBATO_SETTINGS_PAGES,
   rubatoBlockFilter,
+  rubatoOpensProjectList,
   rubatoRowVisible,
   rubatoSearchItem,
   rubatoSearchItems,
@@ -24,7 +25,6 @@ const byId = (id: string) => ITEMS.find((item) => item.id === id)!;
 
 // Pages that open from the rail or from a row rather than from the sidebar.
 const OFF_SIDEBAR = new Set([
-  "/settings/projects",
   "/settings/memory",
   "/settings/scheduled",
   "/settings/scheduled-tasks",
@@ -76,6 +76,30 @@ describe("Rubato settings layout", () => {
       to: "/settings/general",
       targetId: "about",
     });
+  });
+
+  it("puts the project list and its options on Projects, and the thread rows on Threads", () => {
+    for (const id of ["add-project-starts-in", "project-grouping", "rubato-home-projects"]) {
+      expect(rubatoSearchItem(byId(id)).to).toBe("/settings/projects");
+    }
+    expect(rubatoSearchItem(byId("project-order"))).toMatchObject({
+      to: "/settings/projects",
+      targetId: "rubato-project-list",
+    });
+    expect(unplacedGeneralRows(ITEMS)).not.toContain("project-order");
+    for (const id of ["new-threads", "working-shelf", "rubato-recent-limit"]) {
+      expect(rubatoSearchItem(byId(id)).to).toBe("/settings/threads");
+    }
+  });
+
+  it("opens the list for its own results and keeps the chosen project for T3's", () => {
+    const opens = (id: string) => rubatoOpensProjectList(rubatoSearchItem(byId(id)));
+    expect(opens("project-order")).toBe(true);
+    expect(opens("add-project-starts-in")).toBe(true);
+    expect(opens("rubato-home-projects")).toBe(true);
+    expect(opens("project-overview")).toBe(false);
+    expect(opens("project-actions")).toBe(false);
+    expect(opens("default-model")).toBe(false);
   });
 
   it("drops search results with no row to land on", () => {

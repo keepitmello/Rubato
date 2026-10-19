@@ -17,6 +17,7 @@ export type RubatoSettingsSource =
   | "phone"
   | "about"
   | "homeProjects"
+  | "projectList"
   | "sidebarSections"
   | "titleModels"
   | "voice"
@@ -165,25 +166,19 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
   },
   {
     path: "/settings/threads",
-    label: "Threads & Projects",
+    label: "Threads",
     group: "Work",
     blocks: [
       {
         key: "starting",
         title: "Starting work",
-        rows: ["new-threads", "add-project-starts-in", "rubato-home-projects"],
-        sources: ["general", "homeProjects"],
+        rows: ["new-threads"],
+        sources: ["general"],
       },
       {
         key: "sidebar",
         title: "Sidebar",
-        rows: [
-          "project-grouping",
-          "project-order",
-          "working-shelf",
-          "rubato-recent-limit",
-          "rubato-sidebar-blocks",
-        ],
+        rows: ["working-shelf", "rubato-recent-limit", "rubato-sidebar-blocks"],
         sources: ["general", "sidebarSections"],
       },
       {
@@ -204,6 +199,23 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
         anchor: "confirmations",
         rows: ["unpin-confirmation", "archive-confirmation", "delete-confirmation"],
         sources: ["general"],
+      },
+    ],
+  },
+  // T3's own page. Without a chosen project it is this layout; with one, that
+  // project's settings (project-order-edits.mjs). The sidebar shows it either way.
+  {
+    path: "/settings/projects",
+    label: "Projects",
+    group: "Work",
+    blocks: [
+      // The list and its order (RubatoProjectListSettings.tsx).
+      { key: "list", anchor: "rubato-project-list", sources: ["projectList"] },
+      {
+        key: "options",
+        title: "Options",
+        rows: ["add-project-starts-in", "project-grouping", "rubato-home-projects"],
+        sources: ["general", "homeProjects"],
       },
     ],
   },
@@ -336,6 +348,8 @@ const SEARCH_ALIASES: Readonly<Record<string, string>> = {
   "app-version": "general/updates",
   "update-track": "general/updates",
   "project-defaults": "agents/defaults",
+  // T3's sort select has no row: the project list is the order.
+  "project-order": "projects/list",
 };
 
 /** Search results with no row in Rubato: T3's version section is replaced by Rubato's. */
@@ -425,6 +439,16 @@ export function rubatoSearchItems<Item extends SettingsSearchItem>(items: readon
         RUBATO_PLACED_ROWS.get(item.targetId ?? item.id) !== HIDDEN_BLOCK,
     )
     .map(rubatoSearchItem);
+}
+
+/**
+ * A search result that lands on the project list or its options. It opens the
+ * list, which shows only while no project is chosen; T3's own Projects results
+ * (a project's name, checkouts and actions) keep the chosen project.
+ */
+export function rubatoOpensProjectList(item: SettingsSearchItem): boolean {
+  const block = SEARCH_ALIASES[item.id] ?? RUBATO_PLACED_ROWS.get(item.targetId ?? item.id);
+  return block !== undefined && pathOfBlock(block) === "/settings/projects";
 }
 
 /** What a block shows of the panels inside it. */

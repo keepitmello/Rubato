@@ -1,7 +1,11 @@
 // Settings layout: Settings regrouped by what a person
 // comes to change, in four sidebar groups. General had 48 rows of every kind;
-// they now sit on Agents, Chat, Threads & Projects, Notifications & Sounds,
+// they now sit on Agents, Chat, Threads, Projects, Notifications & Sounds,
 // Git & Worktrees and Advanced, and Storage and Phone fold into their neighbours.
+//
+// Projects is T3's page, always on the sidebar: without a chosen project it is
+// the project list (project-order-edits.mjs), so the sidebar's Projects and a
+// search result for one of its options leave the chosen project behind.
 //
 // T3's panels are not rewritten. Each row and section keeps its code; a Rubato
 // page draws T3's panels inside blocks, and a block shows only the rows or
@@ -103,13 +107,14 @@ export const settingsLayoutEdits = {
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/storage"\n',
       '  | "/settings/notifications"\n  | "/settings/agents"\n  | "/settings/chat"\n  | "/settings/threads"\n  | "/settings/advanced"\n'],
+    ['  "/settings/projects": "Project",\n', '  "/settings/projects": "Projects",\n', 'replace'],
     ['  "/settings/integrations": "Integrations",\n', '  "/settings/integrations": "Browser & Devices",\n', 'replace'],
     ['  "/settings/source-control": "Source Control",\n', '  "/settings/source-control": "Git & Worktrees",\n', 'replace'],
     ['  "/settings/storage": "Storage",\n',
       '  "/settings/notifications": "Notifications & Sounds",\n'
         + '  "/settings/agents": "Agents",\n'
         + '  "/settings/chat": "Chat",\n'
-        + '  "/settings/threads": "Threads & Projects",\n'
+        + '  "/settings/threads": "Threads",\n'
         + '  "/settings/advanced": "Advanced",\n'],
     // Rubato's title models, now on Agents (settings/RubatoTitleModels.tsx).
     ['  {\n    id: "project-grouping",\n',
@@ -160,12 +165,6 @@ export const settingsLayoutEdits = {
         '  icon: ComponentType<{ className?: string }>;',
         '  group: string | null;',
         '}> = [',
-        '  {',
-        '    to: "/settings/projects",',
-        '    label: SETTINGS_SECTION_LABELS["/settings/projects"],',
-        '    icon: SETTINGS_SECTION_ICONS["/settings/projects"],',
-        '    group: null,',
-        '  },',
         '  ...RUBATO_SETTINGS_PAGES.map((page, index) => ({',
         '    to: page.path,',
         '    label: page.label,',
@@ -177,7 +176,38 @@ export const settingsLayoutEdits = {
         '',
       ].join('\n')],
     ['import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";\n',
-      'import { RUBATO_SETTINGS_DETAIL_PAGES, RUBATO_SETTINGS_PAGES } from "./rubatoSettingsLayout";\n'],
+      'import { rubatoProjectListSearch } from "./RubatoProjectListSettings";\n'
+        + 'import { RUBATO_SETTINGS_DETAIL_PAGES, RUBATO_SETTINGS_PAGES } from "./rubatoSettingsLayout";\n'
+        + 'import { rubatoOpensProjectList } from "./rubatoSettingsLayout";\n'],
+    ['  isSettingsOverviewVisible,\n',
+      '  // Rubato: Projects is always on the sidebar (settings-layout-edits.mjs).\n', 'replace'],
+    [
+      '      void navigate({\n        to,\n        hash: "",\n        replace: true,\n        hashScrollIntoView: false,\n      });\n',
+      [
+        '      void navigate({',
+        '        to,',
+        '        hash: "",',
+        '        replace: true,',
+        '        hashScrollIntoView: false,',
+        '        // Rubato: Projects opens the project list (settings-layout-edits.mjs).',
+        '        ...(to === "/settings/projects" ? { search: rubatoProjectListSearch } : {}),',
+        '      });',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '        hashScrollIntoView: false,\n        state: { settingsTargetHighlight: true },\n      });\n',
+      [
+        '        hashScrollIntoView: false,',
+        '        state: { settingsTargetHighlight: true },',
+        '        // Rubato: an option of the project list lands on the list (settings-layout-edits.mjs).',
+        '        ...(rubatoOpensProjectList(item) ? { search: rubatoProjectListSearch } : {}),',
+        '      });',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
     ['  const navItems = SETTINGS_NAV_ITEMS.filter(\n', '  const navItems = RUBATO_SETTINGS_NAV_ITEMS.filter(\n', 'replace'],
     ['                  const isGeneralDetailPage =\n'
       + '                    item.to === "/settings/general" &&\n'

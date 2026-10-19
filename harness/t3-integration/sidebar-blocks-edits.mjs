@@ -3,7 +3,7 @@
 // The thread list is five sections: Recent (all projects, project-rail-edits.mjs),
 // the narrowed project's threads under its title, Working, Snoozed and Settled.
 // Dragging a section's header moves the section, and the order is a device
-// setting (client setting rubatoSidebarBlocks); Settings > Threads & Projects
+// setting (client setting rubatoSidebarBlocks); Settings > Threads
 // puts it back. Until moved, Recent heads the list and the project's title
 // follows it: what spans every project first, then this project.
 //

@@ -18,8 +18,9 @@
 //   its options menu drops "Sort projects" for Edit project list....
 // - Settings > Projects, before a project is chosen, is the list itself
 //   (settings/RubatoProjectListSettings.tsx): drag to reorder, − and + between
-//   the sections, a name opens that project's settings. Settings > Threads &
-//   Projects > Project order opens it in place of T3's sort select.
+//   the sections, Add project, a name opens that project's settings. The page
+//   is laid out like Rubato's other settings pages (settings/rubatoSettingsLayout.ts),
+//   and T3's sort select has no row there: the list is the order.
 export const projectOrderOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectOrder.ts',
   'apps/web/src/components/sidebar/rubatoProjectOrder.test.ts',
@@ -348,73 +349,20 @@ export const projectOrderEdits = {
       'replace',
     ],
   ],
-  'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['import { SettingsGroup } from "./SettingsGroup";\n',
-      'import { RubatoProjectOrderButton } from "./RubatoProjectListSettings";\n'],
-    [
-      [
-        '          description="Order of projects in the sidebar project picker and command palette."',
-        '          resetAction={',
-        '            settings.sidebarProjectSortOrder !==',
-        '            DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder ? (',
-        '              <SettingResetButton',
-        '                label="project order"',
-        '                onClick={() =>',
-        '                  updateSettings({',
-        '                    sidebarProjectSortOrder: DEFAULT_UNIFIED_SETTINGS.sidebarProjectSortOrder,',
-        '                  })',
-        '                }',
-        '              />',
-        '            ) : null',
-        '          }',
-        '          control={',
-        '            <Select',
-        '              value={settings.sidebarProjectSortOrder}',
-        '              onValueChange={(value) => {',
-        '                if (isSidebarProjectSortOrder(value)) {',
-        '                  updateSettings({ sidebarProjectSortOrder: value });',
-        '                }',
-        '              }}',
-        '            >',
-        '              <SelectTrigger size="sm" className="w-full sm:w-44" aria-label="Project order">',
-        '                <SelectValue>',
-        '                  {SIDEBAR_PROJECT_SORT_ORDER_LABELS[settings.sidebarProjectSortOrder]}',
-        '                </SelectValue>',
-        '              </SelectTrigger>',
-        '              <SelectPopup align="end" alignItemWithTrigger={false}>',
-        '                {SidebarProjectSortOrder.literals.map((sortOrder) => (',
-        '                  <SelectItem hideIndicator key={sortOrder} value={sortOrder}>',
-        '                    {SIDEBAR_PROJECT_SORT_ORDER_LABELS[sortOrder]}',
-        '                  </SelectItem>',
-        '                ))}',
-        '              </SelectPopup>',
-        '            </Select>',
-        '          }',
-        '',
-      ].join('\n'),
-      [
-        '          // Rubato: one order for every project list, edited in Settings > Projects (project-order-edits.mjs).',
-        '          description="One order for every project list: the Projects window, the home tabs and the new-thread pickers."',
-        '          control={<RubatoProjectOrderButton />}',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-  ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['    searchTerms: ["sort projects sidebar manual created recent"],\n',
       '    searchTerms: [\n'
-        + '      "sort projects sidebar manual created recent reorder drag hide remove list my other projects 프로젝트 순서 목록 편집 숨기기",\n'
+        + '      "sort projects sidebar manual created recent reorder drag hide remove add new list my other projects 프로젝트 순서 목록 편집 숨기기 추가 삭제",\n'
         + '    ],\n',
       'replace'],
   ],
   // Before a project is chosen, Settings > Projects is the project list.
   'apps/web/src/components/settings/ProjectsSettings.tsx': [
     ['import { SettingsScopeNotice } from "./SettingsScopeNotice";\n',
-      'import { RubatoProjectListSettings } from "./RubatoProjectListSettings";\n', 'replace'],
+      'import { RubatoSettingsPage } from "./RubatoSettingsPage";\n', 'replace'],
     [
       '        <SettingsScopeNotice target="project">\n          Choose a project to manage its name, icon, checkouts and actions.\n        </SettingsScopeNotice>\n',
-      '        // Rubato: the project list and its order (project-order-edits.mjs).\n        <RubatoProjectListSettings />\n',
+      '        // Rubato: the project list, its order and the options around it (project-order-edits.mjs).\n        <RubatoSettingsPage path="/settings/projects" />\n',
       'replace',
     ],
   ],
