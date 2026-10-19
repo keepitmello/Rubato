@@ -82,6 +82,8 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     const startedBefore = record.started;
     const askedBefore = record.asked === true;
     if (BUSY.has(current.status)) { record.started = true; delete record.storedSince; }
+    else if (current.status === 'stored') record.storedSince ??= at;
+    else delete record.storedSince;
     // Whether it waits on the person now. A question asked mid-turn leaves the turn `running`, so the
     // runtime's own unanswered questions decide (`pending`); without them, it stays asked until the
     // work ends.
@@ -89,8 +91,6 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       if (current.pending.length > 0 || current.status === 'waiting') record.asked = true;
       else delete record.asked;
     }
-    else if (current.status === 'stored') record.storedSince ??= at;
-    else delete record.storedSince;
     const outcome = judge(record, current, at);
     // Saved once seen: an engine killed mid-turn leaves the lead stored, and only a saved `started`
     // lets the next engine report it lost.

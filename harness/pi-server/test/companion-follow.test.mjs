@@ -212,3 +212,17 @@ test('the follower records when work was handed over, that a lead asked the user
   await f.close();
   assert.deepEqual(finished, [{ sessionId: 'lead', outcome: 'completed', at: 6000, title: 'Deploy', cwd: '/w/ops' }]);
 });
+
+test('a runtime lost mid-turn is still told as lost when the inspector reports pending questions', async () => {
+  const w = world();
+  const f = w.follower();
+  f.follow('lead', 'segno');
+  w.state.set('lead', { status: 'running', pending: [] });
+  await f.poll();
+  w.state.set('lead', { status: 'stored', pending: [] });
+  await f.poll();
+  w.tick(LOST_AFTER_MS);
+  await f.poll();
+  await f.close();
+  assert.deepEqual(w.notices.map((notice) => notice.text), [noticeText('lost', {})]);
+});
