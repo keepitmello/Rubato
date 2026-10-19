@@ -17,6 +17,8 @@
 // is a file in the companion's home (store.mjs). A failure here ends this service, not the engine
 // and not a running conversation.
 import path from 'node:path';
+import { execFile } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { createBotApi, BotApiError } from './bot-api.mjs';
 import {
   MESSENGER_LIMITS, clearDecision, enqueueMessage, listDecisions, listOutbox, messengerPaths, newPairingCode,
@@ -56,6 +58,24 @@ export function splitText(text, limit = MESSENGER_LIMITS.textChars) {
   }
   if (rest) parts.push(rest);
   return parts;
+}
+
+const CREATE_BOT_SCRIPT = fileURLToPath(new URL('./scripts/create-bot.mjs', import.meta.url));
+/** The usernames tried in order when the person did not name one; @BotFather refuses the taken ones. */
+export const DEFAULT_BOT_USERNAMES = Object.freeze(['segno_rubato_bot', 'segno_companion_bot', 'segno_bot', 'rubato_segno_bot']);
+
+/** Makes the bot over MTProto from the person's own account (`scripts/create-bot.mjs`). */
+export function createBotOverMtproto({ name = 'Segno', username } = {}) {
+  const usernames = [...new Set([...(username ? [username] : []), ...DEFAULT_BOT_USERNAMES])];
+  const args = [CREATE_BOT_SCRIPT, '--name', name, ...usernames.flatMap((value) => ['--username', value])];
+  return new Promise((resolve, reject) => {
+    execFile(process.execPath, args, { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
+      (error, stdout, stderr) => {
+        if (error) { reject(new Error(`making the bot failed: ${String(stderr || error.message).trim().split('\n')[0]}`)); return; }
+        try { resolve(JSON.parse(String(stdout).trim().split('\n').at(-1))); }
+        catch { reject(new Error('making the bot returned no token')); }
+      });
+  });
 }
 
 /** `'user'` for the person's own chat, otherwise a chat the message is addressed to. */
@@ -101,7 +121,7 @@ function saidText(message) {
 export function startCompanionMessenger({
   deliver, env = process.env, agentDir, onError = () => {}, log = () => {},
   createApi = (token) => createBotApi({ token, baseUrl: env.RUBATO_TELEGRAM_API_BASE || undefined }),
-  createBot, signal, pollMs = 1000, longPollSeconds = 25, now = Date.now,
+  createBot = createBotOverMtproto, signal, pollMs = 1000, longPollSeconds = 25, now = Date.now,
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
   const sessionsDir = agentDir ? path.join(agentDir, 'sessions') : undefined;
