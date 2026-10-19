@@ -94,9 +94,11 @@ test('a hub that keeps exiting comes back with growing delays, and a stable run 
   const steady = await until(async () => (await box.starts()).find((item) => item.mode === 'stay'), 5_000);
   await sleep(1_100);
   await box.setMode('crash');
+  // Count from here: crash exits before the steady run (under load there can be more) do not count.
+  const exitsBefore = events.filter((item) => item.event === 'hub.exited').length;
   process.kill(steady.pid, 'SIGTERM');
-  await until(() => events.filter((item) => item.event === 'hub.exited').length > delays.length);
-  assert.equal(events.filter((item) => item.event === 'hub.exited').at(-1).restartInMs, 40);
+  await until(() => events.filter((item) => item.event === 'hub.exited').length > exitsBefore);
+  assert.equal(events.filter((item) => item.event === 'hub.exited')[exitsBefore].restartInMs, 40);
 });
 
 test('a hub that cannot start is reported and retried; the supervisor itself never throws', async (t) => {
@@ -233,4 +235,48 @@ test('a spec other users can write is refused', async (t) => {
   assert.equal((await box.starts()).length, 0);
   assert.equal(errors.length, 1, 'reported once, not on every poll');
   assert.match(errors[0].message, /writable by other users/);
+});
+
+test('the engine thread hands the hub to ctx.spawn, and a rejected spawn is retried', async (t) => {
+  const box = await sandbox(t);
+  await writeHubServiceSpec(box.paths.service, box.spec());
+  const calls = [];
+  let reject = true;
+  const { startHubSupervisor: startSupervisor } = await import('../src/hub-supervisor.mjs');
+  const events = [];
+  const supervisor = startSupervisor({ paths: box.paths, accountHome: false, pollMs: 50, minBackoffMs: 40, onError: () => {},
+    log: (event) => events.push(event),
+    spawn: async (command, args, options) => {
+      calls.push({ command, args, stdio: options.stdio });
+      if (reject) { reject = false; throw Object.assign(new Error('spawn failed'), { code: 'EACCES' }); }
+      return spawn(command, args, options);
+    } });
+  t.after(() => supervisor.close());
+  await supervisor.ready;
+  const hub = await until(async () => (await box.starts())[0]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].stdio[3], 'ipc');
+  assert.equal(events.includes('hub.exited'), true);
+  assert.equal(hub.ipc, true);
+});
+
+test('start(ctx) runs the hub through the engine main-thread spawn when the engine offers it', async (t) => {
+  const box = await sandbox(t);
+  await writeHubServiceSpec(box.paths.service, box.spec());
+  const { start } = await import('../src/hub-supervisor.mjs');
+  const previous = process.env.HOME;
+  process.env.HOME = box.home;
+  const spawned = [];
+  let owned = 0;
+  let service;
+  try {
+    service = await start({ onError: () => {}, log: () => {}, own: () => { owned += 1; },
+      spawn: async (command, args, options) => { const child = spawn(command, args, options); spawned.push(child.pid); return child; } });
+  } finally { process.env.HOME = previous; }
+  t.after(() => service.close());
+  const hub = await until(async () => (await box.starts())[0]);
+  assert.deepEqual(spawned, [hub.pid]);
+  assert.equal(owned, 0, 'a main-thread child needs no ctx.own');
+  await service.close();
+  assert.equal(alive(hub.pid), false);
 });
