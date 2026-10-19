@@ -342,8 +342,11 @@ export function startCompanionMessenger({
         if (decided.has(row.id)) {
           const decision = readDecision(row.id, env);
           if (decision?.decision === 'approve') {
-            const sent = await sendToChat(client, row.target.chatId, row.text);
+            // The person may have edited the draft before approving it; that is what goes out.
+            const edited = typeof decision.text === 'string' && decision.text.trim() ? decision.text : undefined;
+            const sent = await sendToChat(client, row.target.chatId, edited ?? row.text);
             updateOutboxRow(row.id, { state: 'sent', sentAt: new Date(now()).toISOString(), decidedBy: decision.by,
+              ...(edited ? { text: edited, draft: row.text } : {}),
               ...(sent?.message_id === undefined ? {} : { telegramMessageId: sent.message_id }) }, env);
           } else {
             updateOutboxRow(row.id, { state: 'rejected', rejectedAt: new Date(now()).toISOString(), decidedBy: decision?.by }, env);

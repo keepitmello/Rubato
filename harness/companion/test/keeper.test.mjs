@@ -200,3 +200,19 @@ test('a companion started before the report time gets that day\'s report', async
   await keeper.poke();
   assert.deepEqual(notices, [DAILY_REPORT_TEXT]);
 });
+
+test("the keeper keeps the panel beside Segno's chat current from the engine's list", async (t) => {
+  const { followingStore, readPanel } = await import('../companion.mjs');
+  const env = sandbox(t);
+  const engine = fakeEngine();
+  engine.sessions.set('lead', { sessionId: 'lead', title: 'Login timeout', cwd: '/w/hash-game', status: 'running', runtimeId: 'r-lead', attachments: 1 });
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  followingStore(env).save({ lead: { companionId: 'x', base: { final: null, waiting: false, ui: [] }, since: 1000 } });
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  assert.deepEqual(readPanel(env).leads, [{ sessionId: 'lead', title: 'Login timeout', cwd: '/w/hash-game', state: 'running', since: 1000 }]);
+  engine.sessions.get('lead').status = 'waiting';
+  await keeper.poke();
+  assert.equal(readPanel(env).leads[0].state, 'asked');
+});

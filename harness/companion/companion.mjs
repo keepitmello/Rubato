@@ -50,7 +50,8 @@ export function companionHome(env = process.env) {
 export function companionPaths(env = process.env) {
   const home = companionHome(env);
   return { home, settings: path.join(home, 'settings.json'), state: path.join(home, 'state.json'),
-    following: path.join(home, 'following.json'), prompt: path.join(home, 'prompt') };
+    following: path.join(home, 'following.json'), finished: path.join(home, 'finished.json'),
+    panel: path.join(home, 'panel.json'), art: path.join(home, 'art'), prompt: path.join(home, 'prompt') };
 }
 
 function readJson(file) {
@@ -134,7 +135,74 @@ export function followingStore(env = process.env) {
   return {
     load: () => { const value = readJson(file); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; },
     save: (records) => writeJson(file, records),
+    /** A followed conversation's handed work ended and the companion was told. */
+    finished: (entry) => writeFinished(entry, env),
   };
+}
+
+/** How many recently finished handoffs the companion's space keeps, and for how long. */
+export const FINISHED_LIMITS = Object.freeze({ count: 20, ageMs: 24 * 60 * 60_000 });
+
+/** Recently finished handoffs, newest first. */
+export function readFinished(env = process.env, { now = Date.now() } = {}) {
+  const value = readJson(companionPaths(env).finished);
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => typeof entry?.sessionId === 'string' && Number.isFinite(entry.at) && now - entry.at <= FINISHED_LIMITS.ageMs)
+    .sort((a, b) => b.at - a.at).slice(0, FINISHED_LIMITS.count);
+}
+
+function writeFinished(entry, env) {
+  const at = Number.isFinite(entry?.at) ? entry.at : Date.now();
+  const rest = readFinished(env, { now: at }).filter((item) => item.sessionId !== entry.sessionId);
+  writeJson(companionPaths(env).finished, [{ ...entry, at }, ...rest].slice(0, FINISHED_LIMITS.count));
+}
+
+const LEAD_BUSY = new Set(['starting', 'running', 'waiting']);
+
+/**
+ * What the companion's space shows beside its chat (the app's task panel): the conversations it
+ * follows, each running or waiting on the user, and the ones that recently finished. `rows` is the
+ * engine's session list; `following` the follower's records.
+ */
+export function composePanel({ following = {}, finished = [], rows = [] }) {
+  const byId = new Map(rows.map((row) => [row.sessionId, row]));
+  const describe = (id) => { const row = byId.get(id); return row ? { title: row.title ?? null, cwd: row.cwd ?? null } : {}; };
+  const leads = Object.entries(following).map(([sessionId, record]) => {
+    const row = byId.get(sessionId);
+    const asked = record?.asked === true || row?.status === 'waiting';
+    return { sessionId, ...describe(sessionId), state: asked ? 'asked' : LEAD_BUSY.has(row?.status) ? 'running' : 'queued',
+      since: Number.isFinite(record?.since) ? record.since : null };
+  }).sort((a, b) => (a.since ?? 0) - (b.since ?? 0));
+  const followed = new Set(Object.keys(following));
+  const done = finished.filter((entry) => !followed.has(entry.sessionId))
+    .map((entry) => ({ sessionId: entry.sessionId, title: byId.get(entry.sessionId)?.title ?? entry.title ?? null,
+      cwd: byId.get(entry.sessionId)?.cwd ?? entry.cwd ?? null, outcome: entry.outcome, at: entry.at }));
+  return { leads, finished: done };
+}
+
+/**
+ * The art Segno's space shows, one swappable file: a `stage.webp` or `stage.png` the person put in
+ * the companion's art folder, else the default that ships here (art/stage.webp). Expressions will
+ * be more files beside it.
+ */
+export function stageArtFile(env = process.env) {
+  const own = companionPaths(env).art;
+  for (const name of ['stage.webp', 'stage.png']) if (existsSync(path.join(own, name))) return path.join(own, name);
+  return path.join(import.meta.dirname, 'art', 'stage.webp');
+}
+
+export function readPanel(env = process.env) {
+  const value = readJson(companionPaths(env).panel);
+  return value && Array.isArray(value.leads) && Array.isArray(value.finished) ? value : { leads: [], finished: [] };
+}
+
+/** Writes the panel when it changed; returns whether it did. */
+export function writePanel(panel, env = process.env) {
+  const current = readJson(companionPaths(env).panel);
+  const { updatedAt: _ignored, ...before } = current ?? {};
+  if (JSON.stringify(before) === JSON.stringify(panel)) return false;
+  writeJson(companionPaths(env).panel, { ...panel, updatedAt: new Date().toISOString() });
+  return true;
 }
 
 function pieceOf(id) {

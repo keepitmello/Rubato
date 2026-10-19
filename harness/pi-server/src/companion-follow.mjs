@@ -80,13 +80,16 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     }
     const at = now();
     const startedBefore = record.started;
+    const askedBefore = record.asked === true;
     if (BUSY.has(current.status)) { record.started = true; delete record.storedSince; }
+    // Running again after it asked the user: the question was answered.
+    if (current.status === 'running' && record.asked) delete record.asked;
     else if (current.status === 'stored') record.storedSince ??= at;
     else delete record.storedSince;
     const outcome = judge(record, current, at);
     // Saved once seen: an engine killed mid-turn leaves the lead stored, and only a saved `started`
     // lets the next engine report it lost.
-    if (!outcome) return record.started !== startedBefore;
+    if (!outcome) return record.started !== startedBefore || (record.asked === true) !== askedBefore;
     if (outcome === 'skip') {
       record.skip -= 1;
       record.base.final = current.final.entryId;
@@ -103,7 +106,13 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       // Keep following: the turn goes on once the user answers, and its end is told too.
       record.base.waiting = current.status === 'waiting';
       record.base.ui = [...new Set([...record.base.ui, ...current.ui])];
-    } else records.delete(id);
+      record.asked = true;
+    } else {
+      records.delete(id);
+      // What the companion's space lists as recently finished (harness/companion panel.json).
+      if (store?.finished) safe(() => store.finished({ sessionId: id, outcome, at: now(),
+        ...(current.title ? { title: current.title } : {}), ...(current.cwd ? { cwd: current.cwd } : {}) }), onError);
+    }
     return true;
   }
 
@@ -138,7 +147,7 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       if (closed) return;
       const previous = records.get(targetId);
       records.set(targetId, { companionId, base: { final: previous?.base.final ?? final, waiting: false, ui: previous?.base.ui ?? [] },
-        ...(messageId ? { messageId } : { skip: busy ? 1 : 0 }), started: busy });
+        ...(messageId ? { messageId } : { skip: busy ? 1 : 0 }), started: busy, since: previous?.since ?? now() });
       save();
       if (!polling) schedule();
     },

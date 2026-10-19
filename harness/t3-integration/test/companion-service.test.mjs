@@ -89,3 +89,26 @@ test('a held message is approved from the page, and the decision is a file the m
   const refused = await post('telegram-decide', { id: row.id, decision: 'maybe' });
   assert.equal(refused.status, 400);
 });
+
+test("the task panel beside Segno's chat: followed leads, recent endings and held messages, and an edited approval", async (t) => {
+  const { env, post } = await setup(t);
+  const { writePanel } = await import('../../companion/companion.mjs');
+  const { enqueueMessage, listOutbox, updateOutboxRow, readDecision } = await import('../../companion/messenger/store.mjs');
+  writePanel({ leads: [{ sessionId: 'run', title: 'Login timeout', cwd: '/w/hash-game', state: 'running', since: 1 }],
+    finished: [{ sessionId: 'done', title: 'Payments', cwd: '/w/pay', outcome: 'completed', at: 2 }] }, env);
+  const held = enqueueMessage({ text: 'Hi Giron, fixed today.', target: { chatId: '-100', name: 'VaultOne' } }, env);
+  updateOutboxRow(held.id, { state: 'held' }, env);
+  enqueueMessage({ text: 'to me', target: 'user' }, env);
+  const panel = await post('panel');
+  assert.equal(panel.status, 200);
+  assert.deepEqual(panel.body.leads.map((lead) => lead.title), ['Login timeout']);
+  assert.deepEqual(panel.body.finished.map((entry) => entry.outcome), ['completed']);
+  assert.deepEqual(panel.body.held.map((row) => [row.id, row.text, row.to.name]), [[held.id, 'Hi Giron, fixed today.', 'VaultOne']]);
+  const decided = await post('telegram-decide', { id: held.id, decision: 'approve', text: 'Hi Giron — fixed in today’s release.' });
+  assert.equal(decided.status, 200);
+  assert.deepEqual(readDecision(held.id, env), { ...readDecision(held.id, env), decision: 'approve', text: 'Hi Giron — fixed in today’s release.' });
+  assert.equal((await post('telegram-decide', { id: held.id, decision: 'reject', text: 'x' })).status, 400);
+  assert.equal(listOutbox(env).length, 2);
+  const art = await post('art');
+  assert.match(art.body.art.url, /^data:image\/webp;base64,/);
+});

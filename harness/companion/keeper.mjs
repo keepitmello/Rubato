@@ -14,7 +14,7 @@
 // heartbeat every so many minutes and a daily report at a set time, each a notice that wakes the
 // companion. A companion in the middle of a turn is not interrupted; the beat waits for it.
 import { mkdirSync } from 'node:fs';
-import { COMPANION_TITLE, companionPaths, readSettings, readState, writeState } from './companion.mjs';
+import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, writePanel, writeState } from './companion.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -85,6 +85,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
         attachedTo = sessionId;
       }
       await keepRhythm(sessionId, row && BUSY.has(row.status));
+      // The space beside the companion's chat lists what it follows (the app reads panel.json).
+      writePanel(composePanel({ following: followingStore(env).load(), finished: readFinished(env), rows }), env);
     } catch (error) {
       onError(error);
       await release();

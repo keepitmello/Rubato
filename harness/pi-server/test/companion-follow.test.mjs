@@ -187,3 +187,25 @@ test('a handed message written after a stopped turn, with no turn of its own, is
   assert.equal(notices.length, 1);
   assert.match(notices[0], /^Was stopped before finishing\./);
 });
+
+test('the follower records when work was handed over, that a lead asked the user, and what finished', async () => {
+  const w = world();
+  const finished = [];
+  let saved = {};
+  const store = { load: () => saved, save: (records) => { saved = JSON.parse(JSON.stringify(records)); }, finished: (entry) => finished.push(entry) };
+  const f = w.follower({ store });
+  w.tick(5000);
+  f.follow('lead', 'segno');
+  assert.equal(saved.lead.since, 5000);
+  w.state.set('lead', { status: 'waiting', title: 'Deploy', cwd: '/w/ops' });
+  await f.poll();
+  assert.equal(saved.lead.asked, true, 'asked the user');
+  w.state.set('lead', { status: 'running', title: 'Deploy', cwd: '/w/ops' });
+  await f.poll();
+  assert.equal(saved.lead.asked, undefined, 'answered: running again');
+  w.state.set('lead', { status: 'idle', title: 'Deploy', cwd: '/w/ops', final: { entryId: 'e1', text: 'deployed' } });
+  w.tick(1000);
+  await f.poll();
+  await f.close();
+  assert.deepEqual(finished, [{ sessionId: 'lead', outcome: 'completed', at: 6000, title: 'Deploy', cwd: '/w/ops' }]);
+});

@@ -12,6 +12,7 @@
 //
 // The route's `thread` action is not here: finding the T3 thread of a session needs the T3
 // server's own bindings (RubatoCompanion.ts answers it).
+import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -62,6 +63,15 @@ export function createCompanionService(options = {}) {
     }
   };
 
+  function panel(companion, messenger) {
+    const { leads, finished } = companion.readPanel(env);
+    const held = messenger.listOutbox(env).filter((row) => row.state === 'held')
+      .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
+      .map((row) => ({ id: row.id, text: row.text, createdAt: row.createdAt,
+        to: row.target === 'user' ? null : { chatId: row.target.chatId, name: row.target.name ?? null } }));
+    return { leads, finished, held };
+  }
+
   async function handle(action, input) {
     const { companion, messenger, defaultsDir } = await modules();
     switch (action) {
@@ -90,8 +100,20 @@ export function createCompanionService(options = {}) {
         return { telegram: messenger.messengerStatus(env) };
       case 'telegram-decide':
         if (typeof input.id !== 'string' || !input.id) throw new CompanionRequestError(400, 'invalid', 'id is missing.');
-        invalid(() => messenger.writeDecision(input.id, input.decision, { by: 'app' }, env));
+        invalid(() => messenger.writeDecision(input.id, input.decision,
+          { by: 'app', ...(input.text === undefined ? {} : { text: input.text }) }, env));
         return { telegram: messenger.messengerStatus(env) };
+      // The task panel beside Segno's chat: what it follows (the keeper's panel.json) and the
+      // messages to other people that wait for the person.
+      case 'panel':
+        return panel(companion, messenger);
+      // Segno's art for its space, as a data URL (the route answers JSON to authenticated calls).
+      case 'art': {
+        const file = companion.stageArtFile(env);
+        const data = await readFile(file);
+        const mime = file.endsWith('.png') ? 'image/png' : 'image/webp';
+        return { art: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };
+      }
       case 'pieces':
         return { pieces: companion.readPieces({ defaultsDir, env }) };
       case 'save-piece':

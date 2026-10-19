@@ -406,3 +406,17 @@ test('an engine with no conversation host leaves the messenger idle instead of f
   await assert.rejects(service.send({ text: 'x', to: 'user' }), /idle/);
   await service.close();
 });
+
+test('the person can edit a held message before approving it; the edited text is what goes out', async (t) => {
+  const box = await paired(t);
+  const row = enqueueMessage({ text: 'draft: we found it', target: { chatId: GROUP_CHAT, name: '버그 리포트' } }, box.env);
+  await settle(box.service);
+  assert.throws(() => writeDecision(row.id, 'reject', { by: 'app', text: 'x' }, box.env), /only an approval/);
+  assert.throws(() => writeDecision(row.id, 'approve', { by: 'app', text: '  ' }, box.env), /must not be empty/);
+  writeDecision(row.id, 'approve', { by: 'app', text: 'Fixed in today’s release.' }, box.env);
+  await settle(box.service);
+  const sent = listOutbox(box.env).find((item) => item.id === row.id);
+  assert.deepEqual([sent.state, sent.text, sent.draft], ['sent', 'Fixed in today’s release.', 'draft: we found it']);
+  const out = box.fake.sent.filter((item) => item.chatId === GROUP_CHAT);
+  assert.deepEqual(out.map((item) => item.text), ['Fixed in today’s release.']);
+});

@@ -278,9 +278,19 @@ function pruneOutbox(env) {
 
 // ── the user's answers ─────────────────────────────────────────────────────────────────────
 
-export function writeDecision(id, decision, { by = 'app' } = {}, env = process.env) {
+/**
+ * The person's answer to one held message. An approval may carry `text`: the message as the person
+ * edited it, which is what goes out.
+ */
+export function writeDecision(id, decision, { by = 'app', text } = {}, env = process.env) {
   if (decision !== 'approve' && decision !== 'reject') throw new TypeError('decision must be approve or reject');
-  writeJson(path.join(messengerPaths(env).decisions, `${id}.json`), { id, decision, by, at: new Date().toISOString() });
+  if (text !== undefined) {
+    if (decision !== 'approve') throw new TypeError('only an approval carries edited text');
+    if (typeof text !== 'string' || !text.trim()) throw new TypeError('edited text must not be empty');
+    if (text.length > MESSENGER_LIMITS.heldTextChars) throw new TypeError(`text holds at most ${MESSENGER_LIMITS.heldTextChars} characters`);
+  }
+  writeJson(path.join(messengerPaths(env).decisions, `${id}.json`),
+    { id, decision, by, at: new Date().toISOString(), ...(text === undefined ? {} : { text }) });
   return { id, decision };
 }
 

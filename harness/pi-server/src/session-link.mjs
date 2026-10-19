@@ -445,7 +445,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         const described = await describe(id);
         const current = await snapshot(id, seen, listeners, asked);
         const handoff = record?.messageId && current.final ? await handoffOrder(id, record.messageId, current.final.entryId, orders) : undefined;
-        return { ...current, title: described.title, ...(handoff ? { handoff } : {}) };
+        return { ...current, title: described.title, cwd: described.cwd, ...(handoff ? { handoff } : {}) };
       },
       notify: async (companionId, targetId, text) => {
         const about = await describe(targetId);

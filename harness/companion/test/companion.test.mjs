@@ -72,3 +72,45 @@ test('a personal file left for the tools piece is never read', (t) => {
   assert.doesNotMatch(composeCompanionPrompt({ defaultsDir, env }), /invented tools/);
   assert.throws(() => writePiece('nope', 'x', { defaultsDir, env }), /Unknown prompt piece/);
 });
+
+test("the space beside Segno's chat lists what it follows and what recently finished", async (t) => {
+  const { composePanel, followingStore, readFinished, readPanel, writePanel, FINISHED_LIMITS } = await import('../companion.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-panel-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = { RUBATO_COMPANION_HOME: dir };
+  const store = followingStore(env);
+  const now = Date.now();
+  store.finished({ sessionId: 'old', outcome: 'completed', at: now - FINISHED_LIMITS.ageMs - 1, title: 'Old' });
+  store.finished({ sessionId: 'done', outcome: 'completed', at: now - 1000, title: 'Fix login', cwd: '/w/app' });
+  store.finished({ sessionId: 'again', outcome: 'stopped', at: now - 500, title: 'Payments' });
+  assert.deepEqual(readFinished(env, { now }).map((entry) => entry.sessionId), ['again', 'done'], 'newest first, older than a day dropped');
+  const rows = [
+    { sessionId: 'run', title: 'Login timeout', cwd: '/w/hash-game', status: 'running' },
+    { sessionId: 'ask', title: 'Deploy', cwd: '/w/ops', status: 'waiting' },
+    { sessionId: 'answered', title: 'Docs', cwd: '/w/docs', status: 'idle' },
+    { sessionId: 'again', title: 'Payments v2', cwd: '/w/pay', status: 'running' },
+  ];
+  const following = { run: { since: now - 60_000 }, ask: { since: now - 30_000 }, answered: { since: now - 90_000, asked: true }, again: { since: now - 10 } };
+  const panel = composePanel({ following, finished: readFinished(env, { now }), rows });
+  assert.deepEqual(panel.leads.map((lead) => [lead.sessionId, lead.state, lead.title]), [
+    ['answered', 'asked', 'Docs'], ['run', 'running', 'Login timeout'], ['ask', 'asked', 'Deploy'], ['again', 'running', 'Payments v2']]);
+  assert.equal(panel.leads[1].cwd, '/w/hash-game');
+  assert.equal(panel.leads[1].since, now - 60_000);
+  // A conversation followed again is not also listed as finished.
+  assert.deepEqual(panel.finished.map((entry) => [entry.sessionId, entry.outcome, entry.title]), [['done', 'completed', 'Fix login']]);
+  assert.equal(writePanel(panel, env), true);
+  assert.equal(writePanel(panel, env), false, 'an unchanged panel is not rewritten');
+  assert.deepEqual(readPanel(env).leads, panel.leads);
+});
+
+test("Segno's art is one swappable file: the person's own, else the default that ships", async (t) => {
+  const { stageArtFile, companionPaths } = await import('../companion.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-art-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = { RUBATO_COMPANION_HOME: dir };
+  assert.match(stageArtFile(env), /harness\/companion\/art\/stage\.webp$/);
+  assert.ok(existsSync(stageArtFile(env)));
+  mkdirSync(companionPaths(env).art, { recursive: true });
+  writeFileSync(path.join(companionPaths(env).art, 'stage.png'), 'png');
+  assert.equal(stageArtFile(env), path.join(dir, 'art', 'stage.png'));
+});
