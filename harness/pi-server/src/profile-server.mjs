@@ -8,19 +8,19 @@ import { SessionWorker } from './session-worker.mjs';
 import { readDescriptor } from './descriptor.mjs';
 import { drainForRestart, resumeAfterRestart, resumeFilePath } from './drain.mjs';
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from '../../rubato-pi/src/session-defaults.mjs';
-import { startCompanionKeeper } from '../../companion/keeper.mjs';
+import { RESIDENT_SERVICES, startResidentServices } from './resident-services.mjs';
 import { followingStore } from '../../companion/companion.mjs';
-import { SessionClient } from './client.mjs';
 export { readDescriptor } from './descriptor.mjs';
 
 /**
  * `drainGate` and `drainTimeoutMs` are test seams: a hosted engine drains through the gate its
  * runtime build ships (drain.mjs); an engine without one closes at once, as before.
- * `companion` lets this engine keep the companion loaded (harness/companion keeper.mjs); the CLI
- * sets it for the person's own profile only.
+ * `resident` makes this the person's resident engine: it runs the resident services (the companion
+ * keeper, the scheduler, ... — resident-services.mjs), each in its own thread. The CLI sets it for
+ * the person's own profile only; a test passes its own list of services, and `residentTimings`.
  */
 export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runtimeRoot, workerFactory, onError = console.error,
-  drainGate, drainTimeoutMs, companion: keepCompanion = false } = {}) {
+  drainGate, drainTimeoutMs, resident = false, residentTimings, log = () => {} } = {}) {
   if (!path.isAbsolute(agentDir ?? '')) throw new TypeError('agentDir must be absolute');
   await mkdir(agentDir, { recursive: true, mode: 0o700 });
   agentDir = await realpath(agentDir);
@@ -38,7 +38,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
   let terminalServer;
   let compromised;
   let hosted;
-  let companion;
+  let residents;
   // 서버가 kill -9 로 죽으면 락은 stale 로 넘어갈 때까지 남고, 그 창이 그대로
   // 앱의 복구 지연이 된다. 실측 41초. 살아있는 서버는 update 마다 mtime 을 새로
   // 찍으므로 stale 은 update 의 세 배면 충분하다.
@@ -46,7 +46,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     stale: 15000, update: 5000, retries: 0,
     onCompromised(error) {
       compromised = error; onError(error);
-      void (async () => { await companion?.close(); hosted?.sessionLink.close(); await terminalServer?.close(); await service?.close(); })().catch(onError);
+      void (async () => { await residents?.close(); hosted?.sessionLink.close(); await terminalServer?.close(); await service?.close(); })().catch(onError);
     } });
   try {
     let previous;
@@ -70,7 +70,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     });
     hosted?.bindHost(service.host);
     hosted?.sessionLink.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId, onError,
-      ...(keepCompanion ? { followStore: followingStore() } : {}) });
+      ...(resident ? { followStore: followingStore() } : {}) });
     if (compromised) throw compromised;
     const descriptor = { version: 1, serverId: service.serverId, socketPath };
     if (hosted) {
@@ -83,29 +83,40 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     const temporary = `${descriptorPath}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(descriptor, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
     await rename(temporary, descriptorPath);
-    // The companion (harness/companion) stays loaded in a hosted engine while it is turned on.
-    if (hosted && keepCompanion) companion = startCompanionKeeper({ onError,
-      notify: (to, text) => hosted.sessionLink.notice({ to, text }),
-      connect: () => new SessionClient({ socketPath, serverId: service.serverId, onError }).connect() });
+    // The resident services run beside the conversations, each in its own thread: one failing is
+    // started again and never stops the engine (resident-services.mjs).
+    if (resident) {
+      const sessionLink = hosted?.sessionLink;
+      const host = sessionLink ? {
+        notice: (args) => sessionLink.notice(args),
+        channel: (args) => {
+          if (typeof sessionLink.channel !== 'function') throw new Error('This engine build cannot deliver channel messages');
+          return sessionLink.channel(args);
+        },
+      } : {};
+      residents = startResidentServices({ services: Array.isArray(resident) ? resident : RESIDENT_SERVICES,
+        context: { agentDir, socketPath, serverId: service.serverId }, host, onError, log, timings: residentTimings });
+    }
     // What the previous engine was running when a restart closed it (drain.mjs).
     const resumeFile = resumeFilePath(serverDir);
     const resumed = resumeAfterRestart({ descriptor, resumeFile, onError }).catch((error) => { onError(error); return []; });
     const gate = drainGate ?? await hosted?.loadDrainGate();
     let closing;
     const drainStop = new AbortController();
-    return { ...service, descriptorPath, descriptor, resumed, companion, close: ({ drain = false } = {}) => closing ??= (async () => {
+    return { ...service, descriptorPath, descriptor, resumed, residents, close: ({ drain = false } = {}) => closing ??= (async () => {
+      // The services stop first, so none starts new work while the engine drains.
+      await residents?.close().catch(onError);
       // A restart lets running work reach the gate first; a second stop signal ends the wait.
       if (drain && !compromised) {
         await Promise.race([resumed, new Promise((resolve) => setTimeout(resolve, 10_000).unref?.())]);
         await drainForRestart({ host: service.host, gate, resumeFile, signal: drainStop.signal, onError,
           ...(drainTimeoutMs === undefined ? {} : { timeoutMs: drainTimeoutMs }) }).catch(onError);
       }
-      await companion?.close().catch(onError);
       hosted?.sessionLink.close();
       try { await terminalServer?.close(); await service.close(); } finally { if (!compromised) await release(); }
     })(), stopDraining: () => drainStop.abort() };
   } catch (error) {
-    await companion?.close().catch(() => {});
+    await residents?.close().catch(() => {});
     hosted?.sessionLink.close();
     await terminalServer?.close().catch(() => {});
     await service?.close().catch(() => {});
