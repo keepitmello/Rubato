@@ -31,6 +31,11 @@ const MAX_TOOL_ARTIFACT_BYTES = 20 * 1024 * 1024;
 const RECONNECT_MIN_MS = 250;
 const RECONNECT_MAX_MS = 30_000;
 const RECONNECT_STABLE_MS = 30_000;
+// A hub that is not listening (restarting under the profile engine, or the engine restarting) costs
+// nothing to ask again: no registration happens and no session state is read. It is asked every
+// second without growing the backoff, which stays for a hub that accepts and then drops the surface.
+const HUB_DOWN_RETRY_MS = 1_000;
+const hubNotListening = (error) => error?.code === "ENOENT" || error?.code === "ECONNREFUSED";
 const V1_REMOTE_MODES = new Set(["direct", "native-action", "terminal-only"]);
 const DEGRADABLE_OUTGOING_KINDS = new Set(["surface.snapshot", "surface.summary", "surface.event"]);
 const reportedOutgoingSchemaFailures = new Set();
@@ -505,11 +510,13 @@ export class RemoteSurface {
   }
 
   async connectNow() {
+    let opened = false;
     try {
       const connection = await this.connect(
         (message) => void this.receive(message),
         () => this.disconnected(),
       );
+      opened = true;
       if (this.stopped) return connection.close();
       this.connection = connection;
       this.registered = false;
@@ -534,8 +541,21 @@ export class RemoteSurface {
         this.connectionErrorReported = true;
         console.error(`[rubato remote] surface connection failed: ${error instanceof Error ? error.message : String(error)}`);
       }
+      if (!opened && hubNotListening(error)) return this.retryWhileHubDown();
       this.disconnected();
     }
+  }
+
+  retryWhileHubDown() {
+    if (this.stopped || this.reconnectTimer) return;
+    this.reconnectWaitMs = HUB_DOWN_RETRY_MS;
+    this.reconnectTimer = this.clock.setTimeout(() => {
+      this.reconnectTimer = undefined;
+      this.connectNow();
+    }, HUB_DOWN_RETRY_MS);
+    this.connection = undefined;
+    this.registered = false;
+    this.registeredAt = undefined;
   }
 
   disconnected() {
