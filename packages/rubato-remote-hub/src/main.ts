@@ -92,6 +92,10 @@ const stop = async (): Promise<void> => {
 }
 process.once("SIGINT", () => void stop().finally(() => process.exit(0)))
 process.once("SIGTERM", () => void stop().finally(() => process.exit(0)))
+// The profile engine starts the hub with an IPC channel (harness/pi-server/src/hub-supervisor.mjs).
+// The channel closes when the engine or its service thread goes away, even on SIGKILL; the hub
+// stops then instead of outliving its supervisor beside the next hub it starts.
+if (process.send) process.once("disconnect", () => void stop().finally(() => process.exit(0)))
 
 function stampProcessOutput(stream: NodeJS.WriteStream): void {
   const write = stream.write.bind(stream)

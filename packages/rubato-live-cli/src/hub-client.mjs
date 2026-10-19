@@ -8,7 +8,6 @@ import { encodeFrame, JsonFrameDecoder, REMOTE_PROTOCOL_NAME } from "./protocol-
 import { ZmxAdapter } from "./zmx-adapter.mjs";
 
 const PROTOCOL = REMOTE_PROTOCOL_NAME;
-const LAUNCHD_LABEL = "com.keepitmello.rubato.remote-hub";
 
 export class HubUnavailableError extends Error {
   constructor(message = "Rubato live session service is unavailable") {
@@ -204,13 +203,13 @@ function stringEnvironment(environment) {
   return Object.fromEntries(Object.entries(environment).filter(([key, value]) => key && typeof value === "string" && !key.includes("\0") && !value.includes("\0")));
 }
 
+// The profile engine runs the hub and restarts it when it exits (harness/pi-server/src/hub-supervisor.mjs).
+// An unhealthy hub here means it is between restarts or no engine runs; the launcher names the
+// helper that asks the engine for a fresh hub and starts the engine when it is down.
 function defaultKickstart() {
-  if (process.platform !== "darwin" || typeof process.getuid !== "function") return false;
+  if (process.platform !== "darwin") return false;
   const restart = process.env.RUBATO_HUB_RESTART;
-  if (restart) {
-    const result = spawnSync(process.execPath, [restart], { stdio: "ignore" });
-    return result.status === 0;
-  }
-  const result = spawnSync("/bin/launchctl", ["kickstart", "-k", `gui/${process.getuid()}/${LAUNCHD_LABEL}`], { stdio: "ignore" });
+  if (!restart) return false;
+  const result = spawnSync(process.execPath, [restart], { stdio: "ignore" });
   return result.status === 0;
 }

@@ -4,7 +4,9 @@ import { join } from "node:path"
 export const RELEASE_SCHEMA_VERSION = 1
 export const SUPPORTED_BUN_VERSION = "1.4.0"
 export const MINIMUM_NODE_MAJOR = 24
-export const HUB_LABEL = "com.keepitmello.rubato.remote-hub"
+// The hub ran as its own LaunchAgent under this label before the profile engine supervised it.
+// Only migration (retire it) and doctor (report it) still name it.
+export const LEGACY_HUB_LABEL = "com.keepitmello.rubato.remote-hub"
 export const HUB_PORT_MIN = 7314
 export const HUB_PORT_MAX = 7399
 export const REMOTE_PATH = "/rubato/"
@@ -36,6 +38,10 @@ export function defaultPaths(home = homedir(), uid = process.getuid?.() ?? 0) {
     current: join(library, "remote", "current"),
     zmx: join(library, "bin", "zmx"),
     socket: join(tmpdir(), `rubato-remote-${uid}`, "hub.sock"),
-    plist: join(home, "Library", "LaunchAgents", `${HUB_LABEL}.plist`),
+    // What the profile engine runs as the hub (harness/pi-server/src/hub-supervisor.mjs), and the
+    // pid it last started. The release channel writes the first; the engine owns the second.
+    service: join(state, "hub-service.json"),
+    servicePid: join(state, "hub-service.pid"),
+    legacyPlist: join(home, "Library", "LaunchAgents", `${LEGACY_HUB_LABEL}.plist`),
   }
 }

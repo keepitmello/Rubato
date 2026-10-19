@@ -204,6 +204,18 @@ test("restart reaches the profile engine and the hub, and says which it did", (t
   assert.match(result.stderr, /ENGINE-STDERR-MARKER/);
 });
 
+test("restart reaches an engine-run hub by its spec, with no hub LaunchAgent at all", (t) => {
+  // The profile engine runs the hub (pi-server/src/hub-supervisor.mjs); the spec it reads marks the install.
+  const harness = restartHarness(t, { engineToken: "restarted", engineExit: 0, hubPresent: false, hubExit: 0 });
+  const remote = join(harness.root, "home", "Library", "Application Support", "Rubato", "remote");
+  mkdirSync(remote, { recursive: true });
+  writeFileSync(join(remote, "hub-service.json"), "{}");
+  const result = harness.run(["restart"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(harness.calls(), /rubato-hub-restart\.mjs/);
+  assert.match(result.stdout, /✓ remote hub/);
+});
+
 test("restart skips cleanly with exit 0 when neither side is present", (t) => {
   const harness = restartHarness(t, { engineToken: "missing", engineExit: 0, hubPresent: false, engineBuild: "absent" });
   const result = harness.run(["restart"]);

@@ -252,14 +252,19 @@ need_engine_job=0
 if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -z "${RUBATO_NO_ENGINE_LAUNCHD-}" ] && [ -f "$HERE/../pi-server/src/launchd.mjs" ]; then
   need_engine_job=1
 fi
-# Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
-# 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
-# 허브 소스가 바뀌고, 이 기기에 허브가 등록돼 있을 때만.
+# Remote hub 도 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을 계속 돈다.
+# zmx 세션은 허브 밖이라 허브를 다시 띄워도 안 죽는다.
+# 허브 소스가 바뀌고, 이 기기에 허브가 깔려 있을 때만. 허브는 프로필 엔진이 띄우는
+# 자식이고(pi-server/src/hub-supervisor.mjs) 엔진이 읽는 허브 설정 파일이 설치 표시다.
+# 엔진으로 옮기기 전 설치는 허브 자체 launch agent 로 남아 있어 그것도 센다.
 # 업데이터 자신이 허브 재시작을 처음 넣는 커밋도 포함한다 — 그 커밋만
 # 받으면 허브 소스는 이미 HEAD 인데 프로세스는 옛 코드로 남는 구멍이 있다.
-HUB_LABEL="com.keepitmello.rubato.remote-hub"
+LEGACY_HUB_LABEL="com.keepitmello.rubato.remote-hub"
 if echo "$CHANGED" | grep -Eq '^packages/rubato-remote-hub/|^harness/scripts/rubato-update\.sh$'; then
-  "$LAUNCHCTL_BIN" print "gui/$(id -u)/$HUB_LABEL" >/dev/null 2>&1 && need_hub=1
+  if [ -f "$HOME/Library/Application Support/Rubato/remote/hub-service.json" ] \
+    || "$LAUNCHCTL_BIN" print "gui/$(id -u)/$LEGACY_HUB_LABEL" >/dev/null 2>&1; then
+    need_hub=1
+  fi
 fi
 # 프로필 엔진도 상주 프로세스라 소스를 받아도 옛 코드로 계속 돈다. 소켓을
 # 잡고 있는 프로세스에 SIGTERM 을 보낸다(cli.mjs 가 락을 풀고 끝낸다).
@@ -612,12 +617,14 @@ if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -z "${RUBATO_NO_MSEARCH_REDIS-}
 fi
 
 # 허브 재시작은 세션이 있어도 한다. zmx 세션은 허브 프로세스가 아니라서
-# LaunchAgent 를 다시 심어도 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
+# 허브를 다시 띄워도 안 죽는다. 허브 소스가 안 바뀌면 need_hub=0 이라 안 건드린다.
 #
 # 허브 헬퍼를 직접 부른다. 사용자용 `rubato restart` 는 프로필 엔진까지
 # 재시작하므로 여기서 쓰면 허브만 바뀐 업데이트가 살아 있는 대화를 죽인다
 # (need_hub=1, need_profile=0). 엔진 재시작은 아래 need_profile 게이트가 전담한다.
-if [ "$need_hub" = 1 ]; then
+# 엔진도 다시 뜨면 허브는 엔진과 함께 새로 뜨니 여기서는 건너뛴다. 엔진으로 옮기기 전
+# 설치의 허브 launch agent 도 새 엔진이 뜨면서 넘겨받는다(hub-supervisor.mjs).
+if [ "$need_hub" = 1 ] && [ "$need_profile" != 1 ]; then
   . "$HERE/find-node.sh"
   HUB_NODE="$(rubato_find_node 2>/dev/null || true)"
   [ -n "$HUB_NODE" ] || HUB_NODE="$NODE"

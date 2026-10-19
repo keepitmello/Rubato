@@ -4,7 +4,6 @@ import { readFile, stat, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { promisify } from "node:util"
 import { ensureHostConfig, loadHostConfig } from "../src/config.js"
-import { renderLaunchAgent } from "../src/launchd.js"
 import { configureTailscaleServe, tailscaleGrantExample, tailscalePairingBaseUrl } from "../src/tailscale.js"
 import type { CommandRunner } from "../src/zmx.js"
 import { HOST_ID, temporaryDirectory } from "./helpers.js"
@@ -15,21 +14,6 @@ const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => Promise.all(cleanups.splice(0).map((cleanup) => cleanup())))
 
 describe("localhost service configuration", () => {
-  test("renders a persistent user launch agent without a shell command", () => {
-    const plist = renderLaunchAgent({
-      nodePath: "/usr/local/bin/node",
-      entryPath: "/Users/test/Rubato & Remote/main.ts",
-      stdoutPath: "/tmp/rubato.out",
-      stderrPath: "/tmp/rubato.err",
-      home: "/Users/test",
-      tmpdir: "/tmp/",
-    })
-    expect(plist).toContain("com.keepitmello.rubato.remote-hub")
-    expect(plist).toContain("<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>")
-    expect(plist).toContain("Rubato &amp; Remote")
-    expect(plist).not.toContain("/bin/sh")
-  })
-
   test("remote setup initialization writes a complete private config accepted by the real loader", async () => {
     const temporary = await temporaryDirectory()
     cleanups.push(temporary.cleanup)

@@ -6,7 +6,8 @@ import { createConnection } from "node:net"
 import { basename, dirname, join, relative, resolve } from "node:path"
 import { arch, platform, tmpdir } from "node:os"
 
-import { HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, MINIMUM_NODE_MAJOR, REMOTE_PATH, SUPPORTED_BUN_VERSION, ZMX_COMMIT } from "./constants.mjs"
+import { LEGACY_HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, MINIMUM_NODE_MAJOR, REMOTE_PATH, SUPPORTED_BUN_VERSION, ZMX_COMMIT } from "./constants.mjs"
+import { readHubServiceSpec, writeHubServiceSpec } from "./hub-service.mjs"
 import { atomicSymlink, commandString, currentRelease, ensurePrivateDirectories, fileMode, isInside, parseJsonOutput, pathExists, readJson, redact, relativeTarget, run, sha256, uuidV7, writeJsonPrivate, writePrivate } from "./lib.mjs"
 
 export function assertMacOS() {
@@ -91,14 +92,30 @@ export async function guardUpdate(paths, { forceLive = false, runner = run } = {
   return sessions
 }
 
-// ProcessType is Interactive on purpose. Background + a crash loop leaves launchd in
-// xpcproxy with execs=0 / immediate reason=inefficient, so kickstart never actually execs the hub.
-export function renderLaunchAgent({ nodePath, bunPath, tailscalePath, entryPath, bootstrapPath, launcherPath, zmxPath, stdoutPath, stderrPath, home, tmpDirectory = tmpdir(), buildId }) {
-  const xml = (value) => String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;")
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>\n<key>Label</key><string>${HUB_LABEL}</string>\n<key>ProgramArguments</key><array><string>${xml(nodePath)}</string><string>${xml(entryPath)}</string></array>\n<key>RunAtLoad</key><true/><key>KeepAlive</key><true/>\n<key>ProcessType</key><string>Interactive</string>\n<key>EnvironmentVariables</key><dict><key>HOME</key><string>${xml(home)}</string><key>TMPDIR</key><string>${xml(tmpDirectory)}</string><key>RUBATO_BUILD_ID</key><string>${xml(buildId)}</string><key>RUBATO_BUN_BIN</key><string>${xml(bunPath)}</string><key>RUBATO_BOOTSTRAP_PATH</key><string>${xml(bootstrapPath)}</string><key>RUBATO_LAUNCHER_PATH</key><string>${xml(launcherPath)}</string><key>RUBATO_ZMX_PATH</key><string>${xml(zmxPath)}</string><key>RUBATO_TAILSCALE_PATH</key><string>${xml(tailscalePath)}</string></dict>\n<key>StandardOutPath</key><string>${xml(stdoutPath)}</string>\n<key>StandardErrorPath</key><string>${xml(stderrPath)}</string>\n</dict></plist>\n`
+// The profile engine runs the hub (harness/pi-server/src/hub-supervisor.mjs). This is what it runs:
+// the installed release hub under node, with the environment its LaunchAgent used to give it.
+export function renderHubService({ nodePath, bunPath, tailscalePath, entryPath, bootstrapPath, launcherPath, zmxPath, stdoutPath, stderrPath, home, tmpDirectory = tmpdir(), buildId, requestedAt = new Date().toISOString() }) {
+  return {
+    schemaVersion: 1,
+    command: nodePath,
+    args: [entryPath],
+    env: {
+      HOME: home,
+      TMPDIR: tmpDirectory,
+      RUBATO_BUILD_ID: buildId,
+      RUBATO_BUN_BIN: bunPath,
+      RUBATO_BOOTSTRAP_PATH: bootstrapPath,
+      RUBATO_LAUNCHER_PATH: launcherPath,
+      RUBATO_ZMX_PATH: zmxPath,
+      RUBATO_TAILSCALE_PATH: tailscalePath,
+    },
+    stdout: stdoutPath,
+    stderr: stderrPath,
+    requestedAt,
+  }
 }
 
-export function launchdNodePath() {
+export function hubNodePath() {
   const candidates = [process.env.RUBATO_NODE, "/opt/homebrew/bin/node", "/usr/local/bin/node", process.execPath]
   for (const candidate of candidates) {
     if (candidate && existsSync(candidate)) return candidate
@@ -110,34 +127,19 @@ export function canonicalHubEntryPath(paths) {
   return join(paths.current, "hub", "main.mjs")
 }
 
-export function launchAgentProgramArguments(plist) {
-  const match = String(plist ?? "").match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/)
-  if (!match) return []
-  return [...match[1].matchAll(/<string>([\s\S]*?)<\/string>/g)].map((item) =>
-    item[1]
-      .replaceAll("&amp;", "&")
-      .replaceAll("&lt;", "<")
-      .replaceAll("&gt;", ">")
-      .replaceAll("&quot;", '"')
-      .replaceAll("&apos;", "'"),
-  )
+/** True when the spec does not run the installed release hub under node. */
+export function hubServiceNeedsRepair(spec, { entryPath }) {
+  if (!spec || !Array.isArray(spec.args) || spec.args.length !== 1) return true
+  if (spec.args[0] !== entryPath) return true
+  const runtime = basename(String(spec.command ?? ""))
+  return runtime === "bun" || runtime === "bun.exe" || runtime === "sh" || runtime === "bash"
 }
 
-export function launchAgentNeedsRepair(plist, { entryPath }) {
-  const args = launchAgentProgramArguments(plist)
-  if (args.length !== 2) return true
-  if (args[1] !== entryPath) return true
-  const runtime = basename(args[0])
-  if (runtime === "bun" || runtime === "bun.exe") return true
-  if (String(plist).includes("<key>WorkingDirectory</key>")) return true
-  return false
-}
-
-export async function installLaunchAgent(paths, buildId, runner = run, bunPath = "bun", launcherPath = join(paths.current, "bin", "rubato"), tailscalePath = "tailscale") {
-  await mkdir(dirname(paths.plist), { recursive: true })
+/** Writes what the engine runs as the hub. A new `requestedAt` is what restarts a running hub. */
+export async function writeHubService(paths, buildId, bunPath = "bun", launcherPath = join(paths.current, "bin", "rubato"), tailscalePath = "tailscale") {
   await mkdir(paths.logs, { recursive: true, mode: 0o700 })
-  const plist = renderLaunchAgent({
-    nodePath: launchdNodePath(),
+  const spec = renderHubService({
+    nodePath: hubNodePath(),
     bunPath,
     tailscalePath,
     entryPath: canonicalHubEntryPath(paths),
@@ -149,12 +151,59 @@ export async function installLaunchAgent(paths, buildId, runner = run, bunPath =
     home: paths.home,
     buildId,
   })
-  await writePrivate(paths.plist, plist)
+  await writeHubServiceSpec(paths.service, spec)
+  return spec
+}
+
+/** Whether the engine has started the hub for this request, from the pid record it writes. */
+export async function supervisedHubFor(paths, requestedAt) {
+  const record = await readJson(paths.servicePid, null).catch(() => null)
+  if (!record || record.requestedAt !== requestedAt || !Number.isSafeInteger(record.pid)) return null
+  try { process.kill(record.pid, 0) } catch (error) { if (error?.code !== "EPERM") return null }
+  return record
+}
+
+async function waitForSupervisedHub(paths, requestedAt, timeoutMs) {
+  const deadline = Date.now() + timeoutMs
+  do {
+    const record = await supervisedHubFor(paths, requestedAt)
+    if (record) return record
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  } while (Date.now() < deadline)
+  return null
+}
+
+/**
+ * Brings up the hub the spec names. A running engine picks the spec up on its own (it polls the
+ * file); with no engine, `ensureEngine` starts one. An engine from before hub supervision does
+ * neither, and an install that still has the hub's LaunchAgent keeps using it until that engine
+ * restarts and retires the agent.
+ */
+export async function activateHub(paths, { runner = run, ensureEngine, handoffMs = 8_000, engineStartMs = 20_000, health = { attempts: 80, delayMs: 250 } } = {}) {
+  const read = await readHubServiceSpec(paths.service)
+  if (!read || read instanceof Error) throw new Error(`hub service spec is unusable: ${read?.message ?? "missing"}`)
+  const requestedAt = read.spec.requestedAt
+  let record = await waitForSupervisedHub(paths, requestedAt, handoffMs)
+  if (!record && ensureEngine) {
+    await ensureEngine()
+    record = await waitForSupervisedHub(paths, requestedAt, engineStartMs)
+  }
+  if (record) return { supervisedBy: "engine", pid: record.pid, health: await waitForHealth(paths.socket, health) }
   const domain = `gui/${process.getuid()}`
-  await runner("/bin/launchctl", ["bootout", domain, paths.plist], { check: false, timeoutMs: 10_000 })
-  await runner("/bin/launchctl", ["bootstrap", domain, paths.plist])
-  await runner("/bin/launchctl", ["enable", `${domain}/${HUB_LABEL}`])
-  await runner("/bin/launchctl", ["kickstart", "-k", `${domain}/${HUB_LABEL}`])
+  const legacy = await runner("/bin/launchctl", ["print", `${domain}/${LEGACY_HUB_LABEL}`], { check: false, timeoutMs: 5_000 })
+  if (legacy.code === 0) {
+    await runner("/bin/launchctl", ["kickstart", "-k", `${domain}/${LEGACY_HUB_LABEL}`])
+    return { supervisedBy: "legacy-launchd", health: await waitForHealth(paths.socket, health) }
+  }
+  throw new Error("the running profile engine does not supervise the hub yet; restart it with `rubato restart`")
+}
+
+/** Retires the hub's old LaunchAgent, if this install still has one. */
+export async function removeLegacyHubAgent(paths, runner = run) {
+  if (!await pathExists(paths.legacyPlist)) return { removed: false }
+  await runner("/bin/launchctl", ["bootout", `gui/${process.getuid()}/${LEGACY_HUB_LABEL}`], { check: false, timeoutMs: 10_000 })
+  await rm(paths.legacyPlist, { force: true })
+  return { removed: true }
 }
 
 export async function waitForHealth(socketPath, { attempts = 40, delayMs = 250 } = {}) {

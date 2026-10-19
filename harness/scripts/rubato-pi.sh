@@ -190,13 +190,16 @@ case "${1-}" in
       done
     fi
 
-    # 3. remote hub. 이 기기에 launch agent 이 등록돼 있을 때만.
+    # 3. remote hub. 이 기기에 깔려 있을 때만. 허브는 프로필 엔진이 띄우는 자식이고
+    # (pi-server/src/hub-supervisor.mjs), 엔진이 읽는 허브 설정 파일이 설치 표시다.
+    # 엔진으로 옮기기 전 설치는 허브 자체 launch agent 로 남아 있어 그것도 센다.
     # launchctl 서비스는 HOME 이 아니라 계정에 하나다. 다른 HOME(테스트·샌드박스)에서
     # 그 서비스를 다시 띄우면 계정의 hub 가 그 HOME 의 설치본을 찾는다(account-home.sh).
     . "$HERE/account-home.sh"
     if [ -z "${RUBATO_LAUNCHCTL_BIN-}" ] && ! rubato_home_is_account_home; then
       ui_skip "remote hub 은 이 HOME 에서는 건드리지 않아요 (이 계정의 홈이 아니에요)"
-    elif "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.remote-hub" >/dev/null 2>&1; then
+    elif [ -f "$HOME/Library/Application Support/Rubato/remote/hub-service.json" ] \
+      || "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.remote-hub" >/dev/null 2>&1; then
       progress_start "remote hub 을 다시 띄우는 중"
       if "$NODE" "$HERE/rubato-hub-restart.mjs" >>"$RESTART_LOG" 2>&1; then
         progress_stop

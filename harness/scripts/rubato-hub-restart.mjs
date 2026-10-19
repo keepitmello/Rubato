@@ -1,45 +1,38 @@
 #!/usr/bin/env node
+// Restarts the remote hub. The profile engine runs it (harness/pi-server/src/hub-supervisor.mjs);
+// writing its spec again with a new request time is what makes the engine restart it. With no
+// engine running, this starts the engine, which then starts the hub.
 import { homedir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { realpathSync } from "node:fs"
-import { readFile } from "node:fs/promises"
 
 import { defaultPaths } from "../../scripts/remote-release/constants.mjs"
 import { pathExists, readJson, run } from "../../scripts/remote-release/lib.mjs"
-import {
-  canonicalHubEntryPath,
-  installLaunchAgent,
-  launchAgentNeedsRepair,
-  waitForHealth,
-} from "../../scripts/remote-release/system.mjs"
+import { activateHub, canonicalHubEntryPath, writeHubService } from "../../scripts/remote-release/system.mjs"
+import { ensureProfileEngine } from "../pi-server/src/discovery.mjs"
+import { resolveLaunchAgentDir } from "../rubato-pi/src/launch.mjs"
 
-export async function repairRemoteHubLaunchAgent({
+export async function restartRemoteHub({
   paths = defaultPaths(),
-  force = true,
   runner = run,
   bunPath = process.env.RUBATO_BUN_BIN || join(homedir(), ".bun", "bin", "bun"),
   tailscalePath = process.env.RUBATO_TAILSCALE_PATH || "/usr/local/bin/tailscale",
   launcherPath = join(fileURLToPath(new URL(".", import.meta.url)), "rubato-pi.sh"),
+  ensureEngine = () => ensureProfileEngine({ descriptorPath: join(resolveLaunchAgentDir(), "server", "connection.json") }),
+  timeouts = {},
 } = {}) {
   const entryPath = canonicalHubEntryPath(paths)
   if (!await pathExists(entryPath)) throw new Error("release hub entry is missing: " + entryPath)
   const release = await readJson(join(paths.current, "release.json"))
   if (!release?.buildId) throw new Error("release metadata is invalid")
-  const plist = await readFile(paths.plist, "utf8").catch(() => "")
-  if (!force && !launchAgentNeedsRepair(plist, { entryPath })) {
-    const domain = "gui/" + process.getuid()
-    await runner("/bin/launchctl", ["kickstart", "-k", domain + "/com.keepitmello.rubato.remote-hub"], { check: false })
-    return { repaired: false, buildId: release.buildId, entryPath }
-  }
-  await installLaunchAgent(paths, release.buildId, runner, bunPath, launcherPath, tailscalePath)
-  return { repaired: true, buildId: release.buildId, entryPath }
+  await writeHubService(paths, release.buildId, bunPath, launcherPath, tailscalePath)
+  const activated = await activateHub(paths, { runner, ensureEngine, ...timeouts })
+  return { buildId: release.buildId, entryPath, supervisedBy: activated.supervisedBy, ...(activated.pid ? { pid: activated.pid } : {}) }
 }
 
 async function main() {
-  const result = await repairRemoteHubLaunchAgent({ force: true })
-  const paths = defaultPaths()
-  await waitForHealth(paths.socket, { attempts: 80, delayMs: 500 })
+  const result = await restartRemoteHub()
   process.stdout.write(JSON.stringify({ ok: true, ...result }) + "\n")
 }
 

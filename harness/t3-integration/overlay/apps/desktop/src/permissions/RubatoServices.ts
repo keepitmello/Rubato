@@ -27,6 +27,8 @@ export const RUBATO_SERVICES: readonly ServiceSpec[] = [
   { id: "msearch" },
   // The profile engine: conversations, Segno and scheduled tasks (pi-server launchd.mjs).
   { id: "engine", label: "com.keepitmello.rubato.engine" },
+  // The profile engine runs the hub (pi-server/src/hub-supervisor.mjs); this label is only the
+  // hub's own LaunchAgent on an install the engine has not taken over yet.
   { id: "remote-hub", label: "com.keepitmello.rubato.remote-hub" },
   { id: "aside-cursor", label: "com.keepitmello.rubato.aside-cursor", optional: true },
   { id: "speed-data", label: "com.keepitmello.rubato.speed-data", optional: true, periodic: true },
@@ -58,6 +60,39 @@ export function serviceStatus(
   // launchd keeps a crashed KeepAlive job loaded and respawns it ("spawn scheduled").
   if (job.lastExit !== null && job.lastExit !== 0) return "failed";
   return periodic ? "scheduled" : "stopped";
+}
+
+/**
+ * The hub as the profile engine runs it: its spec says it is set up, and the pid the engine
+ * records for it says whether it runs.
+ */
+export function hubStatus(
+  specPresent: boolean,
+  record: { readonly pid?: unknown } | null,
+  alive: (pid: number) => boolean,
+): RubatoServiceStatus {
+  if (!specPresent) return "missing";
+  const pid = Number(record?.pid);
+  return Number.isSafeInteger(pid) && pid > 1 && alive(pid) ? "running" : "stopped";
+}
+
+const remoteState = () => path.join(homedir(), "Library", "Application Support", "Rubato", "remote");
+const processAlive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+};
+
+async function supervisedHubState(): Promise<RubatoServiceState | null> {
+  if (!(await exists(path.join(remoteState(), "hub-service.json")))) return null;
+  const record = await readFile(path.join(remoteState(), "hub-service.pid"), "utf8").then(
+    (text) => JSON.parse(text) as { pid?: unknown },
+    () => null,
+  );
+  return { id: "remote-hub", status: hubStatus(true, record, processAlive), detail: null };
 }
 
 const uid = () => process.getuid?.() ?? 0;
@@ -100,6 +135,13 @@ export async function readServices(harness: string | null): Promise<RubatoServic
       if (harness) states.push(await msearchState(harness));
       continue;
     }
+    if (spec.id === "remote-hub") {
+      const supervised = await supervisedHubState();
+      if (supervised) {
+        states.push(supervised);
+        continue;
+      }
+    }
     const plist = path.join(agents(), `${spec.label}.plist`);
     const installed = await exists(plist);
     const job = parseLaunchctlPrint(await launchctlPrint(spec.label!));
@@ -124,6 +166,16 @@ export async function startService(harness: string | null, id: RubatoServiceId):
     if (!harness) throw new Error("The Rubato checkout is unknown");
     // Installs Redis and its dependencies when they are missing, so it can take minutes.
     await loginShell(`${quoted(path.join(harness, "msearch", "redis-service.sh"))} --apply`, 1_200_000);
+    return;
+  }
+  if (id === "remote-hub" && (await exists(path.join(remoteState(), "hub-service.json")))) {
+    if (!harness) throw new Error("The Rubato checkout is unknown");
+    // Asks the profile engine for a fresh hub, and starts the engine when it is down.
+    await loginShell(
+      `. ${quoted(path.join(harness, "scripts", "find-node.sh"))} && node="$(rubato_find_node)" && ` +
+        `"$node" ${quoted(path.join(harness, "scripts", "rubato-hub-restart.mjs"))}`,
+      120_000,
+    );
     return;
   }
   const plist = path.join(agents(), `${spec.label}.plist`);

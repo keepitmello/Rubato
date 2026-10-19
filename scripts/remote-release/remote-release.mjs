@@ -2,6 +2,7 @@
 import { chmod, cp, mkdir, readFile, readdir, rename, rm } from "node:fs/promises"
 import { existsSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
+import { pathToFileURL } from "node:url"
 
 import { verifyRelease } from "./artifact.mjs"
 import { defaultPaths, ZMX_COMMIT } from "./constants.mjs"
@@ -15,15 +16,16 @@ import {
   ensureStateLayout,
   guardUpdate,
   initializeIdentity,
-  installLaunchAgent,
+  activateHub,
   installZmx,
   readServeStateRecord,
+  removeLegacyHubAgent,
   removeRubatoServeRoute,
   serveStatus,
   setupInstructions,
   tailscaleIdentity,
   terminalBridgeSmoke,
-  waitForHealth,
+  writeHubService,
   writeServeStateRecord,
   zmxSmoke,
 } from "./system.mjs"
@@ -77,9 +79,12 @@ export async function install(options) {
     throw error
   }
   await atomicSymlink(relativeTarget(final, paths.current), paths.current)
+  const ensureEngine = options.ensureEngine ?? (() => ensureProfileEngineFrom(options.repository))
+  const previousService = await readFile(paths.service, "utf8").catch(() => null)
   try {
-    await installLaunchAgent(paths, manifest.buildId, runner, bunPath, launcherPath, tailscalePath)
-    await waitForHealth(paths.socket)
+    // The profile engine runs the hub; this hands it the new release and waits until it runs.
+    await writeHubService(paths, manifest.buildId, bunPath, launcherPath, tailscalePath)
+    await activateHub(paths, { runner, ensureEngine, ...(options.hubTimeouts ?? {}) })
     await saveBaseline(paths, runner)
     await configureCmux(options.repository, runner)
     if (!options.skipSmoke) {
@@ -93,13 +98,18 @@ export async function install(options) {
   } catch (error) {
     if (zmxBackup) await rename(zmxBackup, paths.zmx).catch(() => {})
     else if (previousZmxHash === null) await rm(paths.zmx, { force: true })
-    await runner("/bin/launchctl", ["bootout", `gui/${process.getuid()}`, paths.plist], { check: false, timeoutMs: 10_000 }).catch(() => {})
-    await rm(paths.plist, { force: true })
     if (previous && await pathExists(previous)) {
       await atomicSymlink(relativeTarget(previous, paths.current), paths.current)
       const prior = await readJson(join(previous, "release.json"), null)
-      if (prior?.buildId) await installLaunchAgent(paths, prior.buildId, runner, bunPath, launcherPath, tailscalePath).catch(() => {})
-    } else await rm(paths.current, { force: true })
+      if (prior?.buildId) {
+        await writeHubService(paths, prior.buildId, bunPath, launcherPath, tailscalePath).catch(() => {})
+        await activateHub(paths, { runner, ensureEngine, ...(options.hubTimeouts ?? {}) }).catch(() => {})
+      }
+    } else {
+      // Nothing to go back to: without its spec the engine stops the hub it started.
+      if (previousService === null) await rm(paths.service, { force: true })
+      await rm(paths.current, { force: true })
+    }
     throw error
   }
 }
@@ -120,7 +130,7 @@ export async function update(options) {
         const bunProbe = await runner("/usr/bin/which", [options.bun ?? "bun"], { check: false, timeoutMs: 2_000 })
         const launcherPath = join(resolve(options.repository ?? process.cwd()), "harness", "scripts", "rubato-pi.sh")
         const tailscaleProbe = await runner("/usr/bin/which", [options.tailscale ?? "tailscale"], { check: false, timeoutMs: 2_000 })
-        await installLaunchAgent(paths, metadata.buildId, runner, bunProbe.stdout.trim() || options.bun || "bun", launcherPath, tailscaleProbe.stdout.trim() || options.tailscale || "tailscale").catch(() => {})
+        await writeHubService(paths, metadata.buildId, bunProbe.stdout.trim() || options.bun || "bun", launcherPath, tailscaleProbe.stdout.trim() || options.tailscale || "tailscale").catch(() => {})
       }
     }
     throw error
@@ -151,9 +161,11 @@ export async function uninstall(options) {
     else if (JSON.stringify(status).includes("/rubato")) throw new Error("uninstall found persisted /rubato Serve state but the signed Rubato host port is unavailable; restore the installation state and retry cleanup")
     await writeServeStateRecord(paths, "absent")
   }
-  const domain = `gui/${process.getuid()}`
-  await runner("/bin/launchctl", ["bootout", domain, paths.plist], { check: false, timeoutMs: 10_000 })
-  await rm(paths.plist, { force: true })
+  // Without its spec the engine stops the hub; an install from before engine supervision still
+  // has the hub's own LaunchAgent, which goes too.
+  await rm(paths.service, { force: true })
+  await removeLegacyHubAgent(paths, runner)
+  await waitForHubStop(paths)
   if (options.removeRegistry) {
     for (const name of ["host.json", "owner.json", "origins.json", "favorites.json"]) await rm(join(paths.state, name), { force: true })
   }
@@ -177,6 +189,23 @@ export async function uninstall(options) {
     registryRemovalIncludesBrowserCleanup: false,
     preserved: ["journal", "snapshots", "artifacts", "audit", "logs", "launch-env.enc", "serve-state.json", "installer-state signing key", ...(options.removeRegistry ? [] : ["host.json", "owner.json", "origins.json", "favorites.json"]), ...(options.removePush ? ["push-key-material"] : ["push"])],
   }
+}
+
+async function waitForHubStop(paths, timeoutMs = 8_000) {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline && await pathExists(paths.servicePid)) await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+}
+
+/** Starts the person's profile engine from the installation clone when none runs. */
+async function ensureProfileEngineFrom(repository) {
+  if (!repository) return
+  const root = resolve(repository)
+  const discovery = join(root, "harness", "pi-server", "src", "discovery.mjs")
+  const launch = join(root, "harness", "rubato-pi", "src", "launch.mjs")
+  if (!await pathExists(discovery) || !await pathExists(launch)) return
+  const { ensureProfileEngine } = await import(pathToFileURL(discovery).href)
+  const { resolveLaunchAgentDir } = await import(pathToFileURL(launch).href)
+  await ensureProfileEngine({ descriptorPath: join(resolveLaunchAgentDir(), "server", "connection.json") })
 }
 
 async function saveBaseline(paths, runner) {

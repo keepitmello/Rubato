@@ -10,7 +10,8 @@ import { defaultPaths, ZMX_COMMIT } from "./constants.mjs"
 import { atomicSymlink, pathExists, redact, removeTreeInside, sha256 } from "./lib.mjs"
 import { install, uninstall } from "./remote-release.mjs"
 import { createMockDriver, qualify } from "./qualification.mjs"
-import { assertBunVersion, assertNoFunnel, configureServe, guardUpdate, launchAgentNeedsRepair, renderLaunchAgent, serveHasRubatoTarget, withoutRubatoServeRoute, writeServeStateRecord } from "./system.mjs"
+import { parseHubServiceSpec } from "./hub-service.mjs"
+import { activateHub, assertBunVersion, assertNoFunnel, configureServe, guardUpdate, hubServiceNeedsRepair, renderHubService, serveHasRubatoTarget, withoutRubatoServeRoute, writeHubService, writeServeStateRecord } from "./system.mjs"
 
 async function temporary(t) {
   const root = await mkdtemp(join(tmpdir(), "rubato-release-test-"))
@@ -80,7 +81,8 @@ test("isolated uninstall revokes host Push state without touching global launchd
   assert.match(result.browserCleanupInstructions, /PWA is discontinued/)
   assert.equal(result.registryRemovalIncludesBrowserCleanup, false)
   assert.equal(await pathExists(join(paths.push, "profile.json")), false)
-  assert.equal(calls.some(([file]) => file === "/bin/launchctl"), true)
+  // No old LaunchAgent in this HOME, so launchd is not asked anything.
+  assert.equal(calls.some(([file]) => file === "/bin/launchctl"), false)
   assert.equal(calls.every((call) => !call.join(" ").includes(process.env.HOME)), true)
 })
 
@@ -88,8 +90,8 @@ test("uninstall fails transactionally when Tailscale Serve state is unavailable"
   const home = await temporary(t)
   const paths = defaultPaths(home, 501)
   await mkdir(join(paths.current, "web"), { recursive: true })
-  await mkdir(join(paths.plist, ".."), { recursive: true })
-  await writeFile(paths.plist, "launch agent")
+  await mkdir(join(paths.service, ".."), { recursive: true })
+  await writeFile(paths.service, "hub service spec")
   await mkdir(paths.state, { recursive: true })
   await writeFile(paths.host, JSON.stringify({ httpPort: 7314 }))
   let launchctlCalled = false
@@ -99,7 +101,7 @@ test("uninstall fails transactionally when Tailscale Serve state is unavailable"
     throw new Error(`unexpected command: ${file} ${args.join(" ")}`)
   }
   await assert.rejects(() => uninstall({ paths, runner, yes: true }), /cannot inspect persisted \/rubato Serve state.*reconnect or log in.*retry/)
-  assert.equal(await pathExists(paths.plist), true)
+  assert.equal(await pathExists(paths.service), true)
   assert.equal(await pathExists(paths.current), true)
   assert.equal(launchctlCalled, false)
 })
@@ -107,33 +109,33 @@ test("uninstall fails transactionally when Tailscale Serve state is unavailable"
 test("uninstall fails transactionally when Tailscale is logged out unless signed state proves routes absent", async (t) => {
   const home = await temporary(t)
   const paths = defaultPaths(home, 501)
-  await mkdir(join(paths.plist, ".."), { recursive: true })
-  await writeFile(paths.plist, "launch agent")
+  await mkdir(join(paths.service, ".."), { recursive: true })
+  await writeFile(paths.service, "hub service spec")
   const runner = async (file, args) => {
     if (file === "/bin/launchctl") return { code: 0, stdout: "", stderr: "" }
     if (args.join(" ") === "serve status --json") return { code: 1, stdout: "", stderr: "Logged out." }
     throw new Error(`unexpected command: ${file} ${args.join(" ")}`)
   }
   await assert.rejects(() => uninstall({ paths, runner, yes: true }), /cannot inspect persisted \/rubato Serve state/)
-  assert.equal(await pathExists(paths.plist), true)
+  assert.equal(await pathExists(paths.service), true)
   await writeServeStateRecord(paths, "absent")
   const tampered = JSON.parse(await readFile(paths.serveState, "utf8"))
   tampered.payload.serveRoutes = "present"
   await writeFile(paths.serveState, JSON.stringify(tampered))
   await assert.rejects(() => uninstall({ paths, runner, yes: true }), /cannot inspect persisted \/rubato Serve state/)
-  assert.equal(await pathExists(paths.plist), true)
+  assert.equal(await pathExists(paths.service), true)
   await writeServeStateRecord(paths, "absent")
   const result = await uninstall({ paths, runner, yes: true })
   assert.equal(result.uninstalled, true)
-  assert.equal(await pathExists(paths.plist), false)
+  assert.equal(await pathExists(paths.service), false)
 })
 
-test("uninstall leaves LaunchAgent and service intact when scoped Serve cleanup fails", async (t) => {
+test("uninstall leaves the hub service intact when scoped Serve cleanup fails", async (t) => {
   const home = await temporary(t)
   const paths = defaultPaths(home, 501)
   await mkdir(join(paths.current, "web"), { recursive: true })
-  await mkdir(join(paths.plist, ".."), { recursive: true })
-  await writeFile(paths.plist, "launch agent")
+  await mkdir(join(paths.service, ".."), { recursive: true })
+  await writeFile(paths.service, "hub service spec")
   await mkdir(paths.state, { recursive: true })
   await writeFile(paths.host, JSON.stringify({ httpPort: 7314 }))
   let launchctlCalled = false
@@ -145,7 +147,7 @@ test("uninstall leaves LaunchAgent and service intact when scoped Serve cleanup 
     throw new Error(`unexpected command: ${file} ${args.join(" ")}`)
   }
   await assert.rejects(() => uninstall({ paths, runner, yes: true }), /injected Serve cleanup failure/)
-  assert.equal(await pathExists(paths.plist), true)
+  assert.equal(await pathExists(paths.service), true)
   assert.equal(launchctlCalled, false)
 })
 
@@ -178,30 +180,70 @@ test("update guard lists active sessions and requires the explicit force switch"
   assert.equal((await guardUpdate(paths, { runner, forceLive: true })).length, 1)
 })
 
-test("launchd and Serve checks retain argv boundaries, localhost, scoped path, and no shell", () => {
-  const plist = renderLaunchAgent({ nodePath: "/node 24/bin/node", bunPath: "/Users/a/.bun/bin/bun", tailscalePath: "/usr/local/bin/tailscale", entryPath: "/release & one/main.mjs", bootstrapPath: "/release/bin/bootstrap", launcherPath: "/clone/harness/rubato-pi.sh", zmxPath: "/Users/a/.local/lib/rubato/bin/zmx", stdoutPath: "/tmp/out", stderrPath: "/tmp/err", home: "/Users/a", buildId: "build-1" })
-  assert.match(plist, /<string>\/node 24\/bin\/node<\/string>/)
-  assert.match(plist, /release &amp; one/)
-  assert.doesNotMatch(plist, /\/bin\/sh/)
+test("hub service and Serve checks retain argv boundaries, localhost, scoped path, and no shell", () => {
+  const spec = renderHubService({ nodePath: "/node 24/bin/node", bunPath: "/Users/a/.bun/bin/bun", tailscalePath: "/usr/local/bin/tailscale", entryPath: "/release & one/main.mjs", bootstrapPath: "/release/bin/bootstrap", launcherPath: "/clone/harness/rubato-pi.sh", zmxPath: "/Users/a/.local/lib/rubato/bin/zmx", stdoutPath: "/tmp/out", stderrPath: "/tmp/err", home: "/Users/a", tmpDirectory: "/tmp/a", buildId: "build-1", requestedAt: "2026-10-19T00:00:00.000Z" })
+  assert.equal(spec.command, "/node 24/bin/node")
+  assert.deepEqual(spec.args, ["/release & one/main.mjs"])
+  assert.doesNotMatch(JSON.stringify(spec), /\/bin\/sh|src\/main\.ts|"run"/)
+  // The environment the hub's LaunchAgent gave it, unchanged.
+  assert.deepEqual(Object.keys(spec.env).sort(), ["HOME", "RUBATO_BOOTSTRAP_PATH", "RUBATO_BUILD_ID", "RUBATO_BUN_BIN", "RUBATO_LAUNCHER_PATH", "RUBATO_TAILSCALE_PATH", "RUBATO_ZMX_PATH", "TMPDIR"])
+  // What the release channel writes is what the engine's supervisor accepts.
+  assert.deepEqual(parseHubServiceSpec(JSON.stringify(spec)), spec)
   assert.equal(serveHasRubatoTarget({ Web: { "host:443": { Handlers: { "/rubato": { Proxy: "http://127.0.0.1:7314" } } } } }, 7314), true)
   assert.equal(serveHasRubatoTarget({ Web: { "/": "http://0.0.0.0:7314" } }, 7314), false)
-  assert.equal(plist.includes("<key>WorkingDirectory</key>"), false)
-  assert.equal(plist.includes("src/main.ts"), false)
-  assert.equal(plist.includes("<string>run</string>"), false)
-  assert.match(plist, /<string>Interactive<\/string>/)
-  assert.equal(launchAgentNeedsRepair(plist, { entryPath: "/release & one/main.mjs" }), false)
+  assert.equal(hubServiceNeedsRepair(spec, { entryPath: "/release & one/main.mjs" }), false)
 })
 
-test("a checkout bun-run LaunchAgent is drifted from the installed release hub", () => {
-  const drifted = `<?xml version="1.0" encoding="UTF-8"?>
-<plist version="1.0"><dict>
-<key>ProgramArguments</key><array><string>/Users/wy/.bun/bin/bun</string><string>run</string><string>src/main.ts</string></array>
-<key>WorkingDirectory</key><string>/Users/wy/Github-repos/rubato-lab/rubato/packages/rubato-remote-hub</string>
-</dict></plist>
-`
+test("a checkout bun-run hub is drifted from the installed release hub", () => {
   const entryPath = "/Users/wy/.local/lib/rubato/remote/current/hub/main.mjs"
-  assert.equal(launchAgentNeedsRepair(drifted, { entryPath }), true)
-  assert.equal(launchAgentNeedsRepair("", { entryPath }), true)
+  assert.equal(hubServiceNeedsRepair({ command: "/Users/wy/.bun/bin/bun", args: ["run", "src/main.ts"] }, { entryPath }), true)
+  assert.equal(hubServiceNeedsRepair({ command: "/bin/sh", args: [entryPath] }, { entryPath }), true)
+  assert.equal(hubServiceNeedsRepair(null, { entryPath }), true)
+})
+
+test("the release channel hands the hub to the engine and waits until the engine runs it", async (t) => {
+  const home = await temporary(t)
+  const paths = { ...defaultPaths(home, process.getuid()), socket: join(home, "no-hub.sock") }
+  const spec = await writeHubService(paths, "build-7", "/bun", "/clone/harness/scripts/rubato-pi.sh", "/tailscale")
+  assert.equal((await lstat(paths.service)).mode & 0o077, 0)
+  assert.equal(spec.args[0], join(paths.current, "hub", "main.mjs"))
+  // The engine's record names this request; health is the hub's own answer.
+  await writeFile(paths.servicePid, JSON.stringify({ pid: process.pid, enginePid: process.pid, requestedAt: spec.requestedAt }))
+  const launchctl = []
+  const runner = async (file, args) => { launchctl.push([file, ...args]); return { code: 1, stdout: "", stderr: "" } }
+  await assert.rejects(activateHub(paths, { runner, handoffMs: 50, health: { attempts: 1, delayMs: 1 } }), /localhost hub health failed/)
+  assert.deepEqual(launchctl, [], "an engine that took the request needs no launchd")
+
+  // No engine picks it up and none can be started: the old LaunchAgent, if any, keeps the hub.
+  await rm(paths.servicePid)
+  let ensured = 0
+  await assert.rejects(activateHub(paths, { runner, ensureEngine: async () => { ensured += 1 }, handoffMs: 50, engineStartMs: 50 }), /does not supervise the hub yet/)
+  assert.equal(ensured, 1)
+  assert.deepEqual(launchctl.map((call) => call.slice(1, 2)), [["print"]])
+  const legacy = []
+  const legacyRunner = async (file, args) => { legacy.push(args[0]); return { code: 0, stdout: "", stderr: "" } }
+  await assert.rejects(activateHub(paths, { runner: legacyRunner, handoffMs: 50, health: { attempts: 1, delayMs: 1 } }), /localhost hub health failed/)
+  assert.deepEqual(legacy, ["print", "kickstart"])
+})
+
+test("the release copy of these scripts imports nothing outside its own directory", async () => {
+  // build-release.mjs copies scripts/remote-release into the release; the installed copy runs
+  // doctor, update and uninstall without the checkout beside it.
+  const { readdir } = await import("node:fs/promises")
+  for (const name of await readdir(import.meta.dirname)) {
+    if (!name.endsWith(".mjs") || name.endsWith(".test.mjs")) continue
+    const text = await readFile(join(import.meta.dirname, name), "utf8")
+    assert.doesNotMatch(text, /^import[^\n]*from\s+["']\.\.\//m, `${name} imports from outside scripts/remote-release`)
+  }
+})
+
+test("install never registers a hub LaunchAgent", async () => {
+  const source = await readFile(join(import.meta.dirname, "remote-release.mjs"), "utf8")
+  const system = await readFile(join(import.meta.dirname, "system.mjs"), "utf8")
+  for (const text of [source, system]) {
+    assert.doesNotMatch(text, /"bootstrap"/)
+    assert.doesNotMatch(text, /<plist/)
+  }
 })
 
 test("selective Serve removal preserves unrelated routes, listeners, and same-name routes owned by others", async () => {

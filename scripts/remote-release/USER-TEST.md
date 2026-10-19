@@ -73,7 +73,7 @@ scripts/remote-release/install.sh \
   --trusted-local-build
 ```
 
-설치는 LaunchAgent로 허브를 올리고 소켓 `cli.health`가 응답할 때까지 기다린다.
+설치는 프로필 엔진이 띄울 허브 설정을 쓰고, 엔진이 허브를 띄워 소켓 `cli.health`가 응답할 때까지 기다린다.
 Tailscale Serve `/rubato` 경로는 더 이상 만들지 않는다.
 
 ## 2. Mac 상태 확인하기
