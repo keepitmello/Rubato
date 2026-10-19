@@ -79,6 +79,40 @@ export interface CompanionSettingsPatch {
   readonly dailyReport?: Partial<CompanionSettings["dailyReport"]>;
 }
 
+/** A conversation Segno handed work to and follows until that work ends (engine panel.json). */
+export interface SegnoLead {
+  readonly sessionId: string;
+  readonly title: string | null;
+  readonly cwd: string | null;
+  /** `asked`: it stopped to ask the person; `queued`: handed over, not running yet. */
+  readonly state: "running" | "asked" | "queued";
+  /** When Segno handed the work over, epoch ms. */
+  readonly since: number | null;
+}
+
+export interface SegnoFinished {
+  readonly sessionId: string;
+  readonly title: string | null;
+  readonly cwd: string | null;
+  readonly outcome: "completed" | "stopped" | "failed" | "lost";
+  readonly at: number;
+}
+
+/** A message Segno wrote to someone other than the person, held until the person decides. */
+export interface SegnoHeldMessage {
+  readonly id: string;
+  readonly text: string;
+  readonly createdAt: string;
+  readonly to: { readonly chatId: string; readonly name: string | null } | null;
+}
+
+/** What the task panel beside Segno's chat shows. */
+export interface SegnoPanel {
+  readonly leads: readonly SegnoLead[];
+  readonly finished: readonly SegnoFinished[];
+  readonly held: readonly SegnoHeldMessage[];
+}
+
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
   postRubato<T>(env, COMPANION_ROUTE, action, body, "companion settings");
 
@@ -99,9 +133,16 @@ export const rubatoCompanion = {
   /** Has Segno's bot made from the person's own Telegram account (@BotFather over MTProto). */
   createTelegramBot: (env: EnvironmentId | null, name: string, username?: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-create-bot", { name, ...(username ? { username } : {}) }),
-  /** Approves or refuses one message addressed to someone else; nothing is sent before this. */
-  decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject") =>
-    call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision }),
+  /**
+   * Approves or refuses one message addressed to someone else; nothing is sent before this. An
+   * approval may carry the text as the person edited it, which is what goes out.
+   */
+  decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject", text?: string) =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision, ...(text === undefined ? {} : { text }) }),
+  /** The task panel beside Segno's chat: leads it follows, recent endings, held messages. */
+  panel: (env: EnvironmentId | null) => call<SegnoPanel>(env, "panel"),
+  /** Segno's art for its space, as a data URL; `version` changes when the file is swapped. */
+  art: (env: EnvironmentId | null) => call<{ art: { url: string; version: number } }>(env, "art"),
   /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
   thread: (env: EnvironmentId | null, sessionId: string) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId }),

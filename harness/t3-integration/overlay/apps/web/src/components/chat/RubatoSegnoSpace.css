@@ -1,0 +1,56 @@
+/*
+ * Segno's space (RubatoSegnoSpace.tsx). The stage beside the chat holds the task panel and
+ * Segno's art; the chat column is the ordinary chat.
+ *
+ * Where the window has a material (macOS vibrancy or Liquid Glass, rubatoWindowMaterial.css), the
+ * space is the one work area that shows it, washed with the theme's sidebar color like the sidebar.
+ * Message bubbles, the composer and the task panel stay opaque on top. Without a material the space
+ * keeps the workspace's own canvas and grain (SidebarInset paints them).
+ */
+
+[data-rubato-segno-stage] {
+  width: clamp(300px, 32%, 460px);
+}
+
+/* Purposeful motion only: a row slides in once when it appears. */
+@keyframes rubato-segno-row-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+}
+.rubato-segno-row {
+  animation: rubato-segno-row-in 220ms ease-out both;
+}
+.rubato-segno-finished {
+  opacity: 0.6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .rubato-segno-row {
+    animation: none;
+  }
+}
+
+/* ---- Window material: the space shows it ---- */
+
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-rubato-segno-space-host] {
+  background-color: var(--rb-material-wash);
+  background-image: none;
+}
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-rubato-segno-space-host]
+  [data-rubato-segno-chat]
+  :is([data-chat-surface], [data-slot="chat-view"]) {
+  background-color: transparent;
+  background-image: none;
+}
+/* The assistant's words get the same opaque card the person's messages have. */
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-rubato-segno-space-host]
+  [data-timeline-row-kind="message"][data-message-role="assistant"]
+  > * {
+  background-color: var(--card);
+  border-radius: var(--radius-lg, 0.75rem);
+  padding: 0.5rem 0.75rem;
+}

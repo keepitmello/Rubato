@@ -14,6 +14,8 @@ export const companionOverlays = [
   'apps/web/src/components/settings/RubatoCompanionSettings.tsx',
   'apps/web/src/components/sidebar/RubatoSegnoIcon.tsx',
   'apps/web/src/routes/settings.companion.tsx',
+  'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
+  'apps/web/src/components/chat/RubatoSegnoSpace.css',
 ];
 
 /** The settings route slug the generated route tree gains (route-tree-edits.mjs). */
@@ -114,6 +116,29 @@ export const companionEdits = {
       'replace'],
     ['import { startNewThreadFromContext } from "../lib/chatThreadActions";\n',
       'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+  ],
+  // Segno's thread opens in Segno's space: its chat on the left, Segno and the task panel on the
+  // right (components/chat/RubatoSegnoSpace.tsx). Every other thread is unchanged.
+  'apps/web/src/components/ThreadRouteView.tsx': [
+    ['  let view: React.ReactNode = null;\n',
+      '  // Rubato: Segno\'s thread opens in its own space (companion-edits.mjs).\n'
+        + '  const rubatoCompanionThreadId = useRubatoCompanion().threadId;\n'
+        + '  const rubatoSegnoSpace = target.kind === "server" && rubatoCompanionThreadId === target.threadRef.threadId;\n'],
+    ['    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">\n      {view}\n    </SidebarInset>\n',
+      '    <SidebarInset\n'
+        + '      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"\n'
+        + '      data-rubato-segno-space-host={rubatoSegnoSpace ? "" : undefined}\n'
+        + '    >\n'
+        + '      {rubatoSegnoSpace ? <RubatoSegnoSpace>{view}</RubatoSegnoSpace> : view}\n'
+        + '    </SidebarInset>\n',
+      'replace'],
+    ['import { SidebarInset } from "./ui/sidebar";\n',
+      'import { RubatoSegnoSpace } from "./chat/RubatoSegnoSpace";\nimport { useRubatoCompanion } from "../state/rubatoCompanion";\n'],
+  ],
+  // Segno's header is just its name: its folder is not a project.
+  'apps/web/src/components/chat/ChatHeader.tsx': [
+    ['        {activeProject ? (\n', '        {activeProject && !isCompanionThread(activeThreadId) ? (\n', 'replace'],
+    ['import { cn } from "~/lib/utils";\n', 'import { isCompanionThread } from "../../state/rubatoCompanion";\n'],
   ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
