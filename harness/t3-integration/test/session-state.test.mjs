@@ -66,6 +66,69 @@ test('a team whose members all rest is idle, and a wake makes it and the member 
   assert.deepEqual([status('st_owner'), fold.snapshot().teams[0].status], ['running', 'running']);
 });
 
+// A resident child's record keeps its last tracked run; the engine's `member_turn` says what it
+// did since (task-rpc-bridge member-turn-watch.ts).
+const teamFold = () => {
+  const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
+  fold.feed({ type: 'agent_start' });
+  fold.feed({ type: 'tool_execution_end', toolName: 'team_create', toolCallId: 'call_team', isError: false,
+    result: { details: { kind: 'created', team_name: 'mobile-team', team_run_id: 'run_team', members } } });
+  return fold;
+};
+const agentRow = (fold, id) => fold.snapshot().agents.find((agent) => agent.taskId === id);
+const firstRun = { task_id: 'st_verifier', status: 'completed', residency_state: 'resident', final_response: 'Baseline checks saved.\nMore.' };
+
+test("a resting member's line follows its latest final message, not the record's first run", () => {
+  const fold = teamFold();
+  tick(fold, firstRun);
+  assert.equal(agentRow(fold, 'st_verifier').activity, 'Baseline checks saved.');
+  tick(fold, { ...firstRun, member_turn: { state: 'resting', final_response: 'Verified up to 0e4924c98.\nDetails below.' } });
+  const row = agentRow(fold, 'st_verifier');
+  assert.equal(row.status, 'idle');
+  assert.equal(row.activity, 'Verified up to 0e4924c98.');
+  assert.equal(row.result, undefined);
+  assert.equal(row.awaiting, undefined);
+});
+
+test('a member whose own background work will wake it rests with that work named; nothing pending rests bare', () => {
+  const fold = teamFold();
+  tick(fold, { ...firstRun, member_turn: { state: 'resting', final_response: 'Suite started.',
+    awaiting: [{ id: 'bash_9', description: 'bun test (pi-runtime)' }] } });
+  assert.deepEqual(agentRow(fold, 'st_verifier').awaiting, [{ id: 'bash_9', description: 'bun test (pi-runtime)' }]);
+  assert.equal(agentRow(fold, 'st_verifier').status, 'idle');
+  tick(fold, { ...firstRun, member_turn: { state: 'resting', final_response: 'Suite passed.', awaiting: [] } });
+  assert.equal(agentRow(fold, 'st_verifier').awaiting, undefined);
+  assert.equal(agentRow(fold, 'st_verifier').activity, 'Suite passed.');
+});
+
+test('a member its inbox woke works, with its team, though its record still says completed', () => {
+  const fold = teamFold();
+  tick(fold, firstRun);
+  tick(fold, { task_id: 'st_owner', status: 'completed', residency_state: 'resident', final_response: 'Ported.' });
+  assert.equal(fold.snapshot().teams[0].status, 'idle');
+  tick(fold, { ...firstRun, live_progress: { current_tool: 'bash npm test' },
+    member_turn: { state: 'working', assignment: { from: 'lead', summary: 'Recheck feat/companion' } } });
+  const row = agentRow(fold, 'st_verifier');
+  assert.equal(row.status, 'running');
+  assert.equal(row.activity, 'bash npm test');
+  assert.deepEqual(row.assignment, { from: 'lead', summary: 'Recheck feat/companion' });
+  assert.equal(fold.snapshot().teams[0].status, 'running');
+});
+
+test('an agent outside a team that ended its turn on its own background work waits, then ends with its latest answer', () => {
+  const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
+  const base = { task_id: 'st_solo', status: 'completed', residency_state: 'resident', final_response: 'Kicked off the build.' };
+  tick(fold, { ...base, member_turn: { state: 'resting', final_response: 'Kicked off the build.',
+    awaiting: [{ id: 'bash_2', description: 'npm run build' }] } });
+  assert.equal(agentRow(fold, 'st_solo').status, 'idle');
+  assert.deepEqual(agentRow(fold, 'st_solo').awaiting, [{ id: 'bash_2', description: 'npm run build' }]);
+  tick(fold, { ...base, member_turn: { state: 'working' } });
+  assert.equal(agentRow(fold, 'st_solo').status, 'running');
+  tick(fold, { ...base, member_turn: { state: 'resting', final_response: 'Build passed.', awaiting: [] } });
+  assert.equal(agentRow(fold, 'st_solo').status, 'completed');
+  assert.equal(agentRow(fold, 'st_solo').result, 'Build passed.');
+});
+
 test('the session speed score comes from the engine and clears with null', () => {
   const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
   fold.feed({ type: 'extension_event', name: 'rubato.speed.updated', data: { speed: 87 } });

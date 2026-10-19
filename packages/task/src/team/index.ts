@@ -64,6 +64,7 @@ export { createTeamMemberRespawnLaunchResolver, TeamMemberRespawnLaunchError } f
 export type { TeamMemberRespawnLaunchErrorCode, TeamMemberRespawnLaunchResolverOptions } from "./member-respawn"
 export {
   buildPeerMessageEnvelope,
+  TEAM_MESSAGE_CUSTOM_TYPE,
   buildTeamMessage,
   countUnreadTeamMessages,
   createLeadDeliveryJournal,

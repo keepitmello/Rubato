@@ -69,7 +69,7 @@ export function RubatoSpawnRow({ spawn }: { spawn: RubatoSpawn }) {
   const live = isActiveSubagentStatus(agent.status);
   const activity =
     spawn.kind === "team"
-      ? teamCountsLabel(spawn.members, "waiting")
+      ? teamCountsLabel(spawn.members, true)
       : live
         ? (agent.progress ?? (agent.lastToolName ? `▸ ${agent.lastToolName}` : null))
         : (agent.error ?? agent.result ?? agent.progress ?? null);

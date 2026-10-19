@@ -35,6 +35,7 @@ import {
 } from "./report-reminder"
 import { createMemberTaskSendTool } from "./tools"
 import { readMemberTaskMap } from "../member-map"
+import { TEAM_MESSAGE_CUSTOM_TYPE } from "../messaging/message"
 import { liveMemberNames } from "../shutdown-helpers"
 import { resolveTeamRuntimeDirs } from "../storage"
 
@@ -182,7 +183,7 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
       reminder.onInboundWork()
       pi.sendMessage(
         {
-          customType: "senpi-task:team-message",
+          customType: TEAM_MESSAGE_CUSTOM_TYPE,
           content,
           display: false,
           details: { messageId },

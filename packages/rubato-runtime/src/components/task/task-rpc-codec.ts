@@ -6,6 +6,8 @@ import type {
 } from "@rubato/task"
 import { recordSummary } from "@rubato/task"
 
+import type { MemberTurn } from "./member-turn-watch"
+
 export type TaskLiveProgressSnapshot = ReturnType<typeof liveProgressSnapshot>
 
 const MAX_CONTROL_MESSAGE_LENGTH = 32_000
@@ -19,6 +21,7 @@ export function taskSnapshot(
   record: TaskRecord,
   liveRunStats: TaskRunStats | undefined,
   liveProgress: TaskLiveProgressSnapshot | undefined,
+  memberTurn?: MemberTurn,
 ) {
   const runStats = liveRunStats ?? record.run_stats
   const description = bounded(record.description, MAX_SNAPSHOT_TEXT_LENGTH)
@@ -42,6 +45,7 @@ export function taskSnapshot(
     ...(errorMessage.value === undefined ? {} : { error_message: errorMessage.value }),
     ...(errorMessage.truncated ? { error_message_truncated: true } : {}),
     ...(liveProgress === undefined ? {} : { live_progress: liveProgress }),
+    ...(memberTurn === undefined ? {} : { member_turn: memberTurn }),
   }
 }
 
