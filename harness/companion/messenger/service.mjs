@@ -25,7 +25,7 @@ import {
   pairedChatId, readBot, readDecision, readHandoff, readIntent, readMessengerSettings, readPairing, readSecret,
   readOutboxRow, readState, updateOutboxRow, writeBotIdentity, writeDecision, writeHandoff, writePairing, writeSecret, writeState,
 } from './store.mjs';
-import { newAnswers, locateTranscript, readEntries } from './transcript.mjs';
+import { answerAt, isFinalAnswer, locateTranscript, readEntries } from './transcript.mjs';
 import { readState as readCompanionState } from '../companion.mjs';
 
 /** The keeper's own words; a heartbeat turn is recognised by the notice text it woke on. */
@@ -362,42 +362,60 @@ export function startCompanionMessenger({
 
   // ── Segno's own answers ─────────────────────────────────────────────────────────────────
 
+  /**
+   * Sends every finished answer the transcript gained since the last pass, oldest first.
+   *
+   * The ledger is a position in the transcript — how many entries were already accounted for — not a
+   * list of entry ids. A transcript only grows, so the position always moves forward, no matter how
+   * many turns pass; a rewind that drops entries resyncs to what is there without replaying.
+   * A conversation that already has history the first time the messenger looks is taken as read, so
+   * turning Telegram on does not replay months of answers; a conversation that appears afterwards
+   * (Segno's first turn) is new and every answer in it goes out.
+   */
   async function answerTranscript(client) {
     if (!sessionsDir) return;
     const sessionId = readCompanionState(env).sessionId;
     if (!sessionId) return;
     const file = await locateTranscript(sessionsDir, sessionId);
     const state = readState(env);
-    const entries = file ? await readEntries(file) : [];
-    const all = newAnswers(entries, { companionSessionId: sessionId, answered: [] });
-    if (!entries.length || !all.length) {
-      // The first look at a conversation that has no finished answer yet: nothing is replayed later.
-      if (state.answered === undefined) writeState({ answered: [] }, env);
+    if (!file) {
+      if (!state.transcript) writeState({ transcript: { file: null, seen: null } }, env);
       return;
     }
-    let answered = state.answered;
-    if (answered === undefined) {
-      // A conversation that already has history: its older answers are not messages to send now.
-      const keep = all.at(-1);
-      answered = all.filter((answer) => answer !== keep).map((answer) => answer.entryId);
-      writeState({ answered }, env);
+    const entries = await readEntries(file);
+    let cursor = state.transcript;
+    if (!cursor) {
+      // First look, and the conversation already holds answers: they are history, not messages.
+      writeState({ transcript: { file, seen: entries.length } }, env);
+      return;
     }
-    const pending = all.filter((answer) => !answered.includes(answer.entryId));
-    for (const answer of pending) {
-      if (!answer.text || !routesOut(answer.trigger)) {
-        answered = [...answered, answer.entryId];
-        writeState({ answered }, env);
-        continue;
-      }
-      try { await routeAnswer(client, answer); }
-      catch (error) {
-        // Not marked as answered: the next pass sends it, in order, instead of losing the reply.
-        onError(error);
-        return;
-      }
-      answered = [...answered, answer.entryId];
-      writeState({ answered }, env);
+    if (cursor.file !== null && cursor.file !== file) {
+      // A different conversation file (a fork or a rewind): take what is there as read.
+      writeState({ transcript: { file, seen: entries.length } }, env);
+      return;
     }
+    let seen = cursor.seen ?? 0;
+    if (entries.length < seen) seen = 0;
+    if (seen === entries.length) {
+      if (cursor.file !== file) writeState({ transcript: { file, seen } }, env);
+      return;
+    }
+    for (let index = seen; index < entries.length; index += 1) {
+      const entry = entries[index];
+      if (!isFinalAnswer(entry)) continue;
+      const answer = answerAt(entries, index, { companionSessionId: sessionId });
+      if (answer.text && routesOut(answer.trigger)) {
+        try { await routeAnswer(client, answer); }
+        catch (error) {
+          // The cursor stays before this answer: the next pass sends it, in order, instead of losing it.
+          onError(error);
+          writeState({ transcript: { file, seen: index } }, env);
+          return;
+        }
+      }
+      writeState({ transcript: { file, seen: index + 1 } }, env);
+    }
+    writeState({ transcript: { file, seen: entries.length } }, env);
   }
 
   /** Whether this turn's answer has somewhere to go: the person, or another chat (held). */

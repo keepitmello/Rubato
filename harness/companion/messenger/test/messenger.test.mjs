@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -190,12 +190,14 @@ test('a restart picks up where it stopped, without answering an old update twice
   await again.service.close();
 });
 
-function transcript(box, entries, sessionId = 'S1') {
+function transcript(box, entries, { append = false, sessionId = 'S1' } = {}) {
   writeCompanionState({ sessionId }, box.env);
   const dir = path.join(box.agentDir, 'sessions');
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `2026-10-19T10-00-00-000Z_${sessionId}.jsonl`);
-  writeFileSync(file, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  const body = entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n';
+  if (append) appendFileSync(file, body);
+  else writeFileSync(file, body);
   return file;
 }
 
@@ -230,7 +232,7 @@ test('an answer in the app is not mirrored to Telegram', async (t) => {
   transcript(box, [appEntry('e1', '앱에서 쓴 말'), answerEntry('e2', '앱에서 답한 말')]);
   await settle(box.service);
   assert.equal(box.fake.sent.filter((row) => row.text.includes('앱에서 답한 말')).length, 0);
-  assert.deepEqual(readState(box.env).answered, ['e2'], 'it is remembered as handled');
+  assert.equal(readState(box.env).transcript.seen, 2, 'the transcript position moved past it');
 });
 
 test('the daily report, a lead ending and a heartbeat answer reach the person', async (t) => {
@@ -247,7 +249,7 @@ test('the daily report, a lead ending and a heartbeat answer reach the person', 
     answerEntry('e4', '네.'),
     noticeEntry('e5', 'Finished its turn.', { sessionId: 'lead-1', title: '버그 수정', cwd: '/tmp' }),
     answerEntry('e6', '버그 수정 끝났어요.'),
-  ]);
+  ], { append: true });
   await settle(box.service);
   assert.ok(box.fake.sent.some((row) => row.text.includes('버그 수정 끝났어요')));
 
@@ -256,7 +258,7 @@ test('the daily report, a lead ending and a heartbeat answer reach the person', 
     answerEntry('e8', '네.'),
     noticeEntry('e9', 'Heartbeat. Look over the conversations you follow.'),
     answerEntry('e10', '아직 진행 중인 리드 하나 있어요.'),
-  ]);
+  ], { append: true });
   await settle(box.service);
   assert.ok(box.fake.sent.some((row) => row.text.includes('진행 중인 리드')), 'a heartbeat answer is read on the phone');
 });
@@ -365,7 +367,7 @@ test('a failed Telegram send is not remembered as answered, and goes out next ti
   await service.poke(); await service.poke();
   assert.equal(errors.length, 1);
   assert.equal(fake.sent.filter((row) => row.text === '실패해도 살아남는 답').length, 1);
-  assert.deepEqual(readState(box.env).answered, ['e2']);
+  assert.equal(readState(box.env).transcript.seen, 2, 'the cursor moved only after the answer went out');
   await service.close();
 });
 
@@ -378,4 +380,17 @@ test('two answers that ended between polls both go out, oldest first', async (t)
   await settle(box.service);
   const texts = box.fake.sent.map((row) => row.text).filter((text) => /번째 답/.test(text));
   assert.deepEqual(texts, ['첫 번째 답', '두 번째 답']);
+});
+
+test('a long transcript is sent once and never replayed: the ledger is a position, not a list', async (t) => {
+  const box = await paired(t);
+  const count = 200;
+  transcript(box, Array.from({ length: count }, (_, index) => [
+    channelEntry(`incoming-${index}`, { messageId: 1000 + index }), answerEntry(`final-${index}`, `답 ${index}`),
+  ]).flat());
+  const replies = () => box.fake.sent.filter((row) => /^답 /.test(row.text)).length;
+  await settle(box.service);
+  assert.equal(replies(), count, 'every answer went out exactly once');
+  await settle(box.service);
+  assert.equal(replies(), count, 'later polls send nothing again');
 });

@@ -108,32 +108,15 @@ export function triggerOf(entries, index, { companionSessionId } = {}) {
   return { kind: 'unknown' };
 }
 
+/** Whether this entry is a finished answer (a turn that did not hand over to tools). */
+export function isFinalAnswer(entry) {
+  return isFinalAssistant(entry);
+}
+
 /** One finished answer: its entry, its words and what woke the turn. */
-function answerAt(entries, index, { companionSessionId }) {
+export function answerAt(entries, index, { companionSessionId } = {}) {
   const entry = entries[index];
   const stopReason = entry.message.stopReason;
   const text = stopReason === 'aborted' || stopReason === 'error' ? '' : textOf(entry.message.content).trim();
   return { entryId: entry.id, text, stopReason, trigger: triggerOf(entries, index, { companionSessionId }) };
 }
-
-/**
- * Every finished answer not yet accounted for, oldest first. A pass that reads the transcript can
- * therefore see two turns that ended between polls, and a turn that failed to go out stays in the
- * list until it does: nothing is dropped because a newer answer came after it.
- */
-export function newAnswers(entries, { answered = [], companionSessionId } = {}) {
-  const done = new Set(answered);
-  const found = [];
-  for (let index = 0; index < entries.length; index += 1) {
-    if (!isFinalAssistant(entries[index])) continue;
-    if (done.has(entries[index].id)) continue;
-    found.push(answerAt(entries, index, { companionSessionId }));
-  }
-  return found;
-}
-
-/** The newest finished answer, or undefined while a turn is still going. */
-export function lastAnswer(entries, options = {}) {
-  return newAnswers(entries, options).at(-1);
-}
-

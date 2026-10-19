@@ -30,8 +30,6 @@ export const MESSENGER_LIMITS = Object.freeze({
   heldMax: 50,
   /** Sent or refused outbox rows kept for the settings page. */
   historyMax: 200,
-  /** Turns remembered as answered, so a restart does not send one twice. */
-  answeredMax: 50,
 });
 
 export function messengerHome(env = process.env) {
@@ -303,20 +301,23 @@ export function clearDecision(id, env = process.env) {
 
 export function readState(env = process.env) {
   const value = readJson(messengerPaths(env).state);
+  const transcript = value?.transcript && typeof value.transcript === 'object' ? value.transcript : undefined;
   return {
     ...(Number.isInteger(value?.offset) ? { offset: value.offset } : {}),
-    ...(Array.isArray(value?.answered) ? { answered: value.answered.filter((id) => typeof id === 'string') } : {}),
+    // The companion transcript already accounted for: `seen` entries of `file`. A file that is
+    // waiting to appear keeps `file: null` and takes everything it gets.
+    ...(transcript ? { transcript: {
+      file: typeof transcript.file === 'string' ? transcript.file : null,
+      seen: Number.isInteger(transcript.seen) ? transcript.seen : null,
+    } } : {}),
   };
 }
 
 export function writeState(patch, env = process.env) {
-  const current = readState(env);
-  const next = { ...current, ...patch };
-  if (Array.isArray(next.answered)) next.answered = next.answered.slice(-MESSENGER_LIMITS.answeredMax);
+  const next = { ...readState(env), ...patch };
   writeJson(messengerPaths(env).state, next);
   return next;
 }
-
 
 // ── what Settings › Companion shows ─────────────────────────────────────────────────────────
 
