@@ -116,6 +116,9 @@ export interface SegnoInboxItem {
   readonly createdAt: string;
 }
 
+/** Segno's expression on its stage (harness/companion art/stage-<state>.webp). */
+export type SegnoStageState = "idle" | "working" | "waiting" | "night";
+
 /** What the task panel beside Segno's chat shows. */
 export interface SegnoPanel {
   readonly leads: readonly SegnoLead[];
@@ -153,8 +156,9 @@ export const rubatoCompanion = {
     call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision, ...(text === undefined ? {} : { text }) }),
   /** The task panel beside Segno's chat: leads it follows, recent endings, held messages. */
   panel: (env: EnvironmentId | null) => call<SegnoPanel>(env, "panel"),
-  /** Segno's art for its space, as a data URL; `version` changes when the file is swapped. */
-  art: (env: EnvironmentId | null) => call<{ art: { url: string; version: number } }>(env, "art"),
+  /** Segno's art for one expression of its space, as a data URL; `version` changes when the file is swapped. */
+  art: (env: EnvironmentId | null, state: SegnoStageState = "idle") =>
+    call<{ art: { url: string; version: number } }>(env, "art", { state }),
   /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
   thread: (env: EnvironmentId | null, sessionId: string) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId }),

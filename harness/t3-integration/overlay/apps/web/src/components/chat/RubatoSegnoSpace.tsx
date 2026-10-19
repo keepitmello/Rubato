@@ -5,7 +5,7 @@
 // the app has one (RubatoSegnoSpace.css), and the chat, the composer and the panel stay opaque.
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, CircleAlertIcon, InboxIcon, MessageSquareIcon, PlayIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { cn } from "../../lib/utils";
 import {
@@ -16,6 +16,7 @@ import {
   type SegnoInboxItem,
   type SegnoLead,
   type SegnoPanel,
+  type SegnoStageState,
 } from "../../state/rubatoCompanion";
 import { Button } from "../ui/button";
 import "./RubatoSegnoSpace.css";
@@ -45,27 +46,70 @@ function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>) {
   return { panel, refresh };
 }
 
-// Loaded once per app session; the server answers a new version when the file is swapped.
-let artCache: string | null = null;
-function useSegnoArt(environmentId: ReturnType<typeof useReadyEnvironmentId>) {
-  const [art, setArt] = useState<string | null>(artCache);
+/** The quiet hours: with nothing running, Segno sleeps between these local hours. */
+export const NIGHT_HOURS = { from: 1, to: 7 } as const;
+
+/**
+ * Segno's expression from what it follows: something waits for the person (a held reply, a lead
+ * that asked), a lead runs, the quiet hours with nothing running, or resting.
+ */
+export function stageStateOf(panel: SegnoPanel, now: Date): SegnoStageState {
+  if (panel.held.length > 0 || panel.leads.some((lead) => lead.state === "asked")) return "waiting";
+  if (panel.leads.some((lead) => lead.state === "running")) return "working";
+  const hour = now.getHours();
+  if (hour >= NIGHT_HOURS.from && hour < NIGHT_HOURS.to) return "night";
+  return "idle";
+}
+
+// Each expression loads once per app session, when it is first needed.
+const artCache = new Map<SegnoStageState, string>();
+function useSegnoArt(environmentId: ReturnType<typeof useReadyEnvironmentId>, state: SegnoStageState) {
+  const [loaded, setLoaded] = useState<ReadonlyMap<SegnoStageState, string>>(() => new Map(artCache));
   useEffect(() => {
-    if (artCache !== null || environmentId === null) return;
+    if (artCache.has(state) || environmentId === null) return;
     let live = true;
     void rubatoCompanion
-      .art(environmentId)
-      .then(({ art: loaded }) => {
-        artCache = loaded.url;
-        if (live) setArt(loaded.url);
+      .art(environmentId, state)
+      .then(({ art }) => {
+        artCache.set(state, art.url);
+        if (live) setLoaded(new Map(artCache));
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [environmentId]);
-  return art;
+  }, [environmentId, state]);
+  return loaded;
 }
 
+/**
+ * The expressions stacked in one place; only the current one shows. A change of state cross-fades
+ * once (RubatoSegnoSpace.css); nothing moves in between. Until the new picture has loaded, the one
+ * before stays.
+ */
+function SegnoArt({ art, state }: { art: ReadonlyMap<SegnoStageState, string>; state: SegnoStageState }) {
+  const lastShown = useRef<SegnoStageState | null>(null);
+  const shown = art.has(state) ? state : (lastShown.current ?? state);
+  useEffect(() => {
+    if (art.has(state)) lastShown.current = state;
+  }, [art, state]);
+  return (
+    <>
+      {[...art].map(([key, url]) => (
+        <img
+          key={key}
+          src={url}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          data-rubato-segno-art={key}
+          data-shown={key === shown ? "" : undefined}
+          className="rubato-segno-art pointer-events-none absolute right-0 bottom-0 h-full max-w-full select-none object-contain object-right-bottom"
+        />
+      ))}
+    </>
+  );
+}
 /** Elapsed time the way the sidebar writes it: now, 12m, 3h, 2d. */
 export function compactSince(fromMs: number, nowMs: number): string {
   const minutes = Math.floor(Math.max(0, nowMs - fromMs) / 60_000);
@@ -87,39 +131,88 @@ function useNow(stepMs = 30_000) {
   return now;
 }
 
+/** Narrower than this, the stage steps aside entirely and the chat keeps the whole space. */
+const STAGE_MIN_PX = 180;
+/** Room kept between the chat's column and the stage, and off the window's right edge. */
+const STAGE_GAP_PX = 16;
+const STAGE_EDGE_PX = 8;
+
+/**
+ * How wide the stage can be: the room right of the chat's column. The chat keeps exactly the width
+ * an ordinary thread has at this window size and chat-width setting (chat-width-edits.mjs), and the
+ * stage takes what is left of it; the chat never narrows for Segno.
+ */
+function useStageWidth(space: RefObject<HTMLDivElement | null>) {
+  const [width, setWidth] = useState(0);
+  useEffect(() => {
+    const root = space.current;
+    if (!root) return;
+    let lane: Element | null = null;
+    const measure = () => {
+      lane ??= root.querySelector(".chat-content-lane");
+      const outer = root.getBoundingClientRect();
+      const inner = lane?.getBoundingClientRect();
+      const free = inner ? outer.right - STAGE_EDGE_PX - (inner.right + STAGE_GAP_PX) : 0;
+      setWidth(free >= STAGE_MIN_PX ? Math.floor(free) : 0);
+    };
+    const observer = new ResizeObserver(() => {
+      lane = null;
+      measure();
+    });
+    observer.observe(root);
+    // The column appears once the thread loads; look again when the chat's children change.
+    const mutations = new MutationObserver(() => {
+      if (!lane || !lane.isConnected) {
+        lane = null;
+        measure();
+      }
+    });
+    mutations.observe(root, { childList: true, subtree: true });
+    measure();
+    return () => {
+      observer.disconnect();
+      mutations.disconnect();
+    };
+  }, [space]);
+  return width;
+}
+
 export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
   const environmentId = useReadyEnvironmentId();
   const { panel, refresh } = usePanel(environmentId);
-  const art = useSegnoArt(environmentId);
+  const now = useNow();
+  const state = stageStateOf(panel, new Date(now));
+  const art = useSegnoArt(environmentId, state);
+  const space = useRef<HTMLDivElement>(null);
+  const stageWidth = useStageWidth(space);
   return (
-    <div data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
+    <div ref={space} data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
+      {/* The chat is the ordinary chat at its ordinary width. */}
       <div data-rubato-segno-chat="" className="flex min-h-0 min-w-0 flex-1 flex-col">
         {children}
       </div>
-      {/* The panel sits in the stage's flow above the art, so it never covers Segno; the art takes
-          the height the panel leaves. The top clears the workspace's title bar controls. */}
-      <aside
-        data-rubato-segno-stage=""
-        aria-label="Segno"
-        className="relative hidden min-h-0 shrink-0 flex-col pt-[3.25rem] lg:flex"
-      >
-        <SegnoTaskPanel
-          environmentId={environmentId}
-          panel={panel}
-          onChanged={() => void refresh()}
-        />
-        <div className="relative min-h-0 flex-1">
-          {art ? (
-            <img
-              src={art}
-              alt=""
-              aria-hidden="true"
-              draggable={false}
-              className="pointer-events-none absolute right-0 bottom-0 h-full max-w-full select-none object-contain object-right-bottom"
+      {/* The stage stands in the room right of the chat's column, over the same surface: the panel
+          on top (below the title bar controls), Segno in the height the panel leaves. When the
+          window is too narrow for it, it steps aside. */}
+      {stageWidth > 0 ? (
+        <aside
+          data-rubato-segno-stage=""
+          aria-label="Segno"
+          style={{ width: stageWidth, right: STAGE_EDGE_PX }}
+          className="pointer-events-none absolute top-[3.25rem] bottom-0 flex min-h-0 flex-col"
+        >
+          <div className="pointer-events-auto min-h-0 shrink-0">
+            <SegnoTaskPanel
+              environmentId={environmentId}
+              panel={panel}
+              onChanged={() => void refresh()}
             />
-          ) : null}
-        </div>
-      </aside>
+          </div>
+          <div className="relative min-h-0 flex-1" data-rubato-segno-state={state}>
+            <SegnoArt art={art} state={state} />
+          </div>
+        </aside>
+      ) : null}
     </div>
   );
 }
@@ -144,7 +237,7 @@ function SegnoTaskPanel({
   return (
     <section
       data-rubato-segno-panel=""
-      className="mx-3 mb-3 flex max-h-[52%] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+      className="mb-3 flex max-h-[min(52vh,32rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
     >
       <header className="flex items-center justify-between px-3.5 pt-2.5 pb-1.5 text-muted-foreground text-xs">
         <span>Segno's tasks</span>

@@ -111,6 +111,9 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   assert.equal(listOutbox(env).length, 2);
   const art = await post('art');
   assert.match(art.body.art.url, /^data:image\/webp;base64,/);
+  const working = await post('art', { state: 'working' });
+  assert.notEqual(working.body.art.url, art.body.art.url, 'each expression is its own picture');
+  assert.equal((await post('art', { state: 'dancing' })).status, 400);
   // Open inbox items without a lead are rows; one a lead took is that lead's row instead.
   const { openInbox } = await import('../../companion/inbox.mjs');
   const box = openInbox({ env });

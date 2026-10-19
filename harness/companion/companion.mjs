@@ -180,15 +180,22 @@ export function composePanel({ following = {}, finished = [], rows = [] }) {
   return { leads, finished: done };
 }
 
+/** Segno's expressions in its space: resting, a lead it follows is running, something waits for the
+ * person, and the quiet hours of the night. */
+export const STAGE_STATES = Object.freeze(['idle', 'working', 'waiting', 'night']);
+
 /**
- * The art Segno's space shows, one swappable file: a `stage.webp` or `stage.png` the person put in
- * the companion's art folder, else the default that ships here (art/stage.webp). Expressions will
- * be more files beside it.
+ * The art Segno's space shows for `state`, swappable per file: the person's own
+ * `art/stage-<state>.webp|png` in the companion's folder, else their single `art/stage.webp|png` for
+ * every state, else the default that ships here (art/stage-<state>.webp).
  */
-export function stageArtFile(env = process.env) {
+export function stageArtFile(env = process.env, state = 'idle') {
+  if (!STAGE_STATES.includes(state)) throw new TypeError(`Unknown stage state: ${state}`);
   const own = companionPaths(env).art;
-  for (const name of ['stage.webp', 'stage.png']) if (existsSync(path.join(own, name))) return path.join(own, name);
-  return path.join(import.meta.dirname, 'art', 'stage.webp');
+  for (const name of [`stage-${state}.webp`, `stage-${state}.png`, 'stage.webp', 'stage.png']) {
+    if (existsSync(path.join(own, name))) return path.join(own, name);
+  }
+  return path.join(import.meta.dirname, 'art', `stage-${state}.webp`);
 }
 
 export function readPanel(env = process.env) {

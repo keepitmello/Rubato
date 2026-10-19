@@ -119,9 +119,10 @@ export function createCompanionService(options = {}) {
       // messages to other people that wait for the person.
       case 'panel':
         return panel(companion, messenger, inbox);
-      // Segno's art for its space, as a data URL (the route answers JSON to authenticated calls).
+      // Segno's art for one expression of its space, as a data URL (the route answers JSON to
+      // authenticated calls).
       case 'art': {
-        const file = companion.stageArtFile(env);
+        const file = invalid(() => companion.stageArtFile(env, input.state ?? 'idle'));
         const data = await readFile(file);
         const mime = file.endsWith('.png') ? 'image/png' : 'image/webp';
         return { art: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };

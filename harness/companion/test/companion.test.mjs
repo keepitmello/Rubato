@@ -103,14 +103,20 @@ test("the space beside Segno's chat lists what it follows and what recently fini
   assert.deepEqual(readPanel(env).leads, panel.leads);
 });
 
-test("Segno's art is one swappable file: the person's own, else the default that ships", async (t) => {
-  const { stageArtFile, companionPaths } = await import('../companion.mjs');
+test("Segno's art is one swappable file per expression: the person's own, else the default that ships", async (t) => {
+  const { stageArtFile, companionPaths, STAGE_STATES } = await import('../companion.mjs');
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-art-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const env = { RUBATO_COMPANION_HOME: dir };
-  assert.match(stageArtFile(env), /harness\/companion\/art\/stage\.webp$/);
-  assert.ok(existsSync(stageArtFile(env)));
+  for (const state of STAGE_STATES) {
+    assert.match(stageArtFile(env, state), new RegExp(`harness/companion/art/stage-${state}\\.webp$`));
+    assert.ok(existsSync(stageArtFile(env, state)), state);
+  }
+  assert.throws(() => stageArtFile(env, 'dancing'), /Unknown stage state/);
   mkdirSync(companionPaths(env).art, { recursive: true });
   writeFileSync(path.join(companionPaths(env).art, 'stage.png'), 'png');
-  assert.equal(stageArtFile(env), path.join(dir, 'art', 'stage.png'));
+  assert.equal(stageArtFile(env, 'working'), path.join(dir, 'art', 'stage.png'), 'one file of their own stands for every state');
+  writeFileSync(path.join(companionPaths(env).art, 'stage-night.webp'), 'webp');
+  assert.equal(stageArtFile(env, 'night'), path.join(dir, 'art', 'stage-night.webp'));
+  assert.equal(stageArtFile(env, 'idle'), path.join(dir, 'art', 'stage.png'));
 });

@@ -8,10 +8,6 @@
  * keeps the workspace's own canvas and grain (SidebarInset paints them).
  */
 
-[data-rubato-segno-stage] {
-  width: clamp(300px, 32%, 460px);
-}
-
 /* Purposeful motion only: a row slides in once when it appears. */
 @keyframes rubato-segno-row-in {
   from {
@@ -25,9 +21,20 @@
 .rubato-segno-finished {
   opacity: 0.6;
 }
+/* Segno's expressions: only the current one shows, and a change cross-fades once. */
+.rubato-segno-art {
+  opacity: 0;
+  transition: opacity 700ms ease-in-out;
+}
+.rubato-segno-art[data-shown] {
+  opacity: 1;
+}
 @media (prefers-reduced-motion: reduce) {
   .rubato-segno-row {
     animation: none;
+  }
+  .rubato-segno-art {
+    transition: none;
   }
 }
 
