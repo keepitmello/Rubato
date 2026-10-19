@@ -520,3 +520,18 @@ test('a heartbeat answer never goes out on its own, even when nothing else does'
   await settle(box.service);
   assert.equal(box.fake.sent.length, before, 'silence: the phone gets nothing');
 });
+
+test("a wake is classified by what it is, not by the words it carries", async (t) => {
+  const box = await paired(t);
+  // Same wake kind, words that do not start with the product texts: a reworded clock still lands
+  // the daily report and still keeps the heartbeat quiet.
+  transcript(box, [
+    wakeEntry('x1', 'daily-report', 'It is nine. Give them the day.'),
+    answerEntry('x2', '오늘 리포트: 들어온 것 1건.'),
+    wakeEntry('x3', 'heartbeat', 'An hour passed.'),
+    answerEntry('x4', '조용해.'),
+  ]);
+  await settle(box.service);
+  assert.ok(box.fake.sent.some((row) => row.text.includes('오늘 리포트')), 'the daily report reached the person');
+  assert.equal(box.fake.sent.filter((row) => row.text.includes('조용해')).length, 0, 'the heartbeat stayed in the app');
+});
