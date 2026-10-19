@@ -55,6 +55,38 @@ export const companionEdits = {
       'replace'],
     ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
   ],
+  // Segno's own folder is not a project to start work in: neither the new thread's default
+  // project nor the headline's picker offers it.
+  'apps/web/src/hooks/useHandleNewThread.ts': [
+    ['  const rubatoFirstGroup = useSidebarProjectGroups().find((group) => group.isScratch !== true);\n',
+      '  const rubatoCompanionHome = useRubatoCompanion().status?.home;\n'
+        + '  const rubatoFirstGroup = useSidebarProjectGroups().find(\n'
+        + '    (group) => group.isScratch !== true && !isCompanionProject(group, rubatoCompanionHome),\n'
+        + '  );\n',
+      'replace'],
+    ['import { useSidebarProjectGroups } from "./useSidebarProjectGroups";\n',
+      'import { isCompanionProject, useRubatoCompanion } from "../state/rubatoCompanion";\n'],
+  ],
+  'apps/web/src/hooks/useHandleNewThread.test.ts': [
+    ['vi.mock("./useSidebarProjectGroups", () => ({ useSidebarProjectGroups: () => [] }));\n',
+      'vi.mock("../state/rubatoCompanion", () => ({\n'
+        + '  isCompanionProject: () => false,\n'
+        + '  useRubatoCompanion: () => ({ status: null, threadId: null }),\n'
+        + '}));\n'],
+  ],
+  'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
+    ['  const projectGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;',
+      '  const rubatoOrderedGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;\n'
+        + '  // Rubato: Segno\'s own folder is not offered as a project (companion-edits.mjs).\n'
+        + '  const rubatoCompanionHome = useRubatoCompanion().status?.home;\n'
+        + '  const projectGroups = useMemo(\n'
+        + '    () => rubatoOrderedGroups.filter((group) => !isCompanionProject(group, rubatoCompanionHome)),\n'
+        + '    [rubatoOrderedGroups, rubatoCompanionHome],\n'
+        + '  );',
+      'replace'],
+    ['import { ProjectFavicon } from "../ProjectFavicon";\n',
+      'import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";\n'],
+  ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
     ['  const threads = useThreadShells();\n',
