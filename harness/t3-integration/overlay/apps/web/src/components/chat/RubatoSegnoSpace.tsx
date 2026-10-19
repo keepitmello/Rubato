@@ -75,7 +75,7 @@ export function compactSince(fromMs: number, nowMs: number): string {
 }
 
 const projectOf = (cwd: string | null) => (cwd ? (cwd.split("/").filter(Boolean).at(-1) ?? cwd) : null);
-const joined = (...parts: Array<string | null | undefined>) => parts.filter(Boolean).join(" · ");
+const parts = (...values: Array<string | null | undefined>) => values.filter((value): value is string => Boolean(value));
 
 function useNow(stepMs = 30_000) {
   const [now, setNow] = useState(() => Date.now());
@@ -134,7 +134,8 @@ function SegnoTaskPanel({
   return (
     <section
       data-rubato-segno-panel=""
-      className="absolute inset-x-3 top-3 z-10 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+      // Below the workspace's title bar controls, which sit over the stage's top right.
+      className="absolute inset-x-3 top-[3.25rem] z-10 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
     >
       <header className="flex items-center justify-between px-3.5 pt-2.5 pb-1.5 text-muted-foreground text-xs">
         <span>Segno's tasks</span>
@@ -198,11 +199,21 @@ function RowButton({ onClick, children }: { onClick: () => void; children: React
   );
 }
 
-function RowText({ title, detail }: { title: string; detail: string }) {
+/** Each detail is its own text, so the Korean dictionary (rubatoI18n) finds the words. */
+function RowText({ title, detail }: { title: string; detail: readonly string[] }) {
   return (
     <span className="flex min-w-0 flex-1 flex-col">
       <span className="truncate font-medium text-sm">{title}</span>
-      {detail ? <span className="truncate text-muted-foreground text-xs">{detail}</span> : null}
+      {detail.length > 0 ? (
+        <span className="truncate text-muted-foreground text-xs">
+          {detail.map((part, index) => (
+            <span key={index}>
+              {index > 0 ? " · " : null}
+              <span>{part}</span>
+            </span>
+          ))}
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -224,7 +235,7 @@ function LeadRow({
         <RowIcon tone={asked ? "asked" : "running"}>{asked ? <CircleAlertIcon /> : <PlayIcon />}</RowIcon>
         <RowText
           title={lead.title ?? "Untitled"}
-          detail={joined(projectOf(lead.cwd), asked ? "Asked you" : lead.since ? compactSince(lead.since, now) : null)}
+          detail={parts(projectOf(lead.cwd), asked ? "Asked you" : lead.since ? compactSince(lead.since, now) : null)}
         />
       </RowButton>
     </li>
@@ -248,7 +259,7 @@ function FinishedRow({
         <RowIcon tone={done ? "done" : "stopped"}>{done ? <CheckIcon /> : <XIcon />}</RowIcon>
         <RowText
           title={item.title ?? "Untitled"}
-          detail={joined(projectOf(item.cwd), done ? "Finished" : item.outcome === "failed" ? "Failed" : "Stopped", compactSince(item.at, now))}
+          detail={parts(projectOf(item.cwd), done ? "Finished" : item.outcome === "failed" ? "Failed" : "Stopped", compactSince(item.at, now))}
         />
       </RowButton>
     </li>
@@ -291,7 +302,7 @@ function HeldRow({
         <RowIcon tone="held">
           <MessageSquareIcon />
         </RowIcon>
-        <RowText title="Reply waiting for approval" detail={message.to?.name ?? message.to?.chatId ?? ""} />
+        <RowText title="Reply waiting for approval" detail={parts(message.to?.name ?? message.to?.chatId)} />
       </div>
       <div className="mt-2 ms-8.5 flex flex-col gap-2">
         {editing ? (
@@ -316,7 +327,7 @@ function HeldRow({
             {editing ? "Cancel" : "Edit"}
           </Button>
           <Button size="xs" variant="outline" disabled={busy} onClick={() => void decide("reject")}>
-            Discard
+            Don't send
           </Button>
         </div>
       </div>

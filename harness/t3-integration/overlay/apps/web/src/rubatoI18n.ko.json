@@ -4449,7 +4449,13 @@
   "Your chat": "내 대화",
   "Unpair": "연결 해제",
   "Reject": "그만두기",
-  "Could not change the Telegram connection": "텔레그램 연결을 바꿀 수 없습니다"
+  "Could not change the Telegram connection": "텔레그램 연결을 바꿀 수 없습니다",
+  "Segno's tasks": "세뇨가 맡은 일",
+  "Reply waiting for approval": "승인 기다리는 답장",
+  "Asked you": "물어봄",
+  "Don't send": "보내지 않기",
+  "Untitled": "제목 없음",
+  "now": "방금"
  },
  "templates": [
   [
