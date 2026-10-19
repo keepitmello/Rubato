@@ -27,6 +27,7 @@ import {
 } from './store.mjs';
 import { answerAt, isFinalAnswer, locateTranscript, readEntries } from './transcript.mjs';
 import { readState as readCompanionState } from '../companion.mjs';
+import { openInbox } from '../inbox.mjs';
 
 /** The keeper's own words; a heartbeat turn is recognised by the notice text it woke on. */
 const HEARTBEAT_PREFIX = 'Heartbeat.';
@@ -234,6 +235,9 @@ export function startCompanionMessenger({
     }
     if (message.chat?.type === 'group' || message.chat?.type === 'supergroup') {
       if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
+      // Someone else's report belongs in Segno's inbox whether or not its conversation is up: the
+      // list is what the person reads, and a message must not be lost to a restarting engine.
+      fileReport({ chatId, message, text });
       const to = readCompanionState(env).sessionId;
       if (!to) { log('inbound-dropped', { chatId, why: 'no companion conversation yet' }); return; }
       await deliver({
@@ -285,6 +289,27 @@ export function startCompanionMessenger({
       }
       failures.delete(update.update_id);
       if (typeof update.update_id === 'number') writeState({ offset: update.update_id + 1 }, env);
+    }
+  }
+
+  /** One report from another chat as one inbox item; a re-delivered Telegram message is one item. */
+  function fileReport({ chatId, message, text }) {
+    try {
+      const inbox = openInbox({ env, now });
+      try {
+        const firstLine = String(text).split('\n').find((line) => line.trim()) ?? '신고';
+        inbox.add({
+          title: firstLine.length > 80 ? `${firstLine.slice(0, 79)}…` : firstLine,
+          body: String(text),
+          source: 'telegram',
+          sourceRef: `telegram:${chatId}:${message.message_id}`,
+          reporter: nameOf(message.from, message.chat),
+        });
+        log('inbox-filed', { chatId, messageId: message.message_id });
+      } finally { inbox.close(); }
+    } catch (error) {
+      // The inbox is a convenience; a failure there must not cost the conversation its message.
+      onError(error);
     }
   }
 

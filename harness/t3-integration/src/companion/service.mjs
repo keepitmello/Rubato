@@ -18,6 +18,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const companionFile = path.resolve(here, '..', '..', '..', 'companion', 'companion.mjs');
 const messengerFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'store.mjs');
+const inboxFile = path.resolve(here, '..', '..', '..', 'companion', 'inbox.mjs');
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 
@@ -40,9 +41,10 @@ export function createCompanionService(options = {}) {
   const modules = () => (loaded ??= (async () => {
     const companion = options.companion ?? await import(pathToFileURL(companionFile).href);
     const messenger = options.messenger ?? await import(pathToFileURL(messengerFile).href);
+    const inbox = options.inbox ?? await import(pathToFileURL(inboxFile).href);
     const defaultsDir = options.defaultsDir
       ?? (await import(pathToFileURL(systemPromptFile).href)).companionDefaultsDir(env);
-    return { companion, messenger, defaultsDir };
+    return { companion, messenger, inbox, defaultsDir };
   })().catch((error) => {
     loaded = undefined;
     throw new CompanionRequestError(500, 'companion-unavailable', `The companion module could not load: ${error.message}`);
@@ -63,7 +65,7 @@ export function createCompanionService(options = {}) {
   };
 
   async function handle(action, input) {
-    const { companion, messenger, defaultsDir } = await modules();
+    const { companion, messenger, inbox, defaultsDir } = await modules();
     switch (action) {
       case 'status':
         return status(companion);
@@ -92,6 +94,16 @@ export function createCompanionService(options = {}) {
         if (typeof input.id !== 'string' || !input.id) throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => messenger.writeDecision(input.id, input.decision, { by: 'app' }, env));
         return { telegram: messenger.messengerStatus(env) };
+      // Segno's inbox: the issue list the Segno space shows and the daily report reads.
+      case 'inbox': {
+        const box = inbox.openInbox({ env });
+        try {
+          return { inbox: { path: box.path,
+            items: box.list({ status: input.status ?? 'open', ...(input.source ? { source: String(input.source) } : {}),
+              ...(input.limit ? { limit: Number(input.limit) } : {}) }),
+            counts: box.counts() } };
+        } finally { box.close(); }
+      }
       case 'pieces':
         return { pieces: companion.readPieces({ defaultsDir, env }) };
       case 'save-piece':

@@ -406,3 +406,25 @@ test('an engine with no conversation host leaves the messenger idle instead of f
   await assert.rejects(service.send({ text: 'x', to: 'user' }), /idle/);
   await service.close();
 });
+
+test("another person's report lands in Segno's inbox, once", async (t) => {
+  const box = await paired(t);
+  const update = box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그 리포트', text: '앱이 자꾸 죽어요', from: 'Gildong' });
+  await settle(box.service);
+  const { openInbox } = await import('../../inbox.mjs');
+  const inbox = openInbox({ env: box.env });
+  t.after(() => inbox.close());
+  const items = inbox.list();
+  assert.equal(items.length, 1);
+  assert.equal(items[0].title, '앱이 자꾸 죽어요');
+  assert.equal(items[0].source, 'telegram');
+  assert.equal(items[0].reporter, 'Gildong');
+  assert.equal(items[0].sourceRef, `telegram:${GROUP_CHAT}:${update.message.message_id}`);
+
+  // The same update delivered again (a restart before the offset moved) is still one item.
+  const repeated = box.fake.api.getUpdates;
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그 리포트', text: '앱이 자꾸 죽어요', from: 'Gildong', messageId: update.message.message_id });
+  await settle(box.service);
+  assert.equal(inbox.list().length, 1);
+  assert.ok(repeated);
+});

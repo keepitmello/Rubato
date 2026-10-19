@@ -64,6 +64,9 @@ const catalog = Object.freeze({
   // The companion's `telegram_send` tool: a thin call into the engine's sessionLink, so the
   // resident messenger owns what is held and what is sent (harness/companion/messenger).
   "companion-messenger": { requires: ["session-link"], load: () => import("./features/companion-messenger/feature.mjs") },
+  // Segno's own records and inbox (harness/companion/home.mjs, inbox.mjs): the daily/diary and the
+  // issue list the companion reads and writes in its own home.
+  "companion-home": { requires: [], load: () => import("./features/companion-home/feature.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

@@ -25,6 +25,7 @@ import { createUserCommandSessionFactories } from "../user-commands-session/inde
 import { createSessionTitleFactories } from "../session-title/index.mjs";
 import { createSessionLinkFactories } from "../session-link/index.mjs";
 import { createCompanionMessengerFactories } from "../companion-messenger/index.mjs";
+import { createCompanionHomeFactories } from "../companion-home/index.mjs";
 import { createAdapterHookFactories } from "../adapter-hooks/index.mjs";
 import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
@@ -108,6 +109,8 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     // The companion's only way out to a messenger; the message is queued and held for approval
     // unless it is addressed to the person (harness/companion/messenger).
     ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories({ sessionLink }) : []),
+    // Segno's daily/diary and inbox tools: its own home, no engine binding needed.
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionHomeFactories() : []),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),
