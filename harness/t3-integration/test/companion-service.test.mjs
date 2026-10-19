@@ -52,3 +52,40 @@ test('pieces list every piece with its default, and a saved piece is the person\
   assert.equal(tools.status, 400);
   assert.equal((await post('nope')).status, 404);
 });
+
+test('the Telegram page reads the token masked and asks the engine for a pairing code', async (t) => {
+  const { env, post } = await setup(t);
+  const store = await import('../../companion/messenger/store.mjs');
+  const empty = await post('telegram');
+  assert.equal(empty.status, 200);
+  assert.equal(empty.body.telegram.bot.masked, null);
+  assert.equal(empty.body.telegram.pairing.status, 'unpaired');
+
+  store.writeSecret('123456789:AAaaBBbbCCccDDddEEeeFFffGGhh', env);
+  const withBot = await post('telegram');
+  assert.doesNotMatch(JSON.stringify(withBot.body.telegram), /AAaaBBbb/);
+  assert.equal(withBot.body.telegram.bot.masked, '123456789:…GGhh');
+
+  await post('telegram-pair');
+  assert.deepEqual(store.readIntent(env).action, 'pair', 'the page asks; the messenger answers a second later');
+  await post('telegram-settings', { patch: { enabled: false } });
+  assert.equal(store.readMessengerSettings(env).enabled, false);
+  await post('telegram-settings', { patch: { enabled: 'yes' } }).then((answer) => {
+    assert.equal(answer.status, 400, 'a field the page cannot offer is refused');
+  });
+});
+
+test('a held message is approved from the page, and the decision is a file the messenger reads', async (t) => {
+  const { env, post } = await setup(t);
+  const store = await import('../../companion/messenger/store.mjs');
+  const row = store.enqueueMessage({ text: '고칠게요.', target: { chatId: '-1001', name: '버그 리포트' } }, env);
+  const shown = await post('telegram');
+  assert.deepEqual(shown.body.telegram.waiting.map((message) => message.id), [row.id]);
+  assert.deepEqual(shown.body.telegram.waiting[0].target, { chatId: '-1001', name: '버그 리포트' });
+
+  const decided = await post('telegram-decide', { id: row.id, decision: 'approve' });
+  assert.equal(decided.status, 200);
+  assert.equal(store.readDecision(row.id, env).decision, 'approve');
+  const refused = await post('telegram-decide', { id: row.id, decision: 'maybe' });
+  assert.equal(refused.status, 400);
+});

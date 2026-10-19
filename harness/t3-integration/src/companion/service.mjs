@@ -5,6 +5,11 @@
 // Turning the companion on is a saved setting; the engine's keeper picks it up within seconds and
 // creates or loads the companion's conversation.
 //
+// Settings › Companion also shows the Telegram messenger (harness/companion/messenger): the bot it
+// talks through, the code that pairs the person's chat, and every message Segno wants to send to
+// someone else. Nothing here reaches the engine either; the page writes the same intent and
+// decision files the resident messenger reads, and reads back what it did.
+//
 // The route's `thread` action is not here: finding the T3 thread of a session needs the T3
 // server's own bindings (RubatoCompanion.ts answers it).
 import path from 'node:path';
@@ -12,6 +17,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const companionFile = path.resolve(here, '..', '..', '..', 'companion', 'companion.mjs');
+const messengerFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'store.mjs');
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 
@@ -33,9 +39,10 @@ export function createCompanionService(options = {}) {
   let loaded;
   const modules = () => (loaded ??= (async () => {
     const companion = options.companion ?? await import(pathToFileURL(companionFile).href);
+    const messenger = options.messenger ?? await import(pathToFileURL(messengerFile).href);
     const defaultsDir = options.defaultsDir
       ?? (await import(pathToFileURL(systemPromptFile).href)).companionDefaultsDir(env);
-    return { companion, defaultsDir };
+    return { companion, messenger, defaultsDir };
   })().catch((error) => {
     loaded = undefined;
     throw new CompanionRequestError(500, 'companion-unavailable', `The companion module could not load: ${error.message}`);
@@ -56,7 +63,7 @@ export function createCompanionService(options = {}) {
   };
 
   async function handle(action, input) {
-    const { companion, defaultsDir } = await modules();
+    const { companion, messenger, defaultsDir } = await modules();
     switch (action) {
       case 'status':
         return status(companion);
@@ -64,6 +71,27 @@ export function createCompanionService(options = {}) {
         if (!input.patch || typeof input.patch !== 'object') throw new CompanionRequestError(400, 'invalid', 'patch is missing.');
         invalid(() => companion.writeSettings(input.patch, env));
         return status(companion);
+      case 'telegram':
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-settings':
+        if (!input.patch || typeof input.patch !== 'object') throw new CompanionRequestError(400, 'invalid', 'patch is missing.');
+        invalid(() => messenger.writeMessengerSettings(input.patch, env));
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-pair':
+        messenger.writeIntent({ action: 'pair' }, env);
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-unpair':
+        messenger.writeIntent({ action: 'unpair' }, env);
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-create-bot':
+        messenger.writeIntent({ action: 'create-bot',
+          ...(typeof input.name === 'string' && input.name.trim() ? { name: input.name.trim() } : {}),
+          ...(typeof input.username === 'string' && input.username.trim() ? { username: input.username.trim() } : {}) }, env);
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-decide':
+        if (typeof input.id !== 'string' || !input.id) throw new CompanionRequestError(400, 'invalid', 'id is missing.');
+        invalid(() => messenger.writeDecision(input.id, input.decision, { by: 'app' }, env));
+        return { telegram: messenger.messengerStatus(env) };
       case 'pieces':
         return { pieces: companion.readPieces({ defaultsDir, env }) };
       case 'save-piece':

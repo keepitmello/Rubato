@@ -30,6 +30,38 @@ export interface CompanionStatus {
   readonly heartbeatMinutes: readonly number[];
 }
 
+/** Where a held message is addressed: a chat other than the person's own. */
+export interface TelegramChat {
+  readonly chatId: string;
+  readonly name?: string;
+}
+
+export interface TelegramHeldMessage {
+  readonly id: string;
+  readonly text: string;
+  /** Null when the message is for the person's own chat; a message to anyone else is held. */
+  readonly target: TelegramChat | null;
+  readonly createdAt: string;
+  readonly source?: string;
+  readonly state?: string;
+}
+
+export interface TelegramStatus {
+  readonly settings: { readonly enabled: boolean; readonly approvalRequired: boolean };
+  /** The bot as Settings shows it: its id and last four characters, never the token. */
+  readonly bot: { readonly masked: string | null; readonly username?: string; readonly name?: string };
+  readonly pairing: {
+    readonly status: "unpaired" | "pending" | "paired";
+    readonly code?: string;
+    readonly chat?: TelegramChat & { readonly username?: string };
+  };
+  /** What the engine's messenger did with the last request, and why not if it failed. */
+  readonly handoff: { readonly result?: string; readonly error?: string };
+  readonly home: string;
+  readonly waiting: readonly TelegramHeldMessage[];
+  readonly recent: readonly TelegramHeldMessage[];
+}
+
 export type CompanionPieceId = "preamble" | "soul" | "identity" | "user" | "companion" | "tools";
 
 export interface CompanionPiece {
@@ -58,6 +90,18 @@ export const rubatoCompanion = {
   /** An empty text, or the default itself, returns the piece to the default. */
   savePiece: (env: EnvironmentId | null, id: CompanionPieceId, text: string) =>
     call<{ pieces: CompanionPiece[] }>(env, "save-piece", { id, text }),
+  telegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram"),
+  saveTelegramSettings: (env: EnvironmentId | null, patch: { readonly enabled?: boolean }) =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-settings", { patch }),
+  /** Asks the engine's messenger for a fresh six-character code; the person sends it to the bot. */
+  pairTelegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram-pair"),
+  unpairTelegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram-unpair"),
+  /** Has Segno's bot made from the person's own Telegram account (@BotFather over MTProto). */
+  createTelegramBot: (env: EnvironmentId | null, name: string, username?: string) =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-create-bot", { name, ...(username ? { username } : {}) }),
+  /** Approves or refuses one message addressed to someone else; nothing is sent before this. */
+  decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject") =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision }),
   /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
   thread: (env: EnvironmentId | null, sessionId: string) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId }),
