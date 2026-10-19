@@ -1,29 +1,22 @@
 // The companion's one way out to a messenger: `telegram_send`.
 //
-// Segno writes; this tool queues. Nothing is sent from the runtime, so a message to anyone but
-// the person waits in the companion's own store until they approve it (harness/companion/messenger
-// service.mjs sends it, or refuses it). The rule is in the code, not in a prompt: the tool has no
-// path to Telegram at all.
-import { enqueueMessage } from "../../../companion/messenger/store.mjs";
-
+// Segno writes; the engine's resident messenger decides. The tool is a thin call into the
+// engine's `sessionLink.telegramSend`, which queues the message in the messenger's own store
+// (harness/companion/messenger); a message to anyone but the person waits there until they
+// approve it. The rule is in the code, not in a prompt: this file has no path to Telegram.
 export const TELEGRAM_SEND_TOOL = "telegram_send";
 
-export function sendTelegram(details, env = process.env) {
-  const to = details?.to;
-  const text = details?.text;
-  if (typeof text !== "string" || !text.trim()) throw new Error("text must be a non-empty message");
-  const target = to === undefined || to === null || to === "" || to === "user" ? "user" : { chatId: String(to), name: typeof details?.name === "string" ? details.name : String(to) };
-  const row = enqueueMessage({ text: text.trim(), target, source: "tool" }, env);
-  return row;
+function text(value) {
+  return { type: "text", text: value };
 }
 
-function toolText(row) {
-  return row.target === "user"
-    ? "Queued for the person's Telegram."
-    : `Held for the person's approval before it goes anywhere (${row.id}). It is sent only if they approve it.`;
+function answer(row) {
+  if (!row || row.target === "user") return "Queued for the person's Telegram.";
+  return `Held for the person's approval before it goes anywhere (${row.id}). It is sent only if they approve it.`;
 }
 
-export function createCompanionMessengerFactories() {
+export function createCompanionMessengerFactories({ sessionLink } = {}) {
+  if (!sessionLink?.telegramSend) return [];
   return [{
     name: "companion-messenger",
     factory: (pi) => {
@@ -48,8 +41,8 @@ export function createCompanionMessengerFactories() {
           },
         },
         async execute(_id, params) {
-          const row = sendTelegram(params);
-          return { content: [{ type: "text", text: toolText(row) }], details: { id: row.id, state: row.state, target: row.target } };
+          const row = await sessionLink.telegramSend({ text: params.text, to: params.to, name: params.name });
+          return { content: [text(answer(row))], details: { id: row?.id, state: row?.state, target: row?.target } };
         },
       });
     },
@@ -57,4 +50,3 @@ export function createCompanionMessengerFactories() {
 }
 
 export default createCompanionMessengerFactories;
-

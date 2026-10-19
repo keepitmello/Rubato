@@ -317,3 +317,28 @@ export function writeState(patch, env = process.env) {
   return next;
 }
 
+
+// ── what Settings › Companion shows ─────────────────────────────────────────────────────────
+
+/** The Telegram connection for the settings page: never the token, always what can be acted on. */
+export function messengerStatus(env = process.env) {
+  const rows = listOutbox(env);
+  const visible = (row) => ({
+    id: row.id,
+    text: row.text,
+    target: row.target === 'user' ? null : row.target,
+    createdAt: row.createdAt,
+    ...(row.source ? { source: row.source } : {}),
+  });
+  return {
+    settings: readMessengerSettings(env),
+    bot: readBot(env),
+    pairing: readPairing(env),
+    handoff: readHandoff(env),
+    home: messengerPaths(env).home,
+    waiting: rows.filter((row) => row.state === 'held' || row.state === 'queued').map(visible),
+    recent: rows.filter((row) => row.state === 'sent' || row.state === 'rejected' || row.state === 'failed')
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).slice(0, 20)
+      .map((row) => ({ ...visible(row), state: row.state })),
+  };
+}

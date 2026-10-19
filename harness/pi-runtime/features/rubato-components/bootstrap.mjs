@@ -107,7 +107,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createSessionLinkFactories({ sessionLink, companion: env.RUBATO_PI_ROLE === "companion" }),
     // The companion's only way out to a messenger; the message is queued and held for approval
     // unless it is addressed to the person (harness/companion/messenger).
-    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories() : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories({ sessionLink }) : []),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),

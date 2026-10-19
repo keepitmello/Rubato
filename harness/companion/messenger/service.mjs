@@ -58,6 +58,13 @@ export function splitText(text, limit = MESSENGER_LIMITS.textChars) {
   return parts;
 }
 
+/** `'user'` for the person's own chat, otherwise a chat the message is addressed to. */
+export function targetOf(to, name) {
+  return to === undefined || to === null || to === '' || to === 'user'
+    ? 'user'
+    : { chatId: String(to), ...(name ? { name: String(name) } : {}) };
+}
+
 /** A person's display name from a Telegram message. */
 function nameOf(user, chat) {
   const parts = [user?.first_name, user?.last_name].filter(Boolean).join(' ');
@@ -179,7 +186,10 @@ export function startCompanionMessenger({
 
     if (userChat === chatId) {
       if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
+      const to = readCompanionState(env).sessionId;
+      if (!to) { log('inbound-dropped', { chatId, why: 'no companion conversation yet' }); return; }
       await deliver({
+        to,
         channel: 'telegram',
         from: { channel: 'telegram', chatId, name: nameOf(message.from, message.chat), isUser: true, messageId: message.message_id },
         text,
@@ -199,7 +209,10 @@ export function startCompanionMessenger({
     }
     if (message.chat?.type === 'group' || message.chat?.type === 'supergroup') {
       if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
+      const to = readCompanionState(env).sessionId;
+      if (!to) { log('inbound-dropped', { chatId, why: 'no companion conversation yet' }); return; }
       await deliver({
+        to,
         channel: 'telegram',
         from: { channel: 'telegram', chatId, name: nameOf(message.from, message.chat), isUser: false, messageId: message.message_id },
         text: `${saidText(message)}\n\n(보낸 곳: ${message.chat.title ?? chatId})`,
@@ -396,6 +409,13 @@ export function startCompanionMessenger({
     ready,
     /** Checks now instead of at the next turn (settings or a decision were just saved). */
     poke: run,
+    /**
+     * What the companion's `telegram_send` tool does, reached through the engine's sessionLink
+     * bridge: it only queues, and the loop below holds or sends it.
+     */
+    send({ text, to, name } = {}) {
+      return enqueueMessage({ text, target: targetOf(to, name), source: 'tool' }, env);
+    },
     async close() {
       closed = true;
       stop.abort();

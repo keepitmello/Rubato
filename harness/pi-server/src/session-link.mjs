@@ -18,7 +18,7 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
   waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
-const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'channel'];
+const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'channel', 'telegramSend'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
@@ -697,6 +697,19 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       return deliver(to, envelope({ messageId: randomUUID(), kind: 'notice', from, text }));
     },
     /**
+     * What the companion's `telegram_send` tool asks for (harness/companion/messenger): a message
+     * it wrote, queued in the messenger's own store. The resident messenger decides what goes out
+     * at once and what waits for the person, so the tool never reaches Telegram itself.
+     */
+    async telegramSend({ text, to, name } = {}) {
+      requireText(text);
+      if (!bound) throw fail('unavailable', 'This engine has no messenger');
+      const send = bound.telegramSend;
+      if (typeof send !== 'function') throw fail('unavailable', 'The messenger is not running in this engine');
+      return send({ text, to: to === undefined || to === null || to === '' ? 'user' : String(to),
+        ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}) });
+    },
+    /**
      * A person's words from a messenger into a conversation (harness/companion/messenger): the
      * companion's Telegram chat. `from.isUser` says whether it is the person the conversation
      * belongs to; anyone else's words arrive without the user's authority.
@@ -710,6 +723,15 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
           isUser: from.isUser === true,
           ...(typeof from.name === 'string' && from.name.trim() ? { name: from.name.trim() } : {}),
           ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text }));
+    },
+    /**
+     * Connects the messenger's queue to the tools (`telegramSend`). The resident messenger passes a
+     * function that queues one message; the engine's service supervisor owns the service itself.
+     */
+    attachTelegram(send) {
+      if (typeof send !== 'function') throw new TypeError('attachTelegram needs a function');
+      if (!bound) throw new Error('session link is not bound yet');
+      bound.telegramSend = send;
     },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
     close() { void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },

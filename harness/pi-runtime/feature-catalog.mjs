@@ -61,6 +61,9 @@ const catalog = Object.freeze({
   "drain-gate": { requires: [], load: () => import("./features/drain-gate/patches.mjs") },
   // 1.0 defaults the user froze (2026-10-03): built-ins off, regular TUI, old theme, no install telemetry.
   "stock-defaults": { requires: [], load: () => import("./features/stock-defaults/patches.mjs") },
+  // The companion's `telegram_send` tool: a thin call into the engine's sessionLink, so the
+  // resident messenger owns what is held and what is sent (harness/companion/messenger).
+  "companion-messenger": { requires: ["session-link"], load: () => import("./features/companion-messenger/feature.mjs") },
 });
 
 export const PI_FEATURE_NAMES = Object.freeze(Object.keys(catalog));

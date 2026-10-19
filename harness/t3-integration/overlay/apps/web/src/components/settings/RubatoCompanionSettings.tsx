@@ -1,10 +1,15 @@
-// Settings › Companion: turning Segno on, its heartbeat and daily report, and the pieces its
-// system prompt is made of. The server half is harness/t3-integration/src/companion/service.mjs
-// over harness/companion. A saved piece reaches Segno on its next request; the tools piece
-// follows the product and only reads here.
+// Settings › Companion: turning Segno on, its heartbeat and daily report, the pieces its system
+// prompt is made of, and the Telegram messenger it talks through. The server half is
+// harness/t3-integration/src/companion/service.mjs over harness/companion. A saved piece reaches
+// Segno on its next request; the tools piece follows the product and only reads here.
+//
+// The Telegram part reads and writes the same files the engine's resident messenger reads
+// (harness/companion/messenger/store.mjs): a request is a file, and the answer shows up here a
+// second or two later, so this panel polls while it is open.
 import { RotateCcwIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 import {
   acceptCompanionStatus,
@@ -14,6 +19,8 @@ import {
   type CompanionPiece,
   type CompanionPieceId,
   type CompanionSettingsPatch,
+  type TelegramHeldMessage,
+  type TelegramStatus,
 } from "../../state/rubatoCompanion";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
@@ -119,6 +126,166 @@ function PieceEditor({
         </div>
       ) : null}
     </SettingsRow>
+  );
+}
+
+
+const HELD_KIND = (message: TelegramHeldMessage): string =>
+  message.target?.name ?? message.target?.chatId ?? "you";
+
+function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
+  const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const apply = useCallback((next: { telegram: TelegramStatus }) => {
+    setTelegram(next.telegram);
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    if (environmentId === null) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await rubatoCompanion.telegram(environmentId);
+        if (alive) apply(next);
+      } catch (cause) {
+        if (alive) setError(cause instanceof Error ? cause.message : String(cause));
+      }
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 3_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [environmentId, apply]);
+
+  const run = async (work: () => Promise<{ telegram: TelegramStatus }>) => {
+    setBusy(true);
+    try {
+      apply(await work());
+    } catch (cause) {
+      reportError("Could not change the Telegram connection", cause);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const made = telegram?.bot.masked != null;
+  const paired = telegram?.pairing.status === "paired";
+  const waiting = telegram?.pairing.status === "pending";
+  const state = !made ? (
+    <Badge variant="outline">No bot yet</Badge>
+  ) : paired ? (
+    <Badge variant="success">Connected</Badge>
+  ) : waiting ? (
+    <Badge variant="outline">Waiting for the code</Badge>
+  ) : (
+    <Badge variant="outline">Not paired</Badge>
+  );
+
+  return (
+    <SettingsSection id="rubato-companion-telegram" title="Telegram">
+      {error ? <SettingsRow title="Could not read the Telegram connection" description={error} /> : null}
+      {telegram === null && !error ? (
+        <SettingsRow title="Reading the Telegram connection" control={<Spinner className="size-4" />} />
+      ) : null}
+      {telegram ? (
+        <>
+          <SettingsRow
+            id="rubato-companion-telegram-enabled"
+            title="Telegram"
+            description="Talk to Segno from your own Telegram chat. Anything Segno writes to someone else waits here for you."
+            status={state}
+            control={
+              <Switch
+                aria-label="Telegram"
+                checked={telegram.settings.enabled}
+                disabled={busy}
+                onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { enabled: next }))}
+              />
+            }
+          />
+          {!made ? (
+            <SettingsRow
+              id="rubato-companion-telegram-create"
+              title="Make Segno's bot"
+              description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
+              control={
+                <Button size="sm" disabled={busy} onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, "Segno"))}>
+                  {busy ? <Spinner className="size-3.5" /> : null}
+                  Create the bot
+                </Button>
+              }
+            />
+          ) : (
+            <SettingsRow
+              id="rubato-companion-telegram-bot"
+              title={telegram.bot.name ?? "Segno's bot"}
+              description={telegram.bot.username ? `@${telegram.bot.username}` : "The bot Rubato made for Segno."}
+              status={telegram.bot.masked ? <Badge variant="outline">{telegram.bot.masked}</Badge> : null}
+            />
+          )}
+          {telegram.handoff.error ? (
+            <SettingsRow id="rubato-companion-telegram-error" title="The last Telegram request failed" description={telegram.handoff.error} />
+          ) : null}
+          {made && !paired ? (
+            <SettingsRow
+              id="rubato-companion-telegram-pair"
+              title="Pair your chat"
+              description="Only the chat that sends this code becomes yours; nothing else counts as you."
+              status={waiting && telegram.pairing.code ? <Badge variant="outline">{telegram.pairing.code}</Badge> : null}
+              control={
+                <Button size="sm" disabled={busy} onClick={() => void run(() => rubatoCompanion.pairTelegram(environmentId))}>
+                  {waiting ? "New code" : "Pair"}
+                </Button>
+              }
+            >
+              {waiting ? (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Open the bot in Telegram and send it this code. Send it before the code is replaced.
+                </p>
+              ) : null}
+            </SettingsRow>
+          ) : null}
+          {paired ? (
+            <SettingsRow
+              id="rubato-companion-telegram-chat"
+              title="Your chat"
+              description={telegram.pairing.chat?.name ?? telegram.pairing.chat?.chatId ?? ""}
+              control={
+                <Button size="sm" variant="outline" disabled={busy}
+                  onClick={() => void run(() => rubatoCompanion.unpairTelegram(environmentId))}>
+                  Unpair
+                </Button>
+              }
+            />
+          ) : null}
+          {telegram.waiting.map((message) => (
+            <SettingsRow
+              key={message.id}
+              id={`rubato-companion-telegram-held-${message.id}`}
+              title={`For ${HELD_KIND(message)}`}
+              description={message.text}
+              control={
+                <span className="flex items-center gap-2">
+                  <Button size="sm" disabled={busy}
+                    onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "approve"))}>
+                    Approve
+                  </Button>
+                  <Button size="sm" variant="outline" disabled={busy}
+                    onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "reject"))}>
+                    Reject
+                  </Button>
+                </span>
+              }
+            />
+          ))}
+        </>
+      ) : null}
+    </SettingsSection>
   );
 }
 
@@ -286,6 +453,7 @@ export function RubatoCompanionSettingsPanel() {
           </>
         ) : null}
       </SettingsSection>
+      <TelegramPanel environmentId={environmentId} />
       <SettingsSection id="rubato-companion-prompt" title="Segno's prompt">
         {pieces === null && !error ? (
           <SettingsRow title="Reading the prompt" control={<Spinner className="size-4" />} />

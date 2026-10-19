@@ -49,6 +49,8 @@ async function settle(service) {
 async function paired(t, { createBot } = {}) {
   const box = sandbox(t);
   writeSecret(TOKEN, box.env);
+  // The keeper has already created the companion's conversation; deliveries go there.
+  writeCompanionState({ sessionId: 'S1' }, box.env);
   writeIntent({ action: 'pair' }, box.env);
   const fake = fakeTelegram();
   const started = start({ ...box, fake, createBot });
@@ -73,6 +75,8 @@ test('the token is stored 0600 and Settings only ever sees it masked', async (t)
 test('pairing waits for the code, and binds only the chat that sent it', async (t) => {
   const box = sandbox(t);
   writeSecret(TOKEN, box.env);
+  // The keeper has already created the companion's conversation; deliveries go there.
+  writeCompanionState({ sessionId: 'S1' }, box.env);
   writeIntent({ action: 'pair' }, box.env);
   const fake = fakeTelegram();
   const { service, delivered } = start({ ...box, fake });
@@ -101,6 +105,7 @@ test("the person's own Telegram message reaches Segno as the user's input, namin
   assert.equal(box.delivered.length, 1);
   const [delivery] = box.delivered;
   assert.equal(delivery.channel, 'telegram');
+  assert.equal(delivery.to, 'S1');
   assert.equal(delivery.from.isUser, true);
   assert.equal(delivery.from.chatId, USER_CHAT);
   assert.equal(delivery.text, '버그 리포트 하나 들어왔어');
