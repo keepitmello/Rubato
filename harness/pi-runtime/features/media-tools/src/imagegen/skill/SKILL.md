@@ -1,6 +1,6 @@
 ---
 name: gpt-image-gen
-description: MUST read before creating or editing images. Covers when to use image_create versus image_edit, prompt structure from subject to background, verbatim text rendering, how edits drift and how to hold them, anti-patterns, and the revised_prompt feedback loop.
+description: MUST read before creating or editing images. Covers when to use image_create versus image_edit, prompt structure from subject to background, verbatim text rendering, how edits drift and how to hold them, anti-patterns, and what to do when the safety system rejects a prompt.
 ---
 
 # GPT Image Generation
@@ -9,10 +9,12 @@ How to write image prompts that come back right the first time, and how to fix t
 
 ## Which tool
 
-Both tools run ChatGPT Images 2.5 on the user's OpenAI ChatGPT login and save a PNG.
+Both tools call the ChatGPT image service on the user's OpenAI ChatGPT login and save a PNG. Your prompt reaches the service exactly as written.
 
-- `image_create` makes a new image from text. It uses Flare, the fast tier, which suits drafts, explorations and everyday images.
-- `image_edit` changes an image. It uses Sunburst, the precise-editing tier. Pass `images` to edit or reference specific files. Omit `images` to keep editing the last image made in this session; the earlier requests of that chain ride along so the edit keeps their intent.
+- `image_create` makes a new image from text. It asks for Flare, the fast tier, which suits drafts, explorations and everyday images.
+- `image_edit` changes an image. It asks for Sunburst, the precise-editing tier. Pass `images` to edit or reference specific files. Omit `images` to keep editing the last image made in this session; the earlier requests of that chain ride along so the edit keeps their intent.
+
+The backend decides the model, size and quality it actually uses; the requested values are hints. State the framing (portrait, wide, square) in the prompt as well.
 
 A chain restarts whenever `image_create` runs or `image_edit` gets explicit `images`. If a tool says the ChatGPT login is missing, tell the user to run `/login` and choose OpenAI; there is no other credential path.
 
@@ -58,13 +60,13 @@ Every edit redraws the whole image. "Keep everything else identical" is a reques
 - With several input images, label their roles: "Image 1: the product photo. Image 2: the style reference." Say what transfers and what stays.
 - When exact pixel preservation is required, prompting alone will not hold it. Edit, then composite only the changed region back onto the original.
 
-### The revised_prompt loop
+### When the safety system rejects a prompt
 
-Both tools return a revised prompt: the prompt the image model actually used after its own rewrite. Always read it.
+The tools send your prompt to the image service exactly as written; no model rewrites it on the way, so what you write is what gets drawn. A prompt the service's safety system refuses comes back as `moderation_blocked` with the stage and categories it flagged, and no image.
 
-1. Diff it against your intent. Note what the model added, dropped, or reinterpreted.
-2. Fold the delta into your next prompt explicitly. If the rewrite dropped "overcast sky", put "overcast sky, no direct sunlight" back with more weight. If it added something you dislike, name the exclusion ("no lens flare").
-3. Regenerate. Treat each round as a conversation with the rewriter, not a fresh roll of the dice.
+1. Tell the user it was refused and which category was flagged.
+2. If you rewrite the prompt to get past it, say what you changed before you retry, such as a garment you swapped or a word you dropped. The rewrite is yours and the user sees it.
+3. Refusals add up on the account for a short while. After two or three in a row, wait a few minutes before retrying instead of rewording immediately.
 
 ## Iteration workflow
 
