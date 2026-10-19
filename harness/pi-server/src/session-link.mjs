@@ -412,7 +412,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
   async function snapshot(id, seen, listeners, asked) {
     const status = row(id)?.status ?? (need().host.getSessionWorker(id) ? 'idle' : 'stored');
     listen(id, listeners, asked);
-    return { status, ui: [...new Set(asked.get(id) ?? [])], ...await progress(id, seen) };
+    return { status, ui: [...new Set(asked.get(id) ?? [])], pending: need().host.pendingQuestions?.(id) ?? [], ...await progress(id, seen) };
   }
   /**
    * Whether the handoff message was written before the final `finalId` ('before'), after it or not

@@ -197,13 +197,16 @@ test('the follower records when work was handed over, that a lead asked the user
   w.tick(5000);
   f.follow('lead', 'segno');
   assert.equal(saved.lead.since, 5000);
-  w.state.set('lead', { status: 'waiting', title: 'Deploy', cwd: '/w/ops' });
+  // A question asked mid-turn: the turn still reads running, the runtime holds it unanswered.
+  w.state.set('lead', { status: 'running', title: 'Deploy', cwd: '/w/ops', ui: ['q1'], pending: ['q1'] });
   await f.poll();
   assert.equal(saved.lead.asked, true, 'asked the user');
-  w.state.set('lead', { status: 'running', title: 'Deploy', cwd: '/w/ops' });
   await f.poll();
-  assert.equal(saved.lead.asked, undefined, 'answered: running again');
-  w.state.set('lead', { status: 'idle', title: 'Deploy', cwd: '/w/ops', final: { entryId: 'e1', text: 'deployed' } });
+  assert.equal(saved.lead.asked, true, 'still unanswered on the next look');
+  w.state.set('lead', { status: 'running', title: 'Deploy', cwd: '/w/ops', ui: ['q1'], pending: [] });
+  await f.poll();
+  assert.equal(saved.lead.asked, undefined, 'answered: nothing pending');
+  w.state.set('lead', { status: 'idle', title: 'Deploy', cwd: '/w/ops', final: { entryId: 'e1', text: 'deployed' }, ui: ['q1'], pending: [] });
   w.tick(1000);
   await f.poll();
   await f.close();

@@ -342,6 +342,11 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       return () => { if (prepared.get(metadata.id) === record) prepared.delete(metadata.id); };
     },
     getSessionWorker(id) { return handles.get(id)?.worker; },
+    /** The questions a live runtime asked and nobody answered yet (a running turn can have one). */
+    pendingQuestions(id) {
+      const handle = handles.get(id);
+      return handle && !handle.closed ? [...handle.pendingUi.keys()].map(String) : [];
+    },
     async resolveSession(id) {
       const record = prepared.get(id);
       if (record) { await record.ready; return record.metadata; }

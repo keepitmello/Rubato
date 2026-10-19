@@ -831,3 +831,17 @@ test("a window cannot rename the companion's conversation; any other conversatio
   }
   assert.equal(env.row(segno.id).title, 'Segno');
 });
+
+test('a question asked mid-turn reads running in the directory, and the host names it as pending until it is answered', async (t) => {
+  const env = await setup(t);
+  const lead = await env.make('Lead');
+  const client = await env.client();
+  await client.attach(lead.id);
+  await client.command({ type: 'prompt', message: 'question' });
+  await until(() => env.host.pendingQuestions(lead.id).length === 1, 'the question is pending');
+  assert.equal(env.row(lead.id).status, 'running', 'the directory still says running');
+  assert.deepEqual(env.host.pendingQuestions(lead.id), ['question-1']);
+  await client.reply({ id: 'question-1', value: 'yes' });
+  await until(() => env.host.pendingQuestions(lead.id).length === 0, 'answered');
+  assert.deepEqual(env.host.pendingQuestions('unknown'), []);
+});

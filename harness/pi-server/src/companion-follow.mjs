@@ -82,8 +82,13 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     const startedBefore = record.started;
     const askedBefore = record.asked === true;
     if (BUSY.has(current.status)) { record.started = true; delete record.storedSince; }
-    // Running again after it asked the user: the question was answered.
-    if (current.status === 'running' && record.asked) delete record.asked;
+    // Whether it waits on the person now. A question asked mid-turn leaves the turn `running`, so the
+    // runtime's own unanswered questions decide (`pending`); without them, it stays asked until the
+    // work ends.
+    if (Array.isArray(current.pending)) {
+      if (current.pending.length > 0 || current.status === 'waiting') record.asked = true;
+      else delete record.asked;
+    }
     else if (current.status === 'stored') record.storedSince ??= at;
     else delete record.storedSince;
     const outcome = judge(record, current, at);
