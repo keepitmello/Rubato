@@ -1,6 +1,7 @@
 import {
   createLeadPoller,
   readMemberTaskMap,
+  TEAM_MESSAGE_CUSTOM_TYPE,
   type ActiveTeamSummary,
   type DefaultTeamRunIdResolution,
   type LeadDeliveryJournal,
@@ -206,7 +207,7 @@ export function createLeadPollerLifecycle(deps: LeadPollerLifecycleDeps): LeadPo
         if (input.coordinator === undefined) {
           input.pi.sendMessage(
             {
-              customType: "senpi-task:team-message",
+              customType: TEAM_MESSAGE_CUSTOM_TYPE,
               content: injection.content,
               display: false,
               ...(injection.details === undefined ? {} : { details: injection.details }),
@@ -218,7 +219,7 @@ export function createLeadPollerLifecycle(deps: LeadPollerLifecycleDeps): LeadPo
         }
         input.coordinator.enqueue({
           ...injection,
-          customType: "senpi-task:team-message",
+          customType: TEAM_MESSAGE_CUSTOM_TYPE,
           display: false,
         })
         const parentState = input.runtime.parentState()

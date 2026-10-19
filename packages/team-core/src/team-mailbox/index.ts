@@ -8,7 +8,7 @@ export {
 export { listUnreadMessages } from "./inbox"
 export { isMessageConsumed } from "./consumed-ledger"
 export { withInboxConsumerLease } from "./consumer-lease"
-export { pollAndBuildInjection, buildEnvelope } from "./poll"
+export { pollAndBuildInjection, buildEnvelope, readEnvelopeHeaders } from "./poll"
 export type { InjectionResult } from "./poll"
 export { ackMessages } from "./ack"
 export {

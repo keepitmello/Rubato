@@ -6,6 +6,9 @@ import type { SendTeamMessageInput } from "./types"
 
 export { buildEnvelope as buildPeerMessageEnvelope } from "@rubato/team-core/team-mailbox"
 
+/** The custom message a team envelope reaches a session as (a member's inbox, the lead's poller). */
+export const TEAM_MESSAGE_CUSTOM_TYPE = "senpi-task:team-message"
+
 export type BuildTeamMessageOptions = {
   readonly now?: () => number
   readonly newMessageId?: () => string

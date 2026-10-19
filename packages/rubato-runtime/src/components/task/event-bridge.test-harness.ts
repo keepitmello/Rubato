@@ -1,5 +1,6 @@
 import type {
   ManagedChildEvent,
+  ManagedChildHandle,
   ReconcileResult,
   SendInput,
   SuspendInput,
@@ -25,6 +26,8 @@ type HarnessOptions = {
   readonly withRpc?: boolean | "emit-only"
   readonly queuedInjections?: () => number
   readonly withSessionClosing?: boolean
+  /** Resident children this process holds a handle for, with what each answers about its turns. */
+  readonly residentHandles?: Readonly<Record<string, Pick<ManagedChildHandle, "readTurnFacts">>>
 }
 
 export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
@@ -94,6 +97,7 @@ export function wireHarness(sessionId?: string, options: HarnessOptions = {}) {
           .filter((record) => scope.scope === "all" || record.parent_session_id === scope.session_id)
           .map((record) => ({ record })),
       runStatsSnapshot: (taskId: string) => options.liveRunStats?.[taskId],
+      getResidentHandle: (taskId: string) => options.residentHandles?.[taskId],
       subscribeChild: (taskId: string, listener: (event: ManagedChildEvent) => void) => {
         const listeners = childListeners.get(taskId) ?? new Set()
         listeners.add(listener)

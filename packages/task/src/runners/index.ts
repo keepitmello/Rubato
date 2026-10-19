@@ -24,9 +24,11 @@ export { createChildResourceLoader } from "./in-process/child-loader"
 export { RpcProcessRunner } from "./rpc-process"
 export type { RpcProcessRunnerOptions } from "./rpc-process"
 export type {
+  ChildAwaitedWake,
   ChildEventListener,
   ChildExitFacts,
   ChildExitOutcome,
+  ChildTurnFacts,
   RpcChildHandle,
   RpcRunnerSpec,
   RunnerErrorFacts,
@@ -47,7 +49,7 @@ export type { ChildExitInput } from "./rpc/exit-mapping"
 export { terminateRpcChild } from "./rpc/terminate"
 export { RpcProtocolClient } from "./rpc/protocol-client"
 export type { MalformedLineHandler, RpcProtocolClientOptions } from "./rpc/protocol-client"
-export { createRpcChildHandle } from "./rpc/handle"
+export { CHILD_AWAITED_WAKES_REQUEST, createRpcChildHandle } from "./rpc/handle"
 export type { CreateRpcChildHandleOptions } from "./rpc/handle"
 export { RpcCommandError } from "./rpc/errors"
 export { buildAutoUiResponse } from "./rpc/ui-auto-answer"
