@@ -108,7 +108,9 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),
     { name: "rubato-bash-timeout", factory: createBashTimeoutExtension() },
-    { name: "terminal", factory: (pi) => terminal(pi, { ...terminalOptions, createSettingsManager: () => settings }) },
+    // The companion gets no watch tool either: it learns of other conversations from their messages.
+    { name: "terminal", factory: (pi) => terminal(env.RUBATO_PI_ROLE === "companion" ? withoutTools(pi, COMPANION_WITHHELD_TERMINAL_TOOLS) : pi,
+      { ...terminalOptions, createSettingsManager: () => settings }) },
     { name: "media-tools", factory: (pi) => mediaTools(pi, { createSettingsManager: () => settings }) },
     { name: "codemode", factory: (pi) => codemode(pi, codemodeOptions) },
     { name: "tool-search", factory: createToolSearchExtension(toolSearch) },
@@ -135,6 +137,24 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
 }
 
 const runtimeRoot = fileURLToPath(new URL("../..", import.meta.url));
+
+/**
+ * Terminal tools the companion does not get: `monitor` watches, and the companion follows other
+ * conversations only through the messages they send it (user, "지켜보기도 더하지 말고";
+ * harness/prompts/companion/tools.pi.md). Never registered, so tool_search cannot reach it either.
+ */
+export const COMPANION_WITHHELD_TERMINAL_TOOLS = Object.freeze(["monitor"]);
+
+/** `pi` as an extension sees it, without the tools named in `withheld`. */
+export function withoutTools(pi, withheld) {
+  const hidden = new Set(withheld);
+  return new Proxy(pi, { get(target, key, receiver) {
+    if (key === "registerTool") return (tool, ...rest) => (hidden.has(tool?.name) ? undefined : target.registerTool(tool, ...rest));
+    if (key === "setActiveTools") return (names, ...rest) => target.setActiveTools(names.filter((name) => !hidden.has(name)), ...rest);
+    const value = Reflect.get(target, key, receiver);
+    return typeof value === "function" ? value.bind(target) : value;
+  } });
+}
 
 // Codemode owns the removed-tool hints; components reach them through the host they register on.
 function withRemovedToolHints(componentFactory) {

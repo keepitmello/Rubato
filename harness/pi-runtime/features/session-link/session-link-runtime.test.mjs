@@ -47,13 +47,13 @@ after(() => {
 const SESSION_TOOLS = ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork"];
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
-async function openSession(name, sessionLink) {
+async function openSession(name, sessionLink, env = {}) {
   const cwd = join(scratch, name);
   mkdirSync(cwd, { recursive: true });
   const settingsManager = sdk.SettingsManager.inMemory();
   const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json"),
     allowModelNetwork: false, refreshOnCreate: false });
-  const assembled = createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, hosted: true, env: { PI_OFFLINE: "1" },
+  const assembled = createRubatoExtensionFactories({ cwd, agentDir, settingsManager, modelRuntime, hosted: true, env: { PI_OFFLINE: "1", ...env },
     ...(sessionLink ? { sessionLink } : {}),
     codemodeOptions: { complete: async () => { throw new Error("provider calls are forbidden here"); } },
     providerOptions: { env: { PI_OFFLINE: "1", RUBATO_SPEED_INDEX: "0", RUBATO_NO_KIRO_ENSURE: "1" },
@@ -144,6 +144,28 @@ test("bootstrap without the engine's sessionLink registers no conversation tool"
   const names = api.getAllTools().map(({ name }) => name);
   for (const name of SESSION_TOOLS) assert.ok(!names.includes(name), name);
   await close(session);
+});
+
+test("the companion gets no watch tool: no session_wait and no monitor, registered nowhere, so tool_search cannot reach them", async () => {
+  const sessionLink = { async list() { return { sessions: [], truncated: false }; } };
+  const companion = await openSession("companion", sessionLink, { RUBATO_PI_ROLE: "companion" });
+  const lead = await openSession("lead", sessionLink);
+  try {
+    assert.deepEqual(companion.errors, []);
+    const names = companion.api.getAllTools().map(({ name }) => name);
+    for (const name of ["monitor", "session_wait"]) {
+      assert.ok(!names.includes(name), `${name} is not registered for the companion`);
+      assert.ok(!companion.session.getActiveToolNames().includes(name), `${name} is not active`);
+      assert.ok(!companion.assembled.toolSearch.search(name === "monitor" ? "watch a file or command output and wake on change" : "wait for another conversation", 20)
+        .some((match) => match.name === name), `tool_search does not find ${name}`);
+    }
+    for (const name of ["bash", "bash_output", "kill_bash", "session_create", "session_send"]) assert.ok(names.includes(name), name);
+    const leadNames = lead.api.getAllTools().map(({ name }) => name);
+    assert.ok(leadNames.includes("monitor") && leadNames.includes("session_wait"), "every other conversation keeps them");
+  } finally {
+    await close(companion.session);
+    await close(lead.session);
+  }
 });
 
 test("in the staged candidate the tools are catalogued for tool_search, and a delivery wakes an idle session with the envelope", async () => {
