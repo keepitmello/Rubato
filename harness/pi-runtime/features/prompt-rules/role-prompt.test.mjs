@@ -4,10 +4,11 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
+import { COMPANION_ROLE as ROLE_PROMPT_COMPANION_ROLE, createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from "../session-prompt/patches.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
 import { resolveRole } from "../../../rubato-pi/src/role-contract.mjs";
+import { COMPANION_ROLE, PIECES, writePiece } from "../../../companion/companion.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const promptHref = pathToFileURL(resolve(here, "../../../rubato-pi/src/system-prompt.mjs")).href;
@@ -273,4 +274,60 @@ test("the opening turn leads every request of a new session and stays pinned", a
 
   branches.set("session-e", [{ type: "custom", customType: SYSTEM_PROMPT_REPLACEMENT_ENTRY, data: { value: "Own prompt." } }]);
   assert.deepEqual(await request(handlers, "session-e", [user]), [user], "a session opened with its own whole prompt gets no opening turn");
+});
+
+test("the companion's prompt is its pieces, the person's versions first, and an edit reaches its next request", async (t) => {
+  // The companion is one conversation that never ends, so its role prompt follows the pieces
+  // instead of staying pinned; the person edits them in Settings › Companion.
+  const dir = mkdtempSync(join(tmpdir(), "rubato-companion-prompt-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const prompts = join(dir, "prompts");
+  const home = join(dir, "home");
+  mkdirSync(join(prompts, "companion"), { recursive: true });
+  for (const { id } of PIECES) writeFileSync(join(prompts, "companion", `${id}.pi.md`), `default ${id}\n`);
+  writeFileSync(join(prompts, "opening-turn.pi.md"), "I am Lea.\n");
+  const env = {
+    RUBATO_PI_ROLE: COMPANION_ROLE,
+    RUBATO_PROMPTS_DIR: prompts,
+    RUBATO_COMPANION_HOME: home,
+    RUBATO_ROLE_PROMPT_MODULE: promptHref,
+    RUBATO_ROLE_CONTRACT_MODULE: roleHref,
+  };
+  const branch = [];
+  const ctx = {
+    model: { id: "claude-opus-5", provider: "anthropic", name: "Claude Opus 5" },
+    sessionManager: { getSessionId: () => "segno", getBranch: () => branch },
+  };
+  const handlers = {};
+  await createRolePromptExtensionFactories({ env })[0].factory({
+    on(name, fn) { handlers[name] = fn; },
+    appendEntry(customType, data) { branch.push({ type: "custom", customType, data }); },
+  });
+  const compose = async () => (await handlers.system_prompt({ systemPrompt: "" }, ctx)).systemPrompt;
+  const pinned = () => branch.filter((entry) => entry.customType === "rubato.role-prompt").length;
+
+  const first = await compose();
+  assert.ok(first.startsWith(PIECES.map(({ id }) => `default ${id}`).join("\n\n")), "the pieces in order, ahead of everything else");
+  assert.match(first, /Role: companion/);
+  assert.doesNotMatch(first, /# Working agreement/);
+  assert.equal(await compose(), first);
+  assert.equal(pinned(), 1, "an unchanged composition is not written again");
+
+  writePiece("soul", "my own soul", { defaultsDir: join(prompts, "companion"), env });
+  const edited = await compose();
+  assert.ok(edited.startsWith("default preamble\n\nmy own soul\n\ndefault identity"));
+  assert.doesNotMatch(edited, /default soul/);
+  assert.equal(pinned(), 2);
+  assert.throws(() => writePiece("tools", "other tools", { defaultsDir: join(prompts, "companion"), env }), /no personal version/);
+
+  writePiece("soul", "", { defaultsDir: join(prompts, "companion"), env });
+  assert.match(await compose(), /default soul/, "clearing a piece returns it to the default");
+
+  const user = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 };
+  assert.deepEqual((await handlers.context({ type: "context", messages: [user] }, ctx))?.messages ?? [user], [user],
+    "the companion's preamble is its own, so the leads' opening turn does not answer it");
+});
+
+test("the role prompt names the companion's role the way harness/companion does", () => {
+  assert.equal(ROLE_PROMPT_COMPANION_ROLE, COMPANION_ROLE);
 });

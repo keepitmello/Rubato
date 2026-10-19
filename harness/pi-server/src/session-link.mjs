@@ -1,7 +1,9 @@
 import { open, readFile, stat, writeFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
+import { COMPANION_ENTRY } from '../../companion/companion.mjs';
 import { SessionClient } from './client.mjs';
+import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
@@ -133,7 +135,8 @@ function progressOf(branch) {
   const tool = branch.findLast((entry) => isAssistant(entry) && entry.message.content?.some?.((part) => part?.type === 'toolCall'));
   const toolName = tool?.message.content.findLast((part) => part?.type === 'toolCall')?.name;
   return {
-    final: final ? { entryId: final.id, text: clip(textOf(final.message.content), LIMITS.charsDefault) } : undefined,
+    final: final ? { entryId: final.id, text: clip(textOf(final.message.content), LIMITS.charsDefault),
+      ...(final.message.stopReason === 'aborted' || final.message.stopReason === 'error' ? { stopReason: final.message.stopReason } : {}) } : undefined,
     latestAssistant: latest ? { entryId: latest.id, text: clip(textOf(latest.message.content), LIMITS.charsDefault) } : undefined,
     latestTool: tool ? { entryId: tool.id, name: toolName } : undefined,
   };
@@ -222,7 +225,8 @@ export async function forkSessionFile({ source, sessionsDir, title, side = false
   const header = entries.find((entry) => entry.type === 'session');
   if (!header) throw fail('invalid', `Conversation ${source} has no session header`);
   migrateSessionEntries(entries);
-  const copied = forkedHistory(branchOf(entries).branch, at);
+  // There is one companion: a copy of its conversation is an ordinary one (harness/companion).
+  const copied = forkedHistory(branchOf(entries).branch.filter((entry) => !(entry.type === 'custom' && entry.customType === COMPANION_ENTRY)), at);
   if (side) {
     const taken = new Set(entries.map((entry) => entry.id));
     const newId = () => { let id; do id = randomBytes(4).toString('hex'); while (taken.has(id)); taken.add(id); return id; };
@@ -247,7 +251,7 @@ export async function forkSessionFile({ source, sessionsDir, title, side = false
  * before the host does (extension factories receive it at runtime creation) and is
  * bound once the server listens; until then every method refuses.
  */
-export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
+export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPollMs = 2000 } = {}) {
   let bound;
   const files = new Map();
   const recent = [];
@@ -407,6 +411,26 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
   }
   const cursorOf = (state) => encodeCursor({ v: 1, final: state.final?.entryId ?? null, leaf: state.leaf,
     waiting: state.status === 'waiting', ui: [...state.ui].sort() });
+
+  /** The companion's handoffs are followed until they end (companion-follow.mjs). */
+  const fromCompanion = (id) => row(id)?.companion === true;
+  function createCompanionFollower({ store, onError }) {
+    const seen = new Map();
+    const listeners = new Map();
+    const asked = new Map();
+    return createFollower({ store, onError, pollMs: followPollMs,
+      inspect: async (id) => {
+        const described = await describe(id);
+        const current = await snapshot(id, seen, listeners, asked);
+        return { ...current, title: described.title };
+      },
+      notify: async (companionId, targetId, text) => {
+        const about = await describe(targetId);
+        return deliver(companionId, envelope({ messageId: randomUUID(), kind: 'notice',
+          from: { sessionId: targetId, title: about.title, cwd: about.cwd }, text }));
+      },
+    });
+  }
 
   const api = {
     async list({ cwd, query, limit } = {}) {
@@ -581,14 +605,16 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
       await describe(to);
       const release = admit(from, to, text, { retry: messageId !== undefined });
       // Read before delivering, so an answer written before this call returns is still after it.
-      let cursor;
+      let cursor, before;
+      const busy = BUSY.has(row(to)?.status);
       try {
-        const before = await progress(to, new Map());
+        before = await progress(to, new Map());
         cursor = encodeCursor({ v: 1, final: before.final?.entryId ?? null, leaf: before.leaf, waiting: false, ui: [] });
       } catch (error) { release(); throw error; }
       let answer;
       try { answer = await deliver(to, envelope({ messageId: id, kind: 'message', from: origin, text })); }
       catch (error) { release(); throw error; }
+      if (fromCompanion(from)) need().follower.follow(to, from, { final: before.final?.entryId ?? null, busy });
       const target = await describe(to);
       // What the target's handler said, never more: an older runtime answers without these.
       return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status },
@@ -612,6 +638,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
       received(from, created.sessionId, text);
       try { await deliver(created.sessionId, envelope({ messageId: randomUUID(), kind: 'create', from: origin, text })); }
       catch (error) { throw fail(error.code ?? 'delivery_failed', `Created conversation ${created.sessionId}, but its first message was not delivered: ${error.message}`); }
+      if (fromCompanion(from)) need().follower.follow(created.sessionId, from);
       const described = await describe(created.sessionId);
       return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status };
     },
@@ -644,7 +671,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
   return {
     api: facade,
     ...facade,
-    bind({ host, sessionsDir, socketPath, serverId, onError = () => {} }) {
+    /** `followStore` keeps the companion's followed handoffs across restarts (harness/companion followingStore). */
+    bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore }) {
       if (bound) throw new Error('session link is already bound');
       if (!host?.directory || typeof host.getSessionWorker !== 'function') throw new TypeError('session link requires a session host');
       if (!path.isAbsolute(sessionsDir ?? '') || !socketPath || !serverId) throw new TypeError('session link requires sessionsDir, socketPath and serverId');
@@ -652,8 +680,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS } = {}) {
       const inspector = createInspector({ agentDir: path.dirname(sessionsDir), sessionsDir,
         cwds: () => rows().map((item) => item.cwd).filter(Boolean), titleOf: (id) => row(id)?.title, locate });
       bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
+      bound.follower = createCompanionFollower({ store: followStore, onError });
     },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
-    close() { bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
+    close() { void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
   };
 }

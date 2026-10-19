@@ -25,7 +25,7 @@ const IDLE_RETRY_MS = 250;
  * Each path writes the message once, so a messageId is a duplicate while it is held here or by Pi,
  * and once it is in the transcript.
  */
-export function installSessionLink(pi, { sessionLink } = {}) {
+export function installSessionLink(pi, { sessionLink, companion = false } = {}) {
   const state = {
     ctx: undefined,
     waiting: new Map(), // messageId -> details, in arrival order: held here for a boundary
@@ -109,7 +109,7 @@ export function installSessionLink(pi, { sessionLink } = {}) {
   });
 
   if (!sessionLink) return;
-  for (const tool of createSessionTools(() => sessionLink)) pi.registerTool(tool);
+  for (const tool of createSessionTools(() => sessionLink, { companion })) pi.registerTool(tool);
 }
 
 export default function sessionLinkExtension(pi, options) {

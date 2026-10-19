@@ -4,6 +4,8 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
+import { resolveRole } from "./role-contract.mjs";
+import { composeCompanionPrompt, COMPANION_ROLE } from "../../companion/companion.mjs";
 
 const SKILLS_SECTION = "The following skills provide specialized instructions";
 const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");
@@ -74,11 +76,22 @@ export function readPromptFile(path, {
   }
 }
 
+/** The companion's default prompt pieces (harness/prompts/companion); a person's own versions override them. */
+export function companionDefaultsDir(env = process.env) {
+  return join(rolePromptsRoot(env), "companion");
+}
+
 export function loadRolePrompt(role, {
   env = process.env,
   readFile = readFileSync,
   materialize = materializeLocalFile,
 } = {}) {
+  // The companion is composed from its pieces when the prompt is built, not by build.sh: the
+  // person's versions live outside the repository (harness/companion). A custom prompt file
+  // replaces the leads' prompt, not the companion's.
+  if (role === COMPANION_ROLE) {
+    return composeCompanionPrompt({ defaultsDir: companionDefaultsDir(env), env, readFile: (path) => readFile(path, "utf8") });
+  }
   const custom = customPromptPath(env);
   const path = custom ?? join(rolePromptsRoot(env), ".build", promptNameForRole(role));
   if (!existsSync(path)) {
@@ -108,7 +121,8 @@ export function loadOpeningTurn({
   readFile = readFileSync,
   materialize = materializeLocalFile,
 } = {}) {
-  if (customPromptPath(env)) return "";
+  // The opening turn answers the leads' preamble; the companion has its own.
+  if (customPromptPath(env) || resolveRole({ env }) === COMPANION_ROLE) return "";
   const path = join(rolePromptsRoot(env), OPENING_TURN_FILE);
   if (!existsSync(path)) return "";
   return readPromptFile(path, { readFile, materialize }).trim();
@@ -122,6 +136,7 @@ export function assignedRoleSection(role) {
     owner: "I own the assigned outcome under the workstream-owner contract, including its integration when assigned.",
     verifier: "I give an independent, evidence-backed judgment under the independent-verifier contract; the owner makes the fix.",
     agent: "",
+    companion: "",
   };
   if (!Object.hasOwn(contracts, role)) return "";
   return [`## Runtime-assigned role`, "", `Role: ${role}`, contracts[role]].filter((line, i) => i < 3 || line).join("\n");

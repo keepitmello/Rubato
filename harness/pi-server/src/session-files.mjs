@@ -6,6 +6,7 @@ import { readSessionMetadata, SESSION_METADATA_VERSION } from './session-metadat
 import { TITLE_ENTRY } from '../../pi-runtime/features/session-title/session-title.mjs';
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from '../../pi-runtime/features/session-prompt/patches.mjs';
 import { SESSION_MESSAGE } from './session-link.mjs';
+import { COMPANION_ENTRY } from '../../companion/companion.mjs';
 
 const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs, stats.ctimeNs, stats.mode].join(':');
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
@@ -254,8 +255,11 @@ export class SessionFiles {
    * (its lock entry, read at session start). Scheduled runs use it for their "⏰ name" titles.
    * `systemPrompt` (`{ text, label?, source? }`) opens the session on that text as its whole
    * system prompt (session-prompt's replacement entry); forks copy it with the history.
+   * `companion` marks the conversation as the companion (harness/companion): the engine runs it
+   * under the companion role.
    */
-  async create({ cwd, title, titleLocked = false, systemPrompt } = {}) {
+  async create({ cwd, title, titleLocked = false, systemPrompt, companion = false } = {}) {
+    if (typeof companion !== 'boolean') throw new TypeError('companion must be a boolean');
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');
     if (title !== undefined && (typeof title !== 'string' || title.length > 512)) throw new TypeError('Invalid title');
     const replacement = systemPrompt === undefined || systemPrompt === null ? undefined : replacementEntry(systemPrompt);
@@ -271,8 +275,9 @@ export class SessionFiles {
     // Persist its PUBLIC header, exclusively, so an empty created session can be
     // discovered after restart. No fake conversation entry or private SDK call.
     await writeFile(file, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
-    if (title || replacement) {
+    if (title || replacement || companion) {
       const opened = SessionManager.open(file, this.root);
+      if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString() });
       if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);
       if (title) opened.appendSessionInfo(title);
       if (title && titleLocked === true) opened.appendCustomEntry(TITLE_ENTRY, { locked: true });

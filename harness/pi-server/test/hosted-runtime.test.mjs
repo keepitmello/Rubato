@@ -6,7 +6,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
-import { announceUnloadOnDispose, loadHostedRuntime } from '../src/hosted-runtime.mjs';
+import { announceUnloadOnDispose, loadHostedRuntime, workerEnv } from '../src/hosted-runtime.mjs';
+import { COMPANION_ROLE } from '../../companion/companion.mjs';
+import { resolveRole } from '../../rubato-pi/src/role-contract.mjs';
 import { serveProfile } from '../src/profile-server.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 
@@ -49,4 +51,13 @@ test('failed engine selection releases the profile owner rather than blocking re
   const cliPath = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
   const recovered = await serveProfile({ agentDir, workerFactory: metadata => new RpcWorker(metadata, { cliPath }) });
   await recovered.close();
+});
+
+test("the companion's conversation runs under the companion role, and every other keeps its creator's", () => {
+  const base = { HOME: '/home', RUBATO_PI_ROLE: 'lead' };
+  assert.equal(resolveRole({ env: workerEnv({ companion: true }, undefined, base) }), COMPANION_ROLE);
+  assert.equal(resolveRole({ env: workerEnv({ companion: true }, { env: { RUBATO_PI_ROLE: 'owner' } }, base) }), COMPANION_ROLE);
+  assert.equal(resolveRole({ env: workerEnv({}, undefined, base) }), 'lead');
+  assert.equal(workerEnv({}, { env: { A: '1' } }, base).A, '1');
+  assert.equal(base.RUBATO_PI_ROLE, 'lead', 'the engine environment is never written');
 });

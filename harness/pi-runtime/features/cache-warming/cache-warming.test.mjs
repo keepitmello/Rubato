@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { cacheWarmingFeature } from "./patches.mjs";
+import { COMPANION_ENTRY } from "../../../companion/companion.mjs";
 
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const scratch = mkdtempSync(join(tmpdir(), "rubato-cache-warming-"));
@@ -404,4 +405,21 @@ test("a Claude refresh that reads nothing keeps warming: only Vertex stops on a 
   await advance(40 * MIN);
   assert.equal(warms.length, 1);
   assert.equal(warmer.status.state, "scheduled");
+});
+
+test("the companion warms without an end until the person turns its warming off", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, branch } = harness("anthropic", 0);
+  branch.unshift({ type: "custom", customType: COMPANION_ENTRY, data: {} });
+  assert.equal(warmer.deadline(), Number.POSITIVE_INFINITY);
+  warmer.start({ model: model("anthropic"), context: {}, options: {} }, () => true);
+  warmer.onAgentSettled();
+  // A day of silence: every 40 minutes, past the two-hour window and the 24-hour cap alike.
+  for (let step = 0; step < 36; step += 1) await advance(40 * MIN);
+  assert.equal(warms.length, 36);
+  assert.equal(warmer.status.state, "scheduled");
+  warmer.setSessionWarming({ enabled: false });
+  await advance(40 * MIN);
+  assert.equal(warms.length, 36);
 });

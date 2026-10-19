@@ -66,3 +66,23 @@ test('a session created with a system prompt carries it as its replacement entry
   assert.equal((await store.resolve(plain.id)).systemPrompt, undefined);
   await assert.rejects(store.create({ cwd: tmpdir(), systemPrompt: { text: '  ' } }), /non-empty/);
 });
+
+test('a session created as the companion carries its marker in the list, and a fork of it is an ordinary conversation', async (t) => {
+  const { COMPANION_ENTRY } = await import('../../companion/companion.mjs');
+  const { forkSessionFile } = await import('../src/session-link.mjs');
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  const markers = async (file) => (await readFile(file, 'utf8')).trim().split('\n').map((line) => JSON.parse(line))
+    .filter((entry) => entry.type === 'custom' && entry.customType === COMPANION_ENTRY);
+  const companion = await store.create({ cwd: tmpdir(), title: 'Segno', titleLocked: true, companion: true });
+  assert.equal(companion.companion, true);
+  assert.equal((await markers(companion.file)).length, 1);
+  assert.equal((await new SessionFiles(root).resolve(companion.id)).companion, true, 'a fresh directory view reads it again');
+  const plain = await store.create({ cwd: tmpdir(), title: 'Lead' });
+  assert.equal(plain.companion, undefined);
+  const { metadata } = await forkSessionFile({ source: companion.file, sessionsDir: root, title: 'Segno (fork)' });
+  assert.equal(metadata.companion, undefined);
+  assert.deepEqual(await markers(metadata.file), []);
+  await assert.rejects(store.create({ cwd: tmpdir(), companion: 'yes' }), /companion must be a boolean/);
+});

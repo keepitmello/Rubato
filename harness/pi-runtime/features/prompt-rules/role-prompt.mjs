@@ -10,6 +10,10 @@ export const PROJECT_RULES_ENTRY_TYPE = "rubato.project-rules";
 
 export const OPENING_TURN_ENTRY_TYPE = "rubato.opening-turn";
 
+// The always-on companion's role (harness/companion COMPANION_ROLE; that module is not staged
+// with these runtime files).
+export const COMPANION_ROLE = "companion";
+
 // session-prompt's replacement entry (its patches.mjs is the source, not staged with these
 // runtime files): a session holding one runs on that text alone.
 export const SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE = "rubato.system-prompt";
@@ -54,12 +58,20 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       if (event?.reason === "reload") repin.add(id);
     });
     // The pinned value of one entry type for this session; `live` supplies it the first time.
-    const pin = (id, ctx, type, live) => {
+    // `follow` re-pins whenever `live` reads something else: the companion is one conversation
+    // that never ends, so the prompt pieces a person edits in Settings › Companion reach it on
+    // its next request instead of waiting for a new session. Only such an edit costs the cache.
+    const pin = (id, ctx, type, live, { follow = false } = {}) => {
       if (!pinned.has(id)) pinned.set(id, new Map());
       const session = pinned.get(id);
       let value = repin.has(id) ? undefined : session.get(type) ?? recordedEntry(ctx, type);
-      if (value === undefined) {
-        value = live();
+      let current;
+      if (value === undefined) current = live();
+      else if (follow) {
+        try { current = live(); } catch { current = undefined; }
+      }
+      if (current !== undefined && current !== value) {
+        value = current;
         try { pi.appendEntry?.(type, { value }); } catch {}
       }
       session.set(type, value);
@@ -75,7 +87,8 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       const id = sessionIdOf(ctx);
       const hooks = id === undefined || typeof loadRolePrompt !== "function"
         ? {}
-        : { loadRolePrompt: () => pin(id, ctx, ROLE_PROMPT_ENTRY_TYPE, () => loadRolePrompt(role, { env })) };
+        : { loadRolePrompt: () => pin(id, ctx, ROLE_PROMPT_ENTRY_TYPE, () => loadRolePrompt(role, { env }),
+          { follow: role === COMPANION_ROLE }) };
       const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, hooks);
       let composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
       if (id !== undefined) {

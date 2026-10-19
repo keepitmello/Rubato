@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { buildStockPiArgs, stockPiSupportEnv } from '../../rubato-pi/src/launch.mjs';
 import { createSessionLink } from './session-link.mjs';
+import { COMPANION_ROLE } from '../../companion/companion.mjs';
 
 // One engine process is a profile boundary. Do not let a second caller repin
 // process-level configuration while an existing profile has live runtimes.
@@ -31,6 +32,14 @@ export function announceUnloadOnDispose(runtime) {
   dispose[UNLOAD_DISPOSE] = true;
   runtime.dispose = dispose;
   return runtime;
+}
+
+/**
+ * One runtime's own environment: what the CLI that created it carried, or the engine's. The
+ * companion's conversation (harness/companion) runs under its own role, whoever opens it.
+ */
+export function workerEnv(metadata, creation, base = process.env) {
+  return { ...(creation?.env ?? base), ...(metadata?.companion ? { RUBATO_PI_ROLE: COMPANION_ROLE } : {}) };
 }
 
 export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
@@ -118,7 +127,7 @@ export async function loadHostedRuntime({ runtimeRoot, agentDir }) {
   hosted.createWorkerOptions = async () => {
     const api = await hosted.loadTerminalApi();
     return (metadata, creation) => {
-      const scope = api.createUiScope({ process: { cwd: () => metadata.cwd }, env: { ...(creation?.env ?? process.env) } });
+      const scope = api.createUiScope({ process: { cwd: () => metadata.cwd }, env: workerEnv(metadata, creation) });
       const fromCli = Boolean(creation?.createRuntime);
       let runtime;
       let refresh, refreshController, refreshTimeout;

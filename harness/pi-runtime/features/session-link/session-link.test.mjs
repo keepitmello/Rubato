@@ -6,7 +6,7 @@ import { InteractiveMode, getMarkdownTheme, initTheme } from "@earendil-works/pi
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { DELIVER_REQUEST, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, createSessionLinkFactories, sessionMessageHeader } from "./index.mjs";
+import { COMPANION_WITHHELD_TOOLS, DELIVER_REQUEST, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, createSessionLinkFactories, createSessionTools, sessionMessageHeader } from "./index.mjs";
 
 initTheme("dark");
 
@@ -357,4 +357,22 @@ test("a side chat uses the prompt cache of the conversation it came from while i
   pi.start({ cwd: "/work", sessionManager: { getSessionId: () => "side-1", getCwd: () => "/work", getEntries: () => [marker] } });
   for (const handler of pi.handlers.get("session_shutdown") ?? []) handler({});
   assert.equal(keys().has("side-1"), false, "ending the session clears it");
+});
+
+test("the companion gets every conversation tool except waiting, and none of its tools tells it to wait", () => {
+  const lead = createSessionTools(() => ({})).map((tool) => tool.name);
+  const companion = createSessionTools(() => ({}), { companion: true });
+  assert.deepEqual(companion.map((tool) => tool.name), lead.filter((name) => !COMPANION_WITHHELD_TOOLS.includes(name)));
+  assert.ok(lead.includes("session_wait"));
+  for (const tool of companion) assert.doesNotMatch(tool.description, /session_wait/, tool.name);
+  assert.match(companion.find((tool) => tool.name === "session_create").description, /start a lead/);
+});
+
+test("a session the engine runs as the companion registers the companion's tools", async () => {
+  const registered = [];
+  const pi = { on() {}, registerMessageRenderer() {}, registerTool(tool) { registered.push(tool.name); }, rpc: { handle() {} } };
+  const [factory] = createSessionLinkFactories({ sessionLink: {}, companion: true });
+  await factory.factory(pi);
+  assert.ok(!registered.includes("session_wait"));
+  assert.ok(registered.includes("session_create"));
 });

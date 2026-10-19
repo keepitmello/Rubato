@@ -1,0 +1,12 @@
+{
+  "name": "rubato-companion",
+  "private": true,
+  "type": "module",
+  "description": "The companion (Segno): its files, its prompt pieces and the engine keeper that keeps it loaded.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test --test-timeout=90000 test/*.test.mjs"
+  }
+}

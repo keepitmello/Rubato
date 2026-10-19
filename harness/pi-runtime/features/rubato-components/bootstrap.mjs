@@ -94,13 +94,16 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     // process.env is never written.
     { name: "context-notes", factory: createContextNotesExtension({ agentDir, settingsManager: settings, env, propagateEnv: !hosted || env !== process.env }) },
     ...createCompactionExtensionFactories({ settingsManager: settings, env }),
-    ...createPromptRulesExtensionFactories({ settingsManager: settings }),
+    // `env` names this session's role: the engine runs the companion's conversation under its own.
+    ...createPromptRulesExtensionFactories({ settingsManager: settings, env }),
     ...createConfigReloadExtensionFactories({ settingsManager: settings, agentDir, cwd }),
     ...createUserCommandsAgentFactories({ agentDir, env }),
     ...createUserCommandSessionFactories(),
     ...createSessionTitleFactories(),
     // `sessionLink` comes from the engine (pi-server hosted-runtime.mjs); outside it the tools stay unregistered.
-    ...createSessionLinkFactories({ sessionLink }),
+    // The companion follows the conversations it starts through the messages they send it, so it
+    // gets no tool that waits on one (harness/prompts/companion/tools.pi.md).
+    ...createSessionLinkFactories({ sessionLink, companion: env.RUBATO_PI_ROLE === "companion" }),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),

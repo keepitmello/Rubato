@@ -38,8 +38,11 @@ try {
     };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);
-    service = await serveProfile({ agentDir: path.resolve(values['agent-dir'] ?? resolveLaunchAgentDir()),
-      socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: errorLog() });
+    const agentDir = path.resolve(values['agent-dir'] ?? resolveLaunchAgentDir());
+    // The companion belongs to the person's own profile, not to a profile a test or a tool started.
+    service = await serveProfile({ agentDir,
+      socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: errorLog(),
+      companion: agentDir === path.resolve(resolveLaunchAgentDir()) });
     console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
     if (stopRequested) await stop();
   }

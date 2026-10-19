@@ -155,11 +155,22 @@ export function lastUserInputAt(entries) {
     return undefined;
 }
 /**
+ * The companion's conversation (harness/companion COMPANION_ENTRY): it is always on, so its
+ * cache stays warm without an end while warming is on.
+ */
+export const COMPANION_SESSION_ENTRY = "rubato.companion";
+export function companionSession(entries) {
+    return entries.some((entry) => entry?.type === "custom" && entry.customType === COMPANION_SESSION_ENTRY);
+}
+/**
  * When warming ends: two hours after the latest user input, or the end the person set.
  * The latest action wins: an end set after that input stands as set (shorter too), and a
  * later input keeps the set end only if it reaches further. Undefined with neither.
+ * The companion warms without an end (Infinity).
  */
 export function warmingDeadline(entries, preference = sessionWarming(entries)) {
+    if (companionSession(entries))
+        return Number.POSITIVE_INFINITY;
     const inputAt = lastUserInputAt(entries);
     const fromInput = inputAt === undefined ? undefined : inputAt + RUBATO_WARMING_HORIZON_MS;
     if (preference.until === undefined)

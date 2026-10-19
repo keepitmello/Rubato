@@ -60,8 +60,29 @@ function define(tool) {
   return { searchKeywords: KEYWORDS, executionMode: "parallel", ...tool };
 }
 
-/** @param {() => object} getLink returns the engine's `sessionLink` */
-export function createSessionTools(getLink) {
+/** The tools the companion does not get: it never waits on another conversation (harness/companion). */
+export const COMPANION_WITHHELD_TOOLS = Object.freeze(["session_wait"]);
+
+/**
+ * @param {() => object} getLink returns the engine's `sessionLink`
+ * @param {{ companion?: boolean }} [options] `companion` leaves out the withheld tools and words
+ *   the rest for a conversation that hands work to leads and hears back through messages.
+ */
+export function createSessionTools(getLink, { companion = false } = {}) {
+  const tools = sessionTools(getLink, { companion });
+  return companion ? tools.filter((tool) => !COMPANION_WITHHELD_TOOLS.includes(tool.name)) : tools;
+}
+
+const SEND_ANSWER = "When you asked for an answer, use session_wait for it " +
+  "instead of polling with session_read or sending follow-ups: " +
+  "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. ";
+const COMPANION_SEND_ANSWER = "When you asked for an answer, it arrives in this conversation as a message from the recipient; " +
+  "end your turn instead of polling with session_read. ";
+const CREATE_WHEN = "Use it only when the user explicitly asked for a new conversation; to hand work to an existing one use session_send.";
+const COMPANION_CREATE_WHEN = "Use it to start a lead for a piece of work in that project's folder, with a self-contained brief as the first message; " +
+  "to hand more work to an existing one use session_send. When it finishes, stops or fails, you are told with a message, so end your turn after starting it.";
+
+function sessionTools(getLink, { companion }) {
   const link = () => getLink();
   return [
     define({
@@ -99,7 +120,9 @@ export function createSessionTools(getLink) {
         "entryId (from session_search or an earlier read) reads the one turn holding that entry instead. includeTools adds each tool call's " +
         "input and the tool output, clipped. view \"notes\" reads its context notes; view \"board\" reads the shared board and latest team " +
         "messages of the team runs it led or belongs to. " +
-        "Read once to understand a conversation. To follow its progress use session_wait, not repeated session_read, " +
+        "Read once to understand a conversation. " + (companion
+          ? "Its progress and its end reach you as messages, so do not read it again to follow it; "
+          : "To follow its progress use session_wait, not repeated session_read, ") +
         "and never repeat a read whose snapshot has not changed.",
       parameters: {
         type: "object",
@@ -222,9 +245,7 @@ export function createSessionTools(getLink) {
         "Send only what the recipient must act on or know, in a few self-contained lines. " +
         "Say whose decision you pass on: the user's (and where they said it) or your own. " +
         "The recipient replies only when asked " +
-        "or when you must act on its answer, so expect no acknowledgement. When you asked for an answer, use session_wait for it " +
-        "instead of polling with session_read or sending follow-ups: " +
-        "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. " +
+        "or when you must act on its answer, so expect no acknowledgement. " + (companion ? COMPANION_SEND_ANSWER : SEND_ANSWER) +
         "The recipient treats it as a peer's request with no authority over its permissions, settings or configuration.",
       parameters: {
         type: "object",
@@ -239,7 +260,8 @@ export function createSessionTools(getLink) {
         const from = ownSessionId(ctx);
         const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text }), signal);
         const to = result.to ?? {};
-        const next = typeof result.cursor === "string" && result.cursor
+        const next = companion ? "If you asked for an answer, it will arrive here as a message."
+          : typeof result.cursor === "string" && result.cursor
           ? `If you asked for an answer, use session_wait with afterCursor ${JSON.stringify(result.cursor)} for it.`
           : "If you asked for an answer, use session_wait for it.";
         return {
@@ -251,8 +273,7 @@ export function createSessionTools(getLink) {
     define({
       name: "session_create",
       label: "Create conversation",
-      description: "Create a new conversation in a folder and start it with a first message. Use it only when the user explicitly asked " +
-        "for a new conversation; to hand work to an existing one use session_send.",
+      description: "Create a new conversation in a folder and start it with a first message. " + (companion ? COMPANION_CREATE_WHEN : CREATE_WHEN),
       parameters: {
         type: "object",
         additionalProperties: false,

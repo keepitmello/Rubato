@@ -251,7 +251,7 @@ need_aside=0
 need_scheduler=0
 SCHEDULER_LABEL="com.keepitmello.rubato.scheduler"
 if "$LAUNCHCTL_BIN" print "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1; then
-  echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/)' && need_scheduler=1
+  echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/|harness/companion/)' && need_scheduler=1
 elif [ -f "$HERE/../scheduler/src/cli.mjs" ] && [ -z "${RUBATO_NO_SCHEDULER-}" ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
   need_scheduler=install
 fi
@@ -268,7 +268,8 @@ fi
 # 잡고 있는 프로세스에 SIGTERM 을 보낸다(cli.mjs 가 락을 풀고 끝낸다).
 # kill -9 는 락을 15초 stale 로 남기므로 쓰지 않는다. 엔진이 없으면 건너뛴다.
 need_profile=0
-echo "$CHANGED" | grep -Eq '^harness/pi-server/src/' && need_profile=1
+# 컴패니언 모듈(harness/companion)은 엔진이 메타데이터를 읽고 세뇨를 붙잡아 둘 때 쓴다.
+echo "$CHANGED" | grep -Eq '^harness/(pi-server/src|companion)/' && need_profile=1
 # 프로필 엔진은 기동할 때 런타임 루트에서 제공자·모델 코드를 읽는다. 후보만 새로
 # 깔고 엔진을 옛 코드로 두면, 피커에 새 모델이 안 뜨는 식으로 조용히 어긋난다 —
 # Opus 5.5 등록이 정확히 그렇게 됐다: 후보에는 파생 코드가 들어갔는데 도는 엔진이

@@ -1,0 +1,175 @@
+// The companion (Segno): one always-on conversation above the leads. This module is the one
+// place that knows where its files live and what they hold; the engine keeper, the role prompt
+// and the app's Companion settings page all read and write through it.
+//
+//   ~/.rubato/companion/                 the companion's home and its conversation's folder
+//     settings.json                      what the person chose in Settings › Companion
+//     state.json                         which conversation is the companion (written by the keeper)
+//     prompt/<piece>.md                  the person's version of one prompt piece
+//
+// Each prompt piece has a product default (harness/prompts/companion/<piece>.pi.md). A piece the
+// person rewrote is read from prompt/<piece>.md; every other piece keeps following the default,
+// so an update to Rubato still reaches the pieces nobody touched. The tools piece describes the
+// real tools and moves with the code, so it has no personal version.
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+
+/** The session entry that marks a conversation as the companion (pi-server session-files create). */
+export const COMPANION_ENTRY = 'rubato.companion';
+/** The role the engine gives the companion's runtime (rubato-pi role-contract). */
+export const COMPANION_ROLE = 'companion';
+export const COMPANION_TITLE = 'Segno';
+
+export const PIECES = Object.freeze([
+  Object.freeze({ id: 'preamble', editable: true }),
+  Object.freeze({ id: 'soul', editable: true }),
+  Object.freeze({ id: 'identity', editable: true }),
+  Object.freeze({ id: 'user', editable: true }),
+  Object.freeze({ id: 'companion', editable: true }),
+  Object.freeze({ id: 'tools', editable: false }),
+]);
+const PIECE_IDS = new Set(PIECES.map((piece) => piece.id));
+/** A personal piece larger than this is refused: it rides on every request. */
+export const PIECE_LIMIT = 64 * 1024;
+
+export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 60, 120, 240]);
+export const DEFAULT_SETTINGS = Object.freeze({
+  enabled: false,
+  heartbeat: Object.freeze({ enabled: true, everyMinutes: 60 }),
+});
+
+export function companionHome(env = process.env) {
+  if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
+  return path.join(env.HOME || homedir(), '.rubato', 'companion');
+}
+
+export function companionPaths(env = process.env) {
+  const home = companionHome(env);
+  return { home, settings: path.join(home, 'settings.json'), state: path.join(home, 'state.json'),
+    following: path.join(home, 'following.json'), prompt: path.join(home, 'prompt') };
+}
+
+function readJson(file) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); }
+  catch (error) { if (error?.code === 'ENOENT') return undefined; if (error instanceof SyntaxError) return undefined; throw error; }
+}
+
+function writeJson(file, value) {
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600 });
+  renameSync(temporary, file);
+}
+
+/** Settings as stored, with every missing or malformed field at its default. */
+export function normalizeSettings(value) {
+  const input = value && typeof value === 'object' ? value : {};
+  const heartbeat = input.heartbeat && typeof input.heartbeat === 'object' ? input.heartbeat : {};
+  return {
+    enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_SETTINGS.enabled,
+    heartbeat: {
+      enabled: typeof heartbeat.enabled === 'boolean' ? heartbeat.enabled : DEFAULT_SETTINGS.heartbeat.enabled,
+      everyMinutes: HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes) ? heartbeat.everyMinutes : DEFAULT_SETTINGS.heartbeat.everyMinutes,
+    },
+  };
+}
+
+export function readSettings(env = process.env) {
+  return normalizeSettings(readJson(companionPaths(env).settings));
+}
+
+/** Applies `patch` over the stored settings; a field outside the schema is refused. */
+export function writeSettings(patch, env = process.env) {
+  if (!patch || typeof patch !== 'object') throw new TypeError('settings patch must be an object');
+  const current = readSettings(env);
+  if (patch.enabled !== undefined && typeof patch.enabled !== 'boolean') throw new TypeError('enabled must be true or false');
+  const heartbeat = patch.heartbeat;
+  if (heartbeat !== undefined) {
+    if (!heartbeat || typeof heartbeat !== 'object') throw new TypeError('heartbeat must be an object');
+    if (heartbeat.enabled !== undefined && typeof heartbeat.enabled !== 'boolean') throw new TypeError('heartbeat.enabled must be true or false');
+    if (heartbeat.everyMinutes !== undefined && !HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes))
+      throw new TypeError(`heartbeat.everyMinutes must be one of ${HEARTBEAT_MINUTES.join(', ')}`);
+  }
+  const next = normalizeSettings({ ...current, ...patch, heartbeat: { ...current.heartbeat, ...heartbeat } });
+  writeJson(companionPaths(env).settings, next);
+  return next;
+}
+
+export function readState(env = process.env) {
+  const state = readJson(companionPaths(env).state);
+  return typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {};
+}
+
+export function writeState(state, env = process.env) {
+  writeJson(companionPaths(env).state, { sessionId: state.sessionId });
+}
+
+/**
+ * The conversations the engine follows for the companion until their handed work ends
+ * (pi-server companion-follow.mjs), kept across engine restarts.
+ */
+export function followingStore(env = process.env) {
+  const file = companionPaths(env).following;
+  return {
+    load: () => { const value = readJson(file); return value && typeof value === 'object' && !Array.isArray(value) ? value : {}; },
+    save: (records) => writeJson(file, records),
+  };
+}
+
+function pieceOf(id) {
+  if (!PIECE_IDS.has(id)) throw new TypeError(`Unknown prompt piece: ${id}`);
+  return PIECES.find((piece) => piece.id === id);
+}
+
+export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${pieceOf(id).id}.pi.md`);
+export const personalPiecePath = (env, id) => path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`);
+
+/**
+ * Every piece for the settings page: its default text, the person's version if any, and
+ * whether it can have one.
+ */
+export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
+  return PIECES.map(({ id, editable }) => {
+    const defaultText = readFile(defaultPiecePath(defaultsDir, id)).trim();
+    const personal = editable ? readOptional(personalPiecePath(env, id), readFile) : undefined;
+    return { id, editable, defaultText, ...(personal === undefined ? {} : { personalText: personal }) };
+  });
+}
+
+function readOptional(file, readFile) {
+  try { return readFile(file).trim(); }
+  catch (error) { if (error?.code === 'ENOENT') return undefined; throw error; }
+}
+
+/** Saves the person's version of one piece; an empty text or the default itself removes it. */
+export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
+  const piece = pieceOf(id);
+  if (!piece.editable) throw new TypeError(`The ${id} piece follows the product and has no personal version`);
+  if (typeof text !== 'string') throw new TypeError('text must be a string');
+  if (text.length > PIECE_LIMIT) throw new TypeError(`A piece holds at most ${PIECE_LIMIT} characters`);
+  const file = personalPiecePath(env, id);
+  const trimmed = text.trim();
+  const defaultText = defaultsDir && existsSync(defaultPiecePath(defaultsDir, id))
+    ? readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim() : undefined;
+  if (!trimmed || trimmed === defaultText) { rmSync(file, { force: true }); return { personal: false }; }
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, trimmed + '\n', { mode: 0o600 });
+  renameSync(temporary, file);
+  return { personal: true };
+}
+
+/** The companion's whole role prompt: each piece, the person's version first, in order. */
+export function composeCompanionPrompt({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
+  return readPieces({ defaultsDir, env, readFile })
+    .map((piece) => piece.personalText ?? piece.defaultText)
+    .filter((text) => text.length > 0)
+    .join('\n\n');
+}
+
+/** Whether a session's entries carry the companion marker. */
+export function isCompanionEntries(entries) {
+  return Array.isArray(entries) && entries.some((entry) => entry?.type === 'custom' && entry.customType === COMPANION_ENTRY);
+}

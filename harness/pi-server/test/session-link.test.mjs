@@ -31,7 +31,7 @@ async function setup(t, { now, startDelayMs = 0 } = {}) {
       if (startDelayMs) { const start = worker.start.bind(worker); worker.start = async () => { await delay(startDelayMs); return start(); }; }
       return worker;
     }, onError: (error) => errors.push(error) });
-  const link = createSessionLink({ pollMs: 20, now });
+  const link = createSessionLink({ pollMs: 20, followPollMs: 20, now });
   link.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId });
   const clients = [];
   t.after(async () => {
@@ -43,7 +43,7 @@ async function setup(t, { now, startDelayMs = 0 } = {}) {
   const files = new SessionFiles(sessionsDir);
   const row = (id) => service.host.directory.value.sessions.find((item) => item.sessionId === id);
   const listed = (id) => until(() => row(id), `session ${id} never reached the directory`);
-  const make = async (title) => { const created = await files.create({ cwd: root, title }); await listed(created.id); return created; };
+  const make = async (title, options = {}) => { const created = await files.create({ cwd: root, title, ...options }); await listed(created.id); return created; };
   const client = async () => {
     const instance = await new SessionClient({ socketPath, serverId: service.serverId }).connect();
     clients.push(instance); return instance;
@@ -782,4 +782,29 @@ test('read view notes: the current version of each context note, one note by pat
   assert.deepEqual(notes.notes.map((note) => [note.path, note.text, note.windowId]), [['log.md', 'tried X', 'w1'], ['now.md', 'new goal', 'w2']]);
   const one = await env.api.read({ sessionId: session.id, view: 'notes', notePath: 'now.md' });
   assert.deepEqual([one.notes.map((note) => note.text), one.paths], [['new goal'], ['log.md', 'now.md']]);
+});
+
+test("the companion hears once when a lead it started or sent work to ends its turn; other creators do not", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const lead = await env.make('Lead');
+  const notices = async () => (await env.deliveries(segno.id)).filter((item) => item.data.kind === 'notice');
+
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Fix login', text: 'fix the login bug' });
+  await until(async () => env.host.getSessionWorker(segno.id) && (await notices()).length === 1, 'no notice for the created lead');
+  const [first] = await notices();
+  assert.equal(first.data.from.sessionId, created.sessionId);
+  assert.equal(first.data.from.title, 'Fix login');
+  assert.match(first.data.text, /^Finished its turn\.\n\nIts answer:\nreply: fix the login bug/);
+
+  await env.api.send({ from: segno.id, to: created.sessionId, text: 'also check signup' });
+  await until(async () => (await notices()).length === 2, 'no notice for the follow-up');
+  assert.match((await notices())[1].data.text, /reply: also check signup/);
+  await delay(100);
+  assert.equal((await notices()).length, 2, 'one notice per handoff');
+
+  const plain = await env.api.create({ from: lead.id, cwd: env.root, title: 'Not followed', text: 'something' });
+  await until(async () => env.row(plain.sessionId)?.status === 'idle');
+  await delay(100);
+  assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
 });

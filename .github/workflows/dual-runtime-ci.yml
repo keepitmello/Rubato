@@ -5,6 +5,7 @@ on:
     branches: [rubato/base, codex/dual-runtime-checkpoints-20260913]
     paths:
       - 'harness/pi-server/**'
+      - 'harness/companion/**'
       - 'harness/t3-integration/**'
       - 'docs/dual-runtime/**'
       - 'IMPLEMENTATION_HANDOFF.md'
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - 'harness/pi-server/**'
+      - 'harness/companion/**'
       - 'harness/t3-integration/**'
       - 'docs/dual-runtime/**'
       - 'IMPLEMENTATION_HANDOFF.md'
@@ -52,6 +54,8 @@ jobs:
         run: |
           set -o pipefail
           npm --prefix harness/pi-server test --workspaces=false 2>&1 | tee "$RUNNER_TEMP/pi-server-tests.log"
+      - name: Test the companion's files and keeper
+        run: npm --prefix harness/companion test
       - name: Measure synthetic Pi lifecycle control path
         run: node harness/pi-server/scripts/measure-lifecycle.mjs | tee "$RUNNER_TEMP/pi-lifecycle-measurement.json"
       - name: Preserve validation logs
