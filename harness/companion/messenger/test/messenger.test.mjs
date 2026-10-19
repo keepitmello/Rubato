@@ -394,3 +394,15 @@ test('a long transcript is sent once and never replayed: the ledger is a positio
   await settle(box.service);
   assert.equal(replies(), count, 'later polls send nothing again');
 });
+
+test('an engine with no conversation host leaves the messenger idle instead of failing the thread', async (t) => {
+  const box = sandbox(t);
+  const { start } = await import('../service.mjs');
+  const logs = [];
+  const service = await start({ env: box.env, agentDir: box.agentDir, log: (event) => logs.push(event) });
+  assert.deepEqual(logs, ['messenger-idle']);
+  await service.ready;
+  await service.poke();
+  await assert.rejects(service.send({ text: 'x', to: 'user' }), /idle/);
+  await service.close();
+});
