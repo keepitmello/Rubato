@@ -70,6 +70,9 @@ test('the engine job starts the profile engine at load, keeps it alive and waits
   assert.match(plist, /<key>NODE_OPTIONS<\/key><string>--experimental-strip-types<\/string>/);
   assert.match(plist, /<key>RUBATO_SCHEDULE_HOME<\/key><string>\/s&amp;t<\/string>/);
   assert.equal(plistAgentDir(plist), '/h/.rubato-pi/agent');
+  assert.doesNotMatch(plist, /--runtime-root/, 'the engine reads the installed build at each start');
+  assert.match(renderEngineLaunchAgent({ nodePath: '/n', agentDir: '/a', home: '/h', pathEnv: '/n', logPath: '/l', runtimeRoot: '/c' }),
+    /<string>--launchd<\/string><string>--runtime-root<\/string><string>\/c<\/string>/);
   // The restart helpers find the engine by `cli.mjs --agent-dir <dir>` on its command line.
   assert.ok(plist.indexOf('cli.mjs') < plist.indexOf('--agent-dir'));
 });
