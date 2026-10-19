@@ -18,7 +18,7 @@ const answer = (text, timestamp) => ({ role: "assistant", content: [{ type: "tex
 const wake = (what, text, timestamp) => ({ role: "custom", timestamp,
   ...buildSessionMessage(parseDelivery({ v: 1, messageId: `w${timestamp}`, kind: "wake", what, text })) });
 const anchor = (timestamp) => ({ role: "user", content: [{ type: "text", text: SYSTEM_ANCHOR }], timestamp });
-const system = (text, timestamp) => ({ role: "system", content: [{ type: "text", text }], timestamp });
+const system = (text, timestamp) => ({ role: "system", content: [{ type: "text", text }], rubatoEvent: true, timestamp });
 
 test("a wake is Rubato's clock, not shown, and its envelope says so for models that read it as a user message", () => {
   const message = wake("heartbeat", HEARTBEAT, 5);

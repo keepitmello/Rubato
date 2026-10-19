@@ -145,6 +145,8 @@ const USER_SIDE = new Set(["user", "custom", "toolResult"]);
  * prompt) gets SYSTEM_ANCHOR before it. A wake's projection depends only on what precedes it, so
  * earlier turns project the same bytes on every request. Other models read the wake's envelope as
  * a user message, as before. The transcript keeps the wake as it was written.
+ * The system message carries `rubatoEvent`, so the forced-prompt projection (session-prompt
+ * patches.mjs) keeps it as an event in the conversation rather than a prompt update.
  */
 export function projectWakes(messages, { native }) {
   if (!native || !messages.some(isWake)) return messages;
@@ -158,7 +160,8 @@ export function projectWakes(messages, { native }) {
     const leading = projected.length === 1 && previous.role === "system";
     const open = previous !== undefined && !leading && (USER_SIDE.has(previous.role) || previous.role === "system");
     if (!open) projected.push({ role: "user", content: [{ type: "text", text: SYSTEM_ANCHOR }], timestamp: message.timestamp });
-    projected.push({ role: "system", content: [{ type: "text", text: message.details.text }], timestamp: message.timestamp });
+    projected.push({ role: "system", content: [{ type: "text", text: message.details.text }], rubatoEvent: true,
+      timestamp: message.timestamp });
   }
   return projected;
 }

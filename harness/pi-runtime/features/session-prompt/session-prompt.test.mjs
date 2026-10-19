@@ -268,3 +268,52 @@ test("a session's replacement prompt is the whole system prompt of every request
   assert.equal(replaced.session.systemPrompt, replacement);
   assert.deepEqual(composeCalls, [], "no system_prompt handler runs for a replaced session");
 });
+
+// Rubato's clock (the session link's wake) reaches a model that takes system messages
+// mid-conversation as one, through the forced-prompt projection that rebuilds every later
+// system message (session-link message.mjs projectWakes).
+test("a wake from Rubato's clock reaches the request as a system message after the fixed anchor", async () => {
+  const { installSessionLink } = await import("../session-link/extension.mjs");
+  const { SYSTEM_ANCHOR, buildSessionMessage, parseDelivery } = await import("../session-link/message.mjs");
+  const cwd = join(scratchRoot, "wake");
+  const agentDir = join(cwd, "agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({
+    providers: { "sp-test": { baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "unused",
+      models: [{ id: "fake-model", input: ["text"], compat: { supportsMidConvoSystemMessages: true } }] } },
+  }));
+  let link;
+  const settingsManager = sdk.SettingsManager.inMemory();
+  const resourceLoader = new sdk.DefaultResourceLoader({
+    cwd, agentDir, settingsManager,
+    // Rubato composes every prompt (system_prompt handlers), so the forced-prompt projection runs.
+    extensionFactories: [{ name: "session-link", factory: (pi) => {
+      link = pi;
+      installSessionLink(pi);
+      pi.on("system_prompt", (event) => ({ systemPrompt: `COMPOSED\n${event.systemPrompt}` }));
+    } }],
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
+  });
+  await resourceLoader.reload();
+  const { session } = await sdk.createAgentSession({
+    cwd, agentDir, settingsManager, resourceLoader, sessionManager: sdk.SessionManager.inMemory(cwd),
+  });
+  try {
+    const requests = [];
+    session.agent.streamFunction = (_model, context) => {
+      requests.push(context.messages);
+      return streamOf(assistant([{ type: "text", text: `done-${requests.length}` }]));
+    };
+    await session.prompt("hi");
+    const heartbeat = "Heartbeat. Look over the conversations you follow.";
+    link.sendMessage(buildSessionMessage(parseDelivery({ v: 1, messageId: "w1", kind: "wake", what: "heartbeat", text: heartbeat })),
+      { triggerTurn: true });
+    for (let waited = 0; requests.length < 2 && waited < 5000; waited += 20) await new Promise((resolve) => setTimeout(resolve, 20));
+    await session.agent.waitForIdle?.();
+    const sent = requests[1];
+    assert.equal(sent[0].role, "system");
+    assert.match(textOf(sent[0]), /^COMPOSED\n/);
+    assert.deepEqual(sent.slice(-3).map((message) => [message.role, textOf(message)]),
+      [["assistant", "done-1"], ["user", SYSTEM_ANCHOR], ["system", heartbeat]]);
+  } finally { await session.dispose(); }
+});

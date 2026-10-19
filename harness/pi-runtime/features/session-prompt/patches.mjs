@@ -235,7 +235,15 @@ export function patchAgentSession(source) {
                     rest.push(message);
                     continue;
                 }
-                if (index === firstIndex || (!message.toolsAdded?.length && !message.toolsRemoved?.length))
+                if (index === firstIndex)
+                    continue;
+                // An event in the conversation that reaches the model as a system message (the
+                // session link's wake from Rubato's own clock) is not a prompt update; it stays whole.
+                if (message.rubatoEvent === true) {
+                    rest.push(message);
+                    continue;
+                }
+                if (!message.toolsAdded?.length && !message.toolsRemoved?.length)
                     continue;
                 rest.push({
                     role: "system",
