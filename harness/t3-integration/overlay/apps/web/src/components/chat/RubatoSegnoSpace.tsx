@@ -28,13 +28,17 @@ const PANEL_POLL_MS = 3_000;
 const FINISHED_SHOWN_MS = 20 * 60_000;
 
 const EMPTY: SegnoPanel = { leads: [], finished: [], held: [] };
+/** The last panel the server gave, so coming back to the space starts from it, not from nothing. */
+let lastPanel: SegnoPanel | null = null;
 
+/** `known` is false until the server has answered once; Segno's face waits for it. */
 function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>) {
-  const [panel, setPanel] = useState<SegnoPanel>(EMPTY);
+  const [panel, setPanel] = useState<SegnoPanel | null>(lastPanel);
   const refresh = useCallback(async () => {
     if (environmentId === null) return;
     try {
-      setPanel(await rubatoCompanion.panel(environmentId));
+      lastPanel = await rubatoCompanion.panel(environmentId);
+      setPanel(lastPanel);
     } catch {
       // A server without the route shows nothing.
     }
@@ -44,7 +48,7 @@ function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>) {
     const timer = window.setInterval(() => void refresh(), PANEL_POLL_MS);
     return () => window.clearInterval(timer);
   }, [refresh]);
-  return { panel, refresh };
+  return { panel: panel ?? EMPTY, known: panel !== null, refresh };
 }
 
 /** The quiet hours: with nothing running, Segno sleeps between these local hours. */
@@ -64,10 +68,13 @@ export function stageStateOf(panel: SegnoPanel, now: Date): SegnoStageState {
 
 // Each expression loads once per app session, when it is first needed.
 const artCache = new Map<SegnoStageState, string>();
-function useSegnoArt(environmentId: ReturnType<typeof useReadyEnvironmentId>, state: SegnoStageState) {
+function useSegnoArt(
+  environmentId: ReturnType<typeof useReadyEnvironmentId>,
+  state: SegnoStageState | null,
+) {
   const [loaded, setLoaded] = useState<ReadonlyMap<SegnoStageState, string>>(() => new Map(artCache));
   useEffect(() => {
-    if (artCache.has(state) || environmentId === null) return;
+    if (state === null || artCache.has(state) || environmentId === null) return;
     let live = true;
     void rubatoCompanion
       .art(environmentId, state)
@@ -86,13 +93,19 @@ function useSegnoArt(environmentId: ReturnType<typeof useReadyEnvironmentId>, st
 /**
  * The expressions stacked in one place; only the current one shows. A change of state cross-fades
  * once (RubatoSegnoSpace.css); nothing moves in between. Until the new picture has loaded, the one
- * before stays.
+ * before stays; before the first state is known, none shows.
  */
-function SegnoArt({ art, state }: { art: ReadonlyMap<SegnoStageState, string>; state: SegnoStageState }) {
+function SegnoArt({
+  art,
+  state,
+}: {
+  art: ReadonlyMap<SegnoStageState, string>;
+  state: SegnoStageState | null;
+}) {
   const lastShown = useRef<SegnoStageState | null>(null);
-  const shown = art.has(state) ? state : (lastShown.current ?? state);
+  const shown = state !== null && art.has(state) ? state : lastShown.current;
   useEffect(() => {
-    if (art.has(state)) lastShown.current = state;
+    if (state !== null && art.has(state)) lastShown.current = state;
   }, [art, state]);
   return (
     <>
@@ -200,9 +213,9 @@ export function useThreadListFoldedHere() {
 export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
   useThreadListFoldedHere();
   const environmentId = useReadyEnvironmentId();
-  const { panel, refresh } = usePanel(environmentId);
+  const { panel, known, refresh } = usePanel(environmentId);
   const now = useNow();
-  const state = stageStateOf(panel, new Date(now));
+  const state = known ? stageStateOf(panel, new Date(now)) : null;
   const art = useSegnoArt(environmentId, state);
   const space = useRef<HTMLDivElement>(null);
   const stageWidth = useStageWidth(space);
@@ -239,7 +252,7 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
               />
             )}
           </div>
-          <div className="relative min-h-0 flex-1" data-rubato-segno-state={state}>
+          <div className="relative min-h-0 flex-1" data-rubato-segno-state={state ?? undefined}>
             <SegnoArt art={art} state={state} />
           </div>
         </aside>
