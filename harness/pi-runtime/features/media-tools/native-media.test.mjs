@@ -234,7 +234,7 @@ test("staged stock SDK parses native image, web search, and anthropic bash from 
 	assert.equal(imageOut.content[0].type, "providerNative");
 	assert.equal(imageOut.content[0].subtype, "image_generation_call");
 	assert.equal(imageOut.content[0].raw.result, PNG_DATA);
-	// image_create/image_edit read the saved image and its revised prompt from this block.
+	// The block keeps the finished image and the prompt the chat model wrote for it.
 	assert.equal(imageOut.content[0].raw.status, "completed");
 	assert.equal(imageOut.content[0].raw.revised_prompt, "one pixel");
 

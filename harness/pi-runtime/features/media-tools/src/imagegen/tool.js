@@ -4,7 +4,7 @@ import { dirname, extname, isAbsolute, resolve } from "node:path";
 import { Type } from "typebox";
 import { defineTool } from "../host-sdk.mjs";
 import { latestImageResult, nextChain } from "./chain.js";
-import { CODEX_PROVIDER, composePrompt, generateCodexImage, IMAGE_MODELS, ORCHESTRATOR_MODEL_ID, resolveCodexImageModel } from "./codex.js";
+import { composePrompt, generateCodexImage, IMAGE_MODELS, resolveCodexImageModel } from "./codex.js";
 import { displayPath, resolveTarget } from "./paths.js";
 
 export const IMAGE_CREATE_TOOL_NAME = "image_create";
@@ -15,8 +15,8 @@ const INPUT_MIME_TYPES = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "
 
 const shared = {
     prompt: Type.String({ minLength: 1, maxLength: 32_000, description: "Detailed description of the image, or of the change to make." }),
-    size: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("1024x1024"), Type.Literal("1024x1536"), Type.Literal("1536x1024")], { default: "auto", description: "Output resolution. Defaults to auto." })),
-    quality: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")], { default: "auto", description: "Rendering quality. Defaults to auto." })),
+    size: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("1024x1024"), Type.Literal("1024x1536"), Type.Literal("1536x1024")], { default: "auto", description: "Requested resolution. The ChatGPT backend may pick another size; describe the framing (portrait, wide) in the prompt too. Defaults to auto." })),
+    quality: Type.Optional(Type.Union([Type.Literal("auto"), Type.Literal("low"), Type.Literal("medium"), Type.Literal("high")], { default: "auto", description: "Requested rendering quality. The ChatGPT backend may pick another. Defaults to auto." })),
     output_path: Type.Optional(Type.String({ minLength: 1, description: "Where to write the PNG, relative to the working directory. Defaults to generated-images/." })),
 };
 const CreateParams = Type.Object(shared, { additionalProperties: false });
@@ -71,7 +71,7 @@ async function runImageTool(kind, toolCallId, params, signal, ctx) {
     const imageModel = IMAGE_MODELS[kind];
     const size = params.size ?? "auto";
     const quality = params.quality ?? "auto";
-    const base = { tool: kind === "create" ? IMAGE_CREATE_TOOL_NAME : IMAGE_EDIT_TOOL_NAME, imageModel, orchestrator: `${CODEX_PROVIDER}/${ORCHESTRATOR_MODEL_ID}`, size, quality };
+    const base = { tool: kind === "create" ? IMAGE_CREATE_TOOL_NAME : IMAGE_EDIT_TOOL_NAME, imageModel, size, quality };
     const prompt = params.prompt.trim();
     if (prompt.length === 0)
         return failure("Error: prompt must contain non-whitespace text.", "invalid_params", base);
@@ -115,13 +115,11 @@ async function runImageTool(kind, toolCallId, params, signal, ctx) {
         inputs: sources.inputs.map((input) => displayPath(ctx.cwd, input.absolute)),
         continued: sources.continued === true,
         prompt,
-        ...(result.revisedPrompt === undefined ? {} : { revisedPrompt: result.revisedPrompt }),
         chain: nextChain(sources.history, { prompt }),
     };
     const summary = [
         `Saved ${path} (${imageModel}).`,
         ...(details.continued ? [`Continued from ${details.inputs[0]}.`] : []),
-        ...(result.revisedPrompt === undefined ? [] : [`Revised prompt: ${result.revisedPrompt}`]),
     ].join("\n");
     return {
         content: [{ type: "text", text: summary }, { type: "image", data: result.data, mimeType: "image/png" }],
@@ -133,8 +131,8 @@ async function runImageTool(kind, toolCallId, params, signal, ctx) {
 export const imageCreateTool = defineTool({
     name: IMAGE_CREATE_TOOL_NAME,
     label: "Create Image",
-    description: "Create a new image from a text prompt with ChatGPT Images 2.5 Flare, the fast tier, and save it as a PNG. To change an existing image, use image_edit. Runs on the OpenAI ChatGPT login only.",
-    promptSnippet: "Create new images from text prompts (ChatGPT Images 2.5 Flare).",
+    description: "Create a new image from a text prompt and save it as a PNG. The prompt reaches the image service exactly as written. Requests ChatGPT Images 2.5 Flare, the fast tier; the ChatGPT backend picks the model it runs and does not say which. To change an existing image, use image_edit. Runs on the OpenAI ChatGPT login only.",
+    promptSnippet: "Create new images from text prompts (ChatGPT image service, prompt sent as written).",
     parameters: CreateParams,
     execute: (toolCallId, params, signal, _onUpdate, ctx) => runImageTool("create", toolCallId, params, signal, ctx),
 });
@@ -142,8 +140,8 @@ export const imageCreateTool = defineTool({
 export const imageEditTool = defineTool({
     name: IMAGE_EDIT_TOOL_NAME,
     label: "Edit Image",
-    description: "Edit or continue an image with ChatGPT Images 2.5 Sunburst, the precise-editing tier, and save the result as a new PNG. Pass `images` to edit or reference specific files; omit it to keep editing the last image made in this session, with the earlier requests carried along. Runs on the OpenAI ChatGPT login only.",
-    promptSnippet: "Edit or continue images (ChatGPT Images 2.5 Sunburst).",
+    description: "Edit or continue an image and save the result as a new PNG. The prompt reaches the image service exactly as written. Requests ChatGPT Images 2.5 Sunburst, the precise-editing tier; the ChatGPT backend picks the model it runs and does not say which. Pass `images` to edit or reference specific files; omit it to keep editing the last image made in this session, with the earlier requests carried along. Runs on the OpenAI ChatGPT login only.",
+    promptSnippet: "Edit or continue images (ChatGPT image service, prompt sent as written).",
     parameters: EditParams,
     execute: (toolCallId, params, signal, _onUpdate, ctx) => runImageTool("edit", toolCallId, params, signal, ctx),
 });
