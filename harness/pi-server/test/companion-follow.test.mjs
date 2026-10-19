@@ -113,3 +113,37 @@ test('judge waits while the turn runs', () => {
   assert.equal(judge(record, { status: 'running', ui: [], final: { entryId: 'x' } }, 0), undefined);
   assert.equal(judge(record, { status: 'idle', ui: [] }, 0), undefined);
 });
+
+test('a lead that dies mid-turn with the engine is reported lost by the next engine', async () => {
+  const w = world();
+  let saved = {};
+  const store = { load: () => JSON.parse(JSON.stringify(saved)), save: (records) => { saved = JSON.parse(JSON.stringify(records)); } };
+  const before = w.follower({ store });
+  before.follow('lead', 'segno');
+  w.state.set('lead', { status: 'running' });
+  await before.poll();
+  assert.equal(saved.lead.started, true, 'seeing the turn run is saved');
+  // The engine is killed: no close(), and the lead's runtime died with it.
+  w.state.set('lead', { status: 'stored' });
+  const after = w.follower({ store });
+  await after.poll();
+  w.tick(LOST_AFTER_MS);
+  await after.poll();
+  await after.close();
+  assert.deepEqual(w.notices.map((notice) => [notice.targetId, notice.text]), [['lead', noticeText('lost', {})]]);
+  assert.deepEqual(after.following(), []);
+});
+
+test('work handed to a busy lead whose turn is then stopped or fails is told at once: the held message starts no turn', async () => {
+  for (const [stopReason, outcome] of [['aborted', 'Was stopped before finishing.'], ['error', 'Ended with an error.']]) {
+    const w = world();
+    const f = w.follower();
+    w.state.set('lead', { status: 'running', final: { entryId: 'old', text: 'old' } });
+    f.follow('lead', 'segno', { final: 'old', busy: true });
+    w.state.set('lead', { status: 'idle', final: { entryId: 'cur', text: 'half', stopReason } });
+    await f.poll();
+    await f.close();
+    assert.equal(w.notices.length, 1, stopReason);
+    assert.match(w.notices[0].text, new RegExp(`^${outcome.replace('.', '\\.')}`));
+  }
+});
