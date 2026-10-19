@@ -28,6 +28,8 @@ const THREAD = path.join(here, 'resident-thread.mjs');
 export const RESIDENT_SERVICES = [
   { name: 'companion', module: path.resolve(here, '../../companion/keeper-service.mjs') },
   { name: 'scheduler', module: path.resolve(here, '../../scheduler/src/service.mjs') },
+  { name: 'messenger', module: path.resolve(here, '../../companion/messenger/service.mjs') },
+  { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },
 ];
 
 export const TIMINGS = Object.freeze({

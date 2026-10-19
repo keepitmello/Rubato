@@ -94,8 +94,13 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
           return sessionLink.channel(args);
         },
       } : {};
-      residents = startResidentServices({ services: Array.isArray(resident) ? resident : RESIDENT_SERVICES,
+      const services = Array.isArray(resident) ? resident : RESIDENT_SERVICES;
+      residents = startResidentServices({ services,
         context: { agentDir, socketPath, serverId: service.serverId }, host, onError, log, timings: residentTimings });
+      // The companion's telegram_send queues through the messenger service (harness/companion/messenger).
+      if (sessionLink?.attachTelegram && services.some((entry) => entry.name === 'messenger')) {
+        sessionLink.attachTelegram((args) => residents.call('messenger', 'send', args));
+      }
     }
     // What the previous engine was running when a restart closed it (drain.mjs).
     const resumeFile = resumeFilePath(serverDir);
