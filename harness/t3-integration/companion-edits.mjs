@@ -47,6 +47,14 @@ export const companionEdits = {
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/phone",\n', '  "/settings/companion",\n'],
   ],
+  // Segno keeps its name: its first message does not title its thread (T3 titles a thread with no
+  // messages from the first one it sends, and the Pi adapter mirrors that title into the engine).
+  'apps/web/src/components/ChatView.tsx': [
+    ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
+      '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
+      'replace'],
+    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+  ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
     ['  const threads = useThreadShells();\n',

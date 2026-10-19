@@ -193,7 +193,11 @@ export function RubatoProjectRail() {
     if (key !== null && !open) void setOpen(true);
   };
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
-  const onSegno = companion.threadId !== null && pathname.endsWith(`/${companion.threadId}`);
+  // The router's pathname is percent-encoded, and Segno's thread id (an inventory import) has ':'.
+  const onSegno =
+    companion.threadId !== null &&
+    (pathname.endsWith(`/${encodeURIComponent(companion.threadId)}`) ||
+      pathname.endsWith(`/${companion.threadId}`));
   const onRailPage =
     onSegno ||
     ["/scheduled", "/memory", "/pull-requests", "/usage", "/stats", "/settings"].some(onPage);

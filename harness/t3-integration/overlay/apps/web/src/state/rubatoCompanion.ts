@@ -185,6 +185,11 @@ export function useRubatoCompanion(): CompanionView {
   return current;
 }
 
+/** Whether `threadId` is Segno's conversation, as far as the app knows it now. */
+export function isCompanionThread(threadId: string): boolean {
+  return view.threadId !== null && view.threadId === threadId;
+}
+
 /** The thread list without Segno's conversation: it opens from the rail (companion-edits.mjs). */
 export function useWithoutCompanionThread<T extends { readonly id: string }>(
   threads: ReadonlyArray<T>,

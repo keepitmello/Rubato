@@ -179,6 +179,9 @@ class RuntimeHandle {
     if (!command || !COMMANDS.has(command.type)) throw invalid('Unsupported command for an attached session');
     if (this.closed) throw invalid('Runtime is unloading; attach again');
     if (this.worker.presentationOwner && !command.type.startsWith('get_')) throw invalid('This conversation is controlled by a CLI terminal; detach it before controlling it from another window');
+    // The companion's conversation keeps its name: a window mirroring its own thread title (the
+    // T3 Pi adapter does on every turn) must not rename it (harness/companion).
+    if (command.type === 'set_session_name' && this.metadata?.companion === true) return wire(null);
     this.calls++;
     clearTimeout(this.timer);
     if (INPUT_COMMANDS.has(command.type) || command.type === 'compact' || command.type === 'continue') { this.running = true; this.publish(); }

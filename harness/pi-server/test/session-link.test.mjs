@@ -817,3 +817,17 @@ test("Rubato's own notice (the companion's heartbeat) wakes a conversation as a 
   assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.from.title, item.data.text]), [['notice', 'Rubato', 'Heartbeat.']]);
   await assert.rejects(env.link.notice({ to: segno.id, text: '' }), { code: 'invalid' });
 });
+
+test("a window cannot rename the companion's conversation; any other conversation it can", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const lead = await env.make('Lead');
+  const client = await env.client();
+  for (const [id, expected] of [[segno.id, 'Segno'], [lead.id, 'first message as title']]) {
+    await client.attach(id);
+    await client.command({ type: 'set_session_name', name: 'first message as title' });
+    await client.detach();
+    await until(() => env.row(id)?.title === expected, `title of ${id}`);
+  }
+  assert.equal(env.row(segno.id).title, 'Segno');
+});
