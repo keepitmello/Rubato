@@ -127,11 +127,12 @@ export function mergePaths(...values) {
   return [...new Set(values.flatMap((value) => String(value ?? '').split(':')).filter((part) => part && path.isAbsolute(part)))].join(':');
 }
 
+/** `runtimeRoot` pins an engine build (a sandbox's candidate); without it the engine uses the installed one. */
 export function renderEngineLaunchAgent({ label = ENGINE_LAUNCHD_LABEL, nodePath, cliPath = ENGINE_CLI, agentDir, home, pathEnv, logPath,
-  env = {} }) {
+  env = {}, runtimeRoot }) {
   const vars = { HOME: home, PATH: pathEnv, NODE_OPTIONS: '--experimental-strip-types', ...env };
   const dict = Object.keys(vars).sort().map((key) => `<key>${escapeXml(key)}</key><string>${escapeXml(vars[key])}</string>`).join('');
-  const args = [nodePath, cliPath, '--agent-dir', agentDir, '--launchd'].map((value) => `<string>${escapeXml(value)}</string>`).join('');
+  const args = [nodePath, cliPath, '--agent-dir', agentDir, '--launchd', ...(runtimeRoot ? ['--runtime-root', runtimeRoot] : [])].map((value) => `<string>${escapeXml(value)}</string>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -222,7 +223,7 @@ export async function removeLegacyScheduler({ env = process.env, job = engineJob
  * @returns {Promise<{ label: string, plistPath: string, changed: boolean, bootstrapped: boolean, stale: boolean, removedLegacy: boolean }>}
  */
 export async function ensureEngineLaunchAgent({ env = process.env, agentDir = path.resolve(resolveLaunchAgentDir(env)),
-  nodePath = resolveNodeBinary(env), cliPath = ENGINE_CLI } = {}) {
+  nodePath = resolveNodeBinary(env), cliPath = ENGINE_CLI, runtimeRoot } = {}) {
   const job = engineJob(env);
   if (job.uid === undefined) throw new Error('launchd needs a user id');
   if (!nodePath) throw new Error('Could not find Node.js 24 or newer to run the engine.');
@@ -231,7 +232,7 @@ export async function ensureEngineLaunchAgent({ env = process.env, agentDir = pa
   mkdirSync(job.agentsDir, { recursive: true });
   const carried = Object.fromEntries(CARRIED_ENV.filter((key) => env[key]?.trim()).map((key) => [key, env[key]]));
   const plist = renderEngineLaunchAgent({ label: job.label, nodePath, cliPath, agentDir, home: job.home,
-    pathEnv: baselinePath(nodePath, job.home), logPath, env: carried });
+    pathEnv: baselinePath(nodePath, job.home), logPath, env: carried, runtimeRoot });
   let previous;
   try { previous = readFileSync(job.plistPath, 'utf8'); } catch {}
   const changed = previous !== plist;
