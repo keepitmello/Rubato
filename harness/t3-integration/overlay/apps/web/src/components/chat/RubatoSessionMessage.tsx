@@ -1,4 +1,4 @@
-import { MessagesSquareIcon } from "lucide-react";
+import { BellIcon, MessagesSquareIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 /**
@@ -12,8 +12,11 @@ export const RUBATO_SESSION_CONTEXT_KIND = "rubato-session";
 export interface RubatoSessionMessageLink {
   /** The sending conversation's title; empty when it had none. */
   readonly title: string;
-  /** `create`: the sender started this conversation with it. */
-  readonly kind: "message" | "create";
+  /**
+   * `create`: the sender started this conversation with it. `notice`: Rubato's own word about
+   * the sender (a lead Segno follows ended, asked the person, or a heartbeat); one quiet line.
+   */
+  readonly kind: "message" | "create" | "notice";
   readonly fromSessionId: string | null;
 }
 
@@ -42,7 +45,7 @@ export function rubatoSessionMessageOf(message: {
           : "";
     return {
       title,
-      kind: payload?.kind === "create" ? "create" : "message",
+      kind: payload?.kind === "create" || payload?.kind === "notice" ? payload.kind : "message",
       fromSessionId: typeof from?.sessionId === "string" ? from.sessionId : null,
     };
   }
@@ -55,6 +58,26 @@ export function rubatoSessionMessageHeading(link: RubatoSessionMessageLink): str
 }
 
 /**
+ * What a notice says happened, in a word or two (pi-server companion-follow.mjs noticeText and
+ * harness/companion keeper.mjs write these). Unknown text keeps its first sentence.
+ */
+export function rubatoNoticeLabel(text: string): string {
+  const first = text.trim();
+  const known: ReadonlyArray<readonly [string, string]> = [
+    ["Finished its turn", "Finished"],
+    ["Was stopped before finishing", "Stopped"],
+    ["Ended with an error", "Failed"],
+    ["Stopped mid-turn without finishing", "Lost its runtime"],
+    ["Is waiting for the user to answer it", "Asked you"],
+    ["Heartbeat", "Heartbeat"],
+    ["Daily report time", "Daily report"],
+  ];
+  for (const [prefix, label] of known) if (first.startsWith(prefix)) return label;
+  const sentence = first.split(/(?<=[.!?])\s|\n/)[0] ?? first;
+  return sentence.length > 80 ? `${sentence.slice(0, 79)}…` : sentence;
+}
+
+/**
  * Sits on the left like an incoming message, framed and headed by the sender,
  * so it reads as neither the person's own bubble (right, filled) nor the
  * assistant's answer (left, unframed prose).
@@ -63,8 +86,25 @@ export function RubatoSessionMessageBubble(props: {
   link: RubatoSessionMessageLink;
   children: ReactNode;
   meta?: ReactNode;
+  /** The message text; a notice reads it for the one line it shows. */
+  text?: string;
 }) {
   const heading = rubatoSessionMessageHeading(props.link);
+  if (props.link.kind === "notice") {
+    // A notice is one quiet line: who, and what happened. The conversation it woke answers next.
+    return (
+      <div
+        className="flex min-w-0 items-center gap-1.5 ps-1 text-muted-foreground text-xs"
+        data-rubato-session-notice="true"
+        title={props.text}
+      >
+        <BellIcon aria-hidden="true" className="size-3 shrink-0" />
+        <span className="min-w-0 truncate font-medium">{props.link.title || "Rubato"}</span>
+        <span aria-hidden="true">·</span>
+        <span className="shrink-0">{rubatoNoticeLabel(props.text ?? "")}</span>
+      </div>
+    );
+  }
   return (
     <div className="group flex flex-col items-start gap-1" data-rubato-session-message="true">
       <div className="relative max-w-[80%] rounded-2xl border border-border bg-card p-3 text-card-foreground shadow-xs">

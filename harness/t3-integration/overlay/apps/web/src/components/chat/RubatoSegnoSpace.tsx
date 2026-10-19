@@ -4,7 +4,7 @@
 // Everything reads the theme's own colors; the space is see-through to the window material where
 // the app has one (RubatoSegnoSpace.css), and the chat, the composer and the panel stay opaque.
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CircleAlertIcon, MessageSquareIcon, PlayIcon, XIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, InboxIcon, MessageSquareIcon, PlayIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
@@ -13,6 +13,7 @@ import {
   useReadyEnvironmentId,
   type SegnoFinished,
   type SegnoHeldMessage,
+  type SegnoInboxItem,
   type SegnoLead,
   type SegnoPanel,
 } from "../../state/rubatoCompanion";
@@ -95,21 +96,29 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
       <div data-rubato-segno-chat="" className="flex min-h-0 min-w-0 flex-1 flex-col">
         {children}
       </div>
-      <aside data-rubato-segno-stage="" aria-label="Segno" className="relative hidden min-h-0 shrink-0 lg:block">
-        {art ? (
-          <img
-            src={art}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            className="pointer-events-none absolute right-0 bottom-0 max-h-[78%] max-w-full select-none object-contain object-bottom"
-          />
-        ) : null}
+      {/* The panel sits in the stage's flow above the art, so it never covers Segno; the art takes
+          the height the panel leaves. The top clears the workspace's title bar controls. */}
+      <aside
+        data-rubato-segno-stage=""
+        aria-label="Segno"
+        className="relative hidden min-h-0 shrink-0 flex-col pt-[3.25rem] lg:flex"
+      >
         <SegnoTaskPanel
           environmentId={environmentId}
           panel={panel}
           onChanged={() => void refresh()}
         />
+        <div className="relative min-h-0 flex-1">
+          {art ? (
+            <img
+              src={art}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="pointer-events-none absolute right-0 bottom-0 h-full max-w-full select-none object-contain object-right-bottom"
+            />
+          ) : null}
+        </div>
       </aside>
     </div>
   );
@@ -129,24 +138,27 @@ function SegnoTaskPanel({
     () => panel.finished.filter((item) => now - item.at < FINISHED_SHOWN_MS),
     [panel.finished, now],
   );
-  const count = panel.leads.length + panel.held.length;
+  const inbox = panel.inbox ?? [];
+  const count = panel.leads.length + panel.held.length + inbox.length;
   if (count === 0 && finished.length === 0) return null;
   return (
     <section
       data-rubato-segno-panel=""
-      // Below the workspace's title bar controls, which sit over the stage's top right.
-      className="absolute inset-x-3 top-[3.25rem] z-10 overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
+      className="mx-3 mb-3 flex max-h-[52%] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
     >
       <header className="flex items-center justify-between px-3.5 pt-2.5 pb-1.5 text-muted-foreground text-xs">
         <span>Segno's tasks</span>
         {count > 0 ? <span className="tabular-nums">{count}</span> : null}
       </header>
-      <ul className="flex flex-col">
+      <ul className="flex min-h-0 flex-col overflow-y-auto">
         {panel.leads.map((lead) => (
           <LeadRow key={lead.sessionId} lead={lead} now={now} environmentId={environmentId} />
         ))}
         {panel.held.map((message) => (
           <HeldRow key={message.id} message={message} environmentId={environmentId} onChanged={onChanged} />
+        ))}
+        {inbox.map((item) => (
+          <InboxRow key={item.id} item={item} now={now} />
         ))}
         {finished.map((item) => (
           <FinishedRow key={`${item.sessionId}:${item.at}`} item={item} now={now} environmentId={environmentId} />
@@ -156,7 +168,7 @@ function SegnoTaskPanel({
   );
 }
 
-function RowIcon({ tone, children }: { tone: "running" | "asked" | "held" | "done" | "stopped"; children: ReactNode }) {
+function RowIcon({ tone, children }: { tone: "running" | "asked" | "held" | "done" | "stopped" | "inbox"; children: ReactNode }) {
   return (
     <span
       aria-hidden="true"
@@ -164,7 +176,7 @@ function RowIcon({ tone, children }: { tone: "running" | "asked" | "held" | "don
         "mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md [&_svg]:size-3.5",
         tone === "running" && "bg-primary/15 text-primary",
         (tone === "asked" || tone === "held") && "bg-warning/15 text-warning-foreground",
-        tone === "done" && "bg-muted text-muted-foreground",
+        (tone === "done" || tone === "inbox") && "bg-muted text-muted-foreground",
         tone === "stopped" && "bg-destructive/10 text-destructive-foreground",
       )}
     >
@@ -262,6 +274,26 @@ function FinishedRow({
           detail={parts(projectOf(item.cwd), done ? "Finished" : item.outcome === "failed" ? "Failed" : "Stopped", compactSince(item.at, now))}
         />
       </RowButton>
+    </li>
+  );
+}
+
+const SOURCE_LABELS: Record<string, string> = { telegram: "Telegram" };
+
+/** An inbox item no lead took yet: what came in, from where and whom. */
+function InboxRow({ item, now }: { item: SegnoInboxItem; now: number }) {
+  const created = Date.parse(item.createdAt);
+  return (
+    <li data-rubato-segno-row="inbox" className="rubato-segno-row border-border border-t first:border-t-0">
+      <div className="flex items-start gap-2.5 px-3.5 py-2">
+        <RowIcon tone="inbox">
+          <InboxIcon />
+        </RowIcon>
+        <RowText
+          title={item.title}
+          detail={parts(SOURCE_LABELS[item.source] ?? item.source, item.reporter, Number.isFinite(created) ? compactSince(created, now) : null)}
+        />
+      </div>
     </li>
   );
 }

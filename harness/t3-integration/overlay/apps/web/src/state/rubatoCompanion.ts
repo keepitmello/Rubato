@@ -106,11 +106,23 @@ export interface SegnoHeldMessage {
   readonly to: { readonly chatId: string; readonly name: string | null } | null;
 }
 
+/** An open item in Segno's inbox that no lead took yet (harness/companion inbox.mjs). */
+export interface SegnoInboxItem {
+  readonly id: string;
+  readonly title: string;
+  readonly source: string;
+  readonly reporter: string | null;
+  readonly status: "open" | "in-progress" | "waiting";
+  readonly createdAt: string;
+}
+
 /** What the task panel beside Segno's chat shows. */
 export interface SegnoPanel {
   readonly leads: readonly SegnoLead[];
   readonly finished: readonly SegnoFinished[];
   readonly held: readonly SegnoHeldMessage[];
+  /** Absent from a server without the inbox. */
+  readonly inbox?: readonly SegnoInboxItem[];
 }
 
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>

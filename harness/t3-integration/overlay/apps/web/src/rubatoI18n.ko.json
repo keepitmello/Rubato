@@ -4426,7 +4426,7 @@
   "View": "보기",
   "Back to default": "기본값으로 되돌리기",
   "Every hour": "1시간마다",
-  "Telegram": "텔레그램",
+  "Telegram": "Telegram",
   "Talk to Segno from your own Telegram chat. Anything Segno writes to someone else waits here for you.": "내 텔레그램 대화에서 세뇨와 이야기합니다. 세뇨가 다른 사람에게 쓰는 말은 여기서 내가 승인할 때까지 기다립니다.",
   "No bot yet": "봇 없음",
   "Waiting for the code": "코드를 기다리는 중",
@@ -4448,11 +4448,12 @@
   "Reject": "그만두기",
   "Could not change the Telegram connection": "텔레그램 연결을 바꿀 수 없습니다",
   "Segno's tasks": "세뇨가 맡은 일",
-  "Reply waiting for approval": "승인 기다리는 답장",
-  "Asked you": "물어봄",
+  "Reply waiting for approval": "승인을 기다리는 답장",
+  "Asked you": "답변 대기 중",
   "Don't send": "보내지 않기",
   "Untitled": "제목 없음",
-  "now": "방금"
+  "now": "방금",
+  "Lost its runtime": "런타임 끊김"
  },
  "templates": [
   [

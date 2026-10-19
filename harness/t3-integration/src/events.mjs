@@ -50,7 +50,8 @@ export function sessionMessageFrom(message, threadId) {
     createdAt: isoFrom(message.timestamp),
     context: { version: 1, records: [{
       version: 1, contextId: SESSION_MESSAGE_CONTEXT_KIND, kind: SESSION_MESSAGE_CONTEXT_KIND, label: title,
-      payload: { v: 1, kind: details.kind === 'create' ? 'create' : 'message', messageId,
+      // `notice`: Rubato's own word, such as a followed lead ending; the app draws it as one quiet line.
+      payload: { v: 1, kind: details.kind === 'create' || details.kind === 'notice' ? details.kind : 'message', messageId,
         from: {
           ...(typeof from.sessionId === 'string' ? { sessionId: from.sessionId } : {}),
           title,

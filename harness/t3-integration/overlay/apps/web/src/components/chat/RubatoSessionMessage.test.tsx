@@ -3,12 +3,13 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   RubatoSessionMessageBubble,
+  rubatoNoticeLabel,
   rubatoSessionMessageHeading,
   rubatoSessionMessageOf,
 } from "./RubatoSessionMessage";
 
 /** The context the bridge attaches (harness/t3-integration/src/events.mjs sessionMessageFrom). */
-const sessionContext = (kind: "message" | "create", title: string) => ({
+const sessionContext = (kind: "message" | "create" | "notice", title: string) => ({
   version: 1,
   records: [
     {
@@ -57,5 +58,28 @@ describe("a message from another conversation", () => {
     expect(markup).not.toContain("bg-message");
     expect(markup).toContain("Release notes");
     expect(markup).toContain("Please check the changelog.");
+  });
+});
+
+describe("a notice from Rubato about a followed conversation", () => {
+  it("is one quiet line naming the conversation and what happened", () => {
+    const link = rubatoSessionMessageOf({ role: "user", context: sessionContext("notice", "결제 로그 점검") });
+    expect(link?.kind).toBe("notice");
+    const html = renderToStaticMarkup(
+      <RubatoSessionMessageBubble link={link!} text={"Finished its turn.\n\nIts answer:\nAll fine."}>
+        <p>body</p>
+      </RubatoSessionMessageBubble>,
+    );
+    expect(html).toContain("data-rubato-session-notice");
+    expect(html).toContain("결제 로그 점검");
+    expect(html).toContain(">Finished<");
+    expect(html).not.toContain("body");
+  });
+  it("says what happened in a word or two", () => {
+    expect(rubatoNoticeLabel("Was stopped before finishing.")).toBe("Stopped");
+    expect(rubatoNoticeLabel("Ended with an error.\n\nIts last words:\nx")).toBe("Failed");
+    expect(rubatoNoticeLabel("Is waiting for the user to answer it (select).")).toBe("Asked you");
+    expect(rubatoNoticeLabel("Stopped mid-turn without finishing: its runtime went away.")).toBe("Lost its runtime");
+    expect(rubatoNoticeLabel("Something new happened. More text.")).toBe("Something new happened.");
   });
 });

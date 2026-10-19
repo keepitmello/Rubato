@@ -72,7 +72,7 @@ export function createCompanionService(options = {}) {
     try {
       const box = inbox.openInbox({ env });
       try {
-        unassigned = box.list({ status: 'open' }).filter((item) => !item.leadSessionId)
+        unassigned = box.list({ status: 'open', unlinked: true })
           .map((item) => ({ id: item.id, title: item.title, source: item.source, reporter: item.reporter ?? null,
             status: item.status, createdAt: item.createdAt }));
       } finally { box.close(); }
