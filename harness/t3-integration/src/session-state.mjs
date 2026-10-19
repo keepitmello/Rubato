@@ -4,8 +4,9 @@
 // a tool named `subagent`), so the panel reads them here.
 //
 // The agent rules are V1's (events.mjs EventProjection): a resident team member that ends its
-// turn rests (`idle`: the panel reads it as Waiting, and as not working), not done; an agent revived by AgentSend works again; a team follows its
-// members; boards ride on the team. Rather than restate them, a headless projection is fed
+// turn rests (`idle`, with `awaiting` when work of its own will wake it), not done; an agent
+// revived by AgentSend or by its own wakes works again; a team follows its members; boards ride
+// on the team. Rather than restate them, a headless projection is fed
 // the same engine records and its task events are folded into rows.
 import { EventProjection, cacheFrom } from './events.mjs';
 
@@ -77,14 +78,24 @@ export class SessionStateFold {
       for (const key of ['totalTokens', 'toolUses', 'turns', 'speedIndex']) if (Number.isInteger(usage[key])) row[key] = usage[key];
     }
     if (payload.board) row.board = payload.board;
-    if (event.type === 'task.started') { row.status = 'running'; delete row.completedAt; delete row.result; delete row.error; }
+    if (event.type === 'task.started') {
+      row.status = 'running'; delete row.completedAt; delete row.result; delete row.error; delete row.awaiting;
+    }
     if (event.type === 'task.progress') {
       if (payload.description && payload.description !== 'Board updated') row.activity = payload.description;
-      if (payload.status) row.status = STATUS_OF_PROGRESS[payload.status] ?? row.status ?? 'running';
+      if (payload.status) {
+        row.status = STATUS_OF_PROGRESS[payload.status] ?? row.status ?? 'running';
+        // A state report replaces the last one: its waits, and an earlier run's ending.
+        if (Array.isArray(payload.awaiting) && payload.awaiting.length > 0) row.awaiting = payload.awaiting;
+        else delete row.awaiting;
+        delete row.result; delete row.completedAt;
+      }
+      if (payload.assignment) row.assignment = payload.assignment;
       if (payload.error) row.error = payload.error;
       if (payload.summary) row.summary = payload.summary;
     }
     if (event.type === 'task.completed') {
+      delete row.awaiting;
       row.status = ['completed', 'failed', 'stopped'].includes(payload.status) ? payload.status : 'completed';
       row.completedAt = event.createdAt;
       const report = payload.summary ?? row.summary;

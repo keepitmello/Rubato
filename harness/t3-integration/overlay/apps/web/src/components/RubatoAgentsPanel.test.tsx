@@ -25,6 +25,8 @@ function agent(overrides: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "id">
     modelLabel: "Opus 5.5 · High",
     memberName: null,
     board: null,
+    awaiting: [],
+    assignment: null,
     role: null,
     model: "anthropic/claude-opus-5-5",
     effort: "high",
@@ -57,6 +59,9 @@ function agent(overrides: Partial<RuntimeSubagent> & Pick<RuntimeSubagent, "id">
 function render(agents: RuntimeSubagent[]): string {
   return renderToStaticMarkup(<RubatoAgentsPanel model={deriveAgentPanelModel({ agents })} />);
 }
+
+/** What a person reads: counts are split into one element per part for the Korean interface. */
+const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
 
 describe("RubatoAgentsPanel", () => {
   it("an agent row leads with its task and names the model as the picker does, with turns instead of tools", () => {
@@ -99,13 +104,13 @@ describe("RubatoAgentsPanel", () => {
       agent({ id: "st_verifier", kind: "workflow_agent", parentAgentId: "call_team", role: "verifier" }),
     ]);
     expect(html).toContain("auth-refactor");
-    expect(html).toContain("1 working · 1 done");
+    expect(textOf(html)).toContain("1 working · 1 done");
     expect(html).toContain("1/2 done · 1 in progress");
     expect(html).toContain("Owner · Opus 5.5 · High");
     expect(html).toContain("Verifier · Opus 5.5 · High");
   });
 
-  it("a resting team member reads Waiting with what it last said, and the members come before the board", () => {
+  it("a resting team member reads Waiting for instructions with what it last said, and the members come before the board", () => {
     const html = render([
       agent({
         id: "call_team",
@@ -126,8 +131,8 @@ describe("RubatoAgentsPanel", () => {
         memberName: "gui", progress: "Waiting on the build." }),
     ]);
     expect(html).toMatch(/>gui<\/span>Isolated T3 sandbox/);
-    expect(html).toContain("1 working · 1 waiting");
-    expect(html).toContain("Waiting · Waiting on the build.");
+    expect(textOf(html)).toContain("1 working · 1 waiting");
+    expect(textOf(html)).toContain("Waiting for instructions · Waiting on the build.");
     expect(html.indexOf("Waiting on the build.")).toBeLessThan(html.indexOf(">Board<"));
     // The brief is the lead's instruction to the agent: folded until asked for.
     expect(html).not.toContain("intent_ref");
@@ -163,7 +168,7 @@ describe("RubatoAgentsPanel", () => {
     expect(finished.map((item) => item.id)).toEqual(["st_idle", "st_new", "st_old"]);
     const html = render(agents);
     expect(html).toContain("In progress");
-    expect(html).toContain("1 idle · 1 done · 1 failed");
+    expect(textOf(html)).toContain("1 idle · 1 done · 1 failed");
     expect(html).toContain("Now writing the script and helpers.");
     expect(html.match(/aria-expanded="false"[^>]*>[^]*?Finished/)).not.toBeNull();
     // Folded: only the live row is rendered, and a row opens its conversation.

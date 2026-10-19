@@ -21,6 +21,8 @@ function agent(overrides: Partial<RubatoSubagent> & Pick<RubatoSubagent, "id">):
     modelLabel: "Opus 5.5 · High",
     memberName: null,
     board: null,
+    awaiting: [],
+    assignment: null,
     role: null,
     model: "anthropic/claude-opus-5-5",
     effort: "high",
@@ -59,6 +61,9 @@ const member = (
   role: string | null = "owner",
 ) => agent({ id, parentAgentId: teamId, status, memberName: id, role });
 
+/** What a person reads, without the attributes that name a state for tests and styling. */
+const textOf = (html: string) => html.replace(/<[^>]*>/g, "");
+
 function render(agents: RubatoSubagent[]): string {
   return renderToStaticMarkup(
     <RubatoThreadDetailsAgents
@@ -88,9 +93,9 @@ describe("summarizeThreadDetailsAgents", () => {
         id: "t1",
         name: "v13.4 revision",
         members: [
-          { id: "m1", name: "m1", role: "owner", status: "running" },
-          { id: "m3", name: "m3", role: "owner", status: "completed" },
-          { id: "m2", name: "m2", role: "verifier", status: "idle" },
+          { id: "m1", name: "m1", role: "owner", state: "working", job: null },
+          { id: "m3", name: "m3", role: "owner", state: "completed", job: null },
+          { id: "m2", name: "m2", role: "verifier", state: "waiting", job: null },
         ],
       },
     ]);
@@ -161,7 +166,7 @@ describe("RubatoThreadDetailsAgents", () => {
     expect(teamAt).toBeGreaterThan(-1);
     expect(agentsAt).toBeGreaterThan(teamAt);
     expect(html.slice(teamAt, agentsAt)).toContain("v13.4 revision");
-    expect(html.slice(teamAt, agentsAt)).not.toMatch(/working|idle|done/);
+    expect(textOf(html.slice(teamAt, agentsAt))).not.toMatch(/working|idle|done/);
     expect(html.slice(agentsAt)).toContain("Fix workspace label");
     expect(html.slice(agentsAt)).toContain("1 working");
     expect(html.slice(agentsAt)).not.toContain("Task m1");
@@ -185,13 +190,13 @@ describe("RubatoThreadDetailsAgents", () => {
     const glyphs = [...html.matchAll(/<span[^>]*data-role="[^"]*"[^>]*>/g)].map(([tag]) => ({
       name: attr(tag, "data-name"),
       role: attr(tag, "data-role"),
-      status: attr(tag, "data-status"),
+      state: attr(tag, "data-state"),
       className: attr(tag, "class"),
     }));
-    expect(glyphs.map(({ name, role, status }) => `${name}:${role}:${status}`)).toEqual([
-      "backend:owner:running",
-      "schema:owner:idle",
-      "verify:verifier:idle",
+    expect(glyphs.map(({ name, role, state }) => `${name}:${role}:${state}`)).toEqual([
+      "backend:owner:working",
+      "schema:owner:waiting",
+      "verify:verifier:waiting",
     ]);
     const classOf = (name: string) => glyphs.find((glyph) => glyph.name === name)?.className ?? "";
     expect(classOf("backend")).toContain("rounded-full");

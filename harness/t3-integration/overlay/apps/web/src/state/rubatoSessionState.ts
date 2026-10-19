@@ -25,6 +25,11 @@ export interface RubatoSessionAgent {
   readonly teamRunId?: string | null;
   readonly parentAgentId?: string | null;
   readonly status: "running" | "waiting" | "idle" | "completed" | "failed" | "stopped";
+  /** A resting agent's own work that will wake it; absent when nothing of its own is pending. */
+  readonly awaiting?: ReadonlyArray<{ readonly id: string; readonly description: string }>;
+  /** The latest team message it received (its sender and summary). */
+  readonly assignment?: { readonly from: string; readonly summary?: string } | null;
+  /** What it is doing now, or for a resting agent the first line of its latest final message. */
   readonly activity?: string | null;
   readonly lastToolName?: string | null;
   readonly result?: string | null;

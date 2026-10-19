@@ -3,8 +3,11 @@
  *
  * Every agent row keeps three fixed lines, each with one job:
  *   1. what the agent is working on (the spawn's own words, uncut), after its team name if any
- *   2. what it is doing now, or how it ended
+ *   2. its state (rubatoAgentStatus agentDisplayState) and what goes with it: what it does now,
+ *      the job it waits on, its latest report, or how it ended
  *   3. role · model as the picker names it · Speed · turn N (· quiet 3m when stalled)
+ * A team member that got a team message since the engine started watching it adds one line
+ * between 2 and 3: who sent its latest assignment and the summary they gave it.
  * Taskforces (team_create) sit above plain agents as cards: members first, then the shared
  * board. A board row says its state and owner; the lead's brief to the agent unfolds on click.
  * An agent row opens that agent's whole conversation in place of the list (RubatoAgentSession),
@@ -47,13 +50,18 @@ import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environ
 import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
 import { RubatoAgentSession } from "./RubatoAgentSession";
 import {
+  AGENT_STATE_VISUALS,
   AgentElapsed,
-  STATUS_VISUALS,
   StatusDot,
+  agentDisplayState,
   agentTaskLabel,
+  awaitedWorkLabel,
   isLive,
   isSettled,
+  isUnderWay,
+  stateCountParts,
   teamMembers,
+  type AgentDisplayState,
 } from "./rubatoAgentStatus";
 
 export { agentTaskLabel, formatElapsedSeconds } from "./rubatoAgentStatus";
@@ -84,6 +92,10 @@ function useQuietLabel(agent: RuntimeSubagent): string | null {
   return quietLabel(agent, now);
 }
 
+/**
+ * What goes with the state. A resting agent's `progress` is the first line of its latest final
+ * message (the server folds it from the engine's member_turn), newer than any earlier `result`.
+ */
 function agentActivityText(agent: RuntimeSubagent): string | null {
   if (isLive(agent.status)) {
     return (
@@ -92,6 +104,9 @@ function agentActivityText(agent: RuntimeSubagent): string | null {
       agent.result ??
       agent.error
     );
+  }
+  if (agent.status === "idle") {
+    return agent.progress ?? agent.result ?? (agent.lastToolName ? `▸ ${agent.lastToolName}` : null);
   }
   return (
     agent.error ??
@@ -121,35 +136,109 @@ export function agentMetaParts(agent: RuntimeSubagent): string[] {
   ].filter((value): value is string => value !== null);
 }
 
+function agentStatusLabel(agent: RuntimeSubagent, state: AgentDisplayState): string {
+  if (agent.kind === "subagent_batch" && state === "idle") return "Idle";
+  return AGENT_STATE_VISUALS[state].label;
+}
+
 /**
- * A team member that ended its turn is still resident and wakes on mail or a notification,
- * so inside a taskforce idle reads as Waiting, with what it last said.
+ * The second line: the state word, then what goes with it. A resting agent leads with what
+ * wakes it, so "Waiting for instructions" and "Background job · npm test" never look alike.
+ * The word is interface text; the detail is the agent's or its command's own words.
  */
-function agentStatusLabel(agent: RuntimeSubagent, inTeam: boolean): string {
-  if (inTeam && agent.status === "idle") return "Waiting";
-  if (agent.kind === "subagent_batch" && agent.status === "idle") return "Idle";
-  return STATUS_VISUALS[agent.status].label;
+export function agentStateParts(
+  agent: RuntimeSubagent,
+  inTeam: boolean,
+): { readonly label: string | null; readonly detail: string | null } {
+  const state = agentDisplayState(agent, inTeam);
+  const label = agentStatusLabel(agent, state);
+  const said = agentActivityText(agent);
+  if (state === "background") return { label, detail: awaitedWorkLabel(agent) };
+  if (state === "waiting") return { label, detail: said };
+  return said ? { label: null, detail: said } : { label, detail: null };
+}
+
+export function agentStateLine(agent: RuntimeSubagent, inTeam: boolean): string {
+  const { label, detail } = agentStateParts(agent, inTeam);
+  return [label, detail].filter((part): part is string => part !== null).join(" · ");
+}
+
+/**
+ * Who sent the member's latest team message and the summary they gave it, or why there is no
+ * label to show: the sender gave none (team_send's summary is optional).
+ */
+export function assignmentParts(
+  agent: RuntimeSubagent,
+): { readonly from: string; readonly summary: string | null } | null {
+  const assignment = agent.assignment;
+  if (!assignment) return null;
+  return { from: boardOwnerLabel(assignment.from) ?? assignment.from, summary: assignment.summary };
+}
+
+export function assignmentLabel(agent: RuntimeSubagent): string | null {
+  const parts = assignmentParts(agent);
+  if (!parts) return null;
+  return parts.summary ? `Assigned by ${parts.from}: ${parts.summary}` : `Assigned by ${parts.from} · no summary given`;
+}
+
+/** A state word and the words that go with it, each its own text: the word is translated, the rest never. */
+function StateLine({ label, detail }: { label: string | null; detail: string | null }) {
+  return (
+    <>
+      {label ? <span>{label}</span> : null}
+      {label && detail ? <span aria-hidden> · </span> : null}
+      {detail ? <span translate="no">{detail}</span> : null}
+    </>
+  );
+}
+
+function AssignmentLine({ agent }: { agent: RuntimeSubagent }) {
+  const parts = assignmentParts(agent);
+  if (!parts) return null;
+  return (
+    <>
+      <span>Assigned by {parts.from}</span>
+      {parts.summary ? (
+        <>
+          <span aria-hidden>: </span>
+          <span translate="no">{parts.summary}</span>
+        </>
+      ) : (
+        <>
+          <span aria-hidden> · </span>
+          <span>no summary given</span>
+        </>
+      )}
+    </>
+  );
 }
 
 function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: boolean }) {
   const openAgent = useContext(OpenAgentContext);
-  const waiting = inTeam && agent.status === "idle";
-  const statusLabel = agentStatusLabel(agent, inTeam);
-  const said = agentActivityText(agent);
-  const activity = waiting ? (said ? `Waiting · ${said}` : "Waiting") : said;
+  const state = agentDisplayState(agent, inTeam);
+  const statusLabel = agentStatusLabel(agent, state);
+  const line = agentStateParts(agent, inTeam);
+  const assignment = inTeam ? assignmentLabel(agent) : null;
   const quiet = useQuietLabel(agent);
   const task = agentTaskLabel(agent);
   const meta = agentMetaParts(agent);
+  const metaRow = assignment ? "row-start-4" : "row-start-3";
   return (
     <div className="min-w-0">
       <button
         type="button"
         aria-label={`${task}: open conversation. ${statusLabel}`}
+        data-state={state}
         onClick={() => openAgent(agent.id)}
-        className="grid h-[3.875rem] w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] grid-rows-[1.25rem_1.125rem_1rem] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className={cn(
+          "grid w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+          assignment
+            ? "h-[4.875rem] grid-rows-[1.25rem_1.125rem_1rem_1rem]"
+            : "h-[3.875rem] grid-rows-[1.25rem_1.125rem_1rem]",
+        )}
       >
         <span className="col-start-1 row-start-1 flex items-center">
-          <StatusDot status={agent.status} />
+          <StatusDot state={state} />
         </span>
         <span className="col-start-2 row-start-1 min-w-0 truncate text-sm font-medium" title={task}>
           {inTeam && agent.memberName ? (
@@ -172,9 +261,17 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
             agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
           )}
         >
-          {activity ?? statusLabel}
+          <StateLine {...line} />
         </span>
-        <span className="col-start-2 col-end-4 row-start-3 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70">
+        {assignment ? (
+          <span
+            className="col-start-2 col-end-4 row-start-3 truncate text-[.7rem] text-muted-foreground/80"
+            title={assignment}
+          >
+            <AssignmentLine agent={agent} />
+          </span>
+        ) : null}
+        <span className={cn("col-start-2 col-end-4 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70", metaRow)}>
           {meta.join(" · ")}
           {quiet ? <span className="text-warning-foreground"> · {quiet}</span> : null}
         </span>
@@ -192,22 +289,31 @@ function SectionLabel({ children }: { children: ReactNode }) {
   );
 }
 
-/** "2 working · 1 idle · 1 done", nonzero parts only. */
-export function teamCountsLabel(
-  members: ReadonlyArray<RuntimeSubagent>,
-  idleWord: "idle" | "waiting" = "idle",
-): string {
-  const count = (predicate: (member: RuntimeSubagent) => boolean) =>
-    members.filter(predicate).length;
-  const parts = [
-    [count((member) => isLive(member.status)), "working"],
-    [count((member) => member.status === "idle"), idleWord],
-    [count((member) => member.status === "completed"), "done"],
-    [count((member) => member.status === "failed"), "failed"],
-    [count((member) => member.status === "cancelled" || member.status === "interrupted"), "stopped"],
-  ] as const;
-  const shown = parts.filter(([value]) => value > 0).map(([value, word]) => `${value} ${word}`);
-  return shown.length > 0 ? shown.join(" · ") : "starting";
+/** ["2 working", "1 on a job", "1 waiting"], nonzero parts only, by the same states the rows show. */
+export function teamCountsParts(members: ReadonlyArray<RuntimeSubagent>, inTeam = false): string[] {
+  return stateCountParts(members.map((member) => agentDisplayState(member, inTeam)));
+}
+
+/** "2 working · 1 on a job · 1 done", nonzero parts only. */
+export function teamCountsLabel(members: ReadonlyArray<RuntimeSubagent>, inTeam = false): string {
+  const parts = teamCountsParts(members, inTeam);
+  return parts.length > 0 ? parts.join(" · ") : "starting";
+}
+
+/** The same counts with each part its own text, so the Korean interface finds every one. */
+function CountParts({ members, inTeam = false }: { members: ReadonlyArray<RuntimeSubagent>; inTeam?: boolean }) {
+  const parts = teamCountsParts(members, inTeam);
+  if (parts.length === 0) return <span>starting</span>;
+  return (
+    <span>
+      {parts.map((part, index) => (
+        <span key={part}>
+          {index > 0 ? <span aria-hidden> · </span> : null}
+          <span>{part}</span>
+        </span>
+      ))}
+    </span>
+  );
 }
 
 function boardOwnerLabel(owner: string | null): string | null {
@@ -346,7 +452,7 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
   const members = teamMembers(group);
   const name = team.workflowName ?? agentTaskLabel(team);
   const failed = members.some((member) => member.status === "failed");
-  const dotStatus = failed ? "failed" : team.status;
+  const dotState: AgentDisplayState = failed ? "failed" : agentDisplayState(team);
   if (!open) {
     return (
       <button
@@ -355,7 +461,7 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
         aria-expanded={false}
         className="flex w-full items-center gap-2 rounded-md px-1.5 py-1.5 text-left hover:bg-accent/40"
       >
-        <StatusDot status={dotStatus} />
+        <StatusDot state={dotState} />
         <span className="min-w-0 truncate text-sm font-medium">{name}</span>
         <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[.7rem] text-muted-foreground/80">
           <span>
@@ -380,17 +486,19 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
         aria-expanded
         className="flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40"
       >
-        <StatusDot status={dotStatus} />
-        <span className="min-w-0 truncate text-sm font-medium">{name}</span>
-        <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[.7rem] text-muted-foreground/80">
-          <span>{teamCountsLabel(members, "waiting")}</span>
+        <StatusDot state={dotState} />
+        <span className="max-w-[45%] shrink-0 truncate text-sm font-medium" title={name}>{name}</span>
+        <span className="ml-auto flex min-w-0 items-center gap-1 font-mono text-[.7rem] text-muted-foreground/80">
+          <span className="min-w-0 truncate" title={teamCountsLabel(members, true)}>
+            <CountParts members={members} inTeam />
+          </span>
           {team.startedAt ? (
-            <>
+            <span className="flex shrink-0 items-center gap-1 whitespace-nowrap">
               <span>·</span>
               <AgentElapsed agent={team} />
-            </>
+            </span>
           ) : null}
-          <ChevronDown aria-hidden className="size-3" />
+          <ChevronDown aria-hidden className="size-3 shrink-0" />
         </span>
       </button>
       <div className="border-t border-border/40 pt-0.5">
@@ -410,17 +518,18 @@ function TaskforceCard({ group }: { group: AgentPanelWorkflowGroup }) {
 }
 
 /**
- * Working agents stay on top; finished and idle ones fold away below, newest first.
+ * Working agents and those on a job of their own stay on top; finished and idle ones fold away
+ * below, newest first.
  * An idle agent that is resumed is live again and moves back up on its own.
  */
 export function splitAgentsByActivity(agents: ReadonlyArray<RuntimeSubagent>): {
   live: RuntimeSubagent[];
   finished: RuntimeSubagent[];
 } {
-  const live = agents.filter((agent) => isLive(agent.status));
+  const live = agents.filter((agent) => isUnderWay(agent));
   const finishedAt = (agent: RuntimeSubagent) => agent.completedAt ?? agent.updatedAt;
   const finished = agents
-    .filter((agent) => !isLive(agent.status))
+    .filter((agent) => !isUnderWay(agent))
     .sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)));
   return { live, finished };
 }
@@ -435,7 +544,7 @@ function GroupToggle({
   open: boolean;
   onToggle: () => void;
   label: string;
-  detail: string;
+  detail: ReactNode;
   controls: string;
 }) {
   return (
@@ -489,7 +598,7 @@ function AgentGroups({ agents }: { agents: ReadonlyArray<RuntimeSubagent> }) {
             open={finishedOpen}
             onToggle={() => setFinishedOpen((value) => !value)}
             label="Finished"
-            detail={teamCountsLabel(finished)}
+            detail={<CountParts members={finished} />}
             controls={finishedId}
           />
           {finishedOpen ? (
@@ -523,6 +632,9 @@ export function findPanelAgent(
 function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam: boolean }) {
   const task = agentTaskLabel(agent);
   const quiet = useQuietLabel(agent);
+  const state = agentDisplayState(agent, inTeam);
+  const job = state === "background" ? awaitedWorkLabel(agent) : null;
+  const assignment = inTeam ? assignmentLabel(agent) : null;
   return (
     <div className="min-w-0 py-0.5">
       <p className="line-clamp-3 text-sm font-medium [overflow-wrap:anywhere]">
@@ -532,8 +644,14 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
         {task}
       </p>
       <p className="flex min-w-0 items-center gap-1.5 font-mono text-[.7rem] text-muted-foreground/80">
-        <StatusDot status={agent.status} />
-        <span>{agentStatusLabel(agent, inTeam)}</span>
+        <StatusDot state={state} />
+        <span>{agentStatusLabel(agent, state)}</span>
+        {job ? (
+          <>
+            <span aria-hidden>·</span>
+            <span translate="no" className="min-w-0 truncate">{job}</span>
+          </>
+        ) : null}
         {agent.startedAt ? (
           <>
             <span>·</span>
@@ -542,6 +660,11 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
         ) : null}
         {quiet ? <span className="text-warning-foreground">· {quiet}</span> : null}
       </p>
+      {assignment ? (
+        <p className="truncate text-[.7rem] text-muted-foreground/80">
+          <AssignmentLine agent={agent} />
+        </p>
+      ) : null}
       <p className="truncate font-mono text-[.7rem] text-muted-foreground/70">
         {agentMetaParts(agent).join(" · ")}
       </p>
@@ -630,6 +753,7 @@ export function RubatoAgentsPanel({
             ● {model.runningCount + model.waitingCount} working
           </span>
         ) : null}
+        {model.backgroundCount > 0 ? <span>{model.backgroundCount} on a job</span> : null}
         {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
         {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
       </footer>

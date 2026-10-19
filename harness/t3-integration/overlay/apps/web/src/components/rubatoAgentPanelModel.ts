@@ -47,6 +47,10 @@ export interface RubatoSubagentExtras {
   readonly memberName: string | null;
   /** A taskforce's shared board, latest snapshot. */
   readonly board: SubagentBoard | null;
+  /** Work of its own a resting agent will be woken by (a bounded background command, a monitor). */
+  readonly awaiting: ReadonlyArray<{ readonly id: string; readonly description: string }>;
+  /** The latest team message it received: who sent it and the summary they gave, if they gave one. */
+  readonly assignment: { readonly from: string; readonly summary: string | null } | null;
 }
 
 export type RubatoSubagent = Omit<RuntimeSubagent, "usage"> &
@@ -72,6 +76,9 @@ export interface AgentPanelModel {
   readonly directAgents: ReadonlyArray<RubatoSubagent>;
   readonly runningCount: number;
   readonly waitingCount: number;
+  /** Resting on work of its own that will wake it (rubatoAgentStatus "background"). */
+  readonly backgroundCount: number;
+  /** Resting with nothing of its own pending. */
   readonly idleCount: number;
   readonly settledCount: number;
   readonly totalTokens: number;
@@ -84,6 +91,7 @@ const EMPTY_PANEL_MODEL: AgentPanelModel = {
   directAgents: [],
   runningCount: 0,
   waitingCount: 0,
+  backgroundCount: 0,
   idleCount: 0,
   settledCount: 0,
   totalTokens: 0,
@@ -164,6 +172,7 @@ export function deriveAgentPanelModel({
 
   let runningCount = 0;
   let waitingCount = 0;
+  let backgroundCount = 0;
   let idleCount = 0;
   let settledCount = 0;
   let totalTokens = 0;
@@ -172,6 +181,7 @@ export function deriveAgentPanelModel({
     if (agent.kind === "workflow" && (members.get(agent.id) ?? []).length > 0) continue;
     if (agent.status === "running" || agent.status === "pending") runningCount += 1;
     else if (agent.status === "waiting") waitingCount += 1;
+    else if (agent.status === "idle" && agent.awaiting.length > 0) backgroundCount += 1;
     else if (agent.status === "idle") idleCount += 1;
     else settledCount += 1;
     totalTokens += agent.usage?.totalTokens ?? 0;
@@ -183,6 +193,7 @@ export function deriveAgentPanelModel({
     directAgents: direct.toSorted(byFirstSeen),
     runningCount,
     waitingCount,
+    backgroundCount,
     idleCount,
     settledCount,
     totalTokens,
@@ -227,6 +238,8 @@ export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoS
       modelLabel: orNull(agent.modelLabel),
       memberName: orNull(agent.memberName),
       board: null,
+      awaiting: agent.awaiting ?? [],
+      assignment: agent.assignment ? { from: agent.assignment.from, summary: agent.assignment.summary ?? null } : null,
       role: orNull(agent.role),
       model: orNull(agent.model),
       effort: orNull(agent.effort),
@@ -272,6 +285,8 @@ export function rubatoAgentsFromSessionState(state: RubatoSessionState): RubatoS
       label: team.name,
       modelLabel: null,
       memberName: null,
+      awaiting: [],
+      assignment: null,
       board: team.board
         ? {
             tasks: team.board.tasks.map((task) => ({
