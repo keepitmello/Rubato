@@ -808,3 +808,12 @@ test("the companion hears once when a lead it started or sent work to ends its t
   await delay(100);
   assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
 });
+
+test("Rubato's own notice (the companion's heartbeat) wakes a conversation as a notice from Rubato", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  await env.link.notice({ to: segno.id, text: 'Heartbeat.' });
+  const delivered = await env.deliveries(segno.id);
+  assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.from.title, item.data.text]), [['notice', 'Rubato', 'Heartbeat.']]);
+  await assert.rejects(env.link.notice({ to: segno.id, text: '' }), { code: 'invalid' });
+});

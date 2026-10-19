@@ -70,7 +70,11 @@ export const COMPANION_WITHHELD_TOOLS = Object.freeze(["session_wait"]);
  */
 export function createSessionTools(getLink, { companion = false } = {}) {
   const tools = sessionTools(getLink, { companion });
-  return companion ? tools.filter((tool) => !COMPANION_WITHHELD_TOOLS.includes(tool.name)) : tools;
+  // Running conversations is the companion's whole job, so its tools are in every request
+  // instead of waiting behind tool_search.
+  return companion
+    ? tools.filter((tool) => !COMPANION_WITHHELD_TOOLS.includes(tool.name)).map((tool) => ({ ...tool, exposure: "direct" }))
+    : tools;
 }
 
 const SEND_ANSWER = "When you asked for an answer, use session_wait for it " +

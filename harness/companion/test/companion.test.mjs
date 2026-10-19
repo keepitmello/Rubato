@@ -38,7 +38,9 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   writeSettings({ heartbeat: { everyMinutes: 30 } }, env);
-  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 30 } });
+  writeSettings({ dailyReport: { time: '18:30' } }, env);
+  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 30 }, dailyReport: { enabled: true, time: '18:30' } });
+  assert.throws(() => writeSettings({ dailyReport: { time: '25:00' } }, env), /HH:MM/);
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
   writeFileSync(companionPaths(env).settings, '{ broken');

@@ -366,6 +366,7 @@ test("the companion gets every conversation tool except waiting, and none of its
   assert.ok(lead.includes("session_wait"));
   for (const tool of companion) assert.doesNotMatch(tool.description, /session_wait/, tool.name);
   assert.match(companion.find((tool) => tool.name === "session_create").description, /start a lead/);
+  assert.ok(companion.every((tool) => tool.exposure === "direct"), "the companion's tools are always in its requests");
 });
 
 test("a session the engine runs as the companion registers the companion's tools", async () => {

@@ -85,6 +85,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     await rename(temporary, descriptorPath);
     // The companion (harness/companion) stays loaded in a hosted engine while it is turned on.
     if (hosted && keepCompanion) companion = startCompanionKeeper({ onError,
+      notify: (to, text) => hosted.sessionLink.notice({ to, text }),
       connect: () => new SessionClient({ socketPath, serverId: service.serverId, onError }).connect() });
     // What the previous engine was running when a restart closed it (drain.mjs).
     const resumeFile = resumeFilePath(serverDir);

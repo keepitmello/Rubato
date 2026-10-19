@@ -38,7 +38,9 @@ export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 60, 120, 240]);
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 60 }),
+  dailyReport: Object.freeze({ enabled: true, time: '09:00' }),
 });
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export function companionHome(env = process.env) {
   if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
@@ -67,11 +69,16 @@ function writeJson(file, value) {
 export function normalizeSettings(value) {
   const input = value && typeof value === 'object' ? value : {};
   const heartbeat = input.heartbeat && typeof input.heartbeat === 'object' ? input.heartbeat : {};
+  const daily = input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
   return {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_SETTINGS.enabled,
     heartbeat: {
       enabled: typeof heartbeat.enabled === 'boolean' ? heartbeat.enabled : DEFAULT_SETTINGS.heartbeat.enabled,
       everyMinutes: HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes) ? heartbeat.everyMinutes : DEFAULT_SETTINGS.heartbeat.everyMinutes,
+    },
+    dailyReport: {
+      enabled: typeof daily.enabled === 'boolean' ? daily.enabled : DEFAULT_SETTINGS.dailyReport.enabled,
+      time: typeof daily.time === 'string' && TIME.test(daily.time) ? daily.time : DEFAULT_SETTINGS.dailyReport.time,
     },
   };
 }
@@ -92,18 +99,30 @@ export function writeSettings(patch, env = process.env) {
     if (heartbeat.everyMinutes !== undefined && !HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes))
       throw new TypeError(`heartbeat.everyMinutes must be one of ${HEARTBEAT_MINUTES.join(', ')}`);
   }
-  const next = normalizeSettings({ ...current, ...patch, heartbeat: { ...current.heartbeat, ...heartbeat } });
+  const daily = patch.dailyReport;
+  if (daily !== undefined) {
+    if (!daily || typeof daily !== 'object') throw new TypeError('dailyReport must be an object');
+    if (daily.enabled !== undefined && typeof daily.enabled !== 'boolean') throw new TypeError('dailyReport.enabled must be true or false');
+    if (daily.time !== undefined && !(typeof daily.time === 'string' && TIME.test(daily.time))) throw new TypeError('dailyReport.time must be HH:MM');
+  }
+  const next = normalizeSettings({ ...current, ...patch, heartbeat: { ...current.heartbeat, ...heartbeat },
+    dailyReport: { ...current.dailyReport, ...daily } });
   writeJson(companionPaths(env).settings, next);
   return next;
 }
 
+/** `dailyReportOn` is the local date (YYYY-MM-DD) the last daily report went out. */
 export function readState(env = process.env) {
   const state = readJson(companionPaths(env).state);
-  return typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {};
+  return {
+    ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
+    ...(typeof state?.dailyReportOn === 'string' ? { dailyReportOn: state.dailyReportOn } : {}),
+  };
 }
 
-export function writeState(state, env = process.env) {
-  writeJson(companionPaths(env).state, { sessionId: state.sessionId });
+/** Merges `patch` over the stored state. */
+export function writeState(patch, env = process.env) {
+  writeJson(companionPaths(env).state, { ...readState(env), ...patch });
 }
 
 /**

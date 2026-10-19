@@ -682,6 +682,15 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
       bound.follower = createCompanionFollower({ store: followStore, onError });
     },
+    /**
+     * Rubato's own word to a conversation (`kind: 'notice'`): the companion's heartbeat and daily
+     * report (harness/companion keeper.mjs). It wakes the conversation like any delivery.
+     */
+    async notice({ to, about, text } = {}) {
+      requireId(to, 'to'); requireText(text);
+      const from = about ?? { sessionId: 'rubato', title: 'Rubato', cwd: '' };
+      return deliver(to, envelope({ messageId: randomUUID(), kind: 'notice', from, text }));
+    },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
     close() { void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
   };

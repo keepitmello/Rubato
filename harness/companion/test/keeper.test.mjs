@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { COMPANION_TITLE, companionPaths, readState, writeSettings, writeState } from '../companion.mjs';
-import { startCompanionKeeper } from '../keeper.mjs';
+import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT, localDate, startCompanionKeeper } from '../keeper.mjs';
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-keeper-'));
@@ -134,4 +134,69 @@ test('an engine error is reported and the next poll tries again', async (t) => {
   fail = false;
   await keeper.poke();
   assert.equal(engine.attached(readState(env).sessionId), 1);
+});
+
+test('the heartbeat wakes the companion on its interval, waits while it is busy, and stops when switched off', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, dailyReport: { enabled: false } }, env);
+  const engine = fakeEngine();
+  const notices = [];
+  let at = new Date(2026, 9, 20, 12, 0).getTime();
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+    notify: async (sessionId, text) => { notices.push({ sessionId, text }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  const { sessionId } = readState(env);
+  at += 29 * 60_000;
+  await keeper.poke();
+  assert.deepEqual(notices, []);
+  at += 60_000;
+  engine.sessions.get(sessionId).status = 'running';
+  await keeper.poke();
+  assert.deepEqual(notices, [], 'a busy companion is not interrupted');
+  engine.sessions.get(sessionId).status = 'idle';
+  await keeper.poke();
+  assert.deepEqual(notices, [{ sessionId, text: HEARTBEAT_TEXT }]);
+  at += 30 * 60_000;
+  writeSettings({ heartbeat: { enabled: false } }, env);
+  await keeper.poke();
+  assert.equal(notices.length, 1);
+});
+
+test('the daily report goes out once a day at its time; a companion started after the time begins tomorrow', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { time: '09:00' } }, env);
+  const engine = fakeEngine();
+  const notices = [];
+  let at = new Date(2026, 9, 20, 14, 0).getTime();
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+    notify: async (_sessionId, text) => { notices.push(text); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.deepEqual(notices, [], 'turned on at 14:00, the 09:00 report waits for tomorrow');
+  at = new Date(2026, 9, 21, 8, 59).getTime();
+  await keeper.poke();
+  assert.deepEqual(notices, []);
+  at = new Date(2026, 9, 21, 9, 0).getTime();
+  await keeper.poke();
+  at = new Date(2026, 9, 21, 9, 5).getTime();
+  await keeper.poke();
+  assert.deepEqual(notices, [DAILY_REPORT_TEXT]);
+  assert.equal(readState(env).dailyReportOn, localDate(at));
+});
+
+test('a companion started before the report time gets that day\'s report', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { enabled: false } }, env);
+  const engine = fakeEngine();
+  const notices = [];
+  let at = new Date(2026, 9, 20, 7, 0).getTime();
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+    notify: async (_sessionId, text) => { notices.push(text); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  at = new Date(2026, 9, 20, 9, 0).getTime();
+  await keeper.poke();
+  assert.deepEqual(notices, [DAILY_REPORT_TEXT]);
 });

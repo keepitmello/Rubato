@@ -9,20 +9,47 @@
 //
 // The first time the companion is on, the keeper creates its conversation in the companion's
 // home folder and records which one it is (state.json). That record is how the app finds it.
+//
+// The keeper also keeps the companion's rhythm, as the person set it in Settings › Companion: a
+// heartbeat every so many minutes and a daily report at a set time, each a notice that wakes the
+// companion. A companion in the middle of a turn is not interrupted; the beat waits for it.
 import { mkdirSync } from 'node:fs';
 import { COMPANION_TITLE, companionPaths, readSettings, readState, writeState } from './companion.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
+const BUSY = new Set(['starting', 'running', 'waiting']);
+
+export const HEARTBEAT_TEXT = 'Heartbeat. Look over the conversations you follow and anything that came in, and move stalled work forward. ' +
+  'Write to the user only if something needs them; otherwise end your turn with a one-line note to yourself.';
+export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
+  'what is still running and what waits for them. Keep it short.';
+
+/** A local date as YYYY-MM-DD. */
+export function localDate(at) {
+  const date = new Date(at);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+/** Today's report time on the local clock, in epoch ms. */
+function reportTimeOn(at, time) {
+  const [hours, minutes] = time.split(':').map(Number);
+  const date = new Date(at);
+  date.setHours(hours, minutes, 0, 0);
+  return date.getTime();
+}
 
 /**
- * @param {{ connect: () => Promise<object>, env?: NodeJS.ProcessEnv, onError?: (error: unknown) => void, pollMs?: number }} options
- *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient).
+ * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string) => Promise<unknown>, env?: NodeJS.ProcessEnv,
+ *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number }} options
+ *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
+ *   wakes the companion with a notice (pi-server session-link notice).
  */
-export function startCompanionKeeper({ connect, env = process.env, onError = () => {}, pollMs = 3000 }) {
+export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now }) {
   let client;
   let attachedTo;
   let closed = false;
   let ticking;
+  let lastBeat;
 
   async function release() {
     const held = client;
@@ -52,13 +79,39 @@ export function startCompanionKeeper({ connect, env = process.env, onError = () 
       const row = rows.find((item) => item.sessionId === sessionId);
       // A runtime that ended (an error, or the engine reclaimed it) took this attachment with it.
       const live = row && LIVE.has(row.status) && row.runtimeId !== null;
-      if (attachedTo === sessionId && live) return;
-      if (attachedTo !== undefined) { await release(); client = await connect(); }
-      await client.attach(sessionId);
-      attachedTo = sessionId;
+      if (attachedTo !== sessionId || !live) {
+        if (attachedTo !== undefined) { await release(); client = await connect(); }
+        await client.attach(sessionId);
+        attachedTo = sessionId;
+      }
+      await keepRhythm(sessionId, row && BUSY.has(row.status));
     } catch (error) {
       onError(error);
       await release();
+    }
+  }
+
+  async function keepRhythm(sessionId, busy) {
+    if (!notify) return;
+    const settings = readSettings(env);
+    const at = now();
+    const { dailyReportOn } = readState(env);
+    const today = localDate(at);
+    const pastReportTime = at >= reportTimeOn(at, settings.dailyReport.time);
+    // A companion that starts after today's report time begins with tomorrow's.
+    if (dailyReportOn === undefined) { writeState({ dailyReportOn: pastReportTime ? today : '' }, env); lastBeat ??= at; return; }
+    const reportDue = settings.dailyReport.enabled && pastReportTime && dailyReportOn !== today;
+    lastBeat ??= at;
+    if (busy) return;
+    if (reportDue) {
+      await notify(sessionId, DAILY_REPORT_TEXT);
+      writeState({ dailyReportOn: today }, env);
+      lastBeat = at;
+      return;
+    }
+    if (settings.heartbeat.enabled && at - lastBeat >= settings.heartbeat.everyMinutes * 60_000) {
+      lastBeat = at;
+      await notify(sessionId, HEARTBEAT_TEXT);
     }
   }
 
