@@ -96,6 +96,9 @@ export function startHubSupervisor({
   stableMs = 30_000,
   stopTimeoutMs = 4_000,
   now = Date.now,
+  // The engine's resident-service thread can take ownership of the child (ctx.own), so a thread
+  // that ends without close() still stops the hub it started.
+  own = () => {},
 } = {}) {
   const legacyPlist = path.join(path.dirname(paths.legacyPlist), `${label}.plist`);
   let child = null;
@@ -185,6 +188,7 @@ export function startHubSupervisor({
         stdio: ['ignore', out.fd, err.fd, 'ipc'], detached: false });
       child = started;
       startedAt = now();
+      try { own(started); } catch (error) { onError(error); }
       childExit = new Promise((resolve) => {
         let settled = false;
         const done = (code, signal) => { if (settled) return; settled = true; resolve({ code, signal }); };
@@ -280,7 +284,8 @@ export function startHubSupervisor({
 
 /** Resident-service entry (resident-services.mjs): the engine runs this in its own thread. */
 export async function start(ctx = {}) {
-  const supervisor = startHubSupervisor({ onError: ctx.onError ?? console.error, log: ctx.log ?? (() => {}) });
+  const supervisor = startHubSupervisor({ onError: ctx.onError ?? console.error, log: ctx.log ?? (() => {}),
+    ...(typeof ctx.own === 'function' ? { own: (child) => ctx.own(child) } : {}) });
   ctx.signal?.addEventListener?.('abort', () => { void supervisor.close(); }, { once: true });
   await supervisor.ready;
   return { close: () => supervisor.close(), status: () => supervisor.status() };
