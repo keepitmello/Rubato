@@ -1590,22 +1590,25 @@ test('a live session message goes to the thread once and emits no runtime event;
 
 // Rubato's clock (a heartbeat) is hidden in Pi but opens its turn in the thread, so T3 does not
 // label the turn as background activity; the web timeline draws no row for it.
-test("Rubato's clock goes to the thread as a session message of kind wake, live and from history", async () => {
-  const clock = sessionMessage({ display:false, content:'<rubato_wake what="heartbeat">…</rubato_wake>',
-    details:{ v:1, messageId:'wake-1', kind:'wake', what:'heartbeat', from:{ sessionId:'rubato', title:'Rubato', cwd:'' },
-      text:'Heartbeat. Look over the conversations you follow.' } });
+test("Rubato's clock and the run it starts stay out of the thread, live and from history", async () => {
+  const clock = (what, at) => sessionMessage({ display:false, content:`<rubato_wake what="${what}">…</rubato_wake>`, timestamp:at,
+    details:{ v:1, messageId:`wake-${at}`, kind:'wake', what, from:{ sessionId:'rubato', title:'Rubato', cwd:'' }, text:'Heartbeat.' } });
   const delivered = [];
   const p = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
     emit:() => {}, sessionMessage:(item) => delivered.push(item) });
   p.begin();
-  for (const type of ['message_start', 'message_end']) p.project({ type, message:clock });
-  assert.equal(delivered.length, 1);
-  assert.equal(linkOf(delivered[0]).messageKind, 'wake');
+  for (const type of ['message_start', 'message_end']) p.project({ type, message:clock('heartbeat', 2) });
+  assert.deepEqual(delivered, [], 'no thread row for the wake');
+  const answer = (text, at) => ({ role:'assistant', content:[{ type:'text', text }], timestamp:at, stopReason:'stop' });
   const bridge = new RubatoPiBridge({ descriptorPath:'/nonexistent/descriptor.json', instanceId:'rubato-test' });
   try {
-    const items = bridge.importedMessages('session', [clock,
-      { role:'custom', customType:'rubato-session-message', display:false, content:'hidden', details:sessionMessage().details, timestamp:6 }], 'thread');
-    assert.deepEqual(items.map((item) => linkOf(item).messageKind), ['wake']);
+    const items = bridge.importedMessages('session', [
+      { role:'user', content:'hi', timestamp:1 }, answer('hello', 2),
+      clock('heartbeat', 3), answer('Heartbeat check: nothing has stalled.', 4),
+      clock('sleep', 5), { role:'toolResult', toolCallId:'t', toolName:'segno_record', content:[{ type:'text', text:'ok' }], timestamp:6 }, answer('잘 자.', 7),
+      sessionMessage({ timestamp:8 }), answer('A lead finished; here is what it did.', 9),
+    ], 'thread');
+    assert.deepEqual(items.map((item) => item.text), ['hi', 'hello', sessionMessage().details.text, 'A lead finished; here is what it did.']);
   } finally { await bridge.close(); }
 });
 

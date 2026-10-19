@@ -2,6 +2,7 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
+import { quietMessages } from './quiet-runs.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
@@ -487,7 +488,10 @@ export class RubatoPiBridge {
   // history goes to (see sessionMessageFrom); T3's history import takes no
   // context, so the server appends those after the import.
   importedMessages(sessionId, messages, threadId) {
+    // Runs Rubato's clock started stay in the session, not in the thread (quiet-runs.mjs).
+    const quiet = quietMessages(messages);
     return messages.flatMap((message) => {
+      if (quiet.has(message)) return [];
       if (['user', 'assistant'].includes(message.role)) return [{
         id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
         createdAt: new Date(message.timestamp).toISOString(),

@@ -1,0 +1,108 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { createQuietRuns, quietMessages } from '../src/quiet-runs.mjs';
+import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
+
+const wake = (what) => ({ role: 'custom', customType: 'rubato-session-message', display: false, content: '<rubato_wake>',
+  details: { v: 1, messageId: `w-${what}`, kind: 'wake', what, from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'tick' }, timestamp: 1 });
+const notice = { role: 'custom', customType: 'rubato-session-message', display: true, content: '<session_notice>',
+  details: { v: 1, messageId: 'n', kind: 'notice', from: { sessionId: 'lead', title: 'Login', cwd: '/w' }, text: 'Finished.' }, timestamp: 2 };
+const user = { role: 'user', content: 'hi', timestamp: 3 };
+const answer = { role: 'assistant', content: [{ type: 'text', text: 'Heartbeat check: nothing has stalled.' }], timestamp: 4, stopReason: 'stop' };
+const notesNudge = { role: 'custom', customType: 'rubato-context-note', display: false, content: 'x', timestamp: 0 };
+/** One Pi run as the engine publishes it. */
+const run = (input, ...tail) => [{ type: 'agent_start' }, { type: 'turn_start' },
+  { type: 'message_start', message: input }, { type: 'message_end', message: input },
+  ...tail.flatMap((message) => [{ type: 'message_start', message }, { type: 'message_end', message }]),
+  { type: 'agent_end' }, { type: 'agent_settled' }];
+const pass = (filter, events) => events.flatMap((event) => filter.accept(event));
+
+test('a run the clock started passes nothing; any other run passes whole, in order', () => {
+  for (const what of ['heartbeat', 'daily-report', 'sleep']) {
+    assert.deepEqual(pass(createQuietRuns(), run(wake(what), answer)), [], what);
+  }
+  for (const input of [user, notice]) {
+    const events = run(input, answer);
+    assert.deepEqual(pass(createQuietRuns(), events), events);
+  }
+  const quietThenNot = [...run(wake('heartbeat'), answer), ...run(user, answer)];
+  assert.deepEqual(pass(createQuietRuns(), quietThenNot), run(user, answer), 'the next run is judged on its own');
+});
+
+test("Pi's own hidden messages before the input wait with the start; a run with no input shows", () => {
+  const events = [{ type: 'agent_start' }, { type: 'message_start', message: notesNudge }, { type: 'message_end', message: notesNudge },
+    { type: 'message_start', message: wake('heartbeat') }, { type: 'message_end', message: answer }, { type: 'agent_settled' }];
+  assert.deepEqual(pass(createQuietRuns(), events), []);
+  const continued = [{ type: 'agent_start' }, { type: 'message_start', message: answer }, { type: 'agent_settled' }];
+  assert.deepEqual(pass(createQuietRuns(), continued), continued);
+});
+
+test('an input that is not the clock joins a quiet run: it shows from there as a run of its own', () => {
+  const filter = createQuietRuns();
+  const shown = pass(filter, [{ type: 'agent_start' }, { type: 'message_start', message: wake('heartbeat') }, { type: 'message_end', message: answer },
+    { type: 'message_start', message: notice }, { type: 'message_end', message: answer }, { type: 'agent_settled' }]);
+  assert.deepEqual(shown.map((event) => [event.type, event.message?.details?.kind ?? event.message?.role ?? null]),
+    [['agent_start', null], ['message_start', 'notice'], ['message_end', 'assistant'], ['agent_settled', null]]);
+});
+
+test('a run the client asked for is never held or hidden', () => {
+  const filter = createQuietRuns({ owned: () => true });
+  assert.deepEqual(filter.accept({ type: 'agent_start' }), [{ type: 'agent_start' }]);
+  assert.deepEqual(filter.accept({ type: 'message_start', message: wake('heartbeat') }), [{ type: 'message_start', message: wake('heartbeat') }]);
+});
+
+test('idle() waits for a quiet run to settle', async () => {
+  const filter = createQuietRuns();
+  await filter.idle();
+  filter.accept({ type: 'agent_start' });
+  let done = false;
+  const waiting = filter.idle().then(() => { done = true; });
+  filter.accept({ type: 'message_start', message: wake('heartbeat') });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(done, false);
+  filter.accept({ type: 'agent_settled' });
+  await waiting;
+  assert.equal(done, true);
+});
+
+test('quietMessages marks each clock wake and its run up to the next other input', () => {
+  const messages = [user, answer, wake('heartbeat'), { ...answer, timestamp: 5 }, wake('sleep'), { ...answer, timestamp: 6 }, notice, { ...answer, timestamp: 7 }];
+  const quiet = quietMessages(messages);
+  assert.deepEqual(messages.map((message) => quiet.has(message)), [false, false, true, true, true, true, false, false]);
+});
+
+test('on the stream: a heartbeat run reaches T3 as nothing, and a message sent meanwhile goes in after it', async () => {
+  const commands = [];
+  const client = { client: { connected: true }, attached: [], listener: null,
+    async attach(id) { client.attached.push(id); }, async subscribeSession(listener) { client.listener = listener; return async () => {}; },
+    async command(command) { commands.push(command); return command.type === 'prompt' ? { disposition: 'started' } : undefined; },
+    async reply() {}, async close() {} };
+  const records = [];
+  const appended = [];
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(),
+    appendSessionMessage: async (_threadId, item) => { appended.push(item); } },
+  { threadId: 't1', cwd: '/w', onRecord: (record) => records.push(record), awaitTimings: { pollMs: 5, graceMs: 5 } });
+  conn.client = client;
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  const events = run(wake('heartbeat'), answer);
+  const half = events.slice(0, 4);
+  client.listener({ runtimeId: 'r1', sequence: half.length, status: 'running', events: half.map((event, index) => ({ sequence: index + 1, event })) });
+  await conn.inbound;
+  const sending = conn.request({ type: 'prompt', message: 'are you there?' });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(commands.some((command) => command.type === 'prompt'), false, 'the message waits for the clock run');
+  client.listener({ runtimeId: 'r1', sequence: events.length, status: 'idle',
+    events: events.map((event, index) => ({ sequence: index + 1, event })).slice(half.length) });
+  await sending;
+  await conn.inbound;
+  assert.deepEqual(records.filter((record) => record.type !== 'response'), [], 'T3 saw nothing of the run');
+  assert.deepEqual(appended, [], 'and no row for the wake');
+  assert.ok(commands.some((command) => command.type === 'prompt' && command.message === 'are you there?'));
+  const reply = run(user, answer);
+  client.listener({ runtimeId: 'r1', sequence: events.length + reply.length, status: 'idle',
+    events: reply.map((event, index) => ({ sequence: events.length + index + 1, event })) });
+  await conn.inbound;
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type), reply.map((event) => event.type),
+    'the person\'s run arrives whole');
+});

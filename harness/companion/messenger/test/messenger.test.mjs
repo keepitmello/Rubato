@@ -263,7 +263,7 @@ test('the daily report and a lead ending reach the person; a heartbeat answer do
   ], { append: true });
   await settle(box.service);
   assert.equal(box.fake.sent.filter((row) => row.text.includes('진행 중인 리드')).length, 0,
-    'a heartbeat answer stays in the app: thinking on a timer is not a message to the phone');
+    'a heartbeat answer stays with Segno: thinking on a timer is not a message to the phone');
 });
 
 // Rubato's clock as the session link writes it (kind `wake`, not shown in the app).
@@ -536,7 +536,7 @@ test("a wake is classified by what it is, not by the words it carries", async (t
   assert.equal(box.fake.sent.filter((row) => row.text.includes('조용해')).length, 0, 'the heartbeat stayed in the app');
 });
 
-test('the answer to the sleep wake stays in the app', async (t) => {
+test('the answer to the sleep wake does not go to the phone', async (t) => {
   const box = await paired(t);
   const before = box.fake.sent.length;
   transcript(box, [

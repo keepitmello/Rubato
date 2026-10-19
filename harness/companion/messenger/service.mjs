@@ -486,7 +486,7 @@ export function startCompanionMessenger({
       // A wake names itself (`what`); its opening words are only the fallback for an older message.
       const heartbeat = own && (trigger.what === 'heartbeat' || String(trigger.text ?? '').startsWith(HEARTBEAT_PREFIX));
       const daily = own && (trigger.what === 'daily-report' || String(trigger.text ?? '').startsWith(DAILY_PREFIX));
-      // Silence by default: a heartbeat's answer stays in the app. Segno speaks to the phone only
+      // Silence by default: a heartbeat's answer stays with Segno. Segno speaks to the phone only
       // when something needs the user, and then it says it with `telegram_send` — one act, not a
       // side effect of thinking out loud on a timer (Roo's model).
       if (heartbeat) return;

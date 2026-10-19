@@ -5,6 +5,7 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
+import { createQuietRuns } from './quiet-runs.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -43,6 +44,9 @@ import { isBookkeepingTool } from './activity.mjs';
  * - A Stop can strand a steer Pi had not read yet. After the abort it is cleared from Pi's
  *   queue and its text comes back as a warning in the turn instead of surfacing inside an
  *   unrelated later turn (decisions/t3-queued-message-vs-steer.md).
+ * - Rubato's clock (a heartbeat, the daily report, sleep) wakes Segno for its own rhythm; that run
+ *   reaches no client (quiet-runs.mjs). Its events stop here, and a prompt sent while it runs
+ *   waits for it to settle.
  * - A restart does not end the turn. The engine says `restarting` on the session state while
  *   it lets running tool calls finish (pi-server drain.mjs); the turn shows a "Restarting
  *   Rubato" row, and when the engine's socket closes this stream attaches to the next engine,
@@ -137,6 +141,11 @@ export class RubatoRpcConnection {
     this.restarts = 0;
     // The run going on now, from its agent_start (noteRun): a turn that adopts it replays it.
     this.run = null;
+    // Runs Rubato's clock started, which no client sees (quiet-runs.mjs).
+    // A run this stream asked for, a turn held open on a wait, or one carried across an engine
+    // restart is never one of them.
+    this.asked = false;
+    this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null });
     this.sessionId = null;
     this.closed = false;
   }
@@ -206,7 +215,10 @@ export class RubatoRpcConnection {
       this.runtimeId = state.runtimeId;
       this.sequence = state.sequence ?? 0;
       this.run = null;
-      for (const record of state.events ?? []) { this.fold?.feed(record.event); this.sessionMessage(record.event); this.noteRun(record.event); }
+      for (const record of state.events ?? []) {
+        this.fold?.feed(record.event); this.sessionMessage(record.event);
+        for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
+      }
       if (state.status !== 'running') this.run = null;
       if (state.restarting === true) this.beginRestart(state);
       return;
@@ -321,6 +333,8 @@ export class RubatoRpcConnection {
   async engineReady(type) {
     if (this.reconnecting) await this.reconnecting;
     if (this.restart && RUN_INPUTS.has(type)) await this.restart.ready;
+    // A clock run the person never sees is not interrupted: their message goes in after it.
+    if (RUN_INPUTS.has(type)) { await this.quietRuns.idle(); this.asked = true; }
     if (this.closed) throw new Error('Rubato connection is closed');
   }
   /** The run going on now, from its start: what a turn that adopts it shows first. */
@@ -363,7 +377,6 @@ export class RubatoRpcConnection {
     });
   }
   deliver(event) {
-    this.noteRun(event);
     // The Agents panel, Speed Index and cache read the engine's own records, not the
     // rows this stream turns them into.
     this.fold?.feed(event);
@@ -373,7 +386,11 @@ export class RubatoRpcConnection {
     // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
     if (event?.type === 'session_info_changed' && typeof event.name === 'string' && event.name.trim())
       this.mirrorTitle(event.name.trim());
-    this.enqueue(() => this.process(event));
+    for (const shown of this.quietRuns.accept(event)) {
+      if (shown?.type === 'agent_settled') this.asked = false;
+      this.noteRun(shown);
+      this.enqueue(() => this.process(shown));
+    }
   }
   enqueue(step) {
     this.inbound = this.inbound.then(step).catch((error) => this.log('inbound step failed', error));
@@ -558,7 +575,8 @@ export class RubatoRpcConnection {
       return {};
     }
     if (command.type === 'set_model') { this.thinkingLevel = undefined; this.fastMode = undefined; }
-    return this.client.command(command);
+    try { return await this.client.command(command); }
+    catch (error) { if (RUN_INPUTS.has(command.type)) this.asked = false; throw error; }
   }
   /** A control typed as a prompt; the adapter's turn for it settles once Pi reads idle. */
   async control(control) {

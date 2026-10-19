@@ -29,7 +29,7 @@ const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
 
 export const HEARTBEAT_TEXT = 'Heartbeat. Look over the conversations you follow and anything that came in, and move stalled work forward. ' +
-  'End your turn with a short note here; that note stays in the app. If something needs the user, say it to them with telegram_send instead of putting it in the note.';
+  'End your turn with a short note for yourself; no one else sees it. If something needs the user, say it to them with telegram_send instead of putting it in the note.';
 export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
   'what is still running and what waits for them. Keep it short.';
 export const SLEEP_TEXT = 'Time to sleep. The user has been quiet for hours and your context is long. ' +

@@ -47,9 +47,10 @@ test('a reloaded runtime starts its sequence over', async () => {
   const { conn, records } = connection(client);
   await conn.request({ type: 'switch_session', sessionPath: 's1' });
   client.listener({ runtimeId: 'r1', sequence: 9, status: 'idle', events: [] });
-  client.listener({ runtimeId: 'r2', sequence: 1, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } }] });
+  client.listener({ runtimeId: 'r2', sequence: 2, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } },
+    { sequence: 2, event: { type: 'message_start', message: { role: 'user', content: 'hi', timestamp: 1 } } }] });
   await conn.inbound;
-  assert.deepEqual(records.map((record) => record.type), ['agent_start']);
+  assert.deepEqual(records.map((record) => record.type), ['agent_start', 'message_start']);
 });
 
 test('new_session creates through the engine and the native id is the session id', async () => {
@@ -414,7 +415,9 @@ async function runningStream(answers = {}) {
   const harness = connection(client, {}, { restartTimings });
   await harness.conn.request({ type: 'switch_session', sessionPath: 's1' });
   client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
-  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } }] });
+  // A turn the person started: the run's first input is their message.
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } },
+    { sequence: 1.5, event: { type: 'message_start', message: { role: 'user', content: 'go', timestamp: 1 } } }] });
   await harness.conn.inbound;
   return { client, ...harness };
 }

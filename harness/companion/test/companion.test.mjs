@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, PIECES, SEEDED_PIECES, basePiecePath, composeCompanionPrompt, companionPaths, personalPiecePath,
+  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, SEEDED_PIECES, basePiecePath, composeCompanionPrompt, companionPaths, personalPiecePath,
   readPieces, readSettings, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
 
@@ -110,14 +110,26 @@ test('the companion is off until the person turns it on, with the heartbeat on b
 test('saved settings merge over what is stored and refuse what the page cannot offer', (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
-  writeSettings({ heartbeat: { everyMinutes: 30 } }, env);
+  writeSettings({ heartbeat: { everyMinutes: 45 } }, env);
   writeSettings({ dailyReport: { time: '18:30' } }, env);
-  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 30 }, dailyReport: { enabled: true, time: '18:30' } });
+  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45 }, dailyReport: { enabled: true, time: '18:30' } });
   assert.throws(() => writeSettings({ dailyReport: { time: '25:00' } }, env), /HH:MM/);
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
   writeFileSync(companionPaths(env).settings, '{ broken');
   assert.deepEqual(readSettings(env), DEFAULT_SETTINGS, 'an unreadable file reads as the defaults');
+});
+
+test('the heartbeat is every 15, 30 or 45 minutes; an older stored interval reads as 30', (t) => {
+  const env = sandbox(t);
+  assert.deepEqual(HEARTBEAT_MINUTES, [15, 30, 45]);
+  assert.equal(DEFAULT_SETTINGS.heartbeat.everyMinutes, 30);
+  writeSettings({ enabled: true }, env);
+  for (const older of [60, 120, 240]) {
+    writeFileSync(companionPaths(env).settings, JSON.stringify({ enabled: true, heartbeat: { enabled: true, everyMinutes: older } }));
+    assert.deepEqual(readSettings(env).heartbeat, { enabled: true, everyMinutes: 30 }, `${older}`);
+    assert.throws(() => writeSettings({ heartbeat: { everyMinutes: older } }, env), /everyMinutes/);
+  }
 });
 
 test('a personal piece replaces only that piece, and saving the default or nothing removes it', (t) => {

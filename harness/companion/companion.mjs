@@ -44,10 +44,12 @@ const PIECE_IDS = new Set(PIECES.map((piece) => piece.id));
 /** A personal piece larger than this is refused: it rides on every request. */
 export const PIECE_LIMIT = 64 * 1024;
 
-export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 60, 120, 240]);
+// Anthropic's prompt cache lives an hour, so a beat at an hour or more lands after it expired; a
+// stored interval outside these (an older 60, 120 or 240) reads as the default.
+export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
-  heartbeat: Object.freeze({ enabled: true, everyMinutes: 60 }),
+  heartbeat: Object.freeze({ enabled: true, everyMinutes: 30 }),
   dailyReport: Object.freeze({ enabled: true, time: '09:00' }),
 });
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
