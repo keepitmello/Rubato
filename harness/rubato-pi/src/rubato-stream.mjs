@@ -392,6 +392,22 @@ function isWebSocketTransportError(errorMessage) {
   return typeof errorMessage === "string" && /websocket/i.test(errorMessage);
 }
 
+/**
+ * Gemini 4 는 답을 다 쓴 뒤 끝에 내부 문법 찌꺼기(`[:] …`, `'][]}}`)를 흘리고
+ * `MALFORMED_RESPONSE` 로 끝내곤 한다. 이미 나간 답은 재시도로 다시 쓸 수 없으니
+ * 턴을 죽이지 않고 쓴 데까지로 마감한다. 완성된 도구 호출만 있으면 `toolUse`,
+ * 잘린 도구가 하나라도 있으면 그대로 오류로 남긴다. `rawStopReason` 은 진단으로 남는다.
+ */
+export function settleMalformedGeminiEnd(message) {
+  if (message?.rawStopReason !== "MALFORMED_RESPONSE" || message.stopReason !== "error") return false;
+  const content = message.content ?? [];
+  if (content.some((part) => part?.type === "toolCall")) return settleAbortedToolUse(message);
+  if (!content.some((part) => part?.type === "text" && part.text.trim().length > 0)) return false;
+  message.stopReason = "stop";
+  delete message.errorMessage;
+  return true;
+}
+
 function observeDelta(state, event) {
   if (isReplayableContent(event)) state.emittedDelta = true;
   const capture = state.speedCapture;
@@ -461,6 +477,7 @@ function attachTiming(state, message) {
  * - 텍스트·도구 델타 후 오류 → `NO_TURN_RETRY_PREFIX` 로 재시도 금지
  * - 사용자 중단 또는 WebSocket 단절 + 완성된 미실행 tool → `toolUse` done
  *   (응답 전체가 성공한 게 아니라, 프로토콜상 끝난 item 을 소켓과 함께 롤백하지 않는다)
+ * - Gemini `MALFORMED_RESPONSE` + 이미 나간 텍스트·완성된 tool → `stop`/`toolUse` done
  * - 잘린 도구·텍스트만 있는 전송 실패는 성공으로 바꾸지 않는다
  */
 function settleTerminal(state, options, event) {
@@ -484,6 +501,10 @@ function settleTerminal(state, options, event) {
     state.endCall({ status: message.stopReason, usage: normalizeProviderUsage(message.providerUsage ?? message.usage) });
     state.emitSpeedIndex(message, message.stopReason, undefined, { aborted });
     return { type: "done", reason: message.stopReason, message };
+  }
+
+  if (event.type === "error" && !aborted && state.emittedDelta && settleMalformedGeminiEnd(message)) {
+    event = { type: "done", reason: message.stopReason, message };
   }
 
   state.endCall({

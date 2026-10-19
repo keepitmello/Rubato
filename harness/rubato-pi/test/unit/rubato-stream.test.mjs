@@ -455,6 +455,77 @@ test("중단이 아닌 전송 실패는 도구가 있어도 성공으로 바꾸�
   assert.ok(last.error.errorMessage.startsWith(NO_TURN_RETRY_PREFIX));
 });
 
+const gemini = { provider: "google-vertex", id: "gemini-4-argon" };
+const malformed = (content) => assistant({
+  stopReason: "error",
+  rawStopReason: "MALFORMED_RESPONSE",
+  errorMessage: "Provider stopped with: MALFORMED_RESPONSE",
+  content,
+});
+
+test("Gemini MALFORMED_RESPONSE 로 끝나도 이미 쓴 답은 정상 완료로 마감한다", async () => {
+  const message = malformed([
+    { type: "thinking", thinking: "생각" },
+    { type: "text", text: "다 쓴 답이야.[:] Clean and ready.\n" },
+  ]);
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "thinking_delta", contentIndex: 0, delta: "생각" },
+    { type: "text_delta", contentIndex: 1, delta: "다 쓴 답이야." },
+    { type: "text_end", contentIndex: 1, content: "다 쓴 답이야." },
+    { type: "error", reason: "error", error: message },
+  ]))(gemini, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "done");
+  assert.equal(last.reason, "stop");
+  assert.equal(last.message.stopReason, "stop");
+  assert.equal(last.message.errorMessage, undefined);
+  assert.equal(last.message.rawStopReason, "MALFORMED_RESPONSE", "진단은 남는다");
+  assert.equal(last.message.content[1].text, "다 쓴 답이야.[:] Clean and ready.\n");
+});
+
+test("Gemini MALFORMED_RESPONSE 전에 사고만 나갔으면 재시도 가능한 오류로 남는다", async () => {
+  const message = malformed([{ type: "thinking", thinking: "생각" }]);
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "thinking_delta", contentIndex: 0, delta: "생각" },
+    { type: "error", reason: "error", error: message },
+  ]))(gemini, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "error");
+  assert.equal(last.error.errorMessage, "Provider stopped with: MALFORMED_RESPONSE");
+});
+
+test("Gemini MALFORMED_RESPONSE 직전의 완성된 도구 호출은 toolUse 로 실행된다", async () => {
+  const message = malformed([
+    { type: "text", text: "볼게." },
+    { type: "toolCall", id: "t1", name: "ls", arguments: { path: "/tmp" } },
+  ]);
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "text_delta", contentIndex: 0, delta: "볼게." },
+    { type: "toolcall_end", contentIndex: 1 },
+    { type: "error", reason: "error", error: message },
+  ]))(gemini, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "done");
+  assert.equal(last.message.stopReason, "toolUse");
+  assert.equal(last.message.errorMessage, undefined);
+});
+
+test("MALFORMED_RESPONSE 가 아닌 오류는 답이 나갔어도 그대로 재시도를 막는다", async () => {
+  const message = assistant({
+    stopReason: "error",
+    rawStopReason: "SAFETY",
+    errorMessage: "Provider stopped with: SAFETY",
+    content: [{ type: "text", text: "쓰다가" }],
+  });
+  const last = (await drain(withRubatoStream(scriptedStream([
+    { type: "start", partial: message },
+    { type: "text_delta", contentIndex: 0, delta: "쓰다가" },
+    { type: "error", reason: "error", error: message },
+  ]))(gemini, context, { env: {} }))).at(-1);
+  assert.equal(last.type, "error");
+  assert.equal(last.error.errorMessage, `${NO_TURN_RETRY_PREFIX}Provider stopped with: SAFETY`);
+});
+
 test("pi-ai 가 표지한 exec-resolved block 은 실행할 tool 로 세지 않는다", () => {
   // 표지는 설치본의 module-local Symbol 이다. 우리가 Symbol.for 로 지어낸 것은
   // 절대 일치하지 않으므로, 여기서 실제 표지를 그대로 얹어 검사한다.

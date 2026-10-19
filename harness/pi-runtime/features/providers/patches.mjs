@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { patchOpenAiCodexResponsesAstra, patchTransformMessagesPreserve } from "./astra-codex.mjs";
 import { patchEventStreamLocalWork, patchLazyLocalWork } from "./lazy-local-work.mjs";
-import { patchGemini4ThinkingLevel, patchVertexServiceAccountJson } from "./google-vertex.mjs";
+import { patchGemini4ThinkingLevel, patchGeminiMalformedResponse, patchVertexServiceAccountJson } from "./google-vertex.mjs";
 
 const PACKAGE_NAME = "@earendil-works/pi-ai";
 import { PI_VERSION as PACKAGE_VERSION } from "../../pi-version.mjs";
@@ -504,6 +504,14 @@ export const patches = Object.freeze([
     path: "dist/api/google-shared.js",
     preimageSha256: "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
     apply: patchGemini4ThinkingLevel,
+  }),
+  Object.freeze({
+    id: "providers:gemini-malformed-response",
+    packageName: PACKAGE_NAME,
+    version: PACKAGE_VERSION,
+    path: "dist/api/google-shared.js",
+    preimageSha256: "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a",
+    apply: patchGeminiMalformedResponse,
   }),
 ]);
 

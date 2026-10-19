@@ -82,3 +82,21 @@ export function patchGemini4ThinkingLevel(source) {
     "gemini-4-thinking-level",
   );
 }
+
+/**
+ * Gemini 4 ends some turns with finishReason MALFORMED_RESPONSE, a value @google/genai 2.21
+ * does not list. Stock's exhaustive switch throws on it mid-stream, so the open text block is
+ * never closed and the final usage chunk is lost. Map it like the other error reasons; the
+ * Rubato stream decorator decides what an already-written answer becomes.
+ */
+export function patchGeminiMalformedResponse(source) {
+  return replaceOnce(
+    source,
+    `        case FinishReason.NO_IMAGE:
+            return "error";`,
+    `        case FinishReason.NO_IMAGE:
+        case "MALFORMED_RESPONSE":
+            return "error";`,
+    "gemini-malformed-response",
+  );
+}

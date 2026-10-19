@@ -255,6 +255,12 @@ test("feature stages one stock-bound closure and its default factory builds the 
   assert.equal(staged.receipt.addedFiles.length, providersFeature.files.length);
 });
 
+test("staged Gemini stop mapping treats MALFORMED_RESPONSE as an error instead of throwing", async () => {
+  const googleShared = await import(pathToFileURL(join(piAiRoot, "dist/api/google-shared.js")).href);
+  assert.equal(googleShared.mapStopReason("MALFORMED_RESPONSE"), "error");
+  assert.equal(googleShared.mapStopReason("STOP"), "stop");
+});
+
 test("Cursor adapter restores grouped catalogs and forwards local-work state through lazy setup", async () => {
   const provider = cursorFactory.cursorProvider();
   const legacyModel = (id) => model({
