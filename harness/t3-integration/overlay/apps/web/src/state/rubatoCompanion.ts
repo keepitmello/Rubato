@@ -57,6 +57,8 @@ export interface TelegramStatus {
   };
   /** What the engine's messenger did with the last request, and why not if it failed. */
   readonly handoff: { readonly result?: string; readonly error?: string };
+  /** Whether this Mac has the person's own MTProto client, which is what can make a bot for them. */
+  readonly botCreation?: { readonly available: boolean; readonly reason?: string; readonly account?: string };
   readonly home: string;
   readonly waiting: readonly TelegramHeldMessage[];
   readonly recent: readonly TelegramHeldMessage[];
@@ -142,6 +144,9 @@ export const rubatoCompanion = {
   /** Asks the engine's messenger for a fresh six-character code; the person sends it to the bot. */
   pairTelegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram-pair"),
   unpairTelegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram-unpair"),
+  /** Hands a token from @BotFather to the messenger, which checks it with Telegram before keeping it. */
+  setTelegramToken: (env: EnvironmentId | null, token: string) =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-set-token", { token }),
   /** Has Segno's bot made from the person's own Telegram account (@BotFather over MTProto). */
   createTelegramBot: (env: EnvironmentId | null, name: string, username?: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-create-bot", { name, ...(username ? { username } : {}) }),

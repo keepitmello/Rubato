@@ -135,6 +135,7 @@ const HELD_KIND = (message: TelegramHeldMessage): string =>
 
 function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
+  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -209,17 +210,44 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
             }
           />
           {!made ? (
-            <SettingsRow
-              id="rubato-companion-telegram-create"
-              title="Make Segno's bot"
-              description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
-              control={
-                <Button size="sm" disabled={busy} onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, "Segno"))}>
-                  {busy ? <Spinner className="size-3.5" /> : null}
-                  Create the bot
-                </Button>
-              }
-            />
+            <>
+              <SettingsRow
+                id="rubato-companion-telegram-token"
+                title="Paste the token @BotFather gave you"
+                description="In Telegram, open @BotFather, send /newbot, answer its two questions, and paste the token it sends back here."
+                control={
+                  <span className="flex items-center gap-2">
+                    <Input
+                      aria-label="Telegram bot token"
+                      className="h-8 w-64"
+                      placeholder="123456789:AA…"
+                      value={token}
+                      disabled={busy}
+                      onChange={(event) => setToken(event.target.value)}
+                    />
+                    <Button size="sm" disabled={busy || token.trim() === ""}
+                      onClick={() => void run(() => rubatoCompanion.setTelegramToken(environmentId, token.trim()))}>
+                      {busy ? <Spinner className="size-3.5" /> : null}
+                      Save
+                    </Button>
+                  </span>
+                }
+              />
+              {telegram.botCreation?.available ? (
+                <SettingsRow
+                  id="rubato-companion-telegram-create"
+                  title="Or let Rubato make it"
+                  description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
+                  control={
+                    <Button size="sm" variant="outline" disabled={busy}
+                      onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, "Segno"))}>
+                      {busy ? <Spinner className="size-3.5" /> : null}
+                      Create the bot
+                    </Button>
+                  }
+                />
+              ) : null}
+            </>
           ) : (
             <SettingsRow
               id="rubato-companion-telegram-bot"

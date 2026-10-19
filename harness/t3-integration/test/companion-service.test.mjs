@@ -140,3 +140,28 @@ test('the Segno space asks the server for the inbox and gets the open work with 
   // The Segno space shows the rows no lead holds yet.
   assert.deepEqual((await post('inbox', { unlinked: true })).body.inbox.items.map((item) => item.title), ['로그인이 안 돼요']);
 });
+
+test('a pasted token is handed to the messenger, and the page learns whether a tg client can make one', async (t) => {
+  const dir = await mkdtemp(path.join(tmpdir(), 'rubato-companion-service-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
+  const service = createCompanionService({ env, defaultsDir,
+    tg: { probeTg: async () => ({ available: false, reason: 'no tg client on this Mac' }) } });
+  const post = async (action, body = {}) => {
+    const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
+      { method: 'POST', body: JSON.stringify(body) }));
+    return { status: response.status, body: await response.json() };
+  };
+  const store = await import('../../companion/messenger/store.mjs');
+
+  const status = await post('telegram');
+  assert.deepEqual(status.body.telegram.botCreation, { available: false, reason: 'no tg client on this Mac' },
+    'the make-it-for-me button knows there is no tg here');
+
+  const saved = await post('telegram-set-token', { token: '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh' });
+  assert.equal(saved.status, 200);
+  assert.equal(store.readIntent(env).action, 'set-token');
+  assert.equal(store.readIntent(env).token, '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh',
+    'the service checks it and stores it; the page never keeps it');
+  assert.equal((await post('telegram-set-token', { token: '  ' })).status, 400);
+});

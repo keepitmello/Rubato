@@ -12,6 +12,7 @@
 // It reads @BotFather live (never the store) because the answer to a step is what decides the
 // next one, and it waits for each answer by message id, so an old message is never mistaken for it.
 import { execFile } from 'node:child_process';
+import { randomInt } from 'node:crypto';
 
 export const BOTFATHER = '@BotFather';
 const TOKEN = /\b(\d{8,10}:[A-Za-z0-9_-]{35})\b/;
@@ -21,6 +22,30 @@ const USERNAME_REJECTED = /already taken|invalid|can't be used|cannot be used|to
 const TOO_MANY_ATTEMPTS = /too many attempts|try again later|slow down/i;
 
 const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const SUFFIX_ALPHABET = 'abcdefghijkmnpqrstuvwxyz23456789';
+
+/** A short suffix nobody remembers but Telegram will take: this name is not meant to be typed twice. */
+export function usernameSuffix(random = (max) => randomInt(max)) {
+  let suffix = '';
+  for (let index = 0; index < 4; index += 1) suffix += SUFFIX_ALPHABET[random(SUFFIX_ALPHABET.length)];
+  return suffix;
+}
+
+/**
+ * Candidate usernames when the person did not pick one. A fixed default is taken by the first
+ * install that used it, so each try carries a fresh suffix.
+ */
+export function botUsernameCandidates({ base = 'segno', count = 5, random } = {}) {
+  const names = [];
+  // A suffix source that keeps returning the same value must not spin here: the list may end up
+  // shorter, and the bot simply has fewer names to try.
+  for (let attempt = 0; attempt < count * 20 && names.length < count; attempt += 1) {
+    const candidate = `${base}_${usernameSuffix(random)}_bot`;
+    if (!names.includes(candidate)) names.push(candidate);
+  }
+  return names;
+}
 
 function tg(args) {
   return new Promise((resolve, reject) => {

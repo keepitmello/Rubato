@@ -4453,7 +4453,11 @@
   "Don't send": "보내지 않기",
   "Untitled": "제목 없음",
   "now": "방금",
-  "Lost its runtime": "런타임 끊김"
+  "Lost its runtime": "런타임 끊김",
+  "Paste the token @BotFather gave you": "@BotFather 가 준 토큰 붙여넣기",
+  "In Telegram, open @BotFather, send /newbot, answer its two questions, and paste the token it sends back here.": "텔레그램에서 @BotFather 를 열고 /newbot 을 보내 두 가지 질문에 답한 뒤, 돌아온 토큰을 여기에 붙여넣으세요.",
+  "Telegram bot token": "텔레그램 봇 토큰",
+  "Or let Rubato make it": "아니면 루바토가 만들게"
  },
  "templates": [
   [

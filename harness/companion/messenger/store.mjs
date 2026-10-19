@@ -198,8 +198,9 @@ export function readIntent(env = process.env) {
   return value && typeof value === 'object' && typeof value.action === 'string' && typeof value.at === 'string' ? value : undefined;
 }
 
-export function writeIntent(intent, env = process.env) {
-  writeJson(messengerPaths(env).intent, { ...intent, at: new Date().toISOString() });
+/** `at` lets the service answer its own request file without the request looking new again. */
+export function writeIntent(intent, env = process.env, { at } = {}) {
+  writeJson(messengerPaths(env).intent, { ...intent, at: at ?? new Date().toISOString() });
   return readIntent(env);
 }
 

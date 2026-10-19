@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createBot } from '../scripts/create-bot.mjs';
+import { botUsernameCandidates, createBot } from '../scripts/create-bot.mjs';
 
 // Built at run time: a literal in Telegram's token shape trips secret scanners on every push.
 const TOKEN = ['8123456789', `AAH${'x'.repeat(32)}`].join(':');
@@ -57,3 +57,20 @@ test('a dry run says which messages would go and sends none', async () => {
   assert.deepEqual(dry.steps, [['/newbot'], ['Segno'], ['segno_rubato_bot']]);
 });
 
+
+test('usernames are generated with a fresh suffix instead of a fixed default', () => {
+  let step = 0;
+  const names = botUsernameCandidates({ count: 5, random: (max) => (step = (step + 1) % max) });
+  assert.equal(names.length, 5);
+  for (const name of names) assert.match(name, /^segno_[a-z0-9]{4}_bot$/);
+  assert.equal(new Set(names).size, 5, 'no candidate repeats');
+  const degenerate = botUsernameCandidates({ count: 3, random: () => 0 });
+  assert.equal(degenerate.length, 1, 'a suffix source that never varies gives one candidate, not a spin');
+});
+
+test('with no username given, the bot is made with a generated one', async () => {
+  const botfather = fakeBotFather();
+  const made = await createBot({ name: 'Segno', usernames: botUsernameCandidates({ count: 2 }), run: botfather.run, sleep: async () => {} });
+  assert.equal(made.token, TOKEN);
+  assert.match(botfather.sent.at(-1), /^segno_[a-z0-9]{4}_bot$/);
+});
