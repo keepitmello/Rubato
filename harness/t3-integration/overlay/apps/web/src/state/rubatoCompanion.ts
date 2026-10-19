@@ -73,6 +73,10 @@ export interface CompanionPiece {
   readonly defaultText: string;
   /** The person's own version; absent while the piece follows the default. */
   readonly personalText?: string;
+  /** The product default that version was seeded from; absent when the base is unknown. */
+  readonly baseText?: string;
+  /** True for a copy that predates seeding: Rubato has no record of the default it came from. */
+  readonly baseUnknown?: boolean;
 }
 
 export interface CompanionSettingsPatch {

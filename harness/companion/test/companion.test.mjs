@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, PIECES, composeCompanionPrompt, companionPaths, readPieces, readSettings, writePiece, writeSettings,
+  DEFAULT_SETTINGS, PIECES, SEEDED_PIECES, basePiecePath, composeCompanionPrompt, companionPaths, personalPiecePath,
+  readPieces, readSettings, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -25,6 +26,78 @@ test('the shipped defaults name Segno and never hand the companion a waiting too
   const prompt = composeCompanionPrompt({ defaultsDir, env: { RUBATO_COMPANION_HOME: '/nonexistent' } });
   assert.match(prompt, /Segno/);
   assert.doesNotMatch(prompt, /session_wait/);
+});
+
+test('a new home starts with the person\'s own copy of who Segno is, and the default it came from', (t) => {
+  const env = sandbox(t);
+  assert.deepEqual([...SEEDED_PIECES], ['preamble', 'soul', 'identity', 'user']);
+  const result = seedPromptPieces({ defaultsDir, env });
+  assert.deepEqual(result, { seeded: ['preamble', 'soul', 'identity', 'user'], kept: [] });
+  for (const id of SEEDED_PIECES) {
+    const defaultText = readFileSync(path.join(defaultsDir, `${id}.pi.md`), 'utf8').trim();
+    assert.equal(readFileSync(personalPiecePath(env, id), 'utf8').trim(), defaultText, `${id} is copied`);
+    assert.equal(readFileSync(basePiecePath(env, id), 'utf8').trim(), defaultText, `${id} remembers what it was copied from`);
+  }
+  for (const id of ['companion', 'tools']) {
+    assert.equal(existsSync(personalPiecePath(env, id)), false, `${id} is Rubato's work rules and is not copied`);
+    assert.equal(existsSync(basePiecePath(env, id)), false);
+  }
+  // A second setup leaves the copy alone; nothing in the prompt composer reads the base.
+  assert.deepEqual(seedPromptPieces({ defaultsDir, env }), { seeded: [], kept: [...SEEDED_PIECES] });
+  assert.equal(composeCompanionPrompt({ defaultsDir, env }),
+    composeCompanionPrompt({ defaultsDir, env: { RUBATO_COMPANION_HOME: '/nonexistent' } }),
+    'a copy of the default reads as the default, once');
+});
+
+test('seeding never rewrites a file the person wrote, and records no base for it', (t) => {
+  const env = sandbox(t);
+  seedPromptPieces({ defaultsDir, env });
+  writeFileSync(personalPiecePath(env, 'soul'), 'my own soul\n');
+  const result = seedPromptPieces({ defaultsDir, env });
+  assert.deepEqual(result.seeded, [], 'nothing was copied over');
+  assert.ok(result.kept.includes('soul'));
+  assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8'), 'my own soul\n', 'their words stay exactly');
+  // The base still names the default this copy started from: they edited a seeded copy.
+  assert.equal(readFileSync(basePiecePath(env, 'soul'), 'utf8').trim(),
+    readFileSync(path.join(defaultsDir, 'soul.pi.md'), 'utf8').trim());
+  const unseeded = sandbox(t);
+  mkdirSync(companionPaths(unseeded).prompt, { recursive: true });
+  writeFileSync(personalPiecePath(unseeded, 'user'), 'about me\n');
+  seedPromptPieces({ defaultsDir, env: unseeded });
+  const user = readPieces({ defaultsDir, env: unseeded }).find((piece) => piece.id === 'user');
+  assert.equal(user.personalText, 'about me');
+  assert.equal(user.baseText, undefined);
+  assert.equal(user.baseUnknown, true, 'an older home has no base, and we do not invent one');
+});
+
+test('a copy the person deleted comes back at the next setup, and the work rules never appear', (t) => {
+  const env = sandbox(t);
+  seedPromptPieces({ defaultsDir, env });
+  rmSync(personalPiecePath(env, 'identity'));
+  assert.deepEqual(seedPromptPieces({ defaultsDir, env }), { seeded: ['identity'], kept: ['preamble', 'soul', 'user'] });
+  assert.deepEqual(readFileSync(personalPiecePath(env, 'identity'), 'utf8').trim(),
+    readFileSync(path.join(defaultsDir, 'identity.pi.md'), 'utf8').trim());
+  for (const id of ['companion', 'tools']) assert.equal(existsSync(personalPiecePath(env, id)), false);
+});
+
+test('a seeded copy reads as the person\'s own text, keeps its base through their edit, and loses it on reset', (t) => {
+  const env = sandbox(t);
+  seedPromptPieces({ defaultsDir, env });
+  const pieces = readPieces({ defaultsDir, env });
+  for (const id of SEEDED_PIECES) {
+    const piece = pieces.find((entry) => entry.id === id);
+    assert.equal(piece.personalText, piece.defaultText, `${id} is their copy from the start`);
+    assert.equal(piece.baseText, piece.defaultText);
+    assert.equal(piece.baseUnknown, undefined);
+  }
+  for (const id of ['companion', 'tools']) assert.equal(pieces.find((piece) => piece.id === id).personalText, undefined);
+  const seededSoul = pieces.find((piece) => piece.id === 'soul').baseText;
+  writePiece('soul', 'mine now', { defaultsDir, env });
+  const edited = readPieces({ defaultsDir, env }).find((piece) => piece.id === 'soul');
+  assert.equal(edited.personalText, 'mine now');
+  assert.equal(edited.baseText, seededSoul, 'what it started from is still known after their edit');
+  writePiece('soul', '', { defaultsDir, env });
+  assert.equal(existsSync(basePiecePath(env, 'soul')), false, 'back to default leaves no stale base');
 });
 
 test('the companion is off until the person turns it on, with the heartbeat on by default', (t) => {

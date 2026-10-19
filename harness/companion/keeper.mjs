@@ -15,8 +15,9 @@
 // clock (the companion reads it as a system message where its model allows; session-link
 // message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
 import { mkdirSync } from 'node:fs';
-import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, writePanel, writeState } from './companion.mjs';
+import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, seedPromptPieces, writePanel, writeState } from './companion.mjs';
 import { ensureSegnoHome } from './home.mjs';
+import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -42,16 +43,33 @@ function reportTimeOn(at, time) {
 
 /**
  * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'daily-report') => Promise<unknown>, env?: NodeJS.ProcessEnv,
- *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number }} options
+ *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number, defaultsDir?: string }} options
  *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
- *   wakes the companion (pi-server session-link wake).
+ *   wakes the companion (pi-server session-link wake); `defaultsDir` is where the product default
+ *   prompt pieces live (rubato-pi system-prompt companionDefaultsDir).
  */
-export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now }) {
+export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
+  defaultsDir = companionDefaultsDir(env) }) {
   let client;
   let attachedTo;
   let closed = false;
   let ticking;
   let lastBeat;
+  let homeReady;
+
+  /**
+   * The home's setup, once per keeper (the engine starts it again after a restart): Segno's own
+   * places and memory store, then the person's own copy of who Segno is. A home that predates the
+   * copy — or one the person emptied — is seeded here, before its conversation loads. A fault in
+   * the defaults folder must not stop the companion, so it is reported and tried again next start.
+   */
+  function setupHome() {
+    if (homeReady) return;
+    ensureSegnoHome(env);
+    try { seedPromptPieces({ defaultsDir, env }); }
+    catch (error) { onError(error); }
+    homeReady = true;
+  }
 
   async function release() {
     const held = client;
@@ -66,9 +84,6 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (sessionId && rows.some((row) => row.sessionId === sessionId)) return { sessionId, rows };
     const { home } = companionPaths(env);
     mkdirSync(home, { recursive: true, mode: 0o700 });
-    // Segno's own places exist before its conversation starts: the memory store its folder writes to
-    // is decided from this folder's config, which the session reads when it loads.
-    ensureSegnoHome(env);
     const created = await active.create({ cwd: home, title: COMPANION_TITLE, titleLocked: true, companion: true });
     if (!created?.sessionId) throw new Error('The engine did not return the companion conversation it created');
     writeState({ sessionId: created.sessionId }, env);
@@ -79,6 +94,10 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (closed) return;
     try {
       if (!readSettings(env).enabled) { if (client) await release(); return; }
+      // Segno's own places, and the person's copy of its prompt, exist before its conversation
+      // starts: the memory store its folder writes to is decided from this folder's config, which
+      // the session reads when it loads.
+      setupHome();
       client ??= await connect();
       const { sessionId, rows } = await ensureSession(client);
       const row = rows.find((item) => item.sessionId === sessionId);
