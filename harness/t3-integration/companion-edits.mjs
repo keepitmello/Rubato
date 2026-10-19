@@ -87,6 +87,23 @@ export const companionEdits = {
     ['import { ProjectFavicon } from "../ProjectFavicon";\n',
       'import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";\n'],
   ],
+  // Nor do the palette's project list, the first screen's draft, or a new thread started from
+  // Segno's conversation ("new thread in this project" takes the default project instead).
+  'apps/web/src/components/CommandPalette.tsx': [
+    ['  const projects = useProjects();\n', '  const projects = useWithoutCompanionProjects(useProjects());\n', 'replace'],
+    ['      resolveThreadActionProjectRef({\n        activeDraftThread,\n        activeThread: activeThread ?? undefined,\n',
+      '      resolveThreadActionProjectRef({\n        activeDraftThread,\n        activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n', 'replace'],
+    ['          await startNewThreadFromContext({\n            activeDraftThread,\n            activeThread: activeThread ?? undefined,\n',
+      '          await startNewThreadFromContext({\n            activeDraftThread,\n            activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n', 'replace'],
+    ['import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";\n',
+      'import { isCompanionThread, useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
+  ],
+  'apps/web/src/routes/_chat.index.tsx': [
+    ['  const projects = useProjects();\n  const threads = useThreadShells();\n',
+      '  const projects = useWithoutCompanionProjects(useProjects());\n  const threads = useThreadShells();\n', 'replace'],
+    ['import { useNewThreadHandler } from "../hooks/useHandleNewThread";\n',
+      'import { useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
+  ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
     ['  const threads = useThreadShells();\n',
@@ -94,6 +111,12 @@ export const companionEdits = {
         + '  const threads = useWithoutCompanionThread(useThreadShells());\n',
       'replace'],
     ['import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";\n',
-      'import { useWithoutCompanionThread } from "../state/rubatoCompanion";\n'],
+      'import { isCompanionThread, useWithoutCompanionThread } from "../state/rubatoCompanion";\n'],
+    ['          activeThread: newThreadContext.activeThread ?? undefined,\n',
+      '          activeThread:\n'
+        + '            newThreadContext.activeThread && !isCompanionThread(newThreadContext.activeThread.id)\n'
+        + '              ? newThreadContext.activeThread\n'
+        + '              : undefined,\n',
+      'replace'],
   ],
 };

@@ -204,6 +204,16 @@ export function useWithoutCompanionThread<T extends { readonly id: string }>(
   );
 }
 
+/** `projects` without Segno's own folder: no list offers it as a place to start work. */
+export function useWithoutCompanionProjects<A extends ReadonlyArray<{ readonly workspaceRoot: string }>>(projects: A): A {
+  const home = useRubatoCompanion().status?.home;
+  return useMemo(
+    () =>
+      (home == null ? projects : projects.filter((project) => !isCompanionProject(project, home))) as unknown as A,
+    [home, projects],
+  );
+}
+
 /** Whether a project is Segno's own folder, which no project list shows. */
 export function isCompanionProject(
   project: { readonly workspaceRoot: string },
