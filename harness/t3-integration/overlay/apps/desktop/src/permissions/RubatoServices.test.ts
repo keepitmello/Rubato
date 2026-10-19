@@ -7,7 +7,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { parseLaunchctlPrint, rubatoHarness, serviceStatus } from "./RubatoServices.ts";
 
 // Trimmed `launchctl print gui/<uid>/<label>` output, as macOS 26 prints it.
-const running = `gui/501/com.keepitmello.rubato.scheduler = {
+const running = `gui/501/com.keepitmello.rubato.engine = {
 \tactive count = 1
 \tstate = running
 \tpid = 1837

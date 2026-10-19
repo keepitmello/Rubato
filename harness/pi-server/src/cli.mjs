@@ -6,13 +6,17 @@ import { resolveLaunchAgentDir } from '../../rubato-pi/src/launch.mjs';
 import { installedSharedRuntime } from './discovery.mjs';
 import { errorLog } from './error-log.mjs';
 import { installExitGuard } from './exit-guard.mjs';
+import { loginShellPath, mergePaths } from './launchd.mjs';
+
+const LOCK_WAIT_MS = 1000;
 
 try {
   const { values } = parseArgs({ options: {
-    'agent-dir': { type: 'string' }, socket: { type: 'string' }, 'idle-ms': { type: 'string' }, 'runtime-root': { type: 'string' }, help: { type: 'boolean' },
+    'agent-dir': { type: 'string' }, socket: { type: 'string' }, 'idle-ms': { type: 'string' }, 'runtime-root': { type: 'string' },
+    launchd: { type: 'boolean' }, help: { type: 'boolean' },
   }, allowPositionals: false });
   if (values.help) {
-    console.log('Usage: node harness/pi-server/src/cli.mjs [--agent-dir /absolute/profile] [--socket /short/pi.sock] [--idle-ms 60000] [--runtime-root /verified/engine]');
+    console.log('Usage: node harness/pi-server/src/cli.mjs [--agent-dir /absolute/profile] [--socket /short/pi.sock] [--idle-ms 60000] [--runtime-root /verified/engine] [--launchd]');
   } else {
     if (values['runtime-root'] && !values['agent-dir']) {
       throw new Error('--runtime-root is an incomplete candidate and requires an explicit --agent-dir; the normal profile is not selected implicitly');
@@ -39,12 +43,32 @@ try {
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);
     const agentDir = path.resolve(values['agent-dir'] ?? resolveLaunchAgentDir());
-    // The companion belongs to the person's own profile, not to a profile a test or a tool started.
-    service = await serveProfile({ agentDir,
-      socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(), onError: errorLog(),
-      companion: agentDir === path.resolve(resolveLaunchAgentDir()) });
-    console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
-    if (stopRequested) await stop();
+    // launchd (launchd.mjs) starts this engine with a bare environment. Conversations run their
+    // tools with the login shell's PATH, as they do when the app starts the engine.
+    if (values.launchd) process.env.PATH = mergePaths(loginShellPath(), process.env.PATH);
+    // The resident services (the companion, the scheduler, ...) belong to the person's own
+    // profile, not to a profile a test or a tool started.
+    const options = { agentDir, socketPath: values.socket, idleMs, runtimeRoot: values['runtime-root'] ?? installedSharedRuntime(),
+      onError: errorLog(), resident: agentDir === path.resolve(resolveLaunchAgentDir()),
+      log: (line) => console.log(`${new Date().toISOString()} ${line}`) };
+    // Under launchd another engine may hold the profile (one still draining after a restart, or
+    // one the app started before this job existed). Exiting would have launchd start us again
+    // and again; wait for the lock instead and take over when that engine ends.
+    let waiting = false;
+    for (;;) {
+      try { service = await serveProfile(options); break; }
+      catch (error) {
+        if (!values.launchd || error?.code !== 'ELOCKED') throw error;
+        if (stopRequested) break;
+        if (!waiting) { waiting = true; console.error(`${new Date().toISOString()} rubato-pi-server: another engine holds this profile; waiting to take over`); }
+        await new Promise((resolve) => setTimeout(resolve, LOCK_WAIT_MS));
+        if (stopRequested) break;
+      }
+    }
+    if (service) {
+      console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
+      if (stopRequested) await stop();
+    }
   }
 } catch (error) {
   console.error(`rubato-pi-server: ${error.message}`);

@@ -20,7 +20,7 @@ const permissionTypes = [
   '  | "cua-install" | "cua-start" | "cua-grant" | "cua-update"',
   '  | "service-start";',
   '/** The launchd agents Rubato runs beside the app (desktop RubatoServices.ts). */',
-  'export type RubatoServiceId = "msearch" | "scheduler" | "remote-hub" | "aside-cursor" | "speed-data";',
+  'export type RubatoServiceId = "msearch" | "engine" | "remote-hub" | "aside-cursor" | "speed-data";',
   'export type RubatoServiceStatus = "running" | "scheduled" | "stopped" | "failed" | "missing";',
   'export interface RubatoServiceState {',
   '  id: RubatoServiceId;',

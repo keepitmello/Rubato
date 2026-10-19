@@ -25,7 +25,8 @@ interface ServiceSpec {
 
 export const RUBATO_SERVICES: readonly ServiceSpec[] = [
   { id: "msearch" },
-  { id: "scheduler", label: "com.keepitmello.rubato.scheduler" },
+  // The profile engine: conversations, Segno and scheduled tasks (pi-server launchd.mjs).
+  { id: "engine", label: "com.keepitmello.rubato.engine" },
   { id: "remote-hub", label: "com.keepitmello.rubato.remote-hub" },
   { id: "aside-cursor", label: "com.keepitmello.rubato.aside-cursor", optional: true },
   { id: "speed-data", label: "com.keepitmello.rubato.speed-data", optional: true, periodic: true },
@@ -126,11 +127,14 @@ export async function startService(harness: string | null, id: RubatoServiceId):
     return;
   }
   const plist = path.join(agents(), `${spec.label}.plist`);
-  if (id === "scheduler" && !(await exists(plist))) {
+  if (id === "engine") {
     if (!harness) throw new Error("The Rubato checkout is unknown");
+    // Registers the job when it is missing and starts it; a running engine is left alone, since
+    // restarting it would end the turns that run in it (its restart is Settings › Update's).
     await loginShell(
       `. ${quoted(path.join(harness, "scripts", "find-node.sh"))} && node="$(rubato_find_node)" && ` +
-        `"$node" ${quoted(path.join(harness, "scheduler", "src", "cli.mjs"))} install`,
+        `"$node" ${quoted(path.join(harness, "pi-server", "src", "launchd.mjs"))} ensure && ` +
+        `/bin/launchctl kickstart gui/$(id -u)/${spec.label}`,
       120_000,
     );
     return;

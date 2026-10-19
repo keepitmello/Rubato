@@ -1,16 +1,15 @@
 #!/usr/bin/env node
 // `rubato schedule` — the small CLI. Registering and editing belong to the settings page and
-// the session tool; this lists tasks, starts one now, shows a task's history and manages the
-// scheduler's launchd job.
-import { homedir } from 'node:os';
+// the session tool; this lists tasks, starts one now, shows a task's history and makes sure the
+// scheduler runs (inside the profile engine, which launchd keeps).
 import { createScheduleStore, findTask, formatNextRun, ScheduleError } from '../../../packages/schedule-core/src/index.mjs';
-import { schedulerLaunchAgentLoaded, startScheduler, uninstallSchedulerLaunchAgent } from './launchd.mjs';
+import { engineLaunchAgentLoaded, startScheduler } from './launchd.mjs';
 
 const USAGE = `usage: rubato schedule [list] [--json]
        rubato schedule run <task>          start a task now (name, id or id prefix)
        rubato schedule runs <task> [--json] a task's recent runs
        rubato schedule status              is the scheduler running on this Mac
-       rubato schedule install|uninstall   register or remove the scheduler's launchd job`;
+       rubato schedule install             make sure it runs: the Rubato engine, kept by launchd, runs it`;
 
 const SKIP_LABEL = { sleep: 'Mac was asleep', 'not-running': "didn't run (Mac off or scheduler not running)", overlap: 'previous run still going' };
 const pad = (value) => String(value).padStart(2, '0');
@@ -59,22 +58,16 @@ export async function main(argv, { env = process.env, out = (text) => process.st
     }
     case 'status': {
       const status = store.schedulerStatus();
-      const loaded = await schedulerLaunchAgentLoaded(env.RUBATO_LAUNCHCTL_BIN ? { launchctl: env.RUBATO_LAUNCHCTL_BIN } : {}).catch(() => false);
+      const loaded = await engineLaunchAgentLoaded({ env }).catch(() => false);
       print({ ...status, launchAgent: loaded, root: store.files.root },
-        `${status.running ? `running (pid ${status.pid}, last check ${status.lastTickAt ? formatNextRun(new Date(status.lastTickAt), new Date()) : '—'})` : 'not running'}`
-        + ` · launchd job ${loaded ? 'registered' : 'not registered'} · ${store.files.root}\n`);
+        `${status.running ? `running in the engine (pid ${status.pid}, last check ${status.lastTickAt ? formatNextRun(new Date(status.lastTickAt), new Date()) : '—'})` : 'not running'}`
+        + ` · engine launchd job ${loaded ? 'registered' : 'not registered'} · ${store.files.root}\n`);
       return 0;
     }
     case 'install': {
       const result = await startScheduler({ env });
-      print(result, result.installed ? `Scheduler started (pid ${result.pid}) and registered with launchd, so it comes back after login.\n`
-        : `Scheduler is already running (pid ${result.pid}).\n`);
-      return 0;
-    }
-    case 'uninstall': {
-      const result = await uninstallSchedulerLaunchAgent({ home: env.HOME ?? homedir(),
-        ...(env.RUBATO_LAUNCHCTL_BIN ? { launchctl: env.RUBATO_LAUNCHCTL_BIN } : {}) });
-      print(result, 'Scheduler removed from launchd. Tasks are kept; they will not run until it is installed again.\n');
+      print(result, result.installed ? `The Rubato engine is registered with launchd and runs the scheduler (pid ${result.pid}); both come back after login.\n`
+        : `The scheduler is running in the Rubato engine (pid ${result.pid}).\n`);
       return 0;
     }
     case '-h': case '--help': case 'help':

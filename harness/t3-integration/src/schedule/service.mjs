@@ -13,7 +13,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const coreFile = path.resolve(here, '..', '..', '..', '..', 'packages', 'schedule-core', 'src', 'index.mjs');
-// Installs and starts the scheduler's launchd agent; `rubato schedule install` calls the same function.
+// Makes sure the scheduler runs: it registers the Rubato engine with launchd and starts it, and the
+// engine runs the scheduler (harness/scheduler service.mjs). `rubato schedule install` calls the same function.
 const launchdFile = path.resolve(here, '..', '..', '..', 'scheduler', 'src', 'launchd.mjs');
 
 export class ScheduleRequestError extends Error {
