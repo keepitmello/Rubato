@@ -10,14 +10,16 @@
 //   hangs (busy loop)              →  no answer to the ping; the thread is terminated and restarted
 //   runs out of memory             →  the thread's own heap limit ends the thread only
 //
-// A service that spawns its own process (the hub) ends it with the thread: the thread's end closes
-// the child's IPC channel (the child exits on 'disconnect'), and `ctx.own(child)` has the supervisor
-// stop whatever is still running after the thread ends (SIGTERM, then SIGKILL).
+// A service that runs its own process (the hub) starts it with `ctx.spawn`: the main thread starts
+// and owns it, so it is reaped when it ends (a process a thread started stays a zombie once that
+// thread is gone), and when the service's thread ends the supervisor stops it (SIGTERM, then
+// SIGKILL). `ctx.own(child)` does the stopping part for a process the thread started itself.
 //
 // A service module exports `start(ctx)` and may return `{ close?, ...methods }`. `ctx` carries
 // `connect()` (a SessionClient on this engine), `host.<method>()` (calls into the main thread,
 // such as `notice` to wake a conversation), `onError`, `log`, `signal` and the entry's `options`.
 // `call(name, method, ...args)` reaches a returned method from the main thread.
+import { spawn as spawnProcess } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 
@@ -74,6 +76,7 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
     let pingTimer;
     let lastPong = 0;
     const owned = new Set();
+    const spawned = new Map();
     const stopOwned = () => {
       for (const pid of owned) {
         owned.delete(pid);
@@ -154,6 +157,36 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
       switch (message?.type) {
         case 'pong': lastPong = Date.now(); return;
         case 'own': owned.add(message.pid); return;
+        case 'spawn': {
+          let started;
+          try {
+            started = spawnProcess(message.command, message.args ?? [], { cwd: message.options?.cwd, env: message.options?.env,
+              stdio: message.options?.stdio ?? 'ignore', detached: false });
+          } catch (error) {
+            try { current.postMessage({ type: 'spawned', id: message.id, error: { message: error.message, code: error.code } }); } catch {}
+            return;
+          }
+          spawned.set(message.id, started);
+          if (started.pid) owned.add(started.pid);
+          started.once('error', (error) => {
+            if (started.pid) return;
+            spawned.delete(message.id);
+            try { current.postMessage({ type: 'spawned', id: message.id, error: { message: error.message, code: error.code } }); } catch {}
+          });
+          started.once('exit', (code, signal) => {
+            spawned.delete(message.id);
+            owned.delete(started.pid);
+            if (worker === current) try { current.postMessage({ type: 'child-exit', id: message.id, code, signal }); } catch {}
+          });
+          // The thread ended while this was starting: nobody would stop it.
+          if (worker !== current) { stopOwned(); return; }
+          if (started.pid) current.postMessage({ type: 'spawned', id: message.id, pid: started.pid });
+          return;
+        }
+        case 'child-kill': {
+          try { spawned.get(message.id)?.kill(message.signal); } catch { /* ended */ }
+          return;
+        }
         case 'disown': owned.delete(message.pid); return;
         case 'ready':
           state.status = 'running'; state.readyAt = Date.now(); state.nextStartAt = undefined;
