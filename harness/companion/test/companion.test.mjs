@@ -5,8 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, PIECES, SEEDED_PIECES, acceptDefault, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
-  companionPaths, markDefaultReviewed, pendingDefaultChanges, personalPiecePath, readPersonaReviewRequest, readPieces,
+  DEFAULT_SETTINGS, PIECES, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
+  companionPaths, moveBaseToDefault, pendingDefaultChanges, personalPiecePath, readPersonaReviewRequest, readPieces,
   readSettings, requestPersonaReview, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
 
@@ -204,7 +204,7 @@ test("Segno's art is one swappable file per expression: the person's own, else t
   assert.equal(stageArtFile(env, 'idle'), path.join(dir, 'art', 'stage.png'));
 });
 
-test('a default that moved away from the base is one review; the same change is not asked again', (t) => {
+test('a default that moved away from the base is a review; moving the base settles it', (t) => {
   const env = sandbox(t);
   const before = defaultsSandbox(t);
   seedPromptPieces({ defaultsDir: before, env });
@@ -212,16 +212,14 @@ test('a default that moved away from the base is one review; the same change is 
   const after = defaultsSandbox(t, { soul: '# I am Segno\n\nA new default voice.\n' });
   const pending = pendingDefaultChanges({ defaultsDir: after, env });
   assert.deepEqual(pending.map((change) => change.id), ['soul']);
-  assert.equal(pending[0].defaultText, '# I am Segno\n\nA new default voice.');
-  assert.equal(pending[0].personalText, readFileSync(personalPiecePath(env, 'soul'), 'utf8').trim(),
-    'the review carries the person\'s own file');
+  assert.equal(pending[0].defaultPath, path.join(after, 'soul.pi.md'), 'the wake names the file Segno reads');
   const piece = readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul');
-  assert.equal(piece.defaultChanged, true);
-  assert.equal(piece.reviewDue, true);
+  assert.equal(piece.defaultChanged, true, 'the page marks it');
   assert.ok(piece.baseText.length > 0);
-  markDefaultReviewed('soul', { defaultsDir: after, env });
-  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }), [], 'the same default does not wake again');
-  assert.equal(readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul').reviewDue, undefined);
+  moveBaseToDefault('soul', { defaultsDir: after, env });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }), [], 'the same change does not wake again');
+  assert.equal(readFileSync(basePiecePath(env, 'soul'), 'utf8').trim(), '# I am Segno\n\nA new default voice.');
+  assert.equal(readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'soul').defaultChanged, undefined);
   const later = defaultsSandbox(t, { soul: '# I am Segno\n\nA third default voice.\n' });
   assert.deepEqual(pendingDefaultChanges({ defaultsDir: later, env }).map((change) => change.id), ['soul'],
     'a newer default is a new review');
@@ -238,19 +236,14 @@ test('a copy with no base is compared but never reviewed on its own', (t) => {
   assert.equal(piece.defaultChanged, undefined);
 });
 
-test('taking the default moves the base to the new default and stops the review', (t) => {
+test('a copy the person already edited is still reviewed from the base it was seeded from', (t) => {
   const env = sandbox(t);
   const before = defaultsSandbox(t);
   seedPromptPieces({ defaultsDir: before, env });
-  const after = defaultsSandbox(t, { identity: '# Who I am\n\nA new identity.\n' });
-  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }).map((change) => change.id), ['identity']);
-  writePiece('identity', 'my own identity, with what I liked', { defaultsDir: after, env, accepted: true });
-  assert.equal(readFileSync(basePiecePath(env, 'identity'), 'utf8').trim(), '# Who I am\n\nA new identity.');
-  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }), []);
-  const piece = readPieces({ defaultsDir: after, env }).find((entry) => entry.id === 'identity');
-  assert.equal(piece.personalText, 'my own identity, with what I liked');
-  assert.equal(piece.defaultChanged, undefined, 'the base now names the current default');
-  assert.equal(acceptDefault('identity', { defaultsDir: after, env }).baseText, '# Who I am\n\nA new identity.');
+  writePiece('soul', 'my own soul', { defaultsDir: before, env });
+  const after = defaultsSandbox(t, { soul: '# A new default soul\n' });
+  assert.deepEqual(pendingDefaultChanges({ defaultsDir: after, env }).map((change) => change.id), ['soul']);
+  assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8').trim(), 'my own soul', 'their file is not touched');
 });
 
 test('the page asks for a review with a request the keeper can read and clear', (t) => {

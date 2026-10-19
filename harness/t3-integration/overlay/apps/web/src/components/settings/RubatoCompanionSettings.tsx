@@ -82,36 +82,39 @@ function lineDiff(before: string, after: string): DiffRow[] {
     endA -= 1;
     endB -= 1;
   }
-  const head = a.slice(0, start);
-  const tail = a.slice(endA);
   const A = a.slice(start, endA);
   const B = b.slice(start, endB);
-  const table: number[][] = Array.from({ length: A.length + 1 }, () => new Array<number>(B.length + 1).fill(0));
+  // Longest common subsequence, in one flat table (row-major), so the walk picks removed and added
+  // lines in the order they read. Unchanged lines are not part of what this view shows.
+  const width = B.length + 1;
+  const table = new Array<number>((A.length + 1) * width).fill(0);
+  const at = (i: number, j: number): number => table[i * width + j] ?? 0;
   for (let i = A.length - 1; i >= 0; i -= 1) {
     for (let j = B.length - 1; j >= 0; j -= 1) {
-      table[i][j] = A[i] === B[j] ? table[i + 1][j + 1] + 1 : Math.max(table[i + 1][j], table[i][j + 1]);
+      table[i * width + j] =
+        (A[i] ?? "") === (B[j] ?? "") ? at(i + 1, j + 1) + 1 : Math.max(at(i + 1, j), at(i, j + 1));
     }
   }
-  const rows: DiffRow[] = head.map((text) => ({ kind: "same", text }));
+  const rows: DiffRow[] = [];
   let i = 0;
   let j = 0;
   while (i < A.length && j < B.length) {
-    if (A[i] === B[j]) {
-      rows.push({ kind: "same", text: A[i] });
+    const lineA = A[i] ?? "";
+    const lineB = B[j] ?? "";
+    if (lineA === lineB) {
       i += 1;
       j += 1;
-    } else if (table[i + 1][j] >= table[i][j + 1]) {
-      rows.push({ kind: "removed", text: A[i] });
+    } else if (at(i + 1, j) >= at(i, j + 1)) {
+      rows.push({ kind: "removed", text: lineA });
       i += 1;
     } else {
-      rows.push({ kind: "added", text: B[j] });
+      rows.push({ kind: "added", text: lineB });
       j += 1;
     }
   }
-  while (i < A.length) rows.push({ kind: "removed", text: A[i++] });
-  while (j < B.length) rows.push({ kind: "added", text: B[j++] });
-  rows.push(...tail.map((text) => ({ kind: "same", text })));
-  return rows.filter((row) => row.kind !== "same");
+  while (i < A.length) rows.push({ kind: "removed", text: A[i++] ?? "" });
+  while (j < B.length) rows.push({ kind: "added", text: B[j++] ?? "" });
+  return rows;
 }
 
 /** Rubato's changes base → new, and the person's copy beside the new default. Nothing merges here. */
@@ -179,7 +182,7 @@ function PieceEditor({
       description={copy.description}
       status={
         <span className="flex items-center gap-1">
-          {piece.reviewDue ? <Badge variant="warning">Default update available</Badge> : null}
+          {piece.defaultChanged ? <Badge variant="warning">Default update available</Badge> : null}
           {piece.personalText !== undefined ? <Badge variant="outline">Yours</Badge> : null}
         </span>
       }
@@ -485,7 +488,7 @@ export function RubatoCompanionSettingsPanel() {
     return () => window.clearInterval(timer);
   }, [reviewPending, loadPieces]);
   useEffect(() => {
-    if (reviewPending && pieces !== null && !pieces.some((piece) => piece.reviewDue)) setReviewPending(false);
+    if (reviewPending && pieces !== null && !pieces.some((piece) => piece.defaultChanged)) setReviewPending(false);
   }, [pieces, reviewPending]);
 
   const settings = status?.settings;
@@ -620,7 +623,7 @@ export function RubatoCompanionSettingsPanel() {
           title="Rubato's defaults"
           description="When Rubato changes who Segno is by default, Segno compares it with your own file and tells you what it recommends. Nothing is merged without you."
           status={
-            pieces?.some((piece) => piece.reviewDue) ? (
+            pieces?.some((piece) => piece.defaultChanged) ? (
               <Badge variant="warning">Default update available</Badge>
             ) : reviewPending ? (
               <Badge variant="outline">Reviewing</Badge>

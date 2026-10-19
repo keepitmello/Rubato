@@ -21,7 +21,7 @@
 // in its prompt (harness/prompts/companion).
 import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
-import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, markDefaultReviewed,
+import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { ensureSegnoHome } from './home.mjs';
@@ -37,13 +37,22 @@ export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s repo
 export const SLEEP_TEXT = 'Time to sleep. The user has been quiet for hours and your context is long. ' +
   'Get ready for sleep as your instructions say: today\'s records, your notes rewritten to the current state, ' +
   'then compaction or a new window. This turn is not for the user; nothing goes to their phone.';
-/** The review Segno is woken for when Rubato's default for who it is moved, or the person asks. */
-export function personaReviewText(ids = []) {
-  const which = ids.length ? `: ${ids.join(', ')}` : '';
-  return `Rubato's default for who you are changed${which}. Read it with segno_persona, compare each with your own file, ` +
-    'and tell the user briefly what changed, whether it clashes with your own version, and what you recommend — with ' +
-    'the reason. Change your own file only after the user says which changes to take; when they do, save your version ' +
-    'with accepted=true so Rubato knows you saw this default.';
+/**
+ * The review wake for a default that moved: where the new default is and where the copy came from, so
+ * Segno reads both with its ordinary file tools. What changed is for Segno to find and report.
+ */
+export function changedDefaultsText(pending) {
+  return pending.map(({ id, defaultPath }) => `Rubato's default ${id} changed. The new default is at ${defaultPath}; ` +
+    `the one your file was copied from is prompt/.base/${id}.md in your home. Compare them with your own ` +
+    `prompt/${id}.md and tell the user briefly what changed, whether it clashes with yours, and what you ` +
+    'recommend, with the reason. Change your file only after the user says which changes to take.').join('\n\n');
+}
+
+/** The review the Settings button asks for: the four files against the defaults folder, no change needed. */
+export function requestedReviewText(defaultsDir) {
+  return `The user asked you to look over who you are against Rubato's defaults, which are in ${defaultsDir}. ` +
+    'Compare them with your own files in prompt/ and tell the user briefly where they differ and what you would ' +
+    'take, with the reason. Change your files only after the user says which changes to take.';
 }
 
 /** The local hours the companion may be put to sleep in: from 01:00 up to 07:00. */
@@ -54,8 +63,6 @@ export const SLEEP_QUIET_MS = 3 * 60 * 60_000;
 export const SLEEP_CONTEXT_TOKENS = 500_000;
 /** How often, at night, the keeper asks the engine whether the companion is ready to sleep. */
 const SLEEP_CHECK_MS = 10 * 60_000;
-/** How often the keeper looks for a default of Segno's own files that moved. */
-const REVIEW_CHECK_MS = 10 * 60_000;
 
 // session-link message.mjs SESSION_MESSAGE_TYPE: a message from another conversation, a messenger or Rubato.
 const SESSION_MESSAGE_TYPE = 'rubato-session-message';
@@ -105,14 +112,13 @@ function reportTimeOn(at, time) {
 /**
  * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'daily-report' | 'sleep') => Promise<unknown>, env?: NodeJS.ProcessEnv,
  *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number, sleepCheckMs?: number,
- *   reviewCheckMs?: number,
  *   defaultsDir?: string }} options
  *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
  *   wakes the companion (pi-server session-link wake); `defaultsDir` is where the product default
  *   prompt pieces live (rubato-pi system-prompt companionDefaultsDir).
  */
 export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
-  sleepCheckMs = SLEEP_CHECK_MS, reviewCheckMs = REVIEW_CHECK_MS, defaultsDir = companionDefaultsDir(env) }) {
+  sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env) }) {
   let client;
   let attachedTo;
   let closed = false;
@@ -120,7 +126,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   let lastBeat;
   let homeReady;
   let lastSleepCheck;
-  let lastReviewCheck;
+  let reviewChecked = false;
 
   /**
    * The home's setup, once per keeper (the engine starts it again after a restart): Segno's own
@@ -217,7 +223,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       lastBeat = at;
       return;
     }
-    if (await personaReviewDue(sessionId, at)) { lastBeat = at; return; }
+    if (await personaReviewDue(sessionId)) { lastBeat = at; return; }
     if (reportDue) {
       await notify(sessionId, DAILY_REPORT_TEXT, 'daily-report');
       writeState({ dailyReportOn: today }, env);
@@ -231,20 +237,26 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   }
 
   /**
-   * Whether Rubato should hand Segno the default changes to review. Two ways in: a change the person
-   * has not been shown yet (at most every ten minutes, and once at engine start), and the page's
-   * "have Segno look at it" request, which wakes even when nothing changed. Once the wake is
-   * delivered the change is marked, so the same default does not wake Segno twice.
+   * Whether Rubato should hand Segno its own prompt files to review. The page's request comes first
+   * (the user pressed the button). Otherwise a default that moved is checked once per engine start:
+   * defaults only change with an update, and an update restarts the engine. Either way the base moves
+   * to the default Segno was just told about, so the same change never wakes it twice.
    */
-  async function personaReviewDue(sessionId, at) {
+  async function personaReviewDue(sessionId) {
     const requested = readPersonaReviewRequest(env);
-    if (requested === undefined && lastReviewCheck !== undefined && at - lastReviewCheck < reviewCheckMs) return false;
-    if (requested === undefined) lastReviewCheck = at;
+    if (requested !== undefined) {
+      await notify(sessionId, requestedReviewText(defaultsDir), 'persona-review');
+      for (const change of pendingDefaultChanges({ defaultsDir, env })) moveBaseToDefault(change.id, { defaultsDir, env });
+      clearPersonaReviewRequest(env);
+      reviewChecked = true;
+      return true;
+    }
+    if (reviewChecked) return false;
     const pending = pendingDefaultChanges({ defaultsDir, env });
-    if (!pending.length && requested === undefined) return false;
-    await notify(sessionId, personaReviewText(pending.map((change) => change.id)), 'persona-review');
-    for (const change of pending) markDefaultReviewed(change.id, { defaultsDir, env });
-    if (requested !== undefined) clearPersonaReviewRequest(env);
+    if (!pending.length) { reviewChecked = true; return false; }
+    await notify(sessionId, changedDefaultsText(pending), 'persona-review');
+    for (const change of pending) moveBaseToDefault(change.id, { defaultsDir, env });
+    reviewChecked = true;
     return true;
   }
 

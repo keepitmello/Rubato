@@ -22,7 +22,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 
 /** The session entry that marks a conversation as the companion (pi-server session-files create). */
 export const COMPANION_ENTRY = 'rubato.companion';
@@ -232,15 +232,8 @@ export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${p
 export const personalPiecePath = (env, id) => path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`);
 /** Where the default text a personal copy was seeded from is kept; never read by the composer. */
 export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
-/** The default each personal copy was last shown to the person at, so one change wakes once. */
-const reviewedPath = (env) => path.join(companionPaths(env).prompt, '.review.json');
 /** The settings page's "have Segno look at it" request; the keeper reads it and wakes Segno. */
 const reviewRequestPath = (env) => path.join(companionPaths(env).home, 'persona-review.json');
-
-/** A short, stable name for one default's text. */
-export function defaultFingerprint(text) {
-  return createHash('sha256').update(String(text).trim()).digest('hex');
-}
 
 /** Writes text as a new file, refusing to replace one already there. */
 function writeTextNew(file, text) {
@@ -288,54 +281,32 @@ export function seedPromptPieces({ defaultsDir, env = process.env } = {}) {
   return { seeded, kept };
 }
 
-/** The defaults Segno has already been shown, by piece, as fingerprints. */
-export function readReviewedDefaults(env = process.env) {
-  const value = readJson(reviewedPath(env));
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
-  return Object.fromEntries(Object.entries(value).filter(([, fingerprint]) => typeof fingerprint === 'string'));
-}
-
-function writeReviewedDefault(id, fingerprint, env) {
-  writeJson(reviewedPath(env), { ...readReviewedDefaults(env), [id]: fingerprint });
-}
-
 /**
- * The product defaults that moved away from the base a person's copy was seeded from and that Segno
- * has not been shown yet. A copy with no base (an older home) is not reviewed automatically: there
- * is nothing to compare it to, so the person asks for that review from the page.
+ * The product defaults that moved away from the base a person's copy was seeded from. A copy with no
+ * base (an older home) is not reviewed automatically: there is nothing to compare it to, so the
+ * person asks for that review from the Settings page.
  */
 export function pendingDefaultChanges({ defaultsDir, env = process.env } = {}) {
   if (!defaultsDir) throw new TypeError('a review needs the folder the default pieces live in');
-  const reviewed = readReviewedDefaults(env);
   const pending = [];
   for (const id of SEEDED_PIECES) {
-    const personal = readOptional(personalPiecePath(env, id), (file) => readFileSync(file, 'utf8'));
-    if (personal === undefined) continue;
     const base = readOptional(basePiecePath(env, id), (file) => readFileSync(file, 'utf8'));
     if (base === undefined) continue;
     const defaultText = readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim();
     if (defaultText === base) continue;
-    if (reviewed[id] === defaultFingerprint(defaultText)) continue;
-    pending.push({ id, baseText: base, defaultText, personalText: personal });
+    pending.push({ id, baseText: base, defaultText, defaultPath: defaultPiecePath(defaultsDir, id) });
   }
   return pending;
 }
 
-/** Records that Segno has seen this piece's current default: the same change does not wake again. */
-export function markDefaultReviewed(id, { defaultsDir, env = process.env } = {}) {
-  const defaultText = readFileSync(defaultPiecePath(defaultsDir, pieceOf(id).id), 'utf8').trim();
-  writeReviewedDefault(pieceOf(id).id, defaultFingerprint(defaultText), env);
-}
-
 /**
- * The person took the changes they wanted: the base moves to the default Segno just reviewed, so the
- * next comparison starts from there rather than from the copy they started with.
+ * The base moves to the default Segno was just told about, whether or not the person takes anything:
+ * one default change wakes Segno once, and the next update compares from this default.
  */
-export function acceptDefault(id, { defaultsDir, env = process.env } = {}) {
+export function moveBaseToDefault(id, { defaultsDir, env = process.env } = {}) {
   const defaultText = readFileSync(defaultPiecePath(defaultsDir, pieceOf(id).id), 'utf8').trim();
   mkdirSync(path.dirname(basePiecePath(env, id)), { recursive: true, mode: 0o700 });
   writeFileSync(basePiecePath(env, id), defaultText + '\n', { mode: 0o600 });
-  writeReviewedDefault(pieceOf(id).id, defaultFingerprint(defaultText), env);
   return { id: pieceOf(id).id, baseText: defaultText };
 }
 
@@ -360,7 +331,6 @@ export function clearPersonaReviewRequest(env = process.env) {
  * `baseUnknown` when the file predates seeding.
  */
 export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
-  const reviewed = readReviewedDefaults(env);
   return PIECES.map(({ id, editable }) => {
     const defaultText = readFile(defaultPiecePath(defaultsDir, id)).trim();
     const personal = editable ? readOptional(personalPiecePath(env, id), readFile) : undefined;
@@ -369,8 +339,7 @@ export function readPieces({ defaultsDir, env = process.env, readFile = (file) =
     const changed = base !== undefined && base !== defaultText;
     return { id, editable, defaultText, personalText: personal,
       ...(base === undefined ? { baseUnknown: true } : { baseText: base }),
-      ...(changed ? { defaultChanged: true } : {}),
-      ...(changed && reviewed[id] !== defaultFingerprint(defaultText) ? { reviewDue: true } : {}) };
+      ...(changed ? { defaultChanged: true } : {}) };
   });
 }
 
@@ -379,11 +348,8 @@ function readOptional(file, readFile) {
   catch (error) { if (error?.code === 'ENOENT') return undefined; throw error; }
 }
 
-/**
- * Saves the person's version of one piece; an empty text or the default itself removes it. `accepted`
- * means the person took the default changes Segno brought them, so the base moves to this default.
- */
-export function writePiece(id, text, { defaultsDir, env = process.env, accepted = false } = {}) {
+/** Saves the person's version of one piece; an empty text or the default itself removes it. */
+export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
   const piece = pieceOf(id);
   if (!piece.editable) throw new TypeError(`The ${id} piece follows the product and has no personal version`);
   if (typeof text !== 'string') throw new TypeError('text must be a string');
@@ -395,14 +361,12 @@ export function writePiece(id, text, { defaultsDir, env = process.env, accepted 
   if (!trimmed || trimmed === defaultText) {
     rmSync(file, { force: true });
     rmSync(basePiecePath(env, id), { force: true });
-    if (accepted && defaultsDir) markDefaultReviewed(id, { defaultsDir, env });
     return { personal: false };
   }
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, trimmed + '\n', { mode: 0o600 });
   renameSync(temporary, file);
-  if (accepted && defaultsDir) acceptDefault(id, { defaultsDir, env });
   return { personal: true };
 }
 

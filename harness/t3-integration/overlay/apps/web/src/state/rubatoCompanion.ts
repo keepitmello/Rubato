@@ -77,6 +77,8 @@ export interface CompanionPiece {
   readonly baseText?: string;
   /** True for a copy that predates seeding: Rubato has no record of the default it came from. */
   readonly baseUnknown?: boolean;
+  /** Rubato's default moved since this copy was made. */
+  readonly defaultChanged?: boolean;
 }
 
 export interface CompanionSettingsPatch {

@@ -210,14 +210,14 @@ test('the page marks a default that moved and asks Segno to look at it', async (
   const pieces = (await ask('pieces')).body.pieces;
   const soul = pieces.find((piece) => piece.id === 'soul');
   assert.equal(soul.defaultChanged, true);
-  assert.equal(soul.reviewDue, true, 'the page shows the mark');
+  assert.equal(soul.defaultChanged, true, 'the page shows the mark');
   assert.equal(soul.baseText, soul.personalText, 'the copy came from the default it is compared with');
-  assert.equal(pieces.find((piece) => piece.id === 'identity').reviewDue, undefined);
+  assert.equal(pieces.find((piece) => piece.id === 'identity').defaultChanged, undefined);
 
   const asked = await ask('review-persona');
   assert.equal(asked.status, 200);
   assert.ok(asked.body.reviewRequested, 'the keeper has something to read');
   assert.equal(readPersonaReviewRequest(env), asked.body.reviewRequested);
-  assert.equal(asked.body.pieces.find((piece) => piece.id === 'soul').reviewDue, true,
-    'the mark stays until Segno has actually seen it');
+  assert.equal(asked.body.pieces.find((piece) => piece.id === 'soul').defaultChanged, true,
+    'the mark stays until the engine moves the base under it');
 });
