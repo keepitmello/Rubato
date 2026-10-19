@@ -86,3 +86,10 @@ test("hub health failure kickstarts once and reports dispatcher fallback status"
   await assert.rejects(() => lifecycle.list(), (error) => error instanceof HubUnavailableError && error.code === "HUB_UNAVAILABLE");
   assert.equal(kickstarts, 1);
 });
+
+test("an unhealthy hub is never restarted through launchd: the profile engine runs it", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/hub-client.mjs", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /launchctl|com\.keepitmello\.rubato\.remote-hub/);
+  assert.match(source, /RUBATO_HUB_RESTART/);
+});

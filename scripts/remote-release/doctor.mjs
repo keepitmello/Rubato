@@ -2,9 +2,10 @@ import { lstat, readFile, readdir, stat } from "node:fs/promises"
 import { basename, join } from "node:path"
 import { pathToFileURL } from "node:url"
 
-import { HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, SUPPORTED_BUN_VERSION, ZMX_COMMIT } from "./constants.mjs"
+import { LEGACY_HUB_LABEL, HUB_PORT_MAX, HUB_PORT_MIN, SUPPORTED_BUN_VERSION, ZMX_COMMIT } from "./constants.mjs"
 import { fileMode, pathExists, readJson, redact, run, SECRET_VALUE, sha256 } from "./lib.mjs"
-import { assertBunVersion, assertNoFunnel, assertNodeVersion, canonicalHubEntryPath, launchAgentNeedsRepair, listManagedZmxSessions, serveHasRubatoTarget, serveStatus, tailscaleIdentity, waitForHealth } from "./system.mjs"
+import { readHubServiceSpec } from "./hub-service.mjs"
+import { assertBunVersion, assertNoFunnel, assertNodeVersion, canonicalHubEntryPath, hubServiceNeedsRepair, listManagedZmxSessions, serveHasRubatoTarget, serveStatus, tailscaleIdentity, waitForHealth } from "./system.mjs"
 
 const STOCK_PI_PACKAGES = Object.freeze([
   "@earendil-works/pi-agent-core",
@@ -73,17 +74,26 @@ export async function doctor(paths, options = {}) {
     if (!release.buildId || release.zmx?.commit !== ZMX_COMMIT) throw new Error("release metadata is invalid")
     return { buildId: release.buildId, sourceCommit: release.sourceCommit }
   })
-  await check("launchd", async () => {
-    const result = await runner("/bin/launchctl", ["print", `gui/${process.getuid()}/${HUB_LABEL}`], { check: false, timeoutMs: 5_000 })
-    if (result.code !== 0) throw new Error("hub LaunchAgent is not loaded")
-    return { loaded: true }
-  })
-  await check("launchd-plist", async () => {
-    const plist = await readFile(paths.plist, "utf8")
+  await check("hub-service", async () => {
+    const read = await readHubServiceSpec(paths.service)
+    if (read === null) throw new Error("hub service spec is missing; the profile engine has nothing to run")
+    if (read instanceof Error) throw read
     const entryPath = canonicalHubEntryPath(paths)
-    if (launchAgentNeedsRepair(plist, { entryPath })) throw new Error("hub LaunchAgent does not run the installed release hub")
+    if (hubServiceNeedsRepair(read.spec, { entryPath })) throw new Error("hub service spec does not run the installed release hub")
     return { entryPath }
   })
+  await check("hub-supervisor", async () => {
+    const record = await readJson(paths.servicePid)
+    for (const [name, pid] of [["hub", record.pid], ["engine", record.enginePid]]) {
+      try { process.kill(pid, 0) } catch (error) { if (error?.code !== "EPERM") throw new Error(`the ${name} process recorded for the hub is not running`) }
+    }
+    return { pid: record.pid, enginePid: record.enginePid }
+  })
+  await check("legacy-launch-agent", async () => {
+    const loaded = await runner("/bin/launchctl", ["print", `gui/${process.getuid()}/${LEGACY_HUB_LABEL}`], { check: false, timeoutMs: 5_000 })
+    if (loaded.code === 0 || await pathExists(paths.legacyPlist)) throw new Error("the hub's old LaunchAgent is still present; the profile engine retires it when it next starts")
+    return { present: false }
+  }, { warning: true })
   await check("unix-socket", async () => {
     const info = await lstat(paths.socket)
     if (!info.isSocket()) throw new Error("hub control path is not a Unix socket")

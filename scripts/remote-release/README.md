@@ -46,9 +46,11 @@ rubato remote update --release /tmp/rubato-remote-build --public-key release-pub
 
 A developer-built release can be installed only with the explicit `--trusted-local-build` switch. Updates stop when a live session exists unless `--force-live` is supplied. zmx itself is never replaced while a managed zmx session exists.
 
-The installer atomically stages immutable releases under `~/.local/lib/rubato/remote/releases/`, atomically switches `remote/current`, configures a user LaunchAgent, writes owner-only state, records the logged-in Tailscale owner, encrypts the launch environment through the live CLI, waits for hub `cli.health` on the unix socket, runs zmx and terminal bridge smoke checks, and writes an owner-only PNG QR code. It does not create Tailscale Serve `/rubato` routes.
+The installer atomically stages immutable releases under `~/.local/lib/rubato/remote/releases/`, atomically switches `remote/current`, writes the hub spec the profile engine runs (`hub-service.json` in the remote state directory; the engine supervises the hub as its child, see `harness/pi-server/src/hub-supervisor.mjs`), writes owner-only state, records the logged-in Tailscale owner, encrypts the launch environment through the live CLI, waits until the engine has started that hub and it answers `cli.health` on the unix socket, runs zmx and terminal bridge smoke checks, and writes an owner-only PNG QR code. It does not create Tailscale Serve `/rubato` routes.
 
 If Tailscale is not logged in, assets are staged but no release is activated. No auth key is generated; log in with `tailscale up` and rerun install.
+
+An install from before engine supervision has the hub's own LaunchAgent (`com.keepitmello.rubato.remote-hub`). The profile engine retires it the first time it starts with supervision: it keeps the program and environment the agent ran, boots the agent out and removes its plist. Until then the release channel restarts the hub through that agent.
 
 ## Uninstall
 

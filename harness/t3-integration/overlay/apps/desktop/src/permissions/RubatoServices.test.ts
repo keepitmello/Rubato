@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseLaunchctlPrint, rubatoHarness, serviceStatus } from "./RubatoServices.ts";
+import { hubStatus, parseLaunchctlPrint, rubatoHarness, serviceStatus } from "./RubatoServices.ts";
 
 // Trimmed `launchctl print gui/<uid>/<label>` output, as macOS 26 prints it.
 const running = `gui/501/com.keepitmello.rubato.scheduler = {
@@ -36,6 +36,14 @@ describe("rubato background services", () => {
     expect(serviceStatus(parseLaunchctlPrint(betweenRuns), true)).toBe("stopped");
     expect(serviceStatus(parseLaunchctlPrint(null), true)).toBe("stopped");
     expect(serviceStatus(parseLaunchctlPrint(null), false)).toBe("missing");
+  });
+
+  it("reads the engine-run hub from its spec and the pid the engine records", () => {
+    const alive = (pid: number) => pid === 4242;
+    expect(hubStatus(false, null, alive)).toBe("missing");
+    expect(hubStatus(true, { pid: 4242 }, alive)).toBe("running");
+    expect(hubStatus(true, { pid: 4243 }, alive)).toBe("stopped");
+    expect(hubStatus(true, null, alive)).toBe("stopped");
   });
 
   it("finds the checkout's harness from the bridge module the server settings name", async () => {
