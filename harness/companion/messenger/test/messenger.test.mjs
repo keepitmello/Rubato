@@ -320,3 +320,62 @@ test('the engine entry maps the host channel to deliveries and hands the tools a
   assert.ok(fake.sent.some((sent) => sent.text.includes('도구가 큐에 넣은 말')));
   await service.close();
 });
+
+test('a failed delivery keeps the update: the offset does not move past it', async (t) => {
+  const box = sandbox(t);
+  writeSecret(TOKEN, box.env);
+  writeCompanionState({ sessionId: 'S1' }, box.env);
+  const store = await import('../store.mjs');
+  store.writePairing({ status: 'paired', chat: { chatId: USER_CHAT } }, box.env);
+  const fake = fakeTelegram();
+  const delivered = [];
+  const errors = [];
+  let attempts = 0;
+  const service = startCompanionMessenger({ env: box.env, agentDir: box.agentDir, createApi: () => fake.api,
+    pollMs: 3_600_000, longPollSeconds: 0, onError: (error) => errors.push(error),
+    deliver: async (args) => { attempts += 1; if (attempts === 1) throw new Error('engine said no'); delivered.push(args.text); } });
+  await service.ready; await service.poke(); await service.poke();
+  const update = fake.message({ chatId: USER_CHAT, text: '한 번 실패해도 도착해야 한다' });
+  await service.poke(); await service.poke();
+  assert.equal(errors.length, 1, 'the failure reached the engine log');
+  assert.deepEqual(delivered, ['한 번 실패해도 도착해야 한다'], 'the second pass delivered it');
+  assert.equal(readState(box.env).offset, update.update_id + 1);
+  await service.close();
+});
+
+test('a failed Telegram send is not remembered as answered, and goes out next time', async (t) => {
+  const box = sandbox(t);
+  writeSecret(TOKEN, box.env);
+  const store = await import('../store.mjs');
+  store.writePairing({ status: 'paired', chat: { chatId: USER_CHAT } }, box.env);
+  writeCompanionState({ sessionId: 'S1' }, box.env);
+  const fake = fakeTelegram();
+  const send = fake.api.sendMessage;
+  let attempts = 0;
+  fake.api.sendMessage = async (...args) => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('telegram hiccup');
+    return send(...args);
+  };
+  const errors = [];
+  const service = startCompanionMessenger({ env: box.env, agentDir: box.agentDir, createApi: () => fake.api,
+    pollMs: 3_600_000, longPollSeconds: 0, onError: (error) => errors.push(error), deliver: async () => {} });
+  await service.ready; await service.poke(); await service.poke();
+  transcript(box, [channelEntry('e1', { isUser: true }), answerEntry('e2', '실패해도 살아남는 답')]);
+  await service.poke(); await service.poke();
+  assert.equal(errors.length, 1);
+  assert.equal(fake.sent.filter((row) => row.text === '실패해도 살아남는 답').length, 1);
+  assert.deepEqual(readState(box.env).answered, ['e2']);
+  await service.close();
+});
+
+test('two answers that ended between polls both go out, oldest first', async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    channelEntry('e1', { messageId: 601 }), answerEntry('e2', '첫 번째 답'),
+    channelEntry('e3', { messageId: 602 }), answerEntry('e4', '두 번째 답'),
+  ]);
+  await settle(box.service);
+  const texts = box.fake.sent.map((row) => row.text).filter((text) => /번째 답/.test(text));
+  assert.deepEqual(texts, ['첫 번째 답', '두 번째 답']);
+});

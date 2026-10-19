@@ -108,18 +108,32 @@ export function triggerOf(entries, index, { companionSessionId } = {}) {
   return { kind: 'unknown' };
 }
 
+/** One finished answer: its entry, its words and what woke the turn. */
+function answerAt(entries, index, { companionSessionId }) {
+  const entry = entries[index];
+  const stopReason = entry.message.stopReason;
+  const text = stopReason === 'aborted' || stopReason === 'error' ? '' : textOf(entry.message.content).trim();
+  return { entryId: entry.id, text, stopReason, trigger: triggerOf(entries, index, { companionSessionId }) };
+}
+
 /**
- * The newest finished answer of the companion, with what woke its turn:
- * `{ entryId, text, stopReason, trigger }`, or undefined while a turn is still going.
+ * Every finished answer not yet accounted for, oldest first. A pass that reads the transcript can
+ * therefore see two turns that ended between polls, and a turn that failed to go out stays in the
+ * list until it does: nothing is dropped because a newer answer came after it.
  */
-export function lastAnswer(entries, { companionSessionId } = {}) {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (!isFinalAssistant(entry)) continue;
-    const stopReason = entry.message.stopReason;
-    if (stopReason === 'aborted' || stopReason === 'error') return { entryId: entry.id, text: '', stopReason, trigger: triggerOf(entries, index, { companionSessionId }) };
-    return { entryId: entry.id, text: textOf(entry.message.content).trim(), stopReason, trigger: triggerOf(entries, index, { companionSessionId }) };
+export function newAnswers(entries, { answered = [], companionSessionId } = {}) {
+  const done = new Set(answered);
+  const found = [];
+  for (let index = 0; index < entries.length; index += 1) {
+    if (!isFinalAssistant(entries[index])) continue;
+    if (done.has(entries[index].id)) continue;
+    found.push(answerAt(entries, index, { companionSessionId }));
   }
-  return undefined;
+  return found;
+}
+
+/** The newest finished answer, or undefined while a turn is still going. */
+export function lastAnswer(entries, options = {}) {
+  return newAnswers(entries, options).at(-1);
 }
 

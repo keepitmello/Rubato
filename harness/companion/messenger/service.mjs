@@ -25,7 +25,7 @@ import {
   pairedChatId, readBot, readDecision, readHandoff, readIntent, readMessengerSettings, readPairing, readSecret,
   readOutboxRow, readState, updateOutboxRow, writeBotIdentity, writeDecision, writeHandoff, writePairing, writeSecret, writeState,
 } from './store.mjs';
-import { lastAnswer, locateTranscript, readEntries } from './transcript.mjs';
+import { newAnswers, locateTranscript, readEntries } from './transcript.mjs';
 import { readState as readCompanionState } from '../companion.mjs';
 
 /** The keeper's own words; a heartbeat turn is recognised by the notice text it woke on. */
@@ -36,6 +36,9 @@ const BUTTON_APPROVE = '✅ 보내기';
 const BUTTON_REJECT = '❌ 그만두기';
 
 /** A sleep that ends early when the service closes, and never by itself keeps the process alive. */
+/** How many passes one update may fail before it is given up on (a minute and a half at the default pace). */
+export const MAX_UPDATE_TRIES = 50;
+
 const sleep = (ms, signal) => new Promise((resolve) => {
   const timer = setTimeout(done, ms);
   timer.unref?.();
@@ -132,6 +135,8 @@ export function startCompanionMessenger({
   let ticking;
   let loop;
   let inboundSeen = new Map();
+  /** Updates whose delivery failed, so one that always fails cannot wedge the rest forever. */
+  const failures = new Map();
   const stop = new AbortController();
   if (signal) signal.addEventListener('abort', () => stop.abort(), { once: true });
 
@@ -269,7 +274,16 @@ export function startCompanionMessenger({
     for (const update of updates) {
       if (aborted()) return;
       try { await handleUpdate(client, update); }
-      catch (error) { onError(error); }
+      catch (error) {
+        onError(error);
+        // The offset stays where it is, so Telegram hands this update back and the message is not
+        // lost to a failure in the engine. Order is kept: later updates wait behind it.
+        const tries = (failures.get(update.update_id) ?? 0) + 1;
+        failures.set(update.update_id, tries);
+        if (tries < MAX_UPDATE_TRIES) return;
+        log('inbound-dropped', { updateId: update.update_id, tries, why: 'the engine refused it every time' });
+      }
+      failures.delete(update.update_id);
       if (typeof update.update_id === 'number') writeState({ offset: update.update_id + 1 }, env);
     }
   }
@@ -353,30 +367,63 @@ export function startCompanionMessenger({
     const sessionId = readCompanionState(env).sessionId;
     if (!sessionId) return;
     const file = await locateTranscript(sessionsDir, sessionId);
-    if (!file) return;
-    const entries = await readEntries(file);
-    const answer = lastAnswer(entries, { companionSessionId: sessionId });
-    if (!answer || !answer.text) return;
     const state = readState(env);
-    const answered = state.answered ?? [];
-    if (answered.includes(answer.entryId)) return;
-    const trigger = answer.trigger ?? { kind: 'unknown' };
-    try {
-      if (trigger.kind === 'channel' && trigger.isUser) {
-        await sendToUser(client, answer.text, { replyToMessageId: trigger.incomingMessageId });
-      } else if (trigger.kind === 'channel' && !trigger.isUser) {
-        const chatId = trigger.chatId;
-        if (!chatId) throw new Error('the message that woke this turn names no chat to answer');
-        enqueueMessage({ text: answer.text, target: { chatId, ...(trigger.name ? { name: trigger.name } : {}) }, source: 'reply',
-          heldReason: '답장은 사용자 승인을 기다립니다' }, env);
-      } else if (trigger.kind === 'notice') {
-        const own = trigger.own === true;
-        const heartbeat = own && String(trigger.text ?? '').startsWith(HEARTBEAT_PREFIX);
-        const daily = own && String(trigger.text ?? '').startsWith(DAILY_PREFIX);
-        if (heartbeat || daily || !own) await sendToUser(client, answer.text);
+    const entries = file ? await readEntries(file) : [];
+    const all = newAnswers(entries, { companionSessionId: sessionId, answered: [] });
+    if (!entries.length || !all.length) {
+      // The first look at a conversation that has no finished answer yet: nothing is replayed later.
+      if (state.answered === undefined) writeState({ answered: [] }, env);
+      return;
+    }
+    let answered = state.answered;
+    if (answered === undefined) {
+      // A conversation that already has history: its older answers are not messages to send now.
+      const keep = all.at(-1);
+      answered = all.filter((answer) => answer !== keep).map((answer) => answer.entryId);
+      writeState({ answered }, env);
+    }
+    const pending = all.filter((answer) => !answered.includes(answer.entryId));
+    for (const answer of pending) {
+      if (!answer.text || !routesOut(answer.trigger)) {
+        answered = [...answered, answer.entryId];
+        writeState({ answered }, env);
+        continue;
       }
-    } finally {
-      writeState({ answered: [...answered, answer.entryId] }, env);
+      try { await routeAnswer(client, answer); }
+      catch (error) {
+        // Not marked as answered: the next pass sends it, in order, instead of losing the reply.
+        onError(error);
+        return;
+      }
+      answered = [...answered, answer.entryId];
+      writeState({ answered }, env);
+    }
+  }
+
+  /** Whether this turn's answer has somewhere to go: the person, or another chat (held). */
+  function routesOut(trigger) {
+    if (!trigger) return false;
+    return trigger.kind === 'channel' || trigger.kind === 'notice';
+  }
+
+  async function routeAnswer(client, answer) {
+    const trigger = answer.trigger ?? { kind: 'unknown' };
+    if (trigger.kind === 'channel' && trigger.isUser) {
+      await sendToUser(client, answer.text, { replyToMessageId: trigger.incomingMessageId });
+      return;
+    }
+    if (trigger.kind === 'channel') {
+      const chatId = trigger.chatId;
+      if (!chatId) throw new Error('the message that woke this turn names no chat to answer');
+      enqueueMessage({ text: answer.text, target: { chatId, ...(trigger.name ? { name: trigger.name } : {}) }, source: 'reply',
+        heldReason: '답장은 사용자 승인을 기다립니다' }, env);
+      return;
+    }
+    if (trigger.kind === 'notice') {
+      const own = trigger.own === true;
+      const heartbeat = own && String(trigger.text ?? '').startsWith(HEARTBEAT_PREFIX);
+      const daily = own && String(trigger.text ?? '').startsWith(DAILY_PREFIX);
+      if (heartbeat || daily || !own) await sendToUser(client, answer.text);
     }
   }
 
