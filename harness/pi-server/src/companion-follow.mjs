@@ -32,9 +32,11 @@ export function judge(record, current, at) {
   if ((current.status === 'waiting' && !base.waiting) || current.ui.some((id) => !base.ui.includes(id))) return 'needs-attention';
   if (current.status === 'error') return 'failed';
   if (!BUSY.has(current.status) && current.final && current.final.entryId !== base.final) {
-    if (record.skip > 0) return 'skip';
+    // A stopped or failed turn is reported even when it is the turn the handoff waited behind: the
+    // message held for it is then written without starting a turn, so no later end would come.
     if (current.final.stopReason === 'aborted') return 'stopped';
     if (current.final.stopReason === 'error') return 'failed';
+    if (record.skip > 0) return 'skip';
     return 'completed';
   }
   if (current.status === 'stored' && record.started && at - (record.storedSince ?? at) >= LOST_AFTER_MS) return 'lost';
@@ -63,11 +65,14 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       throw error;
     }
     const at = now();
+    const startedBefore = record.started;
     if (BUSY.has(current.status)) { record.started = true; delete record.storedSince; }
     else if (current.status === 'stored') record.storedSince ??= at;
     else delete record.storedSince;
     const outcome = judge(record, current, at);
-    if (!outcome) return false;
+    // Saved once seen: an engine killed mid-turn leaves the lead stored, and only a saved `started`
+    // lets the next engine report it lost.
+    if (!outcome) return record.started !== startedBefore;
     if (outcome === 'skip') {
       record.skip -= 1;
       record.base.final = current.final.entryId;

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { readDescriptor } from './descriptor.mjs';
 import { resolveLaunchEngine, readPiEngineReceipt } from '../../rubato-pi/src/engine-selection.mjs';
 import { removeRetiredAgentExtensions } from '../../rubato-pi/src/retired-agent-extensions.mjs';
+import { kickstartEngine, launchdManagesEngine } from './launchd.mjs';
 
 const openings = new Map();
 const serverCli = path.join(import.meta.dirname, 'cli.mjs');
@@ -35,9 +36,12 @@ async function liveDescriptor(file) {
 
 /** Shared CLI/GUI bootstrap. Concurrent presentations contend on one profile
  * owner lock; none kills or replaces an engine with active user conversations.
+ * When launchd keeps this profile's engine (launchd.mjs), launchd is asked to start it and
+ * nothing here spawns a second one; `launchd` substitutes that lookup in tests.
  */
 export async function ensureProfileEngine({ descriptorPath, nodeBin = process.execPath, env = process.env,
-  runtimeRoot = installedSharedRuntime(env), requireTerminal = false, timeoutMs = 40000 }) {
+  runtimeRoot = installedSharedRuntime(env), requireTerminal = false, timeoutMs = 40000,
+  launchd = { manages: launchdManagesEngine, kickstart: kickstartEngine } }) {
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('Descriptor path must be absolute');
   const agentDir = path.dirname(path.dirname(descriptorPath));
   // Every engine start (CLI and T3 bridge) passes here, before pi discovers agentDir/extensions.
@@ -58,6 +62,19 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
       await mkdir(path.join(agentDir, 'logs'), { recursive: true, mode: 0o700 });
       const logFile = path.join(agentDir, 'logs', 'pi-server.log');
       const deadline = Date.now() + timeoutMs;
+      if (launchd.manages({ agentDir, env }) && await launchd.kickstart({ env })) {
+        // launchd starts it, and starts it again if it ends. An engine it starts while another
+        // still holds the profile waits for the lock, so this waits for the descriptor only.
+        let asked = Date.now();
+        while (Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const ready = await liveDescriptor(descriptorPath);
+          if (ready) return ready;
+          if (Date.now() - asked > 5000) { asked = Date.now(); await launchd.kickstart({ env }); }
+        }
+        let tail = ''; try { tail = (await readFile(logFile, 'utf8')).slice(-800).trim(); } catch {}
+        throw new Error(`Rubato profile engine did not start under launchd${tail ? `\n${tail}` : ''}`);
+      }
       let child;
       let spawnError;
       let exits = 0;

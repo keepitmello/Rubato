@@ -295,9 +295,10 @@ const SERVICES: Record<RubatoServiceId, { title: string; description: string }> 
     description:
       "Redis with its search module on port 6380. Agents search Rubato's memory through it (msearch) to find earlier decisions.",
   },
-  scheduler: {
-    title: "Scheduled tasks",
-    description: "Runs the tasks in Settings › Scheduled Tasks at their times, even while this window is closed.",
+  engine: {
+    title: "Rubato engine",
+    description:
+      "Runs your conversations, Segno and the tasks in Settings › Scheduled Tasks, even while this window is closed.",
   },
   "remote-hub": {
     title: "Remote access",
@@ -382,8 +383,9 @@ function ServicesSection({
                 : undefined)
             }
             control={
-              // A running memory search has nothing to restart: its setup only fills gaps.
-              !canStart(service) || (service.id === "msearch" && isUp(service)) ? null : (
+              // A running memory search has nothing to restart: its setup only fills gaps. A running
+              // engine is restarted by Settings › Update, which lets its turns finish first.
+              !canStart(service) || ((service.id === "msearch" || service.id === "engine") && isUp(service)) ? null : (
                 <Button
                   size="xs"
                   variant={isUp(service) ? "ghost" : "default"}

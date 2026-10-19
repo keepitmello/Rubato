@@ -243,17 +243,14 @@ echo "$CHANGED" | grep -Eq '^(install\.sh$|harness/scripts/)' && need_shell=1
 # 이 기기에 등록돼 있을 때만.
 need_aside=0
 "$LAUNCHCTL_BIN" print "gui/$(id -u)/com.keepitmello.rubato.aside-cursor" >/dev/null 2>&1 && need_aside=1
-# 예약 작업 스케줄러도 launchd 상주로 체크아웃 소스를 돈다. 자기 코드와 그것이 읽는
-# 공용 모듈·엔진 클라이언트가 바뀌었고 이 기기에 등록돼 있을 때만 다시 띄운다. 실행 중인
-# 예약 세션은 엔진 안에 있어 끊기지 않고, 새 스케줄러가 그 기록을 이어받는다.
-# 등록돼 있지 않으면 새로 켠다(need_scheduler=install) — 예약 작업은 기본으로 돌아야 하고,
-# 이 업데이트가 스케줄러를 처음 들여오는 경우도 여기서 켜진다. 계정 홈에서만(아래).
-need_scheduler=0
-SCHEDULER_LABEL="com.keepitmello.rubato.scheduler"
-if "$LAUNCHCTL_BIN" print "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1; then
-  echo "$CHANGED" | grep -Eq '^(harness/scheduler/|packages/schedule-core/|harness/pi-server/src/|harness/companion/)' && need_scheduler=1
-elif [ -f "$HERE/../scheduler/src/cli.mjs" ] && [ -z "${RUBATO_NO_SCHEDULER-}" ] && [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
-  need_scheduler=install
+# 프로필 엔진은 launchd 작업(com.keepitmello.rubato.engine)이다. 로그인하면 뜨고 죽으면
+# 다시 뜬다. 예약 작업 스케줄러는 그 엔진 안에서 돈다(scheduler/src/service.mjs). 등록은
+# 업데이트마다 맞춘다. 없으면 깔고, 옛 스케줄러 작업(com.keepitmello.rubato.scheduler)은
+# 걷어낸다(pi-server/src/launchd.mjs). 엔진을 다시 띄울 때는 재시작 단계가 그 일을 같이
+# 하므로 여기서는 재시작이 없는 업데이트만 맡는다. 맥의 계정 홈에서만(아래).
+need_engine_job=0
+if [ "$(uname -s 2>/dev/null)" = "Darwin" ] && [ -z "${RUBATO_NO_ENGINE_LAUNCHD-}" ] && [ -f "$HERE/../pi-server/src/launchd.mjs" ]; then
+  need_engine_job=1
 fi
 # Remote hub 도 launchd 상주라 소스만 받으면 옛 프로세스가 GC/유휴 정책을
 # 계속 돈다. zmx 세션은 허브 밖이라 kickstart -k 로도 안 죽는다.
@@ -300,6 +297,7 @@ echo "  번들 스킬 → ~/.agents/skills"
 [ "$need_shell" = 1 ]   && echo "  셸 alias 블록 · cmux 세션 복원"
 [ "$need_candidate" = 1 ] && echo "  pi 엔진 설치 ${DIM}(몇 분 걸려요)${RST}"
 [ "$need_aside" = 1 ]   && echo "  Aside 프록시 재시작"
+[ "$need_engine_job" = 1 ] && echo "  엔진 launchd 등록 확인 ${DIM}(옛 스케줄러 작업은 걷어내요)${RST}"
 [ "$need_hub" = 1 ]     && echo "  remote hub 재시작"
 [ "$need_profile" = 1 ] && echo "  프로필 엔진 재시작 ${DIM}(열린 CLI는 다시 붙여야 해요)${RST}"
 [ "$need_gui" = 1 ]     && echo "  공식 GUI (핀된 T3 + overlay + Rubato.app) ${DIM}(켜져 있으면 껐다 켭니다)${RST}"
@@ -583,18 +581,16 @@ if [ "$need_aside" = 1 ]; then
     && ok "Aside 프록시 재시작" || warn "Aside 프록시 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$ASIDE_LABEL"
 fi
 
-if [ "$need_scheduler" = 1 ]; then
-  "$LAUNCHCTL_BIN" kickstart -k "gui/$(id -u)/$SCHEDULER_LABEL" >/dev/null 2>&1 \
-    && ok "예약 작업 스케줄러 재시작" || warn "예약 작업 스케줄러 재시작 경고 — 손으로: launchctl kickstart -k gui/\$(id -u)/$SCHEDULER_LABEL"
-elif [ "$need_scheduler" = install ] && [ -f "$HERE/account-home.sh" ] && [ -f "$HERE/find-node.sh" ]; then
+# 엔진을 다시 띄우는 업데이트는 restart-profile-engine.mjs 가 등록까지 한다. 정의가 바뀐
+# 작업은 그 재시작이 다시 싣는다. 재시작이 없는 업데이트는 여기서 등록만 맞추고, 정의가
+# 바뀌었으면(--reload) 다시 싣는다 — 그 엔진은 하던 도구 호출을 마치고 새 엔진이 이어 간다.
+if [ "$need_engine_job" = 1 ] && [ "$need_profile" != 1 ] && [ -f "$HERE/account-home.sh" ]; then
   . "$HERE/account-home.sh"
-  if rubato_home_is_account_home; then
-    . "$HERE/find-node.sh"
-    SCHED_NODE="$(rubato_find_node 2>/dev/null || true)"
-    if [ -n "$SCHED_NODE" ] && "$SCHED_NODE" "$HERE/../scheduler/src/cli.mjs" install >/dev/null 2>&1; then
-      ok "예약 작업 스케줄러를 켰다"
+  if rubato_home_is_account_home && [ -n "$NODE" ]; then
+    if ENGINE_JOB_OUT="$("$NODE" "$HERE/../pi-server/src/launchd.mjs" ensure --reload 2>&1)"; then
+      ok "엔진 launchd 등록 ($ENGINE_JOB_OUT)"
     else
-      warn "예약 작업 스케줄러를 켜지 못했다 — 손으로: rubato schedule install (앱 설정 > Scheduled Tasks 에서도 켤 수 있다)"
+      warn "엔진을 launchd 에 등록하지 못했다 — 손으로: node $HERE/../pi-server/src/launchd.mjs ensure ($ENGINE_JOB_OUT)"
     fi
   fi
 fi

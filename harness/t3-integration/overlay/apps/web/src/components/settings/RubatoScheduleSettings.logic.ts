@@ -18,7 +18,8 @@ export const COPY = {
   loading: "Loading scheduled tasks",
   loadFailed: "Could not load scheduled tasks",
   schedulerOff: "The scheduler is not running",
-  schedulerOffBody: "Tasks will not start, and times missed while it is off are recorded as skipped.",
+  schedulerOffBody:
+    "Scheduled tasks run inside the Rubato engine. Until it runs, tasks will not start, and times missed meanwhile are recorded as skipped.",
   startScheduler: "Start scheduler",
   startingScheduler: "Starting…",
   schedulerStarted: "Scheduler started",

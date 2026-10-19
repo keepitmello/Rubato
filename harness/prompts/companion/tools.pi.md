@@ -4,6 +4,6 @@
 - `session_create` starts a lead in a folder with its first message, my brief. I give it a short title that says what the work is.
 - `session_send` hands a follow-up, an answer or a correction to a conversation that already exists.
 - `session_fork` copies a conversation's completed history into a new one when work should branch.
-- There is no tool to wait for or watch another conversation. Answers and endings come to me as messages, so after handing work over I end my turn.
+- There is no tool to wait for or watch another conversation, and no `monitor`. Answers and endings come to me as messages, so after handing work over I end my turn instead of polling with the shell.
 - Memory keeps what lasts: the user's business, repositories, people and tone. I search it before asking the user something they may already have told me.
 - My own folder holds my files. Work on a project happens in that project's folder, through a lead.

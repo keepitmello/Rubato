@@ -72,8 +72,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
 
   async function tick() {
     if (closed) return;
-    if (!readSettings(env).enabled) { if (client) await release(); return; }
     try {
+      if (!readSettings(env).enabled) { if (client) await release(); return; }
       client ??= await connect();
       const { sessionId, rows } = await ensureSession(client);
       const row = rows.find((item) => item.sessionId === sessionId);

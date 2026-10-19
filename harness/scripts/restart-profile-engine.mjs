@@ -8,6 +8,7 @@ import { ensureProfileEngine, socketAlive } from '../pi-server/src/discovery.mjs
 import { SessionClient } from '../pi-server/src/client.mjs';
 import { DRAIN_TIMEOUT_MS, resumeFilePath } from '../pi-server/src/drain.mjs';
 import { resolveLaunchAgentDir } from '../rubato-pi/src/launch.mjs';
+import { engineJobPid, engineLaunchdApplies, ensureEngineLaunchAgent, reloadEngineJob } from '../pi-server/src/launchd.mjs';
 import { markStage, nowRequested, stateDirectory } from '../t3-integration/gui-update.mjs';
 // Process lookup lives apart so a test can reach it without the pi-server client above.
 import { ancestorPids, listenerPid } from './profile-engine-pid.mjs';
@@ -23,9 +24,14 @@ async function runningTurns(descriptor) {
 // covers its drain and the close after it. `onDraining` hears once that the engine is still
 // finishing work after the stop; `cutShort` is asked while it does, and when it answers true the
 // engine gets a second stop, which ends its wait and cuts what still runs.
+//
+// With launchd keeping the engine (pi-server launchd.mjs) the stop is the same SIGTERM, and
+// launchd starts the next engine. `launchdJob` is what registering the job reported: a job whose
+// definition changed is reloaded instead (`reload`), which stops the engine it runs the same way.
 export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIMEOUT_MS + 30_000,
   startEngine = (path) => ensureProfileEngine({ descriptorPath: path }),
-  onDraining = async () => {}, cutShort = async () => false, pollMs = 50 } = {}) {
+  onDraining = async () => {}, cutShort = async () => false, pollMs = 50,
+  launchdJob, reload = () => reloadEngineJob(), jobPid = () => engineJobPid() } = {}) {
   descriptorPath ??= path.join(resolveLaunchAgentDir(), 'server', 'connection.json');
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('descriptorPath must be absolute');
   let descriptor;
@@ -41,7 +47,16 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
   catch { inspectError = true; }
   const pid = listenerPid(path.dirname(path.dirname(descriptor.socketPath)));
   if (!pid) return { restarted: false, reason: 'no-pid', running, inspectError };
-  process.kill(pid, 'SIGTERM');
+  let reloading;
+  if (launchdJob?.stale) {
+    // bootout sends the job's engine the same SIGTERM; an engine launchd does not run (one the app
+    // started before the job existed) still gets its own.
+    const ownPid = await jobPid().catch(() => undefined);
+    reloading = Promise.resolve().then(reload).catch((error) => error);
+    if (ownPid !== pid) process.kill(pid, 'SIGTERM');
+  } else {
+    process.kill(pid, 'SIGTERM');
+  }
   const deadline = Date.now() + waitMs;
   let draining = false;
   let cut = false;
@@ -50,9 +65,11 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
       // Work the old engine handed over is taken up by the next one (drain.mjs). Start it now
       // rather than when some window reconnects: a terminal-only machine has none that will.
       const handedOver = await access(resumeFilePath(path.dirname(descriptorPath))).then(() => true, () => false);
+      const reloadError = await reloading;
       let resumeError;
       if (handedOver) await startEngine(descriptorPath).catch((error) => { resumeError = error; });
-      return { restarted: true, pid, running, inspectError, handedOver, cut, ...(resumeError ? { resumeError } : {}) };
+      return { restarted: true, pid, running, inspectError, handedOver, cut, ...(resumeError ? { resumeError } : {}),
+        ...(launchdJob?.stale ? { reloaded: !reloadError } : {}) };
     }
     if (!draining) { draining = true; await onDraining().catch(() => {}); }
     if (!cut && await cutShort().catch(() => false)) {
@@ -107,7 +124,16 @@ if (isCli()) {
   // second press cuts it short.
   const token = process.env.RUBATO_GUI_UPDATE_TOKEN;
   const jobs = token ? stateDirectory(process.env) : null;
-  const result = await restartProfileEngine({ descriptorPath: process.argv[2],
+  // Every update and restart passes here, so a machine set up before the engine had a launchd job
+  // gets it now, and loses the scheduler's own job (pi-server launchd.mjs). Only for the person's
+  // own profile: a named descriptor elsewhere is a test or a tool.
+  const ownDescriptor = path.join(resolveLaunchAgentDir(), 'server', 'connection.json');
+  let launchdJob;
+  if ((!process.argv[2] || path.resolve(process.argv[2]) === path.resolve(ownDescriptor)) && engineLaunchdApplies()) {
+    try { launchdJob = await ensureEngineLaunchAgent(); }
+    catch (error) { process.stderr.write(`엔진을 launchd 에 등록하지 못했습니다: ${error?.stderr || error?.message || error}\n`); }
+  }
+  const result = await restartProfileEngine({ descriptorPath: process.argv[2], launchdJob,
     ...(jobs ? { onDraining: () => markStage(jobs, token, 'draining'), cutShort: () => nowRequested(jobs, token) } : {}) });
   process.stdout.write(`${reportRestart(result)}\n`);
   process.exit(restartSucceeded(result) ? 0 : 1);
