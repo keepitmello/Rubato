@@ -43,7 +43,7 @@ test('a hosted engine passes one bound sessionLink to extension factories', asyn
   const context = globalThis.__factoryContexts.at(-1);
   assert.equal(context.hosted, true);
   assert.equal(context.sessionLink, hosted.sessionLink.api, 'every factory gets the same engine-wide link');
-  assert.deepEqual(Object.keys(context.sessionLink).sort(), ['create', 'fork', 'list', 'read', 'search', 'send', 'wait']);
+  assert.deepEqual(Object.keys(context.sessionLink).sort(), ['channel', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
   await assert.rejects(context.sessionLink.list({}), /session link is not available in this process/);
 
   // The profile's own socket path under a realpath'd temp dir exceeds the UNIX limit.

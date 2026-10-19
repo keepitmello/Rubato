@@ -76,9 +76,9 @@ async function writeSession(dir, cwd, entries) {
   return { id, file, entries: chained };
 }
 
-test('the extension-facing object has exactly its seven methods and refuses until the engine binds it', async () => {
+test('the extension-facing object has exactly its nine methods and refuses until the engine binds it', async () => {
   const link = createSessionLink();
-  assert.deepEqual(keys(link.api), ['create', 'fork', 'list', 'read', 'search', 'send', 'wait']);
+  assert.deepEqual(keys(link.api), ['channel', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
   assert.ok(Object.isFrozen(link.api));
   for (const name of Object.keys(link.api)) {
     await assert.rejects(link.api[name]({}), /session link is not available in this process/);
