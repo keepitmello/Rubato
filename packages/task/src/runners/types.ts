@@ -81,12 +81,30 @@ export type RpcTerminalAssistantMessage = {
   readonly errorMessage?: string
 }
 
+/** Work the child set up that will wake it when it ends (a bounded background command, a monitor). */
+export type ChildAwaitedWake = {
+  readonly id: string
+  readonly description: string
+}
+
+/**
+ * What a resident child is doing between the turns the manager runs: a team member's own inbox
+ * wakes it, and those turns never pass through the manager's record. Each field is absent when
+ * the child could not answer it.
+ */
+export type ChildTurnFacts = {
+  readonly streaming?: boolean
+  readonly lastAssistantText?: string
+  readonly awaiting?: readonly ChildAwaitedWake[]
+}
+
 export type RpcChildHandle = ChildHandle & {
   readonly spawnSpec?: RpcSpawnSpec
   terminalAssistantMessage?(): RpcTerminalAssistantMessage | undefined
   wasAbortedByUser?(): boolean
   switchSession?(sessionPath: string): Promise<RpcSwitchSessionResult>
   getEntries?(since?: string): Promise<RpcEntriesResult>
+  readTurnFacts?(): Promise<ChildTurnFacts>
   terminate(options?: TerminateOptions): Promise<void>
   exitOutcome(): ChildExitOutcome | undefined
   waitForExit(): Promise<ChildExitOutcome>

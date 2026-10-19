@@ -1,4 +1,4 @@
-export { buildPeerMessageEnvelope, buildTeamMessage } from "./message"
+export { buildPeerMessageEnvelope, buildTeamMessage, TEAM_MESSAGE_CUSTOM_TYPE } from "./message"
 export type { BuildTeamMessageOptions } from "./message"
 export { createLeadDeliveryJournal } from "./delivery-journal"
 export type { LeadDeliveryJournal, LeadDeliveryJournalOptions } from "./delivery-journal"

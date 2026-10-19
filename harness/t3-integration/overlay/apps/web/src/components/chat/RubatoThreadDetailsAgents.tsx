@@ -3,8 +3,9 @@
  * (floating-menu-edits.mjs). They answer "what is running for this thread" at a glance:
  * - Team: every taskforce that has not ended, one row each, its members as a strip of glyphs.
  *   Shape says the role (circle owner, diamond verifier, owners first); fill and motion say the
- *   state with the Agents surface's colors, so a role never borrows a state's color. The strip is
- *   the whole summary: no count text beside it.
+ *   state from the Agents surface's own mapping (rubatoAgentStatus AGENT_STATE_VISUALS), so a
+ *   role never borrows a state's color and the two surfaces never disagree. The strip is the
+ *   whole summary: no count text beside it; hovering a member names it, its state and its job.
  * - Agents: agents working outside a team, up to AGENT_ROW_LIMIT rows, the rest counted. A row
  *   gives the task its own line and puts the model and elapsed time under it.
  * A section shows only while something in it is running; finished work is a count that opens
@@ -21,13 +22,17 @@ import { useRightPanelStore } from "../../rightPanelStore";
 import { setOpenedInPanel } from "../../rubatoPanelViews";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import {
+  AGENT_STATE_VISUALS,
   AgentElapsed,
-  STATUS_VISUALS,
   StatusDot,
+  agentDisplayState,
   agentTaskLabel,
-  isLive,
+  awaitedWorkLabel,
   isSettled,
+  isUnderWay,
+  stateCountParts,
   teamMembers,
+  type AgentDisplayState,
 } from "../rubatoAgentStatus";
 import {
   formatSubagentModelLabel,
@@ -43,15 +48,15 @@ import {
 
 export const AGENT_ROW_LIMIT = 3;
 
-type Status = RubatoSubagent["status"];
-
 export type TeamMemberRole = "owner" | "verifier";
 
 export interface ThreadDetailsTeamMember {
   readonly id: string;
   readonly name: string;
   readonly role: TeamMemberRole;
-  readonly status: Status;
+  readonly state: AgentDisplayState;
+  /** The job a member on a job waits on, for its tooltip. */
+  readonly job: string | null;
 }
 
 export interface ThreadDetailsTeamRow {
@@ -74,7 +79,7 @@ function memberRole(member: RubatoSubagent): TeamMemberRole {
   return member.role === "verifier" ? "verifier" : "owner";
 }
 
-/** The rows both sections draw: running teams, then at most `limit` working direct agents. */
+/** The rows both sections draw: running teams, then at most `limit` direct agents under way. */
 export function summarizeThreadDetailsAgents(
   model: AgentPanelModel,
   limit: number = AGENT_ROW_LIMIT,
@@ -85,7 +90,8 @@ export function summarizeThreadDetailsAgents(
       id: member.id,
       name: member.memberName ?? agentTaskLabel(member),
       role: memberRole(member),
-      status: member.status,
+      state: agentDisplayState(member, true),
+      job: awaitedWorkLabel(member),
     }));
     const members = [
       ...all.filter((member) => member.role === "owner"),
@@ -97,7 +103,7 @@ export function summarizeThreadDetailsAgents(
       members,
     };
   });
-  const live = model.directAgents.filter((agent) => isLive(agent.status));
+  const live = model.directAgents.filter((agent) => isUnderWay(agent));
   return {
     teams,
     finishedTeamCount: model.workflows.length - running.length,
@@ -113,29 +119,23 @@ export function shortModelLabel(agent: RubatoSubagent): string | null {
   return label ? (label.split(" · ")[0] ?? label) : null;
 }
 
-/** "+2 more · 3 finished", nonzero parts only; null when there is nothing to count. */
+/** ["+2 more", "3 finished"], nonzero parts only; each is its own text so the Korean interface finds it. */
+export function overflowParts(more: number, finished: number): string[] {
+  return [more > 0 ? `+${more} more` : null, finished > 0 ? `${finished} finished` : null].filter(
+    (part): part is string => part !== null,
+  );
+}
+
+/** "+2 more · 3 finished"; null when there is nothing to count. */
 export function overflowLabel(more: number, finished: number): string | null {
-  const parts = [more > 0 ? `+${more} more` : null, finished > 0 ? `${finished} finished` : null];
-  const shown = parts.filter((part): part is string => part !== null);
-  return shown.length > 0 ? shown.join(" · ") : null;
+  const parts = overflowParts(more, finished);
+  return parts.length > 0 ? parts.join(" · ") : null;
 }
 
 /** Circle for an owner; a verifier's square turned on its corner reads as the same size. */
 const GLYPH_SHAPE_CLASS: Record<TeamMemberRole, string> = {
   owner: "size-2.5 rounded-full",
   verifier: "size-2 rotate-45 rounded-[2px]",
-};
-
-/** Same colors as the Agents surface's dots: filled and breathing works, a hollow ring rests. */
-const GLYPH_STATUS_CLASS: Record<Status, string> = {
-  pending: "bg-info ring-2 ring-info/25 animate-pulse",
-  running: "bg-info ring-2 ring-info/25 animate-pulse",
-  waiting: "bg-info ring-2 ring-info/25 animate-pulse",
-  idle: "bg-transparent ring-1 ring-inset ring-muted-foreground/70",
-  completed: "bg-success",
-  failed: "bg-destructive",
-  cancelled: "bg-muted-foreground/40",
-  interrupted: "bg-muted-foreground/40",
 };
 
 function useOpenAgents(environmentId: EnvironmentId, threadId: ThreadId) {
@@ -157,10 +157,15 @@ function OpenAgentsAction({ onOpen }: { onOpen: () => void }) {
   );
 }
 
-function OverflowRow({ label, onOpen }: { label: string; onOpen: () => void }) {
+function OverflowRow({ parts, onOpen }: { parts: ReadonlyArray<string>; onOpen: () => void }) {
   return (
     <ThreadDetailsControl part="meta" className="ms-7.5 self-start" onClick={onOpen}>
-      {label}
+      {parts.map((part, index) => (
+        <span key={part}>
+          {index > 0 ? <span aria-hidden> · </span> : null}
+          <span>{part}</span>
+        </span>
+      ))}
     </ThreadDetailsControl>
   );
 }
@@ -198,12 +203,12 @@ function MemberGlyph({ member }: { member: ThreadDetailsTeamMember }) {
         render={
           <span
             data-role={member.role}
-            data-status={member.status}
+            data-state={member.state}
             data-name={member.name}
             className={cn(
               "shrink-0",
               GLYPH_SHAPE_CLASS[member.role],
-              GLYPH_STATUS_CLASS[member.status],
+              AGENT_STATE_VISUALS[member.state].glyphClass,
             )}
           />
         }
@@ -211,7 +216,8 @@ function MemberGlyph({ member }: { member: ThreadDetailsTeamMember }) {
       <TooltipPopup side="top">
         <span className="flex items-center gap-1.5">
           <span className="font-medium">{member.name}</span>
-          <span className="text-muted-foreground">{STATUS_VISUALS[member.status].label}</span>
+          <span className="text-muted-foreground">{AGENT_STATE_VISUALS[member.state].label}</span>
+          {member.job ? <span className="max-w-48 truncate text-muted-foreground">{member.job}</span> : null}
         </span>
       </TooltipPopup>
     </Tooltip>
@@ -224,7 +230,7 @@ function AgentRow({ agent, onOpen }: { agent: RubatoSubagent; onOpen: () => void
   return (
     <ThreadDetailsControl multiline onClick={onOpen} aria-label={`${task}: open conversation`}>
       <span className="flex size-4 shrink-0 items-center justify-center self-start pt-1.5">
-        <StatusDot status={agent.status} />
+        <StatusDot state={agentDisplayState(agent)} />
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1 py-1">
         <span className={cn("block truncate", THREAD_DETAILS_PANEL_LABEL_CLASS)}>{task}</span>
@@ -253,8 +259,10 @@ export function RubatoThreadDetailsAgents({
   const openSurface = useCallback(() => openAgents(null), [openAgents]);
   const summary = summarizeThreadDetailsAgents(model);
   const workingCount = summary.agents.length + summary.moreAgentCount;
-  const teamOverflow = overflowLabel(0, summary.finishedTeamCount);
-  const agentOverflow = overflowLabel(summary.moreAgentCount, summary.finishedAgentCount);
+  const underWay = model.directAgents.filter((agent) => isUnderWay(agent));
+  const headerParts = stateCountParts(underWay.map((agent) => agentDisplayState(agent)));
+  const teamOverflow = overflowParts(0, summary.finishedTeamCount);
+  const agentOverflow = overflowParts(summary.moreAgentCount, summary.finishedAgentCount);
   return (
     <>
       {summary.teams.length > 0 ? (
@@ -268,7 +276,7 @@ export function RubatoThreadDetailsAgents({
             {summary.teams.map((team) => (
               <TeamRow key={team.id} team={team} onOpen={openSurface} />
             ))}
-            {teamOverflow ? <OverflowRow label={teamOverflow} onOpen={openSurface} /> : null}
+            {teamOverflow.length > 0 ? <OverflowRow parts={teamOverflow} onOpen={openSurface} /> : null}
           </div>
         </ThreadDetailsSection>
       ) : null}
@@ -281,7 +289,12 @@ export function RubatoThreadDetailsAgents({
             <>
               <span className="flex items-center gap-1.5 font-mono text-[.7rem] text-info-foreground">
                 <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-info" />
-                {workingCount} working
+                {headerParts.map((part, index) => (
+                  <span key={part}>
+                    {index > 0 ? <span aria-hidden> · </span> : null}
+                    <span>{part}</span>
+                  </span>
+                ))}
               </span>
               <OpenAgentsAction onOpen={openSurface} />
             </>
@@ -291,7 +304,7 @@ export function RubatoThreadDetailsAgents({
             {summary.agents.map((agent) => (
               <AgentRow key={agent.id} agent={agent} onOpen={() => openAgents(agent.id)} />
             ))}
-            {agentOverflow ? <OverflowRow label={agentOverflow} onOpen={openSurface} /> : null}
+            {agentOverflow.length > 0 ? <OverflowRow parts={agentOverflow} onOpen={openSurface} /> : null}
           </div>
         </ThreadDetailsSection>
       ) : null}

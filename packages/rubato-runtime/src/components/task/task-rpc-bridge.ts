@@ -10,6 +10,7 @@ import {
 import type { IdleInjectionCoordinator } from "../../extension/idle-injection-coordinator"
 import type { SenpiExtensionAPI } from "../../extension/types"
 import type { TaskEngine } from "./engine"
+import { watchMemberTurns, type MemberTurnWatch } from "./member-turn-watch"
 import {
   boundedTaskOutput,
   invalidArguments,
@@ -61,6 +62,8 @@ export function wireTaskRpcBridge(
   const subscriptions = new Map<string, () => void>()
   const liveProgress = new Map<string, TaskLiveProgressSnapshot>()
   const writing = new Map<string, unknown>()
+  // Keyed by task, held with the handle it watches: a revive or respawn brings a new handle.
+  const watches = new Map<string, { readonly watch: MemberTurnWatch; readonly handle: unknown }>()
   let activeSessionId: string | undefined
   let lastSnapshot: string | undefined
   let disposed = false
@@ -86,13 +89,15 @@ export function wireTaskRpcBridge(
     if (selection === undefined) return
     const data = {
       parent_session_id: sessionId,
-      tasks: selection.records.map((record) =>
-        taskSnapshot(
+      tasks: selection.records.map((record) => {
+        const watch = watches.get(record.task_id)?.watch
+        return taskSnapshot(
           record,
           isLive(record) ? engine.manager.runStatsSnapshot?.(record.task_id) : undefined,
-          liveProgress.get(record.task_id),
-        ),
-      ),
+          liveProgress.get(record.task_id) ?? watch?.progress(),
+          watch?.turn(),
+        )
+      }),
       ...(selection.truncatedTasks === 0 ? {} : { truncated_tasks: selection.truncatedTasks }),
     }
     const fingerprint = JSON.stringify(data)
@@ -108,7 +113,36 @@ export function wireTaskRpcBridge(
     writing.delete(taskId)
   }
 
+  // A resident child keeps a live handle between runs; its own wakes (team inbox, background work)
+  // run turns the record never hears about, so they are watched on the handle (member-turn-watch.ts).
+  const syncWatches = (records: readonly TaskRecord[]): void => {
+    const handles = new Map(
+      records.flatMap((record) => {
+        const handle = record.residency_state === "resident" ? engine.manager.getResidentHandle?.(record.task_id) : undefined
+        return handle === undefined ? [] : [[record.task_id, handle] as const]
+      }),
+    )
+    for (const [taskId, held] of watches) {
+      if (handles.get(taskId) === held.handle) continue
+      held.watch.dispose()
+      watches.delete(taskId)
+    }
+    for (const record of records) {
+      const handle = handles.get(record.task_id)
+      if (handle === undefined || watches.has(record.task_id)) continue
+      const readTurnFacts = handle.readTurnFacts
+      const watch = watchMemberTurns({
+        record,
+        subscribe: (listener) => engine.manager.subscribeChild(record.task_id, listener),
+        ...(readTurnFacts === undefined ? {} : { readTurnFacts: () => readTurnFacts.call(handle) }),
+        changed: () => emit(),
+      })
+      watches.set(record.task_id, { watch, handle })
+    }
+  }
+
   const syncSubscriptions = (records: readonly TaskRecord[]): void => {
+    syncWatches(records)
     const liveIds = new Set(
       records
         .filter((record) => isLive(record) && record.residency_state === "resident")
@@ -149,6 +183,8 @@ export function wireTaskRpcBridge(
 
   const detach = (): void => {
     for (const taskId of [...subscriptions.keys()]) removeSubscription(taskId)
+    for (const held of watches.values()) held.watch.dispose()
+    watches.clear()
     activeSessionId = undefined
     lastSnapshot = undefined
   }

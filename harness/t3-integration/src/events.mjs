@@ -172,6 +172,20 @@ const liveFacts = (item) => {
     turns: live.turns,
   };
 };
+// What a resident child did after its record's last run (task-rpc-bridge member-turn-watch.ts).
+const memberTurnOf = (item) => {
+  const turn = record(item.member_turn);
+  if (turn.state !== 'working' && turn.state !== 'resting') return undefined;
+  const awaiting = (Array.isArray(turn.awaiting) ? turn.awaiting : []).flatMap((raw) => {
+    const wait = record(raw);
+    const id = nonempty(wait.id);
+    return id ? [{ id, description: nonempty(wait.description) || id }] : [];
+  });
+  const from = nonempty(record(turn.assignment).from);
+  const summary = nonempty(record(turn.assignment).summary);
+  return { state: turn.state, finalResponse: nonempty(turn.final_response), awaiting,
+    ...(from ? { assignment: { from, ...(summary ? { summary } : {}) } } : {}) };
+};
 const taskUsageOf = (item, live) => {
   const stats = record(item.run_stats);
   const total = asInt(live.totalTokens) ?? asInt(stats.total_tokens);
@@ -737,15 +751,18 @@ export class EventProjection {
   taskEvent(type, payload, task) {
     return this.event(type, payload, (!this.turnId && task?.turnId) ? { turnId: task.turnId } : {});
   }
-  progressTask(task, { description, summary, lastToolName, status, error, typedUsage }) {
+  // `awaiting` is the member's own work that will wake it; `assignment` the latest team message it got.
+  progressTask(task, { description, summary, lastToolName, status, error, typedUsage, awaiting, assignment }) {
     const note = nonempty(summary);
     const doing = nonempty(description) || note || 'running';
-    task.lastProgress = { description, summary, lastToolName, status, error, typedUsage };
+    task.lastProgress = { description, summary, lastToolName, status, error, typedUsage, awaiting, assignment };
     this.taskEvent('task.progress', { taskId: task.taskId, description: doing,
       ...(note && note !== task.label ? { summary: note } : {}),
       ...(nonempty(lastToolName) ? { lastToolName } : {}),
       ...(status ? { status } : {}), ...(nonempty(error) ? { error } : {}),
-      ...(typedUsage ? { typedUsage } : {}), ...this.linkage(task) }, task);
+      ...(typedUsage ? { typedUsage } : {}),
+      ...(awaiting?.length ? { awaiting } : {}), ...(assignment ? { assignment } : {}),
+      ...this.linkage(task) }, task);
   }
   /**
    * A rewind drops the turns a task was started in, and T3 drops that task's rows with
@@ -971,22 +988,30 @@ export class EventProjection {
       if (nonempty(item.model) && !task.model) task.model = item.model;
       if (effortOf({}, item, item) && !task.effort) task.effort = effortOf({}, item, item);
       if (!task) continue;
-      const status = nonempty(item.status);
-      // AgentSend revives a finished agent under the same id. Ignoring every
-      // snapshot after the first completion left a working agent under Finished.
-      const woke = task.done && (status === 'running' || status === 'pending');
+      const rawStatus = nonempty(item.status);
+      // A resident child's record keeps its last tracked run; the turns its own inbox or
+      // background work starts are on `member_turn` (task-rpc-bridge member-turn-watch).
+      const turn = memberTurnOf(item);
+      const resident = rawStatus === 'completed' && item.residency_state === 'resident';
+      const status = resident && turn?.state === 'working' ? 'running' : rawStatus;
+      const awaiting = resident && turn?.state === 'resting' ? turn.awaiting : [];
+      const assignment = turn?.assignment;
+      const latestFinal = turn?.finalResponse || nonempty(item.final_response);
+      // AgentSend revives a finished agent under the same id, and so does its own background work.
+      // Ignoring every snapshot after the first completion left a working agent under Finished.
+      const woke = task.done && (status === 'running' || status === 'pending' || awaiting.length > 0);
       if (task.done && !woke) continue;
       if (woke) { task.done = false; task.terminal = undefined; }
       const typedUsage = taskUsageOf(item, live);
-      // A team member that ends its turn stays resident and wakes on mail or a
-      // notification. That is waiting, not done: settling it here froze a
-      // "Waiting on the build" member under a green check for good.
-      if (status === 'completed' && item.residency_state === 'resident' && task.parentAgentId) {
-        const said = live.lastAssistantLine || firstLine(item.final_response);
-        const key = `${said ?? ''}\n${JSON.stringify(typedUsage ?? null)}`;
+      // A team member that ends its turn stays resident and wakes on mail or a notification;
+      // any agent that ends it on work of its own wakes when that work ends. That is waiting,
+      // not done: settling it here froze a "Waiting on the build" member under a green check.
+      if (status === 'completed' && item.residency_state === 'resident' && (task.parentAgentId || awaiting.length > 0)) {
+        const said = turn ? firstLine(latestFinal) || live.lastAssistantLine : live.lastAssistantLine || firstLine(item.final_response);
+        const key = `${said ?? ''}\n${JSON.stringify(typedUsage ?? null)}\n${JSON.stringify(awaiting)}\n${JSON.stringify(assignment ?? null)}`;
         if (task.restingKey === key) continue;
         task.restingKey = key;
-        this.progressTask(task, { description: said || 'waiting', summary: said, status: 'idle', typedUsage });
+        this.progressTask(task, { description: said || 'waiting', summary: said, status: 'idle', typedUsage, awaiting, assignment });
         this.syncTeam(task);
         continue;
       }
@@ -994,13 +1019,13 @@ export class EventProjection {
       task.restingKey = undefined;
       if (FAILED_STATUS.has(status)) this.completeTask(task, 'failed', label, typedUsage);
       else if (STOPPED_STATUS.has(status)) this.completeTask(task, 'stopped', label);
-      else if (status === 'completed') this.completeTask(task, 'completed', nonempty(item.final_response) || label, typedUsage);
+      else if (status === 'completed') this.completeTask(task, 'completed', latestFinal || label, typedUsage);
       else {
         const doing = live.lastAssistantLine || live.currentTool;
         const mapped = LIVE_STATUS.has(status) ? status : 'running';
-        if (!doing && !typedUsage && mapped === 'running' && !wasResting && !woke) continue;
+        if (!doing && !typedUsage && !assignment && mapped === 'running' && !wasResting && !woke) continue;
         this.progressTask(task, { description: doing || 'running', summary: live.lastAssistantLine,
-          lastToolName: live.currentTool, status: mapped, typedUsage });
+          lastToolName: live.currentTool, status: mapped, typedUsage, assignment });
         this.syncTeam(task);
       }
     }

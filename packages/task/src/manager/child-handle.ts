@@ -1,6 +1,6 @@
 import type { ChildHandle as InProcessChildHandle, RunnerOutcome } from "../runners/in-process/child-handle"
 import { mapExitOutcomeToError } from "../runners/rpc/exit-mapping"
-import type { RpcChildHandle, RpcEntriesResult, RpcSpawnSpec, RpcSwitchSessionResult } from "../runners/types"
+import type { ChildTurnFacts, RpcChildHandle, RpcEntriesResult, RpcSpawnSpec, RpcSwitchSessionResult } from "../runners/types"
 
 export type { RunnerOutcome } from "../runners/in-process/child-handle"
 
@@ -36,6 +36,8 @@ export type ManagedChildHandle = {
   waitForOutcome(): Promise<RunnerOutcome>
   switchSession?(sessionPath: string): Promise<RpcSwitchSessionResult>
   getEntries?(since?: string): Promise<RpcEntriesResult>
+  // A resident child's own turns (team inbox wakes) and the waits that will wake it; rpc only.
+  readTurnFacts?(): Promise<ChildTurnFacts>
   // Partial assistant text captured so far (used by interrupt to preserve work-in-progress).
   lastAssistantText(): string | undefined
   terminate?(): Promise<void>
@@ -60,6 +62,7 @@ export function adaptInProcessHandle(handle: InProcessChildHandle): ManagedChild
 export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
   const switchSession = handle.switchSession
   const getEntries = handle.getEntries
+  const readTurnFacts = handle.readTurnFacts
   return {
     task_id: handle.task_id,
     get sessionId() {
@@ -76,6 +79,7 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
     waitForOutcome: () => handle.waitForOutcome === undefined ? rpcOutcome(handle) : handle.waitForOutcome(),
     ...(switchSession === undefined ? {} : { switchSession: (sessionPath: string) => switchSession(sessionPath) }),
     ...(getEntries === undefined ? {} : { getEntries: (since?: string) => getEntries(since) }),
+    ...(readTurnFacts === undefined ? {} : { readTurnFacts: () => readTurnFacts() }),
     lastAssistantText: () => handle.lastAssistantText(),
     terminate: () => handle.terminate(),
     dispose: () => handle.dispose(),

@@ -4,8 +4,10 @@ import { log } from "@rubato/utils"
 
 import type { RunnerOutcome } from "../in-process/child-handle"
 import type {
+  ChildAwaitedWake,
   ChildEventListener,
   ChildExitOutcome,
+  ChildTurnFacts,
   RpcChildHandle,
   RpcTerminalAssistantMessage,
   TerminateOptions,
@@ -16,6 +18,13 @@ import { classifyChildExit } from "./exit-mapping"
 import { isHarmlessRpcShutdownError, type RpcProtocolClient } from "./protocol-client"
 import { terminateRpcChild } from "./terminate"
 import { agentEndOutcome, exitTurnOutcome, extractAssistantText, promptFailureOutcome } from "./turn-outcome"
+
+/**
+ * The terminal extension's answer to "what will still wake this session"
+ * (harness/pi-runtime/features/terminal pending-work.ts terminalAwaitedWakes), asked through the
+ * engine's extension-rpc command the same way the app asks a lead.
+ */
+export const CHILD_AWAITED_WAKES_REQUEST = "rubato.terminal.awaited-wakes"
 
 export type CreateRpcChildHandleOptions = {
   readonly client: RpcProtocolClient
@@ -185,7 +194,38 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     },
     terminate: (terminateOptions?: TerminateOptions) => terminateRpcChild(child, terminateOptions),
     startInitialPrompt: (text) => runPrompt(text),
+    readTurnFacts: () => readTurnFacts(client),
   }
+}
+
+async function readTurnFacts(client: RpcProtocolClient): Promise<ChildTurnFacts> {
+  if (client.exited) return {}
+  const ask = (command: Parameters<RpcProtocolClient["send"]>[0]) => client.send(command).catch(() => undefined)
+  const [state, text, wakes] = await Promise.all([
+    ask({ type: "get_state" }),
+    ask({ type: "get_last_assistant_text" }),
+    // extension_request is the engine's own RPC command (pi-runtime extension-rpc patch).
+    ask({ type: "extension_request", name: CHILD_AWAITED_WAKES_REQUEST } as unknown as Parameters<RpcProtocolClient["send"]>[0]),
+  ])
+  const streaming = state?.success === true && state.command === "get_state" ? state.data.isStreaming : undefined
+  const lastText = text?.success === true && text.command === "get_last_assistant_text" ? text.data.text : undefined
+  const awaiting = wakes?.success === true ? awaitedWakesOf((wakes as { data?: unknown }).data) : undefined
+  return {
+    ...(typeof streaming === "boolean" ? { streaming } : {}),
+    ...(typeof lastText === "string" && lastText.trim().length > 0 ? { lastAssistantText: lastText } : {}),
+    ...(awaiting === undefined ? {} : { awaiting }),
+  }
+}
+
+function awaitedWakesOf(data: unknown): readonly ChildAwaitedWake[] | undefined {
+  const items = typeof data === "object" && data !== null ? (data as { items?: unknown }).items : undefined
+  if (!Array.isArray(items)) return undefined
+  return items.flatMap((item: unknown) => {
+    if (typeof item !== "object" || item === null) return []
+    const { id, description } = item as { id?: unknown; description?: unknown }
+    if (typeof id !== "string" || id.length === 0) return []
+    return [{ id, description: typeof description === "string" && description.length > 0 ? description : id }]
+  })
 }
 
 function flush(waiters: Array<() => void>): void {

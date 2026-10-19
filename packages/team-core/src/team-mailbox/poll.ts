@@ -42,6 +42,34 @@ ${message.body}
 </peer_message>`
 }
 
+function unescapeAttributeValue(value: string): string {
+  return value
+    .replaceAll("&apos;", "'")
+    .replaceAll("&gt;", ">")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&quot;", '"')
+    .replaceAll("&amp;", "&")
+}
+
+/**
+ * Who sent each envelope in an injection and the summary they gave it, in order; a host shows a
+ * member's latest assignment from this without parsing the body.
+ */
+export function readEnvelopeHeaders(content: string): Array<{ from: string; summary?: string }> {
+  const headers: Array<{ from: string; summary?: string }> = []
+  for (const match of content.matchAll(/<peer_message\s([^>]*)>/g)) {
+    const attributes = new Map<string, string>()
+    for (const attribute of (match[1] ?? "").matchAll(/([A-Za-z]+)="([^"]*)"/g)) {
+      attributes.set(attribute[1]!, unescapeAttributeValue(attribute[2]!))
+    }
+    const from = attributes.get("from")
+    if (from === undefined) continue
+    const summary = attributes.get("summary")?.trim()
+    headers.push(summary ? { from, summary } : { from })
+  }
+  return headers
+}
+
 export async function pollAndBuildInjection(
   sessionID: string,
   memberName: string,

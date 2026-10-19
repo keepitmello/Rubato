@@ -122,6 +122,7 @@ export {
   buildChildArgs,
   buildRpcSpawn,
   classifyChildExit,
+  CHILD_AWAITED_WAKES_REQUEST,
   createRpcChildHandle,
   detectBunBinary,
   mapExitOutcomeToError,
@@ -133,10 +134,12 @@ export {
   terminateRpcChild,
 } from "./runners"
 export type {
+  ChildAwaitedWake,
   ChildEventListener,
   ChildExitFacts,
   ChildExitInput,
   ChildExitOutcome,
+  ChildTurnFacts,
   CreateRpcChildHandleOptions,
   MalformedLineHandler,
   RpcChildHandle,
@@ -385,6 +388,7 @@ export type {
 export {
   buildPeerMessageEnvelope,
   buildTeamMessage,
+  TEAM_MESSAGE_CUSTOM_TYPE,
   createLeadPoller,
   createIncrementalSessionMarkerIndex,
   DEFAULT_STALE_RESERVATION_TTL_MS,
