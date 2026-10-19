@@ -31,6 +31,20 @@ export function judge(record, current, at) {
   const base = record.base;
   if ((current.status === 'waiting' && !base.waiting) || current.ui.some((id) => !base.ui.includes(id))) return 'needs-attention';
   if (current.status === 'error') return 'failed';
+  if (record.messageId && !BUSY.has(current.status) && current.final && current.final.entryId !== base.final) {
+    // A handoff by message: the turn that read it ends with a final written after it. Both turns
+    // may end between two looks, so the order in the transcript decides, not a count of finals.
+    if (current.handoff === 'before') {
+      if (current.final.stopReason === 'aborted') return 'stopped';
+      if (current.final.stopReason === 'error') return 'failed';
+      return 'completed';
+    }
+    // The newest final is the turn the message waited behind. Stopped or failed, the held message
+    // is then written without starting a turn, so no later end would come.
+    if (current.final.stopReason === 'aborted') return 'stopped';
+    if (current.final.stopReason === 'error') return 'failed';
+    return undefined;
+  }
   if (!BUSY.has(current.status) && current.final && current.final.entryId !== base.final) {
     // A stopped or failed turn is reported even when it is the turn the handoff waited behind: the
     // message held for it is then written without starting a turn, so no later end would come.
@@ -59,7 +73,7 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
 
   async function check(id, record) {
     let current;
-    try { current = await inspect(id); }
+    try { current = await inspect(id, record); }
     catch (error) {
       if (error?.code === 'unknown_session') { records.delete(id); return true; }
       throw error;
@@ -116,13 +130,15 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     /**
      * Follows `targetId` for the companion `companionId` until its current handoff ends. `base` is
      * how the target stood before the handoff (its last finished answer), and `busy` that it was
-     * mid-turn then: that turn's end is not the end of the work just handed over.
+     * mid-turn then: that turn's end is not the end of the work just handed over. `messageId` names
+     * the message that handed the work over; the inspector then says whether the newest final was
+     * written after it (`current.handoff === 'before'`).
      */
-    follow(targetId, companionId, { final = null, busy = false } = {}) {
+    follow(targetId, companionId, { final = null, busy = false, messageId } = {}) {
       if (closed) return;
       const previous = records.get(targetId);
       records.set(targetId, { companionId, base: { final: previous?.base.final ?? final, waiting: false, ui: previous?.base.ui ?? [] },
-        skip: busy ? 1 : 0, started: busy });
+        ...(messageId ? { messageId } : { skip: busy ? 1 : 0 }), started: busy });
       save();
       if (!polling) schedule();
     },

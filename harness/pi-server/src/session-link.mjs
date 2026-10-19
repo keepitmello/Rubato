@@ -414,6 +414,22 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     listen(id, listeners, asked);
     return { status, ui: [...new Set(asked.get(id) ?? [])], ...await progress(id, seen) };
   }
+  /**
+   * Whether the handoff message was written before the final `finalId` ('before'), after it or not
+   * at all ('after'). The transcript is append-only, so file order is write order.
+   */
+  async function handoffOrder(id, messageId, finalId, cache) {
+    const file = await locate(id);
+    const stats = await stat(file).catch(() => undefined);
+    const key = `${file}:${stats?.size}:${stats?.mtimeMs}:${messageId}:${finalId}`;
+    if (cache.get(id)?.key === key) return cache.get(id).order;
+    const text = await readFile(file, 'utf8').catch(() => '');
+    const message = text.indexOf(`"messageId":${JSON.stringify(messageId)}`);
+    const final = text.indexOf(`"id":${JSON.stringify(finalId)}`);
+    const order = message >= 0 && final >= 0 && message < final ? 'before' : 'after';
+    cache.set(id, { key, order });
+    return order;
+  }
   const cursorOf = (state) => encodeCursor({ v: 1, final: state.final?.entryId ?? null, leaf: state.leaf,
     waiting: state.status === 'waiting', ui: [...state.ui].sort() });
 
@@ -423,11 +439,13 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     const seen = new Map();
     const listeners = new Map();
     const asked = new Map();
+    const orders = new Map();
     return createFollower({ store, onError, pollMs: followPollMs,
-      inspect: async (id) => {
+      inspect: async (id, record) => {
         const described = await describe(id);
         const current = await snapshot(id, seen, listeners, asked);
-        return { ...current, title: described.title };
+        const handoff = record?.messageId && current.final ? await handoffOrder(id, record.messageId, current.final.entryId, orders) : undefined;
+        return { ...current, title: described.title, ...(handoff ? { handoff } : {}) };
       },
       notify: async (companionId, targetId, text) => {
         const about = await describe(targetId);
@@ -619,7 +637,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       let answer;
       try { answer = await deliver(to, envelope({ messageId: id, kind: 'message', from: origin, text })); }
       catch (error) { release(); throw error; }
-      if (fromCompanion(from)) need().follower.follow(to, from, { final: before.final?.entryId ?? null, busy });
+      if (fromCompanion(from)) need().follower.follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
       const target = await describe(to);
       // What the target's handler said, never more: an older runtime answers without these.
       return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status },

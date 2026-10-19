@@ -147,3 +147,43 @@ test('work handed to a busy lead whose turn is then stopped or fails is told at 
     assert.match(w.notices[0].text, new RegExp(`^${outcome.replace('.', '\\.')}`));
   }
 });
+
+test('work handed to a busy lead is told when the turn that read it ends, even when both turns end between two looks', async () => {
+  // The lead's transcript in write order; the inspector says where the handoff message stands
+  // relative to the newest final, as session-link does from the file.
+  const transcript = [];
+  let status = 'running';
+  const notices = [];
+  const f = createFollower({ pollMs: 3_600_000,
+    inspect: async (_id, record) => {
+      const final = transcript.findLast((entry) => entry.final);
+      const message = transcript.findIndex((entry) => entry.messageId === record.messageId);
+      return { status, ui: [], ...(final ? { final, handoff: message >= 0 && message < transcript.indexOf(final) ? 'before' : 'after' } : {}) };
+    },
+    notify: async (_companion, _target, text) => { notices.push(text); } });
+  transcript.push({ entryId: 'old', final: true, text: 'earlier' });
+  f.follow('lead', 'segno', { final: 'old', busy: true, messageId: 'm1' });
+  // The current turn ends; the held message is not written yet: not the handed work.
+  transcript.push({ entryId: 'f1', final: true, text: 'the turn it was in' });
+  status = 'idle';
+  await f.poll();
+  assert.deepEqual(notices, []);
+  // The message is written, its turn runs and ends — all before the next look.
+  transcript.push({ entryId: 'msg', messageId: 'm1' }, { entryId: 'f2', final: true, text: 'handed work done' });
+  await f.poll();
+  assert.deepEqual(notices, ['Finished its turn.\n\nIts answer:\nhanded work done']);
+  assert.deepEqual(f.following(), []);
+  await f.close();
+});
+
+test('a handed message written after a stopped turn, with no turn of its own, is told as stopped', async () => {
+  const notices = [];
+  const f = createFollower({ pollMs: 3_600_000,
+    inspect: async () => ({ status: 'idle', ui: [], final: { entryId: 'f1', text: 'half', stopReason: 'aborted' }, handoff: 'after' }),
+    notify: async (_companion, _target, text) => { notices.push(text); } });
+  f.follow('lead', 'segno', { final: 'old', busy: true, messageId: 'm1' });
+  await f.poll();
+  await f.close();
+  assert.equal(notices.length, 1);
+  assert.match(notices[0], /^Was stopped before finishing\./);
+});
