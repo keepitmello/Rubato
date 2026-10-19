@@ -323,6 +323,12 @@ test("the companion's prompt is its pieces, the person's versions first, and an 
   writePiece("soul", "", { defaultsDir: join(prompts, "companion"), env });
   assert.match(await compose(), /default soul/, "clearing a piece returns it to the default");
 
+  // A product edit to a default piece (an update brings new heartbeat or sleep lines) reaches the
+  // same conversation too, with no /reload and no new window.
+  writeFileSync(join(prompts, "companion", "companion.pi.md"), "default companion\n\n## Sleep\nnew lines\n");
+  assert.match(await compose(), /## Sleep\nnew lines/);
+  assert.equal(pinned(), 4);
+
   const user = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 };
   assert.deepEqual((await handlers.context({ type: "context", messages: [user] }, ctx))?.messages ?? [user], [user],
     "the companion's preamble is its own, so the leads' opening turn does not answer it");
