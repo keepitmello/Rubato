@@ -151,3 +151,61 @@ test('a rebuild through build-active-engine restarts the live profile engine; a 
   const stopped = await restartProfileEngine({ descriptorPath, waitMs: 8000 });
   assert.equal(stopped.restarted, true, JSON.stringify(stopped));
 });
+
+// An engine with running conversations closes its socket before it has closed them and let go of
+// the profile lock. The next engine cannot serve before that, so the restart waits for the old
+// process to end before it starts (or, under launchd, asks for) the next one.
+async function slowClosingEngine(t, closeMs) {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-slow-'));
+  const child = spawn(process.execPath, [fileURLToPath(new URL('./fixtures/slow-close/cli.mjs', import.meta.url)),
+    '--agent-dir', root, '--close-ms', String(closeMs)], { stdio: ['ignore', 'pipe', 'ignore'] });
+  t.after(async () => { try { child.kill('SIGKILL'); } catch {} await rm(root, { force: true, recursive: true }); });
+  await new Promise((resolve) => child.stdout.once('data', resolve));
+  // What a draining engine leaves for the next one (drain.mjs).
+  await writeFile(path.join(root, 'server', 'resume.json'), JSON.stringify({ version: 1, writtenAt: Date.now(), sessions: [] }));
+  return { child, descriptorPath: path.join(root, 'server', 'connection.json') };
+}
+// An ended child the test has not collected yet is a zombie: ended, though kill(pid, 0) still finds it.
+const processAlive = (pid) => {
+  const stat = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' }).stdout.trim();
+  return stat !== '' && !stat.startsWith('Z');
+};
+
+test('a restart waits for the old engine to end, not just its socket, before it starts the next one', async (t) => {
+  const { child, descriptorPath } = await slowClosingEngine(t, 1500);
+  const started = [];
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 500, closeWaitMs: 10_000, pollMs: 20,
+    startEngine: async () => { started.push(processAlive(child.pid)); } });
+  assert.equal(result.restarted, true, JSON.stringify(result));
+  assert.equal(result.pid, child.pid);
+  assert.equal(result.resumeError, undefined);
+  assert.deepEqual(started, [false], 'the next engine was started once, after the old one had ended');
+});
+
+test('an engine that never ends after closing its socket is a timeout, not a restart', async (t) => {
+  const { child, descriptorPath } = await slowClosingEngine(t, 60_000);
+  const started = [];
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 200, closeWaitMs: 500, pollMs: 20,
+    startEngine: async () => { started.push(true); } });
+  assert.deepEqual([result.restarted, result.reason, result.pid], [false, 'timeout', child.pid]);
+  assert.deepEqual(started, []);
+});
+
+test('`rubato restart` over an engine still closing its conversations: the restart reports success and the hub step finds the next engine', async (t) => {
+  // The two steps `rubato restart` runs (rubato-pi.sh): the restart helper, then the hub helper,
+  // whose first move is ensureProfileEngine. A temp HOME with no engine build: nothing reaches launchd.
+  const { child, descriptorPath } = await slowClosingEngine(t, 2500);
+  const root = path.dirname(path.dirname(descriptorPath));
+  const env = { ...process.env, HOME: root, RUBATO_STOCK_ENGINE_DIR: path.join(root, 'no-engine') };
+  const { serverId } = JSON.parse(await (await import('node:fs/promises')).readFile(descriptorPath, 'utf8'));
+  const helper = fileURLToPath(new URL('../../scripts/restart-profile-engine.mjs', import.meta.url));
+  const run = spawnSync(process.execPath, [helper, descriptorPath], { encoding: 'utf8', env });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stdout.trim(), 'restarted');
+  assert.doesNotMatch(run.stderr, /새 엔진을 바로 띄우지 못했습니다|did not start/);
+  assert.equal(processAlive(child.pid), false);
+  const next = await ensureProfileEngine({ descriptorPath, env, runtimeRoot: null, timeoutMs: 20_000 });
+  t.after(async () => { await restartProfileEngine({ descriptorPath, waitMs: 4000 }).catch(() => {}); });
+  assert.equal(await socketAlive(next.socketPath), true);
+  assert.equal(next.serverId, serverId, 'the next engine keeps the profile identity');
+});

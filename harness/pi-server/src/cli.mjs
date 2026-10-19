@@ -80,6 +80,10 @@ try {
     }
   }
 } catch (error) {
-  console.error(`rubato-pi-server: ${error.message}`);
+  // A start that finds the profile already held (another window or tool asked at the same time, or
+  // an engine is still closing) is not a failure of that engine; say so instead of the lock's words.
+  console.error(error?.code === 'ELOCKED'
+    ? `${new Date().toISOString()} rubato-pi-server: another engine holds this profile; this start is not needed`
+    : `rubato-pi-server: ${error.message}`);
   process.exitCode = 1;
 }

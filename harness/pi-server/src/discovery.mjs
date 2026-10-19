@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir, open, readFile, realpath } from 'node:fs/promises';
+import { mkdir, open, readFile, realpath, stat } from 'node:fs/promises';
 import { connect } from 'node:net';
 import path from 'node:path';
 import { readDescriptor } from './descriptor.mjs';
@@ -62,6 +62,9 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
       await mkdir(path.join(agentDir, 'logs'), { recursive: true, mode: 0o700 });
       const logFile = path.join(agentDir, 'logs', 'pi-server.log');
       const deadline = Date.now() + timeoutMs;
+      // A failure quotes only what this start wrote, not older lines from earlier starts.
+      const logStart = await stat(logFile).then((info) => info.size, () => 0);
+      const newLog = async () => { try { return (await readFile(logFile)).subarray(logStart).toString('utf8').slice(-800).trim(); } catch { return ''; } };
       if (launchd.manages({ agentDir, env }) && await launchd.kickstart({ env })) {
         // launchd starts it, and starts it again if it ends. An engine it starts while another
         // still holds the profile waits for the lock, so this waits for the descriptor only.
@@ -72,7 +75,7 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
           if (ready) return ready;
           if (Date.now() - asked > 5000) { asked = Date.now(); await launchd.kickstart({ env }); }
         }
-        let tail = ''; try { tail = (await readFile(logFile, 'utf8')).slice(-800).trim(); } catch {}
+        const tail = await newLog();
         throw new Error(`Rubato profile engine did not start under launchd${tail ? `\n${tail}` : ''}`);
       }
       let child;
@@ -108,7 +111,7 @@ export async function ensureProfileEngine({ descriptorPath, nodeBin = process.ex
           if (exited()) break;
         }
       }
-      let tail = ''; try { tail = (await readFile(logFile, 'utf8')).slice(-800).trim(); } catch {}
+      const tail = await newLog();
       throw new Error(`Rubato profile engine did not start${tail ? `\n${tail}` : ''}`);
     })().finally(() => openings.delete(descriptorPath));
     openings.set(descriptorPath, operation);

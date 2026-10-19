@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import { realpathSync } from 'node:fs';
 import { access } from 'node:fs/promises';
 import path from 'node:path';
@@ -12,6 +13,17 @@ import { engineJobPid, engineLaunchdApplies, ensureEngineLaunchAgent, reloadEngi
 import { markStage, nowRequested, stateDirectory } from '../t3-integration/gui-update.mjs';
 // Process lookup lives apart so a test can reach it without the pi-server client above.
 import { ancestorPids, listenerPid } from './profile-engine-pid.mjs';
+
+/** How long an engine whose socket already closed may take to close its conversations and exit. */
+export const CLOSE_WAIT_MS = 300_000;
+
+/** Whether `pid` still runs. Another user's process (EPERM) counts as running; an exited one its
+ * parent has not collected yet (a zombie) does not. */
+function processAlive(pid) {
+  try { process.kill(pid, 0); } catch (error) { return error?.code === 'EPERM'; }
+  const state = spawnSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8' });
+  return state.status !== 0 ? false : !state.stdout.trim().startsWith('Z');
+}
 
 async function runningTurns(descriptor) {
   const client = await new SessionClient({ ...descriptor, timeoutMs: 2500 }).connect();
@@ -28,7 +40,7 @@ async function runningTurns(descriptor) {
 // With launchd keeping the engine (pi-server launchd.mjs) the stop is the same SIGTERM, and
 // launchd starts the next engine. `launchdJob` is what registering the job reported: a job whose
 // definition changed is reloaded instead (`reload`), which stops the engine it runs the same way.
-export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIMEOUT_MS + 30_000,
+export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIMEOUT_MS + 30_000, closeWaitMs = CLOSE_WAIT_MS,
   startEngine = (path) => ensureProfileEngine({ descriptorPath: path }),
   onDraining = async () => {}, cutShort = async () => false, pollMs = 50,
   launchdJob, reload = () => reloadEngineJob(), jobPid = () => engineJobPid() } = {}) {
@@ -62,6 +74,19 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
   let cut = false;
   while (Date.now() < deadline) {
     if (!await socketAlive(descriptor.socketPath)) {
+      // The socket closes before the engine has closed its conversations and let go of the profile
+      // lock; with running conversations that takes a while. The next engine (launchd's, or the one
+      // started below) cannot serve before then, so wait for the old process to end first.
+      // Closing is under way once the socket is gone, so it gets its own allowance past the drain's.
+      const closedBy = Math.max(deadline, Date.now() + closeWaitMs);
+      while (processAlive(pid) && Date.now() < closedBy) {
+        if (!cut && await cutShort().catch(() => false)) {
+          cut = true;
+          try { process.kill(pid, 'SIGTERM'); } catch { /* gone meanwhile */ }
+        }
+        await new Promise((resolve) => setTimeout(resolve, Math.max(pollMs, 250)));
+      }
+      if (processAlive(pid)) return { restarted: false, reason: 'timeout', pid, running, inspectError };
       // Work the old engine handed over is taken up by the next one (drain.mjs). Start it now
       // rather than when some window reconnects: a terminal-only machine has none that will.
       const handedOver = await access(resumeFilePath(path.dirname(descriptorPath))).then(() => true, () => false);

@@ -160,13 +160,13 @@ test('an engine the app started before the job existed keeps the profile; the jo
   // The job's engine waits for the lock instead of exiting (no restart loop).
   const standby = await until(() => engineJobPid({ env: box.env }), 'job started');
   await delay(1500);
-  assert.equal(alive(standby), true);
+  assert.equal(alive(standby), true, 'the job\'s engine is still waiting');
   assert.equal(box.starts().length, 1, 'launchd did not have to start it again');
   assert.match(readFileSync(path.join(box.agentDir, 'logs', 'pi-server.log'), 'utf8'), /another engine holds this profile; waiting to take over/);
   assert.equal((await readDescriptor(box.descriptorPath)).serverId, before.serverId);
   // The update's restart ends the app's engine; the job's engine takes the profile.
-  const result = await restartProfileEngine({ descriptorPath: box.descriptorPath, waitMs: 30_000 });
-  assert.equal(result.restarted, true);
+  const result = await restartProfileEngine({ descriptorPath: box.descriptorPath, waitMs: 60_000 });
+  assert.equal(result.restarted, true, JSON.stringify(result));
   assert.equal(result.pid, appEngine);
   const after = await ensureProfileEngine({ descriptorPath: box.descriptorPath, env: box.env, runtimeRoot: null, timeoutMs: 40_000 });
   assert.equal(after.serverId, before.serverId);
