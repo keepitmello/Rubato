@@ -14,9 +14,10 @@ export interface RubatoSessionMessageLink {
   readonly title: string;
   /**
    * `create`: the sender started this conversation with it. `notice`: Rubato's own word about
-   * the sender (a lead Segno follows ended, asked the person, or a heartbeat); one quiet line.
+   * the sender (a lead Segno follows ended or asked the person); one quiet line. `wake`:
+   * Rubato's own clock (a heartbeat, the daily report); it has no row, only its turn shows.
    */
-  readonly kind: "message" | "create" | "notice";
+  readonly kind: "message" | "create" | "notice" | "wake";
   readonly fromSessionId: string | null;
 }
 
@@ -45,7 +46,10 @@ export function rubatoSessionMessageOf(message: {
           : "";
     return {
       title,
-      kind: payload?.kind === "create" || payload?.kind === "notice" ? payload.kind : "message",
+      kind:
+        payload?.kind === "create" || payload?.kind === "notice" || payload?.kind === "wake"
+          ? payload.kind
+          : "message",
       fromSessionId: typeof from?.sessionId === "string" ? from.sessionId : null,
     };
   }
@@ -89,6 +93,9 @@ export function RubatoSessionMessageBubble(props: {
   /** The message text; a notice reads it for the one line it shows. */
   text?: string;
 }) {
+  // Rubato's clock opens its turn and shows nothing; its timeline row takes no room
+  // (rubatoPolish.css), so only the turn it starts appears.
+  if (props.link.kind === "wake") return <span data-rubato-wake="" hidden />;
   const heading = rubatoSessionMessageHeading(props.link);
   if (props.link.kind === "notice") {
     // A notice is one quiet line: who, and what happened. The conversation it woke answers next.

@@ -3,6 +3,9 @@
 // sessionMessageFrom; the server appends it in RubatoPiInventory.ts). The
 // timeline draws that message as its own bubble, headed by the sending
 // conversation's title, instead of as the person's own bubble.
+// Rubato's clock (a heartbeat, the daily report) arrives the same way, so it opens its
+// turn, but its row draws nothing and, marked data-rubato-wake-row, takes no room
+// (rubatoPolish.css): only the turn shows.
 export const sessionMessageOverlays = [
   'apps/web/src/components/chat/RubatoSessionMessage.tsx',
   'apps/web/src/components/chat/RubatoSessionMessage.test.tsx',
@@ -10,6 +13,12 @@ export const sessionMessageOverlays = [
 
 export const sessionMessageEdits = {
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    // Rubato's clock opens its turn but shows nothing; the marker lets its row give back the room
+    // a message row keeps (rubatoPolish.css).
+    ['      data-timeline-row-kind={row.kind}\n',
+      '      data-rubato-wake-row={\n'
+      + '        row.kind === "message" && rubatoSessionMessageOf(row.message)?.kind === "wake" ? "" : undefined\n'
+      + '      }\n'],
     ['import { MessageCopyButton } from "./MessageCopyButton";\n',
       'import { RubatoSessionMessageBubble, rubatoSessionMessageOf } from "./RubatoSessionMessage";\n'],
     [

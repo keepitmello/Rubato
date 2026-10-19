@@ -355,6 +355,21 @@ test('the read-only transcript keeps received session messages in the live shape
   assert.equal(env.host.metrics.runtimeStarts, 0, 'reading history loads nothing');
 });
 
+test("the read-only transcript carries Rubato's clock (a hidden wake) so the app can open its turn", async (t) => {
+  const env = await setup(t);
+  const wake = { type: 'custom_message', customType: 'rubato-session-message', content: '<rubato_wake what="heartbeat">…</rubato_wake>',
+    display: false, details: { v: 1, messageId: 'w1', kind: 'wake', what: 'heartbeat', from: { sessionId: 'rubato', title: 'Rubato', cwd: '' },
+      text: 'Heartbeat.' } };
+  const session = await writeSession(env.sessionsDir, env.root, [user('hi'), assistant('hello'), wake, assistant('nothing new'),
+    sessionMessage('m2', 'hidden', false)]);
+  await env.listed(session.id);
+  const client = await env.client();
+  const { messages } = await client.transcript(session.id);
+  assert.deepEqual(messages.map((message) => message.role), ['user', 'assistant', 'custom', 'assistant']);
+  assert.equal(messages[2].display, false);
+  assert.equal(messages[2].details.kind, 'wake');
+});
+
 test('wait without a cursor wakes at once on a target that already finished', async (t) => {
   const env = await setup(t);
   const stored = await writeSession(env.sessionsDir, env.root, [user('question'), assistant('old answer')]);

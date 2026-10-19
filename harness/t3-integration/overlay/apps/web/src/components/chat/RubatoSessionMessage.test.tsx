@@ -9,7 +9,7 @@ import {
 } from "./RubatoSessionMessage";
 
 /** The context the bridge attaches (harness/t3-integration/src/events.mjs sessionMessageFrom). */
-const sessionContext = (kind: "message" | "create" | "notice", title: string) => ({
+const sessionContext = (kind: "message" | "create" | "notice" | "wake", title: string) => ({
   version: 1,
   records: [
     {
@@ -81,5 +81,18 @@ describe("a notice from Rubato about a followed conversation", () => {
     expect(rubatoNoticeLabel("Is waiting for the user to answer it (select).")).toBe("Asked you");
     expect(rubatoNoticeLabel("Stopped mid-turn without finishing: its runtime went away.")).toBe("Lost its runtime");
     expect(rubatoNoticeLabel("Something new happened. More text.")).toBe("Something new happened.");
+  });
+});
+
+describe("Rubato's clock (a heartbeat, the daily report)", () => {
+  it("is a session message of its own kind that draws nothing but a marker for its row", () => {
+    const link = rubatoSessionMessageOf({ role: "user", context: sessionContext("wake", "Rubato") });
+    expect(link?.kind).toBe("wake");
+    const html = renderToStaticMarkup(
+      <RubatoSessionMessageBubble link={link!} text="Heartbeat.">
+        <p>Heartbeat.</p>
+      </RubatoSessionMessageBubble>,
+    );
+    expect(html).toBe('<span data-rubato-wake="" hidden=""></span>');
   });
 });

@@ -1588,6 +1588,27 @@ test('a live session message goes to the thread once and emits no runtime event;
   assert.deepEqual(seeded, []);
 });
 
+// Rubato's clock (a heartbeat) is hidden in Pi but opens its turn in the thread, so T3 does not
+// label the turn as background activity; the web timeline draws no row for it.
+test("Rubato's clock goes to the thread as a session message of kind wake, live and from history", async () => {
+  const clock = sessionMessage({ display:false, content:'<rubato_wake what="heartbeat">…</rubato_wake>',
+    details:{ v:1, messageId:'wake-1', kind:'wake', what:'heartbeat', from:{ sessionId:'rubato', title:'Rubato', cwd:'' },
+      text:'Heartbeat. Look over the conversations you follow.' } });
+  const delivered = [];
+  const p = new EventProjection({ threadId:'thread', sessionId:'session', instanceId:'instance',
+    emit:() => {}, sessionMessage:(item) => delivered.push(item) });
+  p.begin();
+  for (const type of ['message_start', 'message_end']) p.project({ type, message:clock });
+  assert.equal(delivered.length, 1);
+  assert.equal(linkOf(delivered[0]).messageKind, 'wake');
+  const bridge = new RubatoPiBridge({ descriptorPath:'/nonexistent/descriptor.json', instanceId:'rubato-test' });
+  try {
+    const items = bridge.importedMessages('session', [clock,
+      { role:'custom', customType:'rubato-session-message', display:false, content:'hidden', details:sessionMessage().details, timestamp:6 }], 'thread');
+    assert.deepEqual(items.map((item) => linkOf(item).messageKind), ['wake']);
+  } finally { await bridge.close(); }
+});
+
 test('an attach snapshot taken while the session message opened the turn writes it into the thread', async () => {
   const appended = [];
   const { bridge, context } = reattachContext({

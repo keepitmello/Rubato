@@ -12,10 +12,13 @@ const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs,
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
 /**
  * A message another conversation sent (session link) as Pi's live `get_messages` carries
- * it: the custom message shape plus `entryId`. Every other custom message stays out.
+ * it: the custom message shape plus `entryId`. Rubato's clock (`wake`) comes too, hidden as
+ * in Pi: it opens its turn in the app's thread and draws nothing. Every other custom message
+ * stays out.
  */
-const receivedRow = (entry) => entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE && entry.display !== false
-  ? { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content, display: true,
+const receivedRow = (entry) => entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE
+  && (entry.display !== false || entry.details?.kind === 'wake')
+  ? { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content, display: entry.display !== false,
     details: entry.details, timestamp: new Date(entry.timestamp).getTime() }
   : undefined;
 // One cap across all cwd folders, rather than Pi's per-folder cap multiplied

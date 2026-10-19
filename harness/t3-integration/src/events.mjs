@@ -15,13 +15,15 @@ export const importedId = (instanceId, sessionId, message) => `import:${instance
 // role for it, so it travels as a user message with one context record of an
 // open kind; the web timeline draws that record as its own bubble, and T3's
 // contract keeps unknown record kinds intact. Every other custom message
-// (wakes, notes) stays out of the thread.
+// (Pi's wakes, notes) stays out of the thread. Rubato's clock (`wake`, not shown in
+// Pi) still goes to the thread: it opens its turn there, so T3 does not label the
+// turn "background activity", and the web timeline draws no row for it.
 export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const SESSION_MESSAGE_CONTEXT_KIND = 'rubato-session';
 export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
 const CONTEXT_LABEL_MAX = 200;
 export const isSessionMessage = (message) => message?.role === 'custom'
-  && message.customType === SESSION_MESSAGE_TYPE && message.display !== false;
+  && message.customType === SESSION_MESSAGE_TYPE && (message.display !== false || message.details?.kind === 'wake');
 const isoFrom = (timestamp) => {
   const date = new Date(typeof timestamp === 'number' || typeof timestamp === 'string' ? timestamp : Number.NaN);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
@@ -51,7 +53,8 @@ export function sessionMessageFrom(message, threadId) {
     context: { version: 1, records: [{
       version: 1, contextId: SESSION_MESSAGE_CONTEXT_KIND, kind: SESSION_MESSAGE_CONTEXT_KIND, label: title,
       // `notice`: Rubato's own word, such as a followed lead ending; the app draws it as one quiet line.
-      payload: { v: 1, kind: details.kind === 'create' || details.kind === 'notice' ? details.kind : 'message', messageId,
+      // `wake`: Rubato's clock; the app draws nothing for it.
+      payload: { v: 1, kind: ['create', 'notice', 'wake'].includes(details.kind) ? details.kind : 'message', messageId,
         from: {
           ...(typeof from.sessionId === 'string' ? { sessionId: from.sessionId } : {}),
           title,
