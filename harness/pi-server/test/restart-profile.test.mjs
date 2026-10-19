@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { restartProfileEngine } from '../../scripts/restart-profile-engine.mjs';
+import { restartProfileEngine, restartSucceeded, reportRestart } from '../../scripts/restart-profile-engine.mjs';
 import { ensureProfileEngine, socketAlive } from '../src/discovery.mjs';
 import { SessionClient } from '../src/client.mjs';
 
@@ -189,6 +189,29 @@ test('an engine that never ends after closing its socket is a timeout, not a res
     startEngine: async () => { started.push(true); } });
   assert.deepEqual([result.restarted, result.reason, result.pid], [false, 'timeout', child.pid]);
   assert.deepEqual(started, []);
+});
+
+test('a retry while the old engine is already closing is not reported as dead', async (t) => {
+  const { child, descriptorPath } = await slowClosingEngine(t, 1000);
+  child.kill('SIGTERM');
+  const socket = path.join(path.dirname(descriptorPath), 'pi.sock');
+  for (let i = 0; i < 100 && await socketAlive(socket); i++) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(await socketAlive(socket), false);
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 500, closeWaitMs: 5000,
+    startEngine: async () => { assert.equal(processAlive(child.pid), false); } });
+  assert.equal(result.restarted, true, JSON.stringify(result));
+  assert.equal(result.pid, child.pid);
+});
+
+test('failure to start the replacement engine is a failed restart, not a success with a warning', async (t) => {
+  const { descriptorPath } = await slowClosingEngine(t, 100);
+  const result = await restartProfileEngine({ descriptorPath, waitMs: 500, closeWaitMs: 5000,
+    startEngine: async () => { throw new Error('replacement unavailable'); } });
+  assert.equal(result.restarted, false);
+  assert.equal(restartSucceeded(result), false);
+  let note = '';
+  assert.equal(reportRestart(result, { write(text) { note += text; } }), 'start-failed');
+  assert.match(note, /재시작이 완료되지 않았습니다.*replacement unavailable/);
 });
 
 test('`rubato restart` over an engine still closing its conversations: the restart reports success and the hub step finds the next engine', async (t) => {

@@ -80,6 +80,14 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<voi
 }
 
 describe("RpcProtocolClient", () => {
+  test("an unresponsive child cannot hold restoration indefinitely", async () => {
+    const child = track(spawn(process.execPath, ["-e", "process.stdin.resume()"], { stdio: ["pipe", "pipe", "pipe"] }))
+    const client = new RpcProtocolClient({ child })
+    await expect(client.switchSession("/fixture/session.jsonl", 20)).rejects.toThrow("RPC switch_session timed out")
+    await terminateRpcChild(child, { sigkillDelayMs: 100 })
+    expect(client.exited).toBe(true)
+  })
+
   test(" w2reattach #given session RPC commands #when switching and reading entries #then typed command data is preserved", async () => {
     // given
     const client = new RpcProtocolClient({ child: track(spawnSessionCommandChild()) })

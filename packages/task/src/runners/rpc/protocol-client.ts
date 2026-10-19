@@ -84,10 +84,23 @@ export class RpcProtocolClient {
     })
   }
 
-  async switchSession(sessionPath: string): Promise<RpcSwitchSessionResult> {
-    const response = await this.send({ type: "switch_session", sessionPath })
-    if (response.success && response.command === "switch_session") return response.data
-    throw commandError(response, "switch_session")
+  async switchSession(sessionPath: string, timeoutMs = 120_000): Promise<RpcSwitchSessionResult> {
+    // The runner awaits this before returning a restored child. An unresponsive child
+    // must fail startup and reach discardUnstartedRpcHandle, not hold the parent's
+    // session_start (and therefore the next profile restart) indefinitely.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      const response = await Promise.race([
+        this.send({ type: "switch_session", sessionPath }),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => reject(new Error("RPC switch_session timed out; child restoration did not complete")), timeoutMs)
+        }),
+      ])
+      if (response.success && response.command === "switch_session") return response.data
+      throw commandError(response, "switch_session")
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async getEntries(since?: string): Promise<RpcEntriesResult> {

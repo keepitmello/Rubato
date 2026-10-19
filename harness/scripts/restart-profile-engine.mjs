@@ -52,12 +52,16 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
     if (error.code === 'ENOENT' || error instanceof SyntaxError) return { restarted: false, reason: 'missing' };
     throw error;
   }
-  if (!await socketAlive(descriptor.socketPath)) return { restarted: false, reason: 'dead' };
+  const listening = await socketAlive(descriptor.socketPath);
+  const pid = listenerPid(path.dirname(path.dirname(descriptor.socketPath)));
+  // A closed socket is also the middle of shutdown, not proof that its owner exited.
+  if (!listening && !pid) return { restarted: false, reason: 'dead' };
   let running = [];
   let inspectError = false;
-  try { running = await runningTurns(descriptor); }
-  catch { inspectError = true; }
-  const pid = listenerPid(path.dirname(path.dirname(descriptor.socketPath)));
+  if (listening) {
+    try { running = await runningTurns(descriptor); }
+    catch { inspectError = true; }
+  }
   if (!pid) return { restarted: false, reason: 'no-pid', running, inspectError };
   let reloading;
   if (launchdJob?.stale) {
@@ -92,8 +96,9 @@ export async function restartProfileEngine({ descriptorPath, waitMs = DRAIN_TIME
       const handedOver = await access(resumeFilePath(path.dirname(descriptorPath))).then(() => true, () => false);
       const reloadError = await reloading;
       let resumeError;
-      if (handedOver) await startEngine(descriptorPath).catch((error) => { resumeError = error; });
-      return { restarted: true, pid, running, inspectError, handedOver, cut, ...(resumeError ? { resumeError } : {}),
+      if (handedOver || launchdJob) await startEngine(descriptorPath).catch((error) => { resumeError = error; });
+      return { restarted: !resumeError && !reloadError, ...(resumeError || reloadError ? { reason: 'start-failed' } : {}),
+        pid, running, inspectError, handedOver, cut, ...(resumeError ? { resumeError } : {}), ...(reloadError ? { reloadError } : {}),
         ...(launchdJob?.stale ? { reloaded: !reloadError } : {}) };
     }
     if (!draining) { draining = true; await onDraining().catch(() => {}); }
@@ -123,8 +128,11 @@ export async function profileEngineHostsCaller({ descriptorPath, ancestors = anc
 /** Names the conversations the restart carries over on `stderr` and returns the one-word stdout token
  * (`restarted`, `missing`, `dead`, `no-pid`, `timeout <pid>`) the shell callers key on. */
 export function reportRestart(result, stderr = process.stderr) {
+  if (result.reloadError) {
+    stderr.write(`엔진 launchd 설정을 다시 불러오지 못했습니다: ${result.reloadError.message ?? result.reloadError}\n`);
+  }
   if (result.resumeError) {
-    stderr.write(`새 엔진을 바로 띄우지 못했습니다. 다음에 Rubato 를 열면 이어 갑니다: ${result.resumeError.message ?? result.resumeError}\n`);
+    stderr.write(`새 엔진을 시작하지 못해 재시작이 완료되지 않았습니다: ${result.resumeError.message ?? result.resumeError}\n`);
   }
   if (result.inspectError) {
     stderr.write('진행 중인 대화를 확인하지 못했습니다. 프로필 엔진을 재시작합니다.\n');
@@ -136,7 +144,7 @@ export function reportRestart(result, stderr = process.stderr) {
     ? `timeout ${result.pid}` : (result.reason ?? 'unknown');
 }
 
-export const restartSucceeded = (result) => result.restarted || result.reason === 'missing' || result.reason === 'dead';
+export const restartSucceeded = (result) => !result.resumeError && (result.restarted || result.reason === 'missing' || result.reason === 'dead');
 
 function isCli() {
   if (!process.argv[1]) return false;

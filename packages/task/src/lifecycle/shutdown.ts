@@ -117,8 +117,11 @@ async function disposeOwnedOnQuit(context: LifecycleContext, parentSessionId: st
 // residency. The pre-dispose steps are best-effort so dispose ALWAYS runs.
 async function suspendHandle(context: LifecycleContext, handle: ResidentHandle, reason: string): Promise<void> {
   context.registry.forget(handle.task_id)
-  await bestEffort(handle.task_id, "abort", () => handle.abort())
+  // RPC abort waits for an acknowledgement without a deadline. A child that no longer
+  // answers would block the whole profile restart before termination can even begin.
+  // Use the same bounded SIGTERM/SIGKILL path as terminal teardown (destroy.ts).
   if (handle.kind === "rpc") await bestEffort(handle.task_id, "terminate", () => handle.terminate())
+  else await bestEffort(handle.task_id, "abort", () => handle.abort())
   await handle.dispose()
   context.store.transition(handle.task_id, {
     type: handle.kind === "in-process" ? "persist_only" : "detach_rpc",

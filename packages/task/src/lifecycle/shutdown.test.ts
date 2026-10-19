@@ -90,11 +90,25 @@ describe("suspendOnSessionShutdown", () => {
     expect(record?.residency_state).toBe("rpc_detached")
     expect(record?.pid).toBe(55)
     expect(record?.host_pid).toBeUndefined()
-    expect(order.indexOf("abort:st_000000f1")).toBeLessThan(order.indexOf("terminate:st_000000f1"))
+    expect(order).not.toContain("abort:st_000000f1")
     expect(order.indexOf("terminate:st_000000f1")).toBeLessThan(order.indexOf("dispose:st_000000f1"))
     expect(readEvents(store, "st_000000f1").at(-1)).toBe("suspended")
     expect(summary).toEqual({ suspended_in_process: 0, suspended_rpc: 1, suspended_pending: 0, disposed: 0, failures: [] })
   })
+
+  test("an unresponsive RPC abort cannot block profile shutdown", async () => {
+    const store = tempStore()
+    seedRecord(store, { task_id: "st_000000fa", status: "running", execution_mode: "process", host_pid: HOST, pid: 55 })
+    const order: CallLog = []
+    const registry = new OrderRegistry(order)
+    const handle = fakeHandle("st_000000fa", "rpc", order, { pid: 55 })
+    registry.add({ ...handle, abort: () => new Promise<void>(() => {}) })
+    const lifecycle = createTaskLifecycle({ store, registry, config: settings() })
+    const summary = await lifecycle.suspendOnSessionShutdown({ parentSessionId: "parent-1", reason: "unload" })
+    expect(order).toEqual(["forget:st_000000fa", "terminate:st_000000fa", "dispose:st_000000fa"])
+    expect(summary.failures).toEqual([])
+    expect(store.load("st_000000fa")?.residency_state).toBe("rpc_detached")
+  }, 1000)
 
   test("#given a waiting rpc member #when the hosting server unloads the idle lead #then it suspends instead of dying", async () => {
     // given
