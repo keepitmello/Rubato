@@ -10,6 +10,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
 import { useThreadShells } from "../../state/entities";
+import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";
 import { useUiStateStore } from "../../uiStateStore";
 import { useRubatoProjectOrder } from "./rubatoProjectOrder";
 import {
@@ -26,14 +27,17 @@ export function useRubatoProjectList() {
   // project to pick, as in the headline's picker; its threads stay in the list
   // under "All projects". The server marks it, and its path is the fallback.
   const { scratchWorkspaceRootFor } = useScratchProject();
+  // Segno's own folder is not a project either: its conversation opens from the rail.
+  const companionHome = useRubatoCompanion().status?.home;
   const groups = useMemo(
     () =>
       allGroups.filter(
         (group) =>
           group.isScratch !== true &&
-          !isScratchProject(group, scratchWorkspaceRootFor(group.environmentId)),
+          !isScratchProject(group, scratchWorkspaceRootFor(group.environmentId)) &&
+          !isCompanionProject(group, companionHome),
       ),
-    [allGroups, scratchWorkspaceRootFor],
+    [allGroups, scratchWorkspaceRootFor, companionHome],
   );
   const threads = useThreadShells();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);

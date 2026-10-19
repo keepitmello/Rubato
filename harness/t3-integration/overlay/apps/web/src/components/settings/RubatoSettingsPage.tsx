@@ -8,6 +8,7 @@ import { Button } from "../ui/button";
 import { ConnectionsSettings } from "./ConnectionsSettings";
 import { IntegrationsSettingsPanel } from "./IntegrationsSettings";
 import { RubatoAboutSection } from "./RubatoAboutSection";
+import { RubatoCompanionSettingsPanel } from "./RubatoCompanionSettings";
 import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
 import { RubatoSidebarSectionsSettingsRows } from "./RubatoSidebarSectionsSetting";
 import { RubatoTitleModelsSection } from "./RubatoTitleModels";
@@ -60,6 +61,7 @@ const SOURCES: Readonly<Record<RubatoSettingsSource, ComponentType>> = {
   titleModels: RubatoTitleModelsSection,
   voice: RubatoVoiceSettingsSection,
   permissionsLink: PermissionsLinkRow,
+  companion: RubatoCompanionSettingsPanel,
 };
 
 const FALLBACK_ROWS = unplacedGeneralRows(SETTINGS_SEARCH_ITEMS);

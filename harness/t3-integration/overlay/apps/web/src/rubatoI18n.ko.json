@@ -4395,7 +4395,40 @@
   "This Mac could not be reached.": "이 Mac에 연결할 수 없습니다.",
   "No speech was detected.": "말소리가 감지되지 않았습니다.",
   "Paste the whole OpenAI API key.": "OpenAI API 키 전체를 붙여 넣으세요.",
-  "Enter a model id without spaces.": "공백 없이 모델 id를 입력하세요."
+  "Enter a model id without spaces.": "공백 없이 모델 id를 입력하세요.",
+  "Companion": "컴패니언",
+  "Segno": "세뇨",
+  "Segno (starting)": "세뇨 (시작하는 중)",
+  "Turn Segno on": "세뇨 켜기",
+  "Talk to Segno": "세뇨와 대화",
+  "Segno also has its own button on the left rail.": "왼쪽 레일에도 세뇨 버튼이 있습니다.",
+  "One conversation that is always on. You talk to it; it starts lead conversations for the work, follows them and tells you how they went.": "늘 켜져 있는 대화 하나입니다. 세뇨에게 말하면 일마다 리드 대화를 띄우고, 따라가다가 어떻게 됐는지 알려줍니다.",
+  "Heartbeat": "하트비트",
+  "Heartbeat interval": "하트비트 간격",
+  "Segno looks over the work it follows on a schedule and only writes when something needs you.": "세뇨가 정해진 간격으로 맡은 일을 둘러보고, 확인할 게 있을 때만 연락합니다.",
+  "Daily report": "데일리 리포트",
+  "Daily report time": "데일리 리포트 시각",
+  "Once a day: what came in, what was finished, what is still running and what waits for you.": "하루 한 번, 들어온 일과 끝난 일, 아직 진행 중인 일, 확인을 기다리는 일을 정리해 보냅니다.",
+  "Segno's prompt": "세뇨 프롬프트",
+  "Reading the prompt": "프롬프트를 읽는 중",
+  "Reading the companion": "컴패니언을 읽는 중",
+  "Could not read the companion": "컴패니언을 읽을 수 없습니다",
+  "Could not save the companion settings": "컴패니언 설정을 저장할 수 없습니다",
+  "Could not save the piece": "조각을 저장할 수 없습니다",
+  "Preamble": "프리앰블",
+  "The first words Segno reads: its name and its welcome.": "세뇨가 가장 먼저 읽는 글입니다. 이름과 환영 인사가 들어갑니다.",
+  "Soul": "소울",
+  "Who Segno is and how it speaks.": "세뇨가 어떤 존재이고 어떻게 말하는지입니다.",
+  "Identity": "아이덴티티",
+  "Name, look and what stays the same.": "이름, 모습, 그리고 변하지 않는 것들입니다.",
+  "Your business, your repositories, how you like to be told things.": "하는 일, repo, 보고받고 싶은 방식입니다.",
+  "How Segno works": "세뇨의 일하는 방식",
+  "Leads, approvals, reports, heartbeat.": "리드, 승인, 보고, 하트비트.",
+  "The tools Segno has. It follows Rubato and cannot be changed.": "세뇨가 가진 도구입니다. Rubato 를 따라가므로 바꿀 수 없습니다.",
+  "Yours": "직접 고침",
+  "View": "보기",
+  "Back to default": "기본값으로 되돌리기",
+  "Every hour": "1시간마다"
  },
  "templates": [
   [
@@ -7677,6 +7710,14 @@
   [
    "{0} is not valid JSON. Fix or remove it, then refresh.",
    "{0} 파일이 올바른 JSON이 아닙니다. 고치거나 지운 뒤 새로고침하세요."
+  ],
+  [
+   "Every {0} minutes",
+   "{0}분마다"
+  ],
+  [
+   "Every {0} hours",
+   "{0}시간마다"
   ]
  ]
 }

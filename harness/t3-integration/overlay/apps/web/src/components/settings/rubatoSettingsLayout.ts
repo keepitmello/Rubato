@@ -20,7 +20,8 @@ export type RubatoSettingsSource =
   | "sidebarSections"
   | "titleModels"
   | "voice"
-  | "permissionsLink";
+  | "permissionsLink"
+  | "companion";
 
 export interface RubatoSettingsBlock {
   readonly key: string;
@@ -120,6 +121,13 @@ export const RUBATO_SETTINGS_PAGES: readonly RubatoSettingsPage[] = [
         sources: ["general"],
       },
     ],
+  },
+  // Segno, the always-on companion (companion-edits.mjs).
+  {
+    path: "/settings/companion",
+    label: "Companion",
+    group: "Work",
+    blocks: [{ key: "companion", sources: ["companion"] }],
   },
   { path: "/settings/providers", label: "Providers", group: "Work" },
   {
@@ -301,6 +309,7 @@ export const RUBATO_SECTION_TITLES: Readonly<Record<string, string>> = {
 export const RUBATO_ADDED_SETTINGS_PATHS = [
   "/settings/notifications",
   "/settings/agents",
+  "/settings/companion",
   "/settings/chat",
   "/settings/threads",
   "/settings/advanced",

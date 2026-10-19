@@ -55,6 +55,7 @@ import { sidebarBlocksEdits, sidebarBlocksOverlays } from './sidebar-blocks-edit
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
 import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
+import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1638,7 +1639,7 @@ for (const [relative, changes] of Object.entries(statsEdits)) {
 // own pages (settings-layout-edits.mjs) in the generated route tree (route-tree-edits.mjs).
 edits['apps/web/src/routeTree.gen.ts'] = [
   ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
-  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats', ...settingsLayoutPages]),
+  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats', ...settingsLayoutPages, ...companionSettingsPages]),
   // Memory, Scheduled Tasks and Stats as their own pages, opened from the rail (project-rail-edits.mjs).
   ...topLevelRouteTreeEdits(),
 ];
@@ -1819,6 +1820,11 @@ for (const [relative, changes] of Object.entries(sidebarBlocksEdits)) {
 // Settings regrouped into Rubato's layout; last, since it anchors on the sidebar and search other modules edit (settings-layout-edits.mjs).
 overlays.push(...settingsLayoutOverlays);
 for (const [relative, changes] of Object.entries(settingsLayoutEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Segno, the always-on companion; after the Settings layout, whose Settings lines it anchors on (companion-edits.mjs).
+overlays.push(...companionOverlays);
+for (const [relative, changes] of Object.entries(companionEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 overlays.push(...i18nOverlays);

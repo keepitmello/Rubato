@@ -1,5 +1,5 @@
 // The rail left of the thread list holds app controls only: home, one Projects
-// button, and below a hairline the pages (scheduled tasks, memory, pull
+// button, Segno while the companion is on, and below a hairline the pages (scheduled tasks, memory, pull
 // requests, usage, stats, settings), which replace the sidebar's footer row. Projects
 // are never bare icons here; the Projects button opens a window that lists them
 // by name and edits the shared list (RubatoProjectPicker.tsx). Choosing a
@@ -21,6 +21,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
+import { useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
 import { useStatsWarmup } from "../../state/rubatoStats";
 import { useUiStateStore } from "../../uiStateStore";
@@ -30,6 +31,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RubatoProjectPicker } from "./RubatoProjectPicker";
+import { RubatoSegnoIcon } from "./RubatoSegnoIcon";
 import { useRubatoProjectList } from "./rubatoProjectList";
 import {
   RUBATO_SIGNAL_DOT,
@@ -163,6 +165,8 @@ export function RubatoProjectRail() {
   const scheduleSignal = useScheduleSignal();
   const { list, signals, lastActivity, remove, add, move } = useRubatoProjectList();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const companion = useRubatoCompanion();
+  const environmentId = useReadyEnvironmentId();
 
   useEffect(() => {
     if (isMobile) return;
@@ -189,7 +193,10 @@ export function RubatoProjectRail() {
     if (key !== null && !open) void setOpen(true);
   };
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
-  const onRailPage = ["/scheduled", "/memory", "/pull-requests", "/usage", "/stats", "/settings"].some(onPage);
+  const onSegno = companion.threadId !== null && pathname.endsWith(`/${companion.threadId}`);
+  const onRailPage =
+    onSegno ||
+    ["/scheduled", "/memory", "/pull-requests", "/usage", "/stats", "/settings"].some(onPage);
 
   // Phones get the sidebar as a sheet with its own footer; the rail is a desktop column.
   if (isMobile) return null;
@@ -267,6 +274,25 @@ export function RubatoProjectRail() {
             />
           </PopoverPopup>
         </Popover>
+        {/* Segno, the always-on companion, while it is on (companion-edits.mjs). */}
+        {companion.status?.settings.enabled ? (
+          <RailButton
+            label={companion.threadId === null ? "Segno (starting)" : "Segno"}
+            active={onSegno}
+            onClick={() => {
+              if (companion.threadId === null || environmentId === null) {
+                void navigate({ to: "/settings/companion" });
+                return;
+              }
+              void navigate({
+                to: "/$environmentId/$threadId",
+                params: { environmentId, threadId: companion.threadId },
+              });
+            }}
+          >
+            <RubatoSegnoIcon />
+          </RailButton>
+        ) : null}
       </div>
       <div className="flex shrink-0 flex-col items-center gap-1 px-2 pt-2 pb-3">
         <RailSeparator />

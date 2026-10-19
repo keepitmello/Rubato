@@ -20,6 +20,43 @@ const spec: ServiceSpec = {
   name: "schedule",
 };
 
+/**
+ * The `thread` action: which T3 thread shows a Pi session (`{ sessionId }` in the body), or null
+ * while the app has not picked the session up yet. RubatoCompanion.ts answers with it too.
+ */
+export const sessionThread = (
+  request: HttpServerRequest.HttpServerRequest,
+  sql: SqlClient.SqlClient,
+) =>
+  Effect.gen(function* () {
+    const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+    const { sessionId } = (body ?? {}) as { sessionId?: unknown };
+    if (typeof sessionId !== "string" || sessionId.length === 0)
+      return HttpServerResponse.jsonUnsafe(
+        { error: { code: "invalid", message: "sessionId is missing." } },
+        { status: 400 },
+      );
+    // Engine session ids are unique across engines, so the run's serverId is not needed.
+    const threadId = yield* threadOfPiSession(sessionId).pipe(
+      Effect.provideService(SqlClient.SqlClient, sql),
+    );
+    return HttpServerResponse.jsonUnsafe({ threadId });
+  }).pipe(
+    Effect.catch(() =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          {
+            error: {
+              code: "thread-lookup-failed",
+              message: "Could not look up the session's thread.",
+            },
+          },
+          { status: 500 },
+        ),
+      ),
+    ),
+  );
+
 export const rubatoScheduleRouteLayer = Layer.unwrap(
   Effect.gen(function* () {
     const auth = yield* EnvironmentAuth;
@@ -27,39 +64,17 @@ export const rubatoScheduleRouteLayer = Layer.unwrap(
     const path = yield* Path.Path;
     const sql = yield* SqlClient.SqlClient;
 
-    const thread = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-        const { sessionId } = (body ?? {}) as { sessionId?: unknown };
-        if (typeof sessionId !== "string" || sessionId.length === 0)
-          return HttpServerResponse.jsonUnsafe(
-            { error: { code: "invalid", message: "sessionId is missing." } },
-            { status: 400 },
-          );
-        // Engine session ids are unique across engines, so the run's serverId is not needed.
-        const threadId = yield* threadOfPiSession(sessionId).pipe(
-          Effect.provideService(SqlClient.SqlClient, sql),
-        );
-        return HttpServerResponse.jsonUnsafe({ threadId });
-      }).pipe(
-        Effect.catch(() =>
-          Effect.succeed(
-            HttpServerResponse.jsonUnsafe(
-              { error: { code: "thread-lookup-failed", message: "Could not look up the session's thread." } },
-              { status: 500 },
-            ),
-          ),
-        ),
-      );
-
     return HttpRouter.add(
       "*",
       `${spec.route}/*`,
       Effect.gen(function* () {
         const request = yield* HttpServerRequest.HttpServerRequest;
         if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
-        const action = new URL(request.url, "http://local").pathname.replace(/\/+$/, "").split("/").at(-1);
-        if (action === "thread") return yield* thread(request);
+        const action = new URL(request.url, "http://local").pathname
+          .replace(/\/+$/, "")
+          .split("/")
+          .at(-1);
+        if (action === "thread") return yield* sessionThread(request, sql);
         return yield* answerFromService(spec, serverSettings, path, request);
       }),
     );
