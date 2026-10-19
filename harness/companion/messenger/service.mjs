@@ -450,5 +450,26 @@ export function startCompanionMessenger({
   };
 }
 
+/**
+ * The engine's resident-service entry (`pi-server resident-services.mjs`): the supervisor hands a
+ * worker thread a context and gets methods back that it can call. What the messenger needs from
+ * the engine arrives as `ctx.host.channel`; what the tools need is the returned `send`.
+ *
+ *   ctx = { name, env, agentDir, options, host: { channel, notice }, onError, log, signal }
+ */
+export async function start(ctx = {}) {
+  if (!ctx.host || typeof ctx.host.channel !== 'function')
+    throw new TypeError('the messenger needs the engine host channel');
+  return startCompanionMessenger({
+    deliver: (args) => ctx.host.channel(args),
+    env: ctx.env ?? process.env,
+    agentDir: ctx.agentDir,
+    onError: ctx.onError ?? (() => {}),
+    log: ctx.log ?? (() => {}),
+    ...(ctx.signal ? { signal: ctx.signal } : {}),
+    ...(ctx.options?.createApi ? { createApi: ctx.options.createApi } : {}),
+  });
+}
+
 export default startCompanionMessenger;
 

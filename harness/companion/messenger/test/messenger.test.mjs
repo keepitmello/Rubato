@@ -296,3 +296,27 @@ test('making the bot over MTProto stores its token and never asks the person for
   assert.doesNotMatch(JSON.stringify(readBot(box.env)), /AAaaBBbb/);
 });
 
+
+test('the engine entry maps the host channel to deliveries and hands the tools a send', async (t) => {
+  const box = sandbox(t);
+  writeSecret(TOKEN, box.env);
+  writeCompanionState({ sessionId: 'S1' }, box.env);
+  writeIntent({ action: 'pair' }, box.env);
+  const fake = fakeTelegram();
+  const delivered = [];
+  const { start } = await import('../service.mjs');
+  const service = await start({ env: box.env, agentDir: box.agentDir, onError: () => {},
+    host: { channel: async (args) => delivered.push(args) }, options: { createApi: () => fake.api } });
+  assert.equal(typeof service.send, 'function');
+  await service.ready; await service.poke(); await service.poke();
+  fake.message({ chatId: USER_CHAT, text: readPairing(box.env).code ?? 'nope' });
+  await service.poke(); await service.poke();
+  assert.equal(readPairing(box.env).status, 'paired');
+
+  const row = service.send({ text: '도구가 큐에 넣은 말', to: 'user' });
+  assert.equal(row.target, 'user');
+  assert.equal(row.state, 'queued');
+  await service.poke(); await service.poke();
+  assert.ok(fake.sent.some((sent) => sent.text.includes('도구가 큐에 넣은 말')));
+  await service.close();
+});
