@@ -109,6 +109,9 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   assert.deepEqual(readDecision(held.id, env), { ...readDecision(held.id, env), decision: 'approve', text: 'Hi Giron — fixed in today’s release.' });
   assert.equal((await post('telegram-decide', { id: held.id, decision: 'reject', text: 'x' })).status, 400);
   assert.equal(listOutbox(env).length, 2);
+  // Once the person has answered, the row leaves the panel; the messenger sends or drops it later.
+  assert.equal(listOutbox(env).find((row) => row.id === held.id).state, 'held');
+  assert.deepEqual((await post('panel')).body.held, []);
   const art = await post('art');
   assert.match(art.body.art.url, /^data:image\/webp;base64,/);
   const working = await post('art', { state: 'working' });

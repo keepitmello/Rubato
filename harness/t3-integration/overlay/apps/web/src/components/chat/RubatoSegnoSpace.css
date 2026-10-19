@@ -38,6 +38,14 @@
   }
 }
 
+/* The chat keeps its ordinary width but sits at the left of the space, so the room an ordinary
+   thread leaves around its column is the stage's. */
+[data-rubato-segno-chat] .chat-content-lane,
+[data-rubato-segno-chat] .group\/composer-stack {
+  margin-inline-start: 0;
+  margin-inline-end: auto;
+}
+
 /* ---- One surface ----
    The chat and the stage are one surface: the workspace's own canvas and grain (SidebarInset paints
    them), or the window material's wash. The chat view's sheets and header step aside so no column or

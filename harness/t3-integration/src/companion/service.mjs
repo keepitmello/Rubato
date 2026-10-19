@@ -77,7 +77,10 @@ export function createCompanionService(options = {}) {
             status: item.status, createdAt: item.createdAt }));
       } finally { box.close(); }
     } catch { /* no inbox yet, or this Node has no SQLite: the panel goes on without it */ }
-    const held = messenger.listOutbox(env).filter((row) => row.state === 'held')
+    // A held message the person already answered leaves the panel now; the messenger applies the
+    // answer on its next pass.
+    const answered = new Set(messenger.listDecisions(env).map((row) => row.id));
+    const held = messenger.listOutbox(env).filter((row) => row.state === 'held' && !answered.has(row.id))
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
       .map((row) => ({ id: row.id, text: row.text, createdAt: row.createdAt,
         to: row.target === 'user' ? null : { chatId: row.target.chatId, name: row.target.name ?? null } }));

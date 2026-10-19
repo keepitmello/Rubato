@@ -16,6 +16,7 @@ export const companionOverlays = [
   'apps/web/src/routes/settings.companion.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.css',
+  'apps/web/src/components/chat/RubatoSegnoSpace.test.ts',
 ];
 
 /** The settings route slug the generated route tree gains (route-tree-edits.mjs). */

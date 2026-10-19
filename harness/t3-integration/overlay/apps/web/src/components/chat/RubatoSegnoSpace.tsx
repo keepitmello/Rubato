@@ -131,16 +131,19 @@ function useNow(stepMs = 30_000) {
   return now;
 }
 
+/** The stage holds the full task panel from this width; narrower, it holds a compact one. */
+const STAGE_FULL_PX = 200;
 /** Narrower than this, the stage steps aside entirely and the chat keeps the whole space. */
-const STAGE_MIN_PX = 180;
+const STAGE_PEEK_PX = 64;
 /** Room kept between the chat's column and the stage, and off the window's right edge. */
 const STAGE_GAP_PX = 16;
 const STAGE_EDGE_PX = 8;
 
 /**
  * How wide the stage can be: the room right of the chat's column. The chat keeps exactly the width
- * an ordinary thread has at this window size and chat-width setting (chat-width-edits.mjs), and the
- * stage takes what is left of it; the chat never narrows for Segno.
+ * an ordinary thread has at this window size and chat-width setting (chat-width-edits.mjs) and sits
+ * at the left of the space (RubatoSegnoSpace.css), so the stage gets all the room an ordinary
+ * thread leaves on both sides of its column; the chat never narrows for Segno.
  */
 function useStageWidth(space: RefObject<HTMLDivElement | null>) {
   const [width, setWidth] = useState(0);
@@ -148,29 +151,26 @@ function useStageWidth(space: RefObject<HTMLDivElement | null>) {
     const root = space.current;
     if (!root) return;
     let lane: Element | null = null;
+    const sizes = new ResizeObserver(() => measure());
     const measure = () => {
-      lane ??= root.querySelector(".chat-content-lane");
+      if (!lane || !lane.isConnected) {
+        lane = root.querySelector(".chat-content-lane");
+        if (lane) sizes.observe(lane);
+      }
       const outer = root.getBoundingClientRect();
       const inner = lane?.getBoundingClientRect();
       const free = inner ? outer.right - STAGE_EDGE_PX - (inner.right + STAGE_GAP_PX) : 0;
-      setWidth(free >= STAGE_MIN_PX ? Math.floor(free) : 0);
+      setWidth(free >= STAGE_PEEK_PX ? Math.floor(free) : 0);
     };
-    const observer = new ResizeObserver(() => {
-      lane = null;
-      measure();
-    });
-    observer.observe(root);
+    sizes.observe(root);
     // The column appears once the thread loads; look again when the chat's children change.
     const mutations = new MutationObserver(() => {
-      if (!lane || !lane.isConnected) {
-        lane = null;
-        measure();
-      }
+      if (!lane || !lane.isConnected) measure();
     });
     mutations.observe(root, { childList: true, subtree: true });
     measure();
     return () => {
-      observer.disconnect();
+      sizes.disconnect();
       mutations.disconnect();
     };
   }, [space]);
@@ -185,6 +185,7 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
   const art = useSegnoArt(environmentId, state);
   const space = useRef<HTMLDivElement>(null);
   const stageWidth = useStageWidth(space);
+  const compact = stageWidth > 0 && stageWidth < STAGE_FULL_PX;
   return (
     <div ref={space} data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
       {/* The chat is the ordinary chat at its ordinary width. */}
@@ -192,21 +193,30 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
         {children}
       </div>
       {/* The stage stands in the room right of the chat's column, over the same surface: the panel
-          on top (below the title bar controls), Segno in the height the panel leaves. When the
-          window is too narrow for it, it steps aside. */}
+          on top (below the title bar controls), Segno in the height the panel leaves. With little
+          room the panel folds into a button and Segno peeks from the corner; with none, the stage
+          steps aside. */}
       {stageWidth > 0 ? (
         <aside
-          data-rubato-segno-stage=""
+          data-rubato-segno-stage={compact ? "compact" : "full"}
           aria-label="Segno"
           style={{ width: stageWidth, right: STAGE_EDGE_PX }}
           className="pointer-events-none absolute top-[3.25rem] bottom-0 flex min-h-0 flex-col"
         >
-          <div className="pointer-events-auto min-h-0 shrink-0">
-            <SegnoTaskPanel
-              environmentId={environmentId}
-              panel={panel}
-              onChanged={() => void refresh()}
-            />
+          <div className="pointer-events-auto relative min-h-0 shrink-0">
+            {compact ? (
+              <CompactTaskPanel
+                environmentId={environmentId}
+                panel={panel}
+                onChanged={() => void refresh()}
+              />
+            ) : (
+              <SegnoTaskPanel
+                environmentId={environmentId}
+                panel={panel}
+                onChanged={() => void refresh()}
+              />
+            )}
           </div>
           <div className="relative min-h-0 flex-1" data-rubato-segno-state={state}>
             <SegnoArt art={art} state={state} />
@@ -214,6 +224,53 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
         </aside>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The panel folded for a narrow window: a button with how many things Segno holds; pressing it
+ * opens the full panel over the stage's corner until pressed again.
+ */
+function CompactTaskPanel(props: {
+  environmentId: ReturnType<typeof useReadyEnvironmentId>;
+  panel: SegnoPanel;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const count =
+    props.panel.leads.length + props.panel.held.length + (props.panel.inbox?.length ?? 0);
+  if (count === 0 && props.panel.finished.length === 0) return null;
+  const waiting =
+    props.panel.held.length > 0 || props.panel.leads.some((lead) => lead.state === "asked");
+  return (
+    <>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-label="Segno's tasks"
+        onClick={() => setOpen((value) => !value)}
+        className={cn(
+          "ms-auto flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-card-foreground text-xs shadow-sm",
+          "cursor-pointer hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        )}
+      >
+        {waiting ? (
+          <CircleAlertIcon aria-hidden="true" className="size-3.5 text-warning-foreground" />
+        ) : (
+          <PlayIcon aria-hidden="true" className="size-3.5 text-primary" />
+        )}
+        <span className="tabular-nums">{count}</span>
+      </button>
+      {open ? (
+        <div data-rubato-segno-panel-popover="" className="absolute top-9 right-0 z-30 w-80">
+          <SegnoTaskPanel
+            environmentId={props.environmentId}
+            panel={props.panel}
+            onChanged={props.onChanged}
+          />
+        </div>
+      ) : null}
+    </>
   );
 }
 
