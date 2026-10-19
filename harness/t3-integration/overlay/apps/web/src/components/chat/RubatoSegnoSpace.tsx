@@ -214,9 +214,9 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
         {children}
       </div>
       {/* The stage stands in the room right of the chat's column, over the same surface: the panel
-          on top (below the title bar controls), Segno in the height the panel leaves. With little
-          room the panel folds into a button and Segno peeks from the corner; with none, the stage
-          steps aside. */}
+          on top (below the title bar controls, at most 30rem wide against the edge), Segno in the
+          height the panel leaves. With little room the panel folds into a button and Segno peeks
+          from the corner; with none, the stage steps aside. */}
       {stageWidth > 0 ? (
         <aside
           data-rubato-segno-stage={compact ? "compact" : "full"}
@@ -224,7 +224,7 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
           style={{ width: stageWidth, right: STAGE_EDGE_PX }}
           className="pointer-events-none absolute top-[3.25rem] bottom-0 flex min-h-0 flex-col"
         >
-          <div className="pointer-events-auto relative min-h-0 shrink-0">
+          <div className="pointer-events-auto relative ms-auto min-h-0 w-full max-w-[30rem] shrink-0">
             {compact ? (
               <CompactTaskPanel
                 environmentId={environmentId}
