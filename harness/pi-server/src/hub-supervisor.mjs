@@ -182,10 +182,19 @@ export function startHubSupervisor({
     try {
       const user = userInfo();
       const env = { PATH: LAUNCHD_PATH, USER: user.username, LOGNAME: user.username, SHELL: user.shell ?? '/bin/zsh', ...spec.env };
-      // The IPC channel is the hub's lifeline: when this engine (or its service thread) goes away,
-      // the hub sees `disconnect` and exits instead of outliving it.
-      const started = spawn(spec.command, spec.args, { cwd: env.HOME ?? homedir(), env,
-        stdio: ['ignore', out.fd, err.fd, 'ipc'], detached: false });
+      // The IPC channel is the hub's lifeline: when this engine goes away, the hub sees `disconnect`
+      // and exits instead of outliving it. The engine's ctx.spawn starts it from the main thread,
+      // which reaps it; the descriptors stay open until the spawn has resolved.
+      let started;
+      try {
+        started = await spawn(spec.command, spec.args, { cwd: env.HOME ?? homedir(), env,
+          stdio: ['ignore', out.fd, err.fd, 'ipc'], detached: false });
+      } catch (error) {
+        onError(error);
+        startedAt = now();
+        retryAfter({ code: null, signal: 'spawn-error' });
+        return;
+      }
       child = started;
       startedAt = now();
       try { own(started); } catch (error) { onError(error); }
@@ -208,7 +217,12 @@ export function startHubSupervisor({
 
   async function exited(which, exit) {
     if (which !== child) return;
-    child = null; childExit = null; lastExit = { ...exit, at: new Date(now()).toISOString() };
+    child = null; childExit = null;
+    retryAfter(exit);
+  }
+
+  function retryAfter(exit) {
+    lastExit = { ...exit, at: new Date(now()).toISOString() };
     if (stopped) return;
     if (now() - startedAt >= stableMs) failures = 0;
     const delay = Math.min(maxBackoffMs, minBackoffMs * 2 ** failures);
@@ -284,8 +298,11 @@ export function startHubSupervisor({
 
 /** Resident-service entry (resident-services.mjs): the engine runs this in its own thread. */
 export async function start(ctx = {}) {
+  // ctx.spawn: the engine's main thread starts, owns and reaps the hub (a thread's own children stay
+  // zombies once the thread is gone). ctx.own is the fallback for an engine without it.
   const supervisor = startHubSupervisor({ onError: ctx.onError ?? console.error, log: ctx.log ?? (() => {}),
-    ...(typeof ctx.own === 'function' ? { own: (child) => ctx.own(child) } : {}) });
+    ...(typeof ctx.spawn === 'function' ? { spawn: (command, args, options) => ctx.spawn(command, args, options) }
+      : typeof ctx.own === 'function' ? { own: (child) => ctx.own(child) } : {}) });
   ctx.signal?.addEventListener?.('abort', () => { void supervisor.close(); }, { once: true });
   await supervisor.ready;
   return { close: () => supervisor.close(), status: () => supervisor.status() };
