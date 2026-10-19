@@ -7,6 +7,8 @@ import { installedSharedRuntime } from './discovery.mjs';
 import { errorLog } from './error-log.mjs';
 import { installExitGuard } from './exit-guard.mjs';
 import { loginShellPath, mergePaths } from './launchd.mjs';
+import { rmSync } from 'node:fs';
+import { listenerPid } from '../../scripts/profile-engine-pid.mjs';
 
 const LOCK_WAIT_MS = 1000;
 
@@ -60,6 +62,13 @@ try {
       catch (error) {
         if (!values.launchd || error?.code !== 'ELOCKED') throw error;
         if (stopRequested) break;
+        // A lock no engine process holds is what a killed engine leaves. It would go stale on its
+        // own after 15 s; launchd restarted us to serve now, so take it over at once.
+        if (!listenerPid(agentDir)) {
+          console.error(`${new Date().toISOString()} rubato-pi-server: the engine that held this profile is gone; taking over its lock`);
+          rmSync(path.join(agentDir, 'server', 'owner.lock'), { recursive: true, force: true });
+          continue;
+        }
         if (!waiting) { waiting = true; console.error(`${new Date().toISOString()} rubato-pi-server: another engine holds this profile; waiting to take over`); }
         await new Promise((resolve) => setTimeout(resolve, LOCK_WAIT_MS));
         if (stopRequested) break;
