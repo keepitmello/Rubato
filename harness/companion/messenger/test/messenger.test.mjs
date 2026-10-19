@@ -6,7 +6,7 @@ import test from 'node:test';
 import { startCompanionMessenger } from '../service.mjs';
 import { fakeTelegram } from './fake-telegram.mjs';
 import {
-  enqueueMessage, listOutbox, maskToken, pairedChatId, readBot, readPairing, readSecret, readState, writeDecision,
+  enqueueMessage, listOutbox, maskToken, pairedChatId, readBot, readHandoff, readIntent, readPairing, readSecret, readState, writeDecision,
   writeIntent, writeSecret, writeState, messengerPaths,
 } from '../store.mjs';
 import { writeState as writeCompanionState } from '../../companion.mjs';
@@ -441,4 +441,35 @@ test("another person's report lands in Segno's inbox, once", async (t) => {
   await settle(box.service);
   assert.equal(inbox.list().length, 1);
   assert.ok(repeated);
+});
+
+test('a pasted token is checked with Telegram before it is kept, and never echoed back', async (t) => {
+  const box = sandbox(t);
+  writeIntent({ action: 'set-token', token: '987654321:Past edTokenForTheTest1234567890'.replace(' ', '') }, box.env);
+  const fake = fakeTelegram();
+  const asked = [];
+  const api = { ...fake.api, getMe: async () => { asked.push('me'); return { is_bot: true, username: 'segno_abcd_bot', first_name: 'Segno' }; } };
+  const { service, errors } = start({ ...box, fake: { api } });
+  await settle(service);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(asked, ['me'], 'the token was checked against the Bot API');
+  const secret = readSecret(box.env);
+  assert.equal(secret.token, '987654321:Past edTokenForTheTest1234567890'.replace(' ', ''));
+  assert.equal(readBot(box.env).username, 'segno_abcd_bot');
+  assert.equal(readHandoff(box.env).result, 'token-saved');
+  assert.equal(readIntent(box.env).token, undefined, 'the request file does not keep a second copy of the secret');
+  await settle(service);
+  assert.equal(readHandoff(box.env).result, 'token-saved', 'and it is not handled twice');
+});
+
+test('a token Telegram refuses is not kept, and the page is told why', async (t) => {
+  const box = sandbox(t);
+  writeIntent({ action: 'set-token', token: '987654321:BadTokenForTheTest1234567890' }, box.env);
+  const fake = fakeTelegram();
+  const api = { ...fake.api, getMe: async () => { throw new Error('Unauthorized'); } };
+  const { service, errors } = start({ ...box, fake: { api } });
+  await settle(service);
+  assert.equal(errors.length, 1);
+  assert.equal(readSecret(box.env), undefined, 'no token was stored');
+  assert.match(readHandoff(box.env).error ?? '', /Unauthorized/);
 });

@@ -23,9 +23,10 @@ import { createBotApi, BotApiError } from './bot-api.mjs';
 import {
   MESSENGER_LIMITS, clearDecision, enqueueMessage, listDecisions, listOutbox, messengerPaths, newPairingCode,
   pairedChatId, readBot, readDecision, readHandoff, readIntent, readMessengerSettings, readPairing, readSecret,
-  readOutboxRow, readState, updateOutboxRow, writeBotIdentity, writeDecision, writeHandoff, writePairing, writeSecret, writeState,
+  readOutboxRow, readState, updateOutboxRow, writeBotIdentity, writeDecision, writeHandoff, writeIntent, writePairing, writeSecret, writeState,
 } from './store.mjs';
 import { answerAt, isFinalAnswer, locateTranscript, readEntries } from './transcript.mjs';
+import { botUsernameCandidates } from './scripts/create-bot.mjs';
 import { readState as readCompanionState } from '../companion.mjs';
 import { openInbox } from '../inbox.mjs';
 
@@ -65,12 +66,12 @@ export function splitText(text, limit = MESSENGER_LIMITS.textChars) {
 }
 
 const CREATE_BOT_SCRIPT = fileURLToPath(new URL('./scripts/create-bot.mjs', import.meta.url));
-/** The usernames tried in order when the person did not name one; @BotFather refuses the taken ones. */
-export const DEFAULT_BOT_USERNAMES = Object.freeze(['segno_rubato_bot', 'segno_companion_bot', 'segno_bot', 'rubato_segno_bot']);
 
 /** Makes the bot over MTProto from the person's own account (`scripts/create-bot.mjs`). */
 export function createBotOverMtproto({ name = 'Segno', username } = {}) {
-  const usernames = [...new Set([...(username ? [username] : []), ...DEFAULT_BOT_USERNAMES])];
+  // A name the person gave is tried first; otherwise each try carries a fresh suffix, because a
+  // fixed default belongs to whoever installed it first.
+  const usernames = [...new Set([...(username ? [username] : []), ...botUsernameCandidates({ base: 'segno' })])];
   const args = [CREATE_BOT_SCRIPT, '--name', name, ...usernames.flatMap((value) => ['--username', value])];
   return new Promise((resolve, reject) => {
     execFile(process.execPath, args, { timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
@@ -182,6 +183,21 @@ export function startCompanionMessenger({
       } else if (intent.action === 'unpair') {
         writePairing({ status: 'unpaired' }, env);
         writeHandoff({ intentAt: intent.at, result: 'unpaired' }, env);
+      } else if (intent.action === 'set-token') {
+        // The path for everyone without the person's MTProto client: a token from @BotFather,
+        // checked before it is kept, and never echoed back.
+        if (typeof intent.token !== 'string' || !intent.token.trim()) throw new Error('no bot token was handed over');
+        const candidate = createApi(intent.token.trim());
+        let me;
+        try { me = await candidate.getMe(); }
+        catch (error) { throw new Error(`Telegram did not accept that token: ${error?.message ?? error}`); }
+        if (!me?.is_bot) throw new Error('that token does not belong to a bot');
+        writeSecret(intent.token.trim(), env);
+        writeBotIdentity({ username: me.username, name: me.first_name }, env);
+        writeHandoff({ intentAt: intent.at, result: 'token-saved' }, env);
+        // The request file is not a second copy of the secret.
+        writeIntent({ action: 'token-saved' }, env, { at: intent.at });
+        log('token-saved', { username: me.username });
       } else if (intent.action === 'create-bot') {
         if (!createBot) throw new Error('making a bot is not available in this build');
         const made = await createBot({ name: intent.name, username: intent.username });

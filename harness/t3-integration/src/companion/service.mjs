@@ -20,6 +20,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const companionFile = path.resolve(here, '..', '..', '..', 'companion', 'companion.mjs');
 const messengerFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'store.mjs');
 const inboxFile = path.resolve(here, '..', '..', '..', 'companion', 'inbox.mjs');
+const tgFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'tg.mjs');
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 
@@ -31,6 +32,10 @@ export class CompanionRequestError extends Error {
   }
 }
 
+// Whether the person's own MTProto client can make a bot here. The page polls every few seconds and
+// spawning `tg status` each time would be rude, so each server keeps the answer briefly.
+const TG_CACHE_MS = 30_000;
+
 /**
  * @param {{ companion?: object, defaultsDir?: string, env?: NodeJS.ProcessEnv }} [options]
  *   `companion` stands in for harness/companion/companion.mjs; `defaultsDir` for the default
@@ -39,13 +44,21 @@ export class CompanionRequestError extends Error {
 export function createCompanionService(options = {}) {
   const env = options.env ?? process.env;
   let loaded;
+  let tgProbe;
+  function botCreation(tg, now = Date.now) {
+    if (tgProbe && now() - tgProbe.at < TG_CACHE_MS) return tgProbe.value;
+    const value = tg.probeTg({ env });
+    tgProbe = { at: now(), value };
+    return value;
+  }
   const modules = () => (loaded ??= (async () => {
     const companion = options.companion ?? await import(pathToFileURL(companionFile).href);
     const messenger = options.messenger ?? await import(pathToFileURL(messengerFile).href);
     const inbox = options.inbox ?? await import(pathToFileURL(inboxFile).href);
+    const tg = options.tg ?? await import(pathToFileURL(tgFile).href);
     const defaultsDir = options.defaultsDir
       ?? (await import(pathToFileURL(systemPromptFile).href)).companionDefaultsDir(env);
-    return { companion, messenger, inbox, defaultsDir };
+    return { companion, messenger, inbox, tg, defaultsDir };
   })().catch((error) => {
     loaded = undefined;
     throw new CompanionRequestError(500, 'companion-unavailable', `The companion module could not load: ${error.message}`);
@@ -88,7 +101,7 @@ export function createCompanionService(options = {}) {
   }
 
   async function handle(action, input) {
-    const { companion, messenger, inbox, defaultsDir } = await modules();
+    const { companion, messenger, inbox, tg, defaultsDir } = await modules();
     switch (action) {
       case 'status':
         return status(companion);
@@ -97,7 +110,7 @@ export function createCompanionService(options = {}) {
         invalid(() => companion.writeSettings(input.patch, env));
         return status(companion);
       case 'telegram':
-        return { telegram: messenger.messengerStatus(env) };
+        return { telegram: { ...messenger.messengerStatus(env), botCreation: await botCreation(tg) } };
       case 'telegram-settings':
         if (!input.patch || typeof input.patch !== 'object') throw new CompanionRequestError(400, 'invalid', 'patch is missing.');
         invalid(() => messenger.writeMessengerSettings(input.patch, env));
@@ -107,6 +120,11 @@ export function createCompanionService(options = {}) {
         return { telegram: messenger.messengerStatus(env) };
       case 'telegram-unpair':
         messenger.writeIntent({ action: 'unpair' }, env);
+        return { telegram: messenger.messengerStatus(env) };
+      case 'telegram-set-token':
+        if (typeof input.token !== 'string' || !input.token.trim())
+          throw new CompanionRequestError(400, 'invalid', 'A bot token is missing.');
+        messenger.writeIntent({ action: 'set-token', token: input.token.trim() }, env);
         return { telegram: messenger.messengerStatus(env) };
       case 'telegram-create-bot':
         messenger.writeIntent({ action: 'create-bot',
