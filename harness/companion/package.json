@@ -7,6 +7,6 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test --test-timeout=90000 test/*.test.mjs"
+    "test": "node --test --test-timeout=90000 test/*.test.mjs messenger/test/*.test.mjs"
   }
 }

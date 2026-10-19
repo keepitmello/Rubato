@@ -24,6 +24,7 @@ import { createGoalExtension, createUserCommandsAgentFactories } from "../user-c
 import { createUserCommandSessionFactories } from "../user-commands-session/index.mjs";
 import { createSessionTitleFactories } from "../session-title/index.mjs";
 import { createSessionLinkFactories } from "../session-link/index.mjs";
+import { createCompanionMessengerFactories } from "../companion-messenger/index.mjs";
 import { createAdapterHookFactories } from "../adapter-hooks/index.mjs";
 import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
@@ -104,6 +105,9 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     // The companion follows the conversations it starts through the messages they send it, so it
     // gets no tool that waits on one (harness/prompts/companion/tools.pi.md).
     ...createSessionLinkFactories({ sessionLink, companion: env.RUBATO_PI_ROLE === "companion" }),
+    // The companion's only way out to a messenger; the message is queued and held for approval
+    // unless it is addressed to the person (harness/companion/messenger).
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories() : []),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),
