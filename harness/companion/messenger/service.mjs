@@ -523,8 +523,19 @@ export function startCompanionMessenger({
  *   ctx = { name, env, agentDir, options, host: { channel, notice }, onError, log, signal }
  */
 export async function start(ctx = {}) {
-  if (!ctx.host || typeof ctx.host.channel !== 'function')
-    throw new TypeError('the messenger needs the engine host channel');
+  if (typeof ctx.host?.channel !== 'function') {
+    // An engine that is not hosting conversations (a bare test engine) has nowhere to deliver. It
+    // must not throw: the thread would be restarted on a backoff for no reason. This service then
+    // stays idle, and so do the tools it backs.
+    ctx.log?.('messenger-idle', { why: 'the engine has no conversation host' });
+    return {
+      name: 'messenger',
+      ready: Promise.resolve(),
+      poke: async () => {},
+      send: async () => { throw new Error('the messenger is idle: this engine has no conversation host'); },
+      close: async () => {},
+    };
+  }
   return startCompanionMessenger({
     deliver: (args) => ctx.host.channel(args),
     env: ctx.env ?? process.env,
