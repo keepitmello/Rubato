@@ -66,6 +66,7 @@ export function createCompanionHomeFactories() {
           properties: {
             status: { type: "string", enum: ["open", ...INBOX_STATUSES] },
             source: { type: "string" },
+            unlinked: { type: "boolean", description: "Only the items no lead holds yet." },
             limit: { type: "integer", minimum: 1, maximum: 100 },
           },
         },
@@ -73,7 +74,8 @@ export function createCompanionHomeFactories() {
           const list = inbox();
           try {
             const items = list.list({ ...(params.status ? { status: params.status } : {}),
-              ...(params.source ? { source: params.source } : {}), ...(params.limit ? { limit: params.limit } : {}) });
+              ...(params.source ? { source: params.source } : {}), ...(params.unlinked === true ? { unlinked: true } : {}),
+              ...(params.limit ? { limit: params.limit } : {}) });
             const counts = list.counts();
             return {
               content: [text(items.length ? `${items.map(itemLine).join("\n")}\n\nopen: ${counts.open ?? 0}` : `Nothing in the inbox yet.\nopen: ${counts.open ?? 0}`)],

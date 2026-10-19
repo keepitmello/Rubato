@@ -137,4 +137,6 @@ test('the Segno space asks the server for the inbox and gets the open work with 
   assert.equal(body.inbox.counts.open, 1);
   assert.ok(body.inbox.counts.done >= 1);
   assert.equal((await post('inbox', { status: 'done' })).body.inbox.items[0].title, '끝난 일');
+  // The Segno space shows the rows no lead holds yet.
+  assert.deepEqual((await post('inbox', { unlinked: true })).body.inbox.items.map((item) => item.title), ['로그인이 안 돼요']);
 });

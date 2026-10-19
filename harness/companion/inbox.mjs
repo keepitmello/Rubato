@@ -118,10 +118,12 @@ export function openInbox({ env = process.env, now = Date.now } = {}) {
     }
   }
 
-  function list({ status, source, limit = 30 } = {}) {
+  function list({ status, source, unlinked, limit = 30 } = {}) {
     const capped = Math.min(200, Math.max(1, Math.floor(limit)));
     const where = [];
     const values = [];
+    // A row no lead holds yet: what the person still has to hand to someone.
+    if (unlinked === true) where.push('lead_session_id IS NULL');
     if (status === 'open') { where.push(`status IN (${OPEN_STATUSES.map(() => '?').join(', ')})`); values.push(...OPEN_STATUSES); }
     else if (status !== undefined) {
       if (!INBOX_STATUSES.includes(status)) throw new TypeError(`status must be one of ${INBOX_STATUSES.join(', ')}`);

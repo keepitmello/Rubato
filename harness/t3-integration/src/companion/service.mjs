@@ -132,7 +132,7 @@ export function createCompanionService(options = {}) {
         try {
           return { inbox: { path: box.path,
             items: box.list({ status: input.status ?? 'open', ...(input.source ? { source: String(input.source) } : {}),
-              ...(input.limit ? { limit: Number(input.limit) } : {}) }),
+              ...(input.unlinked === true ? { unlinked: true } : {}), ...(input.limit ? { limit: Number(input.limit) } : {}) }),
             counts: box.counts() } };
         } finally { box.close(); }
       }
