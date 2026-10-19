@@ -31,27 +31,22 @@
   }
 }
 
+/* ---- One surface ----
+   The chat and the stage are one surface: the workspace's own canvas and grain (SidebarInset paints
+   them), or the window material's wash. The chat view's sheets and header step aside so no column or
+   edge shows between the chat and Segno. The composer, the bubbles and the panel keep their cards. */
+
+[data-rubato-segno-space-host] [data-rubato-segno-chat] div.bg-background:is(.overflow-hidden, .flex-col),
+[data-rubato-segno-space-host] header[data-chat-header] {
+  background-color: transparent;
+  background-image: none;
+}
+
 /* ---- Window material: the space shows it ---- */
 
 :root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
   [data-rubato-segno-space-host] {
   background-color: var(--rb-material-wash);
-  background-image: none;
-}
-/* The chat view's own sheets (its frame and the column under the header) step aside; the
-   composer, the person's bubbles and cards keep their colors. */
-:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
-  [data-rubato-segno-space-host]
-  [data-rubato-segno-chat]
-  div.bg-background:is(.overflow-hidden, .flex-col) {
-  background-color: transparent;
-  background-image: none;
-}
-/* The header carries only Segno's name; it sits on the material too. */
-:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
-  [data-rubato-segno-space-host]
-  header[data-chat-header] {
-  background-color: transparent;
   background-image: none;
 }
 /* The assistant's words get an opaque card, as the person's messages have; the row's hover
