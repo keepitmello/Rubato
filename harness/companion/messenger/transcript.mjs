@@ -75,7 +75,7 @@ export async function readEntries(file) {
 
 /**
  * What woke the turn ending at `index`: the nearest entry before it that came from the person,
- * from a channel, or from Rubato's own notice.
+ * from a channel, or from Rubato's own notice or clock (a wake reads as Rubato's own notice).
  */
 export function triggerOf(entries, index, { companionSessionId } = {}) {
   for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
@@ -92,6 +92,9 @@ export function triggerOf(entries, index, { companionSessionId } = {}) {
           messageId: entry.id,
           incomingMessageId: details.replyTo?.messageId ?? details.from?.messageId,
         };
+      }
+      if (details.kind === 'wake') {
+        return { kind: 'notice', own: true, text: typeof details.text === 'string' ? details.text : '', messageId: entry.id };
       }
       if (details.kind === 'notice') {
         // Rubato's own word is sent from 'rubato' (sessionLink.notice); a followed conversation's

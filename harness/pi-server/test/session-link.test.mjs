@@ -809,13 +809,25 @@ test("the companion hears once when a lead it started or sent work to ends its t
   assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
 });
 
-test("Rubato's own notice (the companion's heartbeat) wakes a conversation as a notice from Rubato", async (t) => {
+test("Rubato's own notice wakes a conversation as a notice from Rubato", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });
-  await env.link.notice({ to: segno.id, text: 'Heartbeat.' });
+  await env.link.notice({ to: segno.id, text: 'Something to look at.' });
   const delivered = await env.deliveries(segno.id);
-  assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.from.title, item.data.text]), [['notice', 'Rubato', 'Heartbeat.']]);
+  assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.from.title, item.data.text]), [['notice', 'Rubato', 'Something to look at.']]);
   await assert.rejects(env.link.notice({ to: segno.id, text: '' }), { code: 'invalid' });
+});
+
+test("Rubato's clock (the companion's heartbeat and daily report) wakes a conversation as a wake", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  await env.link.wake({ to: segno.id, what: 'heartbeat', text: 'Heartbeat.' });
+  await env.link.wake({ to: segno.id, what: 'daily-report', text: 'Daily report time.' });
+  const delivered = await env.deliveries(segno.id);
+  assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.what, item.data.from.sessionId, item.data.text]),
+    [['wake', 'heartbeat', 'rubato', 'Heartbeat.'], ['wake', 'daily-report', 'rubato', 'Daily report time.']]);
+  await assert.rejects(env.link.wake({ to: segno.id, what: 'lunch', text: 'x' }), { code: 'invalid' });
+  await assert.rejects(env.link.wake({ to: segno.id, what: 'heartbeat', text: '' }), { code: 'invalid' });
 });
 
 test("a window cannot rename the companion's conversation; any other conversation it can", async (t) => {

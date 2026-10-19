@@ -1,4 +1,4 @@
-import { DELIVER_REQUEST, SESSION_MESSAGE_TYPE, buildSessionMessage, deliveredMessageIds, parseDelivery } from "./message.mjs";
+import { DELIVER_REQUEST, SESSION_MESSAGE_TYPE, buildSessionMessage, deliveredMessageIds, parseDelivery, projectWakes } from "./message.mjs";
 import { renderSessionMessage } from "./render.mjs";
 import { trackSideChatCache } from "./side-chat.mjs";
 import { createSessionTools } from "./tools.mjs";
@@ -24,6 +24,10 @@ const IDLE_RETRY_MS = 250;
  *   without one.
  * Each path writes the message once, so a messageId is a duplicate while it is held here or by Pi,
  * and once it is in the transcript.
+ *
+ * A wake from Rubato's own clock (heartbeat, daily report) reaches a model that takes system
+ * messages mid-conversation as a system message (message.mjs projectWakes), on every request of
+ * the turn, the cache warmer's replays included, since they reuse the projected context.
  */
 export function installSessionLink(pi, { sessionLink, companion = false } = {}) {
   const state = {
@@ -96,6 +100,12 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
   });
 
   pi.registerMessageRenderer(SESSION_MESSAGE_TYPE, renderSessionMessage);
+
+  pi.on("context_with_system", (event, ctx) => {
+    const native = ctx?.model?.compat?.supportsMidConvoSystemMessages === true;
+    const messages = projectWakes(event.messages, { native });
+    return messages === event.messages ? undefined : { messages };
+  });
 
   pi.rpc?.handle(DELIVER_REQUEST, (data) => {
     const details = parseDelivery(data);

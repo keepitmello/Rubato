@@ -7,6 +7,7 @@ import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
+import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { createInspector, isAgentId, readEntries, searchTerms, turnAround, windowTurn, INSPECT_LIMITS } from './session-inspect.mjs';
 
@@ -705,14 +706,22 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
       bound.follower = createCompanionFollower({ store: followStore, onError });
     },
-    /**
-     * Rubato's own word to a conversation (`kind: 'notice'`): the companion's heartbeat and daily
-     * report (harness/companion keeper.mjs). It wakes the conversation like any delivery.
-     */
+    /** Rubato's own word to a conversation (`kind: 'notice'`); it wakes the conversation like any delivery. */
     async notice({ to, about, text } = {}) {
       requireId(to, 'to'); requireText(text);
       const from = about ?? { sessionId: 'rubato', title: 'Rubato', cwd: '' };
       return deliver(to, envelope({ messageId: randomUUID(), kind: 'notice', from, text }));
+    },
+    /**
+     * Rubato's own clock (`kind: 'wake'`): the companion's heartbeat and daily report (harness/companion
+     * keeper.mjs). The conversation takes it as a system message where its model allows, and it
+     * draws no bubble; only the turn it starts shows.
+     */
+    async wake({ to, what, text } = {}) {
+      requireId(to, 'to'); requireText(text);
+      if (!WAKES.includes(what)) throw fail('invalid', `what must be one of ${WAKES.join(', ')}`);
+      return deliver(to, { v: 1, messageId: randomUUID(), kind: 'wake', what,
+        from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text });
     },
     /**
      * What the companion's `telegram_send` tool asks for (harness/companion/messenger): a message

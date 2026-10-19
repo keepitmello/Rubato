@@ -89,6 +89,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
       const sessionLink = hosted?.sessionLink;
       const host = sessionLink ? {
         notice: (args) => sessionLink.notice(args),
+        wake: (args) => sessionLink.wake(args),
         channel: (args) => {
           if (typeof sessionLink.channel !== 'function') throw new Error('This engine build cannot deliver channel messages');
           return sessionLink.channel(args);

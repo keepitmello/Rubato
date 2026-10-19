@@ -11,8 +11,9 @@
 // home folder and records which one it is (state.json). That record is how the app finds it.
 //
 // The keeper also keeps the companion's rhythm, as the person set it in Settings › Companion: a
-// heartbeat every so many minutes and a daily report at a set time, each a notice that wakes the
-// companion. A companion in the middle of a turn is not interrupted; the beat waits for it.
+// heartbeat every so many minutes and a daily report at a set time, each a wake from Rubato's own
+// clock (the companion reads it as a system message where its model allows; session-link
+// message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
 import { mkdirSync } from 'node:fs';
 import { COMPANION_TITLE, companionPaths, composePanel, followingStore, readFinished, readSettings, readState, writePanel, writeState } from './companion.mjs';
 import { ensureSegnoHome } from './home.mjs';
@@ -40,10 +41,10 @@ function reportTimeOn(at, time) {
 }
 
 /**
- * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string) => Promise<unknown>, env?: NodeJS.ProcessEnv,
+ * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'daily-report') => Promise<unknown>, env?: NodeJS.ProcessEnv,
  *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number }} options
  *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
- *   wakes the companion with a notice (pi-server session-link notice).
+ *   wakes the companion (pi-server session-link wake).
  */
 export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now }) {
   let client;
@@ -110,14 +111,14 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     lastBeat ??= at;
     if (busy) return;
     if (reportDue) {
-      await notify(sessionId, DAILY_REPORT_TEXT);
+      await notify(sessionId, DAILY_REPORT_TEXT, 'daily-report');
       writeState({ dailyReportOn: today }, env);
       lastBeat = at;
       return;
     }
     if (settings.heartbeat.enabled && at - lastBeat >= settings.heartbeat.everyMinutes * 60_000) {
       lastBeat = at;
-      await notify(sessionId, HEARTBEAT_TEXT);
+      await notify(sessionId, HEARTBEAT_TEXT, 'heartbeat');
     }
   }
 

@@ -10,6 +10,8 @@ import {
   writeIntent, writeSecret, writeState, messengerPaths,
 } from '../store.mjs';
 import { writeState as writeCompanionState } from '../../companion.mjs';
+import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT } from '../../keeper.mjs';
+import { buildSessionMessage, parseDelivery } from '../../../pi-runtime/features/session-link/message.mjs';
 
 const TOKEN = '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh';
 const USER_CHAT = '777';
@@ -262,6 +264,23 @@ test('the daily report and a lead ending reach the person; a heartbeat answer do
   await settle(box.service);
   assert.equal(box.fake.sent.filter((row) => row.text.includes('진행 중인 리드')).length, 0,
     'a heartbeat answer stays in the app: thinking on a timer is not a message to the phone');
+});
+
+// Rubato's clock as the session link writes it (kind `wake`, not shown in the app).
+const wakeEntry = (id, what, text) => ({ type: 'custom_message', id,
+  ...buildSessionMessage(parseDelivery({ v: 1, messageId: id, kind: 'wake', what, text })) });
+
+test("from Rubato's clock as a wake, the daily report reaches the person and a heartbeat answer does not", async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    wakeEntry('w1', 'daily-report', DAILY_REPORT_TEXT),
+    answerEntry('w2', '오늘 리포트: 들어온 것 2건.'),
+    wakeEntry('w3', 'heartbeat', HEARTBEAT_TEXT),
+    answerEntry('w4', '리드 둘 다 아직 돌고 있어.'),
+  ]);
+  await settle(box.service);
+  assert.ok(box.fake.sent.some((row) => row.chatId === USER_CHAT && row.text.includes('오늘 리포트')));
+  assert.equal(box.fake.sent.filter((row) => row.text.includes('아직 돌고')).length, 0);
 });
 
 test("Segno's answer to another person is held, not sent", async (t) => {

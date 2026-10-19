@@ -4,7 +4,7 @@ import { startCompanionKeeper } from './keeper.mjs';
 
 export async function start(ctx) {
   const keeper = startCompanionKeeper({ env: ctx.env, onError: ctx.onError, connect: () => ctx.connect(),
-    notify: (to, text) => ctx.host.notice({ to, text }) });
+    notify: (to, text, what) => ctx.host.wake({ to, what, text }) });
   return {
     /** Checks now instead of at the next poll (settings were just saved). */
     poke: () => keeper.poke(),

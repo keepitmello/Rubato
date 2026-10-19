@@ -143,7 +143,7 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   const notices = [];
   let at = new Date(2026, 9, 20, 12, 0).getTime();
   const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
-    notify: async (sessionId, text) => { notices.push({ sessionId, text }); } });
+    notify: async (sessionId, text, what) => { notices.push({ sessionId, text, what }); } });
   t.after(() => keeper.close());
   await keeper.ready;
   const { sessionId } = readState(env);
@@ -156,7 +156,7 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   assert.deepEqual(notices, [], 'a busy companion is not interrupted');
   engine.sessions.get(sessionId).status = 'idle';
   await keeper.poke();
-  assert.deepEqual(notices, [{ sessionId, text: HEARTBEAT_TEXT }]);
+  assert.deepEqual(notices, [{ sessionId, text: HEARTBEAT_TEXT, what: 'heartbeat' }]);
   at += 30 * 60_000;
   writeSettings({ heartbeat: { enabled: false } }, env);
   await keeper.poke();
@@ -170,7 +170,7 @@ test('the daily report goes out once a day at its time; a companion started afte
   const notices = [];
   let at = new Date(2026, 9, 20, 14, 0).getTime();
   const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
-    notify: async (_sessionId, text) => { notices.push(text); } });
+    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
   t.after(() => keeper.close());
   await keeper.ready;
   await keeper.poke();
@@ -182,7 +182,7 @@ test('the daily report goes out once a day at its time; a companion started afte
   await keeper.poke();
   at = new Date(2026, 9, 21, 9, 5).getTime();
   await keeper.poke();
-  assert.deepEqual(notices, [DAILY_REPORT_TEXT]);
+  assert.deepEqual(notices, [{ text: DAILY_REPORT_TEXT, what: 'daily-report' }]);
   assert.equal(readState(env).dailyReportOn, localDate(at));
 });
 
