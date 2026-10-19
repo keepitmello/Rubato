@@ -104,6 +104,17 @@ export const companionEdits = {
     ['import { useNewThreadHandler } from "../hooks/useHandleNewThread";\n',
       'import { useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
   ],
+  // The new-thread shortcuts (chat.newLocal, chat.new) from Segno's conversation, likewise.
+  'apps/web/src/routes/_chat.tsx': [
+    ['      if (command === "chat.newLocal") {\n        event.preventDefault();\n        event.stopPropagation();\n        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread ?? undefined,\n',
+      '      if (command === "chat.newLocal") {\n        event.preventDefault();\n        event.stopPropagation();\n        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n',
+      'replace'],
+    ['        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread ?? undefined,\n',
+      '        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n',
+      'replace'],
+    ['import { startNewThreadFromContext } from "../lib/chatThreadActions";\n',
+      'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+  ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
     ['  const threads = useThreadShells();\n',
