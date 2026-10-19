@@ -16,6 +16,7 @@ const RUNTIME_FILES = Object.freeze([
   "guidance.mjs",
   "anthropic-server-compaction.mjs",
   "anthropic-server-compaction-wire.mjs",
+  "compact-now.mjs",
   "patches.mjs",
   "relationship.md",
   "THIRD_PARTY_NOTICES.md",

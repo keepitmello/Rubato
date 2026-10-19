@@ -1,7 +1,8 @@
 // Settings › Companion: turning Segno on, its heartbeat and daily report, the pieces its system
 // prompt is made of, and the Telegram messenger it talks through. The server half is
 // harness/t3-integration/src/companion/service.mjs over harness/companion. A saved piece reaches
-// Segno on its next request; the tools piece follows the product and only reads here.
+// Segno when its conversation next crosses a compaction or a new window (prompt-rules
+// role-prompt.mjs); the tools piece follows the product and only reads here.
 //
 // The Telegram part reads and writes the same files the engine's resident messenger reads
 // (harness/companion/messenger/store.mjs): a request is a file, and the answer shows up here a

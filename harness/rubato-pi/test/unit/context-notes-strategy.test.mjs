@@ -3,10 +3,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
-import { ContextNotesController, GUIDANCE, guidanceFor } from "../../src/context-notes/controller.mjs";
+import { ContextNotesController, GUIDANCE, guidanceFor, periodicNotesNudge } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
 import { NUDGE_ENTRY, REMINDER_ENTRY, messageText } from "../../src/context-notes/protocol.mjs";
-import { NUDGE_TEXT, REMINDER_TEXT } from "../../src/context-notes/reminder.mjs";
+import { BYTE_NUDGE_TEXT, NUDGE_TEXT, REMINDER_TEXT } from "../../src/context-notes/reminder.mjs";
+import { REQUEST_BYTE_WARNING } from "../../src/context-notes/request-budget.mjs";
 
 const ASTRA = { provider: "openai-codex", id: "gpt-6-astra", contextWindow: 272000, maxTokens: 128000 };
 const GROK = { provider: "xai", id: "grok-4.7", contextWindow: 500000, maxTokens: 128000 };
@@ -14,13 +15,14 @@ const OPUS = { provider: "anthropic", id: "claude-opus-5-5", contextWindow: 1000
 const DEEPSEEK = { provider: "b-ai", id: "deepseek-v4.1-flash", contextWindow: 1000000, maxTokens: 384000 };
 const GEMINI = { provider: "google-antigravity", id: "gemini-3.8-flash", contextWindow: 1048576, maxTokens: 65536 };
 
-function setup(t, model, env = {}) {
+function setup(t, model, env = {}, runtimeEnv = undefined) {
   const f = fakeSession(t);
   f.ctx.model = model;
   let tokens = 0;
   f.ctx.getContextUsage = () => ({ tokens });
   f.addMessage("user", "Goal: migrate the cache layer without changing the public API.");
-  const c = new ContextNotesController(f.pi, f.ctx, { requireEngine: false, config: contextNotesConfig(env) });
+  const c = new ContextNotesController(f.pi, f.ctx, { requireEngine: false, config: contextNotesConfig(env),
+    ...(runtimeEnv ? { env: runtimeEnv } : {}) });
   t.after(() => c.close());
   let call = 0;
   // One completed tool round of real work; the provider meter ends at `at` tokens.
@@ -198,6 +200,41 @@ test("the nudge interval follows RUBATO_CONTEXT_NOTE_NUDGE_RATIO and 0 turns it 
   const tight = setup(t, DEEPSEEK, { RUBATO_CONTEXT_NOTE_NUDGE_RATIO: "0.05" });
   tight.work(10_000); tight.work(61_000);
   assert.equal(count(tight.prepare(), NUDGE_TEXT), 1);
+});
+
+const COMPANION_ENV = { RUBATO_PI_ROLE: "companion" };
+
+test("the companion gets no periodic notes nudge; a lead in the same engine still does", (t) => {
+  const lead = setup(t, DEEPSEEK, {}, { RUBATO_PI_ROLE: "lead" });
+  const companion = setup(t, DEEPSEEK, {}, COMPANION_ENV);
+  for (const f of [lead, companion]) { f.work(20_000); f.save(); f.work(20_000 + 2 * f.c.usage().nudgeTokens); }
+  assert.equal(count(lead.prepare(), NUDGE_TEXT), 1);
+  assert.equal(count(companion.prepare(), NUDGE_TEXT), 0);
+  assert.equal(companion.c.store.diagnostics().filter((e) => e.event === "note_nudge_recorded").length, 0);
+  assert.equal(periodicNotesNudge(COMPANION_ENV), false);
+  assert.equal(periodicNotesNudge({}), true, "a runtime without a role is a lead");
+});
+
+test("the companion keeps the hard limits: the byte warning and the checkpoint at the hard line", async (t) => {
+  const bytes = setup(t, OPUS, {}, COMPANION_ENV);
+  bytes.setTokens(100);
+  bytes.addMessage("user", "x".repeat(REQUEST_BYTE_WARNING));
+  assert.equal(count(bytes.prepare(), BYTE_NUDGE_TEXT), 1);
+  const hardLine = setup(t, DEEPSEEK, {}, COMPANION_ENV);
+  hardLine.work(20_000); hardLine.save(); hardLine.work(hardLine.c.usage().hard + 1000);
+  assert.throws(() => hardLine.c.admit(hardLine.build().messages), /창 한도/);
+  await hardLine.c.turnEnd({}, hardLine.ctx);
+  assert.equal(hardLine.c.checkpointRequested, true);
+});
+
+test("the companion's guidance does not promise a periodic notice", () => {
+  for (const model of [OPUS, DEEPSEEK]) {
+    assert.match(guidanceFor(model), /a periodic notice asks you to refresh them/);
+    const companion = guidanceFor(model, undefined, { periodicNudge: false });
+    assert.doesNotMatch(companion, /periodic/);
+    assert.match(companion, /Keep notes current while you work\. /);
+  }
+  assert.equal(guidanceFor(ASTRA, undefined, { periodicNudge: false }), GUIDANCE, "Astra's text never promised one");
 });
 
 test("a server compaction that shrinks the context does not hide accumulated work", (t) => {

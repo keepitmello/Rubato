@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createCompanionService, handleCompanionRequest } from '../src/companion/service.mjs';
-import { writeState } from '../../companion/companion.mjs';
+import { seedPromptPieces, writeState } from '../../companion/companion.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 
@@ -51,6 +51,25 @@ test('pieces list every piece with its default, and a saved piece is the person\
   const tools = await post('save-piece', { id: 'tools', text: 'mine' });
   assert.equal(tools.status, 400);
   assert.equal((await post('nope')).status, 404);
+});
+
+test('a home set up for the first time shows who Segno is as the person\'s own version', async (t) => {
+  const { env, post } = await setup(t);
+  seedPromptPieces({ defaultsDir, env });
+  const { body } = await post('pieces');
+  // Settings › Companion marks a piece "Yours" when it has a personal text and lets it be edited;
+  // all four seeded pieces read that way from the first day, with no edit by the person.
+  for (const id of ['preamble', 'soul', 'identity', 'user']) {
+    const piece = body.pieces.find((entry) => entry.id === id);
+    assert.equal(piece.personalText, piece.defaultText, `${id} is the person's copy`);
+    assert.equal(piece.baseText, piece.defaultText, `${id} remembers the default it was copied from`);
+    assert.equal(piece.editable, true);
+  }
+  for (const id of ['companion', 'tools']) {
+    const piece = body.pieces.find((entry) => entry.id === id);
+    assert.equal(piece.personalText, undefined, `${id} still follows Rubato`);
+    assert.equal(piece.baseText, undefined);
+  }
 });
 
 test('the Telegram page reads the token masked and asks the engine for a pairing code', async (t) => {

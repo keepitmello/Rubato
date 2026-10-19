@@ -6,11 +6,19 @@
 //     settings.json                      what the person chose in Settings › Companion
 //     state.json                         which conversation is the companion (written by the keeper)
 //     prompt/<piece>.md                  the person's version of one prompt piece
+//     prompt/.base/<piece>.md            the product default that version was copied from
 //
 // Each prompt piece has a product default (harness/prompts/companion/<piece>.pi.md). A piece the
 // person rewrote is read from prompt/<piece>.md; every other piece keeps following the default,
 // so an update to Rubato still reaches the pieces nobody touched. The tools piece describes the
 // real tools and moves with the code, so it has no personal version.
+//
+// A new home starts with the person's own copy of who Segno is (SEEDED_PIECES): setup copies the
+// default into prompt/<piece>.md when that file is absent, and keeps the text it copied in
+// prompt/.base/<piece>.md. The base is outside what the prompt composer reads, so it never joins
+// the prompt; it lets a later compare tell what Rubato changed from what the person changed.
+// The companion and tools pieces are Rubato's work rules and are never copied: they keep following
+// updates. A personal file without a base was not seeded (an older home), so its base is unknown.
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -30,6 +38,8 @@ export const PIECES = Object.freeze([
   Object.freeze({ id: 'companion', editable: true }),
   Object.freeze({ id: 'tools', editable: false }),
 ]);
+/** The pieces a home starts with as the person's own copy: who Segno is, and who they are. */
+export const SEEDED_PIECES = Object.freeze(['preamble', 'soul', 'identity', 'user']);
 const PIECE_IDS = new Set(PIECES.map((piece) => piece.id));
 /** A personal piece larger than this is refused: it rides on every request. */
 export const PIECE_LIMIT = 64 * 1024;
@@ -118,6 +128,7 @@ export function readState(env = process.env) {
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
     ...(typeof state?.dailyReportOn === 'string' ? { dailyReportOn: state.dailyReportOn } : {}),
+    ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
   };
 }
 
@@ -219,16 +230,68 @@ function pieceOf(id) {
 
 export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${pieceOf(id).id}.pi.md`);
 export const personalPiecePath = (env, id) => path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`);
+/** Where the default text a personal copy was seeded from is kept; never read by the composer. */
+export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
+
+/** Writes text as a new file, refusing to replace one already there. */
+function writeTextNew(file, text) {
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  try {
+    // `wx` is the never-overwrite rule itself, so two setups racing still leave one file.
+    writeFileSync(file, text, { flag: 'wx', mode: 0o600 });
+    return true;
+  } catch (error) {
+    if (error?.code === 'EEXIST') return false;
+    throw error;
+  }
+}
 
 /**
- * Every piece for the settings page: its default text, the person's version if any, and
- * whether it can have one.
+ * Gives a home the person's own copy of who Segno is: each seeded piece is copied from the product
+ * default into prompt/<piece>.md, and the default it was copied from into prompt/.base/<piece>.md.
+ *
+ * - A file already at either place is never overwritten: the person's version is the answer, and a
+ *   base already recorded describes the copy the person holds.
+ * - A copy the person deleted (or one that was never seeded) comes back on the next setup; a home
+ *   set up before this ran gets seeded at its next engine start.
+ * - The companion and tools pieces are not copied: they are Rubato's work rules and keep following
+ *   updates.
+ *
+ * Returns which pieces were copied and which were left alone.
+ */
+export function seedPromptPieces({ defaultsDir, env = process.env } = {}) {
+  if (!defaultsDir) throw new TypeError('seeding needs the folder the default pieces live in');
+  const seeded = [];
+  const kept = [];
+  for (const id of SEEDED_PIECES) {
+    if (existsSync(personalPiecePath(env, id))) { kept.push(id); continue; }
+    let text;
+    try { text = readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim(); }
+    catch (error) { if (error?.code === 'ENOENT') { kept.push(id); continue; } throw error; }
+    if (!text) { kept.push(id); continue; }
+    if (!writeTextNew(personalPiecePath(env, id), text + '\n')) { kept.push(id); continue; }
+    // The base follows the copy that was just made, so it always names the default this version
+    // started from even when an older base was left behind by a deleted copy.
+    mkdirSync(path.dirname(basePiecePath(env, id)), { recursive: true, mode: 0o700 });
+    writeFileSync(basePiecePath(env, id), text + '\n', { mode: 0o600 });
+    seeded.push(id);
+  }
+  return { seeded, kept };
+}
+
+/**
+ * Every piece for the settings page: its default text, the person's version if any, whether it can
+ * have one, and for a copy that exists, the default it was seeded from (`baseText`) or
+ * `baseUnknown` when the file predates seeding.
  */
 export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
   return PIECES.map(({ id, editable }) => {
     const defaultText = readFile(defaultPiecePath(defaultsDir, id)).trim();
     const personal = editable ? readOptional(personalPiecePath(env, id), readFile) : undefined;
-    return { id, editable, defaultText, ...(personal === undefined ? {} : { personalText: personal }) };
+    if (personal === undefined) return { id, editable, defaultText };
+    const base = readOptional(basePiecePath(env, id), readFile);
+    return { id, editable, defaultText, personalText: personal,
+      ...(base === undefined ? { baseUnknown: true } : { baseText: base }) };
   });
 }
 
@@ -247,7 +310,11 @@ export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
   const trimmed = text.trim();
   const defaultText = defaultsDir && existsSync(defaultPiecePath(defaultsDir, id))
     ? readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim() : undefined;
-  if (!trimmed || trimmed === defaultText) { rmSync(file, { force: true }); return { personal: false }; }
+  if (!trimmed || trimmed === defaultText) {
+    rmSync(file, { force: true });
+    rmSync(basePiecePath(env, id), { force: true });
+    return { personal: false };
+  }
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, trimmed + '\n', { mode: 0o600 });

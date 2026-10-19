@@ -1,6 +1,9 @@
 import { createCompactionExtension } from "./extension.mjs";
+import { createCompactNowExtensionFactories } from "./compact-now.mjs";
 
 export const COMPACTION_FACTORY_NAME = "rubato-compaction";
+// harness/companion COMPANION_ROLE (not staged with these files).
+const COMPANION_ROLE = "companion";
 
 export function createCompactionExtensionFactories({
   settingsManager,
@@ -12,10 +15,14 @@ export function createCompactionExtensionFactories({
   return [{
     name: COMPACTION_FACTORY_NAME,
     factory: createCompactionExtension({ settingsManager, env, fetchImpl, now }),
-  }];
+  },
+  // Only the companion compacts on request (its sleep, harness/prompts/companion); leads keep the
+  // safety line and new_context.
+  ...(env.RUBATO_PI_ROLE === COMPANION_ROLE ? createCompactNowExtensionFactories() : [])];
 }
 
 export { createCompactionExtension } from "./extension.mjs";
+export { COMPACT_CONTEXT_TOOL, createCompactNowExtension } from "./compact-now.mjs";
 export { shouldRunIdleCompaction } from "./idle.mjs";
 export { isTripped, recordFailure, recordSuccess } from "./circuit-breaker.mjs";
 export { shouldTriggerCompaction } from "./policy.mjs";
