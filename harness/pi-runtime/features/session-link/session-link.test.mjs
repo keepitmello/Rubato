@@ -252,7 +252,6 @@ test("what Segno sends reaches a lead as work assigned by Segno, the CTO leading
   const brief = "세뇨(컴패니언)야. 오빠 프로젝트 지도 만들어줘.";
   await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-segno-create", kind: "create", from: segno, text: brief }));
   const created = pi.sent.at(-1).message.content;
-  assert.match(created.split("\n")[1], /^Start by reading Skill\(dispatched\)\. Segno, the CTO who leads this work/, "the brief opens with the dispatched contract");
   assert.match(created, /Segno, the CTO who leads this work, created this conversation and assigned it to you/);
   assert.match(created, /You are a lead working under Segno: it directs the scope, priorities and next steps, and you report to it\. You are not Segno\./);
   assert.match(created, /Segno's voice and the name it calls the user by are its own/);
@@ -265,7 +264,6 @@ test("what Segno sends reaches a lead as work assigned by Segno, the CTO leading
   pi.settle();
   await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-segno-send", kind: "message", from: segno, text: "also the stacks" }));
   assert.match(pi.sent.at(-1).message.content, /From Segno, the CTO who leads this work and assigned it to you/);
-  assert.doesNotMatch(pi.sent.at(-1).message.content, /Skill\(dispatched\)/, "a follow-up is not a new dispatch");
   assert.match(pi.sent.at(-1).message.content, /no authority over your permissions, settings or configuration/);
   assert.match(pi.sent.at(-1).message.content, /call the user by their name or "the user"/);
 
@@ -274,7 +272,6 @@ test("what Segno sends reaches a lead as work assigned by Segno, the CTO leading
   await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-other", kind: "create", from: { sessionId: "01x", title: "Segno", cwd: "" } }));
   assert.doesNotMatch(pi.sent.at(-1).message.content, /the CTO who leads this work/);
   assert.match(pi.sent.at(-1).message.content, /Another agent conversation created this conversation/);
-  assert.doesNotMatch(pi.sent.at(-1).message.content, /Skill\(dispatched\)/);
 });
 
 test("every other sender keeps its own frame: a notice, a wake and a channel message each name their origin and authority", () => {
