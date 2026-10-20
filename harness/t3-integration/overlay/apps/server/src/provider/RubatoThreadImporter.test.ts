@@ -1,7 +1,7 @@
 // A message another conversation sent into a Rubato session, as the thread stores it: valid V2
 // records keyed by its own id (a replay replaces them), authored the way upstream marks a
 // message another agent sent, with the sender context and the sending thread when known.
-import { OrchestrationV2ConversationMessage, OrchestrationV2TurnItem, ThreadId } from "@t3tools/contracts";
+import { OrchestrationMessageContext, OrchestrationV2ConversationMessage, OrchestrationV2TurnItem, ThreadId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import { sessionMessageRecords } from "./RubatoThreadImporter.ts";
@@ -25,5 +25,20 @@ describe("session message records", () => {
     expect(decodedMessage.context?.records[0]?.label).toBe("Planner");
     expect(decodedItem).toMatchObject({ id: "rubato-session:abc", type: "user_message", messageId: "rubato-session:abc",
       ordinal: 7, runId: null, createdBy: "agent", senderThreadId: "sending-thread" });
+  });
+  it("write a message Segno sent on Telegram from a hidden run as Segno's own words", () => {
+    const threadId = ThreadId.make("segno-thread");
+    const echo = { version: 1 as const, records: [{ version: 1 as const, contextId: "rubato-telegram", kind: "rubato-telegram",
+      label: "Telegram", payload: { v: 1, toolCallId: "c1" } }] };
+    // The live path decodes the context before it gets here (RubatoPiSessions.ts appendSessionMessage).
+    expect(Schema.decodeUnknownSync(OrchestrationMessageContext)(echo).records[0]?.kind).toBe("rubato-telegram");
+    const { message, turnItem } = sessionMessageRecords(threadId, { role: "session", id: "rubato-session:tg",
+      text: "밥은 먹었어?", createdAt: "2026-10-20T03:00:00.000Z", context: echo as never }, 9);
+    const decodedMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(
+      Schema.encodeSync(OrchestrationV2ConversationMessage)(message));
+    const decodedItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
+    expect(decodedMessage).toMatchObject({ id: "rubato-session:tg", role: "assistant", createdBy: "agent", text: "밥은 먹었어?" });
+    expect(decodedMessage.context).toBeUndefined();
+    expect(decodedItem).toMatchObject({ id: "rubato-session:tg", type: "assistant_message", messageId: "rubato-session:tg", ordinal: 9 });
   });
 });

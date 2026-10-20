@@ -6,6 +6,7 @@ import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
 import { createQuietRuns } from './quiet-runs.mjs';
+import { createTelegramEcho } from './telegram-echo.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -146,6 +147,8 @@ export class RubatoRpcConnection {
     // restart is never one of them.
     this.asked = false;
     this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null });
+    // What Segno sends the person with telegram_send from such a run shows as its words (telegram-echo.mjs).
+    this.telegramEcho = createTelegramEcho({ threadId });
     this.sessionId = null;
     this.closed = false;
   }
@@ -216,7 +219,7 @@ export class RubatoRpcConnection {
       this.sequence = state.sequence ?? 0;
       this.run = null;
       for (const record of state.events ?? []) {
-        this.fold?.feed(record.event); this.sessionMessage(record.event);
+        this.fold?.feed(record.event); this.sessionMessage(record.event); this.telegramMessage(record.event);
         for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
       }
       if (state.status !== 'running') this.run = null;
@@ -376,11 +379,22 @@ export class RubatoRpcConnection {
       this.log('session message not written', error);
     });
   }
+  /** A quiet run's telegram_send to the person, written into the thread as Segno's words. */
+  telegramMessage(event) {
+    const item = this.telegramEcho.accept(event, this.quietRuns.quiet);
+    if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
+    this.sessionMessages.add(item.id);
+    Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
+      this.sessionMessages.delete(item.id);
+      this.log('telegram message not written', error);
+    });
+  }
   deliver(event) {
     // The Agents panel, Speed Index and cache read the engine's own records, not the
     // rows this stream turns them into.
     this.fold?.feed(event);
     this.sessionMessage(event);
+    this.telegramMessage(event);
     if (cacheMoved(event)) void this.refreshCache();
     // Rubato's title extension names the session from its topic; the thread shows that name
     // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
