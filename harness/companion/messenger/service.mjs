@@ -220,13 +220,20 @@ export function startCompanionMessenger({
     return api;
   }
 
+  /** Updates already let through the cap: a retry of one (waiting, a failed delivery) is not new traffic. */
+  const admitted = new Set();
   /** Telegram refuses a band of messages from one chat in one minute; these are generous. */
-  function allowedInbound(chatId) {
+  function allowedInbound(chatId, updateId) {
+    if (updateId !== undefined && admitted.has(updateId)) return true;
     const at = now();
     const recent = (inboundSeen.get(chatId) ?? []).filter((time) => at - time < 60_000);
     if (recent.length >= 30) { inboundSeen.set(chatId, recent); return false; }
     recent.push(at);
     inboundSeen.set(chatId, recent);
+    if (updateId !== undefined) {
+      admitted.add(updateId);
+      if (admitted.size > 1000) admitted.delete(admitted.values().next().value);
+    }
     return true;
   }
 
@@ -371,7 +378,7 @@ export function startCompanionMessenger({
       }
     }
     if (message.chat?.type === 'group' || message.chat?.type === 'supergroup') {
-      if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
+      if (!allowedInbound(chatId, update.update_id)) { log('inbound-dropped', { chatId }); return; }
       // Someone else's report belongs in Segno's inbox whether or not its conversation is up: the
       // list is what the person reads, and a message must not be lost to a restarting engine.
       const to = readCompanionState(env).sessionId;

@@ -190,3 +190,14 @@ test("another person's report is filed at once even before Segno runs, and reach
   const again = openInbox({ env: box.env });
   try { assert.equal(again.list().length, 1, 'still one item'); } finally { again.close(); }
 });
+
+test("a report waiting for Segno's conversation is retried without using up its chat's cap, and still arrives", async (t) => {
+  const box = await paired(t);
+  const { writeState: writeCompanion } = await import('../../companion.mjs');
+  writeCompanion({ sessionId: '' }, box.env);
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '오래 기다린 신고', from: 'Gildong' });
+  for (let pass = 0; pass < 40; pass += 1) await box.service.poke();
+  writeCompanion({ sessionId: 'S1' }, box.env);
+  await settle(box.service);
+  assert.deepEqual(box.delivered.map((delivery) => delivery.text.split('\n')[0]), ['오래 기다린 신고']);
+});
