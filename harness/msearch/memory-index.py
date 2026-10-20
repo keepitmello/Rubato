@@ -177,6 +177,26 @@ def is_excluded(file_path: Path) -> bool:
     return any(fragment in normalized for fragment in EXCLUDE_PATH_FRAGMENTS)
 
 
+def walk_markdown(directory: Path) -> Iterable[Path]:
+    """Every *.md under `directory`, linked folders included.
+
+    A folder is walked once by its real path, so a loop of links or a second link to the same
+    place adds nothing. pathlib's rglob(recurse_symlinks=True) has no such guard: two loop links
+    in one folder branch at every level until the OS link limit, and the walk does not end.
+    """
+    seen: set[str] = set()
+    for root, dirs, names in os.walk(directory, followlinks=True):
+        real = os.path.realpath(root)
+        if real in seen:
+            dirs[:] = []
+            continue
+        seen.add(real)
+        dirs.sort()
+        for name in sorted(names):
+            if name.endswith(".md"):
+                yield Path(root, name)
+
+
 def discover_markdown_files() -> list[Path]:
     # 원본은 세 디렉터리를 이름으로 박아둔다. 그것은 채널 레이아웃이 고정이기 때문이었고,
     # 여기서는 루트 아래에 identity 저장소가 몇 개든 생길 수 있다. 루트를 통째로 훑되,
@@ -186,10 +206,10 @@ def discover_markdown_files() -> list[Path]:
     for directory in source_dirs:
         if directory.exists():
             # 링크한 폴더도 따라간다: 레포 문서를 정본으로 두고 기억 자리에 링크로 걸면
-            # 그 안의 문서가 찾혀야 한다. 순환 링크로 같은 파일이 여러 경로로 잡히면 아래에서
-            # 실제 경로 하나로 모은다.
+            # 그 안의 문서가 찾혀야 한다. 폴더는 실제 경로로 한 번만 걷고(walk_markdown),
+            # 같은 파일이 여러 경로로 잡히면 아래에서 실제 경로 하나로 모은다.
             files.extend(
-                path for path in directory.rglob("*.md", recurse_symlinks=True)
+                path for path in walk_markdown(directory)
                 if path.is_file() and not is_excluded(path)
             )
     # 재귀 스캔 금지 — 명시한 루트 문서만.
@@ -205,9 +225,11 @@ def rel_path(file_path: Path) -> str:
     try:
         return str(resolved.relative_to(PROJECT_ROOT))
     except ValueError:
-        # External paths — use home-relative or absolute
+        # 루트 밖(링크로 걸린 레포 문서 같은 것)은 ~/ 로 시작하는 홈 기준이나 절대 경로.
+        # 접두어가 없으면 홈의 work/x.md 와 루트의 work/x.md 가 같은 이름(같은 file_id·조각 키)이
+        # 되어 한쪽이 사라진다.
         try:
-            return str(resolved.relative_to(Path.home()))
+            return "~/" + str(resolved.relative_to(Path.home()))
         except ValueError:
             return str(resolved)
 
