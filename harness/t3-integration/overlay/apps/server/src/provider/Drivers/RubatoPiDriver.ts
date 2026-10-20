@@ -113,6 +113,13 @@ export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   /** Writes a message another conversation sent into the thread's session (RubatoPiSessions.ts binds it). */
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
+  /** A run for a turn the engine runs while T3 holds no stream on the thread (bridge engine-runs.mjs); null when the thread runs something else. */
+  openEngineRun?: (threadId: string, request: {readonly sessionId: string}) => Promise<string | null>;
+  closeEngineRun?: (threadId: string, runId: string, status: "completed" | "interrupted" | "failed") => Promise<void>;
+  /** Shows a running engine session in its thread while it runs (bridge engine-runs.mjs). */
+  followEngineRun(threadId: string, sessionId: string): Promise<void>;
+  /** The open stream T3 holds on a thread, if any. */
+  rpcFor(threadId: string): unknown;
   /** A typed `/rewind N`: refuses when the thread has fewer than N turns before the running one. */
   checkRewind?: (threadId: string, turns: number) => Promise<void>;
   /** A typed `/rewind N`: once its turn settled, T3 reverts it and the N turns before it (RubatoPiSessions.ts). */
