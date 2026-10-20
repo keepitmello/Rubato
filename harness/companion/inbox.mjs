@@ -11,7 +11,7 @@
 //
 // The file is self-contained on purpose (no local imports): the same file is staged into the
 // runtime build so the companion's inbox tools can read and write it beside the engine.
-import { existsSync, mkdirSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, openSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { homedir } from 'node:os';
 import { DatabaseSync } from 'node:sqlite';
@@ -28,6 +28,50 @@ export function companionHomeFor(env = process.env) {
 
 export function inboxPath(env = process.env) {
   return path.join(companionHomeFor(env), 'inbox', 'inbox.sqlite');
+}
+
+/**
+ * The wake line file (user item 5b32e195): the user's Telegram listener (tgd) appends one JSON line
+ * per message Segno should wake for — one that tags the user or answers the user's own message —
+ * `{"v":1,"at":ISO,"marker":"b-…","itemIds":["…"],"text":"…"}`, after writing the items to the
+ * inbox. Everything else only lands in the inbox and Segno sees it on its heartbeat. The keeper
+ * reads the file forward by bytes and wakes Segno (keeper.mjs).
+ */
+export function inboxWakePath(env = process.env) {
+  return path.join(companionHomeFor(env), 'inbox', 'wake.jsonl');
+}
+
+/** Wake lines that come within this long of the first unread one go to Segno in one wake. */
+export const INBOX_WAKE_WINDOW_MS = 5 * 60_000;
+
+/**
+ * The complete wake lines after byte `offset`: `records` in file order, `end` the byte after the
+ * last complete line (an unfinished last line waits for its newline), `size` the file's size
+ * (undefined when there is no file), `skipped` lines that are not a wake record.
+ */
+export function readInboxWakes(offset, env = process.env) {
+  const file = inboxWakePath(env);
+  let size;
+  try { size = statSync(file).size; } catch { return { records: [], end: offset, size: undefined, skipped: 0 }; }
+  if (size <= offset) return { records: [], end: offset, size, skipped: 0 };
+  const buffer = Buffer.alloc(size - offset);
+  const fd = openSync(file, 'r');
+  try { readSync(fd, buffer, 0, buffer.length, offset); } finally { closeSync(fd); }
+  const last = buffer.lastIndexOf(0x0a);
+  if (last < 0) return { records: [], end: offset, size, skipped: 0 };
+  const records = [];
+  let skipped = 0;
+  for (const line of buffer.subarray(0, last).toString('utf8').split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const record = JSON.parse(line);
+      const itemIds = Array.isArray(record?.itemIds) ? record.itemIds.filter((id) => typeof id === 'string' && id) : [];
+      if (typeof record?.text !== 'string' && !itemIds.length) { skipped += 1; continue; }
+      records.push({ at: typeof record.at === 'string' ? record.at : undefined, marker: typeof record.marker === 'string' ? record.marker : undefined,
+        itemIds, text: typeof record.text === 'string' ? record.text : '' });
+    } catch { skipped += 1; }
+  }
+  return { records, end: offset + last + 1, size, skipped };
 }
 
 const SCHEMA = `

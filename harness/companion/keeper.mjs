@@ -48,13 +48,14 @@
 // is a wake too; what the companion does with it (records, notes, compaction or a new window) is
 // in its prompt (harness/prompts/companion).
 import { open, readFile } from 'node:fs/promises';
-import { mkdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
 import { scheduleNudges } from './schedule.mjs';
+import { INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
@@ -91,6 +92,19 @@ export function timeLabel(at) {
   const part = localParts(at);
   const hour = Number(part.hour);
   return `${Number(part.month)}월 ${Number(part.day)}일(${WEEKDAY(at)}) ${hour < 12 ? '오전' : '오후'} ${hour % 12 || 12}:${part.minute}`;
+}
+
+/**
+ * The wake for messages from the user's work rooms that tag the user (user items 5b32e195, 06ebe72b):
+ * a signal line like the heartbeat's, then what the listener wrote for each message. The items are in
+ * the inbox already; this tells Segno which ones and when.
+ */
+export function inboxWakeText(records, at) {
+  const markers = records.map((record) => record.marker).filter(Boolean);
+  const items = [...new Set(records.flatMap((record) => record.itemIds))];
+  const parts = ['INBOX', ...(markers.length ? [`marker=${markers.join(',')}`] : []), ...(items.length ? [`items=${items.join(',')}`] : []), `now="${timeLabel(at)}"`];
+  const texts = records.map((record) => record.text.trim()).filter(Boolean);
+  return [parts.join(' '), ...texts].join('\n\n');
 }
 
 /** A moment as ISO 8601 with the local offset, the way Roo writes a wake wish's time: 2026-10-20T18:30:00+09:00. */
@@ -342,7 +356,7 @@ export function localDate(at) {
 }
 
 /**
- * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'greeting' | 'wake' | 'recall' | 'sleep' | 'persona-review') => Promise<unknown>, env?: NodeJS.ProcessEnv,
+ * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'greeting' | 'wake' | 'recall' | 'sleep' | 'persona-review' | 'inbox') => Promise<unknown>, env?: NodeJS.ProcessEnv,
  *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number, sleepCheckMs?: number,
  *   defaultsDir?: string }} options
  *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
@@ -464,6 +478,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (busy) { lastBusyAt = at; return; }
     const today = localDate(at);
     if (await wakeDue(active, sessionId, at, settings)) return;
+    if (await inboxDue(sessionId, at)) return;
     if (await sleepDue(active, at, today)) {
       await notify(sessionId, SLEEP_TEXT, 'sleep');
       writeState({ sleptOn: today }, env);
@@ -478,6 +493,31 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       return;
     }
     if (settings.heartbeat.enabled) await beat(active, sessionId, at, settings);
+  }
+
+  /**
+   * The listener's wake lines (inbox.mjs inboxWakePath), read forward by bytes. The first time the
+   * keeper meets the file it only notes where it ends; a file shorter than where it read is read
+   * again from the start. Lines that come within five minutes of the first unread one go to Segno
+   * together once those five minutes are over (user item 06ebe72b); the place moves on only after
+   * the wake went. While Segno is off the keeper does not tick, so lines wait for it.
+   */
+  async function inboxDue(sessionId, at) {
+    const saved = readState(env).inboxWake;
+    let size;
+    try { size = statSync(inboxWakePath(env)).size; } catch { size = undefined; }
+    if (saved === undefined || !Number.isInteger(saved.offset)) { writeState({ inboxWake: { offset: size ?? 0 } }, env); return false; }
+    let offset = saved.offset;
+    if (size === undefined) return false;
+    if (size < offset) { offset = 0; writeState({ inboxWake: { offset } }, env); }
+    if (size === offset) return false;
+    const { records, end } = readInboxWakes(offset, env);
+    if (!records.length) { if (end !== offset) writeState({ inboxWake: { offset: end } }, env); return false; }
+    const first = Date.parse(records[0].at ?? '');
+    if (at - (Number.isFinite(first) ? first : at) < INBOX_WAKE_WINDOW_MS) return false;
+    await notify(sessionId, inboxWakeText(records, at), 'inbox');
+    writeState({ inboxWake: { offset: end } }, env);
+    return true;
   }
 
   /**
