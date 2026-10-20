@@ -12,7 +12,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
-import { RubatoThreadImporter, SAID_RUN_PREFIX, isSaidRun, layer as importerLayer, saidRunId, sessionMessageRecords } from "./RubatoThreadImporter.ts";
+import { ENGINE_RUN_PREFIX, RubatoThreadImporter, SAID_RUN_PREFIX, isRubatoRun, isSaidRun, layer as importerLayer, saidRunId, sessionMessageRecords } from "./RubatoThreadImporter.ts";
+import { engineRunning } from "./RubatoPiInventory.ts";
 import { gapsFromProviderEvents } from "./RubatoPiSessions.ts";
 
 const context = { version: 1 as const, records: [{
@@ -139,5 +140,35 @@ describe("Segno's own run (tell_user from a hidden run)", () => {
     await run(writes, { ...opened, ordinal: 7 });
     expect(writes.map((write) => write.events.map((event) => event.type))).toEqual([["message.updated", "turn-item.updated", "run.updated"]]);
     expect(writes[0]!.events[2]!.payload).toMatchObject({ id: saidRunId("rubato-session:said"), status: "completed", ordinal: 7 });
+  });
+});
+
+describe("a turn the engine runs while T3 holds no stream (bridge engine-runs.mjs)", () => {
+  const threadId = ThreadId.make("lead-thread");
+  const instance = ProviderInstanceId.make("rubato-pi");
+  it("opens as running and ends as completed, as a run T3 does not rewind", async () => {
+    const writes: Array<ReadonlyArray<OrchestrationV2DomainEvent>> = [];
+    let next = 0;
+    const sink = Layer.succeed(EventSink.EventSinkV2, { write: ({ events }: { events: ReadonlyArray<OrchestrationV2DomainEvent> }) =>
+      Effect.sync(() => { writes.push(events); return []; }) } as never);
+    const ids = Layer.succeed(IdAllocator.IdAllocatorV2, { allocate: { event: () => Effect.succeed(EventId.make(`e${next++}`)) } } as never);
+    const runId = RunId.make(`${ENGINE_RUN_PREFIX}01a15a0a:1760976028137`);
+    await Effect.runPromise(Effect.gen(function* () {
+      const importer = yield* RubatoThreadImporter;
+      const run = yield* importer.openRun({ threadId, runId, runOrdinal: 1, providerInstanceId: instance,
+        modelSelection: { instanceId: instance, model: "claude" } });
+      yield* importer.closeRun({ run, status: "completed" });
+    }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));
+    expect(writes.map((events) => events.map((event) => event.type))).toEqual([["run.created"], ["run.updated"]]);
+    const opened = Schema.decodeUnknownSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(writes[0]![0]!.payload as never));
+    expect(opened).toMatchObject({ id: runId, status: "running", ordinal: 1, providerThreadId: null, checkpointId: null });
+    expect(writes[1]![0]!.payload).toMatchObject({ id: runId, status: "completed" });
+    expect(isRubatoRun(runId)).toBe(true);
+    expect(isSaidRun(runId)).toBe(false);
+  });
+  it("counts a session as running from the engine's own list status", () => {
+    expect(engineRunning({ status: "running" })).toBe(true);
+    expect(engineRunning({ status: "starting" })).toBe(true);
+    for (const status of ["stored", "idle", "unloading"]) expect(engineRunning({ status })).toBe(false);
   });
 });

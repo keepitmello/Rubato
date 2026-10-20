@@ -8,6 +8,11 @@
  *
  * It never starts a model turn and never owns Pi workers or conversation files. A thread the
  * person deleted or archived is not brought back.
+ *
+ * A session the engine is running (a lead Segno opened, a scheduled run) is imported as active,
+ * not settled, and followed while it runs so its thread shows it running and its turns as they
+ * land (bridge engine-runs.mjs, user item 4c2a0df1). The same goes for a thread T3 let go idle
+ * whose session the engine runs again. A session at rest is never held open.
  */
 import { CommandId, OrchestrationMessageContext, ProjectId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
@@ -42,6 +47,9 @@ const nextPass = Effect.gen(function* () {
     Effect.ensuring(Effect.sync(() => { if (wake === current) wake = undefined; })),
   );
 });
+
+/** Whether the engine is running a session now (its session list row's status). */
+export const engineRunning = (entry: Pick<PiSummary, "status">) => entry.status === "running" || entry.status === "starting";
 
 /** A folder name for a session's project: the last path part, Unix or Windows. */
 export const projectTitleOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
@@ -103,15 +111,34 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     });
     yield* importer.value.importPiSessionThread({ threadId, projectId: project.id, title: entry.title || "Rubato session",
       sessionId: entry.sessionId, modelSelection, runtimeMode: "full-access", interactionMode: "default",
-      createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)), messages, settled: true });
+      createdAt: DateTime.formatIso(DateTime.makeUnsafe(entry.createdAt)), messages, settled: !engineRunning(entry) });
     settledSessions.add(entry.sessionId);
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session projection skipped", { sessionId: entry.sessionId, cause })));
+
+  // A thread the person has not deleted or archived: only such a one shows a running session.
+  const openThread = (threadId: string) => sql.value<{ readonly thread_id: string }>`
+    SELECT thread_id FROM orchestration_v2_projection_threads
+    WHERE thread_id = ${threadId} AND deleted_at IS NULL AND archived_at IS NULL LIMIT 1
+  `.pipe(Effect.map((rows) => rows.length > 0));
+
+  // The thread a running session shows in: the one bound to it, or the one the inventory imported.
+  const followSession = (instance: ProviderInstance, entry: PiSummary) => Effect.gen(function* () {
+    const bridge = rubatoBridgeFor(instance);
+    if (!bridge) return;
+    const bound = yield* threadOfPiSession(entry.sessionId);
+    const imported = importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
+    const threadId = bound ?? imported;
+    if (bridge.rpcFor(threadId) || !(yield* openThread(threadId))) return;
+    // The follower runs on its own; this pass does not wait for the session to finish.
+    yield* Effect.sync(() => { void bridge.followEngineRun(threadId, entry.sessionId); });
+  }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session follow skipped", { sessionId: entry.sessionId, cause })));
 
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) return;
     const inventory = yield* Effect.tryPromise(() => bridge.inventory());
     for (const entry of inventory) yield* importSession(instance, entry);
+    for (const entry of inventory) if (engineRunning(entry)) yield* followSession(instance, entry);
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
 
   const sync = Effect.gen(function* () {

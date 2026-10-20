@@ -5,6 +5,7 @@ import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom,
 import { quietMessages } from './quiet-runs.mjs';
 import { saidEchoes } from './said-echo.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
+import { followEngineRun } from './engine-runs.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
@@ -407,6 +408,33 @@ export class RubatoPiBridge {
     if (!Array.isArray(rows)) return false;
     for (const row of rows) if (typeof row?.sessionId === 'string') this.companionSessions.set(row.sessionId, row.companion === true);
     return this.companionSessions.get(sessionId) === true;
+  }
+  /**
+   * Shows a session the engine runs while T3 holds no stream on its thread, as it runs
+   * (engine-runs.mjs). The inventory asks for each running session it finds; one follower per
+   * session, none for Segno's own conversation, none while T3 streams the thread itself. The T3
+   * server binds `openEngineRun` and `closeEngineRun` (RubatoPiSessions.ts); before that, nothing.
+   */
+  async followEngineRun(threadId, sessionId) {
+    this.engineFollowers ??= new Map();
+    if (this.closed || !threadId || !sessionId || this.engineFollowers.has(sessionId)) return;
+    if (typeof this.openEngineRun !== 'function' || typeof this.closeEngineRun !== 'function') return;
+    if (this.rpcFor(threadId) || this.sessions.has(threadId)) return;
+    const pending = (async () => {
+      if (await this.companionSession(sessionId)) return undefined;
+      return followEngineRun({ bridge: this, threadId, sessionId, throttleMs: this.engineRunThrottleMs ?? 1000,
+        connect: this.engineConnect ?? (async () => { await this.connection(); return new SessionClient({ ...this.descriptor, onError: this.onError }).connect(); }),
+        onEnd: () => { if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId); },
+        log: (what, error) => t3BridgeLog(what, `${threadId} ${String(error?.message ?? error)}`) });
+    })();
+    this.engineFollowers.set(sessionId, pending);
+    try {
+      const follower = await pending;
+      if (!follower && this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId);
+    } catch (error) {
+      if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId);
+      t3BridgeLog('engine run follow failed', `${threadId} ${String(error?.message ?? error)}`);
+    }
   }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
@@ -1311,6 +1339,7 @@ export class RubatoPiBridge {
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
     await Promise.all([...this.rpcConnections].map((connection) => connection.close()));
+    await Promise.all([...(this.engineFollowers?.values() ?? [])].map((pending) => pending.then((follower) => follower?.stop(), () => {})));
     await this.flushStates();
     await this.inventoryClient?.close();
   }

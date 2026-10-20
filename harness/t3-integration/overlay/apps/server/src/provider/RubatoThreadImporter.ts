@@ -87,8 +87,15 @@ export const BACKFILL_KIND = "rubato-backfill";
  */
 export const SAID_RUN_PREFIX = "rubato-said:";
 export const saidRunId = (messageId: string) => RunId.make(`${SAID_RUN_PREFIX}${messageId}`);
-/** Whether a run is one appendOwnRun wrote rather than a turn the provider ran. */
+/**
+ * The run of a turn the engine ran while T3 held no stream on the thread (openEngineRun, bridge
+ * engine-runs.mjs): `rubato-engine:<session id>:<when it opened>`.
+ */
+/** Whether a run is one appendOwnRun wrote: Segno's words, not a turn. */
 export const isSaidRun = (runId: string) => runId.startsWith(SAID_RUN_PREFIX);
+export const ENGINE_RUN_PREFIX = "rubato-engine:";
+/** Whether a run is one this overlay wrote (Segno's words, an engine-run turn) rather than a turn T3 ran. */
+export const isRubatoRun = (runId: string) => runId.startsWith(SAID_RUN_PREFIX) || runId.startsWith(ENGINE_RUN_PREFIX);
 const ownRole = (context: unknown): "assistant" | "user" | null => {
   const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown; readonly payload?: unknown }> } | undefined)?.records;
   if (!Array.isArray(records)) return null;
@@ -308,8 +315,48 @@ const make = Effect.gen(function* () {
     ] }).pipe(Effect.mapError(importFailure("Could not write Segno's message")));
     return runId;
   });
-  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage, appendOwnRun };
+  /**
+   * A turn the engine runs while T3 holds no stream on the thread, as a run that shows running
+   * (bridge engine-runs.mjs): what it says arrives into it as session messages, and closeRun ends
+   * it. The caller reads the ordinal and checks the thread runs nothing else.
+   */
+  const openRun = (input: OpenRunInput) => Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const run: OrchestrationV2Run = {
+      id: input.runId, threadId: input.threadId, ordinal: input.runOrdinal, providerInstanceId: input.providerInstanceId,
+      modelSelection: input.modelSelection, providerThreadId: null, userMessageId: MessageId.make(input.runId),
+      rootNodeId: null, activeAttemptId: null, status: "running", queuePosition: null,
+      requestedAt: now, startedAt: now, completedAt: null, checkpointId: null, contextHandoffId: null,
+    };
+    const id = yield* idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the engine's run")));
+    yield* eventSink.write({ events: [{ id, type: "run.created", threadId: input.threadId, runId: input.runId,
+      providerInstanceId: input.providerInstanceId, occurredAt: now, payload: run }] })
+      .pipe(Effect.mapError(importFailure("Could not open the engine's run")));
+    return run;
+  });
+  /** Ends a run openRun wrote: completed when the engine settled, interrupted when it stopped short. */
+  const closeRun = (input: { readonly run: OrchestrationV2Run; readonly status: "completed" | "interrupted" | "failed" }) =>
+    Effect.gen(function* () {
+      const now = yield* DateTime.now;
+      const id = yield* idAllocator.allocate.event({ threadId: input.run.threadId }).pipe(
+        Effect.mapError(importFailure("Could not number the end of the engine's run")));
+      yield* eventSink.write({ events: [{ id, type: "run.updated", threadId: input.run.threadId, runId: input.run.id,
+        providerInstanceId: input.run.providerInstanceId, occurredAt: now,
+        payload: { ...input.run, status: input.status, completedAt: now } }] })
+        .pipe(Effect.mapError(importFailure("Could not end the engine's run")));
+    });
+  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage, appendOwnRun, openRun, closeRun };
 });
+
+export interface OpenRunInput {
+  readonly threadId: ThreadId;
+  readonly runId: RunId;
+  /** The thread's next free run ordinal (V2 numbers runs 1..n). */
+  readonly runOrdinal: number;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly modelSelection: ModelSelection;
+}
 
 export interface OwnRunInput {
   readonly threadId: ThreadId;
@@ -360,6 +407,9 @@ export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, 
   readonly appendSessionMessage: (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
     Effect.Effect<void, RubatoThreadImportError>;
   readonly appendOwnRun: (input: OwnRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
+  readonly openRun: (input: OpenRunInput) => Effect.Effect<OrchestrationV2Run, RubatoThreadImportError>;
+  readonly closeRun: (input: { readonly run: OrchestrationV2Run; readonly status: "completed" | "interrupted" | "failed" }) =>
+    Effect.Effect<void, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);
