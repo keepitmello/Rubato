@@ -742,7 +742,18 @@ test('prompt: Segno speaks only in the app — no Telegram in its defaults, and 
     assert.doesNotMatch(text, /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context/i, name);
   }
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  assert.match(companion, /내가 먼저 하는 말은 `tell_user`로 해: 안부, 리드가 끝났다는 소식, 일정 찌르기, 하트비트/);
+  assert.match(companion, /내가 먼저 하는 말은 `tell_user`로 해: 안부, 리드가 끝났다는 소식, 다른 대화에서 온 것 중 사용자가 알아야 할 것, 일정 찌르기, 하트비트/);
   for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `tell_user`로/);
   assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /\| 사용자한테 먼저 말하기 \| `tell_user` \|/);
+});
+
+test('prompt: only what Segno says to the user is visible — lead endings and messages from other conversations are private turns (intent rev 9, user 9fbe5b98)', () => {
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 하트비트'));
+  assert.match(channel, /보이는 건 셋뿐이야\. 사용자가 앱에서 연 턴의 내 답, 사용자가 시킨 백그라운드 일이나 서브에이전트가 끝나서 온 결과, 그리고 어느 턴에서든 내가 `tell_user`로 한 말/);
+  const hidden = channel.match(/나머지 턴은 다 나만 봐: ([^.]+)\./)?.[1] ?? '';
+  for (const turn of ['리드가 끝남', '다른 대화나 팀이 보낸 메시지', '내가 혼자 띄운 일이 끝난 것', '하트비트', '안부', '깨어남', '떠올리기', '잠'])
+    assert.ok(hidden.includes(turn), turn);
+  assert.match(companion, /루바토가 나를 깨워\. 그때 읽고 다음 수를 정해\. 그 턴은 나만 보니까, 사용자가 알아야 할 게 있으면 `tell_user`로 말해\./);
+  assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /사용자가 못 보는 턴\(하트비트, 안부, 리드 끝, 다른 대화에서 온 메시지, 일정 찌르기\)/);
 });
