@@ -801,7 +801,7 @@ test('read view notes: the current version of each context note, one note by pat
   assert.deepEqual([one.notes.map((note) => note.text), one.paths], [['new goal'], ['log.md', 'now.md']]);
 });
 
-test("what Segno creates or sends is marked as Segno's, so the lead reads it as Segno's request for the user; a lead's is not", async (t) => {
+test("what Segno creates or sends is marked as Segno's, so the lead reads it as work Segno leads and assigned; a lead's is not", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });
   const lead = await env.make('Lead');

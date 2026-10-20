@@ -291,7 +291,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
   }
   /**
    * The sender's own name and folder, and whether it is the companion (its words then reach the
-   * receiver framed as Segno's request for the user, message.mjs); callers pass ids only.
+   * receiver framed as work Segno, the CTO leading it, assigned (message.mjs); callers pass ids only.
    */
   async function sender(id) {
     const known = row(id);
