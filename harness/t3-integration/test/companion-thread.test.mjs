@@ -61,9 +61,11 @@ const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 test("a turn the person opened shows only its start, its end and a question for them; a reply is Segno's message and ends the turn", async () => {
   const s = await stream();
   await s.conn.request({ type: 'prompt', message: '오늘 뭐 있어?' });
-  await s.publish([...run(user, thinking, bashResult, ui, replyCall('r1', '3시에 회의 있어.'), replyResult('r1'), final)]);
+  const notify = { type: 'extension_ui_request', id: 'n1', method: 'notify', message: '혼잣말 알림' };
+  const status = { type: 'extension_ui_request', id: 's1', method: 'setStatus', statusText: '생각 중' };
+  await s.publish([...run(user, thinking, bashResult, notify, status, ui, replyCall('r1', '3시에 회의 있어.'), replyResult('r1'), final)]);
   assert.deepEqual(s.shown().map((record) => record.type), ['agent_start', 'extension_ui_request', 'agent_settled']);
-  assert.doesNotMatch(JSON.stringify(s.shown()), /혼잣말|뭐라고 하지|다 했다|bash/);
+  assert.doesNotMatch(JSON.stringify(s.shown()), /혼잣말|뭐라고 하지|다 했다|bash|생각 중/);
   assert.deepEqual(s.appended.map((item) => [item.text, item.ownRun]), [['3시에 회의 있어.', true]]);
 });
 
@@ -141,4 +143,16 @@ test('the filter on its own: a turn T3 holds open goes on in the same turn; an a
   filter.attached(true);
   filter.adopt();
   assert.equal(filter.accept({ type: 'agent_settled' }).length, 1, 'T3 took the run over after an app restart');
+});
+
+test("T3's old V1 path refuses Segno's conversation: only the V2 stream keeps its thread a chat log", async () => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/descriptor.json', instanceId: 'rubato-test' });
+  try {
+    bridge.connection = async () => ({});
+    bridge.descriptor = { serverId: 'srv' };
+    bridge.companionSession = async (id) => id === 'segno';
+    await assert.rejects(bridge.open({ threadId: 't', cwd: '/w', runtimeMode: 'full-access', resumeCursor: { kind: 'rubato-pi', serverId: 'srv', sessionId: 'segno' } }),
+      /V2 stream/);
+  } finally { await bridge.close(); }
 });

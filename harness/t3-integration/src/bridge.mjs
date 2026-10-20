@@ -580,6 +580,11 @@ export class RubatoPiBridge {
   }
   async open(input) {
     const inventory = await this.connection();
+    // This V1 path projects every event of a session; T3's V2 server never opens it (it streams
+    // through openRpc), and Segno's conversation, a chat log only the V2 stream filters, must not use it.
+    const resumed = input.resumeCursor?.sessionId;
+    if (typeof resumed === 'string' && await this.companionSession(resumed))
+      throw new Error("Segno's conversation opens only on T3's V2 stream (companion-thread.mjs)");
     let sessionId;
     if (input.resumeCursor !== undefined && input.resumeCursor !== null) {
       const cursor = input.resumeCursor;
