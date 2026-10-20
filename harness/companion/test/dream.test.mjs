@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
 import { segnoPaths, segnoSearchEnv } from '../home.mjs';
-import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, childArgs, guardResidentMemory, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
+import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, weeklySearchCheck, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
 
@@ -588,4 +588,32 @@ test("the seen-mail ledger comes home only with the held list it feeds", async (
   const conflicted = await ledgerRun({ segnoEditsHeld: true });
   assert.deepEqual(conflicted.record.conflicts, ['notes/held.md']);
   assert.equal(conflicted.ledger['mail-42'], undefined);
+});
+
+test("Sunday's search check: no cases is said as such, a sandbox does not run it, and each case must find one of its places", async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  assert.deepEqual(weeklySearchCheck(home, () => []), { status: 'no-cases' });
+  write(env, SEARCH_CASES, JSON.stringify({ cases: [
+    { name: 'interview', query: '면접 언제', top_k: 2, expected_any: [{ rel_path: 'user.md', section: '지금' }] },
+    { name: 'promise', query: '약속', expected_any: [{ rel_path: 'us.md', content: '먼저 물어' }] },
+  ] }));
+  assert.deepEqual(weeklySearchCheck(home, undefined), { status: 'not-run', reason: 'not the live home', total: 2 });
+  const results = { '면접 언제': [{ rel_path: 'diary/2026-10-20.md', section: '밤' }, { rel_path: 'user.md', section: '지금' }],
+    약속: [{ rel_path: 'us.md', section: '지금', content: '되돌리기 어려운 건 꼭 먼저 물어.' }] };
+  assert.deepEqual(weeklySearchCheck(home, (query) => results[query]), { status: 'passed', passed: 2, total: 2 });
+  assert.deepEqual(weeklySearchCheck(home, (query, topK) => (query === '약속' ? [] : results[query].slice(0, topK))),
+    { status: 'failed', passed: 1, total: 2, failures: ['promise'] });
+  assert.equal(weeklySearchCheck(home, () => { throw new Error('msearch: redis down'); }).status, 'error');
+
+  // On a Sunday the dream records it; the search is the live service's to pass.
+  write(env, 'memory/2026-10-24.md', '## 10:05\n하루', at(24, 10, 5));
+  const asked = [];
+  const dreamer = fakeDreamer({ result: { status: 'done', blocks: { weekly: 'done' } } });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(25, 4, 7), defaultsDir, sessionFiles: () => [],
+    search: (query, topK, environment) => { asked.push([query, topK, environment.RUBATO_COMPANION_HOME]); return results[query]; } });
+  assert.deepEqual(asked, [['면접 언제', 2, home], ['약속', 3, home]]);
+  assert.equal(record.searchHealth.status, 'passed');
+  assert.equal(readDreamState(env).weeklySearch.status, 'passed');
+  assert.match(readFileSync(path.join(dreamPaths(env).log, '2026-10-25.md'), 'utf8'), /- 검색 점검: 2\/2 통과/);
 });

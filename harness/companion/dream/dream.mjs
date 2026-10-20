@@ -37,6 +37,48 @@ import { commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
 export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
 
+/** Where the questions Segno's search must keep answering live (Roo tests/memory-search-golden.json). */
+export const SEARCH_CASES = 'memory/search-golden.json';
+
+/**
+ * One search for the weekly check: msearch's structured results on Segno's channel, logged nowhere
+ * (Roo's golden check sets ROO_RECALL_LOG=0: a test is not a recall).
+ */
+export function searchSegnoJson(query, topK, env) {
+  const out = execFileSync(env.MSEARCH_BIN || 'msearch', ['--json', '-a', '-k', String(topK), query], {
+    cwd: segnoPaths(env).memory, env: { ...segnoSearchEnv(env), ROO_RECALL_LOG: '0' }, encoding: 'utf8', timeout: 120_000,
+    stdio: ['ignore', 'pipe', 'pipe'] });
+  const parsed = JSON.parse(out);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Roo's Sunday search check (scripts/memory-golden-check.sh, memory-search-eval.py): each case's query
+ * must bring one of its expected places into the top results. Segno's cases are its own, in
+ * memory/search-golden.json (`{ "cases": [{ "name", "query", "top_k", "expected_any": [{ "rel_path",
+ * "section"?, "content"? }] }] }`, paths as the search reports them, under memory/). With no cases the
+ * check says so; without the live search (a sandbox) it says it was not run.
+ */
+export function weeklySearchCheck(home, search) {
+  let cases;
+  try { cases = JSON.parse(readFileSync(path.join(home, SEARCH_CASES), 'utf8')).cases; } catch { cases = undefined; }
+  if (!Array.isArray(cases) || cases.length === 0) return { status: 'no-cases' };
+  if (!search) return { status: 'not-run', reason: 'not the live home', total: cases.length };
+  const matches = (result, expected) => Object.entries(expected).every(([key, value]) =>
+    key === 'content' ? String(result?.content ?? '').includes(value) : String(result?.[key] ?? '') === String(value));
+  const failures = [];
+  for (const item of cases) {
+    const topK = Number.isInteger(item?.top_k) ? item.top_k : 3;
+    let results;
+    try { results = search(String(item?.query ?? ''), topK); }
+    catch (error) { return { status: 'error', reason: String(error?.message ?? error).split('\n')[0], total: cases.length }; }
+    const expected = Array.isArray(item?.expected_any) ? item.expected_any : [];
+    if (!results.slice(0, topK).some((result) => expected.some((want) => matches(result, want)))) failures.push(item?.name ?? item?.query);
+  }
+  return { status: failures.length ? 'failed' : 'passed', passed: cases.length - failures.length, total: cases.length,
+    ...(failures.length ? { failures } : {}) };
+}
+
 /** Roo's dream runs at 04:07 (launchd com.roo.cron.memory); Segno's starts at or after it, once a day. */
 export const DREAM_AT = Object.freeze({ hour: 4, minute: 7 });
 /**
@@ -523,7 +565,7 @@ export const spawnLogged = ({ command, args, cwd, env, logPath, timeoutMs }) => 
  */
 export async function runCompanionDream({ env = process.env, launch, spawnChild = spawnLogged, models = DREAM_MODELS,
   now = Date.now, manual = false, launchModel, childEnv = (value) => value, timeoutMs = CHILD_TIMEOUT_MS,
-  defaultsDir = companionDefaultsDir(env), sessionFiles = () => segnoSessionFiles(env), reindex } = {}) {
+  defaultsDir = companionDefaultsDir(env), sessionFiles = () => segnoSessionFiles(env), reindex, search } = {}) {
   const at = now();
   const paths = dreamPaths(env);
   const home = segnoPaths(env).home;
@@ -621,10 +663,14 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     }
     // Roo's first step, done last here: what the dream wrote is searchable for Segno from now on.
     const index = applied.length && reindex ? firstLineOf(reindex(env)) : undefined;
-    appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
+    // Sunday: Roo's search check, recorded whether or not there was anything to check.
+    const searchHealth = plan.sunday ? weeklySearchCheck(home, search && ((query, topK) => search(query, topK, env))) : undefined;
+    if (searchHealth) writeJson(paths.state, { ...readDreamState(env), weeklySearch: { at: localIso(at), ...searchHealth } });
+    appendLog(paths.log, plan.runDate, [readText(path.join(outDir, 'log.md')), searchHealth && `- 검색 점검: ${describeSearchHealth(searchHealth)}`]
+      .filter(Boolean).join('\n'), runId);
     record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
       ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(guarded.length ? { guarded } : {}),
-      ...(held ? { watermarks: 'held' } : {}), ...(index === undefined ? {} : { index }),
+      ...(held ? { watermarks: 'held' } : {}), ...(index === undefined ? {} : { index }), ...(searchHealth ? { searchHealth } : {}),
       commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;
@@ -660,6 +706,13 @@ function ratchetResident(env, home, before) {
   const start = before === undefined ? now : chars(before.toString('utf8'));
   const baseline = Math.min(Number.isFinite(stored) ? stored : start, start, now);
   writeJson(dreamPaths(env).state, { ...readDreamState(env), memoryGuard: { baselineChars: Math.max(baseline, 0) } });
+}
+
+function describeSearchHealth(health) {
+  if (health.status === 'no-cases') return `검사할 사례 없음 (${SEARCH_CASES})`;
+  if (health.status === 'not-run') return `사례 ${health.total}개, 살아 있는 집이 아니라 안 돌림`;
+  if (health.status === 'error') return `실패: ${health.reason}`;
+  return `${health.passed}/${health.total} 통과${health.failures ? ` (놓침: ${health.failures.join(', ')})` : ''}`;
 }
 
 const firstLineOf = (text) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';

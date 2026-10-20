@@ -12,7 +12,7 @@ import { open } from 'node:fs/promises';
 import { userInfo } from 'node:os';
 import path from 'node:path';
 import { readSettings, readState } from '../companion.mjs';
-import { dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream } from './dream.mjs';
+import { dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream, searchSegnoJson } from './dream.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -91,7 +91,7 @@ export async function start(ctx) {
   const liveHome = path.join(userInfo().homedir, '.rubato', 'companion');
   const ownHome = path.resolve(env.RUBATO_COMPANION_HOME || path.join(env.HOME || userInfo().homedir, '.rubato', 'companion')) === liveHome;
   const run = async () => runCompanionDream({ env, launch: await resolveLaunch(env), childEnv, launchModel: launchProductModel, spawnChild,
-    ...(ownHome ? { reindex: reindexSegnoMemory } : {}) });
+    ...(ownHome ? { reindex: reindexSegnoMemory, search: searchSegnoJson } : {}) });
   const loop = startDreamLoop({ env, isBusy, run, onError: ctx.onError, log: ctx.log });
   return { check: () => loop.check(), close: () => loop.close() };
 }
