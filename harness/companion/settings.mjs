@@ -32,6 +32,7 @@ export class SettingsRefused extends Error {
 
 /** Whether the run that called the tool belongs to the user (sync.mjs triggers). */
 export function isUserOrigin(trigger) {
+  if (trigger?.unverified === true) return false;
   return trigger?.kind === 'app' || (trigger?.kind === 'channel' && trigger.isUser === true);
 }
 

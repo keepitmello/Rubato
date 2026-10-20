@@ -195,3 +195,18 @@ test('the voice model is checked like the voice id', async (t) => {
   await box.call({ action: 'change', change: { telegram: { voice: { model: 's2-pro' } } } });
   assert.equal(readMessengerSettings(box.env).voice.model, 's2-pro');
 });
+
+test('a finished job no recorded launch names, or one in a batch with someone else\'s, carries no user authority', async (t) => {
+  const box = setup(t);
+  const change = { action: 'change', change: { telegram: { approvalRequired: false } } };
+  box.transcript([appEntry('u1', 'hi'), answerEntry('a1', 'hi'), finished('f1', 'st_never_launched')]);
+  await assert.rejects(box.call(change), (error) => error.code === 'not-the-user', 'unknown work');
+  const batch = { type: 'custom_message', id: 'f2', customType: 'rubato.task.completion', display: false, content: 'completed',
+    details: [{ agentId: 'st_user_job1', status: 'completed' }, { agentId: 'st_other_job', status: 'completed' }] };
+  box.transcript([channelEntry('g1', { isUser: false, chatId: '-100' }),
+    answerEntry('a2', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }), launched('l1', 'a2-t0', 'st_other_job'),
+    appEntry('u2', 'job'), answerEntry('a3', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }),
+    launched('l2', 'a3-t0', 'st_user_job1'), batch]);
+  await assert.rejects(box.call(change), (error) => error.code === 'not-the-user', "a batch with someone else's work");
+  assert.equal(readMessengerSettings(box.env).approvalRequired, true);
+});

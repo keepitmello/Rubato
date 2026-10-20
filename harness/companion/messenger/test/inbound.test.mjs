@@ -215,3 +215,27 @@ test('"typing…" shows in another chat too while Segno works on its message, as
   await new Promise((resolve) => setTimeout(resolve, 4500));
   assert.equal(box.fake.actions.length, count, 'it stops when the (held) answer is written');
 });
+
+test('/segno off and on switch Segno itself from Telegram, answered without a turn; while off the person hears how to turn it on', async (t) => {
+  const box = await paired(t);
+  const { readSettings, writeSettings } = await import('../../companion.mjs');
+  box.fake.message({ chatId: USER_CHAT, text: '/segno off', from: 'Wy' });
+  await settle(box.service);
+  assert.equal(readSettings(box.env).enabled, false);
+  assert.match(box.fake.sent.at(-1).text, /세뇨: 꺼짐[\s\S]*\/segno on/);
+  box.fake.message({ chatId: USER_CHAT, text: '세뇨야?', from: 'Wy' });
+  await settle(box.service);
+  assert.equal(box.delivered.length, 0, 'Segno is not woken while off');
+  assert.match(box.fake.sent.at(-1).text, /꺼져 있어요\. \/segno on/);
+  box.fake.message({ chatId: USER_CHAT, text: '/segno', from: 'Wy' });
+  await settle(box.service);
+  assert.match(box.fake.sent.at(-1).text, /세뇨: 꺼짐\n켜려면 \/segno on/);
+  box.fake.message({ chatId: USER_CHAT, text: '/segno on', from: 'Wy' });
+  await settle(box.service);
+  assert.equal(readSettings(box.env).enabled, true);
+  assert.equal(box.delivered.length, 0, 'the command itself is never a turn');
+  writeSettings({ enabled: true }, box.env);
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '/segno off', from: 'Gildong' });
+  await settle(box.service);
+  assert.equal(readSettings(box.env).enabled, true, 'another chat cannot switch Segno');
+});
