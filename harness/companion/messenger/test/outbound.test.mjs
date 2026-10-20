@@ -169,3 +169,16 @@ test('"typing…" stops the moment a message reaches the person, as Roo stops it
   await new Promise((resolve) => setTimeout(resolve, 4500));
   assert.equal(box.fake.actions.length, count, 'no refresh after the message went out');
 });
+
+test('"typing…" in another chat stops the moment an approved message goes out there', async (t) => {
+  const box = await paired(t, { typingDelay: () => 0 });
+  writeMessengerSettings({ approvalRequired: false }, box.env);
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '앱이 죽어요', from: 'Gildong' });
+  await settle(box.service);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(box.fake.actions.some((row) => row.chatId === GROUP_CHAT));
+  await box.service.send({ text: '확인 중입니다', to: GROUP_CHAT });
+  const count = box.fake.actions.filter((row) => row.chatId === GROUP_CHAT).length;
+  await new Promise((resolve) => setTimeout(resolve, 4500));
+  assert.equal(box.fake.actions.filter((row) => row.chatId === GROUP_CHAT).length, count);
+});

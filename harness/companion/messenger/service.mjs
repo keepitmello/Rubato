@@ -538,7 +538,7 @@ export function startCompanionMessenger({
     const files = (row.files ?? []).map(sendableFile);
     const sent = [];
     // Roo stops "typing…" the moment a message goes out to that chat (roo-runtime.ts outbound_sent).
-    if (toUser) stopTyping(chatId);
+    stopTyping(chatId);
     const total = (payload.text ? splitText(payload.text).length : 0) + files.length;
     try {
       for (const part of payload.text ? splitText(payload.text) : []) {
