@@ -20,8 +20,9 @@ function fakeLink() {
   };
 }
 
-function toolsOf(link) {
-  const [feature] = createCompanionMessengerFactories({ sessionLink: link });
+/** The tools as the runtime registers them; `telegram` is the runtime's option for the Telegram hands. */
+function toolsOf(link, { telegram = true } = {}) {
+  const [feature] = createCompanionMessengerFactories({ sessionLink: link, telegram });
   const registered = new Map();
   feature.factory({ registerTool: (tool) => { registered.set(tool.name, tool); } });
   return registered;
@@ -46,6 +47,19 @@ test('the companion tool queues a message for the person and holds one for anyon
 test('without an engine messenger the tool is not registered at all', () => {
   assert.deepEqual(createCompanionMessengerFactories({}), []);
   assert.deepEqual(createCompanionMessengerFactories(), []);
+  assert.deepEqual(createCompanionMessengerFactories({ sessionLink: fakeLink() }), [], 'Telegram is off unless the runtime asks for it');
+});
+
+test('with Telegram off (the product default) Segno has the settings tool and no Telegram tool, and its words name no Telegram', async () => {
+  const { COMPANION_SETTINGS_TOOL } = await import('../../../pi-runtime/features/companion-messenger/index.mjs');
+  const link = { ...fakeLink(), companionSettings: async () => ({}) };
+  const [feature] = createCompanionMessengerFactories({ sessionLink: link });
+  const registered = new Map();
+  feature.factory({ registerTool: (tool) => { registered.set(tool.name, tool); } });
+  assert.deepEqual([...registered.keys()], [COMPANION_SETTINGS_TOOL]);
+  const settings = registered.get(COMPANION_SETTINGS_TOOL);
+  const words = JSON.stringify([settings.description, settings.searchKeywords, settings.parameters]);
+  assert.doesNotMatch(words, /telegram|botToken|fishKey|pairing|Fish/i);
 });
 
 test("Roo's three Telegram hands: send with files and voice, react, edit — each a request to the messenger", async () => {
@@ -89,4 +103,5 @@ test('the settings tool asks the engine with this conversation\'s id, and is the
   assert.deepEqual(answer.details, { applied: ['companion'] });
   assert.match(tool.description, /companion-settings skill/);
   assert.equal(toolsOf(fakeLink()).has(COMPANION_SETTINGS_TOOL), false);
+  assert.match(toolsOf(link).get(COMPANION_SETTINGS_TOOL).description, /botToken/, 'with Telegram on, its settings come back');
 });

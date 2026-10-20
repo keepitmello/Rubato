@@ -1,12 +1,13 @@
 // Settings › Companion: turning Segno on, its heartbeat and daily report, the pieces its system
-// prompt is made of, and the Telegram messenger it talks through. The server half is
+// prompt is made of, and the Telegram messenger while the product runs one. The server half is
 // harness/t3-integration/src/companion/service.mjs over harness/companion. A saved piece reaches
 // Segno when its conversation next crosses a compaction or a new window (prompt-rules
 // role-prompt.mjs); the tools piece follows the product and only reads here.
 //
 // The Telegram part reads and writes the same files the engine's resident messenger reads
 // (harness/companion/messenger/store.mjs): a request is a file, and the answer shows up here a
-// second or two later, so this panel polls while it is open.
+// second or two later, so this panel polls while it is open. While the product runs no Telegram
+// (store.mjs TELEGRAM_ENABLED) the server answers no status and the panel shows nothing.
 import { RotateCcwIcon } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import { useCallback, useEffect, useState } from "react";
@@ -225,6 +226,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
   const [voiceKey, setVoiceKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [off, setOff] = useState(false);
 
   const apply = useCallback((next: { telegram: TelegramStatus }) => {
     setTelegram(next.telegram);
@@ -234,16 +236,23 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
   useEffect(() => {
     if (environmentId === null) return;
     let alive = true;
+    let timer: number | undefined;
     const load = async () => {
       try {
         const next = await rubatoCompanion.telegram(environmentId);
-        if (alive) apply(next);
+        if (!alive) return;
+        if (next.telegram === null) {
+          setOff(true);
+          window.clearInterval(timer);
+          return;
+        }
+        apply({ telegram: next.telegram });
       } catch (cause) {
         if (alive) setError(cause instanceof Error ? cause.message : String(cause));
       }
     };
     void load();
-    const timer = window.setInterval(() => void load(), 3_000);
+    timer = window.setInterval(() => void load(), 3_000);
     return () => {
       alive = false;
       window.clearInterval(timer);
@@ -274,6 +283,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
     <Badge variant="outline">Not paired</Badge>
   );
 
+  if (off) return null;
   return (
     <SettingsSection id="rubato-companion-telegram" title="Telegram">
       {error ? <SettingsRow title="Could not read the Telegram connection" description={error} /> : null}

@@ -8,7 +8,9 @@
 // Settings › Companion also shows the Telegram messenger (harness/companion/messenger): the bot it
 // talks through, the code that pairs the person's chat, and every message Segno wants to send to
 // someone else. Nothing here reaches the engine either; the page writes the same intent and
-// decision files the resident messenger reads, and reads back what it did.
+// decision files the resident messenger reads, and reads back what it did. While the product runs
+// no Telegram (messenger/store.mjs TELEGRAM_ENABLED) the page gets no Telegram status, every Telegram
+// action is refused, and the panel holds no message for approval.
 //
 // The route's `thread` action is not here: finding the T3 thread of a session needs the T3
 // server's own bindings (RubatoCompanion.ts answers it).
@@ -80,6 +82,8 @@ export function createCompanionService(options = {}) {
     }
   };
 
+  const telegramOn = (messenger) => (options.telegram ?? messenger.TELEGRAM_ENABLED) === true;
+
   function panel(companion, messenger, inbox) {
     const { leads, finished } = companion.readPanel(env);
     // Open inbox items no lead took yet; one with a lead already shows as that lead's row.
@@ -94,6 +98,7 @@ export function createCompanionService(options = {}) {
     } catch { /* no inbox yet, or this Node has no SQLite: the panel goes on without it */ }
     // A held message the person already answered leaves the panel now; the messenger applies the
     // answer on its next pass.
+    if (!telegramOn(messenger)) return { leads, finished, held: [], inbox: unassigned };
     const answered = new Set(messenger.listDecisions(env).map((row) => row.id));
     const held = messenger.listOutbox(env).filter((row) => row.state === 'held' && !answered.has(row.id))
       .sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)))
@@ -106,6 +111,9 @@ export function createCompanionService(options = {}) {
     const { companion, messenger, inbox, tg, defaultsDir, withCopy } = await modules();
     // Each piece with what it is for (companion/piece-copy.mjs): the page and Segno read the same words.
     const pieces = () => companion.readPieces({ defaultsDir, env }).map(withCopy);
+    if (action === 'telegram' && !telegramOn(messenger)) return { telegram: null };
+    if ((action.startsWith('telegram-') || action === 'voice-key') && !telegramOn(messenger))
+      throw new CompanionRequestError(404, 'telegram-off', 'Telegram is off in Rubato for now.');
     switch (action) {
       case 'status':
         return status(companion);

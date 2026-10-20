@@ -16,10 +16,12 @@ import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as PubSub from "effect/PubSub";
+import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
-import { RubatoThreadImportError, RubatoThreadImporter, importFailure, nextTurnItemOrdinal } from "./RubatoThreadImporter.ts";
+import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isSaidRun, nextTurnItemOrdinal, saidRunId,
+  type SessionMessage } from "./RubatoThreadImporter.ts";
 import { rubatoBridgeFor, type PiBridge, type PiSessionMessage } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
@@ -36,6 +38,12 @@ const senderSessionOf = (context: unknown): string | null => {
   return typeof sessionId === "string" && sessionId !== "" ? sessionId : null;
 };
 const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+/**
+ * How long a run that carries Segno's words shows as running: the relay publishes a thread's state
+ * from a worker that reads the thread when it gets to it, and a state it never saw running then
+ * completed does not buzz the phone.
+ */
+export const OWN_RUN_HOLD = "3 seconds";
 const IMPORTED_THREAD = /^import:[^:]+:([^:]+):(.+)$/;
 const DRIVER = "rubato-pi";
 
@@ -203,7 +211,8 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   const liveRuns = (threadId: string) => Effect.gen(function* () {
     if (Option.isNone(orchestrator)) return yield* new RubatoThreadImportError({ detail: "The conversation is not available" });
     const records = yield* orchestrator.value.getThreadRecords(ThreadId.make(threadId), ["runs", "checkpoints"]);
-    return { runs: records.runs.filter((run) => run.status !== "rolled_back").sort((left, right) => left.ordinal - right.ordinal),
+    // A run that only carries Segno's words (appendOwnRun) is no turn of the conversation.
+    return { runs: records.runs.filter((run) => run.status !== "rolled_back" && !isSaidRun(run.id)).sort((left, right) => left.ordinal - right.ordinal),
       checkpoints: records.checkpoints };
   });
   const checkRewind = (threadId: string, turns: number) => Effect.gen(function* () {
@@ -237,6 +246,35 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   // written once, as an agent's message with its sender context and, when the sender is a
   // thread here, a link to it.
   const importer = yield* Effect.serviceOption(RubatoThreadImporter);
+  // One own run at a time, so two of Segno's messages never take the same run ordinal.
+  const ownRuns = yield* Semaphore.make(1);
+  /**
+   * Segno's words from a hidden run (tell_user) in a run of their own, so the phone hears of them
+   * (RubatoThreadImporter appendOwnRun). While the thread has a run going, the words go in as a
+   * plain message instead: that run's own ending notifies, and a second running run would take the
+   * messages the person sends meanwhile. A message the person queued while the own run showed as
+   * running starts once it completes, as it would after any run.
+   */
+  const appendOwnRun = (thread: ThreadId, message: SessionMessage, ordinal: () => Effect.Effect<number, RubatoThreadImportError>) =>
+    ownRuns.withPermits(1)(Effect.gen(function* () {
+      if (Option.isNone(orchestrator) || Option.isNone(importer)) return false;
+      const records = yield* orchestrator.value.getThreadRecords(thread, ["runs"]).pipe(
+        Effect.mapError(importFailure("Could not read the thread's runs")));
+      // The same words delivered twice (the live stream and an attach's snapshot) are written once. A
+      // run an attempt opened and never completed (the server went down during the hold) is
+      // completed with the words now; the caller found no message for them.
+      const opened = records.runs.find((run) => run.id === saidRunId(message.id));
+      if (opened?.status === "completed") return true;
+      if (opened === undefined && records.runs.some((run) => BUSY_RUN.has(run.status))) return false;
+      const shell = yield* orchestrator.value.getThreadShell(thread).pipe(Effect.mapError(importFailure("Could not read the thread")));
+      if (shell === null) return false;
+      yield* importer.value.appendOwnRun({ threadId: thread, message, itemOrdinal: yield* ordinal(),
+        runOrdinal: opened?.ordinal ?? Math.max(0, ...records.runs.map((run) => run.ordinal)) + 1,
+        providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection, hold: OWN_RUN_HOLD,
+        ...(opened === undefined ? {} : { opened }) });
+      yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
+      return true;
+    }));
   const appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.gen(function* () {
     if (Option.isNone(orchestrator) || Option.isNone(importer)) {
       return yield* new RubatoThreadImportError({ detail: "The thread writer is not running" });
@@ -247,14 +285,16 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     const senderSession = senderSessionOf(item.context);
     const senderThreadId = senderSession === null ? null
       : yield* threadOfPiSession(senderSession).pipe(Effect.provideService(SqlClient.SqlClient, sql.value), Effect.orElseSucceed(() => null));
-    const ordinal = yield* nextTurnItemOrdinal(thread).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
-    yield* importer.value.appendSessionMessage({ threadId: thread, ordinal, message: {
+    const ordinal = () => nextTurnItemOrdinal(thread).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
+    const message: SessionMessage = {
       role: "session", id: item.id, text: item.text, createdAt: item.createdAt,
       // A backfilled message stays in the run it followed (bridge backfill.mjs), where T3 orders it.
-      ...(typeof item.runId === "string" && item.runId !== "" ? { runId: RunId.make(item.runId) } : {}),
+      ...(typeof item.runId === "string" && item.runId !== "" && item.ownRun !== true ? { runId: RunId.make(item.runId) } : {}),
       ...(Option.isSome(context) ? { context: context.value } : {}),
       ...(senderThreadId === null ? {} : { senderThreadId: ThreadId.make(senderThreadId) }),
-    } });
+    };
+    if (item.ownRun === true && (yield* appendOwnRun(thread, message, ordinal))) return;
+    yield* importer.value.appendSessionMessage({ threadId: thread, ordinal: yield* ordinal(), message });
   });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {

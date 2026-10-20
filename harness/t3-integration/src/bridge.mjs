@@ -3,7 +3,7 @@ import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { quietMessages } from './quiet-runs.mjs';
-import { telegramEchoes } from './telegram-echo.mjs';
+import { saidEchoes } from './said-echo.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
@@ -395,6 +395,19 @@ export class RubatoPiBridge {
       return await client.command(command);
     } finally { await client.detach().catch(() => {}); await client.close(); }
   }
+  /**
+   * Whether a session is Segno's own conversation, from the engine's session list (its `companion`
+   * mark). A session keeps what it is, so each answer is kept; an engine that cannot list says no.
+   */
+  async companionSession(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId) return false;
+    this.companionSessions ??= new Map();
+    if (this.companionSessions.has(sessionId)) return this.companionSessions.get(sessionId);
+    const rows = await this.viaInventory((client) => client.list()).catch(() => null);
+    if (!Array.isArray(rows)) return false;
+    for (const row of rows) if (typeof row?.sessionId === 'string') this.companionSessions.set(row.sessionId, row.companion === true);
+    return this.companionSessions.get(sessionId) === true;
+  }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
@@ -507,11 +520,12 @@ export class RubatoPiBridge {
   // carries its context record and an id that names `threadId`, the T3 thread the
   // history goes to (see sessionMessageFrom); T3's history import takes no
   // context, so the server appends those after the import.
-  importedMessages(sessionId, messages, threadId) {
+  // `companion`: the session is Segno's, whose thread shows only what Segno says to the person (quiet-runs.mjs).
+  importedMessages(sessionId, messages, threadId, { companion = false } = {}) {
     // Runs Rubato's clock started stay in the session, not in the thread (quiet-runs.mjs).
-    const quiet = quietMessages(messages);
-    // What Segno sent the person from such a run still shows, as its own words (telegram-echo.mjs).
-    const echoes = telegramEchoes(messages, quiet, threadId);
+    const quiet = quietMessages(messages, { companion });
+    // What Segno said to the person from such a run still shows, as its own words (said-echo.mjs).
+    const echoes = saidEchoes(messages, quiet, threadId);
     return messages.flatMap((message) => {
       if (echoes.has(message)) return [echoes.get(message)];
       if (quiet.has(message)) return [];
@@ -605,11 +619,11 @@ export class RubatoPiBridge {
       context.projection.event('session.started', { resume: context.session.resumeCursor });
       // Runs Rubato's clock started stay out of the thread here too, as in importedMessages: an
       // attach must not replay a heartbeat's or a wake's answer, nor open a turn for one in flight.
-      const quiet = quietMessages(snapshot.messages);
+      const quiet = quietMessages(snapshot.messages, { companion: await this.companionSession(context.sessionId) });
       const quietTail = snapshot.messages.length > 0 && quiet.has(snapshot.messages.at(-1));
       if (snapshot.state.isStreaming && !quietTail) context.projection.begin();
-      // What a quiet run sent the person with telegram_send shows as Segno's words (telegram-echo.mjs).
-      for (const item of telegramEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
+      // What a quiet run said to the person shows as Segno's words (said-echo.mjs).
+      for (const item of saidEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
       snapshot.messages.forEach((message, index) => {
         if (quiet.has(message)) return;
         context.projection.message(message, !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason));
@@ -707,7 +721,8 @@ export class RubatoPiBridge {
     const gaps = this.streamGaps ? await this.streamGaps(threadId) : undefined;
     if (Array.isArray(gaps) && !gaps.length) return true;
     const { messages } = await this.transcript(sessionId);
-    const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId), thread.messages,
+    const companion = await this.companionSession(sessionId);
+    const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), thread.messages,
       Array.isArray(gaps) ? { gaps } : {});
     for (const { item, runId } of missing) {
       if (this.closed) return false;

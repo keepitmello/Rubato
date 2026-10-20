@@ -451,10 +451,24 @@ export function searchSegnoMemory(query, { index = false, env = process.env, run
 
 // ── what reached the user ─────────────────────────────────────────────────────────────────
 // Roo's sent.sh: memory gets "did I already tell them?" wrong often, in both directions, and only
-// the record outside it settles that. The messenger appends one line per message it delivered to
-// <home>/messenger/sent.jsonl ({ at, chatId, toUser, text, via }); this reads it.
+// the record outside it settles that. Each message that reached the user is one line of
+// <home>/messenger/sent.jsonl ({ at, toUser, text, via }): `tell_user` writes it now, and the
+// Telegram messenger wrote it (with chatId) while the product ran Telegram, so those lines count too.
 
-/** Messages delivered to the user's Telegram in the last `days` days, oldest first; `keyword` filters. */
+/** Segno's tool for speaking to the user in the app from a turn they do not see (pi-runtime companion-home). */
+export const TELL_USER_TOOL = 'tell_user';
+
+/** Records one message `tell_user` showed the user, for `sentMessages`. */
+export function recordTold(text, { at = Date.now(), env = process.env } = {}) {
+  if (typeof text !== 'string' || !text.trim()) throw new TypeError('tell_user needs some text');
+  const file = segnoPaths(env).messengerSent;
+  const row = { at: new Date(at).toISOString(), toUser: true, text, via: TELL_USER_TOOL };
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
+  return row;
+}
+
+/** Messages that reached the user in the last `days` days, oldest first; `keyword` filters. */
 export function sentMessages({ days = 2, keyword = '', now = Date.now(), env = process.env } = {}) {
   let raw;
   try { raw = readFileSync(segnoPaths(env).messengerSent, 'utf8'); } catch { return []; }

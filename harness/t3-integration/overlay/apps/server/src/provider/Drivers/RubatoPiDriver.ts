@@ -47,6 +47,8 @@ export interface PiSummary {
   readonly runtimeId: string | null;
   /** The session a side chat was opened from; absent for every other session. */
   readonly sideChatOf?: string;
+  /** Segno's own conversation (the engine's session list marks it). */
+  readonly companion?: boolean;
 }
 /** A prompt file a new conversation can open with (bridge session-prompts.mjs). */
 export interface PiSessionPromptEntry {
@@ -69,6 +71,8 @@ export interface PiSessionMessage {
   readonly context: unknown;
   /** A backfilled message's run: the run of the message it followed (bridge backfill.mjs). */
   readonly runId?: string | null;
+  /** Segno's words from a hidden run (bridge said-echo.mjs tell_user): written in a run of their own. */
+  readonly ownRun?: boolean;
 }
 /** A rewind that lands after a finished tool step: its row's call id, its turn, and when it finished. */
 export interface RubatoRevertStep {
@@ -136,8 +140,11 @@ export interface PiBridge {
   prepareSessionPrompt(threadId: string, choice: {id: string} | {text: string; label?: string}): Promise<PiSessionPromptSummary>;
   /** What the session runs on instead of Rubato's prompt, or null. */
   sessionPrompt(sessionId: string): Promise<PiSessionPromptSummary | null>;
-  /** `threadId` is the T3 thread the history goes to; a session message's id names it. */
-  importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string): ReadonlyArray<PiImportedMessage>;
+  /**
+   * `threadId` is the T3 thread the history goes to; a session message's id names it. `companion`:
+   * the session is Segno's, which shows only what Segno says to the person (bridge quiet-runs.mjs).
+   */
+  importedMessages(id: string, messages: ReadonlyArray<unknown>, threadId: string, options?: {companion?: boolean}): ReadonlyArray<PiImportedMessage>;
   /** `fresh` drops every cached catalogue first: an explicit refresh must see a key added a moment ago. */
   catalogue(cwd: string, options?: {fresh?: boolean}): Promise<{models: ReadonlyArray<{provider:string; id:string; name:string; reasoning?:boolean; capabilities?:{optionDescriptors?:ReadonlyArray<unknown>}|null}>; model:{provider:string;id:string}|null; slashCommands?: ReadonlyArray<{name:string; description?:string; input?:{hint:string}}>; skills?: ReadonlyArray<{name:string; description?:string; path:string; scope?:string; enabled:boolean; displayName?:string; shortDescription?:string}>}>;
   startSession(input: unknown): Promise<unknown>;

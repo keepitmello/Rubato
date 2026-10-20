@@ -8,12 +8,13 @@
 // message of the session left over — and newer than the thread's first message, so a side chat's
 // copied history is never one — is missing. Where T3's own log says when the thread had no stream
 // (RubatoPiSessions.ts streamGaps), only messages from those times count. Missing are: Segno's or the agent's words, a
-// message another conversation or a messenger sent, what Segno sent the person on Telegram. The
+// message another conversation or a messenger sent, what Segno said to the person (said-echo.mjs). The
 // session is projected the way a history import projects it (bridge importedMessages: quiet-runs.mjs
 // hides Rubato's clock), so a hidden run stays hidden. Each missing message is written into the run
 // of the message it followed in the session — T3 orders a thread by run, then within a run by when
 // an item arrived — under an id made from it, so writing it again changes nothing and the thread
-// keeps the session's order.
+// keeps the session's order. What Segno said with tell_user is the exception: it goes into a run of
+// its own (RubatoThreadImporter.ts appendOwnRun), so the phone hears of it.
 import { sessionMessageId } from './events.mjs';
 
 /** The context record of a message the backfill wrote; RubatoThreadImporter.ts writes it as `role`. */
@@ -83,11 +84,11 @@ export function missingItems(items, threadMessages, { gaps } = {}) {
 
 /**
  * One item as the thread writes it (bridge appendSessionMessage), in `runId`. A session message or
- * a Telegram echo already carries its record; a plain user or assistant message carries a backfill
- * record that says which it was, so T3 writes it in that role.
+ * an echo of Segno's words already carries its record (and tell_user's its own run); a plain user
+ * or assistant message carries a backfill record that says which it was, so T3 writes it in that role.
  */
 export function backfillItem(item, threadId, runId = null) {
-  const run = runId ? { runId } : {};
+  const run = runId && item.ownRun !== true ? { runId } : {};
   if (item.context !== undefined) return { ...item, ...run };
   return {
     id: writtenId(item, threadId),
