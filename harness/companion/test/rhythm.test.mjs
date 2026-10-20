@@ -698,3 +698,27 @@ test('schedule: a local .ics that is not a calendar fails like an address that i
   const { failed } = await readSchedule({ sources: [{ kind: 'ics', location: '/cal.ics' }], now: Date.UTC(2026, 9, 21), readFile: () => '<html>sign in</html>' });
   assert.deepEqual(failed.map((entry) => entry.error), ['not a calendar']);
 });
+
+test('schedule: monthly by weekday (first Monday, last Friday), by month day (the last), yearly by month; any other rule is reported, not guessed', async (t) => {
+  const cal = (...events) => ['BEGIN:VCALENDAR', ...events.flat(), 'END:VCALENDAR'].join('\r\n');
+  const ev = (...lines) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT'];
+  const dates = (text, from, to) => parseIcs(text, { from, to }).map((item) => new Date(item.at).toISOString().slice(0, 10));
+  const year = [Date.UTC(2026, 0, 1), Date.UTC(2026, 11, 31)];
+  assert.deepEqual(dates(cal(ev('UID:a', 'DTSTART:20260202T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=1MO;COUNT=3', 'SUMMARY:First Monday')), ...year),
+    ['2026-02-02', '2026-03-02', '2026-04-06']);
+  assert.deepEqual(dates(cal(ev('UID:b', 'DTSTART:20260130T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=-1FR;COUNT=3', 'SUMMARY:Last Friday')), ...year),
+    ['2026-01-30', '2026-02-27', '2026-03-27']);
+  assert.deepEqual(dates(cal(ev('UID:c', 'DTSTART:20260131T090000Z', 'RRULE:FREQ=MONTHLY;BYMONTHDAY=-1;COUNT=3', 'SUMMARY:Month end')), ...year),
+    ['2026-01-31', '2026-02-28', '2026-03-31']);
+  assert.deepEqual(dates(cal(ev('UID:d', 'DTSTART:20260315T090000Z', 'RRULE:FREQ=YEARLY;BYMONTH=3,9;COUNT=3', 'SUMMARY:Twice a year')), Date.UTC(2026, 0, 1), Date.UTC(2027, 11, 31)),
+    ['2026-03-15', '2026-09-15', '2027-03-15']);
+  const problems = [];
+  const mixed = cal(ev('UID:e', 'DTSTART:20260105T090000Z', 'RRULE:FREQ=MONTHLY;BYDAY=MO,TU;BYSETPOS=-1', 'SUMMARY:Board'),
+    ev('UID:f', 'DTSTART:20261021T090000Z', 'SUMMARY:Dentist'));
+  assert.deepEqual(parseIcs(mixed, { from: Date.UTC(2026, 9, 20), to: Date.UTC(2026, 9, 23), problems }).map((item) => item.text), ['Dentist']);
+  assert.deepEqual(problems, ['"Board" BYSETPOS']);
+  const env = sandbox(t);
+  mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
+  const lines = await scheduleNudges({ sources: [{ kind: 'ics', location: '/cal.ics' }], now: Date.UTC(2026, 9, 20), env, readFile: () => mixed });
+  assert.equal(lines[0], 'SCHEDULE_WARN 일정 출처를 못 읽어서 그 일정은 챙기지 못하고 있어: cal.ics (반복 규칙을 못 읽는 일정: "Board" BYSETPOS)');
+});

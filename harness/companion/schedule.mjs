@@ -181,22 +181,69 @@ function property(line) {
 const icsText = (value) => String(value).replace(/\\n/gi, ' ').replace(/\\([,;\\])/g, '$1').trim();
 const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
+/** The RRULE parts this reader follows; a rule with any other part is reported, never guessed. */
+const RULE_PARTS = new Set(['FREQ', 'INTERVAL', 'COUNT', 'UNTIL', 'WKST', 'BYDAY', 'BYMONTHDAY', 'BYMONTH']);
+const BYDAY = /^([+-]?\d{1,2})?(SU|MO|TU|WE|TH|FR|SA)$/;
+
+/** Why this reader cannot expand `rule`, or undefined when it can. */
+function unsupportedRule(rule) {
+  const extra = Object.keys(rule).filter((key) => !RULE_PARTS.has(key));
+  if (extra.length) return extra.join(',');
+  if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(rule.FREQ)) return `FREQ=${rule.FREQ ?? ''}`;
+  const byday = rule.BYDAY ? rule.BYDAY.split(',') : [];
+  if (byday.some((day) => !BYDAY.test(day))) return `BYDAY=${rule.BYDAY}`;
+  const ordinal = byday.some((day) => BYDAY.exec(day)[1] !== undefined);
+  if (rule.FREQ === 'DAILY' && (rule.BYDAY || rule.BYMONTHDAY || rule.BYMONTH)) return 'BY* with DAILY';
+  if (rule.FREQ === 'WEEKLY' && (ordinal || rule.BYMONTHDAY || rule.BYMONTH)) return 'BY* with WEEKLY';
+  if (rule.FREQ === 'MONTHLY' && (rule.BYMONTH || (rule.BYDAY && rule.BYMONTHDAY))) return 'BY* with MONTHLY';
+  if (rule.FREQ === 'YEARLY' && (rule.BYDAY || rule.BYMONTHDAY)) return 'BY* with YEARLY';
+  if (rule.BYMONTHDAY && rule.BYMONTHDAY.split(',').some((d) => !/^[+-]?\d{1,2}$/.test(d) || Number(d) === 0 || Math.abs(Number(d)) > 31)) return `BYMONTHDAY=${rule.BYMONTHDAY}`;
+  if (rule.BYMONTH && rule.BYMONTH.split(',').some((m) => !/^\d{1,2}$/.test(m) || Number(m) < 1 || Number(m) > 12)) return `BYMONTH=${rule.BYMONTH}`;
+  return undefined;
+}
+
+/** The days of `year`/`month` a monthly rule names (BYDAY with or without an ordinal, BYMONTHDAY, else the start's day). */
+function monthDays(rule, year, month, startDay) {
+  const length = daysIn(year, month);
+  if (rule.BYMONTHDAY) {
+    return rule.BYMONTHDAY.split(',').map(Number).map((d) => (d > 0 ? d : length + 1 + d)).filter((d) => d >= 1 && d <= length);
+  }
+  if (rule.BYDAY) {
+    const out = [];
+    for (const spec of rule.BYDAY.split(',')) {
+      const [, ordinal, code] = BYDAY.exec(spec);
+      const weekday = WEEKDAYS.indexOf(code);
+      const matching = [];
+      for (let d = 1; d <= length; d += 1) if (new Date(Date.UTC(year, month - 1, d)).getUTCDay() === weekday) matching.push(d);
+      if (ordinal === undefined) out.push(...matching);
+      else { const n = Number(ordinal); const pick = n > 0 ? matching[n - 1] : matching[matching.length + n]; if (pick) out.push(pick); }
+    }
+    return out;
+  }
+  return startDay <= length ? [startDay] : [];
+}
+
 /**
  * The start instants of one event's occurrences up to `to`: its start, and for RRULE FREQ=DAILY,
- * WEEKLY (BYDAY), MONTHLY or YEARLY with INTERVAL, COUNT and UNTIL, each repetition stepped in the
- * event's own frame. A monthly or yearly date the month does not have (the 31st, Feb 29) is
- * skipped, as RFC 5545 says, and does not count. EXDATE instants are left out but still count.
+ * WEEKLY (BYDAY), MONTHLY (BYDAY with or without an ordinal such as 1MO or -1FR, or BYMONTHDAY) or
+ * YEARLY (BYMONTH) with INTERVAL, COUNT and UNTIL, each repetition stepped in the event's own frame.
+ * A date a month does not have (the 31st, Feb 29) is skipped, as RFC 5545 says, and does not count.
+ * EXDATE instants are left out but still count. A rule with anything else throws `unsupported`.
  */
 function occurrences(event, to) {
   const { fields: first, frame } = event.start;
   const startAt = instantOf(first, frame);
   if (!event.rrule) return [startAt];
-  const rule = Object.fromEntries(event.rrule.split(';').map((part) => part.split('=')).map(([k, v]) => [k.toUpperCase(), v]));
+  const rule = Object.fromEntries(event.rrule.split(';').filter(Boolean).map((part) => part.split('=')).map(([k, v]) => [k.toUpperCase(), v ?? '']));
+  const reason = unsupportedRule(rule);
+  if (reason) throw Object.assign(new Error(`unsupported repeat rule: ${reason}`), { code: 'unsupported', reason });
   const interval = Math.max(1, Number(rule.INTERVAL) || 1);
   const count = Number(rule.COUNT) || Infinity;
   const untilValue = rule.UNTIL ? icsValue(rule.UNTIL) : undefined;
   const until = untilValue ? instantOf(untilValue.fields, untilValue.frame === 'local' ? frame : untilValue.frame) : Infinity;
-  const days = rule.FREQ === 'WEEKLY' && rule.BYDAY ? rule.BYDAY.split(',').map((d) => WEEKDAYS.indexOf(d.slice(-2))).filter((d) => d >= 0).sort() : undefined;
+  const weekDays = rule.FREQ === 'WEEKLY' && rule.BYDAY ? rule.BYDAY.split(',').map((d) => WEEKDAYS.indexOf(BYDAY.exec(d)[2])).sort() : undefined;
+  const months = rule.FREQ === 'YEARLY' && rule.BYMONTH ? rule.BYMONTH.split(',').map(Number).sort((x, y) => x - y) : undefined;
+  const at = (y, m, d) => [y, m, d, first[3], first[4], first[5]];
   const out = [];
   let n = 0;
   for (let period = 0; period < 10000; period += 1) {
@@ -205,19 +252,22 @@ function occurrences(event, to) {
     if (rule.FREQ === 'DAILY') candidates = [addDays(first, k)];
     else if (rule.FREQ === 'WEEKLY') {
       const week = addDays(first, 7 * k);
-      candidates = days ? days.map((weekday) => addDays(week, weekday - weekdayOf(week))) : [week];
-    } else if (rule.FREQ === 'MONTHLY' || rule.FREQ === 'YEARLY') {
-      const monthIndex = (first[1] - 1) + (rule.FREQ === 'MONTHLY' ? k : 12 * k);
+      candidates = weekDays ? weekDays.map((weekday) => addDays(week, weekday - weekdayOf(week))) : [week];
+    } else if (rule.FREQ === 'MONTHLY') {
+      const monthIndex = (first[1] - 1) + k;
       const year = first[0] + Math.floor(monthIndex / 12);
       const month = (monthIndex % 12) + 1;
-      candidates = first[2] <= daysIn(year, month) ? [[year, month, first[2], first[3], first[4], first[5]]] : [];
-    } else return [startAt];
+      candidates = [...new Set(monthDays(rule, year, month, first[2]))].sort((x, y) => x - y).map((d) => at(year, month, d));
+    } else {
+      const year = first[0] + k;
+      candidates = (months ?? [first[1]]).filter((month) => first[2] <= daysIn(year, month)).map((month) => at(year, month, first[2]));
+    }
     for (const fields of candidates) {
-      const at = instantOf(fields, frame);
-      if (at < startAt) continue;
-      if (at > until || n >= count || at > to) return out;
+      const instant = instantOf(fields, frame);
+      if (instant < startAt) continue;
+      if (instant > until || n >= count || instant > to) return out;
       n += 1;
-      if (!event.exdates.has(at)) out.push(at);
+      if (!event.exdates.has(instant)) out.push(instant);
     }
   }
   return out;
@@ -226,9 +276,10 @@ function occurrences(event, to) {
 /**
  * Items of an ICS calendar between `from` and `to`, as parseMarkdownSchedule gives them. An event
  * that repeats is expanded; an occurrence moved or cancelled by an override (same UID with a
- * RECURRENCE-ID) is replaced by that override, which stands as its own event, or dropped.
+ * RECURRENCE-ID) is replaced by that override, which stands as its own event, or dropped. An event
+ * whose repeat rule this reader cannot follow is left out and named in `problems`.
  */
-export function parseIcs(text, { from, to }) {
+export function parseIcs(text, { from, to, problems = [] }) {
   const events = [];
   let current;
   for (const line of unfold(text)) {
@@ -263,7 +314,14 @@ export function parseIcs(text, { from, to }) {
   for (const event of events) {
     if (event.status === 'CANCELLED') continue;
     const replaced = !event.recurrenceId && event.uid ? overridden.get(event.uid) : undefined;
-    for (const at of occurrences(event, to)) {
+    let starts;
+    try { starts = occurrences(event, to); }
+    catch (error) {
+      if (error?.code !== 'unsupported') throw error;
+      problems.push(`"${event.summary || '(제목 없음)'}" ${error.reason}`);
+      continue;
+    }
+    for (const at of starts) {
       if (at < from - DAY_MS || replaced?.has(at)) continue;
       const date = new Date(at);
       if (event.start.allDay) {
@@ -304,7 +362,9 @@ async function readSource(source, { now, env, fetchImpl, readFile }) {
     text = readFile(path.resolve(expandHome(source.location, env)));
     if (!/BEGIN:VCALENDAR/.test(text)) throw Object.assign(new Error('not a calendar'), { code: 'not a calendar' });
   }
-  return parseIcs(text, { from, to });
+  const problems = [];
+  const items = parseIcs(text, { from, to, problems });
+  return problems.length ? Object.assign(items, { problems }) : items;
 }
 
 /**
@@ -317,7 +377,12 @@ export async function readSchedule({ sources, now = Date.now(), env = process.en
   const items = [];
   const failed = [];
   for (const source of list) {
-    try { for (const item of await readSource(source, { now, env, fetchImpl, readFile })) items.push({ ...item, source: sourceLabel(source) }); }
+    try {
+      const read = await readSource(source, { now, env, fetchImpl, readFile });
+      for (const item of read) items.push({ ...item, source: sourceLabel(source) });
+      // Events whose repeat rule cannot be followed: the rest of the source still counts.
+      if (read.problems) failed.push({ source, error: `반복 규칙을 못 읽는 일정: ${read.problems.join('; ')}`, partial: true });
+    }
     catch (error) { failed.push({ source, error: error?.code ?? error?.message ?? String(error) }); }
   }
   items.sort((a, b) => a.date.localeCompare(b.date) || (a.time ?? '99:99').localeCompare(b.time ?? '99:99') || a.text.localeCompare(b.text));
