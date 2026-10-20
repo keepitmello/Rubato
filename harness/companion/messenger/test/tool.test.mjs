@@ -76,3 +76,17 @@ test("the send tool says the answers already reach Telegram, so Segno does not s
   assert.match(tool.description, /already reach the person's Telegram on their own/);
   assert.equal(tool.parameters.required, undefined, 'a voice-only or file-only message needs no text');
 });
+
+test('the settings tool asks the engine with this conversation\'s id, and is there only when the engine offers it', async () => {
+  const { COMPANION_SETTINGS_TOOL } = await import('../../../pi-runtime/features/companion-messenger/index.mjs');
+  const asked = [];
+  const link = { ...fakeLink(), companionSettings: async (request) => { asked.push(request); return { applied: ['companion'] }; } };
+  const tool = toolsOf(link).get(COMPANION_SETTINGS_TOOL);
+  assert.equal(tool.exposure, 'direct');
+  const answer = await tool.execute('c1', { action: 'change', change: { companion: { greetings: { enabled: false } } } }, undefined, undefined,
+    { sessionManager: { getSessionId: () => 'S1' } });
+  assert.deepEqual(asked, [{ sessionId: 'S1', action: 'change', piece: undefined, change: { companion: { greetings: { enabled: false } } } }]);
+  assert.deepEqual(answer.details, { applied: ['companion'] });
+  assert.match(tool.description, /companion-settings skill/);
+  assert.equal(toolsOf(fakeLink()).has(COMPANION_SETTINGS_TOOL), false);
+});

@@ -248,6 +248,7 @@ const HELD_KIND = (message: TelegramHeldMessage): string =>
 function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
   const [token, setToken] = useState("");
+  const [voiceKey, setVoiceKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -403,6 +404,51 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
               }
             />
           ) : null}
+          <SettingsRow
+            id="rubato-companion-telegram-approval"
+            title="Hold messages to others"
+            description="Anything Segno writes to someone other than you waits here, and in your Telegram chat, until you approve it."
+            control={
+              <Switch
+                aria-label="Hold messages to others"
+                checked={telegram.settings.approvalRequired}
+                disabled={busy}
+                onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { approvalRequired: next }))}
+              />
+            }
+          />
+          <SettingsRow
+            id="rubato-companion-voice"
+            title="Segno's voice"
+            description="Voice replies speak in this Fish Audio voice. Ask Segno to pick or change it."
+            status={<Badge variant="outline">{telegram.settings.voice?.voiceId ?? "Not chosen"}</Badge>}
+          />
+          <SettingsRow
+            id="rubato-companion-voice-key"
+            title="Fish Audio key"
+            description="Voice replies need a Fish Audio API key. Paste it here; it is never typed to Segno."
+            status={<Badge variant={telegram.voiceKey?.set ? "success" : "outline"}>{telegram.voiceKey?.set ? "Set" : "Not set"}</Badge>}
+            control={
+              <span className="flex items-center gap-2">
+                <Input
+                  aria-label="Fish Audio API key"
+                  className="h-8 w-64"
+                  type="password"
+                  value={voiceKey}
+                  disabled={busy}
+                  onChange={(event) => setVoiceKey(event.target.value)}
+                />
+                <Button size="sm" disabled={busy || voiceKey.trim() === ""}
+                  onClick={() => void run(async () => {
+                    const next = await rubatoCompanion.setVoiceKey(environmentId, voiceKey.trim());
+                    setVoiceKey("");
+                    return next;
+                  })}>
+                  Save
+                </Button>
+              </span>
+            }
+          />
           {telegram.waiting.map((message) => (
             <SettingsRow
               key={message.id}

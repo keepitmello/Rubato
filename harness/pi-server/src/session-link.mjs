@@ -19,7 +19,7 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
   waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
-const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'channel', 'telegramSend'];
+const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'channel', 'telegramSend', 'companionSettings'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
@@ -690,6 +690,18 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         }
       }
       return { sessionId: metadata.id, title: metadata.title, cwd: metadata.cwd, copiedMessages };
+    },
+    /**
+     * The companion's settings, read or changed by talking to it (harness/companion/settings.mjs):
+     * through the Settings page's own code, and a change only in a run the user opened.
+     */
+    async companionSettings({ sessionId, action, piece, change } = {}) {
+      requireId(sessionId, 'sessionId');
+      const { sessionsDir } = need();
+      if (row(sessionId) && row(sessionId).companion !== true) throw fail('not_companion', "Only Segno's own conversation has settings");
+      const { companionSettings } = await import('../../companion/settings.mjs');
+      try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change } }); }
+      catch (error) { throw error?.name === 'SettingsRefused' ? fail(error.code, error.message) : error; }
     },
     /**
      * What the companion's Telegram tools ask for (harness/companion/messenger): a message it wrote,

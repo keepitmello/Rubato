@@ -10,6 +10,8 @@ export const TELEGRAM_SEND_TOOL = "telegram_send";
 export const TELEGRAM_REACT_TOOL = "telegram_react";
 export const TELEGRAM_EDIT_TOOL = "telegram_edit";
 export const TELEGRAM_TOOL_NAMES = Object.freeze([TELEGRAM_SEND_TOOL, TELEGRAM_REACT_TOOL, TELEGRAM_EDIT_TOOL]);
+/** Segno's settings by talking (harness/companion/settings.mjs, skill companion-settings). */
+export const COMPANION_SETTINGS_TOOL = "companion_settings";
 
 function text(value) {
   return { type: "text", text: value };
@@ -32,6 +34,7 @@ export function describeResult(row) {
 
 export function createCompanionMessengerFactories({ sessionLink } = {}) {
   if (!sessionLink?.telegramSend) return [];
+  const settingsTool = typeof sessionLink.companionSettings === "function";
   const call = async (request) => {
     const row = await sessionLink.telegramSend(request);
     return { content: [text(describeResult(row))],
@@ -114,6 +117,39 @@ export function createCompanionMessengerFactories({ sessionLink } = {}) {
         },
         async execute(_id, params) {
           return call({ op: "edit", messageId: params.message_id, text: params.text, to: params.to, name: params.name });
+        },
+      });
+      if (!settingsTool) return;
+      pi.registerTool({
+        name: COMPANION_SETTINGS_TOOL,
+        label: "Segno settings",
+        exposure: "direct",
+        searchKeywords: ["settings", "setting", "heartbeat", "greeting", "schedule", "voice", "telegram", "pair", "설정", "하트비트", "인사", "일정", "목소리"],
+        description:
+          "Read or change your own settings, the ones in Settings › Companion: heartbeat, greetings, schedule sources, " +
+          "Telegram (on/off, approval hold, voice, pairing) and your prompt pieces. Open the companion-settings skill first: " +
+          "it says what each one does. action \"show\" gives the current values (or one prompt piece's text with piece=<id>); " +
+          "action \"change\" applies a patch, checked by the same rules as the Settings page. " +
+          "Only the user can change a setting: a change from a turn opened by anyone or anything else is refused. " +
+          "Tokens and keys are never set here; the user enters them in Settings › Companion.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["action"],
+          properties: {
+            action: { type: "string", enum: ["show", "change"] },
+            piece: { type: "string", description: "With show: the id of one prompt piece whose text to read." },
+            change: {
+              type: "object",
+              description: "With change: { companion?: <settings patch>, telegram?: <Telegram settings patch>, pairing?: \"pair\"|\"unpair\", " +
+                "piece?: { id, text } (empty text goes back to the default), personaReview?: true }.",
+            },
+          },
+        },
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+          const sessionId = ctx?.sessionManager?.getSessionId?.();
+          const answer = await sessionLink.companionSettings({ sessionId, action: params.action, piece: params.piece, change: params.change });
+          return { content: [text(JSON.stringify(answer, null, 2))], details: answer };
         },
       });
     },

@@ -6,7 +6,6 @@
 // Roo synthesizes WAV and encodes Opus with ffmpeg; this asks Fish for Opus directly, so nothing
 // outside Node is needed and the audio is still compressed once.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import path from 'node:path';
 import { messengerPaths, readMessengerSettings } from './store.mjs';
 
@@ -23,14 +22,14 @@ export class VoiceError extends Error {
   constructor(message) { super(message); this.name = 'VoiceError'; }
 }
 
-/** The Fish key: FISH_API_KEY, the messenger's own key file, or this Mac's shared fish-audio setup. */
+/**
+ * The Fish key: FISH_API_KEY, else the messenger's own key file. Nothing outside the companion's
+ * home is read, so every install looks for it in the same place (intent rev 8).
+ */
 export function fishApiKey(env = process.env) {
   const fromEnv = env.FISH_API_KEY?.trim();
   if (fromEnv) return fromEnv;
-  const files = [messengerPaths(env).fishKey, path.join(env.HOME || homedir(), '.config', 'fish-audio', 'api_key')];
-  for (const file of files) {
-    try { const key = readFileSync(file, 'utf8').trim(); if (key) return key; } catch {}
-  }
+  try { const key = readFileSync(messengerPaths(env).fishKey, 'utf8').trim(); if (key) return key; } catch {}
   return null;
 }
 
@@ -67,7 +66,7 @@ export async function synthesizeVoice(text, { env = process.env, fetch: call = g
   const { voice } = readMessengerSettings(env);
   if (!voice.voiceId) throw new VoiceError('no voice is chosen for Segno yet');
   const key = fishApiKey(env);
-  if (!key) throw new VoiceError('no Fish Audio key is set up on this Mac');
+  if (!key) throw new VoiceError('no Fish Audio key is set up');
   let response;
   try {
     response = await call(baseUrl, {

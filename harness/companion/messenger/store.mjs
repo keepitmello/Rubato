@@ -185,6 +185,28 @@ export function writeBotIdentity({ username, name } = {}, env = process.env) {
   });
 }
 
+// ── the Fish Audio key for voice replies ─────────────────────────────────────────────────────
+
+/** Keeps the Fish Audio key the person pasted in Settings, 0600; it is never handed back. */
+export function writeFishKey(key, env = process.env) {
+  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,200}$/.test(key.trim())) throw new TypeError('that does not look like a Fish Audio API key');
+  const file = messengerPaths(env).fishKey;
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, key.trim() + '\n', { mode: 0o600 });
+  renameSync(temporary, file);
+}
+
+export function clearFishKey(env = process.env) {
+  rmSync(messengerPaths(env).fishKey, { force: true });
+}
+
+/** Whether voice replies have a key: the environment's FISH_API_KEY or the one pasted in Settings. */
+export function fishKeySet(env = process.env) {
+  if (env.FISH_API_KEY?.trim()) return true;
+  try { return readFileSync(messengerPaths(env).fishKey, 'utf8').trim() !== ''; } catch { return false; }
+}
+
 // ── pairing ──────────────────────────────────────────────────────────────────────────────────
 
 /** No 0/O/1/I: the person types this on a phone. */
@@ -442,6 +464,7 @@ export function messengerStatus(env = process.env) {
   });
   return {
     settings: readMessengerSettings(env),
+    voiceKey: { set: fishKeySet(env) },
     bot: readBot(env),
     pairing: readPairing(env),
     handoff: readHandoff(env),

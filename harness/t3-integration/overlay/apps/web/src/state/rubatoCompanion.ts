@@ -49,7 +49,14 @@ export interface TelegramHeldMessage {
 }
 
 export interface TelegramStatus {
-  readonly settings: { readonly enabled: boolean; readonly approvalRequired: boolean };
+  readonly settings: {
+    readonly enabled: boolean;
+    readonly approvalRequired: boolean;
+    /** Segno's voice for voice replies (Fish Audio); null until the person picks one, usually by asking Segno. */
+    readonly voice?: { readonly voiceId: string | null; readonly model: string };
+  };
+  /** Whether voice replies have a Fish Audio key; the key itself never comes back. */
+  readonly voiceKey?: { readonly set: boolean };
   /** The bot as Settings shows it: its id and last four characters, never the token. */
   readonly bot: { readonly masked: string | null; readonly username?: string; readonly name?: string };
   readonly pairing: {
@@ -162,7 +169,7 @@ export const rubatoCompanion = {
   reviewPersona: (env: EnvironmentId | null) =>
     call<{ pieces: CompanionPiece[]; reviewRequested: string | null }>(env, "review-persona"),
   telegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram"),
-  saveTelegramSettings: (env: EnvironmentId | null, patch: { readonly enabled?: boolean }) =>
+  saveTelegramSettings: (env: EnvironmentId | null, patch: { readonly enabled?: boolean; readonly approvalRequired?: boolean }) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-settings", { patch }),
   /** Asks the engine's messenger for a fresh six-character code; the person sends it to the bot. */
   pairTelegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram-pair"),
@@ -170,6 +177,9 @@ export const rubatoCompanion = {
   /** Hands a token from @BotFather to the messenger, which checks it with Telegram before keeping it. */
   setTelegramToken: (env: EnvironmentId | null, token: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-set-token", { token }),
+  /** Keeps the Fish Audio key for Segno's voice replies; null removes it. Never typed to Segno. */
+  setVoiceKey: (env: EnvironmentId | null, key: string | null) =>
+    call<{ telegram: TelegramStatus }>(env, "voice-key", { key }),
   /** Has Segno's bot made from the person's own Telegram account (@BotFather over MTProto). */
   createTelegramBot: (env: EnvironmentId | null, name: string, username?: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-create-bot", { name, ...(username ? { username } : {}) }),

@@ -27,7 +27,7 @@ function runnable(bin) {
  */
 export function probeTg({ env = process.env, timeoutMs = 4000 } = {}) {
   const bin = tgBinary(env);
-  if (!runnable(bin)) return Promise.resolve({ available: false, reason: 'no tg client on this Mac' });
+  if (!runnable(bin)) return Promise.resolve({ available: false, reason: 'no tg client on this computer' });
   return new Promise((resolve) => {
     execFile(bin, ['status'], { env, timeout: timeoutMs, maxBuffer: 1024 * 1024 }, (error, stdout) => {
       if (error) { resolve({ available: false, reason: 'the tg client is not answering' }); return; }
