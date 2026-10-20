@@ -101,7 +101,19 @@ export function localTime(at = Date.now()) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
 }
 
-function writeFileAtomic(file, text) {
+/**
+ * Every file Segno's own code writes in its home goes through here: a path that would leave the home
+ * through a link inside it (memory/ref links repository documents in; a record file someone replaced
+ * with a link) is refused, so Segno's records never land in another store or repository.
+ */
+function assertInHome(file, env) {
+  if (!landsInside(segnoPaths(env).home, file)) {
+    throw new Error(`refusing to write ${file}: it leads outside Segno's home through a link`);
+  }
+}
+
+function writeFileAtomic(file, text, env = process.env) {
+  assertInHome(file, env);
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, text, { mode: 0o600 });
@@ -145,7 +157,7 @@ export function wakeWishAt(target, now = Date.now()) {
 export function setWakeWish({ target, reason = '' }, { now = Date.now(), env = process.env } = {}) {
   const wish = { schemaVersion: 1, wishAt: new Date(wakeWishAt(target, now)).toISOString(),
     reason: String(reason).split(/\s+/).filter(Boolean).join(' ').slice(0, 200), setAt: new Date(now).toISOString() };
-  writeFileAtomic(segnoPaths(env).wake, JSON.stringify(wish, null, 2) + '\n');
+  writeFileAtomic(segnoPaths(env).wake, JSON.stringify(wish, null, 2) + '\n', env);
   return wish;
 }
 
@@ -183,11 +195,11 @@ export function ensureSegnoHome(env = process.env) {
   mkdirSync(paths.diary, { recursive: true, mode: 0o700 });
   let config = 'existing';
   if (!existsSync(paths.projectConfig)) {
-    writeFileAtomic(paths.projectConfig, JSON.stringify({ memory: { agent: SEGNO_MEMORY_AGENT } }, null, 2) + '\n');
+    writeFileAtomic(paths.projectConfig, JSON.stringify({ memory: { agent: SEGNO_MEMORY_AGENT } }, null, 2) + '\n', env);
     config = 'written';
   }
   // The held list starts with its two places; a list Segno already keeps is its own.
-  if (!existsSync(paths.held)) writeFileAtomic(paths.held, HELD_TEMPLATE);
+  if (!existsSync(paths.held)) writeFileAtomic(paths.held, HELD_TEMPLATE, env);
   return { ...paths, config };
 }
 
@@ -219,7 +231,7 @@ export function leaveMood(note, { now = Date.now(), env = process.env } = {}) {
   const line = String(note ?? '').trim();
   if (!line) throw new TypeError('a mood needs one line');
   const mood = { note: line, at: new Date(now).toISOString() };
-  writeFileAtomic(segnoPaths(env).mood, JSON.stringify(mood, null, 2) + '\n');
+  writeFileAtomic(segnoPaths(env).mood, JSON.stringify(mood, null, 2) + '\n', env);
   return mood;
 }
 
@@ -262,7 +274,7 @@ export function ensureHomeRepo(env = process.env) {
   mkdirSync(home, { recursive: true, mode: 0o700 });
   if (existsSync(path.join(home, '.git'))) return { created: false };
   const ignore = path.join(home, '.gitignore');
-  if (!existsSync(ignore)) writeFileAtomic(ignore, HOME_GITIGNORE);
+  if (!existsSync(ignore)) writeFileAtomic(ignore, HOME_GITIGNORE, env);
   git(home, ['init', '--quiet']);
   git(home, ['add', '--all']);
   git(home, ['commit', '--quiet', '--allow-empty', '-m', 'home: 세뇨의 기록이 여기서부터 이력을 가진다']);
@@ -420,7 +432,7 @@ export function oldMemorySeed({ walk = false, now = Date.now(), env = process.en
   }
   if (!chosen) return undefined;
   const kept = [...history.filter((row) => row.at >= windowStart), { key: chosen.key, at: now }].slice(-500);
-  writeFileAtomic(segnoPaths(env).seedHistory, JSON.stringify(kept) + '\n');
+  writeFileAtomic(segnoPaths(env).seedHistory, JSON.stringify(kept) + '\n', env);
   const { key: _key, ...seed } = chosen;
   return seed;
 }
@@ -491,6 +503,7 @@ export function recordTold(text, { at = Date.now(), via = REPLY_TOOL, env = proc
   if (typeof text !== 'string' || !text.trim()) throw new TypeError(`${via} needs some text`);
   const file = segnoPaths(env).messengerSent;
   const row = { at: new Date(at).toISOString(), toUser: true, text, via };
+  assertInHome(file, env);
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   appendFileSync(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
   return row;
@@ -587,6 +600,7 @@ export function record(kind, text, { at = Date.now(), date, name, heading, env =
   const existing = existsSync(file) ? readFileSync(file, 'utf8') : '';
   const separator = kind === 'diary' && existing.trim() ? '\n---\n' : '';
   const entry = `${separator}\n## ${title}\n${body}\n`;
+  assertInHome(file, env);
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   appendFileSync(file, entry, { mode: 0o600 });
   return { kind, file, date: day, at: new Date(at).toISOString() };

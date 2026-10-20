@@ -103,3 +103,30 @@ test("Segno writes only inside its home: linked repository documents are read-on
   assert.equal(patch(`*** Add File: ${path.join(dir, 'repo', 'x.md')}\n+# x`), OUTSIDE_WRITE_REFUSAL);
   assert.equal(readFileSync(path.join(repo, 'guide.md'), 'utf8'), '# guide');
 });
+
+test("Segno's records never land outside its home: a record file or folder that became a link is refused, dangling or not", async (t) => {
+  const { dir, env } = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  const { record, localDate: today } = await import('../home.mjs');
+  const other = path.join(dir, 'other-store');
+  mkdirSync(other, { recursive: true });
+  writeFileSync(path.join(other, 'reference.md'), '# other store\n');
+  mkdirSync(path.join(home, 'memory', 'diary'), { recursive: true });
+  mkdirSync(path.join(home, 'notes'), { recursive: true });
+  const day = today();
+  symlinkSync(path.join(other, 'reference.md'), path.join(home, 'memory', `${day}.md`));
+  symlinkSync(path.join(other, 'not-yet.md'), path.join(home, 'memory', 'diary', `${day}.md`));
+  symlinkSync(other, path.join(home, 'notes', 'shared'), 'dir');
+  assert.throws(() => record('daily', 'PRIVATE', { env }), /outside Segno's home through a link/);
+  assert.throws(() => record('diary', 'PRIVATE', { env, heading: '밤' }), /outside Segno's home/);
+  assert.equal(readFileSync(path.join(other, 'reference.md'), 'utf8'), '# other store\n');
+  assert.ok(!existsSync(path.join(other, 'not-yet.md')));
+  // A note is a plain file in notes/; a folder link under notes/ is no way out either.
+  rmSync(path.join(home, 'notes', 'shared'));
+  symlinkSync(path.join(other, 'reference.md'), path.join(home, 'notes', 'shared.md'));
+  assert.throws(() => record('note', 'PRIVATE', { env, name: 'shared' }), /outside Segno's home/);
+  assert.equal(readFileSync(path.join(other, 'reference.md'), 'utf8'), '# other store\n');
+  // Its own files are written as before.
+  rmSync(path.join(home, 'memory', `${day}.md`));
+  assert.equal(record('daily', '오늘 일', { env }).file, path.join(home, 'memory', `${day}.md`));
+});
