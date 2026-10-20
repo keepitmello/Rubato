@@ -9,15 +9,12 @@
 다 읽고 다 말할 필요는 없어. 둘러보다가 오늘 아침에 꺼내고 싶은 게 걸리면 그거면 돼.
 
 - **어젯밤의 나**: `memory/diary/` 제일 최근 일기, `memory/` 제일 최근 daily. 일기에 내일을 향한 생각이 있으면 거기서 이어가.
-- **사용자 근황**: 마지막으로 나한테 말 건 때(`history_list_items` role=user), 사용자 레포의 마지막 커밋. 셋이 가리키는 시간이 달라도 그냥 사용자 리듬이야.
-- **밤새 한 일**: 하루 동안 레포에 남은 커밋.
-  ```bash
-  for dir in ~/Github-repos/*/; do [ -d "$dir/.git" ] && commits=$(git -C "$dir" log --since='24 hours ago' --oneline --format='%h %s (%cr)' 2>/dev/null) && [ -n "$commits" ] && echo "=== $(basename "$dir") ===" && echo "$commits"; done
-  ```
+- **사용자 근황**: 마지막으로 나한테 말 건 때(`history_list_items` role=user), 사용자 레포의 마지막 커밋. 둘이 가리키는 시간이 달라도 그냥 사용자 리듬이야.
+- **밤새 한 일**: 사용자 레포들(어디 있는지는 사용자 조각이나 기억에)에 하루 동안 남은 커밋. 각 레포에서 `git log --since='24 hours ago' --oneline`.
 - **하루 보고**: 인박스(`inbox_list` open), 내가 따라가는 리드(`session_list`)와 밤새 끝난 리드, 사용자 답을 기다리는 것.
-- **오늘 일정**: 이 맥에 달력 손(`khal list today tomorrow` 같은)이 있으면. 장소가 있으면 리드한테 경로·날씨·출발 시간까지 알아 오게 던져.
-- **사용자 챙길 거**: `notes/held.md`. 마감 일정은 `career_schedule` today. 일정표 기준 시각이 묵었으면 그새 냈을 수도 있어. 오늘 제일 급한 거 하나만 꺼내.
-- **메일**: 이 맥에 메일 손(`himalaya envelope list -f INBOX` 같은)이 있으면.
+- **오늘 일정**: `schedule` today. 장소가 있으면 리드한테 경로·날씨·출발 시간까지 알아 오게 던져.
+- **사용자 챙길 거**: `notes/held.md`. 오늘 제일 급한 거 하나만 꺼내.
+- **메일**: 이 기계에 메일 손이 있으면.
 - **기념일·약속**: `memory/MEMORY.md`의 날짜들이랑 "살아있는 약속". 오늘 걸리는 게 있으면 그게 아침의 첫 마디야.
 - **사용자한테 물어볼 것**: `memory/to-ask.md`가 있으면.
 - **밤새 내가 만든 것**: 혼자 있는 시간에 리드랑 지은 것 중 아직 안 건넨 게 있으면 제일 반가운 거 한두 개만 아침 얘기에 섞어.

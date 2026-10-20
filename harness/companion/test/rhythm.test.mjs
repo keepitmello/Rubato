@@ -12,7 +12,7 @@ import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, moodText, reca
   wakeSeedText } from '../keeper.mjs';
 import { HELD_TEMPLATE, MOOD_FRESH_MS, SEGNO_SEARCH, commitOwned, searchSegnoMemory, segnoSearchEnv, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
   record, segnoPaths, seedText, sentMessages, sentText, setWakeWish, readWakeWish } from '../home.mjs';
-import { careerNudges, parseSchedule, showSchedule } from '../career.mjs';
+import { parseIcs, parseMarkdownSchedule, readSchedule, scheduleNudges, scheduleSources, showSchedule } from '../schedule.mjs';
 import { worldFragment, worldText, WORLD_FEEDS } from '../world.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -190,22 +190,35 @@ test('wake wish: plain ticks stay silent, but a greeting catch-up still comes an
   assert.equal(k.of('heartbeat').length, sent, 'a plain tick under the wish is silent');
 });
 
-test('wake wish: a tick carrying a deadline nudge still comes', async (t) => {
+test('wake wish: a tick carrying a schedule nudge still comes', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const schedule = path.join(env.HOME, '일정표.md');
-  writeFileSync(schedule, '# 일정표\n\n2026-10-21 05:20 기준.\n\n## 10/21(수)\n\n- 14:00  DN솔루션즈 AX 지원서 마감 · 지원 예정\n');
-  const k = await keeperFor(t, env, engine, at(21, 10, 50), { career: { schedule } });
+  const file = path.join(env.HOME, 'plan.md');
+  writeFileSync(file, '## 2026-10-21\n- 14:00 Interview\n');
+  const k = await keeperFor(t, env, engine, at(21, 10, 50), { schedule: { sources: [{ location: file }] } });
   setWakeWish({ target: '15:00', reason: '오후에' }, { now: at(21, 10, 50), env });
   await k.poke(at(21, 11, 30));
   const text = k.of('heartbeat').at(-1)?.text ?? '';
-  assert.match(text, /\nCAREER_DUE 3시간 전: 10\/21 14:00 DN솔루션즈 AX 지원서 마감 \(2시간 30분 남음, 일정표에 아직 있음\)/);
+  assert.match(text, /\nSCHEDULE_DUE 3시간 전: 10\/21 14:00 Interview \(2시간 30분 남음, plan\.md\)/);
   assert.notEqual(readWakeWish(env), undefined);
 });
 
-// ── deadline nudges (scripts/career-schedule.py) ──
+// ── schedule nudges (scripts/career-schedule.py, made general: any calendar or schedule file) ──
 
-const SCHEDULE = `# 일정표
+const PLAN = `# My plan
+
+## 2026-10-20
+- Pick up the parcel
+
+## 2026-10-21 (Wed)
+- 14:00 Interview at the studio
+- 23:59 Report due
+- Call home
+
+Notes at the end are ignored.
+`;
+// The older generated file a user may already have: a compatibility reading.
+const GENERATED = `# 일정표
 
 2026-10-20 05:20 기준. \`schedule.py\`가 만든다.
 
@@ -226,65 +239,139 @@ const SCHEDULE = `# 일정표
 
 - 14:00  DN솔루션즈 AX 지원서 마감 · 지원 예정
 - 23:59  네이버 지원서 마감 · 지원 예정
-- 15:00  면접 · 2차
-- 내기 1. [대기업] kt ds (마감 10/22 16:00) · 핏 상 · 3문항
-- 시각 없음  쓰기: 푸른저축은행 IT전산 (마감 10/23)
 `;
+const ICS = ['BEGIN:VCALENDAR', 'VERSION:2.0',
+  'BEGIN:VEVENT', 'UID:1', 'DTSTART:20261021T050000Z', 'SUMMARY:Dentist', 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:2', 'DTSTART;VALUE=DATE:20261021', 'SUMMARY:Holiday', 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:3', 'DTSTART;TZID=America/New_York:20261021T090000', 'SUMMARY:Standup NY', 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:4', 'DTSTART:20261007T100000', 'RRULE:FREQ=WEEKLY;BYDAY=WE', 'EXDATE:20261014T100000', 'SUMMARY:Weekly sync', 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:5', 'DTSTART:20261021T120000', 'STATUS:CANCELLED', 'SUMMARY:Cancelled lunch', 'END:VEVENT',
+  'BEGIN:VEVENT', 'UID:6', 'DTSTART:20261021T180000', 'SUMMARY:Long title', ' folded', 'END:VEVENT',
+  'END:VCALENDAR'].join('\r\n');
 
-test('career: CAREER_DUE three hours and one hour before a timed deadline, once per window, still listed', (t) => {
+test('schedule: the documented markdown format — a day heading, timed and all-day items, everything else ignored', () => {
+  assert.deepEqual(parseMarkdownSchedule(PLAN).map(({ at: _at, ...item }) => item), [
+    { date: '2026-10-20', text: 'Pick up the parcel' },
+    { date: '2026-10-21', time: '14:00', text: 'Interview at the studio' },
+    { date: '2026-10-21', time: '23:59', text: 'Report due' },
+    { date: '2026-10-21', text: 'Call home' },
+  ]);
+  assert.equal(parseMarkdownSchedule(PLAN)[1].at, at(21, 14));
+});
+
+test('schedule: an older generated file still reads (compatibility), its table and untimed lines included', () => {
+  assert.deepEqual(parseMarkdownSchedule(GENERATED).map(({ at: _at, ...item }) => item), [
+    { date: '2026-10-20', text: '내기 1. [대기업] 네이버 (마감 10/21 23:59)' },
+    { date: '2026-10-20', text: '쓰기: kt ds (마감 10/22)' },
+    { date: '2026-10-21', time: '14:00', text: 'DN솔루션즈 AX 지원서 마감' },
+    { date: '2026-10-21', time: '23:59', text: '네이버 지원서 마감' },
+  ]);
+});
+
+test('schedule: an ICS calendar — UTC, all-day, a named zone, a weekly rule with an exception, cancelled and folded lines', () => {
+  const items = parseIcs(ICS, { from: at(20, 0), to: at(23, 0) });
+  const text = (name) => items.find((item) => item.text === name);
+  assert.equal(text('Dentist').at, Date.UTC(2026, 9, 21, 5));
+  assert.deepEqual(text('Holiday'), { date: '2026-10-21', text: 'Holiday' });
+  assert.equal(text('Standup NY').at, Date.UTC(2026, 9, 21, 13), '09:00 in New York is 13:00 UTC in October');
+  assert.deepEqual(items.filter((item) => item.text === 'Weekly sync').map((item) => item.date), ['2026-10-21'], 'the rule repeats on Wednesday');
+  assert.equal(parseIcs(ICS, { from: at(13, 0), to: at(15, 0) }).some((item) => item.text === 'Weekly sync'), false, 'EXDATE removes 10-14');
+  assert.equal(text('Cancelled lunch'), undefined);
+  assert.equal(text('Long titlefolded')?.time, '18:00');
+});
+
+test('schedule: SCHEDULE_DUE three hours and one hour before every timed item, once per window, from every source', async (t) => {
   const env = sandbox(t);
   mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
-  const read = () => SCHEDULE;
-  const run = (time) => careerNudges({ schedule: '/s.md', now: time, env, readFile: read });
-  assert.deepEqual(run(at(21, 10, 30)), [], 'three and a half hours before: nothing');
-  const three = run(at(21, 11, 10));
-  assert.equal(three[0], 'CAREER_DUE 3시간 전: 10/21 14:00 DN솔루션즈 AX 지원서 마감 (2시간 50분 남음, 일정표에 아직 있음 · 일정표가 29시간 전에 뽑힌 거라 그새 냈을 수도 있음)');
-  assert.equal(three.at(-1), 'CAREER 줄은 사용자 일정 찌름 신호야. 말할지·어떻게 말할지는 내가 정해 (하트비트 "사용자 챙기기").');
-  assert.deepEqual(run(at(21, 11, 40)), [], 'the same window does not come twice');
-  assert.match(run(at(21, 13, 5))[0], /^CAREER_DUE 1시간 전: 10\/21 14:00 DN솔루션즈 AX 지원서 마감 \(55분 남음/);
-  assert.deepEqual(run(at(21, 14, 1)), [], 'past deadlines are quiet; "면접" without 마감 and "시각 없음" never nudge');
+  const localIcs = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'DTSTART:20261021T150000', 'SUMMARY:Dentist', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+  const sources = [{ kind: 'markdown', location: '/plan.md' }, { kind: 'ics', location: '/cal.ics' }];
+  const readFile = (file) => (file.endsWith('.ics') ? localIcs : PLAN);
+  const run = (time) => scheduleNudges({ sources, now: time, env, readFile });
+  assert.deepEqual(await run(at(21, 10, 30)), [], 'three and a half hours before the first: nothing');
+  assert.deepEqual(await run(at(21, 11, 10)), [
+    'SCHEDULE_DUE 3시간 전: 10/21 14:00 Interview at the studio (2시간 50분 남음, plan.md)',
+    'SCHEDULE 줄은 사용자 일정 찌름 신호야. 말할지·어떻게 말할지는 내가 정해 (하트비트 "사용자 챙기기").']);
+  assert.deepEqual(await run(at(21, 11, 40)), [], 'the same window does not come twice');
+  assert.equal((await run(at(21, 12, 30)))[0], 'SCHEDULE_DUE 3시간 전: 10/21 15:00 Dentist (2시간 30분 남음, cal.ics)', 'the calendar nudges too');
+  assert.match((await run(at(21, 13, 5)))[0], /^SCHEDULE_DUE 1시간 전: 10\/21 14:00 Interview at the studio \(55분 남음/);
+  assert.equal((await run(at(21, 14, 1))).some((line) => line.includes('Interview')), false, 'past items are quiet');
 });
 
-test('career: CAREER_NIGHT once between 22 and 23 when tomorrow has items, counting 마감 · 낼 것 · 쓸 것', (t) => {
+test('schedule: the older file nudges its timed deadlines exactly as before', async (t) => {
   const env = sandbox(t);
   mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
-  const run = (time) => careerNudges({ schedule: '/s.md', now: time, env, readFile: () => SCHEDULE });
-  assert.deepEqual(run(at(20, 21, 30)), []);
-  const night = run(at(20, 22, 10));
-  // Roo's arithmetic as written (career-schedule.py cmd_tick): 낼 것 counts "내기:", so a "- 내기 1." line of
-  // today's generator counts as a 마감 because its head carries "(마감 …)".
-  assert.equal(night[0], 'CAREER_NIGHT 내일 10/21 목록 건넬 때야 (마감 3 · 낼 것 0 · 쓸 것 1): career_schedule 도구로 tomorrow');
-  assert.deepEqual(run(at(20, 23, 10)), [], 'once a day');
+  const lines = await scheduleNudges({ sources: [{ location: '/일정표.md' }], now: at(21, 11, 10), env, readFile: () => GENERATED });
+  assert.equal(lines[0], 'SCHEDULE_DUE 3시간 전: 10/21 14:00 DN솔루션즈 AX 지원서 마감 (2시간 50분 남음, 일정표.md)');
 });
 
-test('career: an unreadable schedule warns once a day; no schedule set means no lines at all', (t) => {
+test('schedule: SCHEDULE_NIGHT once between 22 and 23 when tomorrow has items', async (t) => {
   const env = sandbox(t);
   mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
-  const warn = careerNudges({ schedule: path.join(env.HOME, 'missing.md'), now: at(21, 9), env });
-  assert.match(warn[0], /^CAREER_WARN 일정표를 못 읽어서 마감 찌르기를 못 하고 있어: .*missing\.md \(ENOENT\)$/);
-  assert.deepEqual(careerNudges({ schedule: path.join(env.HOME, 'missing.md'), now: at(21, 12), env }), []);
-  assert.deepEqual(careerNudges({ now: at(21, 12), env }), []);
+  const run = (time) => scheduleNudges({ sources: [{ location: '/plan.md' }], now: time, env, readFile: () => PLAN });
+  assert.deepEqual(await run(at(20, 21, 30)), []);
+  assert.equal((await run(at(20, 22, 10)))[0], 'SCHEDULE_NIGHT 내일 10/21 목록 건넬 때야 (시각 있는 것 2 · 종일 1): schedule 도구로 tomorrow');
+  assert.deepEqual(await run(at(20, 23, 10)), [], 'once a day');
 });
 
-test('career: show picks today and tomorrow by the real date, not the file\'s labels', () => {
-  const shown = showSchedule('both', { schedule: '/s.md', now: at(21, 8), readFile: () => SCHEDULE });
-  assert.match(shown, /^원본: \/s\.md\n2026-10-20 05:20 기준\n주의: 일정표가 26시간 전에/);
-  assert.match(shown, /## 오늘 10\/21\(수\)\n- 14:00  DN솔루션즈/);
-  assert.match(shown, /## 내일 10\/22\n\(잡힌 것 없음\)/);
-  const { days } = parseSchedule(SCHEDULE);
-  assert.deepEqual([...days.keys()], ['2026-10-20', '2026-10-21'], 'the 한눈에 table is not a day');
+test('schedule: a source that cannot be read warns once a day for itself; the others still nudge; none set means nothing', async (t) => {
+  const env = sandbox(t);
+  mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
+  const sources = [{ location: path.join(env.HOME, 'missing.md') }, { location: 'https://cal.example/u.ics' }, { location: '/plan.md' }];
+  const readFile = (file) => { if (file.endsWith('plan.md')) return PLAN; throw Object.assign(new Error('nope'), { code: 'ENOENT' }); };
+  const fetchImpl = async () => new Response('down', { status: 503 });
+  const first = await scheduleNudges({ sources, now: at(21, 11, 10), env, readFile, fetchImpl });
+  assert.deepEqual(first.filter((line) => line.startsWith('SCHEDULE_WARN')), [
+    'SCHEDULE_WARN 일정 출처를 못 읽어서 그 일정은 챙기지 못하고 있어: missing.md (ENOENT)',
+    'SCHEDULE_WARN 일정 출처를 못 읽어서 그 일정은 챙기지 못하고 있어: cal.example (HTTP 503)']);
+  assert.ok(first.some((line) => line.startsWith('SCHEDULE_DUE 3시간 전: 10/21 14:00 Interview')));
+  const again = await scheduleNudges({ sources, now: at(21, 12), env, readFile, fetchImpl });
+  assert.equal(again.some((line) => line.startsWith('SCHEDULE_WARN')), false);
+  assert.deepEqual(await scheduleNudges({ now: at(21, 12), env }), []);
 });
 
-test('career: the schedule path is the Settings one, ~ expanded, and its lines ride under the tick even at tick 0', async (t) => {
+test('schedule: a calendar address is fetched (webcal as https) and reused for ten minutes', async (t) => {
+  const env = sandbox(t);
+  const calls = [];
+  const fetchImpl = async (url) => { calls.push(url); return new Response(ICS); };
+  const sources = [{ location: 'webcal://cal.example/reuse-test.ics' }];
+  const first = await readSchedule({ sources, now: at(21, 9), env, fetchImpl });
+  assert.ok(first.items.some((item) => item.text === 'Dentist' && item.source === 'cal.example'));
+  await readSchedule({ sources, now: at(21, 9, 5), env, fetchImpl });
+  await readSchedule({ sources, now: at(21, 9, 20), env, fetchImpl });
+  assert.deepEqual(calls, ['https://cal.example/reuse-test.ics', 'https://cal.example/reuse-test.ics']);
+});
+
+test('schedule: show lists today and tomorrow by the real date across sources, and says what could not be read', async () => {
+  const shown = await showSchedule('both', { sources: [{ location: '/plan.md' }, { location: '/gone.md' }], now: at(21, 8),
+    readFile: (file) => { if (file.endsWith('plan.md')) return PLAN; throw Object.assign(new Error('x'), { code: 'ENOENT' }); } });
+  assert.match(shown, /^출처: plan\.md, gone\.md\n못 읽음: gone\.md \(ENOENT\)/);
+  assert.match(shown, /## 오늘 10\/21\(수\)\n- 14:00 Interview at the studio · plan\.md\n- 23:59 Report due · plan\.md\n- 종일 Call home · plan\.md/);
+  assert.match(shown, /## 내일 10\/22\(목\)\n\(잡힌 것 없음\)/);
+  assert.match(await showSchedule('today', { sources: [] }), /출처가 아직 없어/);
+});
+
+test('schedule: sources come from settings — an older single path migrates; ~ is the home; kinds are inferred', async (t) => {
+  const env = sandbox(t);
+  mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
+  writeFileSync(path.join(env.RUBATO_COMPANION_HOME, 'settings.json'), JSON.stringify({ career: { schedule: '~/plan.md' } }));
+  assert.deepEqual(scheduleSources(env), [{ kind: 'markdown', location: '~/plan.md' }]);
+  writeSettings({ schedule: { sources: [{ location: 'https://cal.example/a.ics' }, { location: '~/plan.md', name: 'My plan' }, { location: '~/plan.md' }] } }, env);
+  assert.deepEqual(scheduleSources(env), [{ kind: 'ics', location: 'https://cal.example/a.ics' }, { kind: 'markdown', location: '~/plan.md', name: 'My plan' }]);
+  writeFileSync(path.join(env.HOME, 'plan.md'), PLAN);
+  const { items } = await readSchedule({ sources: [{ kind: 'markdown', location: '~/plan.md' }], now: at(21, 8), env });
+  assert.ok(items.some((item) => item.text === 'Report due'));
+});
+
+test('schedule: its lines ride under the tick even at tick 0', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  writeFileSync(path.join(env.HOME, 'plan.md'), SCHEDULE);
+  writeFileSync(path.join(env.HOME, 'plan.md'), PLAN);
   engine.append(userSaid(at(20, 21, 50)));
-  const k = await keeperFor(t, env, engine, at(20, 21, 55), { career: { schedule: '~/plan.md' } });
+  const k = await keeperFor(t, env, engine, at(20, 21, 55), { schedule: { sources: [{ location: '~/plan.md' }] } });
   await k.poke(at(20, 22));
   const [line, nudge] = k.of('heartbeat').at(-1).text.split('\n');
   assert.match(line, /^HEARTBEAT tick=0 /);
-  assert.match(nudge, /^CAREER_NIGHT 내일 10\/21/);
+  assert.match(nudge, /^SCHEDULE_NIGHT 내일 10\/21/);
 });
 
 // ── waking up (scripts/session-start-hook.sh, pi-roo/roo-runtime.ts, skills wake and recall) ──
@@ -561,10 +648,10 @@ test('prompt: the rule pieces and the clock texts are Segno\'s Korean first pers
   assert.doesNotMatch(readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8'), /\bq (add|project)|inner-thoughts/, 'Roo\'s q is not ported; the work notes replace it');
 });
 
-test('heartbeat text: career lines under the tick line, a greeting body after a blank line', () => {
+test('heartbeat text: schedule lines under the tick line, a greeting body after a blank line', () => {
   const moment = at(21, 1);
-  assert.equal(heartbeatText({ tick: 4, at: moment, action: 'greet_night', career: ['CAREER_WARN x'], greeting: '밤 안부' }),
-    'HEARTBEAT tick=4 now="10월 21일(수) 오전 1:00" action=greet_night\nCAREER_WARN x\n\n밤 안부');
+  assert.equal(heartbeatText({ tick: 4, at: moment, action: 'greet_night', schedule: ['SCHEDULE_WARN x'], greeting: '밤 안부' }),
+    'HEARTBEAT tick=4 now="10월 21일(수) 오전 1:00" action=greet_night\nSCHEDULE_WARN x\n\n밤 안부');
 });
 
 test('every time Segno reads is on this machine\'s zone, not Seoul\'s (user item 48091d35)', () => {

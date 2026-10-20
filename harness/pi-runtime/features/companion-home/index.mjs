@@ -9,15 +9,15 @@
 // - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
 // - `memory_seed`, `world_fragment`, `sent_messages` are Roo's random-memory.sh, random-world.sh and
 //   sent.sh: an old memory, a piece of the world, and what really reached the user.
-// - `career_schedule` is Roo's career-schedule.py show: today's and tomorrow's part of the schedule.
+// - `schedule` is Roo's career-schedule.py show, made general: today's and tomorrow's items from every source.
 //
 // All of them live in the companion's home (harness/companion home.mjs, inbox.mjs, world.mjs,
-// career.mjs). Those files are staged beside this one because the runtime build cannot reach
+// schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
 import { RECORD_KINDS, commitOwned, oldMemorySeed, record, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { worldFragment, worldText } from "./world.mjs";
-import { showSchedule } from "./career.mjs";
+import { showSchedule } from "./schedule.mjs";
 
 const text = (value) => ({ type: "text", text: value });
 
@@ -158,20 +158,20 @@ export function createCompanionHomeFactories() {
       });
 
       pi.registerTool({
-        name: "career_schedule",
+        name: "schedule",
         label: "Schedule",
         exposure: "direct",
-        searchKeywords: ["schedule", "deadline", "career", "today", "tomorrow", "일정", "마감", "일정표"],
+        searchKeywords: ["schedule", "calendar", "deadline", "today", "tomorrow", "일정", "달력", "마감"],
         description:
-          "The user's deadline schedule from Settings › Companion, read where it is: today's and/or tomorrow's " +
-          "section by the real date, with when the schedule was generated. A schedule lists only what is not " +
-          "handed in yet.",
+          "The user's schedule from the sources in your settings (calendar ICS addresses, .ics files, schedule " +
+          "files), read where they are: today's and/or tomorrow's items by the real date, and any source that " +
+          "could not be read. To add or remove a source, change your settings (schedule.sources).",
         parameters: {
           type: "object", additionalProperties: false,
           properties: { which: { type: "string", enum: ["today", "tomorrow", "both"] } },
         },
         async execute(_id, params) {
-          return { content: [text(showSchedule(params?.which ?? "both"))] };
+          return { content: [text(await showSchedule(params?.which ?? "both"))] };
         },
       });
 
@@ -184,7 +184,7 @@ export function createCompanionHomeFactories() {
           "When you next want to look in, and why: minutes from now, HH:MM (the next one; a time already past " +
           "today is tomorrow) or an ISO 8601 time. Until then no heartbeat tick comes; you rest. " +
           "The first tick at or after that time comes with action=reflect and your reason. The user, a lead's " +
-          "ending, a greeting, a tick with a greeting catch-up or a deadline nudge, and sleep still wake you. At " +
+          "ending, a greeting, a tick with a greeting catch-up or a schedule nudge, and sleep still wake you. At " +
           "most six hours from now; a later time is cut to six. Setting it again replaces the earlier one.",
         parameters: {
           type: "object", additionalProperties: false, required: ["when", "reason"],

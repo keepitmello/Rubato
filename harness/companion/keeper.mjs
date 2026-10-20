@@ -22,12 +22,12 @@
 //   ninth carries action=reflect. Segno's wake wish (home.mjs, the `wake_wish` tool) silences plain
 //   and reflect ticks until its time — they are counted, not sent; only the warmer runs (user,
 //   2026-10-20) — then that tick carries action=reflect, reason=wake_wish and a WAKE_WISH line. A tick
-//   that carries a greeting catch-up or a deadline nudge still comes during a wish, as Roo's does
+//   that carries a greeting catch-up or a schedule nudge still comes during a wish, as Roo's does
 //   (user item 0b210d57). Roo's sleep signals (ctx_step, action=compact) are not ported: Segno's sleep
 //   is the keeper's night sleep below, which the user chose for cost. The cache warmer does not
 //   depend on the tick.
-// - Deadline nudges (scripts/career-schedule.py tick): CAREER_ lines under the tick, from the
-//   schedule set in Settings › Companion (career.mjs).
+// - Schedule nudges (scripts/career-schedule.py tick, made general): SCHEDULE_ lines under the
+//   tick, from the calendars and schedule files set in Segno's settings (schedule.mjs).
 // - The greetings (cron-prompts/night.md and morning.md, launchd at 00:07 and 09:07, dispatch
 //   windows 00–04 and 09–14). The night greeting writes the day's diary first and talks in that
 //   temperature; the morning greeting carries what the daily report used to (user item 4c0b0f00).
@@ -54,7 +54,7 @@ import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePane
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
-import { careerNudges } from './career.mjs';
+import { scheduleNudges } from './schedule.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
@@ -101,17 +101,17 @@ export function localIso(at) {
 
 /**
  * The tick as Roo receives it: `HEARTBEAT tick=N now="…"`, then `action=` when there is one and
- * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. CAREER_ lines follow
+ * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. SCHEDULE_ lines follow
  * (Roo's career_nudge_lines after the heartbeat line), and a greeting catch-up carries the greeting's
  * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md.
  */
-export function heartbeatText({ tick, at, action = 'none', wish, career = [], greeting = '' }) {
+export function heartbeatText({ tick, at, action = 'none', wish, schedule = [], greeting = '' }) {
   const parts = ['HEARTBEAT', `tick=${tick}`, `now="${timeLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
   const lines = [parts.join(' ')];
   if (wish) lines.push(`WAKE_WISH at=${localIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
-  lines.push(...career);
+  lines.push(...schedule);
   return greeting ? `${lines.join('\n')}\n\n${greeting}` : lines.join('\n');
 }
 
@@ -554,17 +554,17 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     let action = tick > 0 && tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
     const missed = tick > 0 && settings.greetings.enabled ? missedGreeting(at, state.greeted) : undefined;
     if (missed) action = GREETINGS[missed].action;
-    const career = careerNudges({ now: at, env });
+    const schedule = await scheduleNudges({ now: at, env }).catch(() => []);
     const storedWish = readWakeWish(env);
     const wishState = storedWish && wakeWishState(storedWish, at);
-    if (wishState?.mode === 'wait' && !missed && !career.length) return;
+    if (wishState?.mode === 'wait' && !missed && !schedule.length) return;
     let wish;
     if (wishState?.mode === 'due') {
       if (!missed) action = 'reflect';
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, career, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, schedule, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);
   }

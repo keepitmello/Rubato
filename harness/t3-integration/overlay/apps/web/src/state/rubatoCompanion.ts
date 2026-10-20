@@ -18,8 +18,10 @@ export interface CompanionSettings {
   readonly heartbeat: { readonly enabled: boolean; readonly everyMinutes: number };
   /** The night (00:07) and morning (09:07) greetings; the morning one carries the daily report. */
   readonly greetings: { readonly enabled: boolean };
-  /** The deadline schedule the heartbeat reads for its nudges; "" for none. */
-  readonly career: { readonly schedule: string };
+  /** The calendars and schedule files the heartbeat reads for its nudges; Segno sets them when told. */
+  readonly schedule: {
+    readonly sources: readonly { readonly kind: "ics" | "markdown"; readonly location: string; readonly name?: string }[];
+  };
 }
 
 export interface CompanionStatus {
@@ -95,7 +97,7 @@ export interface CompanionSettingsPatch {
   readonly enabled?: boolean;
   readonly heartbeat?: Partial<CompanionSettings["heartbeat"]>;
   readonly greetings?: Partial<CompanionSettings["greetings"]>;
-  readonly career?: Partial<CompanionSettings["career"]>;
+  readonly schedule?: Partial<CompanionSettings["schedule"]>;
 }
 
 /** A conversation Segno handed work to and follows until that work ends (engine panel.json). */

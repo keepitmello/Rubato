@@ -28,6 +28,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { SCHEDULE_SOURCE_LIMIT, normalizeSource } from './schedule.mjs';
 
 /** The session entry that marks a conversation as the companion (pi-server session-files create). */
 export const COMPANION_ENTRY = 'rubato.companion';
@@ -56,16 +57,16 @@ export const PIECE_LIMIT = 64 * 1024;
 export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
 /**
  * `greetings` are Roo's night (00:07) and morning (09:07) greetings; the morning one carries the
- * daily report (user item 4c0b0f00). `career.schedule` is the path of the user's deadline schedule
- * the heartbeat reads for its nudges (career.mjs); empty means none.
+ * daily report (user item 4c0b0f00). `schedule.sources` are the calendars (ICS address or .ics file)
+ * and schedule files the heartbeat reads for its nudges (schedule.mjs, which documents the format);
+ * Segno sets them when the user tells it. None by default.
  */
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30 }),
   greetings: Object.freeze({ enabled: true }),
-  career: Object.freeze({ schedule: '' }),
+  schedule: Object.freeze({ sources: Object.freeze([]) }),
 });
-const SCHEDULE_LIMIT = 1024;
 
 export function companionHome(env = process.env) {
   if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
@@ -98,7 +99,12 @@ export function normalizeSettings(value) {
   // A home from before the greetings kept `dailyReport`; its switch is the greetings' switch now.
   const greetings = input.greetings && typeof input.greetings === 'object' ? input.greetings
     : input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
-  const career = input.career && typeof input.career === 'object' ? input.career : {};
+  // An older home kept one schedule path as `career.schedule`; it reads as one markdown source.
+  const listed = Array.isArray(input.schedule?.sources) ? input.schedule.sources
+    : typeof input.career?.schedule === 'string' && input.career.schedule.trim() ? [{ kind: 'markdown', location: input.career.schedule }] : [];
+  const seen = new Set();
+  const sources = listed.map(normalizeSource).filter((source) => source && !seen.has(source.location) && seen.add(source.location))
+    .slice(0, SCHEDULE_SOURCE_LIMIT);
   return {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_SETTINGS.enabled,
     heartbeat: {
@@ -106,7 +112,7 @@ export function normalizeSettings(value) {
       everyMinutes: HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes) ? heartbeat.everyMinutes : DEFAULT_SETTINGS.heartbeat.everyMinutes,
     },
     greetings: { enabled: typeof greetings.enabled === 'boolean' ? greetings.enabled : DEFAULT_SETTINGS.greetings.enabled },
-    career: { schedule: typeof career.schedule === 'string' && career.schedule.length <= SCHEDULE_LIMIT ? career.schedule.trim() : DEFAULT_SETTINGS.career.schedule },
+    schedule: { sources },
   };
 }
 
@@ -131,15 +137,21 @@ export function writeSettings(patch, env = process.env) {
     if (!greetings || typeof greetings !== 'object') throw new TypeError('greetings must be an object');
     if (greetings.enabled !== undefined && typeof greetings.enabled !== 'boolean') throw new TypeError('greetings.enabled must be true or false');
   }
-  const career = patch.career;
-  if (career !== undefined) {
-    if (!career || typeof career !== 'object') throw new TypeError('career must be an object');
-    if (career.schedule !== undefined && !(typeof career.schedule === 'string' && career.schedule.length <= SCHEDULE_LIMIT))
-      throw new TypeError(`career.schedule must be a path of at most ${SCHEDULE_LIMIT} characters`);
+  const schedule = patch.schedule;
+  if (schedule !== undefined) {
+    if (!schedule || typeof schedule !== 'object') throw new TypeError('schedule must be an object');
+    if (schedule.sources !== undefined) {
+      if (!Array.isArray(schedule.sources)) throw new TypeError('schedule.sources must be a list');
+      if (schedule.sources.length > SCHEDULE_SOURCE_LIMIT) throw new TypeError(`schedule.sources holds at most ${SCHEDULE_SOURCE_LIMIT} sources`);
+      for (const source of schedule.sources) {
+        if (!normalizeSource(source)) throw new TypeError('each schedule source needs a location: an ICS address, an .ics file or a schedule file');
+        if (source?.kind !== undefined && source.kind !== 'ics' && source.kind !== 'markdown') throw new TypeError("a schedule source's kind is 'ics' or 'markdown'");
+      }
+    }
   }
-  const { dailyReport: _old, ...rest } = patch;
+  const { dailyReport: _old, career: _career, ...rest } = patch;
   const next = normalizeSettings({ ...current, ...rest, heartbeat: { ...current.heartbeat, ...heartbeat },
-    greetings: { ...current.greetings, ...greetings }, career: { ...current.career, ...career } });
+    greetings: { ...current.greetings, ...greetings }, schedule: { ...current.schedule, ...schedule } });
   writeJson(companionPaths(env).settings, next);
   return next;
 }
