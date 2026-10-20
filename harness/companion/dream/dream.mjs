@@ -32,7 +32,7 @@ import path from 'node:path';
 import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
-import { commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { TELL_USER_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
 export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
@@ -337,13 +337,19 @@ export function segnoSessionFiles(env = process.env) {
 const SESSION_MESSAGE = 'rubato-session-message';
 
 /**
- * What Segno said to the user through its messenger tools (telegram_send, telegram_edit,
- * telegram_react): in a turn Rubato's clock opened, these calls are the only place its words to the
- * user exist, so the dream hears them as Segno's own words.
+ * What Segno said to the user, as the dream hears it: tell_user (home.mjs TELL_USER_TOOL), which Segno
+ * speaks with from a turn of its own and whose words exist only as the call's arguments, and in older
+ * sessions its telegram_* tools.
+ */
+const isSaying = (name) => name === TELL_USER_TOOL || name.startsWith('telegram_');
+
+/**
+ * What Segno said to the user through tool calls. In a turn Rubato's clock opened these calls are the
+ * only place its words to the user exist, so the dream hears them as Segno's own words.
  */
 function sentOf(content) {
   if (!Array.isArray(content)) return '';
-  return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && block.name.startsWith('telegram_'))
+  return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && isSaying(block.name))
     .map((block) => {
       const args = block.arguments ?? {};
       const said = [args.text, args.voice_text && args.voice_text !== args.text ? `(음성) ${args.voice_text}` : '']

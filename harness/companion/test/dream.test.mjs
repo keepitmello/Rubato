@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
-import { segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { TELL_USER_TOOL, segnoPaths, segnoSearchEnv } from '../home.mjs';
 import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, commandExists, composeDreamPrompt, dreamDue, dreamPaths, FALLBACK_PATH, workEnv, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
@@ -50,6 +50,8 @@ function segnoSession(env, { cwd = env.RUBATO_COMPANION_HOME, id = '01a154ba-000
     { type: 'message', timestamp: new Date(at(20, 10, 4)).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: '금요일 면접~ 챙겨둘게.' }] } },
     { type: 'message', timestamp: new Date(at(20, 10, 31)).toISOString(), message: { role: 'assistant', content: [
       { type: 'toolCall', name: 'telegram_send', arguments: { text: '좋은 아침~ 금요일 넥타이 챙겨' } }, { type: 'text', text: '보냈다. 이제 기다리자.' }] } },
+    { type: 'message', timestamp: new Date(at(20, 10, 40)).toISOString(), message: { role: 'assistant', content: [
+      { type: 'toolCall', name: TELL_USER_TOOL, arguments: { text: '면접 준비 다 됐어? 응원할게~' } }] } },
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 10, 30)).toISOString(),
       content: '<rubato_wake what="heartbeat">…', details: { kind: 'wake', what: 'heartbeat', text: 'HEARTBEAT tick=1' } },
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 11, 0)).toISOString(),
@@ -143,8 +145,11 @@ test("the conversation export carries words and wake marks, not tools or thinkin
   assert.doesNotMatch(out.markdown, /TOOL OUTPUT|secret thinking|toolCall|"ls"/);
   // In a turn the clock opened, the words that reached the user exist only as the send call.
   assert.match(out.markdown, /### 2026-10-20 10:31 나\n\n보냈다\. 이제 기다리자\.\n\n\[telegram_send\] 좋은 아침~ 금요일 넥타이 챙겨/);
-  assert.equal(out.messages, 4);
-  assert.equal(exportTranscript([file], at(20, 10, 30)).messages, 2, 'only what came after the mark');
+  // In the app, what Segno says on its own is the tell_user call (older sessions: telegram_*).
+  assert.match(out.markdown, /### 2026-10-20 10:40 나\n\n\[tell_user\] 면접 준비 다 됐어\? 응원할게~/);
+  assert.equal(out.markdown.match(/면접 준비 다 됐어/g).length, 1, 'once');
+  assert.equal(out.messages, 5);
+  assert.equal(exportTranscript([file], at(20, 10, 30)).messages, 3, 'only what came after the mark');
   const small = exportTranscript([file], at(20, 0), { budgetChars: 60 });
   assert.equal(small.truncated, true);
   assert.ok(small.coveredThrough >= at(20, 10, 2) - 1 && small.coveredThrough < at(20, 10, 3), 'the mark moves only as far as was read');
