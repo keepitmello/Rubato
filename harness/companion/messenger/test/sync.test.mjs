@@ -232,3 +232,42 @@ test('taking history as read keeps the run going on at the end: an answer to a c
   await settle(box.service);
   assert.ok(sentTexts(box).includes('정리 중이었어.'));
 });
+
+// Background work finishing opens a run of its own (quiet-runs.mjs quietStep): it belongs to the
+// run that launched the work, for what the app shows and for where Telegram sends the answer.
+const launched = (id, callId, agentId) => ({ type: 'message', id, message: { role: 'toolResult', toolCallId: callId, toolName: 'Agent',
+  details: { agentId, status: 'running', mode: 'spawn' }, isError: false, content: [{ type: 'text', text: 'started' }] } });
+const finished = (id, agentId) => ({ type: 'custom_message', id, customType: 'rubato.task.completion', display: false,
+  content: `completed ${agentId}`, details: [{ agentId, status: 'completed' }] });
+
+test("work started for another person finishes after the person's own turn: the answer is held for them, not sent to the person", async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    channelEntry('b1', { isUser: false, chatId: GROUP_CHAT, name: 'Gildong' }),
+    answerEntry('b2', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }),
+    launched('b3', 'b2-t0', 'st_repro_bug1'), answerEntry('b4', '원인 찾는 중입니다.'),
+    appEntry('b5', '오늘 뭐 먹지'), answerEntry('b6', '국수 어때?'),
+    finished('b7', 'st_repro_bug1'), answerEntry('b8', '원인을 찾았어요. 다음 버전에서 고칩니다.'),
+  ]);
+  await settle(box.service);
+  assert.ok(sentTexts(box).includes('국수 어때?'));
+  assert.ok(!sentTexts(box).includes('원인을 찾았어요. 다음 버전에서 고칩니다.'), 'not to the person');
+  const held = listOutbox(box.env).filter((row) => row.source === 'reply').map((row) => [row.target.chatId, row.text]);
+  assert.deepEqual(held, [[GROUP_CHAT, '원인 찾는 중입니다.'], [GROUP_CHAT, '원인을 찾았어요. 다음 버전에서 고칩니다.']]);
+});
+
+test("work the person asked for on Telegram finishes after a heartbeat: the answer reaches them, with a notification", async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    channelEntry('c1', { messageId: 700 }),
+    answerEntry('c2', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }),
+    launched('c3', 'c2-t0', 'st_build_0001'), answerEntry('c4', '빌드 돌려둘게.'),
+    wakeEntry('c5', 'heartbeat', 'tick'), answerEntry('c6', '조용히 기다린다.'),
+    finished('c7', 'st_build_0001'), answerEntry('c8', '빌드 끝났어. 다 통과야.'),
+  ]);
+  await settle(box.service);
+  const done = box.fake.sent.find((row) => row.text === '빌드 끝났어. 다 통과야.');
+  assert.ok(done, 'the answer to their request reached them');
+  assert.equal(done.disableNotification, false);
+  assert.ok(!sentTexts(box).includes('조용히 기다린다.'));
+});

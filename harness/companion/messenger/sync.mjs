@@ -5,7 +5,10 @@
 // copied to Telegram: Segno's answer has to read on its own there.
 //
 // Which runs the app hides is decided in one place, harness/t3-integration/src/quiet-runs.mjs
-// (`isClockWake`, QUIET_WAKES); this reads the transcript with the same rule.
+// (`quietStep`, QUIET_WAKES): a clock wake opens a quiet run, the person's or anyone's message a
+// shown one, and a run opened by background work finishing follows the run that launched it. This
+// steps through the transcript with that same function, one entry at a time, and an answer goes
+// to whoever started the work: the person, or another chat (held for approval).
 //
 // The transcript is read from a byte offset that only moves forward past whole lines, so a
 // transcript of any length is read once and never replayed. The run state that decides where an
@@ -13,7 +16,7 @@
 // telegram_send in it) is carried with that offset.
 import { open, opendir } from 'node:fs/promises';
 import path from 'node:path';
-import { isClockWake } from '../../t3-integration/src/quiet-runs.mjs';
+import { launchedIds, newQuietState, quietStep } from '../../t3-integration/src/quiet-runs.mjs';
 
 export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const TELEGRAM_SEND_TOOL = 'telegram_send';
@@ -72,9 +75,25 @@ export async function readEntriesFrom(file, offset = 0, { maxBytes = READ_CHUNK_
   } finally { await handle.close(); }
 }
 
-/** The run state carried with the offset: a plain object, so it can be stored and read back. */
+/** Launches remembered for routing a completion; the oldest go first past this many. */
+const LAUNCHES_MAX = 2000;
+
+/**
+ * The run state carried with the offset: a plain object, so it can be stored and read back.
+ * `visibility` is quiet-runs.mjs's own state; `launches` says which input each piece of background
+ * work was started under, so a completion's answer goes where the work came from.
+ */
 export function freshRun() {
-  return { quiet: false, trigger: { kind: 'unknown' }, toolTexts: [], calls: {}, held: null };
+  return { quiet: false, visibility: newQuietState(), trigger: { kind: 'unknown' }, toolTexts: [], calls: {}, held: null, launches: {} };
+}
+
+/** A transcript entry as the message quiet-runs.mjs reads (Pi's message list). */
+function messageOf(entry) {
+  if (entry?.type === 'message') return entry.message;
+  if (entry?.type === 'custom_message') {
+    return { role: 'custom', customType: entry.customType, content: entry.content, display: entry.display, details: entry.details };
+  }
+  return undefined;
 }
 
 /** What opened a run, from the input that started it. */
@@ -150,17 +169,30 @@ function newInput(run, quiet, trigger) {
  * beside its own telegram_send call waits for that call's result before it is judged.
  */
 export function stepRun(run, entry, { companionSessionId } = {}) {
-  if (!entry || typeof entry !== 'object') return [];
+  const message = messageOf(entry);
+  if (!message) return [];
   run.calls ??= {};
   run.held ??= null;
+  run.launches ??= {};
+  // A run state from before quietStep: its visibility starts from what it knew.
+  run.visibility ??= { ...newQuietState(), inQuiet: run.quiet === true };
+  const { quiet, launcher } = quietStep(run.visibility, message);
+  run.quiet = quiet;
   if (entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE) {
-    const message = { role: 'custom', customType: entry.customType, details: entry.details };
-    return newInput(run, isClockWake(message), triggerOf(entry, { companionSessionId }));
+    return newInput(run, quiet, triggerOf(entry, { companionSessionId }));
   }
-  if (entry.type !== 'message') return [];
-  const message = entry.message ?? {};
-  if (message.role === 'user') return newInput(run, false, triggerOf(entry));
+  if (message.role === 'user') return newInput(run, quiet, triggerOf(entry));
+  if (launcher !== undefined) {
+    // Background work finishing opens a run that belongs to the run that launched the work.
+    return newInput(run, quiet, run.launches[launcher] ?? run.trigger);
+  }
   if (message.role === 'toolResult') {
+    for (const id of launchedIds(message)) {
+      delete run.launches[id];
+      run.launches[id] = run.trigger;
+    }
+    const ids = Object.keys(run.launches);
+    for (const id of ids.slice(0, Math.max(0, ids.length - LAUNCHES_MAX))) delete run.launches[id];
     if (message.toolName !== TELEGRAM_SEND_TOOL || !(message.toolCallId in run.calls)) return [];
     if (delivered(message)) run.toolTexts.push(...run.calls[message.toolCallId]);
     delete run.calls[message.toolCallId];
