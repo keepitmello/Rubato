@@ -83,3 +83,17 @@
   background-color: var(--card);
   padding: 0.625rem 0.875rem;
 }
+
+/* ---- A chat room (user item f41ed6a0) ----
+   Segno's space reads like a messenger: only the conversation's bubbles — the person's and Segno's,
+   and Rubato's one-line notices about the leads, which are message rows too. The work behind a reply
+   (tool and work rows, "Worked for" folds, thinking, the turn's always-on meta, background-activity
+   events, context-compaction dividers, plans and renders) and the changed-files card under a reply
+   stay out of this space; every other thread shows them as before. The working indicator stays: it
+   reads as "typing". */
+[data-rubato-segno-chat]
+  [data-timeline-row-kind]:not([data-timeline-row-kind="message"]):not([data-timeline-row-kind="working"]),
+[data-rubato-segno-chat] [data-rubato-wake-row],
+[data-rubato-segno-chat] [data-timeline-row-kind="message"] [data-changed-files-state] {
+  display: none;
+}

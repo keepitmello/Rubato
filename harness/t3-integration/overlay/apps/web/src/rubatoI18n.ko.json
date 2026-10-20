@@ -1,5 +1,9 @@
 {
  "exact": {
+  "Approval needed": "승인 필요",
+  "Input needed": "입력 필요",
+  "Thread completed": "스레드 완료",
+  "Thread failed": "스레드 실패",
   "_No description provided._": "_설명이 없습니다._",
   "- Lead with the conclusion": "- 결론부터 말할 것",
   "- Prefers short answers": "- 짧은 답변을 선호함",

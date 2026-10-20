@@ -18,6 +18,9 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoSpace.css',
   'apps/web/src/components/chat/RubatoSegnoSpace.test.ts',
   'apps/web/src/components/chat/RubatoSegnoSidebar.test.tsx',
+  'apps/web/src/components/chat/RubatoSegnoNotice.tsx',
+  'apps/web/src/components/chat/RubatoSegnoNotice.test.tsx',
+  'apps/web/src/components/chat/RubatoSegnoNoticeCoordinator.test.tsx',
 ];
 
 /** The settings route slug the generated route tree gains (route-tree-edits.mjs). */
@@ -136,6 +139,39 @@ export const companionEdits = {
       'replace'],
     ['import { SidebarInset } from "./ui/sidebar";\n',
       'import { RubatoSegnoSpace } from "./chat/RubatoSegnoSpace";\nimport { useRubatoCompanion } from "../state/rubatoCompanion";\n'],
+  ],
+  // A run that ends in Segno's thread notifies like a messenger — Segno's name, the start of what it
+  // said, "Open" (chat/RubatoSegnoNotice.tsx); every other thread's notification is unchanged but
+  // for its desktop title, which now follows the interface language like the toast's.
+  'apps/web/src/components/ThreadNotificationCoordinator.tsx': [
+    ['import { resolveSidebarThreadStatus } from "./Sidebar.logic";\n',
+      'import { notifySegnoCompletion } from "./chat/RubatoSegnoNotice";\n'
+        + 'import { uiText } from "../rubatoI18n";\n'
+        + 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+    ['      if (!kind) continue;\n      const title =\n',
+      '      if (!kind) continue;\n'
+        + '      // Rubato: Segno\'s thread notifies like a messenger (companion-edits.mjs).\n'
+        + '      if (kind === "completion" && isCompanionThread(thread.id)) {\n'
+        + '        void notifySegnoCompletion({\n'
+        + '          environmentId,\n'
+        + '          threadId: thread.id,\n'
+        + '          runId: rawThread.latestRunId,\n'
+        + '          mode,\n'
+        + '          inAppNotificationsEnabled,\n'
+        + '          viewing: activeEnvironmentId === environmentId && activeThreadId === thread.id,\n'
+        + '          open: () =>\n'
+        + '            void navigate({\n'
+        + '              to: "/$environmentId/$threadId",\n'
+        + '              params: { environmentId, threadId: thread.id },\n'
+        + '            }),\n'
+        + '          onNotification,\n'
+        + '        });\n'
+        + '        continue;\n'
+        + '      }\n'
+        + '      const title =\n',
+      'replace'],
+    ['        const notification = new Notification(title, {\n',
+      '        const notification = new Notification(uiText(title), {\n', 'replace'],
   ],
   // Segno's header is just its name: its folder is not a project.
   'apps/web/src/components/chat/ChatHeader.tsx': [

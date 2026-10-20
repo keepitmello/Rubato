@@ -202,6 +202,9 @@ export const rubatoCompanion = {
   /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
   thread: (env: EnvironmentId | null, sessionId: string) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId }),
+  /** What Segno said in a run of its thread that just ended; null when it said nothing to the person. */
+  said: (env: EnvironmentId | null, threadId: string, runId: string) =>
+    call<{ text: string | null }>(env, "said", { threadId, runId }),
 };
 
 /** The primary environment's id once its HTTP connection is ready; null until then. */
@@ -285,6 +288,30 @@ export function useRubatoCompanion(): CompanionView {
 /** Whether `threadId` is Segno's conversation, as far as the app knows it now. */
 export function isCompanionThread(threadId: string): boolean {
   return view.threadId !== null && view.threadId === threadId;
+}
+
+/** At most this many characters of what Segno said show in a notification. */
+export const SEGNO_NOTICE_CHARS = 120;
+
+/**
+ * A notification from Segno's thread reads like a messenger's (user 55dd0da4): Segno's name over
+ * the start of what it said, as plain text. Null when it said nothing.
+ */
+export function segnoNotice(
+  said: string | null | undefined,
+): { readonly title: string; readonly body: string } | null {
+  if (typeof said !== "string") return null;
+  const text = said
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d+[.)]\s+)/gm, "")
+    .replace(/(\*\*|__|`|~~)/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return null;
+  const chars = [...text];
+  const body = chars.length > SEGNO_NOTICE_CHARS ? `${chars.slice(0, SEGNO_NOTICE_CHARS - 1).join("").trimEnd()}…` : text;
+  return { title: "Segno", body };
 }
 
 /** The thread list without Segno's conversation: it opens from the rail (companion-edits.mjs). */
