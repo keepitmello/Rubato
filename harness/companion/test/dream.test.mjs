@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
-import { segnoPaths } from '../home.mjs';
+import { segnoPaths, segnoSearchEnv } from '../home.mjs';
 import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, childArgs, guardResidentMemory, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
@@ -519,9 +519,13 @@ test('what came home is re-indexed for Segno\'s search, and the shared recall lo
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
   const stateDir = path.join(env.HOME, '.rubato', 'memory', 'msearch-state');
   mkdirSync(stateDir, { recursive: true });
-  const hit = (rel, section, day) => JSON.stringify({ ts: new Date(at(day, 12)).toISOString(), caller: 'cli', query: 'q', hits: [{ rel_path: rel, section }] });
-  writeFileSync(path.join(stateDir, 'recall-log.jsonl'), [hit('user.md', '지금', 20), hit('user.md', '지금', 19), hit('rubato/repo/decisions/x.md', 'a', 20),
-    hit('rubato/repo/decisions/x.md', 'a', 19), hit('us.md', '이야기', 20), hit('user.md', '지금', 1)].join('\n') + '\n');
+  // The log is shared by every msearch channel; a hit's key carries its channel (memory-search.py log_recall).
+  const own = segnoSearchEnv(env).MSEARCH_CHANNEL;
+  const hit = (rel, section, day, channel = own) => JSON.stringify({ ts: new Date(at(day, 12)).toISOString(), caller: 'cli', query: 'q',
+    hits: [{ key: `msearch:memory:channel:${channel}:${rel}:0`, rel_path: rel, section }] });
+  writeFileSync(path.join(stateDir, 'recall-log.jsonl'), [hit('user.md', '지금', 20), hit('user.md', '지금', 19),
+    hit('user.md', '지금', 20, 'segno_0123456789'), hit('user.md', '지금', 19, 'rubato'), hit('us.md', '이야기', 20, 'rubato'),
+    hit('us.md', '이야기', 19, 'rubato'), hit('us.md', '이야기', 20), hit('user.md', '지금', 1)].join('\n') + '\n');
   const indexed = [];
   let plan;
   const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; }, edits: { 'memory/us.md': '## 지금\n' }, result: { status: 'done', blocks: { distill: 'done' } } });

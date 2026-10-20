@@ -648,12 +648,16 @@ function ratchetResident(env, home, before) {
 const firstLineOf = (text) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
 
 /**
- * What Segno looked up often in the last week (Roo's recallPromotionCandidates): msearch logs every
- * search in its shared recall log, and Segno's hits are the ones under its own memory folder (paths
- * relative to it; the leads' stores sit under <store>/repo/). Sections hit twice or more, most first.
+ * What Segno looked up often in the last week (Roo's recallPromotionCandidates). msearch logs every
+ * search in one recall log shared by every channel; each hit's key starts with its channel's prefix
+ * (msearch_config.py KEY_PREFIX, `msearch:memory:channel:<id>:`), and Segno's channel is the one its
+ * search runs on (home.mjs segnoSearchEnv). Sections hit twice or more, most first.
  */
 function recallCandidates(env, at) {
-  const file = path.join(segnoSearchEnv(env).MSEARCH_STATE_DIR, 'recall-log.jsonl');
+  const search = segnoSearchEnv(env);
+  const channel = String(search.MSEARCH_CHANNEL).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'default';
+  const prefix = search.MSEARCH_KEY_PREFIX || `msearch:memory:channel:${channel}:`;
+  const file = path.join(search.MSEARCH_STATE_DIR, 'recall-log.jsonl');
   let raw;
   try { raw = readFileSync(file, 'utf8'); } catch { return []; }
   const counts = new Map();
@@ -663,7 +667,7 @@ function recallCandidates(env, at) {
     if (!(at - Date.parse(entry?.ts ?? '') <= 7 * DAY_MS)) continue;
     for (const hit of Array.isArray(entry.hits) ? entry.hits : []) {
       const rel = String(hit?.rel_path ?? '');
-      if (!rel || rel.includes('/repo/') || path.isAbsolute(rel)) continue;
+      if (!rel || !String(hit?.key ?? '').startsWith(prefix)) continue;
       const key = `${rel}\u0000${String(hit.section ?? '')}`;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
