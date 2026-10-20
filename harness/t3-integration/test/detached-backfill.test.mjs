@@ -141,3 +141,15 @@ test('after a bubble T3 shows outside any run, a recovered reply still goes into
   assert.ok(await until(() => appended.length >= 1));
   assert.deepEqual(appended.map(([, item]) => [item.text, item.runId]), [['받았어. 정리할게.', 'run-40']]);
 });
+
+test('every thread a stream attaches to is remembered for the backfill, with or without agents or a speed reading', async (t) => {
+  const { readFileSync, existsSync } = await import('node:fs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-backfill-state-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(dir, 'none.json'), instanceId: 'rubato-test', sessionStateDir: dir, backfillMs: 60_000 });
+  t.after(() => bridge.close());
+  bridge.stateFor('plain-chat', 'S9');
+  const file = path.join(dir, `${encodeURIComponent('plain-chat')}.json`);
+  for (let tries = 0; tries < 50 && !existsSync(file); tries += 1) await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(JSON.parse(readFileSync(file, 'utf8')).sessionId, 'S9');
+});

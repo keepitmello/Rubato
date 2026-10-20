@@ -279,10 +279,15 @@ export class RubatoPiBridge {
   /** The thread's session state (session-state.mjs): kept in memory, else saved, else new on attach. */
   stateFor(threadId, sessionId) {
     let fold = this.knownState(threadId);
+    const bound = fold?.sessionId;
     if (!fold) {
       fold = new SessionStateFold({ threadId, sessionId, instanceId: this.instanceId, changed: () => this.saveState(threadId) });
       this.sessionStates.set(threadId, fold);
     } else fold.rebind(sessionId);
+    // The saved state is also the record of which session this thread streams, which the backfill
+    // reads (backfill.mjs): it is written on attach, not only when the session happens to carry
+    // agents or a speed reading.
+    if (bound !== sessionId) this.saveState(threadId);
     return fold;
   }
   stateFile(threadId) {
