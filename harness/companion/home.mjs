@@ -22,7 +22,7 @@
 // This file has no local imports on purpose. The same file is staged into the runtime build
 // (pi-runtime/features/companion-home) so the companion's tools can write these records, where
 // harness/companion is out of reach; anything it imported from beside itself would not follow.
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { homedir, userInfo } from 'node:os';
@@ -61,6 +61,32 @@ export function segnoPaths(env = process.env) {
     projectConfig: path.join(home, '.rubato', 'rubato.jsonc'),
     projectConfigDir: path.join(home, '.rubato'),
   };
+}
+
+/**
+ * Whether writing `file` lands inside `home`. Segno links repository documents into its memory
+ * (memory/ref/) to read them; a write at a linked path would go through the link into the
+ * repository. The dream checks what it brings home with this, and Segno's own write tools check
+ * every write (companion-home index.mjs). Every part of the path below the home is checked as it is on
+ * disk: a link whose real place is outside the home refuses the write, and so does a link that points
+ * nowhere yet (a dangling link would create its target wherever it points).
+ */
+export function landsInside(home, file) {
+  const real = (target) => { try { return realpathSync(target); } catch { return path.resolve(target); } };
+  const root = real(home);
+  const rel = path.relative(home, file);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  let current = home;
+  for (const part of rel.split(path.sep)) {
+    current = path.join(current, part);
+    let stat;
+    try { stat = lstatSync(current); } catch { return true; }
+    if (!stat.isSymbolicLink()) continue;
+    let target;
+    try { target = realpathSync(current); } catch { return false; }
+    if (target !== root && !target.startsWith(root + path.sep)) return false;
+  }
+  return true;
 }
 
 /** A local date as YYYY-MM-DD. */

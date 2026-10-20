@@ -177,6 +177,11 @@ test("Segno's conversations are the ones whose folder is its home", (t) => {
   segnoSession(env, { cwd: '/Users/someone/project', id: 'other', name: 'other.jsonl' });
   mkdirSync(path.join(env.RUBATO_PI_CODING_AGENT_DIR, 'sessions', '--nested--'));
   const nested = segnoSession(env, { id: 'nested', name: path.join('--nested--', 'n.jsonl') });
+  // A helper conversation opened in Segno's folder is not Segno: its words are not Segno's.
+  const helper = path.join(env.RUBATO_PI_CODING_AGENT_DIR, 'sessions', 'helper.jsonl');
+  writeFileSync(helper, [{ type: 'session', version: 3, id: 'helper', timestamp: '2026-10-20T00:00:00.000Z', cwd: env.RUBATO_COMPANION_HOME },
+    { type: 'message', timestamp: '2026-10-20T00:00:01.000Z', message: { role: 'user', content: [{ type: 'text', text: 'ring' }] } }]
+    .map((line) => JSON.stringify(line)).join('\n') + '\n');
   assert.deepEqual(segnoSessionFiles(env), [nested, own].sort());
 });
 

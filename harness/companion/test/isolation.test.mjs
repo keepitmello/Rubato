@@ -2,7 +2,7 @@
 // given Segno's prompt, its own skills or its way of speaking, and Segno's records stay in its home.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -11,6 +11,7 @@ import { resolveRole } from '../../rubato-pi/src/role-contract.mjs';
 import { COMPANION_SKILL_DIRS, loadRolePrompt, replaceSystemPrompt } from '../../rubato-pi/src/system-prompt.mjs';
 import { createUiScope } from '../../pi-runtime/features/session-ui/context.mjs';
 import { getShellEnv } from '../../pi-runtime/features/terminal/src/host/shell.ts';
+import { LINKED_WRITE_REFUSAL, linkedWriteRefusal } from '../../pi-runtime/features/companion-home/index.mjs';
 
 const harness = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MARK = 'SEGNO-PERSONAL-MARK-7c1';
@@ -75,4 +76,28 @@ test("Segno's own skills are listed for Segno only, and the shared skills folder
   for (const { dir: own } of COMPANION_SKILL_DIRS) assert.ok(existsSync(path.join(own, 'companion-settings', 'SKILL.md')));
   assert.ok(!existsSync(path.join(harness, 'skills', 'companion-settings')));
   assert.match(readFileSync(path.join(harness, 'scripts', 'install-skills.sh'), 'utf8'), /for name in [^\n]*companion-settings/);
+});
+
+test("Segno reads linked repository documents but its write tools never write through the link", (t) => {
+  const { dir, env } = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  const repo = path.join(dir, 'repo', 'docs');
+  mkdirSync(path.join(repo, 'ops'), { recursive: true });
+  writeFileSync(path.join(repo, 'guide.md'), '# guide');
+  mkdirSync(path.join(home, 'memory', 'ref'), { recursive: true });
+  symlinkSync(path.join(repo, 'guide.md'), path.join(home, 'memory', 'ref', 'guide.md'));
+  symlinkSync(path.join(repo, 'ops'), path.join(home, 'memory', 'ref', 'ops'), 'dir');
+  symlinkSync(path.join(repo, 'not-yet.md'), path.join(home, 'memory', 'ref', 'later.md'));
+  const call = (toolName, file) => linkedWriteRefusal({ toolName, input: { path: file } }, { cwd: home, env });
+  assert.equal(call('write', 'memory/ref/guide.md'), LINKED_WRITE_REFUSAL);
+  assert.equal(call('edit', path.join(home, 'memory', 'ref', 'ops', 'map.md')), LINKED_WRITE_REFUSAL);
+  assert.equal(call('write', 'memory/ref/later.md'), LINKED_WRITE_REFUSAL, 'a dangling link would create the file in the repository');
+  assert.equal(call('write', 'memory/2026-10-21.md'), undefined, "Segno's own files stay writable");
+  assert.equal(call('read', 'memory/ref/guide.md'), undefined, 'reading is what the links are for');
+  assert.equal(call('write', path.join(dir, 'elsewhere.md')), undefined, 'paths outside the home are not this guard\'s');
+  const patch = (body) => linkedWriteRefusal({ toolName: 'apply_patch', input: { input: `*** Begin Patch\n${body}\n*** End Patch` } }, { cwd: home, env });
+  assert.equal(patch('*** Update File: memory/ref/guide.md\n@@\n-# guide\n+# mine'), LINKED_WRITE_REFUSAL);
+  assert.equal(patch('*** Update File: memory/self.md\n*** Move to: memory/ref/ops/self.md'), LINKED_WRITE_REFUSAL);
+  assert.equal(patch('*** Add File: memory/work/new.md\n+# new'), undefined);
+  assert.equal(readFileSync(path.join(repo, 'guide.md'), 'utf8'), '# guide');
 });

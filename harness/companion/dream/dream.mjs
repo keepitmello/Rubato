@@ -25,14 +25,14 @@
 // and the run counts as partial. A child that fails brings nothing home.
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, closeSync, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
+import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
   realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
-import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
-import { REPLY_TOOL, SAY_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { COMPANION_ENTRY, memoryPiecePath, readPieces, readState } from '../companion.mjs';
+import { REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
 export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
@@ -298,28 +298,16 @@ function agentDirOf(env) {
 
 const real = (file) => { try { return realpathSync(file); } catch { return path.resolve(file); } };
 
-/**
- * Whether writing `file` lands inside `home`. Segno links repository documents into its memory
- * (memory/ref/); the dream's copy leaves links out, so a file it writes at a linked path would go
- * through the link into the repository. Every part of the path below the home is checked as it is on
- * disk: a link whose real place is outside the home refuses the write, and so does a link that points
- * nowhere yet (a dangling link would create its target wherever it points).
- */
-function landsInside(home, file) {
-  const root = real(home);
-  const rel = path.relative(home, file);
-  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
-  let current = home;
-  for (const part of rel.split(path.sep)) {
-    current = path.join(current, part);
-    let stat;
-    try { stat = lstatSync(current); } catch { return true; }
-    if (!stat.isSymbolicLink()) continue;
-    let target;
-    try { target = realpathSync(current); } catch { return false; }
-    if (target !== root && !target.startsWith(root + path.sep)) return false;
-  }
-  return true;
+/** Whether a session file carries the companion marker; it is written right after the header. */
+function isSegno(file) {
+  const fd = openSync(file, 'r');
+  try {
+    const buffer = Buffer.alloc(64 * 1024);
+    const read = readSync(fd, buffer, 0, buffer.length, 0);
+    return buffer.subarray(0, read).toString('utf8').split('\n').slice(1, 40).some((line) => {
+      try { const entry = JSON.parse(line); return entry?.type === 'custom' && entry.customType === COMPANION_ENTRY; } catch { return false; }
+    });
+  } finally { closeSync(fd); }
 }
 
 function firstLine(file) {
@@ -332,8 +320,10 @@ function firstLine(file) {
 }
 
 /**
- * Segno's session files: every conversation the engine keeps whose folder is Segno's home (its
- * windows and any copy of it), flat or in a per-folder directory. The dream's own session lives under
+ * Segno's session files: the conversations the engine keeps in Segno's home that are Segno itself
+ * (marked as the companion when created, companion.mjs COMPANION_ENTRY), flat or in a per-folder
+ * directory. Another conversation opened in the same folder (a helper, a lead started there) is not
+ * Segno and is not read: its words would be heard as Segno's. The dream's own session lives under
  * dream/runs, outside the engine's sessions, so a dream never reads itself.
  */
 export function segnoSessionFiles(env = process.env) {
@@ -343,7 +333,7 @@ export function segnoSessionFiles(env = process.env) {
   const consider = (file) => {
     try {
       const header = JSON.parse(firstLine(file));
-      if (header?.type === 'session' && typeof header.cwd === 'string' && real(header.cwd) === home) files.push(file);
+      if (header?.type === 'session' && typeof header.cwd === 'string' && real(header.cwd) === home && isSegno(file)) files.push(file);
     } catch { /* not a session file */ }
   };
   let entries;
