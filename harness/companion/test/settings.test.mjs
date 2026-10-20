@@ -134,3 +134,17 @@ test('who counts as the user', () => {
   for (const trigger of [{ kind: 'channel', isUser: false }, { kind: 'wake' }, { kind: 'notice', own: true }, { kind: 'message' }, { kind: 'unknown' }, undefined])
     assert.equal(isUserOrigin(trigger), false);
 });
+
+test('schedule sources go through the same validation: Segno reads the list and writes it back whole', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '내 구글 캘린더 주소 이거야')]);
+  const shown = await box.call({ action: 'show' });
+  assert.deepEqual(shown.settings.companion.schedule.sources, []);
+  const sources = [{ location: 'https://calendar.example.com/me.ics' }, { kind: 'markdown', location: '~/notes/deadlines.md', name: '마감' }];
+  const answer = await box.call({ action: 'change', change: { companion: { schedule: { sources } } } });
+  assert.deepEqual(answer.settings.companion.schedule.sources.map((source) => source.kind), ['ics', 'markdown']);
+  assert.deepEqual((await box.service.handle('status', {})).settings.schedule.sources, answer.settings.companion.schedule.sources,
+    'the Settings page shows the same list');
+  await assert.rejects(box.call({ action: 'change', change: { companion: { schedule: { sources: [{ kind: 'fax', location: 'x' }] } } } }),
+    (error) => error.code === 'invalid');
+});
