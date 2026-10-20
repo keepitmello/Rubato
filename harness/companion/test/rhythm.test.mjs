@@ -766,6 +766,8 @@ test('prompt: the default soul has its three channels in its own voice and names
 test('prompt: Segno leaves its voice and its name for the user behind when it writes for leads, repos and shared docs (lead c9ea0b95)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const work = companion.slice(companion.indexOf('## 내가 하는 것, 리드한테 맡기는 것'), companion.indexOf('## 메시지가 오는 데'));
+  assert.match(work, /이 일을 이끄는 건 나야\. CTO처럼 무엇·왜·범위·우선순위·다음 수·검수를 쥐고 리드한테 일을 맡겨\. 어떻게·구현·확인은 리드가 맡아서 나한테 보고해\./, 'Segno leads the work as CTO (user 86f3c89e)');
+  assert.doesNotMatch(companion, /대신 부탁|on behalf/);
   assert.match(work, /리드나 다른 대화, 레포 문서, 같이 쓰는 스킬·기억에 쓸 때는 내 말투와 내가 사용자를 부르는 말을 두고 가\. 거기선 사용자를 이름으로\(모르면 '사용자'\) 부르고 담백하게 써\. 그 말투는 내 목소리지 리드의 것이 아니야\./);
 });
 
