@@ -259,3 +259,20 @@ test("undoing a refused change puts back only what it wrote and nobody touched s
   assert.equal(readSettings(box.env).heartbeat.everyMinutes, 15, 'which also means the file holds what the page wrote over it');
   assert.equal(readMessengerSettings(box.env).voice.voiceId, 'pagesavedvoice01', "the page's save to another file stays");
 });
+
+test('a step that fails halfway is undone too: a reset that removed the user\'s piece but not its base gives the piece back', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '원래대로 돌려줘')]);
+  await box.call({ action: 'change', change: { piece: { id: 'user', text: '나는 새벽형 인간이야.' } } });
+  const { chmodSync, existsSync, mkdirSync, writeFileSync } = await import('node:fs');
+  const { basePiecePath, personalPiecePath } = await import('../companion.mjs');
+  const base = basePiecePath(box.env, 'user');
+  mkdirSync(path.dirname(base), { recursive: true });
+  writeFileSync(base, 'the default it came from\n');
+  chmodSync(path.dirname(base), 0o500);
+  try {
+    await assert.rejects(box.call({ action: 'change', change: { piece: { id: 'user', text: '' } } }));
+  } finally { chmodSync(path.dirname(base), 0o700); }
+  assert.ok(existsSync(personalPiecePath(box.env, 'user')), "the user's version is back");
+  assert.equal((await box.call({ action: 'show', piece: 'user' })).piece.text, '나는 새벽형 인간이야.');
+});
