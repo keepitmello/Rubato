@@ -79,6 +79,9 @@ function resolveNode() {
   return process.execPath;
 }
 const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
+/** How long a catalogue waits for an engine that is not connected before the last list stands in. */
+export const CATALOGUE_STALE_MS = 3000;
+const STALE = Symbol('stale');
 t3BridgeLog('t3-bridge loaded');
 // A restart reopens the app only when the code recorded here has changed (code-fingerprint.mjs).
 recordLoadedCode();
@@ -196,14 +199,16 @@ export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession,
     rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); }, sessionStateDir = null,
-    backfillMs = BACKFILL_MS }) {
+    backfillMs = BACKFILL_MS, findEngine = ensureDescriptor, catalogueStaleMs = CATALOGUE_STALE_MS }) {
     // appendSessionMessage(threadId, item) writes a session message into the T3
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
     // rewindConversation(threadId, { afterTurn, turns }) asks T3 to revert `turns` turns
     // before the turn `afterTurn` and that turn too (/rewind); T3's revert then comes
     // back through rollbackThread like a rewind from a button.
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
-      rewindConversation, sessionStateDir });
+      rewindConversation, sessionStateDir, findEngine, catalogueStaleMs });
+    // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
+    this.lastCatalogues = new Map();
     this.rpcConnections = new Set();
     // What a step rewind's continue sends through T3 (rpc-connection.mjs turns it into Pi's continue).
     this.stepContinueText = STEP_CONTINUE_TEXT;
@@ -242,7 +247,7 @@ export class RubatoPiBridge {
     this.connecting = (async () => {
       await this.inventoryClient?.close();
       t3BridgeLog('ensureDescriptor', this.descriptorPath);
-      this.descriptor = await ensureDescriptor(this.descriptorPath);
+      this.descriptor = await this.findEngine(this.descriptorPath);
       t3BridgeLog('connect', this.descriptor?.socketPath);
       this.inventoryClient = await new SessionClient({ ...this.descriptor, onError: this.onError }).connect();
       t3BridgeLog('connected');
@@ -531,10 +536,18 @@ export class RubatoPiBridge {
   // `fresh` 는 사용자가 다시 받으라고 한 경우다(키 추가·삭제, Refresh). 그때는 모든 폴더의
   // 재사용 목록을 버린다. 안 버리면 방금 넣은 키의 모델이 60초 안의 옛 목록에 가려
   // 설정 화면에 "No models listed" 로 굳는다(2026-10-12 NanoGPT).
+  /**
+   * The model picker's list, slash commands and skills for `cwd`. While the engine cannot answer —
+   * it is restarting (its socket is gone until launchd starts the next one, which waits for the old
+   * one to finish its work) or the request fails — the last list it gave stands in, so the picker
+   * never empties and new threads still open; the engine's own answer replaces it once it comes.
+   * T3 refreshes its provider snapshot only now and then, so an empty answer would stay until then.
+   */
   async catalogue(cwd, { fresh = false } = {}) {
     if (fresh) this.catalogues.clear();
     const cached = this.catalogues.get(cwd);
     if (cached && Date.now() - cached.at < 60000) return cached.value;
+    const reachable = Boolean(this.inventoryClient?.client.connected);
     const pending = (async () => {
       const raw = await this.viaInventory((client) => client.catalogue(cwd));
       this.rememberWindows(raw.models ?? []);
@@ -544,7 +557,27 @@ export class RubatoPiBridge {
         slashCommands: surface.slashCommands, skills: surface.skills };
     })();
     this.catalogues.set(cwd, { at: Date.now(), value: pending });
-    try { const value = await pending; t3BridgeLog('catalogue ok', String((value.models ?? []).length)); return value; } catch (error) { t3BridgeLog('catalogue fail', String(error?.message ?? error)); this.catalogues.delete(cwd); throw error; }
+    const settled = pending.then((value) => {
+      this.lastCatalogues.set(cwd, value);
+      t3BridgeLog('catalogue ok', String((value.models ?? []).length));
+      return value;
+    }, (error) => {
+      t3BridgeLog('catalogue fail', String(error?.message ?? error));
+      if (this.catalogues.get(cwd)?.value === pending) this.catalogues.delete(cwd);
+      throw error;
+    });
+    const last = this.lastCatalogues.get(cwd);
+    if (!last) return settled;
+    settled.catch(() => {});
+    // An engine that is not connected answers through a reconnect that can take as long as a
+    // restart: give it a moment, then the last list.
+    const waited = reachable ? settled : Promise.race([settled, delay(this.catalogueStaleMs).then(() => STALE)]);
+    try {
+      const value = await waited;
+      if (value !== STALE) return value;
+    } catch { /* the engine failed to answer: the last list below */ }
+    t3BridgeLog('catalogue stale', cwd);
+    return last;
   }
   cursor(sessionId) { return { kind: 'rubato-pi', serverId: this.descriptor.serverId, sessionId }; }
   // Stored history as T3 thread messages. A message another conversation sent

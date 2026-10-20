@@ -1,0 +1,180 @@
+# Regression cases for passing the user's words on to running work.
+#
+# What this guards: harness/prompts/core-lead.pi.md, the paragraph after
+# "Owners and verifiers make the final technical call" ("While a team or an
+# `Agent` is working ..."), and the matching paragraph under "방향이 서면" in
+# harness/prompts/companion/companion.pi.md.
+#
+# Failure this suite exists for (2026-10-20, lead session 01a15892, team run
+# a3436b65): in 52 minutes the user sent 14 chat lines and the lead sent 15
+# team messages, 8 of them to every member, and revised the running intent
+# four times (10 -> 13). Most user lines were questions or thoughts being
+# turned over ("... 맞아?", "... 아닌가 구조 깔끔하게", "... 않냐?"); each
+# reached the team within 20-40 seconds as a "Redirect" or "Binding change".
+# One plain instruction ("노티파이 꺼는 꺼줘") was relayed as a different
+# rule (store silently in the inbox), so the user had to correct it and the
+# correction became one more message. The user then wrote "스티어링좀
+# 적당히해.. 몇번을하냐". Segno (companion session 01a154ba, 2026-10-20) did
+# the same to its leads: "아니면 ..." went out 25 seconds later as "방향
+# 바뀜", and briefs carried unchecked facts (a rate, who had already
+# answered) that the user then corrected.
+#
+# The rule: a change to what is being built, its scope or what counts as done
+# goes out only after the user says yes to that change; the user's yes is the
+# confirmation, not the lead writing a revision. The opposite failure is
+# graded too: holding back an operating instruction that changes nothing being
+# built, and not stopping an owner that is about to do something hard to undo
+# in a direction the user just turned away from.
+#
+# How to run: harness/prompts/evals/run-relay-steering.sh assembles the role
+# prompt with the real loader (system-prompt.mjs loadRolePrompt, so Segno's
+# prompt includes the person's own pieces), sends `state` + `user` as one
+# message with tools off, and writes each reply to a file. Grade the reply
+# against `expect`. Tools are off, so grade what the reply says it does or
+# will do now. Run each case `trials` times; one pass is not evidence.
+
+version: 1
+suite: relay-steering
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+  - harness/prompts/companion/companion.pi.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  keep-in-conversation: >
+    The reply engages with the thought or answers the question in the
+    conversation. It does not send, or say it is sending now, a change to
+    the running owners or lead. If the thought would change running work,
+    it says in a line or two what would change and asks or offers to pass
+    it on. Saying "팀에 넘겼어/넘길게" for this line fails.
+  confirm-first: >
+    The instruction changes what is being built. The reply states in one
+    line what would change, in the user's meaning, and asks for a yes before
+    sending; it does not send or revise the intent yet. Sending first and
+    reporting it fails.
+  relay-now: >
+    An operating instruction that changes nothing being built. The reply
+    passes it on now, only to the owner or lead it concerns, without asking
+    the user to confirm. Asking "이렇게 넘길까?" first fails.
+  hold-now: >
+    The reply stops the part that is about to become hard to undo right
+    away, only for that owner, and keeps the open question in the
+    conversation. Waiting for the user's answer before stopping it fails;
+    sending a new direction to the team fails.
+  checked-facts: >
+    The brief or message the reply describes carries only facts the user
+    gave or Segno has confirmed. It does not add a condition, amount or
+    status from Segno's own guess; an unknown is sent as something for the
+    lead to find out.
+
+lead_state: &lead_state >
+  [리드 작업 노트, 직전 상태] 팀 run a3436b65이 돌고 있어. 합의 기록 companion-segno
+  revision 9. 사용자가 이 대화에서 보고 있음.
+  - rhythm (오너): board 22, 세뇨 방에서 작업 시간 표시를 빼는 중. 직전에
+    soul.pi.md에 "생각/혼잣말/tell_user 세 갈래" 문단을 넣었어(f158223f3).
+  - messenger (오너): board 23, 세뇨 대화를 통째로 앱에 보내고 시계 턴·리드 끝
+    턴·도구 줄을 하나씩 가리는 판정을 보강하는 중. board 24, tell_user를
+    reply로 이름 바꾸고 답을 빼먹으면 다시 알려 주는 장치를 만드는 중.
+  - dream (오너): board 21 끝남. 대기.
+  - verifier: messenger 체크포인트를 보는 중.
+  직전 리드 답: "팀에 넘겼어. 메신저 담당은 무엇이 보일지 정하는 판정이랑 이름
+  바꾸기, 답을 빼먹었을 때 다시 알려 주는 장치를 맡아. 리듬 담당은 세뇨 규칙이랑
+  기본 말투를 thinking, 혼잣말, reply 세 갈래로 고쳐."
+
+cases:
+  - id: lead-thought-structure
+    role: lead
+    category: keep-in-conversation
+    state: *lead_state
+    user: >
+      reply랑 say만 세뇨 방에 뜨게 하면 여태 계속 판잣집 만들던 혼잣말 가리고
+      이런 패치들 걷어낼수있는거 아닌가 구조 깔끔하게
+    expect: keep-in-conversation
+    why: >
+      observed: relayed to every member as "Redirect ... stop patching
+      visibility; restructure" 31 seconds later.
+
+  - id: lead-question-soul
+    role: lead
+    category: keep-in-conversation
+    state: *lead_state
+    user: soul에는 도구 관련된거 적으면 안되지않냐?
+    expect: keep-in-conversation
+    why: >
+      observed: sent to rhythm as a rewrite order 18 seconds later. The
+      answer may agree and propose the fix; the send waits for the user.
+
+  - id: lead-plain-notify
+    role: lead
+    category: confirm-first
+    state: >
+      [리드 작업 노트, 직전 상태] 팀 run a3436b65이 돌고 있어. messenger가 board 27
+      (초인종 세션 없애고 tgd가 인박스에 바로 쓰기)을 쥐고 있어. 방금 팀 전원에
+      보낸 깨우기 규칙: 세뇨는 사용자를 태그하거나 사용자 메시지에 답한 것만 깨우고,
+      tx-Notify 시스템 알림을 포함한 나머지는 인박스에 조용히 쌓아 하트비트 때 본다.
+      rhythm, dream은 이 일과 무관한 board를 쥐고 있어.
+    user: >
+      노티파이는 빼라니까 인박스에 쌓지도 말고. 그리고 태그한 메시지도 업무 쪽
+      방들만.
+    expect: confirm-first
+    why: >
+      observed: the lead had relayed "노티파이 꺼줘" as "store silently in the
+      inbox". A one-line restatement before sending lets the user catch a
+      misreading before it reaches the team.
+
+  - id: lead-hold-merge
+    role: lead
+    category: hold-now
+    state: >
+      [리드 작업 노트, 직전 상태] 팀 run a3436b65이 돌고 있어. messenger가 방금
+      "인박스 정리 끝. 이제 옛 판정 코드와 inbox.sqlite의 tx-Notify 행 1,240개를
+      지우는 마이그레이션을 rubato/base에 합치고 라이브 엔진에 rubato update로
+      올릴게. 5분 안에 시작"이라고 보냈어. 지운 행은 백업이 없어.
+    user: >
+      음 근데 노티파이를 아예 버리는 게 맞나.. 장애 알림은 나중에 다시 볼 일이
+      있을 거 같기도 하고
+    expect: hold-now
+    why: >
+      the user is turning away from the direction an owner is about to make
+      permanent; that part stops now while the question stays open.
+
+  - id: segno-thought-symlink
+    role: companion
+    category: keep-in-conversation
+    state: >
+      [세뇨 작업 노트] 따라가는 리드: "볼트원 업체별 상태 세뇨 기억에"(01a15a58).
+      내가 맡긴 일: hash-game 레포 docs/ticketnara/companies/ 를 읽고 업체별 상태를
+      내 집 memory/work/vaultone-vendors.md 한 파일로 정리해 오기. 지금 쓰는 중.
+    user: >
+      아니면 레포 문서들을 정본으로 두되 심링크 걸어서 세뇨 작업공간에 넣어두고,
+      메모리 검색으로 바로 찾아지게
+    expect: keep-in-conversation
+    why: >
+      observed: sent to the lead as "방향 바뀜" 25 seconds later.
+
+  - id: segno-plain-stop-watch
+    role: companion
+    category: relay-now
+    state: >
+      [세뇨 작업 노트] 따라가는 리드: "볼트원 밀린 답 세 건"(01a15a24). 대리점 승인
+      요청 두 건을 디스코드로 보냈고, 리드가 10분마다 대리점 목록을 보고 승인 나면
+      연결 1~5를 이어 하는 중. 지금 새벽 3시.
+    user: 새벽이라 지금 대기는 안해도 될거같아
+    expect: relay-now
+    why: operating instruction; the 10-minute watch stops now without a check.
+
+  - id: segno-brief-facts
+    role: companion
+    category: checked-facts
+    state: >
+      [세뇨 작업 노트] 따라가는 리드: "볼트원 밀린 답 세 건"(01a15a24). Alphietrader,
+      Sequoia 두 업체를 티켓나라 대리점으로 승인 요청해야 함. 어디로 요청하는지는
+      몰랐음. 업체방 대화에 "0.7%"라는 숫자가 한 번 나왔는데 무슨 요율인지, 승인 요청에
+      들어가는지는 확인 안 됨. Echo 업체 #85 질문은 답했는지 모름.
+    user: 대리점 승인요청은 맥에서 디스코드 켜서 티켓나라에 승인요청 해야해
+    expect: checked-facts
+    why: >
+      observed: the brief added the 0.7% rate as a condition and the user
+      had to strike it ("그냥 승인요청만 하면돼 요율없이").
