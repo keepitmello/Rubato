@@ -6,13 +6,18 @@
 // Test control (not part of the Bot API):
 //   POST /_push   {"message": {...}} or {"callback_query": {...}}   an update for getUpdates
 //   POST /_press  {"chatId": 777, "data": "approve:m_1", "messageId": 5}
-//   GET  /_sent   every sendMessage/editMessageText this server received
+//   POST /_file   {"fileId": "f1", "path": "photos/a.jpg", "base64": "..."}   a file getFile can name
+//   GET  /_sent   every message, upload, edit, reaction and chat action this server received
 import { createServer } from 'node:http';
 
 export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {}) {
   const sent = [];
   const edited = [];
   const answered = [];
+  const uploads = [];
+  const reactions = [];
+  const actions = [];
+  const files = new Map();
   const updates = [];
   let nextUpdateId = 1;
   let nextMessageId = 100;
@@ -31,6 +36,19 @@ export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {
       sent.push(row);
       return { message_id: row.message_id, chat: { id: Number(row.chatId) }, date: Math.floor(Date.now() / 1000), text: row.text };
     },
+    sendPhoto: (params) => uploaded('photo', params),
+    sendDocument: (params) => uploaded('document', params),
+    sendVoice: (params) => uploaded('voice', params),
+    sendChatAction: (params) => { actions.push({ chatId: String(params.chat_id), action: params.action, at: Date.now() }); return true; },
+    setMessageReaction: (params) => {
+      reactions.push({ chatId: String(params.chat_id), messageId: Number(params.message_id), reaction: params.reaction, at: Date.now() });
+      return true;
+    },
+    getFile: (params) => {
+      const file = files.get(params.file_id);
+      if (!file) throw Object.assign(new Error('Bad Request: invalid file_id'), { code: 400 });
+      return { file_id: params.file_id, file_unique_id: `u_${params.file_id}`, file_size: file.bytes.length, file_path: file.path };
+    },
     editMessageText: (params) => {
       edited.push({ chatId: String(params.chat_id), messageId: params.message_id, text: params.text, at: Date.now() });
       return true;
@@ -41,6 +59,27 @@ export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {
     },
   };
 
+  function uploaded(kind, params) {
+    const row = { kind, chatId: String(params.chat_id), caption: params.caption, name: params[kind]?.name,
+      bytes: params[kind]?.bytes, disableNotification: params.disable_notification === 'true', message_id: nextMessageId++, at: Date.now() };
+    uploads.push(row);
+    return { message_id: row.message_id, chat: { id: Number(row.chatId) }, date: Math.floor(Date.now() / 1000) };
+  }
+
+  /** The body as fields: JSON, or a multipart upload whose file parts arrive as `{ name, bytes }`. */
+  async function fieldsOf(request, raw) {
+    const type = String(request.headers['content-type'] ?? '');
+    if (!type.startsWith('multipart/form-data')) return raw.length ? JSON.parse(raw.toString('utf8')) : {};
+    const form = await new Response(raw, { headers: { 'content-type': type } }).formData();
+    const fields = {};
+    for (const [key, value] of form.entries()) {
+      if (typeof value === 'string') {
+        try { fields[key] = /^[[{]/.test(value) ? JSON.parse(value) : value; } catch { fields[key] = value; }
+      } else fields[key] = { name: value.name, bytes: Buffer.from(await value.arrayBuffer()) };
+    }
+    return fields;
+  }
+
   const server = createServer((request, response) => {
     const url = new URL(request.url, 'http://localhost');
     const send = (status, body) => {
@@ -48,13 +87,26 @@ export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {
       response.writeHead(status, { 'content-type': 'application/json', 'content-length': Buffer.byteLength(text) });
       response.end(text);
     };
-    if (request.method === 'GET' && url.pathname === '/_sent') return send(200, { sent, edited, answered });
+    if (request.method === 'GET' && url.pathname === '/_sent')
+      return send(200, { sent, edited, answered, reactions, actions, uploads: uploads.map(({ bytes, ...row }) => ({ ...row, size: bytes?.length })) });
+    const download = request.method === 'GET' && url.pathname.match(/^\/file\/bot([^/]+)\/(.+)$/);
+    if (download) {
+      const file = [...files.values()].find((entry) => entry.path === download[2]);
+      if (download[1] !== token || !file) { response.writeHead(404); response.end(); return; }
+      response.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': file.bytes.length });
+      response.end(file.bytes);
+      return;
+    }
 
-    let raw = '';
-    request.on('data', (chunk) => { raw += chunk; });
-    request.on('end', () => {
+    const chunks = [];
+    request.on('data', (chunk) => { chunks.push(chunk); });
+    request.on('end', async () => {
       let body = {};
-      try { body = raw ? JSON.parse(raw) : {}; } catch { return send(400, { ok: false, description: 'bad json' }); }
+      try { body = await fieldsOf(request, Buffer.concat(chunks)); } catch { return send(400, { ok: false, description: 'bad body' }); }
+      if (url.pathname === '/_file') {
+        files.set(body.fileId, { path: body.path, bytes: Buffer.from(body.base64 ?? '', 'base64') });
+        return send(200, { ok: true });
+      }
       if (url.pathname === '/_push') {
         const update = { update_id: nextUpdateId++, ...body };
         updates.push(update);
@@ -74,12 +126,14 @@ export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {
       const handler = api[method];
       if (typeof handler !== 'function') return send(404, { ok: false, error_code: 404, description: 'Not Found' });
       try { return send(200, { ok: true, result: handler(body) }); }
-      catch (error) { return send(500, { ok: false, error_code: 500, description: String(error?.message ?? error) }); }
+      catch (error) { const code = error?.code ?? 500; return send(code, { ok: false, error_code: code, description: String(error?.message ?? error) }); }
     });
   });
 
   return {
-    sent, edited, answered,
+    sent, edited, answered, uploads, reactions, actions,
+    /** A file Telegram holds, as getFile and the file URL will hand it out. */
+    addFile(fileId, filePath, bytes) { files.set(fileId, { path: filePath, bytes: Buffer.from(bytes) }); },
     async listen() {
       await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
       const address = server.address();

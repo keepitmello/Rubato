@@ -11,13 +11,18 @@
 //     outbox/<id>.json     a message Segno wrote: queued, held for approval, sent or refused
 //     decisions/<id>.json  the user's answer to one held message, written by the app or Telegram
 //     state.json           the update offset and the turns already answered
+//     sent.jsonl           every message that reached Telegram, one line each (Segno's sent-message check reads it)
+//     received/            photos and files the person sent, saved for Segno to see and open
+//     stt/                 each voice message: its audio and what it said (Roo's STT archive)
+//     voice/               Segno's own voice replies, kept a day
+//     fish-api-key         the Fish Audio key for voice replies, 0600, if the person gave one here
 //
 // Two processes touch these files: the engine's service and the app's Settings page. Each file has
 // one writer, so neither has to lock: the app writes settings, intent and decisions; the service
 // writes the secret, pairing, outbox state, handoff and state. Every write is a rename, so a reader
 // sees a whole file or the old one.
 import { randomInt, randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { companionHome } from '../companion.mjs';
 
@@ -48,6 +53,11 @@ export function messengerPaths(env = process.env) {
     state: path.join(home, 'state.json'),
     outbox: path.join(home, 'outbox'),
     decisions: path.join(home, 'decisions'),
+    sent: path.join(home, 'sent.jsonl'),
+    received: path.join(home, 'received'),
+    stt: path.join(home, 'stt'),
+    voice: path.join(home, 'voice'),
+    fishKey: path.join(home, 'fish-api-key'),
   };
 }
 
@@ -80,17 +90,32 @@ function readDirJson(dir) {
 
 // ── settings ─────────────────────────────────────────────────────────────────────────────────
 
+/** Fish Audio's model for Segno's voice replies (Roo's tts-adapter.ts FISH_DEFAULT_MODEL). */
+export const DEFAULT_VOICE_MODEL = 's2.1-pro-free';
+
 export const DEFAULT_MESSENGER_SETTINGS = Object.freeze({
   enabled: true,
   /** Ask before sending to anyone but the user. Off only if the person turns it off. */
   approvalRequired: true,
+  /**
+   * Segno's voice for voice replies: a Fish Audio voice id. None until the person picks one, and
+   * until then a voice reply says so instead of speaking in a voice nobody chose.
+   */
+  voice: Object.freeze({ voiceId: null, model: DEFAULT_VOICE_MODEL }),
 });
+
+const VOICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
 
 export function normalizeMessengerSettings(value) {
   const input = value && typeof value === 'object' ? value : {};
+  const voice = input.voice && typeof input.voice === 'object' ? input.voice : {};
   return {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_MESSENGER_SETTINGS.enabled,
     approvalRequired: typeof input.approvalRequired === 'boolean' ? input.approvalRequired : DEFAULT_MESSENGER_SETTINGS.approvalRequired,
+    voice: {
+      voiceId: typeof voice.voiceId === 'string' && VOICE_ID.test(voice.voiceId) ? voice.voiceId : null,
+      model: typeof voice.model === 'string' && voice.model.trim() ? voice.model.trim() : DEFAULT_VOICE_MODEL,
+    },
   };
 }
 
@@ -102,7 +127,14 @@ export function writeMessengerSettings(patch, env = process.env) {
   if (!patch || typeof patch !== 'object') throw new TypeError('settings patch must be an object');
   for (const field of ['enabled', 'approvalRequired'])
     if (patch[field] !== undefined && typeof patch[field] !== 'boolean') throw new TypeError(`${field} must be true or false`);
-  const next = normalizeMessengerSettings({ ...readMessengerSettings(env), ...patch });
+  if (patch.voice !== undefined) {
+    if (!patch.voice || typeof patch.voice !== 'object') throw new TypeError('voice must be an object');
+    const { voiceId } = patch.voice;
+    if (voiceId !== undefined && voiceId !== null && !(typeof voiceId === 'string' && VOICE_ID.test(voiceId)))
+      throw new TypeError('voice.voiceId must be a Fish Audio voice id or null');
+  }
+  const current = readMessengerSettings(env);
+  const next = normalizeMessengerSettings({ ...current, ...patch, voice: { ...current.voice, ...patch.voice } });
   writeJson(messengerPaths(env).settings, next, 0o600);
   return next;
 }
@@ -226,13 +258,37 @@ export function newOutboxId() {
   return `m_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
 }
 
+/** What one outbox row asks Telegram for: a message (text, files, voice), a reaction or an edit. */
+export const OUTBOX_OPS = Object.freeze(['send', 'react', 'edit']);
+/** Files one message may carry; Roo's reply sends each as its own photo or document. */
+export const FILES_MAX = 10;
+
 /**
  * What Segno wrote, waiting to go out. `target` is `'user'` or a chat it addresses:
  * `{ chatId, name? }`. The tool that writes this never sends anything itself.
+ *
+ *   op 'send'   text and/or files and/or a voice note (`voice`: false, true = text and voice, 'only')
+ *   op 'react'  one emoji on `messageId`
+ *   op 'edit'   new `text` for Segno's own `messageId`
  */
-export function enqueueMessage({ text, target, source = 'tool', heldReason }, env = process.env) {
-  if (typeof text !== 'string' || !text.trim()) throw new TypeError('text must be a non-empty string');
-  if (text.length > MESSENGER_LIMITS.heldTextChars) throw new TypeError(`text holds at most ${MESSENGER_LIMITS.heldTextChars} characters`);
+export function enqueueMessage({ text, target, source = 'tool', heldReason, op = 'send', files, voice, voiceText, sanitize,
+  emoji, messageId } = {}, env = process.env) {
+  if (!OUTBOX_OPS.includes(op)) throw new TypeError(`op must be one of ${OUTBOX_OPS.join(', ')}`);
+  const hasText = typeof text === 'string' && text.trim() !== '';
+  if (text !== undefined && !hasText) throw new TypeError('text must be a non-empty string');
+  if (hasText && text.length > MESSENGER_LIMITS.heldTextChars) throw new TypeError(`text holds at most ${MESSENGER_LIMITS.heldTextChars} characters`);
+  if (voiceText !== undefined && !(typeof voiceText === 'string' && voiceText.trim()))
+    throw new TypeError('voice_text must be a non-empty string');
+  if (voice !== undefined && voice !== true && voice !== false && voice !== 'only') throw new TypeError('voice must be true, false or "only"');
+  if (files !== undefined) {
+    if (!Array.isArray(files) || files.length > FILES_MAX) throw new TypeError(`files must be a list of at most ${FILES_MAX} paths`);
+    for (const file of files) if (typeof file !== 'string' || !path.isAbsolute(file)) throw new TypeError('each file must be an absolute path');
+  }
+  const ids = messageId === undefined ? undefined : Number(messageId);
+  if (op === 'send' && !hasText && !voiceText && !files?.length) throw new TypeError('a message needs text, voice_text or files');
+  if (op === 'react' && !(typeof emoji === 'string' && emoji.trim())) throw new TypeError('a reaction needs an emoji');
+  if ((op === 'react' || op === 'edit') && !Number.isInteger(ids)) throw new TypeError(`${op === 'react' ? 'a reaction' : 'an edit'} needs the message id`);
+  if (op === 'edit' && !hasText) throw new TypeError('an edit needs the new text');
   if (target !== 'user' && !(target && typeof target === 'object' && target.chatId !== undefined))
     throw new TypeError("target must be 'user' or an object with a chatId");
   const rows = listOutbox(env);
@@ -241,7 +297,14 @@ export function enqueueMessage({ text, target, source = 'tool', heldReason }, en
   const row = {
     id: newOutboxId(),
     state: 'queued',
-    text,
+    ...(op === 'send' ? {} : { op }),
+    ...(hasText ? { text } : {}),
+    ...(files?.length ? { files: [...files] } : {}),
+    ...(voice === true || voice === 'only' ? { voice } : {}),
+    ...(voiceText ? { voiceText } : {}),
+    ...(sanitize === false ? { sanitize: false } : {}),
+    ...(op === 'react' ? { emoji: emoji.trim() } : {}),
+    ...(ids === undefined ? {} : { messageId: ids }),
     target: target === 'user' ? 'user' : { chatId: String(target.chatId), ...(target.name ? { name: target.name } : {}) },
     source,
     createdAt: new Date().toISOString(),
@@ -315,12 +378,19 @@ export function readState(env = process.env) {
   const transcript = value?.transcript && typeof value.transcript === 'object' ? value.transcript : undefined;
   return {
     ...(Number.isInteger(value?.offset) ? { offset: value.offset } : {}),
-    // The companion transcript already accounted for: `seen` entries of `file`. A file that is
-    // waiting to appear keeps `file: null` and takes everything it gets.
+    // The companion transcript already accounted for: `offset` bytes of `file`, the run state at
+    // that point (sync.mjs) and how many parts of the next text already went out. A file that is
+    // waiting to appear keeps `file: null` and takes everything it gets. A cursor without an
+    // offset is from before offsets, and reads as "take what is there as read".
     ...(transcript ? { transcript: {
       file: typeof transcript.file === 'string' ? transcript.file : null,
-      seen: Number.isInteger(transcript.seen) ? transcript.seen : null,
+      ...(Number.isInteger(transcript.offset) && transcript.offset >= 0 ? { offset: transcript.offset } : {}),
+      ...(transcript.run && typeof transcript.run === 'object' ? { run: transcript.run } : {}),
+      ...(Number.isInteger(transcript.sentParts) && transcript.sentParts > 0 ? { sentParts: transcript.sentParts } : {}),
     } } : {}),
+    // The person's latest Telegram message: where a reaction lands when Segno names none.
+    ...(value?.lastIncoming && typeof value.lastIncoming === 'object' && value.lastIncoming.messageId !== undefined
+      ? { lastIncoming: { chatId: String(value.lastIncoming.chatId), messageId: value.lastIncoming.messageId } } : {}),
   };
 }
 
@@ -330,6 +400,34 @@ export function writeState(patch, env = process.env) {
   return next;
 }
 
+/** What a row asks for, in the words the person reads on an approval card or in Settings. */
+export function describeRow(row) {
+  if (row?.op === 'react') return `반응 ${row.emoji} — 메시지 ${row.messageId}`;
+  if (row?.op === 'edit') return `메시지 ${row.messageId} 고치기:\n${row.text}`;
+  const parts = [];
+  if (row?.voice === 'only') parts.push(`(음성) ${row.voiceText ?? row.text ?? ''}`.trim());
+  else {
+    if (row?.text) parts.push(row.text);
+    if (row?.voice === true) parts.push(`(음성도 함께${row.voiceText ? `: ${row.voiceText}` : ''})`);
+  }
+  for (const file of row?.files ?? []) parts.push(`(파일: ${path.basename(file)})`);
+  return parts.join('\n');
+}
+
+// ── what reached Telegram ───────────────────────────────────────────────────────────────────
+
+/**
+ * One line per message that reached Telegram, for Segno's sent-message check (Roo's sent.sh):
+ * `{ at, chatId, toUser, text, via: 'auto' | 'tool', media? }`. `auto` is an answer the sync sent,
+ * `tool` one Segno sent with telegram_send or one the person approved.
+ */
+export function recordSent({ at = new Date().toISOString(), chatId, toUser, text, via, media }, env = process.env) {
+  const file = messengerPaths(env).sent;
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  appendFileSync(file, JSON.stringify({ at, chatId: String(chatId), toUser: toUser === true, text: String(text ?? ''), via,
+    ...(media ? { media } : {}) }) + '\n', { mode: 0o600 });
+}
+
 // ── what Settings › Companion shows ─────────────────────────────────────────────────────────
 
 /** The Telegram connection for the settings page: never the token, always what can be acted on. */
@@ -337,7 +435,7 @@ export function messengerStatus(env = process.env) {
   const rows = listOutbox(env);
   const visible = (row) => ({
     id: row.id,
-    text: row.text,
+    text: describeRow(row),
     target: row.target === 'user' ? null : row.target,
     createdAt: row.createdAt,
     ...(row.source ? { source: row.source } : {}),
