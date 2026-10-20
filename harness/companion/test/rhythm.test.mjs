@@ -18,6 +18,9 @@ import { worldFragment, worldText, WORLD_FEEDS } from '../world.mjs';
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
 const HOUR = 60 * 60_000;
+/** This machine's zone at a moment, as the seed and the resume line write it. */
+const zone = (time) => { const m = -new Date(time).getTimezoneOffset(); const p = (n) => String(n).padStart(2, '0');
+  return `UTC${m < 0 ? '-' : '+'}${p(Math.floor(Math.abs(m) / 60))}:${p(Math.abs(m) % 60)}`; };
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-segno-rhythm-'));
@@ -114,7 +117,7 @@ test('greetings: a missed greeting rides on an idle tick as greet_night (01–04
   assert.equal(k.of('greeting').length, 0, 'past the first hour the scheduled wake does not send it');
   await k.poke(at(21, 1, 30));
   const [line] = k.of('heartbeat').at(-1).text.split('\n');
-  assert.match(line, /^HEARTBEAT tick=\d+ kst="[^"]*" action=greet_night$/);
+  assert.match(line, /^HEARTBEAT tick=\d+ now="[^"]*" action=greet_night$/);
   assert.equal(k.of('heartbeat').at(-1).text.split('\n\n').slice(1).join('\n\n'), greetingText('night', defaultsDir));
   await k.poke(at(21, 2));
   assert.doesNotMatch(k.of('heartbeat').at(-1).text, /greet_night/, 'once that day');
@@ -151,7 +154,7 @@ test('greetings: no catch-up while the user is here (tick 0), and none after the
   const k = await keeperFor(t, env, engine, at(21, 9, 50));
   engine.append(userSaid(at(21, 9, 55)));
   await k.poke(at(21, 10));
-  assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=0 kst="[^"]*"$/);
+  assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=0 now="[^"]*"$/);
   for (const time of [at(21, 14), at(21, 14, 30), at(21, 15)]) await k.poke(time);
   assert.ok(k.of('heartbeat').every((notice) => !/greet_morning/.test(notice.text)), 'from 14:00 the day\'s morning greeting is spent');
 });
@@ -179,7 +182,7 @@ test('wake wish: plain ticks stay silent, but a greeting catch-up still comes an
   const k = await keeperFor(t, env, engine, at(21, 1, 5));
   setWakeWish({ target: '05:00', reason: '새벽에 리드 보기' }, { now: at(21, 1, 5), env });
   await k.poke(at(21, 1, 30));
-  assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=\d+ kst="[^"]*" action=greet_night\n/);
+  assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=\d+ now="[^"]*" action=greet_night\n/);
   assert.doesNotMatch(k.of('heartbeat').at(-1).text, /reason=wake_wish/);
   assert.notEqual(readWakeWish(env), undefined, 'the wish still waits');
   const sent = k.of('heartbeat').length;
@@ -291,7 +294,7 @@ test('wake: a conversation the keeper creates opens with the seed, and one recal
   const engine = engineFor(env, { existing: false });
   const k = await keeperFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
   const [wake] = k.of('wake');
-  assert.ok(wake.text.startsWith('방금 깼어. 나야, 세뇨.\n\n## 시각·경과\n현재: 2026-10-20 15:00 KST (화)\n직전 창 기록 없음 — 처음 눈뜸'));
+  assert.ok(wake.text.startsWith(`방금 깼어. 나야, 세뇨.\n\n## 시각·경과\n현재: 2026-10-20 15:00 ${zone(at(20, 15))} (화)\n직전 창 기록 없음 — 처음 눈뜸`));
   assert.match(wake.text, /## 지금 몸\nanthropic\/claude-opus-5\n\n## 잠들 때의 온도\nNO_MOOD\n\n— 눈은 떴고, 지금의 나는…\n\n# 깨어나기/);
   engine.busy(true);
   await k.poke(at(20, 15) + 20_000);
@@ -316,7 +319,7 @@ test('wake: a new window in the session file wakes fresh, with how long since th
   leaveMood('오늘은 좀 뿌듯하게 잠들어', { now: at(21, 2, 1), env });
   await k.poke(at(21, 2, 3));
   const [wake] = k.of('wake');
-  assert.match(wake.text, /^방금 깼어\. 나야, 세뇨\.\n\n## 시각·경과\n현재: 2026-10-21 02:03 KST \(수\)\n직전 창: 방금 \(2분 전\) — 깜빡 존 정도/);
+  assert.ok(wake.text.startsWith(`방금 깼어. 나야, 세뇨.\n\n## 시각·경과\n현재: 2026-10-21 02:03 ${zone(at(21, 2, 3))} (수)\n직전 창: 방금 (2분 전) — 깜빡 존 정도`));
   assert.match(wake.text, /## 잠들 때의 온도\n2분 전\(10-21 02:01\) 잠들 무렵에 남긴 한 줄:\n> 오늘은 좀 뿌듯하게 잠들어/);
   await k.poke(at(21, 2, 4));
   assert.equal(k.of('recall').length, 1, 'a new window gets its recall');
@@ -355,7 +358,7 @@ test('wake: a conversation loaded again for the same window gets Roo\'s resume l
   const engine = engineFor(env, { existing: 'stored' });
   const k = await keeperFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false } });
   assert.deepEqual(k.of('wake').map((notice) => notice.text), [resumeText(at(21, 9, 30))]);
-  assert.equal(resumeText(at(21, 9, 30)), '[세션 재시작 — resume] 2026-10-21 09:30 KST. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.');
+  assert.equal(resumeText(at(21, 9, 30)), `[세션 재시작 — resume] 2026-10-21 09:30 ${zone(at(21, 9, 30))}. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.`);
   await k.poke(at(21, 9, 31));
   await k.poke(at(21, 9, 40));
   assert.equal(k.of('recall').length, 0, 'no recall after a resume');
@@ -559,7 +562,24 @@ test('prompt: the rule pieces and the clock texts are Segno\'s Korean first pers
 });
 
 test('heartbeat text: career lines under the tick line, a greeting body after a blank line', () => {
-  const moment = Date.UTC(2026, 9, 20, 16, 0);
+  const moment = at(21, 1);
   assert.equal(heartbeatText({ tick: 4, at: moment, action: 'greet_night', career: ['CAREER_WARN x'], greeting: '밤 안부' }),
-    'HEARTBEAT tick=4 kst="10월 21일(수) 오전 1:00" action=greet_night\nCAREER_WARN x\n\n밤 안부');
+    'HEARTBEAT tick=4 now="10월 21일(수) 오전 1:00" action=greet_night\nCAREER_WARN x\n\n밤 안부');
+});
+
+test('every time Segno reads is on this machine\'s zone, not Seoul\'s (user item 48091d35)', () => {
+  const before = process.env.TZ;
+  process.env.TZ = 'America/New_York';
+  try {
+    const moment = new Date(2026, 9, 20, 18, 30).getTime();
+    assert.equal(new Date(moment).getTimezoneOffset(), 240, 'the zone took effect');
+    assert.equal(heartbeatText({ tick: 1, at: moment }), 'HEARTBEAT tick=1 now="10월 20일(화) 오후 6:30"');
+    assert.equal(heartbeatText({ tick: 4, at: moment, wish: { effectiveAt: moment, clamped: false, reason: 'r' } }).split('\n')[1],
+      'WAKE_WISH at=2026-10-20T18:30:00-04:00 clamped=0 reason=r');
+    assert.match(sessionAge(moment, moment - 60_000), /^현재: 2026-10-20 18:30 UTC-04:00 \(화\)/);
+    assert.equal(resumeText(moment), '[세션 재시작 — resume] 2026-10-20 18:30 UTC-04:00. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.');
+    assert.match(moodText({ note: 'n', at: moment - 2 * HOUR }, moment), /^2시간 전\(10-20 16:30\)/);
+  } finally {
+    if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
+  }
 });

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, kstLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
 import { readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -496,12 +496,12 @@ async function heartbeatDay(t, { entries = [], start = at(20, 12), env = sandbox
 }
 const firstLine = (text) => text.split('\n')[0];
 
-test("heartbeat: Roo's line — HEARTBEAT tick=N kst=\"…\", and nothing else on a plain tick", () => {
-  const moment = Date.UTC(2026, 9, 20, 9, 30); // 18:30 in Seoul
-  assert.equal(kstLabel(moment), '10월 20일(화) 오후 6:30');
-  assert.equal(heartbeatText({ tick: 2, at: moment }), 'HEARTBEAT tick=2 kst="10월 20일(화) 오후 6:30"');
-  assert.equal(heartbeatText({ tick: 3, at: moment, action: 'reflect' }), 'HEARTBEAT tick=3 kst="10월 20일(화) 오후 6:30" action=reflect');
-  assert.equal(kstLabel(Date.UTC(2026, 9, 19, 15, 5)), '10월 20일(화) 오전 12:05');
+test("heartbeat: Roo's line — HEARTBEAT tick=N now=\"…\" on this machine's clock, and nothing else on a plain tick", () => {
+  const moment = new Date(2026, 9, 20, 18, 30).getTime();
+  assert.equal(timeLabel(moment), '10월 20일(화) 오후 6:30');
+  assert.equal(heartbeatText({ tick: 2, at: moment }), 'HEARTBEAT tick=2 now="10월 20일(화) 오후 6:30"');
+  assert.equal(heartbeatText({ tick: 3, at: moment, action: 'reflect' }), 'HEARTBEAT tick=3 now="10월 20일(화) 오후 6:30" action=reflect');
+  assert.equal(timeLabel(new Date(2026, 9, 20, 0, 5).getTime()), '10월 20일(화) 오전 12:05');
 });
 
 test('heartbeat: ticks land on :00 and :30, count up while the user is away, and reflect on 3, 6 and 9 only', async (t) => {
@@ -509,7 +509,7 @@ test('heartbeat: ticks land on :00 and :30, count up while the user is away, and
   await poke(at(20, 12, 29));
   assert.equal(lines().length, 0, 'the first boundary is 12:30');
   for (let n = 0; n < 12; n += 1) await poke(at(20, 12, 30) + n * 30 * 60_000);
-  assert.deepEqual(lines().map((line) => line.replace(/ kst="[^"]*"/, '')), [
+  assert.deepEqual(lines().map((line) => line.replace(/ now="[^"]*"/, '')), [
     'HEARTBEAT tick=1', 'HEARTBEAT tick=2', 'HEARTBEAT tick=3 action=reflect', 'HEARTBEAT tick=4', 'HEARTBEAT tick=5',
     'HEARTBEAT tick=6 action=reflect', 'HEARTBEAT tick=7', 'HEARTBEAT tick=8', 'HEARTBEAT tick=9 action=reflect',
     'HEARTBEAT tick=10', 'HEARTBEAT tick=11', 'HEARTBEAT tick=12',
@@ -522,12 +522,12 @@ test('heartbeat: tick=0 while the user is here; after they leave the count start
   await poke(at(20, 13));
   write([userMessage(at(20, 13, 20))]);
   await poke(at(20, 13, 30));
-  assert.match(lines().at(-1), /^HEARTBEAT tick=0 kst=/, 'they wrote ten minutes ago');
+  assert.match(lines().at(-1), /^HEARTBEAT tick=0 now=/, 'they wrote ten minutes ago');
   await poke(at(20, 14));
-  assert.match(lines().at(-1), /^HEARTBEAT tick=1 kst=/, 'forty minutes since their last word');
+  assert.match(lines().at(-1), /^HEARTBEAT tick=1 now=/, 'forty minutes since their last word');
   write([userMessage(at(20, 13, 20)), userMessage(at(20, 14, 10))]);
   await poke(at(20, 15));
-  assert.match(lines().at(-1), /^HEARTBEAT tick=1 kst=/, 'they wrote between ticks, more than thirty minutes ago: reset, then one');
+  assert.match(lines().at(-1), /^HEARTBEAT tick=1 now=/, 'they wrote between ticks, more than thirty minutes ago: reset, then one');
 });
 
 test('heartbeat: the tick survives an engine restart', async (t) => {
@@ -538,7 +538,7 @@ test('heartbeat: the tick survives an engine restart', async (t) => {
   await first.keeper.close();
   const second = await heartbeatDay(t, { env, start: at(20, 13, 10) });
   await second.poke(at(20, 13, 30));
-  assert.match(second.lines().at(-1), /^HEARTBEAT tick=3 kst="[^"]*" action=reflect$/);
+  assert.match(second.lines().at(-1), /^HEARTBEAT tick=3 now="[^"]*" action=reflect$/);
 });
 
 test('heartbeat: while a wake wish waits no tick is sent but they are counted; its tick reflects with the reason, once', async (t) => {
@@ -548,11 +548,12 @@ test('heartbeat: while a wake wish waits no tick is sent but they are counted; i
   assert.equal(lines().length, 0, 'Segno rests: no tick until the wish');
   await poke(at(20, 15, 30));
   const due = lines().at(-1).split('\n');
-  assert.match(due[0], /^HEARTBEAT tick=7 kst="[^"]*" action=reflect reason=wake_wish$/, 'the rest counted as seven ticks away');
-  assert.equal(due[1], 'WAKE_WISH at=2026-10-20T15:10:00+09:00 clamped=0 reason=로그인 버그 리드가 끝났는지 본다');
+  assert.match(due[0], /^HEARTBEAT tick=7 now="[^"]*" action=reflect reason=wake_wish$/, 'the rest counted as seven ticks away');
+  assert.equal(due[1], `WAKE_WISH at=${localIso(at(20, 15, 10))} clamped=0 reason=로그인 버그 리드가 끝났는지 본다`);
+  assert.match(due[1], /^WAKE_WISH at=2026-10-20T15:10:00[+-]\d\d:\d\d /);
   assert.equal(readWakeWish(env), undefined, 'the wish is used up');
   await poke(at(20, 16));
-  assert.equal(firstLine(lines().at(-1)).replace(/ kst="[^"]*"/, ''), 'HEARTBEAT tick=8');
+  assert.equal(firstLine(lines().at(-1)).replace(/ now="[^"]*"/, ''), 'HEARTBEAT tick=8');
 });
 
 test('heartbeat: a wake wish keeps the ticks quiet while the user is here too, and does not hold back the morning greeting', async (t) => {
@@ -573,7 +574,7 @@ test('heartbeat: a wish further than six hours from when it was set comes due at
   await poke(at(20, 17, 30));
   assert.equal(lines().length, 0);
   await poke(at(20, 18));
-  assert.match(lines().at(-1), /\nWAKE_WISH at=2026-10-20T18:00:00\+09:00 clamped=1 reason=저녁에$/);
+  assert.ok(lines().at(-1).endsWith(`\nWAKE_WISH at=${localIso(at(20, 18))} clamped=1 reason=저녁에`));
 });
 
 test('nextBoundary: the interval on the local clock', () => {
