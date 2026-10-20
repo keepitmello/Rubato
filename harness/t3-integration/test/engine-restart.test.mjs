@@ -48,6 +48,10 @@ test('an engine restart with the app open: the picker keeps its list while no en
   const during = await bridge.catalogue(root, { fresh: true });
   assert.ok(Date.now() - started < 2000, 'it does not wait out the restart (T3 gives up on a catalogue after 30 s)');
   assert.deepEqual(during.slashCommands, before.slashCommands, 'the last list stands in: the picker does not empty');
+  const again = Date.now();
+  const second = await bridge.catalogue(root);
+  assert.ok(Date.now() - again < 2000, 'a second, ordinary request (T3\'s workspace snapshot) does not wait on the same fetch either');
+  assert.deepEqual(second.slashCommands, before.slashCommands);
 
   // launchd starts the next engine on the same profile; the bridge reaches it without the app reopening.
   current = await engine(root);
