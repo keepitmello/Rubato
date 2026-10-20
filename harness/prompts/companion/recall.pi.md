@@ -8,7 +8,7 @@
 |---|---|---|
 | 일기 | `memory/diary/` 오늘·어제 것 | 그날의 온도. 새벽에 깼으면 오늘 건 조각뿐이고 하루의 몸통은 어제 일기에 있어 |
 | 작업 노트 | notes 도구 | 지금 쥐고 있는 것. 잠들기 전에 지금 상태로 다시 써 뒀어 |
-| 당김 | 집의 `notes/` | 만료 없는 하다 만 것들 |
+| 당김 | 집의 `notes/` | 만료 없는 하다 만 것들. 영역 폴더의 `research/`는 원본이라 필요할 때만 |
 | 챙길 거 | `notes/held.md` | 사용자가 던진 마감·할 일 |
 | 현황 | `memory/status.md` | 뭐가 열려 있고 뭐가 닫혔는지. 흐린 건 `segno_search` |
 | 직전 창 | `history_list_windows`로 직전 창을 찾고 `history_list_items` window_id=<그 창> recent_first=true | 바로 앞 창에 있었던 일. 사용자 말, 내 말·혼잣말·손, 하트비트·리드 끝 |

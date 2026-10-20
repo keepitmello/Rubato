@@ -760,3 +760,16 @@ test('prompt: only what Segno says to the user is visible — lead endings and m
   assert.match(companion, /루바토가 나를 깨워\. 그때 읽고 다음 수를 정해\. 그 턴은 나만 보니까, 사용자가 알아야 할 게 있으면 `tell_user`로 말해\./);
   assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /사용자가 못 보는 턴\(하트비트, 안부, 리드 끝, 다른 대화에서 온 메시지, 일정 찌르기\)/);
 });
+
+test('prompt: a work area gets one card in memory/work/ and its raw research under notes/<area>/research/; the dream keeps the card\'s frame and leaves the raw research alone (Segno session 01a154ba, relaying the user)', () => {
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  assert.match(companion, /조사를 맡기면 원본을 어디 써 올지도 내 집 절대 경로로 줘: `notes\/<영역>\/research\/YYYY-MM-DD-주제\.md`/);
+  assert.match(companion, /\| 일 카드 \| `memory\/work\/<영역>\.md` \|/);
+  assert.match(companion, /- 일 카드\(`memory\/work\/<영역>\.md`\): .*15KB 안쪽.*`notes\/<영역>\/research\/YYYY-MM-DD-주제\.md`에 고치지 않고 쌓아\. 거기서 나온 결론이나 사용자 결정은 그날 카드로 올려\./);
+  assert.match(companion, /정본을 직접 고칠 땐\(일 카드 빼고\) `## 지금`/);
+  assert.match(readFileSync(path.join(defaultsDir, 'recall.pi.md'), 'utf8'), /영역 폴더의 `research\/`는 원본이라 필요할 때만/);
+  const dream = readFileSync(path.resolve(defaultsDir, '..', '..', 'companion', 'dream', 'dream.md'), 'utf8');
+  assert.match(dream, /\*\*일 카드는 달라\.\*\* `memory\/work\/<영역>\.md`.*틀은 그대로 두고, 바뀐 사실이나 새로 정해진 운영 방식만 그 줄에서 고쳐\./);
+  assert.match(dream, /영역 폴더의 `research\/`는 리드가 해 온 원본이라 안 걸어\./);
+  assert.match(dream, /\| `memory\/work\/\*\.md` \| 일 카드\. 일 영역 하나에 파일 하나/);
+});
