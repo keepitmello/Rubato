@@ -337,13 +337,20 @@ export function segnoSessionFiles(env = process.env) {
 const SESSION_MESSAGE = 'rubato-session-message';
 
 /**
- * What Segno said to the user through its messenger tools (telegram_send, telegram_edit,
- * telegram_react): in a turn Rubato's clock opened, these calls are the only place its words to the
- * user exist, so the dream hears them as Segno's own words.
+ * The tool Segno speaks to the user with from a turn of its own (greetings, a heartbeat that decides
+ * to speak, a lead's ending): its words exist only as this call's arguments in the session.
+ */
+export const TELL_USER_TOOL = 'tell_user';
+/** What Segno said to the user, as the dream hears it: tell_user, and in older sessions its telegram_* tools. */
+const isSaying = (name) => name === TELL_USER_TOOL || name.startsWith('telegram_');
+
+/**
+ * What Segno said to the user through tool calls. In a turn Rubato's clock opened these calls are the
+ * only place its words to the user exist, so the dream hears them as Segno's own words.
  */
 function sentOf(content) {
   if (!Array.isArray(content)) return '';
-  return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && block.name.startsWith('telegram_'))
+  return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && isSaying(block.name))
     .map((block) => {
       const args = block.arguments ?? {};
       const said = [args.text, args.voice_text && args.voice_text !== args.text ? `(음성) ${args.voice_text}` : '']
