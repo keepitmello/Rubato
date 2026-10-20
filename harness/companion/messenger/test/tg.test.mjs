@@ -34,3 +34,18 @@ test('the "make it for me" path is offered only when the person has a working tg
   const empty = await probeTg({ env: { ...process.env, RUBATO_TG_BIN: 'tg', PATH: path.join(tmpdir(), 'empty-for-this-test') } });
   assert.equal(empty.available, false);
 });
+
+test('the tg client is looked up on the given environment\'s search path, with Windows Path and PATHEXT', async (t) => {
+  const { resolveBinary } = await import('../tg.mjs');
+  const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-tg-path-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(path.join(dir, 'tg.cmd'), '@echo off');
+  // Windows matches the extension in any case (and so does this test's filesystem, on a Mac).
+  assert.equal(resolveBinary('tg', { Path: `C:\\nowhere;${dir}`, PATHEXT: '.EXE;.CMD' }, 'win32')?.toLowerCase(), path.join(dir, 'tg.cmd').toLowerCase());
+  assert.equal(resolveBinary('tg', { Path: dir, PATHEXT: '.EXE' }, 'win32'), undefined, 'only the extensions PATHEXT names');
+  writeFileSync(path.join(dir, 'tg'), '#!/bin/sh\n');
+  chmodSync(path.join(dir, 'tg'), 0o755);
+  assert.equal(resolveBinary('tg', { PATH: `/nowhere:${dir}` }, 'darwin'), path.join(dir, 'tg'), "the env passed in, not the process's");
+  assert.equal(resolveBinary('tg', { PATH: '/nowhere' }, 'darwin'), undefined);
+});

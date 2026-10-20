@@ -37,9 +37,9 @@ import { freshRun, locateTranscript, readEntriesFrom, runAt, stepRun } from './s
 import { mediaOf, saveMedia, transcribeMedia } from './media.mjs';
 import { prepareReplyPayload, telegramText } from './reply-text.mjs';
 import { synthesizeVoice } from './voice.mjs';
-import { contextText, heartbeatText, parseControlCommand } from './commands.mjs';
+import { SEGNO_OFF_TEXT, contextText, heartbeatText, parseControlCommand, segnoText } from './commands.mjs';
 import { botUsernameCandidates } from './scripts/create-bot.mjs';
-import { readState as readCompanionState, writeSettings as writeCompanionSettings } from '../companion.mjs';
+import { readSettings as readCompanionSettings, readState as readCompanionState, writeSettings as writeCompanionSettings } from '../companion.mjs';
 import { openInbox } from '../inbox.mjs';
 
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
@@ -283,7 +283,7 @@ export function startCompanionMessenger({
         writeHandoff({ intentAt: intent.at, result: 'unpaired' }, env);
       } else if (intent.action === 'set-token') {
         // The path for everyone without the person's MTProto client: a token from @BotFather,
-        // checked before it is kept, and never echoed back.
+        // checked before it is kept.
         if (typeof intent.token !== 'string' || !intent.token.trim()) throw new Error('no bot token was handed over');
         const candidate = createApi(intent.token.trim());
         let me;
@@ -350,6 +350,12 @@ export function startCompanionMessenger({
       // The person's own chat has no cap, as in Roo; only other chats are rate-limited.
       const command = mediaOf(message) ? undefined : parseControlCommand(message.text);
       if (command) { await answerCommand(client, chatId, command); return; }
+      // Segno is off: its conversation is not woken; the person hears how to turn it back on.
+      if (!readCompanionSettings(env).enabled) {
+        await serial(() => client.sendMessage({ chatId, text: SEGNO_OFF_TEXT }));
+        log('inbound-while-off', { chatId });
+        return;
+      }
       const to = readCompanionState(env).sessionId;
       // Segno's conversation is not there yet (the engine is starting, the companion was just
       // turned on): the person's words wait in Telegram until it is.
@@ -382,6 +388,13 @@ export function startCompanionMessenger({
       if (!allowedInbound(chatId, update.update_id)) { log('inbound-dropped', { chatId }); return; }
       // Someone else's report belongs in Segno's inbox whether or not its conversation is up: the
       // list is what the person reads, and a message must not be lost to a restarting engine.
+      // Segno is off: the report is kept in its inbox, where it finds it once it is on again, and
+      // nothing wakes it now.
+      if (!readCompanionSettings(env).enabled) {
+        fileReport({ chatId, message, text: mediaOf(message)?.text ?? plainText(message) });
+        log('inbound-while-off', { chatId });
+        return;
+      }
       const to = readCompanionState(env).sessionId;
       if (!to) { fileReport({ chatId, message, text: mediaOf(message)?.text ?? plainText(message) }); throw notReady(); }
       const { text, attachments } = await contentOf(client, message);
@@ -410,12 +423,18 @@ export function startCompanionMessenger({
         const stats = await sessionStats(sessionId);
         text = contextText({ usage: stats?.contextUsage });
       } catch (error) { text = contextText({ error: error?.message ?? String(error) }); }
+    } else if (command === 'segno') {
+      try {
+        const before = readCompanionSettings(env).enabled;
+        if (enable === undefined) text = segnoText({ enabled: before, changed: false });
+        else { writeCompanionSettings({ enabled: enable }, env); text = segnoText({ enabled: enable, changed: before !== enable }); }
+      } catch (error) { text = segnoText({ error: error?.message ?? String(error) }); }
     } else {
       try { writeCompanionSettings({ heartbeat: { enabled: enable } }, env); text = heartbeatText({ enabled: enable }); }
       catch (error) { text = heartbeatText({ error: error?.message ?? String(error) }); }
     }
     await serial(() => client.sendMessage({ chatId, text }));
-    log('command', { command, ...(command === 'heartbeat' ? { enable } : {}) });
+    log('command', { command, ...(enable === undefined ? {} : { enable }) });
   }
 
   async function handleCallback(client, query) {

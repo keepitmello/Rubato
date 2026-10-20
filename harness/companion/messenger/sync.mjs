@@ -16,7 +16,7 @@
 // telegram_send in it) is carried with that offset.
 import { open, opendir } from 'node:fs/promises';
 import path from 'node:path';
-import { launchedIds, newQuietState, quietStep } from '../../t3-integration/src/quiet-runs.mjs';
+import { launchedIds, newQuietState, quietStep, reportedIds } from '../../t3-integration/src/quiet-runs.mjs';
 
 export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const TELEGRAM_SEND_TOOL = 'telegram_send';
@@ -182,9 +182,16 @@ export function stepRun(run, entry, { companionSessionId } = {}) {
     return newInput(run, quiet, triggerOf(entry, { companionSessionId }));
   }
   if (message.role === 'user') return newInput(run, quiet, triggerOf(entry));
-  if (launcher !== undefined) {
-    // Background work finishing opens a run that belongs to the run that launched the work.
-    return newInput(run, quiet, run.launches[launcher] ?? run.trigger);
+  const reported = reportedIds(message);
+  if (reported.length) {
+    // Background work finishing opens a run that belongs to the run that launched the work. Work no
+    // launch on record names (started before this transcript was read, or forgotten) answers to
+    // nobody in particular, and a batch is the user's only if every piece in it was: `unverified`
+    // keeps such a run from counting as the user's (settings.mjs).
+    const owners = reported.map((id) => run.launches[id]);
+    const user = (owner) => owner?.kind === 'app' || (owner?.kind === 'channel' && owner.isUser === true);
+    const chosen = (launcher !== undefined ? run.launches[launcher] : undefined) ?? { kind: 'unknown' };
+    return newInput(run, quiet, owners.every(user) ? chosen : { ...chosen, unverified: true });
   }
   if (message.role === 'toolResult') {
     for (const id of launchedIds(message)) {

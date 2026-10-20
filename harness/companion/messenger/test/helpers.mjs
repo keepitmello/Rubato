@@ -7,7 +7,7 @@ import path from 'node:path';
 import { startCompanionMessenger } from '../service.mjs';
 import { fakeTelegram } from './fake-telegram.mjs';
 import { readPairing, writeIntent, writeSecret } from '../store.mjs';
-import { writeState as writeCompanionState } from '../../companion.mjs';
+import { writeSettings as writeCompanionSettings, writeState as writeCompanionState } from '../../companion.mjs';
 import { buildSessionMessage, parseDelivery } from '../../../pi-runtime/features/session-link/message.mjs';
 
 export const TOKEN = '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh';
@@ -20,6 +20,8 @@ export function sandbox(t) {
   const env = { RUBATO_COMPANION_HOME: path.join(dir, 'companion'), HOME: dir };
   const agentDir = path.join(dir, 'agent');
   mkdirSync(agentDir, { recursive: true });
+  // The companion is on: that is when the messenger carries the person's words to it.
+  writeCompanionSettings({ enabled: true }, env);
   return { dir, env, agentDir };
 }
 

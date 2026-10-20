@@ -76,9 +76,9 @@ async function writeSession(dir, cwd, entries) {
   return { id, file, entries: chained };
 }
 
-test('the extension-facing object has exactly its nine methods and refuses until the engine binds it', async () => {
+test('the extension-facing object has exactly its ten methods and refuses until the engine binds it', async () => {
   const link = createSessionLink();
-  assert.deepEqual(keys(link.api), ['channel', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
+  assert.deepEqual(keys(link.api), ['channel', 'companionSettings', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
   assert.ok(Object.isFrozen(link.api));
   for (const name of Object.keys(link.api)) {
     await assert.rejects(link.api[name]({}), /session link is not available in this process/);
@@ -902,4 +902,11 @@ test("the companion's Telegram tools reach the messenger through the facade the 
     { op: 'edit', messageId: 5, text: '고침', to: '-100', name: '그룹' },
   ]);
   await assert.rejects(env.link.api.telegramSend([]), { code: 'invalid' });
+});
+
+test("only the companion's conversation reaches the settings, through the facade the runtime holds", async (t) => {
+  const env = await setup(t);
+  const lead = await env.make('Lead');
+  await assert.rejects(env.link.api.companionSettings({ sessionId: lead.id, action: 'show' }), { code: 'not_companion' });
+  await assert.rejects(env.link.api.companionSettings({ action: 'show' }), { code: 'invalid' });
 });

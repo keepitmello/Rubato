@@ -21,6 +21,7 @@ const companionFile = path.resolve(here, '..', '..', '..', 'companion', 'compani
 const messengerFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'store.mjs');
 const inboxFile = path.resolve(here, '..', '..', '..', 'companion', 'inbox.mjs');
 const tgFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 'tg.mjs');
+const pieceCopyFile = path.resolve(here, '..', '..', '..', 'companion', 'piece-copy.mjs');
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 
@@ -56,9 +57,10 @@ export function createCompanionService(options = {}) {
     const messenger = options.messenger ?? await import(pathToFileURL(messengerFile).href);
     const inbox = options.inbox ?? await import(pathToFileURL(inboxFile).href);
     const tg = options.tg ?? await import(pathToFileURL(tgFile).href);
+    const { withCopy } = await import(pathToFileURL(pieceCopyFile).href);
     const defaultsDir = options.defaultsDir
       ?? (await import(pathToFileURL(systemPromptFile).href)).companionDefaultsDir(env);
-    return { companion, messenger, inbox, tg, defaultsDir };
+    return { companion, messenger, inbox, tg, defaultsDir, withCopy };
   })().catch((error) => {
     loaded = undefined;
     throw new CompanionRequestError(500, 'companion-unavailable', `The companion module could not load: ${error.message}`);
@@ -101,7 +103,9 @@ export function createCompanionService(options = {}) {
   }
 
   async function handle(action, input) {
-    const { companion, messenger, inbox, tg, defaultsDir } = await modules();
+    const { companion, messenger, inbox, tg, defaultsDir, withCopy } = await modules();
+    // Each piece with what it is for (companion/piece-copy.mjs): the page and Segno read the same words.
+    const pieces = () => companion.readPieces({ defaultsDir, env }).map(withCopy);
     switch (action) {
       case 'status':
         return status(companion);
@@ -125,6 +129,12 @@ export function createCompanionService(options = {}) {
         if (typeof input.token !== 'string' || !input.token.trim())
           throw new CompanionRequestError(400, 'invalid', 'A bot token is missing.');
         messenger.writeIntent({ action: 'set-token', token: input.token.trim() }, env);
+        return { telegram: messenger.messengerStatus(env) };
+      // The Fish Audio key for Segno's voice replies, entered here or given to Segno
+      // (harness/companion/settings.mjs); it is never handed back.
+      case 'voice-key':
+        if (input.key === null) messenger.clearFishKey(env);
+        else invalid(() => messenger.writeFishKey(input.key, env));
         return { telegram: messenger.messengerStatus(env) };
       case 'telegram-create-bot':
         messenger.writeIntent({ action: 'create-bot',
@@ -159,17 +169,16 @@ export function createCompanionService(options = {}) {
         } finally { box.close(); }
       }
       case 'pieces':
-        return { pieces: companion.readPieces({ defaultsDir, env }) };
+        return { pieces: pieces() };
       case 'save-piece':
         if (typeof input.id !== 'string') throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => companion.writePiece(input.id, input.text, { defaultsDir, env }));
-        return { pieces: companion.readPieces({ defaultsDir, env }) };
+        return { pieces: pieces() };
       // "Have Segno review it": a request file the engine's keeper wakes Segno for. The page never
       // wakes a conversation itself, and it never merges a default into the person's file.
       case 'review-persona':
         invalid(() => companion.requestPersonaReview(env));
-        return { pieces: companion.readPieces({ defaultsDir, env }),
-          reviewRequested: companion.readPersonaReviewRequest(env) ?? null };
+        return { pieces: pieces(), reviewRequested: companion.readPersonaReviewRequest(env) ?? null };
       default:
         throw new CompanionRequestError(404, 'unknown-action', `Unknown action: ${action}`);
     }

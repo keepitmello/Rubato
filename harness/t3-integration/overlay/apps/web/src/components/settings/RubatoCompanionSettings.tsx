@@ -33,31 +33,6 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
-const PIECE_COPY: Readonly<Record<CompanionPieceId, { title: string; description: string }>> = {
-  preamble: {
-    title: "Preamble",
-    description: "The first words Segno reads: its name and its welcome.",
-  },
-  soul: { title: "Soul", description: "Who Segno is and how it speaks." },
-  identity: { title: "Identity", description: "Name, look and what stays the same." },
-  user: {
-    title: "About you",
-    description: "Your business, your repositories, how you like to be told things.",
-  },
-  companion: { title: "How Segno works", description: "Leads, approvals, reports, heartbeat." },
-  tools: {
-    title: "Tools",
-    description: "The tools Segno has. It follows Rubato and cannot be changed.",
-  },
-  memory: {
-    title: "Resident memory",
-    description: "What Segno always carries. Its night dream keeps this in memory/MEMORY.md.",
-  },
-  coda: {
-    title: "Closing lines",
-    description: "The last words of Segno's prompt, after everything else.",
-  },
-};
 
 function reportError(title: string, error: unknown) {
   toastManager.add({
@@ -181,13 +156,12 @@ function PieceEditor({
   const [open, setOpen] = useState(false);
   // The parent keys this editor by the saved text, so a save starts a fresh draft.
   const [draft, setDraft] = useState(current);
-  const copy = PIECE_COPY[piece.id];
   const changed = draft.trim() !== current.trim();
   return (
     <SettingsRow
       id={`rubato-companion-piece-${piece.id}`}
-      title={copy.title}
-      description={copy.description}
+      title={piece.title}
+      description={piece.description}
       status={
         <span className="flex items-center gap-1">
           {piece.defaultChanged ? <Badge variant="warning">Default update available</Badge> : null}
@@ -209,7 +183,7 @@ function PieceEditor({
             className="min-h-48"
             value={draft}
             readOnly={!piece.editable}
-            aria-label={copy.title}
+            aria-label={piece.title}
             spellCheck={false}
             onChange={(event) => setDraft(event.target.value)}
           />
@@ -248,6 +222,7 @@ const HELD_KIND = (message: TelegramHeldMessage): string =>
 function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
   const [token, setToken] = useState("");
+  const [voiceKey, setVoiceKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -286,7 +261,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
     }
   };
 
-  const made = telegram?.bot.masked != null;
+  const made = telegram?.bot.token != null;
   const paired = telegram?.pairing.status === "paired";
   const waiting = telegram?.pairing.status === "pending";
   const state = !made ? (
@@ -365,7 +340,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
               id="rubato-companion-telegram-bot"
               title={telegram.bot.name ?? "Segno's bot"}
               description={telegram.bot.username ? `@${telegram.bot.username}` : "The bot Rubato made for Segno."}
-              status={telegram.bot.masked ? <Badge variant="outline">{telegram.bot.masked}</Badge> : null}
+              status={telegram.bot.token ? <Badge variant="outline">{telegram.bot.token}</Badge> : null}
             />
           )}
           {telegram.handoff.error ? (
@@ -403,6 +378,50 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
               }
             />
           ) : null}
+          <SettingsRow
+            id="rubato-companion-telegram-approval"
+            title="Hold messages to others"
+            description="Anything Segno writes to someone other than you waits here, and in your Telegram chat, until you approve it."
+            control={
+              <Switch
+                aria-label="Hold messages to others"
+                checked={telegram.settings.approvalRequired}
+                disabled={busy}
+                onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { approvalRequired: next }))}
+              />
+            }
+          />
+          <SettingsRow
+            id="rubato-companion-voice"
+            title="Segno's voice"
+            description="Voice replies speak in this Fish Audio voice. Ask Segno to pick or change it."
+            status={<Badge variant="outline">{telegram.settings.voice?.voiceId ?? "Not chosen"}</Badge>}
+          />
+          <SettingsRow
+            id="rubato-companion-voice-key"
+            title="Fish Audio key"
+            description="Voice replies need a Fish Audio API key. Give it to Segno, or paste it here."
+            status={<Badge variant={telegram.fishKey ? "success" : "outline"}>{telegram.fishKey ?? "Not set"}</Badge>}
+            control={
+              <span className="flex items-center gap-2">
+                <Input
+                  aria-label="Fish Audio API key"
+                  className="h-8 w-64"
+                  value={voiceKey}
+                  disabled={busy}
+                  onChange={(event) => setVoiceKey(event.target.value)}
+                />
+                <Button size="sm" disabled={busy || voiceKey.trim() === ""}
+                  onClick={() => void run(async () => {
+                    const next = await rubatoCompanion.setVoiceKey(environmentId, voiceKey.trim());
+                    setVoiceKey("");
+                    return next;
+                  })}>
+                  Save
+                </Button>
+              </span>
+            }
+          />
           {telegram.waiting.map((message) => (
             <SettingsRow
               key={message.id}

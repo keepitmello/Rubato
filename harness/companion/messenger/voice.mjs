@@ -5,10 +5,9 @@
 //
 // Roo synthesizes WAV and encodes Opus with ffmpeg; this asks Fish for Opus directly, so nothing
 // outside Node is needed and the audio is still compressed once.
-import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { messengerPaths, readMessengerSettings } from './store.mjs';
+import { messengerPaths, readFishKey, readMessengerSettings } from './store.mjs';
 
 export const FISH_ENDPOINT = 'https://api.fish.audio/v1/tts';
 // Roo's measured choices: `balanced` latency does not grow with length; temperature 0.3 made
@@ -21,17 +20,6 @@ const TIMEOUT_MS = 60_000;
 
 export class VoiceError extends Error {
   constructor(message) { super(message); this.name = 'VoiceError'; }
-}
-
-/** The Fish key: FISH_API_KEY, the messenger's own key file, or this Mac's shared fish-audio setup. */
-export function fishApiKey(env = process.env) {
-  const fromEnv = env.FISH_API_KEY?.trim();
-  if (fromEnv) return fromEnv;
-  const files = [messengerPaths(env).fishKey, path.join(env.HOME || homedir(), '.config', 'fish-audio', 'api_key')];
-  for (const file of files) {
-    try { const key = readFileSync(file, 'utf8').trim(); if (key) return key; } catch {}
-  }
-  return null;
 }
 
 /** The voice note's length from its last Ogg page: granule position (48 kHz) less Opus pre-skip. */
@@ -66,8 +54,8 @@ export async function synthesizeVoice(text, { env = process.env, fetch: call = g
   if (spoken.length > VOICE_MAX_CHARS) throw new VoiceError(`too long for a voice note: ${spoken.length} characters (at most ${VOICE_MAX_CHARS})`);
   const { voice } = readMessengerSettings(env);
   if (!voice.voiceId) throw new VoiceError('no voice is chosen for Segno yet');
-  const key = fishApiKey(env);
-  if (!key) throw new VoiceError('no Fish Audio key is set up on this Mac');
+  const key = readFishKey(env);
+  if (!key) throw new VoiceError('no Fish Audio key is set up');
   let response;
   try {
     response = await call(baseUrl, {

@@ -21,7 +21,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
-import { useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
+import { acceptCompanionStatus, rubatoCompanion, useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
 import { useStatsWarmup } from "../../state/rubatoStats";
 import { useUiStateStore } from "../../uiStateStore";
@@ -278,6 +278,23 @@ export function RubatoProjectRail() {
             />
           </PopoverPopup>
         </Popover>
+        {/* Segno, switched off after it was set up: one click turns it back on (intent rev 8). */}
+        {companion.status && !companion.status.settings.enabled && companion.status.sessionId !== null ? (
+          <RailButton
+            label="Segno (off) · turn on"
+            onClick={() => {
+              if (environmentId === null) return;
+              void rubatoCompanion
+                .saveSettings(environmentId, { enabled: true })
+                .then(acceptCompanionStatus)
+                .catch(() => void navigate({ to: "/settings/companion" }));
+            }}
+          >
+            <span className="opacity-40">
+              <RubatoSegnoIcon />
+            </span>
+          </RailButton>
+        ) : null}
         {/* Segno, the always-on companion, while it is on (companion-edits.mjs). */}
         {companion.status?.settings.enabled ? (
           <RailButton
