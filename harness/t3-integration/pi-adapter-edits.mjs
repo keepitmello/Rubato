@@ -13,6 +13,43 @@ export const piAdapterOverlays = [
 
 export const piAdapterEdits = {
   'packages/provider-pi/src/server/adapter.test.ts': [
+    ['import * as Fiber from "effect/Fiber";\n', 'import * as FileSystem from "effect/FileSystem";\n'],
+    ['import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter";\n',
+      'import * as ProviderHost from "@t3tools/provider-core/server/ProviderHost";\n'],
+    ['  it.effect("answers model-selection dialogs before a user turn claims a native wake", () =>\n', [
+      '  // Rubato: pi-adapter-edits.mjs names where an attached image\'s original is stored.',
+      '  it.effect("tells the model where an attached image is stored", () =>',
+      '    Effect.gen(function* () {',
+      '      const fake = yield* makeFakePi;',
+      '      const { runtime } = yield* openRuntime(fake);',
+      '      const providerThread = yield* runtime.ensureThread({',
+      '        threadId: THREAD_ID,',
+      '        modelSelection: modelSelection("default"),',
+      '        runtimePolicy,',
+      '      });',
+      '      const host = yield* ProviderHost.ProviderHost;',
+      '      const attachment = {',
+      '        type: "image",',
+      '        id: "thread-pi-test-00000000-0000-4000-8000-000000000001",',
+      '        name: "photo.png",',
+      '        mimeType: "image/png",',
+      '        sizeBytes: 4,',
+      '      } as ChatAttachment;',
+      '      const path = host.resolveAttachmentPath(attachment);',
+      '      assert.isNotNull(path);',
+      '      const fileSystem = yield* FileSystem.FileSystem;',
+      '      yield* fileSystem.writeFile(path!, new Uint8Array([1, 2, 3, 4]));',
+      '      yield* startTurn(runtime, providerThread, "default", [attachment]);',
+      '      const prompt = yield* fake.takeRequest("prompt");',
+      '      assert.equal(prompt["message"], `Hello pi\\n\\n[Image "photo.png" saved at ${path}]`);',
+      '      assert.deepEqual(prompt["images"], [',
+      '        { type: "image", data: Buffer.from([1, 2, 3, 4]).toString("base64"), mimeType: "image/png" },',
+      '      ]);',
+      '    }).pipe(Effect.scoped, Effect.provide(layerTest)),',
+      '  );',
+      '',
+      '',
+    ].join('\n')],
     ['  it.effect("rejects rollback while native wake output is awaiting ownership", () =>\n', [
       '  // Rubato: pi-adapter-edits.mjs resumes the thread a rollback-only session lacks.',
       '  it.effect("resumes the thread before rolling back in a session opened only for it", () =>',
@@ -161,6 +198,22 @@ export const piAdapterEdits = {
     ].join('\n')],
   ],
   'packages/provider-pi/src/server/adapter.ts': [
+    // Upstream sends an attached image only as pixels, so the model could not tell where the
+    // original file is (other attachments already get their path). Rubato also re-encodes a
+    // large PNG photo as JPEG before the model sees it, so the stored original is the one to
+    // reach for when full fidelity matters.
+    [
+      '              mimeType: attachment.mimeType,\n            });\n          } else {\n',
+      [
+        '              mimeType: attachment.mimeType,',
+        '            });',
+        '            // Rubato: name where the original is stored (pi-adapter-edits.mjs).',
+        '            extraLines.push(`[Image "${attachment.name}" saved at ${path}]`);',
+        '          } else {',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
     // A session opened only to roll back (the first thing after a restart, or after the
     // session closed) has no thread registered yet, and rollback refused with "Pi session
     // has no registered thread". Resume the thread first, as a turn does.
