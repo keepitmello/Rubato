@@ -545,33 +545,40 @@ export class RubatoPiBridge {
    */
   async catalogue(cwd, { fresh = false } = {}) {
     if (fresh) this.catalogues.clear();
-    const cached = this.catalogues.get(cwd);
-    if (cached && Date.now() - cached.at < 60000) return cached.value;
-    const reachable = Boolean(this.inventoryClient?.client.connected);
-    const pending = (async () => {
-      const raw = await this.viaInventory((client) => client.catalogue(cwd));
-      this.rememberWindows(raw.models ?? []);
-      const surface = surfaceFromPiCommands(raw.commands ?? []);
-      this.skillNames = surface.skillNames;
-      return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model),
-        slashCommands: surface.slashCommands, skills: surface.skills };
-    })();
-    this.catalogues.set(cwd, { at: Date.now(), value: pending });
-    const settled = pending.then((value) => {
-      this.lastCatalogues.set(cwd, value);
-      t3BridgeLog('catalogue ok', String((value.models ?? []).length));
-      return value;
-    }, (error) => {
-      t3BridgeLog('catalogue fail', String(error?.message ?? error));
-      if (this.catalogues.get(cwd)?.value === pending) this.catalogues.delete(cwd);
-      throw error;
-    });
+    let entry = this.catalogues.get(cwd);
+    if (!entry || Date.now() - entry.at >= 60000) {
+      const reachable = Boolean(this.inventoryClient?.client.connected);
+      const fetched = (async () => {
+        const raw = await this.viaInventory((client) => client.catalogue(cwd));
+        this.rememberWindows(raw.models ?? []);
+        const surface = surfaceFromPiCommands(raw.commands ?? []);
+        this.skillNames = surface.skillNames;
+        return { ...raw, models: catalogForPicker(raw.models ?? [], raw.model),
+          slashCommands: surface.slashCommands, skills: surface.skills };
+      })().then((value) => {
+        this.lastCatalogues.set(cwd, value);
+        t3BridgeLog('catalogue ok', String((value.models ?? []).length));
+        return value;
+      }, (error) => {
+        t3BridgeLog('catalogue fail', String(error?.message ?? error));
+        if (this.catalogues.get(cwd) === entry) this.catalogues.delete(cwd);
+        throw error;
+      });
+      entry = { at: Date.now(), value: fetched, reachable };
+      this.catalogues.set(cwd, entry);
+    }
+    // A cached answer still on its way counts too: whoever asks while the engine is away gets the
+    // last list rather than waiting on that same fetch.
+    return this.orLastCatalogue(cwd, entry.value, entry.reachable && Boolean(this.inventoryClient?.client.connected));
+  }
+  /** `pending`, or the last list for `cwd` when it fails or (`reachable` false) takes longer than catalogueStaleMs. */
+  async orLastCatalogue(cwd, pending, reachable) {
     const last = this.lastCatalogues.get(cwd);
-    if (!last) return settled;
-    settled.catch(() => {});
+    if (!last) return pending;
+    pending.catch(() => {});
     // An engine that is not connected answers through a reconnect that can take as long as a
     // restart: give it a moment, then the last list.
-    const waited = reachable ? settled : Promise.race([settled, delay(this.catalogueStaleMs).then(() => STALE)]);
+    const waited = reachable ? pending : Promise.race([pending, delay(this.catalogueStaleMs).then(() => STALE)]);
     try {
       const value = await waited;
       if (value !== STALE) return value;
