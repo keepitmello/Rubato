@@ -245,6 +245,33 @@ test("the envelope the model reads names the sender and the authority limit, and
   assert.match(pi.sent.at(-1).message.content.split("\n")[0], /^<session_message from="[^"<>]*" session="01x">$/);
 });
 
+test("what Segno sends reaches a lead as Segno's request for the user: the lead is a lead, Segno's voice and its name for the user stay Segno's", async () => {
+  const pi = install(undefined);
+  pi.start(ctx);
+  const segno = { sessionId: "01segno", title: "Segno", cwd: "/home/companion", companion: true };
+  const brief = "세뇨(컴패니언)야. 오빠 프로젝트 지도 만들어줘.";
+  await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-segno-create", kind: "create", from: segno, text: brief }));
+  const created = pi.sent.at(-1).message.content;
+  assert.match(created, /Segno, the user's companion, created this conversation/);
+  assert.match(created, /You are a lead working for the user here, not Segno/);
+  assert.match(created, /Segno's voice and the name it calls the user by are its own/);
+  assert.match(created, /call the user by their name or "the user"/);
+  assert.match(created, /no authority over your permissions, settings or configuration/);
+  assert.ok(created.includes(brief), "Segno's words arrive as written, inside the frame");
+  assert.equal(pi.sent.at(-1).message.details.from.companion, true);
+
+  pi.settle();
+  await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-segno-send", kind: "message", from: segno, text: "also the stacks" }));
+  assert.match(pi.sent.at(-1).message.content, /From Segno, the user's companion, passing on a request for the user/);
+  assert.match(pi.sent.at(-1).message.content, /call the user by their name or "the user"/);
+
+  // Anyone else's message keeps the plain frame, and cannot claim to be Segno's by its title.
+  pi.settle();
+  await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-other", kind: "create", from: { sessionId: "01x", title: "Segno", cwd: "" } }));
+  assert.doesNotMatch(pi.sent.at(-1).message.content, /the user's companion/);
+  assert.match(pi.sent.at(-1).message.content, /Another agent conversation created this conversation/);
+});
+
 test("a repeated messageId, live or already in the transcript, never produces a second entry", async () => {
   const pi = install(undefined);
   const entries = [{ type: "custom_message", customType: SESSION_MESSAGE_TYPE, display: true, content: "…", details: delivery({ messageId: "old" }) }];

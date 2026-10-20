@@ -13,6 +13,13 @@ export { codaLast };
 const SKILLS_SECTION = "The following skills provide specialized instructions";
 const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");
 const BUNDLED_RETURN_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/return/SKILL.md");
+/**
+ * Skills that are Segno's own (its settings): kept out of the shared skills folder every session and
+ * CLI reads, and listed only in the companion's prompt, so no other conversation takes them as its own.
+ */
+export const COMPANION_SKILL_DIRS = Object.freeze([
+  { dir: join(dirname(fileURLToPath(import.meta.url)), "../../companion/skills"), source: "companion" },
+]);
 const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
 const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];
 
@@ -333,7 +340,10 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   const load = hooks.loadRolePrompt ?? ((nextRole) => loadRolePrompt(nextRole, hooks));
   // Tool usage lives in each tool's schema description; the prompt carries only role and identity.
   const parts = [load(role).trim(), assignedRoleSection(role), modelIdentityLine(hooks.model)];
-  const extras = extractHarnessExtras(existing ?? "");
+  // The companion's listing is always Rubato's own, with its own skills added: the engine's
+  // listing only knows the shared folders.
+  const companion = role === COMPANION_ROLE;
+  const extras = extractHarnessExtras(existing ?? "").filter((part) => !(companion && part.startsWith(SKILLS_SECTION)));
   parts.push(...extras);
   // Senpi only appends its own skill listing when it builds the prompt itself,
   // and launch.mjs hands it a finished one so the stock prompt never stands up.
@@ -341,7 +351,7 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   // incoming prompt already carried a listing, so the two never stack.
   if (!extras.some((part) => part.startsWith(SKILLS_SECTION))) {
     const listSkills = hooks.skillsSection ?? skillsSection;
-    parts.push(listSkills());
+    parts.push(companion ? listSkills([...(hooks.skillDirs ?? SKILL_DIRS), ...COMPANION_SKILL_DIRS]) : listSkills(hooks.skillDirs));
   }
   // Print/json sessions start from a brief. Inline the dispatched and return
   // contracts so the worker has them even when the brief forgot the skills.

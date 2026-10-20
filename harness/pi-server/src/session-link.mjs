@@ -289,10 +289,13 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     return { sessionId: id, title: metadata.title ?? '', cwd: metadata.cwd ?? '', status: live ? 'idle' : 'stored',
       updatedAt: metadata.modifiedAt ?? null, messageCount: metadata.messageCount ?? 0, live };
   }
-  /** The sender's own name and folder; callers pass ids only. */
+  /**
+   * The sender's own name and folder, and whether it is the companion (its words then reach the
+   * receiver framed as Segno's request for the user, message.mjs); callers pass ids only.
+   */
   async function sender(id) {
     const known = row(id);
-    if (known) return { sessionId: id, title: known.title, cwd: known.cwd };
+    if (known) return { sessionId: id, title: known.title, cwd: known.cwd, ...(known.companion === true ? { companion: true } : {}) };
     const worker = need().host.getSessionWorker(id);
     // A new CLI conversation has no file until its first answer, but it is live.
     if (worker) {
@@ -370,7 +373,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       return { v: 1, messageId, kind, from: { channel: from.channel, chatId: from.chatId, isUser: from.isUser === true,
         ...(from.name ? { name: from.name } : {}), ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text,
         ...(attachments === undefined ? {} : { attachments }) };
-    return { v: 1, messageId, kind, from: { sessionId: from.sessionId, title: from.title, cwd: from.cwd }, text };
+    return { v: 1, messageId, kind, from: { sessionId: from.sessionId, title: from.title, cwd: from.cwd,
+      ...(from.companion === true ? { companion: true } : {}) }, text };
   }
   const messageIdOf = (value) => {
     if (value === undefined) return randomUUID();
