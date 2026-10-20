@@ -298,6 +298,19 @@ function agentDirOf(env) {
 
 const real = (file) => { try { return realpathSync(file); } catch { return path.resolve(file); } };
 
+/**
+ * Whether writing `file` lands inside `home`. Segno links repository documents into its memory
+ * (memory/ref/); the dream's copy leaves links out, so a file it writes at a linked path would go
+ * through the link into the repository. The nearest existing part of the path decides.
+ */
+function landsInside(home, file) {
+  let probe = file;
+  while (!existsSync(probe) && path.dirname(probe) !== probe) probe = path.dirname(probe);
+  const root = real(home);
+  const target = real(probe);
+  return target === root || target.startsWith(root + path.sep);
+}
+
 function firstLine(file) {
   const fd = openSync(file, 'r');
   try {
@@ -522,8 +535,8 @@ function bringHome({ home, base, dreamed, scratch, guard = () => undefined }) {
     const before = base.get(rel);
     const after = dreamed.get(rel);
     if (same(before, after)) continue;
-    if (!WRITABLE(rel)) { refused.push(rel); continue; }
     const file = path.join(home, rel);
+    if (!WRITABLE(rel) || !landsInside(home, file)) { refused.push(rel); continue; }
     const live = existsSync(file) ? readFileSync(file) : undefined;
     if (same(live, after)) continue;
     let next = after;

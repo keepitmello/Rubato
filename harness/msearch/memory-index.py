@@ -185,8 +185,11 @@ def discover_markdown_files() -> list[Path]:
     files: list[Path] = []
     for directory in source_dirs:
         if directory.exists():
+            # 링크한 폴더도 따라간다: 레포 문서를 정본으로 두고 기억 자리에 링크로 걸면
+            # 그 안의 문서가 찾혀야 한다. 순환 링크로 같은 파일이 여러 경로로 잡히면 아래에서
+            # 실제 경로 하나로 모은다.
             files.extend(
-                path for path in directory.rglob("*.md")
+                path for path in directory.rglob("*.md", recurse_symlinks=True)
                 if path.is_file() and not is_excluded(path)
             )
     # 재귀 스캔 금지 — 명시한 루트 문서만.
@@ -194,7 +197,7 @@ def discover_markdown_files() -> list[Path]:
         path for name in RESIDENT_DOCS
         if (path := PROJECT_ROOT / name).is_file()
     )
-    return sorted(set(files), key=lambda path: rel_path(path))
+    return sorted({rel_path(path): path for path in files}.values(), key=lambda path: rel_path(path))
 
 
 def rel_path(file_path: Path) -> str:
