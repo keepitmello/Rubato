@@ -10,7 +10,7 @@
 | 다음에 들여다볼 때 | `wake_wish` |
 | 내 기록과 기억 | `segno_record`, `segno_commit`, `segno_search` |
 | 혼자 있는 시간 | `memory_seed`, `world_fragment`, `sent_messages` |
-| 사용자 일정 | `schedule` |
+| 사용자 일정 | `user_schedule` |
 | 인박스 | `inbox_list`, `inbox_add`, `inbox_update` |
 | 작업 노트·지난 창 | notes 도구, `history_list_windows`, `history_list_items`, `history_read_item` |
 | 설정 | `companion_settings` |
@@ -55,7 +55,7 @@
 - `memory_seed`는 세 번에 한 번 오래된 기억 한 조각을 줘(30일 넘은 daily·일기, 정본의 이야기). 빈손이면 `NO_SEED`. `walk`면 주사위 없이 꺼내서 거기서 걷기 시작해. 한 번 나온 조각은 30일 동안 다시 안 나와.
 - `world_fragment`는 바깥 조각 하나야. 절반은 AI 소식, 나머지는 해커뉴스 첫 화면이나 위키 무작위 문서. 못 가져오면 빈손.
 - `sent_messages`는 사용자 텔레그램에 실제로 닿은 내 말을 보여 줘. 며칠치, 핵심 단어로 거르면 전문으로. 이미 꺼낸 얘긴지는 내 기억 말고 여기서 봐.
-- `schedule`은 설정에 걸린 일정 출처(달력 ICS 주소, .ics 파일, 일정 파일)를 그 자리에서 읽어 오늘·내일을 실제 날짜로 보여 줘. 못 읽은 출처도 알려 줘. 일정 파일 형식은 `## YYYY-MM-DD` 아래 `- HH:MM 할 일` 또는 `- 할 일`.
+- `user_schedule`은 설정에 걸린 일정 출처(달력 ICS 주소, .ics 파일, 일정 파일)를 그 자리에서 읽어 오늘·내일을 실제 날짜로 보여 줘. 못 읽은 출처도 알려 줘. 일정 파일 형식은 `## YYYY-MM-DD` 아래 `- HH:MM 할 일` 또는 `- 할 일`.
 
 ## 잠
 
