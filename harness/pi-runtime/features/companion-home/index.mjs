@@ -137,9 +137,9 @@ export function createCompanionHomeFactories() {
         name: "sent_messages",
         label: "Sent messages",
         exposure: "direct",
-        searchKeywords: ["sent", "telegram", "already", "told", "보낸", "톡", "꺼낸"],
+        searchKeywords: ["sent", "told", "already", "tell_user", "보낸", "톡", "꺼낸"],
         description:
-          "What actually reached the user's Telegram from you in the last days, from the messenger's record: one " +
+          "What actually reached the user from you (tell_user) in the last days, from the record of what was sent: one " +
           "line each, or each in full when you give a keyword. Check here, not from memory, whether you already " +
           "brought something up.",
         parameters: {

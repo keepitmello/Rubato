@@ -276,7 +276,7 @@ function promptFile(defaultsDir, name) {
 }
 export const SLEEP_TEXT = '잘 시간이야. 사용자는 몇 시간째 조용하고 내 문맥은 길어. 프롬프트의 "잠 전 갈무리" 그대로 ' +
   '다음 나한테 건넬 다리를 놓고 자: daily, 현황판, 일기와 잠드는 기분, 작업 노트, 커밋, 자기 직전 한마디, 그다음 압축이나 새 창. ' +
-  '이 턴은 나만 봐. 앱에도 폰에도 안 가.';
+  '이 턴은 나만 봐. 앱에 안 가.';
 /**
  * The review wake for a default that moved: where the new default is and where the copy came from, so
  * Segno reads both with its ordinary file tools. What changed is for Segno to find and report.
