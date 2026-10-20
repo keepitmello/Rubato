@@ -423,6 +423,7 @@ export class RubatoPiBridge {
     const pending = (async () => {
       if (await this.companionSession(sessionId)) return undefined;
       return followEngineRun({ bridge: this, threadId, sessionId, throttleMs: this.engineRunThrottleMs ?? 1000,
+        ...(this.engineRunRetryMs ? { retryMs: this.engineRunRetryMs } : {}),
         connect: this.engineConnect ?? (async () => { await this.connection(); return new SessionClient({ ...this.descriptor, onError: this.onError }).connect(); }),
         onEnd: () => { if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId); },
         log: (what, error) => t3BridgeLog(what, `${threadId} ${String(error?.message ?? error)}`) });

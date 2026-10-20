@@ -19,7 +19,14 @@ const BUSY = new Set(['running', 'starting']);
  * importedMessages, appendSessionMessage, openEngineRun and closeEngineRun; `connect()` a session
  * client on the engine. Resolves once the follower is attached and has placed a run already going.
  */
-export async function followEngineRun({ bridge, connect, threadId, sessionId, throttleMs = 1000, onEnd = () => {}, log = () => {} }) {
+/**
+ * When a read of the session that failed is tried again: a few times right away before a run is
+ * closed, then, after the follower let the session go, from the stored conversation (no stream).
+ */
+export const SYNC_RETRY_MS = Object.freeze({ beforeClose: [500, 1000, 2000], afterEnd: [5000, 15_000, 30_000, 60_000, 120_000] });
+
+export async function followEngineRun({ bridge, connect, threadId, sessionId, throttleMs = 1000, retryMs = SYNC_RETRY_MS,
+  onEnd = () => {}, log = () => {} }) {
   const client = await connect();
   let unsubscribe;
   let runId = null;
@@ -28,6 +35,9 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
   let syncing = Promise.resolve();
   let syncTimer;
   let sequence;
+  // Whether the last read of the session reached the thread; a failed one is tried again until one does.
+  let synced = true;
+  let stopped = false;
   const end = async () => {
     if (ended) return;
     ended = true;
@@ -37,19 +47,31 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
     await client.detach().catch(() => {});
     await client.close().catch(() => {});
     onEnd();
+    // A last read that failed still reaches the thread: from the stored conversation, with no stream.
+    if (!synced) void (async () => {
+      for (const ms of retryMs.afterEnd) {
+        await new Promise((resolve) => setTimeout(resolve, ms).unref?.());
+        if (stopped || (await sync())) return;
+      }
+      log('engine run sync gave up', new Error(`${threadId} still lacks part of ${sessionId}`));
+    })();
+  };
+  const messagesOf = async () => {
+    const reply = ended ? await bridge.transcript(sessionId) : await client.command({ type: 'get_messages' });
+    if (!Array.isArray(reply?.messages)) throw new Error('the session gave no messages');
+    return reply.messages;
   };
   // What the thread lacks of the session goes into the run going now; the same ids as the backfill,
-  // so whichever writes first, the other writes nothing.
+  // so whichever writes first, the other writes nothing. Answers whether it got through.
   const sync = () => (syncing = syncing.then(async () => {
-    if (ended) return;
     const thread = await bridge.projectedThread(threadId);
-    if (!thread) return;
-    const reply = await client.command({ type: 'get_messages' });
-    const items = bridge.importedMessages(sessionId, Array.isArray(reply?.messages) ? reply.messages : [], threadId);
+    if (!thread) return (synced = true);
+    const items = bridge.importedMessages(sessionId, await messagesOf(), threadId);
     for (const { item, runId: anchor } of missingItems(items, thread.messages)) {
       await bridge.appendSessionMessage(threadId, backfillItem(item, threadId, runId ?? anchor));
     }
-  }).catch((error) => log('engine run sync failed', error)));
+    return (synced = true);
+  }).catch((error) => { synced = false; log('engine run sync failed', error); return false; }));
   const soon = () => {
     if (throttleMs <= 0) return sync();
     if (syncTimer) return syncing;
@@ -65,7 +87,11 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
   const close = async (status) => {
     await opening;
     clearTimeout(syncTimer); syncTimer = undefined;
-    await sync();
+    // The run's last words must be in before it shows as finished.
+    for (const ms of [0, ...retryMs.beforeClose]) {
+      if (ms) await new Promise((resolve) => setTimeout(resolve, ms));
+      if (await sync()) break;
+    }
     const id = runId;
     runId = null; opening = undefined;
     if (id) await Promise.resolve(bridge.closeEngineRun(threadId, id, status)).catch((error) => log('engine run not closed', error));
@@ -103,5 +129,5 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
   }
   // Stopping (the T3 server closing) lets go of the session and leaves the thread as it is: T3's
   // own startup recovery settles a run it finds still running.
-  return { stop: end, get ended() { return ended; } };
+  return { stop: async () => { stopped = true; await end(); }, get ended() { return ended; } };
 }

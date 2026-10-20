@@ -32,7 +32,11 @@ function engine() {
       listener({ runtimeId: 'r1', sequence: session.sequence, status: session.status, events: [] });
       return async () => { session.listener = null; };
     },
-    async command(record) { return record.type === 'get_messages' ? { messages: session.messages } : undefined; },
+    async command(record) {
+      if (record.type !== 'get_messages') return undefined;
+      if (session.failReads > 0) { session.failReads -= 1; throw new Error('socket reset'); }
+      return { messages: [...session.messages] };
+    },
   });
   return session;
 }
@@ -66,6 +70,8 @@ function setup(t, { companion = false } = {}) {
   bridge.closeEngineRun = t3.closeEngineRun;
   bridge.engineConnect = session.connect;
   bridge.engineRunThrottleMs = 0;
+  bridge.engineRunRetryMs = { beforeClose: [5, 5], afterEnd: [20, 20] };
+  bridge.transcript = async () => ({ messages: [...session.messages] });
   bridge.companionSession = async () => companion;
   t.after(() => bridge.close());
   return { bridge, session, t3 };
@@ -127,4 +133,24 @@ test('when the thread already runs a turn of T3\'s own, the follower writes noth
   session.push([{ type: 'message_end', message: said('T3가 직접 보여주는 답', 62) }]);
   assert.ok(await until(() => session.detached === 1));
   assert.deepEqual(t3.messages.map((message) => message.text), ['운영 알림 조사해 줘']);
+});
+
+test("a read of the session that fails at the end does not lose the run's last answer", async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.failReads = 1;
+  session.push([{ type: 'message_end', message: said('최종 답이야.', 716) }, { type: 'agent_settled' }], 'idle');
+  assert.ok(await until(() => t3.runs[0].status === 'completed'));
+  assert.equal(t3.messages.at(-1).text, '최종 답이야.', 'in the thread before the run shows as finished');
+  assert.equal(t3.messages.at(-1).runId, 'run-1');
+});
+
+test('when every read fails until the run closes, the answer still arrives afterwards from the stored conversation', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.failReads = 100;
+  session.push([{ type: 'message_end', message: said('늦게라도 와야 하는 답.', 716) }, { type: 'agent_settled' }], 'idle');
+  assert.ok(await until(() => t3.runs[0].status === 'completed'), 'the run does not stay running forever');
+  assert.ok(await until(() => session.detached === 1), 'and the session is let go');
+  assert.ok(await until(() => t3.messages.some((message) => message.text === '늦게라도 와야 하는 답.')), 'the answer arrives without a stream');
 });
