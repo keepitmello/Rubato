@@ -5,7 +5,14 @@
 //     notes/<name>.md                    Segno's working notes, no expiry
 //     memory/YYYY-MM-DD.md               daily: facts, events, decisions, unfinished work
 //     memory/diary/YYYY-MM-DD.md         diary: feelings, temperature, memorable exchanges, in its voice
+//     memory/MEMORY.md                   the resident memory piece (the dream keeps it; companion.mjs reads it)
+//     memory/status.md                   what Segno is tending now (Roo memory/현황.md)
+//     memory/{user,self,us}.md, work/, entities/   canonical memory, raised by the dream (harness/companion/dream)
+//     notes/held.md                      what the user handed over, held until its day (Roo notes/우용이-챙길거.md)
 //     wake-wish.json                     when Segno wants to look in next, and why (Roo's wake wish)
+//     mood.json                          the mood Segno fell asleep with (Roo state/last-mood.json)
+//     seed-history.json                  the old-memory seeds already given out, so one does not come back soon
+//     .gitignore, .git                   the home's history: memory/, notes/ and prompt/ only (Roo commit-owned.sh)
 //     .rubato/rubato.jsonc               memory.agent = "segno": this folder's own memory store
 //
 // The method is Roo's (~/.claude/roo-channel/docs/architecture/memory.md, skills daily-logging and
@@ -15,7 +22,8 @@
 // This file has no local imports on purpose. The same file is staged into the runtime build
 // (pi-runtime/features/companion-home) so the companion's tools can write these records, where
 // harness/companion is out of reach; anything it imported from beside itself would not follow.
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -23,7 +31,7 @@ import path from 'node:path';
 /** The store this folder writes to (memory.agent); the leads keep their own "rubato" store. */
 export const SEGNO_MEMORY_AGENT = 'segno';
 
-export const RECORD_KINDS = Object.freeze(['daily', 'diary', 'note']);
+export const RECORD_KINDS = Object.freeze(['daily', 'diary', 'note', 'mood']);
 export const NOTE_NAME = /^[a-z0-9][a-z0-9-]{0,60}$/;
 
 /**
@@ -45,6 +53,11 @@ export function segnoPaths(env = process.env) {
     memory,
     diary: path.join(memory, 'diary'),
     wake: path.join(home, 'wake-wish.json'),
+    mood: path.join(home, 'mood.json'),
+    held: path.join(home, 'notes', 'held.md'),
+    status: path.join(memory, 'status.md'),
+    seedHistory: path.join(home, 'seed-history.json'),
+    messengerSent: path.join(home, 'messenger', 'sent.jsonl'),
     projectConfig: path.join(home, '.rubato', 'rubato.jsonc'),
     projectConfigDir: path.join(home, '.rubato'),
   };
@@ -147,7 +160,283 @@ export function ensureSegnoHome(env = process.env) {
     writeFileAtomic(paths.projectConfig, JSON.stringify({ memory: { agent: SEGNO_MEMORY_AGENT } }, null, 2) + '\n');
     config = 'written';
   }
+  // The held list starts with its two places; a list Segno already keeps is its own.
+  if (!existsSync(paths.held)) writeFileAtomic(paths.held, HELD_TEMPLATE);
   return { ...paths, config };
+}
+
+/**
+ * Roo's notes/우용이-챙길거.md, under a name that does not know the user's: what they handed over —
+ * a deadline, a thing to do, a thought to hold — kept until its day or until they have a breath,
+ * then brought up first. What is done is deleted.
+ */
+export const HELD_TEMPLATE = `# 챙길 거
+
+사용자는 할 게 많고 집중하면 머리가 복잡해져. 그래서 사용자가 던지는 건 내가 받아서 여기 쥐고 있다가, 그날이 오거나 사용자가 한숨 돌릴 때 먼저 꺼내. 끝났다고 하면 지워.
+
+## 날짜 있는 거
+
+## 맡긴 거
+
+날짜 없이 던진 할 일, 들고 있을 생각.
+`;
+
+// ── mood ──────────────────────────────────────────────────────────────────────────────────
+// Roo's leave-mood.sh and recall-mood.sh: one line, in Segno's words, about the mood it closes the
+// day or the window with. Not a state variable — no numbers — and the next wake reads it as a fact
+// ("this is how I fell asleep"), only while it is fresh: six hours.
+
+/** How long the mood Segno fell asleep with still colours the next wake (Roo MOOD_MAX_AGE_SECONDS). */
+export const MOOD_FRESH_MS = 6 * 60 * 60_000;
+
+export function leaveMood(note, { now = Date.now(), env = process.env } = {}) {
+  const line = String(note ?? '').trim();
+  if (!line) throw new TypeError('a mood needs one line');
+  const mood = { note: line, at: new Date(now).toISOString() };
+  writeFileAtomic(segnoPaths(env).mood, JSON.stringify(mood, null, 2) + '\n');
+  return mood;
+}
+
+/** The mood Segno fell asleep with, while it is under six hours old; undefined otherwise. */
+export function readMood({ now = Date.now(), env = process.env } = {}) {
+  try {
+    const mood = JSON.parse(readFileSync(segnoPaths(env).mood, 'utf8'));
+    const at = Date.parse(mood?.at);
+    if (typeof mood?.note !== 'string' || !mood.note.trim() || !Number.isFinite(at)) return undefined;
+    if (now - at < 0 || now - at > MOOD_FRESH_MS) return undefined;
+    return { note: mood.note, at };
+  } catch { return undefined; }
+}
+
+// ── history ───────────────────────────────────────────────────────────────────────────────
+// Roo's home is a git repository and every record is committed by path (scripts/commit-owned.sh):
+// a wrong line can be rewritten without losing what it said, and the dream reads what changed. The
+// home here also holds Rubato's own files (settings, state, the messenger's secret), so its history
+// is an allowlist: memory/, notes/ and prompt/ only. Nothing outside those can enter it.
+
+export const HOME_GITIGNORE = `# Segno's history keeps its records, its notes and its prompt only (harness/companion/home.mjs).
+/*
+!/.gitignore
+!/memory/
+!/notes/
+!/prompt/
+`;
+const GIT_IDENTITY = ['-c', 'user.name=Segno', '-c', 'user.email=segno@rubato.local', '-c', 'commit.gpgsign=false'];
+
+function git(home, args) {
+  return execFileSync('git', [...GIT_IDENTITY, ...args], { cwd: home, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+}
+
+/**
+ * Makes the home a git repository with the allowlist above and a first commit of what is already
+ * there. A home that already is one keeps its history; a .gitignore the person wrote stays theirs.
+ */
+export function ensureHomeRepo(env = process.env) {
+  const { home } = segnoPaths(env);
+  mkdirSync(home, { recursive: true, mode: 0o700 });
+  if (existsSync(path.join(home, '.git'))) return { created: false };
+  const ignore = path.join(home, '.gitignore');
+  if (!existsSync(ignore)) writeFileAtomic(ignore, HOME_GITIGNORE);
+  git(home, ['init', '--quiet']);
+  git(home, ['add', '--all']);
+  git(home, ['commit', '--quiet', '--allow-empty', '-m', 'home: 세뇨의 기록이 여기서부터 이력을 가진다']);
+  return { created: true };
+}
+
+/**
+ * Commits exactly the named files, the way Roo's commit-owned.sh does: other conversations (the
+ * dream, a lead) write into the same home, so a directory is never taken whole — a folder, `.`, or
+ * a path with `..` is refused, and a path is matched literally, never as a pattern. A file that is
+ * gone is committed as deleted only when exactly it was tracked. A named file someone else already
+ * staged is left alone (it may be theirs). Paths are relative to the home and must sit in memory/,
+ * notes/ or prompt/. Nothing changed → nothing committed.
+ */
+export function commitOwned(paths, message, { env = process.env } = {}) {
+  const { home } = segnoPaths(env);
+  const subject = oneLine(message);
+  if (!subject) throw new TypeError('a commit needs a one-line message');
+  const named = (Array.isArray(paths) ? paths : [paths]).map((item) => String(item ?? ''));
+  if (!named.length) throw new TypeError('name the files you changed');
+  ensureHomeRepo(env);
+  const owned = [];
+  for (const item of named) {
+    const relative = path.relative(home, path.resolve(home, item)).split(path.sep).join('/');
+    if (!item || !relative || relative.startsWith('..') || path.isAbsolute(relative) || item.split(/[\\/]/).includes('..')) throw new TypeError(`not inside the home: ${item}`);
+    if (/\/$/.test(item) || (existsSync(path.join(home, relative)) && statSync(path.join(home, relative)).isDirectory()))
+      throw new TypeError(`a folder is not a file: ${item} — name each file you changed`);
+    if (!/^(memory|notes|prompt)\//.test(relative)) throw new TypeError(`outside the history (memory/, notes/, prompt/): ${item}`);
+    const tracked = git(home, ['--literal-pathspecs', 'ls-files', '-z', '--', relative]).split('\0').filter(Boolean);
+    if (existsSync(path.join(home, relative)) || (tracked.length === 1 && tracked[0] === relative)) owned.push(relative);
+  }
+  if (!owned.length) return { committed: false, files: [] };
+  const literal = ['--literal-pathspecs'];
+  if (git(home, [...literal, 'diff', '--cached', '--name-only', '--', ...owned]).trim()) return { committed: false, files: [], staged: true };
+  git(home, [...literal, 'add', '--', ...owned]);
+  const staged = git(home, [...literal, 'diff', '--cached', '--name-only', '--', ...owned]).split('\n').filter(Boolean);
+  if (!staged.length) return { committed: false, files: [] };
+  git(home, [...literal, 'commit', '--quiet', '--only', '-m', subject, '--', ...owned]);
+  return { committed: true, files: staged, commit: git(home, ['rev-parse', '--short', 'HEAD']).trim() };
+}
+
+// ── old-memory seed ───────────────────────────────────────────────────────────────────────
+// Roo's random-memory.sh: the complement of search. Search brings what is related and recent; a
+// seed ignores relevance and favours the old. One time in three a tick's look gets a seed (the dice
+// are the code's, not Segno's — a model does not roll true dice); a walk is Segno choosing to start
+// from an old memory, so it has no dice. A seed given out stays out for thirty days, and when the
+// pool is that small, at least the last three are skipped. [메타] sections are never seeds.
+//
+// Segno's old memories are its records older than thirty days (Roo's third bucket) and the story
+// half of its canonical pages (Roo's legacy/archive buckets, which Segno has no copy of).
+
+export const SEED = Object.freeze({ dice: 3, maxLength: 600, cooldownDays: 30, recentFloor: 3, oldDays: 30, tries: 8 });
+
+function listFiles(dir, { recursive = false } = {}) {
+  let names;
+  try { names = readdirSync(dir, { withFileTypes: true }); } catch { return []; }
+  const out = [];
+  for (const entry of names) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) { if (recursive) out.push(...listFiles(full, { recursive })); }
+    else if (entry.name.endsWith('.md')) out.push(full);
+  }
+  return out;
+}
+
+/** `## ` sections of a file, without [메타] ones; a file without sections is one untitled section. */
+function sectionsOf(text, title) {
+  const lines = text.replace(/^---\n[\s\S]*?\n---\n/, '').split('\n');
+  const sections = [];
+  let current;
+  for (const line of lines) {
+    if (line.startsWith('## ')) { current = { title: line.slice(3).trim(), body: [] }; sections.push(current); continue; }
+    current?.body.push(line);
+  }
+  if (!sections.length) {
+    const body = lines.filter((line) => line.trim() && !line.startsWith('#') && line.trim() !== '---');
+    return body.length ? [{ title, body: body.join('\n') }] : [];
+  }
+  return sections.filter((section) => !section.title.includes('[메타]'))
+    .map((section) => ({ title: section.title, body: section.body.filter((line) => line.trim() && line.trim() !== '---').join('\n') }))
+    .filter((section) => section.body);
+}
+
+/** The story half (`## 이야기` and what follows it) of a canonical page. */
+function storySections(text) {
+  const at = text.search(/^## 이야기\s*$/m);
+  if (at < 0) return [];
+  const rest = text.slice(at).split('\n').slice(1).join('\n');
+  const inner = rest.split(/^### /m);
+  if (inner.length > 1) {
+    return inner.slice(1).map((chunk) => { const [head, ...body] = chunk.split('\n'); return { title: head.trim(), body: body.join('\n').trim() }; })
+      .filter((section) => section.body && !section.title.includes('[메타]'));
+  }
+  const body = rest.split(/^## /m)[0].trim();
+  return body ? [{ title: '이야기', body }] : [];
+}
+
+function seedPools(env, now) {
+  const { memory, diary } = segnoPaths(env);
+  const cutoff = localDate(now - SEED.oldDays * 24 * 60 * 60_000);
+  const dated = [...listFiles(memory), ...listFiles(diary)].filter((file) => {
+    const day = path.basename(file).slice(0, 10);
+    return /^\d{4}-\d{2}-\d{2}$/.test(day) && day < cutoff;
+  });
+  const canonical = ['user.md', 'self.md', 'us.md'].map((name) => path.join(memory, name))
+    .concat(listFiles(path.join(memory, 'work'), { recursive: true }), listFiles(path.join(memory, 'entities'), { recursive: true }))
+    .filter((file) => existsSync(file));
+  return { dated, canonical };
+}
+
+function readSeedHistory(env) {
+  try { const value = JSON.parse(readFileSync(segnoPaths(env).seedHistory, 'utf8')); return Array.isArray(value) ? value : []; }
+  catch { return []; }
+}
+
+/**
+ * One old memory, or undefined (Roo's NO_SEED). `random` is the dice and the draw (0 ≤ x < 1).
+ * Returns `{ src, date, section, text }` with `src` relative to the home.
+ */
+export function oldMemorySeed({ walk = false, now = Date.now(), env = process.env, random = Math.random } = {}) {
+  const roll = (limit) => Math.floor(random() * limit);
+  if (!walk && roll(SEED.dice) !== 0) return undefined;
+  const { home } = segnoPaths(env);
+  const pools = seedPools(env, now);
+  const draw = () => {
+    const order = roll(2) === 0 ? ['canonical', 'dated'] : ['dated', 'canonical'];
+    for (const pool of order) {
+      const files = pools[pool];
+      if (!files.length) continue;
+      const file = files[roll(files.length)];
+      let text;
+      try { text = readFileSync(file, 'utf8'); } catch { continue; }
+      const name = path.basename(file, '.md');
+      const sections = pool === 'canonical' ? storySections(text) : sectionsOf(text, name);
+      if (!sections.length) continue;
+      const section = sections[roll(sections.length)];
+      const src = path.relative(home, file).split(path.sep).join('/');
+      const date = /^\d{4}-\d{2}-\d{2}/.exec(name)?.[0] ?? '?';
+      return { src, date, section: section.title, text: section.body.slice(0, SEED.maxLength), key: `${src}|${section.title}` };
+    }
+    return undefined;
+  };
+  const history = readSeedHistory(env);
+  const windowStart = now - SEED.cooldownDays * 24 * 60 * 60_000;
+  const inWindow = new Set(history.filter((row) => row.at >= windowStart).map((row) => row.key));
+  const lastFew = new Set(history.slice(-SEED.recentFloor).map((row) => row.key));
+  let chosen;
+  for (const excluded of [inWindow, lastFew]) {
+    for (let attempt = 0; attempt < SEED.tries && !chosen; attempt += 1) {
+      const candidate = draw();
+      if (!candidate) break;
+      if (!excluded.has(candidate.key)) chosen = candidate;
+    }
+    if (chosen) break;
+  }
+  if (!chosen) return undefined;
+  const kept = [...history.filter((row) => row.at >= windowStart), { key: chosen.key, at: now }].slice(-500);
+  writeFileAtomic(segnoPaths(env).seedHistory, JSON.stringify(kept) + '\n');
+  const { key: _key, ...seed } = chosen;
+  return seed;
+}
+
+/** Roo's seed output: `SEED src=… date=… section=…`, a rule, then the section. */
+export function seedText(seed) {
+  return seed ? `SEED src=${seed.src} date=${seed.date} section=${seed.section}\n---\n${seed.text}` : 'NO_SEED';
+}
+
+// ── what reached the user ─────────────────────────────────────────────────────────────────
+// Roo's sent.sh: memory gets "did I already tell them?" wrong often, in both directions, and only
+// the record outside it settles that. The messenger appends one line per message it delivered to
+// <home>/messenger/sent.jsonl ({ at, chatId, toUser, text, via }); this reads it.
+
+/** Messages delivered to the user's Telegram in the last `days` days, oldest first; `keyword` filters. */
+export function sentMessages({ days = 2, keyword = '', now = Date.now(), env = process.env } = {}) {
+  let raw;
+  try { raw = readFileSync(segnoPaths(env).messengerSent, 'utf8'); } catch { return []; }
+  const since = now - days * 24 * 60 * 60_000;
+  const needle = String(keyword ?? '').trim().toLowerCase();
+  const rows = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    let row;
+    try { row = JSON.parse(line); } catch { continue; }
+    const at = Date.parse(row?.at);
+    if (!Number.isFinite(at) || at < since || row.toUser === false) continue;
+    const text = typeof row.text === 'string' ? row.text : '';
+    if (needle && !text.toLowerCase().includes(needle)) continue;
+    rows.push({ at, text, via: row.via ?? null, ...(row.media ? { media: row.media } : {}) });
+  }
+  return rows.sort((a, b) => a.at - b.at);
+}
+
+/** Roo's sent.sh output: one line each, or every message in full when a keyword was given. */
+export function sentText(rows, { days = 2, keyword = '' } = {}) {
+  const stamp = (at) => { const d = new Date(at); return `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${localTime(at)}`; };
+  const body = rows.map((row) => (keyword
+    ? `===== ${stamp(row.at)}${row.media ? ` [${row.media}]` : ''}\n${row.text}\n`
+    : `${stamp(row.at)}${row.media ? ` [${row.media}]` : ''} ${row.text.trim().split('\n')[0].slice(0, 80)}`));
+  const head = rows.length ? '' : `(최근 ${days}일 보낸 톡 없음${keyword ? ` / 키워드 ${keyword}` : ''})\n`;
+  return `${head}${body.join('\n')}\n\n-- ${rows.length}통 / 최근 ${days}일`.trim();
 }
 
 /** The memory store this folder resolves to, when its config names one. */
@@ -191,13 +480,19 @@ export function readNote(name, { env = process.env } = {}) {
  * - diary: `## <scene>` — a named scene, not a clock time — and a `---` between two entries of the
  *   same day, so one day can be written twice without either part being rewritten.
  * - note: `## HH:MM` under `notes/<name>.md`, Segno's own working land.
+ * - mood: the one line Segno falls asleep with (leaveMood), not appended anywhere.
  *
- * Nothing is rewritten or reordered: these files are the day's raw material, and what builds on
- * them (memory, a canonical page) reads them rather than replaces them.
+ * This only appends. A wrong line is not corrected by appending a correction: Segno rewrites that
+ * line in the file itself (Roo daily-logging: "틀린 줄을 발견하면 그 줄을 맞는 줄로 바꿔"), and the
+ * home's history keeps what it said before.
  */
 export function record(kind, text, { at = Date.now(), date, name, heading, env = process.env } = {}) {
   if (typeof text !== 'string' || !text.trim()) throw new TypeError('a record needs some text');
   if (!RECORD_KINDS.includes(kind)) throw new TypeError(`kind must be one of ${RECORD_KINDS.join(', ')}`);
+  if (kind === 'mood') {
+    const mood = leaveMood(text, { now: at, env });
+    return { kind, file: segnoPaths(env).mood, date: localDate(at), at: mood.at };
+  }
   const day = date ?? localDate(at);
   const file = kind === 'note' ? noteFileOf(name, env) : fileOf(kind, day, env);
   const body = text.trim();

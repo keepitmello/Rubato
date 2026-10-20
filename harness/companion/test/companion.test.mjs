@@ -121,13 +121,24 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   writeSettings({ heartbeat: { everyMinutes: 45 } }, env);
-  writeSettings({ dailyReport: { time: '18:30' } }, env);
-  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45 }, dailyReport: { enabled: true, time: '18:30' } });
-  assert.throws(() => writeSettings({ dailyReport: { time: '25:00' } }, env), /HH:MM/);
+  writeSettings({ greetings: { enabled: false } }, env);
+  writeSettings({ career: { schedule: '~/work/일정표.md' } }, env);
+  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45 }, greetings: { enabled: false },
+    career: { schedule: '~/work/일정표.md' } });
+  assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
+  assert.throws(() => writeSettings({ career: { schedule: 3 } }, env), /career\.schedule/);
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
   writeFileSync(companionPaths(env).settings, '{ broken');
   assert.deepEqual(readSettings(env), DEFAULT_SETTINGS, 'an unreadable file reads as the defaults');
+});
+
+test('a home from before the greetings keeps its daily-report switch as the greetings switch', (t) => {
+  const env = sandbox(t);
+  mkdirSync(companionPaths(env).home, { recursive: true });
+  writeFileSync(companionPaths(env).settings, JSON.stringify({ enabled: true, dailyReport: { enabled: false, time: '09:00' } }));
+  assert.deepEqual(readSettings(env).greetings, { enabled: false });
+  assert.equal('dailyReport' in readSettings(env), false);
 });
 
 test('the heartbeat is every 15, 30 or 45 minutes; an older stored interval reads as 30', (t) => {

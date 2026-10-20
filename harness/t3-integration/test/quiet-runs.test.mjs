@@ -20,7 +20,7 @@ const run = (input, ...tail) => [{ type: 'agent_start' }, { type: 'turn_start' }
 const pass = (filter, events) => events.flatMap((event) => filter.accept(event));
 
 test('a run the clock started passes nothing; any other run passes whole, in order', () => {
-  for (const what of ['heartbeat', 'daily-report', 'sleep']) {
+  for (const what of ['heartbeat', 'greeting', 'wake', 'recall', 'daily-report', 'sleep']) {
     assert.deepEqual(pass(createQuietRuns(), run(wake(what), answer)), [], what);
   }
   for (const input of [user, notice]) {
@@ -111,7 +111,7 @@ test('on the stream: a heartbeat run reaches T3 as nothing, and a message sent m
 
 test("the quiet wakes are Rubato's clock; a wake meant for the person still opens a turn the app shows", () => {
   for (const what of QUIET_WAKES) assert.ok(WAKES.includes(what), what);
-  assert.deepEqual([...QUIET_WAKES].sort(), ['daily-report', 'heartbeat', 'sleep']);
+  assert.deepEqual([...QUIET_WAKES].sort(), ['daily-report', 'greeting', 'heartbeat', 'recall', 'sleep', 'wake']);
   const review = wake('persona-review');
   const events = run(review, answer);
   assert.deepEqual(pass(createQuietRuns(), events), events);

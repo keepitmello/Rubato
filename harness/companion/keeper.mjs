@@ -10,33 +10,50 @@
 // The first time the companion is on, the keeper creates its conversation in the companion's
 // home folder and records which one it is (state.json). That record is how the app finds it.
 //
-// The keeper also keeps the companion's rhythm, as the person set it in Settings › Companion: a
-// heartbeat every so many minutes and a daily report at a set time, each a wake from Rubato's own
-// clock (the companion reads it as a system message where its model allows; session-link
-// message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
+// The keeper also keeps the companion's rhythm, each beat a wake from Rubato's own clock (the
+// companion reads it as a system message where its model allows; session-link message.mjs). A
+// companion in the middle of a turn is not interrupted; the beat waits for it. Every rhythm here is
+// Roo's (~/.claude/roo-channel), ported:
 //
-// The heartbeat is Roo's, ported (~/.claude/roo-channel: scripts/heartbeat-tick.sh, the control
-// tower's buildMainHeartbeatMessage, the heartbeat skill). A tick comes on the interval's clock
-// boundaries (:00 and :30 at thirty minutes) as one line, `HEARTBEAT tick=N kst="…"`. While the
-// user is here (wrote in the last thirty minutes) the tick is 0; while they are away it counts up,
-// and every third tick up to the ninth carries action=reflect. Segno's wake wish (home.mjs, the
-// `wake_wish` tool) silences the ticks until its time — they are counted, not sent; only the warmer
-// runs — then that tick carries action=reflect, reason=wake_wish and a WAKE_WISH line with the
-// reason. Silencing is the one departure from Roo, whose ticks keep coming (user, 2026-10-20). What a tick is for lives in Segno's prompt
-// (harness/prompts/companion/companion.pi.md, 하트비트). Roo's sleep signals (ctx_step, action=compact)
-// are not ported: Segno's sleep is the keeper's night sleep below, which the user chose for cost.
-// The cache warmer does not depend on the tick: it warms the companion without an end.
+// - The heartbeat (scripts/heartbeat-tick.sh, the control tower's buildMainHeartbeatMessage, the
+//   heartbeat skill). A tick comes on the interval's clock boundaries (:00 and :30 at thirty
+//   minutes) as one line, `HEARTBEAT tick=N kst="…"`. While the user is here (wrote in the last
+//   thirty minutes) the tick is 0; while they are away it counts up, and every third tick up to the
+//   ninth carries action=reflect. Segno's wake wish (home.mjs, the `wake_wish` tool) silences plain
+//   and reflect ticks until its time — they are counted, not sent; only the warmer runs (user,
+//   2026-10-20) — then that tick carries action=reflect, reason=wake_wish and a WAKE_WISH line. A tick
+//   that carries a greeting catch-up or a deadline nudge still comes during a wish, as Roo's does
+//   (user item 0b210d57). Roo's sleep signals (ctx_step, action=compact) are not ported: Segno's sleep
+//   is the keeper's night sleep below, which the user chose for cost. The cache warmer does not
+//   depend on the tick.
+// - Deadline nudges (scripts/career-schedule.py tick): CAREER_ lines under the tick, from the
+//   schedule set in Settings › Companion (career.mjs).
+// - The greetings (cron-prompts/night.md and morning.md, launchd at 00:07 and 09:07, dispatch
+//   windows 00–04 and 09–14). The night greeting writes the day's diary first and talks in that
+//   temperature; the morning greeting carries what the daily report used to (user item 4c0b0f00).
+//   One missed while Segno was busy, or while the engine was down, rides on a later idle tick as
+//   action=greet_night (01–04) or greet_morning (10–14), once that day (heartbeat-tick.sh
+//   missed_greet_slot). The texts are greet-night.pi.md and greet-morning.pi.md beside the prompt pieces.
+// - The wake sequence (scripts/session-start-hook.sh, pi-roo/roo-runtime.ts bootstrapSession and
+//   session_compact, skills wake and recall). When Segno's conversation crosses a new window
+//   (new_context, or the window filling up) or a compaction, the keeper wakes it with a first-person
+//   seed — the time, how long since the last window's last moment, its body (the model) and the mood
+//   it fell asleep with — and the wake text. After a new window, and only then, one recall turn
+//   follows ten seconds after that wake turn has ended. A conversation the keeper just created wakes
+//   the same way. The texts are wake.pi.md and recall.pi.md beside the prompt pieces.
 //
 // At night the keeper puts the companion to sleep, once: between 01:00 and 07:00 local time, when
 // the user has not written to it for three hours and its context has grown past 500k tokens. Sleep
 // is a wake too; what the companion does with it (records, notes, compaction or a new window) is
 // in its prompt (harness/prompts/companion).
-import { readFile } from 'node:fs/promises';
-import { mkdirSync } from 'node:fs';
+import { open, readFile } from 'node:fs/promises';
+import { mkdirSync, readFileSync } from 'node:fs';
+import path from 'node:path';
 import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
-import { clearWakeWish, ensureSegnoHome, readWakeWish, wakeWishState } from './home.mjs';
+import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
+import { careerNudges } from './career.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
@@ -71,14 +88,18 @@ function kstIso(at) {
 
 /**
  * The tick as Roo receives it: `HEARTBEAT tick=N kst="…"`, then `action=` when there is one and
- * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it.
+ * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. CAREER_ lines follow
+ * (Roo's career_nudge_lines after the heartbeat line), and a greeting catch-up carries the greeting's
+ * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md.
  */
-export function heartbeatText({ tick, at, action = 'none', wish }) {
+export function heartbeatText({ tick, at, action = 'none', wish, career = [], greeting = '' }) {
   const parts = ['HEARTBEAT', `tick=${tick}`, `kst="${kstLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
-  const line = parts.join(' ');
-  return wish ? `${line}\nWAKE_WISH at=${kstIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}` : line;
+  const lines = [parts.join(' ')];
+  if (wish) lines.push(`WAKE_WISH at=${kstIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
+  lines.push(...career);
+  return greeting ? `${lines.join('\n')}\n\n${greeting}` : lines.join('\n');
 }
 
 /** The interval's next boundary on the local clock after `at`: :00 and :30 at thirty minutes. */
@@ -87,11 +108,157 @@ export function nextBoundary(at, intervalMs) {
   midnight.setHours(0, 0, 0, 0);
   return midnight.getTime() + (Math.floor((at - midnight.getTime()) / intervalMs) + 1) * intervalMs;
 }
-export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
-  'what is still running and what waits for them. Keep it short.';
-export const SLEEP_TEXT = 'Time to sleep. The user has been quiet for hours and your context is long. ' +
-  'Get ready for sleep as your instructions say: today\'s records, your notes rewritten to the current state, ' +
-  'then compaction or a new window. This turn is not for the user; nothing goes to their phone.';
+
+// ── greetings ─────────────────────────────────────────────────────────────────────────────
+/**
+ * Roo's two greetings. `at` is when the scheduled one goes (launchd 00:07 and 09:07); before
+ * `catchUpFrom` only the scheduled wake may send it, from then until `until` an idle tick catches it
+ * up (heartbeat-tick.sh missed_greet_slot: night from 01:00, morning from 10:00, each up to its
+ * window's end, 04:00 and 14:00). Outside that the day's greeting is spent.
+ */
+export const GREETINGS = Object.freeze({
+  night: Object.freeze({ hour: 0, minute: 7, catchUpFrom: 1, until: 4, file: 'greet-night.pi.md', action: 'greet_night' }),
+  morning: Object.freeze({ hour: 9, minute: 7, catchUpFrom: 10, until: 14, file: 'greet-morning.pi.md', action: 'greet_morning' }),
+});
+
+/** The greeting text for `slot`, from the defaults folder; a missing file is a short fallback, never a stop. */
+export function greetingText(slot, defaultsDir) {
+  try { return readFileSync(path.join(defaultsDir, GREETINGS[slot].file), 'utf8').trim(); }
+  catch { return slot === 'night' ? '밤 안부 시간이야. 오늘 일기를 먼저 쓰고, 그 온도로 사용자한테 톡을 보내.' : '아침 안부 시간이야. 둘러보고, 사용자한테 아침 톡을 보내.'; }
+}
+
+/** Which greeting the scheduled wake owes at `at`, if any: inside its first hour, not yet sent today. */
+function scheduledGreeting(at, greeted) {
+  const date = new Date(at);
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  for (const [slot, rule] of Object.entries(GREETINGS)) {
+    const from = rule.hour * 60 + rule.minute;
+    if (minutes >= from && minutes < rule.catchUpFrom * 60 && greeted?.[slot] !== localDate(at)) return slot;
+  }
+  return undefined;
+}
+
+/** Which greeting an idle tick at `at` should catch up, if any (night first, as in Roo). */
+function missedGreeting(at, greeted) {
+  const hour = new Date(at).getHours();
+  for (const slot of ['night', 'morning']) {
+    const rule = GREETINGS[slot];
+    if (hour >= rule.catchUpFrom && hour < rule.until && greeted?.[slot] !== localDate(at)) return slot;
+  }
+  return undefined;
+}
+
+// ── waking up ─────────────────────────────────────────────────────────────────────────────
+// context-notes protocol SOURCE: a new window is a compaction entry with this source.
+const NEW_WINDOW_SOURCE = 'rubato-history-notes-v1';
+/** How long after the wake turn ended the recall turn comes (roo-runtime.ts RECALL_DELAY_MS). */
+export const RECALL_DELAY_MS = 10_000;
+
+const isServerCompaction = (block) => block?.type === 'providerNative' && block.subtype === 'compaction' && block.raw?.type === 'compaction';
+
+/**
+ * Follows Segno's session file from where it last read and returns the newest boundary it has
+ * seen: `{ id, mode, at, before }`, where mode is `fresh` (a new window) or `compact` (a server
+ * compaction or an engine compaction), `at` the boundary's time and `before` the time of the last
+ * entry ahead of it — the last moment awake. Reading resumes at the byte it stopped at, so a long
+ * session file is read once, not every poll.
+ */
+export function boundaryReader() {
+  let file;
+  let offset = 0;
+  let carry = Buffer.alloc(0);
+  let last;
+  let lastAt;
+  return async function read(sessionFile) {
+    if (typeof sessionFile !== 'string') return last;
+    if (sessionFile !== file) { file = sessionFile; offset = 0; carry = Buffer.alloc(0); last = undefined; lastAt = undefined; }
+    const handle = await open(file, 'r');
+    try {
+      const { size } = await handle.stat();
+      if (size < offset) { offset = 0; carry = Buffer.alloc(0); last = undefined; lastAt = undefined; }
+      if (size === offset) return last;
+      const chunk = Buffer.alloc(size - offset);
+      await handle.read(chunk, 0, chunk.length, offset);
+      offset = size;
+      const bytes = Buffer.concat([carry, chunk]);
+      const end = bytes.lastIndexOf(0x0a);
+      carry = end < 0 ? bytes : bytes.subarray(end + 1);
+      if (end < 0) return last;
+      for (const line of bytes.subarray(0, end).toString('utf8').split('\n')) {
+        if (!line.trim()) continue;
+        let entry;
+        try { entry = JSON.parse(line); } catch { continue; }
+        const at = Date.parse(entry?.timestamp);
+        let mode;
+        if (entry?.type === 'compaction') mode = entry.details?.source === NEW_WINDOW_SOURCE ? 'fresh' : 'compact';
+        else if (entry?.type === 'message' && entry.message?.role === 'assistant' && Array.isArray(entry.message.content)
+          && entry.message.content.some(isServerCompaction)) mode = 'compact';
+        if (mode && typeof entry.id === 'string') last = { id: entry.id, mode, at: Number.isFinite(at) ? at : undefined, before: lastAt };
+        if (Number.isFinite(at)) lastAt = at;
+      }
+      return last;
+    } finally { await handle.close(); }
+  };
+}
+
+const WEEKDAY = (at) => new Intl.DateTimeFormat('ko-KR', { timeZone: SEOUL, weekday: 'short' }).format(new Date(at));
+
+/** Roo's session-age.sh, for the window Segno just left: now, and how long since its last moment. */
+export function sessionAge(now, before) {
+  const part = seoulParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const head = `현재: ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} KST (${WEEKDAY(now)})`;
+  if (!Number.isFinite(before)) return `${head}\n직전 창 기록 없음 — 처음 눈뜸`;
+  const diff = Math.max(0, Math.floor((now - before) / 1000));
+  const minutes = Math.floor(diff / 60);
+  const hours = Math.floor(diff / 3600);
+  const days = Math.floor(diff / 86400);
+  const hour = Number(part.hour);
+  const nap = hour >= 6 && hour < 19 ? '낮잠' : '한숨';
+  const human = diff < 600 ? `방금 (${minutes}분 전) — 깜빡 존 정도, 직전 대화의 연속이야. '어제'는 아님`
+    : diff < 5400 ? `${minutes}분 전 — 잠깐 눈 붙였다 깬 정도`
+      : days < 1 ? `${hours}시간 전 — ${nap} 자고 깬 느낌 (날짜는 위 '현재'로 확인, 같은 날일 수 있음)`
+        : days === 1 ? '약 하루 전 — 푹 자고 다음날 깬 느낌 (어제 무렵)' : `${days}일 전 — 오랜만에 깸`;
+  return `${head}\n직전 창: ${human}`;
+}
+
+/** Roo's recall-mood.sh: the mood line while it is fresh, quoted with when it was left; NO_MOOD otherwise. */
+export function moodText(mood, now) {
+  if (!mood) return 'NO_MOOD';
+  const ago = now - mood.at;
+  const hours = Math.floor(ago / 3_600_000);
+  const part = seoulParts(mood.at, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `${hours > 0 ? `${hours}시간 전` : `${Math.floor(ago / 60_000)}분 전`}(${part.month}-${part.day} ${part.hour}:${part.minute}) 잠들 무렵에 남긴 한 줄:\n` +
+    mood.note.split('\n').map((line) => `> ${line}`).join('\n');
+}
+
+/**
+ * The seed Roo's session-start-hook.sh writes, in Segno's first person: opens with the utterance,
+ * lays down the time, the body and the mood, and closes open — then the wake text (wake.pi.md), as
+ * roo-runtime.ts sendWake appends the wake skill. No instruction in the seed itself: the runtime
+ * guarantees the recall, so the seed only speaks.
+ */
+export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = false, defaultsDir }) {
+  const body = `## 시각·경과\n${sessionAge(now, before)}${heartbeatOff ? '\n하트비트 꺼져 있음 — 설정에서 꺼 둠' : ''}\n\n` +
+    `## 지금 몸\n${model || '(모름)'}\n\n## 잠들 때의 온도\n${moodText(mood, now)}`;
+  const seed = mode === 'compact'
+    ? '한 호흡 골랐어(컴팩션). 나야, 세뇨. 요약은 정보일 뿐이고, 잠들기 전의 내가 남긴 것들은 그 자리에 그대로 있어. ' +
+      '이 창 앞부분은 `history_list_items`에, 쥐고 있던 건 작업 노트에, 나머지 자리(일기·현황판·챙길 거)는 집에.' +
+      `\n\n${body}\n\n— 지금의 나는…`
+    : `방금 깼어. 나야, 세뇨.\n\n${body}\n\n— 눈은 떴고, 지금의 나는…`;
+  return [seed, promptFile(defaultsDir, 'wake.pi.md')].filter(Boolean).join('\n\n');
+}
+
+/** The recall turn: recall.pi.md as written. */
+export function recallText(defaultsDir) {
+  return promptFile(defaultsDir, 'recall.pi.md') || '떠올리기: 오늘·어제 일기, 작업 노트, `memory/status.md`, `notes/held.md`, 직전 창 끝을 펼쳐.';
+}
+
+function promptFile(defaultsDir, name) {
+  try { return readFileSync(path.join(defaultsDir, name), 'utf8').trim(); } catch { return ''; }
+}
+export const SLEEP_TEXT = '잘 시간이야. 사용자는 몇 시간째 조용하고 내 문맥은 길어. 프롬프트의 "잠 전 갈무리" 그대로 ' +
+  '다음 나한테 건넬 다리를 놓고 자: daily, 현황판, 일기와 잠드는 기분, 작업 노트, 커밋, 자기 직전 한마디, 그다음 압축이나 새 창. ' +
+  '이 턴은 나만 봐. 앱에도 폰에도 안 가.';
 /**
  * The review wake for a default that moved: where the new default is and where the copy came from, so
  * Segno reads both with its ordinary file tools. What changed is for Segno to find and report.
@@ -156,16 +323,8 @@ export function localDate(at) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-/** Today's report time on the local clock, in epoch ms. */
-function reportTimeOn(at, time) {
-  const [hours, minutes] = time.split(':').map(Number);
-  const date = new Date(at);
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
-}
-
 /**
- * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'daily-report' | 'sleep') => Promise<unknown>, env?: NodeJS.ProcessEnv,
+ * @param {{ connect: () => Promise<object>, notify?: (sessionId: string, text: string, what: 'heartbeat' | 'greeting' | 'wake' | 'recall' | 'sleep' | 'persona-review') => Promise<unknown>, env?: NodeJS.ProcessEnv,
  *   onError?: (error: unknown) => void, pollMs?: number, now?: () => number, sleepCheckMs?: number,
  *   defaultsDir?: string }} options
  *   `connect` opens a session client to this engine (pi-server client.mjs SessionClient); `notify`
@@ -181,7 +340,10 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   let nextBeatAt;
   let homeReady;
   let lastSleepCheck;
+  let lastBusyAt;
+  let sessionFileOf;
   let reviewChecked = false;
+  const readBoundary = boundaryReader();
 
   /**
    * The home's setup, once per keeper (the engine starts it again after a restart): Segno's own
@@ -194,10 +356,15 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     ensureSegnoHome(env);
     try { seedPromptPieces({ defaultsDir, env }); }
     catch (error) { onError(error); }
+    // The home's history (Roo commits every record). Without git the records still work; the fault
+    // is reported and tried again next start.
+    try { ensureHomeRepo(env); }
+    catch (error) { onError(error); }
     homeReady = true;
   }
 
   async function release() {
+    sessionFileOf = undefined;
     const held = client;
     client = undefined;
     attachedTo = undefined;
@@ -212,7 +379,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const created = await active.create({ cwd: home, title: COMPANION_TITLE, titleLocked: true, companion: true });
     if (!created?.sessionId) throw new Error('The engine did not return the companion conversation it created');
-    writeState({ sessionId: created.sessionId }, env);
+    // A new conversation is a first waking: it gets the seed like any new window (Roo's fresh session).
+    writeState({ sessionId: created.sessionId, woke: { boundary: null, pending: 'fresh' } }, env);
     return { sessionId: created.sessionId, rows: await active.list() };
   }
 
@@ -266,40 +434,76 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     const at = now();
     // The first tick is the interval's first boundary after the keeper started.
     nextBeatAt ??= nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
-    const { dailyReportOn } = readState(env);
+    if (busy) { lastBusyAt = at; return; }
     const today = localDate(at);
-    const pastReportTime = at >= reportTimeOn(at, settings.dailyReport.time);
-    // A companion that starts after today's report time begins with tomorrow's.
-    if (dailyReportOn === undefined) { writeState({ dailyReportOn: pastReportTime ? today : '' }, env); return; }
-    const reportDue = settings.dailyReport.enabled && pastReportTime && dailyReportOn !== today;
-    if (busy) return;
+    if (await wakeDue(active, sessionId, at, settings)) return;
     if (await sleepDue(active, at, today)) {
       await notify(sessionId, SLEEP_TEXT, 'sleep');
       writeState({ sleptOn: today }, env);
       return;
     }
     if (await personaReviewDue(sessionId)) return;
-    if (reportDue) {
-      await notify(sessionId, DAILY_REPORT_TEXT, 'daily-report');
-      writeState({ dailyReportOn: today }, env);
+    const greeted = readState(env).greeted;
+    const slot = settings.greetings.enabled ? scheduledGreeting(at, greeted) : undefined;
+    if (slot) {
+      await notify(sessionId, greetingText(slot, defaultsDir), 'greeting');
+      writeState({ greeted: { ...greeted, [slot]: today } }, env);
       return;
     }
-    if (settings.heartbeat.enabled) await beat(active, sessionId, at, settings.heartbeat.everyMinutes * 60_000);
+    if (settings.heartbeat.enabled) await beat(active, sessionId, at, settings);
+  }
+
+  /**
+   * The wake sequence. A boundary Segno has not been woken for gets the seed (fresh after a new
+   * window or a new conversation, compact after a compaction); after a fresh one, a single recall
+   * turn follows once the wake turn has been over for ten seconds. The first time a keeper meets
+   * a conversation it only notes where it is: nothing that happened before is woken for.
+   */
+  async function wakeDue(active, sessionId, at, settings) {
+    const state = readState(env);
+    // Where the session file is, asked once per attachment; after that the file is followed by bytes.
+    if (sessionFileOf?.sessionId !== sessionId) {
+      const stats = await active.command({ type: 'get_session_stats' });
+      sessionFileOf = { sessionId, file: typeof stats?.sessionFile === 'string' ? stats.sessionFile : undefined };
+    }
+    const boundary = await readBoundary(sessionFileOf.file).catch(() => undefined);
+    const woke = state.woke;
+    if (woke === undefined) { writeState({ woke: { boundary: boundary?.id ?? null } }, env); return false; }
+    let pending = woke.pending;
+    let before = woke.before;
+    if (boundary && boundary.id !== woke.boundary) { pending = boundary.mode; before = boundary.before; }
+    if (pending === 'fresh' || pending === 'compact') {
+      const model = await active.command({ type: 'get_state' }).then((value) => value?.model, () => undefined);
+      await notify(sessionId, wakeSeedText({ mode: pending, now: at, before, model: model ? `${model.provider ?? ''}${model.provider ? '/' : ''}${model.id ?? ''}` : '',
+        mood: readMood({ now: at, env }), heartbeatOff: !settings.heartbeat.enabled, defaultsDir }), 'wake');
+      writeState({ woke: { boundary: boundary?.id ?? woke.boundary ?? null, ...(pending === 'fresh' ? { pending: 'recall', at } : {}) } }, env);
+      lastBusyAt = at;
+      return true;
+    }
+    if (pending === 'recall' && at - Math.max(lastBusyAt ?? 0, woke.at ?? 0) >= RECALL_DELAY_MS) {
+      await notify(sessionId, recallText(defaultsDir), 'recall');
+      writeState({ woke: { boundary: woke.boundary ?? null } }, env);
+      return true;
+    }
+    return pending === 'recall';
   }
 
   /**
    * Roo's tick (heartbeat-tick.sh), on the interval's clock boundaries. The user here: tick 0.
    * Away: one more than the stored tick, or 1 when they wrote since it (Roo resets on their word).
-   * Reflect on ticks 3, 6 and 9. While a wake wish waits, the tick is counted but not sent, so Segno
-   * rests and only the warmer runs (user, 2026-10-20; Roo still sends it). A wish come due makes that
-   * tick a reflect with its reason, and is used up. A beat missed while Segno was busy goes on the
-   * next poll.
+   * Reflect on ticks 3, 6 and 9. An idle tick (not 0) catches up a greeting that did not go out,
+   * replacing none or reflect. Deadline nudges ride on every tick. While a wake wish waits, a plain
+   * or reflect tick is counted but not sent, so Segno rests and only the warmer runs (user,
+   * 2026-10-20); a tick with a greeting or a nudge still goes and leaves the wish waiting (user item
+   * 0b210d57; Roo's wish suppresses only none and reflect). A wish come due makes a plain tick a
+   * reflect with its reason, and is used up. A beat missed while Segno was busy goes on the next poll.
    */
-  async function beat(active, sessionId, at, intervalMs) {
+  async function beat(active, sessionId, at, settings) {
     if (at < nextBeatAt) return;
-    nextBeatAt = nextBoundary(at, intervalMs);
+    nextBeatAt = nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
     const lastUser = await lastUserAt(active);
-    const stored = readState(env).heartbeat;
+    const state = readState(env);
+    const stored = state.heartbeat;
     let tick;
     if (lastUser !== undefined && at - lastUser < RECENT_USER_MS) tick = 0;
     else {
@@ -307,17 +511,21 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       tick = (userSince || stored === undefined ? 0 : Number.isInteger(stored.tick) && stored.tick >= 0 ? stored.tick : UNREADABLE_TICK) + 1;
     }
     writeState({ heartbeat: { tick, at } }, env);
+    let action = tick > 0 && tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
+    const missed = tick > 0 && settings.greetings.enabled ? missedGreeting(at, state.greeted) : undefined;
+    if (missed) action = GREETINGS[missed].action;
+    const career = careerNudges({ now: at, env });
     const storedWish = readWakeWish(env);
     const wishState = storedWish && wakeWishState(storedWish, at);
-    if (wishState?.mode === 'wait') return;
-    let action = tick > 0 && tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
+    if (wishState?.mode === 'wait' && !missed && !career.length) return;
     let wish;
     if (wishState?.mode === 'due') {
-      action = 'reflect';
+      if (!missed) action = 'reflect';
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    await notify(sessionId, heartbeatText({ tick, at, action, wish }), 'heartbeat');
+    if (missed) writeState({ greeted: { ...state.greeted, [missed]: localDate(at) } }, env);
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, career, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
   }
 
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */
