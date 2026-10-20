@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
-import { segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { TELL_USER_TOOL, segnoPaths, segnoSearchEnv } from '../home.mjs';
 import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, commandExists, composeDreamPrompt, dreamDue, dreamPaths, FALLBACK_PATH, workEnv, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
@@ -51,7 +51,7 @@ function segnoSession(env, { cwd = env.RUBATO_COMPANION_HOME, id = '01a154ba-000
     { type: 'message', timestamp: new Date(at(20, 10, 31)).toISOString(), message: { role: 'assistant', content: [
       { type: 'toolCall', name: 'telegram_send', arguments: { text: '좋은 아침~ 금요일 넥타이 챙겨' } }, { type: 'text', text: '보냈다. 이제 기다리자.' }] } },
     { type: 'message', timestamp: new Date(at(20, 10, 40)).toISOString(), message: { role: 'assistant', content: [
-      { type: 'toolCall', name: 'tell_user', arguments: { text: '면접 준비 다 됐어? 응원할게~' } }] } },
+      { type: 'toolCall', name: TELL_USER_TOOL, arguments: { text: '면접 준비 다 됐어? 응원할게~' } }] } },
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 10, 30)).toISOString(),
       content: '<rubato_wake what="heartbeat">…', details: { kind: 'wake', what: 'heartbeat', text: 'HEARTBEAT tick=1' } },
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 11, 0)).toISOString(),
