@@ -761,16 +761,14 @@ test('prompt: only what Segno says to the user is visible — lead endings and m
   assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /사용자가 못 보는 턴\(하트비트, 안부, 리드 끝, 다른 대화에서 온 메시지, 일정 찌르기\)/);
 });
 
-test('prompt: a work area gets one card in memory/work/ and its raw research under notes/<area>/research/; the dream keeps the card\'s frame and leaves the raw research alone (Segno session 01a154ba, relaying the user)', () => {
+test('prompt: a work area gets one canonical file in memory/work/ split like Roo\'s, and the leads\' raw research sits in notes/<area>/ as topic-MMDD, unwalked by the dream (Segno session 01a154ba, relaying the user; Roo ~/.claude/roo-channel memory/work, notes/<area>)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  assert.match(companion, /조사를 맡기면 원본을 어디 써 올지도 내 집 절대 경로로 줘: `notes\/<영역>\/research\/YYYY-MM-DD-주제\.md`/);
-  assert.match(companion, /\| 일 카드 \| `memory\/work\/<영역>\.md` \|/);
-  assert.match(companion, /- 일 카드\(`memory\/work\/<영역>\.md`\): .*15KB 안쪽.*`notes\/<영역>\/research\/YYYY-MM-DD-주제\.md`에 고치지 않고 쌓아\. 거기서 나온 결론이나 사용자 결정은 그날 카드로 올려\./);
-  assert.match(companion, /정본을 직접 고칠 땐\(일 카드 빼고\) `## 지금`/);
-  assert.match(readFileSync(path.join(defaultsDir, 'recall.pi.md'), 'utf8'), /영역 폴더의 `research\/`는 원본이라 필요할 때만/);
+  assert.match(companion, /조사를 맡기면 원본을 어디 써 올지도 내 집 절대 경로로 줘: `notes\/<영역>\/주제-MMDD\.md`/);
+  assert.match(companion, /\| 일 정본 \| `memory\/work\/<영역>\.md` \|/);
+  assert.match(companion, /- 일 정본\(`memory\/work\/<영역>\.md`\): .*다른 정본처럼 `## 지금`과 `## 이야기`로 나눠\..*15KB 안쪽이고, 지난 경위는 `## 이야기`로 내려\. 리드가 해 온 조사 원본은 `notes\/<영역>\/주제-MMDD\.md`에 그대로 쌓고, 낡은 건 `notes\/<영역>\/archive\/`로\. 거기서 나온 결론이나 사용자 결정은 그날 `## 지금`으로 올려\./);
+  assert.match(readFileSync(path.join(defaultsDir, 'recall.pi.md'), 'utf8'), /영역 폴더\(`notes\/<영역>\/`\)는 리드가 해 온 원본이라 필요할 때만/);
   const dream = readFileSync(path.resolve(defaultsDir, '..', '..', 'companion', 'dream', 'dream.md'), 'utf8');
-  assert.match(dream, /\*\*일 카드는 달라\.\*\* `memory\/work\/<영역>\.md`.*다시 빚거나 줄이지 않아\. 틀은 그대로 두고, 바뀐 사실이나 새로 정해진 운영 방식만 그 줄에서 고치고, 고친 줄에 출처\(daily 날짜\)를 붙이는 데까지만 손대\./);
-  assert.match(dream, /고쳐서 15KB를 넘길 것 같으면 깎지 말고 `memory\/to-ask\.md`에 올려\./);
-  assert.match(dream, /영역 폴더의 `research\/`는 리드가 해 온 원본이라 안 걸어\./);
-  assert.match(dream, /\| `memory\/work\/\*\.md` \| 일 카드\. 일 영역 하나에 파일 하나/);
+  assert.match(dream, /영역 폴더\(`notes\/<영역>\/`\)는 리드가 해 온 원본이라 안 걸어\./);
+  assert.match(dream, /\| `memory\/work\/\*\.md` \| 일\. 일 영역 하나에 파일 하나\. `## 지금`은 .*15KB 안쪽, 넘치면 지난 건 `## 이야기`로 내려 \|/);
+  assert.doesNotMatch(dream, /일 카드/, 'the work file is ordinary canon, as in Roo; no card exception');
 });
