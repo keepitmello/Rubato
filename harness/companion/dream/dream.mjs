@@ -32,7 +32,10 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
-import { commitOwned, ensureHomeRepo, localDate, segnoPaths } from '../home.mjs';
+import { commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
+
+/** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
+export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
 
 /** Roo's dream runs at 04:07 (launchd com.roo.cron.memory); Segno's starts at or after it, once a day. */
 export const DREAM_AT = Object.freeze({ hour: 4, minute: 7 });
@@ -511,7 +514,9 @@ export const spawnLogged = ({ command, args, cwd, env, logPath, timeoutMs }) => 
 /**
  * One dream over Segno's home. `launch` is how to start an engine child ({ command, prefixArgs, env });
  * `spawnChild` runs it (tests pass a fake that edits files the way a model would); `sessionFiles` lists
- * Segno's conversation files (a sandbox passes copies). Returns the run
+ * Segno's conversation files (a sandbox passes copies); `reindex` refreshes Segno's search index after
+ * files came home. Search has one index per Mac, so only the live service passes it: a sandbox that
+ * re-indexed would replace Segno's index with the sandbox's files. Returns the run
  * record, also kept at dream/runs/<runId>/run.json.
  *
  * The watermarks move only for what the dream covered: a part the child reports as done moves to this
@@ -520,7 +525,7 @@ export const spawnLogged = ({ command, args, cwd, env, logPath, timeoutMs }) => 
  */
 export async function runCompanionDream({ env = process.env, launch, spawnChild = spawnLogged, models = DREAM_MODELS,
   now = Date.now, manual = false, launchModel, childEnv = (value) => value, timeoutMs = CHILD_TIMEOUT_MS,
-  defaultsDir = companionDefaultsDir(env), sessionFiles = () => segnoSessionFiles(env) } = {}) {
+  defaultsDir = companionDefaultsDir(env), sessionFiles = () => segnoSessionFiles(env), reindex } = {}) {
   const at = now();
   const paths = dreamPaths(env);
   const home = segnoPaths(env).home;
@@ -552,6 +557,7 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     plan.checks = { mail: commandExists('himalaya', env), calendar: commandExists('khal', env), file: paths.checks };
     plan.workNotes = exportWorkNotes(env, path.join(runDir, 'work-notes.md'));
     plan.dated = hasDatedItems(home);
+    plan.recall = recallCandidates(env, at);
     // Roo dreams every night. Segno's skips a night only when there is nothing to do at all: no new
     // record or talk, no Sunday, no sweep due, nothing dated that may have passed, no mail or calendar.
     const nothingToDo = !manual && plan.raw.daily.length === 0 && plan.raw.diary.length === 0 && !plan.transcript && !plan.sunday
@@ -605,10 +611,12 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     const held = conflicts.length > 0 || refused.length > 0 || guarded.length > 0;
     if (!held) advance(env, { at, plan, blocks, result, transcript: plan.transcriptFor === 'selfReview' ? transcript : undefined });
     if (applied.includes(RESIDENT)) ratchetResident(env, home, started.get(RESIDENT));
+    // Roo's first step, done last here: what the dream wrote is searchable for Segno from now on.
+    const index = applied.length && reindex ? firstLineOf(reindex(env)) : undefined;
     appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
     record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
       ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(guarded.length ? { guarded } : {}),
-      ...(held ? { watermarks: 'held' } : {}),
+      ...(held ? { watermarks: 'held' } : {}), ...(index === undefined ? {} : { index }),
       commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;
@@ -635,6 +643,33 @@ function ratchetResident(env, home, before) {
   const start = before === undefined ? now : chars(before.toString('utf8'));
   const baseline = Math.min(Number.isFinite(stored) ? stored : start, start, now);
   writeJson(dreamPaths(env).state, { ...readDreamState(env), memoryGuard: { baselineChars: Math.max(baseline, 0) } });
+}
+
+const firstLineOf = (text) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
+
+/**
+ * What Segno looked up often in the last week (Roo's recallPromotionCandidates): msearch logs every
+ * search in its shared recall log, and Segno's hits are the ones under its own memory folder (paths
+ * relative to it; the leads' stores sit under <store>/repo/). Sections hit twice or more, most first.
+ */
+function recallCandidates(env, at) {
+  const file = path.join(segnoSearchEnv(env).MSEARCH_STATE_DIR, 'recall-log.jsonl');
+  let raw;
+  try { raw = readFileSync(file, 'utf8'); } catch { return []; }
+  const counts = new Map();
+  for (const line of raw.split('\n')) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (!(at - Date.parse(entry?.ts ?? '') <= 7 * DAY_MS)) continue;
+    for (const hit of Array.isArray(entry.hits) ? entry.hits : []) {
+      const rel = String(hit?.rel_path ?? '');
+      if (!rel || rel.includes('/repo/') || path.isAbsolute(rel)) continue;
+      const key = `${rel}\u0000${String(hit.section ?? '')}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+  }
+  return [...counts].filter(([, hits]) => hits >= 2).sort((a, b) => b[1] - a[1]).slice(0, 10)
+    .map(([key, hits]) => { const [relPath, section] = key.split('\u0000'); return { path: `memory/${relPath}`, section, hits }; });
 }
 
 /** Whether a command is on the PATH the dream's shell will have. */

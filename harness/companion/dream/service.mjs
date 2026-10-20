@@ -9,9 +9,10 @@
 // the dream starts, runs and ends without a word in Segno's context (intent companion-segno, user
 // item bfe3d27d).
 import { open } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { readSettings, readState } from '../companion.mjs';
-import { dreamDue, readDreamState, runCompanionDream } from './dream.mjs';
+import { dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream } from './dream.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -84,7 +85,10 @@ export async function start(ctx) {
       child.once('exit', (code) => { clearTimeout(timer); resolve({ code }); });
     });
   }
-  const run = async () => runCompanionDream({ env, launch: await resolveLaunch(env), childEnv, launchModel: launchProductModel, spawnChild });
+  // Segno's search index is one per Mac: only the person's own home re-indexes it.
+  const ownHome = !env.RUBATO_COMPANION_HOME || path.resolve(env.RUBATO_COMPANION_HOME) === path.join(env.HOME || homedir(), '.rubato', 'companion');
+  const run = async () => runCompanionDream({ env, launch: await resolveLaunch(env), childEnv, launchModel: launchProductModel, spawnChild,
+    ...(ownHome ? { reindex: reindexSegnoMemory } : {}) });
   const loop = startDreamLoop({ env, isBusy, run, onError: ctx.onError, log: ctx.log });
   return { check: () => loop.check(), close: () => loop.close() };
 }

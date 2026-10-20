@@ -513,3 +513,25 @@ test("Segno's work notes are copied for the dream to read", async (t) => {
   assert.match(notes, /## now\.md\n\n지금 노트: 금요일 면접/);
   assert.doesNotMatch(notes, /옛 노트/);
 });
+
+test('what came home is re-indexed for Segno\'s search, and the shared recall log gives the dream its often-recalled places', async (t) => {
+  const env = sandbox(t);
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  const stateDir = path.join(env.HOME, '.rubato', 'memory', 'msearch-state');
+  mkdirSync(stateDir, { recursive: true });
+  const hit = (rel, section, day) => JSON.stringify({ ts: new Date(at(day, 12)).toISOString(), caller: 'cli', query: 'q', hits: [{ rel_path: rel, section }] });
+  writeFileSync(path.join(stateDir, 'recall-log.jsonl'), [hit('user.md', '지금', 20), hit('user.md', '지금', 19), hit('rubato/repo/decisions/x.md', 'a', 20),
+    hit('rubato/repo/decisions/x.md', 'a', 19), hit('us.md', '이야기', 20), hit('user.md', '지금', 1)].join('\n') + '\n');
+  const indexed = [];
+  let plan;
+  const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; }, edits: { 'memory/us.md': '## 지금\n' }, result: { status: 'done', blocks: { distill: 'done' } } });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [],
+    reindex: (environment) => { indexed.push(environment.RUBATO_COMPANION_HOME); return 'indexed 1 file'; } });
+  assert.deepEqual(plan.recall, [{ path: 'memory/user.md', section: '지금', hits: 2 }]);
+  assert.deepEqual(indexed, [env.RUBATO_COMPANION_HOME]);
+  assert.equal(record.index, 'indexed 1 file');
+  const failed = fakeDreamer({ code: 1 });
+  await runCompanionDream({ env, launch, spawnChild: failed.spawnChild, now: () => at(22, 4, 7), defaultsDir, sessionFiles: () => [],
+    reindex: () => { indexed.push('again'); return ''; } });
+  assert.equal(indexed.length, 1, 'nothing came home, nothing to index');
+});
