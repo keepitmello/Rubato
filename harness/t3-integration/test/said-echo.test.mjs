@@ -1,11 +1,14 @@
-// The app and Telegram show the same conversation: what Segno sends the person with telegram_send
-// from a run the thread hides (Rubato's clock) still appears in the thread, as Segno's words.
+// What Segno says to the person shows in the thread as Segno's words: tell_user from any turn (a
+// quiet one in a run of its own, so the phone hears of it), and telegram_send from a quiet run in
+// the conversations from when the product ran Telegram.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { SESSION_MESSAGE_TYPE, sessionMessageId } from '../src/events.mjs';
-import { TELEGRAM_ECHO_KIND, echoText } from '../src/telegram-echo.mjs';
+import { SAID_KIND, TELEGRAM_ECHO_KIND, echoText, saidEchoes } from '../src/said-echo.mjs';
+import { quietMessages } from '../src/quiet-runs.mjs';
+import { TELL_USER_TOOL } from '../../companion/home.mjs';
 
 const wake = (what, timestamp) => ({ role: 'custom', customType: SESSION_MESSAGE_TYPE, display: false, timestamp, content: 'w',
   details: { v: 1, messageId: `wake-${timestamp}`, kind: 'wake', what, from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'tick' } });
@@ -81,7 +84,52 @@ test('after a time with no stream (the app closed, the engine restarted), the ba
     { role: 'user', content: 'hi', timestamp: 1 }, answer('hello', 2),
     wake('heartbeat', 3), calling('c1', { text: '좋은 아침' }, 4), result('c1', 'sent (id: 10)', 5), answer('보냈다', 6),
   ];
-  conn.backfillTelegramEchoes(messages);
-  conn.backfillTelegramEchoes(messages);
+  conn.backfillSaidEchoes(messages);
+  conn.backfillSaidEchoes(messages);
   assert.deepEqual(written, [['t1', sessionMessageId('t1', 'telegram:c1'), '좋은 아침']], 'once, under the live id');
+});
+
+const telling = (id, text, timestamp) => ({ role: 'assistant', stopReason: 'toolUse', timestamp,
+  content: [{ type: 'toolCall', id, name: TELL_USER_TOOL, arguments: { text } }] });
+const told = (id, timestamp, isError = false) => ({ role: 'toolResult', toolCallId: id, toolName: TELL_USER_TOOL, timestamp,
+  content: [{ type: 'text', text: isError ? 'failed' : 'Shown to the user in your thread; the app notifies their phone.' }], isError });
+
+test("tell_user shows from any turn: from a quiet one in a run of its own, from a shown one as a plain message; a failed one not at all", () => {
+  const messages = [
+    wake('heartbeat', 1), telling('t1', '점심 먹었어?', 2), told('t1', 3), answer('물어봤다.', 4),
+    { role: 'user', content: '오늘 뭐 있어?', timestamp: 5 }, telling('t2', '3시에 회의 있어.', 6), told('t2', 7), answer('응', 8),
+    wake('greeting', 9), telling('t3', '실패', 10), told('t3', 11, true),
+  ];
+  const items = [...saidEchoes(messages, quietMessages(messages), 'thread').values()];
+  assert.deepEqual(items.map((item) => [item.text, item.ownRun === true, item.context.records[0].kind]),
+    [['점심 먹었어?', true, SAID_KIND], ['3시에 회의 있어.', false, SAID_KIND]]);
+  assert.equal(items[0].id, sessionMessageId('thread', 'said:t1'));
+  assert.equal(items[0].role, 'user', 'carried as a session message; the record makes T3 write it as Segno\'s (RubatoThreadImporter ownRole)');
+  assert.equal(items[0].createdAt, new Date(3).toISOString());
+});
+
+test('live: a quiet turn\'s tell_user is written once with its own run; a shown turn\'s once without', async () => {
+  const written = [];
+  const client = { client: { connected: true }, listener: null, async attach() {}, async detach() {},
+    async subscribeSession(listener) { client.listener = listener; return async () => {}; }, async command() { return undefined; }, async close() {} };
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(),
+    appendSessionMessage: async (threadId, item) => { written.push(item); },
+    viaInventory: async (call) => call({ create: async () => ({ sessionId: 'x' }) }) },
+  { threadId: 't1', cwd: '/w', onRecord: () => {}, onClosed: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+  conn.client = client;
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  const events = [
+    { type: 'agent_start' }, { type: 'message_end', message: wake('heartbeat', 1) },
+    { type: 'message_end', message: telling('c1', '산책 가자', 2) }, { type: 'message_end', message: told('c1', 3) },
+    { type: 'agent_settled' },
+    { type: 'agent_start' }, { type: 'message_end', message: { role: 'user', content: '응', timestamp: 4 } },
+    { type: 'message_end', message: telling('c2', '좋아, 10분 뒤에!', 5) }, { type: 'message_end', message: told('c2', 6) },
+    { type: 'agent_settled' },
+  ];
+  const records = events.map((event, index) => ({ sequence: index + 1, event }));
+  client.listener({ runtimeId: 'r1', sequence: events.length, status: 'idle', events: records });
+  client.listener({ runtimeId: 'r1', sequence: events.length, status: 'idle', events: records });
+  await conn.inbound;
+  assert.deepEqual(written.map((item) => [item.text, item.ownRun === true]), [['산책 가자', true], ['좋아, 10분 뒤에!', false]]);
 });

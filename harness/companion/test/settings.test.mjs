@@ -15,20 +15,40 @@ import { answerEntry, appEntry, channelEntry, noticeEntry, wakeEntry } from '../
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 const TOKEN = '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh';
 
-function setup(t) {
+/** `telegram` is the product switch (messenger/store.mjs TELEGRAM_ENABLED); most tests here keep the Telegram code covered. */
+function setup(t, { telegram = true } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-settings-talk-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home'), HOME: dir };
   const sessionsDir = path.join(dir, 'sessions');
   mkdirSync(sessionsDir, { recursive: true });
   writeState({ sessionId: 'S1' }, env);
-  const service = createCompanionService({ env, defaultsDir });
+  const service = createCompanionService({ env, defaultsDir, telegram });
   /** Segno's transcript so far: what opened the current turn decides who is asking. */
   const transcript = (entries) => writeFileSync(path.join(sessionsDir, '2026-10-20T00-00-00-000Z_S1.jsonl'),
     entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
-  const call = (request, sessionId = 'S1') => companionSettings({ sessionId, sessionsDir, env, service, request });
+  const call = (request, sessionId = 'S1') => companionSettings({ sessionId, sessionsDir, env, service, request, telegram });
   return { env, service, transcript, call };
 }
+
+test('with Telegram off in the product, Segno sees and changes no Telegram setting, and the rest works as before', async (t) => {
+  const { TELEGRAM_ENABLED } = await import('../messenger/store.mjs');
+  assert.equal(TELEGRAM_ENABLED, false, 'the product runs no Telegram (intent companion-segno rev 9)');
+  const box = setup(t, { telegram: false });
+  box.transcript([appEntry('u1', '설정 보여줘')]);
+  const shown = await box.call({ action: 'show' });
+  assert.equal('telegram' in shown.settings, false);
+  assert.doesNotMatch(JSON.stringify(shown), /telegram|botToken|fishKey|pairing/i);
+  for (const change of [{ telegram: { enabled: true } }, { botToken: TOKEN }, { fishKey: 'k' }, { pairing: 'pair' }, { companion: {}, pairing: 'pair' }]) {
+    await assert.rejects(box.call({ action: 'change', change }), (error) => error.code === 'invalid' && /Telegram is off/.test(error.message));
+  }
+  const answer = await box.call({ action: 'change', change: { companion: { heartbeat: { everyMinutes: 15 } } } });
+  assert.deepEqual(answer.applied, ['companion']);
+  assert.equal(readSettings(box.env).heartbeat.everyMinutes, 15);
+  box.transcript([wakeEntry('w1', 'heartbeat', 'tick')]);
+  await assert.rejects(box.call({ action: 'change', change: { companion: { greetings: { enabled: false } } } }),
+    (error) => error.code === 'not-the-user' && !/Telegram/.test(error.message));
+});
 
 const launched = (id, callId, agentId) => ({ type: 'message', id, message: { role: 'toolResult', toolCallId: callId, toolName: 'Agent',
   details: { agentId }, isError: false, content: [{ type: 'text', text: 'started' }] } });

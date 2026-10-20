@@ -138,6 +138,7 @@
     "apps/web/src/assets/assetUrls.test.ts": "902ba5254012297f1f0565adb7eff7dd5416819577fb461f85acff55592903aa",
     "apps/web/src/routes/_chat.index.tsx": "3b586c685b3516ede35b348e729e06f3d0b2df8c3e758c0d46d71d1f0a63622f",
     "apps/web/src/components/ThreadRouteView.tsx": "9b3df122ff161177145b7d90ad457557e3ba779180565def402a08772ef20fa1",
-    "apps/web/src/components/ThreadNotificationCoordinator.tsx": "072dc10a27a00cf4f5ad0dc83c98afcca209f6968539dcf56bcc51bc095bee29"
+    "apps/web/src/components/ThreadNotificationCoordinator.tsx": "072dc10a27a00cf4f5ad0dc83c98afcca209f6968539dcf56bcc51bc095bee29",
+    "apps/server/src/relay/AgentAwarenessRelay.ts": "73587158701b2341050aaed62a5d5fc2a92b7d2008a4b1ffa19516de884ca990"
   }
 }

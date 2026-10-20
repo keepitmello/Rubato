@@ -4,6 +4,13 @@
 // the mobile app cannot be changed, so the run never reaches the thread at all. A run is quiet
 // when the first input it takes is a clock wake; it stays quiet until it settles, unless an input
 // that is not a clock wake joins it (then it shows from there, as any run would).
+//
+// Segno's own conversation (`companion`) shows only what Segno says to the person (intent
+// companion-segno rev 9, user item 9fbe5b98, Roo's model): a turn the person opened, and the end of
+// background work they asked for. Every other input opens a quiet run there too — a lead's ending, a
+// message from another conversation, team mail — and Segno tells the person what they should know
+// with tell_user (said-echo.mjs). A finish of work nobody saw start is private there too. Other
+// conversations keep showing those inputs.
 import { QUIET_WAKES, SESSION_MESSAGE_TYPE } from './events.mjs';
 
 const isSessionMessage = (message) => message?.role === 'custom' && message.customType === SESSION_MESSAGE_TYPE;
@@ -18,6 +25,11 @@ const carriedTypes = (message) => [message?.customType, ...(Array.isArray(messag
 const isTeamMail = (message) => message?.role === 'custom' && carriedTypes(message).includes('senpi-task:team-message');
 /** An input a run takes: the person's message, a teammate's, or a message from another conversation, a messenger or Rubato. */
 const isInput = (message) => message?.role === 'user' || isSessionMessage(message) || isTeamMail(message);
+/** The person's own words: typed in the app, or from their own chat in a messenger. */
+export const isUserInput = (message) => message?.role === 'user'
+  || (isSessionMessage(message) && message.details?.kind === 'channel' && message.details?.from?.isUser === true);
+/** Whether an input opens (or keeps) a quiet run: a clock wake anywhere, and in Segno's conversation anything not the person's. */
+const quietInput = (message, companion) => isClockWake(message) || (companion === true && !isUserInput(message));
 
 /** How many launched ids one live stream remembers; the oldest go first. */
 const LAUNCHED_LIMIT = 2000;
@@ -86,8 +98,11 @@ function remember(launched, id, quiet) {
   for (let i = 0; i < keys.length - LAUNCHED_LIMIT; i += 1) delete launched[keys[i]];
 }
 
-/** A fresh state for quietStep: plain data, so a reader that follows a file can store it between passes. */
-export const newQuietState = () => ({ inQuiet: false, launched: {}, ended: true });
+/**
+ * A fresh state for quietStep: plain data, so a reader that follows a file can store it between
+ * passes. `companion` says the conversation is Segno's (its session list row's `companion`).
+ */
+export const newQuietState = ({ companion = false } = {}) => ({ inQuiet: false, launched: {}, ended: true, ...(companion ? { companion: true } : {}) });
 
 /**
  * One message of a stored conversation, in order: whether it belongs to a quiet run, and for a
@@ -100,14 +115,16 @@ export const newQuietState = () => ({ inQuiet: false, launched: {}, ended: true 
  */
 export function quietStep(state, message) {
   let launcher;
-  if (isClockWake(message)) state.inQuiet = true;
-  else if (isInput(message)) state.inQuiet = false;
+  if (isInput(message)) state.inQuiet = quietInput(message, state.companion);
   else {
     const found = launcherOf(message, state.launched);
     // A finish that opens a turn (the last one had ended) takes its launcher's side. One steered into
     // a turn already going can bring the person's work into a quiet turn, never hide a shown one.
     const opens = state.ended !== false;
     if (found && (opens || !found.quiet)) { state.inQuiet = found.quiet; launcher = found.id; }
+    // In Segno's conversation only work the person asked for comes back to them: a finish whose start
+    // nobody saw is private there.
+    else if (!found && opens && state.companion === true && isOwnCustomMessage(message)) state.inQuiet = true;
   }
   for (const id of launchedIds(message)) remember(state.launched, id, state.inQuiet);
   state.ended = message?.role === 'assistant' && message.stopReason !== 'toolUse';
@@ -115,9 +132,9 @@ export function quietStep(state, message) {
 }
 
 /** The messages of a stored conversation (Pi's message list, oldest first) that belong to quiet runs (quietStep). */
-export function quietMessages(messages) {
+export function quietMessages(messages, { companion = false } = {}) {
   const quiet = new Set();
-  const state = newQuietState();
+  const state = newQuietState({ companion });
   for (const message of Array.isArray(messages) ? messages : []) if (quietStep(state, message).quiet) quiet.add(message);
   return quiet;
 }
@@ -129,7 +146,8 @@ export function quietMessages(messages) {
  * input says what it is; a quiet run passes nothing until it settles. `idle()` resolves when no
  * quiet run is open or deciding.
  */
-export function createQuietRuns({ owned = () => false, seeded: startSeeded = true } = {}) {
+export function createQuietRuns({ owned = () => false, seeded: startSeeded = true, companion: startCompanion = false } = {}) {
+  let companion = startCompanion === true;
   let state = 'idle'; // idle | opening (agent_start held) | pending (a run already going, asked about) | quiet | shown
   let held = [];
   let waiters = [];
@@ -159,6 +177,9 @@ export function createQuietRuns({ owned = () => false, seeded: startSeeded = tru
   const undecided = () => state === 'quiet' || state === 'opening' || state === 'pending';
   return {
     get quiet() { return undecided(); },
+    /** Whether this stream's conversation is Segno's (newQuietState); set when the stream attaches to a session. */
+    set companion(value) { companion = value === true; },
+    get companion() { return companion; },
     idle() { return undecided() ? new Promise((resolve) => waiters.push(resolve)) : Promise.resolve(); },
     /**
      * A run was already going when this stream attached and its start is no longer in the engine's
@@ -202,7 +223,7 @@ export function createQuietRuns({ owned = () => false, seeded: startSeeded = tru
       }
       if (state === 'opening') {
         const input = inputOf(event);
-        if (input && isClockWake(input)) { held = []; settle('quiet'); return []; }
+        if (input && quietInput(input, companion)) { held = []; settle('quiet'); return []; }
         // Pi's turn marker and its own hidden messages come before the input; anything else decides.
         if (!input && (type === 'turn_start' || isHiddenOwn(event))) { held.push(event); return []; }
         // No input at all, opened by Pi's own message (work finishing): the run that launched the work
@@ -217,7 +238,7 @@ export function createQuietRuns({ owned = () => false, seeded: startSeeded = tru
             lookup = true;
             return [];
           }
-          if (by ?? lastQuiet) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
+          if (by ?? (companion || lastQuiet)) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
         }
         const out = [...held, event];
         held = [];
@@ -227,7 +248,7 @@ export function createQuietRuns({ owned = () => false, seeded: startSeeded = tru
       if (state === 'quiet') {
         if (type === 'agent_settled') { settle('idle'); return []; }
         const input = inputOf(event);
-        if (input && !isClockWake(input)) { settle('shown'); return [{ type: 'agent_start' }, event]; }
+        if (input && !quietInput(input, companion)) { settle('shown'); return [{ type: 'agent_start' }, event]; }
         // The person's work finishing, steered into this turn: from here the turn is theirs.
         if (isOwnCustom(event) && launcherOf(event.message, launched)?.quiet === false) { settle('shown'); return [{ type: 'agent_start' }, event]; }
         return [];

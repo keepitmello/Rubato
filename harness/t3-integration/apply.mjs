@@ -285,6 +285,16 @@ const edits = {
     ['import type {\n  AnyProviderDriver,\n  ProviderUsageReaderEnv,\n} from "@t3tools/provider-core/server/driver";', 'import { RubatoPiDriver } from "./Drivers/RubatoPiDriver.ts";\n'],
     ['  AcpRegistryDriver,\n];', '  RubatoPiDriver,\n'],
   ],
+  // Segno's words come in a run of their own that must be seen running before it completes, or the
+  // phone hears nothing (RubatoPiSessions.ts ownRunShown). The relay alone knows whether its publish
+  // of that running state went through; this lets the run ask, and stay running while a failed
+  // publish waits on its retry.
+  'apps/server/src/relay/AgentAwarenessRelay.ts': [
+    ['    readonly drain: Effect.Effect<void>;\n',
+      '    /** Rubato: whether the thread\'s last publish failed and waits on a retry. */\n    readonly publishPending: (threadId: ThreadId) => Effect.Effect<boolean>;\n'],
+    ['    drain: worker.drain,\n',
+      '    publishPending: (threadId) => Effect.sync(() => publishRetries.get(threadId)?.timer !== undefined),\n'],
+  ],
   'apps/server/src/serverRuntimeStartup.ts': [
     ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\nimport * as Schedule from "effect/Schedule";\n'],
     // Sessions started elsewhere show as threads once commands are accepted (RubatoPiInventory.ts).

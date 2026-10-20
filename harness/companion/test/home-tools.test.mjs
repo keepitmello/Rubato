@@ -5,7 +5,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { createCompanionHomeFactories } from '../../pi-runtime/features/companion-home/index.mjs';
 import { openInbox } from '../inbox.mjs';
-import { readRecord, readWakeWish } from '../home.mjs';
+import { TELL_USER_TOOL, readRecord, readWakeWish, sentMessages } from '../home.mjs';
+import { appendFileSync, mkdirSync } from 'node:fs';
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-segno-tools-'));
@@ -27,7 +28,7 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   t.after(() => { process.env = before; });
   const tools = toolsOf();
   assert.deepEqual([...tools.keys()].sort(), ['inbox_add', 'inbox_list', 'inbox_update', 'memory_seed', 'segno_commit',
-    'segno_record', 'segno_search', 'sent_messages', 'user_schedule', 'wake_wish', 'world_fragment']);
+    'segno_record', 'segno_search', 'sent_messages', 'tell_user', 'user_schedule', 'wake_wish', 'world_fragment']);
   await tools.get('segno_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
   await tools.get('segno_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
   const daily = readRecord('daily', { env });
@@ -85,4 +86,28 @@ test('the companion sets its wake wish with its tool, the way Roo runs wake-wish
   assert.match(result.content[0].text, /^WAKE_WISH_SET wishAt=\S+$/);
   await assert.rejects(tools.get('wake_wish').execute('w2', { when: 'soon', reason: 'x' }), /minutes, HH:MM or an ISO 8601 time/);
   assert.equal(readWakeWish(env).reason, '리드 둘 다 끝날 즈음 본다', 'a refused wish leaves the earlier one');
+});
+
+test('tell_user records what Segno said, and sent_messages finds it beside what Telegram delivered before', async (t) => {
+  const env = sandbox(t);
+  const before = { ...process.env };
+  Object.assign(process.env, env);
+  t.after(() => { process.env = before; });
+  // A line the Telegram messenger wrote while the product ran it still counts.
+  const sent = path.join(env.RUBATO_COMPANION_HOME, 'messenger', 'sent.jsonl');
+  mkdirSync(path.dirname(sent), { recursive: true });
+  appendFileSync(sent, `${JSON.stringify({ at: new Date(Date.now() - 60_000).toISOString(), chatId: '1', toUser: true, text: '어제 그 버그 고쳤어', via: 'telegram_send' })}\n`);
+  const tools = toolsOf();
+  const tell = tools.get(TELL_USER_TOOL);
+  assert.deepEqual(tell.parameters.required, ['text']);
+  assert.doesNotMatch(tell.description, /telegram/i);
+  const answer = await tell.execute('c1', { text: '좋은 아침! 오늘 마감 하나 있어.' });
+  assert.match(answer.content[0].text, /thread/);
+  assert.deepEqual(Object.keys(answer.details).sort(), ['at', 'text', 'toUser', 'via']);
+  assert.equal(answer.details.via, TELL_USER_TOOL);
+  const rows = sentMessages({ env });
+  assert.deepEqual(rows.map((row) => [row.text, row.via]), [['어제 그 버그 고쳤어', 'telegram_send'], ['좋은 아침! 오늘 마감 하나 있어.', 'tell_user']]);
+  const listed = await tools.get('sent_messages').execute('c2', { keyword: '마감' });
+  assert.match(listed.content[0].text, /오늘 마감 하나 있어/);
+  await assert.rejects(async () => tell.execute('c3', { text: '  ' }), /needs some text/);
 });

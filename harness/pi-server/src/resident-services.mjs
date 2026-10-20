@@ -1,6 +1,6 @@
 // The services the person's own engine keeps running beside its conversations: the companion
-// keeper, the companion's nightly dream, the scheduler, the messenger and the remote hub's
-// supervisor. Each one runs in its own
+// keeper, the companion's nightly dream, the scheduler, the remote hub's supervisor and, while the
+// product runs Telegram, the messenger. Each one runs in its own
 // thread (resident-thread.mjs), so nothing a service does can stop the engine or a conversation:
 //
 //   failure in a service              what happens
@@ -23,16 +23,20 @@
 import { spawn as spawnProcess } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
+import { TELEGRAM_ENABLED } from '../../companion/messenger/store.mjs';
 
 const here = import.meta.dirname;
 const THREAD = path.join(here, 'resident-thread.mjs');
+
+/** The Telegram messenger (harness/companion/messenger); it runs only while the product switch is on. */
+export const MESSENGER_SERVICE = Object.freeze({ name: 'messenger', module: path.resolve(here, '../../companion/messenger/service.mjs') });
 
 /** The services the person's own profile engine runs (cli.mjs decides which engine that is). */
 export const RESIDENT_SERVICES = [
   { name: 'companion', module: path.resolve(here, '../../companion/keeper-service.mjs') },
   { name: 'companion-dream', module: path.resolve(here, '../../companion/dream/service.mjs') },
   { name: 'scheduler', module: path.resolve(here, '../../scheduler/src/service.mjs') },
-  { name: 'messenger', module: path.resolve(here, '../../companion/messenger/service.mjs') },
+  ...(TELEGRAM_ENABLED ? [MESSENGER_SERVICE] : []),
   { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },
 ];
 

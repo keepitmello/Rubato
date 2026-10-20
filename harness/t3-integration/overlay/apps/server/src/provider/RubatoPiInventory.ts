@@ -91,7 +91,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const model = lastModel ?? preferred?.slug;
     if (!model) return;
     const modelSelection: ModelSelection = { instanceId: instance.instanceId as ProviderInstanceId, model };
-    const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId).flatMap((message): PiSessionThreadInput["messages"] => {
+    const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId, { companion: entry.companion === true }).flatMap((message): PiSessionThreadInput["messages"] => {
       if (message.text.trim() === "") return [];
       // A message another conversation sent keeps its sender context (bridge sessionMessageFrom).
       if (message.context !== undefined) {
