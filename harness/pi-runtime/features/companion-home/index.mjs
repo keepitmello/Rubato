@@ -4,9 +4,12 @@
 //   memorable exchanges, in Segno's voice), a working note, or the mood it falls asleep with.
 // - `segno_search` searches Segno's own memory/ with msearch (Roo's msearch.sh over Roo's memory/).
 // - `segno_commit` commits the record files Segno changed to its home's history (Roo commit-owned.sh).
-// - `tell_user` is how Segno speaks to the user from a turn they do not see: the app shows its words
-//   in Segno's thread and notifies the phone (bridge said-echo.mjs), and the words are recorded for
-//   `sent_messages`.
+// - `reply` is Segno's mouth (Roo's telegram_reply, intent companion-segno rev 11): in every turn,
+//   the one the user opened too, everything else Segno writes is its own monologue, and only what it
+//   sends with `reply` reaches its thread and the user's phone (bridge said-echo.mjs). `say` is the
+//   same as a voice reply; it is offered once a voice is set. Both are recorded for `sent_messages`.
+//   A turn the user opened that settles without either gets one reminder (Roo's
+//   telegram-reply-reminder.ts), which starts a turn of its own.
 // - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report that came in, what
 //   Segno set aside, which lead holds it and whether it is done.
 // - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
@@ -18,11 +21,45 @@
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, TELL_USER_TOOL, commitOwned, oldMemorySeed, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, oldMemorySeed, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
 
 const text = (value) => ({ type: "text", text: value });
+
+/** What Segno reads when a turn the user opened ended without a reply (Roo's TELEGRAM_REPLY_REMINDER). */
+export const REPLY_REMINDER = "사용자가 답을 기다리고 있어. 방금 하려던 말을 `reply`로 보내.";
+/** The hidden message that carries it. */
+export const REPLY_REMINDER_TYPE = "rubato-companion.reply-reminder";
+
+/**
+ * Roo's reply target, without Telegram: a turn opened by the user's own message waits for a reply.
+ * `settled()` answers whether to remind now — once per such turn, only when no reply or say got
+ * through; the reminder's own turn belongs to the same wait, so a reply there ends it.
+ */
+export function createReplyWait() {
+  let turn;
+  return {
+    /** A message entering the session (Pi's `message_start`): the user's own opens a turn to answer. */
+    message(message) { if (message?.role === "user") turn = { replied: false, reminded: false }; },
+    /** A reply or say that went through answers the turn. */
+    toolEnd(event) {
+      if (turn && (event?.toolName === REPLY_TOOL || event?.toolName === SAY_TOOL) && event.isError !== true) turn.replied = true;
+    },
+    settled() {
+      if (!turn) return false;
+      // Answered, or already reminded once: the wait is over either way.
+      if (turn.replied || turn.reminded) { turn = undefined; return false; }
+      turn.reminded = true;
+      return true;
+    },
+  };
+}
+
+const replyParameters = (what) => ({
+  type: "object", additionalProperties: false, required: ["text"],
+  properties: { text: { type: "string", minLength: 1, description: what } },
+});
 
 function itemLine(item) {
   const who = item.reporter ? ` — ${item.reporter}` : "";
@@ -30,7 +67,8 @@ function itemLine(item) {
   return `${item.id} [${item.status}] ${item.title}${who}${lead}`;
 }
 
-export function createCompanionHomeFactories() {
+/** `voice`: whether a voice is set, so `say` can speak (none can be yet; Segno then never sees `say`). */
+export function createCompanionHomeFactories({ voice = false } = {}) {
   const inbox = () => openInbox();
   return [{
     name: "companion-home",
@@ -137,31 +175,49 @@ export function createCompanionHomeFactories() {
       });
 
       pi.registerTool({
-        name: TELL_USER_TOOL,
-        label: "Tell the user",
+        name: REPLY_TOOL,
+        label: "Reply",
         exposure: "direct",
-        searchKeywords: ["tell", "say", "message", "notify", "greeting", "speak", "말하기", "톡", "알림", "안부"],
+        searchKeywords: ["reply", "answer", "say", "message", "tell", "speak", "답", "말하기", "톡", "안부"],
         description:
-          "Speak to the user from a turn they do not see (a heartbeat, a greeting, a lead ending, a schedule nudge). " +
-          "Your words show in your thread as your message, and the app notifies their phone. In a turn they see, " +
-          "your answer already reaches them; do not repeat it with tell_user.",
-        parameters: {
-          type: "object", additionalProperties: false, required: ["text"],
-          properties: { text: { type: "string", minLength: 1, description: "What you say, as it should read in your thread." } },
-        },
+          "Say something to the user. This is the only way your words reach them: what you write anywhere else, in any turn, " +
+          "stays with you. It shows in your thread as your message and the app notifies their phone.",
+        parameters: replyParameters("What you say to them, as it should read in your thread."),
         async execute(_id, params) {
-          const told = recordTold(params.text);
-          return { content: [text("Shown to the user in your thread; the app notifies their phone.")], details: told };
+          const told = recordTold(params.text, { via: REPLY_TOOL });
+          return { content: [text("Sent to the user.")], details: told };
         },
+      });
+
+      if (voice) pi.registerTool({
+        name: SAY_TOOL,
+        label: "Say aloud",
+        exposure: "direct",
+        searchKeywords: ["say", "voice", "speak", "aloud", "목소리", "음성", "말하기"],
+        description: "Say something to the user in your voice. Like reply, it is the only way these words reach them.",
+        parameters: replyParameters("What you say aloud to them."),
+        async execute(_id, params) {
+          const told = recordTold(params.text, { via: SAY_TOOL });
+          return { content: [text("Said to the user.")], details: told };
+        },
+      });
+
+      // Roo's reminder: a turn the user opened waits for a reply.
+      const wait = createReplyWait();
+      pi.on("message_start", (event) => wait.message(event?.message));
+      pi.on("tool_execution_end", (event) => wait.toolEnd(event));
+      pi.on("agent_settled", () => {
+        if (!wait.settled()) return;
+        pi.sendMessage({ customType: REPLY_REMINDER_TYPE, content: REPLY_REMINDER, display: false }, { deliverAs: "followUp", triggerTurn: true });
       });
 
       pi.registerTool({
         name: "sent_messages",
         label: "Sent messages",
         exposure: "direct",
-        searchKeywords: ["sent", "told", "already", "tell_user", "보낸", "톡", "꺼낸"],
+        searchKeywords: ["sent", "told", "already", "reply", "보낸", "톡", "꺼낸"],
         description:
-          "What actually reached the user from you (tell_user) in the last days, from the record of what was sent: one " +
+          "What actually reached the user from you (reply) in the last days, from the record of what was sent: one " +
           "line each, or each in full when you give a keyword. Check here, not from memory, whether you already " +
           "brought something up.",
         parameters: {

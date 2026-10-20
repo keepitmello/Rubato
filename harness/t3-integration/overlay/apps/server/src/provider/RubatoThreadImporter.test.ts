@@ -37,12 +37,12 @@ describe("session message records", () => {
     expect(decodedItem).toMatchObject({ id: "rubato-session:abc", type: "user_message", messageId: "rubato-session:abc",
       ordinal: 7, runId: null, createdBy: "agent", senderThreadId: "sending-thread" });
   });
-  it("write a message Segno sent on Telegram from a hidden run as Segno's own words", () => {
+  it("write what Segno said with reply as Segno's own words", () => {
     const threadId = ThreadId.make("segno-thread");
-    const echo = { version: 1 as const, records: [{ version: 1 as const, contextId: "rubato-telegram", kind: "rubato-telegram",
-      label: "Telegram", payload: { v: 1, toolCallId: "c1" } }] };
+    const echo = { version: 1 as const, records: [{ version: 1 as const, contextId: "rubato-said", kind: "rubato-said",
+      label: "Segno", payload: { v: 1, toolCallId: "c1" } }] };
     // The live path decodes the context before it gets here (RubatoPiSessions.ts appendSessionMessage).
-    expect(Schema.decodeUnknownSync(OrchestrationMessageContext)(echo).records[0]?.kind).toBe("rubato-telegram");
+    expect(Schema.decodeUnknownSync(OrchestrationMessageContext)(echo).records[0]?.kind).toBe("rubato-said");
     const { message, turnItem } = sessionMessageRecords(threadId, { role: "session", id: "rubato-session:tg",
       text: "밥은 먹었어?", createdAt: "2026-10-20T03:00:00.000Z", context: echo as never }, 9);
     const decodedMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(
@@ -94,7 +94,7 @@ describe("stream gaps", () => {
   });
 });
 
-describe("Segno's own run (tell_user from a hidden run)", () => {
+describe("Segno's own run (reply or say)", () => {
   const said = { version: 1 as const, records: [{ version: 1 as const, contextId: "rubato-said", kind: "rubato-said", label: "Segno",
     payload: { v: 1, toolCallId: "t1" } }] };
   const threadId = ThreadId.make("segno-thread");

@@ -55,15 +55,28 @@ const shownThread = [{ id: 'u', role: 'user', text: '풀 해도 돼?', runId: 'r
 
 test('turns the engine ran after T3 stopped the idle session reach the thread on their own, in order, once', async (t) => {
   const session = [...before, mail(52), said('검증 통과를 확인할게.', 52, 'toolUse'), said('본 브랜치에 올라갔어.', 53),
-    mail(57), said('세뇨 포팅이 다 끝났어.', 58), clock(59), said('혼잣말 메모.', 59)];
+    mail(57), said('세뇨 포팅이 다 끝났어.', 58)];
   const { appended } = setup(t, { session, thread: shownThread });
   assert.ok(await until(() => appended.length >= 3), 'the missed turns arrived without the user writing');
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.deepEqual(appended.map(([threadId, item]) => [threadId, item.text]),
     [['T1', '검증 통과를 확인할게.'], ['T1', '본 브랜치에 올라갔어.'], ['T1', '세뇨 포팅이 다 끝났어.']],
-    "every shown text once, in order; the clock run's words stay hidden");
+    'every text once, in order');
   assert.equal(new Set(appended.map(([, item]) => item.id)).size, appended.length);
   assert.ok(appended.every(([, item]) => item.runId === 'run-40'), 'each goes into the run it followed, where T3 orders it');
+});
+
+test("Segno's thread gets back only what Segno said with reply after a time with no stream, never its monologue", async (t) => {
+  const reply = (id, text, minute) => [
+    { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'text', text: '혼잣말 메모.' }, { type: 'toolCall', id, name: 'reply', arguments: { text } }],
+      timestamp: at(minute), provider: 'anthropic', model: 'claude' },
+    { role: 'toolResult', toolCallId: id, toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: at(minute) }];
+  const session = [...before, clock(52), said('하트비트 혼잣말.', 52), ...reply('r1', '점심 먹었어?', 53), mail(57), said('리드 끝남 혼잣말.', 58)];
+  const { bridge, appended } = setup(t, { session, thread: shownThread });
+  bridge.companionSession = async () => true;
+  assert.ok(await until(() => appended.length >= 1));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(appended.map(([, item]) => [item.text, item.ownRun === true]), [['점심 먹었어?', true]]);
 });
 
 test("with T3's record of when the thread had no stream, only messages from those times are written", async (t) => {
