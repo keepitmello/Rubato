@@ -62,7 +62,8 @@ export function judge(record, current, at) {
  * @param {(id: string) => Promise<{ status: string, title?: string, final?: object, latestAssistant?: object, latestTool?: object, ui: string[] }>} options.inspect
  *   the followed conversation now; throws with code `unknown_session` once it is gone
  * @param {(companionId: string, targetId: string, text: string) => Promise<unknown>} options.notify
- * @param {{ load: () => object, save: (records: object) => void }} [options.store]
+ * @param {{ load: () => object, save: (records: object) => void, finished?: (entry: object) => void, paused?: () => boolean }} [options.store]
+ *   `paused` true holds every notice (the companion is turned off) until it reads false again.
  */
 export function createFollower({ inspect, notify, store, onError = () => {}, pollMs = 2000, now = Date.now }) {
   const records = new Map(Object.entries(safe(() => store?.load(), onError) ?? {}).filter(([, record]) => valid(record)));
@@ -100,6 +101,8 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       record.base.final = current.final.entryId;
       return true;
     }
+    // A companion turned off is not woken: the notice waits, and goes once it is on again.
+    if (store?.paused && safe(() => store.paused(), onError) === true) return false;
     try { await notify(record.companionId, id, noticeText(outcome, current)); }
     catch (error) {
       record.failures = (record.failures ?? 0) + 1;

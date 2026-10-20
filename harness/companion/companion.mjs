@@ -197,6 +197,8 @@ export function followingStore(env = process.env) {
     save: (records) => writeJson(file, records),
     /** A followed conversation's handed work ended and the companion was told. */
     finished: (entry) => writeFinished(entry, env),
+    /** While the companion is turned off, its notices wait: a lead's end does not wake it. */
+    paused: () => !readSettings(env).enabled,
   };
 }
 
