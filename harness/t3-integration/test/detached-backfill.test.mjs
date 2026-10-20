@@ -121,3 +121,23 @@ test('a stream attaching to the thread first writes what it missed, before it ta
   await conn.request({ type: 'switch_session', sessionPath: 'S1' });
   assert.deepEqual(order.slice(0, 3), [['backfill', 'T1', 'S1'], ['attach', 'S1'], ['subscribe']]);
 });
+
+test('a reply recovered after the user already wrote again goes into the run before, so it stands before their new message', async (t) => {
+  const session = [...before, mail(52), said('본 브랜치에 올라갔어.', 53), user('왜 말을 안 해?', 58)];
+  // The user's new message is in the thread already, in its own new run, when the backfill writes.
+  const thread = [...shownThread, { id: 'u2', role: 'user', text: '왜 말을 안 해?', runId: 'run-41', createdAt: new Date(at(58)).toISOString() }];
+  const { appended } = setup(t, { session, thread });
+  assert.ok(await until(() => appended.length >= 1));
+  assert.deepEqual(appended.map(([, item]) => [item.text, item.runId]), [['본 브랜치에 올라갔어.', 'run-40']],
+    'run-40 sorts before run-41 in T3, whatever order the two were written in');
+});
+
+test('after a bubble T3 shows outside any run, a recovered reply still goes into the run before it', async (t) => {
+  const bubble = { role: 'custom', customType: SESSION_MESSAGE_TYPE, display: true, content: 'mail', timestamp: at(50),
+    details: { v: 1, messageId: 'm-50', kind: 'message', from: { sessionId: 'teammate', title: 'Teammate', cwd: '' }, text: '끝났어요' } };
+  const session = [...before, bubble, said('받았어. 정리할게.', 51)];
+  const thread = [...shownThread, { id: 'b', role: 'user', text: '끝났어요', runId: null, createdAt: new Date(at(50)).toISOString() }];
+  const { appended } = setup(t, { session, thread });
+  assert.ok(await until(() => appended.length >= 1));
+  assert.deepEqual(appended.map(([, item]) => [item.text, item.runId]), [['받았어. 정리할게.', 'run-40']]);
+});

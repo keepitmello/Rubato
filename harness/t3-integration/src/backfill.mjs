@@ -42,7 +42,7 @@ const inGap = (gaps, createdAt) => {
  * message is paired with the session message of the same words nearest to it in time; one left over is missing
  * when it is newer than the thread's first message, falls in one of `gaps` when T3's log gives them
  * (`{ from, to }` in ms), and is not the person's own words (the app writes those). It goes into
- * the run of the last item before it the thread holds; one with nothing before it is left alone.
+ * the run of the last item before it the thread holds in a run; one with nothing before it is left alone.
  */
 export function missingItems(items, threadMessages, { gaps } = {}) {
   const projected = (items ?? []).filter((item) => sameWords(item.text));
@@ -71,7 +71,8 @@ export function missingItems(items, threadMessages, { gaps } = {}) {
   let runId = null;
   projected.forEach((item, index) => {
     const paired = pairedWith.get(index);
-    if (paired) { anchored = true; runId = paired.runId ?? paired.turnId ?? null; return; }
+    // A message T3 shows outside any run (a session message's bubble) keeps the run before it.
+    if (paired) { anchored = true; runId = paired.runId ?? paired.turnId ?? runId; return; }
     const theirs = item.role === 'assistant' || item.context !== undefined;
     const since = Date.parse(item.createdAt) >= threadStart;
     if (!theirs || !since || !inGap(gaps, item.createdAt) || !anchored) return;
