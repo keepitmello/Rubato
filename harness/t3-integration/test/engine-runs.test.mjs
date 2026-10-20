@@ -23,7 +23,9 @@ function engine() {
     for (const { event } of records) if (event.type === 'message_end') session.messages.push(event.message);
     session.listener?.({ runtimeId: 'r1', sequence: session.sequence, status, events: records });
   };
+  session.socket = { connected: true };
   session.connect = async () => ({
+    client: session.socket,
     async attach(id) { assert.equal(id, 'S1'); session.attached += 1; },
     async detach() { session.detached += 1; },
     async close() { session.closed += 1; },
@@ -70,6 +72,7 @@ function setup(t, { companion = false } = {}) {
   bridge.closeEngineRun = t3.closeEngineRun;
   bridge.engineConnect = session.connect;
   bridge.engineRunThrottleMs = 0;
+  bridge.engineRunWatchMs = 10;
   bridge.engineRunRetryMs = { beforeClose: [5, 5], afterEnd: [20, 20] };
   bridge.transcript = async () => ({ messages: [...session.messages] });
   bridge.companionSession = async () => companion;
@@ -193,4 +196,24 @@ test('closing the bridge also ends the retries of a follower that already let it
   await new Promise((resolve) => setTimeout(resolve, 80));
   assert.equal(reads, after, 'no read after the bridge closed');
   assert.equal(t3.runs[0].status, 'completed');
+});
+
+test('a session whose worker dies mid-run ends its run as failed and is let go; one unloaded ends as interrupted', async (t) => {
+  for (const [status, expected] of [['error', 'failed'], ['stored', 'interrupted']]) {
+    const { bridge, session, t3 } = setup(t);
+    await bridge.followEngineRun('T1', 'S1');
+    session.push([{ type: 'message_end', message: said('하던 중', 62, 'toolUse') }]);
+    assert.ok(await until(() => t3.messages.some((message) => message.text === '하던 중')));
+    session.push([], status);
+    assert.ok(await until(() => t3.runs[0].status === expected), `${status} → ${expected}`);
+    assert.ok(await until(() => session.detached === 1 && bridge.engineFollowers.size === 0));
+  }
+});
+
+test('an engine that goes away mid-run (crash or restart) ends the run as interrupted and lets go', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.socket.connected = false;
+  assert.ok(await until(() => t3.runs[0].status === 'interrupted'));
+  assert.ok(await until(() => bridge.engineFollowers.size === 0));
 });

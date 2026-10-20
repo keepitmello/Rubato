@@ -26,7 +26,7 @@ const BUSY = new Set(['running', 'starting']);
 export const SYNC_RETRY_MS = Object.freeze({ beforeClose: [500, 1000, 2000], afterEnd: [5000, 15_000, 30_000, 60_000, 120_000] });
 
 export async function followEngineRun({ bridge, connect, threadId, sessionId, throttleMs = 1000, retryMs = SYNC_RETRY_MS,
-  onEnd = () => {}, closed = () => false, log = () => {} }) {
+  onEnd = () => {}, closed = () => false, watchMs = 2000, log = () => {} }) {
   const client = await connect();
   let unsubscribe;
   let runId = null;
@@ -41,6 +41,7 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
   const end = async () => {
     if (ended) return;
     ended = true;
+    stopWatch();
     clearTimeout(syncTimer);
     await syncing.catch(() => {});
     await unsubscribe?.().catch(() => {});
@@ -116,10 +117,22 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
         else if (type === 'agent_settled') await close('completed');
         if (busy) { await end(); return; }
       }
-      if (!BUSY.has(state.status) && !opening) await end();
+      // The session stopped without settling its run (its worker died, it was unloaded): the run
+      // ends as failed or interrupted, and the follower leaves.
+      if (!BUSY.has(state.status) && opening) await close(state.status === 'error' ? 'failed' : state.status === 'idle' ? 'completed' : 'interrupted');
+      if (!BUSY.has(state.status)) await end();
     }).catch((error) => log('engine run follow failed', error));
     return queue;
   };
+  // An engine that went away (a crash, a restart) publishes nothing more: the run ends as
+  // interrupted and the follower leaves; the next inventory pass follows the session again if the
+  // new engine runs it.
+  const watchdog = setInterval(() => {
+    if (ended || client.client?.connected !== false) return;
+    queue = queue.then(async () => { if (opening) await close('interrupted'); await end(); }).catch((error) => log('engine run follow failed', error));
+  }, watchMs);
+  watchdog.unref?.();
+  const stopWatch = () => clearInterval(watchdog);
   try {
     await client.attach(sessionId);
     unsubscribe = await client.subscribeSession((state) => { void onState(state); });
