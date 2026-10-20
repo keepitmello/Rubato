@@ -87,6 +87,9 @@ export type CompanionPieceId =
 
 export interface CompanionPiece {
   readonly id: CompanionPieceId;
+  /** What the piece is called and what it is for (harness/companion/piece-copy.mjs, which Segno reads too). */
+  readonly title: string;
+  readonly description: string;
   /** False for the tools piece: it describes the real tools and follows the product. */
   readonly editable: boolean;
   readonly defaultText: string;

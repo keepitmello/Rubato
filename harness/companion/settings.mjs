@@ -16,7 +16,7 @@
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basePiecePath, companionPaths, personalPiecePath, readSettings, readState } from './companion.mjs';
+import { basePiecePath, clearPersonaReviewRequest, companionPaths, personalPiecePath, readPersonaReviewRequest, readSettings, readState } from './companion.mjs';
 import { messengerPaths, readMessengerSettings } from './messenger/store.mjs';
 import { locateTranscript, runAt } from './messenger/sync.mjs';
 
@@ -68,7 +68,8 @@ export async function settingsView(service, { showPairingCode = false } = {}) {
         ...(showPairingCode && pairing.code ? { code: pairing.code } : {}) },
       waitingForApproval: (telegram.waiting ?? []).length,
     },
-    pieces: pieces.map((piece) => ({ id: piece.id, editable: piece.editable, personal: piece.personalText !== undefined,
+    pieces: pieces.map((piece) => ({ id: piece.id, title: piece.title, purpose: piece.description, editable: piece.editable,
+      personal: piece.personalText !== undefined,
       ...(piece.defaultChanged ? { defaultChanged: true } : {}) })),
   };
 }
@@ -100,16 +101,20 @@ export function unknownFields(patch, shape, prefix = '') {
 
 /** The files a change may write, as they are now, to put back if any part of it is refused. */
 function snapshot(env, change) {
-  const files = [companionPaths(env).settings, messengerPaths(env).settings, messengerPaths(env).fishKey];
+  const files = [companionPaths(env).settings, messengerPaths(env).settings, messengerPaths(env).fishKey, messengerPaths(env).intent];
   if (change.piece && typeof change.piece.id === 'string') {
     try { files.push(personalPiecePath(env, change.piece.id), basePiecePath(env, change.piece.id)); } catch { /* an unknown piece writes nothing */ }
   }
   const saved = files.map((file) => ({ file, bytes: existsSync(file) ? readFileSync(file) : undefined }));
+  const reviewAsked = readPersonaReviewRequest(env) !== undefined;
   return () => {
     for (const { file, bytes } of saved) {
-      if (bytes === undefined) rmSync(file, { force: true });
-      else writeFileSync(file, bytes, { mode: 0o600 });
+      try {
+        if (bytes === undefined) rmSync(file, { force: true });
+        else writeFileSync(file, bytes, { mode: 0o600 });
+      } catch { /* a file that cannot be put back was not written either */ }
     }
+    if (!reviewAsked) try { clearPersonaReviewRequest(env); } catch { /* nothing to undo */ }
   };
 }
 
@@ -148,21 +153,22 @@ async function applyChange(service, change, env) {
       await service.handle('save-piece', { id: change.piece.id, text: change.piece.text ?? '' });
       applied.push(`piece:${change.piece.id}`);
     }
+    // The Telegram request goes last: the messenger acts on it after this answers, so nothing can
+    // be refused after it is written.
+    if (change.botToken !== undefined) {
+      // The messenger checks it with Telegram before keeping it; `show` then has the bot's name or the reason.
+      await service.handle('telegram-set-token', { token: change.botToken.trim() });
+      applied.push('botToken (Telegram checks it; show tells how it went)');
+    }
+    if (change.pairing !== undefined) {
+      await service.handle(change.pairing === 'pair' ? 'telegram-pair' : 'telegram-unpair', {});
+      applied.push(`pairing:${change.pairing}`);
+    }
+    if (change.personaReview === true) { await service.handle('review-persona', {}); applied.push('personaReview'); }
   } catch (error) {
     restore();
     throw error;
   }
-  // These cannot be refused any more: their values were checked above.
-  if (change.botToken !== undefined) {
-    // The messenger checks it with Telegram before keeping it; `show` then has the bot's name or the reason.
-    await service.handle('telegram-set-token', { token: change.botToken.trim() });
-    applied.push('botToken (Telegram checks it; show tells how it went)');
-  }
-  if (change.pairing !== undefined) {
-    await service.handle(change.pairing === 'pair' ? 'telegram-pair' : 'telegram-unpair', {});
-    applied.push(`pairing:${change.pairing}`);
-  }
-  if (change.personaReview === true) { await service.handle('review-persona', {}); applied.push('personaReview'); }
   if (!applied.length) throw new SettingsRefused('invalid', 'Nothing to change');
   return applied;
 }

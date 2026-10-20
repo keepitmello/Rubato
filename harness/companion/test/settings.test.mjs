@@ -210,3 +210,32 @@ test('a finished job no recorded launch names, or one in a batch with someone el
   await assert.rejects(box.call(change), (error) => error.code === 'not-the-user', "a batch with someone else's work");
   assert.equal(readMessengerSettings(box.env).approvalRequired, true);
 });
+
+test('a write that fails midway (a folder that cannot be written) leaves nothing of the change behind', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '켜고 페어링')]);
+  const { chmodSync, mkdirSync } = await import('node:fs');
+  const { messengerPaths } = await import('../messenger/store.mjs');
+  mkdirSync(messengerPaths(box.env).home, { recursive: true });
+  chmodSync(messengerPaths(box.env).home, 0o500);
+  try {
+    for (const change of [{ companion: { enabled: true }, pairing: 'pair' }, { companion: { enabled: true }, botToken: TOKEN }]) {
+      await assert.rejects(box.call({ action: 'change', change }), JSON.stringify(change));
+      assert.equal(readSettings(box.env).enabled, false, `${Object.keys(change).join('+')}: put back`);
+    }
+  } finally { chmodSync(messengerPaths(box.env).home, 0o700); }
+});
+
+test("show tells Segno what each prompt piece is for, in the Settings page's own words", async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '조각들 뭐야')]);
+  const { pieces } = (await box.call({ action: 'show' })).settings;
+  const page = (await box.service.handle('pieces', {})).pieces;
+  assert.equal(pieces.length, page.length);
+  for (const piece of pieces) {
+    const shown = page.find((item) => item.id === piece.id);
+    assert.ok(piece.purpose, `${piece.id} has a purpose`);
+    assert.equal(piece.purpose, shown.description);
+    assert.equal(piece.title, shown.title);
+  }
+});

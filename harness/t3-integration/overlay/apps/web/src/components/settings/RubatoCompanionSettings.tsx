@@ -33,31 +33,6 @@ import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
-const PIECE_COPY: Readonly<Record<CompanionPieceId, { title: string; description: string }>> = {
-  preamble: {
-    title: "Preamble",
-    description: "The first words Segno reads: its name and its welcome.",
-  },
-  soul: { title: "Soul", description: "Who Segno is and how it speaks." },
-  identity: { title: "Identity", description: "Name, look and what stays the same." },
-  user: {
-    title: "About you",
-    description: "Your business, your repositories, how you like to be told things.",
-  },
-  companion: { title: "How Segno works", description: "Leads, approvals, reports, heartbeat." },
-  tools: {
-    title: "Tools",
-    description: "The tools Segno has. It follows Rubato and cannot be changed.",
-  },
-  memory: {
-    title: "Resident memory",
-    description: "What Segno always carries. Its night dream keeps this in memory/MEMORY.md.",
-  },
-  coda: {
-    title: "Closing lines",
-    description: "The last words of Segno's prompt, after everything else.",
-  },
-};
 
 function reportError(title: string, error: unknown) {
   toastManager.add({
@@ -181,13 +156,12 @@ function PieceEditor({
   const [open, setOpen] = useState(false);
   // The parent keys this editor by the saved text, so a save starts a fresh draft.
   const [draft, setDraft] = useState(current);
-  const copy = PIECE_COPY[piece.id];
   const changed = draft.trim() !== current.trim();
   return (
     <SettingsRow
       id={`rubato-companion-piece-${piece.id}`}
-      title={copy.title}
-      description={copy.description}
+      title={piece.title}
+      description={piece.description}
       status={
         <span className="flex items-center gap-1">
           {piece.defaultChanged ? <Badge variant="warning">Default update available</Badge> : null}
@@ -209,7 +183,7 @@ function PieceEditor({
             className="min-h-48"
             value={draft}
             readOnly={!piece.editable}
-            aria-label={copy.title}
+            aria-label={piece.title}
             spellCheck={false}
             onChange={(event) => setDraft(event.target.value)}
           />
