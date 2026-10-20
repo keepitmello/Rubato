@@ -26,6 +26,16 @@ import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSyn
 import path from 'node:path';
 import { companionHome } from '../companion.mjs';
 
+/**
+ * Whether the product runs the Telegram messenger. Off for now (intent companion-segno rev 9, user
+ * item cc61d883: "그냥 텔레 비활성화 하자 제품에서. 아직 한계가 있어보이네"): the engine starts no
+ * messenger, the settings tool and Settings › Companion offer no Telegram, and Segno speaks to the
+ * person only in the app (`tell_user`). The code stays for later; this one switch brings the
+ * engine and the settings back. Segno's Telegram tools follow the runtime's own option
+ * (pi-runtime companion-messenger `telegram`), since the runtime build cannot reach this file.
+ */
+export const TELEGRAM_ENABLED = false;
+
 export const MESSENGER_LIMITS = Object.freeze({
   /** Telegram's own ceiling for one message. */
   textChars: 4096,

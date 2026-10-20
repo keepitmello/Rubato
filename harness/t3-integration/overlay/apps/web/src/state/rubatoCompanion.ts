@@ -173,7 +173,8 @@ export const rubatoCompanion = {
   /** Asks Segno to review the defaults that moved; the engine's keeper wakes it. */
   reviewPersona: (env: EnvironmentId | null) =>
     call<{ pieces: CompanionPiece[]; reviewRequested: string | null }>(env, "review-persona"),
-  telegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus }>(env, "telegram"),
+  /** null while the product runs no Telegram (harness/companion/messenger/store.mjs TELEGRAM_ENABLED). */
+  telegram: (env: EnvironmentId | null) => call<{ telegram: TelegramStatus | null }>(env, "telegram"),
   saveTelegramSettings: (env: EnvironmentId | null, patch: { readonly enabled?: boolean; readonly approvalRequired?: boolean }) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-settings", { patch }),
   /** Asks the engine's messenger for a fresh six-character code; the person sends it to the bot. */

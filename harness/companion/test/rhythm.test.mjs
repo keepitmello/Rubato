@@ -722,3 +722,27 @@ test('schedule: monthly by weekday (first Monday, last Friday), by month day (th
   const lines = await scheduleNudges({ sources: [{ kind: 'ics', location: '/cal.ics' }], now: Date.UTC(2026, 9, 20), env, readFile: () => mixed });
   assert.equal(lines[0], 'SCHEDULE_WARN 일정 출처를 못 읽어서 그 일정은 챙기지 못하고 있어: cal.ics (반복 규칙을 못 읽는 일정: "Board" BYSETPOS)');
 });
+
+test('prompt: the user\'s own words put Segno to sleep — 컴팩션, 새 세션 / 다음 세션, 자 / 자고 와 — each with its path (user item 8d634009)', () => {
+  const text = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  const section = text.slice(text.indexOf('### 사용자가 재울 때'), text.indexOf('## 깨어나기'));
+  assert.ok(section.length > 0, 'the section exists before 깨어나기');
+  assert.match(section, /앱에서 사용자 본인이 한 말일 때만/);
+  assert.match(section, /\*\*"컴팩션"\*\*: 위 갈무리를 하고, `compact_context`를 `keep`/);
+  assert.match(section, /\*\*"새 세션"\*\*, \*\*"다음 세션"\*\*: 위 갈무리를 하고, `new_context`/);
+  assert.match(section, /같은 나고 창만 새거야/);
+  assert.match(section, /\*\*"자"\*\*, \*\*"자고 와"\*\*: 위 갈무리를 하고, 압축할지 새 창을 열지는/);
+  assert.match(section, /짧은 한 줄만/);
+});
+
+test('prompt: Segno speaks only in the app — no Telegram in its defaults, and what it says on its own goes through tell_user (intent rev 9)', () => {
+  const files = ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall'];
+  for (const name of files) {
+    const text = readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8');
+    assert.doesNotMatch(text, /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context/i, name);
+  }
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  assert.match(companion, /내가 먼저 하는 말은 `tell_user`로 해: 안부, 리드가 끝났다는 소식, 일정 찌르기, 하트비트/);
+  for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `tell_user`로/);
+  assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /\| 사용자한테 먼저 말하기 \| `tell_user` \|/);
+});

@@ -5,7 +5,7 @@
  */
 import {
   EventId, MessageId, ProviderDriverKind, RunId, TurnItemId,
-  type ModelSelection, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
+  type ModelSelection, type ProviderInstanceId, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
   type OrchestrationMessageContext, type OrchestrationV2Run,
   type OrchestrationV2DomainEvent, type OrchestrationV2ProviderThread, type OrchestrationV2TurnItem,
   type ProjectId, type ProviderInteractionMode, type RuntimeMode, type ThreadId,
@@ -13,6 +13,7 @@ import {
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -67,38 +68,70 @@ export interface SessionMessage {
   readonly createdAt: string;
   readonly context?: OrchestrationMessageContext;
   readonly senderThreadId?: ThreadId;
+  /** The run it belongs to: a backfilled message stays in the run it followed. */
+  readonly runId?: RunId;
 }
 /**
- * A message Segno sent the person on Telegram from a run the thread does not show (bridge
- * telegram-echo.mjs). It is written as Segno's own words: an assistant message, without the record.
+ * Records that make a session message one of the thread's own messages, written without the record:
+ * `rubato-said`, what Segno said to the person with tell_user from a run the thread does not show,
+ * and `rubato-telegram`, what it sent on Telegram from one while the product ran Telegram (bridge
+ * said-echo.mjs), are Segno's words; `rubato-backfill`, a turn the engine ran while T3 held no
+ * stream on the thread (bridge backfill.mjs), keeps the role it had in the session.
  */
+export const SAID_KIND = "rubato-said";
 export const TELEGRAM_ECHO_KIND = "rubato-telegram";
-const isTelegramEcho = (context: unknown): boolean => {
-  const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown }> } | undefined)?.records;
-  return Array.isArray(records) && records.some((record) => record?.kind === TELEGRAM_ECHO_KIND);
+export const BACKFILL_KIND = "rubato-backfill";
+/**
+ * The run a tell_user message gets (appendOwnRun): `rubato-said:<message id>`. Its message and turn
+ * item carry that id too, and the run's userMessageId names the message, so a client that sees the
+ * thread's latest run finish can tell Segno spoke and find the words.
+ */
+export const SAID_RUN_PREFIX = "rubato-said:";
+export const saidRunId = (messageId: string) => RunId.make(`${SAID_RUN_PREFIX}${messageId}`);
+/** Whether a run is one appendOwnRun wrote rather than a turn the provider ran. */
+export const isSaidRun = (runId: string) => runId.startsWith(SAID_RUN_PREFIX);
+const ownRole = (context: unknown): "assistant" | "user" | null => {
+  const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown; readonly payload?: unknown }> } | undefined)?.records;
+  if (!Array.isArray(records)) return null;
+  for (const record of records) {
+    if (record?.kind === SAID_KIND || record?.kind === TELEGRAM_ECHO_KIND) return "assistant";
+    if (record?.kind === BACKFILL_KIND) {
+      const role = (record.payload as { readonly role?: unknown } | undefined)?.role;
+      return role === "user" ? "user" : "assistant";
+    }
+  }
+  return null;
 };
 /** The message and turn item of a session message, both keyed by its id (a replay replaces them). */
 export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage, ordinal: number) => {
   const at = DateTime.makeUnsafe(entry.createdAt);
   const messageId = MessageId.make(entry.id);
-  if (isTelegramEcho(entry.context)) {
+  const own = ownRole(entry.context);
+  const runId = entry.runId ?? null;
+  if (own !== null) {
+    const common = { id: TurnItemId.make(entry.id), threadId, runId, nodeId: null, providerThreadId: null, providerTurnId: null,
+      nativeItemRef: null, parentItemId: null, ordinal, status: "completed" as const, title: null, startedAt: at, completedAt: at,
+      updatedAt: at };
+    if (own === "user") {
+      const message: OrchestrationV2ConversationMessage = { createdBy: "user", creationSource: "provider", id: messageId, threadId,
+        runId, nodeId: null, role: "user", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+      const turnItem: OrchestrationV2TurnItem = { ...common, createdBy: "user", creationSource: "provider", type: "user_message",
+        messageId, inputIntent: "turn_start", text: entry.text, attachments: [] };
+      return { message, turnItem, at };
+    }
     const message: OrchestrationV2ConversationMessage = { createdBy: "agent", creationSource: "provider", id: messageId, threadId,
-      runId: null, nodeId: null, role: "assistant", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
-    const turnItem: OrchestrationV2TurnItem = {
-      id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
-      nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
-      updatedAt: at, type: "assistant_message", messageId, text: entry.text, streaming: false,
-    };
+      runId, nodeId: null, role: "assistant", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+    const turnItem: OrchestrationV2TurnItem = { ...common, type: "assistant_message", messageId, text: entry.text, streaming: false };
     return { message, turnItem, at };
   }
   // Upstream marks a message another agent sent this way ("Sent by another agent").
   const author = { createdBy: "agent" as const, creationSource: "provider" as const,
     ...(entry.senderThreadId === undefined ? {} : { senderThreadId: entry.senderThreadId }) };
   const context = entry.context === undefined ? {} : { context: entry.context };
-  const message: OrchestrationV2ConversationMessage = { ...author, id: messageId, threadId, runId: null, nodeId: null,
+  const message: OrchestrationV2ConversationMessage = { ...author, id: messageId, threadId, runId, nodeId: null,
     role: "user", text: entry.text, ...context, attachments: [], streaming: false, createdAt: at, updatedAt: at };
   const turnItem: OrchestrationV2TurnItem = {
-    id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
+    id: TurnItemId.make(entry.id), threadId, runId, nodeId: null, providerThreadId: null, providerTurnId: null,
     nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
     updatedAt: at, ...author, type: "user_message", messageId, inputIntent: "turn_start", text: entry.text, ...context,
     attachments: [],
@@ -236,8 +269,63 @@ const make = Effect.gen(function* () {
         { id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: at, payload: turnItem },
       ] }).pipe(Effect.mapError(importFailure("Could not write the session message")));
     });
-  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage };
+  /**
+   * A message of Segno's in a run of its own (bridge said-echo.mjs, tell_user from a hidden run).
+   * T3 tells the phone about a thread only when its run state changes (AgentAwarenessRelay reads
+   * run.created/run.updated, never a message) and buzzes it when a run finishes, so the words come
+   * with a run that is first seen running and then completed: the run opens as running, and after
+   * `hold` — long enough for the relay to publish the running state — the message lands in it and the
+   * run completes. The caller reads the ordinals and keeps the thread free of other runs meanwhile.
+   * `opened` is that run already written by an attempt that stopped before its message (the server
+   * went down during the hold): the message lands in it and it completes now.
+   */
+  const appendOwnRun = (input: OwnRunInput) => Effect.gen(function* () {
+    const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number Segno's message")));
+    const runId = saidRunId(input.message.id);
+    let run: OrchestrationV2Run;
+    if (input.opened !== undefined) run = input.opened;
+    else {
+      const opened = yield* DateTime.now;
+      run = {
+        id: runId, threadId: input.threadId, ordinal: input.runOrdinal, providerInstanceId: input.providerInstanceId,
+        modelSelection: input.modelSelection, providerThreadId: null, userMessageId: MessageId.make(input.message.id),
+        rootNodeId: null, activeAttemptId: null, status: "running", queuePosition: null,
+        requestedAt: opened, startedAt: opened, completedAt: null, checkpointId: null, contextHandoffId: null,
+      };
+      yield* eventSink.write({ events: [
+        { id: yield* event(), type: "run.created", threadId: input.threadId, runId, providerInstanceId: input.providerInstanceId,
+          occurredAt: opened, payload: run },
+      ] }).pipe(Effect.mapError(importFailure("Could not open the run of Segno's message")));
+      yield* Effect.sleep(input.hold);
+    }
+    const { message, turnItem, at } = sessionMessageRecords(input.threadId, { ...input.message, runId }, input.itemOrdinal);
+    const closed = yield* DateTime.now;
+    yield* eventSink.write({ events: [
+      { id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: at, payload: message },
+      { id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: at, payload: turnItem },
+      { id: yield* event(), type: "run.updated", threadId: input.threadId, runId, providerInstanceId: input.providerInstanceId,
+        occurredAt: closed, payload: { ...run, status: "completed", completedAt: closed } },
+    ] }).pipe(Effect.mapError(importFailure("Could not write Segno's message")));
+    return runId;
+  });
+  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage, appendOwnRun };
 });
+
+export interface OwnRunInput {
+  readonly threadId: ThreadId;
+  readonly message: SessionMessage;
+  /** The thread's next free run ordinal (V2 numbers runs 1..n). */
+  readonly runOrdinal: number;
+  /** The thread's next turn-item ordinal. */
+  readonly itemOrdinal: number;
+  readonly providerInstanceId: ProviderInstanceId;
+  readonly modelSelection: ModelSelection;
+  /** How long the run shows as running before the message lands and it completes. */
+  readonly hold: Duration.Input;
+  /** The run an earlier attempt opened and never completed; it is completed instead of a new one. */
+  readonly opened?: OrchestrationV2Run;
+}
 
 /**
  * The thread's next turn-item ordinal, as ProjectionStoreV2.getNextTurnItemOrdinal reads it.
@@ -272,6 +360,7 @@ export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, 
   readonly appendNotice: (input: NoticeInput) => Effect.Effect<void, RubatoThreadImportError>;
   readonly appendSessionMessage: (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
     Effect.Effect<void, RubatoThreadImportError>;
+  readonly appendOwnRun: (input: OwnRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);

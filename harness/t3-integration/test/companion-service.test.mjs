@@ -10,11 +10,12 @@ import { PIECES, readPersonaReviewRequest, seedPromptPieces, writeState } from '
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 
-async function setup(t) {
+/** `telegram` is the product switch (companion/messenger/store.mjs TELEGRAM_ENABLED); these tests keep the Telegram code covered. */
+async function setup(t, { telegram = true } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'rubato-companion-service-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
-  const service = createCompanionService({ env, defaultsDir });
+  const service = createCompanionService({ env, defaultsDir, telegram });
   const post = async (action, body = {}) => {
     const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
       { method: 'POST', body: JSON.stringify(body) }));
@@ -170,7 +171,7 @@ test('a pasted token is handed to the messenger, and the page learns whether a t
   const dir = await mkdtemp(path.join(tmpdir(), 'rubato-companion-service-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
-  const service = createCompanionService({ env, defaultsDir,
+  const service = createCompanionService({ env, defaultsDir, telegram: true,
     tg: { probeTg: async () => ({ available: false, reason: 'no tg client on this Mac' }) } });
   const post = async (action, body = {}) => {
     const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
@@ -232,4 +233,20 @@ test('the Fish Audio key is kept 0600 and shown as it is, like the bot token', a
   assert.equal(statSync(messengerPaths(env).fishKey).mode & 0o777, 0o600);
   assert.equal((await post('voice-key', { key: 'no' })).status, 400);
   assert.equal((await post('voice-key', { key: null })).body.telegram.fishKey, null);
+});
+
+test('with Telegram off in the product, the page gets no Telegram status, every Telegram action is refused, and nothing waits for approval', async (t) => {
+  const { env, post } = await setup(t, { telegram: false });
+  const store = await import('../../companion/messenger/store.mjs');
+  assert.equal(store.TELEGRAM_ENABLED, false);
+  // A message held before Telegram went off does not come back as a row to approve.
+  const held = store.enqueueMessage({ text: '그룹에 보낼 말', target: { chatId: '-100', name: '버그' } }, env);
+  store.updateOutboxRow(held.id, { state: 'held' }, env);
+  assert.deepEqual((await post('telegram')).body, { telegram: null });
+  for (const action of ['telegram-settings', 'telegram-pair', 'telegram-unpair', 'telegram-set-token', 'telegram-create-bot', 'telegram-decide', 'voice-key']) {
+    const answer = await post(action, { patch: { enabled: true }, token: '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh', key: 'k', id: held.id, decision: 'approve' });
+    assert.equal(answer.status, 404, action);
+  }
+  assert.equal(store.readIntent(env), undefined, 'nothing was handed to a messenger');
+  assert.deepEqual((await post('panel')).body.held, []);
 });

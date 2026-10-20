@@ -3,7 +3,8 @@ import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { quietMessages } from './quiet-runs.mjs';
-import { telegramEchoes } from './telegram-echo.mjs';
+import { saidEchoes } from './said-echo.mjs';
+import { backfillItem, missingItems } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
@@ -188,10 +189,14 @@ function revertPending(thread, { dropped, cut }) {
   return [...thread.messages, ...(thread.activities ?? [])].some((row) => later(row.createdAt, cut.after)
     && (row.turnId === cut.turnId || (row.role === 'user' && row.turnId == null)));
 }
+/** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
+const BACKFILL_MS = 5000;
+
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession,
-    rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); }, sessionStateDir = null }) {
+    rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); }, sessionStateDir = null,
+    backfillMs = BACKFILL_MS }) {
     // appendSessionMessage(threadId, item) writes a session message into the T3
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
     // rewindConversation(threadId, { afterTurn, turns }) asks T3 to revert `turns` turns
@@ -219,6 +224,15 @@ export class RubatoPiBridge {
     this.skillNames = new Set();
     this.retryTimer = setInterval(() => { void this.recover().catch(onError); }, 1000);
     this.retryTimer.unref?.();
+    // Turns the engine ran on a thread T3 holds no stream for reach it within one pass (backfill.mjs).
+    // threadId -> the session's updatedAt the thread was last brought up to. `streamGaps(threadId)`,
+    // bound by the T3 server, answers when the thread had no stream ([{ from, to }] in ms).
+    this.backfilled = new Map();
+    this.backfillTimer = setInterval(() => { void this.backfillDetached().catch(onError); }, backfillMs);
+    this.backfillTimer.unref?.();
+    // The first pass right away: a GUI that was closed while the engine worked catches up before
+    // the user writes.
+    setTimeout(() => { void this.backfillDetached().catch(onError); }, 0).unref?.();
     liveBridges.add(this);
   }
   async connection() {
@@ -265,10 +279,15 @@ export class RubatoPiBridge {
   /** The thread's session state (session-state.mjs): kept in memory, else saved, else new on attach. */
   stateFor(threadId, sessionId) {
     let fold = this.knownState(threadId);
+    const bound = fold?.sessionId;
     if (!fold) {
       fold = new SessionStateFold({ threadId, sessionId, instanceId: this.instanceId, changed: () => this.saveState(threadId) });
       this.sessionStates.set(threadId, fold);
     } else fold.rebind(sessionId);
+    // The saved state is also the record of which session this thread streams, which the backfill
+    // reads (backfill.mjs): it is written on attach, not only when the session happens to carry
+    // agents or a speed reading.
+    if (bound !== sessionId) this.saveState(threadId);
     return fold;
   }
   stateFile(threadId) {
@@ -375,6 +394,19 @@ export class RubatoPiBridge {
       await client.attach(sessionId);
       return await client.command(command);
     } finally { await client.detach().catch(() => {}); await client.close(); }
+  }
+  /**
+   * Whether a session is Segno's own conversation, from the engine's session list (its `companion`
+   * mark). A session keeps what it is, so each answer is kept; an engine that cannot list says no.
+   */
+  async companionSession(sessionId) {
+    if (typeof sessionId !== 'string' || !sessionId) return false;
+    this.companionSessions ??= new Map();
+    if (this.companionSessions.has(sessionId)) return this.companionSessions.get(sessionId);
+    const rows = await this.viaInventory((client) => client.list()).catch(() => null);
+    if (!Array.isArray(rows)) return false;
+    for (const row of rows) if (typeof row?.sessionId === 'string') this.companionSessions.set(row.sessionId, row.companion === true);
+    return this.companionSessions.get(sessionId) === true;
   }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
@@ -488,11 +520,12 @@ export class RubatoPiBridge {
   // carries its context record and an id that names `threadId`, the T3 thread the
   // history goes to (see sessionMessageFrom); T3's history import takes no
   // context, so the server appends those after the import.
-  importedMessages(sessionId, messages, threadId) {
+  // `companion`: the session is Segno's, whose thread shows only what Segno says to the person (quiet-runs.mjs).
+  importedMessages(sessionId, messages, threadId, { companion = false } = {}) {
     // Runs Rubato's clock started stay in the session, not in the thread (quiet-runs.mjs).
-    const quiet = quietMessages(messages);
-    // What Segno sent the person from such a run still shows, as its own words (telegram-echo.mjs).
-    const echoes = telegramEchoes(messages, quiet, threadId);
+    const quiet = quietMessages(messages, { companion });
+    // What Segno said to the person from such a run still shows, as its own words (said-echo.mjs).
+    const echoes = saidEchoes(messages, quiet, threadId);
     return messages.flatMap((message) => {
       if (echoes.has(message)) return [echoes.get(message)];
       if (quiet.has(message)) return [];
@@ -586,11 +619,11 @@ export class RubatoPiBridge {
       context.projection.event('session.started', { resume: context.session.resumeCursor });
       // Runs Rubato's clock started stay out of the thread here too, as in importedMessages: an
       // attach must not replay a heartbeat's or a wake's answer, nor open a turn for one in flight.
-      const quiet = quietMessages(snapshot.messages);
+      const quiet = quietMessages(snapshot.messages, { companion: await this.companionSession(context.sessionId) });
       const quietTail = snapshot.messages.length > 0 && quiet.has(snapshot.messages.at(-1));
       if (snapshot.state.isStreaming && !quietTail) context.projection.begin();
-      // What a quiet run sent the person with telegram_send shows as Segno's words (telegram-echo.mjs).
-      for (const item of telegramEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
+      // What a quiet run said to the person shows as Segno's words (said-echo.mjs).
+      for (const item of saidEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
       snapshot.messages.forEach((message, index) => {
         if (quiet.has(message)) return;
         context.projection.message(message, !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason));
@@ -647,6 +680,56 @@ export class RubatoPiBridge {
     if (context.session.status !== next || context.session.activeTurnId !== context.projection.turnId) {
       context.session.status = next; this.stateEvent(context);
     }
+  }
+  /**
+   * One backfill pass (backfill.mjs) over every thread this server streamed before (its saved
+   * session state names the session) and has no stream on now. A thread is looked at the first pass
+   * after this server starts and again whenever its session moved; with T3's log bound, the transcript
+   * is read only when the thread had a gap in its stream.
+   */
+  backfillDetached() {
+    if (this.closed || !this.sessionStateDir) return Promise.resolve();
+    return (this.backfilling ??= (async () => {
+      let names;
+      try { names = readdirSync(this.sessionStateDir).filter((name) => name.endsWith('.json') && !name.startsWith('.')); } catch { return; }
+      if (!names.length) return;
+      const rows = new Map((await this.viaInventory((client) => client.list())).map((row) => [row.sessionId, row]));
+      for (const name of names) {
+        if (this.closed) return;
+        const threadId = decodeURIComponent(name.slice(0, -'.json'.length));
+        let sessionId;
+        try { sessionId = JSON.parse(readFileSync(path.join(this.sessionStateDir, name), 'utf8'))?.sessionId; } catch { continue; }
+        const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
+        const moved = Date.parse(row?.updatedAt ?? '');
+        if (!Number.isFinite(moved) || this.rpcFor(threadId)) continue;
+        if (this.backfilled.has(threadId) && moved <= this.backfilled.get(threadId)) continue;
+        // A thread is done for this session state only once it was really compared: before the T3
+        // server binds its thread reader (the first passes after startup) nothing is.
+        try { if (await this.backfillThread(threadId, sessionId)) this.backfilled.set(threadId, moved); }
+        catch (error) { t3BridgeLog('backfill failed', `${threadId} ${String(error?.message ?? error)}`); }
+      }
+    })().finally(() => { this.backfilling = undefined; }));
+  }
+  /**
+   * Writes into `threadId` what its session holds from the times the thread had no stream. True once
+   * the thread was compared with its session; false while the T3 server has not bound its reader.
+   */
+  async backfillThread(threadId, sessionId) {
+    // T3's record of when the thread had no stream; without one (an older T3 server) every hole counts.
+    const thread = await this.projectedThread(threadId);
+    if (!thread) return false;
+    const gaps = this.streamGaps ? await this.streamGaps(threadId) : undefined;
+    if (Array.isArray(gaps) && !gaps.length) return true;
+    const { messages } = await this.transcript(sessionId);
+    const companion = await this.companionSession(sessionId);
+    const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), thread.messages,
+      Array.isArray(gaps) ? { gaps } : {});
+    for (const { item, runId } of missing) {
+      if (this.closed) return false;
+      await this.appendSessionMessage(threadId, backfillItem(item, threadId, runId));
+    }
+    if (missing.length) t3BridgeLog('backfilled', `${threadId} ${missing.length}`);
+    return true;
   }
   recover() {
     if (this.closed) return Promise.resolve();
@@ -1223,7 +1306,7 @@ export class RubatoPiBridge {
   }
   async close() {
     if (this.closed) return;
-    this.closed = true; clearInterval(this.retryTimer); liveBridges.delete(this);
+    this.closed = true; clearInterval(this.retryTimer); clearInterval(this.backfillTimer); liveBridges.delete(this);
     await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));

@@ -12,12 +12,13 @@
 // transcript, with the same run rule the app and Telegram use (messenger/sync.mjs).
 //
 // The Telegram bot token and the Fish Audio key are plain settings like the rest (user items 0fc61da6,
-// 0020edac: Rubato runs on the user's own computer).
+// 0020edac: Rubato runs on the user's own computer). While the product runs no Telegram
+// (messenger/store.mjs TELEGRAM_ENABLED) none of the Telegram settings is shown or changed here.
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basePiecePath, clearPersonaReviewRequest, companionPaths, personalPiecePath, readPersonaReviewRequest, readSettings, readState } from './companion.mjs';
-import { messengerPaths, readMessengerSettings } from './messenger/store.mjs';
+import { TELEGRAM_ENABLED, messengerPaths, readMessengerSettings } from './messenger/store.mjs';
 import { locateTranscript, runAt } from './messenger/sync.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -50,15 +51,23 @@ async function defaultService(env) {
 }
 
 /** Everything Segno can know about its settings now; secrets only as whether they are set. */
-export async function settingsView(service, { showPairingCode = false } = {}) {
+export async function settingsView(service, { showPairingCode = false, telegram: withTelegram = TELEGRAM_ENABLED } = {}) {
   const status = await service.handle('status', {});
-  const { telegram } = await service.handle('telegram', {});
   const { pieces } = await service.handle('pieces', {});
-  const pairing = telegram.pairing ?? { status: 'unpaired' };
   return {
     companion: status.settings,
     choices: { heartbeatEveryMinutes: status.heartbeatMinutes },
-    telegram: {
+    ...(withTelegram ? { telegram: await telegramView(service, { showPairingCode }) } : {}),
+    pieces: pieces.map((piece) => ({ id: piece.id, title: piece.title, purpose: piece.description, editable: piece.editable,
+      personal: piece.personalText !== undefined,
+      ...(piece.defaultChanged ? { defaultChanged: true } : {}) })),
+  };
+}
+
+async function telegramView(service, { showPairingCode }) {
+  const { telegram } = await service.handle('telegram', {});
+  const pairing = telegram.pairing ?? { status: 'unpaired' };
+  return {
       settings: telegram.settings,
       bot: telegram.bot,
       // How the last request to the messenger went (a token Telegram refused says why here).
@@ -67,10 +76,6 @@ export async function settingsView(service, { showPairingCode = false } = {}) {
       pairing: { status: pairing.status, ...(pairing.chat?.name ? { chat: pairing.chat.name } : {}),
         ...(showPairingCode && pairing.code ? { code: pairing.code } : {}) },
       waitingForApproval: (telegram.waiting ?? []).length,
-    },
-    pieces: pieces.map((piece) => ({ id: piece.id, title: piece.title, purpose: piece.description, editable: piece.editable,
-      personal: piece.personalText !== undefined,
-      ...(piece.defaultChanged ? { defaultChanged: true } : {}) })),
   };
 }
 
@@ -144,9 +149,14 @@ function undoLog(env) {
  * own writes, not a transaction. A Telegram request (the bot token, pairing) is one per change and
  * goes last, since the messenger carries it out after this answers.
  */
-async function applyChange(service, change, env) {
+const TELEGRAM_KEYS = Object.freeze(['telegram', 'pairing', 'botToken', 'fishKey']);
+
+async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED } = {}) {
   if (!change || typeof change !== 'object' || Array.isArray(change)) throw new SettingsRefused('invalid', 'change must be an object');
-  const known = new Set(['companion', 'telegram', 'pairing', 'piece', 'personaReview', 'botToken', 'fishKey']);
+  const offered = Object.keys(change).filter((key) => TELEGRAM_KEYS.includes(key));
+  if (!telegram && offered.length)
+    throw new SettingsRefused('invalid', `Telegram is off in Rubato for now, so there is nothing to change in ${offered.join(', ')}`);
+  const known = new Set(['companion', 'piece', 'personaReview', ...TELEGRAM_KEYS]);
   const unknown = Object.keys(change).filter((key) => !known.has(key));
   if (change.companion !== undefined) unknown.push(...unknownFields(change.companion, readSettings(env), 'companion.'));
   if (change.telegram !== undefined) unknown.push(...unknownFields(change.telegram, readMessengerSettings(env), 'telegram.'));
@@ -211,7 +221,7 @@ async function applyChange(service, change, env) {
  * change?: { companion?, telegram?, pairing?, piece?, personaReview? } }.
  * `sessionId` is the calling conversation, which must be the companion's.
  */
-export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin } = {}) {
+export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin, telegram = TELEGRAM_ENABLED } = {}) {
   const companionId = readState(env).sessionId;
   if (!sessionId || sessionId !== companionId) throw new SettingsRefused('not-companion', "Only Segno's own conversation has settings to change");
   const action = request.action ?? 'show';
@@ -221,15 +231,16 @@ export async function companionSettings({ sessionId, sessionsDir, request = {}, 
   const byUser = isUserOrigin(from);
   if (action === 'show') {
     if (typeof request.piece === 'string') return { piece: await pieceText(settings, request.piece) };
-    return { settings: await settingsView(settings, { showPairingCode: byUser }) };
+    return { settings: await settingsView(settings, { showPairingCode: byUser, telegram }) };
   }
   if (!byUser) {
-    throw new SettingsRefused('not-the-user',
-      'Only the user changes settings: this turn was not opened by their message in the app or their Telegram chat');
+    throw new SettingsRefused('not-the-user', telegram
+      ? 'Only the user changes settings: this turn was not opened by their message in the app or their Telegram chat'
+      : 'Only the user changes settings: this turn was not opened by their message in the app');
   }
   try {
-    const applied = await applyChange(settings, request.change, env);
-    return { applied, settings: await settingsView(settings, { showPairingCode: true }) };
+    const applied = await applyChange(settings, request.change, env, { telegram });
+    return { applied, settings: await settingsView(settings, { showPairingCode: true, telegram }) };
   } catch (error) {
     if (error instanceof SettingsRefused) throw error;
     // The page's own validation answers with its message (CompanionRequestError 400 'invalid').

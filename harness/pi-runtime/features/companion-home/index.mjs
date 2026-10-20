@@ -4,8 +4,11 @@
 //   memorable exchanges, in Segno's voice), a working note, or the mood it falls asleep with.
 // - `segno_search` searches Segno's own memory/ with msearch (Roo's msearch.sh over Roo's memory/).
 // - `segno_commit` commits the record files Segno changed to its home's history (Roo commit-owned.sh).
-// - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report from another chat in
-//   Telegram, what Segno set aside, which lead holds it and whether it is done.
+// - `tell_user` is how Segno speaks to the user from a turn they do not see: the app shows its words
+//   in Segno's thread and notifies the phone (bridge said-echo.mjs), and the words are recorded for
+//   `sent_messages`.
+// - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report that came in, what
+//   Segno set aside, which lead holds it and whether it is done.
 // - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
 // - `memory_seed`, `world_fragment`, `sent_messages` are Roo's random-memory.sh, random-world.sh and
 //   sent.sh: an old memory, a piece of the world, and what really reached the user.
@@ -15,7 +18,7 @@
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, commitOwned, oldMemorySeed, record, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, TELL_USER_TOOL, commitOwned, oldMemorySeed, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
 
@@ -134,12 +137,31 @@ export function createCompanionHomeFactories() {
       });
 
       pi.registerTool({
+        name: TELL_USER_TOOL,
+        label: "Tell the user",
+        exposure: "direct",
+        searchKeywords: ["tell", "say", "message", "notify", "greeting", "speak", "말하기", "톡", "알림", "안부"],
+        description:
+          "Speak to the user from a turn they do not see (a heartbeat, a greeting, a lead ending, a schedule nudge). " +
+          "Your words show in your thread as your message, and the app notifies their phone. In a turn they see, " +
+          "your answer already reaches them; do not repeat it with tell_user.",
+        parameters: {
+          type: "object", additionalProperties: false, required: ["text"],
+          properties: { text: { type: "string", minLength: 1, description: "What you say, as it should read in your thread." } },
+        },
+        async execute(_id, params) {
+          const told = recordTold(params.text);
+          return { content: [text("Shown to the user in your thread; the app notifies their phone.")], details: told };
+        },
+      });
+
+      pi.registerTool({
         name: "sent_messages",
         label: "Sent messages",
         exposure: "direct",
-        searchKeywords: ["sent", "telegram", "already", "told", "보낸", "톡", "꺼낸"],
+        searchKeywords: ["sent", "told", "already", "tell_user", "보낸", "톡", "꺼낸"],
         description:
-          "What actually reached the user's Telegram from you in the last days, from the messenger's record: one " +
+          "What actually reached the user from you (tell_user) in the last days, from the record of what was sent: one " +
           "line each, or each in full when you give a keyword. Check here, not from memory, whether you already " +
           "brought something up.",
         parameters: {

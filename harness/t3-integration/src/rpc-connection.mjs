@@ -5,8 +5,8 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns, newQuietState, quietMessages, quietStep } from './quiet-runs.mjs';
-import { createTelegramEcho, telegramEchoes } from './telegram-echo.mjs';
+import { createQuietRuns, isUserInput, newQuietState, quietMessages, quietStep } from './quiet-runs.mjs';
+import { createSaidEcho, saidEchoes } from './said-echo.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -147,8 +147,8 @@ export class RubatoRpcConnection {
     // restart is never one of them.
     this.asked = false;
     this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null, seeded: false });
-    // What Segno sends the person with telegram_send from such a run shows as its words (telegram-echo.mjs).
-    this.telegramEcho = createTelegramEcho({ threadId });
+    // What Segno says to the person from such a run shows as its words (said-echo.mjs).
+    this.saidEcho = createSaidEcho({ threadId });
     this.sessionId = null;
     this.closed = false;
   }
@@ -177,6 +177,11 @@ export class RubatoRpcConnection {
     this.unsubscribe = undefined;
     if (this.sessionId) await this.client.detach().catch(() => {});
     this.sessionId = null;
+    // What the engine ran on this session while no stream watched it reaches the thread first, so it
+    // stands before what this attach brings (bridge backfillThread, backfill.mjs).
+    await this.bridge.backfillThread?.(this.threadId, sessionId)?.catch?.((error) => this.log('backfill failed', error));
+    // Segno's own conversation shows only what Segno says to the person (quiet-runs.mjs).
+    this.quietRuns.companion = await this.bridge.companionSession?.(sessionId) === true;
     await this.client.attach(sessionId);
     this.sessionId = sessionId;
     this.bridge.claimed.add(sessionId);
@@ -210,7 +215,7 @@ export class RubatoRpcConnection {
   placeFromStore() {
     Promise.resolve(this.client.command({ type: 'get_messages' })).then((reply) => {
       const messages = Array.isArray(reply?.messages) ? reply.messages : [];
-      const store = newQuietState();
+      const store = newQuietState({ companion: this.quietRuns.companion });
       let last;
       for (const message of messages) last = quietStep(store, message);
       this.quietRuns.seed(store);
@@ -244,7 +249,7 @@ export class RubatoRpcConnection {
       this.sequence = state.sequence ?? 0;
       this.run = null;
       for (const record of state.events ?? []) {
-        this.fold?.feed(record.event); this.sessionMessage(record.event); this.telegramMessage(record.event);
+        this.fold?.feed(record.event); this.sessionMessage(record.event); this.saidMessage(record.event);
         for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
       }
       if (this.quietRuns.takeLookup()) this.placeFromStore();
@@ -399,6 +404,9 @@ export class RubatoRpcConnection {
    */
   sessionMessage(event) {
     if (event?.type !== 'message_end') return;
+    // Segno's own thread shows no message from anyone but the person: a lead's ending or another
+    // conversation's message opens a quiet run there (quiet-runs.mjs).
+    if (this.quietRuns.companion && !isUserInput(event.message)) return;
     let item;
     try { item = sessionMessageFrom(event.message, this.threadId); } catch { return; }
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
@@ -413,20 +421,20 @@ export class RubatoRpcConnection {
    * person from a quiet run while no stream watched, under the id the live stream would have used,
    * so a message already in the thread is not written twice.
    */
-  backfillTelegramEchoes(messages) {
-    for (const item of telegramEchoes(messages, quietMessages(messages), this.threadId).values()) this.appendEcho(item);
+  backfillSaidEchoes(messages) {
+    for (const item of saidEchoes(messages, quietMessages(messages, { companion: this.quietRuns.companion }), this.threadId).values()) this.appendEcho(item);
   }
-  /** A quiet run's telegram_send to the person, written into the thread as Segno's words. */
-  telegramMessage(event) {
-    this.appendEcho(this.telegramEcho.accept(event, this.quietRuns.quiet));
+  /** A quiet run's words to the person (tell_user, or telegram_send then), written into the thread as Segno's. */
+  saidMessage(event) {
+    this.appendEcho(this.saidEcho.accept(event, this.quietRuns.quiet));
   }
-  /** One telegram echo into the thread, once per id on this connection. */
+  /** One echo into the thread, once per id on this connection. */
   appendEcho(item) {
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
     this.sessionMessages.add(item.id);
     Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
       this.sessionMessages.delete(item.id);
-      this.log('telegram message not written', error);
+      this.log('said message not written', error);
     });
   }
   deliver(event) {
@@ -434,7 +442,7 @@ export class RubatoRpcConnection {
     // rows this stream turns them into.
     this.fold?.feed(event);
     this.sessionMessage(event);
-    this.telegramMessage(event);
+    this.saidMessage(event);
     if (cacheMoved(event)) void this.refreshCache();
     // Rubato's title extension names the session from its topic; the thread shows that name
     // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
@@ -701,12 +709,12 @@ export class RubatoRpcConnection {
         // out of it, as they do from the history import and the live stream (quiet-runs.mjs).
         const reply = await this.command(record);
         if (!reply || !Array.isArray(reply.messages)) return reply;
-        const quiet = quietMessages(reply.messages);
+        // What Segno said to the person belongs in the thread: the same item the live stream appends
+        // (said-echo.mjs), under the same id, so a backfill after an engine restart brings it back
+        // once and never twice.
+        this.backfillSaidEchoes(reply.messages);
+        const quiet = quietMessages(reply.messages, { companion: this.quietRuns.companion });
         if (!quiet.size) return reply;
-        // What such a run said to the person with telegram_send still belongs in the thread: the
-        // same item the live stream appends (telegram-echo.mjs), under the same id, so a backfill
-        // after an engine restart brings it back once and never twice.
-        this.backfillTelegramEchoes(reply.messages);
         return { ...reply, messages: reply.messages.filter((message) => !quiet.has(message)) };
       }
       case 'abort':

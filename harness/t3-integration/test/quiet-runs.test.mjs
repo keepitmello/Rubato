@@ -400,3 +400,115 @@ test('a finish is identified by its own header or details, never by ids its outp
   pass(filter, run(wake('heartbeat'), agentLaunch('st_segno9'), answer));
   assert.deepEqual(pass(filter, ownRun(taskQuoting, said('PRIVATE_9'))), []);
 });
+
+test('a teammate\'s message opens a shown turn even after a quiet one, live and in history; a batched finish still names its work', () => {
+  const teamBatch = { role: 'custom', customType: 'rubato-runtime:wake', display: false, timestamp: 40, content: 'Message from owner-1: done',
+    details: [{ customType: 'senpi-task:team-message', details: { from: 'owner-1' } }] };
+  const filter = createQuietRuns();
+  pass(filter, run(wake('heartbeat'), answer));
+  const team = run(teamBatch, said('TEAM_REPLY'));
+  assert.deepEqual(pass(filter, team), team);
+  const stored = [wake('heartbeat'), answer, teamBatch, said('TEAM_REPLY')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), false);
+  // A subagent's finish inside a batch, with a terminal's finish second in the same batch.
+  const batch = { role: 'custom', customType: 'rubato-runtime:wake', display: false, timestamp: 41,
+    content: 'A subagent finished.\n\n<system-reminder>Background terminal session bash_88 finished: completed.</system-reminder>',
+    details: [{ customType: 'rubato.task.completion', details: [{ agentId: 'st_person88' }] }] };
+  const live = createQuietRuns();
+  pass(live, run(user, agentLaunch('st_person88'), answer));
+  pass(live, run(wake('heartbeat'), bashLaunch('bash_88'), answer));
+  const finish = ownRun(batch, said('BATCH'));
+  assert.deepEqual(pass(live, finish), finish, 'the person\'s subagent makes the batch theirs');
+});
+
+test("Segno's own conversation shows only what Segno says to the person: a lead's ending, another conversation's message and team mail open quiet runs there", () => {
+  const teamMail = { role: 'custom', customType: 'senpi-task:team-message', display: false, timestamp: 50, content: 'Message from owner-1: done' };
+  const fromOther = { ...notice, details: { ...notice.details, kind: 'message', messageId: 'm' } };
+  for (const input of [notice, fromOther, teamMail]) {
+    const events = run(input, said('레포 지도 리드는 끝났어. 더 할 말은 없어.'));
+    assert.deepEqual(pass(createQuietRuns({ companion: true }), events), [], `${input.details?.kind ?? input.customType}: hidden in Segno's thread`);
+    assert.deepEqual(pass(createQuietRuns(), events), events, `${input.details?.kind ?? input.customType}: still shown in any other thread`);
+    const stored = [input, said('PRIVATE')];
+    assert.equal(quietMessages(stored, { companion: true }).has(stored.at(-1)), true);
+    assert.equal(quietMessages(stored).has(stored.at(-1)), false);
+  }
+  // The person's own turn shows, and so does one they open while Segno is in a private turn.
+  const filter = createQuietRuns({ companion: true });
+  assert.deepEqual(pass(filter, run(user, answer)), run(user, answer));
+  const steered = [{ type: 'agent_start' }, { type: 'message_end', message: notice },
+    { type: 'message_start', message: user }, { type: 'message_end', message: user }, { type: 'message_end', message: answer }, { type: 'agent_settled' }];
+  assert.deepEqual(pass(filter, steered), [{ type: 'agent_start' }, { type: 'message_start', message: user },
+    { type: 'message_end', message: user }, { type: 'message_end', message: answer }, { type: 'agent_settled' }]);
+  // The stream learns which conversation it follows when it attaches.
+  const late = createQuietRuns();
+  late.companion = true;
+  assert.deepEqual(pass(late, run(notice, said('PRIVATE'))), []);
+});
+
+test("in Segno's conversation the end of work the person asked for still comes back to them; work Segno started for a lead's ending stays private", () => {
+  const filter = createQuietRuns({ companion: true });
+  pass(filter, run(user, bashLaunch('bash_91'), answer));
+  pass(filter, run(notice, bashLaunch('bash_92'), said('PRIVATE')));
+  const theirs = ownRun(terminalDone('bash_91'), said('RESULT_FOR_PERSON'));
+  assert.deepEqual(pass(filter, theirs), theirs);
+  assert.deepEqual(pass(filter, ownRun(terminalDone('bash_92'), said('PRIVATE'))), []);
+  const stored = [user, bashLaunch('bash_91'), answer, notice, bashLaunch('bash_92'), said('PRIVATE'),
+    terminalDone('bash_91'), said('RESULT_FOR_PERSON'), terminalDone('bash_92'), said('PRIVATE_2')];
+  const quiet = quietMessages(stored, { companion: true });
+  assert.deepEqual(stored.filter((message) => message.role === 'assistant' && message.content?.[0]?.text && !quiet.has(message)).map((message) => message.content[0].text),
+    ['Heartbeat check: nothing has stalled.', 'RESULT_FOR_PERSON']);
+});
+
+test("Segno's thread gets no bubble for another conversation's message; any other thread still does", async () => {
+  const bubbles = async (companion) => {
+    const written = [];
+    const client = { client: { connected: true }, listener: null, async attach() {}, async detach() {},
+      async subscribeSession(listener) { client.listener = listener; return async () => {}; }, async command() { return undefined; }, async close() {} };
+    const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(),
+      appendSessionMessage: async (_threadId, item) => { written.push(item.text); },
+      companionSession: async () => companion,
+      viaInventory: async (call) => call({ create: async () => ({ sessionId: 'x' }) }) },
+    { threadId: 't1', cwd: '/w', onRecord: () => {}, onClosed: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+    conn.client = client;
+    await conn.request({ type: 'switch_session', sessionPath: 's1' });
+    client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+    const events = run(notice, said('ok'));
+    client.listener({ runtimeId: 'r1', sequence: events.length, status: 'idle', events: events.map((event, index) => ({ sequence: index + 1, event })) });
+    await conn.inbound;
+    return written;
+  };
+  assert.deepEqual(await bubbles(true), []);
+  assert.deepEqual(await bubbles(false), ['Finished.']);
+});
+
+test("the bridge knows Segno's conversation from the engine's session list, and a history import of it hides a lead's ending", async () => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/descriptor.json', instanceId: 'rubato-test' });
+  try {
+    let lists = 0;
+    bridge.viaInventory = async (call) => call({ list: async () => { lists += 1; return [{ sessionId: 'segno', companion: true }, { sessionId: 'lead' }]; } });
+    assert.equal(await bridge.companionSession('segno'), true);
+    assert.equal(await bridge.companionSession('lead'), false);
+    assert.equal(await bridge.companionSession('unknown'), false);
+    assert.equal(lists, 2, 'what a listed session is, is kept; an unlisted one is asked again');
+    const stored = [user, answer, notice, said('레포 지도 리드는 끝났어.')];
+    const texts = (companion) => bridge.importedMessages('segno', stored, 'thread', { companion }).map((item) => item.text);
+    assert.deepEqual(texts(true), ['hi', 'Heartbeat check: nothing has stalled.']);
+    assert.deepEqual(texts(false), ['hi', 'Heartbeat check: nothing has stalled.', 'Finished.', '레포 지도 리드는 끝났어.']);
+  } finally { await bridge.close(); }
+});
+
+test("in Segno's conversation a finish whose start nobody saw stays private even right after the person's turn", () => {
+  const unknownDone = taskDone(['st_unknown01']);
+  const live = createQuietRuns({ companion: true });
+  pass(live, run(user, answer));
+  assert.deepEqual(pass(live, ownRun(unknownDone, said('PRIVATE'))), []);
+  const stored = [user, answer, unknownDone, said('PRIVATE')];
+  assert.equal(quietMessages(stored, { companion: true }).has(stored.at(-1)), true);
+  // Any other conversation keeps the stretch it was in.
+  const other = createQuietRuns();
+  pass(other, run(user, answer));
+  const finish = ownRun(unknownDone, said('SHOWN'));
+  assert.deepEqual(pass(other, finish), finish);
+  assert.equal(quietMessages(stored).has(stored.at(-1)), false);
+});
