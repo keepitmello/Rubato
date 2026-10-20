@@ -154,3 +154,28 @@ test('when every read fails until the run closes, the answer still arrives after
   assert.ok(await until(() => session.detached === 1), 'and the session is let go');
   assert.ok(await until(() => t3.messages.some((message) => message.text === '늦게라도 와야 하는 답.')), 'the answer arrives without a stream');
 });
+
+test('a thread imported empty, before the engine was prompted, gets the prompt and every answer as they land', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  t3.messages.length = 0;
+  session.messages.length = 0;
+  session.status = 'idle';
+  const followed = bridge.followEngineRun('T1', 'S1');
+  session.status = 'running';
+  await followed;
+  await bridge.followEngineRun('T1', 'S1');
+  const prompt = { role: 'user', content: [{ type: 'text', text: '매일 아침 점검해 줘' }], timestamp: at(30) };
+  session.push([{ type: 'agent_start' }, { type: 'message_end', message: prompt }, { type: 'message_end', message: said('점검 시작할게.', 31, 'toolUse') }]);
+  assert.ok(await until(() => t3.messages.some((message) => message.text === '점검 시작할게.')), 'the answer lands while the run goes on');
+  assert.deepEqual(t3.messages.map((message) => [message.role, message.text, message.runId]),
+    [['user', '매일 아침 점검해 줘', 'run-1'], ['assistant', '점검 시작할게.', 'run-1']]);
+});
+
+test('an older message the thread happens to lack is not written again by the follower; only what is newer than the thread', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  session.messages.unshift(said('아주 예전 답 (스레드에 다른 글자로 남은 것)', 1));
+  await bridge.followEngineRun('T1', 'S1');
+  session.push([{ type: 'message_end', message: said('새 답.', 62) }]);
+  assert.ok(await until(() => t3.messages.some((message) => message.text === '새 답.')));
+  assert.equal(t3.messages.some((message) => message.text.startsWith('아주 예전 답')), false);
+});

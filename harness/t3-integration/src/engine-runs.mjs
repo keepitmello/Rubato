@@ -67,7 +67,7 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
     const thread = await bridge.projectedThread(threadId);
     if (!thread) return (synced = true);
     const items = bridge.importedMessages(sessionId, await messagesOf(), threadId);
-    for (const { item, runId: anchor } of missingItems(items, thread.messages)) {
+    for (const { item, runId: anchor } of missingItems(items, thread.messages, { whole: true })) {
       await bridge.appendSessionMessage(threadId, backfillItem(item, threadId, runId ?? anchor));
     }
     return (synced = true);
