@@ -40,12 +40,10 @@ const senderSessionOf = (context: unknown): string | null => {
 };
 const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 /**
- * The longest a run that carries Segno's words shows as running while the relay publishes that
- * state (bindRubatoSessionLookup ownRunShown); past it the words land anyway.
+ * When a run that carries Segno's words asks the relay again while its running state failed to
+ * publish: the relay's own retry delays (AgentAwarenessRelay RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS).
  */
-export const OWN_RUN_HOLD_MAX = "30 seconds";
-/** How long the run stays running after the relay's first pass, covering its first two retries. */
-export const OWN_RUN_RETRY_WINDOW = "3500 millis";
+export const OWN_RUN_RETRY_DELAYS = ["1 second", "2 seconds", "4 seconds", "8 seconds", "16 seconds"] as const;
 const IMPORTED_THREAD = /^import:[^:]+:([^:]+):(.+)$/;
 const DRIVER = "rubato-pi";
 
@@ -251,16 +249,19 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   // One own run at a time, so two of Segno's messages never take the same run ordinal.
   const ownRuns = yield* Semaphore.make(1);
   // The phone hears of a thread only from the states the relay publishes, and it publishes from a
-  // worker that reads the thread when it gets to it: a run that finishes while the worker is busy
-  // elsewhere is read only as finished, the same as the last state, and nothing goes out. So the own
-  // run waits, running, until the relay has worked through its queue up to this thread. A publish
-  // that fails is retried by the relay after 1 s and 3 s (RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS); the
-  // run stays running past those and asks once more, so a short outage still lets the running state
-  // out. Whether a publish went through is the relay's to know, not this service's.
+  // worker that reads the thread when it gets to it: a run that finishes before the relay got its
+  // running state out is read only as finished, the same as the last state, and nothing goes out.
+  // So the own run stays running until the relay has published it: publishThread works the queue
+  // through to this thread, and while that publish failed and waits on a retry (publishPending,
+  // apply.mjs edit), the run asks again on the relay's own schedule, then gives up.
   const relay = yield* Effect.serviceOption(AgentAwarenessRelay);
-  const ownRunShown = (thread: ThreadId) => (Option.isSome(relay)
-    ? relay.value.publishThread(thread).pipe(Effect.andThen(Effect.sleep(OWN_RUN_RETRY_WINDOW)), Effect.andThen(relay.value.publishThread(thread)))
-    : Effect.sleep("1 second")).pipe(Effect.timeout(OWN_RUN_HOLD_MAX), Effect.ignore);
+  const ownRunShown = (thread: ThreadId) => Option.isNone(relay) ? Effect.sleep("1 second") : Effect.gen(function* () {
+    for (const delay of [...OWN_RUN_RETRY_DELAYS, null]) {
+      yield* relay.value.publishThread(thread);
+      if (!(yield* relay.value.publishPending(thread)) || delay === null) return;
+      yield* Effect.sleep(delay);
+    }
+  });
   /**
    * Segno's words from a hidden run (tell_user) in a run of their own, so the phone hears of them
    * (RubatoThreadImporter appendOwnRun). While the thread has a run going, the words go in as a
