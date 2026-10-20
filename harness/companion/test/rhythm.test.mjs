@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { readState, writeSettings, writeState } from '../companion.mjs';
 import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, moodText, recallText, sessionAge, startCompanionKeeper,
   wakeSeedText } from '../keeper.mjs';
-import { HELD_TEMPLATE, MOOD_FRESH_MS, commitOwned, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
+import { HELD_TEMPLATE, MOOD_FRESH_MS, SEGNO_SEARCH, commitOwned, searchSegnoMemory, segnoSearchEnv, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
   record, segnoPaths, seedText, sentMessages, sentText, setWakeWish, readWakeWish } from '../home.mjs';
 import { careerNudges, parseSchedule, showSchedule } from '../career.mjs';
 import { worldFragment, worldText, WORLD_FEEDS } from '../world.mjs';
@@ -120,6 +120,28 @@ test('greetings: a missed greeting rides on an idle tick as greet_night (01–04
   assert.doesNotMatch(k.of('heartbeat').at(-1).text, /greet_night/, 'once that day');
   for (const time of [at(21, 4), at(21, 9, 30)]) await k.poke(time);
   assert.ok(k.of('heartbeat').every((notice) => !/greet_morning/.test(notice.text)), 'not before 10:00');
+  assert.equal(readState(env).greeted.night, '2026-10-21');
+});
+
+test('greetings: a catch-up whose send failed is not spent; the next tick carries it again', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  engine.append(userSaid(at(20, 22)));
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: true } }, env);
+  const clock = { at: at(21, 1, 5) };
+  const sent = [];
+  let fail = true;
+  const errors = [];
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir, onError: (error) => errors.push(error),
+    notify: async (_id, text, what) => { if (fail && /greet_night/.test(text)) throw new Error('engine busy'); sent.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  clock.at = at(21, 1, 30); await keeper.poke();
+  assert.equal(errors.length, 1);
+  assert.equal(readState(env).greeted?.night, undefined, 'not marked: it never went');
+  fail = false;
+  clock.at = at(21, 2); await keeper.poke();
+  assert.match(sent.at(-1).text, /action=greet_night/);
   assert.equal(readState(env).greeted.night, '2026-10-21');
 });
 
@@ -451,6 +473,24 @@ test('world: one fragment per layer, a title kept out for seven days, empty-hand
   assert.deepEqual([first.title, second.title, first.source], ['A', 'B', 'TechCrunch'], 'one feed down, the others still give; A is out for a week');
   assert.equal(await worldFragment({ layer: 'ai', env, fetchImpl: async () => { throw new Error('offline'); } }), undefined);
   assert.match(worldText(undefined), /빈손/);
+});
+
+test('search: msearch over Segno\'s own memory/, its own channel and index, Rubato\'s state folder (Roo msearch.sh over memory/)', (t) => {
+  const env = sandbox(t);
+  ensureSegnoHome(env);
+  const calls = [];
+  const run = (bin, args, options) => { calls.push({ bin, args, cwd: options.cwd, env: options.env }); return '**2026-10-20**\n[memory/diary/2026-10-20.md]\n## 밤\n…'; };
+  assert.match(searchSegnoMemory('비 오는 밤', { env, run }), /2026-10-20/);
+  const [call] = calls;
+  assert.equal(call.bin, 'msearch');
+  assert.deepEqual(call.args, ['-a', '비 오는 밤']);
+  assert.equal(call.env.MSEARCH_ROOT, segnoPaths(env).memory);
+  assert.deepEqual([call.env.MSEARCH_CHANNEL, call.env.MSEARCH_INDEX], [SEGNO_SEARCH.channel, SEGNO_SEARCH.index]);
+  assert.equal(call.env.MSEARCH_STATE_DIR, path.join(env.HOME, '.rubato', 'memory', 'msearch-state'));
+  assert.deepEqual(searchSegnoMemory('', { env, index: true, run }) && calls.at(-1).args, ['--index']);
+  const missing = Object.assign(new Error('spawn msearch ENOENT'), { code: 'ENOENT' });
+  assert.match(searchSegnoMemory('x', { env, run: () => { throw missing; } }), /msearch.*없어/);
+  assert.equal(segnoSearchEnv(env).MSEARCH_ROOT, path.join(env.RUBATO_COMPANION_HOME, 'memory'));
 });
 
 // ── prompt voice (Roo AGENTS.md: every piece in Roo's own Korean first person) ──

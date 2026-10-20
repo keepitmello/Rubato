@@ -404,6 +404,40 @@ export function seedText(seed) {
   return seed ? `SEED src=${seed.src} date=${seed.date} section=${seed.section}\n---\n${seed.text}` : 'NO_SEED';
 }
 
+// ── searching Segno's own memory ──────────────────────────────────────────────────────────
+// Roo's msearch.sh searches Roo's own memory/ (daily, diary, canonical) with the same hybrid search
+// Rubato ships as `msearch`. Segno's records live in its home, not under Rubato's memory root, so its
+// search points msearch at <home>/memory under a channel and index of its own; msearch follows the
+// files on every search (only changed files are re-indexed), so a record written a moment ago is
+// found. The state folder stays Rubato's, where the API key and the translation cache are.
+
+export const SEGNO_SEARCH = Object.freeze({ channel: 'segno', index: 'segno_idx' });
+
+/** The environment `msearch` needs to search Segno's memory instead of Rubato's. */
+export function segnoSearchEnv(env = process.env) {
+  const home = env.HOME || homedir();
+  return { ...env, MSEARCH_ROOT: segnoPaths(env).memory, MSEARCH_CHANNEL: SEGNO_SEARCH.channel, MSEARCH_INDEX: SEGNO_SEARCH.index,
+    MSEARCH_STATE_DIR: env.MSEARCH_STATE_DIR || path.join(home, '.rubato', 'memory', 'msearch-state') };
+}
+
+/**
+ * Searches Segno's memory with msearch (`MSEARCH_BIN`, else `msearch` on the PATH). `index` re-indexes
+ * instead (the dream's step after it rewrote canonical pages). Returns msearch's own output; a missing
+ * msearch or a failure is said in words, never thrown, so a search never breaks a turn.
+ */
+export function searchSegnoMemory(query, { index = false, env = process.env, run = execFileSync } = {}) {
+  const args = index ? ['--index'] : ['-a', String(query ?? '').trim()];
+  if (!index && !args[1]) return '무엇을 찾을지 한두 마디로 줘.';
+  try {
+    return String(run(env.MSEARCH_BIN || 'msearch', args, { cwd: segnoPaths(env).memory, env: segnoSearchEnv(env), encoding: 'utf8',
+      timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'] })).trim() || 'NO RELEVANT MEMORY';
+  } catch (error) {
+    if (error?.code === 'ENOENT') return '기억 검색(msearch)이 이 맥에 없어. 설치는 Rubato install.sh, 상태는 `msearch --doctor`.';
+    const out = `${error?.stdout ?? ''}`.trim();
+    return out || `기억 검색이 실패했어: ${String(error?.stderr ?? error?.message ?? error).trim().split('\n').slice(-3).join(' / ')}`;
+  }
+}
+
 // ── what reached the user ─────────────────────────────────────────────────────────────────
 // Roo's sent.sh: memory gets "did I already tell them?" wrong often, in both directions, and only
 // the record outside it settles that. The messenger appends one line per message it delivered to
