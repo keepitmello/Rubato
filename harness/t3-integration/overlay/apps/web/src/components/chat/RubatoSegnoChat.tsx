@@ -11,6 +11,7 @@ import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
 import type { TimelineEntry } from "../../session-logic";
 import ChatMarkdown from "../ChatMarkdown";
 import {
+  arrivals,
   segnoChatItems,
   segnoIsWriting,
   separatorLabel,
@@ -124,17 +125,18 @@ export function RubatoSegnoChat(props: {
     return () => window.clearInterval(timer);
   }, []);
 
-  // Bubbles already there when the room opened stay still; later ones spring in.
-  const seen = useRef<Set<string> | null>(null);
-  if (seen.current === null) seen.current = new Set(items.map((item) => item.id));
-  const entering = useMemo(() => {
-    const known = seen.current!;
-    const fresh = new Set(items.filter((item) => !known.has(item.id)).map((item) => item.id));
-    for (const id of fresh) known.add(id);
-    return fresh;
-  }, [items]);
+  // Bubbles already there when the room's history first arrives stay still; later ones spring in.
+  const seen = useRef<{ ids: Set<string>; latest: number } | null>(null);
   const animated = useRef(new Set<string>());
-  for (const id of entering) animated.current.add(id);
+  useMemo(() => {
+    const bubbles = items.filter((item) => item.kind === "bubble");
+    if (seen.current === null) {
+      if (bubbles.length > 0)
+        seen.current = { ids: new Set(bubbles.map((item) => item.id)), latest: Math.max(...bubbles.map((item) => item.at)) };
+      return;
+    }
+    for (const id of arrivals(bubbles, seen.current)) animated.current.add(id);
+  }, [items]);
 
   const scroller = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);

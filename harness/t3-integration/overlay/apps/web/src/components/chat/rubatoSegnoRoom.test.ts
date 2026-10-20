@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import {
+  arrivals,
   GROUP_GAP_MS,
   SEPARATOR_GAP_MS,
   segnoChatItems,
@@ -87,5 +88,12 @@ describe("Segno's chat room", () => {
     expect(separatorLabel(base - 24 * 60 * 60_000, now, "en-US")).toBe("yesterday 9:00 AM");
     expect(separatorLabel(base - 3 * 24 * 60 * 60_000, now, "en-US")).toBe("Sun, October 18 9:00 AM");
     expect(separatorLabel(base - 24 * 60 * 60_000, now, "ko-KR")).toBe("어제 오전 9:00");
+  });
+
+  it("springs in only bubbles newer than what the room knew; earlier history loads in still", () => {
+    const known = { ids: new Set(["b", "c"]), latest: 200 };
+    expect(arrivals([{ id: "a", at: 100 }, { id: "b", at: 150 }, { id: "c", at: 200 }], known)).toEqual([]);
+    expect(arrivals([{ id: "a", at: 100 }, { id: "c", at: 200 }, { id: "d", at: 260 }], known)).toEqual(["d"]);
+    expect(arrivals([{ id: "d", at: 260 }, { id: "e", at: 260 }], known)).toEqual(["e"]);
   });
 });

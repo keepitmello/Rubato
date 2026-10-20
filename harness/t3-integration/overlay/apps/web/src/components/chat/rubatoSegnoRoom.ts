@@ -109,3 +109,21 @@ export function separatorLabel(at: number, now: number, locale: string): string 
   }).format(at);
   return `${date} ${time}`;
 }
+
+/**
+ * The bubbles that arrived since the room last looked: new, and not older than the newest one it
+ * knew, so earlier history loading in above stays still. Updates `known` as it goes.
+ */
+export function arrivals(
+  bubbles: ReadonlyArray<{ readonly id: string; readonly at: number }>,
+  known: { ids: Set<string>; latest: number },
+): string[] {
+  const fresh: string[] = [];
+  for (const bubble of bubbles) {
+    if (known.ids.has(bubble.id)) continue;
+    known.ids.add(bubble.id);
+    if (bubble.at >= known.latest) fresh.push(bubble.id);
+  }
+  for (const bubble of bubbles) known.latest = Math.max(known.latest, bubble.at);
+  return fresh;
+}
