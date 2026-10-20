@@ -651,22 +651,14 @@ export function RubatoCompanionSettingsPanel() {
               }
             />
             <SettingsRow
-              id="rubato-companion-career-schedule"
-              title="Deadline schedule"
-              description="A Markdown schedule file Segno reads on each heartbeat to nudge you 3 hours and 1 hour before a timed deadline, and at 22:00 about tomorrow. Leave empty for none."
-              control={
-                <Input
-                  nativeInput
-                  aria-label="Deadline schedule file"
-                  className="h-8 w-72"
-                  disabled={busy}
-                  placeholder="~/path/to/schedule.md"
-                  defaultValue={settings.career.schedule}
-                  onBlur={(event) => {
-                    const schedule = event.target.value.trim();
-                    if (schedule !== settings.career.schedule) void save({ career: { schedule } });
-                  }}
-                />
+              id="rubato-companion-schedule"
+              title="Schedule"
+              description={
+                settings.schedule.sources.length === 0
+                  ? "No calendar or schedule file yet. Tell Segno where yours is (a calendar's ICS address, an .ics file or a schedule file) and it sets it here; it nudges you 3 hours and 1 hour before a timed item and at 22:00 about tomorrow."
+                  : `Segno reads ${settings.schedule.sources
+                      .map((source) => source.name ?? source.location)
+                      .join(", ")}. Tell Segno to add or remove one.`
               }
             />
           </>

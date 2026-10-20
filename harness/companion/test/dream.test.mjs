@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
 import { segnoPaths, segnoSearchEnv } from '../home.mjs';
-import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
+import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, commandExists, composeDreamPrompt, dreamDue, dreamPaths, FALLBACK_PATH, workEnv, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
 
@@ -685,4 +685,39 @@ test('night after night the resident memory moves by the ratchet: a grown night 
   const third = await night(23, '# 기억\n');
   assert.equal(third.record.status, 'done');
   assert.equal(readDreamState(env).memoryGuard.baselineChars, chars('# 기억\n'));
+});
+
+test('the dream finds mail and calendar tools and keeps its PATH on macOS, Linux and Windows alike', (t) => {
+  const env = sandbox(t);
+  const dir = path.join(env.HOME, 'tools');
+  mkdirSync(dir);
+  writeFileSync(path.join(dir, 'himalaya.exe'), '');
+  writeFileSync(path.join(dir, 'khal'), '#!/bin/sh\n', { mode: 0o755 });
+  // Windows: the variable is Path, the delimiter ';', and the command carries an extension from PATHEXT.
+  assert.equal(commandExists('himalaya', { Path: `C:\\nowhere;${dir}`, PATHEXT: '.COM;.EXE' }, 'win32'), true);
+  assert.equal(commandExists('himalaya', { Path: dir, PATHEXT: '.CMD' }, 'win32'), false);
+  assert.equal(commandExists('khal', { PATH: `/nowhere:${dir}` }, 'darwin'), true);
+  assert.equal(commandExists('himalaya', { PATH: dir }, 'linux'), false, 'no .exe guessing off Windows');
+  // The child's environment: Windows keeps its own Path and gets no Unix fallback or locale.
+  const windows = workEnv({ Path: 'C:\\Tools', PATHEXT: '.EXE' }, { SEGNO_HOME: 'x' }, 'win32');
+  assert.equal(windows.Path, 'C:\\Tools');
+  assert.equal(windows.PATH, undefined);
+  assert.equal(windows.LANG, undefined);
+  const bare = workEnv({}, {}, 'darwin');
+  assert.equal(bare.PATH, FALLBACK_PATH);
+  assert.equal(bare.LANG, 'en_US.UTF-8');
+  assert.equal(workEnv({ PATH: '/usr/bin', LANG: 'ko_KR.UTF-8' }, {}, 'linux').LANG, 'ko_KR.UTF-8');
+});
+
+test("the dream measures MEMORY.md with the guard's own count, not the shell's", async (t) => {
+  const env = sandbox(t);
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  write(env, 'memory/MEMORY.md', '# 기억\n가나다\n');
+  let counted;
+  const dreamer = fakeDreamer({ onRun: (seen) => {
+    counted = execFileSync('/bin/sh', ['-c', seen.plan.memoryGuard.countCommand], { cwd: seen.home, env: { PATH: '/usr/bin:/bin' }, encoding: 'utf8' }).trim();
+    assert.equal(Number(counted), seen.plan.memoryGuard.currentChars);
+  }, result: { status: 'done', blocks: {} } });
+  await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.equal(counted, String([...'# 기억\n가나다\n'].length));
 });

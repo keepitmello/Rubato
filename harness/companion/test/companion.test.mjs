@@ -122,11 +122,14 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   writeSettings({ enabled: true }, env);
   writeSettings({ heartbeat: { everyMinutes: 45 } }, env);
   writeSettings({ greetings: { enabled: false } }, env);
-  writeSettings({ career: { schedule: '~/work/일정표.md' } }, env);
+  writeSettings({ schedule: { sources: [{ location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } }, env);
   assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45 }, greetings: { enabled: false },
-    career: { schedule: '~/work/일정표.md' } });
+    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } });
   assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
-  assert.throws(() => writeSettings({ career: { schedule: 3 } }, env), /career\.schedule/);
+  assert.throws(() => writeSettings({ schedule: { sources: 'x' } }, env), /schedule\.sources/);
+  assert.throws(() => writeSettings({ schedule: { sources: [{ location: '' }] } }, env), /location/);
+  assert.throws(() => writeSettings({ schedule: { sources: [{ kind: 'pdf', location: 'a' }] } }, env), /kind/);
+  assert.throws(() => writeSettings({ schedule: { sources: Array.from({ length: 11 }, (_, i) => ({ location: `/s${i}.md` })) } }, env), /at most 10/);
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
   writeFileSync(companionPaths(env).settings, '{ broken');

@@ -144,8 +144,25 @@ const QUOTE = /"[^"\n]+"|“[^”\n]+”/g;
  */
 export const MEMORY_GUARD = Object.freeze({ toleranceChars: 200, targetChars: 5_000 });
 const DATE_FILE = /^(\d{4}-\d{2}-\d{2})\.md$/;
-/** The engine may run from launchd with a bare PATH; the dream's shell still needs git, rg, himalaya and khal. */
+/**
+ * On macOS and Linux the engine may run from launchd or a service manager with a bare PATH; the
+ * dream's shell still needs git, rg, himalaya and khal. Windows keeps its own Path as it is.
+ */
 export const FALLBACK_PATH = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
+/** Counts characters like the guard, for the dream to run with the engine's own node on any machine. */
+const COUNT_CHARS = path.join(import.meta.dirname, 'count-chars.mjs');
+
+/** The environment's PATH key: Windows spells it Path, and a copied env object is case-sensitive. */
+function pathKey(env, platform) {
+  if (platform !== 'win32') return 'PATH';
+  return Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'Path';
+}
+
+/** The directories the dream's shell searches for commands. */
+export function searchPath(env, platform = process.platform) {
+  const value = env[pathKey(env, platform)];
+  return value || (platform === 'win32' ? '' : FALLBACK_PATH);
+}
 
 export function dreamPaths(env = process.env) {
   const dir = path.join(segnoPaths(env).home, 'dream');
@@ -723,6 +740,7 @@ export function residentGuardPlan(beforeText, baselineChars) {
   const baseline = Math.min(Number.isFinite(baselineChars) ? baselineChars : currentChars, currentChars);
   return { currentChars, baselineChars: baseline, allowedMaxChars: baseline + MEMORY_GUARD.toleranceChars,
     targetChars: MEMORY_GUARD.targetChars, overTarget: currentChars > MEMORY_GUARD.targetChars,
+    countCommand: `"${process.execPath}" "${COUNT_CHARS}" memory/MEMORY.md`,
     protectedQuotes: [...protectedQuotes(beforeText).keys()] };
 }
 
@@ -788,9 +806,13 @@ export function recallCandidates(env, at) {
 }
 
 /** Whether a command is on the PATH the dream's shell will have. */
-function commandExists(name, env) {
-  const dirs = String(env.PATH || FALLBACK_PATH).split(path.delimiter).filter(Boolean);
-  return dirs.some((dir) => { try { return statSync(path.join(dir, name)).isFile(); } catch { return false; } });
+export function commandExists(name, env, platform = process.platform) {
+  const delimiter = platform === 'win32' ? ';' : ':';
+  const extensions = platform === 'win32'
+    ? ['', ...String(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)] : [''];
+  return searchPath(env, platform).split(delimiter).filter(Boolean).some((dir) => extensions.some((extension) => {
+    try { return statSync(path.join(dir, `${name}${extension}`)).isFile(); } catch { return false; }
+  }));
 }
 
 /** Something dated that may have passed: a line under the held list's dated part or the user's 예약된 것. */
@@ -834,10 +856,10 @@ export function exportWorkNotes(env, target, files = segnoSessionFiles(env)) {
 }
 
 /** The child's environment: its copy is its home, so the live home's override does not follow it. */
-function workEnv(env, extra) {
-  // launchd starts the engine without a locale, and then the shell counts Korean in bytes.
-  const locale = env.LC_ALL || env.LC_CTYPE || env.LANG ? {} : { LANG: 'en_US.UTF-8' };
-  const out = { ...env, PATH: env.PATH || FALLBACK_PATH, ...locale, ...extra };
+export function workEnv(env, extra, platform = process.platform) {
+  // launchd starts the engine without a locale, and then a shell counts Korean in bytes.
+  const locale = platform === 'win32' || env.LC_ALL || env.LC_CTYPE || env.LANG ? {} : { LANG: 'en_US.UTF-8' };
+  const out = { ...env, [pathKey(env, platform)]: searchPath(env, platform), ...locale, ...extra };
   delete out.RUBATO_COMPANION_HOME;
   return out;
 }

@@ -443,7 +443,7 @@ export function searchSegnoMemory(query, { index = false, env = process.env, run
     return String(run(env.MSEARCH_BIN || 'msearch', args, { cwd: segnoPaths(env).memory, env: segnoSearchEnv(env), encoding: 'utf8',
       timeout: 120_000, stdio: ['ignore', 'pipe', 'pipe'] })).trim() || 'NO RELEVANT MEMORY';
   } catch (error) {
-    if (error?.code === 'ENOENT') return '기억 검색(msearch)이 이 맥에 없어. 설치는 Rubato install.sh, 상태는 `msearch --doctor`.';
+    if (error?.code === 'ENOENT') return '기억 검색(msearch)이 이 기계에 없어. 설치는 Rubato install.sh, 상태는 `msearch --doctor`.';
     const out = `${error?.stdout ?? ''}`.trim();
     return out || `기억 검색이 실패했어: ${String(error?.stderr ?? error?.message ?? error).trim().split('\n').slice(-3).join(' / ')}`;
   }

@@ -17,17 +17,17 @@
 //
 // - The heartbeat (scripts/heartbeat-tick.sh, the control tower's buildMainHeartbeatMessage, the
 //   heartbeat skill). A tick comes on the interval's clock boundaries (:00 and :30 at thirty
-//   minutes) as one line, `HEARTBEAT tick=N kst="…"`. While the user is here (wrote in the last
+//   minutes) as one line, `HEARTBEAT tick=N now="…"` on this machine's clock. While the user is here (wrote in the last
 //   thirty minutes) the tick is 0; while they are away it counts up, and every third tick up to the
 //   ninth carries action=reflect. Segno's wake wish (home.mjs, the `wake_wish` tool) silences plain
 //   and reflect ticks until its time — they are counted, not sent; only the warmer runs (user,
 //   2026-10-20) — then that tick carries action=reflect, reason=wake_wish and a WAKE_WISH line. A tick
-//   that carries a greeting catch-up or a deadline nudge still comes during a wish, as Roo's does
+//   that carries a greeting catch-up or a schedule nudge still comes during a wish, as Roo's does
 //   (user item 0b210d57). Roo's sleep signals (ctx_step, action=compact) are not ported: Segno's sleep
 //   is the keeper's night sleep below, which the user chose for cost. The cache warmer does not
 //   depend on the tick.
-// - Deadline nudges (scripts/career-schedule.py tick): CAREER_ lines under the tick, from the
-//   schedule set in Settings › Companion (career.mjs).
+// - Schedule nudges (scripts/career-schedule.py tick, made general): SCHEDULE_ lines under the
+//   tick, from the calendars and schedule files set in Segno's settings (schedule.mjs).
 // - The greetings (cron-prompts/night.md and morning.md, launchd at 00:07 and 09:07, dispatch
 //   windows 00–04 and 09–14). The night greeting writes the day's diary first and talks in that
 //   temperature; the morning greeting carries what the daily report used to (user item 4c0b0f00).
@@ -54,7 +54,7 @@ import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePane
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
-import { careerNudges } from './career.mjs';
+import { scheduleNudges } from './schedule.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
@@ -68,38 +68,50 @@ export const RECENT_USER_MS = 30 * 60_000;
 /** A stored tick that cannot be read counts as long idle (Roo's heartbeat-state.py falls back to 12). */
 const UNREADABLE_TICK = 12;
 
-const SEOUL = 'Asia/Seoul';
-const seoulParts = (at, options) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: SEOUL, ...options })
-  .formatToParts(new Date(at)).map(({ type, value }) => [type, value]));
+// Every time Segno reads is on this machine's own clock and zone (user item 48091d35: Segno runs the
+// same for every user). Roo's labels were fixed to Asia/Seoul; the format stays, the zone is local.
+const pad2 = (n) => String(n).padStart(2, '0');
+const localParts = (at) => {
+  const date = new Date(at);
+  return { year: String(date.getFullYear()), month: pad2(date.getMonth() + 1), day: pad2(date.getDate()),
+    hour: pad2(date.getHours()), minute: pad2(date.getMinutes()), second: pad2(date.getSeconds()) };
+};
+const WEEKDAY = (at) => new Intl.DateTimeFormat('ko-KR', { weekday: 'short' }).format(new Date(at));
+/** The local zone's offset at `at`, as ISO 8601 writes it: +09:00, -04:00. */
+function zoneOffset(at) {
+  const minutes = -new Date(at).getTimezoneOffset();
+  const sign = minutes < 0 ? '-' : '+';
+  return `${sign}${pad2(Math.floor(Math.abs(minutes) / 60))}:${pad2(Math.abs(minutes) % 60)}`;
+}
+/** The zone as a label beside a clock reading: UTC+09:00. */
+const zoneLabel = (at) => `UTC${zoneOffset(at)}`;
 
-/** Roo's clock label (control tower nowKstLabel): 10월 20일(화) 오후 6:30. */
-export function kstLabel(at) {
-  const part = seoulParts(at, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  const weekday = new Intl.DateTimeFormat('ko-KR', { timeZone: SEOUL, weekday: 'short' }).format(new Date(at));
+/** Roo's clock label (control tower nowKstLabel), on the local clock: 10월 20일(화) 오후 6:30. */
+export function timeLabel(at) {
+  const part = localParts(at);
   const hour = Number(part.hour);
-  return `${Number(part.month)}월 ${Number(part.day)}일(${weekday}) ${hour < 12 ? '오전' : '오후'} ${hour % 12 || 12}:${part.minute}`;
+  return `${Number(part.month)}월 ${Number(part.day)}일(${WEEKDAY(at)}) ${hour < 12 ? '오전' : '오후'} ${hour % 12 || 12}:${part.minute}`;
 }
 
-/** A moment as ISO 8601 in Asia/Seoul, the way Roo writes a wake wish's time: 2026-10-20T18:30:00+09:00. */
-function kstIso(at) {
-  const part = seoulParts(at, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-    second: '2-digit', hourCycle: 'h23' });
-  return `${part.year}-${part.month}-${part.day}T${part.hour}:${part.minute}:${part.second}+09:00`;
+/** A moment as ISO 8601 with the local offset, the way Roo writes a wake wish's time: 2026-10-20T18:30:00+09:00. */
+export function localIso(at) {
+  const part = localParts(at);
+  return `${part.year}-${part.month}-${part.day}T${part.hour}:${part.minute}:${part.second}${zoneOffset(at)}`;
 }
 
 /**
- * The tick as Roo receives it: `HEARTBEAT tick=N kst="…"`, then `action=` when there is one and
- * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. CAREER_ lines follow
+ * The tick as Roo receives it: `HEARTBEAT tick=N now="…"`, then `action=` when there is one and
+ * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. SCHEDULE_ lines follow
  * (Roo's career_nudge_lines after the heartbeat line), and a greeting catch-up carries the greeting's
  * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md.
  */
-export function heartbeatText({ tick, at, action = 'none', wish, career = [], greeting = '' }) {
-  const parts = ['HEARTBEAT', `tick=${tick}`, `kst="${kstLabel(at)}"`];
+export function heartbeatText({ tick, at, action = 'none', wish, schedule = [], greeting = '' }) {
+  const parts = ['HEARTBEAT', `tick=${tick}`, `now="${timeLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
   const lines = [parts.join(' ')];
-  if (wish) lines.push(`WAKE_WISH at=${kstIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
-  lines.push(...career);
+  if (wish) lines.push(`WAKE_WISH at=${localIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
+  lines.push(...schedule);
   return greeting ? `${lines.join('\n')}\n\n${greeting}` : lines.join('\n');
 }
 
@@ -202,12 +214,11 @@ export function boundaryReader() {
   };
 }
 
-const WEEKDAY = (at) => new Intl.DateTimeFormat('ko-KR', { timeZone: SEOUL, weekday: 'short' }).format(new Date(at));
 
 /** Roo's session-age.sh, for the window Segno just left: now, and how long since its last moment. */
 export function sessionAge(now, before) {
-  const part = seoulParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  const head = `현재: ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} KST (${WEEKDAY(now)})`;
+  const part = localParts(now);
+  const head = `현재: ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} ${zoneLabel(now)} (${WEEKDAY(now)})`;
   if (!Number.isFinite(before)) return `${head}\n직전 창 기록 없음 — 처음 눈뜸`;
   const diff = Math.max(0, Math.floor((now - before) / 1000));
   const minutes = Math.floor(diff / 60);
@@ -227,7 +238,7 @@ export function moodText(mood, now) {
   if (!mood) return 'NO_MOOD';
   const ago = now - mood.at;
   const hours = Math.floor(ago / 3_600_000);
-  const part = seoulParts(mood.at, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const part = localParts(mood.at);
   return `${hours > 0 ? `${hours}시간 전` : `${Math.floor(ago / 60_000)}분 전`}(${part.month}-${part.day} ${part.hour}:${part.minute}) 잠들 무렵에 남긴 한 줄:\n` +
     mood.note.split('\n').map((line) => `> ${line}`).join('\n');
 }
@@ -251,8 +262,8 @@ export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = fa
 
 /** Roo's resume seed (session-start-hook.sh MODE=resume): the time, and that this is the same conversation. */
 export function resumeText(now) {
-  const part = seoulParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  return `[세션 재시작 — resume] ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} KST. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.`;
+  const part = localParts(now);
+  return `[세션 재시작 — resume] ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} ${zoneLabel(now)}. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.`;
 }
 
 /** The recall turn: recall.pi.md as written. */
@@ -543,17 +554,17 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     let action = tick > 0 && tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
     const missed = tick > 0 && settings.greetings.enabled ? missedGreeting(at, state.greeted) : undefined;
     if (missed) action = GREETINGS[missed].action;
-    const career = careerNudges({ now: at, env });
+    const schedule = await scheduleNudges({ now: at, env }).catch(() => []);
     const storedWish = readWakeWish(env);
     const wishState = storedWish && wakeWishState(storedWish, at);
-    if (wishState?.mode === 'wait' && !missed && !career.length) return;
+    if (wishState?.mode === 'wait' && !missed && !schedule.length) return;
     let wish;
     if (wishState?.mode === 'due') {
       if (!missed) action = 'reflect';
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, career, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, schedule, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);
   }
