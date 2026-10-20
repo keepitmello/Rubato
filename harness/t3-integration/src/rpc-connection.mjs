@@ -5,8 +5,8 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns } from './quiet-runs.mjs';
-import { createTelegramEcho } from './telegram-echo.mjs';
+import { createQuietRuns, quietMessages } from './quiet-runs.mjs';
+import { createTelegramEcho, telegramEchoes } from './telegram-echo.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -379,9 +379,19 @@ export class RubatoRpcConnection {
       this.log('session message not written', error);
     });
   }
+  /**
+   * The same from a stored message list (the adapter's backfill, get_messages): what Segno sent the
+   * person from a quiet run while no stream watched, under the id the live stream would have used,
+   * so a message already in the thread is not written twice.
+   */
+  backfillTelegramEchoes(messages) {
+    for (const item of telegramEchoes(messages, quietMessages(messages), this.threadId).values()) this.appendEcho(item);
+  }
   /** A quiet run's telegram_send to the person, written into the thread as Segno's words. */
   telegramMessage(event) {
-    const item = this.telegramEcho.accept(event, this.quietRuns.quiet);
+    this.appendEcho(this.telegramEcho.accept(event, this.quietRuns.quiet));
+  }
+  appendEcho(item) {
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
     this.sessionMessages.add(item.id);
     Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
