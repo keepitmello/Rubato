@@ -763,6 +763,12 @@ test('prompt: the default soul has its three channels in its own voice and names
   assert.doesNotMatch(soul, /companion rules|heartbeat|lead's ending/i);
 });
 
+test('prompt: Segno leaves its voice and its name for the user behind when it writes for leads, repos and shared docs (lead c9ea0b95)', () => {
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  const work = companion.slice(companion.indexOf('## 내가 하는 것, 리드한테 맡기는 것'), companion.indexOf('## 메시지가 오는 데'));
+  assert.match(work, /리드나 다른 대화, 레포 문서, 같이 쓰는 스킬·기억에 쓸 때는 내 말투와 내가 사용자를 부르는 말을 두고 가\. 거기선 사용자를 이름으로\(모르면 '사용자'\) 부르고 담백하게 써\. 그 말투는 내 목소리지 리드의 것이 아니야\./);
+});
+
 test('prompt: in every turn what Segno writes is monologue; only reply reaches the user, and a user turn without one is reminded (intent rev 11, users 85727ce8, c31022f7)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 하트비트'));
