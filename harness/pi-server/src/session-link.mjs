@@ -362,12 +362,14 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       } finally { await client.detach().catch(() => {}); }
     });
   }
-  function envelope({ messageId, kind, from, text }) {
+  function envelope({ messageId, kind, from, text, attachments }) {
     // A channel delivery names where it came from instead of another conversation: the messenger,
-    // the chat, who wrote and whether that is the user (harness/companion/messenger).
+    // the chat, who wrote and whether that is the user (harness/companion/messenger), and the
+    // files it saved from that message; the receiving runtime checks them (message.mjs).
     if (kind === 'channel')
       return { v: 1, messageId, kind, from: { channel: from.channel, chatId: from.chatId, isUser: from.isUser === true,
-        ...(from.name ? { name: from.name } : {}), ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text };
+        ...(from.name ? { name: from.name } : {}), ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text,
+        ...(attachments === undefined ? {} : { attachments }) };
     return { v: 1, messageId, kind, from: { sessionId: from.sessionId, title: from.title, cwd: from.cwd }, text };
   }
   const messageIdOf = (value) => {
@@ -689,6 +691,21 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       }
       return { sessionId: metadata.id, title: metadata.title, cwd: metadata.cwd, copiedMessages };
     },
+    /**
+     * What the companion's Telegram tools ask for (harness/companion/messenger): a message it wrote,
+     * a reaction or an edit (`op`). The resident messenger checks the request and decides what
+     * goes out at once and what waits for the person, so the tools never reach Telegram themselves.
+     * It lives on `api`, so the facade the runtime gets reaches it.
+     */
+    async telegramSend(request = {}) {
+      if (!request || typeof request !== 'object' || Array.isArray(request)) throw fail('invalid', 'telegramSend takes one request object');
+      if (!bound) throw fail('unavailable', 'This engine has no messenger');
+      const send = bound.telegramSend;
+      if (typeof send !== 'function') throw fail('unavailable', 'The messenger is not running in this engine');
+      const { to, name, ...rest } = request;
+      return send({ ...rest, to: to === undefined || to === null || to === '' ? 'user' : String(to),
+        ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}) });
+    },
   };
   // Availability is checked before arguments, so an unbound engine answers the same way to every call.
   const facade = Object.freeze(Object.fromEntries(METHODS.map((name) => [name, async (args) => { need(); return api[name](args); }])));
@@ -724,32 +741,21 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text });
     },
     /**
-     * What the companion's `telegram_send` tool asks for (harness/companion/messenger): a message
-     * it wrote, queued in the messenger's own store. The resident messenger decides what goes out
-     * at once and what waits for the person, so the tool never reaches Telegram itself.
-     */
-    async telegramSend({ text, to, name } = {}) {
-      requireText(text);
-      if (!bound) throw fail('unavailable', 'This engine has no messenger');
-      const send = bound.telegramSend;
-      if (typeof send !== 'function') throw fail('unavailable', 'The messenger is not running in this engine');
-      return send({ text, to: to === undefined || to === null || to === '' ? 'user' : String(to),
-        ...(typeof name === 'string' && name.trim() ? { name: name.trim() } : {}) });
-    },
-    /**
      * A person's words from a messenger into a conversation (harness/companion/messenger): the
      * companion's Telegram chat. `from.isUser` says whether it is the person the conversation
      * belongs to; anyone else's words arrive without the user's authority.
      */
-    async channel({ to, from, text } = {}) {
+    async channel({ to, from, text, attachments } = {}) {
       requireId(to, 'to'); requireText(text);
       if (!from || typeof from !== 'object' || typeof from.channel !== 'string' || !from.channel.trim())
         throw fail('invalid', 'from.channel must name the messenger');
+      if (attachments !== undefined && !Array.isArray(attachments)) throw fail('invalid', 'attachments must be a list');
       return deliver(to, envelope({ messageId: randomUUID(), kind: 'channel',
         from: { channel: from.channel.trim(), chatId: from.chatId === undefined || from.chatId === null ? '' : String(from.chatId),
           isUser: from.isUser === true,
           ...(typeof from.name === 'string' && from.name.trim() ? { name: from.name.trim() } : {}),
-          ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text }));
+          ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text,
+        ...(attachments?.length ? { attachments } : {}) }));
     },
     /**
      * Connects the messenger's queue to the tools (`telegramSend`). The resident messenger passes a

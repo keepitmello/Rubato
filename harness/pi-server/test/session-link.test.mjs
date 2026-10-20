@@ -873,3 +873,31 @@ test('a question asked mid-turn reads running in the directory, and the host nam
   await until(() => env.host.pendingQuestions(lead.id).length === 0, 'answered');
   assert.deepEqual(env.host.pendingQuestions('unknown'), []);
 });
+
+test("a messenger's message carries the files it saved from Telegram to the conversation", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const photo = { kind: 'photo', path: path.join(env.root, 'photo.jpg'), mime: 'image/jpeg' };
+  await env.link.channel({ to: segno.id, from: { channel: 'telegram', chatId: '777', isUser: true, messageId: 41 },
+    text: '(photo)', attachments: [photo] });
+  await env.link.channel({ to: segno.id, from: { channel: 'telegram', chatId: '777', isUser: true, messageId: 42 }, text: '글만' });
+  const delivered = await env.deliveries(segno.id);
+  assert.deepEqual(delivered.map((item) => item.data.attachments), [[photo], undefined], 'a message without files carries none');
+  assert.equal(delivered[0].data.from.messageId, 41);
+  await assert.rejects(env.link.channel({ to: segno.id, from: { channel: 'telegram' }, text: 'x', attachments: 'nope' }), { code: 'invalid' });
+});
+
+test("the companion's Telegram tools reach the messenger through the facade the runtime holds, with their whole request", async (t) => {
+  const env = await setup(t);
+  const asked = [];
+  env.link.attachTelegram(async (request) => { asked.push(request); return { id: 'm1' }; });
+  await env.link.api.telegramSend({ text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only' });
+  await env.link.api.telegramSend({ op: 'react', emoji: '👍', to: '', name: '  ' });
+  await env.link.api.telegramSend({ op: 'edit', messageId: 5, text: '고침', to: '-100', name: ' 그룹 ' });
+  assert.deepEqual(asked, [
+    { text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only', to: 'user' },
+    { op: 'react', emoji: '👍', to: 'user' },
+    { op: 'edit', messageId: 5, text: '고침', to: '-100', name: '그룹' },
+  ]);
+  await assert.rejects(env.link.api.telegramSend([]), { code: 'invalid' });
+});
