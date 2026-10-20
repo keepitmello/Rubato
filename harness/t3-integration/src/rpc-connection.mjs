@@ -5,7 +5,7 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns } from './quiet-runs.mjs';
+import { createQuietRuns, quietMessages } from './quiet-runs.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -640,6 +640,14 @@ export class RubatoRpcConnection {
         const state = await this.command(record);
         return state && typeof state === 'object'
           ? { ...state, sessionFile: this.sessionId, rubatoSessionFile: state.sessionFile } : state;
+      }
+      case 'get_messages': {
+        // The adapter builds the thread's backfill from this list; runs Rubato's clock started stay
+        // out of it, as they do from the history import and the live stream (quiet-runs.mjs).
+        const reply = await this.command(record);
+        if (!reply || !Array.isArray(reply.messages)) return reply;
+        const quiet = quietMessages(reply.messages);
+        return quiet.size ? { ...reply, messages: reply.messages.filter((message) => !quiet.has(message)) } : reply;
       }
       case 'abort':
         return this.abort(record);

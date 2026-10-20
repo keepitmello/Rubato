@@ -171,3 +171,15 @@ test('an attach replays the thread\'s missing answers but never a clock run\'s, 
     }
   }
 });
+
+test('get_messages on the RPC stream (the adapter\'s backfill) leaves the clock runs out', async () => {
+  const stored = [user, answer, wake('wake'), { ...answer, content: [{ type: 'text', text: 'QUIET' }], timestamp: 5 }, { ...user, timestamp: 6 }];
+  const client = { client: { connected: true }, async attach() {}, async subscribeSession() { return async () => {}; },
+    async command(command) { return command.type === 'get_messages' ? { messages: stored } : undefined; }, async reply() {}, async close() {} };
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), appendSessionMessage: async () => {} },
+    { threadId: 't1', cwd: '/w', onRecord: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+  conn.client = client;
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  const { messages } = await conn.request({ type: 'get_messages' });
+  assert.deepEqual(messages, [user, answer, { ...user, timestamp: 6 }]);
+});
