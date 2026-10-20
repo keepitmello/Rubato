@@ -3,12 +3,12 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { readState, writeSettings, writeState } from '../companion.mjs';
-import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, moodText, recallText, sessionAge, startCompanionKeeper,
+import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, moodText, recallText, resumeText, sessionAge, startCompanionKeeper,
   wakeSeedText } from '../keeper.mjs';
 import { HELD_TEMPLATE, MOOD_FRESH_MS, SEGNO_SEARCH, commitOwned, searchSegnoMemory, segnoSearchEnv, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
   record, segnoPaths, seedText, sentMessages, sentText, setWakeWish, readWakeWish } from '../home.mjs';
@@ -31,7 +31,7 @@ function engineFor(env, { existing = true } = {}) {
   const engine = { sessions, sessionFile: path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl'), commands: [] };
   writeFileSync(engine.sessionFile, JSON.stringify({ type: 'session', id: 'segno' }) + '\n');
   if (existing) {
-    sessions.set('segno-1', { sessionId: 'segno-1', status: 'stored', runtimeId: null });
+    sessions.set('segno-1', { sessionId: 'segno-1', status: existing === 'stored' ? 'stored' : 'idle', runtimeId: existing === 'stored' ? null : 'r-segno-1' });
     writeState({ sessionId: 'segno-1', woke: { boundary: null } }, env);
   }
   engine.append = (...entries) => writeFileSync(engine.sessionFile, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n', { flag: 'a' });
@@ -337,6 +337,31 @@ test('wake: a compaction wakes with the compact seed and no recall; a seen bound
   assert.equal(k.of('wake').length, 1);
 });
 
+test('wake: a compaction while the fresh recall waits does not cancel it (roo-runtime.ts keeps pendingFreshRecall)', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env, { existing: false });
+  const k = await keeperFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
+  assert.equal(k.of('wake').length, 1);
+  engine.append({ type: 'message', id: 'c1', timestamp: new Date(at(20, 15) + 3000).toISOString(), message: { role: 'assistant',
+    content: [{ type: 'providerNative', subtype: 'compaction', raw: { type: 'compaction', content: 's' } }] } });
+  await k.poke(at(20, 15) + 4000);
+  assert.ok(k.of('wake')[1].text.startsWith('한 호흡 골랐어'));
+  await k.poke(at(20, 15) + 4000 + RECALL_DELAY_MS + 1000);
+  assert.equal(k.of('recall').length, 1, 'the recall still comes, once');
+});
+
+test('wake: a conversation loaded again for the same window gets Roo\'s resume line only (session-start-hook.sh MODE=resume)', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env, { existing: 'stored' });
+  const k = await keeperFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false } });
+  assert.deepEqual(k.of('wake').map((notice) => notice.text), [resumeText(at(21, 9, 30))]);
+  assert.equal(resumeText(at(21, 9, 30)), '[세션 재시작 — resume] 2026-10-21 09:30 KST. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.');
+  await k.poke(at(21, 9, 31));
+  await k.poke(at(21, 9, 40));
+  assert.equal(k.of('recall').length, 0, 'no recall after a resume');
+  assert.equal(k.of('wake').length, 1);
+});
+
 test('wake: the seed says when the heartbeat is off (session-start-hook.sh heartbeat_pause_note)', () => {
   const text = wakeSeedText({ mode: 'fresh', now: at(21, 9), before: at(21, 1), model: 'x/y', heartbeatOff: true, defaultsDir });
   assert.match(text, /직전 창: 8시간 전 — 낮잠 자고 깬 느낌 \(날짜는 위 '현재'로 확인, 같은 날일 수 있음\)\n하트비트 꺼져 있음/);
@@ -487,8 +512,10 @@ test('search: msearch over Segno\'s own memory/, its own channel and index, Ruba
   assert.equal(call.env.MSEARCH_ROOT, segnoPaths(env).memory);
   assert.match(call.env.MSEARCH_CHANNEL, /^segno_[0-9a-f]{10}$/, 'a sandbox home never shares the live index');
   assert.equal(call.env.MSEARCH_INDEX, `${call.env.MSEARCH_CHANNEL}_idx`);
-  const live = segnoSearchEnv({ HOME: env.HOME });
-  assert.deepEqual([live.MSEARCH_CHANNEL, live.MSEARCH_INDEX], [SEGNO_SEARCH.channel, SEGNO_SEARCH.index], 'the default home is "segno"');
+  const movedHome = segnoSearchEnv({ HOME: env.HOME });
+  assert.match(movedHome.MSEARCH_CHANNEL, /^segno_[0-9a-f]{10}$/, 'a sandbox that only moved HOME is a sandbox too');
+  const live = segnoSearchEnv({ HOME: userInfo().homedir });
+  assert.deepEqual([live.MSEARCH_CHANNEL, live.MSEARCH_INDEX], [SEGNO_SEARCH.channel, SEGNO_SEARCH.index], 'only this account\'s own home is "segno"');
   assert.equal(call.env.MSEARCH_STATE_DIR, path.join(env.HOME, '.rubato', 'memory', 'msearch-state'));
   assert.deepEqual(searchSegnoMemory('', { env, index: true, run }) && calls.at(-1).args, ['--index']);
   const missing = Object.assign(new Error('spawn msearch ENOENT'), { code: 'ENOENT' });

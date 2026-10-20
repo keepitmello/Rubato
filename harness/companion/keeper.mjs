@@ -39,8 +39,9 @@
 //   (new_context, or the window filling up) or a compaction, the keeper wakes it with a first-person
 //   seed — the time, how long since the last window's last moment, its body (the model) and the mood
 //   it fell asleep with — and the wake text. After a new window, and only then, one recall turn
-//   follows ten seconds after that wake turn has ended. A conversation the keeper just created wakes
-//   the same way. The texts are wake.pi.md and recall.pi.md beside the prompt pieces.
+//   follows ten seconds after that wake turn has ended (a compaction in between does not cancel it).
+//   A conversation the keeper just created wakes the same way. A conversation loaded again for the
+//   same window (the engine restarted) gets Roo's one resume line instead. The texts are wake.pi.md and recall.pi.md beside the prompt pieces.
 //
 // At night the keeper puts the companion to sleep, once: between 01:00 and 07:00 local time, when
 // the user has not written to it for three hours and its context has grown past 500k tokens. Sleep
@@ -248,6 +249,12 @@ export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = fa
   return [seed, promptFile(defaultsDir, 'wake.pi.md')].filter(Boolean).join('\n\n');
 }
 
+/** Roo's resume seed (session-start-hook.sh MODE=resume): the time, and that this is the same conversation. */
+export function resumeText(now) {
+  const part = seoulParts(now, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `[세션 재시작 — resume] ${part.year}-${part.month}-${part.day} ${part.hour}:${part.minute} KST. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.`;
+}
+
 /** The recall turn: recall.pi.md as written. */
 export function recallText(defaultsDir) {
   return promptFile(defaultsDir, 'recall.pi.md') || '떠올리기: 오늘·어제 일기, 작업 노트, `memory/status.md`, `notes/held.md`, 직전 창 끝을 펼쳐.';
@@ -342,6 +349,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   let lastSleepCheck;
   let lastBusyAt;
   let sessionFileOf;
+  let resumeOwed = false;
   let reviewChecked = false;
   const readBoundary = boundaryReader();
 
@@ -399,6 +407,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       const live = row && LIVE.has(row.status) && row.runtimeId !== null;
       if (attachedTo !== sessionId || !live) {
         if (attachedTo !== undefined) { await release(); client = await connect(); }
+        // A conversation that was not loaded comes back from its file: that is Roo's resume.
+        if (row && !live) resumeOwed = true;
         await client.attach(sessionId);
         attachedTo = sessionId;
       }
@@ -470,14 +480,25 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     const woke = state.woke;
     if (woke === undefined) { writeState({ woke: { boundary: boundary?.id ?? null } }, env); return false; }
     let pending = woke.pending;
-    let before = woke.before;
+    let before;
+    // A fresh start owes one recall; a compaction while it waits does not cancel it (Roo keeps
+    // pendingFreshRecall across session_compact).
+    const recallOwed = pending === 'fresh' || pending === 'recall' || (boundary && boundary.id !== woke.boundary && boundary.mode === 'fresh');
     if (boundary && boundary.id !== woke.boundary) { pending = boundary.mode; before = boundary.before; }
     if (pending === 'fresh' || pending === 'compact') {
       const model = await active.command({ type: 'get_state' }).then((value) => value?.model, () => undefined);
       await notify(sessionId, wakeSeedText({ mode: pending, now: at, before, model: model ? `${model.provider ?? ''}${model.provider ? '/' : ''}${model.id ?? ''}` : '',
         mood: readMood({ now: at, env }), heartbeatOff: !settings.heartbeat.enabled, defaultsDir }), 'wake');
-      writeState({ woke: { boundary: boundary?.id ?? woke.boundary ?? null, ...(pending === 'fresh' ? { pending: 'recall', at } : {}) } }, env);
+      writeState({ woke: { boundary: boundary?.id ?? woke.boundary ?? null, ...(recallOwed ? { pending: 'recall', at } : {}) } }, env);
       lastBusyAt = at;
+      resumeOwed = false;
+      return true;
+    }
+    // The runtime was loaded again for the same window (an engine restart): Roo's resume line, no
+    // wake text and no recall — it is the same conversation going on.
+    if (resumeOwed) {
+      resumeOwed = false;
+      await notify(sessionId, resumeText(at), 'wake');
       return true;
     }
     if (pending === 'recall' && at - Math.max(lastBusyAt ?? 0, woke.at ?? 0) >= RECALL_DELAY_MS) {

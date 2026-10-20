@@ -1,4 +1,4 @@
-// Rubato's clock (harness/companion keeper.mjs: a heartbeat, the daily report, sleep) wakes
+// Rubato's clock (harness/companion keeper.mjs: a heartbeat, a greeting, a wake or recall, sleep) wakes
 // Segno for its own rhythm. That run stays in Segno's session, where the model sees it, and out
 // of every client: the app on the desktop and T3's mobile app read the same server thread, and
 // the mobile app cannot be changed, so the run never reaches the thread at all. A run is quiet
@@ -41,11 +41,19 @@ export function createQuietRuns({ owned = () => false } = {}) {
   let state = 'idle'; // idle | opening (agent_start held) | quiet | shown
   let held = [];
   let waiters = [];
+  // Whether the last run that settled was quiet: a run opened without any input (a background
+  // completion Segno's own quiet run started) continues that stretch, as quietMessages reads it.
+  let lastQuiet = false;
   const settle = (next) => {
+    if (next === 'idle') lastQuiet = state === 'quiet';
     state = next;
     if (state === 'idle' || state === 'shown') { const done = waiters; waiters = []; for (const resolve of done) resolve(); }
   };
+  // Pi's own messages ahead of the input: its hidden custom messages, and the system message that
+  // declares the tool list at a run's start (a new conversation, or tools added since the last run).
   const isHiddenOwn = (event) => (event?.type === 'message_start' || event?.type === 'message_end')
+    && ((event.message?.role === 'custom' && !isSessionMessage(event.message)) || event.message?.role === 'system');
+  const isOwnCustom = (event) => (event?.type === 'message_start' || event?.type === 'message_end')
     && event.message?.role === 'custom' && !isSessionMessage(event.message);
   const inputOf = (event) => (event?.type === 'message_start' || event?.type === 'message_end') && isInput(event.message)
     ? event.message : undefined;
@@ -67,6 +75,8 @@ export function createQuietRuns({ owned = () => false } = {}) {
         if (input && isClockWake(input)) { held = []; settle('quiet'); return []; }
         // Pi's turn marker and its own hidden messages come before the input; anything else decides.
         if (!input && (type === 'turn_start' || isHiddenOwn(event))) { held.push(event); return []; }
+        // No input at all, after a quiet run, opened by Pi's own message: still Segno's quiet time.
+        if (!input && lastQuiet && held.some(isOwnCustom)) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
         const out = [...held, event];
         held = [];
         settle(type === 'agent_settled' ? 'idle' : 'shown');
