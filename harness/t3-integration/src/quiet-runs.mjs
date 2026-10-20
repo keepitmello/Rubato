@@ -15,15 +15,27 @@ export const isClockWake = (message) => isSessionMessage(message) && message.det
 /** An input a run takes: the person's message, or a message from another conversation, a messenger or Rubato. */
 const isInput = (message) => message?.role === 'user' || isSessionMessage(message);
 
+/** How many launched ids one live stream remembers; the oldest go first. */
+const LAUNCHED_LIMIT = 2000;
 /** Pi's own custom message (a background terminal or subagent finishing, a nudge): not an input. */
 const isOwnCustomMessage = (message) => message?.role === 'custom' && !isSessionMessage(message);
 
-/** The background work a tool result started: a terminal session's id, a subagent's id. */
+/**
+ * The ids a tool result may later be reported under when its work finishes in the background: a
+ * terminal session's id (bash), a subagent's id (Agent), and the tool call's own id (a detached
+ * eval cell is reported under it).
+ */
 export function launchedIds(message) {
-  if (message?.role !== 'toolResult' || !message.details || typeof message.details !== 'object') return [];
-  const { bash_id: bashId, agentId, agentIds } = message.details;
-  return [bashId, agentId, ...(Array.isArray(agentIds) ? agentIds : [])].filter((id) => typeof id === 'string' && id.length >= 4);
+  if (message?.role !== 'toolResult') return [];
+  const details = message.details && typeof message.details === 'object' ? message.details : {};
+  const { bash_id: bashId, agentId, agentIds } = details;
+  return [message.toolCallId, bashId, agentId, ...(Array.isArray(agentIds) ? agentIds : [])]
+    .filter((id) => typeof id === 'string' && id.length >= 4);
 }
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/** Whether `text` names `id` as a whole token: bash_1 is not inside bash_10. */
+const names = (text, id) => new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(id)}(?![A-Za-z0-9_-])`).test(text);
 
 /**
  * Whether Pi's own message reports on work some run launched: that run's visibility (true quiet,
@@ -38,7 +50,7 @@ function launcherOf(message, launched) {
   // A batch can report several pieces of work; one the person asked for makes the turn theirs.
   let found;
   for (const [id, quiet] of launched) {
-    if (!text.includes(id)) continue;
+    if (!text.includes(id) || !names(text, id)) continue;
     if (!quiet) return false;
     found = true;
   }
@@ -117,7 +129,10 @@ export function createQuietRuns({ owned = () => false } = {}) {
     accept(event) {
       const type = event?.type;
       if (type === 'message_end' && (state === 'quiet' || state === 'shown')) {
-        for (const id of launchedIds(event.message)) launched.set(id, state === 'quiet');
+        for (const id of launchedIds(event.message)) {
+          launched.delete(id); launched.set(id, state === 'quiet');
+          if (launched.size > LAUNCHED_LIMIT) launched.delete(launched.keys().next().value);
+        }
       }
       if (state === 'pending') {
         if (type === 'agent_settled') settledWhilePending = true;

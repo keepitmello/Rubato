@@ -301,3 +301,23 @@ test('two pieces of work finishing in the other order each keep their own launch
   const both = ownRun(taskDone(['st_segno02', 'st_person02']), said('C'));
   assert.deepEqual(pass(mixed, both), both);
 });
+
+test('a finish names its work exactly: bash_1 is not bash_10, and a detached eval cell is its tool call', () => {
+  const filter = createQuietRuns();
+  pass(filter, run(user, bashLaunch('bash_1'), answer));
+  pass(filter, run(wake('heartbeat'), bashLaunch('bash_10'), answer));
+  pass(filter, run(user, answer));
+  assert.deepEqual(pass(filter, ownRun(terminalDone('bash_10'), said('PRIVATE_JOB_TEN'))), []);
+  const stored = [user, bashLaunch('bash_1'), answer, wake('heartbeat'), bashLaunch('bash_10'), answer, user, answer,
+    terminalDone('bash_10'), said('PRIVATE_JOB_TEN')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), true);
+  const evalLaunch = { role: 'toolResult', toolCallId: 'toolu_01EVALcell', toolName: 'eval', isError: false, timestamp: 10,
+    content: [{ type: 'text', text: 'detached' }], details: {} };
+  const evalDone = { role: 'custom', customType: 'codemode:detached-eval', display: false, timestamp: 20,
+    content: '<system-reminder>Detached eval cell toolu_01EVALcell (js) completed.\n42\n</system-reminder>' };
+  const cells = createQuietRuns();
+  pass(cells, run(user, evalLaunch, answer));
+  pass(cells, run(wake('heartbeat'), answer));
+  const back = ownRun(evalDone, said('EVAL_FOR_PERSON'));
+  assert.deepEqual(pass(cells, back), back);
+});
