@@ -769,7 +769,8 @@ test('prompt: a work area gets one card in memory/work/ and its raw research und
   assert.match(companion, /정본을 직접 고칠 땐\(일 카드 빼고\) `## 지금`/);
   assert.match(readFileSync(path.join(defaultsDir, 'recall.pi.md'), 'utf8'), /영역 폴더의 `research\/`는 원본이라 필요할 때만/);
   const dream = readFileSync(path.resolve(defaultsDir, '..', '..', 'companion', 'dream', 'dream.md'), 'utf8');
-  assert.match(dream, /\*\*일 카드는 달라\.\*\* `memory\/work\/<영역>\.md`.*틀은 그대로 두고, 바뀐 사실이나 새로 정해진 운영 방식만 그 줄에서 고쳐\./);
+  assert.match(dream, /\*\*일 카드는 달라\.\*\* `memory\/work\/<영역>\.md`.*다시 빚거나 줄이지 않아\. 틀은 그대로 두고, 바뀐 사실이나 새로 정해진 운영 방식만 그 줄에서 고치고, 고친 줄에 출처\(daily 날짜\)를 붙이는 데까지만 손대\./);
+  assert.match(dream, /고쳐서 15KB를 넘길 것 같으면 깎지 말고 `memory\/to-ask\.md`에 올려\./);
   assert.match(dream, /영역 폴더의 `research\/`는 리드가 해 온 원본이라 안 걸어\./);
   assert.match(dream, /\| `memory\/work\/\*\.md` \| 일 카드\. 일 영역 하나에 파일 하나/);
 });
