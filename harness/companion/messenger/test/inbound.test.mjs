@@ -201,3 +201,17 @@ test("a report waiting for Segno's conversation is retried without using up its 
   await settle(box.service);
   assert.deepEqual(box.delivered.map((delivery) => delivery.text.split('\n')[0]), ['오래 기다린 신고']);
 });
+
+test('"typing…" shows in another chat too while Segno works on its message, as in Roo, and stops at the answer', async (t) => {
+  const box = await paired(t, { typingDelay: () => 0 });
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '앱이 죽어요', from: 'Gildong' });
+  await settle(box.service);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(box.fake.actions.some((row) => row.chatId === GROUP_CHAT && row.action === 'typing'));
+  const { transcript, channelEntry, answerEntry } = await import('./helpers.mjs');
+  transcript(box, [channelEntry('g1', { isUser: false, chatId: GROUP_CHAT, name: 'Gildong' }), answerEntry('g2', '재현 방법을 알려주세요.')]);
+  await settle(box.service);
+  const count = box.fake.actions.length;
+  await new Promise((resolve) => setTimeout(resolve, 4500));
+  assert.equal(box.fake.actions.length, count, 'it stops when the (held) answer is written');
+});

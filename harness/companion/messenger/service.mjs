@@ -45,7 +45,8 @@ import { openInbox } from '../inbox.mjs';
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 
 /**
- * "typing…" while Segno works on a Telegram turn (Roo's telegram-tools.ts scheduleTelegramTyping):
+ * "typing…" in the chat Segno works on a message from, the person's or another's (Roo's
+ * telegram-tools.ts scheduleTelegramTyping, daemon.ts handleInbound):
  * it starts after a short, varied pause, Telegram is told again every four seconds, and it stops
  * when the turn's answer is written, after ten minutes, or when the service closes.
  */
@@ -392,6 +393,8 @@ export function startCompanionMessenger({
         text: `${text}\n\n(보낸 곳: ${message.chat.title ?? chatId})`,
         ...(attachments.length ? { attachments } : {}),
       });
+      // Roo shows "typing…" in every chat it works on a message from (daemon.ts handleInbound).
+      startTyping(client, chatId);
       log('inbound-other', { chatId, messageId: message.message_id });
     }
   }
