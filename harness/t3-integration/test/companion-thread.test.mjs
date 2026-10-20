@@ -100,6 +100,15 @@ test("a turn the person opened that ends with no reply stays open for Segno's re
   await late.publish(run(user, final));
   await pause(120);
   assert.deepEqual(late.shown().map((record) => record.type), ['agent_start', 'agent_settled'], 'a reminder that never comes lets the turn end');
+  assert.equal(late.shown().at(-1).aborted, true, 'as stopped: a turn with no words for the person does not notify');
+  assert.equal(s.shown().at(-1).aborted, undefined, 'a turn that replied ends as finished, and notifies');
+
+  const silent = await stream();
+  await silent.conn.request({ type: 'prompt', message: '?' });
+  await silent.publish(run(user, final));
+  await silent.publish(run(reminder, final));
+  assert.deepEqual(silent.shown().map((record) => [record.type, record.aborted]), [['agent_start', undefined], ['agent_start', undefined], ['agent_settled', true]],
+    'the reminder\'s turn said nothing either: stopped');
 
   const failed = await stream();
   await failed.conn.request({ type: 'prompt', message: '?' });
