@@ -10,7 +10,7 @@
 | 작업 노트 | notes 도구 | 지금 쥐고 있는 것. 잠들기 전에 지금 상태로 다시 써 뒀어 |
 | 당김 | 집의 `notes/` | 만료 없는 하다 만 것들 |
 | 챙길 거 | `notes/held.md` | 사용자가 던진 마감·할 일 |
-| 현황 | `memory/status.md` | 뭐가 열려 있고 뭐가 닫혔는지. 흐린 건 기억 검색 |
+| 현황 | `memory/status.md` | 뭐가 열려 있고 뭐가 닫혔는지. 흐린 건 `segno_search` |
 | 직전 창 | `history_list_windows`로 직전 창을 찾고 `history_list_items` window_id=<그 창> recent_first=true | 바로 앞 창에 있었던 일. 사용자 말, 내 말·혼잣말·손, 하트비트·리드 끝 |
 
 파일은 처음부터 끝까지 다 읽혀.

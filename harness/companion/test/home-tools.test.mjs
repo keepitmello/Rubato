@@ -27,7 +27,7 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   t.after(() => { process.env = before; });
   const tools = toolsOf();
   assert.deepEqual([...tools.keys()].sort(), ['career_schedule', 'inbox_add', 'inbox_list', 'inbox_update', 'memory_seed', 'segno_commit',
-    'segno_record', 'sent_messages', 'wake_wish', 'world_fragment']);
+    'segno_record', 'segno_search', 'sent_messages', 'wake_wish', 'world_fragment']);
   await tools.get('segno_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
   await tools.get('segno_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
   const daily = readRecord('daily', { env });

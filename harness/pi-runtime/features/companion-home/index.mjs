@@ -2,6 +2,7 @@
 //
 // - `segno_record` writes the daily (facts, decisions, what is still open), the diary (feelings and
 //   memorable exchanges, in Segno's voice), a working note, or the mood it falls asleep with.
+// - `segno_search` searches Segno's own memory/ with msearch (Roo's msearch.sh over Roo's memory/).
 // - `segno_commit` commits the record files Segno changed to its home's history (Roo commit-owned.sh).
 // - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report from another chat in
 //   Telegram, what Segno set aside, which lead holds it and whether it is done.
@@ -14,7 +15,7 @@
 // career.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, commitOwned, oldMemorySeed, record, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, commitOwned, oldMemorySeed, record, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./career.mjs";
 
@@ -80,6 +81,24 @@ export function createCompanionHomeFactories() {
           const result = commitOwned(params.paths, params.message);
           return { content: [text(result.committed ? `Committed ${result.commit}: ${result.files.join(", ")}` : "Nothing changed; nothing committed.")],
             details: result };
+        },
+      });
+
+      pi.registerTool({
+        name: "segno_search",
+        label: "Search my memory",
+        exposure: "direct",
+        searchKeywords: ["search", "memory", "recall", "remember", "msearch", "기억", "검색", "찾기"],
+        description:
+          "Search your own memory — your daily records, diary, canonical pages and resident memory in your home's " +
+          "memory/ — the way Roo's msearch does: hybrid meaning and keyword search, newest writes included. Ask with " +
+          "the people, events, time and key words you are after, not the user's whole sentence.",
+        parameters: {
+          type: "object", additionalProperties: false, required: ["query"],
+          properties: { query: { type: "string", minLength: 1 } },
+        },
+        async execute(_id, params) {
+          return { content: [text(searchSegnoMemory(params.query))] };
         },
       });
 

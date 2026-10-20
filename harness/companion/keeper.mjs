@@ -524,8 +524,9 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    if (missed) writeState({ greeted: { ...state.greeted, [missed]: localDate(at) } }, env);
     await notify(sessionId, heartbeatText({ tick, at, action, wish, career, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
+    // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
+    if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);
   }
 
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */
