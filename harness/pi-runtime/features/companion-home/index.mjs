@@ -9,7 +9,7 @@
 // - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
 // - `memory_seed`, `world_fragment`, `sent_messages` are Roo's random-memory.sh, random-world.sh and
 //   sent.sh: an old memory, a piece of the world, and what really reached the user.
-// - `schedule` is Roo's career-schedule.py show, made general: today's and tomorrow's items from every source.
+// - `user_schedule` is Roo's career-schedule.py show, made general: today's and tomorrow's items from every source.
 //
 // All of them live in the companion's home (harness/companion home.mjs, inbox.mjs, world.mjs,
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
@@ -158,7 +158,7 @@ export function createCompanionHomeFactories() {
       });
 
       pi.registerTool({
-        name: "schedule",
+        name: "user_schedule",
         label: "Schedule",
         exposure: "direct",
         searchKeywords: ["schedule", "calendar", "deadline", "today", "tomorrow", "일정", "달력", "마감"],

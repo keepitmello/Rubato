@@ -386,7 +386,7 @@ export async function scheduleNudges({ sources, now = Date.now(), env = process.
       state.night = today;
       const timed = ahead.filter((item) => item.time).length;
       out.push(`SCHEDULE_NIGHT 내일 ${tomorrow.getMonth() + 1}/${tomorrow.getDate()} 목록 건넬 때야 (시각 있는 것 ${timed} · 종일 ${ahead.length - timed}): ` +
-        'schedule 도구로 tomorrow');
+        'user_schedule 도구로 tomorrow');
     }
   }
   const cutoff = now - 2 * DAY_MS;

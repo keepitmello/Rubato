@@ -309,7 +309,7 @@ test('schedule: SCHEDULE_NIGHT once between 22 and 23 when tomorrow has items', 
   mkdirSync(env.RUBATO_COMPANION_HOME, { recursive: true });
   const run = (time) => scheduleNudges({ sources: [{ location: '/plan.md' }], now: time, env, readFile: () => PLAN });
   assert.deepEqual(await run(at(20, 21, 30)), []);
-  assert.equal((await run(at(20, 22, 10)))[0], 'SCHEDULE_NIGHT 내일 10/21 목록 건넬 때야 (시각 있는 것 2 · 종일 1): schedule 도구로 tomorrow');
+  assert.equal((await run(at(20, 22, 10)))[0], 'SCHEDULE_NIGHT 내일 10/21 목록 건넬 때야 (시각 있는 것 2 · 종일 1): user_schedule 도구로 tomorrow');
   assert.deepEqual(await run(at(20, 23, 10)), [], 'once a day');
 });
 
