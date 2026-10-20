@@ -26,7 +26,7 @@ const BUSY = new Set(['running', 'starting']);
 export const SYNC_RETRY_MS = Object.freeze({ beforeClose: [500, 1000, 2000], afterEnd: [5000, 15_000, 30_000, 60_000, 120_000] });
 
 export async function followEngineRun({ bridge, connect, threadId, sessionId, throttleMs = 1000, retryMs = SYNC_RETRY_MS,
-  onEnd = () => {}, log = () => {} }) {
+  onEnd = () => {}, closed = () => false, log = () => {} }) {
   const client = await connect();
   let unsubscribe;
   let runId = null;
@@ -51,7 +51,8 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
     if (!synced) void (async () => {
       for (const ms of retryMs.afterEnd) {
         await new Promise((resolve) => setTimeout(resolve, ms).unref?.());
-        if (stopped || (await sync())) return;
+        // The bridge closing ends the retries too: the follower has already left its list by then.
+        if (stopped || closed() || (await sync())) return;
       }
       log('engine run sync gave up', new Error(`${threadId} still lacks part of ${sessionId}`));
     })();

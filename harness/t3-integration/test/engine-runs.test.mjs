@@ -179,3 +179,18 @@ test('an older message the thread happens to lack is not written again by the fo
   assert.ok(await until(() => t3.messages.some((message) => message.text === '새 답.')));
   assert.equal(t3.messages.some((message) => message.text.startsWith('아주 예전 답')), false);
 });
+
+test('closing the bridge also ends the retries of a follower that already let its session go', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  let reads = 0;
+  bridge.transcript = async () => { reads += 1; throw new Error('engine gone'); };
+  await bridge.followEngineRun('T1', 'S1');
+  session.failReads = 100;
+  session.push([{ type: 'message_end', message: said('못 읽은 답.', 716) }, { type: 'agent_settled' }], 'idle');
+  assert.ok(await until(() => session.detached === 1 && bridge.engineFollowers.size === 0));
+  await bridge.close();
+  const after = reads;
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(reads, after, 'no read after the bridge closed');
+  assert.equal(t3.runs[0].status, 'completed');
+});
