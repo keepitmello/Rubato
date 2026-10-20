@@ -115,9 +115,11 @@ function undoLog(env) {
   return {
     async step(files, work) {
       const entry = files.map((file) => ({ file, before: bytesOf(file) }));
-      await work();
-      for (const item of entry) item.after = bytesOf(item.file);
       steps.push(...entry);
+      // A step that fails halfway (one of its files written, the next refused) is undone too: what
+      // it left is taken as its own.
+      try { await work(); }
+      finally { for (const item of entry) item.after = bytesOf(item.file); }
     },
     reviewed() { reviewed = true; },
     restore() {
