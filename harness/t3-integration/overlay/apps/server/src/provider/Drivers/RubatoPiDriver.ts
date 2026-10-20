@@ -67,6 +67,8 @@ export interface PiSessionMessage {
   readonly text: string;
   readonly createdAt: string;
   readonly context: unknown;
+  /** A backfilled message's run: the run of the message it followed (bridge backfill.mjs). */
+  readonly runId?: string | null;
 }
 /** A rewind that lands after a finished tool step: its row's call id, its turn, and when it finished. */
 export interface RubatoRevertStep {
@@ -111,6 +113,8 @@ export interface PiBridge {
   checkRewind?: (threadId: string, turns: number) => Promise<void>;
   /** A typed `/rewind N`: once its turn settled, T3 reverts it and the N turns before it (RubatoPiSessions.ts). */
   rewindConversation?: (threadId: string, request: {readonly turns: number}) => Promise<void>;
+  /** When the thread had no stream, from T3's provider-session events ([{ from, to }] ms); bound by RubatoPiSessions.ts. */
+  streamGaps?: (threadId: string) => Promise<ReadonlyArray<{ from: number; to: number }>>;
   projectedThread: (threadId: string) => Promise<{
     messages: ReadonlyArray<{id: string; role: string; text: string; turnId: string | null; createdAt: string}>;
     checkpoints: ReadonlyArray<{turnId: string; checkpointTurnCount: number}>;

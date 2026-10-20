@@ -67,38 +67,59 @@ export interface SessionMessage {
   readonly createdAt: string;
   readonly context?: OrchestrationMessageContext;
   readonly senderThreadId?: ThreadId;
+  /** The run it belongs to: a backfilled message stays in the run it followed. */
+  readonly runId?: RunId;
 }
 /**
- * A message Segno sent the person on Telegram from a run the thread does not show (bridge
- * telegram-echo.mjs). It is written as Segno's own words: an assistant message, without the record.
+ * Records that make a session message one of the thread's own messages, written without the record:
+ * `rubato-telegram`, what Segno sent the person on Telegram from a run the thread does not show
+ * (bridge telegram-echo.mjs), is Segno's words; `rubato-backfill`, a turn the engine ran while T3
+ * held no stream on the thread (bridge backfill.mjs), keeps the role it had in the session.
  */
 export const TELEGRAM_ECHO_KIND = "rubato-telegram";
-const isTelegramEcho = (context: unknown): boolean => {
-  const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown }> } | undefined)?.records;
-  return Array.isArray(records) && records.some((record) => record?.kind === TELEGRAM_ECHO_KIND);
+export const BACKFILL_KIND = "rubato-backfill";
+const ownRole = (context: unknown): "assistant" | "user" | null => {
+  const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown; readonly payload?: unknown }> } | undefined)?.records;
+  if (!Array.isArray(records)) return null;
+  for (const record of records) {
+    if (record?.kind === TELEGRAM_ECHO_KIND) return "assistant";
+    if (record?.kind === BACKFILL_KIND) {
+      const role = (record.payload as { readonly role?: unknown } | undefined)?.role;
+      return role === "user" ? "user" : "assistant";
+    }
+  }
+  return null;
 };
 /** The message and turn item of a session message, both keyed by its id (a replay replaces them). */
 export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage, ordinal: number) => {
   const at = DateTime.makeUnsafe(entry.createdAt);
   const messageId = MessageId.make(entry.id);
-  if (isTelegramEcho(entry.context)) {
+  const own = ownRole(entry.context);
+  const runId = entry.runId ?? null;
+  if (own !== null) {
+    const common = { id: TurnItemId.make(entry.id), threadId, runId, nodeId: null, providerThreadId: null, providerTurnId: null,
+      nativeItemRef: null, parentItemId: null, ordinal, status: "completed" as const, title: null, startedAt: at, completedAt: at,
+      updatedAt: at };
+    if (own === "user") {
+      const message: OrchestrationV2ConversationMessage = { createdBy: "user", creationSource: "provider", id: messageId, threadId,
+        runId, nodeId: null, role: "user", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+      const turnItem: OrchestrationV2TurnItem = { ...common, createdBy: "user", creationSource: "provider", type: "user_message",
+        messageId, inputIntent: "turn_start", text: entry.text, attachments: [] };
+      return { message, turnItem, at };
+    }
     const message: OrchestrationV2ConversationMessage = { createdBy: "agent", creationSource: "provider", id: messageId, threadId,
-      runId: null, nodeId: null, role: "assistant", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
-    const turnItem: OrchestrationV2TurnItem = {
-      id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
-      nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
-      updatedAt: at, type: "assistant_message", messageId, text: entry.text, streaming: false,
-    };
+      runId, nodeId: null, role: "assistant", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+    const turnItem: OrchestrationV2TurnItem = { ...common, type: "assistant_message", messageId, text: entry.text, streaming: false };
     return { message, turnItem, at };
   }
   // Upstream marks a message another agent sent this way ("Sent by another agent").
   const author = { createdBy: "agent" as const, creationSource: "provider" as const,
     ...(entry.senderThreadId === undefined ? {} : { senderThreadId: entry.senderThreadId }) };
   const context = entry.context === undefined ? {} : { context: entry.context };
-  const message: OrchestrationV2ConversationMessage = { ...author, id: messageId, threadId, runId: null, nodeId: null,
+  const message: OrchestrationV2ConversationMessage = { ...author, id: messageId, threadId, runId, nodeId: null,
     role: "user", text: entry.text, ...context, attachments: [], streaming: false, createdAt: at, updatedAt: at };
   const turnItem: OrchestrationV2TurnItem = {
-    id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
+    id: TurnItemId.make(entry.id), threadId, runId, nodeId: null, providerThreadId: null, providerTurnId: null,
     nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
     updatedAt: at, ...author, type: "user_message", messageId, inputIntent: "turn_start", text: entry.text, ...context,
     attachments: [],
