@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -279,4 +279,22 @@ test('the page asks for a review with a request the keeper can read and clear', 
   assert.equal(readPersonaReviewRequest(env), '2026-10-20T05:00:00.000Z');
   clearPersonaReviewRequest(env);
   assert.equal(readPersonaReviewRequest(env), undefined);
+});
+
+test('resetting a piece is one step: when its base cannot be removed, the person\'s file stays', (t) => {
+  if (process.getuid?.() === 0) return;
+  const env = sandbox(t);
+  writePiece('user', 'I run a studio.', { defaultsDir, env });
+  const base = basePiecePath(env, 'user');
+  mkdirSync(path.dirname(base), { recursive: true });
+  writeFileSync(base, 'old default\n');
+  chmodSync(path.dirname(base), 0o500);
+  try {
+    assert.throws(() => writePiece('user', '', { defaultsDir, env }));
+    assert.equal(readFileSync(personalPiecePath(env, 'user'), 'utf8'), 'I run a studio.\n');
+    assert.equal(readFileSync(base, 'utf8'), 'old default\n');
+  } finally { chmodSync(path.dirname(base), 0o700); }
+  assert.deepEqual(writePiece('user', '', { defaultsDir, env }), { personal: false });
+  assert.equal(existsSync(personalPiecePath(env, 'user')), false);
+  assert.deepEqual(readdirSync(companionPaths(env).prompt).filter((name) => name.includes('.removing')), []);
 });

@@ -413,8 +413,13 @@ export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
   const defaultText = defaultsDir && existsSync(defaultPiecePath(defaultsDir, id))
     ? readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim() : undefined;
   if (!trimmed || trimmed === defaultText) {
-    rmSync(file, { force: true });
-    rmSync(basePiecePath(env, id), { force: true });
+    // One step: the copy is set aside, its base removed, then the copy dropped. A base that cannot be
+    // removed puts the copy back, so a failed reset leaves the person's file as it was.
+    const aside = existsSync(file) ? `${file}.${randomUUID()}.removing` : undefined;
+    if (aside) renameSync(file, aside);
+    try { rmSync(basePiecePath(env, id), { force: true }); }
+    catch (error) { if (aside) renameSync(aside, file); throw error; }
+    if (aside) rmSync(aside, { force: true });
     return { personal: false };
   }
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
