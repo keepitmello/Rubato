@@ -15,16 +15,52 @@ export const isClockWake = (message) => isSessionMessage(message) && message.det
 /** An input a run takes: the person's message, or a message from another conversation, a messenger or Rubato. */
 const isInput = (message) => message?.role === 'user' || isSessionMessage(message);
 
+/** Pi's own custom message (a background terminal or subagent finishing, a nudge): not an input. */
+const isOwnCustomMessage = (message) => message?.role === 'custom' && !isSessionMessage(message);
+
+/** The background work a tool result started: a terminal session's id, a subagent's id. */
+export function launchedIds(message) {
+  if (message?.role !== 'toolResult' || !message.details || typeof message.details !== 'object') return [];
+  const { bash_id: bashId, agentId, agentIds } = message.details;
+  return [bashId, agentId, ...(Array.isArray(agentIds) ? agentIds : [])].filter((id) => typeof id === 'string' && id.length >= 4);
+}
+
+/**
+ * Whether Pi's own message reports on work some run launched: that run's visibility (true quiet,
+ * false shown), or undefined when it names none we saw start. The finish of a terminal session
+ * says its id in its text; a subagent's carries it in its details.
+ */
+function launcherOf(message, launched) {
+  if (!isOwnCustomMessage(message) || !launched.size) return undefined;
+  let text;
+  try { text = `${typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')} ${JSON.stringify(message.details ?? '')}`; }
+  catch { return undefined; }
+  // A batch can report several pieces of work; one the person asked for makes the turn theirs.
+  let found;
+  for (const [id, quiet] of launched) {
+    if (!text.includes(id)) continue;
+    if (!quiet) return false;
+    found = true;
+  }
+  return found;
+}
+
 /**
  * The messages of a stored conversation (Pi's message list, oldest first) that belong to quiet
- * runs: each clock wake and everything after it up to the next input that is not a clock wake.
+ * runs: each clock wake and everything after it up to the next input that is not a clock wake. A
+ * turn opened by work finishing in the background belongs to the run that launched that work —
+ * the user's request stays the user's even when a heartbeat ran in between; work Segno started in
+ * its own quiet time stays quiet. A finish that names no work seen starting continues the stretch.
  */
 export function quietMessages(messages) {
   const quiet = new Set();
+  const launched = new Map();
   let inQuiet = false;
   for (const message of Array.isArray(messages) ? messages : []) {
     if (isClockWake(message)) inQuiet = true;
     else if (isInput(message)) inQuiet = false;
+    else { const by = launcherOf(message, launched); if (by !== undefined) inQuiet = by; }
+    for (const id of launchedIds(message)) launched.set(id, inQuiet);
     if (inQuiet) quiet.add(message);
   }
   return quiet;
@@ -41,9 +77,11 @@ export function createQuietRuns({ owned = () => false } = {}) {
   let state = 'idle'; // idle | opening (agent_start held) | pending (a run already going, asked about) | quiet | shown
   let held = [];
   let waiters = [];
-  // Whether the last run that settled was quiet: a run opened without any input (a background
-  // completion Segno's own quiet run started) continues that stretch, as quietMessages reads it.
+  // Whether the last run that settled was quiet, and which run launched each piece of background
+  // work: a run opened without any input (work finishing) belongs to the run that launched that work,
+  // else it continues the last stretch — as quietMessages reads it.
   let lastQuiet = false;
+  const launched = new Map();
   const settle = (next) => {
     if (next === 'idle') lastQuiet = state === 'quiet';
     state = next;
@@ -78,6 +116,9 @@ export function createQuietRuns({ owned = () => false } = {}) {
     },
     accept(event) {
       const type = event?.type;
+      if (type === 'message_end' && (state === 'quiet' || state === 'shown')) {
+        for (const id of launchedIds(event.message)) launched.set(id, state === 'quiet');
+      }
       if (state === 'pending') {
         if (type === 'agent_settled') settledWhilePending = true;
         held.push(event);
@@ -96,8 +137,13 @@ export function createQuietRuns({ owned = () => false } = {}) {
         if (input && isClockWake(input)) { held = []; settle('quiet'); return []; }
         // Pi's turn marker and its own hidden messages come before the input; anything else decides.
         if (!input && (type === 'turn_start' || isHiddenOwn(event))) { held.push(event); return []; }
-        // No input at all, after a quiet run, opened by Pi's own message: still Segno's quiet time.
-        if (!input && lastQuiet && held.some(isOwnCustom)) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
+        // No input at all, opened by Pi's own message (work finishing): the run that launched the work
+        // decides; work nobody here saw start continues the last stretch.
+        if (!input && held.some(isOwnCustom)) {
+          const verdicts = held.map((one) => (one.type === 'message_end' ? launcherOf(one.message, launched) : undefined));
+          const by = verdicts.includes(false) ? false : verdicts.includes(true) ? true : undefined;
+          if (by ?? lastQuiet) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
+        }
         const out = [...held, event];
         held = [];
         settle(type === 'agent_settled' ? 'idle' : 'shown');

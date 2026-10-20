@@ -86,3 +86,26 @@ test('a session created as the companion carries its marker in the list, and a f
   assert.deepEqual(await markers(metadata.file), []);
   await assert.rejects(store.create({ cwd: tmpdir(), companion: 'yes' }), /companion must be a boolean/);
 });
+
+test('a transcript carries Pi\'s own custom messages hidden, so a client can tell whose turn follows a background finish', async (t) => {
+  const { appendFile } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  const created = await store.create({ cwd: tmpdir(), title: 'Background' });
+  const head = JSON.parse((await readFile(created.file, 'utf8')).trim().split('\n').at(-1));
+  const at = new Date().toISOString();
+  const lines = [
+    { type: 'message', id: 'm1', parentId: head.id, timestamp: at, message: { role: 'user', content: 'run it', timestamp: 1 } },
+    { type: 'custom_message', id: 'c1', parentId: 'm1', timestamp: at, customType: 'senpi-terminal:notification', display: false,
+      content: '<system-reminder>Background terminal session bash_9 finished: completed.</system-reminder>' },
+    { type: 'custom_message', id: 'c2', parentId: 'c1', timestamp: at, customType: 'rubato-session-message', display: false,
+      content: 'x', details: { v: 1, kind: 'notice', from: { sessionId: 'lead' } } },
+    { type: 'message', id: 'm2', parentId: 'c2', timestamp: at, message: { role: 'assistant', content: [{ type: 'text', text: 'done' }], timestamp: 2 } },
+  ];
+  await appendFile(created.file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
+  const { messages } = await store.transcript(created.id);
+  assert.deepEqual(messages.map((message) => [message.role, message.customType ?? null, message.display ?? null]),
+    [['user', null, null], ['custom', 'senpi-terminal:notification', false], ['assistant', null, null]],
+    'the terminal finish comes hidden; a hidden session notice still stays out');
+});

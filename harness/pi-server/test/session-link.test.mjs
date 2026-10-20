@@ -336,7 +336,7 @@ test('safety: oversized text, self-send, unknown target, duplicate and rate limi
 const sessionMessage = (messageId, text, display = true) => ({ type: 'custom_message', customType: 'rubato-session-message',
   content: `envelope for ${text}`, display, details: { v: 1, messageId, kind: 'message', from: { sessionId: 'a', title: 'A', cwd: '/' }, text } });
 
-test('the read-only transcript keeps received session messages in the live shape, and only those custom messages', async (t) => {
+test('the read-only transcript keeps received session messages in the live shape; Pi\'s own custom messages come hidden', async (t) => {
   const env = await setup(t);
   const session = await writeSession(env.sessionsDir, env.root, [
     user('hi'),
@@ -348,7 +348,9 @@ test('the read-only transcript keeps received session messages in the live shape
   await env.listed(session.id);
   const client = await env.client();
   const { messages } = await client.transcript(session.id);
-  assert.deepEqual(messages.map((message) => message.role), ['user', 'custom', 'assistant']);
+  assert.deepEqual(messages.map((message) => [message.role, message.customType ?? null, message.display ?? null]),
+    [['user', null, null], ['custom', 'rubato-session-message', true], ['custom', 'rubato-runtime:wake', false], ['assistant', null, null]],
+    'a hidden session message stays out; Pi\'s own message comes hidden, for telling whose turn follows (t3 quiet-runs.mjs)');
   const stored = session.entries[1];
   assert.deepEqual(messages[1], { entryId: 'e1', role: 'custom', customType: 'rubato-session-message', content: stored.content,
     display: true, details: stored.details, timestamp: Date.parse(stored.timestamp) });

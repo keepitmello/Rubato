@@ -13,14 +13,17 @@ const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
 /**
  * A message another conversation sent (session link) as Pi's live `get_messages` carries
  * it: the custom message shape plus `entryId`. Rubato's clock (`wake`) comes too, hidden as
- * in Pi: it opens its turn in the app's thread and draws nothing. Every other custom message
- * stays out.
+ * in Pi: it opens its turn in the app's thread and draws nothing. Pi's own custom messages
+ * (a background terminal or subagent finishing) come hidden as well: they draw nothing, but the
+ * app needs them to tell whose turn follows (t3-integration quiet-runs.mjs).
  */
-const receivedRow = (entry) => entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE
-  && (entry.display !== false || entry.details?.kind === 'wake')
-  ? { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content, display: entry.display !== false,
-    details: entry.details, timestamp: new Date(entry.timestamp).getTime() }
-  : undefined;
+const receivedRow = (entry) => {
+  if (entry.type !== 'custom_message') return undefined;
+  const session = entry.customType === SESSION_MESSAGE;
+  if (session && !(entry.display !== false || entry.details?.kind === 'wake')) return undefined;
+  return { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content,
+    display: session ? entry.display !== false : false, details: entry.details, timestamp: new Date(entry.timestamp).getTime() };
+};
 // One cap across all cwd folders, rather than Pi's per-folder cap multiplied
 // by the number of folders. Concurrent list/resolve calls share the same scan.
 async function mapFiles(items, read) {

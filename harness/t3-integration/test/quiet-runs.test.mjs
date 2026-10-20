@@ -246,3 +246,58 @@ test('attaching while a long run streams and its start already left the engine b
   assert.equal(await attach([user, answer, wake('sleep'), say('working', 'toolUse')], 'QUIET_TAIL'), 0, 'a clock run\'s tail stays out');
   assert.ok(await attach([user, answer, { ...user, timestamp: 6 }, say('working', 'toolUse')], 'SHOWN_TAIL') > 0, 'the person\'s run comes through');
 });
+
+// ── background work finishing belongs to the run that launched it (lead, O2 option a) ──
+
+const bashLaunch = (id, at = 10) => ({ role: 'toolResult', toolCallId: `call-${id}`, toolName: 'bash', isError: false, timestamp: at,
+  content: [{ type: 'text', text: `Command running in background with ID: ${id}` }], details: { bash_id: id, background: true } });
+const agentLaunch = (id, at = 10) => ({ role: 'toolResult', toolCallId: `call-${id}`, toolName: 'Agent', isError: false, timestamp: at,
+  content: [{ type: 'text', text: `Started ${id}` }], details: { agentId: id, status: 'running', mode: 'spawn' } });
+const terminalDone = (id, at = 20) => ({ role: 'custom', customType: 'senpi-terminal:notification', display: false, timestamp: at,
+  content: `<system-reminder>Background terminal session ${id} finished: completed (exit code 0).</system-reminder>` });
+const taskDone = (ids, at = 20) => ({ role: 'custom', customType: 'rubato.task.completion', display: false, timestamp: at,
+  content: 'A subagent finished.', details: ids.map((agentId) => ({ agentId, status: 'completed' })) });
+const runWith = (input, ...tail) => run(input, ...tail);
+const ownRun = (custom, reply) => [{ type: 'agent_start' }, { type: 'turn_start' },
+  { type: 'message_start', message: custom }, { type: 'message_end', message: custom },
+  { type: 'message_start', message: reply }, { type: 'message_end', message: reply }, { type: 'agent_end' }, { type: 'agent_settled' }];
+const said = (text) => ({ role: 'assistant', content: [{ type: 'text', text }], timestamp: 30, stopReason: 'stop' });
+
+test('the person\'s background work finishing after a heartbeat comes back to them, live and in history', () => {
+  for (const [launch, done] of [[bashLaunch('bash_71'), terminalDone('bash_71')], [agentLaunch('st_01a0beef'), taskDone(['st_01a0beef'])]]) {
+    const filter = createQuietRuns();
+    pass(filter, runWith(user, launch, answer));
+    assert.deepEqual(pass(filter, run(wake('heartbeat'), answer)), []);
+    const finish = ownRun(done, said('RESULT_FOR_PERSON'));
+    assert.deepEqual(pass(filter, finish), finish, `${done.customType}: shown live`);
+    const stored = [user, launch, answer, wake('heartbeat'), answer, done, said('RESULT_FOR_PERSON')];
+    assert.equal(quietMessages(stored).has(stored.at(-1)), false, `${done.customType}: shown in history`);
+  }
+});
+
+test('work Segno launched in its quiet time stays quiet when it finishes after the person spoke', () => {
+  const filter = createQuietRuns();
+  pass(filter, run(wake('heartbeat'), bashLaunch('bash_72'), answer));
+  pass(filter, run(user, answer));
+  assert.deepEqual(pass(filter, ownRun(terminalDone('bash_72'), said('PRIVATE'))), []);
+  const stored = [wake('heartbeat'), bashLaunch('bash_72'), answer, user, answer, terminalDone('bash_72'), said('PRIVATE')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), true);
+});
+
+test('two pieces of work finishing in the other order each keep their own launcher; a mixed batch is the person\'s', () => {
+  const filter = createQuietRuns();
+  pass(filter, run(user, agentLaunch('st_person01'), answer));
+  pass(filter, run(wake('heartbeat'), agentLaunch('st_segno01'), answer));
+  assert.deepEqual(pass(filter, ownRun(taskDone(['st_segno01']), said('A'))), [], 'Segno\'s own finishes first: quiet');
+  const persons = ownRun(taskDone(['st_person01']), said('B'));
+  assert.deepEqual(pass(filter, persons), persons, 'then the person\'s: shown');
+  const stored = [user, agentLaunch('st_person01'), answer, wake('heartbeat'), agentLaunch('st_segno01'), answer,
+    taskDone(['st_segno01']), said('A'), taskDone(['st_person01']), said('B')];
+  const quiet = quietMessages(stored);
+  assert.deepEqual([quiet.has(stored[7]), quiet.has(stored[9])], [true, false]);
+  const mixed = createQuietRuns();
+  pass(mixed, run(user, agentLaunch('st_person02'), answer));
+  pass(mixed, run(wake('heartbeat'), agentLaunch('st_segno02'), answer));
+  const both = ownRun(taskDone(['st_segno02', 'st_person02']), said('C'));
+  assert.deepEqual(pass(mixed, both), both);
+});
