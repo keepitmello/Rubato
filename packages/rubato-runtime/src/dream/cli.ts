@@ -33,7 +33,7 @@ import {
 import { agentDir, childEnv } from "./child-env"
 import { liveMemoryVerdict } from "./live-guard"
 import { languageMigrationDue, runLanguageMigration } from "./migrate-language"
-import { countStoreFiles, createStoreNameResolver, listExistingStores, scanStoreSessions, type SessionFile } from "./stores"
+import { companionOnlyStore, countStoreFiles, createStoreNameResolver, listExistingStores, sameFolder, scanStoreSessions, type SessionFile } from "./stores"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..", "..")
@@ -116,11 +116,24 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stderr.write(`rubato dream: --since is not a date: ${sinceIso}\n`)
     return 2
   }
+  // The companion's conversations and its store are dreamed by the companion's own dream
+  // (harness/companion/dream), in its voice; this one would read them as coding sessions.
+  const companionFolder = await companionHome(env)
+  const resolveStore = createStoreNameResolver((cwd) => loadSenpiRubatoConfig({ cwd, env }).config.memory?.agent, env)
   const scan = scanStoreSessions({
     sessionsRoot: join(agentDir(env), "sessions"),
     sinceMs: (store, sessionId) => trialSinceMs ?? sessionSinceMs(states.get(store) ?? {}, sessionId, now),
-    resolveStore: createStoreNameResolver((cwd) => loadSenpiRubatoConfig({ cwd, env }).config.memory?.agent, env),
+    resolveStore,
+    skipFolder: (cwd) => sameFolder(cwd, companionFolder),
   })
+  const companionStore = companionOnlyStore({ companionFolder, resolveStore, folders: scan.folders })
+  if (companionStore !== undefined) {
+    if ([...named, migrateStore].includes(companionStore)) {
+      process.stderr.write(`rubato dream: ${companionStore} is the companion's memory; the companion dreams it itself\n`)
+      return 2
+    }
+    states.delete(companionStore)
+  }
   const sessionsByStore = scan.sessions
   const minGapMs = dream.min_hours_between * 60 * 60_000
   const statuses: StoreStatus[] = []
@@ -229,6 +242,12 @@ function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]
     const flag = status.enabled ? "on " : "off"
     process.stdout.write(`${flag}  ${status.store.padEnd(28)} last ${last}  new sessions ${status.newSessions}${status.due ? "  due" : ""}\n`)
   }
+}
+
+/** The companion's folder, by the companion's own rule (harness/companion/home.mjs). */
+async function companionHome(env: NodeJS.ProcessEnv): Promise<string> {
+  const home = await import(join(repoRoot, "harness", "companion", "home.mjs"))
+  return home.companionHomeFor(env) as string
 }
 
 async function resolveLaunch(env: NodeJS.ProcessEnv) {
