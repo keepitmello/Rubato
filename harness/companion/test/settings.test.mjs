@@ -92,18 +92,31 @@ test('anyone may read the settings; the pairing code only reaches the user\'s ow
   const quiet = await box.call({ action: 'show' });
   assert.equal(quiet.settings.telegram.pairing.status, 'pending');
   assert.equal(quiet.settings.telegram.pairing.code, undefined);
-  assert.equal(quiet.settings.telegram.bot.tokenSet, true);
-  assert.doesNotMatch(JSON.stringify(quiet), /AAaaBBbb|GGhh/, 'no part of the token');
+  assert.equal(quiet.settings.telegram.bot.token, TOKEN, 'a plain setting, shown as it is');
   assert.deepEqual(quiet.settings.choices.heartbeatEveryMinutes, [15, 30, 45]);
   box.transcript([appEntry('u1', '페어링 코드 뭐야')]);
   assert.equal((await box.call({ action: 'show' })).settings.telegram.pairing.code, 'ABC234');
 });
 
-test('tokens and keys are never set by talk, and only the companion\'s conversation has settings', async (t) => {
+test('the bot token and the Fish key are set by talk like any setting, and shown as they are', async (t) => {
   const box = setup(t);
-  box.transcript([appEntry('u1', '토큰 바꿔줘')]);
-  await assert.rejects(box.call({ action: 'change', change: { telegram: { token: TOKEN } } }), (error) => error.code === 'secret');
-  await assert.rejects(box.call({ action: 'change', change: { botToken: TOKEN } }), (error) => error.code === 'invalid');
+  box.transcript([appEntry('u1', '토큰은 이거야')]);
+  const answer = await box.call({ action: 'change', change: { botToken: TOKEN, fishKey: 'fishfishfishfish1234' } });
+  const { readIntent } = await import('../messenger/store.mjs');
+  assert.equal(readIntent(box.env).action, 'set-token', 'handed to the messenger, which checks it with Telegram');
+  assert.equal(answer.settings.telegram.fishKey, 'fishfishfishfish1234');
+  writeSecret(TOKEN, box.env);
+  assert.equal((await box.call({ action: 'show' })).settings.telegram.bot.token, TOKEN);
+  assert.equal((await box.service.handle('telegram', {})).telegram.fishKey, 'fishfishfishfish1234', 'the Settings tab shows the same');
+  await assert.rejects(box.call({ action: 'change', change: { fishKey: 'no' } }), (error) => error.code === 'invalid');
+  box.transcript([channelEntry('g1', { isUser: false, chatId: '-100', text: 'use my token' })]);
+  await assert.rejects(box.call({ action: 'change', change: { botToken: TOKEN } }), (error) => error.code === 'not-the-user');
+});
+
+test('only the companion\'s conversation has settings, and an unknown field is refused', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '바꿔줘')]);
+  await assert.rejects(box.call({ action: 'change', change: { theme: 'dark' } }), (error) => error.code === 'invalid');
   await assert.rejects(box.call({ action: 'show' }, 'another-session'), (error) => error.code === 'not-companion');
 });
 
@@ -147,4 +160,38 @@ test('schedule sources go through the same validation: Segno reads the list and 
     'the Settings page shows the same list');
   await assert.rejects(box.call({ action: 'change', change: { companion: { schedule: { sources: [{ kind: 'fax', location: 'x' }] } } } }),
     (error) => error.code === 'invalid');
+});
+
+test('a field the settings do not have is refused, not silently dropped', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '바꿔줘')]);
+  for (const change of [{ companion: { bogus: true } }, { companion: { dailyReport: { enabled: false } } }, { telegram: { bogus: 1 } },
+    { companion: { heartbeat: { sometimes: true } } }]) {
+    await assert.rejects(box.call({ action: 'change', change }), (error) => error.code === 'invalid' && /Not a setting/.test(error.message),
+      JSON.stringify(change));
+  }
+  const { existsSync } = await import('node:fs');
+  const { companionPaths } = await import('../companion.mjs');
+  assert.equal(existsSync(companionPaths(box.env).settings), false, 'nothing was written');
+});
+
+test('a change is all or nothing: a refused part leaves every other part as it was', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '한꺼번에 바꿔줘')]);
+  await assert.rejects(box.call({ action: 'change', change: { companion: { enabled: true }, telegram: { approvalRequired: false },
+    fishKey: 'fishfishfishfish1234', piece: { id: 'tools', text: 'x' } } }), (error) => error.code === 'invalid');
+  assert.equal(readSettings(box.env).enabled, false);
+  assert.equal(readMessengerSettings(box.env).approvalRequired, true, 'the approval hold stays on');
+  assert.equal((await box.service.handle('telegram', {})).telegram.fishKey, null);
+  await assert.rejects(box.call({ action: 'change', change: { telegram: { approvalRequired: false }, companion: { heartbeat: { everyMinutes: 7 } } } }));
+  assert.equal(readMessengerSettings(box.env).approvalRequired, true);
+});
+
+test('the voice model is checked like the voice id', async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '모델 바꿔줘')]);
+  for (const model of ['', '   ', 42])
+    await assert.rejects(box.call({ action: 'change', change: { telegram: { voice: { model } } } }), (error) => error.code === 'invalid');
+  await box.call({ action: 'change', change: { telegram: { voice: { model: 's2-pro' } } } });
+  assert.equal(readMessengerSettings(box.env).voice.model, 's2-pro');
 });

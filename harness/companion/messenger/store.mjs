@@ -4,7 +4,7 @@
 //
 //   <companion home>/messenger/
 //     settings.json        what Settings › Companion saved (the app writes it; the service reads it)
-//     secret.json          the bot token, 0600, never handed back in full
+//     secret.json          the bot token, 0600
 //     intent.json          one thing the app asked the service to do (pair, unpair, create the bot)
 //     handoff.json         where the service is with that intent
 //     pair.json            who the user's chat is, or the code waiting for it
@@ -129,9 +129,11 @@ export function writeMessengerSettings(patch, env = process.env) {
     if (patch[field] !== undefined && typeof patch[field] !== 'boolean') throw new TypeError(`${field} must be true or false`);
   if (patch.voice !== undefined) {
     if (!patch.voice || typeof patch.voice !== 'object') throw new TypeError('voice must be an object');
-    const { voiceId } = patch.voice;
+    const { voiceId, model } = patch.voice;
     if (voiceId !== undefined && voiceId !== null && !(typeof voiceId === 'string' && VOICE_ID.test(voiceId)))
       throw new TypeError('voice.voiceId must be a Fish Audio voice id or null');
+    if (model !== undefined && !(typeof model === 'string' && model.trim() && model.length <= 100))
+      throw new TypeError('voice.model must be a Fish Audio model name');
   }
   const current = readMessengerSettings(env);
   const next = normalizeMessengerSettings({ ...current, ...patch, voice: { ...current.voice, ...patch.voice } });
@@ -140,14 +142,6 @@ export function writeMessengerSettings(patch, env = process.env) {
 }
 
 // ── the bot token ────────────────────────────────────────────────────────────────────────────
-
-/** A token's bot id and its last four characters: enough to tell two bots apart, never enough to use one. */
-export function maskToken(token) {
-  if (typeof token !== 'string' || token === '') return null;
-  const [id, secret] = token.split(':');
-  if (!secret) return `${token.slice(0, 4)}…`;
-  return `${id}:…${secret.slice(-4)}`;
-}
 
 export function readSecret(env = process.env) {
   const value = readJson(messengerPaths(env).secret);
@@ -158,18 +152,18 @@ export function writeSecret(token, env = process.env) {
   if (typeof token !== 'string' || !/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) throw new TypeError('token must be a Telegram bot token');
   const file = messengerPaths(env).secret;
   writeJson(file, { token }, 0o600);
-  return { token: maskToken(token) };
+  return { token };
 }
 
 export function clearSecret(env = process.env) {
   rmSync(messengerPaths(env).secret, { force: true });
 }
 
-/** The bot the person made in Telegram, as Settings shows it: name and username, never the token. */
+/** The bot the person made in Telegram, as Settings shows it: its token, name and username. */
 export function readBot(env = process.env) {
   const value = readJson(messengerPaths(env).secret);
   return {
-    masked: maskToken(value?.token),
+    token: typeof value?.token === 'string' && value.token ? value.token : null,
     ...(typeof value?.username === 'string' && value.username ? { username: value.username } : {}),
     ...(typeof value?.name === 'string' && value.name ? { name: value.name } : {}),
   };
@@ -187,7 +181,7 @@ export function writeBotIdentity({ username, name } = {}, env = process.env) {
 
 // ── the Fish Audio key for voice replies ─────────────────────────────────────────────────────
 
-/** Keeps the Fish Audio key the person pasted in Settings, 0600; it is never handed back. */
+/** Keeps the Fish Audio key for voice replies (0600, like the bot token). */
 export function writeFishKey(key, env = process.env) {
   if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{16,200}$/.test(key.trim())) throw new TypeError('that does not look like a Fish Audio API key');
   const file = messengerPaths(env).fishKey;
@@ -201,10 +195,11 @@ export function clearFishKey(env = process.env) {
   rmSync(messengerPaths(env).fishKey, { force: true });
 }
 
-/** Whether voice replies have a key: the environment's FISH_API_KEY or the one pasted in Settings. */
-export function fishKeySet(env = process.env) {
-  if (env.FISH_API_KEY?.trim()) return true;
-  try { return readFileSync(messengerPaths(env).fishKey, 'utf8').trim() !== ''; } catch { return false; }
+/** The Fish Audio key voice replies use: FISH_API_KEY, else the saved one; null when neither. */
+export function readFishKey(env = process.env) {
+  const fromEnv = env.FISH_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  try { return readFileSync(messengerPaths(env).fishKey, 'utf8').trim() || null; } catch { return null; }
 }
 
 // ── pairing ──────────────────────────────────────────────────────────────────────────────────
@@ -452,7 +447,7 @@ export function recordSent({ at = new Date().toISOString(), chatId, toUser, text
 
 // ── what Settings › Companion shows ─────────────────────────────────────────────────────────
 
-/** The Telegram connection for the settings page: never the token, always what can be acted on. */
+/** The Telegram connection for the settings page: everything it holds, and what can be acted on. */
 export function messengerStatus(env = process.env) {
   const rows = listOutbox(env);
   const visible = (row) => ({
@@ -464,7 +459,7 @@ export function messengerStatus(env = process.env) {
   });
   return {
     settings: readMessengerSettings(env),
-    voiceKey: { set: fishKeySet(env) },
+    fishKey: readFishKey(env),
     bot: readBot(env),
     pairing: readPairing(env),
     handoff: readHandoff(env),

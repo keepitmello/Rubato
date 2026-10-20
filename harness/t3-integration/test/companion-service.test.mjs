@@ -73,18 +73,17 @@ test('a home set up for the first time shows who Segno is as the person\'s own v
   }
 });
 
-test('the Telegram page reads the token masked and asks the engine for a pairing code', async (t) => {
+test('the Telegram page reads the token as it is and asks the engine for a pairing code', async (t) => {
   const { env, post } = await setup(t);
   const store = await import('../../companion/messenger/store.mjs');
   const empty = await post('telegram');
   assert.equal(empty.status, 200);
-  assert.equal(empty.body.telegram.bot.masked, null);
+  assert.equal(empty.body.telegram.bot.token, null);
   assert.equal(empty.body.telegram.pairing.status, 'unpaired');
 
   store.writeSecret('123456789:AAaaBBbbCCccDDddEEeeFFffGGhh', env);
   const withBot = await post('telegram');
-  assert.doesNotMatch(JSON.stringify(withBot.body.telegram), /AAaaBBbb/);
-  assert.equal(withBot.body.telegram.bot.masked, '123456789:…GGhh');
+  assert.equal(withBot.body.telegram.bot.token, '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh');
 
   await post('telegram-pair');
   assert.deepEqual(store.readIntent(env).action, 'pair', 'the page asks; the messenger answers a second later');
@@ -222,16 +221,15 @@ test('the page marks a default that moved and asks Segno to look at it', async (
     'the mark stays until the engine moves the base under it');
 });
 
-test('the Fish Audio key is pasted here, kept 0600, and only ever shown as set or not', async (t) => {
+test('the Fish Audio key is kept 0600 and shown as it is, like the bot token', async (t) => {
   const { env, post } = await setup(t);
-  assert.equal((await post('telegram')).body.telegram.voiceKey.set, false);
+  assert.equal((await post('telegram')).body.telegram.fishKey, null);
   const saved = await post('voice-key', { key: 'fishfishfishfish1234' });
   assert.equal(saved.status, 200);
-  assert.equal(saved.body.telegram.voiceKey.set, true);
-  assert.doesNotMatch(JSON.stringify(saved.body), /fishfishfish/);
+  assert.equal(saved.body.telegram.fishKey, 'fishfishfishfish1234');
   const { statSync } = await import('node:fs');
   const { messengerPaths } = await import('../../companion/messenger/store.mjs');
   assert.equal(statSync(messengerPaths(env).fishKey).mode & 0o777, 0o600);
   assert.equal((await post('voice-key', { key: 'no' })).status, 400);
-  assert.equal((await post('voice-key', { key: null })).body.telegram.voiceKey.set, false);
+  assert.equal((await post('voice-key', { key: null })).body.telegram.fishKey, null);
 });

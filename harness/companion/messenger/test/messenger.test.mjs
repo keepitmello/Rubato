@@ -7,17 +7,16 @@ import { startCompanionMessenger } from '../service.mjs';
 import { fakeTelegram } from './fake-telegram.mjs';
 import { GROUP_CHAT, TOKEN, USER_CHAT, paired, sandbox, settle, start } from './helpers.mjs';
 import {
-  enqueueMessage, listOutbox, maskToken, pairedChatId, readBot, readHandoff, readIntent, readPairing, readSecret, readState, writeDecision,
+  enqueueMessage, listOutbox, pairedChatId, readBot, readHandoff, readIntent, readPairing, readSecret, readState, writeDecision,
   writeIntent, writeSecret, writeState, messengerPaths,
 } from '../store.mjs';
 import { writeState as writeCompanionState } from '../../companion.mjs';
 
-test('the token is stored 0600 and Settings only ever sees it masked', async (t) => {
+test('the token is stored 0600 and Settings shows it as it is', async (t) => {
   const box = sandbox(t);
   writeSecret(TOKEN, box.env);
   assert.equal(readSecret(box.env).token, TOKEN);
-  assert.equal(maskToken(TOKEN), `123456789:…GGhh`);
-  assert.doesNotMatch(JSON.stringify(readBot(box.env)), /AAaaBBbb/);
+  assert.equal(readBot(box.env).token, TOKEN);
   const { mode } = await import('node:fs').then(({ statSync }) => ({ mode: statSync(messengerPaths(box.env).secret).mode & 0o777 }));
   assert.equal(mode, 0o600);
 });
@@ -160,7 +159,6 @@ test('making the bot over MTProto stores its token and never asks the person for
   await settle(service);
   assert.equal(readSecret(box.env).token, TOKEN);
   assert.equal(readBot(box.env).username, 'segno_test_bot');
-  assert.doesNotMatch(JSON.stringify(readBot(box.env)), /AAaaBBbb/);
 });
 
 test('a failed delivery keeps the update: the offset does not move past it', async (t) => {
@@ -233,7 +231,7 @@ test("another person's report lands in Segno's inbox, once", async (t) => {
   assert.ok(repeated);
 });
 
-test('a pasted token is checked with Telegram before it is kept, and never echoed back', async (t) => {
+test('a pasted token is checked with Telegram before it is kept', async (t) => {
   const box = sandbox(t);
   writeIntent({ action: 'set-token', token: '987654321:Past edTokenForTheTest1234567890'.replace(' ', '') }, box.env);
   const fake = fakeTelegram();

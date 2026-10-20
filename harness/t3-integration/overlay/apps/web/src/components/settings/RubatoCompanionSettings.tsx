@@ -287,7 +287,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
     }
   };
 
-  const made = telegram?.bot.masked != null;
+  const made = telegram?.bot.token != null;
   const paired = telegram?.pairing.status === "paired";
   const waiting = telegram?.pairing.status === "pending";
   const state = !made ? (
@@ -366,7 +366,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
               id="rubato-companion-telegram-bot"
               title={telegram.bot.name ?? "Segno's bot"}
               description={telegram.bot.username ? `@${telegram.bot.username}` : "The bot Rubato made for Segno."}
-              status={telegram.bot.masked ? <Badge variant="outline">{telegram.bot.masked}</Badge> : null}
+              status={telegram.bot.token ? <Badge variant="outline">{telegram.bot.token}</Badge> : null}
             />
           )}
           {telegram.handoff.error ? (
@@ -426,14 +426,13 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
           <SettingsRow
             id="rubato-companion-voice-key"
             title="Fish Audio key"
-            description="Voice replies need a Fish Audio API key. Paste it here; it is never typed to Segno."
-            status={<Badge variant={telegram.voiceKey?.set ? "success" : "outline"}>{telegram.voiceKey?.set ? "Set" : "Not set"}</Badge>}
+            description="Voice replies need a Fish Audio API key. Give it to Segno, or paste it here."
+            status={<Badge variant={telegram.fishKey ? "success" : "outline"}>{telegram.fishKey ?? "Not set"}</Badge>}
             control={
               <span className="flex items-center gap-2">
                 <Input
                   aria-label="Fish Audio API key"
                   className="h-8 w-64"
-                  type="password"
                   value={voiceKey}
                   disabled={busy}
                   onChange={(event) => setVoiceKey(event.target.value)}

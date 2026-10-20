@@ -131,7 +131,7 @@ export function createCompanionMessengerFactories({ sessionLink } = {}) {
           "it says what each one does. action \"show\" gives the current values (or one prompt piece's text with piece=<id>); " +
           "action \"change\" applies a patch, checked by the same rules as the Settings page. " +
           "Only the user can change a setting: a change from a turn opened by anyone or anything else is refused. " +
-          "Tokens and keys are never set here; the user enters them in Settings › Companion.",
+          "The bot token and the Fish Audio key are set here too (botToken, fishKey).",
         parameters: {
           type: "object",
           additionalProperties: false,
@@ -141,8 +141,8 @@ export function createCompanionMessengerFactories({ sessionLink } = {}) {
             piece: { type: "string", description: "With show: the id of one prompt piece whose text to read." },
             change: {
               type: "object",
-              description: "With change: { companion?: <settings patch>, telegram?: <Telegram settings patch>, pairing?: \"pair\"|\"unpair\", " +
-                "piece?: { id, text } (empty text goes back to the default), personaReview?: true }.",
+              description: "With change: { companion?: <settings patch>, telegram?: <Telegram settings patch>, botToken?: string, " +
+                "fishKey?: string|null, pairing?: \"pair\"|\"unpair\", piece?: { id, text } (empty text goes back to the default), personaReview?: true }.",
             },
           },
         },

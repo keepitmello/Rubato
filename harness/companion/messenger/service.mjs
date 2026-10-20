@@ -283,7 +283,7 @@ export function startCompanionMessenger({
         writeHandoff({ intentAt: intent.at, result: 'unpaired' }, env);
       } else if (intent.action === 'set-token') {
         // The path for everyone without the person's MTProto client: a token from @BotFather,
-        // checked before it is kept, and never echoed back.
+        // checked before it is kept.
         if (typeof intent.token !== 'string' || !intent.token.trim()) throw new Error('no bot token was handed over');
         const candidate = createApi(intent.token.trim());
         let me;

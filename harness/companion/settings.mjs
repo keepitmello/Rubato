@@ -11,12 +11,13 @@
 // conversation, Rubato's clock, or work one of those started cannot — enforced here, from the
 // transcript, with the same run rule the app and Telegram use (messenger/sync.mjs).
 //
-// Secrets never pass through a conversation: what is typed to Segno is kept in its transcript and
-// sent to its model. The Telegram bot token and the Fish Audio key are entered in Settings ›
-// Companion only; the tool says whether they are set, never what they are.
+// The Telegram bot token and the Fish Audio key are plain settings like the rest (user items 0fc61da6,
+// 0020edac: Rubato runs on the user's own computer).
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { readState } from './companion.mjs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { basePiecePath, companionPaths, personalPiecePath, readSettings, readState } from './companion.mjs';
+import { messengerPaths, readMessengerSettings } from './messenger/store.mjs';
 import { locateTranscript, runAt } from './messenger/sync.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -58,7 +59,10 @@ export async function settingsView(service, { showPairingCode = false } = {}) {
     choices: { heartbeatEveryMinutes: status.heartbeatMinutes },
     telegram: {
       settings: telegram.settings,
-      bot: { tokenSet: Boolean(telegram.bot?.masked), ...(telegram.bot?.username ? { username: telegram.bot.username } : {}) },
+      bot: telegram.bot,
+      // How the last request to the messenger went (a token Telegram refused says why here).
+      ...(telegram.handoff?.result ? { lastRequest: { result: telegram.handoff.result, ...(telegram.handoff.error ? { error: telegram.handoff.error } : {}) } } : {}),
+      fishKey: telegram.fishKey ?? null,
       pairing: { status: pairing.status, ...(pairing.chat?.name ? { chat: pairing.chat.name } : {}),
         ...(showPairingCode && pairing.code ? { code: pairing.code } : {}) },
       waitingForApproval: (telegram.waiting ?? []).length,
@@ -76,29 +80,86 @@ async function pieceText(service, id) {
   return { id, editable: piece.editable, personal: piece.personalText !== undefined, text: piece.personalText ?? piece.defaultText };
 }
 
-/** Applies one change through the Settings page's own actions, each validated there. */
-async function applyChange(service, change) {
-  if (!change || typeof change !== 'object' || Array.isArray(change)) throw new SettingsRefused('invalid', 'change must be an object');
-  const known = new Set(['companion', 'telegram', 'pairing', 'piece', 'personaReview']);
-  const unknown = Object.keys(change).filter((key) => !known.has(key));
-  if (unknown.length) throw new SettingsRefused('invalid', `Not a setting this tool changes: ${unknown.join(', ')}`);
-  if (change.telegram && typeof change.telegram === 'object') {
-    for (const secret of ['token', 'secret', 'fishApiKey', 'apiKey'])
-      if (secret in change.telegram) throw new SettingsRefused('secret', 'Keys and tokens are entered in Settings › Companion, never in a conversation');
+/**
+ * Fields of a patch the settings do not have: the current settings, as the page's own code reads
+ * them, are the shape; a field outside it would be dropped silently, so it is refused.
+ */
+export function unknownFields(patch, shape, prefix = '') {
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) return [];
+  const out = [];
+  for (const [key, value] of Object.entries(patch)) {
+    const name = `${prefix}${key}`;
+    if (!shape || typeof shape !== 'object' || !(key in shape)) { out.push(name); continue; }
+    const inner = shape[key];
+    if (value && typeof value === 'object' && !Array.isArray(value) && inner && typeof inner === 'object' && !Array.isArray(inner))
+      out.push(...unknownFields(value, inner, `${name}.`));
   }
+  return out;
+}
+
+/** The files a change may write, as they are now, to put back if any part of it is refused. */
+function snapshot(env, change) {
+  const files = [companionPaths(env).settings, messengerPaths(env).settings, messengerPaths(env).fishKey];
+  if (change.piece && typeof change.piece.id === 'string') {
+    try { files.push(personalPiecePath(env, change.piece.id), basePiecePath(env, change.piece.id)); } catch { /* an unknown piece writes nothing */ }
+  }
+  const saved = files.map((file) => ({ file, bytes: existsSync(file) ? readFileSync(file) : undefined }));
+  return () => {
+    for (const { file, bytes } of saved) {
+      if (bytes === undefined) rmSync(file, { force: true });
+      else writeFileSync(file, bytes, { mode: 0o600 });
+    }
+  };
+}
+
+/**
+ * Applies one change through the Settings page's own actions, each validated there. A change is
+ * all or nothing: the checks that can refuse run first, and a refusal puts back what the change
+ * wrote before it. A Telegram request (the bot token, pairing) is one at a time and goes last, since
+ * the messenger carries it out after this answers.
+ */
+async function applyChange(service, change, env) {
+  if (!change || typeof change !== 'object' || Array.isArray(change)) throw new SettingsRefused('invalid', 'change must be an object');
+  const known = new Set(['companion', 'telegram', 'pairing', 'piece', 'personaReview', 'botToken', 'fishKey']);
+  const unknown = Object.keys(change).filter((key) => !known.has(key));
+  if (change.companion !== undefined) unknown.push(...unknownFields(change.companion, readSettings(env), 'companion.'));
+  if (change.telegram !== undefined) unknown.push(...unknownFields(change.telegram, readMessengerSettings(env), 'telegram.'));
+  if (unknown.length) throw new SettingsRefused('invalid', `Not a setting: ${unknown.join(', ')}`);
+  if (change.pairing !== undefined && !PAIRING.has(change.pairing)) throw new SettingsRefused('invalid', "pairing is 'pair' or 'unpair'");
+  if (change.botToken !== undefined && (typeof change.botToken !== 'string' || !change.botToken.trim()))
+    throw new SettingsRefused('invalid', 'botToken is the token @BotFather gave');
+  if (change.botToken !== undefined && change.pairing !== undefined)
+    throw new SettingsRefused('invalid', 'Set the bot token first; pair in the next change');
+  if (change.piece !== undefined && (!change.piece || typeof change.piece !== 'object' || typeof change.piece.id !== 'string'))
+    throw new SettingsRefused('invalid', 'piece needs an id and its text');
+  if (change.personaReview !== undefined && change.personaReview !== true) throw new SettingsRefused('invalid', 'personaReview is true');
+
   const applied = [];
-  if (change.companion !== undefined) { await service.handle('save-settings', { patch: change.companion }); applied.push('companion'); }
-  if (change.telegram !== undefined) { await service.handle('telegram-settings', { patch: change.telegram }); applied.push('telegram'); }
+  const restore = snapshot(env, change);
+  try {
+    if (change.companion !== undefined) { await service.handle('save-settings', { patch: change.companion }); applied.push('companion'); }
+    if (change.telegram !== undefined) { await service.handle('telegram-settings', { patch: change.telegram }); applied.push('telegram'); }
+    if (change.fishKey !== undefined) {
+      await service.handle('voice-key', { key: change.fishKey === null ? null : String(change.fishKey) });
+      applied.push(change.fishKey === null ? 'fishKey removed' : 'fishKey');
+    }
+    if (change.piece !== undefined) {
+      await service.handle('save-piece', { id: change.piece.id, text: change.piece.text ?? '' });
+      applied.push(`piece:${change.piece.id}`);
+    }
+  } catch (error) {
+    restore();
+    throw error;
+  }
+  // These cannot be refused any more: their values were checked above.
+  if (change.botToken !== undefined) {
+    // The messenger checks it with Telegram before keeping it; `show` then has the bot's name or the reason.
+    await service.handle('telegram-set-token', { token: change.botToken.trim() });
+    applied.push('botToken (Telegram checks it; show tells how it went)');
+  }
   if (change.pairing !== undefined) {
-    if (!PAIRING.has(change.pairing)) throw new SettingsRefused('invalid', "pairing is 'pair' or 'unpair'");
     await service.handle(change.pairing === 'pair' ? 'telegram-pair' : 'telegram-unpair', {});
     applied.push(`pairing:${change.pairing}`);
-  }
-  if (change.piece !== undefined) {
-    const piece = change.piece;
-    if (!piece || typeof piece !== 'object' || typeof piece.id !== 'string') throw new SettingsRefused('invalid', 'piece needs an id and its text');
-    await service.handle('save-piece', { id: piece.id, text: piece.text ?? '' });
-    applied.push(`piece:${piece.id}`);
   }
   if (change.personaReview === true) { await service.handle('review-persona', {}); applied.push('personaReview'); }
   if (!applied.length) throw new SettingsRefused('invalid', 'Nothing to change');
@@ -127,7 +188,7 @@ export async function companionSettings({ sessionId, sessionsDir, request = {}, 
       'Only the user changes settings: this turn was not opened by their message in the app or their Telegram chat');
   }
   try {
-    const applied = await applyChange(settings, request.change);
+    const applied = await applyChange(settings, request.change, env);
     return { applied, settings: await settingsView(settings, { showPairingCode: true }) };
   } catch (error) {
     if (error instanceof SettingsRefused) throw error;

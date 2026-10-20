@@ -126,8 +126,8 @@ export function createCompanionService(options = {}) {
           throw new CompanionRequestError(400, 'invalid', 'A bot token is missing.');
         messenger.writeIntent({ action: 'set-token', token: input.token.trim() }, env);
         return { telegram: messenger.messengerStatus(env) };
-      // The Fish Audio key for Segno's voice replies: a secret, so it is entered here and never by
-      // talking to Segno (harness/companion/settings.mjs).
+      // The Fish Audio key for Segno's voice replies, entered here or given to Segno
+      // (harness/companion/settings.mjs); it is never handed back.
       case 'voice-key':
         if (input.key === null) messenger.clearFishKey(env);
         else invalid(() => messenger.writeFishKey(input.key, env));

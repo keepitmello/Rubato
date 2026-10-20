@@ -57,10 +57,10 @@ export interface TelegramStatus {
     /** Segno's voice for voice replies (Fish Audio); null until the person picks one, usually by asking Segno. */
     readonly voice?: { readonly voiceId: string | null; readonly model: string };
   };
-  /** Whether voice replies have a Fish Audio key; the key itself never comes back. */
-  readonly voiceKey?: { readonly set: boolean };
-  /** The bot as Settings shows it: its id and last four characters, never the token. */
-  readonly bot: { readonly masked: string | null; readonly username?: string; readonly name?: string };
+  /** The Fish Audio key voice replies use; null when there is none. */
+  readonly fishKey?: string | null;
+  /** Segno's bot: its token, name and username. */
+  readonly bot: { readonly token: string | null; readonly username?: string; readonly name?: string };
   readonly pairing: {
     readonly status: "unpaired" | "pending" | "paired";
     readonly code?: string;
@@ -179,7 +179,7 @@ export const rubatoCompanion = {
   /** Hands a token from @BotFather to the messenger, which checks it with Telegram before keeping it. */
   setTelegramToken: (env: EnvironmentId | null, token: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-set-token", { token }),
-  /** Keeps the Fish Audio key for Segno's voice replies; null removes it. Never typed to Segno. */
+  /** Keeps the Fish Audio key for Segno's voice replies; null removes it. Segno can set it too. */
   setVoiceKey: (env: EnvironmentId | null, key: string | null) =>
     call<{ telegram: TelegramStatus }>(env, "voice-key", { key }),
   /** Has Segno's bot made from the person's own Telegram account (@BotFather over MTProto). */
