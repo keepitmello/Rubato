@@ -750,6 +750,15 @@ test('prompt: Segno speaks only in the app — no Telegram in its defaults, and 
   assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /\| 사용자한테 먼저 말하기 \| `tell_user` \|/);
 });
 
+test('prompt: the default soul knows its three channels — thinking, monologue in its own turns, words to the user by tell_user there (user 6ce437ae)', () => {
+  const soul = readFileSync(path.join(defaultsDir, 'soul.pi.md'), 'utf8');
+  const speak = soul.slice(soul.indexOf('# How I speak'));
+  assert.match(speak, /My words flow in three places, and all three are me, in the first person\./);
+  assert.match(speak, /In the turns that are mine alone \(the clock's, a lead's ending, a message from another conversation; the companion rules say which\) I write my monologue: it reaches no screen/);
+  assert.match(speak, /I say it to them with `tell_user`\. In a turn the user opened, what I write is what reaches them\./);
+  assert.doesNotMatch(soul, /no private place|nowhere private/i);
+});
+
 test('prompt: only what Segno says to the user is visible — lead endings and messages from other conversations are private turns (intent rev 9, user 9fbe5b98)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 하트비트'));
