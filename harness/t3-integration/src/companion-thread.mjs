@@ -1,3 +1,5 @@
+import { UI_METHODS } from '../../pi-server/src/contracts.mjs';
+
 // Segno's thread on the live stream (intent companion-segno rev 11, user item c31022f7). The thread
 // is a chat log: the person's own messages, which T3 writes itself, and what Segno says with reply
 // or say (said-echo.mjs). Nothing Segno writes, thinks or runs reaches it, in any turn.
@@ -8,8 +10,14 @@
 // conversation, a finished background job) passes nothing; the person's next message waits until
 // it settles, so it opens a turn of its own.
 
-/** The events of a turn T3 started that Segno's thread gets. */
-export const COMPANION_EVENTS = new Set(['agent_start', 'agent_settled', 'extension_ui_request']);
+/** The events of a turn T3 started that Segno's thread gets: its start, its end, and a question (below). */
+export const COMPANION_EVENTS = new Set(['agent_start', 'agent_settled']);
+/**
+ * A question that waits for the person (select, confirm, input, editor): Segno's turn stops until
+ * they answer, so it passes. Any other UI request (notify, a status line) carries Segno's own text and
+ * waits for nothing, so it does not.
+ */
+const isQuestion = (event) => event?.type === 'extension_ui_request' && UI_METHODS.has(event.method);
 
 /**
  * The filter for one stream on Segno's session. `owned()` says the next run is T3's (its prompt,
@@ -43,7 +51,7 @@ export function createCompanionStream({ owned = () => false } = {}) {
         inTurn = false;
         return [event];
       }
-      return inTurn && COMPANION_EVENTS.has(type) ? [event] : [];
+      return inTurn && (COMPANION_EVENTS.has(type) || isQuestion(event)) ? [event] : [];
     },
   };
 }
