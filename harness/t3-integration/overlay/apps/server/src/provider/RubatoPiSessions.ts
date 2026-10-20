@@ -9,7 +9,7 @@
  *   3. the thread id itself for a session the inventory imported:
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
-import { CommandId, OrchestrationMessageContext, ProviderInstanceId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { CommandId, OrchestrationMessageContext, ProviderInstanceId, RunId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -52,6 +52,54 @@ const parse = (json: string | null): unknown => {
 const field = (value: unknown, key: string): unknown =>
   value !== null && typeof value === "object" ? (value as Record<string, unknown>)[key] : undefined;
 const text = (value: unknown): string | null => (typeof value === "string" && value.length > 0 ? value : null);
+
+/**
+ * What a thread shows, for the bridge's backfill (bridge backfill.mjs): every message in order with
+ * its words and its run, read from the projection the app itself reads.
+ */
+export const threadMessages = (threadId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql<{ readonly message_id: string; readonly role: string; readonly run_id: string | null;
+      readonly created_at: string; readonly payload_json: string }>`
+      SELECT message_id, role, run_id, created_at, payload_json FROM orchestration_v2_projection_messages
+      WHERE thread_id = ${threadId} ORDER BY created_at ASC, message_id ASC`;
+    return rows.map((row) => ({ id: row.message_id, role: row.role, runId: row.run_id, turnId: row.run_id,
+      createdAt: row.created_at, text: text(field(parse(row.payload_json), "text")) ?? "" }));
+  });
+
+/**
+ * When the thread had no stream: from each time T3 stopped its provider session (status `stopped`,
+ * an idle stop among them) to the next time one was attached or ready again, or now. These are
+ * T3's own provider-session events, the same ones that stopped it (bridge backfill.mjs).
+ */
+export const threadStreamGaps = (threadId: string) =>
+  Effect.gen(function* () {
+    const sql = yield* SqlClient.SqlClient;
+    const rows = yield* sql<{ readonly event_type: string; readonly occurred_at: string; readonly payload_json: string }>`
+      SELECT event_type, occurred_at, payload_json FROM orchestration_events
+      WHERE stream_id = ${threadId} AND event_type IN ('provider-session.updated', 'provider-session.attached')
+      ORDER BY sequence ASC`;
+    return gapsFromProviderEvents(rows);
+  });
+
+/** The stream gaps in a thread's provider-session events, oldest first (threadStreamGaps). */
+export const gapsFromProviderEvents = (rows: ReadonlyArray<{ readonly event_type: string; readonly occurred_at: string;
+  readonly payload_json: string }>): ReadonlyArray<{ from: number; to: number }> => {
+  const gaps: Array<{ from: number; to: number }> = [];
+  let from: number | null = null;
+  for (const row of rows) {
+    const at = Date.parse(row.occurred_at);
+    const status = field(parse(row.payload_json), "status");
+    if (from === null && row.event_type === "provider-session.updated" && status === "stopped") from = at;
+    else if (from !== null && (row.event_type === "provider-session.attached" || status === "ready" || status === "running")) {
+      gaps.push({ from, to: at });
+      from = null;
+    }
+  }
+  if (from !== null) gaps.push({ from, to: Number.MAX_SAFE_INTEGER });
+  return gaps;
+};
 
 /** The Pi session `threadId` runs in, or null. */
 export const piSessionOfThread = (threadId: string) =>
@@ -202,6 +250,8 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     const ordinal = yield* nextTurnItemOrdinal(thread).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
     yield* importer.value.appendSessionMessage({ threadId: thread, ordinal, message: {
       role: "session", id: item.id, text: item.text, createdAt: item.createdAt,
+      // A backfilled message stays in the run it followed (bridge backfill.mjs), where T3 orders it.
+      ...(typeof item.runId === "string" && item.runId !== "" ? { runId: RunId.make(item.runId) } : {}),
       ...(Option.isSome(context) ? { context: context.value } : {}),
       ...(senderThreadId === null ? {} : { senderThreadId: ThreadId.make(senderThreadId) }),
     } });
@@ -215,6 +265,12 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
       bridge.checkRewind = (threadId: string, turns: number) => Effect.runPromise(checkRewind(threadId, turns));
       bridge.appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.runPromise(appendSessionMessage(threadId, item));
+      // What a thread shows and when it had no stream: the bridge's backfill compares these with the session.
+      bridge.projectedThread = (threadId: string) =>
+        Effect.runPromise(threadMessages(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value),
+          Effect.map((messages) => ({ messages, checkpoints: [] }))));
+      bridge.streamGaps = (threadId: string) =>
+        Effect.runPromise(threadStreamGaps(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
       bridge.rewindConversation = (threadId: string, request: {readonly turns: number}) =>
         Effect.runPromise(rewindConversation(threadId, request.turns));
     }

@@ -177,6 +177,9 @@ export class RubatoRpcConnection {
     this.unsubscribe = undefined;
     if (this.sessionId) await this.client.detach().catch(() => {});
     this.sessionId = null;
+    // What the engine ran on this session while no stream watched it reaches the thread first, so it
+    // stands before what this attach brings (bridge backfillThread, backfill.mjs).
+    await this.bridge.backfillThread?.(this.threadId, sessionId)?.catch?.((error) => this.log('backfill failed', error));
     await this.client.attach(sessionId);
     this.sessionId = sessionId;
     this.bridge.claimed.add(sessionId);
