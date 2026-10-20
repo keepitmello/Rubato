@@ -1,6 +1,7 @@
 {
  "exact": {
   "Approval needed": "승인 필요",
+  "Segno is writing": "세뇨가 쓰는 중",
   "Input needed": "입력 필요",
   "Thread completed": "스레드 완료",
   "Thread failed": "스레드 실패",
@@ -1812,6 +1813,7 @@
   "Load balancing": "로드 밸런싱",
   "load earlier thread history": "이전 스레드 기록 불러오기",
   "Load earlier turns": "이전 턴 불러오기",
+  "Load earlier messages": "이전 메시지 불러오기",
   "Load more": "더 불러오기",
   "Load more comments": "댓글 더 불러오기",
   "Load more files": "파일 더 불러오기",
