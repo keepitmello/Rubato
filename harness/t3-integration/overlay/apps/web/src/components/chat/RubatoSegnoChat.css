@@ -29,9 +29,12 @@
 }
 
 /* ---- Rows and groups ---- */
+/* Each row keeps room for a tail on both sides, so a bubble's tail stays inside the room and a
+   narrow window never scrolls sideways. */
 [data-rubato-segno-row] {
   display: flex;
   margin-top: 2px;
+  padding-inline: 8px;
 }
 [data-rubato-segno-row][data-group-start] {
   margin-top: 0.7rem;
