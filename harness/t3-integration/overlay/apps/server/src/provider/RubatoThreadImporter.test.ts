@@ -2,11 +2,12 @@
 // records keyed by its own id (a replay replaces them), authored the way upstream marks a
 // message another agent sent, with the sender context and the sending thread when known.
 import {
-  EventId, OrchestrationMessageContext, OrchestrationV2ConversationMessage, OrchestrationV2Run, OrchestrationV2TurnItem,
+  EventId, ProjectId, type OrchestrationV2AppThread, OrchestrationMessageContext, OrchestrationV2ConversationMessage, OrchestrationV2Run, OrchestrationV2TurnItem,
   ProviderInstanceId, RunId, ThreadId, type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -146,6 +147,36 @@ describe("Segno's own run (tell_user from a hidden run)", () => {
 describe("a turn the engine runs while T3 holds no stream (bridge engine-runs.mjs)", () => {
   const threadId = ThreadId.make("lead-thread");
   const instance = ProviderInstanceId.make("rubato-pi");
+  const at = DateTime.makeUnsafe("2026-10-20T16:00:29.852Z");
+  const appThread = (overrides: Partial<OrchestrationV2AppThread>): OrchestrationV2AppThread => ({
+    createdBy: "system", creationSource: "server", id: threadId, projectId: ProjectId.make("hash-game"), title: "lead",
+    providerInstanceId: instance, modelSelection: { instanceId: instance, model: "claude" }, runtimeMode: "full-access",
+    interactionMode: "default", branch: null, worktreePath: null, linkedPullRequest: null, branchPullRequest: null,
+    activeProviderThreadId: null, historyOrigin: "v1_import", lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: threadId },
+    forkedFrom: null, createdAt: at, updatedAt: at, archivedAt: null, settledOverride: null, settledAt: null, unsettledAt: null,
+    snoozedUntil: null, snoozedAt: null, pinnedAt: null, pinOrderKey: null, activeOrderKey: null, lastVisitedAt: null, deletedAt: null,
+    ...overrides,
+  } as OrchestrationV2AppThread);
+  const openOn = async (thread: OrchestrationV2AppThread) => {
+    const writes: Array<ReadonlyArray<OrchestrationV2DomainEvent>> = [];
+    let next = 0;
+    const sink = Layer.succeed(EventSink.EventSinkV2, { write: ({ events }: { events: ReadonlyArray<OrchestrationV2DomainEvent> }) =>
+      Effect.sync(() => { writes.push(events); return []; }) } as never);
+    const ids = Layer.succeed(IdAllocator.IdAllocatorV2, { allocate: { event: () => Effect.succeed(EventId.make(`e${next++}`)) } } as never);
+    await Effect.runPromise(Effect.gen(function* () {
+      const importer = yield* RubatoThreadImporter;
+      yield* importer.openRun({ threadId, runId: RunId.make(`${ENGINE_RUN_PREFIX}s:1`), runOrdinal: 2, providerInstanceId: instance,
+        modelSelection: { instanceId: instance, model: "claude" }, thread });
+    }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));
+    return writes;
+  };
+  it("brings a thread the inventory filed as settled (or one snoozed) back before its run opens, as a T3 run would", async () => {
+    const writes = await openOn(appThread({ settledOverride: "settled", settledAt: at, snoozedUntil: DateTime.makeUnsafe("2026-10-21T00:00:00Z"), snoozedAt: at }));
+    expect(writes.map((events) => events.map((event) => event.type))).toEqual([["thread.unsettled", "thread.unsnoozed", "run.created"]]);
+    expect(writes[0]![0]!.payload).toMatchObject({ settledOverride: null, settledAt: null });
+    expect(writes[0]![1]!.payload).toMatchObject({ settledOverride: null, snoozedUntil: null });
+    expect((await openOn(appThread({}))).map((events) => events.map((event) => event.type))).toEqual([["run.created"]]);
+  });
   it("opens as running and ends as completed, as a run T3 does not rewind", async () => {
     const writes: Array<ReadonlyArray<OrchestrationV2DomainEvent>> = [];
     let next = 0;
@@ -156,7 +187,7 @@ describe("a turn the engine runs while T3 holds no stream (bridge engine-runs.mj
     await Effect.runPromise(Effect.gen(function* () {
       const importer = yield* RubatoThreadImporter;
       const run = yield* importer.openRun({ threadId, runId, runOrdinal: 1, providerInstanceId: instance,
-        modelSelection: { instanceId: instance, model: "claude" } });
+        modelSelection: { instanceId: instance, model: "claude" }, thread: appThread({ settledOverride: null }) });
       yield* importer.closeRun({ run, status: "completed" });
     }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));
     expect(writes.map((events) => events.map((event) => event.type))).toEqual([["run.created"], ["run.updated"]]);

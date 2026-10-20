@@ -303,7 +303,7 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     if (records.runs.some((run) => BUSY_RUN.has(run.status))) return null;
     const shell = yield* orchestrator.value.getThreadShell(thread).pipe(Effect.mapError(importFailure("Could not read the thread")));
     if (shell === null) return null;
-    const run = yield* importer.value.openRun({ threadId: thread,
+    const run = yield* importer.value.openRun({ threadId: thread, thread: records.thread,
       runId: RunId.make(`${ENGINE_RUN_PREFIX}${request.sessionId}:${yield* Clock.currentTimeMillis}`),
       runOrdinal: Math.max(0, ...records.runs.map((one) => one.ordinal)) + 1,
       providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection });

@@ -318,19 +318,34 @@ const make = Effect.gen(function* () {
   /**
    * A turn the engine runs while T3 holds no stream on the thread, as a run that shows running
    * (bridge engine-runs.mjs): what it says arrives into it as session messages, and closeRun ends
-   * it. The caller reads the ordinal and checks the thread runs nothing else.
+   * it. The caller reads the ordinal and checks the thread runs nothing else. Like a run T3 starts
+   * (Orchestrator thread.turn.start), it brings a settled or snoozed thread back first: a thread the
+   * inventory filed as settled while its session rested must not stay settled once it runs again.
    */
   const openRun = (input: OpenRunInput) => Effect.gen(function* () {
     const now = yield* DateTime.now;
+    const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the engine's run")));
+    const back: Array<OrchestrationV2DomainEvent> = [];
+    let thread = input.thread;
+    if (thread.settledOverride !== null) {
+      thread = { ...thread, settledOverride: null, settledAt: null,
+        unsettledAt: thread.settledOverride === "active" ? (thread.unsettledAt ?? null) : now, updatedAt: now };
+      back.push({ id: yield* event(), type: "thread.unsettled", threadId: input.threadId, providerInstanceId: thread.providerInstanceId,
+        occurredAt: now, payload: thread });
+    }
+    if (thread.snoozedUntil != null) {
+      thread = { ...thread, snoozedUntil: null, snoozedAt: null, updatedAt: now };
+      back.push({ id: yield* event(), type: "thread.unsnoozed", threadId: input.threadId, providerInstanceId: thread.providerInstanceId,
+        occurredAt: now, payload: thread });
+    }
     const run: OrchestrationV2Run = {
       id: input.runId, threadId: input.threadId, ordinal: input.runOrdinal, providerInstanceId: input.providerInstanceId,
       modelSelection: input.modelSelection, providerThreadId: null, userMessageId: MessageId.make(input.runId),
       rootNodeId: null, activeAttemptId: null, status: "running", queuePosition: null,
       requestedAt: now, startedAt: now, completedAt: null, checkpointId: null, contextHandoffId: null,
     };
-    const id = yield* idAllocator.allocate.event({ threadId: input.threadId }).pipe(
-      Effect.mapError(importFailure("Could not number the engine's run")));
-    yield* eventSink.write({ events: [{ id, type: "run.created", threadId: input.threadId, runId: input.runId,
+    yield* eventSink.write({ events: [...back, { id: yield* event(), type: "run.created", threadId: input.threadId, runId: input.runId,
       providerInstanceId: input.providerInstanceId, occurredAt: now, payload: run }] })
       .pipe(Effect.mapError(importFailure("Could not open the engine's run")));
     return run;
@@ -351,6 +366,8 @@ const make = Effect.gen(function* () {
 
 export interface OpenRunInput {
   readonly threadId: ThreadId;
+  /** The thread as it stands: a settled or snoozed one is brought back before the run opens. */
+  readonly thread: OrchestrationV2AppThread;
   readonly runId: RunId;
   /** The thread's next free run ordinal (V2 numbers runs 1..n). */
   readonly runOrdinal: number;
