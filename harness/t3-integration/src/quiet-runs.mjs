@@ -67,12 +67,12 @@ function remember(launched, id, quiet) {
 }
 
 /** A fresh state for quietStep: plain data, so a reader that follows a file can store it between passes. */
-export const newQuietState = () => ({ inQuiet: false, launched: {} });
+export const newQuietState = () => ({ inQuiet: false, launched: {}, ended: true });
 
 /**
  * One message of a stored conversation, in order: whether it belongs to a quiet run, and for a
  * message that opened a turn by reporting background work, the id of the work that decided it
- * (`launcher`). `state` ({ inQuiet, launched: { [id]: quiet } }) is updated in place. A clock wake
+ * (`launcher`). `state` ({ inQuiet, launched: { [id]: quiet }, ended }) is updated in place. A clock wake
  * starts a quiet stretch and any other input ends it; a turn opened by work finishing belongs to
  * the run that launched that work — the user's request stays the user's even when a heartbeat ran
  * in between, and work Segno started in its own quiet time stays quiet; a finish that names no work
@@ -82,8 +82,15 @@ export function quietStep(state, message) {
   let launcher;
   if (isClockWake(message)) state.inQuiet = true;
   else if (isInput(message)) state.inQuiet = false;
-  else { const found = launcherOf(message, state.launched); if (found) { state.inQuiet = found.quiet; launcher = found.id; } }
+  else {
+    const found = launcherOf(message, state.launched);
+    // A finish that opens a turn (the last one had ended) takes its launcher's side. One steered into
+    // a turn already going can bring the person's work into a quiet turn, never hide a shown one.
+    const opens = state.ended !== false;
+    if (found && (opens || !found.quiet)) { state.inQuiet = found.quiet; launcher = found.id; }
+  }
   for (const id of launchedIds(message)) remember(state.launched, id, state.inQuiet);
+  state.ended = message?.role === 'assistant' && message.stopReason !== 'toolUse';
   return launcher === undefined ? { quiet: state.inQuiet } : { quiet: state.inQuiet, launcher };
 }
 
@@ -102,7 +109,7 @@ export function quietMessages(messages) {
  * input says what it is; a quiet run passes nothing until it settles. `idle()` resolves when no
  * quiet run is open or deciding.
  */
-export function createQuietRuns({ owned = () => false } = {}) {
+export function createQuietRuns({ owned = () => false, seeded: startSeeded = true } = {}) {
   let state = 'idle'; // idle | opening (agent_start held) | pending (a run already going, asked about) | quiet | shown
   let held = [];
   let waiters = [];
@@ -110,7 +117,11 @@ export function createQuietRuns({ owned = () => false } = {}) {
   // work: a run opened without any input (work finishing) belongs to the run that launched that work,
   // else it continues the last stretch — as quietMessages reads it.
   let lastQuiet = false;
-  const launched = {};
+  let launched = {};
+  // A stream that attached late has not seen what ran before (its buffer holds the last events
+  // only): the first input-less turn it cannot place asks for the stored conversation (wantsLookup).
+  let seeded = startSeeded;
+  let lookup = false;
   const settle = (next) => {
     if (next === 'idle') lastQuiet = state === 'quiet';
     state = next;
@@ -134,6 +145,14 @@ export function createQuietRuns({ owned = () => false } = {}) {
      * buffer: hold everything until `resolve` says, from the stored conversation's tail, whose it is.
      */
     inFlight() { state = 'pending'; held = []; settledWhilePending = false; },
+    /** Whether the filter holds a turn it cannot place without the stored conversation; asking clears it. */
+    takeLookup() { const asked = lookup; lookup = false; return asked; },
+    /** What the stored conversation says (quietStep's state at its end): the launches and the last stretch. */
+    seed(quietState) {
+      launched = { ...(quietState?.launched ?? {}) };
+      if (state === 'idle') lastQuiet = quietState?.inQuiet === true;
+      seeded = true;
+    },
     /** Ends `inFlight`: a quiet run drops what was held; any other passes it on. Returns what to pass. */
     resolve(quiet) {
       if (state !== 'pending') return [];
@@ -171,6 +190,13 @@ export function createQuietRuns({ owned = () => false } = {}) {
         if (!input && held.some(isOwnCustom)) {
           const verdicts = held.map((one) => (one.type === 'message_end' ? launcherOf(one.message, launched)?.quiet : undefined));
           const by = verdicts.includes(false) ? false : verdicts.includes(true) ? true : undefined;
+          if (by === undefined && !seeded) {
+            held.push(event);
+            state = 'pending';
+            settledWhilePending = type === 'agent_settled';
+            lookup = true;
+            return [];
+          }
           if (by ?? lastQuiet) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
         }
         const out = [...held, event];
@@ -182,6 +208,8 @@ export function createQuietRuns({ owned = () => false } = {}) {
         if (type === 'agent_settled') { settle('idle'); return []; }
         const input = inputOf(event);
         if (input && !isClockWake(input)) { settle('shown'); return [{ type: 'agent_start' }, event]; }
+        // The person's work finishing, steered into this turn: from here the turn is theirs.
+        if (isOwnCustom(event) && launcherOf(event.message, launched)?.quiet === false) { settle('shown'); return [{ type: 'agent_start' }, event]; }
         return [];
       }
       if (state === 'shown' && type === 'agent_settled') settle('idle');

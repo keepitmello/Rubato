@@ -5,7 +5,7 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns, quietMessages } from './quiet-runs.mjs';
+import { createQuietRuns, newQuietState, quietMessages, quietStep } from './quiet-runs.mjs';
 import { createTelegramEcho, telegramEchoes } from './telegram-echo.mjs';
 
 /**
@@ -146,7 +146,7 @@ export class RubatoRpcConnection {
     // A run this stream asked for, a turn held open on a wait, or one carried across an engine
     // restart is never one of them.
     this.asked = false;
-    this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null });
+    this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null, seeded: false });
     // What Segno sends the person with telegram_send from such a run shows as its words (telegram-echo.mjs).
     this.telegramEcho = createTelegramEcho({ threadId });
     this.sessionId = null;
@@ -201,9 +201,20 @@ export class RubatoRpcConnection {
   /** Holds the run going on at attach until the conversation's tail says whether Rubato's clock started it. */
   decideRunInFlight() {
     this.quietRuns.inFlight();
+    this.placeFromStore();
+  }
+  /**
+   * Places the turn the quiet filter holds from the stored conversation: quietStep over it gives the
+   * launches it has not seen and the verdict for its last message, which is the turn in question.
+   */
+  placeFromStore() {
     Promise.resolve(this.client.command({ type: 'get_messages' })).then((reply) => {
       const messages = Array.isArray(reply?.messages) ? reply.messages : [];
-      return messages.length > 0 && quietMessages(messages).has(messages.at(-1));
+      const store = newQuietState();
+      let last;
+      for (const message of messages) last = quietStep(store, message);
+      this.quietRuns.seed(store);
+      return last?.quiet === true;
     }, () => false).then((quiet) => {
       for (const shown of this.quietRuns.resolve(quiet)) {
         if (shown?.type === 'agent_settled') this.asked = false;
@@ -236,6 +247,7 @@ export class RubatoRpcConnection {
         this.fold?.feed(record.event); this.sessionMessage(record.event); this.telegramMessage(record.event);
         for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
       }
+      if (this.quietRuns.takeLookup()) this.placeFromStore();
       if (state.status !== 'running') this.run = null;
       // A long run can push its own start out of the engine's buffer. Whose run it is then comes
       // from the stored conversation: a clock run's tail must not reach the thread (quiet-runs.mjs).
@@ -433,6 +445,7 @@ export class RubatoRpcConnection {
       this.noteRun(shown);
       this.enqueue(() => this.process(shown));
     }
+    if (this.quietRuns.takeLookup()) this.placeFromStore();
   }
   enqueue(step) {
     this.inbound = this.inbound.then(step).catch((error) => this.log('inbound step failed', error));

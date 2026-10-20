@@ -338,3 +338,49 @@ test('quietStep is the same rule one message at a time, with plain state a file 
   assert.deepEqual(quietStep(JSON.parse(JSON.stringify(segnoOnly)), taskDone(['st_segno04'])), { quiet: true, launcher: 'st_segno04' },
     'the state survives a JSON round trip');
 });
+
+test('a finish steered into a turn already going: the person\'s work makes a quiet turn theirs from there; Segno\'s never hides a shown one', () => {
+  const steered = (custom, reply) => [{ type: 'message_start', message: custom }, { type: 'message_end', message: custom },
+    { type: 'message_start', message: reply }, { type: 'message_end', message: reply }];
+  const toolUse = { role: 'assistant', content: [{ type: 'toolCall', id: 'x', name: 'read', arguments: {} }], timestamp: 25, stopReason: 'toolUse' };
+  // The person's job lands inside a heartbeat.
+  const live = createQuietRuns();
+  pass(live, run(user, bashLaunch('bash_31'), answer));
+  const beat = [{ type: 'agent_start' }, { type: 'turn_start' }, { type: 'message_start', message: wake('heartbeat') }, { type: 'message_end', message: wake('heartbeat') },
+    { type: 'message_start', message: toolUse }, { type: 'message_end', message: toolUse }];
+  assert.deepEqual(pass(live, beat), []);
+  const out = pass(live, [...steered(terminalDone('bash_31'), said('JOB_31')), { type: 'agent_end' }, { type: 'agent_settled' }]);
+  assert.ok(out.some((event) => event.message?.content?.[0]?.text === 'JOB_31'), 'live shows the person\'s result');
+  const stored = [user, bashLaunch('bash_31'), answer, wake('heartbeat'), toolUse, terminalDone('bash_31'), said('JOB_31')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), false, 'history agrees');
+  // Segno's own job lands inside the person's turn.
+  const live2 = createQuietRuns();
+  pass(live2, run(wake('heartbeat'), bashLaunch('bash_32'), answer));
+  const asked = [{ type: 'agent_start' }, { type: 'turn_start' }, { type: 'message_start', message: user }, { type: 'message_end', message: user },
+    { type: 'message_start', message: toolUse }, { type: 'message_end', message: toolUse }];
+  pass(live2, asked);
+  const out2 = pass(live2, [...steered(terminalDone('bash_32'), said('ANSWER_TO_PERSON')), { type: 'agent_end' }, { type: 'agent_settled' }]);
+  assert.ok(out2.some((event) => event.message?.content?.[0]?.text === 'ANSWER_TO_PERSON'));
+  const stored2 = [wake('heartbeat'), bashLaunch('bash_32'), answer, user, toolUse, terminalDone('bash_32'), said('ANSWER_TO_PERSON')];
+  assert.equal(quietMessages(stored2).has(stored2.at(-1)), false, 'history keeps the person\'s turn shown too');
+});
+
+test('a stream that attached after the launch left the buffer asks the stored conversation before placing a finish', async () => {
+  for (const [launchedQuiet, expectShown] of [[false, true], [true, false]]) {
+    const launchStore = launchedQuiet ? [wake('heartbeat'), bashLaunch('bash_41'), said('a')] : [user, bashLaunch('bash_41'), said('a')];
+    const stored = [...launchStore, launchedQuiet ? user : wake('heartbeat'), said('b'), terminalDone('bash_41')];
+    const records = [];
+    const client = { client: { connected: true }, listener: null, async attach() {}, async subscribeSession(l) { client.listener = l; return async () => {}; },
+      async command(c) { return c.type === 'get_messages' ? { messages: stored } : undefined; }, async reply() {}, async close() {} };
+    const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), appendSessionMessage: async () => {} },
+      { threadId: 't1', cwd: '/w', onRecord: (r) => records.push(r), awaitTimings: { pollMs: 5, graceMs: 5 } });
+    conn.client = client;
+    await conn.request({ type: 'switch_session', sessionPath: 's1' });
+    client.listener({ runtimeId: 'r1', sequence: 500, status: 'idle', events: [] });
+    const finish = ownRun(terminalDone('bash_41'), said('JOB_41'));
+    client.listener({ runtimeId: 'r1', sequence: 500 + finish.length, status: 'idle', events: finish.map((event, i) => ({ sequence: 501 + i, event })) });
+    for (let i = 0; i < 5; i += 1) { await conn.inbound; await new Promise((r) => setTimeout(r, 10)); }
+    const shown = records.some((r) => r.type !== 'response' && JSON.stringify(r).includes('JOB_41'));
+    assert.equal(shown, expectShown, launchedQuiet ? 'Segno\'s own job stays quiet' : 'the person\'s job comes back');
+  }
+});
