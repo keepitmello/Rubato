@@ -24,7 +24,7 @@
 // harness/companion is out of reach; anything it imported from beside itself would not follow.
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
@@ -413,10 +413,18 @@ export function seedText(seed) {
 
 export const SEGNO_SEARCH = Object.freeze({ channel: 'segno', index: 'segno_idx' });
 
-/** The environment `msearch` needs to search Segno's memory instead of Rubato's. */
+/**
+ * The environment `msearch` needs to search Segno's memory instead of Rubato's. The one Redis on the
+ * Mac holds every index, and msearch drops what its root no longer has, so a home other than the
+ * default one (a sandbox, a test) gets a channel and an index of its own, named from its path: it can
+ * never re-sync the live Segno's index to its own files.
+ */
 export function segnoSearchEnv(env = process.env) {
   const home = env.HOME || homedir();
-  return { ...env, MSEARCH_ROOT: segnoPaths(env).memory, MSEARCH_CHANNEL: SEGNO_SEARCH.channel, MSEARCH_INDEX: SEGNO_SEARCH.index,
+  const own = companionHomeFor(env);
+  const suffix = own === path.join(home, '.rubato', 'companion') ? '' : `_${createHash('sha256').update(own).digest('hex').slice(0, 10)}`;
+  return { ...env, MSEARCH_ROOT: segnoPaths(env).memory, MSEARCH_CHANNEL: `${SEGNO_SEARCH.channel}${suffix}`,
+    MSEARCH_INDEX: `${SEGNO_SEARCH.channel}${suffix}_idx`,
     MSEARCH_STATE_DIR: env.MSEARCH_STATE_DIR || path.join(home, '.rubato', 'memory', 'msearch-state') };
 }
 

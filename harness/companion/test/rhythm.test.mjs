@@ -485,7 +485,10 @@ test('search: msearch over Segno\'s own memory/, its own channel and index, Ruba
   assert.equal(call.bin, 'msearch');
   assert.deepEqual(call.args, ['-a', '비 오는 밤']);
   assert.equal(call.env.MSEARCH_ROOT, segnoPaths(env).memory);
-  assert.deepEqual([call.env.MSEARCH_CHANNEL, call.env.MSEARCH_INDEX], [SEGNO_SEARCH.channel, SEGNO_SEARCH.index]);
+  assert.match(call.env.MSEARCH_CHANNEL, /^segno_[0-9a-f]{10}$/, 'a sandbox home never shares the live index');
+  assert.equal(call.env.MSEARCH_INDEX, `${call.env.MSEARCH_CHANNEL}_idx`);
+  const live = segnoSearchEnv({ HOME: env.HOME });
+  assert.deepEqual([live.MSEARCH_CHANNEL, live.MSEARCH_INDEX], [SEGNO_SEARCH.channel, SEGNO_SEARCH.index], 'the default home is "segno"');
   assert.equal(call.env.MSEARCH_STATE_DIR, path.join(env.HOME, '.rubato', 'memory', 'msearch-state'));
   assert.deepEqual(searchSegnoMemory('', { env, index: true, run }) && calls.at(-1).args, ['--index']);
   const missing = Object.assign(new Error('spawn msearch ENOENT'), { code: 'ENOENT' });
