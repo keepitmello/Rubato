@@ -159,13 +159,15 @@ export class RubatoRpcConnection {
   }
   async open() {
     this.client = await this.connectClient();
-    // A dead engine socket surfaces as `connected` turning false. During a restart this stream
-    // moves to the next engine; otherwise the adapter sees the transport fail and the
-    // orchestrator opens a new session on the next turn.
+    // A dead engine socket surfaces as `connected` turning false, or as a client that came back to
+    // the next engine on the same socket without its attachment. Either way this stream moves to
+    // the next engine, as it does after an announced restart: T3 keeps this runtime for the
+    // thread's next turn (ProviderSessionManager reuses a live session), so closing it would leave
+    // that turn on a dead stream ("No session is attached"). Only a next engine that never comes
+    // closes it.
     this.watchdog = setInterval(() => {
-      if (this.closed || this.reconnecting || !this.client || this.client.client.connected) return;
-      if (this.restart) void this.reconnect();
-      else void this.close(new Error('Rubato engine connection closed'));
+      if (this.closed || this.reconnecting || !this.client || !this.engineLost()) return;
+      void this.reachNextEngine();
     }, 1000);
     this.watchdog.unref?.();
     return this;
@@ -291,13 +293,25 @@ export class RubatoRpcConnection {
       inTurn: state.status === 'running', shown: false, ended: false, resumed: false };
     restart.ready = new Promise((resolve) => { restart.resolve = resolve; });
     this.enqueue(() => {
-      if (this.restart !== restart || !(restart.inTurn || this.hold)) return;
+      // Segno's thread is a chat log (companion-thread.mjs): no restart row there.
+      if (this.restart !== restart || !(restart.inTurn || this.hold) || this.companion) return;
       restart.shown = true;
       const row = { toolCallId: restart.id, toolName: RESTART_TITLE, args: {} };
       this.emit({ type: 'tool_execution_start', ...row });
       this.emit({ type: 'tool_execution_update', ...row, partialResult: { content: [{ type: 'text',
         text: 'Rubato is restarting. Running tool calls finish first, then this turn continues on the new engine.' }] } });
     });
+  }
+  /** Whether the engine this stream attached to is gone: its socket closed, or its attachment lost. */
+  engineLost() {
+    if (!this.client?.client) return false;
+    const client = this.client.client;
+    return !client.connected || Boolean(this.sessionId && 'attachment' in client && !client.attachment);
+  }
+  /** An engine that went away without announcing a restart (a crash, a stop without drain): the same path. */
+  reachNextEngine() {
+    if (!this.restart) this.beginRestart({ status: this.run ? 'running' : 'idle' });
+    return this.reconnect();
   }
   /** The old engine closed: attach this stream's session on the next one, which continues the run. */
   reconnect() {
@@ -608,6 +622,11 @@ export class RubatoRpcConnection {
   async command(record) {
     if (this.closed) throw new Error('Rubato connection is closed');
     await this.engineReady(record?.type);
+    // The engine went away since the watchdog last looked: reach the next one before sending.
+    if (this.sessionId && this.engineLost()) {
+      await this.reachNextEngine();
+      if (this.closed) throw new Error('Rubato connection is closed');
+    }
     if (!this.sessionId) await this.openThreadSession();
     const { id: _id, ...command } = record;
     // Only the step-rewind continue route's own message (it marks the thread right before it

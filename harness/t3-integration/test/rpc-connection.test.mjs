@@ -517,3 +517,52 @@ test('T3\'s continuation on a session that is not running is an ordinary prompt'
   await pause();
   assert.ok(client.commands.some((command) => command.type === 'prompt' && command.message === 'Continue where you left off.'));
 });
+
+// An engine that goes away without announcing a restart (killed, stopped without drain): T3 keeps
+// this stream for the thread's next turn (ProviderSessionManager reuses a live session), so the
+// stream must reach the next engine itself instead of failing "No session is attached".
+test('an engine gone without a restart notice: the next message reaches the next engine on the same stream', async () => {
+  const client = fakeClient();
+  const { conn, closed } = connection(client, {}, { restartTimings });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  await conn.inbound;
+  client.client.connected = false; // the socket closed; no `restarting` was published
+  const next = fakeClient({ prompt: { disposition: 'started' } });
+  conn.connectClient = async () => next;
+  const answer = await conn.request({ type: 'prompt', message: '다음 말' });
+  assert.deepEqual(answer, { disposition: 'started' });
+  assert.deepEqual(next.attached, ['s1'], 'reattached on the next engine');
+  assert.ok(next.commands.some((command) => command.type === 'prompt' && command.message === '다음 말'));
+  assert.equal(client.commands.some((command) => command.type === 'prompt'), false, 'nothing went to the dead engine');
+  assert.deepEqual(closed, []);
+});
+
+test('a client that came back to the next engine without its attachment is reattached before anything is sent', async () => {
+  const client = fakeClient();
+  client.client = { connected: true, attachment: { sessionId: 's1' } };
+  const { conn, closed } = connection(client, {}, { restartTimings });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  client.client.attachment = undefined; // reconnected on the same socket path, attachment lost
+  const next = fakeClient({ prompt: { disposition: 'started' } });
+  next.client = { connected: true, attachment: { sessionId: 's1' } };
+  conn.connectClient = async () => next;
+  await conn.request({ type: 'prompt', message: 'hi' });
+  assert.deepEqual(next.attached, ['s1']);
+  assert.deepEqual(closed, []);
+});
+
+test('the watchdog also moves an idle stream to the next engine; one that never comes closes it with the reason', async () => {
+  const client = fakeClient();
+  const { conn, closed } = connection(client, {}, { restartTimings: { ...restartTimings, reconnectMs: 50 } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  conn.watchdog = setInterval(() => { if (!conn.closed && !conn.reconnecting && conn.engineLost()) void conn.reachNextEngine(); }, 10);
+  conn.connectClient = async () => { throw new Error('connect ENOENT'); };
+  client.client.connected = false;
+  for (let i = 0; i < 100 && closed.length === 0; i += 1) await new Promise((resolve) => setTimeout(resolve, 10));
+  clearInterval(conn.watchdog);
+  assert.equal(closed.length, 1);
+  assert.match(String(closed[0]?.message ?? closed[0]), /could not reach the new engine/);
+});
