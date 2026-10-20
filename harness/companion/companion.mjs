@@ -409,32 +409,43 @@ export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
 }
 
 /**
- * Marks the closing piece inside the composed role prompt, so the system prompt can carry it to its
- * very end after everything Rubato adds behind the role prompt (system-prompt.mjs codaLast).
+ * Marks the resident memory and the closing piece inside the composed role prompt, so the system
+ * prompt can carry both to its very end, after everything Rubato adds behind the role prompt
+ * (codaLast): the memory in the last recency slot, then the coda (Roo build.sh).
  */
+export const MEMORY_OPEN = '<!-- segno:memory -->';
+export const MEMORY_CLOSE = '<!-- /segno:memory -->';
 export const CODA_OPEN = '<!-- segno:coda -->';
 export const CODA_CLOSE = '<!-- /segno:coda -->';
 
-/** The companion's whole role prompt: each piece, the person's version first, in order; the coda marked. */
+/** The companion's whole role prompt: each piece, the person's version first, in order; memory and coda marked. */
 export function composeCompanionPrompt({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
   const pieces = readPieces({ defaultsDir, env, readFile }).map((piece) => ({ id: piece.id, text: piece.personalText ?? piece.defaultText }));
-  const body = pieces.filter((piece) => piece.id !== 'coda' && piece.text.length > 0).map((piece) => piece.text).join('\n\n');
-  const coda = pieces.find((piece) => piece.id === 'coda')?.text ?? '';
-  return coda ? `${body}\n\n${CODA_OPEN}\n${coda}\n${CODA_CLOSE}` : body;
+  const marked = { memory: [MEMORY_OPEN, MEMORY_CLOSE], coda: [CODA_OPEN, CODA_CLOSE] };
+  return pieces.filter((piece) => piece.text.length > 0)
+    .map((piece) => (marked[piece.id] ? `${marked[piece.id][0]}\n${piece.text}\n${marked[piece.id][1]}` : piece.text)).join('\n\n');
+}
+
+/** Cuts the block between `open` and `close` out of `prompt`; returns the rest and the block's text. */
+function cut(prompt, open, close) {
+  const start = prompt.indexOf(open);
+  const end = start < 0 ? -1 : prompt.indexOf(close, start);
+  if (end < 0) return { rest: prompt, text: undefined };
+  return { rest: (prompt.slice(0, start).trimEnd() + '\n\n' + prompt.slice(end + close.length).trimStart()).trim(),
+    text: prompt.slice(start + open.length, end).trim() };
 }
 
 /**
- * Moves a marked coda to the very end of `prompt`, after a rule, as Roo's build.sh closes its
- * system prompt: the last tokens are Segno's own voice. A prompt without one is returned as it is.
+ * Moves the marked resident memory and coda to the very end of `prompt`: the memory, then a rule
+ * and the coda, as Roo's build.sh closes its system prompt — "MEMORY는 마지막 recency 슬롯", and the
+ * last tokens in Segno's own voice. A prompt without the marks is returned as it is.
  */
 export function codaLast(prompt) {
   if (typeof prompt !== 'string') return prompt;
-  const start = prompt.indexOf(CODA_OPEN);
-  const end = start < 0 ? -1 : prompt.indexOf(CODA_CLOSE, start);
-  if (end < 0) return prompt;
-  const coda = prompt.slice(start + CODA_OPEN.length, end).trim();
-  const rest = (prompt.slice(0, start).trimEnd() + '\n\n' + prompt.slice(end + CODA_CLOSE.length).trimStart()).trim();
-  return coda ? `${rest}\n\n---\n\n${coda}` : rest;
+  const memory = cut(prompt, MEMORY_OPEN, MEMORY_CLOSE);
+  const coda = cut(memory.rest, CODA_OPEN, CODA_CLOSE);
+  if (memory.text === undefined && coda.text === undefined) return prompt;
+  return [coda.rest, memory.text || '', coda.text ? `---\n\n${coda.text}` : ''].filter(Boolean).join('\n\n');
 }
 
 /** Whether a session's entries carry the companion marker. */

@@ -25,7 +25,7 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, renameSync, appendFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 
 /** The store this folder writes to (memory.agent); the leads keep their own "rubato" store. */
@@ -415,14 +415,17 @@ export const SEGNO_SEARCH = Object.freeze({ channel: 'segno', index: 'segno_idx'
 
 /**
  * The environment `msearch` needs to search Segno's memory instead of Rubato's. The one Redis on the
- * Mac holds every index, and msearch drops what its root no longer has, so a home other than the
- * default one (a sandbox, a test) gets a channel and an index of its own, named from its path: it can
- * never re-sync the live Segno's index to its own files.
+ * Mac holds every index, and msearch drops what its root no longer has, so any home other than this
+ * account's ~/.rubato/companion (a sandbox, a test, one that only moved HOME) gets a channel and an
+ * index of its own, named from its path: it can never re-sync the live Segno's index to its files.
  */
 export function segnoSearchEnv(env = process.env) {
   const home = env.HOME || homedir();
   const own = companionHomeFor(env);
-  const suffix = own === path.join(home, '.rubato', 'companion') ? '' : `_${createHash('sha256').update(own).digest('hex').slice(0, 10)}`;
+  // The account's own home from the user database, not $HOME: a sandbox that only moves HOME is a
+  // sandbox too.
+  const live = path.join(userInfo().homedir, '.rubato', 'companion');
+  const suffix = own === live ? '' : `_${createHash('sha256').update(own).digest('hex').slice(0, 10)}`;
   return { ...env, MSEARCH_ROOT: segnoPaths(env).memory, MSEARCH_CHANNEL: `${SEGNO_SEARCH.channel}${suffix}`,
     MSEARCH_INDEX: `${SEGNO_SEARCH.channel}${suffix}_idx`,
     MSEARCH_STATE_DIR: env.MSEARCH_STATE_DIR || path.join(home, '.rubato', 'memory', 'msearch-state') };

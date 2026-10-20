@@ -69,7 +69,8 @@ function fakeEngine() {
   /** A companion conversation that already exists and was already woken: the keeper attaches to it. */
   engine.existing = (env) => {
     const sessionId = 'segno-1';
-    sessions.set(sessionId, { sessionId, status: 'stored', runtimeId: null, attachments: 0 });
+    // Already loaded, as after the keeper's first start: no resume line is owed.
+    sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0 });
     writeState({ sessionId, woke: { boundary: null } }, env);
     return sessionId;
   };
