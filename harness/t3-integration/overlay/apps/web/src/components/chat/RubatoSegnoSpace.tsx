@@ -211,6 +211,24 @@ export function useThreadListFoldedHere() {
   }, [isMobile]);
 }
 
+/**
+ * Opens the thread list once Segno's space is gone (user 412eb407). Leaving puts the list back as
+ * it was before the space folded it (useThreadListFoldedHere), so opening it any earlier would be
+ * undone; call the returned function, then leave.
+ */
+export function useOpenListAfterSegno(inSegno: boolean): () => void {
+  const { setOpen } = useSidebar();
+  const pending = useRef(false);
+  useEffect(() => {
+    if (inSegno || !pending.current) return;
+    pending.current = false;
+    void setOpen(true);
+  }, [inSegno, setOpen]);
+  return useCallback(() => {
+    pending.current = true;
+  }, []);
+}
+
 export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
   useThreadListFoldedHere();
   const environmentId = useReadyEnvironmentId();

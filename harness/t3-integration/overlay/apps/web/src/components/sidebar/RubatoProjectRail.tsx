@@ -31,6 +31,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RubatoProjectPicker } from "./RubatoProjectPicker";
+import { useOpenListAfterSegno } from "../chat/RubatoSegnoSpace";
 import { RubatoSegnoIcon } from "./RubatoSegnoIcon";
 import { useRubatoProjectList } from "./rubatoProjectList";
 import {
@@ -187,17 +188,25 @@ export function RubatoProjectRail() {
   const projectsLabel = scopedGroup
     ? `Projects: ${scopedGroup.displayName} (⌘G)`
     : "Projects (⌘G)";
-  const choose = (key: string | null) => {
-    setScopeKey(key);
-    setPickerOpen(false);
-    if (key !== null && !open) void setOpen(true);
-  };
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
   // The router's pathname is percent-encoded, and Segno's thread id (an inventory import) has ':'.
   const onSegno =
     companion.threadId !== null &&
     (pathname.endsWith(`/${encodeURIComponent(companion.threadId)}`) ||
       pathname.endsWith(`/${companion.threadId}`));
+  // A project's thread list belongs to the ordinary routes, so a choice made in Segno's space
+  // leaves it for home (user 412eb407), as the rail's other buttons do.
+  const openListAfterSegno = useOpenListAfterSegno(onSegno);
+  const choose = (key: string | null) => {
+    setScopeKey(key);
+    setPickerOpen(false);
+    if (onSegno) {
+      if (key !== null) openListAfterSegno();
+      void navigate({ to: "/" });
+      return;
+    }
+    if (key !== null && !open) void setOpen(true);
+  };
   const onRailPage =
     onSegno ||
     ["/scheduled", "/memory", "/pull-requests", "/usage", "/stats", "/settings"].some(onPage);
