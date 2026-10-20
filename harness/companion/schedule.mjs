@@ -119,6 +119,11 @@ export function parseMarkdownSchedule(text, now = Date.now()) {
 }
 
 // ── ICS ───────────────────────────────────────────────────────────────────────────────────────
+// A time in a calendar is wall-clock fields in one frame: UTC (…Z), a named zone (TZID), or
+// floating (this machine's clock; all-day dates too). Repetitions step those fields in the event's
+// own frame — a weekly 09:00 in New York stays 09:00 there across daylight saving, wherever this
+// machine is — and become an instant only at the end.
+
 /** The instant a wall-clock time in `timeZone` names (two passes over the zone's offset). */
 function zonedTime(year, month, day, hour, minute, second, timeZone) {
   const guess = Date.UTC(year, month - 1, day, hour, minute, second);
@@ -132,18 +137,34 @@ function zonedTime(year, month, day, hour, minute, second, timeZone) {
   return instant;
 }
 
-/** An ICS date or date-time value: `{ at, allDay }` in epoch ms (all-day at local midnight). */
-function icsTime(value, params = {}) {
+/** An ICS date or date-time value as `{ fields: [y, mo, d, h, mi, s], frame, allDay }`; frame is 'utc', a zone name or 'local'. */
+function icsValue(value, params = {}) {
   const match = /^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})(\d{2})(Z)?)?$/.exec(String(value).trim());
   if (!match) return undefined;
-  const [, y, mo, d, h, mi, s, z] = match;
-  if (h === undefined || params.VALUE === 'DATE') return { at: new Date(Number(y), Number(mo) - 1, Number(d)).getTime(), allDay: true };
-  if (z) return { at: Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)), allDay: false };
-  if (params.TZID) {
-    try { return { at: zonedTime(Number(y), Number(mo), Number(d), Number(h), Number(mi), Number(s), params.TZID), allDay: false }; } catch {}
+  const [, y, mo, d, h, mi, sec, z] = match;
+  const allDay = h === undefined || params.VALUE === 'DATE';
+  const fields = [Number(y), Number(mo), Number(d), allDay ? 0 : Number(h), allDay ? 0 : Number(mi), allDay ? 0 : Number(sec)];
+  let frame = 'local';
+  if (!allDay && z) frame = 'utc';
+  else if (!allDay && params.TZID) {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: params.TZID }); frame = params.TZID; } catch { frame = 'local'; }
   }
-  return { at: new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime(), allDay: false };
+  return { fields, frame, allDay };
 }
+
+/** The instant of wall-clock `fields` in `frame`. */
+function instantOf(fields, frame) {
+  const [y, mo, d, h, mi, s] = fields;
+  if (frame === 'utc') return Date.UTC(y, mo - 1, d, h, mi, s);
+  if (frame === 'local') return new Date(y, mo - 1, d, h, mi, s).getTime();
+  return zonedTime(y, mo, d, h, mi, s, frame);
+}
+
+/** Calendar arithmetic on wall-clock fields, free of any zone: Date.UTC only normalizes. */
+const fieldsOf = (ms, time) => { const d = new Date(ms); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), time[3], time[4], time[5]]; };
+const addDays = (fields, k) => fieldsOf(Date.UTC(fields[0], fields[1] - 1, fields[2] + k), fields);
+const weekdayOf = (fields) => new Date(Date.UTC(fields[0], fields[1] - 1, fields[2])).getUTCDay();
+const daysIn = (year, month) => new Date(Date.UTC(year, month, 0)).getUTCDate();
 
 function unfold(text) {
   return String(text).replace(/\r\n/g, '\n').replace(/\n[ \t]/g, '').split('\n');
@@ -161,73 +182,97 @@ const icsText = (value) => String(value).replace(/\\n/gi, ' ').replace(/\\([,;\\
 const WEEKDAYS = ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'];
 
 /**
- * The occurrences of one event from `from` to `to` (epoch ms): its start, and for a recurring
- * event (RRULE FREQ=DAILY/WEEKLY/MONTHLY/YEARLY with INTERVAL, COUNT, UNTIL and weekly BYDAY)
- * each repetition, without the ones EXDATE removes.
+ * The start instants of one event's occurrences up to `to`: its start, and for RRULE FREQ=DAILY,
+ * WEEKLY (BYDAY), MONTHLY or YEARLY with INTERVAL, COUNT and UNTIL, each repetition stepped in the
+ * event's own frame. A monthly or yearly date the month does not have (the 31st, Feb 29) is
+ * skipped, as RFC 5545 says, and does not count. EXDATE instants are left out but still count.
  */
-function occurrences(event, from, to) {
-  const start = event.start;
-  if (!event.rrule) return start.at >= from - DAY_MS && start.at <= to ? [start.at] : [];
+function occurrences(event, to) {
+  const { fields: first, frame } = event.start;
+  const startAt = instantOf(first, frame);
+  if (!event.rrule) return [startAt];
   const rule = Object.fromEntries(event.rrule.split(';').map((part) => part.split('=')).map(([k, v]) => [k.toUpperCase(), v]));
   const interval = Math.max(1, Number(rule.INTERVAL) || 1);
   const count = Number(rule.COUNT) || Infinity;
-  const until = rule.UNTIL ? icsTime(rule.UNTIL)?.at ?? Infinity : Infinity;
-  const first = new Date(start.at);
+  const untilValue = rule.UNTIL ? icsValue(rule.UNTIL) : undefined;
+  const until = untilValue ? instantOf(untilValue.fields, untilValue.frame === 'local' ? frame : untilValue.frame) : Infinity;
+  const days = rule.FREQ === 'WEEKLY' && rule.BYDAY ? rule.BYDAY.split(',').map((d) => WEEKDAYS.indexOf(d.slice(-2))).filter((d) => d >= 0).sort() : undefined;
   const out = [];
   let n = 0;
-  const step = (date, k) => {
-    const next = new Date(date);
-    if (rule.FREQ === 'DAILY') next.setDate(next.getDate() + k);
-    else if (rule.FREQ === 'WEEKLY') next.setDate(next.getDate() + 7 * k);
-    else if (rule.FREQ === 'MONTHLY') next.setMonth(next.getMonth() + k);
-    else if (rule.FREQ === 'YEARLY') next.setFullYear(next.getFullYear() + k);
-    else return undefined;
-    return next;
-  };
-  const days = rule.FREQ === 'WEEKLY' && rule.BYDAY ? rule.BYDAY.split(',').map((d) => WEEKDAYS.indexOf(d.slice(-2))).filter((d) => d >= 0) : undefined;
-  for (let period = 0; period < 5000; period += 1) {
-    const anchor = step(first, period * interval);
-    if (!anchor) break;
-    const candidates = days
-      ? days.map((weekday) => { const d = new Date(anchor); d.setDate(d.getDate() - d.getDay() + weekday); return d; }).sort((a, b) => a - b)
-      : [anchor];
-    for (const candidate of candidates) {
-      const at = candidate.getTime();
-      if (at < start.at) continue;
-      if (at > until || n >= count) return out;
+  for (let period = 0; period < 10000; period += 1) {
+    let candidates;
+    const k = period * interval;
+    if (rule.FREQ === 'DAILY') candidates = [addDays(first, k)];
+    else if (rule.FREQ === 'WEEKLY') {
+      const week = addDays(first, 7 * k);
+      candidates = days ? days.map((weekday) => addDays(week, weekday - weekdayOf(week))) : [week];
+    } else if (rule.FREQ === 'MONTHLY' || rule.FREQ === 'YEARLY') {
+      const monthIndex = (first[1] - 1) + (rule.FREQ === 'MONTHLY' ? k : 12 * k);
+      const year = first[0] + Math.floor(monthIndex / 12);
+      const month = (monthIndex % 12) + 1;
+      candidates = first[2] <= daysIn(year, month) ? [[year, month, first[2], first[3], first[4], first[5]]] : [];
+    } else return [startAt];
+    for (const fields of candidates) {
+      const at = instantOf(fields, frame);
+      if (at < startAt) continue;
+      if (at > until || n >= count || at > to) return out;
       n += 1;
-      if (at > to) return out;
-      if (at >= from - DAY_MS && !event.exdates.has(at)) out.push(at);
+      if (!event.exdates.has(at)) out.push(at);
     }
-    if (anchor.getTime() > to) break;
   }
   return out;
 }
 
-/** Items of an ICS calendar between `from` and `to`, as parseMarkdownSchedule gives them. */
+/**
+ * Items of an ICS calendar between `from` and `to`, as parseMarkdownSchedule gives them. An event
+ * that repeats is expanded; an occurrence moved or cancelled by an override (same UID with a
+ * RECURRENCE-ID) is replaced by that override, which stands as its own event, or dropped.
+ */
 export function parseIcs(text, { from, to }) {
   const events = [];
   let current;
   for (const line of unfold(text)) {
     if (line === 'BEGIN:VEVENT') { current = { exdates: new Set() }; continue; }
-    if (line === 'END:VEVENT') { if (current?.start && current.status !== 'CANCELLED') events.push(current); current = undefined; continue; }
+    if (line === 'END:VEVENT') { if (current?.start) events.push(current); current = undefined; continue; }
     if (!current) continue;
     const prop = property(line);
     if (!prop) continue;
-    if (prop.name === 'DTSTART') current.start = icsTime(prop.value, prop.params);
+    if (prop.name === 'DTSTART') current.start = icsValue(prop.value, prop.params);
     else if (prop.name === 'SUMMARY') current.summary = icsText(prop.value);
+    else if (prop.name === 'UID') current.uid = prop.value.trim();
     else if (prop.name === 'RRULE') current.rrule = prop.value;
     else if (prop.name === 'STATUS') current.status = prop.value.trim().toUpperCase();
-    else if (prop.name === 'RECURRENCE-ID') current.recurrence = true;
-    else if (prop.name === 'EXDATE') for (const value of prop.value.split(',')) { const t = icsTime(value, prop.params); if (t) current.exdates.add(t.at); }
+    else if (prop.name === 'RECURRENCE-ID') current.recurrenceId = icsValue(prop.value, prop.params);
+    else if (prop.name === 'EXDATE') {
+      for (const value of prop.value.split(',')) { const v = icsValue(value, prop.params); if (v) current.exdates.add(v); }
+    }
+  }
+  // EXDATE values are fields in their own frame; compare them as instants.
+  for (const event of events) {
+    event.exdates = new Set([...event.exdates].map((v) => instantOf(v.fields, v.frame === 'local' && event.start ? event.start.frame : v.frame)));
+  }
+  const overridden = new Map();
+  for (const event of events) {
+    if (!event.recurrenceId || !event.uid) continue;
+    const master = events.find((other) => other.uid === event.uid && !other.recurrenceId);
+    const frame = event.recurrenceId.frame === 'local' && master ? master.start.frame : event.recurrenceId.frame;
+    if (!overridden.has(event.uid)) overridden.set(event.uid, new Set());
+    overridden.get(event.uid).add(instantOf(event.recurrenceId.fields, frame));
   }
   const items = [];
   for (const event of events) {
-    if (!event.start) continue;
-    for (const at of occurrences(event, from, to)) {
+    if (event.status === 'CANCELLED') continue;
+    const replaced = !event.recurrenceId && event.uid ? overridden.get(event.uid) : undefined;
+    for (const at of occurrences(event, to)) {
+      if (at < from - DAY_MS || replaced?.has(at)) continue;
       const date = new Date(at);
-      items.push({ date: dayKey(date), ...(event.start.allDay ? {} : { time: `${pad(date.getHours())}:${pad(date.getMinutes())}`, at }),
-        text: event.summary || '(제목 없음)' });
+      if (event.start.allDay) {
+        // An all-day date is a day, not an instant: keep its own calendar date.
+        const day = event.rrule ? fieldsOf(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()), [0, 0, 0, 0, 0, 0]) : event.start.fields;
+        items.push({ date: `${day[0]}-${pad(day[1])}-${pad(day[2])}`, text: event.summary || '(제목 없음)' });
+      } else {
+        items.push({ date: dayKey(date), time: `${pad(date.getHours())}:${pad(date.getMinutes())}`, at, text: event.summary || '(제목 없음)' });
+      }
     }
   }
   return items;
@@ -255,7 +300,10 @@ async function readSource(source, { now, env, fetchImpl, readFile }) {
       if (!/BEGIN:VCALENDAR/.test(text)) throw Object.assign(new Error('not a calendar'), { code: 'not a calendar' });
       icsCache.set(url, { at: now, text });
     }
-  } else text = readFile(path.resolve(expandHome(source.location, env)));
+  } else {
+    text = readFile(path.resolve(expandHome(source.location, env)));
+    if (!/BEGIN:VCALENDAR/.test(text)) throw Object.assign(new Error('not a calendar'), { code: 'not a calendar' });
+  }
   return parseIcs(text, { from, to });
 }
 
