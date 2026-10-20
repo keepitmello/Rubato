@@ -183,3 +183,38 @@ test('get_messages on the RPC stream (the adapter\'s backfill) leaves the clock 
   const { messages } = await conn.request({ type: 'get_messages' });
   assert.deepEqual(messages, [user, answer, { ...user, timestamp: 6 }]);
 });
+
+test('get_messages and an attach both bring back what a quiet run sent the person, and nothing else of that run', async () => {
+  const call = { role: 'assistant', content: [{ type: 'toolCall', id: 'g1', name: 'telegram_send', arguments: { text: '좋은 아침~' } }], timestamp: 5, stopReason: 'toolUse' };
+  const result = { role: 'toolResult', toolCallId: 'g1', toolName: 'telegram_send', content: [{ type: 'text', text: 'sent (id: 11)' }], timestamp: 6, isError: false };
+  const stored = [user, answer, wake('greeting'), call, result, { ...answer, content: [{ type: 'text', text: 'PRIVATE' }], timestamp: 7 }];
+  // The RPC path (the adapter's backfill).
+  const written = [];
+  const client = { client: { connected: true }, async attach() {}, async subscribeSession() { return async () => {}; },
+    async command(command) { return command.type === 'get_messages' ? { messages: stored } : undefined; }, async reply() {}, async close() {} };
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), appendSessionMessage: async (_t, item) => { written.push(item.text); } },
+    { threadId: 't1', cwd: '/w', onRecord: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+  conn.client = client;
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  const { messages } = await conn.request({ type: 'get_messages' });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(messages, [user, answer]);
+  assert.deepEqual(written, ['좋은 아침~']);
+  // The legacy attach path.
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const { EventProjection } = await import('../src/events.mjs');
+  const events = [];
+  const appended = [];
+  const projection = new EventProjection({ threadId: 'thread', sessionId: 'session', instanceId: 'instance', emit: (event) => events.push(event) });
+  const bridge = Object.create(RubatoPiBridge.prototype);
+  bridge.projectedMessages = async () => [];
+  bridge.appendSessionMessage = async (_t, item) => { appended.push(item.text); };
+  bridge.rememberWindows([]); bridge.catalogue = async () => ({ models: [] });
+  const context = { session: { threadId: 'thread', status: 'connecting', resumeCursor: { kind: 'rubato-pi' } }, projection,
+    client: { subscribeSession: async () => () => {}, snapshot: async () => ({ runtimeId: 'rt', sequence: 1, pendingUi: [],
+      state: { isStreaming: false, model: null, autoCompactionEnabled: true }, messages: stored }) } };
+  await bridge.synchronize(context);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.deepEqual(appended, ['좋은 아침~']);
+  assert.equal(events.some((event) => JSON.stringify(event).includes('PRIVATE')), false);
+});
