@@ -670,3 +670,31 @@ test('every time Segno reads is on this machine\'s zone, not Seoul\'s (user item
     if (before === undefined) delete process.env.TZ; else process.env.TZ = before;
   }
 });
+
+test('schedule: repeats step in the event\'s own zone, overrides replace or cancel one occurrence, and a month without the day is skipped', () => {
+  const cal = (...events) => ['BEGIN:VCALENDAR', ...events.flat(), 'END:VCALENDAR'].join('\r\n');
+  const ev = (...lines) => ['BEGIN:VEVENT', ...lines, 'END:VEVENT'];
+  // 09:00 in New York, weekly, across the November daylight-saving change: always 09:00 there.
+  const ny = parseIcs(cal(ev('UID:ny', 'DTSTART;TZID=America/New_York:20261026T090000', 'RRULE:FREQ=WEEKLY', 'SUMMARY:NY')),
+    { from: Date.UTC(2026, 10, 1), to: Date.UTC(2026, 10, 4) });
+  assert.deepEqual(ny.map((item) => item.at), [Date.UTC(2026, 10, 2, 14)], 'EST after Nov 1: 09:00 is 14:00 UTC');
+  // 14:00 UTC weekly stays 14:00 UTC whatever this machine's zone does.
+  const utc = parseIcs(cal(ev('UID:u', 'DTSTART:20261026T140000Z', 'RRULE:FREQ=WEEKLY', 'SUMMARY:U')),
+    { from: Date.UTC(2026, 10, 1), to: Date.UTC(2026, 10, 4) });
+  assert.deepEqual(utc.map((item) => item.at), [Date.UTC(2026, 10, 2, 14)]);
+  // A moved occurrence replaces the original; a cancelled one is gone.
+  const series = cal(ev('UID:s', 'DTSTART:20261019T100000Z', 'RRULE:FREQ=WEEKLY;COUNT=3', 'SUMMARY:Sync'),
+    ev('UID:s', 'RECURRENCE-ID:20261026T100000Z', 'DTSTART:20261027T110000Z', 'SUMMARY:Sync moved'),
+    ev('UID:s', 'RECURRENCE-ID:20261102T100000Z', 'DTSTART:20261102T100000Z', 'STATUS:CANCELLED', 'SUMMARY:Sync'));
+  const items = parseIcs(series, { from: Date.UTC(2026, 9, 25), to: Date.UTC(2026, 10, 5) });
+  assert.deepEqual(items.map((item) => [item.text, item.at]), [['Sync moved', Date.UTC(2026, 9, 27, 11)]]);
+  // Jan 31 monthly, COUNT 3: Jan, Mar, May — February and April have no 31st.
+  const monthly = parseIcs(cal(ev('UID:m', 'DTSTART:20270131T090000Z', 'RRULE:FREQ=MONTHLY;COUNT=3', 'SUMMARY:M')),
+    { from: Date.UTC(2027, 0, 1), to: Date.UTC(2027, 11, 31) });
+  assert.deepEqual(monthly.map((item) => new Date(item.at).toISOString().slice(0, 10)), ['2027-01-31', '2027-03-31', '2027-05-31']);
+});
+
+test('schedule: a local .ics that is not a calendar fails like an address that is not one', async () => {
+  const { failed } = await readSchedule({ sources: [{ kind: 'ics', location: '/cal.ics' }], now: Date.UTC(2026, 9, 21), readFile: () => '<html>sign in</html>' });
+  assert.deepEqual(failed.map((entry) => entry.error), ['not a calendar']);
+});
