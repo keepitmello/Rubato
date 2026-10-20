@@ -32,7 +32,7 @@ function engineFor(env, { existing = true } = {}) {
   writeFileSync(engine.sessionFile, JSON.stringify({ type: 'session', id: 'segno' }) + '\n');
   if (existing) {
     sessions.set('segno-1', { sessionId: 'segno-1', status: existing === 'stored' ? 'stored' : 'idle', runtimeId: existing === 'stored' ? null : 'r-segno-1' });
-    writeState({ sessionId: 'segno-1', woke: { boundary: null } }, env);
+    writeState({ sessionId: 'segno-1', woke: { boundary: null }, ...(existing === 'stored' ? {} : { runtimeId: 'r-segno-1' }) }, env);
   }
   engine.append = (...entries) => writeFileSync(engine.sessionFile, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n', { flag: 'a' });
   engine.busy = (busy) => { for (const row of sessions.values()) row.status = busy ? 'running' : 'idle'; };
@@ -41,7 +41,7 @@ function engineFor(env, { existing = true } = {}) {
     return {
       async list() { return [...sessions.values()].map((row) => ({ ...row })); },
       async create() { sessions.set('segno-1', { sessionId: 'segno-1', status: 'stored', runtimeId: null }); return { sessionId: 'segno-1' }; },
-      async attach(id) { const row = sessions.get(id); Object.assign(row, { status: row.status === 'running' ? 'running' : 'idle', runtimeId: `r-${id}` }); attached = id; },
+      async attach(id) { const row = sessions.get(id); Object.assign(row, { status: row.status === 'running' ? 'running' : 'idle', runtimeId: row.runtimeId ?? `r-${id}` }); attached = id; },
       async command(command) {
         engine.commands.push(command.type);
         if (command.type === 'get_state') return { model: { provider: 'anthropic', id: 'claude-opus-5' } };
@@ -370,6 +370,18 @@ test('wake: a restart before the fresh recall went resumes and forgets the recal
   await k.poke(at(21, 9, 40));
   assert.deepEqual(k.notices.map((notice) => notice.what), ['wake']);
   assert.equal(readState(env).woke.pending, undefined);
+});
+
+test('wake: a restart where something else loaded the conversation first still gets the resume line; a keeper restart alone does not', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  // The app opened it first after an engine restart: loaded, but in a runtime the keeper has not seen.
+  engine.sessions.get('segno-1').runtimeId = 'r-new';
+  const k = await keeperFor(t, env, engine, at(21, 11), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  assert.deepEqual(k.of('wake').map((notice) => notice.text), [resumeText(at(21, 11))]);
+  assert.equal(readState(env).runtimeId, 'r-new');
+  const again = await keeperFor(t, env, engine, at(21, 11, 5), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  assert.equal(again.of('wake').length, 0, 'same runtime: the keeper only restarted');
 });
 
 test('wake: the seed says when the heartbeat is off (session-start-hook.sh heartbeat_pause_note)', () => {

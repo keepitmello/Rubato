@@ -164,6 +164,8 @@ export function readState(env = process.env) {
     // The last heartbeat tick and when it went (keeper.mjs, Roo's heartbeat.json tickCount).
     ...(state?.heartbeat && Number.isFinite(state.heartbeat.at) ? { heartbeat: { tick: state.heartbeat.tick, at: state.heartbeat.at } } : {}),
     ...(woke ? { woke } : {}),
+    // The runtime the keeper last found the conversation loaded in; a new one means it was loaded again.
+    ...(typeof state?.runtimeId === 'string' && state.runtimeId ? { runtimeId: state.runtimeId } : {}),
   };
 }
 

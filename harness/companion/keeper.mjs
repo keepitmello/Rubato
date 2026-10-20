@@ -407,10 +407,16 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       const live = row && LIVE.has(row.status) && row.runtimeId !== null;
       if (attachedTo !== sessionId || !live) {
         if (attachedTo !== undefined) { await release(); client = await connect(); }
-        // A conversation that was not loaded comes back from its file: that is Roo's resume.
-        if (row && !live) resumeOwed = true;
         await client.attach(sessionId);
         attachedTo = sessionId;
+        // A runtime this keeper has not seen before loaded the conversation from its file — after an
+        // engine restart, whoever opened it first: that is Roo's resume. The id is kept across starts.
+        const loaded = (await client.list()).find((item) => item.sessionId === sessionId)?.runtimeId ?? null;
+        const known = readState(env).runtimeId;
+        if (loaded !== null && loaded !== known) {
+          if (row) resumeOwed = true;
+          writeState({ runtimeId: loaded }, env);
+        }
       }
       await keepRhythm(client, sessionId, row && BUSY.has(row.status));
       // The space beside the companion's chat lists what it follows (the app reads panel.json).

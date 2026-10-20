@@ -71,7 +71,7 @@ function fakeEngine() {
     const sessionId = 'segno-1';
     // Already loaded, as after the keeper's first start: no resume line is owed.
     sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0 });
-    writeState({ sessionId, woke: { boundary: null } }, env);
+    writeState({ sessionId, woke: { boundary: null }, runtimeId: `r-${sessionId}` }, env);
     return sessionId;
   };
   return engine;
