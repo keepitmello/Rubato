@@ -17,12 +17,14 @@
 // and no code path here calls the engine's wake or notice. Segno meets the result through these files
 // and its resident memory piece on its next prompt. Segno's session files are only read.
 //
-// The child never commits. It lists the files it changed (result.json) and the runner commits exactly
-// those (home.mjs commitOwned), the way Roo's dream hands its own paths to commit-owned.sh. Files under
-// prompt/ are the user's and never change here: the runner restores them byte for byte if a child
-// touched them, and the run counts as partial.
-import { createHash, randomBytes } from 'node:crypto';
-import { spawn } from 'node:child_process';
+// The child works on a copy of the home's memory/, notes/ and prompt/ under dream/runs/<id>/home and
+// never commits. When it is done, only its own places (memory/ and notes/held.md) come back to the
+// live home, merged three ways with whatever Segno or the user wrote meanwhile, and the runner commits
+// exactly those files (home.mjs commitOwned), the way Roo's dream hands its own paths to
+// commit-owned.sh. The user's prompt/ is never written: a child that edits it changes only its copy,
+// and the run counts as partial. A child that fails brings nothing home.
+import { randomBytes } from 'node:crypto';
+import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
   realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -264,7 +266,13 @@ export function exportTranscript(files, sinceMs, { budgetChars = TRANSCRIPT_BUDG
   for (const item of items) {
     const day = localDate(item.at);
     const text = item.mark ? `\n— ${day} ${hm(item.at)} ${item.mark}\n` : `\n### ${day} ${hm(item.at)} ${item.who}\n\n${item.text}\n`;
-    if (parts.length && used + text.length > budgetChars) { truncated = true; break; }
+    if (parts.length && used + text.length > budgetChars) {
+      // The mark stops just before the first line left out, so a line sharing its moment with the
+      // last one read is read next time instead of falling behind the mark.
+      truncated = true;
+      coveredThrough = Math.min(coveredThrough, item.at - 1);
+      break;
+    }
     parts.push(text);
     used += text.length;
     if (!item.mark) messages += 1;
@@ -329,8 +337,11 @@ export function seedResidentMemory({ env = process.env, defaultsDir = companionD
   return true;
 }
 
-/** Bytes of every file under `dir`, keyed by home-relative path. */
-function snapshot(home, dir) {
+/** The parts of the home the dream works on, copied for it: its memory, its notes and who it is. */
+const COPIED = Object.freeze(['memory', 'notes', 'prompt']);
+
+/** Bytes of every file under the copied parts of `root`, keyed by home-relative path. */
+function snapshot(root) {
   const out = new Map();
   const walk = (current) => {
     let entries;
@@ -338,31 +349,62 @@ function snapshot(home, dir) {
     for (const entry of entries) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) out.set(path.relative(home, full), readFileSync(full));
+      else if (entry.isFile()) out.set(path.relative(root, full).split(path.sep).join('/'), readFileSync(full));
     }
   };
-  walk(path.join(home, dir));
+  for (const part of COPIED) walk(path.join(root, part));
   return out;
 }
 
-const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+/** Writes `files` (a snapshot) under `root`. */
+function materialize(root, files) {
+  for (const [rel, bytes] of files) {
+    mkdirSync(path.dirname(path.join(root, rel)), { recursive: true, mode: 0o700 });
+    writeFileSync(path.join(root, rel), bytes, { mode: 0o600 });
+  }
+}
 
-/** Puts prompt/ back exactly as it was; returns the paths that had changed. */
-function restorePrompt(home, before) {
-  const after = snapshot(home, 'prompt');
-  const touched = [];
-  for (const [rel, bytes] of before) {
-    if (after.get(rel) && digest(after.get(rel)) === digest(bytes)) continue;
-    mkdirSync(path.dirname(path.join(home, rel)), { recursive: true });
-    writeFileSync(path.join(home, rel), bytes);
-    touched.push(rel);
+const same = (a, b) => (a === undefined && b === undefined) || (a !== undefined && b !== undefined && Buffer.compare(a, b) === 0);
+
+/** A three-way text merge (git merge-file): what is live now, what the dream started from, what it wrote. */
+function mergeText(live, base, dream, scratch) {
+  const files = ['live', 'base', 'dream'].map((name) => path.join(scratch, name));
+  writeFileSync(files[0], live);
+  writeFileSync(files[1], base ?? Buffer.alloc(0));
+  writeFileSync(files[2], dream);
+  try { return execFileSync('git', ['merge-file', '-p', ...files], { stdio: ['ignore', 'pipe', 'ignore'] }); }
+  catch { return undefined; }
+  finally { for (const file of files) rmSync(file, { force: true }); }
+}
+
+/**
+ * Brings the dream's work home. Only the dream's own places (memory/ and notes/held.md) come back;
+ * a change anywhere else (the user's prompt/, Segno's other notes) is reported and dropped. A file
+ * nobody touched while the dream ran takes the dream's version; one Segno or the user wrote to
+ * meanwhile is merged three ways, and a merge that conflicts keeps the live file and is reported.
+ */
+function bringHome({ home, base, dreamed, scratch }) {
+  const applied = [];
+  const refused = [];
+  const conflicts = [];
+  for (const rel of [...new Set([...base.keys(), ...dreamed.keys()])].sort()) {
+    const before = base.get(rel);
+    const after = dreamed.get(rel);
+    if (same(before, after)) continue;
+    if (!WRITABLE(rel)) { refused.push(rel); continue; }
+    const file = path.join(home, rel);
+    const live = existsSync(file) ? readFileSync(file) : undefined;
+    if (same(live, after)) continue;
+    let next = after;
+    if (!same(live, before)) {
+      next = live !== undefined && after !== undefined ? mergeText(live, before, after, scratch) : undefined;
+      if (next === undefined) { conflicts.push(rel); continue; }
+    }
+    if (next === undefined) rmSync(file, { force: true });
+    else { mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); writeFileSync(file, next, { mode: 0o600 }); }
+    applied.push(rel);
   }
-  for (const rel of after.keys()) {
-    if (before.has(rel)) continue;
-    rmSync(path.join(home, rel), { force: true });
-    touched.push(rel);
-  }
-  return touched;
+  return { applied, refused, conflicts };
 }
 
 function takeLock(file, at) {
@@ -448,43 +490,43 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     writeFileSync(promptPath, composeDreamPrompt({ env, defaultsDir }), { mode: 0o600 });
     writeJson(path.join(runDir, 'plan.json'), plan);
 
-    const promptBefore = snapshot(home, 'prompt');
+    // The dream works on its own copy of the home, so nothing it does lands in the live home until
+    // the run is over, and then only its own places do (bringHome).
+    const workHome = path.join(runDir, 'home');
+    const started = snapshot(home);
+    materialize(workHome, started);
     const attempts = [];
     let ok = false;
     for (const [index, rung] of models.entries()) {
       const logPath = path.join(runDir, `child-${index + 1}.log`);
-      const result = await spawnChild({
+      const exit = await spawnChild({
         command: launch.command,
         args: childArgs(launch, { promptPath, sessionDir: path.join(runDir, 'session'), rung, launchModel }),
-        cwd: home,
-        env: { ...childEnv(env), ...launch.env, SEGNO_HOME: home, DREAM_RUN_DIR: runDir, DREAM_OUT_DIR: outDir },
+        cwd: workHome,
+        env: workEnv(childEnv(env), { ...launch.env, SEGNO_HOME: workHome, DREAM_RUN_DIR: runDir, DREAM_OUT_DIR: outDir }),
         logPath, timeoutMs,
       });
-      const result_ = readJson(path.join(outDir, 'result.json'));
-      if (result.code === 0 && result_) { attempts.push({ model: rung.model, ok: true }); ok = true; break; }
-      attempts.push({ model: rung.model, ok: false, error: lastLine(logPath, result.code, result_) });
+      const reported = readJson(path.join(outDir, 'result.json'));
+      if (exit.code === 0 && reported) { attempts.push({ model: rung.model, ok: true }); ok = true; break; }
+      attempts.push({ model: rung.model, ok: false, error: lastLine(logPath, exit.code, reported) });
       // A rung that died part way may have written files; the next rung starts from them, as a
       // second Roo dream would. Only result.json is cleared, so a stale one is not read as this rung's.
       rmSync(path.join(outDir, 'result.json'), { force: true });
     }
-    const promptTouched = restorePrompt(home, promptBefore);
     if (!ok) {
-      record = { ...base, status: 'failed', reason: 'every model failed; see child-*.log', attempts, promptTouched };
+      record = { ...base, status: 'failed', reason: 'every model failed; see child-*.log', attempts };
       return record;
     }
     const result = readJson(path.join(outDir, 'result.json')) ?? {};
-    const listed = Array.isArray(result.changed) ? result.changed.filter((rel) => typeof rel === 'string') : [];
-    const clean = (rel) => path.normalize(rel).replace(/^\.\/+/, '');
-    const owned = [...new Set(listed.map(clean))].filter((rel) => !path.isAbsolute(rel) && !rel.startsWith('..') && WRITABLE(rel));
-    const refused = listed.map(clean).filter((rel) => !owned.includes(rel));
+    const { applied, refused, conflicts } = bringHome({ home, base: started, dreamed: snapshot(workHome), scratch: runDir });
     const message = oneLine(result.message) || `${plan.runDate} 꿈`;
-    const commit = owned.length ? commitOwned(owned, `dream: ${message}`, { env }) : undefined;
+    const commit = applied.length ? commitOwned(applied, `dream: ${message}`, { env }) : undefined;
     const blocks = result.blocks && typeof result.blocks === 'object' ? result.blocks : {};
-    const partial = result.status !== 'done' || promptTouched.length > 0 || refused.length > 0;
+    const partial = result.status !== 'done' || refused.length > 0 || conflicts.length > 0;
     advance(env, { at, plan, blocks, result, transcript });
     appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
-    record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: owned,
-      ...(refused.length ? { refused } : {}), ...(promptTouched.length ? { promptTouched } : {}), commit: commit ?? null,
+    record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
+      ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;
   } catch (error) {
@@ -500,6 +542,13 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
         lastAttemptDate: localDate(at) });
     } finally { rmSync(paths.lock, { force: true }); }
   }
+}
+
+/** The child's environment: its copy is its home, so the live home's override does not follow it. */
+function workEnv(env, extra) {
+  const out = { ...env, ...extra };
+  delete out.RUBATO_COMPANION_HOME;
+  return out;
 }
 
 /** Moves each watermark the child covered. */

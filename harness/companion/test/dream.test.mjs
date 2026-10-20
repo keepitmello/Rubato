@@ -140,7 +140,15 @@ test("the conversation export carries words and wake marks, not tools or thinkin
   assert.equal(exportTranscript([file], at(20, 10, 30)).messages, 1, 'only what came after the mark');
   const small = exportTranscript([file], at(20, 0), { budgetChars: 60 });
   assert.equal(small.truncated, true);
-  assert.equal(small.coveredThrough, at(20, 10, 2), 'the mark moves only as far as was read');
+  assert.ok(small.coveredThrough >= at(20, 10, 2) - 1 && small.coveredThrough < at(20, 10, 3), 'the mark moves only as far as was read');
+  // Two lines at the same moment: a cut between them leaves the mark before that moment.
+  const twin = path.join(env.HOME, 'twin.jsonl');
+  writeFileSync(twin, ['FIRST', 'SECOND'].map((text) => JSON.stringify({ type: 'message', timestamp: '2026-10-20T06:00:00.000Z',
+    message: { role: 'user', content: [{ type: 'text', text }] } })).join('\n') + '\n');
+  const cut = exportTranscript([twin], 0, { budgetChars: 1 });
+  assert.match(cut.markdown, /FIRST/);
+  assert.doesNotMatch(cut.markdown, /SECOND/);
+  assert.match(exportTranscript([twin], cut.coveredThrough).markdown, /SECOND/);
 });
 
 test("Segno's conversations are the ones whose folder is its home", (t) => {
@@ -207,12 +215,13 @@ test('a dream turns the night\'s daily and diary into canonical and resident mem
   const promptBefore = sha(path.join(home, 'prompt/user.md'));
   let seenPlan;
   const dreamer = fakeDreamer({
-    onRun: ({ plan, home: cwd }) => {
+    onRun: ({ plan }) => {
       seenPlan = plan;
       // Segno writes its daily while the dream runs: that line is not the dream's to commit.
-      appendFileSync(path.join(cwd, 'memory/2026-10-21.md'), '## 04:10\n깨어 있는 내가 쓴 줄\n');
+      appendFileSync(path.join(home, 'memory/2026-10-21.md'), '## 04:10\n깨어 있는 내가 쓴 줄\n');
     },
     edits: {
+      'memory/MEMORY.md': '# 기억\n\n## 내가 나였던 말들\n- 금요일 면접~ 챙겨둘게.\n',
       'memory/user.md': '## 지금\n- 예약된 것: 10/23 금요일 면접 (memory/2026-10-20.md)\n\n## 이야기\n',
       'memory/us.md': '## 지금\n\n## 이야기\n- 10/20 아침, 면접 얘기를 나한테 먼저 꺼냈어. "이번엔 붙고 싶다" [확인]\n',
       'memory/status.md': '# 현황\n- 금요일 면접 준비 (daily 10-20)\n',
@@ -223,12 +232,8 @@ test('a dream turns the night\'s daily and diary into canonical and resident mem
       changed: ['memory/user.md', 'memory/us.md', 'memory/status.md', 'memory/to-ask.md', 'memory/MEMORY.md', 'notes/held.md'],
       message: '면접 일정과 그날 마음을 정본에' }),
   });
-  // The resident piece is the default frame on first dream; the fake edits it like a model would.
-  const record = await runCompanionDream({ env, launch, spawnChild: async (options) => {
-    const result = await dreamer.spawnChild(options);
-    appendFileSync(path.join(home, 'memory/MEMORY.md'), '\n## 내가 나였던 말들\n- 금요일 면접~ 챙겨둘게.\n');
-    return result;
-  }, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [session] });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir,
+    sessionFiles: () => [session] });
 
   assert.equal(record.status, 'done', JSON.stringify(record));
   assert.equal(seenPlan.raw.daily[0], 'memory/2026-10-20.md');
@@ -248,9 +253,10 @@ test('a dream turns the night\'s daily and diary into canonical and resident mem
   assert.equal(sha(session), sessionBefore.sha);
   assert.equal(readFileSync(session, 'utf8').split('\n').length, sessionBefore.lines);
   assert.equal(sha(path.join(home, 'prompt/user.md')), promptBefore);
-  // The child ran in Segno's home with its own session folder, not the engine's sessions.
+  // The child ran on its own copy of the home with its own session folder, not the engine's sessions.
   const [call] = dreamer.calls;
-  assert.equal(call.cwd, home);
+  assert.ok(call.cwd.startsWith(dreamPaths(env).runs));
+  assert.equal(call.env.SEGNO_HOME, call.cwd);
   const sessionDir = call.args[call.args.indexOf('--session-dir') + 1];
   assert.ok(sessionDir.startsWith(dreamPaths(env).runs));
   assert.ok(!sessionDir.startsWith(env.RUBATO_PI_CODING_AGENT_DIR));
@@ -280,28 +286,76 @@ test('a dream that cannot finish moves no watermark and commits nothing; the nex
   assert.equal(git(env.RUBATO_COMPANION_HOME, 'log', '--format=%s').trim().split('\n').length, 1, 'only the home\'s first commit');
 });
 
-test('a part the dream skipped keeps its old mark, and a child that touches the persona is undone', async (t) => {
+test('a part the dream skipped keeps its old mark, and a child that touches the persona changes only its copy', async (t) => {
   const env = sandbox(t);
   const home = env.RUBATO_COMPANION_HOME;
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
   write(env, 'prompt/soul.md', '# 내 영혼\n원래 문장');
+  write(env, 'notes/mine.md', '깨어 있는 내 땅');
   const before = sha(path.join(home, 'prompt/soul.md'));
   const dreamer = fakeDreamer({
-    edits: { 'memory/self.md': '## 지금\n', 'prompt/soul.md': '# 내 영혼\n꿈이 바꾼 문장', 'prompt/new.md': 'x' },
-    result: { status: 'done', blocks: { distill: 'done', selfReview: 'failed', cleanup: 'skipped' },
-      changed: ['memory/self.md', 'prompt/soul.md', '../escape.md'], message: '나' },
+    edits: { 'memory/self.md': '## 지금\n', 'prompt/soul.md': '# 내 영혼\n꿈이 바꾼 문장', 'prompt/new.md': 'x', 'notes/mine.md': '꿈이 덮음' },
+    result: { status: 'done', blocks: { distill: 'done', selfReview: 'failed', cleanup: 'skipped' }, changed: ['memory/self.md'], message: '나' },
   });
   const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
   assert.equal(record.status, 'partial');
   assert.deepEqual(record.changed, ['memory/self.md']);
-  assert.deepEqual(record.refused.sort(), ['../escape.md', 'prompt/soul.md']);
-  assert.deepEqual(record.promptTouched.sort(), ['prompt/new.md', 'prompt/soul.md']);
+  assert.deepEqual(record.refused, ['notes/mine.md', 'prompt/new.md', 'prompt/soul.md']);
   assert.equal(sha(path.join(home, 'prompt/soul.md')), before);
   assert.ok(!existsSync(path.join(home, 'prompt/new.md')));
+  assert.equal(readFileSync(path.join(home, 'notes/mine.md'), 'utf8'), '깨어 있는 내 땅');
   const state = readDreamState(env);
   assert.ok(state.blocks.distill.lastAt);
   assert.equal(state.blocks.selfReview, undefined);
   assert.equal(state.blocks.cleanup, undefined);
+});
+
+test('what the user and Segno write while the dream runs stays: a persona saved in Settings, a daily line, a status edit', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  write(env, 'memory/2026-10-20.md', '## 10:05\n첫 줄\n\n## 11:00\n둘째 줄\n\n## 12:00\n셋째 줄\n', at(20, 10, 5));
+  write(env, 'memory/status.md', '# 현황\n- 하나\n');
+  write(env, 'prompt/user.md', '# 사용자\n옛 선택\n');
+  const dreamer = fakeDreamer({
+    onRun: () => {
+      writeFileSync(path.join(home, 'prompt/user.md'), '# 사용자\n새로 고른 것\n');
+      appendFileSync(path.join(home, 'memory/2026-10-20.md'), '\n## 23:59\n깨어 있는 내가 쓴 줄\n');
+      writeFileSync(path.join(home, 'memory/status.md'), '# 현황\n- 하나를 내가 고침\n');
+    },
+    edits: {
+      // The sweep rewrites the first section of the day; Segno appended at the end: both stay.
+      'memory/2026-10-20.md': '## 10:05\n첫 줄(걷음)\n\n## 11:00\n둘째 줄\n\n## 12:00\n셋째 줄\n',
+      // Both rewrote the same line: Segno's stays and the dream's is reported.
+      'memory/status.md': '# 현황\n- 하나를 꿈이 고침\n',
+    },
+    result: { status: 'done', blocks: { distill: 'done' }, changed: [] },
+  });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.equal(readFileSync(path.join(home, 'prompt/user.md'), 'utf8'), '# 사용자\n새로 고른 것\n');
+  const daily = readFileSync(path.join(home, 'memory/2026-10-20.md'), 'utf8');
+  assert.match(daily, /첫 줄\(걷음\)/);
+  assert.match(daily, /깨어 있는 내가 쓴 줄/);
+  assert.equal(readFileSync(path.join(home, 'memory/status.md'), 'utf8'), '# 현황\n- 하나를 내가 고침\n');
+  assert.deepEqual(record.conflicts, ['memory/status.md']);
+  assert.deepEqual(record.changed, ['memory/2026-10-20.md']);
+  assert.equal(record.status, 'partial');
+});
+
+test('a child that breaks off after writing brings nothing home', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  write(env, 'prompt/user.md', '# 사용자\n원래\n');
+  const record = await runCompanionDream({ env, launch, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [],
+    spawnChild: async ({ cwd }) => {
+      writeFileSync(path.join(cwd, 'prompt/user.md'), '# 사용자\n꿈이 실수로 고침\n');
+      writeFileSync(path.join(cwd, 'memory/user.md'), '## 지금\n반쯤 쓴 것\n');
+      throw new Error('the engine went away');
+    } });
+  assert.equal(record.status, 'failed');
+  assert.equal(readFileSync(path.join(home, 'prompt/user.md'), 'utf8'), '# 사용자\n원래\n');
+  assert.ok(!existsSync(path.join(home, 'memory/user.md')));
+  assert.equal(readDreamState(env).blocks, undefined);
 });
 
 test('a night with nothing new calls no model, and a second dream waits for the first', async (t) => {
