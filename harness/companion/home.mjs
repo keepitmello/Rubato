@@ -5,7 +5,7 @@
 //     notes/<name>.md                    Segno's working notes, no expiry
 //     memory/YYYY-MM-DD.md               daily: facts, events, decisions, unfinished work
 //     memory/diary/YYYY-MM-DD.md         diary: feelings, temperature, memorable exchanges, in its voice
-//     wake.json                          when Segno asked its heartbeat to come next, and why
+//     wake-wish.json                     when Segno wants to look in next, and why (Roo's wake wish)
 //     .rubato/rubato.jsonc               memory.agent = "segno": this folder's own memory store
 //
 // The method is Roo's (~/.claude/roo-channel/docs/architecture/memory.md, skills daily-logging and
@@ -44,7 +44,7 @@ export function segnoPaths(env = process.env) {
     notes: path.join(home, 'notes'),
     memory,
     diary: path.join(memory, 'diary'),
-    wake: path.join(home, 'wake.json'),
+    wake: path.join(home, 'wake-wish.json'),
     projectConfig: path.join(home, '.rubato', 'rubato.jsonc'),
     projectConfigDir: path.join(home, '.rubato'),
   };
@@ -69,61 +69,68 @@ function writeFileAtomic(file, text) {
   renameSync(temporary, file);
 }
 
-// ── the next wake ──────────────────────────────────────────────────────────────────────────
-// Roo's wake-wish: when nothing will need Segno for a while, it says when to look again and why.
-// Heartbeats rest until then (harness/companion keeper.mjs) and the beat at that time carries the
-// reason. Only the heartbeat rests; the daily report, sleep, a lead's ending, the user and the cache
-// warmer go on as before.
+// ── wake wish ──────────────────────────────────────────────────────────────────────────────
+// Roo's wake wish (~/.claude/roo-channel scripts/wake-wish.sh and heartbeat-tick.sh), ported. Segno
+// says when it next wants to look in and why. Until then the heartbeat's reflect rests (the ticks
+// still come, with no action); the first tick at or after that time carries action=reflect,
+// reason=wake_wish and the reason. A wish further than six hours from when it was set is cut to six.
 
-/** The furthest ahead Segno can set its next wake: one day, so it always comes back. */
-export const NEXT_WAKE_MAX_MS = 24 * 60 * 60_000;
-/** The nearest: one minute. */
-export const NEXT_WAKE_MIN_MS = 60_000;
-const CLOCK = /^([01]\d|2[0-3]):([0-5]\d)$/;
+/** How far a wish reaches from when it was set; beyond this it is cut (clamped). */
+export const WAKE_WISH_CAP_MS = 6 * 60 * 60_000;
+const CLOCK = /^(\d{1,2}):(\d{2})$/;
 
 /**
- * When `minutes` from `now`, or the next local `time` (HH:MM) after `now`, falls. Exactly one of
- * the two. Throws when the moment is closer than a minute or further than a day.
+ * When a wish for `target` falls: whole minutes from `now`, HH:MM on the local clock (the next one;
+ * a time already past today is tomorrow), or an ISO 8601 moment.
  */
-export function nextWakeAt({ minutes, time }, now = Date.now()) {
-  if ((minutes === undefined) === (time === undefined)) throw new TypeError('give minutes or a time (HH:MM), one of them');
-  let at;
-  if (minutes !== undefined) {
-    if (!Number.isFinite(minutes)) throw new TypeError('minutes must be a number');
-    at = now + Math.round(minutes * 60_000);
-  } else {
-    const match = typeof time === 'string' ? CLOCK.exec(time.trim()) : null;
-    if (!match) throw new TypeError('time must be HH:MM on a 24-hour clock');
+export function wakeWishAt(target, now = Date.now()) {
+  const raw = String(target ?? '').trim();
+  if (/^\d+$/.test(raw)) return now + Number(raw) * 60_000;
+  const clock = CLOCK.exec(raw);
+  if (clock) {
+    const hour = Number(clock[1]);
+    const minute = Number(clock[2]);
+    if (hour > 23 || minute > 59) throw new RangeError(`invalid HH:MM: ${raw}`);
     const date = new Date(now);
-    date.setHours(Number(match[1]), Number(match[2]), 0, 0);
-    if (date.getTime() <= now) date.setDate(date.getDate() + 1);
-    at = date.getTime();
+    date.setHours(hour, minute, 0, 0);
+    if (date.getTime() < now) date.setDate(date.getDate() + 1);
+    return date.getTime();
   }
-  if (at - now < NEXT_WAKE_MIN_MS) throw new RangeError('the next wake must be at least a minute away');
-  if (at - now > NEXT_WAKE_MAX_MS) throw new RangeError('the next wake can be at most a day away');
+  const at = Date.parse(raw);
+  if (!raw || !Number.isFinite(at)) throw new TypeError('give minutes, HH:MM or an ISO 8601 time');
   return at;
 }
 
-/** Records Segno's next wake and why; a later one replaces it. */
-export function setNextWake({ at, reason }, env = process.env) {
-  if (!Number.isFinite(at)) throw new TypeError('the next wake needs a time');
-  const why = typeof reason === 'string' ? reason.trim() : '';
-  if (!why) throw new TypeError('say why you want to be woken then');
-  const wake = { at, reason: why };
-  writeFileAtomic(segnoPaths(env).wake, JSON.stringify(wake, null, 2) + '\n');
-  return wake;
+/** Records Segno's wake wish; a later one replaces it. The reason is one line of at most 200 characters. */
+export function setWakeWish({ target, reason = '' }, { now = Date.now(), env = process.env } = {}) {
+  const wish = { schemaVersion: 1, wishAt: new Date(wakeWishAt(target, now)).toISOString(),
+    reason: String(reason).split(/\s+/).filter(Boolean).join(' ').slice(0, 200), setAt: new Date(now).toISOString() };
+  writeFileAtomic(segnoPaths(env).wake, JSON.stringify(wish, null, 2) + '\n');
+  return wish;
 }
 
-/** Segno's next wake, or undefined when it set none (or the file is unreadable). */
-export function readNextWake(env = process.env) {
+/** Segno's wake wish as stored, or undefined when there is none or it cannot be read. */
+export function readWakeWish(env = process.env) {
   try {
-    const wake = JSON.parse(readFileSync(segnoPaths(env).wake, 'utf8'));
-    return Number.isFinite(wake?.at) && typeof wake.reason === 'string' ? { at: wake.at, reason: wake.reason } : undefined;
+    const wish = JSON.parse(readFileSync(segnoPaths(env).wake, 'utf8'));
+    const wishAt = Date.parse(wish?.wishAt);
+    const setAt = Date.parse(wish?.setAt);
+    if (!Number.isFinite(wishAt) || !Number.isFinite(setAt)) return undefined;
+    return { wishAt, setAt, reason: typeof wish.reason === 'string' ? wish.reason : '' };
   } catch { return undefined; }
 }
 
-export function clearNextWake(env = process.env) {
+export function clearWakeWish(env = process.env) {
   rmSync(segnoPaths(env).wake, { force: true });
+}
+
+/**
+ * What a wish means for the tick at `at`: `wait` until its time (cut to six hours after it was
+ * set), then `due` with that time and whether it was cut.
+ */
+export function wakeWishState(wish, at) {
+  const effectiveAt = Math.min(wish.wishAt, wish.setAt + WAKE_WISH_CAP_MS);
+  return at < effectiveAt ? { mode: 'wait' } : { mode: 'due', effectiveAt, clamped: wish.wishAt > effectiveAt };
 }
 
 /**

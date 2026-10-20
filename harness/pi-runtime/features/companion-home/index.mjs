@@ -4,13 +4,13 @@
 //   memorable exchanges, in Segno's voice) or a working note.
 // - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report from another chat in
 //   Telegram, what Segno set aside, which lead holds it and whether it is done.
-// - `next_wake` sets when Segno's heartbeat comes next, and why: until then heartbeats rest.
+// - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
 //
 // Both live in the companion's home (harness/companion/home.mjs, inbox.mjs). Those two files are
 // staged beside this one because the runtime build cannot reach harness/companion, and they import
 // nothing local for the same reason.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, localTime, nextWakeAt, record, setNextWake } from "./home.mjs";
+import { RECORD_KINDS, record, setWakeWish } from "./home.mjs";
 
 const text = (value) => ({ type: "text", text: value });
 
@@ -54,28 +54,25 @@ export function createCompanionHomeFactories() {
       });
 
       pi.registerTool({
-        name: "next_wake",
-        label: "Next wake",
+        name: "wake_wish",
+        label: "Wake wish",
         exposure: "direct",
-        searchKeywords: ["wake", "heartbeat", "rest", "sleep", "later", "깨워", "하트비트", "쉬기"],
+        searchKeywords: ["wake", "wish", "heartbeat", "reflect", "later", "깨워", "하트비트", "다음에"],
         description:
-          "When nothing will need you for a while, say when your heartbeat should come next and why. " +
-          "Give minutes from now or a local time (HH:MM), at most a day ahead. Heartbeats rest until then, " +
-          "and the one at that time carries your reason. The user, a lead's ending, the daily report and " +
-          "sleep still wake you as before. Setting it again replaces the earlier one.",
+          "When you next want to look in, and why: minutes from now, HH:MM (the next one; a time already past " +
+          "today is tomorrow) or an ISO 8601 time. Until then the heartbeat's reflect rests; the ticks still come. " +
+          "The first tick at or after that time comes with action=reflect and your reason. At most six hours from " +
+          "now; a later time is cut to six. Setting it again replaces the earlier one.",
         parameters: {
-          type: "object", additionalProperties: false, required: ["reason"],
+          type: "object", additionalProperties: false, required: ["when", "reason"],
           properties: {
-            minutes: { type: "integer", minimum: 1, maximum: 1440, description: "Minutes from now." },
-            time: { type: "string", description: "A local time on a 24-hour clock, HH:MM; the next one after now." },
-            reason: { type: "string", minLength: 1, description: "Why then: what you want to look at when you wake." },
+            when: { type: "string", minLength: 1, description: "Minutes, HH:MM or an ISO 8601 time." },
+            reason: { type: "string", description: "One line: what you want to look at then." },
           },
         },
         async execute(_id, params) {
-          const at = nextWakeAt({ ...(params.minutes !== undefined ? { minutes: params.minutes } : {}),
-            ...(params.time !== undefined ? { time: params.time } : {}) });
-          const wake = setNextWake({ at, reason: params.reason });
-          return { content: [text(`Heartbeats rest until ${localTime(at)}; then: ${wake.reason}`)], details: wake };
+          const wish = setWakeWish({ target: params.when, reason: params.reason });
+          return { content: [text(`WAKE_WISH_SET wishAt=${wish.wishAt}`)], details: wish };
         },
       });
 

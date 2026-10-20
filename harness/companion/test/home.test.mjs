@@ -4,8 +4,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
-  NEXT_WAKE_MAX_MS, SEGNO_MEMORY_AGENT, clearNextWake, companionHomeFor, ensureSegnoHome, memoryAgentOf, nextWakeAt,
-  readNextWake, readNote, readRecord, record, segnoPaths, setNextWake,
+  SEGNO_MEMORY_AGENT, WAKE_WISH_CAP_MS, clearWakeWish, companionHomeFor, ensureSegnoHome, memoryAgentOf, readNote,
+  readRecord, readWakeWish, record, segnoPaths, setWakeWish, wakeWishAt, wakeWishState,
 } from '../home.mjs';
 import { companionHome } from '../companion.mjs';
 
@@ -77,25 +77,28 @@ test('a record refuses nothing to say and a kind that is not one of the three', 
 });
 
 
-test('nextWakeAt: minutes from now, or the next HH:MM after now, within a minute to a day', () => {
+test('wakeWishAt reads minutes, HH:MM (the next one) and ISO 8601, as wake-wish.sh does', () => {
   const now = new Date(2026, 9, 20, 22, 30).getTime();
-  assert.equal(nextWakeAt({ minutes: 90 }, now), now + 90 * 60_000);
-  assert.equal(nextWakeAt({ time: '23:00' }, now), new Date(2026, 9, 20, 23, 0).getTime());
-  assert.equal(nextWakeAt({ time: '07:30' }, now), new Date(2026, 9, 21, 7, 30).getTime(), 'a time already past today is tomorrow');
-  assert.equal(nextWakeAt({ time: '22:30' }, now), now + NEXT_WAKE_MAX_MS, 'the same clock time is a day ahead');
-  assert.throws(() => nextWakeAt({ minutes: 0 }, now), /at least a minute/);
-  assert.throws(() => nextWakeAt({ minutes: 24 * 60 + 1 }, now), /at most a day/);
-  assert.throws(() => nextWakeAt({ minutes: 5, time: '23:00' }, now), /one of them/);
-  assert.throws(() => nextWakeAt({ time: '25:00' }, now), /HH:MM/);
+  assert.equal(wakeWishAt('90', now), now + 90 * 60_000);
+  assert.equal(wakeWishAt('0', now), now);
+  assert.equal(wakeWishAt('23:00', now), new Date(2026, 9, 20, 23, 0).getTime());
+  assert.equal(wakeWishAt('7:30', now), new Date(2026, 9, 21, 7, 30).getTime(), 'a time already past today is tomorrow');
+  assert.equal(wakeWishAt('22:30', now), now, 'the same minute is now, not tomorrow');
+  assert.equal(wakeWishAt('2026-10-21T09:00:00+09:00', now), Date.parse('2026-10-21T09:00:00+09:00'));
+  assert.throws(() => wakeWishAt('25:00', now), /HH:MM/);
+  assert.throws(() => wakeWishAt('later', now), /minutes, HH:MM or an ISO 8601 time/);
 });
 
-test('the next wake is kept in the home until it is cleared, and needs a reason', (t) => {
+test('a wake wish is kept in the home until it is cleared, and waits until its time, cut to six hours', (t) => {
   const env = sandbox(t);
-  assert.equal(readNextWake(env), undefined);
-  assert.throws(() => setNextWake({ at: 1000 }, env), /why/);
-  setNextWake({ at: 1000, reason: ' 저녁에 다시 ' }, env);
-  assert.deepEqual(readNextWake(env), { at: 1000, reason: '저녁에 다시' });
-  assert.equal(path.basename(segnoPaths(env).wake), 'wake.json');
-  clearNextWake(env);
-  assert.equal(readNextWake(env), undefined);
+  assert.equal(readWakeWish(env), undefined);
+  const now = new Date(2026, 9, 20, 12, 0).getTime();
+  setWakeWish({ target: '600', reason: '  저녁에\t다시 ' }, { now, env });
+  const wish = readWakeWish(env);
+  assert.deepEqual(wish, { wishAt: now + 600 * 60_000, setAt: now, reason: '저녁에 다시' });
+  assert.equal(path.basename(segnoPaths(env).wake), 'wake-wish.json');
+  assert.deepEqual(wakeWishState(wish, now + WAKE_WISH_CAP_MS - 1), { mode: 'wait' });
+  assert.deepEqual(wakeWishState(wish, now + WAKE_WISH_CAP_MS), { mode: 'due', effectiveAt: now + WAKE_WISH_CAP_MS, clamped: true });
+  clearWakeWish(env);
+  assert.equal(readWakeWish(env), undefined);
 });

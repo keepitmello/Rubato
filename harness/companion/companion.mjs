@@ -124,13 +124,15 @@ export function writeSettings(patch, env = process.env) {
   return next;
 }
 
-/** `dailyReportOn` is the local date (YYYY-MM-DD) the last daily report went out. */
+/** `dailyReportOn` is the local date (YYYY-MM-DD) the last daily report went out; `heartbeat` the last tick. */
 export function readState(env = process.env) {
   const state = readJson(companionPaths(env).state);
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
     ...(typeof state?.dailyReportOn === 'string' ? { dailyReportOn: state.dailyReportOn } : {}),
     ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
+    // The last heartbeat tick and when it went (keeper.mjs, Roo's heartbeat.json tickCount).
+    ...(state?.heartbeat && Number.isFinite(state.heartbeat.at) ? { heartbeat: { tick: state.heartbeat.tick, at: state.heartbeat.at } } : {}),
   };
 }
 

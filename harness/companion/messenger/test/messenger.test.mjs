@@ -275,7 +275,7 @@ test("from Rubato's clock as a wake, the daily report reaches the person and a h
   transcript(box, [
     wakeEntry('w1', 'daily-report', DAILY_REPORT_TEXT),
     answerEntry('w2', '오늘 리포트: 들어온 것 2건.'),
-    wakeEntry('w3', 'heartbeat', heartbeatText({ awayMs: 3 * 60 * 60_000 })),
+    wakeEntry('w3', 'heartbeat', heartbeatText({ tick: 3, at: Date.now(), action: 'reflect' })),
     answerEntry('w4', '리드 둘 다 아직 돌고 있어.'),
   ]);
   await settle(box.service);

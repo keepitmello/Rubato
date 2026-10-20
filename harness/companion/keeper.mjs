@@ -15,13 +15,16 @@
 // clock (the companion reads it as a system message where its model allows; session-link
 // message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
 //
-// The heartbeat is Segno's own time, as Roo's is (~/.claude/roo-channel heartbeat skill). The wake
-// is a signal only: the time, how long the user has been away, and Segno's reason when it set the
-// wake; what a beat is for is in Segno's prompt. While the user is talking to Segno there
-// is no beat; the interval counts from their last word. When nothing will need it for a while,
-// Segno sets its next wake (home.mjs, the `next_wake` tool) and the beat rests until then, carrying
-// its reason. The cache warmer does not depend on the beat: it warms the companion without an end
-// (pi-runtime cache-warming).
+// The heartbeat is Roo's, ported (~/.claude/roo-channel: scripts/heartbeat-tick.sh, the control
+// tower's buildMainHeartbeatMessage, the heartbeat skill). A tick comes on the interval's clock
+// boundaries (:00 and :30 at thirty minutes) as one line, `HEARTBEAT tick=N kst="…"`. While the
+// user is here (wrote in the last thirty minutes) the tick is 0; while they are away it counts up,
+// and every third tick up to the ninth carries action=reflect. Segno's wake wish (home.mjs, the
+// `wake_wish` tool) holds reflect back until its time, then that tick carries action=reflect,
+// reason=wake_wish and a WAKE_WISH line with the reason. What a tick is for lives in Segno's prompt
+// (harness/prompts/companion/companion.pi.md, 하트비트). Roo's sleep signals (ctx_step, action=compact)
+// are not ported: Segno's sleep is the keeper's night sleep below, which the user chose for cost.
+// The cache warmer does not depend on the tick: it warms the companion without an end.
 //
 // At night the keeper puts the companion to sleep, once: between 01:00 and 07:00 local time, when
 // the user has not written to it for three hours and its context has grown past 500k tokens. Sleep
@@ -32,41 +35,56 @@ import { mkdirSync } from 'node:fs';
 import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
-import { clearNextWake, ensureSegnoHome, readNextWake } from './home.mjs';
+import { clearWakeWish, ensureSegnoHome, readWakeWish, wakeWishState } from './home.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
 
-/** How long ago, in words: 40 minutes, 3 hours, 2 days. */
-export function awayText(ms) {
-  const minutes = Math.max(1, Math.round(ms / 60_000));
-  if (minutes < 90) return minutes === 1 ? 'a minute' : `${minutes} minutes`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 36) return `${hours} hours`;
-  return `${Math.round(hours / 24)} days`;
+/** Every third tick while the user is away is a reflect, up to the ninth (Roo: tick 3, 6, 9). */
+export const REFLECT_EVERY_TICKS = 3;
+const REFLECT_LAST_TICK = 9;
+/** The user is here when they wrote within this window; the tick is 0 then (Roo's IDLE_WINDOW_SECONDS). */
+export const RECENT_USER_MS = 30 * 60_000;
+/** A stored tick that cannot be read counts as long idle (Roo's heartbeat-state.py falls back to 12). */
+const UNREADABLE_TICK = 12;
+
+const SEOUL = 'Asia/Seoul';
+const seoulParts = (at, options) => Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: SEOUL, ...options })
+  .formatToParts(new Date(at)).map(({ type, value }) => [type, value]));
+
+/** Roo's clock label (control tower nowKstLabel): 10월 20일(화) 오후 6:30. */
+export function kstLabel(at) {
+  const part = seoulParts(at, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const weekday = new Intl.DateTimeFormat('ko-KR', { timeZone: SEOUL, weekday: 'short' }).format(new Date(at));
+  const hour = Number(part.hour);
+  return `${Number(part.month)}월 ${Number(part.day)}일(${weekday}) ${hour < 12 ? '오전' : '오후'} ${hour % 12 || 12}:${part.minute}`;
 }
 
-/** A local clock reading as YYYY-MM-DD HH:MM. */
-function localStamp(at) {
-  const date = new Date(at);
-  return `${localDate(at)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+/** A moment as ISO 8601 in Asia/Seoul, the way Roo writes a wake wish's time: 2026-10-20T18:30:00+09:00. */
+function kstIso(at) {
+  const part = seoulParts(at, { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    second: '2-digit', hourCycle: 'h23' });
+  return `${part.year}-${part.month}-${part.day}T${part.hour}:${part.minute}:${part.second}+09:00`;
 }
 
 /**
- * The heartbeat as a signal, the way Roo's tick is one (`HEARTBEAT tick=3 ACTION=reflect now=…`):
- * the time, how long the user has been away (`awayMs`, undefined when they never wrote) and the
- * reason Segno gave when it set this wake. What a beat is for lives in Segno's prompt
- * (harness/prompts/companion/companion.pi.md), not here.
+ * The tick as Roo receives it: `HEARTBEAT tick=N kst="…"`, then `action=` when there is one and
+ * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it.
  */
-export function heartbeatText({ at = Date.now(), awayMs, reason } = {}) {
-  const quote = (value) => JSON.stringify(String(value));
-  return [
-    'Heartbeat.',
-    `now=${quote(localStamp(at))}`,
-    `away=${quote(awayMs === undefined ? 'never wrote' : awayText(awayMs))}`,
-    ...(reason ? [`wake=${quote(reason)}`] : []),
-  ].join(' ');
+export function heartbeatText({ tick, at, action = 'none', wish }) {
+  const parts = ['HEARTBEAT', `tick=${tick}`, `kst="${kstLabel(at)}"`];
+  if (action !== 'none') parts.push(`action=${action}`);
+  if (wish) parts.push('reason=wake_wish');
+  const line = parts.join(' ');
+  return wish ? `${line}\nWAKE_WISH at=${kstIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}` : line;
+}
+
+/** The interval's next boundary on the local clock after `at`: :00 and :30 at thirty minutes. */
+export function nextBoundary(at, intervalMs) {
+  const midnight = new Date(at);
+  midnight.setHours(0, 0, 0, 0);
+  return midnight.getTime() + (Math.floor((at - midnight.getTime()) / intervalMs) + 1) * intervalMs;
 }
 export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
   'what is still running and what waits for them. Keep it short.';
@@ -159,7 +177,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   let attachedTo;
   let closed = false;
   let ticking;
-  let lastBeat;
+  let nextBeatAt;
   let homeReady;
   let lastSleepCheck;
   let reviewChecked = false;
@@ -245,44 +263,58 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (!notify) return;
     const settings = readSettings(env);
     const at = now();
+    // The first tick is the interval's first boundary after the keeper started.
+    nextBeatAt ??= nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
     const { dailyReportOn } = readState(env);
     const today = localDate(at);
     const pastReportTime = at >= reportTimeOn(at, settings.dailyReport.time);
     // A companion that starts after today's report time begins with tomorrow's.
-    if (dailyReportOn === undefined) { writeState({ dailyReportOn: pastReportTime ? today : '' }, env); lastBeat ??= at; return; }
+    if (dailyReportOn === undefined) { writeState({ dailyReportOn: pastReportTime ? today : '' }, env); return; }
     const reportDue = settings.dailyReport.enabled && pastReportTime && dailyReportOn !== today;
-    lastBeat ??= at;
     if (busy) return;
     if (await sleepDue(active, at, today)) {
       await notify(sessionId, SLEEP_TEXT, 'sleep');
       writeState({ sleptOn: today }, env);
-      lastBeat = at;
       return;
     }
-    if (await personaReviewDue(sessionId)) { lastBeat = at; return; }
+    if (await personaReviewDue(sessionId)) return;
     if (reportDue) {
       await notify(sessionId, DAILY_REPORT_TEXT, 'daily-report');
       writeState({ dailyReportOn: today }, env);
-      lastBeat = at;
       return;
     }
     if (settings.heartbeat.enabled) await beat(active, sessionId, at, settings.heartbeat.everyMinutes * 60_000);
   }
 
   /**
-   * The heartbeat, when it is due. A wake Segno set wins: the beat rests until it and then carries
-   * its reason. Otherwise one beat per interval, counted from the later of the last beat and the
-   * user's last word, so there is none while they talk.
+   * Roo's tick (heartbeat-tick.sh), on the interval's clock boundaries. The user here: tick 0.
+   * Away: one more than the stored tick, or 1 when they wrote since it (Roo resets on their word).
+   * Reflect on ticks 3, 6 and 9, unless a wake wish holds it back; a wish come due makes that tick a
+   * reflect with its reason, and is used up. A beat missed while Segno was busy goes on the next poll.
    */
   async function beat(active, sessionId, at, intervalMs) {
-    const wish = readNextWake(env);
-    if (wish && at < wish.at) return;
-    if (!wish && at - lastBeat < intervalMs) return;
+    if (at < nextBeatAt) return;
+    nextBeatAt = nextBoundary(at, intervalMs);
     const lastUser = await lastUserAt(active);
-    if (!wish && lastUser !== undefined && at - lastUser < intervalMs) { lastBeat = lastUser; return; }
-    lastBeat = at;
-    if (wish) clearNextWake(env);
-    await notify(sessionId, heartbeatText({ at, awayMs: lastUser === undefined ? undefined : at - lastUser, reason: wish?.reason }), 'heartbeat');
+    if (lastUser !== undefined && at - lastUser < RECENT_USER_MS) {
+      writeState({ heartbeat: { tick: 0, at } }, env);
+      await notify(sessionId, heartbeatText({ tick: 0, at }), 'heartbeat');
+      return;
+    }
+    const stored = readState(env).heartbeat;
+    const userSince = lastUser !== undefined && stored !== undefined && lastUser > stored.at;
+    const previous = userSince || stored === undefined ? 0 : Number.isInteger(stored.tick) && stored.tick >= 0 ? stored.tick : UNREADABLE_TICK;
+    const tick = previous + 1;
+    let action = tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
+    let wish;
+    const storedWish = readWakeWish(env);
+    if (storedWish) {
+      const state = wakeWishState(storedWish, at);
+      if (state.mode === 'wait') action = 'none';
+      else { action = 'reflect'; wish = { ...state, reason: storedWish.reason }; clearWakeWish(env); }
+    }
+    writeState({ heartbeat: { tick, at } }, env);
+    await notify(sessionId, heartbeatText({ tick, at, action, wish }), 'heartbeat');
   }
 
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */
