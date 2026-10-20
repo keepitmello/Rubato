@@ -49,7 +49,8 @@ const nextPass = Effect.gen(function* () {
 });
 
 /** Whether the engine is running a session now (its session list row's status). */
-export const engineRunning = (entry: Pick<PiSummary, "status">) => entry.status === "running" || entry.status === "starting";
+export const engineRunning = (entry: Pick<PiSummary, "status">) =>
+  entry.status === "running" || entry.status === "starting" || entry.status === "waiting";
 
 /** A folder name for a session's project: the last path part, Unix or Windows. */
 export const projectTitleOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;

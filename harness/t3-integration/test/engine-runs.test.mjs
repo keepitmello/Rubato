@@ -217,3 +217,15 @@ test('an engine that goes away mid-run (crash or restart) ends the run as interr
   assert.ok(await until(() => t3.runs[0].status === 'interrupted'));
   assert.ok(await until(() => bridge.engineFollowers.size === 0));
 });
+
+test('a run waiting on an answer (the engine asks the person) is still going: it stays running and followed', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.push([{ type: 'message_end', message: said('이거 지워도 돼?', 62, 'toolUse') }], 'waiting');
+  assert.ok(await until(() => t3.messages.some((message) => message.text === '이거 지워도 돼?')));
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(t3.runs[0].status, 'running');
+  assert.equal(bridge.engineFollowers.size, 1);
+  session.push([{ type: 'message_end', message: said('지웠어.', 70) }, { type: 'agent_settled' }], 'idle');
+  assert.ok(await until(() => t3.runs[0].status === 'completed'));
+});

@@ -200,6 +200,7 @@ describe("a turn the engine runs while T3 holds no stream (bridge engine-runs.mj
   it("counts a session as running from the engine's own list status", () => {
     expect(engineRunning({ status: "running" })).toBe(true);
     expect(engineRunning({ status: "starting" })).toBe(true);
+    expect(engineRunning({ status: "waiting" })).toBe(true);
     for (const status of ["stored", "idle", "unloading"]) expect(engineRunning({ status })).toBe(false);
   });
 });

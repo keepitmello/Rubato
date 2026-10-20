@@ -12,7 +12,7 @@
 // session. Segno's own conversation is not followed: what it shows is its own rule (quiet-runs.mjs).
 import { backfillItem, missingItems } from './backfill.mjs';
 
-const BUSY = new Set(['running', 'starting']);
+const BUSY = new Set(['running', 'starting', 'waiting']);
 
 /**
  * Follows one session for `threadId` until it is at rest. `bridge` gives projectedThread,
