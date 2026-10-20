@@ -11,8 +11,21 @@
   --rubato-bubble-near: 0.4rem;
   scrollbar-gutter: stable;
 }
+/* The theme's dark action color is light with dark text; a bubble that size reads better deeper, with
+   light text, as iMessage's does. */
+.dark [data-rubato-segno-room] {
+  --rubato-me: color-mix(in oklab, var(--primary) 58%, black);
+  --rubato-me-text: color-mix(in oklab, white 94%, var(--primary));
+}
+/* On the window material Segno's bubble needs its own card and a hairline to stand off the wash. */
 :root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"]) [data-rubato-segno-room] {
-  --rubato-segno: color-mix(in oklab, var(--card) 78%, transparent);
+  --rubato-segno: color-mix(in oklab, var(--card) 72%, var(--muted));
+}
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"])
+  [data-rubato-segno-room]
+  [data-side="segno"]
+  > [data-rubato-segno-bubble] {
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--border) 80%, transparent);
 }
 
 /* ---- Rows and groups ---- */
