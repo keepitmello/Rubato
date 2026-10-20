@@ -1,22 +1,42 @@
-// The companion's one way out to a messenger: `telegram_send`.
+// The companion's hands on Telegram, ported from Roo's telegram_reply, react and edit_message
+// (~/.claude/roo-channel/pi-roo/roo-runtime.ts, plugins/telegram-daemon/telegram-tools.ts).
 //
-// Segno writes; the engine's resident messenger decides. The tool is a thin call into the
-// engine's `sessionLink.telegramSend`, which queues the message in the messenger's own store
-// (harness/companion/messenger); a message to anyone but the person waits there until they
-// approve it. The rule is in the code, not in a prompt: this file has no path to Telegram.
+// Segno writes; the engine's resident messenger decides. Each tool is a thin call into the
+// engine's `sessionLink.telegramSend`, which hands the request to the messenger
+// (harness/companion/messenger): what is addressed to the person goes out at once and answers with
+// its message ids, and anything addressed to another chat waits there until the person approves
+// it. The rule is in the code, not in a prompt: this file has no path to Telegram.
 export const TELEGRAM_SEND_TOOL = "telegram_send";
+export const TELEGRAM_REACT_TOOL = "telegram_react";
+export const TELEGRAM_EDIT_TOOL = "telegram_edit";
+export const TELEGRAM_TOOL_NAMES = Object.freeze([TELEGRAM_SEND_TOOL, TELEGRAM_REACT_TOOL, TELEGRAM_EDIT_TOOL]);
 
 function text(value) {
   return { type: "text", text: value };
 }
 
-function answer(row) {
-  if (!row || row.target === "user") return "Queued for the person's Telegram.";
-  return `Held for the person's approval before it goes anywhere (${row.id}). It is sent only if they approve it.`;
+const TO = { type: "string", description: "The chat id or title of another chat. Leave it out for the person's own chat." };
+const NAME = { type: "string", description: "What to call that chat in the approval the person sees." };
+
+/** What the model reads back: Roo's "sent (id: …)", or that it waits for the person. */
+export function describeResult(row) {
+  if (!row) return "Nothing was sent.";
+  if (row.state === "held") return `Held for the person's approval before it goes anywhere (${row.id}). It is sent only if they approve it.`;
+  if (row.state === "queued") return row.note ?? "Queued for the person's Telegram.";
+  if (row.op === "react") return "reacted";
+  if (row.op === "edit") return `edited (id: ${row.messageId})`;
+  const ids = row.messageIds ?? [];
+  const note = row.note ?? "";
+  return ids.length === 1 ? `sent (id: ${ids[0]})${note}` : `sent ${ids.length} parts (ids: ${ids.join(", ")})${note}`;
 }
 
 export function createCompanionMessengerFactories({ sessionLink } = {}) {
   if (!sessionLink?.telegramSend) return [];
+  const call = async (request) => {
+    const row = await sessionLink.telegramSend(request);
+    return { content: [text(describeResult(row))],
+      details: { id: row?.id, state: row?.state, target: row?.target, ...(row?.messageIds ? { messageIds: row.messageIds } : {}) } };
+  };
   return [{
     name: "companion-messenger",
     factory: (pi) => {
@@ -24,25 +44,76 @@ export function createCompanionMessengerFactories({ sessionLink } = {}) {
         name: TELEGRAM_SEND_TOOL,
         label: "Telegram",
         exposure: "direct",
-        searchKeywords: ["telegram", "message", "send", "reply", "bug report", "메시지", "텔레그램"],
+        searchKeywords: ["telegram", "message", "send", "reply", "voice", "file", "photo", "bug report", "메시지", "텔레그램", "음성"],
         description:
-          "Send a message to the person on Telegram, or to another chat the person has shown you " +
-          "(a group where bug reports arrive, named by its chat id or title). " +
-          "A message to anyone but the person is held for their approval before it is sent: " +
-          "say what you wrote and that it waits for them. Plain text only.",
+          "Send the person a Telegram message: text, files, a voice note, or text with a voice note. " +
+          "Your answers in this conversation already reach the person's Telegram on their own, so use this to speak from a turn they do not see, " +
+          "or to say something while you keep working. It also sends to another chat the person has shown you (a group where bug reports arrive); " +
+          "a message to anyone but the person is held for their approval: say what you wrote and that it waits for them. " +
+          "Telegram shows plain text. Put long material in a .md file and send the file. " +
+          "voice=true sends the text and a voice note, voice=\"only\" sends only the voice note; answer in the medium the person used. " +
+          "Answers with the sent message ids, which telegram_edit takes.",
         parameters: {
           type: "object",
           additionalProperties: false,
-          required: ["text"],
           properties: {
             text: { type: "string", minLength: 1, description: "The message, as it should read in Telegram." },
-            to: { type: "string", description: "The chat id or title of another chat. Leave it out for the person's own chat." },
-            name: { type: "string", description: "What to call that chat in the approval the person sees." },
+            files: { type: "array", maxItems: 10, items: { type: "string" }, description: "Absolute paths of files to send; images go as photos, anything else as a document." },
+            voice: { anyOf: [{ type: "boolean" }, { type: "string", enum: ["only"] }], description: "true: the text and a voice note. \"only\": a voice note alone." },
+            voice_text: { type: "string", minLength: 1, description: "What the voice note says, when it should differ from the text." },
+            sanitize: { type: "boolean", description: "Default true: emphasis marks and voice tags come out of the text, emoticons and Markdown out of the voice. false sends both as written." },
+            to: TO,
+            name: NAME,
           },
         },
         async execute(_id, params) {
-          const row = await sessionLink.telegramSend({ text: params.text, to: params.to, name: params.name });
-          return { content: [text(answer(row))], details: { id: row?.id, state: row?.state, target: row?.target } };
+          return call({ text: params.text, files: params.files, voice: params.voice, voiceText: params.voice_text,
+            sanitize: params.sanitize, to: params.to, name: params.name });
+        },
+      });
+      pi.registerTool({
+        name: TELEGRAM_REACT_TOOL,
+        label: "Telegram reaction",
+        exposure: "direct",
+        searchKeywords: ["telegram", "react", "reaction", "emoji", "반응", "이모지"],
+        description:
+          "Put one emoji reaction on a Telegram message: by default the person's latest message to you. " +
+          "Telegram accepts only its reaction emoji (👍 ❤ 🔥 🥰 👏 😁 🤔 😢 🙏 👌 😴 🤗 and the like). A reaction in another chat waits for the person's approval.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["emoji"],
+          properties: {
+            emoji: { type: "string", minLength: 1, description: "One reaction emoji." },
+            message_id: { type: "integer", description: "The message to react to (the message attribute of a channel message). Default: the person's latest." },
+            to: TO,
+            name: NAME,
+          },
+        },
+        async execute(_id, params) {
+          return call({ op: "react", emoji: params.emoji, messageId: params.message_id, to: params.to, name: params.name });
+        },
+      });
+      pi.registerTool({
+        name: TELEGRAM_EDIT_TOOL,
+        label: "Telegram edit",
+        exposure: "direct",
+        searchKeywords: ["telegram", "edit", "fix", "correct", "message", "수정", "고치기"],
+        description:
+          "Change the text of a Telegram message you sent, by the id telegram_send answered with. An edit in another chat waits for the person's approval.",
+        parameters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["message_id", "text"],
+          properties: {
+            message_id: { type: "integer", description: "The id of your message." },
+            text: { type: "string", minLength: 1, description: "The message's new text." },
+            to: TO,
+            name: NAME,
+          },
+        },
+        async execute(_id, params) {
+          return call({ op: "edit", messageId: params.message_id, text: params.text, to: params.to, name: params.name });
         },
       });
     },

@@ -68,10 +68,29 @@ export interface SessionMessage {
   readonly context?: OrchestrationMessageContext;
   readonly senderThreadId?: ThreadId;
 }
+/**
+ * A message Segno sent the person on Telegram from a run the thread does not show (bridge
+ * telegram-echo.mjs). It is written as Segno's own words: an assistant message, without the record.
+ */
+export const TELEGRAM_ECHO_KIND = "rubato-telegram";
+const isTelegramEcho = (context: unknown): boolean => {
+  const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown }> } | undefined)?.records;
+  return Array.isArray(records) && records.some((record) => record?.kind === TELEGRAM_ECHO_KIND);
+};
 /** The message and turn item of a session message, both keyed by its id (a replay replaces them). */
 export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage, ordinal: number) => {
   const at = DateTime.makeUnsafe(entry.createdAt);
   const messageId = MessageId.make(entry.id);
+  if (isTelegramEcho(entry.context)) {
+    const message: OrchestrationV2ConversationMessage = { createdBy: "agent", creationSource: "provider", id: messageId, threadId,
+      runId: null, nodeId: null, role: "assistant", text: entry.text, attachments: [], streaming: false, createdAt: at, updatedAt: at };
+    const turnItem: OrchestrationV2TurnItem = {
+      id: TurnItemId.make(entry.id), threadId, runId: null, nodeId: null, providerThreadId: null, providerTurnId: null,
+      nativeItemRef: null, parentItemId: null, ordinal, status: "completed", title: null, startedAt: at, completedAt: at,
+      updatedAt: at, type: "assistant_message", messageId, text: entry.text, streaming: false,
+    };
+    return { message, turnItem, at };
+  }
   // Upstream marks a message another agent sent this way ("Sent by another agent").
   const author = { createdBy: "agent" as const, creationSource: "provider" as const,
     ...(entry.senderThreadId === undefined ? {} : { senderThreadId: entry.senderThreadId }) };

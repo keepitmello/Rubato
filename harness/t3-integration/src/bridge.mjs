@@ -3,6 +3,7 @@ import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { quietMessages } from './quiet-runs.mjs';
+import { telegramEchoes } from './telegram-echo.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
@@ -490,7 +491,10 @@ export class RubatoPiBridge {
   importedMessages(sessionId, messages, threadId) {
     // Runs Rubato's clock started stay in the session, not in the thread (quiet-runs.mjs).
     const quiet = quietMessages(messages);
+    // What Segno sent the person from such a run still shows, as its own words (telegram-echo.mjs).
+    const echoes = telegramEchoes(messages, quiet, threadId);
     return messages.flatMap((message) => {
+      if (echoes.has(message)) return [echoes.get(message)];
       if (quiet.has(message)) return [];
       if (['user', 'assistant'].includes(message.role)) return [{
         id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
