@@ -26,7 +26,7 @@ const BUSY = new Set(['running', 'starting', 'waiting']);
 export const SYNC_RETRY_MS = Object.freeze({ beforeClose: [500, 1000, 2000], afterEnd: [5000, 15_000, 30_000, 60_000, 120_000] });
 
 export async function followEngineRun({ bridge, connect, threadId, sessionId, throttleMs = 1000, retryMs = SYNC_RETRY_MS,
-  onEnd = () => {}, closed = () => false, watchMs = 2000, log = () => {} }) {
+  onEnd = () => {}, closed = () => false, watchMs = 2000, idleGraceMs = 5000, log = () => {} }) {
   const client = await connect();
   let unsubscribe;
   let runId = null;
@@ -42,6 +42,7 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
     if (ended) return;
     ended = true;
     stopWatch();
+    clearTimeout(idleTimer);
     clearTimeout(syncTimer);
     await syncing.catch(() => {});
     await unsubscribe?.().catch(() => {});
@@ -99,6 +100,8 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
     if (id) await Promise.resolve(bridge.closeEngineRun(threadId, id, status)).catch((error) => log('engine run not closed', error));
   };
   let queue = Promise.resolve();
+  let status;
+  let idleTimer;
   const onState = (state) => {
     queue = queue.then(async () => {
       if (ended || !state) return;
@@ -117,10 +120,19 @@ export async function followEngineRun({ bridge, connect, threadId, sessionId, th
         else if (type === 'agent_settled') await close('completed');
         if (busy) { await end(); return; }
       }
-      // The session stopped without settling its run (its worker died, it was unloaded): the run
-      // ends as failed or interrupted, and the follower leaves.
-      if (!BUSY.has(state.status) && opening) await close(state.status === 'error' ? 'failed' : state.status === 'idle' ? 'completed' : 'interrupted');
-      if (!BUSY.has(state.status)) await end();
+      status = state.status;
+      if (BUSY.has(status)) { clearTimeout(idleTimer); idleTimer = undefined; return; }
+      if (!opening) { await end(); return; }
+      // The session stopped without settling its run: its worker died (error) or it was unloaded,
+      // and the run ends as failed or interrupted. Idle is not an end by itself — answering the
+      // person's confirm publishes idle for a moment before the run goes on — so a run still open
+      // on an idle session ends as completed only once it has stayed idle for a while.
+      if (status !== 'idle') { await close(status === 'error' ? 'failed' : 'interrupted'); await end(); return; }
+      idleTimer ??= setTimeout(() => {
+        idleTimer = undefined;
+        queue = queue.then(async () => { if (ended || status !== 'idle' || !opening) return; await close('completed'); await end(); })
+          .catch((error) => log('engine run follow failed', error));
+      }, idleGraceMs);
     }).catch((error) => log('engine run follow failed', error));
     return queue;
   };

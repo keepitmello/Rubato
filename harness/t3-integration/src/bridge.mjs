@@ -425,6 +425,7 @@ export class RubatoPiBridge {
       return followEngineRun({ bridge: this, threadId, sessionId, throttleMs: this.engineRunThrottleMs ?? 1000,
         ...(this.engineRunRetryMs ? { retryMs: this.engineRunRetryMs } : {}),
         ...(this.engineRunWatchMs ? { watchMs: this.engineRunWatchMs } : {}),
+        ...(this.engineRunIdleGraceMs ? { idleGraceMs: this.engineRunIdleGraceMs } : {}),
         connect: this.engineConnect ?? (async () => { await this.connection(); return new SessionClient({ ...this.descriptor, onError: this.onError }).connect(); }),
         onEnd: () => { if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId); },
         closed: () => this.closed,

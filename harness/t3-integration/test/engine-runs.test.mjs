@@ -73,6 +73,7 @@ function setup(t, { companion = false } = {}) {
   bridge.engineConnect = session.connect;
   bridge.engineRunThrottleMs = 0;
   bridge.engineRunWatchMs = 10;
+  bridge.engineRunIdleGraceMs = 60;
   bridge.engineRunRetryMs = { beforeClose: [5, 5], afterEnd: [20, 20] };
   bridge.transcript = async () => ({ messages: [...session.messages] });
   bridge.companionSession = async () => companion;
@@ -228,4 +229,26 @@ test('a run waiting on an answer (the engine asks the person) is still going: it
   assert.equal(bridge.engineFollowers.size, 1);
   session.push([{ type: 'message_end', message: said('지웠어.', 70) }, { type: 'agent_settled' }], 'idle');
   assert.ok(await until(() => t3.runs[0].status === 'completed'));
+});
+
+test('answering the engine\'s confirm publishes idle for a moment; the run stays open and its last answer still lands', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.push([{ type: 'message_end', message: said('지워도 돼?', 62, 'toolUse') }], 'waiting');
+  session.push([], 'idle');
+  session.push([], 'running');
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(t3.runs[0].status, 'running', 'the moment of idle did not end it');
+  session.push([{ type: 'message_end', message: said('지웠어, 끝.', 75) }, { type: 'agent_settled' }], 'idle');
+  assert.ok(await until(() => t3.runs[0].status === 'completed'));
+  assert.equal(t3.messages.at(-1).text, '지웠어, 끝.');
+});
+
+test('a run left open on a session that stays idle without settling ends as completed after a while', async (t) => {
+  const { bridge, session, t3 } = setup(t);
+  await bridge.followEngineRun('T1', 'S1');
+  session.push([{ type: 'message_end', message: said('끝인데 정리 신호가 없다', 62) }], 'idle');
+  assert.equal(t3.runs[0].status, 'running');
+  assert.ok(await until(() => t3.runs[0].status === 'completed'));
+  assert.ok(await until(() => bridge.engineFollowers.size === 0));
 });
