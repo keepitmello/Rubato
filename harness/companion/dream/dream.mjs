@@ -651,6 +651,8 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
   const paths = dreamPaths(env);
   const home = segnoPaths(env).home;
   const state = readDreamState(env);
+  // The dream's own folder (state, lock, log, runs and the copy of the home) stays inside the home too.
+  if (!landsInside(home, path.join(paths.dir, 'state.json'))) return { status: 'failed', reason: `${paths.dir} leads outside Segno's home through a link` };
   if (!takeLock(paths.lock, at)) return { status: 'busy', reason: 'another dream is running' };
   const runId = `dream-${localIso(at).replace(/[:+]/g, '-')}-${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runs, runId);

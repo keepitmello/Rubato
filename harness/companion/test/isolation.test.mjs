@@ -2,7 +2,7 @@
 // given Segno's prompt, its own skills or its way of speaking, and Segno's records stay in its home.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -129,4 +129,20 @@ test("Segno's records never land outside its home: a record file or folder that 
   // Its own files are written as before.
   rmSync(path.join(home, 'memory', `${day}.md`));
   assert.equal(record('daily', '오늘 일', { env }).file, path.join(home, 'memory', `${day}.md`));
+});
+
+test("the dream's own folder is no way out either: a dream/ that is a link outside the home runs nothing", async (t) => {
+  const { dir, env } = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  const { runCompanionDream } = await import('../dream/dream.mjs');
+  const outside = path.join(dir, 'elsewhere');
+  mkdirSync(outside, { recursive: true });
+  symlinkSync(outside, path.join(home, 'dream'), 'dir');
+  let spawned = 0;
+  const record = await runCompanionDream({ env, launch: { command: 'node', prefixArgs: [] }, sessionFiles: () => [],
+    spawnChild: async () => { spawned += 1; return { code: 1 }; } });
+  assert.equal(record.status, 'failed');
+  assert.match(record.reason, /outside Segno's home/);
+  assert.equal(spawned, 0);
+  assert.deepEqual(readdirSync(outside), []);
 });
