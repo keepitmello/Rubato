@@ -5,8 +5,8 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns, isUserInput, newQuietState, quietMessages, quietStep } from './quiet-runs.mjs';
 import { createSaidEcho, saidEchoes } from './said-echo.mjs';
+import { createCompanionStream } from './companion-thread.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -45,9 +45,11 @@ import { createSaidEcho, saidEchoes } from './said-echo.mjs';
  * - A Stop can strand a steer Pi had not read yet. After the abort it is cleared from Pi's
  *   queue and its text comes back as a warning in the turn instead of surfacing inside an
  *   unrelated later turn (decisions/t3-queued-message-vs-steer.md).
- * - Rubato's clock (a heartbeat, the daily report, sleep) wakes Segno for its own rhythm; that run
- *   reaches no client (quiet-runs.mjs). Its events stop here, and a prompt sent while it runs
- *   waits for it to settle.
+ * - Segno's own conversation is a chat log (companion-thread.mjs): of its turns only the start and
+ *   end of one T3 started, and a question waiting for the person, pass here; what Segno says with
+ *   reply or say comes in as its own message (said-echo.mjs). A turn T3 did not start passes nothing,
+ *   and a prompt sent while it runs waits for it to settle. A turn the person opened that ends with
+ *   no reply stays open for the reminder Segno then gets, and ends with that turn.
  * - A restart does not end the turn. The engine says `restarting` on the session state while
  *   it lets running tool calls finish (pi-server drain.mjs); the turn shows a "Restarting
  *   Rubato" row, and when the engine's socket closes this stream attaches to the next engine,
@@ -98,6 +100,8 @@ export function stepBatch(branch, toolCallId) {
 /** The wait that ended starts the agent's next run a moment later; the turn waits that long. */
 export const AWAIT_POLL_MS = 2_000;
 export const AWAIT_GRACE_MS = 3_000;
+/** How long a turn of the person's that ended with no reply waits for the reminder's turn to start. */
+export const REMINDER_GRACE_MS = 10_000;
 export const AWAIT_TITLE = 'Waiting on background work';
 /** The row a turn shows while the engine restarts under it. */
 export const RESTART_TITLE = 'Restarting Rubato';
@@ -142,12 +146,15 @@ export class RubatoRpcConnection {
     this.restarts = 0;
     // The run going on now, from its agent_start (noteRun): a turn that adopts it replays it.
     this.run = null;
-    // Runs Rubato's clock started, which no client sees (quiet-runs.mjs).
-    // A run this stream asked for, a turn held open on a wait, or one carried across an engine
-    // restart is never one of them.
+    // A run this stream asked for, a turn held open, or one carried across an engine restart is T3's.
     this.asked = false;
-    this.quietRuns = createQuietRuns({ owned: () => this.asked || this.hold !== null || this.restart !== null, seeded: false });
-    // What Segno says to the person from such a run shows as its words (said-echo.mjs).
+    // Segno's conversation (companion-thread.mjs); learned when the stream attaches to a session.
+    this.companion = false;
+    this.companionStream = createCompanionStream({ owned: () => this.asked || this.hold !== null || this.restart !== null });
+    // Whether the turn T3 started got a reply, and whether it was already held for the reminder.
+    this.turnReplied = false;
+    this.turnReminded = false;
+    // What Segno says with reply or say (said-echo.mjs).
     this.saidEcho = createSaidEcho({ threadId });
     this.sessionId = null;
     this.closed = false;
@@ -180,8 +187,8 @@ export class RubatoRpcConnection {
     // What the engine ran on this session while no stream watched it reaches the thread first, so it
     // stands before what this attach brings (bridge backfillThread, backfill.mjs).
     await this.bridge.backfillThread?.(this.threadId, sessionId)?.catch?.((error) => this.log('backfill failed', error));
-    // Segno's own conversation shows only what Segno says to the person (quiet-runs.mjs).
-    this.quietRuns.companion = await this.bridge.companionSession?.(sessionId) === true;
+    // Segno's own conversation is a chat log (companion-thread.mjs).
+    this.companion = await this.bridge.companionSession?.(sessionId) === true;
     await this.client.attach(sessionId);
     this.sessionId = sessionId;
     this.bridge.claimed.add(sessionId);
@@ -203,31 +210,6 @@ export class RubatoRpcConnection {
     Promise.resolve(this.bridge.sessionTitle?.(this.threadId, name))
       .catch((error) => this.log('title mirror failed', error));
   }
-  /** Holds the run going on at attach until the conversation's tail says whether Rubato's clock started it. */
-  decideRunInFlight() {
-    this.quietRuns.inFlight();
-    this.placeFromStore();
-  }
-  /**
-   * Places the turn the quiet filter holds from the stored conversation: quietStep over it gives the
-   * launches it has not seen and the verdict for its last message, which is the turn in question.
-   */
-  placeFromStore() {
-    Promise.resolve(this.client.command({ type: 'get_messages' })).then((reply) => {
-      const messages = Array.isArray(reply?.messages) ? reply.messages : [];
-      const store = newQuietState({ companion: this.quietRuns.companion });
-      let last;
-      for (const message of messages) last = quietStep(store, message);
-      this.quietRuns.seed(store);
-      return last?.quiet === true;
-    }, () => false).then((quiet) => {
-      for (const shown of this.quietRuns.resolve(quiet)) {
-        if (shown?.type === 'agent_settled') this.asked = false;
-        this.noteRun(shown);
-        this.enqueue(() => this.process(shown));
-      }
-    });
-  }
   /** The prompt cache behind the context ring and the sidebar capsule (session-state.mjs). */
   async refreshCache() {
     if (!this.fold || this.cacheRefresh) return;
@@ -248,15 +230,13 @@ export class RubatoRpcConnection {
       this.runtimeId = state.runtimeId;
       this.sequence = state.sequence ?? 0;
       this.run = null;
+      // Segno's session running a turn now: not this stream's, so it passes nothing.
+      if (this.companion) this.companionStream.attached(state.status === 'running');
       for (const record of state.events ?? []) {
         this.fold?.feed(record.event); this.sessionMessage(record.event); this.saidMessage(record.event);
-        for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
+        if (!this.companion) this.noteRun(record.event);
       }
-      if (this.quietRuns.takeLookup()) this.placeFromStore();
       if (state.status !== 'running') this.run = null;
-      // A long run can push its own start out of the engine's buffer. Whose run it is then comes
-      // from the stored conversation: a clock run's tail must not reach the thread (quiet-runs.mjs).
-      else if (!(state.events ?? []).some((record) => record.event?.type === 'agent_start')) this.decideRunInFlight();
       if (state.restarting === true) this.beginRestart(state);
       return;
     }
@@ -370,8 +350,8 @@ export class RubatoRpcConnection {
   async engineReady(type) {
     if (this.reconnecting) await this.reconnecting;
     if (this.restart && RUN_INPUTS.has(type)) await this.restart.ready;
-    // A clock run the person never sees is not interrupted: their message goes in after it.
-    if (RUN_INPUTS.has(type)) { await this.quietRuns.idle(); this.asked = true; }
+    // A turn of Segno's the person never sees is not interrupted: their message goes in after it.
+    if (RUN_INPUTS.has(type)) { if (this.companion) await this.companionStream.idle(); this.asked = true; }
     if (this.closed) throw new Error('Rubato connection is closed');
   }
   /** The run going on now, from its start: what a turn that adopts it shows first. */
@@ -394,6 +374,7 @@ export class RubatoRpcConnection {
     if (!state?.isStreaming) return false;
     const replay = this.run ?? [];
     this.run = null;
+    if (this.companion) this.companionStream.adopt();
     for (const event of replay) this.enqueue(() => this.process(event));
     return true;
   }
@@ -403,10 +384,8 @@ export class RubatoRpcConnection {
    * so T3 writes it (RubatoPiSessions.ts); a replay after reattaching finds it there already.
    */
   sessionMessage(event) {
-    if (event?.type !== 'message_end') return;
-    // Segno's own thread shows no message from anyone but the person: a lead's ending or another
-    // conversation's message opens a quiet run there (quiet-runs.mjs).
-    if (this.quietRuns.companion && !isUserInput(event.message)) return;
+    // Segno's thread is a chat log of the person and Segno (companion-thread.mjs): no other sender's message.
+    if (event?.type !== 'message_end' || this.companion) return;
     let item;
     try { item = sessionMessageFrom(event.message, this.threadId); } catch { return; }
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
@@ -417,16 +396,18 @@ export class RubatoRpcConnection {
     });
   }
   /**
-   * The same from a stored message list (the adapter's backfill, get_messages): what Segno sent the
-   * person from a quiet run while no stream watched, under the id the live stream would have used,
-   * so a message already in the thread is not written twice.
+   * The same from a stored message list (the adapter's backfill, get_messages): what Segno said
+   * while no stream watched, under the id the live stream would have used, so a message already in
+   * the thread is not written twice.
    */
   backfillSaidEchoes(messages) {
-    for (const item of saidEchoes(messages, quietMessages(messages, { companion: this.quietRuns.companion }), this.threadId).values()) this.appendEcho(item);
+    for (const item of saidEchoes(messages, this.threadId).values()) this.appendEcho(item);
   }
-  /** A quiet run's words to the person (tell_user, or telegram_send then), written into the thread as Segno's. */
+  /** What Segno says with reply or say, written into the thread as its own message. */
   saidMessage(event) {
-    this.appendEcho(this.saidEcho.accept(event, this.quietRuns.quiet));
+    const item = this.saidEcho.accept(event);
+    if (item && this.companionStream.inTurn) this.turnReplied = true;
+    this.appendEcho(item);
   }
   /** One echo into the thread, once per id on this connection. */
   appendEcho(item) {
@@ -448,12 +429,13 @@ export class RubatoRpcConnection {
     // (V1 mirrorSessionTitle). A name T3 itself set comes back equal and changes nothing.
     if (event?.type === 'session_info_changed' && typeof event.name === 'string' && event.name.trim())
       this.mirrorTitle(event.name.trim());
-    for (const shown of this.quietRuns.accept(event)) {
+    for (const shown of this.companion ? this.companionStream.accept(event) : [event]) {
+      // A turn T3 starts fresh (not one held for the reminder) waits for its own reply.
+      if (shown?.type === 'agent_start' && this.companion && !this.hold) { this.turnReplied = false; this.turnReminded = false; }
       if (shown?.type === 'agent_settled') this.asked = false;
       this.noteRun(shown);
       this.enqueue(() => this.process(shown));
     }
-    if (this.quietRuns.takeLookup()) this.placeFromStore();
   }
   enqueue(step) {
     this.inbound = this.inbound.then(step).catch((error) => this.log('inbound step failed', error));
@@ -468,6 +450,21 @@ export class RubatoRpcConnection {
       if (this.aborting) await this.aborting.catch(() => {});
       if (this.hold) return; // already waiting; the newer settle changes nothing
       if (event.aborted === true || this.stopping) { this.emit(event); return; }
+      if (this.companion) {
+        // The person's turn ended with no reply: Segno is reminded once (companion-home's reply
+        // wait) and the reminder's turn goes on as this one, so the reply lands in it and its end is
+        // what notifies. A reminder that does not come lets the turn end after the grace.
+        if (this.turnReplied || this.turnReminded || this.closed) { this.emit(event); return; }
+        this.turnReminded = true;
+        this.hold = { settled: event, id: `rubato-reminder:${this.sessionId}:${++this.waits}`, detail: null, hidden: true };
+        this.hold.timer = setTimeout(() => { this.enqueue(() => {
+          if (!this.hold?.hidden) return;
+          const hold = this.endHold(false);
+          if (hold) this.emit(hold.settled);
+        }); }, this.awaitTimings.reminderMs ?? REMINDER_GRACE_MS);
+        this.hold.timer.unref?.();
+        return;
+      }
       const labels = await this.awaitedLabels();
       if (labels.length === 0 || this.closed) { this.emit(event); return; }
       this.hold = { settled: event, id: `rubato-wait:${this.sessionId}:${++this.waits}`, detail: null };
@@ -527,6 +524,7 @@ export class RubatoRpcConnection {
     if (!hold) return null;
     clearTimeout(hold.timer);
     this.hold = null;
+    if (hold.hidden) return hold;
     this.emit({ type: 'tool_execution_end', toolCallId: hold.id, toolName: AWAIT_TITLE, args: { waitingOn: hold.detail },
       isError: interrupted, result: { content: [{ type: 'text', text: `${interrupted ? 'Stopped waiting' : 'Waited'} on ${hold.detail}` }] } });
     return hold;
@@ -705,17 +703,16 @@ export class RubatoRpcConnection {
           ? { ...state, sessionFile: this.sessionId, rubatoSessionFile: state.sessionFile } : state;
       }
       case 'get_messages': {
-        // The adapter builds the thread's backfill from this list; runs Rubato's clock started stay
-        // out of it, as they do from the history import and the live stream (quiet-runs.mjs).
+        // The adapter builds the thread's backfill from this list. Segno's thread gets only the
+        // person's messages from it, as from the history import and the live stream.
         const reply = await this.command(record);
         if (!reply || !Array.isArray(reply.messages)) return reply;
-        // What Segno said to the person belongs in the thread: the same item the live stream appends
-        // (said-echo.mjs), under the same id, so a backfill after an engine restart brings it back
-        // once and never twice.
+        // What Segno said with reply or say belongs in the thread: the same item the live stream
+        // appends (said-echo.mjs), under the same id, so a backfill after an engine restart brings it
+        // back once and never twice.
         this.backfillSaidEchoes(reply.messages);
-        const quiet = quietMessages(reply.messages, { companion: this.quietRuns.companion });
-        if (!quiet.size) return reply;
-        return { ...reply, messages: reply.messages.filter((message) => !quiet.has(message)) };
+        if (!this.companion) return reply;
+        return { ...reply, messages: reply.messages.filter((message) => message?.role === 'user') };
       }
       case 'abort':
         return this.abort(record);

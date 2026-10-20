@@ -32,7 +32,7 @@ import path from 'node:path';
 import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
-import { TELL_USER_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { REPLY_TOOL, SAY_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
 export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
@@ -361,17 +361,20 @@ export function segnoSessionFiles(env = process.env) {
 const SESSION_MESSAGE = 'rubato-session-message';
 
 /**
- * What Segno said to the user, as the dream hears it: tell_user (home.mjs TELL_USER_TOOL), which Segno
- * speaks with from a turn of its own and whose words exist only as the call's arguments, and in older
- * sessions its telegram_* tools.
+ * What Segno said to the user, as the dream hears it. Everything Segno writes in a turn is its own
+ * monologue; the user hears only what it sends with `reply` or says aloud with `say` (home.mjs
+ * REPLY_TOOL, SAY_TOOL; Roo's telegram_reply and its voice), so those words exist only as the calls'
+ * arguments. Older sessions said it with
+ * tell_user or the telegram_* tools, read the same way.
  */
-const isSaying = (name) => name === TELL_USER_TOOL || name.startsWith('telegram_');
+const LEGACY_SAYING = 'tell_user';
+const isSaying = (name) => name === REPLY_TOOL || name === SAY_TOOL || name === LEGACY_SAYING || name.startsWith('telegram_');
 
 /**
  * What Segno said to the user through tool calls. In a turn Rubato's clock opened these calls are the
  * only place its words to the user exist, so the dream hears them as Segno's own words.
  */
-function sentOf(content) {
+function sentOf(content, outcomes = new Map()) {
   if (!Array.isArray(content)) return '';
   return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && isSaying(block.name))
     .map((block) => {
@@ -382,7 +385,10 @@ function sentOf(content) {
       if (typeof args.emoji === 'string') said.push(`(반응) ${args.emoji}`);
       if (!said.length) return '';
       const to = typeof args.to === 'string' || typeof args.to === 'number' ? ` → ${args.name ?? args.to}` : '';
-      return `[${block.name}${to}] ${said.join('\n')}`;
+      // Only a call the tool answered without error reached the user; the rest are attempts.
+      const outcome = outcomes.get(block.id);
+      const mark = outcome === undefined ? ' 확인 안 됨' : outcome.isError ? ' 안 감' : '';
+      return `[${block.name}${to}${mark}] ${said.join('\n')}`;
     }).filter(Boolean).join('\n\n');
 }
 const textOf = (content) => typeof content === 'string' ? content.trim()
@@ -399,13 +405,23 @@ const textOf = (content) => typeof content === 'string' ? content.trim()
 export function exportTranscript(files, sinceMs, { budgetChars = TRANSCRIPT_BUDGET_CHARS } = {}) {
   const items = [];
   for (const file of files) {
+    const entries = [];
     for (const line of readFileSync(file, 'utf8').split('\n')) {
       if (!line.trim()) continue;
-      let entry;
-      try { entry = JSON.parse(line); } catch { continue; }
+      try { entries.push(JSON.parse(line)); } catch { continue; }
+    }
+    // How each tool call ended (its toolResult), so a reply that failed is not heard as said.
+    const outcomes = new Map();
+    for (const entry of entries) {
+      const message = entry?.message;
+      if (entry?.type === 'message' && message?.role === 'toolResult' && typeof message.toolCallId === 'string') {
+        outcomes.set(message.toolCallId, { isError: message.isError === true });
+      }
+    }
+    for (const entry of entries) {
       const at = typeof entry?.message?.timestamp === 'number' ? entry.message.timestamp : Date.parse(entry?.timestamp ?? '');
       if (!Number.isFinite(at) || at <= sinceMs) continue;
-      const item = describe(entry);
+      const item = describe(entry, outcomes);
       if (item) items.push({ at, ...item });
     }
   }
@@ -429,10 +445,10 @@ export function exportTranscript(files, sinceMs, { budgetChars = TRANSCRIPT_BUDG
   return { markdown: `# 깨어 있던 대화\n${parts.join('')}`, messages, coveredThrough, truncated };
 }
 
-function describe(entry) {
+function describe(entry, outcomes) {
   if (entry?.type === 'message') {
     const role = entry.message?.role;
-    const text = role === 'assistant' ? [textOf(entry.message?.content), sentOf(entry.message?.content)].filter(Boolean).join('\n\n')
+    const text = role === 'assistant' ? [textOf(entry.message?.content), sentOf(entry.message?.content, outcomes)].filter(Boolean).join('\n\n')
       : textOf(entry.message?.content);
     if (!text) return undefined;
     if (role === 'user') return { who: '사용자 (앱)', text };

@@ -2,8 +2,7 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
-import { quietMessages } from './quiet-runs.mjs';
-import { saidEchoes } from './said-echo.mjs';
+import { companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
 import { followEngineRun } from './engine-runs.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
@@ -552,19 +551,14 @@ export class RubatoPiBridge {
   // carries its context record and an id that names `threadId`, the T3 thread the
   // history goes to (see sessionMessageFrom); T3's history import takes no
   // context, so the server appends those after the import.
-  // `companion`: the session is Segno's, whose thread shows only what Segno says to the person (quiet-runs.mjs).
+  // `companion`: the session is Segno's, whose thread is a chat log of the person's messages and
+  // what Segno said with reply or say, and nothing else (said-echo.mjs).
   importedMessages(sessionId, messages, threadId, { companion = false } = {}) {
-    // Runs Rubato's clock started stay in the session, not in the thread (quiet-runs.mjs).
-    const quiet = quietMessages(messages, { companion });
-    // What Segno said to the person from such a run still shows, as its own words (said-echo.mjs).
-    const echoes = saidEchoes(messages, quiet, threadId);
+    const plain = (message) => ({ id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
+      createdAt: new Date(message.timestamp).toISOString() });
+    if (companion) return companionThreadItems(messages, threadId, plain);
     return messages.flatMap((message) => {
-      if (echoes.has(message)) return [echoes.get(message)];
-      if (quiet.has(message)) return [];
-      if (['user', 'assistant'].includes(message.role)) return [{
-        id: importedId(this.instanceId, sessionId, message), role: message.role, text: textOf(message),
-        createdAt: new Date(message.timestamp).toISOString(),
-      }];
+      if (['user', 'assistant'].includes(message.role)) return [plain(message)];
       const linked = sessionMessageFrom(message, threadId);
       return linked ? [linked] : [];
     });
@@ -649,15 +643,13 @@ export class RubatoPiBridge {
       context.runtimeId = snapshot.runtimeId;
       context.sequence = snapshot.sequence;
       context.projection.event('session.started', { resume: context.session.resumeCursor });
-      // Runs Rubato's clock started stay out of the thread here too, as in importedMessages: an
-      // attach must not replay a heartbeat's or a wake's answer, nor open a turn for one in flight.
-      const quiet = quietMessages(snapshot.messages, { companion: await this.companionSession(context.sessionId) });
-      const quietTail = snapshot.messages.length > 0 && quiet.has(snapshot.messages.at(-1));
-      if (snapshot.state.isStreaming && !quietTail) context.projection.begin();
-      // What a quiet run said to the person shows as Segno's words (said-echo.mjs).
-      for (const item of saidEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
+      // Segno's thread replays only the person's messages and what Segno said with reply or say,
+      // as in importedMessages; any other conversation replays all of it.
+      const companion = await this.companionSession(context.sessionId);
+      if (snapshot.state.isStreaming && !companion) context.projection.begin();
+      for (const item of saidEchoes(snapshot.messages, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
       snapshot.messages.forEach((message, index) => {
-        if (quiet.has(message)) return;
+        if (companion && message.role !== 'user') return;
         context.projection.message(message, !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason));
       });
       for (const request of snapshot.pendingUi) context.projection.question(request);

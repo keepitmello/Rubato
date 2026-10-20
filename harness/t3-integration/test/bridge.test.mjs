@@ -1590,7 +1590,7 @@ test('a live session message goes to the thread once and emits no runtime event;
 
 // Rubato's clock (a heartbeat) is hidden in Pi but opens its turn in the thread, so T3 does not
 // label the turn as background activity; the web timeline draws no row for it.
-test("Rubato's clock and the run it starts stay out of the thread, live and from history", async () => {
+test("Segno's thread imports only the person's messages and what Segno said with reply; any other thread imports the whole conversation", async () => {
   const clock = (what, at) => sessionMessage({ display:false, content:`<rubato_wake what="${what}">…</rubato_wake>`, timestamp:at,
     details:{ v:1, messageId:`wake-${at}`, kind:'wake', what, from:{ sessionId:'rubato', title:'Rubato', cwd:'' }, text:'Heartbeat.' } });
   const delivered = [];
@@ -1598,17 +1598,23 @@ test("Rubato's clock and the run it starts stay out of the thread, live and from
     emit:() => {}, sessionMessage:(item) => delivered.push(item) });
   p.begin();
   for (const type of ['message_start', 'message_end']) p.project({ type, message:clock('heartbeat', 2) });
-  assert.deepEqual(delivered, [], 'no thread row for the wake');
-  const answer = (text, at) => ({ role:'assistant', content:[{ type:'text', text }], timestamp:at, stopReason:'stop' });
+  assert.deepEqual(delivered, [], 'no thread row for a wake');
+  const answer = (text, at, content = [{ type:'text', text }]) => ({ role:'assistant', content, timestamp:at, stopReason:'stop' });
+  const conversation = [
+    { role:'user', content:'hi', timestamp:1 }, answer('혼잣말: 뭐라고 하지', 2),
+    answer('', 3, [{ type:'text', text:'답할게' }, { type:'toolCall', id:'r1', name:'reply', arguments:{ text:'안녕!' } }]),
+    { role:'toolResult', toolCallId:'r1', toolName:'reply', content:[{ type:'text', text:'Sent to the user.' }], timestamp:4 },
+    clock('heartbeat', 5), answer('Heartbeat check: nothing has stalled.', 6),
+    sessionMessage({ timestamp:8 }), answer('A lead finished; here is what it did.', 9),
+  ];
   const bridge = new RubatoPiBridge({ descriptorPath:'/nonexistent/descriptor.json', instanceId:'rubato-test' });
   try {
-    const items = bridge.importedMessages('session', [
-      { role:'user', content:'hi', timestamp:1 }, answer('hello', 2),
-      clock('heartbeat', 3), answer('Heartbeat check: nothing has stalled.', 4),
-      clock('sleep', 5), { role:'toolResult', toolCallId:'t', toolName:'segno_record', content:[{ type:'text', text:'ok' }], timestamp:6 }, answer('잘 자.', 7),
-      sessionMessage({ timestamp:8 }), answer('A lead finished; here is what it did.', 9),
-    ], 'thread');
-    assert.deepEqual(items.map((item) => item.text), ['hi', 'hello', sessionMessage().details.text, 'A lead finished; here is what it did.']);
+    const segno = bridge.importedMessages('session', conversation, 'thread', { companion: true });
+    assert.deepEqual(segno.map((item) => [item.role, item.text]), [['user', 'hi'], ['user', '안녕!']]);
+    assert.equal(segno[1].context.records[0].kind, 'rubato-said', 'the reply travels as Segno\'s own words');
+    const lead = bridge.importedMessages('session', conversation, 'thread');
+    assert.deepEqual(lead.map((item) => item.text), ['hi', '혼잣말: 뭐라고 하지', '답할게', 'Heartbeat check: nothing has stalled.',
+      sessionMessage().details.text, 'A lead finished; here is what it did.']);
   } finally { await bridge.close(); }
 });
 

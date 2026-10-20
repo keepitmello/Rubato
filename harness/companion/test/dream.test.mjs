@@ -7,7 +7,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
-import { TELL_USER_TOOL, segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { REPLY_TOOL, SAY_TOOL, segnoPaths, segnoSearchEnv } from '../home.mjs';
 import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, commandExists, composeDreamPrompt, dreamDue, dreamPaths, FALLBACK_PATH, workEnv, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
@@ -49,9 +49,13 @@ function segnoSession(env, { cwd = env.RUBATO_COMPANION_HOME, id = '01a154ba-000
     { type: 'message', timestamp: new Date(at(20, 10, 3)).toISOString(), message: { role: 'toolResult', content: [{ type: 'text', text: 'TOOL OUTPUT' }] } },
     { type: 'message', timestamp: new Date(at(20, 10, 4)).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: '금요일 면접~ 챙겨둘게.' }] } },
     { type: 'message', timestamp: new Date(at(20, 10, 31)).toISOString(), message: { role: 'assistant', content: [
-      { type: 'toolCall', name: 'telegram_send', arguments: { text: '좋은 아침~ 금요일 넥타이 챙겨' } }, { type: 'text', text: '보냈다. 이제 기다리자.' }] } },
+      { type: 'toolCall', id: 'tg', name: 'telegram_send', arguments: { text: '좋은 아침~ 금요일 넥타이 챙겨' } }, { type: 'text', text: '보냈다. 이제 기다리자.' }] } },
     { type: 'message', timestamp: new Date(at(20, 10, 40)).toISOString(), message: { role: 'assistant', content: [
-      { type: 'toolCall', name: TELL_USER_TOOL, arguments: { text: '면접 준비 다 됐어? 응원할게~' } }] } },
+      { type: 'toolCall', id: 'r1', name: REPLY_TOOL, arguments: { text: '면접 준비 다 됐어? 응원할게~' } }] } },
+    { type: 'message', timestamp: new Date(at(20, 10, 45)).toISOString(), message: { role: 'assistant', content: [
+      { type: 'toolCall', id: 'tu', name: 'tell_user', arguments: { text: '예전 기록의 말' } }, { type: 'toolCall', id: 's1', name: SAY_TOOL, arguments: { text: '목소리로 한 말' } }] } },
+    ...['tg', 'r1', 'tu', 's1'].map((id) => ({ type: 'message', timestamp: new Date(at(20, 10, 46)).toISOString(),
+      message: { role: 'toolResult', toolCallId: id, isError: false, content: [{ type: 'text', text: 'sent' }] } })),
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 10, 30)).toISOString(),
       content: '<rubato_wake what="heartbeat">…', details: { kind: 'wake', what: 'heartbeat', text: 'HEARTBEAT tick=1' } },
     { type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at(20, 11, 0)).toISOString(),
@@ -145,11 +149,12 @@ test("the conversation export carries words and wake marks, not tools or thinkin
   assert.doesNotMatch(out.markdown, /TOOL OUTPUT|secret thinking|toolCall|"ls"/);
   // In a turn the clock opened, the words that reached the user exist only as the send call.
   assert.match(out.markdown, /### 2026-10-20 10:31 나\n\n보냈다\. 이제 기다리자\.\n\n\[telegram_send\] 좋은 아침~ 금요일 넥타이 챙겨/);
-  // In the app, what Segno says on its own is the tell_user call (older sessions: telegram_*).
-  assert.match(out.markdown, /### 2026-10-20 10:40 나\n\n\[tell_user\] 면접 준비 다 됐어\? 응원할게~/);
+  // What the user hears is the reply call (Roo's telegram_reply); older sessions said it with tell_user or telegram_*.
+  assert.match(out.markdown, /### 2026-10-20 10:40 나\n\n\[reply\] 면접 준비 다 됐어\? 응원할게~/);
+  assert.match(out.markdown, /\[tell_user\] 예전 기록의 말\n\n\[say\] 목소리로 한 말/);
   assert.equal(out.markdown.match(/면접 준비 다 됐어/g).length, 1, 'once');
-  assert.equal(out.messages, 5);
-  assert.equal(exportTranscript([file], at(20, 10, 30)).messages, 3, 'only what came after the mark');
+  assert.equal(out.messages, 6);
+  assert.equal(exportTranscript([file], at(20, 10, 30)).messages, 4, 'only what came after the mark');
   const small = exportTranscript([file], at(20, 0), { budgetChars: 60 });
   assert.equal(small.truncated, true);
   assert.ok(small.coveredThrough >= at(20, 10, 2) - 1 && small.coveredThrough < at(20, 10, 3), 'the mark moves only as far as was read');
@@ -770,4 +775,21 @@ test("the dream measures MEMORY.md with the guard's own count, not the shell's",
   }, result: { status: 'done', blocks: {} } });
   await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
   assert.equal(counted, String([...'# 기억\n가나다\n'].length));
+});
+
+test('a reply the tool answered with an error, or never answered, is not heard as said', (t) => {
+  const env = sandbox(t);
+  const file = path.join(env.HOME, 'replies.jsonl');
+  const at0 = at(20, 12);
+  const call = (id, text, offset) => ({ type: 'message', timestamp: new Date(at0 + offset).toISOString(), message: { role: 'assistant',
+    timestamp: at0 + offset, content: [{ type: 'toolCall', id, name: REPLY_TOOL, arguments: { text } }] } });
+  const result = (id, isError, offset) => ({ type: 'message', timestamp: new Date(at0 + offset).toISOString(), message: { role: 'toolResult',
+    toolName: REPLY_TOOL, toolCallId: id, timestamp: at0 + offset, isError, content: [{ type: 'text', text: isError ? 'failed' : 'sent' }] } });
+  writeFileSync(file, [call('ok', '들은 말', 1), result('ok', false, 2), call('bad', '못 간 말', 3), result('bad', true, 4), call('lost', '모르는 말', 5)]
+    .map((line) => JSON.stringify(line)).join('\n') + '\n');
+  const out = exportTranscript([file], at0 - 1).markdown;
+  assert.match(out, /\[reply\] 들은 말/);
+  assert.match(out, /\[reply 안 감\] 못 간 말/);
+  assert.match(out, /\[reply 확인 안 됨\] 모르는 말/);
+  assert.doesNotMatch(out, /\[reply\] 못 간 말|\[reply\] 모르는 말/);
 });

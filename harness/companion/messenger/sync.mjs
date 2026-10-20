@@ -4,11 +4,12 @@
 // heartbeat, sleep, greetings…) stays out of Telegram too. The person's own app messages are not
 // copied to Telegram: Segno's answer has to read on its own there.
 //
-// Which runs the app hides is decided in one place, harness/t3-integration/src/quiet-runs.mjs
-// (`quietStep`, QUIET_WAKES): a clock wake opens a quiet run, the person's or anyone's message a
-// shown one, and a run opened by background work finishing follows the run that launched it. This
-// steps through the transcript with that same function, one entry at a time, and an answer goes
-// to whoever started the work: the person, or another chat (held for approval).
+// Which runs stay out of Telegram is decided in quiet-runs.mjs (`quietStep`, QUIET_WAKES): a clock
+// wake opens a quiet run, the person's or anyone's message a shown one, and a run opened by
+// background work finishing follows the run that launched it. This steps through the transcript
+// with that function, one entry at a time, and an answer goes to whoever started the work: the
+// person, or another chat (held for approval). (Telegram is off in the product; store.mjs
+// TELEGRAM_ENABLED.)
 //
 // The transcript is read from a byte offset that only moves forward past whole lines, so a
 // transcript of any length is read once and never replayed. The run state that decides where an
@@ -16,7 +17,7 @@
 // telegram_send in it) is carried with that offset.
 import { open, opendir } from 'node:fs/promises';
 import path from 'node:path';
-import { launchedIds, newQuietState, quietStep, reportedIds } from '../../t3-integration/src/quiet-runs.mjs';
+import { launchedIds, newQuietState, quietStep, reportedIds } from './quiet-runs.mjs';
 
 export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const TELEGRAM_SEND_TOOL = 'telegram_send';

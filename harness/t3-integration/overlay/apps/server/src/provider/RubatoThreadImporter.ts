@@ -72,16 +72,14 @@ export interface SessionMessage {
 }
 /**
  * Records that make a session message one of the thread's own messages, written without the record:
- * `rubato-said`, what Segno said to the person with tell_user from a run the thread does not show,
- * and `rubato-telegram`, what it sent on Telegram from one while the product ran Telegram (bridge
- * said-echo.mjs), are Segno's words; `rubato-backfill`, a turn the engine ran while T3 held no
- * stream on the thread (bridge backfill.mjs), keeps the role it had in the session.
+ * `rubato-said`, what Segno said to the person with reply or say (bridge said-echo.mjs), is Segno's
+ * words; `rubato-backfill`, a turn the engine ran while T3 held no stream on the thread (bridge
+ * backfill.mjs), keeps the role it had in the session.
  */
 export const SAID_KIND = "rubato-said";
-export const TELEGRAM_ECHO_KIND = "rubato-telegram";
 export const BACKFILL_KIND = "rubato-backfill";
 /**
- * The run a tell_user message gets (appendOwnRun): `rubato-said:<message id>`. Its message and turn
+ * The run a reply or say gets (appendOwnRun): `rubato-said:<message id>`. Its message and turn
  * item carry that id too, and the run's userMessageId names the message, so a client that sees the
  * thread's latest run finish can tell Segno spoke and find the words.
  */
@@ -100,7 +98,7 @@ const ownRole = (context: unknown): "assistant" | "user" | null => {
   const records = (context as { readonly records?: ReadonlyArray<{ readonly kind?: unknown; readonly payload?: unknown }> } | undefined)?.records;
   if (!Array.isArray(records)) return null;
   for (const record of records) {
-    if (record?.kind === SAID_KIND || record?.kind === TELEGRAM_ECHO_KIND) return "assistant";
+    if (record?.kind === SAID_KIND) return "assistant";
     if (record?.kind === BACKFILL_KIND) {
       const role = (record.payload as { readonly role?: unknown } | undefined)?.role;
       return role === "user" ? "user" : "assistant";
@@ -276,7 +274,7 @@ const make = Effect.gen(function* () {
       ] }).pipe(Effect.mapError(importFailure("Could not write the session message")));
     });
   /**
-   * A message of Segno's in a run of its own (bridge said-echo.mjs, tell_user from a hidden run).
+   * A message of Segno's in a run of its own (bridge said-echo.mjs, reply or say).
    * T3 tells the phone about a thread only when its run state changes (AgentAwarenessRelay reads
    * run.created/run.updated, never a message) and buzzes it when a run finishes, so the words come
    * with a run that is first seen running and then completed: the run opens as running, and once

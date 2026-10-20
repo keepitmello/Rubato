@@ -4,7 +4,7 @@
 //
 // The product runs no Telegram for now (harness/companion/messenger/store.mjs TELEGRAM_ENABLED), so
 // the Telegram tools register only with `telegram: true`, which nothing passes; Segno speaks to the
-// person in the app with `tell_user` (companion-home).
+// person in the app with `reply` (companion-home).
 //
 // Segno writes; the engine's resident messenger decides. Each tool is a thin call into the
 // engine's `sessionLink.telegramSend`, which hands the request to the messenger
