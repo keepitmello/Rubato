@@ -136,10 +136,13 @@ function undoLog(env) {
 }
 
 /**
- * Applies one change through the Settings page's own actions, each validated there. A change is
- * all or nothing: the checks that can refuse run first, and a refusal puts back what the change
- * wrote before it. A Telegram request (the bot token, pairing) is one at a time and goes last, since
- * the messenger carries it out after this answers.
+ * Applies one change through the Settings page's own actions, each validated there. The checks this
+ * module can make alone (unknown fields, pairing, piece shape) run before anything is written; the
+ * page's own checks run as each part is written. When a part is refused or fails, what this change
+ * wrote is put back, except where someone else (the Settings page) has written the same file since:
+ * their save is kept, and with it whatever of this change that file still holds. This is undo of our
+ * own writes, not a transaction. A Telegram request (the bot token, pairing) is one per change and
+ * goes last, since the messenger carries it out after this answers.
  */
 async function applyChange(service, change, env) {
   if (!change || typeof change !== 'object' || Array.isArray(change)) throw new SettingsRefused('invalid', 'change must be an object');
