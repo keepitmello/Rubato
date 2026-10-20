@@ -131,18 +131,24 @@ test("Segno's records never land outside its home: a record file or folder that 
   assert.equal(record('daily', '오늘 일', { env }).file, path.join(home, 'memory', `${day}.md`));
 });
 
-test("the dream's own folder is no way out either: a dream/ that is a link outside the home runs nothing", async (t) => {
-  const { dir, env } = sandbox(t);
-  const home = env.RUBATO_COMPANION_HOME;
-  const { runCompanionDream } = await import('../dream/dream.mjs');
-  const outside = path.join(dir, 'elsewhere');
-  mkdirSync(outside, { recursive: true });
-  symlinkSync(outside, path.join(home, 'dream'), 'dir');
-  let spawned = 0;
-  const record = await runCompanionDream({ env, launch: { command: 'node', prefixArgs: [] }, sessionFiles: () => [],
-    spawnChild: async () => { spawned += 1; return { code: 1 }; } });
-  assert.equal(record.status, 'failed');
-  assert.match(record.reason, /outside Segno's home/);
-  assert.equal(spawned, 0);
-  assert.deepEqual(readdirSync(outside), []);
+test("the dream's own folder is no way out either: a link at dream/ or anywhere it writes runs nothing", async (t) => {
+  const { runCompanionDream, dreamPaths } = await import('../dream/dream.mjs');
+  const { localDate: today } = await import('../home.mjs');
+  for (const [label, place] of [['dream/', (paths) => paths.dir], ['dream/log', (paths) => paths.log], ['dream/runs', (paths) => paths.runs],
+    ['dream/state.json', (paths) => paths.state], ['dream/checks.json', (paths) => paths.checks], ['the day\'s log', (paths) => path.join(paths.log, `${today()}.md`)]]) {
+    const { dir, env } = sandbox(t);
+    const outside = path.join(dir, 'elsewhere');
+    mkdirSync(outside, { recursive: true });
+    const target = place(dreamPaths(env));
+    mkdirSync(path.dirname(target), { recursive: true });
+    const isFile = target.endsWith('.json') || target.endsWith('.md');
+    symlinkSync(isFile ? path.join(outside, 'file') : outside, target, isFile ? 'file' : 'dir');
+    let spawned = 0;
+    const record = await runCompanionDream({ env, launch: { command: 'node', prefixArgs: [] }, sessionFiles: () => [],
+      spawnChild: async () => { spawned += 1; return { code: 1 }; } });
+    assert.equal(record.status, 'failed', label);
+    assert.match(record.reason, /outside Segno's home/, label);
+    assert.equal(spawned, 0, label);
+    assert.deepEqual(readdirSync(outside), [], label);
+  }
 });
