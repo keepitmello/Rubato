@@ -266,13 +266,9 @@ export function exportTranscript(files, sinceMs, { budgetChars = TRANSCRIPT_BUDG
   for (const item of items) {
     const day = localDate(item.at);
     const text = item.mark ? `\n— ${day} ${hm(item.at)} ${item.mark}\n` : `\n### ${day} ${hm(item.at)} ${item.who}\n\n${item.text}\n`;
-    if (parts.length && used + text.length > budgetChars) {
-      // The mark stops just before the first line left out, so a line sharing its moment with the
-      // last one read is read next time instead of falling behind the mark.
-      truncated = true;
-      coveredThrough = Math.min(coveredThrough, item.at - 1);
-      break;
-    }
+    // The mark is a moment, so lines sharing the moment of the last one read go together even past
+    // the budget: a cut between them would either lose the rest or read the same lines forever.
+    if (parts.length && used + text.length > budgetChars && item.at !== coveredThrough) { truncated = true; break; }
     parts.push(text);
     used += text.length;
     if (!item.mark) messages += 1;
@@ -523,10 +519,14 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     const commit = applied.length ? commitOwned(applied, `dream: ${message}`, { env }) : undefined;
     const blocks = result.blocks && typeof result.blocks === 'object' ? result.blocks : {};
     const partial = result.status !== 'done' || refused.length > 0 || conflicts.length > 0;
-    advance(env, { at, plan, blocks, result, transcript });
+    // What did not come home (a conflict, or a change outside the dream's places) is not done: the
+    // next dream reads the same ground again.
+    const held = conflicts.length > 0 || refused.length > 0;
+    if (!held) advance(env, { at, plan, blocks, result, transcript });
     appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
     record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
-      ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), commit: commit ?? null,
+      ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(held ? { watermarks: 'held' } : {}),
+      commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;
   } catch (error) {

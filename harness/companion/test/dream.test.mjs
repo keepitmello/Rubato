@@ -141,14 +141,17 @@ test("the conversation export carries words and wake marks, not tools or thinkin
   const small = exportTranscript([file], at(20, 0), { budgetChars: 60 });
   assert.equal(small.truncated, true);
   assert.ok(small.coveredThrough >= at(20, 10, 2) - 1 && small.coveredThrough < at(20, 10, 3), 'the mark moves only as far as was read');
-  // Two lines at the same moment: a cut between them leaves the mark before that moment.
+  // Lines at the same moment are never split by the budget: the mark is a moment.
   const twin = path.join(env.HOME, 'twin.jsonl');
-  writeFileSync(twin, ['FIRST', 'SECOND'].map((text) => JSON.stringify({ type: 'message', timestamp: '2026-10-20T06:00:00.000Z',
+  writeFileSync(twin, ['FIRST', 'SECOND', 'THIRD'].map((text, index) => JSON.stringify({ type: 'message',
+    timestamp: index < 2 ? '2026-10-20T06:00:00.000Z' : '2026-10-20T06:00:01.000Z',
     message: { role: 'user', content: [{ type: 'text', text }] } })).join('\n') + '\n');
   const cut = exportTranscript([twin], 0, { budgetChars: 1 });
-  assert.match(cut.markdown, /FIRST/);
-  assert.doesNotMatch(cut.markdown, /SECOND/);
-  assert.match(exportTranscript([twin], cut.coveredThrough).markdown, /SECOND/);
+  assert.match(cut.markdown, /FIRST[\s\S]*SECOND/);
+  assert.doesNotMatch(cut.markdown, /THIRD/);
+  const next = exportTranscript([twin], cut.coveredThrough, { budgetChars: 1 });
+  assert.match(next.markdown, /THIRD/);
+  assert.doesNotMatch(next.markdown, /FIRST/);
 });
 
 test("Segno's conversations are the ones whose folder is its home", (t) => {
@@ -286,7 +289,7 @@ test('a dream that cannot finish moves no watermark and commits nothing; the nex
   assert.equal(git(env.RUBATO_COMPANION_HOME, 'log', '--format=%s').trim().split('\n').length, 1, 'only the home\'s first commit');
 });
 
-test('a part the dream skipped keeps its old mark, and a child that touches the persona changes only its copy', async (t) => {
+test('a child that touches the persona or another note changes only its copy, and the night is read again', async (t) => {
   const env = sandbox(t);
   const home = env.RUBATO_COMPANION_HOME;
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
@@ -304,8 +307,18 @@ test('a part the dream skipped keeps its old mark, and a child that touches the 
   assert.equal(sha(path.join(home, 'prompt/soul.md')), before);
   assert.ok(!existsSync(path.join(home, 'prompt/new.md')));
   assert.equal(readFileSync(path.join(home, 'notes/mine.md'), 'utf8'), '깨어 있는 내 땅');
+  assert.equal(readDreamState(env).blocks, undefined, 'a refused change holds every mark');
+});
+
+test('a part the dream skipped keeps its old mark while the parts it did move', async (t) => {
+  const env = sandbox(t);
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  const dreamer = fakeDreamer({ edits: { 'memory/self.md': '## 지금\n' },
+    result: { status: 'partial', blocks: { distill: 'done', selfReview: 'failed', cleanup: 'skipped' } } });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.equal(record.status, 'partial');
   const state = readDreamState(env);
-  assert.ok(state.blocks.distill.lastAt);
+  assert.ok(state.blocks.distill.lastAt.startsWith('2026-10-21T04:07'));
   assert.equal(state.blocks.selfReview, undefined);
   assert.equal(state.blocks.cleanup, undefined);
 });
@@ -339,6 +352,7 @@ test('what the user and Segno write while the dream runs stays: a persona saved 
   assert.deepEqual(record.conflicts, ['memory/status.md']);
   assert.deepEqual(record.changed, ['memory/2026-10-20.md']);
   assert.equal(record.status, 'partial');
+  assert.equal(readDreamState(env).blocks, undefined, 'what did not come home is read again next night');
 });
 
 test('a child that breaks off after writing brings nothing home', async (t) => {
