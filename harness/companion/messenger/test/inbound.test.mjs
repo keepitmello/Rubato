@@ -239,3 +239,16 @@ test('/segno off and on switch Segno itself from Telegram, answered without a tu
   await settle(box.service);
   assert.equal(readSettings(box.env).enabled, true, 'another chat cannot switch Segno');
 });
+
+test("while Segno is off, another person's report goes to its inbox and wakes nothing", async (t) => {
+  const box = await paired(t);
+  const { writeSettings } = await import('../../companion.mjs');
+  const { openInbox } = await import('../../inbox.mjs');
+  writeSettings({ enabled: false }, box.env);
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '꺼져 있을 때 온 신고', from: 'Gildong' });
+  await settle(box.service);
+  assert.equal(box.delivered.length, 0);
+  const inbox = openInbox({ env: box.env });
+  try { assert.equal(inbox.list()[0].title, '꺼져 있을 때 온 신고'); } finally { inbox.close(); }
+  assert.equal(box.fake.sent.filter((row) => row.chatId === GROUP_CHAT).length, 0, 'nothing is said to the group');
+});

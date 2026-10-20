@@ -388,6 +388,13 @@ export function startCompanionMessenger({
       if (!allowedInbound(chatId, update.update_id)) { log('inbound-dropped', { chatId }); return; }
       // Someone else's report belongs in Segno's inbox whether or not its conversation is up: the
       // list is what the person reads, and a message must not be lost to a restarting engine.
+      // Segno is off: the report is kept in its inbox, where it finds it once it is on again, and
+      // nothing wakes it now.
+      if (!readCompanionSettings(env).enabled) {
+        fileReport({ chatId, message, text: mediaOf(message)?.text ?? plainText(message) });
+        log('inbound-while-off', { chatId });
+        return;
+      }
       const to = readCompanionState(env).sessionId;
       if (!to) { fileReport({ chatId, message, text: mediaOf(message)?.text ?? plainText(message) }); throw notReady(); }
       const { text, attachments } = await contentOf(client, message);
