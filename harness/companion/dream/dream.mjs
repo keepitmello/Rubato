@@ -44,36 +44,59 @@ export const SEARCH_CASES = 'memory/search-golden.json';
  * One search for the weekly check: msearch's structured results on Segno's channel, logged nowhere
  * (Roo's golden check sets ROO_RECALL_LOG=0: a test is not a recall).
  */
-export function searchSegnoJson(query, topK, env) {
-  const out = execFileSync(env.MSEARCH_BIN || 'msearch', ['--json', '-a', '-k', String(topK), query], {
+export function searchSegnoJson(query, limit, env) {
+  const out = execFileSync(env.MSEARCH_BIN || 'msearch', ['--json', '-a', '-k', String(limit), query], {
     cwd: segnoPaths(env).memory, env: { ...segnoSearchEnv(env), ROO_RECALL_LOG: '0' }, encoding: 'utf8', timeout: 120_000,
     stdio: ['ignore', 'pipe', 'pipe'] });
   const parsed = JSON.parse(out);
   return Array.isArray(parsed) ? parsed : [];
 }
 
+/** Roo's eval default: five results per case unless the case says otherwise (memory-search-eval.py --limit). */
+export const SEARCH_CHECK_LIMIT = 5;
+
+/** Roo's result_matches: every expected field is a substring of the result's field. */
+const searchMatches = (result, expected) => Object.entries(expected ?? {}).every(([key, value]) => String(result?.[key] ?? '').includes(String(value)));
+const list = (value) => (Array.isArray(value) ? value : []);
+
 /**
- * Roo's Sunday search check (scripts/memory-golden-check.sh, memory-search-eval.py): each case's query
- * must bring one of its expected places into the top results. Segno's cases are its own, in
- * memory/search-golden.json (`{ "cases": [{ "name", "query", "top_k", "expected_any": [{ "rel_path",
- * "section"?, "content"? }] }] }`, paths as the search reports them, under memory/). With no cases the
- * check says so; without the live search (a sandbox) it says it was not run.
+ * One case as Roo's evaluate_cases judges it: `expected_empty`, `expected_any` in the top `top_k`,
+ * `expected_first` and `forbidden_first` on the first result, `forbidden` in the top `top_k`,
+ * `min_results` and `max_results`, over `result_limit` results.
+ */
+export function judgeSearchCase(item, results) {
+  const topK = Number.isInteger(item?.top_k) ? item.top_k : SEARCH_CHECK_LIMIT;
+  const top = results.slice(0, topK);
+  let passed = true;
+  if (item?.expected_empty) passed = results.length === 0;
+  if (list(item?.expected_any).length) passed = passed && top.some((result) => item.expected_any.some((want) => searchMatches(result, want)));
+  if (list(item?.expected_first).length) passed = passed && results.length > 0 && item.expected_first.some((want) => searchMatches(results[0], want));
+  if (list(item?.forbidden_first).length) passed = passed && (results.length === 0 || !item.forbidden_first.some((want) => searchMatches(results[0], want)));
+  if (list(item?.forbidden).length) passed = passed && !top.some((result) => item.forbidden.some((want) => searchMatches(result, want)));
+  if (item && 'min_results' in item) passed = passed && results.length >= Number(item.min_results);
+  if (item && 'max_results' in item) passed = passed && results.length <= Number(item.max_results);
+  return passed;
+}
+
+/**
+ * Roo's Sunday search check (scripts/memory-golden-check.sh, memory-search-eval.py), judged as Roo
+ * judges (judgeSearchCase). Segno's cases are its own, in memory/search-golden.json (Roo's format,
+ * paths as the search reports them, under memory/). With no cases the check says so; without the live
+ * search (a sandbox) it says it was not run.
  */
 export function weeklySearchCheck(home, search) {
   let cases;
   try { cases = JSON.parse(readFileSync(path.join(home, SEARCH_CASES), 'utf8')).cases; } catch { cases = undefined; }
   if (!Array.isArray(cases) || cases.length === 0) return { status: 'no-cases' };
   if (!search) return { status: 'not-run', reason: 'not the live home', total: cases.length };
-  const matches = (result, expected) => Object.entries(expected).every(([key, value]) =>
-    key === 'content' ? String(result?.content ?? '').includes(value) : String(result?.[key] ?? '') === String(value));
   const failures = [];
   for (const item of cases) {
-    const topK = Number.isInteger(item?.top_k) ? item.top_k : 3;
+    const topK = Number.isInteger(item?.top_k) ? item.top_k : SEARCH_CHECK_LIMIT;
+    const resultLimit = Number.isInteger(item?.result_limit) ? item.result_limit : Math.max(SEARCH_CHECK_LIMIT, topK);
     let results;
-    try { results = search(String(item?.query ?? ''), topK); }
+    try { results = search(String(item?.query ?? ''), resultLimit); }
     catch (error) { return { status: 'error', reason: String(error?.message ?? error).split('\n')[0], total: cases.length }; }
-    const expected = Array.isArray(item?.expected_any) ? item.expected_any : [];
-    if (!results.slice(0, topK).some((result) => expected.some((want) => matches(result, want)))) failures.push(item?.name ?? item?.query);
+    if (!judgeSearchCase(item, Array.isArray(results) ? results : [])) failures.push(item?.name ?? item?.query);
   }
   return { status: failures.length ? 'failed' : 'passed', passed: cases.length - failures.length, total: cases.length,
     ...(failures.length ? { failures } : {}) };
@@ -664,7 +687,7 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     // Roo's first step, done last here: what the dream wrote is searchable for Segno from now on.
     const index = applied.length && reindex ? firstLineOf(reindex(env)) : undefined;
     // Sunday: Roo's search check, recorded whether or not there was anything to check.
-    const searchHealth = plan.sunday ? weeklySearchCheck(home, search && ((query, topK) => search(query, topK, env))) : undefined;
+    const searchHealth = plan.sunday ? weeklySearchCheck(home, search && ((query, limit) => search(query, limit, env))) : undefined;
     if (searchHealth) writeJson(paths.state, { ...readDreamState(env), weeklySearch: { at: localIso(at), ...searchHealth } });
     appendLog(paths.log, plan.runDate, [readText(path.join(outDir, 'log.md')), searchHealth && `- 검색 점검: ${describeSearchHealth(searchHealth)}`]
       .filter(Boolean).join('\n'), runId);

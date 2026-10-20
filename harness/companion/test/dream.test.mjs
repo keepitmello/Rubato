@@ -8,7 +8,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
 import { segnoPaths, segnoSearchEnv } from '../home.mjs';
-import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, weeklySearchCheck, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
+import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, composeDreamPrompt, dreamDue, dreamPaths, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
 import { startDreamLoop } from '../dream/service.mjs';
 
@@ -606,7 +606,7 @@ test("Sunday's search check: no cases is said as such, a sandbox does not run it
   const results = { '면접 언제': [{ rel_path: 'diary/2026-10-20.md', section: '밤' }, { rel_path: 'user.md', section: '지금' }],
     약속: [{ rel_path: 'us.md', section: '지금', content: '되돌리기 어려운 건 꼭 먼저 물어.' }] };
   assert.deepEqual(weeklySearchCheck(home, (query) => results[query]), { status: 'passed', passed: 2, total: 2 });
-  assert.deepEqual(weeklySearchCheck(home, (query, topK) => (query === '약속' ? [] : results[query].slice(0, topK))),
+  assert.deepEqual(weeklySearchCheck(home, (query) => (query === '약속' ? [] : results[query])),
     { status: 'failed', passed: 1, total: 2, failures: ['promise'] });
   assert.equal(weeklySearchCheck(home, () => { throw new Error('msearch: redis down'); }).status, 'error');
 
@@ -616,8 +616,42 @@ test("Sunday's search check: no cases is said as such, a sandbox does not run it
   const dreamer = fakeDreamer({ result: { status: 'done', blocks: { weekly: 'done' } } });
   const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(25, 4, 7), defaultsDir, sessionFiles: () => [],
     search: (query, topK, environment) => { asked.push([query, topK, environment.RUBATO_COMPANION_HOME]); return results[query]; } });
-  assert.deepEqual(asked, [['면접 언제', 2, home], ['약속', 3, home]]);
+  assert.deepEqual(asked, [['면접 언제', 5, home], ['약속', 5, home]], "Roo's eval asks for five results unless a case says more");
   assert.equal(record.searchHealth.status, 'passed');
   assert.equal(readDreamState(env).weeklySearch.status, 'passed');
   assert.match(readFileSync(path.join(dreamPaths(env).log, '2026-10-25.md'), 'utf8'), /- 검색 점검: 2\/2 통과/);
+});
+
+test("each search case is judged as Roo's eval judges it", () => {
+  const results = [
+    { rel_path: 'diary/2026-10-20.md', section: '면접 얘기 들은 아침 [메타]', content: '기억 찾아본 얘기' },
+    { rel_path: 'user.md', section: '지금', content: '예약된 것: 10/23 금요일 면접' },
+    { rel_path: 'us.md', section: '이야기', content: '먼저 물어' },
+  ];
+  // Every expected field is a substring of the result's field: part of a section or a path is enough.
+  assert.equal(judgeSearchCase({ expected_any: [{ rel_path: 'user', section: '지', content: '금요일 면접' }] }, results), true);
+  assert.equal(judgeSearchCase({ top_k: 1, expected_any: [{ rel_path: 'user.md' }] }, results), false);
+  assert.equal(judgeSearchCase({ expected_first: [{ rel_path: 'user.md' }] }, results), false);
+  assert.equal(judgeSearchCase({ expected_first: [{ rel_path: 'diary/' }] }, results), true);
+  assert.equal(judgeSearchCase({ expected_first: [{ rel_path: 'user.md' }] }, []), false);
+  assert.equal(judgeSearchCase({ forbidden_first: [{ section: '[메타]' }] }, results), false, 'a memory about memory must not come first');
+  assert.equal(judgeSearchCase({ forbidden_first: [{ section: '[메타]' }] }, []), true);
+  assert.equal(judgeSearchCase({ forbidden: [{ rel_path: 'us.md' }] }, results), false);
+  assert.equal(judgeSearchCase({ top_k: 2, forbidden: [{ rel_path: 'us.md' }] }, results), true);
+  assert.equal(judgeSearchCase({ expected_empty: true }, []), true);
+  assert.equal(judgeSearchCase({ expected_empty: true }, results), false);
+  assert.equal(judgeSearchCase({ min_results: 4 }, results), false);
+  assert.equal(judgeSearchCase({ max_results: 2 }, results), false);
+  assert.equal(judgeSearchCase({ min_results: 1, max_results: 3, expected_any: [{ section: '이야기' }], forbidden_first: [{ rel_path: 'us.md' }] }, results), true);
+});
+
+test('a case that asks for more results than five gets them', (t) => {
+  const env = sandbox(t);
+  write(env, SEARCH_CASES, JSON.stringify({ cases: [{ name: 'deep', query: 'q', top_k: 8, expected_any: [{ rel_path: 'x' }] },
+    { name: 'wide', query: 'r', top_k: 2, result_limit: 12, min_results: 10 }] }));
+  const asked = [];
+  const health = weeklySearchCheck(env.RUBATO_COMPANION_HOME, (query, limit) => { asked.push([query, limit]);
+    return Array.from({ length: limit }, (_, index) => ({ rel_path: index === 7 ? 'x' : 'y' })); });
+  assert.deepEqual(asked, [['q', 8], ['r', 12]]);
+  assert.equal(health.status, 'passed');
 });
