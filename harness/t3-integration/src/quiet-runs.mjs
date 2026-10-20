@@ -33,26 +33,38 @@ export function launchedIds(message) {
     .filter((id) => typeof id === 'string' && id.length >= 4);
 }
 
-const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** Whether `text` names `id` as a whole token: bash_1 is not inside bash_10. */
-const names = (text, id) => new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(id)}(?![A-Za-z0-9_-])`).test(text);
+
+
+/**
+ * The work a finish reports on, from where each kind names its subject — never from the output it
+ * quotes: a terminal session in its header ("Background terminal session <id> finished"), a detached
+ * eval cell in its header ("Detached eval cell <toolCallId> (…)"), subagents in details[].agentId.
+ */
+export function reportedIds(message) {
+  if (!isOwnCustomMessage(message)) return [];
+  const text = typeof message.content === 'string' ? message.content
+    : Array.isArray(message.content) ? message.content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('\n') : '';
+  const ids = [];
+  const terminal = /^\s*(?:<system-reminder>)?\s*Background terminal session (\S+) finished\b/.exec(text);
+  if (terminal) ids.push(terminal[1]);
+  for (const cell of text.matchAll(/(?:^|\n)\s*(?:<system-reminder>)?\s*Detached eval cell (\S+) \(/g)) ids.push(cell[1]);
+  const details = Array.isArray(message.details) ? message.details : message.details && typeof message.details === 'object' ? [message.details] : [];
+  for (const detail of details) {
+    if (typeof detail?.agentId === 'string') ids.push(detail.agentId);
+    if (Array.isArray(detail?.agentIds)) ids.push(...detail.agentIds.filter((id) => typeof id === 'string'));
+  }
+  return ids;
+}
 
 /**
  * Which launched work Pi's own message reports on: `{ quiet, id }` of the run that launched it, or
- * undefined when it names none we saw start. The finish of a terminal session says its id in its
- * text, a detached eval cell its tool call's id; a subagent's carries its id in its details. A batch
- * can report several: one the person (a shown run) asked for makes the turn theirs.
+ * undefined when it names none we saw start. A batch can report several: one the person (a shown
+ * run) asked for makes the turn theirs.
  */
 function launcherOf(message, launched) {
-  if (!isOwnCustomMessage(message)) return undefined;
-  const ids = Object.keys(launched);
-  if (!ids.length) return undefined;
-  let text;
-  try { text = `${typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')} ${JSON.stringify(message.details ?? '')}`; }
-  catch { return undefined; }
   let quietOne;
-  for (const id of ids) {
-    if (!text.includes(id) || !names(text, id)) continue;
+  for (const id of reportedIds(message)) {
+    if (!Object.hasOwn(launched, id)) continue;
     if (!launched[id]) return { quiet: false, id };
     quietOne ??= { quiet: true, id };
   }

@@ -384,3 +384,19 @@ test('a stream that attached after the launch left the buffer asks the stored co
     assert.equal(shown, expectShown, launchedQuiet ? 'Segno\'s own job stays quiet' : 'the person\'s job comes back');
   }
 });
+
+test('a finish is identified by its own header or details, never by ids its output happens to mention', () => {
+  const live = createQuietRuns();
+  pass(live, run(user, bashLaunch('bash_41'), answer));
+  pass(live, run(wake('heartbeat'), bashLaunch('bash_42'), answer));
+  const privateDone = { ...terminalDone('bash_42'),
+    content: '<system-reminder>Background terminal session bash_42 finished: completed.\nFinal output:\nEarlier bash_41 was already checked.</system-reminder>' };
+  assert.deepEqual(pass(live, ownRun(privateDone, said('PRIVATE_42'))), []);
+  const stored = [user, bashLaunch('bash_41'), answer, wake('heartbeat'), bashLaunch('bash_42'), answer, privateDone, said('PRIVATE_42')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), true);
+  const taskQuoting = { ...taskDone(['st_segno9']), content: 'Result mentions st_person9 in passing.' };
+  const filter = createQuietRuns();
+  pass(filter, run(user, agentLaunch('st_person9'), answer));
+  pass(filter, run(wake('heartbeat'), agentLaunch('st_segno9'), answer));
+  assert.deepEqual(pass(filter, ownRun(taskQuoting, said('PRIVATE_9'))), []);
+});
