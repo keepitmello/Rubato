@@ -20,8 +20,9 @@
 // boundaries (:00 and :30 at thirty minutes) as one line, `HEARTBEAT tick=N kst="…"`. While the
 // user is here (wrote in the last thirty minutes) the tick is 0; while they are away it counts up,
 // and every third tick up to the ninth carries action=reflect. Segno's wake wish (home.mjs, the
-// `wake_wish` tool) holds reflect back until its time, then that tick carries action=reflect,
-// reason=wake_wish and a WAKE_WISH line with the reason. What a tick is for lives in Segno's prompt
+// `wake_wish` tool) silences the ticks until its time — they are counted, not sent; only the warmer
+// runs — then that tick carries action=reflect, reason=wake_wish and a WAKE_WISH line with the
+// reason. Silencing is the one departure from Roo, whose ticks keep coming (user, 2026-10-20). What a tick is for lives in Segno's prompt
 // (harness/prompts/companion/companion.pi.md, 하트비트). Roo's sleep signals (ctx_step, action=compact)
 // are not ported: Segno's sleep is the keeper's night sleep below, which the user chose for cost.
 // The cache warmer does not depend on the tick: it warms the companion without an end.
@@ -289,31 +290,33 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   /**
    * Roo's tick (heartbeat-tick.sh), on the interval's clock boundaries. The user here: tick 0.
    * Away: one more than the stored tick, or 1 when they wrote since it (Roo resets on their word).
-   * Reflect on ticks 3, 6 and 9, unless a wake wish holds it back; a wish come due makes that tick a
-   * reflect with its reason, and is used up. A beat missed while Segno was busy goes on the next poll.
+   * Reflect on ticks 3, 6 and 9. While a wake wish waits, the tick is counted but not sent, so Segno
+   * rests and only the warmer runs (user, 2026-10-20; Roo still sends it). A wish come due makes that
+   * tick a reflect with its reason, and is used up. A beat missed while Segno was busy goes on the
+   * next poll.
    */
   async function beat(active, sessionId, at, intervalMs) {
     if (at < nextBeatAt) return;
     nextBeatAt = nextBoundary(at, intervalMs);
     const lastUser = await lastUserAt(active);
-    if (lastUser !== undefined && at - lastUser < RECENT_USER_MS) {
-      writeState({ heartbeat: { tick: 0, at } }, env);
-      await notify(sessionId, heartbeatText({ tick: 0, at }), 'heartbeat');
-      return;
-    }
     const stored = readState(env).heartbeat;
-    const userSince = lastUser !== undefined && stored !== undefined && lastUser > stored.at;
-    const previous = userSince || stored === undefined ? 0 : Number.isInteger(stored.tick) && stored.tick >= 0 ? stored.tick : UNREADABLE_TICK;
-    const tick = previous + 1;
-    let action = tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
-    let wish;
-    const storedWish = readWakeWish(env);
-    if (storedWish) {
-      const state = wakeWishState(storedWish, at);
-      if (state.mode === 'wait') action = 'none';
-      else { action = 'reflect'; wish = { ...state, reason: storedWish.reason }; clearWakeWish(env); }
+    let tick;
+    if (lastUser !== undefined && at - lastUser < RECENT_USER_MS) tick = 0;
+    else {
+      const userSince = lastUser !== undefined && stored !== undefined && lastUser > stored.at;
+      tick = (userSince || stored === undefined ? 0 : Number.isInteger(stored.tick) && stored.tick >= 0 ? stored.tick : UNREADABLE_TICK) + 1;
     }
     writeState({ heartbeat: { tick, at } }, env);
+    const storedWish = readWakeWish(env);
+    const wishState = storedWish && wakeWishState(storedWish, at);
+    if (wishState?.mode === 'wait') return;
+    let action = tick > 0 && tick <= REFLECT_LAST_TICK && tick % REFLECT_EVERY_TICKS === 0 ? 'reflect' : 'none';
+    let wish;
+    if (wishState?.mode === 'due') {
+      action = 'reflect';
+      wish = { ...wishState, reason: storedWish.reason };
+      clearWakeWish(env);
+    }
     await notify(sessionId, heartbeatText({ tick, at, action, wish }), 'heartbeat');
   }
 

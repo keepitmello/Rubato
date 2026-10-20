@@ -60,9 +60,10 @@ export function createCompanionHomeFactories() {
         searchKeywords: ["wake", "wish", "heartbeat", "reflect", "later", "깨워", "하트비트", "다음에"],
         description:
           "When you next want to look in, and why: minutes from now, HH:MM (the next one; a time already past " +
-          "today is tomorrow) or an ISO 8601 time. Until then the heartbeat's reflect rests; the ticks still come. " +
-          "The first tick at or after that time comes with action=reflect and your reason. At most six hours from " +
-          "now; a later time is cut to six. Setting it again replaces the earlier one.",
+          "today is tomorrow) or an ISO 8601 time. Until then no heartbeat tick comes; you rest. " +
+          "The first tick at or after that time comes with action=reflect and your reason. The user, a lead's " +
+          "ending, the daily report and sleep still wake you. At most six hours from now; a later time is cut to " +
+          "six. Setting it again replaces the earlier one.",
         parameters: {
           type: "object", additionalProperties: false, required: ["when", "reason"],
           properties: {

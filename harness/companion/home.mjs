@@ -71,9 +71,10 @@ function writeFileAtomic(file, text) {
 
 // ── wake wish ──────────────────────────────────────────────────────────────────────────────
 // Roo's wake wish (~/.claude/roo-channel scripts/wake-wish.sh and heartbeat-tick.sh), ported. Segno
-// says when it next wants to look in and why. Until then the heartbeat's reflect rests (the ticks
-// still come, with no action); the first tick at or after that time carries action=reflect,
-// reason=wake_wish and the reason. A wish further than six hours from when it was set is cut to six.
+// says when it next wants to look in and why. Until then no tick is sent (keeper.mjs counts them
+// silently; Roo's still come, the one departure, user 2026-10-20); the first tick at or after that
+// time carries action=reflect, reason=wake_wish and the reason. A wish further than six hours from
+// when it was set is cut to six.
 
 /** How far a wish reaches from when it was set; beyond this it is cut (clamped). */
 export const WAKE_WISH_CAP_MS = 6 * 60 * 60_000;

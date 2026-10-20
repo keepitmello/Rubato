@@ -514,7 +514,7 @@ async function heartbeatDay(t, { entries = [], start = at(20, 12), env = sandbox
   t.after(() => assert.deepEqual(errors, []));
   const poke = async (time) => { clock.at = time; await keeper.poke(); };
   const lines = () => notices.filter((notice) => notice.what === 'heartbeat').map((notice) => notice.text);
-  return { env, keeper, poke, write, lines };
+  return { env, keeper, poke, write, lines, notices: () => notices };
 }
 const firstLine = (text) => text.split('\n')[0];
 
@@ -563,26 +563,36 @@ test('heartbeat: the tick survives an engine restart', async (t) => {
   assert.match(second.lines().at(-1), /^HEARTBEAT tick=3 kst="[^"]*" action=reflect$/);
 });
 
-test('heartbeat: a wake wish holds reflect back, then its tick reflects with the reason, once', async (t) => {
+test('heartbeat: while a wake wish waits no tick is sent but they are counted; its tick reflects with the reason, once', async (t) => {
   const { env, poke, lines } = await heartbeatDay(t);
   setWakeWish({ target: '15:10', reason: '로그인 버그 리드가 끝났는지 본다' }, { now: at(20, 12, 5), env });
   for (const time of [at(20, 12, 30), at(20, 13), at(20, 13, 30), at(20, 14), at(20, 14, 30), at(20, 15)]) await poke(time);
-  assert.equal(lines().length, 6, 'the ticks still come');
-  assert.ok(lines().every((line) => !line.includes('action=')), 'tick 3 and 6 do not reflect while the wish waits');
+  assert.equal(lines().length, 0, 'Segno rests: no tick until the wish');
   await poke(at(20, 15, 30));
   const due = lines().at(-1).split('\n');
-  assert.match(due[0], /^HEARTBEAT tick=7 kst="[^"]*" action=reflect reason=wake_wish$/);
+  assert.match(due[0], /^HEARTBEAT tick=7 kst="[^"]*" action=reflect reason=wake_wish$/, 'the rest counted as seven ticks away');
   assert.equal(due[1], 'WAKE_WISH at=2026-10-20T15:10:00+09:00 clamped=0 reason=로그인 버그 리드가 끝났는지 본다');
   assert.equal(readWakeWish(env), undefined, 'the wish is used up');
   await poke(at(20, 16));
   assert.equal(firstLine(lines().at(-1)).replace(/ kst="[^"]*"/, ''), 'HEARTBEAT tick=8');
 });
 
+test('heartbeat: a wake wish keeps the ticks quiet while the user is here too, and does not hold back the daily report', async (t) => {
+  const { env, poke, write, lines, notices } = await heartbeatDay(t, { start: at(20, 8) });
+  writeSettings({ dailyReport: { enabled: true, time: '09:00' } }, env);
+  setWakeWish({ target: '120', reason: '오전에 다시' }, { now: at(20, 8, 5), env });
+  write([userMessage(at(20, 8, 50))]);
+  await poke(at(20, 9));
+  await poke(at(20, 9, 1));
+  assert.deepEqual(notices().map((notice) => notice.what), ['daily-report']);
+  assert.equal(lines().length, 0);
+});
+
 test('heartbeat: a wish further than six hours from when it was set comes due at six, marked clamped', async (t) => {
   const { env, poke, lines } = await heartbeatDay(t);
   setWakeWish({ target: String(10 * 60), reason: '저녁에' }, { now: at(20, 12), env });
   await poke(at(20, 17, 30));
-  assert.ok(!lines().at(-1).includes('wake_wish'));
+  assert.equal(lines().length, 0);
   await poke(at(20, 18));
   assert.match(lines().at(-1), /\nWAKE_WISH at=2026-10-20T18:00:00\+09:00 clamped=1 reason=저녁에$/);
 });
