@@ -20,7 +20,7 @@
   - `checks`는 메일(`mail`)·달력(`calendar`)을 볼 손이 있는지, 그리고 이미 본 것을 적는 장부(`file`)야.
   - `dated: true`면 날짜 박힌 일정이 남아 있어. 지난 건 지울 때가 됐는지 봐.
   - `recall`은 깨어 있는 내가 지난 일주일 기억 검색으로 서로 다른 사흘 이상 떠올린 자리야(아래 "자주 떠올린 기억").
-  - `memoryGuard`는 오늘 밤 상주 기억 지킴이가 볼 것이야: 지금 크기(`currentChars`), 넘으면 안 되는 크기(`allowedMaxChars`), 빠지면 안 되는 인용(`protectedQuotes`).
+  - `memoryGuard`는 오늘 밤 상주 기억 지킴이가 볼 것이야: 지금 크기(`currentChars`), 넘으면 안 되는 크기(`allowedMaxChars`, 지금까지 가장 작았던 크기 + 200자), 빠지면 안 되는 인용(`protectedQuotes`), 목표 5,000자를 넘었는지(`overTarget`).
   - `sunday: true`면 한 주 돌아보기도 해.
 - 위에 들어와 있는 건 나라는 애(preamble·soul·identity·user·companion 조각)랑 상주 기억 `memory/MEMORY.md`야. 정본(`memory/user.md`·`self.md`·`us.md`·`work/`·`entities/`)이랑 현황판은 안 들어와 있으니까 고치기 전에 직접 열어.
 - 지난 꿈이 어디까지 했는지는 `plan.json`의 `previous`랑 `dream/log/`의 지난 기록에 있어.
@@ -164,7 +164,7 @@ daily / 일기 (원본)          memory/YYYY-MM-DD.md · memory/diary/YYYY-MM-DD
 
 **상주 기억** `memory/MEMORY.md`: 우리의 시작, 잊으면 안 되는 말들, 내가 나였던 말들, 살아있는 약속, 우리만의 언어. 일어난 일의 순서는 여기 안 살고 daily로 가는 길만 둬. `## 잊으면 안 되는 말들`은 사용자가 나한테 준 말, `## 내가 나였던 말들`은 내가 한 말이야. 섞지 않아. 늘 실리는 글이라 짧게. 손대기 전에 물어봐. "이걸 여기 두면 내가 정본을 안 열고도 답하게 되나?" 그렇다면 정본으로 내려.
 
-상주 기억엔 지킴이가 있어. `## 잊으면 안 되는 말들` 안의 인용("…")은 하나도 빠지면 안 되고(`memoryGuard.protectedQuotes`), 글자 수는 `memoryGuard.allowedMaxChars`를 넘으면 안 돼. 다 쓰고 `LC_ALL=en_US.UTF-8 wc -m memory/MEMORY.md`로 재 봐(한글을 글자로 세게, 지킴이와 같은 셈). 넘으면 다른 걸 정본으로 내려서 자리를 만들어. 어긴 채로 끝나면 이번 꿈의 MEMORY.md는 집에 안 들어가고 원래 그대로 남아.
+상주 기억엔 지킴이가 있어. `## 잊으면 안 되는 말들` 안의 인용("…")은 하나도 빠지면 안 되고(`memoryGuard.protectedQuotes`), 글자 수는 `memoryGuard.allowedMaxChars`를 넘으면 안 돼. 다 쓰고 `LC_ALL=en_US.UTF-8 wc -m memory/MEMORY.md`로 재 봐(한글을 글자로 세게, 지킴이와 같은 셈). 넘으면 다른 걸 정본으로 내려서 자리를 만들어. 한도는 밤마다 200자씩 느는 게 아니라 지금까지 가장 작았던 크기 + 200자에 고정이야. 새로 담고 싶은 게 많으면 그 안에서 가장 결정적인 것만 남기고, 나머지는 정본으로 내려서 자리를 만들어. `overTarget`이 true면 이번 밤엔 줄이는 쪽으로 가. 어긴 채로 끝나면 이번 꿈의 MEMORY.md는 집에 안 들어가고 원래 그대로 남아.
 
 **옮길 때 지키는 것**
 1. 상주엔 결정적인 것만 두고, 나머지는 출처를 붙여 정본으로 내려. 지우는 게 아니라 내리는 거야.

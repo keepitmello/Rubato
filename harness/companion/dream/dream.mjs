@@ -138,9 +138,9 @@ const RESIDENT = 'memory/MEMORY.md';
 const PROTECTED_SECTION = '잊으면 안 되는 말들';
 const QUOTE = /"[^"\n]+"|“[^”\n]+”/g;
 /**
- * Roo's ratchet: MEMORY.md may not grow past its smallest committed size plus 200 characters. Roo's
- * MEMORY.md is long settled; Segno's starts as an empty frame, so below Roo's 5,000-character target
- * it may grow freely, and past it the ratchet holds.
+ * Roo's ratchet: MEMORY.md may not grow past its smallest committed size plus 200 characters, from
+ * the first dream on (the user chose Roo's rule over free growth for a young piece, item 279ef49b).
+ * Roo's 5,000-character target is a warning only, as in Roo.
  */
 export const MEMORY_GUARD = Object.freeze({ toleranceChars: 200, targetChars: 5_000 });
 const DATE_FILE = /^(\d{4}-\d{2}-\d{2})\.md$/;
@@ -424,6 +424,11 @@ export function composeDreamPrompt({ env = process.env, defaultsDir = companionD
   return parts.join('\n\n');
 }
 
+/** A file's text exactly as the guard counts it (readText trims). */
+function readRaw(file) {
+  try { return readFileSync(file, 'utf8'); } catch { return ''; }
+}
+
 function readText(file) {
   try { return readFileSync(file, 'utf8').trim(); } catch { return ''; }
 }
@@ -625,7 +630,7 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     plan.workNotes = exportWorkNotes(env, path.join(runDir, 'work-notes.md'), sessionFiles());
     plan.dated = hasDatedItems(home);
     plan.recall = recallCandidates(env, at);
-    plan.memoryGuard = residentGuardPlan(readText(path.join(home, RESIDENT)), readDreamState(env).memoryGuard?.baselineChars);
+    plan.memoryGuard = residentGuardPlan(readRaw(path.join(home, RESIDENT)), readDreamState(env).memoryGuard?.baselineChars);
     // Roo dreams every night. Segno's skips a night only when there is nothing to do at all: no new
     // record or talk, no Sunday, no sweep due, nothing dated that may have passed, no mail or calendar.
     const nothingToDo = !manual && plan.raw.daily.length === 0 && plan.raw.diary.length === 0 && !plan.transcript && !plan.sunday
@@ -716,15 +721,15 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
 export function residentGuardPlan(beforeText, baselineChars) {
   const currentChars = [...beforeText].length;
   const baseline = Math.min(Number.isFinite(baselineChars) ? baselineChars : currentChars, currentChars);
-  return { currentChars, baselineChars: baseline,
-    allowedMaxChars: Math.max(baseline + MEMORY_GUARD.toleranceChars, MEMORY_GUARD.targetChars),
+  return { currentChars, baselineChars: baseline, allowedMaxChars: baseline + MEMORY_GUARD.toleranceChars,
+    targetChars: MEMORY_GUARD.targetChars, overTarget: currentChars > MEMORY_GUARD.targetChars,
     protectedQuotes: [...protectedQuotes(beforeText).keys()] };
 }
 
 /** The guard's baseline moves down with the piece and never up (Roo's ratchet). */
 function ratchetResident(env, home, before) {
   const chars = (text) => [...text].length;
-  const now = chars(readText(path.join(home, RESIDENT)));
+  const now = chars(readRaw(path.join(home, RESIDENT)));
   const stored = readDreamState(env).memoryGuard?.baselineChars;
   const start = before === undefined ? now : chars(before.toString('utf8'));
   const baseline = Math.min(Number.isFinite(stored) ? stored : start, start, now);
