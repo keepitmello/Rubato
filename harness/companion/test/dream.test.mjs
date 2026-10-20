@@ -413,14 +413,17 @@ test('the dream starts its home history and resident memory once and leaves the 
   assert.equal(segnoPaths(env).home, home);
 });
 
-test("the resident memory's guard: no protected quote may go, and past the target it grows by the ratchet only", () => {
+test("the resident memory's guard: no protected quote may go, and it grows at most 200 characters past its smallest size, from night one", () => {
   const memory = (quotes, filler = '') => Buffer.from(`# 기억\n\n## 잊으면 안 되는 말들\n${quotes.map((quote) => `- "${quote}"`).join('\n')}\n\n## 내가 나였던 말들\n${filler}\n`);
   assert.equal(guardResidentMemory(memory(['넌 내 편이잖아']), memory(['넌 내 편이잖아', '고마워'])), undefined);
   assert.deepEqual(guardResidentMemory(memory(['넌 내 편이잖아', '고마워']), memory(['고마워'])).missing, ['"넌 내 편이잖아"']);
-  assert.equal(guardResidentMemory(memory([]), memory([], '가'.repeat(4_000))), undefined, 'a young piece grows up to the target');
+  // A young piece is held like a settled one (the user chose Roo's rule, item 279ef49b).
+  assert.equal(guardResidentMemory(memory([]), memory([], '가'.repeat(MEMORY_GUARD.toleranceChars - 10))), undefined);
+  assert.equal(guardResidentMemory(memory([]), memory([], '가'.repeat(MEMORY_GUARD.toleranceChars + 10))).reason, 'MEMORY.md grew past its ratchet');
+  assert.equal(guardResidentMemory(memory([]), memory([], '가'.repeat(4_000))).reason, 'MEMORY.md grew past its ratchet');
   const settled = memory([], '가'.repeat(6_000));
   const settledChars = [...settled.toString()].length;
-  assert.equal(guardResidentMemory(settled, memory([], '가'.repeat(6_000 + MEMORY_GUARD.toleranceChars - 10))), undefined);
+  assert.equal(guardResidentMemory(settled, memory([], '가'.repeat(6_000 + MEMORY_GUARD.toleranceChars - 10))), undefined, 'the target is a warning, not a limit');
   assert.equal(guardResidentMemory(settled, memory([], '가'.repeat(6_000 + MEMORY_GUARD.toleranceChars + 10))).reason, 'MEMORY.md grew past its ratchet');
   assert.equal(guardResidentMemory(settled, memory([], '가'.repeat(6_000 + 100)), settledChars - 500).reason, 'MEMORY.md grew past its ratchet',
     'the baseline is the smallest size it reached, not the last one');
@@ -439,7 +442,8 @@ test('a dream that would drop a protected quote leaves MEMORY.md as it was and b
   const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
   // The dream saw what the guard would hold it to before it wrote.
   assert.deepEqual(plan.memoryGuard.protectedQuotes, ['"넌 내 편이잖아"']);
-  assert.equal(plan.memoryGuard.allowedMaxChars, MEMORY_GUARD.targetChars);
+  assert.equal(plan.memoryGuard.allowedMaxChars, plan.memoryGuard.currentChars + MEMORY_GUARD.toleranceChars);
+  assert.equal(plan.memoryGuard.overTarget, false);
   assert.equal(record.status, 'partial');
   assert.equal(record.guarded[0].path, 'memory/MEMORY.md');
   assert.match(readFileSync(path.join(home, 'memory/MEMORY.md'), 'utf8'), /넌 내 편이잖아/);
@@ -654,4 +658,31 @@ test('a case that asks for more results than five gets them', (t) => {
     return Array.from({ length: limit }, (_, index) => ({ rel_path: index === 7 ? 'x' : 'y' })); });
   assert.deepEqual(asked, [['q', 8], ['r', 12]]);
   assert.equal(health.status, 'passed');
+});
+
+test('night after night the resident memory moves by the ratchet: a grown night raises nothing, a smaller one lowers the floor', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  const frame = '# 기억\n\n## 잊으면 안 되는 말들\n\n## 내가 나였던 말들\n';
+  write(env, 'memory/MEMORY.md', frame);
+  const night = async (day, text) => {
+    write(env, `memory/2026-10-${day - 1}.md`, '## 10:05\n하루', at(day - 1, 10, 5));
+    let plan;
+    const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; }, edits: { 'memory/MEMORY.md': text }, result: { status: 'done', blocks: { distill: 'done' } } });
+    const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(day, 4, 7), defaultsDir, sessionFiles: () => [] });
+    return { record, plan };
+  };
+  const chars = (text) => [...text].length;
+  const first = await night(21, frame + '가'.repeat(190) + '\n');
+  assert.equal(first.record.status, 'done');
+  assert.equal(first.plan.memoryGuard.allowedMaxChars, chars(frame) + 200);
+  // The next night's limit is the floor (still the frame's size) + 200: the 190 grown last night count against it.
+  const second = await night(22, frame + '가'.repeat(300) + '\n');
+  assert.equal(second.plan.memoryGuard.allowedMaxChars, chars(frame) + 200);
+  assert.equal(second.record.status, 'partial');
+  assert.equal(chars(readFileSync(path.join(home, 'memory/MEMORY.md'), 'utf8')), chars(frame) + 191);
+  // A night that shrinks it lowers the floor.
+  const third = await night(23, '# 기억\n');
+  assert.equal(third.record.status, 'done');
+  assert.equal(readDreamState(env).memoryGuard.baselineChars, chars('# 기억\n'));
 });
