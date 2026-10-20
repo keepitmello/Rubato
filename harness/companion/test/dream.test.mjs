@@ -267,6 +267,10 @@ test('a dream turns the night\'s daily and diary into canonical and resident mem
   const [call] = dreamer.calls;
   assert.ok(call.cwd.startsWith(dreamPaths(env).runs));
   assert.equal(call.env.SEGNO_HOME, call.cwd);
+  // Without a locale (launchd), the shell would count Korean in bytes, not the characters the guard counts.
+  assert.equal(call.env.LANG, 'en_US.UTF-8');
+  const counted = execFileSync('/bin/sh', ['-c', 'printf 가나다 | wc -m'], { env: { PATH: '/usr/bin:/bin', LANG: call.env.LANG }, encoding: 'utf8' }).trim();
+  assert.equal(counted, '3');
   const sessionDir = call.args[call.args.indexOf('--session-dir') + 1];
   assert.ok(sessionDir.startsWith(dreamPaths(env).runs));
   assert.ok(!sessionDir.startsWith(env.RUBATO_PI_CODING_AGENT_DIR));

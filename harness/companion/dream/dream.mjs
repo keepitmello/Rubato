@@ -807,7 +807,9 @@ export function exportWorkNotes(env, target, files = segnoSessionFiles(env)) {
 
 /** The child's environment: its copy is its home, so the live home's override does not follow it. */
 function workEnv(env, extra) {
-  const out = { ...env, PATH: env.PATH || FALLBACK_PATH, ...extra };
+  // launchd starts the engine without a locale, and then the shell counts Korean in bytes.
+  const locale = env.LC_ALL || env.LC_CTYPE || env.LANG ? {} : { LANG: 'en_US.UTF-8' };
+  const out = { ...env, PATH: env.PATH || FALLBACK_PATH, ...locale, ...extra };
   delete out.RUBATO_COMPANION_HOME;
   return out;
 }
