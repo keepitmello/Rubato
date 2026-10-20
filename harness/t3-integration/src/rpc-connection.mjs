@@ -379,6 +379,14 @@ export class RubatoRpcConnection {
       this.log('session message not written', error);
     });
   }
+  /**
+   * The same from a stored message list (the adapter's backfill, get_messages): what Segno sent the
+   * person from a quiet run while no stream watched, under the id the live stream would have used,
+   * so a message already in the thread is not written twice.
+   */
+  backfillTelegramEchoes(messages) {
+    for (const item of telegramEchoes(messages, quietMessages(messages), this.threadId).values()) this.appendEcho(item);
+  }
   /** A quiet run's telegram_send to the person, written into the thread as Segno's words. */
   telegramMessage(event) {
     this.appendEcho(this.telegramEcho.accept(event, this.quietRuns.quiet));
@@ -668,7 +676,7 @@ export class RubatoRpcConnection {
         // What such a run said to the person with telegram_send still belongs in the thread: the
         // same item the live stream appends (telegram-echo.mjs), under the same id, so a backfill
         // after an engine restart brings it back once and never twice.
-        for (const item of telegramEchoes(reply.messages, quiet, this.threadId).values()) this.appendEcho(item);
+        this.backfillTelegramEchoes(reply.messages);
         return { ...reply, messages: reply.messages.filter((message) => !quiet.has(message)) };
       }
       case 'abort':

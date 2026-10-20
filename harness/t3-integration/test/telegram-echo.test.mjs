@@ -70,3 +70,18 @@ test('what the thread shows is what the phone got: Telegram text, the voice note
   assert.equal(echoText({ files: ['/a/b/report.md'] }), '(파일: report.md)');
   assert.equal(echoText({}), '');
 });
+
+test('after a time with no stream (the app closed, the engine restarted), the backfill writes what Segno sent, once', async () => {
+  const written = [];
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(),
+    appendSessionMessage: async (threadId, item) => { written.push([threadId, item.id, item.text]); },
+    viaInventory: async () => undefined },
+  { threadId: 't1', cwd: '/w', onRecord: () => {}, onClosed: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+  const messages = [
+    { role: 'user', content: 'hi', timestamp: 1 }, answer('hello', 2),
+    wake('heartbeat', 3), calling('c1', { text: '좋은 아침' }, 4), result('c1', 'sent (id: 10)', 5), answer('보냈다', 6),
+  ];
+  conn.backfillTelegramEchoes(messages);
+  conn.backfillTelegramEchoes(messages);
+  assert.deepEqual(written, [['t1', sessionMessageId('t1', 'telegram:c1'), '좋은 아침']], 'once, under the live id');
+});

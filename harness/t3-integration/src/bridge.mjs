@@ -589,6 +589,8 @@ export class RubatoPiBridge {
       const quiet = quietMessages(snapshot.messages);
       const quietTail = snapshot.messages.length > 0 && quiet.has(snapshot.messages.at(-1));
       if (snapshot.state.isStreaming && !quietTail) context.projection.begin();
+      // What a quiet run sent the person with telegram_send shows as Segno's words (telegram-echo.mjs).
+      for (const item of telegramEchoes(snapshot.messages, quiet, context.session.threadId).values()) void this.deliverSessionMessage(context, item);
       snapshot.messages.forEach((message, index) => {
         if (quiet.has(message)) return;
         context.projection.message(message, !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason));
