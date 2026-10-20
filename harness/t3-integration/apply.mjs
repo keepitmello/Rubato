@@ -1019,7 +1019,7 @@ const edits = {
     // 그래서 Speed 라벨이 그 묶음 안에 있으면 따로 비울 것이 없다.
     [
       '                  {showComposerAttachAction ? (',
-      '                  {sessionSpeedLabel ? (\n                    <span className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
+      '                  {sessionSpeedLabel ? (\n                    <span data-rubato-speed-label="" className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
       'replace',
     ],
   ],
