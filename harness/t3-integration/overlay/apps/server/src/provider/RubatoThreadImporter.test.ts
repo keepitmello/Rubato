@@ -105,7 +105,7 @@ describe("Segno's own run (tell_user from a hidden run)", () => {
     return Effect.runPromise(Effect.gen(function* () {
       const importer = yield* RubatoThreadImporter;
       return yield* importer.appendOwnRun({ threadId, runOrdinal: 4, itemOrdinal: 11, providerInstanceId: instance,
-        modelSelection: { instanceId: instance, model: "claude" }, hold: "40 millis",
+        modelSelection: { instanceId: instance, model: "claude" }, whileRunning: Effect.sleep("40 millis"),
         message: { role: "session", id: "rubato-session:said", text: "좋은 아침! 3시에 회의 있어.", createdAt: "2026-10-21T00:00:00.000Z",
           context: said as never }, ...(opened === undefined ? {} : { opened }) });
     }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));

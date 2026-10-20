@@ -13,7 +13,6 @@ import {
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
-import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -273,9 +272,9 @@ const make = Effect.gen(function* () {
    * A message of Segno's in a run of its own (bridge said-echo.mjs, tell_user from a hidden run).
    * T3 tells the phone about a thread only when its run state changes (AgentAwarenessRelay reads
    * run.created/run.updated, never a message) and buzzes it when a run finishes, so the words come
-   * with a run that is first seen running and then completed: the run opens as running, and after
-   * `hold` — long enough for the relay to publish the running state — the message lands in it and the
-   * run completes. The caller reads the ordinals and keeps the thread free of other runs meanwhile.
+   * with a run that is first seen running and then completed: the run opens as running, and once
+   * `whileRunning` is done — the caller has the relay publish the running state — the message lands
+   * in it and the run completes. The caller reads the ordinals and keeps the thread free of other runs meanwhile.
    * `opened` is that run already written by an attempt that stopped before its message (the server
    * went down during the hold): the message lands in it and it completes now.
    */
@@ -297,7 +296,7 @@ const make = Effect.gen(function* () {
         { id: yield* event(), type: "run.created", threadId: input.threadId, runId, providerInstanceId: input.providerInstanceId,
           occurredAt: opened, payload: run },
       ] }).pipe(Effect.mapError(importFailure("Could not open the run of Segno's message")));
-      yield* Effect.sleep(input.hold);
+      yield* input.whileRunning;
     }
     const { message, turnItem, at } = sessionMessageRecords(input.threadId, { ...input.message, runId }, input.itemOrdinal);
     const closed = yield* DateTime.now;
@@ -321,8 +320,8 @@ export interface OwnRunInput {
   readonly itemOrdinal: number;
   readonly providerInstanceId: ProviderInstanceId;
   readonly modelSelection: ModelSelection;
-  /** How long the run shows as running before the message lands and it completes. */
-  readonly hold: Duration.Input;
+  /** What the run waits on while it shows as running, before the message lands and it completes. */
+  readonly whileRunning: Effect.Effect<void>;
   /** The run an earlier attempt opened and never completed; it is completed instead of a new one. */
   readonly opened?: OrchestrationV2Run;
 }

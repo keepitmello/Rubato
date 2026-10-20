@@ -19,6 +19,7 @@ import * as PubSub from "effect/PubSub";
 import * as Semaphore from "effect/Semaphore";
 import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
+import { AgentAwarenessRelay } from "../relay/AgentAwarenessRelay.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isSaidRun, nextTurnItemOrdinal, saidRunId,
   type SessionMessage } from "./RubatoThreadImporter.ts";
@@ -39,11 +40,10 @@ const senderSessionOf = (context: unknown): string | null => {
 };
 const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 /**
- * How long a run that carries Segno's words shows as running: the relay publishes a thread's state
- * from a worker that reads the thread when it gets to it, and a state it never saw running then
- * completed does not buzz the phone.
+ * The longest a run that carries Segno's words shows as running while the relay publishes that
+ * state (bindRubatoSessionLookup ownRunShown); past it the words land anyway.
  */
-export const OWN_RUN_HOLD = "3 seconds";
+export const OWN_RUN_HOLD_MAX = "30 seconds";
 const IMPORTED_THREAD = /^import:[^:]+:([^:]+):(.+)$/;
 const DRIVER = "rubato-pi";
 
@@ -248,6 +248,13 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
   const importer = yield* Effect.serviceOption(RubatoThreadImporter);
   // One own run at a time, so two of Segno's messages never take the same run ordinal.
   const ownRuns = yield* Semaphore.make(1);
+  // The phone hears of a thread only from the states the relay publishes, and it publishes from a
+  // worker that reads the thread when it gets to it: a run that finishes while the worker is busy
+  // elsewhere is read only as finished, the same as the last state, and nothing goes out. So the own
+  // run waits, running, until the relay has worked through its queue up to this thread.
+  const relay = yield* Effect.serviceOption(AgentAwarenessRelay);
+  const ownRunShown = (thread: ThreadId) => (Option.isSome(relay)
+    ? relay.value.publishThread(thread) : Effect.sleep("1 second")).pipe(Effect.timeout(OWN_RUN_HOLD_MAX), Effect.ignore);
   /**
    * Segno's words from a hidden run (tell_user) in a run of their own, so the phone hears of them
    * (RubatoThreadImporter appendOwnRun). While the thread has a run going, the words go in as a
@@ -270,7 +277,7 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       if (shell === null) return false;
       yield* importer.value.appendOwnRun({ threadId: thread, message, itemOrdinal: yield* ordinal(),
         runOrdinal: opened?.ordinal ?? Math.max(0, ...records.runs.map((run) => run.ordinal)) + 1,
-        providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection, hold: OWN_RUN_HOLD,
+        providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection, whileRunning: ownRunShown(thread),
         ...(opened === undefined ? {} : { opened }) });
       yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
       return true;
