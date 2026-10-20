@@ -43,6 +43,8 @@ export function inboxWakePath(env = process.env) {
 
 /** Wake lines that come within this long of the first unread one go to Segno in one wake. */
 export const INBOX_WAKE_WINDOW_MS = 5 * 60_000;
+/** A line older than this when the keeper reads it is not woken for: the item waits in the inbox. */
+export const INBOX_WAKE_STALE_MS = 60 * 60_000;
 
 /**
  * The complete wake lines after byte `offset`: `records` in file order, `end` the byte after the

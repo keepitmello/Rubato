@@ -55,7 +55,7 @@ import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePane
   writeState } from './companion.mjs';
 import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
 import { scheduleNudges } from './schedule.mjs';
-import { INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
+import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
@@ -496,26 +496,26 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   }
 
   /**
-   * The listener's wake lines (inbox.mjs inboxWakePath), read forward by bytes. The first time the
-   * keeper meets the file it only notes where it ends; a file shorter than where it read is read
-   * again from the start. Lines that come within five minutes of the first unread one go to Segno
-   * together once those five minutes are over (user item 06ebe72b); the place moves on only after
-   * the wake went. While Segno is off the keeper does not tick, so lines wait for it.
+   * The listener's wake lines (inbox.mjs inboxWakePath), read forward by bytes from where the keeper
+   * stopped (from the start the first time, and again after the file was cut shorter). A line more
+   * than an hour old is not woken for: its item waits in the inbox for the heartbeat. So the keeper
+   * and the listener can start in either order without losing a fresh line or waking for old ones.
+   * Lines that come within five minutes of the first unread one go to Segno together once those
+   * five minutes are over (user item 06ebe72b); the place moves on only after the wake went. While
+   * Segno is off the keeper does not tick, so lines wait for it.
    */
   async function inboxDue(sessionId, at) {
-    const saved = readState(env).inboxWake;
     let size;
-    try { size = statSync(inboxWakePath(env)).size; } catch { size = undefined; }
-    if (saved === undefined || !Number.isInteger(saved.offset)) { writeState({ inboxWake: { offset: size ?? 0 } }, env); return false; }
-    let offset = saved.offset;
-    if (size === undefined) return false;
+    try { size = statSync(inboxWakePath(env)).size; } catch { return false; }
+    let offset = readState(env).inboxWake?.offset ?? 0;
     if (size < offset) { offset = 0; writeState({ inboxWake: { offset } }, env); }
     if (size === offset) return false;
     const { records, end } = readInboxWakes(offset, env);
-    if (!records.length) { if (end !== offset) writeState({ inboxWake: { offset: end } }, env); return false; }
-    const first = Date.parse(records[0].at ?? '');
-    if (at - (Number.isFinite(first) ? first : at) < INBOX_WAKE_WINDOW_MS) return false;
-    await notify(sessionId, inboxWakeText(records, at), 'inbox');
+    const timeOf = (record) => { const time = Date.parse(record.at ?? ''); return Number.isFinite(time) ? time : at; };
+    const fresh = records.filter((record) => at - timeOf(record) <= INBOX_WAKE_STALE_MS);
+    if (!fresh.length) { if (end !== offset) writeState({ inboxWake: { offset: end } }, env); return false; }
+    if (at - timeOf(fresh[0]) < INBOX_WAKE_WINDOW_MS) return false;
+    await notify(sessionId, inboxWakeText(fresh, at), 'inbox');
     writeState({ inboxWake: { offset: end } }, env);
     return true;
   }

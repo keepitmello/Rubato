@@ -97,13 +97,14 @@ test('inbox: lines within five minutes of the first unread one go to Segno in on
   assert.equal(k.of('inbox').length, 1, 'each line wakes once');
 });
 
-test('inbox: the first look starts at the end of the file; a half-written line waits for its newline; a rotated file is read again', async (t) => {
+test('inbox: lines over an hour old are not woken for, fresh ones are even from before the keeper first looked; a half line waits; a cut file is read again', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  wakeLine(env, at(21, 9, 0), 'old', ['i0'], '어제 거');
+  wakeLine(env, at(21, 8, 30), 'old', ['i0'], '오래된 거');
   const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   await k.poke(at(21, 10, 1));
-  assert.equal(k.of('inbox').length, 0, 'lines from before the keeper met the file are not replayed');
+  assert.equal(k.of('inbox').length, 0, 'a line from an hour and a half ago waits in the inbox, no wake');
+  assert.equal(readState(env).inboxWake.offset, readInboxWakes(0, env).end, 'and the keeper reads past it');
   writeFileSync(inboxWakePath(env), JSON.stringify({ v: 1, at: new Date(at(21, 10, 2)).toISOString(), marker: 'b-3', itemIds: ['i3'], text: '반' }), { flag: 'a' });
   await k.poke(at(21, 10, 20));
   assert.equal(k.of('inbox').length, 0, 'no newline yet');
@@ -114,6 +115,15 @@ test('inbox: the first look starts at the end of the file; a half-written line w
   wakeLine(env, at(21, 11, 0), 'b-4', ['i4'], '새 파일');
   await k.poke(at(21, 11, 10));
   assert.match(k.of('inbox')[1].text, /marker=b-4 items=i4/);
+});
+
+test('inbox: the listener may start first — a line written before the keeper ever looked still wakes Segno', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  wakeLine(env, at(21, 9, 58), 'early', ['i9'], '수진: @우용 먼저 온 거');
+  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  await k.poke(at(21, 10, 3));
+  assert.match(k.of('inbox')[0]?.text ?? '', /marker=early items=i9/);
 });
 
 test('inbox: while Segno is busy or switched off the lines wait; they come when it is free and on again', async (t) => {
