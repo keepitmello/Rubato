@@ -499,6 +499,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (resumeOwed) {
       resumeOwed = false;
       await notify(sessionId, resumeText(at), 'wake');
+      // Roo's pendingFreshRecall lives in the process: a restart that resumes forgets it.
+      if (pending === 'recall') writeState({ woke: { boundary: woke.boundary ?? null } }, env);
       return true;
     }
     if (pending === 'recall' && at - Math.max(lastBusyAt ?? 0, woke.at ?? 0) >= RECALL_DELAY_MS) {

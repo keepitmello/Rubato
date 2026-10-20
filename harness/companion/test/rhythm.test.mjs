@@ -362,6 +362,16 @@ test('wake: a conversation loaded again for the same window gets Roo\'s resume l
   assert.equal(k.of('wake').length, 1);
 });
 
+test('wake: a restart before the fresh recall went resumes and forgets the recall, as a Roo process restart does', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env, { existing: 'stored' });
+  writeState({ woke: { boundary: null, pending: 'recall', at: at(21, 9, 29) } }, env);
+  const k = await keeperFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  await k.poke(at(21, 9, 40));
+  assert.deepEqual(k.notices.map((notice) => notice.what), ['wake']);
+  assert.equal(readState(env).woke.pending, undefined);
+});
+
 test('wake: the seed says when the heartbeat is off (session-start-hook.sh heartbeat_pause_note)', () => {
   const text = wakeSeedText({ mode: 'fresh', now: at(21, 9), before: at(21, 1), model: 'x/y', heartbeatOff: true, defaultsDir });
   assert.match(text, /직전 창: 8시간 전 — 낮잠 자고 깬 느낌 \(날짜는 위 '현재'로 확인, 같은 날일 수 있음\)\n하트비트 꺼져 있음/);

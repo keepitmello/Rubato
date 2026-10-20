@@ -38,7 +38,7 @@ export function quietMessages(messages) {
  * quiet run is open or deciding.
  */
 export function createQuietRuns({ owned = () => false } = {}) {
-  let state = 'idle'; // idle | opening (agent_start held) | quiet | shown
+  let state = 'idle'; // idle | opening (agent_start held) | pending (a run already going, asked about) | quiet | shown
   let held = [];
   let waiters = [];
   // Whether the last run that settled was quiet: a run opened without any input (a background
@@ -57,11 +57,32 @@ export function createQuietRuns({ owned = () => false } = {}) {
     && event.message?.role === 'custom' && !isSessionMessage(event.message);
   const inputOf = (event) => (event?.type === 'message_start' || event?.type === 'message_end') && isInput(event.message)
     ? event.message : undefined;
+  let settledWhilePending = false;
+  const undecided = () => state === 'quiet' || state === 'opening' || state === 'pending';
   return {
-    get quiet() { return state === 'quiet' || state === 'opening'; },
-    idle() { return state === 'quiet' || state === 'opening' ? new Promise((resolve) => waiters.push(resolve)) : Promise.resolve(); },
+    get quiet() { return undecided(); },
+    idle() { return undecided() ? new Promise((resolve) => waiters.push(resolve)) : Promise.resolve(); },
+    /**
+     * A run was already going when this stream attached and its start is no longer in the engine's
+     * buffer: hold everything until `resolve` says, from the stored conversation's tail, whose it is.
+     */
+    inFlight() { state = 'pending'; held = []; settledWhilePending = false; },
+    /** Ends `inFlight`: a quiet run drops what was held; any other passes it on. Returns what to pass. */
+    resolve(quiet) {
+      if (state !== 'pending') return [];
+      const out = quiet ? [] : held;
+      held = [];
+      if (settledWhilePending) { state = quiet ? 'quiet' : 'shown'; settle('idle'); }
+      else settle(quiet ? 'quiet' : 'shown');
+      return out;
+    },
     accept(event) {
       const type = event?.type;
+      if (state === 'pending') {
+        if (type === 'agent_settled') settledWhilePending = true;
+        held.push(event);
+        return [];
+      }
       if (type === 'agent_start') {
         if (state === 'quiet') return [];
         const out = state === 'opening' ? held : [];

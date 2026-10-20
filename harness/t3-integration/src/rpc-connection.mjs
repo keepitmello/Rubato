@@ -198,6 +198,20 @@ export class RubatoRpcConnection {
     Promise.resolve(this.bridge.sessionTitle?.(this.threadId, name))
       .catch((error) => this.log('title mirror failed', error));
   }
+  /** Holds the run going on at attach until the conversation's tail says whether Rubato's clock started it. */
+  decideRunInFlight() {
+    this.quietRuns.inFlight();
+    Promise.resolve(this.client.command({ type: 'get_messages' })).then((reply) => {
+      const messages = Array.isArray(reply?.messages) ? reply.messages : [];
+      return messages.length > 0 && quietMessages(messages).has(messages.at(-1));
+    }, () => false).then((quiet) => {
+      for (const shown of this.quietRuns.resolve(quiet)) {
+        if (shown?.type === 'agent_settled') this.asked = false;
+        this.noteRun(shown);
+        this.enqueue(() => this.process(shown));
+      }
+    });
+  }
   /** The prompt cache behind the context ring and the sidebar capsule (session-state.mjs). */
   async refreshCache() {
     if (!this.fold || this.cacheRefresh) return;
@@ -223,6 +237,9 @@ export class RubatoRpcConnection {
         for (const shown of this.quietRuns.accept(record.event)) this.noteRun(shown);
       }
       if (state.status !== 'running') this.run = null;
+      // A long run can push its own start out of the engine's buffer. Whose run it is then comes
+      // from the stored conversation: a clock run's tail must not reach the thread (quiet-runs.mjs).
+      else if (!(state.events ?? []).some((record) => record.event?.type === 'agent_start')) this.decideRunInFlight();
       if (state.restarting === true) this.beginRestart(state);
       return;
     }

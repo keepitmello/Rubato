@@ -218,3 +218,31 @@ test('get_messages and an attach both bring back what a quiet run sent the perso
   assert.deepEqual(appended, ['좋은 아침~']);
   assert.equal(events.some((event) => JSON.stringify(event).includes('PRIVATE')), false);
 });
+
+test('attaching while a long run streams and its start already left the engine buffer: the stored tail decides', async () => {
+  const say = (text, stopReason = 'stop', at = 2) => ({ role: 'assistant', content: [{ type: 'text', text }], timestamp: at, stopReason });
+  const midRun = [{ type: 'message_start', message: say('working', 'toolUse') },
+    ...Array.from({ length: 300 }, (_, i) => ({ type: 'message_update', message: say('w'.repeat(i), 'toolUse') })),
+    { type: 'message_end', message: say('working', 'toolUse') }, { type: 'turn_end' }];
+  const rest = (mark) => [{ type: 'turn_start' }, { type: 'message_start', message: say(mark, 'stop', 3) }, { type: 'message_end', message: say(mark, 'stop', 3) },
+    { type: 'turn_end' }, { type: 'agent_end' }, { type: 'agent_settled' }];
+  async function attach(stored, mark) {
+    const client = { client: { connected: true }, listener: null, async attach() {}, async subscribeSession(l) { client.listener = l; return async () => {}; },
+      async command(c) { return c.type === 'get_messages' ? { messages: stored } : c.type === 'prompt' ? { disposition: 'started' } : undefined; },
+      async reply() {}, async close() {} };
+    const records = [];
+    const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), appendSessionMessage: async () => {} },
+      { threadId: 't1', cwd: '/w', onRecord: (r) => records.push(r), awaitTimings: { pollMs: 5, graceMs: 5 } });
+    conn.client = client;
+    await conn.request({ type: 'switch_session', sessionPath: 's1' });
+    let seq = 1000;
+    const buffer = midRun.slice(-256);
+    assert.equal(buffer.some((e) => e.type === 'agent_start'), false);
+    client.listener({ runtimeId: 'r1', sequence: seq, status: 'running', events: buffer.map((event) => ({ sequence: ++seq - buffer.length, event })) });
+    client.listener({ runtimeId: 'r1', sequence: seq + 6, status: 'idle', events: rest(mark).map((event) => ({ sequence: ++seq, event })) });
+    for (let i = 0; i < 5; i += 1) { await conn.inbound; await new Promise((r) => setTimeout(r, 10)); }
+    return records.filter((r) => r.type !== 'response' && JSON.stringify(r).includes(mark)).length;
+  }
+  assert.equal(await attach([user, answer, wake('sleep'), say('working', 'toolUse')], 'QUIET_TAIL'), 0, 'a clock run\'s tail stays out');
+  assert.ok(await attach([user, answer, { ...user, timestamp: 6 }, say('working', 'toolUse')], 'SHOWN_TAIL') > 0, 'the person\'s run comes through');
+});
