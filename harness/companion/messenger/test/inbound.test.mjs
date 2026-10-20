@@ -151,3 +151,42 @@ test('in another chat the commands are ordinary words and change nothing', async
   assert.equal(readCompanionSettings(box.env).heartbeat.enabled, true);
   assert.equal(box.delivered.length, 1, 'it reached Segno as their words');
 });
+
+test("the person's message waits in Telegram while Segno's conversation is not running yet, then arrives once", async (t) => {
+  const box = await paired(t);
+  const { writeState: writeCompanion } = await import('../../companion.mjs');
+  const { readState } = await import('../store.mjs');
+  writeCompanion({ sessionId: '' }, box.env);
+  const update = box.fake.message({ chatId: USER_CHAT, text: '부팅 중에 보낸 말', from: 'Wy' });
+  await settle(box.service);
+  assert.equal(box.delivered.length, 0);
+  assert.ok((readState(box.env).offset ?? 0) <= update.update_id, 'the offset did not move past it');
+  for (let pass = 0; pass < 60; pass += 1) await box.service.poke();
+  assert.equal(box.errors.length, 0, 'waiting is not a failure, and nothing is given up after many passes');
+  writeCompanion({ sessionId: 'S1' }, box.env);
+  await settle(box.service);
+  assert.deepEqual(box.delivered.map((delivery) => delivery.text), ['부팅 중에 보낸 말']);
+});
+
+test("the person's own chat has no burst cap, as in Roo; other chats keep theirs", async (t) => {
+  const box = await paired(t);
+  for (let index = 0; index < 35; index += 1) box.fake.message({ chatId: USER_CHAT, text: `메시지 ${index}`, from: 'Wy' });
+  await settle(box.service);
+  assert.equal(box.delivered.length, 35);
+});
+
+test("another person's report is filed at once even before Segno runs, and reaches Segno once it does", async (t) => {
+  const box = await paired(t);
+  const { writeState: writeCompanion } = await import('../../companion.mjs');
+  const { openInbox } = await import('../../inbox.mjs');
+  writeCompanion({ sessionId: '' }, box.env);
+  box.fake.message({ chatId: GROUP_CHAT, chatType: 'supergroup', title: '버그', text: '앱이 꺼져요', from: 'Gildong' });
+  await settle(box.service);
+  const inbox = openInbox({ env: box.env });
+  try { assert.equal(inbox.list().length, 1, 'filed while waiting'); } finally { inbox.close(); }
+  writeCompanion({ sessionId: 'S1' }, box.env);
+  await settle(box.service);
+  assert.equal(box.delivered.length, 1);
+  const again = openInbox({ env: box.env });
+  try { assert.equal(again.list().length, 1, 'still one item'); } finally { again.close(); }
+});

@@ -190,6 +190,9 @@ export function startCompanionMessenger({
   let inboundSeen = new Map();
   /** Updates whose delivery failed, so one that always fails cannot wedge the rest forever. */
   const failures = new Map();
+  /** Since when updates wait for Segno's conversation to exist. */
+  let waitingSince;
+  const notReady = () => Object.assign(new Error("Segno's conversation is not running yet"), { code: 'not-ready' });
   const stop = new AbortController();
   if (signal) signal.addEventListener('abort', () => stop.abort(), { once: true });
 
@@ -336,11 +339,13 @@ export function startCompanionMessenger({
     const userChat = pairedChatId(env);
 
     if (userChat === chatId) {
-      if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
+      // The person's own chat has no cap, as in Roo; only other chats are rate-limited.
       const command = mediaOf(message) ? undefined : parseControlCommand(message.text);
       if (command) { await answerCommand(client, chatId, command); return; }
       const to = readCompanionState(env).sessionId;
-      if (!to) { log('inbound-dropped', { chatId, why: 'no companion conversation yet' }); return; }
+      // Segno's conversation is not there yet (the engine is starting, the companion was just
+      // turned on): the person's words wait in Telegram until it is.
+      if (!to) throw notReady();
       const { text, attachments } = await contentOf(client, message);
       await deliver({
         to,
@@ -367,12 +372,12 @@ export function startCompanionMessenger({
     }
     if (message.chat?.type === 'group' || message.chat?.type === 'supergroup') {
       if (!allowedInbound(chatId)) { log('inbound-dropped', { chatId }); return; }
-      const { text, attachments } = await contentOf(client, message);
       // Someone else's report belongs in Segno's inbox whether or not its conversation is up: the
       // list is what the person reads, and a message must not be lost to a restarting engine.
-      fileReport({ chatId, message, text });
       const to = readCompanionState(env).sessionId;
-      if (!to) { log('inbound-dropped', { chatId, why: 'no companion conversation yet' }); return; }
+      if (!to) { fileReport({ chatId, message, text: mediaOf(message)?.text ?? plainText(message) }); throw notReady(); }
+      const { text, attachments } = await contentOf(client, message);
+      fileReport({ chatId, message, text });
       await deliver({
         to,
         channel: 'telegram',
@@ -432,6 +437,11 @@ export function startCompanionMessenger({
       if (aborted()) return;
       try { await handleUpdate(client, update); }
       catch (error) {
+        if (error?.code === 'not-ready') {
+          // Not a failure: nothing is counted, and this update and those after it wait in Telegram.
+          if (!waitingSince) { waitingSince = now(); log('inbound-waiting', { why: 'no companion conversation yet' }); }
+          return 'waiting';
+        }
         onError(error);
         // The offset stays where it is, so Telegram hands this update back and the message is not
         // lost to a failure in the engine. Order is kept: later updates wait behind it.
@@ -441,6 +451,7 @@ export function startCompanionMessenger({
         log('inbound-dropped', { updateId: update.update_id, tries, why: 'the engine refused it every time' });
       }
       failures.delete(update.update_id);
+      waitingSince = undefined;
       if (typeof update.update_id === 'number') writeState({ offset: update.update_id + 1 }, env);
     }
   }
@@ -516,6 +527,8 @@ export function startCompanionMessenger({
       : { delivery: 'text' };
     const files = (row.files ?? []).map(sendableFile);
     const sent = [];
+    // Roo stops "typing…" the moment a message goes out to that chat (roo-runtime.ts outbound_sent).
+    if (toUser) stopTyping(chatId);
     const total = (payload.text ? splitText(payload.text).length : 0) + files.length;
     try {
       for (const part of payload.text ? splitText(payload.text) : []) {
@@ -549,7 +562,14 @@ export function startCompanionMessenger({
     return { messageIds: sent, note };
   }
 
+  /**
+   * The card that asks the person. A card Telegram refuses leaves the row held and is asked again
+   * on a later pass, a minute apart at least; the tool that wrote the row is told it is held.
+   */
   async function askApproval(client, row) {
+    const last = Date.parse(row.approvalTriedAt ?? '');
+    if (Number.isFinite(last) && now() - last < 60_000) return;
+    updateOutboxRow(row.id, { approvalTriedAt: new Date(now()).toISOString() }, env);
     const target = row.target.name ?? row.target.chatId;
     const sent = await client.sendMessage({
       chatId: pairedChatId(env),
@@ -564,7 +584,7 @@ export function startCompanionMessenger({
     const settings = readMessengerSettings(env);
     if (row.target !== 'user' && settings.approvalRequired) {
       const held = updateOutboxRow(row.id, { state: 'held', heldAt: new Date(now()).toISOString() }, env);
-      if (pairedChatId(env)) await askApproval(client, held);
+      if (pairedChatId(env)) await askApproval(client, held).catch(onError);
       return { state: 'held', row: readOutboxRow(row.id, env) };
     }
     try {
@@ -741,6 +761,7 @@ export function startCompanionMessenger({
     const text = telegramText(said.text);
     const parts = splitText(text);
     countParts?.(parts.length);
+    stopTyping(chatId);
     for (let index = sentParts; index < parts.length; index += 1) {
       await client.sendMessage({ chatId, text: parts[index], ...(said.final ? {} : { disableNotification: true }) });
       onPart(index + 1);
@@ -761,8 +782,7 @@ export function startCompanionMessenger({
       await client.deleteWebhook({ dropPendingUpdates: false }, { signal: stop.signal });
       webhookCleared = true;
     }
-    await receive(client);
-    return 'polled';
+    return (await receive(client)) === 'waiting' ? 'waiting' : 'polled';
   }
 
   /** Segno to Telegram: the app's requests, the outbox and the conversation. */

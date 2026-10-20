@@ -140,3 +140,32 @@ test('before Telegram is connected a tool message waits, and goes out once the c
   await settle(box.service);
   assert.ok(box.fake.sent.some((sent) => sent.text === '연결되면 보내줘'));
 });
+
+test('an approval card Telegram refuses leaves the message held, tells the tool so, and is asked again a minute later', async (t) => {
+  let clock = 1_000_000;
+  const box = await paired(t, { now: () => clock });
+  const send = box.fake.api.sendMessage;
+  let refuse = true;
+  box.fake.api.sendMessage = async (args) => { if (args.keyboard && refuse) throw new Error('card refused'); return send(args); };
+  const row = await box.service.send({ text: '확인했습니다', to: GROUP_CHAT });
+  assert.equal(row.state, 'held', 'the tool hears the message is held, not an error');
+  refuse = false;
+  await settle(box.service);
+  assert.equal(box.fake.sent.filter((sent) => sent.keyboard).length, 0, 'not asked again within the minute');
+  clock += 61_000;
+  await settle(box.service);
+  assert.equal(box.fake.sent.filter((sent) => sent.keyboard).length, 1, 'asked once more after it');
+  assert.equal(box.fake.sent.filter((sent) => sent.chatId === GROUP_CHAT).length, 0);
+});
+
+test('"typing…" stops the moment a message reaches the person, as Roo stops it on outbound_sent', async (t) => {
+  const box = await paired(t, { typingDelay: () => 0 });
+  box.fake.message({ chatId: USER_CHAT, text: '뭐해?', from: 'Wy' });
+  await settle(box.service);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.ok(box.fake.actions.length >= 1);
+  await box.service.send({ text: '잠깐만, 보고 있어', to: 'user' });
+  const count = box.fake.actions.length;
+  await new Promise((resolve) => setTimeout(resolve, 4500));
+  assert.equal(box.fake.actions.length, count, 'no refresh after the message went out');
+});
