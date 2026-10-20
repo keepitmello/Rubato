@@ -6,7 +6,8 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT, SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, lastUserMessageAt, localDate, startCompanionKeeper } from '../keeper.mjs';
+import { DAILY_REPORT_TEXT, SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, awayText, heartbeatText, lastUserMessageAt, localDate, startCompanionKeeper } from '../keeper.mjs';
+import { readNextWake, setNextWake } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 /** A keeper whose default pieces are the ones in this repository, not whatever this Mac has. */
@@ -176,7 +177,7 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   assert.deepEqual(notices, [], 'a busy companion is not interrupted');
   engine.sessions.get(sessionId).status = 'idle';
   await keeper.poke();
-  assert.deepEqual(notices, [{ sessionId, text: HEARTBEAT_TEXT, what: 'heartbeat' }]);
+  assert.deepEqual(notices, [{ sessionId, text: heartbeatText(), what: 'heartbeat' }]);
   at += 30 * 60_000;
   writeSettings({ heartbeat: { enabled: false } }, env);
   await keeper.poke();
@@ -492,4 +493,79 @@ test('the page can ask Segno to review even when no default moved', async (t) =>
   assert.equal(readPersonaReviewRequest(env), undefined, 'the request is cleared once Segno is told');
   await keeper.poke();
   assert.equal(notices.length, 1, 'a request does not repeat by itself');
+});
+
+// ── heartbeat: Segno's own time ─────────────────────────────────────────────────────────────
+
+/** A day with the heartbeat on every 30 minutes and Segno's session file under the test's control. */
+async function heartbeatDay(t, { entries = [], start = at(20, 12) } = {}) {
+  const env = sandbox(t);
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, dailyReport: { enabled: false } }, env);
+  const engine = fakeEngine();
+  engine.sessionFile = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl');
+  const write = (list) => writeFileSync(engine.sessionFile, [{ type: 'session', id: 'segno' }, ...list].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  write(entries);
+  const clock = { at: start };
+  const notices = [];
+  const errors = [];
+  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
+    onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  t.after(() => assert.deepEqual(errors, []));
+  const poke = async (time) => { clock.at = time; await keeper.poke(); };
+  return { env, notices, poke, write, beats: () => notices.filter((notice) => notice.what === 'heartbeat') };
+}
+
+test('heartbeat: it asks for no report and says how long the user has been away', async (t) => {
+  const { poke, beats } = await heartbeatDay(t, { entries: [userMessage(at(20, 9)), assistantMessage(at(20, 9, 1))] });
+  await poke(at(20, 12, 30));
+  assert.deepEqual(beats(), [{ text: heartbeatText({ awayMs: at(20, 12, 30) - at(20, 9) }), what: 'heartbeat' }]);
+  assert.match(beats()[0].text, /your own time/);
+  assert.match(beats()[0].text, /4 hours ago/);
+  assert.doesNotMatch(beats()[0].text, /note for yourself/);
+});
+
+test('heartbeat: none while the user is talking; the interval counts from their last word', async (t) => {
+  const { poke, write, beats } = await heartbeatDay(t);
+  write([userMessage(at(20, 12, 20))]);
+  await poke(at(20, 12, 30));
+  assert.equal(beats().length, 0, 'the user wrote ten minutes ago');
+  await poke(at(20, 12, 45));
+  assert.equal(beats().length, 0, 'still inside the interval from their last word');
+  await poke(at(20, 12, 50));
+  assert.equal(beats().length, 1, 'thirty quiet minutes after their last word');
+  assert.match(beats()[0].text, /30 minutes ago/);
+});
+
+test('heartbeat: Segno\'s next wake rests the beat until then, and that beat carries its reason once', async (t) => {
+  const { env, poke, beats } = await heartbeatDay(t);
+  setNextWake({ at: at(20, 15), reason: '로그인 버그 리드가 끝났는지 본다' }, env);
+  await poke(at(20, 12, 30));
+  await poke(at(20, 14, 59));
+  assert.equal(beats().length, 0, 'resting until 15:00');
+  await poke(at(20, 15));
+  assert.equal(beats().length, 1);
+  assert.match(beats()[0].text, /You asked to be woken now: 로그인 버그 리드가 끝났는지 본다/);
+  assert.equal(readNextWake(env), undefined, 'the wake is used up');
+  await poke(at(20, 15, 29));
+  assert.equal(beats().length, 1, 'then the ordinary interval again');
+  await poke(at(20, 15, 30));
+  assert.equal(beats().length, 2);
+  assert.doesNotMatch(beats()[1].text, /You asked to be woken/);
+});
+
+test('heartbeat: a rest does not hold back the daily report', async (t) => {
+  const { env, poke, notices } = await heartbeatDay(t, { start: at(20, 8) });
+  writeSettings({ dailyReport: { enabled: true, time: '09:00' } }, env);
+  setNextWake({ at: at(20, 18), reason: 'evening look' }, env);
+  await poke(at(20, 9));
+  assert.deepEqual(notices.map((notice) => notice.what), ['daily-report']);
+});
+
+test('awayText reads like a person would say it', () => {
+  assert.equal(awayText(60_000), 'a minute');
+  assert.equal(awayText(40 * 60_000), '40 minutes');
+  assert.equal(awayText(3 * HOUR), '3 hours');
+  assert.equal(awayText(3 * 24 * HOUR), '3 days');
 });

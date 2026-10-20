@@ -93,7 +93,8 @@ function useSegnoArt(
 /**
  * The expressions stacked in one place; only the current one shows. A change of state cross-fades
  * once (RubatoSegnoSpace.css); nothing moves in between. Until the new picture has loaded, the one
- * before stays; before the first state is known, none shows.
+ * before stays; before the first state is known, none shows. Segno stands in the bottom-right corner
+ * at most 26rem tall: a companion beside the chat, not a figure the size of the window.
  */
 function SegnoArt({
   art,
@@ -118,7 +119,7 @@ function SegnoArt({
           draggable={false}
           data-rubato-segno-art={key}
           data-shown={key === shown ? "" : undefined}
-          className="rubato-segno-art pointer-events-none absolute right-0 bottom-0 h-full max-w-full select-none object-contain object-right-bottom"
+          className="rubato-segno-art pointer-events-none absolute right-0 bottom-0 h-full max-h-[26rem] max-w-full select-none object-contain object-right-bottom"
         />
       ))}
     </>
@@ -228,8 +229,8 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
       </div>
       {/* The stage stands in the room right of the chat's column, over the same surface: the panel
           on top (below the title bar controls, at most 30rem wide against the edge), Segno in the
-          height the panel leaves. With little room the panel folds into a button and Segno peeks
-          from the corner; with none, the stage steps aside. */}
+          bottom-right corner of the height the panel leaves. With little room the panel folds into
+          a button and Segno peeks from the corner; with none, the stage steps aside. */}
       {stageWidth > 0 ? (
         <aside
           data-rubato-segno-stage={compact ? "compact" : "full"}

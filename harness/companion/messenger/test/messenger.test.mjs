@@ -10,7 +10,7 @@ import {
   writeIntent, writeSecret, writeState, messengerPaths,
 } from '../store.mjs';
 import { writeState as writeCompanionState } from '../../companion.mjs';
-import { DAILY_REPORT_TEXT, HEARTBEAT_TEXT } from '../../keeper.mjs';
+import { DAILY_REPORT_TEXT, heartbeatText } from '../../keeper.mjs';
 import { buildSessionMessage, parseDelivery } from '../../../pi-runtime/features/session-link/message.mjs';
 
 const TOKEN = '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh';
@@ -275,7 +275,7 @@ test("from Rubato's clock as a wake, the daily report reaches the person and a h
   transcript(box, [
     wakeEntry('w1', 'daily-report', DAILY_REPORT_TEXT),
     answerEntry('w2', '오늘 리포트: 들어온 것 2건.'),
-    wakeEntry('w3', 'heartbeat', HEARTBEAT_TEXT),
+    wakeEntry('w3', 'heartbeat', heartbeatText({ awayMs: 3 * 60 * 60_000 })),
     answerEntry('w4', '리드 둘 다 아직 돌고 있어.'),
   ]);
   await settle(box.service);

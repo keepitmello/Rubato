@@ -38,11 +38,17 @@
   }
 }
 
-/* The chat keeps its ordinary width but sits at the left of the space, so the room an ordinary
-   thread leaves around its column is the stage's. */
+/* The chat keeps its ordinary width and sits toward the left of the space, a little off the edge,
+   so most of the room an ordinary thread leaves around its column is the stage's. The lane is
+   `width: 100%` up to its max width, so the inset comes off the width too and a narrow window does
+   not scroll sideways. */
+[data-rubato-segno-chat] {
+  --rubato-segno-chat-inset: clamp(1rem, 4vw, 5rem);
+}
 [data-rubato-segno-chat] .chat-content-lane,
 [data-rubato-segno-chat] .group\/composer-stack {
-  margin-inline-start: 0;
+  width: calc(100% - var(--rubato-segno-chat-inset));
+  margin-inline-start: var(--rubato-segno-chat-inset);
   margin-inline-end: auto;
 }
 

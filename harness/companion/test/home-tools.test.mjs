@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { createCompanionHomeFactories } from '../../pi-runtime/features/companion-home/index.mjs';
 import { openInbox } from '../inbox.mjs';
-import { readRecord } from '../home.mjs';
+import { readNextWake, readRecord } from '../home.mjs';
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-segno-tools-'));
@@ -26,7 +26,7 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   Object.assign(process.env, env);
   t.after(() => { process.env = before; });
   const tools = toolsOf();
-  assert.deepEqual([...tools.keys()].sort(), ['inbox_add', 'inbox_list', 'inbox_update', 'segno_record']);
+  assert.deepEqual([...tools.keys()].sort(), ['inbox_add', 'inbox_list', 'inbox_update', 'next_wake', 'segno_record']);
   await tools.get('segno_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
   await tools.get('segno_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
   const daily = readRecord('daily', { env });
@@ -68,4 +68,21 @@ test('a tool that is handed a bad id says so instead of writing', async (t) => {
   t.after(() => { process.env = before; });
   const tools = toolsOf();
   await assert.rejects(tools.get('inbox_update').execute('c1', { id: 'S-99', status: 'done' }), /no inbox item/);
+});
+
+test('the companion sets its next wake with its tool, and a wake further than a day is refused', async (t) => {
+  const env = sandbox(t);
+  const before = { ...process.env };
+  Object.assign(process.env, env);
+  t.after(() => { process.env = before; });
+  const tools = toolsOf();
+  const start = Date.now();
+  const result = await tools.get('next_wake').execute('w1', { minutes: 120, reason: '리드 둘 다 끝날 즈음 본다' });
+  const wake = readNextWake(env);
+  assert.equal(wake.reason, '리드 둘 다 끝날 즈음 본다');
+  assert.ok(wake.at >= start + 120 * 60_000 && wake.at <= Date.now() + 120 * 60_000);
+  assert.match(result.content[0].text, /Heartbeats rest until \d\d:\d\d; then: 리드 둘 다 끝날 즈음 본다/);
+  await assert.rejects(tools.get('next_wake').execute('w2', { minutes: 2000, reason: 'too far' }), /at most a day/);
+  await assert.rejects(tools.get('next_wake').execute('w3', { reason: 'no time' }), /minutes or a time/);
+  assert.equal(readNextWake(env).reason, '리드 둘 다 끝날 즈음 본다', 'a refused wake leaves the earlier one');
 });

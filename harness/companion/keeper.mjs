@@ -15,6 +15,13 @@
 // clock (the companion reads it as a system message where its model allows; session-link
 // message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
 //
+// The heartbeat is Segno's own time, as Roo's is (~/.claude/roo-channel heartbeat skill): it asks
+// for no report and says how long the user has been away. While the user is talking to Segno there
+// is no beat; the interval counts from their last word. When nothing will need it for a while,
+// Segno sets its next wake (home.mjs, the `next_wake` tool) and the beat rests until then, carrying
+// its reason. The cache warmer does not depend on the beat: it warms the companion without an end
+// (pi-runtime cache-warming).
+//
 // At night the keeper puts the companion to sleep, once: between 01:00 and 07:00 local time, when
 // the user has not written to it for three hours and its context has grown past 500k tokens. Sleep
 // is a wake too; what the companion does with it (records, notes, compaction or a new window) is
@@ -24,14 +31,36 @@ import { mkdirSync } from 'node:fs';
 import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
-import { ensureSegnoHome } from './home.mjs';
+import { clearNextWake, ensureSegnoHome, readNextWake } from './home.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
 
-export const HEARTBEAT_TEXT = 'Heartbeat. Look over the conversations you follow and anything that came in, and move stalled work forward. ' +
-  'End your turn with a short note for yourself; no one else sees it. If something needs the user, say it to them with telegram_send instead of putting it in the note.';
+/** How long ago, in words: 40 minutes, 3 hours, 2 days. */
+export function awayText(ms) {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 90) return minutes === 1 ? 'a minute' : `${minutes} minutes`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 36) return `${hours} hours`;
+  return `${Math.round(hours / 24)} days`;
+}
+
+/**
+ * The heartbeat's words: Segno's own time, how long the user has been away (`awayMs`, undefined
+ * when they never wrote), and the reason Segno gave when it set this wake, if it did.
+ */
+export function heartbeatText({ awayMs, reason } = {}) {
+  return [
+    'Heartbeat. This is your own time.',
+    awayMs === undefined ? 'The user has not written to you yet.' : `The user last wrote to you ${awayText(awayMs)} ago.`,
+    ...(reason ? [`You asked to be woken now: ${reason}`] : []),
+    'Nothing here asks for a report, and no one sees this turn. Do what you choose: pick up something you left ' +
+      'unfinished, look in on the leads you follow and move stalled work, write in your records, or rest.',
+    'If something needs the user, tell them with telegram_send. If nothing will need you for a while, ' +
+      'set your next wake with next_wake; heartbeats rest until then.',
+  ].join(' ');
+}
 export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
   'what is still running and what waits for them. Keep it short.';
 export const SLEEP_TEXT = 'Time to sleep. The user has been quiet for hours and your context is long. ' +
@@ -230,10 +259,30 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       lastBeat = at;
       return;
     }
-    if (settings.heartbeat.enabled && at - lastBeat >= settings.heartbeat.everyMinutes * 60_000) {
-      lastBeat = at;
-      await notify(sessionId, HEARTBEAT_TEXT, 'heartbeat');
-    }
+    if (settings.heartbeat.enabled) await beat(active, sessionId, at, settings.heartbeat.everyMinutes * 60_000);
+  }
+
+  /**
+   * The heartbeat, when it is due. A wake Segno set wins: the beat rests until it and then carries
+   * its reason. Otherwise one beat per interval, counted from the later of the last beat and the
+   * user's last word, so there is none while they talk.
+   */
+  async function beat(active, sessionId, at, intervalMs) {
+    const wish = readNextWake(env);
+    if (wish && at < wish.at) return;
+    if (!wish && at - lastBeat < intervalMs) return;
+    const lastUser = await lastUserAt(active);
+    if (!wish && lastUser !== undefined && at - lastUser < intervalMs) { lastBeat = lastUser; return; }
+    lastBeat = at;
+    if (wish) clearNextWake(env);
+    await notify(sessionId, heartbeatText({ awayMs: lastUser === undefined ? undefined : at - lastUser, reason: wish?.reason }), 'heartbeat');
+  }
+
+  /** When the user last wrote to the companion, from its session file; undefined when unknown. */
+  async function lastUserAt(active) {
+    const stats = await active.command({ type: 'get_session_stats' });
+    if (typeof stats?.sessionFile !== 'string') return undefined;
+    return lastUserMessageAt(stats.sessionFile).catch(() => undefined);
   }
 
   /**
