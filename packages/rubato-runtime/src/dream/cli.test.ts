@@ -57,6 +57,51 @@ describe("rubato dream store switch", () => {
   })
 })
 
+describe("rubato dream and the companion's store", () => {
+  // The companion dreams its own store (harness/companion/dream). Its store is whatever its folder
+  // resolves to, the way its sessions bind (memory.agent in <home>/.rubato/companion/.rubato/rubato.jsonc).
+  function companionFolder(home: string, agent: string): string {
+    const folder = join(home, ".rubato", "companion")
+    mkdirSync(join(folder, ".rubato"), { recursive: true })
+    writeFileSync(join(folder, ".rubato", "rubato.jsonc"), JSON.stringify({ memory: { agent } }))
+    return folder
+  }
+  function cli(home: string, args: readonly string[]) {
+    const env: NodeJS.ProcessEnv = {
+      PATH: process.env.PATH,
+      HOME: home,
+      // A root of its own, so this copy may write (live-guard.ts) and the live store is never near.
+      RUBATO_MEMORY_HOME: join(home, "memory"),
+      RUBATO_PI_CODING_AGENT_DIR: join(home, "agent"),
+    }
+    return spawnSync(process.execPath, [join(import.meta.dir, "cli.ts"), ...args], { cwd: home, env, encoding: "utf8" })
+  }
+  function storesHome(stores: readonly string[]): string {
+    const home = mkdtempSync(join(tmpdir(), "dream-cli-companion-"))
+    dirs.push(home)
+    for (const store of stores) mkdirSync(join(home, "memory", "agents", store, "repo", ".git"), { recursive: true })
+    return home
+  }
+  const listed = (home: string) =>
+    (JSON.parse(cli(home, ["--json"]).stdout) as { stores: { store: string }[] }).stores.map((entry) => entry.store)
+
+  test("#given the companion's folder binds a store #when status is read #then that store is not this dream's and every other store stays", () => {
+    const home = storesHome(["segno", "rubato", "fresh"])
+    expect(listed(home)).toEqual(["fresh", "rubato", "segno"])
+    companionFolder(home, "segno")
+    expect(listed(home)).toEqual(["fresh", "rubato"])
+  })
+
+  test("#given the companion's store is named #when a dream is asked for it #then it refuses and runs nothing", () => {
+    const home = storesHome(["segno"])
+    companionFolder(home, "segno")
+    const result = cli(home, ["segno"])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("the companion dreams it itself")
+    expect(existsSync(join(home, "memory", "agents", "segno", "runtime", "dream", "runs"))).toBe(false)
+  })
+})
+
 function koreanStore(memory: string, store: string): string {
   const repo = join(memory, "agents", store, "repo")
   mkdirSync(join(repo, "decisions"), { recursive: true })

@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readdirSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
 import { resolveProjectStore, type MemoryIdentityPaths } from "@rubato/memory-core"
@@ -49,12 +49,15 @@ export function scanStoreSessions(options: {
   readonly sessionsRoot: string
   readonly sinceMs: (store: string, sessionId: string) => number
   readonly resolveStore: StoreNameResolver
+  /** Folders whose sessions belong to another dream (the companion's); they count for no store. */
+  readonly skipFolder?: (cwd: string) => boolean
 }): StoreScan {
   const sessions = new Map<string, SessionFile[]>()
   const folders = new Map<string, Set<string>>()
   for (const path of sessionFiles(options.sessionsRoot)) {
     const header = readSessionHeader(path)
     if (header === undefined) continue
+    if (options.skipFolder?.(header.cwd) === true) continue
     const store = options.resolveStore(header.cwd)
     if (store === undefined) continue
     const known = folders.get(store) ?? new Set<string>()
@@ -67,6 +70,36 @@ export function scanStoreSessions(options: {
     sessions.set(store, list)
   }
   return { sessions, folders }
+}
+
+/** Whether `cwd` is `folder`, symlinks resolved. */
+export function sameFolder(cwd: string, folder: string): boolean {
+  return real(cwd) === real(folder)
+}
+
+/**
+ * The companion (Segno, harness/companion) dreams on its own, inside the engine, over its own
+ * records (harness/companion/dream). Its store is the one its folder resolves to, the way its
+ * sessions are bound; this dream leaves that store alone unless some other folder's sessions also
+ * resolve to it (a person who pointed the companion at a shared store keeps that store's dream).
+ */
+export function companionOnlyStore(options: {
+  readonly companionFolder: string
+  readonly resolveStore: StoreNameResolver
+  readonly folders: ReadonlyMap<string, ReadonlySet<string>>
+}): string | undefined {
+  if (!existsSync(options.companionFolder)) return undefined
+  const store = options.resolveStore(options.companionFolder)
+  if (store === undefined) return undefined
+  return options.folders.has(store) ? undefined : store
+}
+
+function real(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
 }
 
 // The engine keeps sessions in two shapes: flat in the root (GUI sessions) and under a folder named

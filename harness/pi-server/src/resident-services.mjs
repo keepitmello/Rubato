@@ -1,5 +1,6 @@
 // The services the person's own engine keeps running beside its conversations: the companion
-// keeper, the scheduler, the messenger and the remote hub's supervisor. Each one runs in its own
+// keeper, the companion's nightly dream, the scheduler, the messenger and the remote hub's
+// supervisor. Each one runs in its own
 // thread (resident-thread.mjs), so nothing a service does can stop the engine or a conversation:
 //
 //   failure in a service              what happens
@@ -29,6 +30,7 @@ const THREAD = path.join(here, 'resident-thread.mjs');
 /** The services the person's own profile engine runs (cli.mjs decides which engine that is). */
 export const RESIDENT_SERVICES = [
   { name: 'companion', module: path.resolve(here, '../../companion/keeper-service.mjs') },
+  { name: 'companion-dream', module: path.resolve(here, '../../companion/dream/service.mjs') },
   { name: 'scheduler', module: path.resolve(here, '../../scheduler/src/service.mjs') },
   { name: 'messenger', module: path.resolve(here, '../../companion/messenger/service.mjs') },
   { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },

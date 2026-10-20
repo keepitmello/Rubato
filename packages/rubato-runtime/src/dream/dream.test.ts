@@ -314,3 +314,35 @@ describe("scanStoreSessions store rule", () => {
     expect(byStore).toEqual({ "hash-game": ["in-repo"], home: ["at-home"], rubato: ["named"] })
   })
 })
+
+describe("scanStoreSessions and the companion", () => {
+  test("the companion's sessions count for no store, and its store is skipped only while no other folder shares it", async () => {
+    const { mkdirSync, realpathSync } = await import("node:fs")
+    const { companionOnlyStore, createStoreNameResolver, sameFolder, scanStoreSessions } = await import("./stores")
+    const root = realpathSync.native(tempDir())
+    const companion = join(root, "companion")
+    const lab = join(root, "lab")
+    for (const dir of [companion, lab]) mkdirSync(dir, { recursive: true })
+    const sessions = join(root, "sessions")
+    mkdirSync(sessions)
+    const write = (id: string, cwd: string) =>
+      writeFileSync(join(sessions, `${id}.jsonl`), JSON.stringify({ type: "session", id, cwd, timestamp: "2026-10-20T00:00:00.000Z" }))
+    write("segno", companion)
+    write("lab", lab)
+    const env = { RUBATO_MEMORY_HOME: join(root, "memory"), HOME: join(root, "home") }
+    const scanWith = (labAgent: string) => {
+      const resolveStore = createStoreNameResolver((cwd) => (cwd === companion ? "segno" : cwd === lab ? labAgent : undefined), env)
+      const scan = scanStoreSessions({ sessionsRoot: sessions, sinceMs: () => 0, resolveStore, skipFolder: (cwd) => sameFolder(cwd, companion) })
+      return { scan, store: companionOnlyStore({ companionFolder: companion, resolveStore, folders: scan.folders }) }
+    }
+
+    const own = scanWith("rubato")
+    expect(Object.fromEntries([...own.scan.sessions].map(([store, list]) => [store, list.map((session) => session.id)]))).toEqual({ rubato: ["lab"] })
+    expect(own.store).toBe("segno")
+
+    // A person who pointed another folder at the same store keeps that store's dream.
+    const shared = scanWith("segno")
+    expect(shared.scan.sessions.get("segno")?.map((session) => session.id)).toEqual(["lab"])
+    expect(shared.store).toBeUndefined()
+  })
+})
