@@ -3,7 +3,10 @@ import test from "node:test";
 
 import {
 	MANY_IMAGE_MAX_DIMENSION,
+	STORED_IMAGE_MAX_BASE64,
+	USER_IMAGE_JPEG_QUALITY,
 	compactStoredImage,
+	compactUserImage,
 	installImageLimit,
 	limitImageBlock,
 	limitInlineImages,
@@ -11,6 +14,7 @@ import {
 	pinnedImageBlock,
 	IMAGE_PROJECTION_ENTRY,
 } from "./src/host/image-limit.mjs";
+import { loadPhoton } from "./src/host-sdk.mjs";
 
 test("request image normalization remains byte-identical after restart even when codec availability changes", async () => {
 	const journal = [];
@@ -165,4 +169,79 @@ test("tool-result images are stored at the size the model sees, and kept when sh
 	assert.equal(failed, large);
 	const small = image(pngHeader(800, 600));
 	assert.equal(await compactStoredImage(small, { process: async () => { throw new Error("must not touch"); } }), small);
+});
+
+function photonPng(width, height, pixel) {
+	const photon = loadPhoton();
+	const raw = new Uint8Array(width * height * 4);
+	for (let y = 0; y < height; y += 1) {
+		for (let x = 0; x < width; x += 1) {
+			const [r, g, b, a = 255] = pixel(x, y);
+			raw.set([r, g, b, a], (y * width + x) * 4);
+		}
+	}
+	const image = new photon.PhotonImage(raw, width, height);
+	try {
+		return Buffer.from(image.get_bytes());
+	} finally {
+		image.free();
+	}
+}
+
+// Camera-like content: smooth light falloff plus sensor grain. Seeded so sizes are stable.
+function photoPixel() {
+	let seed = 7;
+	const grain = () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31 - 0.5) * 24;
+	return (x, y) => [120 + 80 * Math.sin(x / 90) + grain(), 100 + 60 * Math.cos(y / 70) + grain(), 90 + grain()]
+		.map((value) => Math.max(0, Math.min(255, Math.round(value))));
+}
+
+test("a user-attached PNG photo is stored as JPEG 92 at the same resolution", async () => {
+	const png = photonPng(1200, 900, photoPixel());
+	const block = image(png);
+	assert.ok(block.data.length > STORED_IMAGE_MAX_BASE64, "fixture must be big enough to matter");
+	const compacted = await compactUserImage(block);
+	assert.equal(compacted.mimeType, "image/jpeg");
+	assert.ok(compacted.data.length * 2 <= block.data.length, `${compacted.data.length} vs ${block.data.length}`);
+	const photon = loadPhoton();
+	const decoded = photon.PhotonImage.new_from_byteslice(Buffer.from(compacted.data, "base64"));
+	try {
+		assert.deepEqual([decoded.get_width(), decoded.get_height()], [1200, 900]);
+	} finally {
+		decoded.free();
+	}
+	assert.equal(USER_IMAGE_JPEG_QUALITY, 92);
+});
+
+test("user images that JPEG would hurt or barely shrink stay as they were", async () => {
+	const encode = async () => { throw new Error("must not encode"); };
+	const small = image(pngHeader(800, 600));
+	assert.equal(await compactUserImage(small, { encode }), small);
+	const jpeg = { ...image(Buffer.alloc(STORED_IMAGE_MAX_BASE64)), mimeType: "image/jpeg" };
+	assert.equal(await compactUserImage(jpeg, { encode }), jpeg);
+
+	// One clear pixel is enough: JPEG has no alpha and would paint it black.
+	const pixel = photoPixel();
+	const clear = image(photonPng(1200, 900, (x, y) => [...pixel(x, y), x === 0 && y === 0 ? 0 : 255]));
+	assert.equal(await compactUserImage(clear, { minBase64: 1 }), clear);
+
+	// Flat UI: solid panels and thin rules. PNG already stores this well; JPEG would ring.
+	const ui = image(photonPng(1200, 900, (x, y) => (y % 40 < 2 || x % 300 < 2 ? [30, 30, 30] : [245, 245, 245])));
+	assert.equal(await compactUserImage(ui, { minBase64: 1 }), ui);
+
+	const failing = image(photonPng(1200, 900, photoPixel()));
+	assert.equal(await compactUserImage(failing, { encode: async () => { throw new Error("codec down"); } }), failing);
+});
+
+test("input hook swaps only the images it shrank and keeps the typed text", async () => {
+	const handlers = {};
+	installImageLimit({ on(event, handler) { handlers[event] = handler; } });
+	assert.equal(await handlers.input({ type: "input", text: "hi" }), undefined);
+	const photo = image(photonPng(1200, 900, photoPixel()));
+	const small = image(pngHeader(10, 10));
+	const result = await handlers.input({ type: "input", text: "이 사진 봐", images: [photo, small] });
+	assert.equal(result.action, "transform");
+	assert.equal(result.text, "이 사진 봐");
+	assert.equal(result.images[0].mimeType, "image/jpeg");
+	assert.equal(result.images[1], small);
 });

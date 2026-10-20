@@ -1,4 +1,4 @@
-import { findPackageJSON } from "node:module";
+import { createRequire, findPackageJSON } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -25,3 +25,12 @@ const piTui = await import(pathToFileURL(join(piTuiDir, "dist/index.js")).href);
 export const StringEnum = piAi.StringEnum;
 export const Text = piTui.Text;
 export const truncateToWidth = piTui.truncateToWidth;
+
+// The coding agent's own image codec. Stock Pi's resizeImage walks the JPEG quality down
+// until a byte budget fits; callers that must hold a quality floor encode with Photon
+// directly. Loaded on first use so the WASM module stays off the startup path.
+let photon;
+export function loadPhoton() {
+	photon ??= createRequire(fileURLToPath(codingAgentEntry))("@silvia-odwyer/photon-node");
+	return photon;
+}

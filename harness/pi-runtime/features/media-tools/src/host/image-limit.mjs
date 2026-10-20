@@ -1,4 +1,5 @@
 import { isTimedMediaMimeType } from "../read-media/index.mjs";
+import { loadPhoton } from "../host-sdk.mjs";
 import { processImage } from "./image-process.mjs";
 import { createHash } from "node:crypto";
 
@@ -15,6 +16,15 @@ export const MANY_IMAGE_MAX_DIMENSION = 2000;
 export const STORED_IMAGE_MAX_DIMENSION = 1568;
 /** Base64 characters. Screenshots land well under this as JPEG and well over it as PNG. */
 export const STORED_IMAGE_MAX_BASE64 = 512 * 1024;
+
+/**
+ * Photos the user attaches arrive as PNG: a 1447×1087 photo is 3.2MB of base64, so six of
+ * them cross the request byte warning. The same pixels as JPEG 92 are about a sixth of that
+ * at 41-44dB PSNR, which the eye cannot tell apart. Resolution is kept (up to the many-image
+ * cap) and quality never steps below this floor; an image that does not shrink by half
+ * (flat UI, text) stays lossless PNG.
+ */
+export const USER_IMAGE_JPEG_QUALITY = 92;
 
 export function readImageDimensions(bytes) {
 	if (!(bytes instanceof Uint8Array) || bytes.byteLength < 24) return null;
@@ -108,6 +118,57 @@ function readWebpDimensions(bytes) {
 
 function exceedsLimit(dimensions, maxDimension) {
 	return dimensions !== null && (dimensions.width > maxDimension || dimensions.height > maxDimension);
+}
+
+/** True when any pixel is not fully opaque. RGBA screenshots are usually opaque throughout. */
+function hasTransparentPixel(rgba) {
+	for (let index = 3; index < rgba.length; index += 4) if (rgba[index] !== 255) return true;
+	return false;
+}
+
+/**
+ * Re-encode at one fixed quality; downscale only past the many-image cap. Returns null for
+ * an image with transparent pixels, which JPEG would flatten.
+ */
+export function encodePhotoJpeg(bytes, maxDimension = MANY_IMAGE_MAX_DIMENSION, quality = USER_IMAGE_JPEG_QUALITY) {
+	const photon = loadPhoton();
+	const image = photon.PhotonImage.new_from_byteslice(bytes);
+	let target = image;
+	try {
+		if (hasTransparentPixel(image.get_raw_pixels())) return null;
+		const width = image.get_width();
+		const height = image.get_height();
+		const scale = Math.min(1, maxDimension / Math.max(width, height));
+		if (scale < 1) {
+			target = photon.resize(image, Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)),
+				photon.SamplingFilter.Lanczos3);
+		}
+		return target.get_bytes_jpeg(quality);
+	} finally {
+		if (target !== image) target.free();
+		image.free();
+	}
+}
+
+/**
+ * Shrink one user-attached PNG before it enters the session. Anything else, anything small,
+ * with transparent pixels, or not at least halved by JPEG, and any codec failure keeps the
+ * original.
+ */
+export async function compactUserImage(block, options = {}) {
+	if (block?.type !== "image" || typeof block.data !== "string") return block;
+	if (block.mimeType?.split(";")[0]?.trim().toLowerCase() !== "image/png") return block;
+	if (block.data.length < (options.minBase64 ?? STORED_IMAGE_MAX_BASE64)) return block;
+	const bytes = Buffer.from(block.data, "base64");
+	if (readPngDimensions(bytes) === null) return block;
+	let encoded;
+	try {
+		encoded = await (options.encode ?? encodePhotoJpeg)(bytes);
+	} catch {
+		return block;
+	}
+	if (!(encoded?.byteLength > 0) || encoded.byteLength * 2 > bytes.byteLength) return block;
+	return { type: "image", data: Buffer.from(encoded).toString("base64"), mimeType: "image/jpeg" };
 }
 
 async function defaultProcess(bytes, mimeType, maxDimension) {
@@ -240,6 +301,17 @@ export function installImageLimit(pi, options = {}) {
 	for (const event of ["session_start", "session_shutdown"]) {
 		pi.on(event, () => cache.clear());
 	}
+	pi.on("input", async (event) => {
+		if (!Array.isArray(event.images) || event.images.length === 0) return;
+		const images = [];
+		let changed = false;
+		for (const block of event.images) {
+			const compacted = await compactUserImage(block, options);
+			if (compacted !== block) changed = true;
+			images.push(compacted);
+		}
+		if (changed) return { action: "transform", text: event.text, images };
+	});
 	pi.on("tool_result", async (event) => {
 		if (!Array.isArray(event.content) || !event.content.some((block) => block?.type === "image")) return;
 		const content = [];
