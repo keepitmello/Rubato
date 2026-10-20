@@ -16,8 +16,6 @@ import { dreamDue, readDreamState, runCompanionDream } from './dream.mjs';
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 const BUSY = new Set(['starting', 'running', 'waiting']);
 const POLL_MS = 60_000;
-/** The engine may run from launchd with a bare PATH; the dream's shell still needs git and rg. */
-const FALLBACK_PATH = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 
 /** How to start an engine child: the staged runtime's CLI with Rubato's providers (the coding dream's launch). */
 async function resolveLaunch(env) {
@@ -76,8 +74,7 @@ export async function start(ctx) {
     const out = await open(logPath, 'a', 0o600);
     let child;
     try {
-      child = await ctx.spawn(command, args, { cwd, env: { ...childEnvironment, PATH: childEnvironment.PATH || FALLBACK_PATH },
-        stdio: ['ignore', out.fd, out.fd] });
+      child = await ctx.spawn(command, args, { cwd, env: childEnvironment, stdio: ['ignore', out.fd, out.fd] });
     } catch (error) {
       await out.appendFile(`spawn error: ${String(error?.message ?? error)}\n`).catch(() => {});
       return { code: null };

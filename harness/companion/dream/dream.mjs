@@ -23,14 +23,15 @@
 // exactly those files (home.mjs commitOwned), the way Roo's dream hands its own paths to
 // commit-owned.sh. The user's prompt/ is never written: a child that edits it changes only its copy,
 // and the run counts as partial. A child that fails brings nothing home.
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
   realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
-import { memoryPiecePath, readPieces } from '../companion.mjs';
+import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
 import { commitOwned, ensureHomeRepo, localDate, segnoPaths } from '../home.mjs';
 
 /** Roo's dream runs at 04:07 (launchd com.roo.cron.memory); Segno's starts at or after it, once a day. */
@@ -53,19 +54,35 @@ export const CADENCE_HOURS = Object.freeze({ distill: 20, selfReview: 44, cleanu
 const FIRST_LOOKBACK_DAYS = 7;
 const BACKLOG_DAYS = 7;
 export const TRANSCRIPT_BUDGET_CHARS = 250_000;
-export const CHILD_TIMEOUT_MS = 45 * 60_000;
+/** Roo's dream run gives the model an hour and a half (scripts/dream-run.sh). */
+export const CHILD_TIMEOUT_MS = 90 * 60_000;
 /** A lock older than this belongs to a dream that died without cleaning up. */
 const STALE_LOCK_MS = 2 * 60 * 60_000;
 const DAY_MS = 24 * 60 * 60_000;
 const INSTRUCTIONS = path.join(import.meta.dirname, 'dream.md');
-/** What the dream may change: its memory, and the held list it adds to. Everything else stays. */
-const WRITABLE = (rel) => rel.startsWith('memory/') || rel === 'notes/held.md';
+/**
+ * What the dream may change: its memory, and Segno's notes (Roo's dream sweeps notes/당김.md and
+ * notes/now.md for self-diagnosis and adds to the held list). The user's prompt/ never comes home.
+ */
+const WRITABLE = (rel) => rel.startsWith('memory/') || rel.startsWith('notes/');
+/** The resident memory piece and Roo's guard over it (scripts/memory-core-guard.py). */
+const RESIDENT = 'memory/MEMORY.md';
+const PROTECTED_SECTION = '잊으면 안 되는 말들';
+const QUOTE = /"[^"\n]+"|“[^”\n]+”/g;
+/**
+ * Roo's ratchet: MEMORY.md may not grow past its smallest committed size plus 200 characters. Roo's
+ * MEMORY.md is long settled; Segno's starts as an empty frame, so below Roo's 5,000-character target
+ * it may grow freely, and past it the ratchet holds.
+ */
+export const MEMORY_GUARD = Object.freeze({ toleranceChars: 200, targetChars: 5_000 });
 const DATE_FILE = /^(\d{4}-\d{2}-\d{2})\.md$/;
+/** The engine may run from launchd with a bare PATH; the dream's shell still needs git, rg, himalaya and khal. */
+export const FALLBACK_PATH = '/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin';
 
 export function dreamPaths(env = process.env) {
   const dir = path.join(segnoPaths(env).home, 'dream');
   return { dir, state: path.join(dir, 'state.json'), lock: path.join(dir, 'dream.lock'), runs: path.join(dir, 'runs'),
-    log: path.join(dir, 'log') };
+    log: path.join(dir, 'log'), checks: path.join(dir, 'checks.json') };
 }
 
 function readJson(file) {
@@ -233,6 +250,26 @@ export function segnoSessionFiles(env = process.env) {
 }
 
 const SESSION_MESSAGE = 'rubato-session-message';
+
+/**
+ * What Segno said to the user through its messenger tools (telegram_send, telegram_edit,
+ * telegram_react): in a turn Rubato's clock opened, these calls are the only place its words to the
+ * user exist, so the dream hears them as Segno's own words.
+ */
+function sentOf(content) {
+  if (!Array.isArray(content)) return '';
+  return content.filter((block) => block?.type === 'toolCall' && typeof block.name === 'string' && block.name.startsWith('telegram_'))
+    .map((block) => {
+      const args = block.arguments ?? {};
+      const said = [args.text, args.voice_text && args.voice_text !== args.text ? `(음성) ${args.voice_text}` : '']
+        .filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim());
+      if (Array.isArray(args.files) && args.files.length) said.push(`(파일) ${args.files.map((file) => path.basename(String(file))).join(', ')}`);
+      if (typeof args.emoji === 'string') said.push(`(반응) ${args.emoji}`);
+      if (!said.length) return '';
+      const to = typeof args.to === 'string' || typeof args.to === 'number' ? ` → ${args.name ?? args.to}` : '';
+      return `[${block.name}${to}] ${said.join('\n')}`;
+    }).filter(Boolean).join('\n\n');
+}
 const textOf = (content) => typeof content === 'string' ? content.trim()
   : Array.isArray(content) ? content.filter((block) => block?.type === 'text' && typeof block.text === 'string')
     .map((block) => block.text.trim()).filter(Boolean).join('\n\n') : '';
@@ -280,7 +317,8 @@ export function exportTranscript(files, sinceMs, { budgetChars = TRANSCRIPT_BUDG
 function describe(entry) {
   if (entry?.type === 'message') {
     const role = entry.message?.role;
-    const text = textOf(entry.message?.content);
+    const text = role === 'assistant' ? [textOf(entry.message?.content), sentOf(entry.message?.content)].filter(Boolean).join('\n\n')
+      : textOf(entry.message?.content);
     if (!text) return undefined;
     if (role === 'user') return { who: '사용자 (앱)', text };
     if (role === 'assistant') return { who: '나', text };
@@ -379,10 +417,11 @@ function mergeText(live, base, dream, scratch) {
  * nobody touched while the dream ran takes the dream's version; one Segno or the user wrote to
  * meanwhile is merged three ways, and a merge that conflicts keeps the live file and is reported.
  */
-function bringHome({ home, base, dreamed, scratch }) {
+function bringHome({ home, base, dreamed, scratch, guard = () => undefined }) {
   const applied = [];
   const refused = [];
   const conflicts = [];
+  const guarded = [];
   for (const rel of [...new Set([...base.keys(), ...dreamed.keys()])].sort()) {
     const before = base.get(rel);
     const after = dreamed.get(rel);
@@ -396,11 +435,43 @@ function bringHome({ home, base, dreamed, scratch }) {
       next = live !== undefined && after !== undefined ? mergeText(live, before, after, scratch) : undefined;
       if (next === undefined) { conflicts.push(rel); continue; }
     }
+    const refusal = guard(rel, live, next);
+    if (refusal) { guarded.push({ path: rel, ...refusal }); continue; }
     if (next === undefined) rmSync(file, { force: true });
     else { mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 }); writeFileSync(file, next, { mode: 0o600 }); }
     applied.push(rel);
   }
-  return { applied, refused, conflicts };
+  return { applied, refused, conflicts, guarded };
+}
+
+/** Quotes in MEMORY.md's `## 잊으면 안 되는 말들`, with how many times each appears. */
+function protectedQuotes(text) {
+  const lines = text.split('\n');
+  const start = lines.findIndex((line) => /^##\s+/.test(line) && line.replace(/^##\s+/, '').trim() === PROTECTED_SECTION);
+  if (start < 0) return new Map();
+  const end = lines.findIndex((line, index) => index > start && /^##\s+/.test(line));
+  const counts = new Map();
+  for (const quote of lines.slice(start + 1, end < 0 ? undefined : end).join('\n').match(QUOTE) ?? []) counts.set(quote, (counts.get(quote) ?? 0) + 1);
+  return counts;
+}
+
+/**
+ * Roo's memory-core-guard over the resident piece: no quote in `## 잊으면 안 되는 말들` may go, and
+ * the piece may not grow past its ratchet (MEMORY_GUARD). Returns why it refuses, or undefined.
+ */
+export function guardResidentMemory(before, after, baselineChars) {
+  if (after === undefined) return { reason: 'MEMORY.md would be deleted' };
+  const beforeText = before?.toString('utf8') ?? '';
+  const afterText = after.toString('utf8');
+  const kept = protectedQuotes(afterText);
+  const missing = [...protectedQuotes(beforeText)].filter(([quote, count]) => (kept.get(quote) ?? 0) < count).map(([quote]) => quote);
+  const beforeChars = [...beforeText].length;
+  const baseline = Math.min(Number.isFinite(baselineChars) ? baselineChars : beforeChars, beforeChars);
+  const allowedMaxChars = Math.max(baseline + MEMORY_GUARD.toleranceChars, MEMORY_GUARD.targetChars);
+  const afterChars = [...afterText].length;
+  if (missing.length) return { reason: 'protected quote missing', missing };
+  if (afterChars > allowedMaxChars) return { reason: 'MEMORY.md grew past its ratchet', afterChars, allowedMaxChars };
+  return undefined;
 }
 
 function takeLock(file, at) {
@@ -468,18 +539,26 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     seedResidentMemory({ env, defaultsDir });
 
     const plan = planDream({ at, state, env, manual });
-    let transcript;
-    if (plan.blocks.selfReview.due) {
-      const since = Date.parse(state.blocks?.selfReview?.lastAt ?? '');
-      transcript = exportTranscript(sessionFiles(), Number.isFinite(since) ? since : at - FIRST_LOOKBACK_DAYS * DAY_MS);
-      if (transcript.messages > 0) {
-        plan.transcript = path.join(runDir, 'transcript.md');
-        writeFileSync(plan.transcript, transcript.markdown, { mode: 0o600 });
-      }
+    // The conversation is read every dream: since the last listening when that is due, else since
+    // the last distill, for Segno's own words (Roo's voice samples come from the raw talk each night).
+    const markOf = (block) => Date.parse(state.blocks?.[block]?.lastAt ?? '');
+    const since = markOf(plan.blocks.selfReview.due ? 'selfReview' : 'distill');
+    const transcript = exportTranscript(sessionFiles(), Number.isFinite(since) ? since : at - FIRST_LOOKBACK_DAYS * DAY_MS);
+    if (transcript.messages > 0) {
+      plan.transcript = path.join(runDir, 'transcript.md');
+      plan.transcriptFor = plan.blocks.selfReview.due ? 'selfReview' : 'voice';
+      writeFileSync(plan.transcript, transcript.markdown, { mode: 0o600 });
     }
-    const nothingNew = !manual && plan.raw.daily.length === 0 && plan.raw.diary.length === 0 && !plan.transcript && !plan.sunday;
-    if (nothingNew) {
-      record = { ...base, status: 'noop', reason: 'nothing new since the last dream' };
+    plan.checks = { mail: commandExists('himalaya', env), calendar: commandExists('khal', env), file: paths.checks };
+    plan.workNotes = exportWorkNotes(env, path.join(runDir, 'work-notes.md'));
+    plan.dated = hasDatedItems(home);
+    // Roo dreams every night. Segno's skips a night only when there is nothing to do at all: no new
+    // record or talk, no Sunday, no sweep due, nothing dated that may have passed, no mail or calendar.
+    const nothingToDo = !manual && plan.raw.daily.length === 0 && plan.raw.diary.length === 0 && !plan.transcript && !plan.sunday
+      && !(plan.blocks.cleanup.due && (plan.cleanup.newRange.length > 0 || plan.cleanup.backlog.length > 0))
+      && !plan.dated && !plan.checks.mail && !plan.checks.calendar;
+    if (nothingToDo) {
+      record = { ...base, status: 'noop', reason: 'nothing to do tonight' };
       return record;
     }
     const promptPath = path.join(runDir, 'system-prompt.md');
@@ -514,18 +593,22 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
       return record;
     }
     const result = readJson(path.join(outDir, 'result.json')) ?? {};
-    const { applied, refused, conflicts } = bringHome({ home, base: started, dreamed: snapshot(workHome), scratch: runDir });
+    const guardState = readDreamState(env).memoryGuard ?? {};
+    const { applied, refused, conflicts, guarded } = bringHome({ home, base: started, dreamed: snapshot(workHome), scratch: runDir,
+      guard: (rel, live, next) => (rel === RESIDENT ? guardResidentMemory(live, next, guardState.baselineChars) : undefined) });
     const message = oneLine(result.message) || `${plan.runDate} 꿈`;
     const commit = applied.length ? commitOwned(applied, `dream: ${message}`, { env }) : undefined;
     const blocks = result.blocks && typeof result.blocks === 'object' ? result.blocks : {};
-    const partial = result.status !== 'done' || refused.length > 0 || conflicts.length > 0;
+    const partial = result.status !== 'done' || refused.length > 0 || conflicts.length > 0 || guarded.length > 0;
     // What did not come home (a conflict, or a change outside the dream's places) is not done: the
     // next dream reads the same ground again.
-    const held = conflicts.length > 0 || refused.length > 0;
-    if (!held) advance(env, { at, plan, blocks, result, transcript });
+    const held = conflicts.length > 0 || refused.length > 0 || guarded.length > 0;
+    if (!held) advance(env, { at, plan, blocks, result, transcript: plan.transcriptFor === 'selfReview' ? transcript : undefined });
+    if (applied.includes(RESIDENT)) ratchetResident(env, home, started.get(RESIDENT));
     appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
     record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
-      ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(held ? { watermarks: 'held' } : {}),
+      ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(guarded.length ? { guarded } : {}),
+      ...(held ? { watermarks: 'held' } : {}),
       commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;
@@ -544,9 +627,55 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
   }
 }
 
+/** The guard's baseline moves down with the piece and never up (Roo's ratchet). */
+function ratchetResident(env, home, before) {
+  const chars = (text) => [...text].length;
+  const now = chars(readText(path.join(home, RESIDENT)));
+  const stored = readDreamState(env).memoryGuard?.baselineChars;
+  const start = before === undefined ? now : chars(before.toString('utf8'));
+  const baseline = Math.min(Number.isFinite(stored) ? stored : start, start, now);
+  writeJson(dreamPaths(env).state, { ...readDreamState(env), memoryGuard: { baselineChars: Math.max(baseline, 0) } });
+}
+
+/** Whether a command is on the PATH the dream's shell will have. */
+function commandExists(name, env) {
+  const dirs = String(env.PATH || FALLBACK_PATH).split(path.delimiter).filter(Boolean);
+  return dirs.some((dir) => { try { return statSync(path.join(dir, name)).isFile(); } catch { return false; } });
+}
+
+/** Something dated that may have passed: a line under the held list's dated part or the user's 예약된 것. */
+function hasDatedItems(home) {
+  const held = readText(path.join(home, 'notes', 'held.md'));
+  const dated = /^##\s+날짜 있는 거\s*$([\s\S]*?)(?=^##\s|(?![\s\S]))/m.exec(held)?.[1] ?? '';
+  if (dated.split('\n').some((line) => /^\s*[-*]\s+\S/.test(line))) return true;
+  const booked = /예약된 것:?\s*(.*)$/m.exec(readText(path.join(home, 'memory', 'user.md')))?.[1]?.trim() ?? '';
+  return booked !== '' && !/^없음/.test(booked);
+}
+
+/**
+ * Segno's work notes (Roo's q, user item bfe3d27d): the latest text of each note in the engine's
+ * notes store for Segno's conversation, copied read-only for the dream. Undefined when there are none.
+ */
+function exportWorkNotes(env, target) {
+  const { sessionId } = readState(env);
+  if (!sessionId) return undefined;
+  const key = createHash('sha256').update(sessionId).digest('hex');
+  const file = path.join(agentDirOf(env), 'context-notes', `${key}.sqlite`);
+  if (!existsSync(file)) return undefined;
+  let db;
+  try {
+    db = new DatabaseSync(file, { readOnly: true });
+    const rows = db.prepare('SELECT path, text FROM notes n WHERE ordinal = (SELECT MAX(ordinal) FROM notes WHERE path = n.path) ORDER BY path').all();
+    if (!rows.length) return undefined;
+    writeFileSync(target, rows.map((row) => `## ${row.path}\n\n${row.text}\n`).join('\n'), { mode: 0o600 });
+    return target;
+  } catch { return undefined; }
+  finally { db?.close(); }
+}
+
 /** The child's environment: its copy is its home, so the live home's override does not follow it. */
 function workEnv(env, extra) {
-  const out = { ...env, ...extra };
+  const out = { ...env, PATH: env.PATH || FALLBACK_PATH, ...extra };
   delete out.RUBATO_COMPANION_HOME;
   return out;
 }
