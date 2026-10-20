@@ -226,3 +226,21 @@ test('a runtime lost mid-turn is still told as lost when the inspector reports p
   await f.close();
   assert.deepEqual(w.notices.map((notice) => notice.text), [noticeText('lost', {})]);
 });
+
+test('while the companion is turned off a lead ending does not wake it: the notice waits and goes once it is on', async (t) => {
+  const w = world();
+  let off = true;
+  const f = w.follower({ store: { load: () => ({}), save: () => {}, paused: () => off } });
+  t.after(() => f.close());
+  f.follow('lead', 'segno');
+  w.state.set('lead', { status: 'running' });
+  await f.poll();
+  w.state.set('lead', { status: 'idle', final: { entryId: 'e1', text: 'done' } });
+  await f.poll();
+  await f.poll();
+  assert.deepEqual(w.notices, [], 'off: nothing delivered, nothing counted as a failure');
+  assert.deepEqual(f.following(), ['lead']);
+  off = false;
+  await f.poll();
+  assert.deepEqual(w.notices.map((notice) => notice.text), ['Finished its turn.\n\nIts answer:\ndone']);
+});
