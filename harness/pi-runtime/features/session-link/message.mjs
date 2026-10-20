@@ -18,7 +18,7 @@ export const DELIVER_REQUEST = "rubato.session-link.deliver";
 // morning greeting carries the report now.
 export const SESSION_MESSAGE_KINDS = Object.freeze(["message", "create", "notice", "channel", "wake"]);
 /** What Rubato's clock wakes a conversation for. */
-export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "daily-report", "sleep", "persona-review"]);
+export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "daily-report", "sleep", "persona-review", "inbox"]);
 /**
  * The user message that opens a place for a system message where none is open (a system message
  * cannot follow an answer). Fixed, with nothing from the event in it, so every request carries the

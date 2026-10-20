@@ -159,7 +159,8 @@ export function writeSettings(patch, env = process.env) {
 /**
  * What the keeper keeps: `greeted` is the local date (YYYY-MM-DD) each greeting last went out (Roo's
  * state/cron-last-run.json), `heartbeat` the last tick, `woke` the last boundary Segno was woken for
- * and what is still owed (a seed, or the recall that follows a fresh one), `sleptOn` the last night.
+ * and what is still owed (a seed, or the recall that follows a fresh one), `sleptOn` the last night,
+ * `inboxWake` how far the listener's wake lines were read.
  */
 export function readState(env = process.env) {
   const state = readJson(companionPaths(env).state);
@@ -178,6 +179,8 @@ export function readState(env = process.env) {
     ...(woke ? { woke } : {}),
     // The runtime the keeper last found the conversation loaded in; a new one means it was loaded again.
     ...(typeof state?.runtimeId === 'string' && state.runtimeId ? { runtimeId: state.runtimeId } : {}),
+    // How far the keeper has read the listener's wake lines (inbox.mjs inboxWakePath), in bytes.
+    ...(Number.isInteger(state?.inboxWake?.offset) && state.inboxWake.offset >= 0 ? { inboxWake: { offset: state.inboxWake.offset } } : {}),
   };
 }
 

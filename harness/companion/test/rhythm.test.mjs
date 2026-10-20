@@ -8,12 +8,14 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { readState, writeSettings, writeState } from '../companion.mjs';
-import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, moodText, recallText, resumeText, sessionAge, startCompanionKeeper,
+import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, inboxWakeText, moodText, recallText, resumeText, sessionAge, startCompanionKeeper,
   wakeSeedText } from '../keeper.mjs';
 import { HELD_TEMPLATE, MOOD_FRESH_MS, SEGNO_SEARCH, commitOwned, searchSegnoMemory, segnoSearchEnv, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
   record, segnoPaths, seedText, sentMessages, sentText, setWakeWish, readWakeWish } from '../home.mjs';
 import { parseIcs, parseMarkdownSchedule, readSchedule, scheduleNudges, scheduleSources, showSchedule } from '../schedule.mjs';
 import { worldFragment, worldText, WORLD_FEEDS } from '../world.mjs';
+import { inboxWakePath, readInboxWakes } from '../inbox.mjs';
+import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
@@ -70,6 +72,85 @@ async function keeperFor(t, env, engine, start, settings = {}) {
   return { keeper, notices, poke, of: (what) => notices.filter((notice) => notice.what === what) };
 }
 const userSaid = (time) => ({ type: 'message', id: `u${time}`, timestamp: new Date(time).toISOString(), message: { role: 'user', content: 'hi', timestamp: time } });
+
+// ── inbox wakes (user items 5b32e195, 06ebe72b: no doorbell session; the keeper wakes Segno for the listener's lines) ──
+
+const wakeLine = (env, time, marker, itemIds, text) => {
+  mkdirSync(path.dirname(inboxWakePath(env)), { recursive: true });
+  writeFileSync(inboxWakePath(env), JSON.stringify({ v: 1, at: new Date(time).toISOString(), marker, itemIds, text }) + '\n', { flag: 'a' });
+};
+
+test('inbox: lines within five minutes of the first unread one go to Segno in one wake, once, after the window', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  wakeLine(env, at(21, 10, 1), 'b-1', ['i1'], '수진: @우용 로그인 안 돼요');
+  await k.poke(at(21, 10, 2));
+  wakeLine(env, at(21, 10, 4), 'b-2', ['i2'], '민호: @우용 배포 언제?');
+  await k.poke(at(21, 10, 5));
+  assert.equal(k.of('inbox').length, 0, 'the window is still open');
+  await k.poke(at(21, 10, 6));
+  assert.deepEqual(k.of('inbox').map((notice) => notice.text), [inboxWakeText([
+    { marker: 'b-1', itemIds: ['i1'], text: '수진: @우용 로그인 안 돼요' }, { marker: 'b-2', itemIds: ['i2'], text: '민호: @우용 배포 언제?' }], at(21, 10, 6))]);
+  assert.match(k.of('inbox')[0].text, /^INBOX marker=b-1,b-2 items=i1,i2 now="/);
+  await k.poke(at(21, 10, 30));
+  assert.equal(k.of('inbox').length, 1, 'each line wakes once');
+});
+
+test('inbox: lines over an hour old are not woken for, fresh ones are even from before the keeper first looked; a half line waits; a cut file is read again', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  wakeLine(env, at(21, 8, 30), 'old', ['i0'], '오래된 거');
+  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  await k.poke(at(21, 10, 1));
+  assert.equal(k.of('inbox').length, 0, 'a line from an hour and a half ago waits in the inbox, no wake');
+  assert.equal(readState(env).inboxWake.offset, readInboxWakes(0, env).end, 'and the keeper reads past it');
+  writeFileSync(inboxWakePath(env), JSON.stringify({ v: 1, at: new Date(at(21, 10, 2)).toISOString(), marker: 'b-3', itemIds: ['i3'], text: '반' }), { flag: 'a' });
+  await k.poke(at(21, 10, 20));
+  assert.equal(k.of('inbox').length, 0, 'no newline yet');
+  writeFileSync(inboxWakePath(env), '\n', { flag: 'a' });
+  await k.poke(at(21, 10, 21));
+  assert.equal(k.of('inbox').length, 1);
+  writeFileSync(inboxWakePath(env), '');
+  wakeLine(env, at(21, 11, 0), 'b-4', ['i4'], '새 파일');
+  await k.poke(at(21, 11, 10));
+  assert.match(k.of('inbox')[1].text, /marker=b-4 items=i4/);
+});
+
+test('inbox: the listener may start first — a line written before the keeper ever looked still wakes Segno', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  wakeLine(env, at(21, 9, 58), 'early', ['i9'], '수진: @우용 먼저 온 거');
+  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  await k.poke(at(21, 10, 3));
+  assert.match(k.of('inbox')[0]?.text ?? '', /marker=early items=i9/);
+});
+
+test('inbox: while Segno is busy or switched off the lines wait; they come when it is free and on again', async (t) => {
+  const env = sandbox(t);
+  const engine = engineFor(env);
+  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  await k.poke(at(21, 10, 0));
+  writeSettings({ enabled: false }, env);
+  wakeLine(env, at(21, 10, 1), 'b-5', ['i5'], '꺼져 있을 때');
+  await k.poke(at(21, 10, 30));
+  assert.equal(k.of('inbox').length, 0);
+  writeSettings({ enabled: true }, env);
+  engine.busy(true);
+  await k.poke(at(21, 10, 40));
+  assert.equal(k.of('inbox').length, 0, 'not while it works');
+  engine.busy(false);
+  await k.poke(at(21, 10, 41));
+  assert.match(k.of('inbox')[0].text, /marker=b-5/);
+  assert.equal(readInboxWakes(0, env).end, readState(env).inboxWake.offset);
+});
+
+test('inbox: the wake kind is one the engine accepts, and Segno\'s rules say what an INBOX line is', () => {
+  assert.ok(WAKES.includes('inbox'));
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  assert.match(companion, /사용자 일터 방에서 누가 사용자를 부르면 루바토가 `INBOX` 줄로 나를 깨워\. 5분 안에 온 건 한 번에/);
+  assert.match(companion, /그 밖에 일터 방에서 들어온 건 조용히 인박스에만 쌓이니 하트비트 때 둘러봐\./);
+});
 
 // ── greetings (cron-prompts/night.md, morning.md; cron-launchd-dispatch.sh; heartbeat-tick.sh missed_greet_slot) ──
 
