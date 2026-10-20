@@ -9,7 +9,7 @@
 //   each finished message                 →  what the thread lacks, written into that run (backfill.mjs)
 //   agent_settled                         →  the run completes, so the thread finishes like any other
 // and it lets the session go as soon as the session is at rest: no stream is kept on an idle
-// session. Segno's own conversation is not followed: what it shows is its own rule (quiet-runs.mjs).
+// session. Segno's own conversation is not followed: its thread is a chat log (companion-thread.mjs).
 import { backfillItem, missingItems } from './backfill.mjs';
 
 const BUSY = new Set(['running', 'starting', 'waiting']);

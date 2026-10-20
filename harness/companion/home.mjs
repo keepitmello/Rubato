@@ -452,17 +452,19 @@ export function searchSegnoMemory(query, { index = false, env = process.env, run
 // ── what reached the user ─────────────────────────────────────────────────────────────────
 // Roo's sent.sh: memory gets "did I already tell them?" wrong often, in both directions, and only
 // the record outside it settles that. Each message that reached the user is one line of
-// <home>/messenger/sent.jsonl ({ at, toUser, text, via }): `tell_user` writes it now, and the
+// <home>/messenger/sent.jsonl ({ at, toUser, text, via }): `reply` and `say` write it now, and the
 // Telegram messenger wrote it (with chatId) while the product ran Telegram, so those lines count too.
 
-/** Segno's tool for speaking to the user in the app from a turn they do not see (pi-runtime companion-home). */
-export const TELL_USER_TOOL = 'tell_user';
+/** Segno's mouth (Roo's telegram_reply): the only words of Segno's that reach its thread and the user's phone. */
+export const REPLY_TOOL = 'reply';
+/** The same as a voice reply (Roo's voice=true); offered only once a voice is set. */
+export const SAY_TOOL = 'say';
 
-/** Records one message `tell_user` showed the user, for `sentMessages`. */
-export function recordTold(text, { at = Date.now(), env = process.env } = {}) {
-  if (typeof text !== 'string' || !text.trim()) throw new TypeError('tell_user needs some text');
+/** Records one message `reply` or `say` showed the user, for `sentMessages`. */
+export function recordTold(text, { at = Date.now(), via = REPLY_TOOL, env = process.env } = {}) {
+  if (typeof text !== 'string' || !text.trim()) throw new TypeError(`${via} needs some text`);
   const file = segnoPaths(env).messengerSent;
-  const row = { at: new Date(at).toISOString(), toUser: true, text, via: TELL_USER_TOOL };
+  const row = { at: new Date(at).toISOString(), toUser: true, text, via };
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   appendFileSync(file, `${JSON.stringify(row)}\n`, { mode: 0o600 });
   return row;

@@ -12,10 +12,9 @@ const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs,
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
 /**
  * A message another conversation sent (session link) as Pi's live `get_messages` carries
- * it: the custom message shape plus `entryId`. Rubato's clock (`wake`) comes too, hidden as
- * in Pi: it opens its turn in the app's thread and draws nothing. Pi's own custom messages
- * (a background terminal or subagent finishing) come hidden as well: they draw nothing, but the
- * app needs them to tell whose turn follows (t3-integration quiet-runs.mjs).
+ * it: the custom message shape plus `entryId`. Rubato's clock (`wake`) and Pi's own custom
+ * messages (a background terminal or subagent finishing) come too, hidden, as in Pi's live list,
+ * so a reader of the stored conversation sees the same list as one of the live session.
  */
 const receivedRow = (entry) => {
   if (entry.type !== 'custom_message') return undefined;

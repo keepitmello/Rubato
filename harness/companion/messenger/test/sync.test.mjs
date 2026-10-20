@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { quietMessages } from '../../../t3-integration/src/quiet-runs.mjs';
+import { newQuietState, quietStep } from '../quiet-runs.mjs';
 import { readState, writeState, messengerPaths } from '../store.mjs';
 import { GROUP_CHAT, USER_CHAT, answerEntry, appEntry, channelEntry, noticeEntry, paired, settle, toolEntry, transcript, wakeEntry } from './helpers.mjs';
 import { listOutbox } from '../store.mjs';
@@ -14,7 +14,13 @@ const RECORDED = new URL('./fixtures/segno-recorded.jsonl', import.meta.url);
 const textOf = (content) => (Array.isArray(content) ? content : []).filter((part) => part?.type === 'text').map((part) => part.text).join('\n').trim();
 const sentTexts = (box) => box.fake.sent.filter((row) => row.chatId === USER_CHAT).map((row) => row.text);
 
-/** What the app thread shows of Segno, by the app's own rule (t3-integration quiet-runs.mjs). */
+/** The messages of quiet runs, by the mirror's own rule (quiet-runs.mjs quietStep). */
+function quietMessages(messages) {
+  const state = newQuietState();
+  return new Set(messages.filter((message) => quietStep(state, message).quiet));
+}
+
+/** What the mirror counts as shown and as hidden of Segno (quiet-runs.mjs). */
 function appShows(entries) {
   const messages = entries.map((entry) => entry.type === 'custom_message'
     ? { role: 'custom', customType: entry.customType, display: entry.display, details: entry.details }

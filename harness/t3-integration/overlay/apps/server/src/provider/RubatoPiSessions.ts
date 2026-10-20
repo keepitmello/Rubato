@@ -263,31 +263,33 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     }
   });
   /**
-   * Segno's words from a hidden run (tell_user) in a run of their own, so the phone hears of them
-   * (RubatoThreadImporter appendOwnRun). While the thread has a run going, the words go in as a
-   * plain message instead: that run's own ending notifies, and a second running run would take the
-   * messages the person sends meanwhile. A message the person queued while the own run showed as
-   * running starts once it completes, as it would after any run.
+   * What Segno said with reply or say, in a run of its own so the phone hears of it
+   * (RubatoThreadImporter appendOwnRun). While the thread has a run going — the person's turn, which
+   * the bridge holds open until Segno replies (rpc-connection.mjs) — the words go into that run
+   * instead: its ending notifies, and a second running run would take the messages the person sends
+   * meanwhile. Answers `true` when written, or the run to write the words into. A message the person
+   * queued while the own run showed as running starts once it completes, as after any run.
    */
   const appendOwnRun = (thread: ThreadId, message: SessionMessage, ordinal: () => Effect.Effect<number, RubatoThreadImportError>) =>
     ownRuns.withPermits(1)(Effect.gen(function* () {
-      if (Option.isNone(orchestrator) || Option.isNone(importer)) return false;
+      if (Option.isNone(orchestrator) || Option.isNone(importer)) return null as RunId | null;
       const records = yield* orchestrator.value.getThreadRecords(thread, ["runs"]).pipe(
         Effect.mapError(importFailure("Could not read the thread's runs")));
       // The same words delivered twice (the live stream and an attach's snapshot) are written once. A
       // run an attempt opened and never completed (the server went down during the hold) is
       // completed with the words now; the caller found no message for them.
       const opened = records.runs.find((run) => run.id === saidRunId(message.id));
-      if (opened?.status === "completed") return true;
-      if (opened === undefined && records.runs.some((run) => BUSY_RUN.has(run.status))) return false;
+      if (opened?.status === "completed") return true as const;
+      const going = records.runs.filter((run) => BUSY_RUN.has(run.status)).sort((left, right) => right.ordinal - left.ordinal)[0];
+      if (opened === undefined && going !== undefined) return going.id;
       const shell = yield* orchestrator.value.getThreadShell(thread).pipe(Effect.mapError(importFailure("Could not read the thread")));
-      if (shell === null) return false;
+      if (shell === null) return null;
       yield* importer.value.appendOwnRun({ threadId: thread, message, itemOrdinal: yield* ordinal(),
         runOrdinal: opened?.ordinal ?? Math.max(0, ...records.runs.map((run) => run.ordinal)) + 1,
         providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection, whileRunning: ownRunShown(thread),
         ...(opened === undefined ? {} : { opened }) });
       yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
-      return true;
+      return true as const;
     }));
   /**
    * A turn the engine runs while T3 holds no stream on the thread (bridge engine-runs.mjs): a run
@@ -336,8 +338,10 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       ...(Option.isSome(context) ? { context: context.value } : {}),
       ...(senderThreadId === null ? {} : { senderThreadId: ThreadId.make(senderThreadId) }),
     };
-    if (item.ownRun === true && (yield* appendOwnRun(thread, message, ordinal))) return;
-    yield* importer.value.appendSessionMessage({ threadId: thread, ordinal: yield* ordinal(), message });
+    const placed = item.ownRun === true ? yield* appendOwnRun(thread, message, ordinal) : null;
+    if (placed === true) return;
+    yield* importer.value.appendSessionMessage({ threadId: thread, ordinal: yield* ordinal(),
+      message: placed === null ? message : { ...message, runId: placed } });
   });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {
