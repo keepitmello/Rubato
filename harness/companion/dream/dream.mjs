@@ -32,7 +32,7 @@ import path from 'node:path';
 import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
-import { TELL_USER_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
+import { REPLY_TOOL, SAY_TOOL, commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
 export const reindexSegnoMemory = (env) => searchSegnoMemory('', { index: true, env });
@@ -361,11 +361,14 @@ export function segnoSessionFiles(env = process.env) {
 const SESSION_MESSAGE = 'rubato-session-message';
 
 /**
- * What Segno said to the user, as the dream hears it: tell_user (home.mjs TELL_USER_TOOL), which Segno
- * speaks with from a turn of its own and whose words exist only as the call's arguments, and in older
- * sessions its telegram_* tools.
+ * What Segno said to the user, as the dream hears it. Everything Segno writes in a turn is its own
+ * monologue; the user hears only what it sends with `reply` or says aloud with `say` (home.mjs
+ * REPLY_TOOL, SAY_TOOL; Roo's telegram_reply and its voice), so those words exist only as the calls'
+ * arguments. Older sessions said it with
+ * tell_user or the telegram_* tools, read the same way.
  */
-const isSaying = (name) => name === TELL_USER_TOOL || name.startsWith('telegram_');
+const LEGACY_SAYING = 'tell_user';
+const isSaying = (name) => name === REPLY_TOOL || name === SAY_TOOL || name === LEGACY_SAYING || name.startsWith('telegram_');
 
 /**
  * What Segno said to the user through tool calls. In a turn Rubato's clock opened these calls are the
