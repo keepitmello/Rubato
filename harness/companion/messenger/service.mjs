@@ -33,7 +33,7 @@ import {
   readOutboxRow, readState, recordSent, updateOutboxRow, writeBotIdentity, writeDecision, writeHandoff, writeIntent, writePairing,
   writeSecret, writeState,
 } from './store.mjs';
-import { freshRun, locateTranscript, readEntriesFrom, stepRun } from './sync.mjs';
+import { freshRun, locateTranscript, readEntriesFrom, runAt, stepRun } from './sync.mjs';
 import { mediaOf, saveMedia, transcribeMedia } from './media.mjs';
 import { prepareReplyPayload, telegramText } from './reply-text.mjs';
 import { synthesizeVoice } from './voice.mjs';
@@ -674,34 +674,44 @@ export function startCompanionMessenger({
       if (!cursor) writeState({ transcript: { file: null, offset: 0, run: freshRun() } }, env);
       return;
     }
-    const takeAsRead = () => writeState({ transcript: { file, offset: statSync(file).size, run: freshRun() } }, env);
+    const takeAsRead = async () => {
+      const at = await runAt(file, { companionSessionId: sessionId });
+      writeState({ transcript: { file, offset: at.offset, run: at.run } }, env);
+    };
     // First look, an older cursor that counted entries, or a different file (a fork or a rewind
     // into a copy): what is there is history.
     if (!cursor || (cursor.file !== null && cursor.file !== file) || (cursor.file !== null && !Number.isInteger(cursor.offset))) {
-      takeAsRead();
+      await takeAsRead();
       return;
     }
     let offset = Number.isInteger(cursor.offset) ? cursor.offset : 0;
     let run = cursor.run ?? freshRun();
     let sentParts = cursor.sentParts ?? 0;
     const { entries, size } = await readEntriesFrom(file, offset);
-    if (size < offset) { takeAsRead(); return; }
+    if (size < offset) { await takeAsRead(); return; }
     for (const { entry, end } of entries) {
       if (aborted()) return;
       const next = structuredClone(run);
       const said = stepRun(next, entry, { companionSessionId: sessionId });
-      if (said?.final) stopAllTyping();
-      if (said && said.text && !said.quiet && !said.duplicate) {
+      if (said.some((item) => item.final)) stopAllTyping();
+      // `sentParts` counts across everything this entry says, so a retry resumes where it stopped.
+      let done = 0;
+      for (const item of said) {
+        if (!item.text || item.quiet || item.duplicate) continue;
+        const skip = Math.max(0, sentParts - done);
+        let parts = 0;
         try {
-          await serial(() => sendSaid(client, said, { sentParts, onPart: (count) => {
-            sentParts = count;
+          await serial(() => sendSaid(client, item, { sentParts: skip, onPart: (count) => {
+            parts = count;
+            sentParts = done + count;
             writeState({ transcript: { file, offset, run, sentParts } }, env);
-          } }));
+          }, countParts: (count) => { parts = count; } }));
         } catch (error) {
           onError(error);
           writeState({ transcript: { file, offset, run, sentParts } }, env);
           return;
         }
+        done += parts;
       }
       offset = end;
       run = next;
@@ -716,7 +726,7 @@ export function startCompanionMessenger({
    * another person started, whose answer is held for approval. A text before a tool call goes
    * without a notification; the run's last answer notifies.
    */
-  async function sendSaid(client, said, { sentParts, onPart }) {
+  async function sendSaid(client, said, { sentParts, onPart, countParts }) {
     const trigger = said.trigger ?? { kind: 'unknown' };
     if (trigger.kind === 'channel' && !trigger.isUser) {
       if (!said.final) return;
@@ -730,6 +740,7 @@ export function startCompanionMessenger({
     if (!chatId) return;
     const text = telegramText(said.text);
     const parts = splitText(text);
+    countParts?.(parts.length);
     for (let index = sentParts; index < parts.length; index += 1) {
       await client.sendMessage({ chatId, text: parts[index], ...(said.final ? {} : { disableNotification: true }) });
       onPart(index + 1);

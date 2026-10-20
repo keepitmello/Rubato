@@ -74,7 +74,7 @@ export async function readEntriesFrom(file, offset = 0, { maxBytes = READ_CHUNK_
 
 /** The run state carried with the offset: a plain object, so it can be stored and read back. */
 export function freshRun() {
-  return { quiet: false, trigger: { kind: 'unknown' }, toolTexts: [] };
+  return { quiet: false, trigger: { kind: 'unknown' }, toolTexts: [], calls: {}, held: null };
 }
 
 /** What opened a run, from the input that started it. */
@@ -98,48 +98,101 @@ function triggerOf(entry, { companionSessionId } = {}) {
   return { kind: details.kind ?? 'message' };
 }
 
-/** Texts Segno already sent the person with telegram_send in this assistant message. */
+/** telegram_send calls to the person in one assistant message: call id -> the texts it would send. */
 function toolSends(content) {
-  const texts = [];
+  const calls = {};
   for (const part of Array.isArray(content) ? content : []) {
-    if (part?.type !== 'toolCall' || part.name !== TELEGRAM_SEND_TOOL) continue;
+    if (part?.type !== 'toolCall' || part.name !== TELEGRAM_SEND_TOOL || typeof part.id !== 'string') continue;
     const args = part.arguments ?? {};
     const to = args.to;
     if (!(to === undefined || to === null || to === '' || to === 'user')) continue;
-    for (const value of [args.text, args.voice_text]) if (typeof value === 'string' && value.trim()) texts.push(normalize(value));
+    calls[part.id] = [args.text, args.voice_text].filter((value) => typeof value === 'string' && value.trim()).map(normalize);
   }
-  return texts;
+  return calls;
+}
+
+const resultText = (content) => (Array.isArray(content) ? content : []).filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('');
+/** The tool's own answer says the message reached the person, or will once Telegram is connected. */
+const delivered = (message) => message?.isError !== true && !/^Held for/.test(resultText(message?.content).trim());
+
+const isDuplicate = (run, text) => {
+  const said = normalize(text);
+  return said !== '' && run.toolTexts.some((sent) => sent === said || sent.includes(said));
+};
+
+function finish(run, said) {
+  return { ...said, duplicate: isDuplicate(run, said.text) };
+}
+
+/** A held text goes out now, judged against what was confirmed sent by then. */
+function release(run) {
+  const said = run.held;
+  run.held = null;
+  return said ? [finish(run, said)] : [];
+}
+
+function newInput(run, quiet, trigger) {
+  const out = release(run);
+  run.quiet = quiet;
+  run.trigger = trigger;
+  run.toolTexts = [];
+  run.calls = {};
+  return out;
 }
 
 /**
- * One transcript entry through the run state. Returns what this entry says out loud, if anything:
- *   { entryId, text, final, trigger, quiet, duplicate }
+ * One transcript entry through the run state. Returns what is said out loud by now, in order:
+ *   [{ entryId, text, final, trigger, quiet, duplicate }]
  * `final` is a run's last answer (it did not hand over to tools); a text before a tool call is
  * Segno speaking mid-work, which the app shows too. `quiet` answers stay in Segno's session.
- * `duplicate` is a text Segno already sent with telegram_send in the same run.
+ * `duplicate` is a text Segno already sent with telegram_send in the same run — counted only once
+ * the tool's result says it went out, so a failed send never silences the answer. A text written
+ * beside its own telegram_send call waits for that call's result before it is judged.
  */
 export function stepRun(run, entry, { companionSessionId } = {}) {
-  if (!entry || typeof entry !== 'object') return undefined;
+  if (!entry || typeof entry !== 'object') return [];
+  run.calls ??= {};
+  run.held ??= null;
   if (entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE) {
     const message = { role: 'custom', customType: entry.customType, details: entry.details };
-    run.quiet = isClockWake(message);
-    run.trigger = triggerOf(entry, { companionSessionId });
-    run.toolTexts = [];
-    return undefined;
+    return newInput(run, isClockWake(message), triggerOf(entry, { companionSessionId }));
   }
-  if (entry.type !== 'message') return undefined;
+  if (entry.type !== 'message') return [];
   const message = entry.message ?? {};
-  if (message.role === 'user') {
-    run.quiet = false;
-    run.trigger = triggerOf(entry);
-    run.toolTexts = [];
-    return undefined;
+  if (message.role === 'user') return newInput(run, false, triggerOf(entry));
+  if (message.role === 'toolResult') {
+    if (message.toolName !== TELEGRAM_SEND_TOOL || !(message.toolCallId in run.calls)) return [];
+    if (delivered(message)) run.toolTexts.push(...run.calls[message.toolCallId]);
+    delete run.calls[message.toolCallId];
+    if (run.held && !run.held.waitFor.some((id) => id in run.calls)) return release(run);
+    return [];
   }
-  if (message.role !== 'assistant') return undefined;
-  run.toolTexts.push(...toolSends(message.content));
+  if (message.role !== 'assistant') return [];
+  const out = release(run);
+  const calls = toolSends(message.content);
+  Object.assign(run.calls, calls);
   const failed = message.stopReason === 'aborted' || message.stopReason === 'error';
   const text = failed ? '' : textOf(message.content).trim();
-  const said = normalize(text);
-  const duplicate = said !== '' && run.toolTexts.some((sent) => sent === said || sent.includes(said));
-  return { entryId: entry.id, text, final: message.stopReason !== 'toolUse', trigger: run.trigger, quiet: run.quiet, duplicate };
+  const said = { entryId: entry.id, text, final: message.stopReason !== 'toolUse', trigger: run.trigger, quiet: run.quiet };
+  const waitFor = Object.keys(calls);
+  if (text && waitFor.length) { run.held = { ...said, waitFor }; return out; }
+  return [...out, finish(run, said)];
+}
+
+/**
+ * The run state at the end of what is already written, without saying anything: where a cursor
+ * starts when the history is taken as read, so a run that is going on (a quiet one included)
+ * keeps its place.
+ */
+export async function runAt(file, { companionSessionId } = {}) {
+  const run = freshRun();
+  let offset = 0;
+  for (;;) {
+    const { entries } = await readEntriesFrom(file, offset);
+    if (!entries.length) break;
+    for (const { entry, end } of entries) { stepRun(run, entry, { companionSessionId }); offset = end; }
+  }
+  // What was said before the cursor is history; nothing of it is still to be sent.
+  run.held = null;
+  return { run, offset };
 }

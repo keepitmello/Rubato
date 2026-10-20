@@ -101,9 +101,9 @@ test('a text Segno already sent with telegram_send in the same run is not sent a
   transcript(box, [
     channelEntry('d1'),
     answerEntry('d2', '잠깐만, 확인해볼게.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '잠깐만, 확인해볼게.' } }] }),
-    toolEntry('d3', 'telegram_send', 'sent (id: 900)'),
+    toolEntry('d3', 'telegram_send', 'sent (id: 900)', { callId: 'd2-t0' }),
     answerEntry('d4', '다 확인했어. 둘 다 정상이야.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '다 확인했어. 둘 다 정상이야.' } }] }),
-    toolEntry('d5', 'telegram_send'),
+    toolEntry('d5', 'telegram_send', 'sent (id: 901)', { callId: 'd4-t0' }),
     answerEntry('d6', '다 확인했어.'),
   ]);
   await settle(box.service);
@@ -118,7 +118,7 @@ test('in a quiet run Segno speaks only through telegram_send; its answer stays i
   transcript(box, [
     wakeEntry('q1', 'heartbeat', 'tick 1'),
     answerEntry('q2', '', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '밥은 먹었어?' } }] }),
-    toolEntry('q3', 'telegram_send'),
+    toolEntry('q3', 'telegram_send', 'sent (id: 902)', { callId: 'q2-t0' }),
     answerEntry('q4', '물어봤으니 기다리자.'),
   ]);
   await settle(box.service);
@@ -199,4 +199,36 @@ test('a run that ends without words still stops the typing', async (t) => {
   await settle(box.service);
   await new Promise((resolve) => setTimeout(resolve, 100));
   assert.equal(box.fake.actions.length, 0, 'it never started: the run ended first');
+});
+
+test('a telegram_send that failed or was held does not silence the same words in the answer', async (t) => {
+  const box = await paired(t);
+  transcript(box, [
+    appEntry('f1', '회의 언제야?'),
+    answerEntry('f2', '', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '회의는 내일 3시야.' } }] }),
+    toolEntry('f3', 'telegram_send', 'telegram_send failed: Telegram API rejected it', { callId: 'f2-t0', isError: true }),
+    answerEntry('f4', '회의는 내일 3시야.'),
+    appEntry('f5', '그 사람한테도 알려줘'),
+    answerEntry('f6', '알렸어.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '알렸어.' } }] }),
+    toolEntry('f7', 'telegram_send', "Held for the person's approval before it goes anywhere (m_1).", { callId: 'f6-t0' }),
+    answerEntry('f8', '승인하면 나가.'),
+  ]);
+  await settle(box.service);
+  const sent = sentTexts(box);
+  assert.equal(sent.filter((text) => text === '회의는 내일 3시야.').length, 1, 'the failed send left the answer to say it');
+  assert.equal(sent.filter((text) => text === '알렸어.').length, 1, 'a wrongly addressed (held) send does not count as said to the person');
+});
+
+test('taking history as read keeps the run going on at the end: an answer to a clock run already open stays quiet', async (t) => {
+  const box = await paired(t);
+  const file = transcript(box, [appEntry('m1', '안녕'), answerEntry('m2', '안녕!'), wakeEntry('m3', 'heartbeat', 'tick 3')]);
+  writeState({ transcript: { file, seen: 1 } }, box.env);
+  await settle(box.service);
+  appendFileSync(file, JSON.stringify(answerEntry('m4', '혼자 정리하는 말.')) + '\n');
+  await settle(box.service);
+  assert.ok(!sentTexts(box).includes('혼자 정리하는 말.'));
+  assert.ok(!sentTexts(box).includes('안녕!'), 'the history itself is not replayed');
+  appendFileSync(file, [appEntry('m5', '뭐해'), answerEntry('m6', '정리 중이었어.')].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  await settle(box.service);
+  assert.ok(sentTexts(box).includes('정리 중이었어.'));
 });

@@ -85,6 +85,7 @@ export const answerEntry = (id, text, { stopReason = 'stop', tools = [] } = {}) 
   type: 'message', id, message: { role: 'assistant', stopReason,
     content: [...(text ? [{ type: 'text', text }] : []), ...tools.map((tool, index) => ({ type: 'toolCall', id: `${id}-t${index}`, ...tool }))] },
 });
-export const toolEntry = (id, toolName, text = 'ok') => ({ type: 'message', id,
-  message: { role: 'toolResult', toolCallId: `${id}-call`, toolName, content: [{ type: 'text', text }], isError: false } });
+/** A tool's result; `callId` names the call it answers (answerEntry's calls are `<entry id>-t<n>`). */
+export const toolEntry = (id, toolName, text = 'ok', { callId = `${id}-call`, isError = false } = {}) => ({ type: 'message', id,
+  message: { role: 'toolResult', toolCallId: callId, toolName, content: [{ type: 'text', text }], isError } });
 export const appEntry = (id, text) => ({ type: 'message', id, message: { role: 'user', content: [{ type: 'text', text }] } });
