@@ -252,6 +252,9 @@ test("what Segno sends reaches a lead as work assigned by Segno, the CTO leading
   const brief = "세뇨(컴패니언)야. 오빠 프로젝트 지도 만들어줘.";
   await pi.rpcHandlers.get(DELIVER_REQUEST)(delivery({ messageId: "msg-segno-create", kind: "create", from: segno, text: brief }));
   const created = pi.sent.at(-1).message.content;
+  // Only the CTO frame: no skill pointer in the brief (intent rev 15, user item 05e8e8f9).
+  assert.doesNotMatch(created, /Skill\(dispatched\)/);
+  assert.match(created.split("\n")[1], /^Segno, the CTO who leads this work, created this conversation and assigned it to you/);
   assert.match(created, /Segno, the CTO who leads this work, created this conversation and assigned it to you/);
   assert.match(created, /You are a lead working under Segno: it directs the scope, priorities and next steps, and you report to it\. You are not Segno\./);
   assert.match(created, /Segno's voice and the name it calls the user by are its own/);
