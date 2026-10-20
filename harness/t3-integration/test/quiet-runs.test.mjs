@@ -321,3 +321,20 @@ test('a finish names its work exactly: bash_1 is not bash_10, and a detached eva
   const back = ownRun(evalDone, said('EVAL_FOR_PERSON'));
   assert.deepEqual(pass(cells, back), back);
 });
+
+test('quietStep is the same rule one message at a time, with plain state a file reader can keep, and names the deciding launch', async () => {
+  const { quietStep, newQuietState } = await import('../src/quiet-runs.mjs');
+  const reply = (text) => said(text);
+  const stored = [user, agentLaunch('st_person03'), reply('a'), wake('heartbeat'), agentLaunch('st_segno03'), reply('b'),
+    taskDone(['st_segno03', 'st_person03']), reply('MIXED'), terminalDone('bash_999'), reply('UNKNOWN')];
+  const state = newQuietState();
+  const steps = stored.map((message) => quietStep(state, message));
+  assert.deepEqual(steps[6], { quiet: false, launcher: 'st_person03' }, 'a mixed batch is the person\'s, named by their launch');
+  assert.deepEqual(steps[8], { quiet: false }, 'unknown work continues the stretch, no launcher');
+  const quiet = quietMessages(stored);
+  assert.deepEqual(stored.map((message) => quiet.has(message)), steps.map((step) => step.quiet), 'quietMessages is quietStep in a loop');
+  const segnoOnly = newQuietState();
+  for (const message of [wake('heartbeat'), agentLaunch('st_segno04'), reply('c'), user, reply('d')]) quietStep(segnoOnly, message);
+  assert.deepEqual(quietStep(JSON.parse(JSON.stringify(segnoOnly)), taskDone(['st_segno04'])), { quiet: true, launcher: 'st_segno04' },
+    'the state survives a JSON round trip');
+});

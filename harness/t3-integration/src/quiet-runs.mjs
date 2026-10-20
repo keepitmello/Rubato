@@ -38,43 +38,60 @@ const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const names = (text, id) => new RegExp(`(?<![A-Za-z0-9_-])${escapeRegExp(id)}(?![A-Za-z0-9_-])`).test(text);
 
 /**
- * Whether Pi's own message reports on work some run launched: that run's visibility (true quiet,
- * false shown), or undefined when it names none we saw start. The finish of a terminal session
- * says its id in its text; a subagent's carries it in its details.
+ * Which launched work Pi's own message reports on: `{ quiet, id }` of the run that launched it, or
+ * undefined when it names none we saw start. The finish of a terminal session says its id in its
+ * text, a detached eval cell its tool call's id; a subagent's carries its id in its details. A batch
+ * can report several: one the person (a shown run) asked for makes the turn theirs.
  */
 function launcherOf(message, launched) {
-  if (!isOwnCustomMessage(message) || !launched.size) return undefined;
+  if (!isOwnCustomMessage(message)) return undefined;
+  const ids = Object.keys(launched);
+  if (!ids.length) return undefined;
   let text;
   try { text = `${typeof message.content === 'string' ? message.content : JSON.stringify(message.content ?? '')} ${JSON.stringify(message.details ?? '')}`; }
   catch { return undefined; }
-  // A batch can report several pieces of work; one the person asked for makes the turn theirs.
-  let found;
-  for (const [id, quiet] of launched) {
+  let quietOne;
+  for (const id of ids) {
     if (!text.includes(id) || !names(text, id)) continue;
-    if (!quiet) return false;
-    found = true;
+    if (!launched[id]) return { quiet: false, id };
+    quietOne ??= { quiet: true, id };
   }
-  return found;
+  return quietOne;
 }
 
+function remember(launched, id, quiet) {
+  delete launched[id];
+  launched[id] = quiet;
+  const keys = Object.keys(launched);
+  for (let i = 0; i < keys.length - LAUNCHED_LIMIT; i += 1) delete launched[keys[i]];
+}
+
+/** A fresh state for quietStep: plain data, so a reader that follows a file can store it between passes. */
+export const newQuietState = () => ({ inQuiet: false, launched: {} });
+
 /**
- * The messages of a stored conversation (Pi's message list, oldest first) that belong to quiet
- * runs: each clock wake and everything after it up to the next input that is not a clock wake. A
- * turn opened by work finishing in the background belongs to the run that launched that work —
- * the user's request stays the user's even when a heartbeat ran in between; work Segno started in
- * its own quiet time stays quiet. A finish that names no work seen starting continues the stretch.
+ * One message of a stored conversation, in order: whether it belongs to a quiet run, and for a
+ * message that opened a turn by reporting background work, the id of the work that decided it
+ * (`launcher`). `state` ({ inQuiet, launched: { [id]: quiet } }) is updated in place. A clock wake
+ * starts a quiet stretch and any other input ends it; a turn opened by work finishing belongs to
+ * the run that launched that work — the user's request stays the user's even when a heartbeat ran
+ * in between, and work Segno started in its own quiet time stays quiet; a finish that names no work
+ * seen starting continues the stretch.
  */
+export function quietStep(state, message) {
+  let launcher;
+  if (isClockWake(message)) state.inQuiet = true;
+  else if (isInput(message)) state.inQuiet = false;
+  else { const found = launcherOf(message, state.launched); if (found) { state.inQuiet = found.quiet; launcher = found.id; } }
+  for (const id of launchedIds(message)) remember(state.launched, id, state.inQuiet);
+  return launcher === undefined ? { quiet: state.inQuiet } : { quiet: state.inQuiet, launcher };
+}
+
+/** The messages of a stored conversation (Pi's message list, oldest first) that belong to quiet runs (quietStep). */
 export function quietMessages(messages) {
   const quiet = new Set();
-  const launched = new Map();
-  let inQuiet = false;
-  for (const message of Array.isArray(messages) ? messages : []) {
-    if (isClockWake(message)) inQuiet = true;
-    else if (isInput(message)) inQuiet = false;
-    else { const by = launcherOf(message, launched); if (by !== undefined) inQuiet = by; }
-    for (const id of launchedIds(message)) launched.set(id, inQuiet);
-    if (inQuiet) quiet.add(message);
-  }
+  const state = newQuietState();
+  for (const message of Array.isArray(messages) ? messages : []) if (quietStep(state, message).quiet) quiet.add(message);
   return quiet;
 }
 
@@ -93,7 +110,7 @@ export function createQuietRuns({ owned = () => false } = {}) {
   // work: a run opened without any input (work finishing) belongs to the run that launched that work,
   // else it continues the last stretch — as quietMessages reads it.
   let lastQuiet = false;
-  const launched = new Map();
+  const launched = {};
   const settle = (next) => {
     if (next === 'idle') lastQuiet = state === 'quiet';
     state = next;
@@ -129,10 +146,7 @@ export function createQuietRuns({ owned = () => false } = {}) {
     accept(event) {
       const type = event?.type;
       if (type === 'message_end' && (state === 'quiet' || state === 'shown')) {
-        for (const id of launchedIds(event.message)) {
-          launched.delete(id); launched.set(id, state === 'quiet');
-          if (launched.size > LAUNCHED_LIMIT) launched.delete(launched.keys().next().value);
-        }
+        for (const id of launchedIds(event.message)) remember(launched, id, state === 'quiet');
       }
       if (state === 'pending') {
         if (type === 'agent_settled') settledWhilePending = true;
@@ -155,7 +169,7 @@ export function createQuietRuns({ owned = () => false } = {}) {
         // No input at all, opened by Pi's own message (work finishing): the run that launched the work
         // decides; work nobody here saw start continues the last stretch.
         if (!input && held.some(isOwnCustom)) {
-          const verdicts = held.map((one) => (one.type === 'message_end' ? launcherOf(one.message, launched) : undefined));
+          const verdicts = held.map((one) => (one.type === 'message_end' ? launcherOf(one.message, launched)?.quiet : undefined));
           const by = verdicts.includes(false) ? false : verdicts.includes(true) ? true : undefined;
           if (by ?? lastQuiet) { held = []; settle(type === 'agent_settled' ? 'idle' : 'quiet'); if (type === 'agent_settled') lastQuiet = true; return []; }
         }
