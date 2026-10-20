@@ -351,6 +351,26 @@ test('a dream never writes through a link in memory/: a linked repository folder
   assert.ok(lstatSync(path.join(home, 'memory', 'ref', 'guide.md')).isSymbolicLink(), 'the link itself stays a link');
 });
 
+test('a link that points nowhere yet is refused too: nothing is created where it points', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  const outside = path.join(env.HOME, 'repo', 'not-yet.md');
+  mkdirSync(path.join(home, 'memory', 'ref'), { recursive: true });
+  symlinkSync(outside, path.join(home, 'memory', 'ref', 'linked.md'));
+  symlinkSync(path.join(env.HOME, 'repo', 'missing-dir'), path.join(home, 'memory', 'ref', 'gone'), 'dir');
+  const dreamer = fakeDreamer({
+    edits: { 'memory/ref/linked.md': '꿈이 쓴 줄', 'memory/ref/gone/new.md': '꿈이 쓴 새 파일', 'memory/self.md': '## 지금\n' },
+    result: { status: 'done', blocks: { distill: 'done' } },
+  });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.deepEqual(record.refused, ['memory/ref/gone/new.md', 'memory/ref/linked.md']);
+  assert.ok(!existsSync(outside), 'nothing is created outside the home through a dangling link');
+  assert.ok(!existsSync(path.join(env.HOME, 'repo', 'missing-dir')));
+  assert.deepEqual(record.changed, ['memory/self.md']);
+  assert.ok(lstatSync(path.join(home, 'memory', 'ref', 'linked.md')).isSymbolicLink());
+});
+
 test('a part the dream skipped keeps its old mark while the parts it did move', async (t) => {
   const env = sandbox(t);
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
