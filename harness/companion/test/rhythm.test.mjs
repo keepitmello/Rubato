@@ -573,7 +573,10 @@ test('seed: one time in three, only records older than thirty days and canonical
 test('seed: a seed given out stays out for thirty days; when the pool is that small the last three are skipped', (t) => {
   const env = seedHome(t);
   const keys = [];
-  for (let i = 0; i < 3; i += 1) { const seed = oldMemorySeed({ walk: true, now: at(21, 9) + i, env }); keys.push(`${seed.src}|${seed.section}`); }
+  // Seeded dice: with Math.random the draws can miss the one fresh seed SEED.tries times running.
+  let state = 7;
+  const random = () => { state = (state * 1103515245 + 12345) % 2147483648; return state / 2147483648; };
+  for (let i = 0; i < 3; i += 1) { const seed = oldMemorySeed({ walk: true, now: at(21, 9) + i, env, random }); keys.push(`${seed.src}|${seed.section}`); }
   assert.equal(new Set(keys).size, 3, 'three different seeds before any repeats');
 });
 
