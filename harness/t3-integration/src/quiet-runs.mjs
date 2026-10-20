@@ -12,8 +12,12 @@ const isSessionMessage = (message) => message?.role === 'custom' && message.cust
 export const isClockWake = (message) => isSessionMessage(message) && message.details?.kind === 'wake'
   && QUIET_WAKES.includes(message.details.what);
 
-/** An input a run takes: the person's message, or a message from another conversation, a messenger or Rubato. */
-const isInput = (message) => message?.role === 'user' || isSessionMessage(message);
+/** The custom types a Pi message carries, its own and, for a batch (rubato-runtime:wake), each item's. */
+const carriedTypes = (message) => [message?.customType, ...(Array.isArray(message?.details) ? message.details.map((item) => item?.customType) : [])];
+/** A teammate's message (senpi-task:team-message, alone or inside a batch): another session speaking, not the clock. */
+const isTeamMail = (message) => message?.role === 'custom' && carriedTypes(message).includes('senpi-task:team-message');
+/** An input a run takes: the person's message, a teammate's, or a message from another conversation, a messenger or Rubato. */
+const isInput = (message) => message?.role === 'user' || isSessionMessage(message) || isTeamMail(message);
 
 /** How many launched ids one live stream remembers; the oldest go first. */
 const LAUNCHED_LIMIT = 2000;
@@ -45,14 +49,18 @@ export function reportedIds(message) {
   const text = typeof message.content === 'string' ? message.content
     : Array.isArray(message.content) ? message.content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('\n') : '';
   const ids = [];
-  const terminal = /^\s*(?:<system-reminder>)?\s*Background terminal session (\S+) finished\b/.exec(text);
-  if (terminal) ids.push(terminal[1]);
+  // Each notice's header starts its own block; a batch (rubato-runtime:wake) joins several.
+  for (const terminal of text.matchAll(/(?:^|\n)\s*(?:<system-reminder>)?\s*Background terminal session (\S+) finished\b/g)) ids.push(terminal[1]);
   for (const cell of text.matchAll(/(?:^|\n)\s*(?:<system-reminder>)?\s*Detached eval cell (\S+) \(/g)) ids.push(cell[1]);
-  const details = Array.isArray(message.details) ? message.details : message.details && typeof message.details === 'object' ? [message.details] : [];
-  for (const detail of details) {
-    if (typeof detail?.agentId === 'string') ids.push(detail.agentId);
-    if (Array.isArray(detail?.agentIds)) ids.push(...detail.agentIds.filter((id) => typeof id === 'string'));
-  }
+  // Subagents name themselves in details: [{ agentId }], or inside a batch [{ customType, details: [{ agentId }] }].
+  const walk = (value, depth) => {
+    for (const detail of Array.isArray(value) ? value : value && typeof value === 'object' ? [value] : []) {
+      if (typeof detail?.agentId === 'string') ids.push(detail.agentId);
+      if (Array.isArray(detail?.agentIds)) ids.push(...detail.agentIds.filter((id) => typeof id === 'string'));
+      if (depth < 2 && detail?.details !== undefined) walk(detail.details, depth + 1);
+    }
+  };
+  walk(message.details, 0);
   return ids;
 }
 

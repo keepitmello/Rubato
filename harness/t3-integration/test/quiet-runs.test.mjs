@@ -400,3 +400,23 @@ test('a finish is identified by its own header or details, never by ids its outp
   pass(filter, run(wake('heartbeat'), agentLaunch('st_segno9'), answer));
   assert.deepEqual(pass(filter, ownRun(taskQuoting, said('PRIVATE_9'))), []);
 });
+
+test('a teammate\'s message opens a shown turn even after a quiet one, live and in history; a batched finish still names its work', () => {
+  const teamBatch = { role: 'custom', customType: 'rubato-runtime:wake', display: false, timestamp: 40, content: 'Message from owner-1: done',
+    details: [{ customType: 'senpi-task:team-message', details: { from: 'owner-1' } }] };
+  const filter = createQuietRuns();
+  pass(filter, run(wake('heartbeat'), answer));
+  const team = run(teamBatch, said('TEAM_REPLY'));
+  assert.deepEqual(pass(filter, team), team);
+  const stored = [wake('heartbeat'), answer, teamBatch, said('TEAM_REPLY')];
+  assert.equal(quietMessages(stored).has(stored.at(-1)), false);
+  // A subagent's finish inside a batch, with a terminal's finish second in the same batch.
+  const batch = { role: 'custom', customType: 'rubato-runtime:wake', display: false, timestamp: 41,
+    content: 'A subagent finished.\n\n<system-reminder>Background terminal session bash_88 finished: completed.</system-reminder>',
+    details: [{ customType: 'rubato.task.completion', details: [{ agentId: 'st_person88' }] }] };
+  const live = createQuietRuns();
+  pass(live, run(user, agentLaunch('st_person88'), answer));
+  pass(live, run(wake('heartbeat'), bashLaunch('bash_88'), answer));
+  const finish = ownRun(batch, said('BATCH'));
+  assert.deepEqual(pass(live, finish), finish, 'the person\'s subagent makes the batch theirs');
+});
