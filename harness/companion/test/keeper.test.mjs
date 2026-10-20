@@ -177,7 +177,7 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   assert.deepEqual(notices, [], 'a busy companion is not interrupted');
   engine.sessions.get(sessionId).status = 'idle';
   await keeper.poke();
-  assert.deepEqual(notices, [{ sessionId, text: heartbeatText(), what: 'heartbeat' }]);
+  assert.deepEqual(notices, [{ sessionId, text: heartbeatText({ at }), what: 'heartbeat' }]);
   at += 30 * 60_000;
   writeSettings({ heartbeat: { enabled: false } }, env);
   await keeper.poke();
@@ -517,13 +517,14 @@ async function heartbeatDay(t, { entries = [], start = at(20, 12) } = {}) {
   return { env, notices, poke, write, beats: () => notices.filter((notice) => notice.what === 'heartbeat') };
 }
 
-test('heartbeat: it asks for no report and says how long the user has been away', async (t) => {
+test('heartbeat: the wake is a signal — the time and how long the user has been away, nothing more', async (t) => {
   const { poke, beats } = await heartbeatDay(t, { entries: [userMessage(at(20, 9)), assistantMessage(at(20, 9, 1))] });
   await poke(at(20, 12, 30));
-  assert.deepEqual(beats(), [{ text: heartbeatText({ awayMs: at(20, 12, 30) - at(20, 9) }), what: 'heartbeat' }]);
-  assert.match(beats()[0].text, /your own time/);
-  assert.match(beats()[0].text, /4 hours ago/);
-  assert.doesNotMatch(beats()[0].text, /note for yourself/);
+  assert.deepEqual(beats(), [{ text: 'Heartbeat. now="2026-10-20 12:30" away="4 hours"', what: 'heartbeat' }]);
+});
+
+test('heartbeat: a user who never wrote is said as such', () => {
+  assert.equal(heartbeatText({ at: at(20, 7, 5) }), 'Heartbeat. now="2026-10-20 07:05" away="never wrote"');
 });
 
 test('heartbeat: none while the user is talking; the interval counts from their last word', async (t) => {
@@ -535,7 +536,7 @@ test('heartbeat: none while the user is talking; the interval counts from their 
   assert.equal(beats().length, 0, 'still inside the interval from their last word');
   await poke(at(20, 12, 50));
   assert.equal(beats().length, 1, 'thirty quiet minutes after their last word');
-  assert.match(beats()[0].text, /30 minutes ago/);
+  assert.match(beats()[0].text, /away="30 minutes"/);
 });
 
 test('heartbeat: Segno\'s next wake rests the beat until then, and that beat carries its reason once', async (t) => {
@@ -546,13 +547,13 @@ test('heartbeat: Segno\'s next wake rests the beat until then, and that beat car
   assert.equal(beats().length, 0, 'resting until 15:00');
   await poke(at(20, 15));
   assert.equal(beats().length, 1);
-  assert.match(beats()[0].text, /You asked to be woken now: 로그인 버그 리드가 끝났는지 본다/);
+  assert.match(beats()[0].text, /wake="로그인 버그 리드가 끝났는지 본다"$/);
   assert.equal(readNextWake(env), undefined, 'the wake is used up');
   await poke(at(20, 15, 29));
   assert.equal(beats().length, 1, 'then the ordinary interval again');
   await poke(at(20, 15, 30));
   assert.equal(beats().length, 2);
-  assert.doesNotMatch(beats()[1].text, /You asked to be woken/);
+  assert.doesNotMatch(beats()[1].text, /wake=/);
 });
 
 test('heartbeat: a rest does not hold back the daily report', async (t) => {

@@ -15,8 +15,9 @@
 // clock (the companion reads it as a system message where its model allows; session-link
 // message.mjs). A companion in the middle of a turn is not interrupted; the beat waits for it.
 //
-// The heartbeat is Segno's own time, as Roo's is (~/.claude/roo-channel heartbeat skill): it asks
-// for no report and says how long the user has been away. While the user is talking to Segno there
+// The heartbeat is Segno's own time, as Roo's is (~/.claude/roo-channel heartbeat skill). The wake
+// is a signal only: the time, how long the user has been away, and Segno's reason when it set the
+// wake; what a beat is for is in Segno's prompt. While the user is talking to Segno there
 // is no beat; the interval counts from their last word. When nothing will need it for a while,
 // Segno sets its next wake (home.mjs, the `next_wake` tool) and the beat rests until then, carrying
 // its reason. The cache warmer does not depend on the beat: it warms the companion without an end
@@ -46,19 +47,25 @@ export function awayText(ms) {
   return `${Math.round(hours / 24)} days`;
 }
 
+/** A local clock reading as YYYY-MM-DD HH:MM. */
+function localStamp(at) {
+  const date = new Date(at);
+  return `${localDate(at)} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
 /**
- * The heartbeat's words: Segno's own time, how long the user has been away (`awayMs`, undefined
- * when they never wrote), and the reason Segno gave when it set this wake, if it did.
+ * The heartbeat as a signal, the way Roo's tick is one (`HEARTBEAT tick=3 ACTION=reflect now=…`):
+ * the time, how long the user has been away (`awayMs`, undefined when they never wrote) and the
+ * reason Segno gave when it set this wake. What a beat is for lives in Segno's prompt
+ * (harness/prompts/companion/companion.pi.md), not here.
  */
-export function heartbeatText({ awayMs, reason } = {}) {
+export function heartbeatText({ at = Date.now(), awayMs, reason } = {}) {
+  const quote = (value) => JSON.stringify(String(value));
   return [
-    'Heartbeat. This is your own time.',
-    awayMs === undefined ? 'The user has not written to you yet.' : `The user last wrote to you ${awayText(awayMs)} ago.`,
-    ...(reason ? [`You asked to be woken now: ${reason}`] : []),
-    'Nothing here asks for a report, and no one sees this turn. Do what you choose: pick up something you left ' +
-      'unfinished, look in on the leads you follow and move stalled work, write in your records, or rest.',
-    'If something needs the user, tell them with telegram_send. If nothing will need you for a while, ' +
-      'set your next wake with next_wake; heartbeats rest until then.',
+    'Heartbeat.',
+    `now=${quote(localStamp(at))}`,
+    `away=${quote(awayMs === undefined ? 'never wrote' : awayText(awayMs))}`,
+    ...(reason ? [`wake=${quote(reason)}`] : []),
   ].join(' ');
 }
 export const DAILY_REPORT_TEXT = 'Daily report time. Send the user today\'s report: what came in, what was finished, ' +
@@ -275,7 +282,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (!wish && lastUser !== undefined && at - lastUser < intervalMs) { lastBeat = lastUser; return; }
     lastBeat = at;
     if (wish) clearNextWake(env);
-    await notify(sessionId, heartbeatText({ awayMs: lastUser === undefined ? undefined : at - lastUser, reason: wish?.reason }), 'heartbeat');
+    await notify(sessionId, heartbeatText({ at, awayMs: lastUser === undefined ? undefined : at - lastUser, reason: wish?.reason }), 'heartbeat');
   }
 
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */
