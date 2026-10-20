@@ -20,7 +20,7 @@ const run = (input, ...tail) => [{ type: 'agent_start' }, { type: 'turn_start' }
 const pass = (filter, events) => events.flatMap((event) => filter.accept(event));
 
 test('a run the clock started passes nothing; any other run passes whole, in order', () => {
-  for (const what of ['heartbeat', 'daily-report', 'sleep']) {
+  for (const what of ['heartbeat', 'greeting', 'wake', 'recall', 'daily-report', 'sleep']) {
     assert.deepEqual(pass(createQuietRuns(), run(wake(what), answer)), [], what);
   }
   for (const input of [user, notice]) {
@@ -111,10 +111,75 @@ test('on the stream: a heartbeat run reaches T3 as nothing, and a message sent m
 
 test("the quiet wakes are Rubato's clock; a wake meant for the person still opens a turn the app shows", () => {
   for (const what of QUIET_WAKES) assert.ok(WAKES.includes(what), what);
-  assert.deepEqual([...QUIET_WAKES].sort(), ['daily-report', 'heartbeat', 'sleep']);
+  assert.deepEqual([...QUIET_WAKES].sort(), ['daily-report', 'greeting', 'heartbeat', 'recall', 'sleep', 'wake']);
   const review = wake('persona-review');
   const events = run(review, answer);
   assert.deepEqual(pass(createQuietRuns(), events), events);
   assert.equal(sessionMessageFrom(review, 't1')?.context.records[0].payload.kind, 'wake', 'its row opens the turn, drawn as nothing');
   assert.equal(sessionMessageFrom(wake('heartbeat'), 't1'), undefined);
+});
+
+// ── Segno port: clock runs stay out on every path (verifier F1–F3) ──
+
+const toolDeclaration = { role: 'system', content: [{ type: 'text', text: 'tools added' }], timestamp: 0 };
+/** A run whose input comes after Pi's tool declaration, as a new conversation's first run does. */
+const runAfterDeclaration = (input, ...tail) => [{ type: 'agent_start' }, { type: 'turn_start' },
+  { type: 'message_start', message: toolDeclaration }, { type: 'message_end', message: toolDeclaration },
+  ...run(input, ...tail).slice(2)];
+
+test('a clock run that opens with Pi\'s tool declaration is still quiet', () => {
+  for (const what of ['heartbeat', 'wake', 'recall', 'greeting']) {
+    assert.deepEqual(pass(createQuietRuns(), runAfterDeclaration(wake(what), answer)), [], what);
+  }
+  const events = runAfterDeclaration(user, answer);
+  assert.deepEqual(pass(createQuietRuns(), events), events, 'the person\'s run after a declaration passes whole');
+});
+
+test('a run opened by Pi\'s own message continues the stretch before it: quiet after a clock run, shown after the person\'s', () => {
+  const background = { role: 'custom', customType: 'background-done', display: true, content: 'done', timestamp: 5 };
+  const filter = createQuietRuns();
+  assert.deepEqual(pass(filter, [...run(wake('heartbeat'), answer), ...run(background, answer)]), [], 'live agrees with history');
+  assert.ok(quietMessages([wake('heartbeat'), answer, background, answer]).has(answer));
+  const after = createQuietRuns();
+  const shown = run(background, answer);
+  pass(after, run(user, answer));
+  assert.deepEqual(pass(after, shown), shown);
+});
+
+test('an attach replays the thread\'s missing answers but never a clock run\'s, nor opens a turn for one in flight', async () => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const { EventProjection, importedId } = await import('../src/events.mjs');
+  const clock = (what, at) => ({ ...wake(what), timestamp: at, details: { ...wake(what).details, messageId: `wake-${at}` } });
+  const said = (text, at) => ({ role: 'assistant', content: [{ type: 'text', text }], timestamp: at, stopReason: 'stop', provider: 'anthropic', model: 'claude-opus-5' });
+  for (const streaming of [false, true]) {
+    for (const what of ['heartbeat', 'greeting', 'wake', 'recall', 'sleep']) {
+      const events = [];
+      const projection = new EventProjection({ threadId: 'thread', sessionId: 'session', instanceId: 'instance', emit: (event) => events.push(event) });
+      const bridge = Object.create(RubatoPiBridge.prototype);
+      const visible = [{ role: 'user', content: 'hi', timestamp: 1 }, said('hello', 2)];
+      bridge.projectedMessages = async () => visible.map((m) => ({ id: importedId('instance', 'session', m), text: typeof m.content === 'string' ? m.content : m.content[0].text, streaming: false }));
+      bridge.rememberWindows([]); bridge.catalogue = async () => ({ models: [] });
+      const tail = streaming ? [clock(what, 3)] : [clock(what, 3), said(`QUIET_${what}`, 4)];
+      const snapshot = { runtimeId: 'rt', sequence: 1, pendingUi: [], state: { isStreaming: streaming, model: null, autoCompactionEnabled: true },
+        messages: [...visible, ...tail, ...(streaming ? [] : [{ role: 'user', content: 'later', timestamp: 5 }, said('VISIBLE_later', 6)])] };
+      const context = { session: { threadId: 'thread', status: 'connecting', resumeCursor: { kind: 'rubato-pi' } }, projection,
+        client: { subscribeSession: async () => () => {}, snapshot: async () => snapshot } };
+      await bridge.synchronize(context);
+      assert.deepEqual(events.filter((e) => JSON.stringify(e).includes(`QUIET_${what}`)), [], `${what}: its answer stays out`);
+      if (streaming) assert.equal(events.some((e) => e.type === 'turn.started'), false, `${what}: no turn opens for a clock run in flight`);
+      else assert.ok(events.some((e) => JSON.stringify(e).includes('VISIBLE_later')), 'a visible answer the thread lacks still comes');
+    }
+  }
+});
+
+test('get_messages on the RPC stream (the adapter\'s backfill) leaves the clock runs out', async () => {
+  const stored = [user, answer, wake('wake'), { ...answer, content: [{ type: 'text', text: 'QUIET' }], timestamp: 5 }, { ...user, timestamp: 6 }];
+  const client = { client: { connected: true }, async attach() {}, async subscribeSession() { return async () => {}; },
+    async command(command) { return command.type === 'get_messages' ? { messages: stored } : undefined; }, async reply() {}, async close() {} };
+  const conn = new RubatoRpcConnection({ claimed: new Set(), pendingPrompts: new Map(), skillNames: new Set(), appendSessionMessage: async () => {} },
+    { threadId: 't1', cwd: '/w', onRecord: () => {}, awaitTimings: { pollMs: 5, graceMs: 5 } });
+  conn.client = client;
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  const { messages } = await conn.request({ type: 'get_messages' });
+  assert.deepEqual(messages, [user, answer, { ...user, timestamp: 6 }]);
 });

@@ -98,17 +98,21 @@ export function mergeAnthropicServerCompactionEdit(body, { contextWindow, maxTok
 
 /**
  * One request that compacts now: the server-compaction edit already on `payload` gets Anthropic's
- * minimum trigger, so the server summarizes whatever lies above 50k instead of waiting for the
+ * minimum trigger (and, when given, the conversation's `keep` lines under its instructions), so the server summarizes whatever lies above 50k instead of waiting for the
  * safety line. Returns undefined when the payload carries no such edit (another model, or the
  * wire is off); this never adds an edit the adapter was not armed for.
  */
-export function compactNowPayload(payload) {
+export function compactNowPayload(payload, { keep = "" } = {}) {
   const edits = payload?.context_management?.edits;
   if (!Array.isArray(edits)) return undefined;
   const at = edits.findIndex((edit) => edit?.type === ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE);
   if (at === -1) return undefined;
   const next = edits.slice();
-  next[at] = { ...edits[at], trigger: { type: "input_tokens", value: ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN } };
+  // The companion's own words on what to keep go under the usual guidance (compact_context `keep`).
+  const extra = typeof keep === "string" && keep.trim()
+    ? { instructions: `${edits[at].instructions ?? ""}\n\nWhat the conversation itself asked this summary to keep and drop:\n${keep.trim()}`.trim() }
+    : {};
+  next[at] = { ...edits[at], ...extra, trigger: { type: "input_tokens", value: ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN } };
   return { ...payload, context_management: { ...payload.context_management, edits: next } };
 }
 

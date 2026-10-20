@@ -5,8 +5,8 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createQuietRuns } from './quiet-runs.mjs';
-import { createTelegramEcho } from './telegram-echo.mjs';
+import { createQuietRuns, quietMessages } from './quiet-runs.mjs';
+import { createTelegramEcho, telegramEchoes } from './telegram-echo.mjs';
 
 /**
  * One Pi RPC stream for upstream T3's Pi adapter (orchestrator V2), served by the shared
@@ -381,7 +381,10 @@ export class RubatoRpcConnection {
   }
   /** A quiet run's telegram_send to the person, written into the thread as Segno's words. */
   telegramMessage(event) {
-    const item = this.telegramEcho.accept(event, this.quietRuns.quiet);
+    this.appendEcho(this.telegramEcho.accept(event, this.quietRuns.quiet));
+  }
+  /** One telegram echo into the thread, once per id on this connection. */
+  appendEcho(item) {
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
     this.sessionMessages.add(item.id);
     Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
@@ -654,6 +657,19 @@ export class RubatoRpcConnection {
         const state = await this.command(record);
         return state && typeof state === 'object'
           ? { ...state, sessionFile: this.sessionId, rubatoSessionFile: state.sessionFile } : state;
+      }
+      case 'get_messages': {
+        // The adapter builds the thread's backfill from this list; runs Rubato's clock started stay
+        // out of it, as they do from the history import and the live stream (quiet-runs.mjs).
+        const reply = await this.command(record);
+        if (!reply || !Array.isArray(reply.messages)) return reply;
+        const quiet = quietMessages(reply.messages);
+        if (!quiet.size) return reply;
+        // What such a run said to the person with telegram_send still belongs in the thread: the
+        // same item the live stream appends (telegram-echo.mjs), under the same id, so a backfill
+        // after an engine restart brings it back once and never twice.
+        for (const item of telegramEchoes(reply.messages, quiet, this.threadId).values()) this.appendEcho(item);
+        return { ...reply, messages: reply.messages.filter((message) => !quiet.has(message)) };
       }
       case 'abort':
         return this.abort(record);

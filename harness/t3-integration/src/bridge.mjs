@@ -584,9 +584,15 @@ export class RubatoPiBridge {
       context.runtimeId = snapshot.runtimeId;
       context.sequence = snapshot.sequence;
       context.projection.event('session.started', { resume: context.session.resumeCursor });
-      if (snapshot.state.isStreaming) context.projection.begin();
-      snapshot.messages.forEach((message, index) => context.projection.message(message,
-        !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason)));
+      // Runs Rubato's clock started stay out of the thread here too, as in importedMessages: an
+      // attach must not replay a heartbeat's or a wake's answer, nor open a turn for one in flight.
+      const quiet = quietMessages(snapshot.messages);
+      const quietTail = snapshot.messages.length > 0 && quiet.has(snapshot.messages.at(-1));
+      if (snapshot.state.isStreaming && !quietTail) context.projection.begin();
+      snapshot.messages.forEach((message, index) => {
+        if (quiet.has(message)) return;
+        context.projection.message(message, !(snapshot.state.isStreaming && index === snapshot.messages.length - 1 && !message.stopReason));
+      });
       for (const request of snapshot.pendingUi) context.projection.question(request);
       await this.drainStrandedQueue(context, snapshot.state);
       // A turn waiting on a background completion is still open while Pi idles.

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { DAILY_REPORT_TEXT, SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, kstLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, kstLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
 import { readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -55,6 +55,7 @@ function fakeEngine() {
       },
       async command(command) {
         if (!attachedTo) throw new Error('No session is attached');
+        if (command.type === 'get_state') return { model: engine.model ?? { provider: 'anthropic', id: 'claude-test' } };
         if (command.type !== 'get_session_stats') throw new Error(`unexpected command ${command.type}`);
         return { sessionId: attachedTo, sessionFile: engine.sessionFile, contextUsage: { tokens: engine.contextTokens, contextWindow: 1_000_000 } };
       },
@@ -64,6 +65,14 @@ function fakeEngine() {
         attachedTo = undefined;
       },
     };
+  };
+  /** A companion conversation that already exists and was already woken: the keeper attaches to it. */
+  engine.existing = (env) => {
+    const sessionId = 'segno-1';
+    // Already loaded, as after the keeper's first start: no resume line is owed.
+    sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0 });
+    writeState({ sessionId, woke: { boundary: null } }, env);
+    return sessionId;
   };
   return engine;
 }
@@ -159,8 +168,9 @@ test('an engine error is reported and the next poll tries again', async (t) => {
 
 test('the heartbeat wakes the companion on its interval, waits while it is busy, and stops when switched off', async (t) => {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
+  engine.existing(env);
   const notices = [];
   let at = new Date(2026, 9, 20, 12, 0).getTime();
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
@@ -184,50 +194,12 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   assert.equal(notices.length, 1);
 });
 
-test('the daily report goes out once a day at its time; a companion started after the time begins tomorrow', async (t) => {
-  const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { time: '09:00' } }, env);
-  const engine = fakeEngine();
-  const notices = [];
-  let at = new Date(2026, 9, 20, 14, 0).getTime();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
-    notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
-  assert.deepEqual(notices, [], 'turned on at 14:00, the 09:00 report waits for tomorrow');
-  at = new Date(2026, 9, 21, 8, 59).getTime();
-  await keeper.poke();
-  assert.deepEqual(notices, []);
-  at = new Date(2026, 9, 21, 9, 0).getTime();
-  await keeper.poke();
-  at = new Date(2026, 9, 21, 9, 5).getTime();
-  await keeper.poke();
-  assert.deepEqual(notices, [{ text: DAILY_REPORT_TEXT, what: 'daily-report' }]);
-  assert.equal(readState(env).dailyReportOn, localDate(at));
-});
-
-test('a companion started before the report time gets that day\'s report', async (t) => {
-  const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false } }, env);
-  const engine = fakeEngine();
-  const notices = [];
-  let at = new Date(2026, 9, 20, 7, 0).getTime();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
-    notify: async (_sessionId, text) => { notices.push(text); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  at = new Date(2026, 9, 20, 9, 0).getTime();
-  await keeper.poke();
-  assert.deepEqual(notices, [DAILY_REPORT_TEXT]);
-});
-
 test("the keeper keeps the panel beside Segno's chat current from the engine's list", async (t) => {
   const { followingStore, readPanel } = await import('../companion.mjs');
   const env = sandbox(t);
   const engine = fakeEngine();
   engine.sessions.set('lead', { sessionId: 'lead', title: 'Login timeout', cwd: '/w/hash-game', status: 'running', runtimeId: 'r-lead', attachments: 1 });
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   followingStore(env).save({ lead: { companionId: 'x', base: { final: null, waiting: false, ui: [] }, since: 1000 } });
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
   t.after(() => keeper.close());
@@ -283,8 +255,9 @@ const leadEnded = (time) => sessionMessage(time, { v: 1, kind: 'notice', from: {
 /** A sleepy night: Segno's context is long and the user last wrote in the app at `lastUser`. */
 async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } = {}) {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
+  engine.existing(env);
   engine.contextTokens = tokens;
   engine.sessionFile = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl');
   const write = (list) => writeFileSync(engine.sessionFile, [{ type: 'session', id: 'segno' }, ...list].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
@@ -395,8 +368,9 @@ test('sleep: a Telegram message from the user counts like one in the app', async
 
 test('sleep: the keeper asks the engine at most every ten minutes at night, and never by day', async (t) => {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
+  engine.existing(env);
   engine.contextTokens = 100_000;
   let asked = 0;
   const connect = async () => { const client = await engine.connect(); const command = client.command; client.command = (c) => { asked++; return command(c); }; return client; };
@@ -405,9 +379,9 @@ test('sleep: the keeper asks the engine at most every ten minutes at night, and 
   t.after(() => keeper.close());
   await keeper.ready;
   await keeper.poke();
-  assert.equal(asked, 0, 'by day the keeper does not ask');
+  assert.equal(asked, 1, 'by day the keeper asks only once, where the session file is (the wake sequence follows it)');
   for (const minute of [0, 3, 9, 10, 15]) { now = at(21, 2, minute); await keeper.poke(); }
-  assert.equal(asked, 2, 'at 02:00 and 02:10');
+  assert.equal(asked, 3, 'at 02:00 and 02:10');
 });
 
 test('lastUserMessageAt reads the newest user message, in the app or from Telegram', async (t) => {
@@ -425,10 +399,11 @@ test('lastUserMessageAt reads the newest user message, in the app or from Telegr
 
 test('a default that moved wakes Segno once at engine start, with where to look, and the base moves', async (t) => {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   seedPromptPieces({ defaultsDir, env });
   const moved = defaultsCopy(t, { soul: '# I am Segno\n\nA new default voice.\n' });
   const engine = fakeEngine();
+  engine.existing(env);
   const notices = [];
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: moved,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
@@ -457,10 +432,11 @@ test('a default that moved wakes Segno once at engine start, with where to look,
 
 test('a default that changes while the engine runs waits for the next engine start', async (t) => {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const under = defaultsCopy(t);
   seedPromptPieces({ defaultsDir: under, env });
   const engine = fakeEngine();
+  engine.existing(env);
   const notices = [];
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: under,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
@@ -476,8 +452,9 @@ test('a default that changes while the engine runs waits for the next engine sta
 
 test('the page can ask Segno to review even when no default moved', async (t) => {
   const env = sandbox(t);
-  writeSettings({ enabled: true, heartbeat: { enabled: false }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
+  engine.existing(env);
   const notices = [];
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
@@ -499,8 +476,9 @@ test('the page can ask Segno to review even when no default moved', async (t) =>
 
 /** A day with the heartbeat on every 30 minutes and Segno's session file under the test's control. */
 async function heartbeatDay(t, { entries = [], start = at(20, 12), env = sandbox(t) } = {}) {
-  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, dailyReport: { enabled: false } }, env);
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
+  engine.existing(env);
   engine.sessionFile = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl');
   const write = (list) => writeFileSync(engine.sessionFile, [{ type: 'session', id: 'segno' }, ...list].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
   write(entries);
@@ -577,15 +555,16 @@ test('heartbeat: while a wake wish waits no tick is sent but they are counted; i
   assert.equal(firstLine(lines().at(-1)).replace(/ kst="[^"]*"/, ''), 'HEARTBEAT tick=8');
 });
 
-test('heartbeat: a wake wish keeps the ticks quiet while the user is here too, and does not hold back the daily report', async (t) => {
+test('heartbeat: a wake wish keeps the ticks quiet while the user is here too, and does not hold back the morning greeting', async (t) => {
   const { env, poke, write, lines, notices } = await heartbeatDay(t, { start: at(20, 8) });
-  writeSettings({ dailyReport: { enabled: true, time: '09:00' } }, env);
+  writeSettings({ greetings: { enabled: true } }, env);
   setWakeWish({ target: '120', reason: '오전에 다시' }, { now: at(20, 8, 5), env });
   write([userMessage(at(20, 8, 50))]);
   await poke(at(20, 9));
-  await poke(at(20, 9, 1));
-  assert.deepEqual(notices().map((notice) => notice.what), ['daily-report']);
+  await poke(at(20, 9, 7));
+  assert.deepEqual(notices().map((notice) => notice.what), ['greeting']);
   assert.equal(lines().length, 0);
+  assert.notEqual(readWakeWish(env), undefined, 'the wish still waits');
 });
 
 test('heartbeat: a wish further than six hours from when it was set comes due at six, marked clamped', async (t) => {

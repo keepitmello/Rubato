@@ -319,7 +319,11 @@ async function companionSession(t) {
 test("the companion's prompt is its pieces, the person's versions first", async (t) => {
   const s = await companionSession(t);
   const first = await s.compose();
-  assert.ok(first.startsWith(PIECES.map(({ id }) => `default ${id}`).join("\n\n")), "the pieces in order, ahead of everything else");
+  assert.ok(first.startsWith(PIECES.filter(({ id }) => !["memory", "coda"].includes(id)).map(({ id }) => `default ${id}`).join("\n\n")),
+    "the pieces in order, ahead of everything else (Roo build.sh order)");
+  assert.ok(first.endsWith("\n\ndefault memory\n\n---\n\ndefault coda"),
+    "the resident memory in the last recency slot, then the closing piece after a rule (Roo build.sh)");
+  assert.doesNotMatch(first, /segno:(coda|memory)/);
   assert.match(first, /Role: companion/);
   assert.doesNotMatch(first, /# Working agreement/);
   assert.equal(await s.compose(), first);
@@ -329,6 +333,24 @@ test("the companion's prompt is its pieces, the person's versions first", async 
   const user = { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 };
   assert.deepEqual((await s.handlers.context({ type: "context", messages: [user] }, s.ctx))?.messages ?? [user], [user],
     "the companion's preamble is its own, so the leads' opening turn does not answer it");
+});
+
+test("the companion's closing piece stays last even after what other handlers appended", async (t) => {
+  const s = await companionSession(t);
+  const base = "You are an expert coding assistant operating inside pi.\n\n<cwd>\n/tmp/x\n</cwd>";
+  const result = await s.handlers.system_prompt({ systemPrompt: `${base}\n\nEARLIER_GUIDANCE`, basePrompt: base }, s.ctx);
+  assert.match(result.systemPrompt, /EARLIER_GUIDANCE/);
+  assert.ok(result.systemPrompt.endsWith("EARLIER_GUIDANCE\n\ndefault memory\n\n---\n\ndefault coda"));
+  assert.equal(result.systemPrompt.match(/default coda/g).length, 1);
+});
+
+test("the resident memory piece is read from Segno's memory folder, where the dream keeps it", async (t) => {
+  const s = await companionSession(t);
+  mkdirSync(join(s.env.RUBATO_COMPANION_HOME, "memory"), { recursive: true });
+  writeFileSync(join(s.env.RUBATO_COMPANION_HOME, "memory", "MEMORY.md"), "## 살아있는 약속\n- 아침엔 커피");
+  const prompt = await s.compose();
+  assert.match(prompt, /\n\n## 살아있는 약속\n- 아침엔 커피\n\n---\n\ndefault coda$/);
+  assert.doesNotMatch(prompt, /default memory/);
 });
 
 test("a piece edit waits for the companion's next new window; until then every request is the same", async (t) => {

@@ -5,7 +5,10 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { skillsSection, SKILL_DIRS } from "./skills-section.mjs";
 import { resolveRole } from "./role-contract.mjs";
-import { composeCompanionPrompt, COMPANION_ROLE } from "../../companion/companion.mjs";
+import { codaLast, composeCompanionPrompt, COMPANION_ROLE } from "../../companion/companion.mjs";
+
+// The companion's closing piece goes to the very end of the system prompt (companion.mjs codaLast).
+export { codaLast };
 
 const SKILLS_SECTION = "The following skills provide specialized instructions";
 const BUNDLED_DISPATCHED_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../../skills/dispatched/SKILL.md");
@@ -349,5 +352,8 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   if (hooks.includeReturn ?? nonInteractive) {
     parts.push((hooks.returnSkillSection ?? returnSkillSection)(hooks));
   }
-  return parts.filter((part) => part.length > 0).join("\n\n");
+  const prompt = parts.filter((part) => part.length > 0).join("\n\n");
+  // The companion's coda ends the prompt. A caller that appends more after this (the role-prompt
+  // extension) asks for it still marked and moves it last itself.
+  return hooks.renderCoda === false ? prompt : codaLast(prompt);
 }

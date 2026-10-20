@@ -23,7 +23,7 @@ export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 export const SESSION_MESSAGE_CONTEXT_KIND = 'rubato-session';
 export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
 /** The wakes of Rubato's clock (harness/companion keeper.mjs) whose runs no client sees. */
-export const QUIET_WAKES = Object.freeze(['heartbeat', 'daily-report', 'sleep']);
+export const QUIET_WAKES = Object.freeze(['heartbeat', 'greeting', 'wake', 'recall', 'daily-report', 'sleep']);
 const CONTEXT_LABEL_MAX = 200;
 export const isSessionMessage = (message) => message?.role === 'custom'
   && message.customType === SESSION_MESSAGE_TYPE && (message.display !== false || message.details?.kind === 'wake');

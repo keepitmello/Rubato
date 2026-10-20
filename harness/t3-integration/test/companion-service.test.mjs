@@ -43,7 +43,7 @@ test('status starts off with no conversation, and turning it on is a saved setti
 test('pieces list every piece with its default, and a saved piece is the person\'s until cleared', async (t) => {
   const { post } = await setup(t);
   const { body } = await post('pieces');
-  assert.deepEqual(body.pieces.map((piece) => piece.id), ['preamble', 'soul', 'identity', 'user', 'companion', 'tools']);
+  assert.deepEqual(body.pieces.map((piece) => piece.id), ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda']);
   assert.ok(body.pieces.every((piece) => piece.defaultText.length > 0));
   const saved = await post('save-piece', { id: 'user', text: 'I sell shoes.' });
   assert.equal(saved.body.pieces.find((piece) => piece.id === 'user').personalText, 'I sell shoes.');
