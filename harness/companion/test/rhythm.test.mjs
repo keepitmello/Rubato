@@ -781,3 +781,9 @@ test('prompt: a work area gets one canonical file in memory/work/ split like Roo
   assert.match(dream, /\| `memory\/work\/\*\.md` \| 일\. 일 영역 하나에 파일 하나\. `## 지금`은 .*15KB 안쪽, 넘치면 지난 건 `## 이야기`로 내려 \|/);
   assert.doesNotMatch(dream, /일 카드/, 'the work file is ordinary canon, as in Roo; no card exception');
 });
+
+test('prompt: repository documents linked under memory/ref/ are found by search and read-only; a wrong line goes to that repository\'s lead (Segno session 01a154ba, relaying the user)', () => {
+  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
+  const records = companion.slice(companion.indexOf('## 기록'), companion.indexOf('## 잠 전 갈무리'));
+  assert.match(records, /- 레포 문서\(`memory\/ref\/`\): .*`segno_search`로 찾혀\. 읽기 전용이야\. 틀린 게 보이면 직접 고치지 않고 그 레포에서 리드한테 맡겨\./);
+});

@@ -25,7 +25,7 @@
 // and the run counts as partial. A child that fails brings nothing home.
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync, spawn } from 'node:child_process';
-import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
+import { appendFileSync, closeSync, createWriteStream, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync,
   realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -298,6 +298,30 @@ function agentDirOf(env) {
 
 const real = (file) => { try { return realpathSync(file); } catch { return path.resolve(file); } };
 
+/**
+ * Whether writing `file` lands inside `home`. Segno links repository documents into its memory
+ * (memory/ref/); the dream's copy leaves links out, so a file it writes at a linked path would go
+ * through the link into the repository. Every part of the path below the home is checked as it is on
+ * disk: a link whose real place is outside the home refuses the write, and so does a link that points
+ * nowhere yet (a dangling link would create its target wherever it points).
+ */
+function landsInside(home, file) {
+  const root = real(home);
+  const rel = path.relative(home, file);
+  if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false;
+  let current = home;
+  for (const part of rel.split(path.sep)) {
+    current = path.join(current, part);
+    let stat;
+    try { stat = lstatSync(current); } catch { return true; }
+    if (!stat.isSymbolicLink()) continue;
+    let target;
+    try { target = realpathSync(current); } catch { return false; }
+    if (target !== root && !target.startsWith(root + path.sep)) return false;
+  }
+  return true;
+}
+
 function firstLine(file) {
   const fd = openSync(file, 'r');
   try {
@@ -522,8 +546,8 @@ function bringHome({ home, base, dreamed, scratch, guard = () => undefined }) {
     const before = base.get(rel);
     const after = dreamed.get(rel);
     if (same(before, after)) continue;
-    if (!WRITABLE(rel)) { refused.push(rel); continue; }
     const file = path.join(home, rel);
+    if (!WRITABLE(rel) || !landsInside(home, file)) { refused.push(rel); continue; }
     const live = existsSync(file) ? readFileSync(file) : undefined;
     if (same(live, after)) continue;
     let next = after;

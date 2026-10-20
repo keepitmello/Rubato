@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -324,6 +324,51 @@ test('a child that touches the persona changes only its copy, and the night is r
   assert.ok(!existsSync(path.join(home, 'prompt/new.md')));
   assert.equal(readFileSync(path.join(home, 'notes/mine.md'), 'utf8'), '걷어낸 내 땅', "Roo's sweep covers its notes too");
   assert.equal(readDreamState(env).blocks, undefined, 'a refused change holds every mark');
+});
+
+test('a dream never writes through a link in memory/: a linked repository folder or file stays as it was, and the write is refused', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  const repo = path.join(env.HOME, 'repo', 'docs');
+  mkdirSync(path.join(repo, 'companies'), { recursive: true });
+  writeFileSync(path.join(repo, 'companies', 'acme.md'), '# acme\n레포 원문');
+  writeFileSync(path.join(repo, 'guide.md'), '# guide\n레포 원문');
+  mkdirSync(path.join(home, 'memory', 'ref'), { recursive: true });
+  symlinkSync(path.join(repo, 'companies'), path.join(home, 'memory', 'ref', 'companies'), 'dir');
+  symlinkSync(path.join(repo, 'guide.md'), path.join(home, 'memory', 'ref', 'guide.md'));
+  const dreamer = fakeDreamer({
+    edits: { 'memory/self.md': '## 지금\n', 'memory/ref/companies/acme.md': '꿈이 쓴 줄', 'memory/ref/companies/new.md': '꿈이 쓴 새 파일',
+      'memory/ref/guide.md': '꿈이 쓴 줄' },
+    result: { status: 'done', blocks: { distill: 'done' }, changed: ['memory/self.md'], message: '나' },
+  });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.deepEqual(record.changed, ['memory/self.md']);
+  assert.deepEqual(record.refused, ['memory/ref/companies/acme.md', 'memory/ref/companies/new.md', 'memory/ref/guide.md']);
+  assert.equal(readFileSync(path.join(repo, 'companies', 'acme.md'), 'utf8'), '# acme\n레포 원문');
+  assert.ok(!existsSync(path.join(repo, 'companies', 'new.md')));
+  assert.equal(readFileSync(path.join(repo, 'guide.md'), 'utf8'), '# guide\n레포 원문');
+  assert.ok(lstatSync(path.join(home, 'memory', 'ref', 'guide.md')).isSymbolicLink(), 'the link itself stays a link');
+});
+
+test('a link that points nowhere yet is refused too: nothing is created where it points', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  const outside = path.join(env.HOME, 'repo', 'not-yet.md');
+  mkdirSync(path.join(home, 'memory', 'ref'), { recursive: true });
+  symlinkSync(outside, path.join(home, 'memory', 'ref', 'linked.md'));
+  symlinkSync(path.join(env.HOME, 'repo', 'missing-dir'), path.join(home, 'memory', 'ref', 'gone'), 'dir');
+  const dreamer = fakeDreamer({
+    edits: { 'memory/ref/linked.md': '꿈이 쓴 줄', 'memory/ref/gone/new.md': '꿈이 쓴 새 파일', 'memory/self.md': '## 지금\n' },
+    result: { status: 'done', blocks: { distill: 'done' } },
+  });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.deepEqual(record.refused, ['memory/ref/gone/new.md', 'memory/ref/linked.md']);
+  assert.ok(!existsSync(outside), 'nothing is created outside the home through a dangling link');
+  assert.ok(!existsSync(path.join(env.HOME, 'repo', 'missing-dir')));
+  assert.deepEqual(record.changed, ['memory/self.md']);
+  assert.ok(lstatSync(path.join(home, 'memory', 'ref', 'linked.md')).isSymbolicLink());
 });
 
 test('a part the dream skipped keeps its old mark while the parts it did move', async (t) => {
