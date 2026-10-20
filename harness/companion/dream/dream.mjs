@@ -29,7 +29,7 @@ import { appendFileSync, closeSync, createWriteStream, existsSync, mkdirSync, op
   realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
+import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { memoryPiecePath, readPieces, readState } from '../companion.mjs';
 import { commitOwned, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
@@ -468,9 +468,7 @@ export function guardResidentMemory(before, after, baselineChars) {
   const afterText = after.toString('utf8');
   const kept = protectedQuotes(afterText);
   const missing = [...protectedQuotes(beforeText)].filter(([quote, count]) => (kept.get(quote) ?? 0) < count).map(([quote]) => quote);
-  const beforeChars = [...beforeText].length;
-  const baseline = Math.min(Number.isFinite(baselineChars) ? baselineChars : beforeChars, beforeChars);
-  const allowedMaxChars = Math.max(baseline + MEMORY_GUARD.toleranceChars, MEMORY_GUARD.targetChars);
+  const { allowedMaxChars } = residentGuardPlan(beforeText, baselineChars);
   const afterChars = [...afterText].length;
   if (missing.length) return { reason: 'protected quote missing', missing };
   if (afterChars > allowedMaxChars) return { reason: 'MEMORY.md grew past its ratchet', afterChars, allowedMaxChars };
@@ -554,10 +552,15 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
       plan.transcriptFor = plan.blocks.selfReview.due ? 'selfReview' : 'voice';
       writeFileSync(plan.transcript, transcript.markdown, { mode: 0o600 });
     }
-    plan.checks = { mail: commandExists('himalaya', env), calendar: commandExists('khal', env), file: paths.checks };
-    plan.workNotes = exportWorkNotes(env, path.join(runDir, 'work-notes.md'));
+    // The seen-mail ledger is the run's copy; it comes home only with the held list it feeds (Roo
+    // writes both in one run), so a dream that fails or cannot bring held.md home sees the mail again.
+    const checksFile = path.join(runDir, 'checks.json');
+    if (existsSync(paths.checks)) writeFileSync(checksFile, readFileSync(paths.checks), { mode: 0o600 });
+    plan.checks = { mail: commandExists('himalaya', env), calendar: commandExists('khal', env), file: checksFile };
+    plan.workNotes = exportWorkNotes(env, path.join(runDir, 'work-notes.md'), sessionFiles());
     plan.dated = hasDatedItems(home);
     plan.recall = recallCandidates(env, at);
+    plan.memoryGuard = residentGuardPlan(readText(path.join(home, RESIDENT)), readDreamState(env).memoryGuard?.baselineChars);
     // Roo dreams every night. Segno's skips a night only when there is nothing to do at all: no new
     // record or talk, no Sunday, no sweep due, nothing dated that may have passed, no mail or calendar.
     const nothingToDo = !manual && plan.raw.daily.length === 0 && plan.raw.diary.length === 0 && !plan.transcript && !plan.sunday
@@ -608,9 +611,14 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     const partial = result.status !== 'done' || refused.length > 0 || conflicts.length > 0 || guarded.length > 0;
     // What did not come home (a conflict, or a change outside the dream's places) is not done: the
     // next dream reads the same ground again.
-    const held = conflicts.length > 0 || refused.length > 0 || guarded.length > 0;
+    // What did not come home is read again next night. A MEMORY.md the guard turned back is Roo's
+    // failed compaction instead: the night counts, the piece stays as it was, and the run says why.
+    const held = conflicts.length > 0 || refused.length > 0;
     if (!held) advance(env, { at, plan, blocks, result, transcript: plan.transcriptFor === 'selfReview' ? transcript : undefined });
     if (applied.includes(RESIDENT)) ratchetResident(env, home, started.get(RESIDENT));
+    if (existsSync(checksFile) && !conflicts.includes('notes/held.md') && !refused.includes('notes/held.md')) {
+      writeFileSync(paths.checks, readFileSync(checksFile), { mode: 0o600 });
+    }
     // Roo's first step, done last here: what the dream wrote is searchable for Segno from now on.
     const index = applied.length && reindex ? firstLineOf(reindex(env)) : undefined;
     appendLog(paths.log, plan.runDate, readText(path.join(outDir, 'log.md')), runId);
@@ -635,6 +643,15 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
   }
 }
 
+/** What the guard will hold MEMORY.md to tonight, for the dream to see before it writes (plan.memoryGuard). */
+export function residentGuardPlan(beforeText, baselineChars) {
+  const currentChars = [...beforeText].length;
+  const baseline = Math.min(Number.isFinite(baselineChars) ? baselineChars : currentChars, currentChars);
+  return { currentChars, baselineChars: baseline,
+    allowedMaxChars: Math.max(baseline + MEMORY_GUARD.toleranceChars, MEMORY_GUARD.targetChars),
+    protectedQuotes: [...protectedQuotes(beforeText).keys()] };
+}
+
 /** The guard's baseline moves down with the piece and never up (Roo's ratchet). */
 function ratchetResident(env, home, before) {
   const chars = (text) => [...text].length;
@@ -648,32 +665,45 @@ function ratchetResident(env, home, before) {
 const firstLineOf = (text) => String(text ?? '').split('\n').map((line) => line.trim()).filter(Boolean).at(-1) ?? '';
 
 /**
- * What Segno looked up often in the last week (Roo's recallPromotionCandidates). msearch logs every
- * search in one recall log shared by every channel; each hit's key starts with its channel's prefix
- * (msearch_config.py KEY_PREFIX, `msearch:memory:channel:<id>:`), and Segno's channel is the one its
- * search runs on (home.mjs segnoSearchEnv). Sections hit twice or more, most first.
+ * What Segno looked up often in the last week (Roo maintainer_preflight.py recall_stats). msearch logs
+ * every search in one recall log shared by every channel; each hit's key starts with its channel's
+ * prefix (msearch_config.py KEY_PREFIX, `msearch:memory:channel:<id>:`), and Segno's channel is the
+ * one its search runs on (home.mjs segnoSearchEnv). As in Roo: searches from the command line only,
+ * one search counts a section once however many of its pieces came back, and a section is a
+ * candidate when it was found on three different days; most days first, then most searches.
  */
-function recallCandidates(env, at) {
+export function recallCandidates(env, at) {
   const search = segnoSearchEnv(env);
   const channel = String(search.MSEARCH_CHANNEL).replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || 'default';
   const prefix = search.MSEARCH_KEY_PREFIX || `msearch:memory:channel:${channel}:`;
-  const file = path.join(search.MSEARCH_STATE_DIR, 'recall-log.jsonl');
   let raw;
-  try { raw = readFileSync(file, 'utf8'); } catch { return []; }
-  const counts = new Map();
+  try { raw = readFileSync(path.join(search.MSEARCH_STATE_DIR, 'recall-log.jsonl'), 'utf8'); } catch { return []; }
+  const grouped = new Map();
   for (const line of raw.split('\n')) {
     let entry;
     try { entry = JSON.parse(line); } catch { continue; }
-    if (!(at - Date.parse(entry?.ts ?? '') <= 7 * DAY_MS)) continue;
+    if (entry?.caller !== 'cli') continue;
+    const ts = Date.parse(entry.ts ?? '');
+    if (!(at - ts <= 7 * DAY_MS)) continue;
+    const found = new Set();
     for (const hit of Array.isArray(entry.hits) ? entry.hits : []) {
-      const rel = String(hit?.rel_path ?? '');
-      if (!rel || !String(hit?.key ?? '').startsWith(prefix)) continue;
-      const key = `${rel}\u0000${String(hit.section ?? '')}`;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
+      if (!String(hit?.key ?? '').startsWith(prefix) || typeof hit.rel_path !== 'string' || typeof hit.section !== 'string') continue;
+      found.add(`${hit.rel_path}\u0000${hit.section}`);
+    }
+    for (const key of found) {
+      const stats = grouped.get(key) ?? { count: 0, days: new Set(), last: 0 };
+      stats.count += 1;
+      stats.days.add(localDate(ts));
+      stats.last = Math.max(stats.last, ts);
+      grouped.set(key, stats);
     }
   }
-  return [...counts].filter(([, hits]) => hits >= 2).sort((a, b) => b[1] - a[1]).slice(0, 10)
-    .map(([key, hits]) => { const [relPath, section] = key.split('\u0000'); return { path: `memory/${relPath}`, section, hits }; });
+  return [...grouped].filter(([, stats]) => stats.days.size >= 3)
+    .sort(([a, x], [b, y]) => y.days.size - x.days.size || y.count - x.count || a.localeCompare(b))
+    .map(([key, stats]) => {
+      const [relPath, section] = key.split('\u0000');
+      return { path: `memory/${relPath}`, section, count: stats.count, distinctDays: stats.days.size, lastHit: localIso(stats.last) };
+    });
 }
 
 /** Whether a command is on the PATH the dream's shell will have. */
@@ -692,24 +722,34 @@ function hasDatedItems(home) {
 }
 
 /**
- * Segno's work notes (Roo's q, user item bfe3d27d): the latest text of each note in the engine's
- * notes store for Segno's conversation, copied read-only for the dream. Undefined when there are none.
+ * Segno's work notes (Roo's q, user item bfe3d27d), read-only for the dream: the latest text of each
+ * note on the branch Segno's conversation is on now. The session journal is where notes live (the
+ * engine's notes database is an archive that keeps a rewound branch's notes too), so the branch is
+ * walked from the newest entry back to the start. Undefined when there are none.
  */
-function exportWorkNotes(env, target) {
+export function exportWorkNotes(env, target, files = segnoSessionFiles(env)) {
   const { sessionId } = readState(env);
-  if (!sessionId) return undefined;
-  const key = createHash('sha256').update(sessionId).digest('hex');
-  const file = path.join(agentDirOf(env), 'context-notes', `${key}.sqlite`);
-  if (!existsSync(file)) return undefined;
-  let db;
-  try {
-    db = new DatabaseSync(file, { readOnly: true });
-    const rows = db.prepare('SELECT path, text FROM notes n WHERE ordinal = (SELECT MAX(ordinal) FROM notes WHERE path = n.path) ORDER BY path').all();
-    if (!rows.length) return undefined;
-    writeFileSync(target, rows.map((row) => `## ${row.path}\n\n${row.text}\n`).join('\n'), { mode: 0o600 });
-    return target;
-  } catch { return undefined; }
-  finally { db?.close(); }
+  const file = files.find((candidate) => { try { return JSON.parse(firstLine(candidate))?.id === sessionId; } catch { return false; } });
+  if (!file) return undefined;
+  const byId = new Map();
+  let leaf;
+  for (const line of readFileSync(file, 'utf8').split('\n')) {
+    let entry;
+    try { entry = JSON.parse(line); } catch { continue; }
+    if (typeof entry?.id !== 'string' || entry.type === 'session') continue;
+    byId.set(entry.id, entry);
+    leaf = entry;
+  }
+  const notes = new Map();
+  for (let entry = leaf; entry; entry = byId.get(entry.parentId)) {
+    if (entry.type !== 'custom' || entry.customType !== NOTE_ENTRY) continue;
+    const { path: name, text } = entry.data ?? {};
+    if (typeof name === 'string' && typeof text === 'string' && !notes.has(name)) notes.set(name, text);
+  }
+  const kept = [...notes].filter(([, text]) => text.trim()).sort(([a], [b]) => a.localeCompare(b));
+  if (!kept.length) return undefined;
+  writeFileSync(target, kept.map(([name, text]) => `## ${name}\n\n${text}\n`).join('\n'), { mode: 0o600 });
+  return target;
 }
 
 /** The child's environment: its copy is its home, so the live home's override does not follow it. */

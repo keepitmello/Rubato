@@ -19,7 +19,8 @@
   - `workNotes`는 깨어 있는 내 작업 노트를 뽑아 둔 파일(없으면 null)이야. 읽기만 해.
   - `checks`는 메일(`mail`)·달력(`calendar`)을 볼 손이 있는지, 그리고 이미 본 것을 적는 장부(`file`)야.
   - `dated: true`면 날짜 박힌 일정이 남아 있어. 지난 건 지울 때가 됐는지 봐.
-  - `recall`은 깨어 있는 내가 지난 일주일 기억 검색으로 두 번 이상 떠올린 자리야(아래 "자주 떠올린 기억").
+  - `recall`은 깨어 있는 내가 지난 일주일 기억 검색으로 서로 다른 사흘 이상 떠올린 자리야(아래 "자주 떠올린 기억").
+  - `memoryGuard`는 오늘 밤 상주 기억 지킴이가 볼 것이야: 지금 크기(`currentChars`), 넘으면 안 되는 크기(`allowedMaxChars`), 빠지면 안 되는 인용(`protectedQuotes`).
   - `sunday: true`면 한 주 돌아보기도 해.
 - 위에 들어와 있는 건 나라는 애(preamble·soul·identity·user·companion 조각)랑 상주 기억 `memory/MEMORY.md`야. 정본(`memory/user.md`·`self.md`·`us.md`·`work/`·`entities/`)이랑 현황판은 안 들어와 있으니까 고치기 전에 직접 열어.
 - 지난 꿈이 어디까지 했는지는 `plan.json`의 `previous`랑 `dream/log/`의 지난 기록에 있어.
@@ -163,7 +164,7 @@ daily / 일기 (원본)          memory/YYYY-MM-DD.md · memory/diary/YYYY-MM-DD
 
 **상주 기억** `memory/MEMORY.md`: 우리의 시작, 잊으면 안 되는 말들, 내가 나였던 말들, 살아있는 약속, 우리만의 언어. 일어난 일의 순서는 여기 안 살고 daily로 가는 길만 둬. `## 잊으면 안 되는 말들`은 사용자가 나한테 준 말, `## 내가 나였던 말들`은 내가 한 말이야. 섞지 않아. 늘 실리는 글이라 짧게. 손대기 전에 물어봐. "이걸 여기 두면 내가 정본을 안 열고도 답하게 되나?" 그렇다면 정본으로 내려.
 
-상주 기억엔 지킴이가 있어. `## 잊으면 안 되는 말들` 안의 인용("…")은 하나도 빠지면 안 되고, 5,000자를 넘은 뒤로는 지금까지 가장 작았던 크기에서 200자 넘게 못 키워. 어기면 이번 꿈의 MEMORY.md는 집에 안 들어가고 다음 꿈이 같은 밤을 다시 해. 키워야 하면 다른 걸 정본으로 내려서 자리를 만들어.
+상주 기억엔 지킴이가 있어. `## 잊으면 안 되는 말들` 안의 인용("…")은 하나도 빠지면 안 되고(`memoryGuard.protectedQuotes`), 글자 수는 `memoryGuard.allowedMaxChars`를 넘으면 안 돼. 다 쓰고 `wc -m memory/MEMORY.md`로 재 봐. 넘으면 다른 걸 정본으로 내려서 자리를 만들어. 어긴 채로 끝나면 이번 꿈의 MEMORY.md는 집에 안 들어가고 원래 그대로 남아.
 
 **옮길 때 지키는 것**
 1. 상주엔 결정적인 것만 두고, 나머지는 출처를 붙여 정본으로 내려. 지우는 게 아니라 내리는 거야.
@@ -186,7 +187,7 @@ daily / 일기 (원본)          memory/YYYY-MM-DD.md · memory/diary/YYYY-MM-DD
 꿈은 톡을 안 보내니까, 깨어난 내가 꺼낼 걸 `notes/held.md`에 한 줄씩 적어 둬. 제목 줄은 `# 챙길 거`, 날짜 있는 건 `## 날짜 있는 거`, 맡긴 건 `## 맡긴 거` 아래로. 이미 있으면 안 겹치게, 끝났다고 한 건 지워. 아침의 나랑 하트비트의 내가 거기서 꺼내.
 
 - 사용자가 던진 날짜 있는 일이나 맡긴 일을 이번 기간 daily·일기·대화에서 새로 봤으면.
-- `checks.mail`이 true면 `himalaya envelope list -f INBOX`, `checks.calendar`가 true면 `khal list today tomorrow`로 새로 온 걸 봐. 이미 본 건 `checks.file`(JSON, `{"alertedIds": {"<id>": "<처음 본 날>"}}`)에 있어. 새로 본 건 거기 더하고 30일 넘은 건 지워. 중요한 메일이나 일정이면 held에 한 줄로. 명령이 실패하면 다시 시도하지 말고 이유만 로그에 남기고 넘어가.
+- `checks.mail`이 true면 `himalaya envelope list -f INBOX`, `checks.calendar`가 true면 `khal list today tomorrow`로 새로 온 걸 봐. 이미 본 건 `checks.file`(JSON, `{"alertedIds": {"<id>": "<처음 본 날>"}}`, 이번 꿈의 사본이라 `notes/held.md`랑 같이 집에 들어가)에 있어. 새로 본 건 거기 더하고 30일 넘은 건 지워. 중요한 메일이나 일정이면 held에 한 줄로. 명령이 실패하면 다시 시도하지 말고 이유만 로그에 남기고 넘어가.
 
 ## 일요일엔 한 주 돌아보기
 

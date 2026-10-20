@@ -9,7 +9,7 @@
 // the dream starts, runs and ends without a word in Segno's context (intent companion-segno, user
 // item bfe3d27d).
 import { open } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { userInfo } from 'node:os';
 import path from 'node:path';
 import { readSettings, readState } from '../companion.mjs';
 import { dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream } from './dream.mjs';
@@ -86,7 +86,10 @@ export async function start(ctx) {
     });
   }
   // Segno's search index is one per Mac: only the person's own home re-indexes it.
-  const ownHome = !env.RUBATO_COMPANION_HOME || path.resolve(env.RUBATO_COMPANION_HOME) === path.join(env.HOME || homedir(), '.rubato', 'companion');
+  // The account's own home folder, not $HOME: a sandbox that only moves HOME is still a sandbox
+  // (the same rule as home.mjs segnoSearchEnv).
+  const liveHome = path.join(userInfo().homedir, '.rubato', 'companion');
+  const ownHome = path.resolve(env.RUBATO_COMPANION_HOME || path.join(env.HOME || userInfo().homedir, '.rubato', 'companion')) === liveHome;
   const run = async () => runCompanionDream({ env, launch: await resolveLaunch(env), childEnv, launchModel: launchProductModel, spawnChild,
     ...(ownHome ? { reindex: reindexSegnoMemory } : {}) });
   const loop = startDreamLoop({ env, isBusy, run, onError: ctx.onError, log: ctx.log });
