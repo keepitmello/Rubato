@@ -99,22 +99,37 @@ export function unknownFields(patch, shape, prefix = '') {
   return out;
 }
 
-/** The files a change may write, as they are now, to put back if any part of it is refused. */
-function snapshot(env, change) {
-  const files = [companionPaths(env).settings, messengerPaths(env).settings, messengerPaths(env).fishKey, messengerPaths(env).intent];
-  if (change.piece && typeof change.piece.id === 'string') {
-    try { files.push(personalPiecePath(env, change.piece.id), basePiecePath(env, change.piece.id)); } catch { /* an unknown piece writes nothing */ }
-  }
-  const saved = files.map((file) => ({ file, bytes: existsSync(file) ? readFileSync(file) : undefined }));
+/** A file's bytes now, or undefined when it does not exist. */
+const bytesOf = (file) => (existsSync(file) ? readFileSync(file) : undefined);
+const same = (a, b) => (a === undefined ? b === undefined : b !== undefined && a.equals(b));
+
+/**
+ * Undo for one change: each step names the files it writes; `before` keeps them as they were and
+ * `after` as that step left them. A refusal puts back only files this change wrote and nobody wrote
+ * since — a save the Settings page made meanwhile, to the same file or another, stays.
+ */
+function undoLog(env) {
+  const steps = [];
   const reviewAsked = readPersonaReviewRequest(env) !== undefined;
-  return () => {
-    for (const { file, bytes } of saved) {
-      try {
-        if (bytes === undefined) rmSync(file, { force: true });
-        else writeFileSync(file, bytes, { mode: 0o600 });
-      } catch { /* a file that cannot be put back was not written either */ }
-    }
-    if (!reviewAsked) try { clearPersonaReviewRequest(env); } catch { /* nothing to undo */ }
+  let reviewed = false;
+  return {
+    async step(files, work) {
+      const entry = files.map((file) => ({ file, before: bytesOf(file) }));
+      await work();
+      for (const item of entry) item.after = bytesOf(item.file);
+      steps.push(...entry);
+    },
+    reviewed() { reviewed = true; },
+    restore() {
+      for (const { file, before, after } of [...steps].reverse()) {
+        try {
+          if (!same(bytesOf(file), after)) continue;
+          if (before === undefined) rmSync(file, { force: true });
+          else writeFileSync(file, before, { mode: 0o600 });
+        } catch { /* a file that cannot be put back was not written either */ }
+      }
+      if (reviewed && !reviewAsked) try { clearPersonaReviewRequest(env); } catch { /* nothing to undo */ }
+    },
   };
 }
 
@@ -141,32 +156,45 @@ async function applyChange(service, change, env) {
   if (change.personaReview !== undefined && change.personaReview !== true) throw new SettingsRefused('invalid', 'personaReview is true');
 
   const applied = [];
-  const restore = snapshot(env, change);
+  const undo = undoLog(env);
+  const paths = { companion: companionPaths(env).settings, messenger: messengerPaths(env).settings,
+    fishKey: messengerPaths(env).fishKey, intent: messengerPaths(env).intent };
+  const pieceFiles = (id) => { try { return [personalPiecePath(env, id), basePiecePath(env, id)]; } catch { return []; } };
   try {
-    if (change.companion !== undefined) { await service.handle('save-settings', { patch: change.companion }); applied.push('companion'); }
-    if (change.telegram !== undefined) { await service.handle('telegram-settings', { patch: change.telegram }); applied.push('telegram'); }
+    if (change.companion !== undefined) {
+      await undo.step([paths.companion], () => service.handle('save-settings', { patch: change.companion }));
+      applied.push('companion');
+    }
+    if (change.telegram !== undefined) {
+      await undo.step([paths.messenger], () => service.handle('telegram-settings', { patch: change.telegram }));
+      applied.push('telegram');
+    }
     if (change.fishKey !== undefined) {
-      await service.handle('voice-key', { key: change.fishKey === null ? null : String(change.fishKey) });
+      await undo.step([paths.fishKey], () => service.handle('voice-key', { key: change.fishKey === null ? null : String(change.fishKey) }));
       applied.push(change.fishKey === null ? 'fishKey removed' : 'fishKey');
     }
     if (change.piece !== undefined) {
-      await service.handle('save-piece', { id: change.piece.id, text: change.piece.text ?? '' });
+      await undo.step(pieceFiles(change.piece.id), () => service.handle('save-piece', { id: change.piece.id, text: change.piece.text ?? '' }));
       applied.push(`piece:${change.piece.id}`);
     }
     // The Telegram request goes last: the messenger acts on it after this answers, so nothing can
     // be refused after it is written.
     if (change.botToken !== undefined) {
       // The messenger checks it with Telegram before keeping it; `show` then has the bot's name or the reason.
-      await service.handle('telegram-set-token', { token: change.botToken.trim() });
+      await undo.step([paths.intent], () => service.handle('telegram-set-token', { token: change.botToken.trim() }));
       applied.push('botToken (Telegram checks it; show tells how it went)');
     }
     if (change.pairing !== undefined) {
-      await service.handle(change.pairing === 'pair' ? 'telegram-pair' : 'telegram-unpair', {});
+      await undo.step([paths.intent], () => service.handle(change.pairing === 'pair' ? 'telegram-pair' : 'telegram-unpair', {}));
       applied.push(`pairing:${change.pairing}`);
     }
-    if (change.personaReview === true) { await service.handle('review-persona', {}); applied.push('personaReview'); }
+    if (change.personaReview === true) {
+      undo.reviewed();
+      await service.handle('review-persona', {});
+      applied.push('personaReview');
+    }
   } catch (error) {
-    restore();
+    undo.restore();
     throw error;
   }
   if (!applied.length) throw new SettingsRefused('invalid', 'Nothing to change');

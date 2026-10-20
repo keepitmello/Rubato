@@ -239,3 +239,23 @@ test("show tells Segno what each prompt piece is for, in the Settings page's own
     assert.equal(piece.title, shown.title);
   }
 });
+
+test("undoing a refused change puts back only what it wrote and nobody touched since: the Settings page's own save stays", async (t) => {
+  const box = setup(t);
+  box.transcript([appEntry('u1', '한꺼번에')]);
+  const { writeMessengerSettings } = await import('../messenger/store.mjs');
+  const { writeSettings } = await import('../companion.mjs');
+  // The page saves while the tool's change is halfway: once to the file the tool wrote, once to another.
+  const service = { handle: async (action, input) => {
+    if (action === 'save-piece') {
+      writeSettings({ greetings: { enabled: false } }, box.env);
+      writeMessengerSettings({ voice: { voiceId: 'pagesavedvoice01' } }, box.env);
+    }
+    return box.service.handle(action, input);
+  } };
+  await assert.rejects(companionSettings({ sessionId: 'S1', sessionsDir: path.join(path.dirname(box.env.RUBATO_COMPANION_HOME), 'sessions'),
+    env: box.env, service, request: { action: 'change', change: { companion: { heartbeat: { everyMinutes: 15 } }, piece: { id: 'tools', text: 'x' } } } }));
+  assert.equal(readSettings(box.env).greetings.enabled, false, "the page's later save to the same file stays");
+  assert.equal(readSettings(box.env).heartbeat.everyMinutes, 15, 'which also means the file holds what the page wrote over it');
+  assert.equal(readMessengerSettings(box.env).voice.voiceId, 'pagesavedvoice01', "the page's save to another file stays");
+});
