@@ -48,9 +48,10 @@ export const rubatoCompanionRouteLayer = Layer.unwrap(
 );
 
 /**
- * Segno's newest finished message in a run of its thread: the run's own answer, or words that went
- * in as a plain message while the run was going (a tell_user during a visible run). `text` is null
- * when the run said nothing to the person, and no notification is raised then.
+ * Segno's newest finished message in a run of its thread. The thread holds only the person's
+ * messages and what Segno sent with reply or say, so that message is a reply: its own run, or the
+ * run the person's message opened. `text` is null when the run carried no reply, and no
+ * notification is raised then.
  */
 const segnoSaid = (request: HttpServerRequest.HttpServerRequest, sql: SqlClient.SqlClient) =>
   Effect.gen(function* () {
@@ -64,9 +65,7 @@ const segnoSaid = (request: HttpServerRequest.HttpServerRequest, sql: SqlClient.
     const rows = yield* sql<{ readonly text: string | null }>`
       SELECT json_extract(m.payload_json, '$.text') AS text
       FROM orchestration_v2_projection_messages m
-      JOIN orchestration_v2_projection_runs r ON r.run_id = ${runId} AND r.thread_id = ${threadId}
-      WHERE m.thread_id = ${threadId} AND m.role = 'assistant' AND m.streaming = 0
-        AND (m.run_id = r.run_id OR (m.run_id IS NULL AND m.created_at >= r.requested_at))
+      WHERE m.thread_id = ${threadId} AND m.run_id = ${runId} AND m.role = 'assistant' AND m.streaming = 0
       ORDER BY m.created_at DESC, m.message_id DESC
       LIMIT 1
     `;

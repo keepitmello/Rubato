@@ -1,0 +1,192 @@
+/* Segno's chat room (RubatoSegnoChat.tsx, user f38c36a6): iMessage's grammar in the theme's own
+   colors. The person's bubbles take the accent, Segno's a soft glass tone that reads on the canvas
+   and on the window material alike. */
+
+[data-rubato-segno-room] {
+  --rubato-me: var(--primary);
+  --rubato-me-text: var(--primary-foreground);
+  --rubato-segno: color-mix(in oklab, var(--muted) 82%, transparent);
+  --rubato-segno-text: var(--foreground);
+  --rubato-bubble-radius: 1.15rem;
+  --rubato-bubble-near: 0.4rem;
+  scrollbar-gutter: stable;
+}
+:root:is([data-window-material="vibrancy"], [data-window-material="liquid-glass"]) [data-rubato-segno-room] {
+  --rubato-segno: color-mix(in oklab, var(--card) 78%, transparent);
+}
+
+/* ---- Rows and groups ---- */
+[data-rubato-segno-row] {
+  display: flex;
+  margin-top: 2px;
+}
+[data-rubato-segno-row][data-group-start] {
+  margin-top: 0.7rem;
+}
+[data-rubato-segno-row][data-side="me"] {
+  justify-content: flex-end;
+}
+[data-rubato-segno-row][data-side="segno"] {
+  justify-content: flex-start;
+}
+
+/* ---- Bubbles ---- */
+[data-rubato-segno-bubble] {
+  position: relative;
+  max-width: min(75%, 34rem);
+  padding: 0.45rem 0.8rem;
+  border-radius: var(--rubato-bubble-radius);
+  font-size: 0.95rem;
+  line-height: 1.38;
+  overflow-wrap: anywhere;
+}
+[data-rubato-segno-bubble] p {
+  margin: 0;
+}
+[data-side="me"] > [data-rubato-segno-bubble] {
+  --rubato-bubble: var(--rubato-me);
+  background: var(--rubato-bubble);
+  color: var(--rubato-me-text);
+}
+[data-side="segno"] > [data-rubato-segno-bubble] {
+  --rubato-bubble: var(--rubato-segno);
+  background: var(--rubato-bubble);
+  color: var(--rubato-segno-text);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+  backdrop-filter: blur(14px) saturate(1.4);
+}
+/* Neighbours in a group sit close, so the corners that face each other tighten. */
+[data-side="me"]:not([data-group-start]) > [data-rubato-segno-bubble] {
+  border-top-right-radius: var(--rubato-bubble-near);
+}
+[data-side="me"]:not([data-group-end]) > [data-rubato-segno-bubble] {
+  border-bottom-right-radius: var(--rubato-bubble-near);
+}
+[data-side="segno"]:not([data-group-start]) > [data-rubato-segno-bubble] {
+  border-top-left-radius: var(--rubato-bubble-near);
+}
+[data-side="segno"]:not([data-group-end]) > [data-rubato-segno-bubble] {
+  border-bottom-left-radius: var(--rubato-bubble-near);
+}
+/* Segno's words keep the markdown's own spacing, tightened to a bubble. */
+[data-side="segno"] > [data-rubato-segno-bubble] > :first-child {
+  margin-top: 0;
+}
+[data-side="segno"] > [data-rubato-segno-bubble] :is(p, ul, ol, pre, blockquote) {
+  margin-block: 0.25rem;
+}
+[data-side="segno"] > [data-rubato-segno-bubble] :is(p, ul, ol, pre, blockquote):first-child {
+  margin-top: 0;
+}
+[data-side="segno"] > [data-rubato-segno-bubble] :is(p, ul, ol, pre, blockquote):last-of-type {
+  margin-bottom: 0;
+}
+
+/* ---- The tail on a group's last bubble ---- */
+[data-rubato-segno-tail] {
+  position: absolute;
+  bottom: 0;
+  width: 12px;
+  height: 16px;
+  fill: var(--rubato-bubble);
+  pointer-events: none;
+}
+[data-side="me"] [data-rubato-segno-tail] {
+  right: -6px;
+}
+[data-side="segno"] [data-rubato-segno-tail] {
+  left: -6px;
+  transform: scaleX(-1);
+}
+
+/* ---- Attachments the person sent ---- */
+[data-rubato-segno-attachments] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+[data-rubato-segno-attachments] > span {
+  border-radius: 999px;
+  padding: 0.05rem 0.5rem;
+  background: color-mix(in oklab, currentColor 14%, transparent);
+}
+
+/* ---- Time lines ---- */
+[data-rubato-segno-time] {
+  margin: 1.1rem 0 0.2rem;
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+[data-rubato-segno-earlier] {
+  align-self: center;
+  margin-bottom: 0.5rem;
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+[data-rubato-segno-earlier]:hover:not(:disabled) {
+  color: var(--foreground);
+}
+
+/* ---- Segno is writing: three dots in its bubble ---- */
+[data-rubato-segno-writing] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.7rem 0.85rem;
+}
+[data-rubato-segno-writing] > span {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--rubato-segno-text) 45%, transparent);
+  animation: rubato-segno-dot 1.2s ease-in-out infinite;
+}
+[data-rubato-segno-writing] > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+[data-rubato-segno-writing] > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes rubato-segno-dot {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
+  30% { transform: translateY(-0.28rem); opacity: 1; }
+}
+
+/* ---- Arrivals: the person's bubble springs up from the composer, Segno's pops in ---- */
+[data-rubato-segno-row][data-enter="send"] > [data-rubato-segno-bubble] {
+  transform-origin: 100% 100%;
+  animation: rubato-segno-send 340ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+[data-rubato-segno-row][data-enter="arrive"] > [data-rubato-segno-bubble] {
+  transform-origin: 0% 100%;
+  animation: rubato-segno-arrive 300ms cubic-bezier(0.25, 0.9, 0.35, 1.3) both;
+}
+@keyframes rubato-segno-send {
+  from { transform: translateY(1.6rem) scale(0.9); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes rubato-segno-arrive {
+  from { transform: scale(0.55); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-rubato-segno-row][data-enter] > [data-rubato-segno-bubble],
+  [data-rubato-segno-writing] > span {
+    animation: none;
+  }
+}
+
+/* ---- The composer is a rounded pill ---- */
+[data-rubato-segno-chat] [data-chat-composer-surface],
+[data-rubato-segno-chat] [data-chat-composer-main-surface] {
+  border-radius: 1.6rem;
+}

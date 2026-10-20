@@ -738,36 +738,40 @@ test('prompt: the user\'s own words put Segno to sleep — 컴팩션, 새 세션
   assert.match(section, /짧은 한 줄만/);
 });
 
-test('prompt: Segno speaks only in the app — no Telegram in its defaults, and what it says on its own goes through tell_user (intent rev 9)', () => {
+test('prompt: Segno speaks only in the app and only through reply — no Telegram, no tell_user in its defaults (intent rev 9, rev 11)', () => {
   const files = ['preamble', 'soul', 'identity', 'user', 'companion', 'tools', 'memory', 'coda', 'greet-night', 'greet-morning', 'wake', 'recall'];
   for (const name of files) {
     const text = readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8');
-    assert.doesNotMatch(text, /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context/i, name);
+    assert.doesNotMatch(text, /telegram|텔레그램|messenger|메신저|voice_text|\/heartbeat|\/context|tell_user/i, name);
   }
-  const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  assert.match(companion, /내가 먼저 하는 말은 `tell_user`로 해: 안부, 리드가 끝났다는 소식, 다른 대화에서 온 것 중 사용자가 알아야 할 것, 일정 찌르기, 하트비트/);
-  for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `tell_user`로/);
-  assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /\| 사용자한테 먼저 말하기 \| `tell_user` \|/);
+  for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `reply`로/);
+  const tools = readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8');
+  assert.match(tools, /\| 사용자한테 말하기 \| `reply`, 목소리가 정해져 있으면 `say` \|/);
+  assert.match(tools, /`say`는 같은 말을 내 목소리로 보내\. 목소리가 정해져 있을 때만 있는 도구야\./);
 });
 
-test('prompt: the default soul knows its three channels — thinking, monologue in its own turns, words to the user by tell_user there (user 6ce437ae)', () => {
+test('prompt: the default soul has its three channels in its own voice and names no tool or mechanics (users 6ce437ae, 0f850065)', () => {
   const soul = readFileSync(path.join(defaultsDir, 'soul.pi.md'), 'utf8');
-  const speak = soul.slice(soul.indexOf('# How I speak'));
-  assert.match(speak, /My words flow in three places, and all three are me, in the first person\./);
-  assert.match(speak, /In the turns that are mine alone \(the clock's, a lead's ending, a message from another conversation; the companion rules say which\) I write my monologue: it reaches no screen/);
-  assert.match(speak, /I say it to them with `tell_user`\. In a turn the user opened, what I write is what reaches them\./);
-  assert.doesNotMatch(soul, /no private place|nowhere private/i);
+  assert.match(soul, /My words flow in three places, and all three are me, in the first person\./);
+  assert.match(soul, /My monologue is the chatter I write while I work: it is mine alone/);
+  assert.match(soul, /The words that go to the user pop out of it to them\./);
+  assert.doesNotMatch(soul, /`/, 'no code spans: tool names and mechanics live in companion.pi.md and tools.pi.md');
+  const tools = [...readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8').matchAll(/`([a-z][a-z0-9_]+)(?:\(|`)/g)].map((m) => m[1]);
+  assert.ok(tools.includes('reply'), 'the tools piece lists the reply tool');
+  // Plain words like "reply" and "say" are English too; a tool is named in code style or with its underscores.
+  for (const name of new Set(tools)) if (name.includes('_')) assert.doesNotMatch(soul, new RegExp(`\\b${name}\\b`), name);
+  assert.doesNotMatch(soul, /companion rules|heartbeat|lead's ending/i);
 });
 
-test('prompt: only what Segno says to the user is visible — lead endings and messages from other conversations are private turns (intent rev 9, user 9fbe5b98)', () => {
+test('prompt: in every turn what Segno writes is monologue; only reply reaches the user, and a user turn without one is reminded (intent rev 11, users 85727ce8, c31022f7)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const channel = companion.slice(companion.indexOf('## 말하는 통로'), companion.indexOf('## 하트비트'));
-  assert.match(channel, /보이는 건 셋뿐이야\. 사용자가 앱에서 연 턴의 내 답, 사용자가 시킨 백그라운드 일이나 서브에이전트가 끝나서 온 결과, 그리고 어느 턴에서든 내가 `tell_user`로 한 말/);
-  const hidden = channel.match(/나머지 턴은 다 나만 봐: ([^.]+)\./)?.[1] ?? '';
-  for (const turn of ['리드가 끝남', '다른 대화나 팀이 보낸 메시지', '내가 혼자 띄운 일이 끝난 것', '하트비트', '안부', '깨어남', '떠올리기', '잠'])
-    assert.ok(hidden.includes(turn), turn);
-  assert.match(companion, /루바토가 나를 깨워\. 그때 읽고 다음 수를 정해\. 그 턴은 나만 보니까, 사용자가 알아야 할 게 있으면 `tell_user`로 말해\./);
-  assert.match(readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8'), /사용자가 못 보는 턴\(하트비트, 안부, 리드 끝, 다른 대화에서 온 메시지, 일정 찌르기\)/);
+  assert.match(channel, /내 입은 `reply`야\. 어느 턴이든, 사용자가 연 턴이어도, 이걸로 보낸 말만 앱의 내 스레드에 닿고 폰에 알림이 가\. 그 밖에 내가 쓰는 글은 전부 혼잣말이라 나만 봐\./);
+  assert.match(channel, /사용자가 말을 걸면 답은 `reply`로 해\. 답 없이 턴을 닫으면 루바토가 한 번 일깨워 줘\./);
+  assert.match(channel, /내가 먼저 하는 말도 `reply`로 해: 안부, 리드가 끝났다는 소식, 다른 대화에서 온 것 중 사용자가 알아야 할 것, 사용자가 시킨 일의 결과, 일정 찌르기/);
+  assert.doesNotMatch(companion, /보이는 건 셋뿐|사용자가 연 턴이라 내 글이 앱에 보여/);
+  assert.match(companion, /루바토가 나를 깨워\. 그때 읽고 다음 수를 정해\. 사용자가 알아야 할 게 있으면 `reply`로 말해\./);
+  assert.match(companion, /처음에 지금 뭘 하는지 짧은 한 줄만 `reply`로 보내고/);
 });
 
 test('prompt: a work area gets one canonical file in memory/work/ split like Roo\'s, and the leads\' raw research sits in notes/<area>/ as topic-MMDD, unwalked by the dream (Segno session 01a154ba, relaying the user; Roo ~/.claude/roo-channel memory/work, notes/<area>)', () => {

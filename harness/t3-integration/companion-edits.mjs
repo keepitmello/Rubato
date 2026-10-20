@@ -19,6 +19,10 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoSpace.test.ts',
   'apps/web/src/components/chat/RubatoSegnoSidebar.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoNotice.tsx',
+  'apps/web/src/components/chat/RubatoSegnoChat.tsx',
+  'apps/web/src/components/chat/RubatoSegnoChat.css',
+  'apps/web/src/components/chat/rubatoSegnoRoom.ts',
+  'apps/web/src/components/chat/rubatoSegnoRoom.test.ts',
   'apps/web/src/components/chat/RubatoSegnoNotice.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoNoticeCoordinator.test.tsx',
 ];
@@ -60,7 +64,26 @@ export const companionEdits = {
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       'replace'],
-    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\n'],
+    // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
+    // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
+    ['              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',
+      '              {isCompanionThread(activeThread.id) ? (\n'
+        + '                <RubatoSegnoChat\n'
+        + '                  entries={displayedTimeline.entries}\n'
+        + '                  working={!paintOnlyDisplayedTimeline && isWorking}\n'
+        + '                  cwd={gitCwd ?? undefined}\n'
+        + '                  bottomInset={composerTimelineInset}\n'
+        + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
+        + '                    ? {}\n'
+        + '                    : { historyControls: threadHistoryControls })}\n'
+        + '                />\n'
+        + '              ) : (\n'
+        + '              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',
+      'replace'],
+    ['                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n',
+      '                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n              )}\n',
+      'replace'],
   ],
   // Segno's own folder is not a project to start work in: neither the new thread's default
   // project nor the headline's picker offers it.

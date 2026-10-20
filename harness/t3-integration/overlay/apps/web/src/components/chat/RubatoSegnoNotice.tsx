@@ -1,10 +1,9 @@
 // A run that ends in Segno's thread notifies like a messenger (user 55dd0da4): Segno's name, the
-// start of what it said, and "Open" — in the app as a toast, outside it as a desktop notification,
+// start of its reply, and "Open" — in the app as a toast, outside it as a desktop notification,
 // under the same settings and conditions as any thread's (ThreadNotificationCoordinator.tsx, which
-// hands Segno's completions here: companion-edits.mjs). A run that said nothing to the person raises
-// nothing. Turns Segno has alone (heartbeat, greetings, wake, recall, sleep) start no run in the app
-// (bridge quiet-runs.mjs), so they raise nothing either; what Segno tells the person from one
-// (tell_user) arrives as a run of its own and notifies here.
+// hands Segno's completions here: companion-edits.mjs). The thread holds only the person's messages
+// and Segno's reply/say, so a run's last message from Segno is a reply; a run without one (the
+// person's turn that Segno closed without replying) raises nothing.
 import type { EnvironmentId } from "@t3tools/contracts";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 
