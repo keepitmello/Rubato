@@ -453,14 +453,16 @@ export class RubatoRpcConnection {
       if (this.companion) {
         // The person's turn ended with no reply: Segno is reminded once (companion-home's reply
         // wait) and the reminder's turn goes on as this one, so the reply lands in it and its end is
-        // what notifies. A reminder that does not come lets the turn end after the grace.
-        if (this.turnReplied || this.turnReminded || this.closed) { this.emit(event); return; }
+        // what notifies. A turn that still said nothing to the person ends as stopped, not finished:
+        // only Segno's words may buzz the phone (T3 notifies a finished run, not a stopped one).
+        if (this.turnReplied || this.closed) { this.emit(event); return; }
+        if (this.turnReminded) { this.emit({ ...event, aborted: true }); return; }
         this.turnReminded = true;
         this.hold = { settled: event, id: `rubato-reminder:${this.sessionId}:${++this.waits}`, detail: null, hidden: true };
         this.hold.timer = setTimeout(() => { this.enqueue(() => {
           if (!this.hold?.hidden) return;
           const hold = this.endHold(false);
-          if (hold) this.emit(hold.settled);
+          if (hold) this.emit({ ...hold.settled, aborted: true });
         }); }, this.awaitTimings.reminderMs ?? REMINDER_GRACE_MS);
         this.hold.timer.unref?.();
         return;
