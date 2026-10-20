@@ -50,8 +50,10 @@ mkdir -p "$DEST"
 # orca-cli·orchestration 은 번들에서 뺀 Orca 스텁이다. aside-browser 는 Aside CLI
 # 가 업데이트마다 그 이름이 있는 자리를 자기 스텁으로 다시 쓰므로(심링크면 링크를
 # 따라 번들까지) 번들은 `aside` 로 옮겼고, 옛 이름은 비워 둬야 Aside 가 다시 쓰지 않는다.
+# companion-settings 는 세뇨만의 스킬이라 harness/companion/skills 로 옮겼다. 여기 남아 있으면 모든
+# 세션과 다른 CLI 가 "내 설정"으로 읽는다(사용자, 2026-10-21, 세뇨 기억·정체성 격리).
 removed=0
-for name in orca-cli orchestration aside-browser; do
+for name in orca-cli orchestration aside-browser companion-settings; do
   if [ -e "$DEST/$name" ] || [ -L "$DEST/$name" ]; then
     rm -rf "$DEST/$name"
     removed=$((removed + 1))

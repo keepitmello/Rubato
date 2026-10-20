@@ -21,9 +21,10 @@
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, oldMemorySeed, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
+import path from "node:path";
 
 const text = (value) => ({ type: "text", text: value });
 
@@ -68,6 +69,39 @@ function itemLine(item) {
 }
 
 /** `voice`: whether a voice is set, so `say` can speak (none can be yet; Segno then never sees `say`). */
+/** The file tools that write a path, and the field that names it. */
+const WRITING_TOOLS = Object.freeze({ write: "path", edit: "path" });
+/** What Segno reads when a write would go through a link out of its home. */
+export const LINKED_WRITE_REFUSAL = "That path reaches outside my home through a link (a repository document under memory/ref, " +
+  "linked there for me to read). It is read-only for me: if it is wrong, I tell that repository's lead.";
+/** What Segno reads when a write is aimed outside its home. */
+export const OUTSIDE_WRITE_REFUSAL = "I write nothing outside my home. Work in a project or another folder goes to a lead " +
+  "(session_create or session_send); my own records stay in my home.";
+
+/**
+ * Why a write tool call may not run, or undefined: Segno writes only inside its home (user,
+ * 2026-10-21, intent rev12), and inside it never through a link that leads out (memory/ref links
+ * repository documents in to read).
+ */
+export function writeRefusal(event, { cwd, env = process.env } = {}) {
+  const home = segnoPaths(env).home;
+  const refusal = (target) => {
+    if (typeof target !== "string" || !target.trim()) return undefined;
+    const file = path.resolve(cwd || home, target.trim().replace(/^@/, ""));
+    const rel = path.relative(home, file);
+    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return OUTSIDE_WRITE_REFUSAL;
+    return landsInside(home, file) ? undefined : LINKED_WRITE_REFUSAL;
+  };
+  const field = WRITING_TOOLS[event?.toolName];
+  if (field) return refusal(event.input?.[field]);
+  // apply_patch names its files on its own marker lines.
+  if (event?.toolName === "apply_patch" && typeof event.input?.input === "string") {
+    const targets = [...event.input.input.matchAll(/^\*\*\* (?:Add File|Update File|Delete File|Move to): (.+)$/gm)].map((match) => match[1]);
+    return targets.map(refusal).find(Boolean);
+  }
+  return undefined;
+}
+
 export function createCompanionHomeFactories({ voice = false } = {}) {
   const inbox = () => openInbox();
   return [{
@@ -200,6 +234,12 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           const told = recordTold(params.text, { via: SAY_TOOL });
           return { content: [text("Said to the user.")], details: told };
         },
+      });
+
+      // Segno writes only in its home, and never through a link out of it (user, 2026-10-21).
+      pi.on("tool_call", (event, ctx) => {
+        const reason = writeRefusal(event, { cwd: ctx?.cwd });
+        return reason ? { block: true, reason } : undefined;
       });
 
       // Roo's reminder: a turn the user opened waits for a reply.

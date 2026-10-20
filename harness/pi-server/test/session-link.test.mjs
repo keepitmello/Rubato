@@ -801,6 +801,21 @@ test('read view notes: the current version of each context note, one note by pat
   assert.deepEqual([one.notes.map((note) => note.text), one.paths], [['new goal'], ['log.md', 'now.md']]);
 });
 
+test("what Segno creates or sends is marked as Segno's, so the lead reads it as work Segno leads and assigned; a lead's is not", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const lead = await env.make('Lead');
+  const brief = '세뇨(컴패니언)야. 오빠 프로젝트 지도를 만들어줘.';
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Map', text: brief });
+  await env.api.send({ from: segno.id, to: created.sessionId, text: 'also list the stacks' });
+  const fromSegno = await env.deliveries(created.sessionId);
+  assert.deepEqual(fromSegno.map((item) => [item.data.kind, item.data.from.companion]), [['create', true], ['message', true]]);
+  assert.equal(fromSegno[0].data.text, brief, 'the words stay as Segno wrote them; the frame is the receiver\'s to add');
+  const plain = await env.api.create({ from: lead.id, cwd: env.root, title: 'Plain', text: 'start here' });
+  const fromLead = await env.deliveries(plain.sessionId);
+  assert.equal(fromLead[0].data.from.companion, undefined);
+});
+
 test("the companion hears once when a lead it started or sent work to ends its turn; other creators do not", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });
