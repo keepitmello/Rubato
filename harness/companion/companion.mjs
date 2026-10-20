@@ -7,6 +7,11 @@
 //     state.json                         which conversation is the companion (written by the keeper)
 //     prompt/<piece>.md                  the person's version of one prompt piece
 //     prompt/.base/<piece>.md            the product default that version was copied from
+//     memory/MEMORY.md                   the resident memory piece (Roo MEMORY.md), kept by the dream
+//
+// The order is Roo's build.sh: preamble, soul, identity, user, companion, tools, then the resident
+// memory in the last recency slot, and the closing piece (coda) at the very end of the whole system
+// prompt, after whatever Rubato appends (system-prompt.mjs codaLast): "시작도 SOUL, 끝도 SOUL".
 //
 // Each prompt piece has a product default (harness/prompts/companion/<piece>.pi.md). A piece the
 // person rewrote is read from prompt/<piece>.md; every other piece keeps following the default,
@@ -37,6 +42,8 @@ export const PIECES = Object.freeze([
   Object.freeze({ id: 'user', editable: true }),
   Object.freeze({ id: 'companion', editable: true }),
   Object.freeze({ id: 'tools', editable: false }),
+  Object.freeze({ id: 'memory', editable: true }),
+  Object.freeze({ id: 'coda', editable: true }),
 ]);
 /** The pieces a home starts with as the person's own copy: who Segno is, and who they are. */
 export const SEEDED_PIECES = Object.freeze(['preamble', 'soul', 'identity', 'user']);
@@ -47,12 +54,18 @@ export const PIECE_LIMIT = 64 * 1024;
 // Anthropic's prompt cache lives an hour, so a beat at an hour or more lands after it expired; a
 // stored interval outside these (an older 60, 120 or 240) reads as the default.
 export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
+/**
+ * `greetings` are Roo's night (00:07) and morning (09:07) greetings; the morning one carries the
+ * daily report (user item 4c0b0f00). `career.schedule` is the path of the user's deadline schedule
+ * the heartbeat reads for its nudges (career.mjs); empty means none.
+ */
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30 }),
-  dailyReport: Object.freeze({ enabled: true, time: '09:00' }),
+  greetings: Object.freeze({ enabled: true }),
+  career: Object.freeze({ schedule: '' }),
 });
-const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
+const SCHEDULE_LIMIT = 1024;
 
 export function companionHome(env = process.env) {
   if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
@@ -82,17 +95,18 @@ function writeJson(file, value) {
 export function normalizeSettings(value) {
   const input = value && typeof value === 'object' ? value : {};
   const heartbeat = input.heartbeat && typeof input.heartbeat === 'object' ? input.heartbeat : {};
-  const daily = input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
+  // A home from before the greetings kept `dailyReport`; its switch is the greetings' switch now.
+  const greetings = input.greetings && typeof input.greetings === 'object' ? input.greetings
+    : input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
+  const career = input.career && typeof input.career === 'object' ? input.career : {};
   return {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_SETTINGS.enabled,
     heartbeat: {
       enabled: typeof heartbeat.enabled === 'boolean' ? heartbeat.enabled : DEFAULT_SETTINGS.heartbeat.enabled,
       everyMinutes: HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes) ? heartbeat.everyMinutes : DEFAULT_SETTINGS.heartbeat.everyMinutes,
     },
-    dailyReport: {
-      enabled: typeof daily.enabled === 'boolean' ? daily.enabled : DEFAULT_SETTINGS.dailyReport.enabled,
-      time: typeof daily.time === 'string' && TIME.test(daily.time) ? daily.time : DEFAULT_SETTINGS.dailyReport.time,
-    },
+    greetings: { enabled: typeof greetings.enabled === 'boolean' ? greetings.enabled : DEFAULT_SETTINGS.greetings.enabled },
+    career: { schedule: typeof career.schedule === 'string' && career.schedule.length <= SCHEDULE_LIMIT ? career.schedule.trim() : DEFAULT_SETTINGS.career.schedule },
   };
 }
 
@@ -112,27 +126,44 @@ export function writeSettings(patch, env = process.env) {
     if (heartbeat.everyMinutes !== undefined && !HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes))
       throw new TypeError(`heartbeat.everyMinutes must be one of ${HEARTBEAT_MINUTES.join(', ')}`);
   }
-  const daily = patch.dailyReport;
-  if (daily !== undefined) {
-    if (!daily || typeof daily !== 'object') throw new TypeError('dailyReport must be an object');
-    if (daily.enabled !== undefined && typeof daily.enabled !== 'boolean') throw new TypeError('dailyReport.enabled must be true or false');
-    if (daily.time !== undefined && !(typeof daily.time === 'string' && TIME.test(daily.time))) throw new TypeError('dailyReport.time must be HH:MM');
+  const greetings = patch.greetings;
+  if (greetings !== undefined) {
+    if (!greetings || typeof greetings !== 'object') throw new TypeError('greetings must be an object');
+    if (greetings.enabled !== undefined && typeof greetings.enabled !== 'boolean') throw new TypeError('greetings.enabled must be true or false');
   }
-  const next = normalizeSettings({ ...current, ...patch, heartbeat: { ...current.heartbeat, ...heartbeat },
-    dailyReport: { ...current.dailyReport, ...daily } });
+  const career = patch.career;
+  if (career !== undefined) {
+    if (!career || typeof career !== 'object') throw new TypeError('career must be an object');
+    if (career.schedule !== undefined && !(typeof career.schedule === 'string' && career.schedule.length <= SCHEDULE_LIMIT))
+      throw new TypeError(`career.schedule must be a path of at most ${SCHEDULE_LIMIT} characters`);
+  }
+  const { dailyReport: _old, ...rest } = patch;
+  const next = normalizeSettings({ ...current, ...rest, heartbeat: { ...current.heartbeat, ...heartbeat },
+    greetings: { ...current.greetings, ...greetings }, career: { ...current.career, ...career } });
   writeJson(companionPaths(env).settings, next);
   return next;
 }
 
-/** `dailyReportOn` is the local date (YYYY-MM-DD) the last daily report went out; `heartbeat` the last tick. */
+/**
+ * What the keeper keeps: `greeted` is the local date (YYYY-MM-DD) each greeting last went out (Roo's
+ * state/cron-last-run.json), `heartbeat` the last tick, `woke` the last boundary Segno was woken for
+ * and what is still owed (a seed, or the recall that follows a fresh one), `sleptOn` the last night.
+ */
 export function readState(env = process.env) {
   const state = readJson(companionPaths(env).state);
+  const greeted = state?.greeted && typeof state.greeted === 'object' ? Object.fromEntries(['night', 'morning']
+    .filter((slot) => typeof state.greeted[slot] === 'string').map((slot) => [slot, state.greeted[slot]])) : undefined;
+  const woke = state?.woke && typeof state.woke === 'object' && (typeof state.woke.boundary === 'string' || state.woke.boundary === null)
+    ? { boundary: state.woke.boundary,
+      ...(['fresh', 'compact', 'recall'].includes(state.woke.pending) ? { pending: state.woke.pending } : {}),
+      ...(Number.isFinite(state.woke.at) ? { at: state.woke.at } : {}) } : undefined;
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
-    ...(typeof state?.dailyReportOn === 'string' ? { dailyReportOn: state.dailyReportOn } : {}),
+    ...(greeted ? { greeted } : {}),
     ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
     // The last heartbeat tick and when it went (keeper.mjs, Roo's heartbeat.json tickCount).
     ...(state?.heartbeat && Number.isFinite(state.heartbeat.at) ? { heartbeat: { tick: state.heartbeat.tick, at: state.heartbeat.at } } : {}),
+    ...(woke ? { woke } : {}),
   };
 }
 
@@ -233,7 +264,10 @@ function pieceOf(id) {
 }
 
 export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${pieceOf(id).id}.pi.md`);
-export const personalPiecePath = (env, id) => path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`);
+/** The resident memory piece lives with Segno's memory, where the dream keeps it, not under prompt/. */
+export const memoryPiecePath = (env = process.env) => path.join(companionHome(env), 'memory', 'MEMORY.md');
+export const personalPiecePath = (env, id) => (pieceOf(id).id === 'memory' ? memoryPiecePath(env)
+  : path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`));
 /** Where the default text a personal copy was seeded from is kept; never read by the composer. */
 export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
 /** The settings page's "have Segno look at it" request; the keeper reads it and wakes Segno. */
@@ -374,12 +408,33 @@ export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
   return { personal: true };
 }
 
-/** The companion's whole role prompt: each piece, the person's version first, in order. */
+/**
+ * Marks the closing piece inside the composed role prompt, so the system prompt can carry it to its
+ * very end after everything Rubato adds behind the role prompt (system-prompt.mjs codaLast).
+ */
+export const CODA_OPEN = '<!-- segno:coda -->';
+export const CODA_CLOSE = '<!-- /segno:coda -->';
+
+/** The companion's whole role prompt: each piece, the person's version first, in order; the coda marked. */
 export function composeCompanionPrompt({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
-  return readPieces({ defaultsDir, env, readFile })
-    .map((piece) => piece.personalText ?? piece.defaultText)
-    .filter((text) => text.length > 0)
-    .join('\n\n');
+  const pieces = readPieces({ defaultsDir, env, readFile }).map((piece) => ({ id: piece.id, text: piece.personalText ?? piece.defaultText }));
+  const body = pieces.filter((piece) => piece.id !== 'coda' && piece.text.length > 0).map((piece) => piece.text).join('\n\n');
+  const coda = pieces.find((piece) => piece.id === 'coda')?.text ?? '';
+  return coda ? `${body}\n\n${CODA_OPEN}\n${coda}\n${CODA_CLOSE}` : body;
+}
+
+/**
+ * Moves a marked coda to the very end of `prompt`, after a rule, as Roo's build.sh closes its
+ * system prompt: the last tokens are Segno's own voice. A prompt without one is returned as it is.
+ */
+export function codaLast(prompt) {
+  if (typeof prompt !== 'string') return prompt;
+  const start = prompt.indexOf(CODA_OPEN);
+  const end = start < 0 ? -1 : prompt.indexOf(CODA_CLOSE, start);
+  if (end < 0) return prompt;
+  const coda = prompt.slice(start + CODA_OPEN.length, end).trim();
+  const rest = (prompt.slice(0, start).trimEnd() + '\n\n' + prompt.slice(end + CODA_CLOSE.length).trimStart()).trim();
+  return coda ? `${rest}\n\n---\n\n${coda}` : rest;
 }
 
 /** Whether a session's entries carry the companion marker. */

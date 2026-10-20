@@ -7,11 +7,13 @@ export const DELIVER_REQUEST = "rubato.session-link.deliver";
 // `channel` is a person's words arriving from a messenger (harness/companion/messenger): `from`
 // names the messenger, the chat and who wrote, and says whether that is the user.
 // `wake` is Rubato's own clock waking the conversation (harness/companion keeper.mjs): `what` is
-// the heartbeat, the daily report, sleep, or a review of Segno's own prompt files, and the text is
-// Rubato's fixed instruction for it.
+// the heartbeat, a greeting (night or morning), the wake seed after a new window or a compaction,
+// the recall that follows a new window's wake, sleep, or a review of Segno's own prompt files, and
+// the text is Rubato's for it. `daily-report` is kept so older session files still read; the
+// morning greeting carries the report now.
 export const SESSION_MESSAGE_KINDS = Object.freeze(["message", "create", "notice", "channel", "wake"]);
 /** What Rubato's clock wakes a conversation for. */
-export const WAKES = Object.freeze(["heartbeat", "daily-report", "sleep", "persona-review"]);
+export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "daily-report", "sleep", "persona-review"]);
 /**
  * The user message that opens a place for a system message where none is open (a system message
  * cannot follow an answer). Fixed, with nothing from the event in it, so every request carries the

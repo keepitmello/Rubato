@@ -49,6 +49,14 @@ const PIECE_COPY: Readonly<Record<CompanionPieceId, { title: string; description
     title: "Tools",
     description: "The tools Segno has. It follows Rubato and cannot be changed.",
   },
+  memory: {
+    title: "Resident memory",
+    description: "What Segno always carries. Its night dream keeps this in memory/MEMORY.md.",
+  },
+  coda: {
+    title: "Closing lines",
+    description: "The last words of Segno's prompt, after everything else.",
+  },
 };
 
 function reportError(title: string, error: unknown) {
@@ -584,30 +592,35 @@ export function RubatoCompanionSettingsPanel() {
               }
             />
             <SettingsRow
-              id="rubato-companion-daily-report"
-              title="Daily report"
-              description="Once a day: what came in, what was finished, what is still running and what waits for you."
+              id="rubato-companion-greetings"
+              title="Night and morning greetings"
+              description="At 00:07 Segno writes the day's diary and says good night; at 09:07 it says good morning with the day's report: what came in, what finished, what is still running and what waits for you."
               control={
-                <span className="flex items-center gap-2">
-                  <Input
-                    nativeInput
-                    type="time"
-                    aria-label="Daily report time"
-                    className="h-8 w-32"
-                    disabled={busy || !settings.dailyReport.enabled}
-                    value={settings.dailyReport.time}
-                    onChange={(event) => {
-                      const time = event.target.value;
-                      if (/^\d{2}:\d{2}$/.test(time)) void save({ dailyReport: { time } });
-                    }}
-                  />
-                  <Switch
-                    aria-label="Daily report"
-                    checked={settings.dailyReport.enabled}
-                    disabled={busy}
-                    onCheckedChange={(next) => void save({ dailyReport: { enabled: next } })}
-                  />
-                </span>
+                <Switch
+                  aria-label="Night and morning greetings"
+                  checked={settings.greetings.enabled}
+                  disabled={busy}
+                  onCheckedChange={(next) => void save({ greetings: { enabled: next } })}
+                />
+              }
+            />
+            <SettingsRow
+              id="rubato-companion-career-schedule"
+              title="Deadline schedule"
+              description="A Markdown schedule file Segno reads on each heartbeat to nudge you 3 hours and 1 hour before a timed deadline, and at 22:00 about tomorrow. Leave empty for none."
+              control={
+                <Input
+                  nativeInput
+                  aria-label="Deadline schedule file"
+                  className="h-8 w-72"
+                  disabled={busy}
+                  placeholder="~/path/to/schedule.md"
+                  defaultValue={settings.career.schedule}
+                  onBlur={(event) => {
+                    const schedule = event.target.value.trim();
+                    if (schedule !== settings.career.schedule) void save({ career: { schedule } });
+                  }}
+                />
               }
             />
           </>

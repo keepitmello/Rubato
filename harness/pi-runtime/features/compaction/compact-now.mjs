@@ -33,9 +33,12 @@ export function createCompactNowExtension({ armed = anthropicServerCompactionArm
         "Compact this conversation now and carry on in the same window: the next request asks the " +
         "server to summarize the history above about 50k tokens. Use it when going to sleep with work " +
         "still alive, after your records and notes are written. On a model without server compaction " +
-        "it does nothing and says so; there, a smaller context is a new window (new_context).",
-      parameters: { type: "object", additionalProperties: false, properties: {} },
-      async execute(_id, _params, _signal, _onUpdate, ctx) {
+        "it does nothing and says so; there, a smaller context is a new window (new_context). `keep` is two " +
+        "or three lines on what the summary should keep and what it may drop (Roo's compact --reason).",
+      parameters: { type: "object", additionalProperties: false, properties: {
+        keep: { type: "string", maxLength: 600, description: "What to keep and what to drop, two or three lines." },
+      } },
+      async execute(_id, params, _signal, _onUpdate, ctx) {
         const model = ctx?.model;
         if (!supportsAnthropicServerCompaction(model) || !armed()) {
           pending = false;
@@ -43,15 +46,16 @@ export function createCompactNowExtension({ armed = anthropicServerCompactionArm
           return { content: [text(`${name} has no server compaction here, so nothing was compacted. For a smaller context, call new_context.`)],
             details: { compacting: false } };
         }
-        pending = true;
+        pending = { keep: typeof params?.keep === "string" ? params.keep.trim().slice(0, 600) : "" };
         return { content: [text("The next request compacts this conversation on the server. Finish the turn with a short line; the summary carries the rest.")],
           details: { compacting: true } };
       },
     });
     pi.on("before_provider_request", (event) => {
       if (!pending || isCacheWarm(event.payload)) return undefined;
+      const { keep } = pending;
       pending = false;
-      return compactNowPayload(event.payload) ?? undefined;
+      return compactNowPayload(event.payload, { keep }) ?? undefined;
     });
   };
 }

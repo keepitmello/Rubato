@@ -16,8 +16,10 @@ const COMPANION_ROUTE = "/rubato/companion";
 export interface CompanionSettings {
   readonly enabled: boolean;
   readonly heartbeat: { readonly enabled: boolean; readonly everyMinutes: number };
-  /** The daily report's time, HH:MM on this Mac's clock. */
-  readonly dailyReport: { readonly enabled: boolean; readonly time: string };
+  /** The night (00:07) and morning (09:07) greetings; the morning one carries the daily report. */
+  readonly greetings: { readonly enabled: boolean };
+  /** The deadline schedule the heartbeat reads for its nudges; "" for none. */
+  readonly career: { readonly schedule: string };
 }
 
 export interface CompanionStatus {
@@ -64,7 +66,15 @@ export interface TelegramStatus {
   readonly recent: readonly TelegramHeldMessage[];
 }
 
-export type CompanionPieceId = "preamble" | "soul" | "identity" | "user" | "companion" | "tools";
+export type CompanionPieceId =
+  | "preamble"
+  | "soul"
+  | "identity"
+  | "user"
+  | "companion"
+  | "tools"
+  | "memory"
+  | "coda";
 
 export interface CompanionPiece {
   readonly id: CompanionPieceId;
@@ -84,7 +94,8 @@ export interface CompanionPiece {
 export interface CompanionSettingsPatch {
   readonly enabled?: boolean;
   readonly heartbeat?: Partial<CompanionSettings["heartbeat"]>;
-  readonly dailyReport?: Partial<CompanionSettings["dailyReport"]>;
+  readonly greetings?: Partial<CompanionSettings["greetings"]>;
+  readonly career?: Partial<CompanionSettings["career"]>;
 }
 
 /** A conversation Segno handed work to and follows until that work ends (engine panel.json). */

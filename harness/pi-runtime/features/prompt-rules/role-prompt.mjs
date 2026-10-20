@@ -49,7 +49,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
     const promptHref = env.RUBATO_ROLE_PROMPT_MODULE;
     const roleHref = env.RUBATO_ROLE_CONTRACT_MODULE;
     if (!promptHref || !roleHref) return;
-    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf, loadOpeningTurn }, { resolveRole }] = await Promise.all([
+    const [{ loadRolePrompt, promptForAgentStart, skillsListingOf, loadOpeningTurn, codaLast }, { resolveRole }] = await Promise.all([
       import(promptHref),
       import(roleHref),
     ]);
@@ -104,8 +104,8 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       const additions = base !== undefined && current.startsWith(base) ? current.slice(base.length) : "";
       const id = sessionIdOf(ctx);
       const hooks = id === undefined || typeof loadRolePrompt !== "function"
-        ? {}
-        : { loadRolePrompt: () => (role === COMPANION_ROLE ? pinAtBoundary : pin)(id, ctx, ROLE_PROMPT_ENTRY_TYPE,
+        ? { renderCoda: false }
+        : { renderCoda: false, loadRolePrompt: () => (role === COMPANION_ROLE ? pinAtBoundary : pin)(id, ctx, ROLE_PROMPT_ENTRY_TYPE,
           () => loadRolePrompt(role, { env })) };
       const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, hooks);
       let composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
@@ -119,6 +119,9 @@ export function createRolePromptExtension({ env = process.env } = {}) {
         }
         repin.delete(id);
       }
+      // The companion's closing piece is the last thing in the prompt, after the additions too
+      // (Roo build.sh: "마지막 토큰 슬롯을 루 목소리로 점유").
+      if (typeof codaLast === "function") composed = codaLast(composed);
       return { systemPrompt: composed };
     });
     // The opening turn: an assistant turn ahead of the whole conversation, in the model's own
