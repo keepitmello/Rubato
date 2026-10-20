@@ -21,7 +21,7 @@ function sandbox(t) {
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   // PATH is a folder of the test's own: whether mail and calendar tools exist is the test's to say.
   const env = { HOME: dir, RUBATO_COMPANION_HOME: path.join(dir, 'companion'), RUBATO_PI_CODING_AGENT_DIR: path.join(dir, 'agent'),
-    PATH: path.join(dir, 'bin') };
+    PATH: path.join(dir, 'bin'), MSEARCH_STATE_DIR: path.join(dir, 'msearch-state') };
   mkdirSync(env.PATH);
   mkdirSync(path.join(env.RUBATO_COMPANION_HOME, 'memory', 'diary'), { recursive: true });
   mkdirSync(path.join(env.RUBATO_COMPANION_HOME, 'prompt'), { recursive: true });
@@ -423,19 +423,24 @@ test("the resident memory's guard: no protected quote may go, and past the targe
   assert.equal(guardResidentMemory(memory(['a']), undefined).reason, 'MEMORY.md would be deleted');
 });
 
-test('a dream that would drop a protected quote leaves MEMORY.md as it was, brings the rest home and reads the night again', async (t) => {
+test('a dream that would drop a protected quote leaves MEMORY.md as it was and brings the rest home; the night counts, as in Roo', async (t) => {
   const env = sandbox(t);
   const home = env.RUBATO_COMPANION_HOME;
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
   write(env, 'memory/MEMORY.md', '# 기억\n\n## 잊으면 안 되는 말들\n- "넌 내 편이잖아"\n');
-  const dreamer = fakeDreamer({ edits: { 'memory/MEMORY.md': '# 기억\n\n## 잊으면 안 되는 말들\n', 'memory/us.md': '## 지금\n' },
+  let plan;
+  const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; },
+    edits: { 'memory/MEMORY.md': '# 기억\n\n## 잊으면 안 되는 말들\n', 'memory/us.md': '## 지금\n' },
     result: { status: 'done', blocks: { distill: 'done' } } });
   const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  // The dream saw what the guard would hold it to before it wrote.
+  assert.deepEqual(plan.memoryGuard.protectedQuotes, ['"넌 내 편이잖아"']);
+  assert.equal(plan.memoryGuard.allowedMaxChars, MEMORY_GUARD.targetChars);
   assert.equal(record.status, 'partial');
   assert.equal(record.guarded[0].path, 'memory/MEMORY.md');
   assert.match(readFileSync(path.join(home, 'memory/MEMORY.md'), 'utf8'), /넌 내 편이잖아/);
   assert.deepEqual(record.changed, ['memory/us.md']);
-  assert.equal(readDreamState(env).blocks, undefined);
+  assert.ok(readDreamState(env).blocks.distill.lastAt.startsWith('2026-10-21T04:07'));
 });
 
 test('a night without listening still hears the talk for Segno\'s own words, and the listening mark stays', async (t) => {
@@ -476,7 +481,7 @@ test('a quiet night still dreams when mail or a calendar can be read, a dated it
   const withMail = await run(mail);
   assert.equal(withMail.record.status, 'done');
   assert.deepEqual([withMail.plan.checks.mail, withMail.plan.checks.calendar], [true, false]);
-  assert.equal(withMail.plan.checks.file, path.join(dreamPaths(mail).dir, 'checks.json'));
+  assert.ok(withMail.plan.checks.file.startsWith(dreamPaths(mail).runs), "the ledger the dream writes is the run's copy");
 
   const dated = sandbox(t);
   quietState(dated);
@@ -493,49 +498,94 @@ test('a quiet night still dreams when mail or a calendar can be read, a dated it
   assert.equal((await run(sweep)).record.status, 'done');
 });
 
-test("Segno's work notes are copied for the dream to read", async (t) => {
+test("Segno's work notes are read from the branch its conversation is on, not from a rewound one", async (t) => {
   const env = sandbox(t);
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
-  writeState({ sessionId: 'segno-session' }, env);
-  const { DatabaseSync } = await import('node:sqlite');
-  const dir = path.join(env.RUBATO_PI_CODING_AGENT_DIR, 'context-notes');
-  mkdirSync(dir, { recursive: true });
-  const db = new DatabaseSync(path.join(dir, `${createHash('sha256').update('segno-session').digest('hex')}.sqlite`));
-  db.exec('CREATE TABLE notes (id TEXT PRIMARY KEY, path TEXT NOT NULL, text TEXT NOT NULL, window_id TEXT NOT NULL, through_user_id TEXT, ordinal INTEGER NOT NULL, operation_id TEXT)');
-  const insert = db.prepare('INSERT INTO notes (id, path, text, window_id, ordinal) VALUES (?, ?, ?, ?, ?)');
-  insert.run('1', 'now.md', '옛 노트', 'w', 1);
-  insert.run('2', 'now.md', '지금 노트: 금요일 면접 따라가는 중', 'w', 2);
-  db.close();
+  const id = '01a154ba-0000-7000-8000-000000000009';
+  writeState({ sessionId: id }, env);
+  const file = path.join(env.RUBATO_PI_CODING_AGENT_DIR, 'sessions', `x_${id}.jsonl`);
+  const note = (entryId, parentId, name, text) => ({ type: 'custom', customType: 'rubato.context-note.v1', id: entryId, parentId,
+    timestamp: '2026-10-20T01:00:00.000Z', data: { path: name, text, windowId: 'w' } });
+  writeFileSync(file, [
+    { type: 'session', version: 3, id, timestamp: '2026-10-20T00:00:00.000Z', cwd: env.RUBATO_COMPANION_HOME },
+    note('a', null, 'now.md', '옛 노트'),
+    note('b', 'a', 'now.md', '되감기 전 노트'),
+    note('c', 'a', 'now.md', '지금 노트: 금요일 면접 따라가는 중'),
+    note('d', 'c', 'leads.md', '리드 하나'),
+  ].map((line) => JSON.stringify(line)).join('\n') + '\n');
+  const before = sha(file);
   let plan;
   const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; }, result: { status: 'done', blocks: {} } });
-  await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [file] });
   const notes = readFileSync(plan.workNotes, 'utf8');
-  assert.match(notes, /## now\.md\n\n지금 노트: 금요일 면접/);
-  assert.doesNotMatch(notes, /옛 노트/);
+  assert.equal(notes, '## leads.md\n\n리드 하나\n\n## now.md\n\n지금 노트: 금요일 면접 따라가는 중\n');
+  assert.equal(sha(file), before);
 });
 
 test('what came home is re-indexed for Segno\'s search, and the shared recall log gives the dream its often-recalled places', async (t) => {
   const env = sandbox(t);
   write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
-  const stateDir = path.join(env.HOME, '.rubato', 'memory', 'msearch-state');
+  const stateDir = env.MSEARCH_STATE_DIR;
   mkdirSync(stateDir, { recursive: true });
   // The log is shared by every msearch channel; a hit's key carries its channel (memory-search.py log_recall).
   const own = segnoSearchEnv(env).MSEARCH_CHANNEL;
-  const hit = (rel, section, day, channel = own) => JSON.stringify({ ts: new Date(at(day, 12)).toISOString(), caller: 'cli', query: 'q',
-    hits: [{ key: `msearch:memory:channel:${channel}:${rel}:0`, rel_path: rel, section }] });
-  writeFileSync(path.join(stateDir, 'recall-log.jsonl'), [hit('user.md', '지금', 20), hit('user.md', '지금', 19),
-    hit('user.md', '지금', 20, 'segno_0123456789'), hit('user.md', '지금', 19, 'rubato'), hit('us.md', '이야기', 20, 'rubato'),
-    hit('us.md', '이야기', 19, 'rubato'), hit('us.md', '이야기', 20), hit('user.md', '지금', 1)].join('\n') + '\n');
+  const search = (day, hits, { channel = own, caller = 'cli', hour = 12 } = {}) => JSON.stringify({ ts: new Date(at(day, hour)).toISOString(), caller, query: 'q',
+    hits: hits.map(([rel, section], index) => ({ key: `msearch:memory:channel:${channel}:${rel}:${index}`, rel_path: rel, section })) });
+  const user = ['user.md', '지금'];
+  const us = ['us.md', '이야기'];
+  writeFileSync(path.join(stateDir, 'recall-log.jsonl'), [
+    // user.md on three days, one of them with two pieces in one search: a candidate, counted once per search.
+    search(18, [user, user]), search(19, [user]), search(20, [user]), search(20, [user], { hour: 15 }),
+    // us.md: twice on one day, once more another day, and on other channels or from a non-CLI caller: not three days of Segno's.
+    search(20, [us]), search(20, [us], { hour: 16 }), search(19, [us]), search(18, [us], { channel: 'segno_0123456789' }),
+    search(17, [us], { channel: 'rubato' }), search(16, [us], { caller: 'shadow' }),
+    // A week and more ago: out of the window.
+    search(1, [us]),
+  ].join('\n') + '\n');
   const indexed = [];
   let plan;
   const dreamer = fakeDreamer({ onRun: (seen) => { plan = seen.plan; }, edits: { 'memory/us.md': '## 지금\n' }, result: { status: 'done', blocks: { distill: 'done' } } });
   const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [],
     reindex: (environment) => { indexed.push(environment.RUBATO_COMPANION_HOME); return 'indexed 1 file'; } });
-  assert.deepEqual(plan.recall, [{ path: 'memory/user.md', section: '지금', hits: 2 }]);
+  assert.deepEqual(plan.recall.map(({ path: where, section, count, distinctDays }) => ({ where, section, count, distinctDays })),
+    [{ where: 'memory/user.md', section: '지금', count: 4, distinctDays: 3 }]);
   assert.deepEqual(indexed, [env.RUBATO_COMPANION_HOME]);
   assert.equal(record.index, 'indexed 1 file');
   const failed = fakeDreamer({ code: 1 });
   await runCompanionDream({ env, launch, spawnChild: failed.spawnChild, now: () => at(22, 4, 7), defaultsDir, sessionFiles: () => [],
     reindex: () => { indexed.push('again'); return ''; } });
   assert.equal(indexed.length, 1, 'nothing came home, nothing to index');
+});
+
+test("the seen-mail ledger comes home only with the held list it feeds", async (t) => {
+  const ledgerRun = async ({ code = 0, segnoEditsHeld = false } = {}) => {
+    const env = sandbox(t);
+    const home = env.RUBATO_COMPANION_HOME;
+    write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+    write(env, 'notes/held.md', '# 챙길 거\n\n## 날짜 있는 거\n- 원래 줄\n\n## 맡긴 거\n');
+    writeFileSync(path.join(env.PATH, 'himalaya'), '#!/bin/sh\n', { mode: 0o755 });
+    mkdirSync(dreamPaths(env).dir, { recursive: true });
+    writeFileSync(dreamPaths(env).checks, JSON.stringify({ alertedIds: { old: '2026-10-01' } }));
+    const record = await runCompanionDream({ env, launch, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [],
+      spawnChild: async (options) => {
+        const plan = JSON.parse(readFileSync(path.join(options.env.DREAM_RUN_DIR, 'plan.json'), 'utf8'));
+        writeFileSync(plan.checks.file, JSON.stringify({ alertedIds: { old: '2026-10-01', 'mail-42': '2026-10-21' } }));
+        writeFileSync(path.join(options.cwd, 'notes/held.md'), '# 챙길 거\n\n## 날짜 있는 거\n- 꿈이 고친 줄: 메일 42 마감\n\n## 맡긴 거\n');
+        if (segnoEditsHeld) writeFileSync(path.join(home, 'notes/held.md'), '# 챙길 거\n\n## 날짜 있는 거\n- 세뇨가 고친 줄\n\n## 맡긴 거\n');
+        if (code !== 0) return { code };
+        writeFileSync(path.join(options.env.DREAM_OUT_DIR, 'result.json'), JSON.stringify({ status: 'done', blocks: {} }));
+        writeFileSync(options.logPath, 'MEMORY_DONE\n');
+        return { code: 0 };
+      } });
+    return { record, ledger: JSON.parse(readFileSync(dreamPaths(env).checks, 'utf8')).alertedIds, held: readFileSync(path.join(home, 'notes/held.md'), 'utf8') };
+  };
+  const ok = await ledgerRun();
+  assert.ok(ok.ledger['mail-42']);
+  assert.match(ok.held, /메일 42/);
+  const failed = await ledgerRun({ code: 1 });
+  assert.equal(failed.record.status, 'failed');
+  assert.equal(failed.ledger['mail-42'], undefined, 'the next dream sees mail 42 again');
+  const conflicted = await ledgerRun({ segnoEditsHeld: true });
+  assert.deepEqual(conflicted.record.conflicts, ['notes/held.md']);
+  assert.equal(conflicted.ledger['mail-42'], undefined);
 });
