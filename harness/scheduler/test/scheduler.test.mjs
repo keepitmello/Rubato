@@ -272,3 +272,82 @@ test('a running row left while the engine was unreachable is picked up once the 
   const runs = await settled(env.store, task.id);
   assert.deepEqual(runs.map((run) => [run.trigger, run.status, run.reason]), [['schedule', 'success', null], ['schedule', 'success', null]]);
 });
+
+/** The engine as the scheduler service builds it, with `wake` recording what the conversation would take. */
+function wakingEngine(env, { fail } = {}) {
+  const woken = [];
+  return { woken, engine: { ...env.engine, wake: async (args) => {
+    if (fail) throw new Error(fail);
+    woken.push(args);
+    return { messageId: args.messageId, duplicate: false, state: 'queued' };
+  } } };
+}
+const companionHome = async (env, sessionId) => {
+  const home = path.join(env.root, 'companion');
+  await mkdir(home, { recursive: true });
+  if (sessionId) await writeFile(path.join(home, 'state.json'), JSON.stringify({ sessionId }));
+  return { RUBATO_COMPANION_HOME: home };
+};
+
+test('a message task sends its text to the conversation and starts no session', async (t) => {
+  const env = await setup(t);
+  const { engine, woken } = wakingEngine(env);
+  env.clock.value = new Date('2026-09-29T10:59:00Z'); // 19:59
+  const task = await env.store.create({ name: 'Evening report', sendTo: 'companion', prompt: 'Time for the evening report.',
+    schedule: { kind: 'daily', time: '20:00' } });
+  const scheduler = env.scheduler({ engine, env: await companionHome(env, 'segno-conversation-1') });
+  await scheduler.start();
+  env.clock.value = new Date('2026-09-29T11:00:02Z'); // 20:00:02
+  await scheduler.tick();
+  const [run] = await settled(env.store, task.id);
+  assert.deepEqual([run.status, run.kind, run.sessionId, run.cwd, run.model], ['success', 'message', 'segno-conversation-1', null, null]);
+  assert.deepEqual(woken, [{ to: 'segno-conversation-1', what: 'schedule', messageId: `schedule:${run.id}`,
+    text: 'Scheduled message "Evening report":\nTime for the evening report.' }]);
+  const client = await env.engine.connect();
+  try { assert.deepEqual(await client.list(), [], 'no session was created'); } finally { await client.close(); }
+});
+
+test('"companion" follows Segno to its current conversation; a missing one or a refused delivery is a failure', async (t) => {
+  const env = await setup(t);
+  const companion = await companionHome(env);
+  const task = await env.store.create({ name: 'Ping', sendTo: 'companion', prompt: 'ping', schedule: { kind: 'daily', time: '20:00' } });
+  await writeFile(path.join(env.root, 'schedule', 'scheduler.json'), JSON.stringify({ pid: process.pid, startedAt: env.clock.value, lastTickAt: env.clock.value }));
+  const { engine, woken } = wakingEngine(env);
+  const scheduler = env.scheduler({ engine, env: companion });
+  await scheduler.start();
+  await env.store.runNow(task.id);
+  await scheduler.tick();
+  let [run] = await settled(env.store, task.id);
+  assert.deepEqual([run.status, run.reason, run.sessionId], ['failed', 'no-target', null]);
+  await writeFile(path.join(companion.RUBATO_COMPANION_HOME, 'state.json'), JSON.stringify({ sessionId: 'segno-conversation-2' }));
+  await env.store.runNow(task.id);
+  await scheduler.tick();
+  await until(async () => (await env.store.runs(task.id)).runs.every((item) => item.status !== 'running') && woken.length);
+  assert.equal(woken[0].to, 'segno-conversation-2');
+  await scheduler.stop();
+  const refusing = env.scheduler({ engine: wakingEngine(env, { fail: 'Could not open conversation x: not found' }).engine, env: companion });
+  await refusing.start();
+  await env.store.runNow(task.id);
+  await refusing.tick();
+  await until(async () => (await env.store.runs(task.id)).runs.length === 3 && (await env.store.runs(task.id)).runs.every((item) => item.status !== 'running'));
+  [run] = (await env.store.runs(task.id)).runs;
+  assert.deepEqual([run.status, run.reason, run.sessionId], ['failed', 'delivery-failed', 'segno-conversation-2']);
+  assert.match(run.detail, /not found/);
+});
+
+test('a one-off message is delivered without a task or a run row; a message row left by a stopped scheduler is interrupted', async (t) => {
+  const env = await setup(t);
+  const { engine, woken } = wakingEngine(env);
+  const task = await env.store.create({ name: 'Ping', sendTo: '01a154ba-8c2a-74f0-9359-98add9931ab8', prompt: 'ping', schedule: { kind: 'daily', time: '20:00' } });
+  await env.store.mutate((state) => { state.runs.push({ id: 'left', taskId: task.id, kind: 'message', status: 'running', sessionId: null }); });
+  const scheduler = env.scheduler({ engine });
+  await scheduler.start();
+  const { requestId } = await env.store.send({ to: '01a154ba-8c2a-74f0-9359-98add9931ab8', text: 'Deploy finished' });
+  await scheduler.tick();
+  await until(() => woken.length === 1);
+  assert.deepEqual(woken, [{ to: '01a154ba-8c2a-74f0-9359-98add9931ab8', what: 'schedule', text: 'Deploy finished', messageId: `send:${requestId}` }]);
+  assert.deepEqual(env.store.read().requests, []);
+  const [left] = await settled(env.store, task.id);
+  assert.deepEqual([left.status, left.reason], ['failed', 'interrupted']);
+  assert.equal((await env.store.runs(task.id)).runs.length, 1, 'the message made no run row');
+});

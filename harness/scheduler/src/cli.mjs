@@ -1,13 +1,16 @@
 #!/usr/bin/env node
 // `rubato schedule` — the small CLI. Registering and editing belong to the settings page and
 // the session tool; this lists tasks, starts one now, shows a task's history and makes sure the
-// scheduler runs (inside the profile engine, which launchd keeps).
-import { createScheduleStore, findTask, formatNextRun, ScheduleError } from '../../../packages/schedule-core/src/index.mjs';
+// scheduler runs (inside the profile engine, which launchd keeps). `send` is for scripts: one
+// message into a conversation now (an alert, a finished job), delivered by the scheduler with no
+// session started.
+import { COMPANION_TARGET, createScheduleStore, findTask, formatNextRun, ScheduleError } from '../../../packages/schedule-core/src/index.mjs';
 import { engineLaunchAgentLoaded, startScheduler } from './launchd.mjs';
 
 const USAGE = `usage: rubato schedule [list] [--json]
        rubato schedule run <task>          start a task now (name, id or id prefix)
        rubato schedule runs <task> [--json] a task's recent runs
+       rubato schedule send <to> <text…>   send a message now to "companion" (Segno) or a conversation id
        rubato schedule status              is the scheduler running on this Mac
        rubato schedule install             make sure it runs: the Rubato engine, kept by launchd, runs it`;
 
@@ -26,6 +29,8 @@ export function describeRun(run) {
   return `${run.status} · ${when}`;
 }
 
+const targetLabel = (sendTo) => (sendTo === COMPANION_TARGET ? 'Segno' : `conversation ${sendTo}`);
+
 export async function main(argv, { env = process.env, out = (text) => process.stdout.write(text), store = createScheduleStore({ env }) } = {}) {
   const args = argv.filter((arg) => arg !== '--json');
   const json = argv.includes('--json');
@@ -36,8 +41,8 @@ export async function main(argv, { env = process.env, out = (text) => process.st
       const listing = await store.list();
       const lines = listing.tasks.map((task) => [
         `${task.enabled ? '●' : '○'} ${task.name}  [${task.id.slice(0, 8)}]`,
-        `    ${task.summary} · ${task.enabled ? `next: ${task.nextRunLabel ?? '—'}` : 'off'} · ${task.model ?? 'default model'}`,
-        `    ${task.cwd}`,
+        `    ${task.summary} · ${task.enabled ? `next: ${task.nextRunLabel ?? '—'}` : 'off'} · ${task.sendTo ? 'message, no session' : task.model ?? 'default model'}`,
+        `    ${task.sendTo ? `→ ${targetLabel(task.sendTo)}` : task.cwd}`,
         `    last: ${task.running ? 'running now' : describeRun(task.lastRun)}`,
       ].join('\n'));
       const banner = listing.scheduler.running ? '' : '\nThe scheduler is not running on this Mac — tasks will not run. Start it: rubato schedule install\n';
@@ -47,13 +52,20 @@ export async function main(argv, { env = process.env, out = (text) => process.st
     case 'run': {
       const task = findTask((await store.list()).tasks, target);
       const result = await store.runNow(task.id);
-      print({ taskId: task.id, ...result }, `Started "${task.name}". It appears as a new session in ${task.cwd}.\n`);
+      print({ taskId: task.id, ...result }, task.sendTo ? `Sending "${task.name}" to ${targetLabel(task.sendTo)}.\n`
+        : `Started "${task.name}". It appears as a new session in ${task.cwd}.\n`);
       return 0;
     }
     case 'runs': {
       const task = findTask((await store.list()).tasks, target);
       const { runs } = await store.runs(task.id, { limit: 20 });
       print({ taskId: task.id, runs }, `${task.name}\n${runs.map((run) => `  ${describeRun(run)}${run.sessionId ? `  session ${run.sessionId}` : ''}`).join('\n') || '  no runs yet'}\n`);
+      return 0;
+    }
+    case 'send': {
+      const text = args.slice(2).join(' ');
+      const result = await store.send({ to: target, text });
+      print(result, `Queued for ${targetLabel(target.trim())}; the scheduler delivers it in a moment.\n`);
       return 0;
     }
     case 'status': {

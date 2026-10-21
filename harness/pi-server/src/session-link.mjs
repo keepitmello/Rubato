@@ -884,13 +884,15 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     },
     /**
      * Rubato's own clock (`kind: 'wake'`): the companion's heartbeat and daily report (harness/companion
-     * keeper.mjs). The conversation takes it as a system message where its model allows, and it
-     * draws no bubble; only the turn it starts shows.
+     * keeper.mjs) and scheduled messages (harness/scheduler). The conversation takes it as a system
+     * message where its model allows, and it draws no bubble; only the turn it starts shows. A caller
+     * that may deliver again (a restarted scheduler) passes its own `messageId`, so the conversation
+     * takes it once.
      */
-    async wake({ to, what, text } = {}) {
+    async wake({ to, what, text, messageId } = {}) {
       requireId(to, 'to'); requireText(text);
       if (!WAKES.includes(what)) throw fail('invalid', `what must be one of ${WAKES.join(', ')}`);
-      return deliver(to, { v: 1, messageId: randomUUID(), kind: 'wake', what,
+      return deliver(to, { v: 1, messageId: messageIdOf(messageId), kind: 'wake', what,
         from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text });
     },
     /**

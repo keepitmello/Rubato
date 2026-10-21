@@ -1,8 +1,12 @@
 import { statSync } from 'node:fs';
+import { COMPANION_TARGET } from '../../../packages/schedule-core/src/index.mjs';
+import { readState as readCompanionState } from '../../companion/companion.mjs';
 
 // One run = one ordinary session in the profile engine, created, prompted and watched to the
 // end of its first turn. The engine keeps the conversation (JSONL) and T3 projects it into a
 // thread like any other; this side only records the outcome on the run row.
+// A message task's run starts no session: it hands its text to a conversation that already
+// exists (Segno, or one by id) and records whether the conversation took it.
 //
 // A failure before the session exists leaves `sessionId` null (nothing to open); after it, the
 // id stays so the page can still open the thread.
@@ -10,6 +14,45 @@ import { statSync } from 'node:fs';
 const pad = (value) => String(value).padStart(2, '0');
 export function runTitle(taskName, at) {
   return `⏰ ${taskName} · ${at.getMonth() + 1}/${at.getDate()} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
+/** What a message task's conversation reads: which task it is, then the task's text. */
+export function messageText(taskName, text) {
+  return `Scheduled message "${taskName}":\n${text}`;
+}
+
+/**
+ * The conversation a message goes to now. `companion` is whichever conversation is Segno's when
+ * the time comes (harness/companion state.json, written by its keeper), so a new conversation for
+ * Segno does not leave the task pointing at the old one.
+ */
+export function resolveTarget(sendTo, { env = process.env } = {}) {
+  if (sendTo !== COMPANION_TARGET) return sendTo;
+  const sessionId = readCompanionState(env)?.sessionId;
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error('Segno has no conversation yet (turn the companion on in Settings › Companion).');
+  return sessionId;
+}
+
+/**
+ * Sends one message into a conversation that already exists, as a wake from Rubato's clock: no
+ * session is started and no model is called here; the conversation answers in its own turn. The
+ * message id comes from the run, so delivering it again never reaches the conversation twice.
+ */
+export async function deliverMessage({ to, text, messageId, engine, env }) {
+  let target;
+  try { target = resolveTarget(to, { env }); }
+  catch (error) { return { target: null, ...failure('no-target', message(error)) }; }
+  try { await engine.wake({ to: target, what: 'schedule', text, messageId }); }
+  catch (error) { return { target, ...failure('delivery-failed', message(error)) }; }
+  return { target, status: 'success', reason: null, detail: null };
+}
+
+/** A message task's run: the row names the conversation it reached and how the delivery went. */
+export async function executeMessageRun({ task, row, engine, update, log = () => {}, env }) {
+  const { target, ...verdict } = await deliverMessage({ to: task.sendTo, text: messageText(task.name, task.prompt),
+    messageId: `schedule:${row.id}`, engine, env });
+  log('message sent', { runId: row.id, taskId: task.id, to: target, status: verdict.status, ...(verdict.detail ? { detail: verdict.detail } : {}) });
+  return update({ ...verdict, sessionId: target, finishedAt: new Date().toISOString() });
 }
 
 const message = (error) => String(error?.message ?? error ?? 'Unknown error').split('\n')[0].slice(0, 500);
@@ -129,6 +172,8 @@ const LIVE = new Set(['running', 'waiting', 'starting']);
  */
 export async function reconcileRun({ row, engine, update, log = () => {}, signal, quietMs, pollMs }) {
   const finish = (patch) => update({ ...patch, finishedAt: new Date().toISOString() });
+  // A message has no turn to watch: the scheduler stopped between taking the row and hearing back.
+  if (row.kind === 'message') return finish(failure('interrupted', 'The scheduler stopped while sending; the message may have arrived.'));
   if (!row.sessionId) return finish(failure('interrupted', 'The scheduler stopped before the session started.'));
   let client;
   try { client = await engine.connect(); }

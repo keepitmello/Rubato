@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdirSync, watch, writeFileSync, renameSync } from 'node:fs';
 import path from 'node:path';
 import { judgeTask, recordSkip } from '../../../packages/schedule-core/src/index.mjs';
-import { executeRun, reconcileRun, runTitle } from './runner.mjs';
+import { deliverMessage, executeMessageRun, executeRun, reconcileRun, runTitle } from './runner.mjs';
 
 export const TICK_MS = 15_000;
 
@@ -10,9 +10,11 @@ export const TICK_MS = 15_000;
  * The only executor. Each tick judges every enabled task against the clock (run, or record a
  * skip — never catch up), takes queued run-now requests, and starts their sessions. Store
  * changes wake it at once so "Run now" does not wait for the next tick.
+ * A message task (`sendTo`) sends its text through `engine.wake` instead of starting a session;
+ * a queued one-off message (store `send`) goes the same way without a task or a run row.
  */
 export function createScheduler({ store, engine, now = () => new Date(), tickMs = TICK_MS, log = () => {}, runOptions = {},
-  reconcileWaitMs = 20_000 }) {
+  reconcileWaitMs = 20_000, env = process.env }) {
   const startedAt = now();
   const inflight = new Map();
   const controller = new AbortController();
@@ -44,7 +46,8 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
   const newRow = (task, { trigger, scheduledFor, rerunOf = null, at }) => ({
     id: randomUUID(), taskId: task.id, trigger, scheduledFor: scheduledFor?.toISOString() ?? null,
     lastScheduledFor: scheduledFor?.toISOString() ?? null, skipCount: 0, status: 'running', reason: null, detail: null,
-    startedAt: at.toISOString(), finishedAt: null, model: task.model, thinking: task.thinking, cwd: task.cwd,
+    startedAt: at.toISOString(), finishedAt: null, model: task.model ?? null, thinking: task.thinking ?? null, cwd: task.cwd ?? null,
+    ...(task.sendTo ? { kind: 'message' } : {}),
     sessionId: null, serverId: null, title: runTitle(task.name, scheduledFor ?? at), rerunOf,
   });
 
@@ -55,6 +58,7 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
     await settleUnwatched();
     const at = now();
     const starts = [];
+    const messages = [];
     await store.mutate((state) => {
       const busy = (taskId) => state.runs.some((run) => run.taskId === taskId && run.status === 'running')
         || [...inflight.values()].some((item) => item.taskId === taskId);
@@ -73,6 +77,7 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
         }
       }
       for (const request of state.requests.splice(0)) {
+        if (request.message) { messages.push(request); continue; }
         const task = state.tasks.find((item) => item.id === request.taskId);
         if (!task || busy(task.id)) continue;
         const row = newRow(task, { trigger: 'manual', scheduledFor: null, rerunOf: request.fromRunId ?? null, at });
@@ -82,7 +87,15 @@ export function createScheduler({ store, engine, now = () => new Date(), tickMs 
     });
     for (const { task, row } of starts) {
       log('run due', { runId: row.id, taskId: task.id, trigger: row.trigger, scheduledFor: row.scheduledFor });
-      launch(task, row, () => executeRun({ task, row, engine, update: update(row.id), log, signal: controller.signal, ...runOptions }));
+      launch(task, row, task.sendTo
+        ? () => executeMessageRun({ task, row, engine, update: update(row.id), log, env })
+        : () => executeRun({ task, row, engine, update: update(row.id), log, signal: controller.signal, ...runOptions }));
+    }
+    for (const request of messages) {
+      const { message } = request;
+      const sent = deliverMessage({ to: message.to, text: message.text, messageId: `send:${request.id}`, engine, env })
+        .then(({ target, status, detail }) => log('message sent', { requestId: request.id, to: target ?? message.to, status, ...(detail ? { detail } : {}) }));
+      launch(null, { id: request.id, taskId: null }, () => sent);
     }
     writeHeartbeat(at);
   }

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { createScheduleStore } from '../src/index.mjs';
+import { MESSAGE_CHARS, createScheduleStore } from '../src/index.mjs';
 
 let root;
 let project;
@@ -130,6 +130,64 @@ describe('run now', () => {
     await store().mutate((state) => { state.runs.push({ id: 'skip1', taskId: task.id, status: 'skipped', reason: 'sleep' }); });
     await store().runNow(task.id, { fromRunId: 'skip1' });
     expect(store().read().requests[0].fromRunId).toBe('skip1');
+  });
+});
+
+const SESSION = '01a154ba-8c2a-74f0-9359-98add9931ab8';
+const message = (extra = {}) => ({ name: 'Evening report', sendTo: 'companion', prompt: 'Time for the evening report.',
+  schedule: { kind: 'daily', time: '20:00' }, ...extra });
+
+describe('message tasks', () => {
+  test('a task that sends to a conversation needs no folder or model and keeps none', async () => {
+    const toSegno = await store().create(message());
+    expect(toSegno).toMatchObject({ sendTo: 'companion', cwd: null, model: null, thinking: null, prompt: 'Time for the evening report.' });
+    const toSession = await store().create(message({ name: 'Ping', sendTo: ` ${SESSION} ` }));
+    expect(toSession.sendTo).toBe(SESSION);
+  });
+
+  test('a task without sendTo still starts a session and lists sendTo as null', async () => {
+    const task = await store().create(input());
+    expect(task).toMatchObject({ sendTo: null, cwd: project });
+    await store().mutate((state) => { delete state.tasks[0].sendTo; });
+    expect((await store().get(task.id)).sendTo).toBeNull();
+  });
+
+  test('a folder, model or thinking level on a message task is refused, as is a bad target or a long message', async () => {
+    expect((await refusal(store().create(message({ cwd: project })))).field).toBe('cwd');
+    expect((await refusal(store().create(message({ model: 'xai/grok-4.7' })))).field).toBe('model');
+    expect((await refusal(store().create(message({ thinking: 'high' })))).field).toBe('thinking');
+    expect((await refusal(store().create(message({ sendTo: 'not a session' })))).field).toBe('sendTo');
+    expect((await refusal(store().create(message({ prompt: 'x'.repeat(MESSAGE_CHARS + 1) })))).field).toBe('prompt');
+    // Empty folder and model fields, as a form sends them, are not a folder or a model.
+    expect((await store().create(message({ cwd: '', model: null, thinking: null }))).cwd).toBeNull();
+  });
+
+  test('switching a session task to a message drops its folder and model; switching back needs a folder', async () => {
+    const task = await store().create(input({ model: 'xai/grok-4.7', thinking: 'high' }));
+    const toMessage = await store().update(task.id, { sendTo: 'companion' });
+    expect(toMessage).toMatchObject({ sendTo: 'companion', cwd: null, model: null, thinking: null });
+    expect((await refusal(store().update(task.id, { sendTo: null }))).field).toBe('cwd');
+    const back = await store().update(task.id, { sendTo: null, cwd: project });
+    expect(back).toMatchObject({ sendTo: null, cwd: project, model: null });
+    // Renaming a message task touches nothing else.
+    await store().update(task.id, { sendTo: SESSION, cwd: null });
+    expect(await store().update(task.id, { name: 'Renamed' })).toMatchObject({ name: 'Renamed', sendTo: SESSION, cwd: null });
+  });
+
+  test('a session prompt too long for a message cannot become one', async () => {
+    const task = await store().create(input({ prompt: 'x'.repeat(MESSAGE_CHARS + 1) }));
+    expect((await refusal(store().update(task.id, { sendTo: 'companion' }))).field).toBe('prompt');
+  });
+});
+
+describe('send', () => {
+  test('queues one message outside any task while the scheduler runs', async () => {
+    expect((await refusal(store().send({ to: 'companion', text: 'Deploy finished' }))).code).toBe('scheduler-offline');
+    markSchedulerAlive();
+    expect((await refusal(store().send({ to: '', text: 'Deploy finished' }))).field).toBe('sendTo');
+    expect((await refusal(store().send({ to: 'companion', text: ' ' }))).field).toBe('prompt');
+    const { requestId } = await store().send({ to: SESSION, text: ' Deploy finished ' });
+    expect(store().read().requests).toEqual([{ id: requestId, message: { to: SESSION, text: 'Deploy finished' }, requestedAt: now.toISOString() }]);
   });
 });
 

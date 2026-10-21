@@ -29,6 +29,11 @@ export const COPY = {
   emptyBody:
     "A scheduled task starts a normal Rubato session in a project at the times you pick. Its sessions show up in the sidebar, where you can read and continue them.",
   emptyHint: "You can also ask in any session, like “every weekday at 9 AM, check this repo’s dependencies”.",
+  destinations: {
+    session: "Start a session",
+    companion: "Message Segno",
+    conversation: "Message a conversation",
+  } satisfies Record<Destination, string>,
   kinds: {
     daily: "Every day",
     weekdays: "Weekdays",
@@ -37,6 +42,17 @@ export const COPY = {
     once: "Once",
   } satisfies Record<ScheduleKind, string>,
   fields: {
+    action: "What it does",
+    actionHint: {
+      session: "Each run starts a new session that shows up in the sidebar.",
+      companion: "Each run hands the message to Segno’s conversation. No new session or thread, and no model runs for it.",
+      conversation: "Each run hands the message to this conversation. No new session or thread, and no model runs for it.",
+    } satisfies Record<Destination, string>,
+    conversation: "Conversation id",
+    conversationPlaceholder: "01a1…",
+    message: "Message",
+    messageHint: "Arrives as a scheduled message from Rubato; the conversation answers in its own turn.",
+    messagePlaceholder: "Time for the evening report: what got done today, what is coming, what you will take on.",
     name: "Name",
     namePlaceholder: "Morning research digest",
     project: "Project folder",
@@ -79,6 +95,11 @@ export const COPY = {
   deleted: (name: string) => `Deleted ${name}`,
   started: (name: string) => `Starting ${name}`,
   startedBody: "Its session shows up in the sidebar in a few seconds.",
+  sent: (name: string) => `Sending ${name}`,
+  sentBody: (target: string) => `${target} gets it in a few seconds.`,
+  segno: "Segno",
+  conversation: (id: string) => `Conversation ${id.slice(0, 8)}`,
+  noSession: "No new session",
   history: "Run history",
   historyEmpty: "No runs yet.",
   historyLoading: "Loading runs",
@@ -91,6 +112,7 @@ export const COPY = {
     skipped: "Skipped",
   } satisfies Record<RunStatus, string>,
   openThread: "Open thread",
+  openConversation: "Open conversation",
   retry: "Retry",
   runNow: "Run now",
   threadPending: "This session is not in the sidebar yet. Try again in a few seconds.",
@@ -105,12 +127,16 @@ export const COPY = {
     "turn-error": "The session ended with an error",
     aborted: "Stopped",
     interrupted: "Interrupted",
+    "no-target": "No conversation to send to",
+    "delivery-failed": "The conversation did not take the message",
   } as Record<string, string>,
   errors: {
     name: "Give the task a name.",
     cwd: "Choose the project folder.",
     cwdAbsolute: "Use a full path, starting with /.",
     prompt: "Write what the session should do.",
+    message: "Write the message to send.",
+    conversation: "Paste the conversation’s id.",
     days: "Pick at least one day.",
     time: "Pick a time.",
     date: "Pick a date.",
@@ -135,8 +161,24 @@ export const WEEK: ReadonlyArray<{ day: Weekday; label: string }> = [
 ];
 const JS_DAY: readonly Weekday[] = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 
+/** Where a run goes: a new session (folder, model), or a message into Segno or one conversation. */
+export type Destination = "session" | "companion" | "conversation";
+export const COMPANION = "companion";
+
+export function destinationOf(sendTo: string | null): Destination {
+  return sendTo === null ? "session" : sendTo === COMPANION ? "companion" : "conversation";
+}
+
+/** Who a message task reaches, in a few words. */
+export function targetLabel(sendTo: string): string {
+  return sendTo === COMPANION ? COPY.segno : COPY.conversation(sendTo);
+}
+
 export interface TaskForm {
   readonly name: string;
+  readonly destination: Destination;
+  /** The conversation id when the destination is one conversation. */
+  readonly conversation: string;
   readonly cwd: string;
   readonly prompt: string;
   readonly model: string | null;
@@ -151,7 +193,7 @@ export interface TaskForm {
   readonly date: string;
 }
 
-export type FormField = "name" | "cwd" | "prompt" | "model" | "thinking" | "days" | "time" | "date" | "window" | "schedule";
+export type FormField = "name" | "conversation" | "cwd" | "prompt" | "model" | "thinking" | "days" | "time" | "date" | "window" | "schedule";
 export type FormErrors = Partial<Record<FormField, string>>;
 
 const pad = (n: number) => String(n).padStart(2, "0");
@@ -162,6 +204,8 @@ export function emptyForm(now: Date, cwd = ""): TaskForm {
   const soon = new Date(now.getTime() + 60 * 60_000);
   return {
     name: "",
+    destination: "session",
+    conversation: "",
     cwd,
     prompt: "",
     model: null,
@@ -180,8 +224,10 @@ export function emptyForm(now: Date, cwd = ""): TaskForm {
 /** The form for an existing task; inputs its schedule kind does not use keep their defaults. */
 export function formFromTask(task: ScheduledTask, now: Date): TaskForm {
   const base: TaskForm = {
-    ...emptyForm(now, task.cwd),
+    ...emptyForm(now, task.cwd ?? ""),
     name: task.name,
+    destination: destinationOf(task.sendTo),
+    conversation: task.sendTo !== null && task.sendTo !== COMPANION ? task.sendTo : "",
     prompt: task.prompt,
     model: task.model,
     thinking: task.thinking,
@@ -241,10 +287,13 @@ export function scheduleFromForm(form: TaskForm): Schedule | null {
 export function validateForm(form: TaskForm): FormErrors {
   const errors: FormErrors = {};
   if (!form.name.trim()) errors.name = COPY.errors.name;
-  const cwd = form.cwd.trim();
-  if (!cwd) errors.cwd = COPY.errors.cwd;
-  else if (!cwd.startsWith("/")) errors.cwd = COPY.errors.cwdAbsolute;
-  if (!form.prompt.trim()) errors.prompt = COPY.errors.prompt;
+  if (form.destination === "session") {
+    const cwd = form.cwd.trim();
+    if (!cwd) errors.cwd = COPY.errors.cwd;
+    else if (!cwd.startsWith("/")) errors.cwd = COPY.errors.cwdAbsolute;
+  }
+  if (form.destination === "conversation" && !form.conversation.trim()) errors.conversation = COPY.errors.conversation;
+  if (!form.prompt.trim()) errors.prompt = form.destination === "session" ? COPY.errors.prompt : COPY.errors.message;
   if (form.kind === "weekly" && form.days.length === 0) errors.days = COPY.errors.days;
   if (form.kind !== "interval" && !TIME.test(form.time)) errors.time = COPY.errors.time;
   if (form.kind === "once" && !DATE.test(form.date)) errors.date = COPY.errors.date;
@@ -258,8 +307,21 @@ export function inputFromForm(form: TaskForm): TaskInput | null {
   if (Object.keys(validateForm(form)).length > 0) return null;
   const schedule = scheduleFromForm(form);
   if (!schedule) return null;
+  if (form.destination !== "session") {
+    // A message task has no folder or model: the store refuses them, so they go as empty.
+    return {
+      name: form.name.trim(),
+      sendTo: form.destination === "companion" ? COMPANION : form.conversation.trim(),
+      cwd: null,
+      prompt: form.prompt.trim(),
+      model: null,
+      thinking: null,
+      schedule,
+    };
+  }
   return {
     name: form.name.trim(),
+    sendTo: null,
     cwd: form.cwd.trim(),
     prompt: form.prompt.trim(),
     model: form.model,
@@ -273,6 +335,8 @@ export function formFieldOf(field: string | undefined): FormField | null {
   if (!field) return null;
   const leaf = field.startsWith("schedule.") ? field.slice("schedule.".length) : field;
   switch (leaf) {
+    case "sendTo":
+      return "conversation";
     case "name":
     case "cwd":
     case "prompt":
@@ -368,6 +432,7 @@ export const STATUS_BADGE: Record<RunStatus, BadgeVariant> = {
 };
 
 /** Tilde form of a folder under the home folder. */
-export function tildePath(value: string, home: string | null): string {
+export function tildePath(value: string | null, home: string | null): string {
+  if (value === null) return "";
   return home && (value === home || value.startsWith(`${home}/`)) ? `~${value.slice(home.length)}` : value;
 }

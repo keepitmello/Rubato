@@ -13,6 +13,7 @@ import {
   runTimeLabel,
   scheduleFromForm,
   statusLabel,
+  targetLabel,
   validateForm,
   type TaskForm,
 } from "./RubatoScheduleSettings.logic";
@@ -95,6 +96,7 @@ describe("schedule form", () => {
   it("trims the text it sends and drops reasoning when the default model is chosen", () => {
     expect(inputFromForm(filled({ model: null, thinking: "high" }))).toEqual({
       name: "Morning digest",
+      sendTo: null,
       cwd: "/code/repo",
       prompt: "Summarize",
       model: null,
@@ -108,6 +110,7 @@ describe("schedule form", () => {
     const task: ScheduledTask = {
       id: "t1",
       name: "Deps",
+      sendTo: null,
       cwd: "/code/repo",
       prompt: "Check deps",
       model: "openai-codex/gpt-6-sol",
@@ -134,8 +137,61 @@ describe("schedule form", () => {
     expect(formFieldOf("schedule.days")).toBe("days");
     expect(formFieldOf("schedule.everyHours")).toBe("schedule");
     expect(formFieldOf("cwd")).toBe("cwd");
+    expect(formFieldOf("sendTo")).toBe("conversation");
     expect(formFieldOf(undefined)).toBeNull();
     expect(formFieldOf("somethingElse")).toBeNull();
+  });
+});
+
+describe("message tasks", () => {
+  it("sends a message to Segno with no folder or model, whatever the hidden inputs still hold", () => {
+    const form = filled({ destination: "companion", model: "xai/grok-4.7", thinking: "high", prompt: " Report time " });
+    expect(inputFromForm(form)).toEqual({
+      name: "Morning digest",
+      sendTo: "companion",
+      cwd: null,
+      prompt: "Report time",
+      model: null,
+      thinking: null,
+      schedule: { kind: "daily", time: "09:00" },
+    });
+    // A folder is not asked for when no session starts.
+    expect(validateForm({ ...form, cwd: "" })).toEqual({});
+  });
+
+  it("asks for the message and, for one conversation, its id", () => {
+    expect(validateForm(filled({ destination: "companion", prompt: " " })).prompt).toBe(COPY.errors.message);
+    expect(validateForm(filled({ destination: "conversation", conversation: " " })).conversation).toBe(COPY.errors.conversation);
+    expect(inputFromForm(filled({ destination: "conversation", conversation: " 01a154ba-8c2a " }))?.sendTo).toBe("01a154ba-8c2a");
+  });
+
+  it("opens an existing message task on its destination", () => {
+    const task: ScheduledTask = {
+      id: "t2",
+      name: "Evening report",
+      sendTo: "companion",
+      cwd: null,
+      prompt: "Report time",
+      model: null,
+      thinking: null,
+      schedule: { kind: "daily", time: "20:00" },
+      enabled: true,
+      summary: "Every day at 8:00 PM",
+      nextRunAt: null,
+      nextRunLabel: null,
+      lastRun: null,
+      running: false,
+    };
+    expect(formFromTask(task, now)).toMatchObject({ destination: "companion", conversation: "", cwd: "" });
+    expect(formFromTask({ ...task, sendTo: "01a154ba-8c2a" }, now)).toMatchObject({ destination: "conversation", conversation: "01a154ba-8c2a" });
+    expect(targetLabel("companion")).toBe(COPY.segno);
+    expect(targetLabel("01a154ba-8c2a-74f0")).toBe("Conversation 01a154ba");
+  });
+
+  it("names why a message did not arrive and opens the conversation it reached", () => {
+    expect(reasonLabel(run({ status: "failed", reason: "no-target" }))).toBe(COPY.reasons["no-target"]);
+    expect(reasonLabel(run({ status: "failed", reason: "delivery-failed" }))).toBe(COPY.reasons["delivery-failed"]);
+    expect(runActions(run({ kind: "message", cwd: null, sessionId: "01a154ba" })).openThread).toBe(true);
   });
 });
 

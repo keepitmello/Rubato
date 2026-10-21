@@ -60,6 +60,7 @@ import { Toggle, ToggleGroup } from "../ui/toggle-group";
 import {
   COPY,
   EVERY_HOURS,
+  type Destination,
   STATUS_BADGE,
   WEEK,
   durationLabel,
@@ -72,10 +73,12 @@ import {
   runTimeLabel,
   scheduleFromForm,
   statusLabel,
+  targetLabel,
   tildePath,
   validateForm,
   type FormErrors,
   type TaskForm,
+  destinationOf,
 } from "./RubatoScheduleSettings.logic";
 import { SettingsPageContainer, SettingsRow, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
 
@@ -213,7 +216,11 @@ export function RubatoScheduleSettingsPanel() {
   const runNow = async (task: ScheduledTask, fromRunId?: string) => {
     try {
       await rubatoSchedule.runNow(environmentId, task.id, fromRunId);
-      toastManager.add({ type: "info", title: COPY.started(task.name), description: COPY.startedBody });
+      toastManager.add(
+        task.sendTo
+          ? { type: "info", title: COPY.sent(task.name), description: COPY.sentBody(targetLabel(task.sendTo)) }
+          : { type: "info", title: COPY.started(task.name), description: COPY.startedBody },
+      );
       setExpanded(task.id);
       void load();
     } catch (error) {
@@ -422,14 +429,25 @@ function TaskRow({
         <span className="flex min-w-0 flex-wrap items-center gap-x-1.5">
           <span>{task.summary}</span>
           <span aria-hidden>·</span>
-          <span className="inline-flex items-center gap-1">
-            {task.model ? <ModelIcon slug={task.model} /> : null}
-            {modelName}
-          </span>
-          <span aria-hidden>·</span>
-          <span className="truncate">
-            {tildePath(task.cwd, home)}
-          </span>
+          {task.sendTo ? (
+            <>
+              <span className="inline-flex items-center gap-1">
+                <MessageSquareIcon className="size-3.5 shrink-0" aria-hidden />
+                {targetLabel(task.sendTo)}
+              </span>
+              <span aria-hidden>·</span>
+              <span>{COPY.noSession}</span>
+            </>
+          ) : (
+            <>
+              <span className="inline-flex items-center gap-1">
+                {task.model ? <ModelIcon slug={task.model} /> : null}
+                {modelName}
+              </span>
+              <span aria-hidden>·</span>
+              <span className="truncate">{tildePath(task.cwd, home)}</span>
+            </>
+          )}
         </span>
       }
       status={
@@ -584,7 +602,7 @@ function RunHistory({
                   {actions.openThread ? (
                     <Button size="xs" variant="ghost" onClick={() => void openThread(run)}>
                       <MessageSquareIcon className="size-3" />
-                      {COPY.openThread}
+                      {run.kind === "message" ? COPY.openConversation : COPY.openThread}
                     </Button>
                   ) : null}
                   {actions.rerun ? (
@@ -612,6 +630,7 @@ function RunHistory({
 const OTHER_FOLDER = "__other__";
 const DEFAULT = "__default__";
 const KINDS: readonly ScheduleKind[] = ["daily", "weekdays", "weekly", "interval", "once"];
+const DESTINATIONS: readonly Destination[] = ["session", "companion", "conversation"];
 
 function FieldError({ message }: { message: string | undefined }) {
   return message ? <p className="mt-1.5 text-xs text-destructive-foreground">{message}</p> : null;
@@ -695,6 +714,11 @@ function TaskFormView({
   }, [scheduleKey, environmentId]);
 
   const model = models.find((entry) => entry.slug === form.model) ?? null;
+  const message = form.destination !== "session";
+  // One conversation by id is offered only for a task that already sends to one (the session
+  // tool sets it: "remind me here"); a new task picks a session or Segno.
+  const destinations: readonly Destination[] =
+    task && destinationOf(task.sendTo) === "conversation" ? DESTINATIONS : ["session", "companion"];
 
   const pickFolder = async () => {
     const picked = await readLocalApi()?.dialogs.pickFolder(form.cwd ? { initialPath: form.cwd } : undefined);
@@ -855,43 +879,75 @@ function TaskFormView({
           <FieldError message={errors.name} />
         </SettingsRow>
 
-        <SettingsRow title={COPY.fields.project} description={COPY.fields.projectHint}>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {projects.length > 0 ? (
-              <Select
-                value={otherFolder ? OTHER_FOLDER : form.cwd || null}
-                onValueChange={(next) => {
-                  if (typeof next !== "string") return;
-                  if (next === OTHER_FOLDER) {
-                    setOtherFolder(true);
-                    return;
-                  }
-                  setOtherFolder(false);
-                  set({ cwd: next });
-                }}
-              >
-                <SelectTrigger size="sm" className="min-w-56" aria-label={COPY.fields.project}>
-                  <SelectValue>
-                    {otherFolder
-                      ? COPY.fields.otherFolder
-                      : (projects.find((project) => project.workspaceRoot === form.cwd)?.title ??
-                        (form.cwd ? tildePath(form.cwd, home) : (
-                          <span className="text-muted-foreground">{COPY.fields.chooseProject}</span>
-                        )))}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectPopup align="start" alignItemWithTrigger={false}>
-                  {projects.map((project) => (
-                    <SelectItem key={project.workspaceRoot} value={project.workspaceRoot}>
-                      <span className="flex flex-col">
-                        <span>{project.title}</span>
-                        <span className="text-xs text-muted-foreground">{tildePath(project.workspaceRoot, home)}</span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                  <SelectItem value={OTHER_FOLDER}>{COPY.fields.otherFolder}</SelectItem>
-                </SelectPopup>
-              </Select>
+        <SettingsRow title={COPY.fields.action} description={COPY.fields.actionHint[form.destination]}>
+          <div className="mt-2 space-y-2">
+            <ToggleGroup
+              aria-label={COPY.fields.action}
+              variant="segmented"
+              value={[form.destination]}
+              onValueChange={(next) => {
+                const destination = destinations.find((entry) => entry === next[0]);
+                if (destination) set({ destination });
+              }}
+            >
+              {destinations.map((destination) => (
+                <Toggle key={destination} value={destination}>
+                  {COPY.destinations[destination]}
+                </Toggle>
+              ))}
+            </ToggleGroup>
+            {form.destination === "conversation" ? (
+              <Input
+                className="min-w-56 font-mono text-xs"
+                placeholder={COPY.fields.conversationPlaceholder}
+                aria-label={COPY.fields.conversation}
+                aria-invalid={Boolean(errors.conversation) || undefined}
+                value={form.conversation}
+                onChange={(event) => set({ conversation: event.target.value })}
+              />
+            ) : null}
+          </div>
+          <FieldError message={errors.conversation} />
+        </SettingsRow>
+
+        {form.destination === "session" ? (
+          <SettingsRow title={COPY.fields.project} description={COPY.fields.projectHint}>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {projects.length > 0 ? (
+                <Select
+                  value={otherFolder ? OTHER_FOLDER : form.cwd || null}
+                  onValueChange={(next) => {
+                    if (typeof next !== "string") return;
+                    if (next === OTHER_FOLDER) {
+                      setOtherFolder(true);
+                      return;
+                    }
+                    setOtherFolder(false);
+                    set({ cwd: next });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="min-w-56" aria-label={COPY.fields.project}>
+                    <SelectValue>
+                      {otherFolder
+                        ? COPY.fields.otherFolder
+                        : (projects.find((project) => project.workspaceRoot === form.cwd)?.title ??
+                          (form.cwd ? tildePath(form.cwd, home) : (
+                            <span className="text-muted-foreground">{COPY.fields.chooseProject}</span>
+                          )))}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="start" alignItemWithTrigger={false}>
+                    {projects.map((project) => (
+                      <SelectItem key={project.workspaceRoot} value={project.workspaceRoot}>
+                        <span className="flex flex-col">
+                          <span>{project.title}</span>
+                          <span className="text-xs text-muted-foreground">{tildePath(project.workspaceRoot, home)}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    <SelectItem value={OTHER_FOLDER}>{COPY.fields.otherFolder}</SelectItem>
+                  </SelectPopup>
+                </Select>
             ) : null}
             {otherFolder || projects.length === 0 ? (
               <span className="flex min-w-0 flex-1 items-center gap-2">
@@ -914,12 +970,16 @@ function TaskFormView({
           </div>
           <FieldError message={errors.cwd} />
         </SettingsRow>
+        ) : null}
 
-        <SettingsRow title={<label htmlFor={`${id}-prompt`}>{COPY.fields.prompt}</label>} description={COPY.fields.promptHint}>
+        <SettingsRow
+          title={<label htmlFor={`${id}-prompt`}>{message ? COPY.fields.message : COPY.fields.prompt}</label>}
+          description={message ? COPY.fields.messageHint : COPY.fields.promptHint}
+        >
           <Textarea
             id={`${id}-prompt`}
             className="mt-2 min-h-24"
-            placeholder={COPY.fields.promptPlaceholder}
+            placeholder={message ? COPY.fields.messagePlaceholder : COPY.fields.promptPlaceholder}
             value={form.prompt}
             aria-invalid={Boolean(errors.prompt) || undefined}
             onChange={(event) => set({ prompt: event.target.value })}
@@ -927,63 +987,65 @@ function TaskFormView({
           <FieldError message={errors.prompt} />
         </SettingsRow>
 
-        <SettingsRow title={COPY.fields.model} description={COPY.fields.modelHint}>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <Select
-              value={form.model ?? DEFAULT}
-              onValueChange={(next) => {
-                if (typeof next !== "string") return;
-                const slug = next === DEFAULT ? null : next;
-                const levels = models.find((entry) => entry.slug === slug)?.reasoning ?? [];
-                set({ model: slug, thinking: levels.some((level) => level.id === form.thinking) ? form.thinking : null });
-              }}
-            >
-              <SelectTrigger size="sm" className="min-w-56" aria-label={COPY.fields.model}>
-                <SelectValue>
-                  <span className="inline-flex items-center gap-2">
-                    {form.model ? <ModelIcon slug={form.model} /> : null}
-                    {form.model ? (model?.name ?? form.model) : COPY.fields.defaultModel}
-                  </span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup align="start" alignItemWithTrigger={false}>
-                <SelectItem value={DEFAULT}>{COPY.fields.defaultModel}</SelectItem>
-                {models.map((entry) => (
-                  <SelectItem key={entry.slug} value={entry.slug}>
-                    <span className="inline-flex items-center gap-2">
-                      <ModelIcon slug={entry.slug} />
-                      {entry.name}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectPopup>
-            </Select>
-            {model && model.reasoning.length > 0 ? (
+        {message ? null : (
+          <SettingsRow title={COPY.fields.model} description={COPY.fields.modelHint}>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
               <Select
-                value={form.thinking ?? DEFAULT}
+                value={form.model ?? DEFAULT}
                 onValueChange={(next) => {
-                  if (typeof next === "string") set({ thinking: next === DEFAULT ? null : next });
+                  if (typeof next !== "string") return;
+                  const slug = next === DEFAULT ? null : next;
+                  const levels = models.find((entry) => entry.slug === slug)?.reasoning ?? [];
+                  set({ model: slug, thinking: levels.some((level) => level.id === form.thinking) ? form.thinking : null });
                 }}
               >
-                <SelectTrigger size="sm" className="w-56" aria-label={COPY.fields.thinking}>
+                <SelectTrigger size="sm" className="min-w-56" aria-label={COPY.fields.model}>
                   <SelectValue>
-                    {COPY.fields.thinking}:{" "}
-                    {model.reasoning.find((level) => level.id === form.thinking)?.label ?? COPY.fields.defaultThinking}
+                    <span className="inline-flex items-center gap-2">
+                      {form.model ? <ModelIcon slug={form.model} /> : null}
+                      {form.model ? (model?.name ?? form.model) : COPY.fields.defaultModel}
+                    </span>
                   </SelectValue>
                 </SelectTrigger>
                 <SelectPopup align="start" alignItemWithTrigger={false}>
-                  <SelectItem value={DEFAULT}>{COPY.fields.defaultThinking}</SelectItem>
-                  {model.reasoning.map((level) => (
-                    <SelectItem key={level.id} value={level.id}>
-                      {level.label}
+                  <SelectItem value={DEFAULT}>{COPY.fields.defaultModel}</SelectItem>
+                  {models.map((entry) => (
+                    <SelectItem key={entry.slug} value={entry.slug}>
+                      <span className="inline-flex items-center gap-2">
+                        <ModelIcon slug={entry.slug} />
+                        {entry.name}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectPopup>
               </Select>
-            ) : null}
-          </div>
-          <FieldError message={errors.model ?? errors.thinking} />
-        </SettingsRow>
+              {model && model.reasoning.length > 0 ? (
+                <Select
+                  value={form.thinking ?? DEFAULT}
+                  onValueChange={(next) => {
+                    if (typeof next === "string") set({ thinking: next === DEFAULT ? null : next });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-56" aria-label={COPY.fields.thinking}>
+                    <SelectValue>
+                      {COPY.fields.thinking}:{" "}
+                      {model.reasoning.find((level) => level.id === form.thinking)?.label ?? COPY.fields.defaultThinking}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="start" alignItemWithTrigger={false}>
+                    <SelectItem value={DEFAULT}>{COPY.fields.defaultThinking}</SelectItem>
+                    {model.reasoning.map((level) => (
+                      <SelectItem key={level.id} value={level.id}>
+                        {level.label}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
+              ) : null}
+            </div>
+            <FieldError message={errors.model ?? errors.thinking} />
+          </SettingsRow>
+        )}
 
         <SettingsRow title={COPY.fields.schedule}>
           <div className="mt-2 space-y-3">

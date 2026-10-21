@@ -3,6 +3,8 @@
 // socket, and a fault here ends the thread only — the engine starts it again and the next tick
 // reconciles the runs it left. The schedule store and its lock are the ones the standalone daemon
 // used, so the CLI, the session tool and the app's settings page keep working unchanged.
+// A message task reaches its conversation through the engine's own `wake` (session-link), the
+// way Segno's heartbeat does, so it starts no session.
 import { createScheduleStore } from '../../../packages/schedule-core/src/index.mjs';
 import { createScheduler } from './scheduler.mjs';
 import { releaseLock, tryLock } from './lock.mjs';
@@ -26,8 +28,13 @@ export async function start(ctx) {
     });
   }
   if (ctx.signal.aborted) { releaseLock(root); return {}; }
-  const engine = { agentDir: ctx.agentDir, connect: () => ctx.connect() };
-  const scheduler = createScheduler({ store, engine, log, ...(options.tickMs ? { tickMs: Number(options.tickMs) } : {}) });
+  const engine = { agentDir: ctx.agentDir, connect: () => ctx.connect(),
+    wake: (args) => {
+      if (typeof ctx.host?.wake !== 'function') throw new Error('This engine cannot deliver messages to conversations');
+      return ctx.host.wake(args);
+    } };
+  const scheduler = createScheduler({ store, engine, log, env: ctx.env ?? process.env,
+    ...(options.tickMs ? { tickMs: Number(options.tickMs) } : {}) });
   log('scheduler started', { root, agentDir: ctx.agentDir });
   await scheduler.start();
   return {

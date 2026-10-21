@@ -94,6 +94,31 @@ describe("schedule tool", () => {
     const result = await runScheduleTool(store, { action: "delete", task: "nothing" }, session)
     expect(result.isError).toBe(true)
   })
+
+  it("#given send_to #when it registers #then the task sends its text to that conversation and keeps no folder or model", async () => {
+    const here = await runScheduleTool(store, { action: "create", name: "Stand-up", prompt: "Stand-up time.", send_to: "this",
+      schedule: { kind: "weekdays", time: "10:00" } }, session, "01a15e20-97b6-72b9-af17-78043d518515")
+    expect(here.isError).toBeUndefined()
+    expect(text(here)).toContain("sends to: conversation 01a15e20-97b6-72b9-af17-78043d518515 (no new session)")
+    expect(text(here)).not.toContain("folder:")
+    await runScheduleTool(store, { action: "create", name: "Evening report", prompt: "Report.", send_to: "companion",
+      schedule: { kind: "daily", time: "20:00" } }, session)
+    const tasks = (await store.list()).tasks
+    expect(tasks.map((task) => [task.sendTo, task.cwd, task.model])).toEqual([
+      ["01a15e20-97b6-72b9-af17-78043d518515", null, null], ["companion", null, null]])
+    expect(text(await runScheduleTool(store, { action: "list" }, session))).toContain("sends to: Segno (companion)")
+    // A model on a message task is refused; switching back to a session takes the session's folder.
+    expect((await runScheduleTool(store, { action: "update", task: "Evening report", model: "xai/grok-4.7" }, session)).isError).toBe(true)
+    const back = await runScheduleTool(store, { action: "update", task: "Evening report", send_to: "", cwd: "sub" }, session)
+    expect((await store.get(tasks[1]!.id))).toMatchObject({ sendTo: null, cwd: join(session, "sub") })
+    expect(text(back)).toContain("folder:")
+  })
+
+  it("#given send_to this without a conversation id #when it registers #then it refuses", async () => {
+    const result = await runScheduleTool(store, { action: "create", name: "Here", prompt: "x", send_to: "this", schedule: { kind: "daily", time: "09:00" } }, session)
+    expect(result.isError).toBe(true)
+    expect((await store.list()).tasks).toEqual([])
+  })
 })
 
 describe("createScheduleComponent", () => {
@@ -105,5 +130,8 @@ describe("createScheduleComponent", () => {
     expect(tool.exposure).toBe("direct")
     await tool.execute("call-1", { action: "create", name: "Bound", prompt: "x", schedule: { kind: "daily", time: "10:00" } })
     expect((await store.list()).tasks[0]!.cwd).toBe(pi.cwd ?? session)
+    await tool.execute("call-2", { action: "create", name: "Here", prompt: "x", send_to: "this", schedule: { kind: "daily", time: "10:00" } },
+      undefined, undefined, { sessionManager: { getSessionId: () => "01a15e20-97b6-72b9-af17-78043d518515" } })
+    expect((await store.list()).tasks[1]!.sendTo).toBe("01a15e20-97b6-72b9-af17-78043d518515")
   })
 })

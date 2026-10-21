@@ -35,7 +35,7 @@ export interface ScheduleRun {
   /** How many slots a skip row covers; 0 otherwise. */
   readonly skipCount: number;
   readonly status: RunStatus;
-  /** A code. Skips: sleep | not-running | overlap. Failures: cwd-missing | engine-unavailable | start-failed | model | turn-error | aborted | interrupted. */
+  /** A code. Skips: sleep | not-running | overlap. Failures: cwd-missing | engine-unavailable | start-failed | model | turn-error | aborted | interrupted | no-target | delivery-failed. */
   readonly reason: string | null;
   /** The failure's own short text. */
   readonly detail: string | null;
@@ -43,18 +43,27 @@ export interface ScheduleRun {
   readonly finishedAt: string | null;
   readonly model: string | null;
   readonly thinking: string | null;
-  readonly cwd: string;
-  /** Null when the run failed before a session existed. */
+  /** Null for a message run. */
+  readonly cwd: string | null;
+  /** "message": the run sent the task's text to a conversation; its sessionId is that conversation. */
+  readonly kind?: "message";
+  /** Null when the run failed before a session existed (or before it knew where to send). */
   readonly sessionId: string | null;
   readonly serverId: string | null;
   readonly title: string | null;
   readonly rerunOf: string | null;
 }
 
+/** "companion" (Segno, whichever conversation is its own at the time) or a conversation id. */
+export type SendTo = string;
+
 export interface ScheduledTask {
   readonly id: string;
   readonly name: string;
-  readonly cwd: string;
+  /** Null: each run starts a new session in `cwd`. Set: each run sends `prompt` there and starts no session. */
+  readonly sendTo: SendTo | null;
+  /** Null for a message task. */
+  readonly cwd: string | null;
   readonly prompt: string;
   /** "provider/id" as T3 lists Rubato models; null: the user's default model when it runs. */
   readonly model: string | null;
@@ -78,7 +87,8 @@ export interface SchedulerState {
 
 export interface TaskInput {
   readonly name: string;
-  readonly cwd: string;
+  readonly sendTo: SendTo | null;
+  readonly cwd: string | null;
   readonly prompt: string;
   readonly model: string | null;
   readonly thinking: string | null;

@@ -12,6 +12,14 @@ import { pruneRuns } from './judge.mjs';
 // reader never sees half a file and `revision` rises on every change.
 
 export const THINKING_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+/**
+ * Where a message task sends its text: the companion (Segno), whichever conversation is its own
+ * when the time comes, or one conversation by id. A task without `sendTo` starts a new session.
+ */
+export const COMPANION_TARGET = 'companion';
+/** A message rides one session-link delivery (8,000 characters) with a short header. */
+export const MESSAGE_CHARS = 7000;
+const SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9-]{7,99}$/;
 // The id after the provider may itself hold slashes (opengateway/deepseek/deepseek-v4.1-flash-ultrafast).
 const MODEL_ID = /^[a-z0-9][a-z0-9-]{0,63}(?:\/[A-Za-z0-9][A-Za-z0-9._:\[\]-]{0,127}){1,3}$/;
 const LOCK_WAIT_MS = 5000;
@@ -55,38 +63,72 @@ function directoryOrThrow(cwd) {
   return resolved;
 }
 
-/** Validates the user-editable fields present in `input`; `partial` allows missing ones. */
-export function validateTaskFields(input, { partial = false, now = new Date() } = {}) {
+/** `companion`, a conversation id, or null (start a new session). */
+export function validateSendTo(value) {
+  if (value === null || value === undefined) return null;
+  const target = typeof value === 'string' ? value.trim() : value;
+  if (target === '') return null;
+  if (target === COMPANION_TARGET || (typeof target === 'string' && SESSION_ID.test(target))) return target;
+  throw invalid('Send to "companion" (Segno) or a conversation id, or leave it empty to start a new session.', 'sendTo');
+}
+
+/** The text a message task sends now, checked as a delivery: not empty, within MESSAGE_CHARS. */
+export function validateMessageText(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!text) throw invalid('Write the message to send.', 'prompt');
+  if (text.length > MESSAGE_CHARS) throw invalid(`Keep the message under ${MESSAGE_CHARS.toLocaleString('en-US')} characters.`, 'prompt');
+  return text;
+}
+
+/**
+ * Validates the user-editable fields present in `input`; `partial` allows missing ones. `current`
+ * is the task an update changes: whether it sends a message decides which fields it needs.
+ */
+export function validateTaskFields(input, { partial = false, now = new Date(), current } = {}) {
   if (!input || typeof input !== 'object') throw invalid('Task fields are required.');
   const out = {};
   const has = (key) => Object.prototype.hasOwnProperty.call(input, key) && input[key] !== undefined;
+  const given = (key) => has(key) && input[key] !== null && input[key] !== '';
+  if (has('sendTo') || !partial) out.sendTo = validateSendTo(input.sendTo);
+  const sendTo = 'sendTo' in out ? out.sendTo : current?.sendTo ?? null;
+  const switched = 'sendTo' in out && (out.sendTo === null) !== ((current?.sendTo ?? null) === null);
   if (has('name') || !partial) {
     const name = typeof input.name === 'string' ? input.name.trim() : '';
     if (!name) throw invalid('Give the task a name.', 'name');
     if (name.length > 80) throw invalid('Keep the name under 80 characters.', 'name');
     out.name = name;
   }
-  if (has('cwd') || !partial) out.cwd = directoryOrThrow(input.cwd);
-  if (has('prompt') || !partial) {
-    const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
-    if (!prompt) throw invalid('Write the prompt the session starts with.', 'prompt');
-    if (prompt.length > 20_000) throw invalid('Keep the prompt under 20,000 characters.', 'prompt');
-    out.prompt = prompt;
+  if (sendTo !== null) {
+    // A message reaches a conversation that already exists: no folder, no model, no session.
+    for (const [key, what] of [['cwd', 'folder'], ['model', 'model'], ['thinking', 'thinking level']]) {
+      if (given(key)) throw invalid(`A message task starts no session, so it has no ${what}.`, key);
+    }
+    if (!partial || switched) Object.assign(out, { cwd: null, model: null, thinking: null });
+    if (has('prompt') || !partial) out.prompt = validateMessageText(input.prompt);
+    else if (switched) validateMessageText(current?.prompt);
+  } else {
+    if (has('cwd') || !partial || (switched && !current?.cwd)) out.cwd = directoryOrThrow(input.cwd);
+    if (has('prompt') || !partial) {
+      const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : '';
+      if (!prompt) throw invalid('Write the prompt the session starts with.', 'prompt');
+      if (prompt.length > 20_000) throw invalid('Keep the prompt under 20,000 characters.', 'prompt');
+      out.prompt = prompt;
+    }
+    if (has('model') || (!partial && input.model === null)) {
+      const model = input.model === null || input.model === '' ? null : input.model;
+      if (model !== null && (typeof model !== 'string' || !MODEL_ID.test(model))) {
+        throw invalid('Use a model id like provider/model, or leave it empty for your default model.', 'model');
+      }
+      out.model = model;
+    } else if (!partial) out.model = null;
+    if (has('thinking') || (!partial && input.thinking === null)) {
+      const thinking = input.thinking === null || input.thinking === '' ? null : input.thinking;
+      if (thinking !== null && !THINKING_LEVELS.includes(thinking)) {
+        throw invalid(`Thinking level must be one of ${THINKING_LEVELS.join(', ')}.`, 'thinking');
+      }
+      out.thinking = thinking;
+    } else if (!partial) out.thinking = null;
   }
-  if (has('model') || (!partial && input.model === null)) {
-    const model = input.model === null || input.model === '' ? null : input.model;
-    if (model !== null && (typeof model !== 'string' || !MODEL_ID.test(model))) {
-      throw invalid('Use a model id like provider/model, or leave it empty for your default model.', 'model');
-    }
-    out.model = model;
-  } else if (!partial) out.model = null;
-  if (has('thinking') || (!partial && input.thinking === null)) {
-    const thinking = input.thinking === null || input.thinking === '' ? null : input.thinking;
-    if (thinking !== null && !THINKING_LEVELS.includes(thinking)) {
-      throw invalid(`Thinking level must be one of ${THINKING_LEVELS.join(', ')}.`, 'thinking');
-    }
-    out.thinking = thinking;
-  } else if (!partial) out.thinking = null;
   if (has('schedule') || !partial) out.schedule = validateSchedule(input.schedule, { now });
   if (has('enabled')) {
     if (typeof input.enabled !== 'boolean') throw invalid('enabled must be true or false.', 'enabled');
@@ -181,7 +223,7 @@ export function createScheduleStore(options = {}) {
     const { evaluatedThrough: _cursor, ...fields } = task;
     const next = task.enabled ? nextRunAfter(task.schedule, now) : null;
     const lastRun = state.runs.findLast((run) => run.taskId === task.id) ?? null;
-    return { ...fields, summary: describeSchedule(task.schedule, { now }), nextRunAt: next?.toISOString() ?? null,
+    return { ...fields, sendTo: task.sendTo ?? null, summary: describeSchedule(task.schedule, { now }), nextRunAt: next?.toISOString() ?? null,
       nextRunLabel: formatNextRun(next, now), lastRun, running: isRunning(state, task.id) };
   }
 
@@ -214,8 +256,8 @@ export function createScheduleStore(options = {}) {
       const fields = validateTaskFields(input, { now });
       return mutate((state) => {
         const at = now.toISOString();
-        const task = { id: randomUUID(), name: fields.name, cwd: fields.cwd, prompt: fields.prompt, model: fields.model,
-          thinking: fields.thinking, schedule: fields.schedule, enabled: fields.enabled ?? true,
+        const task = { id: randomUUID(), name: fields.name, sendTo: fields.sendTo, cwd: fields.cwd, prompt: fields.prompt,
+          model: fields.model, thinking: fields.thinking, schedule: fields.schedule, enabled: fields.enabled ?? true,
           createdAt: at, updatedAt: at, evaluatedThrough: at };
         state.tasks.push(task);
         return view(state, task, now);
@@ -234,7 +276,7 @@ export function createScheduleStore(options = {}) {
           try { same = JSON.stringify(validateSchedule(patch.schedule, { now: new Date(0) })) === JSON.stringify(task.schedule); } catch {}
           if (same) { const { schedule: _unchanged, ...rest } = patch; input = rest; }
         }
-        const fields = validateTaskFields(input, { partial: true, now });
+        const fields = validateTaskFields(input, { partial: true, now, current: task });
         const reenabled = fields.enabled === true && !task.enabled;
         if (reenabled && !fields.schedule && task.schedule.kind === 'once') validateSchedule(task.schedule, { now });
         Object.assign(task, fields, { updatedAt: now.toISOString() });
@@ -264,6 +306,24 @@ export function createScheduleStore(options = {}) {
           throw new ScheduleError('scheduler-offline', 'The scheduler is not running on this Mac. Start it with `rubato schedule install`.');
         }
         const request = { id: randomUUID(), taskId, fromRunId, requestedAt: clock().toISOString() };
+        state.requests.push(request);
+        return { requestId: request.id };
+      });
+    },
+    /**
+     * One message now, outside any task: what a script that notices something (an alert, a
+     * finished job) uses to reach a conversation without starting a session. The scheduler
+     * delivers it on its next tick, which a change to this file starts at once.
+     */
+    async send({ to, text } = {}) {
+      const target = validateSendTo(to);
+      if (target === null) throw invalid('Name where the message goes: "companion" (Segno) or a conversation id.', 'sendTo');
+      const message = validateMessageText(text);
+      return mutate((state) => {
+        if (!schedulerStatus().running) {
+          throw new ScheduleError('scheduler-offline', 'The scheduler is not running on this Mac. Start it with `rubato schedule install`.');
+        }
+        const request = { id: randomUUID(), message: { to: target, text: message }, requestedAt: clock().toISOString() };
         state.requests.push(request);
         return { requestId: request.id };
       });

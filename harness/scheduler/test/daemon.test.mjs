@@ -83,3 +83,23 @@ test('the CLI refuses an unknown or ambiguous task by name', async () => {
     await assert.rejects(main(['run', 'nothing'], { store, out: () => {} }), (error) => error.code === 'not-found');
   } finally { await rm(root, { recursive: true, force: true }); await rm(project, { recursive: true, force: true }); }
 });
+
+test('the CLI shows where a message task goes and queues a one-off message', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'sd-send-'));
+  try {
+    const store = createScheduleStore({ root });
+    await store.create({ name: 'Evening report', sendTo: 'companion', prompt: 'Report.', schedule: { kind: 'daily', time: '20:00' } });
+    let printed = '';
+    assert.equal(await main(['list'], { store, out: (text) => { printed += text; } }), 0);
+    assert.match(printed, /message, no session/);
+    assert.match(printed, /→ Segno/);
+    await assert.rejects(main(['send', 'companion', 'Deploy', 'finished'], { store, out: () => {} }), (error) => error.code === 'scheduler-offline');
+    const { writeFile } = await import('node:fs/promises');
+    await writeFile(store.files.scheduler, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), lastTickAt: new Date().toISOString() }));
+    printed = '';
+    assert.equal(await main(['send', 'companion', 'Deploy', 'finished'], { store, out: (text) => { printed += text; } }), 0);
+    assert.match(printed, /Queued for Segno/);
+    assert.deepEqual(store.read().requests.map((request) => request.message), [{ to: 'companion', text: 'Deploy finished' }]);
+    await assert.rejects(main(['send'], { store, out: () => {} }), (error) => error.field === 'sendTo');
+  } finally { await rm(root, { recursive: true, force: true }); }
+});

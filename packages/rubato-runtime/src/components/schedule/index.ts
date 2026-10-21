@@ -2,6 +2,7 @@ import { homedir } from "node:os"
 import { isAbsolute, resolve } from "node:path"
 
 import {
+  COMPANION_TARGET,
   ScheduleError,
   createScheduleStore,
   describeSchedule,
@@ -48,7 +49,8 @@ export const ScheduleToolParams = Type.Object({
   ]),
   task: Type.Optional(Type.String({ description: "Existing task's name or id (update, delete, run_now, history)" })),
   name: Type.Optional(Type.String()),
-  prompt: Type.Optional(Type.String({ description: "First user message of each run's session" })),
+  prompt: Type.Optional(Type.String({ description: "First user message of each run's session; for a task with send_to, the message it sends" })),
+  send_to: Type.Optional(Type.String({ description: "Send prompt as a message instead of starting a session: \"this\" (this conversation), \"companion\" (Segno) or a conversation id; empty string switches back to starting a session" })),
   cwd: Type.Optional(Type.String({ description: "Project folder; defaults to this session's folder" })),
   model: Type.Optional(Type.String({ description: "provider/model; omit for the user's default model (empty string clears it)" })),
   thinking: Type.Optional(Type.String({ description: "off minimal low medium high xhigh max; empty string clears it" })),
@@ -59,12 +61,13 @@ export type ScheduleToolInput = Static<typeof ScheduleToolParams>
 
 export const SCHEDULE_TOOL_DESCRIPTION = [
   "Manages Rubato scheduled tasks: at a chosen local time, the scheduler on this Mac starts an ordinary session in a folder with a prompt and runs it unattended. Each run appears as its own thread in the app.",
+  "A task with send_to starts no session: at its time it sends its prompt text into a conversation that already exists (\"this\" conversation, \"companion\" for Segno, or a conversation id), as Rubato's clock, and that conversation answers in its own turn. Use it for reminders and wake-ups of a conversation (\"remind me here every evening\", \"wake Segno at 8 for its report\"); no thread, folder or model of its own. The text is at most 7,000 characters.",
   "",
   "Schedules are one of five kinds: daily {time}, weekdays {time} (Mon–Fri), weekly {days, time}, interval {everyHours: 1|2|3|4|6|12, window?: {start, end}} and once {date, time}. Times are 24-hour HH:MM in the Mac's local time.",
   "Only these five kinds exist. For any other cadence (monthly, day-of-month, every N days or minutes, cron), offer the nearest of them (e.g. monthly → weekly on one weekday, or a once task per date; every 30 minutes → every hour) and ask before registering. When a call is refused, the tool names the closest supported schedule.",
   "Missed times (the Mac asleep or off) are skipped; the settings page and `run_now` can start a skipped task.",
   "",
-  "create needs name, prompt and schedule; cwd defaults to this session's folder and model to the user's default (set model only when the user names one). update changes only the fields given. delete removes the task and its history and keeps its past sessions.",
+  "create needs name, prompt and schedule; cwd defaults to this session's folder and model to the user's default (set model only when the user names one); a send_to task takes no cwd, model or thinking. update changes only the fields given. delete removes the task and its history and keeps its past sessions.",
 ].join("\n")
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; details: Record<string, unknown>; isError?: boolean }
@@ -86,13 +89,20 @@ function describeRun(run: Run | null): string {
   return `${run.status} (${when})${run.sessionId ? `, session ${run.sessionId}` : ""}`
 }
 
+const describeTarget = (sendTo: string): string => (sendTo === COMPANION_TARGET ? "Segno (companion)" : `conversation ${sendTo}`)
+
 function describeTask(task: TaskView): string {
+  const clipped = task.prompt.length > 200 ? `${task.prompt.slice(0, 200)}…` : task.prompt
   return [
     `${task.name} [id ${task.id}] — ${task.enabled ? "on" : "off"}`,
     `  schedule: ${task.summary}; next run: ${task.enabled ? (task.nextRunLabel ?? "none") : "off"}${task.nextRunAt ? ` (${task.nextRunAt})` : ""}`,
-    `  folder: ${task.cwd}`,
-    `  model: ${task.model ?? "user's default model"}${task.thinking ? `, thinking ${task.thinking}` : ""}`,
-    `  prompt: ${task.prompt.length > 200 ? `${task.prompt.slice(0, 200)}…` : task.prompt}`,
+    ...(task.sendTo
+      ? [`  sends to: ${describeTarget(task.sendTo)} (no new session)`, `  message: ${clipped}`]
+      : [
+          `  folder: ${task.cwd}`,
+          `  model: ${task.model ?? "user's default model"}${task.thinking ? `, thinking ${task.thinking}` : ""}`,
+          `  prompt: ${clipped}`,
+        ]),
     `  last run: ${task.running ? "running now" : describeRun(task.lastRun)}`,
   ].join("\n")
 }
@@ -117,9 +127,20 @@ const schedulerNote = (store: ScheduleStore): string => (store.schedulerStatus()
   ? ""
   : "\nNote: the scheduler is not running on this Mac, so tasks will not run until it is started (`rubato schedule install`).")
 
-export async function runScheduleTool(store: ScheduleStore, params: ScheduleToolInput, sessionCwd: string): Promise<ToolResult> {
+/** `this` is the calling conversation; everything else is checked by the store. */
+function resolveSendTo(value: string, sessionId: string | undefined): string | null {
+  const trimmed = value.trim()
+  if (trimmed === "") return null
+  if (trimmed !== "this") return trimmed
+  if (!sessionId) throw new ScheduleError("invalid", "This conversation has no id to send to; name a conversation id or \"companion\".", { field: "sendTo" })
+  return sessionId
+}
+
+export async function runScheduleTool(store: ScheduleStore, params: ScheduleToolInput, sessionCwd: string, sessionId?: string): Promise<ToolResult> {
   try {
+    const sendTo = params.send_to === undefined ? undefined : resolveSendTo(params.send_to, sessionId)
     const fields = () => ({
+      ...(sendTo === undefined ? {} : { sendTo }),
       ...(params.name === undefined ? {} : { name: params.name }),
       ...(params.prompt === undefined ? {} : { prompt: params.prompt }),
       ...(params.model === undefined ? {} : { model: params.model }),
@@ -138,7 +159,7 @@ export async function runScheduleTool(store: ScheduleStore, params: ScheduleTool
         return ok(`${preview.summary}; next run: ${preview.nextRunLabel ?? "none"}${preview.nextRunAt ? ` (${preview.nextRunAt})` : ""}`, { preview })
       }
       case "create": {
-        const task = await store.create({ ...fields(), cwd: resolveFolder(params.cwd, sessionCwd) } as never)
+        const task = await store.create({ ...fields(), ...(sendTo ? {} : { cwd: resolveFolder(params.cwd, sessionCwd) }) } as never)
         return ok(`Registered:\n${describeTask(task)}${schedulerNote(store)}`, { task })
       }
       case "update": {
@@ -154,7 +175,9 @@ export async function runScheduleTool(store: ScheduleStore, params: ScheduleTool
       case "run_now": {
         const current = await target()
         const result = await store.runNow(current.id)
-        return ok(`Started "${current.name}" now. It runs as a new session in ${current.cwd}.`, { taskId: current.id, ...result })
+        return ok(current.sendTo
+          ? `Sending "${current.name}" now to ${describeTarget(current.sendTo)}.`
+          : `Started "${current.name}" now. It runs as a new session in ${current.cwd}.`, { taskId: current.id, ...result })
       }
       case "history": {
         const current = await target()
@@ -193,7 +216,8 @@ export function createScheduleComponent(options: ScheduleComponentOptions = {}):
         // Always visible: a request like "every morning at 9" names no tool to search for.
         exposure: "direct",
         executionMode: "sequential",
-        execute: async (_toolCallId: string, params: ScheduleToolInput) => runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd()),
+        execute: async (_toolCallId: string, params: ScheduleToolInput, _signal?: unknown, _onUpdate?: unknown, ctx?: { sessionManager?: { getSessionId?(): string } }) =>
+          runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd(), ctx?.sessionManager?.getSessionId?.()),
       })
     },
   }

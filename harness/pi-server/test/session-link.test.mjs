@@ -884,6 +884,16 @@ test("Rubato's clock (the companion's heartbeat, daily report and sleep) wakes a
   await assert.rejects(env.link.wake({ to: segno.id, what: 'heartbeat', text: '' }), { code: 'invalid' });
 });
 
+test("a scheduled message wakes any conversation under the caller's message id", async (t) => {
+  const env = await setup(t);
+  const lead = await env.make('Lead');
+  await env.link.wake({ to: lead.id, what: 'schedule', text: 'Scheduled message "Ping":\nping', messageId: 'schedule:run-1' });
+  const delivered = await env.deliveries(lead.id);
+  assert.deepEqual(delivered.map((item) => [item.data.kind, item.data.what, item.data.messageId, item.data.text]),
+    [['wake', 'schedule', 'schedule:run-1', 'Scheduled message "Ping":\nping']]);
+  await assert.rejects(env.link.wake({ to: lead.id, what: 'schedule', text: 'x', messageId: ' ' }), { code: 'invalid' });
+});
+
 test("a window cannot rename the companion's conversation; any other conversation it can", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true, titleLocked: true });
