@@ -19,7 +19,11 @@
   animation: rubato-segno-row-in 220ms ease-out both;
 }
 .rubato-segno-finished {
-  opacity: 0.6;
+  opacity: 0.75;
+}
+.rubato-segno-finished:hover,
+.rubato-segno-finished:focus-within {
+  opacity: 1;
 }
 /* Segno's expressions: only the current one shows, and a change cross-fades once. */
 .rubato-segno-art {

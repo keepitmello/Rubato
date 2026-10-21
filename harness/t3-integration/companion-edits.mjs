@@ -65,6 +65,15 @@ export const companionEdits = {
       '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       'replace'],
     ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\n'],
+    // Segno's thread has no workspace or version control of its own: the floating thread details
+    // (workspace, open in editor, branch, publish, changes) and the button that toggles them stay
+    // out of Segno's space (user 2026-10-21). Every other thread keeps them.
+    ['            <ThreadDetailsPanel {...threadDetailsPanelProps} />\n',
+      '            {isCompanionThread(activeThread.id) ? null : <ThreadDetailsPanel {...threadDetailsPanelProps} />}\n',
+      'replace'],
+    ['      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}\n',
+      '      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !isCompanionThread(activeThread.id)}\n',
+      'replace'],
     // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
     // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
     ['              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',

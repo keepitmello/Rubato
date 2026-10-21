@@ -77,7 +77,7 @@ export function companionPaths(env = process.env) {
   const home = companionHome(env);
   return { home, settings: path.join(home, 'settings.json'), state: path.join(home, 'state.json'),
     following: path.join(home, 'following.json'), finished: path.join(home, 'finished.json'),
-    panel: path.join(home, 'panel.json'), art: path.join(home, 'art'), prompt: path.join(home, 'prompt') };
+    panel: path.join(home, 'panel.json'), dismissed: path.join(home, 'dismissed.json'), art: path.join(home, 'art'), prompt: path.join(home, 'prompt') };
 }
 
 function readJson(file) {
@@ -220,6 +220,35 @@ function writeFinished(entry, env) {
   const at = Number.isFinite(entry?.at) ? entry.at : Date.now();
   const rest = readFinished(env, { now: at }).filter((item) => item.sessionId !== entry.sessionId);
   writeJson(companionPaths(env).finished, [{ ...entry, at }, ...rest].slice(0, FINISHED_LIMITS.count));
+}
+
+/** One ending of handed work: the same conversation can finish again later, and that ending shows anew. */
+const endingKey = (entry) => `${entry.sessionId}@${entry.at}`;
+
+/** The endings the person closed in the companion's space; kept as long as the endings themselves. */
+export function readDismissed(env = process.env, { now = Date.now() } = {}) {
+  const value = readJson(companionPaths(env).dismissed);
+  return (Array.isArray(value) ? value : [])
+    .filter((entry) => typeof entry?.sessionId === 'string' && Number.isFinite(entry.at) && now - entry.at <= FINISHED_LIMITS.ageMs);
+}
+
+/**
+ * Closes endings in the companion's space: they leave the panel and do not come back. Only the
+ * panel forgets them; the conversations and the companion's own record of the ending stay.
+ */
+export function dismissFinished(entries, env = process.env, { now = Date.now() } = {}) {
+  if (!Array.isArray(entries) || entries.some((entry) => typeof entry?.sessionId !== 'string' || !entry.sessionId || !Number.isFinite(entry?.at)))
+    throw new TypeError('Each ending to close needs its sessionId and at.');
+  const kept = readDismissed(env, { now });
+  const known = new Set(kept.map(endingKey));
+  const added = entries.filter((entry) => !known.has(endingKey(entry))).map(({ sessionId, at }) => ({ sessionId, at }));
+  if (added.length > 0) writeJson(companionPaths(env).dismissed, [...kept, ...added]);
+}
+
+/** `finished` without the endings the person closed. */
+export function withoutDismissed(finished, env = process.env) {
+  const closed = new Set(readDismissed(env).map(endingKey));
+  return closed.size === 0 ? finished : finished.filter((entry) => !closed.has(endingKey(entry)));
 }
 
 const LEAD_BUSY = new Set(['starting', 'running', 'waiting']);

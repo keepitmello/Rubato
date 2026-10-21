@@ -4458,6 +4458,14 @@
   "Reject": "그만두기",
   "Could not change the Telegram connection": "텔레그램 연결을 바꿀 수 없습니다",
   "Segno's tasks": "세뇨가 맡은 일",
+  "Finished work": "끝난 일",
+  "Just started": "방금 시작함",
+  "Waiting for your answer": "답을 기다리는 중",
+  "Not started yet": "아직 시작 전",
+  "Done just now": "방금 완료",
+  "Failed just now": "방금 실패",
+  "Stopped just now": "방금 중단됨",
+  "Cut off just now": "방금 중간에 끊김",
   "Reply waiting for approval": "승인을 기다리는 답장",
   "Asked you": "답변 대기 중",
   "Don't send": "보내지 않기",
@@ -7794,6 +7802,66 @@
   [
    "Every {0} hours",
    "{0}시간마다"
+  ],
+  [
+   "Working for {0} min",
+   "{0}분째 작업 중"
+  ],
+  [
+   "Working for {0} hr",
+   "{0}시간째 작업 중"
+  ],
+  [
+   "Working for {0} days",
+   "{0}일째 작업 중"
+  ],
+  [
+   "Done {0} min ago",
+   "{0}분 전 완료"
+  ],
+  [
+   "Done {0} hr ago",
+   "{0}시간 전 완료"
+  ],
+  [
+   "Done {0} days ago",
+   "{0}일 전 완료"
+  ],
+  [
+   "Failed {0} min ago",
+   "{0}분 전 실패"
+  ],
+  [
+   "Failed {0} hr ago",
+   "{0}시간 전 실패"
+  ],
+  [
+   "Failed {0} days ago",
+   "{0}일 전 실패"
+  ],
+  [
+   "Stopped {0} min ago",
+   "{0}분 전 중단됨"
+  ],
+  [
+   "Stopped {0} hr ago",
+   "{0}시간 전 중단됨"
+  ],
+  [
+   "Stopped {0} days ago",
+   "{0}일 전 중단됨"
+  ],
+  [
+   "Cut off {0} min ago",
+   "{0}분 전 중간에 끊김"
+  ],
+  [
+   "Cut off {0} hr ago",
+   "{0}시간 전 중간에 끊김"
+  ],
+  [
+   "Cut off {0} days ago",
+   "{0}일 전 중간에 끊김"
   ]
  ]
 }

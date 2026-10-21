@@ -212,6 +212,29 @@ test("the space beside Segno's chat lists what it follows and what recently fini
   assert.deepEqual(readPanel(env).leads, panel.leads);
 });
 
+test("an ending the person closed leaves the space for good; the same conversation finishing again shows anew", async (t) => {
+  const { dismissFinished, followingStore, readDismissed, readFinished, withoutDismissed, FINISHED_LIMITS } = await import('../companion.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-dismiss-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = { RUBATO_COMPANION_HOME: dir };
+  const now = Date.now();
+  const store = followingStore(env);
+  store.finished({ sessionId: 'a', outcome: 'completed', at: now - 2000, title: 'Fix login' });
+  store.finished({ sessionId: 'b', outcome: 'failed', at: now - 1000, title: 'Payments' });
+  dismissFinished([{ sessionId: 'a', at: now - 2000 }], env, { now });
+  dismissFinished([{ sessionId: 'a', at: now - 2000 }], env, { now });
+  assert.equal(readDismissed(env, { now }).length, 1, 'closing twice keeps one record');
+  assert.deepEqual(withoutDismissed(readFinished(env, { now }), env).map((entry) => entry.sessionId), ['b']);
+  assert.deepEqual(readFinished(env, { now }).map((entry) => entry.sessionId), ['b', 'a'], "the companion's own record stays");
+  // Handed work again, the conversation finishes again: that ending is new and shows.
+  store.finished({ sessionId: 'a', outcome: 'completed', at: now - 10, title: 'Fix login again' });
+  assert.deepEqual(withoutDismissed(readFinished(env, { now }), env).map((entry) => entry.sessionId), ['a', 'b']);
+  // Records go when the endings themselves would have.
+  assert.deepEqual(readDismissed(env, { now: now + FINISHED_LIMITS.ageMs }), []);
+  assert.throws(() => dismissFinished([{ sessionId: 'a' }], env), TypeError);
+  assert.throws(() => dismissFinished('a', env), TypeError);
+});
+
 test("Segno's art is one swappable file per expression: the person's own, else the default that ships", async (t) => {
   const { stageArtFile, companionPaths, STAGE_STATES } = await import('../companion.mjs');
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-art-'));
