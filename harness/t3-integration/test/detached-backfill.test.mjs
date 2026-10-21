@@ -35,7 +35,8 @@ function setup(t, { session, thread, attached = false, gaps }) {
       role: item.role, text: item.text, runId: item.runId ?? null, createdAt: item.createdAt }))], checkpoints: [] } : null),
     appendSessionMessage: async (threadId, item) => { appended.push([threadId, item]); } });
   bridge.viaInventory = async (call) => call({
-    list: async () => [{ sessionId: 'S1', cwd: '/w', title: 'lead', updatedAt: new Date(session.at(-1).timestamp).toISOString() }],
+    // The engine's list row (pi-server host.mjs): epoch-ms `modifiedAt` and `touchedAt`; the end-to-end test below reads a real one.
+    list: async () => [{ sessionId: 'S1', cwd: '/w', title: 'lead', modifiedAt: session.at(-1).timestamp, touchedAt: session.at(-1).timestamp }],
     transcript: async (id) => ({ messages: id === 'S1' ? session : [] }),
   });
   if (gaps) bridge.streamGaps = async () => gaps;
@@ -97,6 +98,19 @@ test('a thread with no gap in its stream is not read at all', async (t) => {
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.deepEqual(appended, []);
   assert.equal(reads, 0);
+});
+
+test('a session the engine-run follower is writing live is not read by the pass meanwhile', async (t) => {
+  let reads = 0;
+  const session = [...before, said('본 브랜치에 올라갔어.', 53)];
+  const { bridge, appended } = setup(t, { session, thread: shownThread });
+  bridge.engineFollowers = new Map([['S1', Promise.resolve({})]]);
+  const transcript = bridge.viaInventory;
+  bridge.viaInventory = async (call) => transcript((client) => call({ ...client, transcript: async (id) => { reads += 1; return client.transcript(id); } }));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.equal(reads, 0);
+  bridge.engineFollowers.delete('S1');
+  assert.ok(await until(() => appended.length >= 1), 'once the follower lets go, the pass compares the thread again');
 });
 
 test("a side chat's copied history, older than the thread itself, is never written into it", async (t) => {
@@ -165,4 +179,49 @@ test('every thread a stream attaches to is remembered for the backfill, with or 
   const file = path.join(dir, `${encodeURIComponent('plain-chat')}.json`);
   for (let tries = 0; tries < 50 && !existsSync(file); tries += 1) await new Promise((resolve) => setTimeout(resolve, 20));
   assert.equal(JSON.parse(readFileSync(file, 'utf8')).sessionId, 'S9');
+});
+
+// 2026-10-21 13:25Z: Segno's reply in a turn a messenger alert opened was in its sent record, but
+// its thread showed it only at 13:32, when the user wrote "나한테 말을 안했어" and the stream
+// attached. The pass that should have brought it read a field the engine's list never had.
+test("Segno's reply sent while its thread has no stream reaches the thread through the engine's real list, without the user writing", async (t) => {
+  const { mkdtemp, rm } = await import('node:fs/promises');
+  const { SessionManager } = await import('@earendil-works/pi-coding-agent');
+  const { SessionFiles } = await import('../../pi-server/src/session-files.mjs');
+  const { startSessionServer } = await import('../../pi-server/src/host.mjs');
+  const { SessionClient } = await import('../../pi-server/src/client.mjs');
+  const root = await mkdtemp(path.join(tmpdir(), 'rubato-backfill-engine-'));
+  const sessionsDir = path.join(root, 'sessions');
+  const socketPath = path.join(root, 'pi.sock');
+  const service = await startSessionServer({ socketPath, sessionsDir, idleMs: null, pollMs: 50 });
+  const client = await new SessionClient({ socketPath, serverId: service.serverId }).connect();
+  t.after(async () => { await client.close(); await service.close(); await rm(root, { recursive: true, force: true }); });
+
+  const created = await new SessionFiles(sessionsDir).create({ cwd: root, companion: true });
+  const manager = SessionManager.open(created.file, sessionsDir);
+  for (const message of [user('풀 해도 돼?', 40), said('응, 받아도 돼.', 41),
+    { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'text', text: '혼잣말.' },
+      { type: 'toolCall', id: 'r1', name: 'reply', arguments: { text: '운영방에서 어드민 느리다고 태그 왔어.' } }],
+    timestamp: at(53), provider: 'anthropic', model: 'claude' },
+    { role: 'toolResult', toolCallId: 'r1', toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: at(53) },
+    said('리드 띄웠어, 혼잣말.', 54)]) manager.appendMessage(message);
+
+  const stateDir = path.join(root, 'state');
+  mkdirSync(stateDir, { recursive: true });
+  writeFileSync(path.join(stateDir, `${encodeURIComponent('T1')}.json`), JSON.stringify({ sessionId: created.id }));
+  const appended = [];
+  // Segno's thread shows the person's own message only; the gap is T3's idle stop.
+  const thread = [{ id: 'u', role: 'user', text: '풀 해도 돼?', runId: 'run-40', createdAt: new Date(at(40)).toISOString() }];
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(root, 'none.json'), instanceId: 'rubato-test', sessionStateDir: stateDir,
+    backfillMs: 30,
+    projectedThread: async (threadId) => (threadId === 'T1' ? { messages: thread, checkpoints: [] } : null),
+    appendSessionMessage: async (threadId, item) => { appended.push([threadId, item]); } });
+  bridge.viaInventory = async (call) => call(client);
+  bridge.streamGaps = async () => [{ from: at(45), to: Number.MAX_SAFE_INTEGER }];
+  t.after(() => bridge.close());
+
+  assert.ok(await until(() => appended.length >= 1, 5000), 'the reply reached the thread on its own');
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(appended.map(([threadId, item]) => [threadId, item.text, item.ownRun === true]),
+    [['T1', '운영방에서 어드민 느리다고 태그 왔어.', true]], 'only the reply, once, in a run of its own so the phone hears of it');
 });

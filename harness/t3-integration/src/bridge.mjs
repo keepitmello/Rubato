@@ -194,6 +194,11 @@ function revertPending(thread, { dropped, cut }) {
 }
 /** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
 const BACKFILL_MS = 5000;
+/** When a session in the engine's list last moved (epoch ms), or NaN: see backfillDetached. */
+export const sessionMoved = (row) => {
+  const times = ['touchedAt', 'modifiedAt'].map((field) => row?.[field]).filter((value) => typeof value === 'number' && Number.isFinite(value));
+  return times.length ? Math.max(...times) : NaN;
+};
 
 export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
@@ -755,6 +760,9 @@ export class RubatoPiBridge {
    * session state names the session) and has no stream on now. A thread is looked at the first pass
    * after this server starts and again whenever its session moved; with T3's log bound, the transcript
    * is read only when the thread had a gap in its stream.
+   *
+   * "Moved" is when the session file was last written (the engine's list row `touchedAt`, epoch
+   * ms), else its last message (`modifiedAt`): a reply's tool result is a write but not a message.
    */
   backfillDetached() {
     if (this.closed || !this.sessionStateDir) return Promise.resolve();
@@ -769,8 +777,9 @@ export class RubatoPiBridge {
         let sessionId;
         try { sessionId = JSON.parse(readFileSync(path.join(this.sessionStateDir, name), 'utf8'))?.sessionId; } catch { continue; }
         const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
-        const moved = Date.parse(row?.updatedAt ?? '');
-        if (!Number.isFinite(moved) || this.rpcFor(threadId)) continue;
+        const moved = sessionMoved(row);
+        // A session the engine-run follower watches is written live (engine-runs.mjs); once it lets go, the session has moved since.
+        if (!Number.isFinite(moved) || this.rpcFor(threadId) || this.engineFollowers?.has(sessionId)) continue;
         if (this.backfilled.has(threadId) && moved <= this.backfilled.get(threadId)) continue;
         // A thread is done for this session state only once it was really compared: before the T3
         // server binds its thread reader (the first passes after startup) nothing is.
