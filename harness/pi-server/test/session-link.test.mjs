@@ -19,12 +19,12 @@ const until = async (predicate, message = 'Condition did not settle') => {
 };
 const keys = (value) => Object.keys(value).sort();
 
-async function setup(t, { now, startDelayMs = 0, idleMs = 5000 } = {}) {
+async function setup(t, { now, startDelayMs = 0 } = {}) {
   const root = await realpath(await mkdtemp(path.join(tmpdir(), 'rb-link-')));
   const sessionsDir = path.join(root, 'sessions');
   const socketPath = path.join(root, 'pi.sock');
   const errors = [];
-  const service = await startSessionServer({ socketPath, sessionsDir, idleMs, pollMs: 50,
+  const service = await startSessionServer({ socketPath, sessionsDir, idleMs: 5000, pollMs: 50,
     workerFactory: (metadata) => {
       const worker = new RpcWorker(metadata, { cliPath: fixture });
       // A slow load, to hold an attach in flight deliberately.
@@ -876,19 +876,6 @@ test("a lead that ends its turn with a subagent still running is told only once 
   assert.match((await notices())[0].data.text, /^Finished its turn\.\n\nIts answer:\nreply: busy-children/);
   await delay(200);
   assert.equal((await notices()).length, 1, 'told once');
-});
-
-test("only the companion's leads keep their runtime for a pending background command", async (t) => {
-  const env = await setup(t, { idleMs: 30 });
-  const segno = await env.make('Segno', { companion: true });
-  const other = await env.make('Other');
-  const followed = await env.api.create({ from: segno.id, cwd: env.root, title: 'Build', text: 'busy-terminal' });
-  const plain = await env.api.create({ from: other.id, cwd: env.root, title: 'Plain build', text: 'busy-terminal' });
-  await until(async () => env.row(plain.sessionId)?.runtimeId === null, 'a lead the companion does not follow unloads as before');
-  assert.ok(env.host.getSessionWorker(followed.sessionId), "the companion's lead keeps the runtime its wake needs");
-  await env.host.getSessionWorker(followed.sessionId).request({ type: 'extension_request', name: 'fixture.terminal-work', data: 0 });
-  for (let i = 0; i < 200 && env.row(followed.sessionId)?.runtimeId !== null; i++) await delay(50);
-  assert.equal(env.row(followed.sessionId)?.runtimeId, null, 'it goes once the background work is done');
 });
 
 test("Rubato's own notice wakes a conversation as a notice from Rubato", async (t) => {

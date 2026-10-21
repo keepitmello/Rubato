@@ -47,9 +47,8 @@ function endpoint(entries) {
 
 /** Owns ONE runtime handle acquired by the official SessionRouter. */
 class RuntimeHandle {
-  constructor(metadata, worker, { idleMs, changed, adopt, holdsBackground = () => false }) {
+  constructor(metadata, worker, { idleMs, changed, adopt }) {
     this.metadata = metadata;
-    this.holdsBackground = holdsBackground;
     this.worker = worker;
     this.idleMs = idleMs;
     this.changed = changed;
@@ -148,12 +147,11 @@ class RuntimeHandle {
   /**
    * Idle means "nothing to do", not merely "no window and no lead turn". A lead whose
    * approved children are still executing keeps its runtime: unloading would suspend
-   * the children with it. A lead the companion follows (host.holdBackgroundFor) also keeps
-   * it while a background command or monitor would wake it: that wake carries the result
-   * the companion waits for, and an unloaded runtime takes it along. Ask the runtime once; a
-   * runtime that cannot answer (no task or terminal extension, request error) unloads as
-   * before. Deferral re-arms the same idle timer, so the work's own deadlines decide when
-   * the lead may go.
+   * the children with it. So does a lead that ended its turn on a background command or
+   * monitor: their completion wakes it with the turn that carries its result, and an
+   * unloaded runtime takes that wake with it. Ask the runtime once; a runtime that cannot
+   * answer (no task or terminal extension, request error) unloads as before. Deferral
+   * re-arms the same idle timer, so the work's own deadlines decide when the lead may go.
    */
   async unloadWhenIdle() {
     if (this.closed || this.attachments || this.calls || this.running || this.pendingUi.size) return;
@@ -173,8 +171,7 @@ class RuntimeHandle {
   async pendingWork() {
     const [tasks, terminal, warming] = await Promise.all([
       this.worker.request({ type: 'extension_request', name: PENDING_WORK_REQUEST }).catch(() => undefined),
-      this.holdsBackground(this.metadata.id)
-        ? this.worker.request({ type: 'extension_request', name: TERMINAL_PENDING_WORK_REQUEST }).catch(() => undefined) : undefined,
+      this.worker.request({ type: 'extension_request', name: TERMINAL_PENDING_WORK_REQUEST }).catch(() => undefined),
       this.worker.request({ type: 'get_cache_warming' }).catch(() => undefined),
     ]);
     const count = (value) => { const number = Number(value); return Number.isFinite(number) && number > 0 ? number : 0; };
@@ -307,11 +304,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     probes.set(cwd, operation);
     return operation;
   };
-  let holdsBackground = () => false;
   const host = {
     metrics, directory,
-    /** Which conversations keep their runtime for pending background commands (session-link: the companion's leads). */
-    holdBackgroundFor(predicate) { holdsBackground = typeof predicate === 'function' ? predicate : () => false; },
     async resolveImport(file) {
       const source = await realpath(file);
       const metadata = await readSessionMetadata(source, await stat(source, { bigint: true }));
@@ -381,8 +375,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
         publish();
         void refresh().catch(onError);
       };
-      const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation),
-        { idleMs, changed: publish, adopt, holdsBackground: (id) => holdsBackground(id) });
+      const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation), { idleMs, changed: publish, adopt });
       handle.worker.presentationOwner = presentations.get(metadata.id);
       try { await handle.start(); } catch (error) { await handle.close(); throw error; }
       metrics.runtimeStarts++; metrics.totalOpenMs += performance.now() - began;

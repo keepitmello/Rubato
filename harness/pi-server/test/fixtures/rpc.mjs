@@ -194,7 +194,6 @@ lines.on('line', (line) => {
         const mode = running ? 'steer' : 'turn';
         // A delivered `busy-children` ends its turn with a subagent still running.
         if (command.data.text === 'busy-children') pendingWork = 1;
-        if (command.data.text === 'busy-terminal') terminalWork = 1;
         deliveries.push({ data: command.data, mode });
         if (scripted.length) { data = scripted.shift(); break; }
         manager.appendCustomMessageEntry('rubato-session-message', `from ${command.data.from.title}: ${command.data.text}`, true, command.data);
@@ -213,7 +212,6 @@ lines.on('line', (line) => {
       if (command.name === 'fixture.session-link.deliveries') { data = deliveries; break; }
       if (command.name === 'fixture.session-link.answer') { scripted.push(command.data); data = null; break; }
       if (command.name === 'fixture.pending-work') { pendingWork = command.data; data = null; break; }
-      if (command.name === 'fixture.terminal-work') { terminalWork = command.data; data = null; break; }
       if (command.name === 'rubato.terminal.pending-work') { data = { active: terminalWork, undelivered: 0 }; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
       data = { active: pendingWork }; break;
