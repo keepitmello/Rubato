@@ -158,7 +158,7 @@ test('send loads a stored target through the router and delivers the frozen data
   const b = await env.make('Target B');
   assert.equal(env.host.metrics.runtimeStarts, 0);
   const result = await env.api.send({ from: a.id, to: b.id, text: 'please check the build', messageId: 'msg-1' });
-  assert.deepEqual(keys(result), ['cursor', 'duplicate', 'messageId', 'state', 'to']);
+  assert.deepEqual(keys(result), ['cursor', 'delivery', 'duplicate', 'messageId', 'state', 'to']);
   assert.deepEqual(keys(result.to), ['sessionId', 'status', 'title']);
   assert.equal(result.messageId, 'msg-1');
   assert.equal(result.to.sessionId, b.id);
@@ -635,6 +635,25 @@ test("send reports the target handler's answer, and null where the handler said 
   assert.deepEqual([written.duplicate, written.state], [false, 'written']);
   await script({ messageId: 'm-3', duplicate: false, state: 'delivered-ish' });
   assert.equal((await env.api.send({ from: a.id, to: b.id, text: 'third', messageId: 'm-3' })).state, null, 'an unknown state is not passed on');
+  assert.equal(older.delivery, null, 'an older runtime names no delivery');
+  await script({ messageId: 'm-4', duplicate: false, state: 'queued', delivery: 'steered' });
+  assert.equal((await env.api.send({ from: a.id, to: b.id, text: 'fourth', messageId: 'm-4', mode: 'steer' })).delivery, 'steered');
+  await script({ messageId: 'm-5', duplicate: false, state: 'queued', delivery: 'somehow' });
+  assert.equal((await env.api.send({ from: a.id, to: b.id, text: 'fifth', messageId: 'm-5' })).delivery, null, 'an unknown delivery is not passed on');
+});
+
+test('send passes steer to the target beside the message, and only then; an unknown mode is refused before anything is sent', async (t) => {
+  const env = await setup(t);
+  const a = await env.make('A');
+  const b = await env.make('B');
+  await env.api.send({ from: a.id, to: b.id, text: 'next task', messageId: 'q-1' });
+  await env.api.send({ from: a.id, to: b.id, text: 'drop that part', messageId: 's-1', mode: 'steer' });
+  const delivered = (await env.deliveries(b.id)).map((item) => item.data);
+  assert.equal('mode' in delivered[0], false, 'queue is the default and sends no mode');
+  assert.equal(delivered[1].mode, 'steer');
+  assert.equal(delivered[1].text, 'drop that part');
+  await assert.rejects(env.api.send({ from: a.id, to: b.id, text: 'x', mode: 'now' }), { code: 'invalid' });
+  assert.equal((await env.deliveries(b.id)).length, 2);
 });
 
 // What a subagent, a team run and context notes leave on disk, in the task store's own layout.

@@ -15,6 +15,10 @@ import { createInspector, isAgentId, readEntries, searchTerms, turnAround, windo
 
 /** Answered by the session-link extension inside the target runtime. */
 export const DELIVER_REQUEST = 'rubato.session-link.deliver';
+/** How a running target takes a sent message (the runtime's DELIVERY_MODES, session-link message.mjs). */
+export const SEND_MODES = Object.freeze(['queue', 'steer']);
+/** What the target's handler reports it did with a message. */
+const DELIVERIES = Object.freeze(['started', 'steered', 'queued']);
 export const SESSION_MESSAGE = 'rubato-session-message';
 export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderPerMinute: 20, duplicateMs: 30000,
   // Receiver side, across all senders.
@@ -733,8 +737,14 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         }),
       };
     },
-    async send({ from, to, text, messageId } = {}) {
+    /**
+     * `mode` is how a running target takes it: `queue` (default) after its current run, `steer`
+     * inside that run at its next step. An idle target starts a turn either way. The answer's
+     * `delivery` is what the target's handler did (`started`, `steered`, `queued`).
+     */
+    async send({ from, to, text, messageId, mode = 'queue' } = {}) {
       requireId(from, 'from'); requireId(to, 'to'); requireText(text);
+      if (!SEND_MODES.includes(mode)) throw fail('invalid', `mode must be one of ${SEND_MODES.join(', ')}`);
       const id = messageIdOf(messageId);
       if (from === to) throw fail('self_send', 'A conversation cannot send a message to itself');
       const origin = await sender(from);
@@ -748,14 +758,16 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         cursor = encodeCursor({ v: 1, final: before.final?.entryId ?? null, leaf: before.leaf, waiting: false, ui: [] });
       } catch (error) { release(); throw error; }
       let answer;
-      try { answer = await deliver(to, envelope({ messageId: id, kind: 'message', from: origin, text })); }
+      const data = envelope({ messageId: id, kind: 'message', from: origin, text });
+      try { answer = await deliver(to, mode === 'steer' ? { ...data, mode } : data); }
       catch (error) { release(); throw error; }
       if (fromCompanion(from)) need().follower.follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
       const target = await describe(to);
       // What the target's handler said, never more: an older runtime answers without these.
       return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status },
         duplicate: typeof answer?.duplicate === 'boolean' ? answer.duplicate : null,
-        state: answer?.state === 'queued' || answer?.state === 'written' ? answer.state : null };
+        state: answer?.state === 'queued' || answer?.state === 'written' ? answer.state : null,
+        delivery: DELIVERIES.includes(answer?.delivery) ? answer.delivery : null };
     },
     /**
      * `model` ("provider/model-id") and `thinking` (an effort level) are selected in the new

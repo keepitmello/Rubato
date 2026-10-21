@@ -185,7 +185,7 @@ test("in the staged candidate the tools are catalogued for tool_search, and a de
     assert.ok(found.includes("session_send"), found.join(", "));
 
     const deliver = (data) => session.extensionRunner.requestRpc("rubato.session-link.deliver", data);
-    assert.deepEqual(await deliver(delivery("m-1", "Run the parser tests.")), { messageId: "m-1", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliver(delivery("m-1", "Run the parser tests.")), { messageId: "m-1", duplicate: false, state: "queued", delivery: "started" });
     await settle(session);
     const [entry] = sessionMessages(session);
     assert.ok(entry, "the message is in the transcript");
@@ -236,7 +236,7 @@ for (const [ending, end] of Object.entries(endings)) {
       const held = hold();
       const run = session.prompt("Work");
       const gate = await held;
-      assert.deepEqual(await deliver(delivery("m-end", "Please answer this.")), { messageId: "m-end", duplicate: false, state: "queued" });
+      assert.deepEqual(await deliver(delivery("m-end", "Please answer this.")), { messageId: "m-end", duplicate: false, state: "queued", delivery: "queued" });
       await end(gate);
       await run;
       for (let i = 0; i < 200 && (firstRunRequests === undefined || requests.length === firstRunRequests || !session.isIdle); i++) await new Promise((r) => setTimeout(r, 10));
@@ -265,13 +265,13 @@ test("a delivery answers as soon as the session took it, and a duplicate is one 
   try {
     // Idle: the handler answers while the turn it started is still waiting on the model.
     let held = hold();
-    assert.deepEqual(await deliver(delivery("m-idle", "Start.")), { messageId: "m-idle", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliver(delivery("m-idle", "Start.")), { messageId: "m-idle", duplicate: false, state: "queued", delivery: "started" });
     let gate = await held;
     assert.equal(session.isStreaming, true, "the turn is still running when the answer arrived");
     assert.deepEqual(await deliver(delivery("m-idle", "Other text, same id.")), { messageId: "m-idle", duplicate: true, state: "written" });
 
     // Running: queued for the next boundary; the same (trimmed) id is refused while it waits.
-    assert.deepEqual(await deliver(delivery("m-run", "Also check the lexer.")), { messageId: "m-run", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliver(delivery("m-run", "Also check the lexer.")), { messageId: "m-run", duplicate: false, state: "queued", delivery: "queued" });
     assert.deepEqual(await deliver(delivery(" m-run ", "Also check the lexer.")), { messageId: "m-run", duplicate: true, state: "queued" });
     assert.deepEqual(idsIn(session), ["m-idle"], "not written while the turn runs");
     held = hold();
@@ -297,7 +297,7 @@ test("a message queued when the user stops the turn and clears the queue is kept
     const held = hold();
     const run = session.prompt("Work until interrupted");
     const gate = await held;
-    assert.deepEqual(await deliver(delivery("m-cut", "Report before you stop.")), { messageId: "m-cut", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliver(delivery("m-cut", "Report before you stop.")), { messageId: "m-cut", duplicate: false, state: "queued", delivery: "queued" });
     assert.deepEqual(idsIn(session), []);
     session.clearQueue();
     const aborting = session.abort();
@@ -321,7 +321,7 @@ test("a user's clear and stop right after a tool-call turn cannot erase the mess
     const held = hold();
     const run = session.prompt("Work until interrupted");
     const gate = await held;
-    assert.deepEqual(await deliver(delivery("m-kept", "Please answer this.")), { messageId: "m-kept", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliver(delivery("m-kept", "Please answer this.")), { messageId: "m-kept", duplicate: false, state: "queued", delivery: "queued" });
     const parked = holdTurnEnd();
     gate.callTool();
     const turnEnd = await parked;
@@ -349,7 +349,7 @@ async function stopBehindAnotherSteer(name, { end, clear }) {
     const run = session.prompt("Work until interrupted");
     let gate = await held;
     api.sendMessage({ customType: "fixture-wake", display: false, content: "a background job finished" }, { triggerTurn: true, deliverAs: "steer" });
-    assert.deepEqual(await deliverTo(session)(delivery("m-behind", "Please answer this.")), { messageId: "m-behind", duplicate: false, state: "queued" });
+    assert.deepEqual(await deliverTo(session)(delivery("m-behind", "Please answer this.")), { messageId: "m-behind", duplicate: false, state: "queued", delivery: "queued" });
     held = hold();
     gate[end]();
     gate = await held;
@@ -382,3 +382,126 @@ for (const end of ["release", "callTool"]) {
     });
   }
 }
+
+const steer = (messageId, text) => ({ ...delivery(messageId, text), mode: "steer" });
+
+test("a steer into an idle session starts a turn with it, as a queued message does", async () => {
+  const { session, requests } = await openSession("steer-idle", { async list() { return { sessions: [], truncated: false }; } });
+  try {
+    assert.deepEqual(await deliverTo(session)(steer("s-idle", "Start now.")), { messageId: "s-idle", duplicate: false, state: "queued", delivery: "started" });
+    await settle(session);
+    assert.equal(requests.length, 1);
+    assert.match(lastUserText(requests[0]), /Start now\./);
+    assert.deepEqual(idsIn(session), ["s-idle"]);
+    assert.deepEqual(sessionMessages(session)[0].details, delivery("s-idle", "Start now."), "the mode is not part of the message");
+  } finally {
+    await close(session);
+  }
+});
+
+test("a steer into a run that goes on is read by that run's next request, after the step's tool results, with no second run", async () => {
+  const { session, requests, hold } = await openSession("steer-step", { async list() { return { sessions: [], truncated: false }; } });
+  const deliver = deliverTo(session);
+  let starts = 0;
+  const settles = [];
+  session.subscribe((event) => {
+    if (event.type === "agent_start") starts++;
+    if (event.type === "agent_settled") settles.push(session.isStreaming);
+  });
+  try {
+    let held = hold();
+    const run = session.prompt("Work");
+    let gate = await held;
+    assert.deepEqual(await deliver(steer("s-step", "Drop the lexer part.")), { messageId: "s-step", duplicate: false, state: "queued", delivery: "steered" });
+    assert.deepEqual(await deliver(steer(" s-step ", "Drop the lexer part.")), { messageId: "s-step", duplicate: true, state: "queued" });
+    held = hold();
+    gate.callTool();
+    gate = await held;
+    const second = requests.at(-1);
+    assert.ok(mentions(second, "Drop the lexer part."), "the run's next request reads it");
+    const roles = second.map((message) => message.role);
+    assert.deepEqual(roles.slice(-2), ["toolResult", "user"], "right after the step's tool result");
+    assert.deepEqual(idsIn(session), ["s-step"], "written at the step boundary, while the run goes on");
+    gate.release();
+    await run;
+    await settle(session);
+    assert.equal(requests.length, 2, "no extra request once a reply followed it");
+    assert.equal(starts, 1, "one run");
+    assert.deepEqual(settles, [false]);
+    assert.equal(session.agent.hasQueuedMessages(), false, "nothing in Pi's steering queue");
+    assert.deepEqual(await deliver(steer("s-step", "Drop the lexer part.")), { messageId: "s-step", duplicate: true, state: "written" });
+    assert.deepEqual(idsIn(session), ["s-step"]);
+  } finally {
+    await close(session);
+  }
+});
+
+// However the run would have ended right after the steer, the message gets one request before the
+// run settles, and the settle is announced once.
+for (const [ending, end] of Object.entries(endings)) {
+  if (ending === "tool call the run goes on from") continue;
+  test(`a steer into a run that ends right after it (${ending}) continues that run once to read it`, async () => {
+    const { session, requests, hold } = await openSession(`steer-end-${Object.keys(endings).indexOf(ending)}`, { async list() { return { sessions: [], truncated: false }; } });
+    session.setActiveToolsByName([...session.getActiveToolNames(), "fixture_stop"]);
+    const settles = [];
+    session.subscribe((event) => { if (event.type === "agent_settled") settles.push(session.isStreaming); });
+    try {
+      const held = hold();
+      const run = session.prompt("Work");
+      const gate = await held;
+      assert.deepEqual(await deliverTo(session)(steer("s-end", "Stop after the parser.")), { messageId: "s-end", duplicate: false, state: "queued", delivery: "steered" });
+      await end(gate);
+      await run;
+      await settle(session);
+      assert.ok(!mentions(requests[0], "Stop after the parser."));
+      assert.equal(requests.length, 2, "one more request");
+      assert.match(lastUserText(requests[1]), /Stop after the parser\./, "which reads the message");
+      assert.deepEqual(idsIn(session), ["s-end"]);
+      assert.deepEqual(settles, [false], "one settle: the continuation is the same run");
+      assert.equal(session.agent.hasQueuedMessages(), false);
+    } finally {
+      await close(session);
+    }
+  });
+}
+
+test("a steer survives the user's clear and stop: written once without a turn, and a redelivery is a duplicate", async () => {
+  const { session, requests, hold, holdTurnEnd } = await openSession("steer-stop", { async list() { return { sessions: [], truncated: false }; } });
+  const deliver = deliverTo(session);
+  try {
+    const held = hold();
+    const run = session.prompt("Work until interrupted");
+    const gate = await held;
+    assert.deepEqual(await deliver(steer("s-cut", "Stop that.")), { messageId: "s-cut", duplicate: false, state: "queued", delivery: "steered" });
+    const parked = holdTurnEnd();
+    gate.callTool();
+    const turnEnd = await parked;
+    session.clearQueue();
+    const aborting = session.abort();
+    turnEnd.release();
+    await Promise.all([run, aborting]);
+    await settle(session);
+    assert.deepEqual(idsIn(session), ["s-cut"], "the clear did not lose it");
+    assert.equal(requests.length, 2, "the stop is honoured: the request it cut is the last, and no continuation follows");
+    assert.deepEqual(await deliver(steer("s-cut", "Stop that.")), { messageId: "s-cut", duplicate: true, state: "written" });
+    await settle(session);
+    await session.prompt("Carry on");
+    await settle(session);
+    assert.deepEqual(idsIn(session), ["s-cut"], "one copy");
+  } finally {
+    await close(session);
+  }
+});
+
+test("a steer refused for a kind that cannot steer or an unknown mode writes nothing", async () => {
+  const { session, requests } = await openSession("steer-refused", { async list() { return { sessions: [], truncated: false }; } });
+  try {
+    await assert.rejects(deliverTo(session)({ ...delivery("s-bad", "x"), mode: "now" }), /delivery mode/);
+    await assert.rejects(deliverTo(session)({ ...delivery("s-notice", "x"), kind: "notice", mode: "steer" }), /cannot steer/);
+    await settle(session);
+    assert.deepEqual(idsIn(session), []);
+    assert.equal(requests.length, 0);
+  } finally {
+    await close(session);
+  }
+});

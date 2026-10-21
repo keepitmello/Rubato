@@ -6,7 +6,7 @@ import { InteractiveMode, getMarkdownTheme, initTheme } from "@earendil-works/pi
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { COMPANION_WITHHELD_TOOLS, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
+import { COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
 
 initTheme("dark");
 
@@ -97,6 +97,11 @@ test("the conversation tools carry the frozen names and descriptions that state 
   assert.match(describe("session_wait"), /already pending on a running target when the wait starts may not be seen/);
   assert.match(describe("session_send"), /instead of polling/);
   assert.match(describe("session_send"), /cursor this tool returns as that target's afterCursor/);
+  assert.match(describe("session_send"), /steer to correct or stop the work in progress/);
+  assert.match(describe("session_send"), /queue \(default\) for the next piece of work/);
+  assert.match(describe("session_send"), /delivery says what happened: started .*steered or queued/);
+  assert.deepEqual(pi.tools.get("session_send").parameters.properties.mode.enum, [...DELIVERY_MODES]);
+  assert.ok(!pi.tools.get("session_send").parameters.required.includes("mode"), "queue stays the default");
   assert.match(describe("session_create"), /only when the user explicitly asked/);
   // A subagent's id arrives from Agent as agentId; the read and search tools say where it goes.
   assert.match(describe("session_read"), /a subagent or team member by its st_ id \(the agentId the Agent tool returned/);
@@ -113,7 +118,8 @@ test("each tool calls its sessionLink method with this conversation's ids and re
     list: listed,
     read,
     wait: waited,
-    send: (args) => ({ messageId: "m-9", cursor: "c-before", to: { sessionId: args.to, title: "B", status: "running" } }),
+    send: (args) => ({ messageId: "m-9", cursor: "c-before", to: { sessionId: args.to, title: "B", status: "running" },
+      ...(args.mode === "steer" ? { delivery: "steered" } : {}) }),
     create: (args) => ({ sessionId: "01new", title: args.title ?? "New", cwd: args.cwd, status: "running" }),
     fork: (args) => ({ sessionId: "01fork", title: "Fork", cwd: "/work/lead", copiedMessages: 7, source: args.sessionId }),
   });
@@ -150,6 +156,10 @@ test("each tool calls its sessionLink method with this conversation's ids and re
   assert.deepEqual(calls.at(-1), { method: "send", args: { from: SELF, to: "01b", text: "status?" } });
   assert.match(result.content[0].text, /Sent to "B" \(01b, running\)\..*afterCursor "c-before"/);
   assert.equal(result.details.cursor, "c-before", "the cursor reaches the model to pass to session_wait");
+  result = await execute(pi, "session_send", { sessionId: "01b", text: "drop the lexer part", mode: "steer" });
+  assert.deepEqual(calls.at(-1), { method: "send", args: { from: SELF, to: "01b", text: "drop the lexer part", mode: "steer" } });
+  assert.match(result.content[0].text, /^Sent to "B" \(01b, running\)\. It joins the running turn at its next step\. /, "the result says how it went in");
+  assert.equal(result.details.delivery, "steered");
 
   result = await execute(pi, "session_create", { text: "start here", title: "Docs" });
   assert.deepEqual(calls.at(-1), { method: "create", args: { from: SELF, cwd: "/work/lead", title: "Docs", text: "start here" } });
@@ -252,7 +262,7 @@ test("a delivery into an idle session persists the frozen message shape and star
   pi.start(ctx);
   const data = delivery();
   const answer = await pi.rpcHandlers.get(DELIVER_REQUEST)(data);
-  assert.deepEqual(answer, { messageId: "msg-1", duplicate: false, state: "queued" });
+  assert.deepEqual(answer, { messageId: "msg-1", duplicate: false, state: "queued", delivery: "started" });
   assert.equal(pi.sent.length, 1);
   const { message, options } = pi.sent[0];
   assert.deepEqual(options, { triggerTurn: true });
@@ -341,7 +351,7 @@ test("a repeated messageId, live or already in the transcript, never produces a 
   pi.start({ ...ctx, sessionManager: { ...ctx.sessionManager, getEntries: () => entries } });
   const deliver = pi.rpcHandlers.get(DELIVER_REQUEST);
   assert.deepEqual(await deliver(delivery({ messageId: "old" })), { messageId: "old", duplicate: true, state: "written" });
-  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued" });
+  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued", delivery: "started" });
   assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: true, state: "queued" }, "a message the session is running with is a duplicate");
   entries.push({ type: "custom_message", customType: SESSION_MESSAGE_TYPE, display: true, content: "…", details: delivery({ messageId: "written-later" }) });
   assert.deepEqual(await deliver(delivery({ messageId: "written-later" })), { messageId: "written-later", duplicate: true, state: "written" });
@@ -354,7 +364,7 @@ test("a messageId is compared trimmed, in a delivery and in the transcript", asy
   pi.start({ ...ctx, sessionManager: { ...ctx.sessionManager, getEntries: () => entries } });
   const deliver = pi.rpcHandlers.get(DELIVER_REQUEST);
   assert.deepEqual(await deliver(delivery({ messageId: "old" })), { messageId: "old", duplicate: true, state: "written" });
-  assert.deepEqual(await deliver(delivery({ messageId: " m " })), { messageId: "m", duplicate: false, state: "queued" });
+  assert.deepEqual(await deliver(delivery({ messageId: " m " })), { messageId: "m", duplicate: false, state: "queued", delivery: "started" });
   assert.equal(pi.sent[0].message.details.messageId, "m", "the trimmed id is the one persisted");
   assert.deepEqual(await deliver(delivery({ messageId: "m" })), { messageId: "m", duplicate: true, state: "queued" });
   await assert.rejects(async () => deliver(delivery({ messageId: "   " })), /messageId/);
@@ -365,10 +375,10 @@ test("a message Pi was sent and did not write by the time it is idle again is ac
   const entries = [];
   pi.start({ ...ctx, sessionManager: { ...ctx.sessionManager, getEntries: () => entries } });
   const deliver = pi.rpcHandlers.get(DELIVER_REQUEST);
-  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued" });
+  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued", delivery: "started" });
   assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: true, state: "queued" }, "while its run goes on");
   pi.settle(); // the run failed before it started, so nothing was written
-  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued" });
+  assert.deepEqual(await deliver(delivery()), { messageId: "msg-1", duplicate: false, state: "queued", delivery: "started" });
   assert.equal(pi.sent.length, 2);
   entries.push({ type: "custom_message", customType: SESSION_MESSAGE_TYPE, display: true, content: "…", details: delivery() });
   pi.settle();

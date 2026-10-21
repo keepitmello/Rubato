@@ -18,6 +18,12 @@ export const DELIVER_REQUEST = "rubato.session-link.deliver";
 // text the task holds. `daily-report` is kept so older session files still read; the morning
 // greeting carries the report now.
 export const SESSION_MESSAGE_KINDS = Object.freeze(["message", "create", "notice", "channel", "wake"]);
+/**
+ * How a message reaches a session that is running a turn: `queue` waits for the run to end and
+ * starts the next one, `steer` joins the running turn at its next step. An idle session starts a
+ * turn either way. Only a conversation's own message (`kind: "message"`) can steer.
+ */
+export const DELIVERY_MODES = Object.freeze(["queue", "steer"]);
 /** What Rubato's clock wakes a conversation for. */
 export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "daily-report", "sleep", "persona-review", "inbox", "schedule"]);
 /**
@@ -107,6 +113,17 @@ export function parseDelivery(data) {
       ...(from.companion === true ? { companion: true } : {}) },
     text: data.text,
   };
+}
+
+/**
+ * The delivery mode a deliver request asks for (`mode`, default `queue`). It rides beside the
+ * message, not in it: the transcript keeps the message as it was sent.
+ */
+export function parseDeliveryMode(data) {
+  const mode = data?.mode ?? "queue";
+  if (!DELIVERY_MODES.includes(mode)) throw new Error(`unknown session message delivery mode: ${String(mode)}`);
+  if (mode === "steer" && data.kind !== "message") throw new Error(`a ${String(data.kind)} delivery cannot steer`);
+  return mode;
 }
 
 /** A channel message's saved files: each an absolute path with its kind, and what Telegram called it. */
@@ -246,4 +263,14 @@ export function deliveredMessageIds(entries) {
     if (typeof id === "string") ids.add(id.trim());
   }
   return ids;
+}
+
+/**
+ * Message ids on a branch that the model already answered: written before its newest assistant
+ * message. A steered message the run never read is not among them.
+ */
+export function answeredMessageIds(branch) {
+  const entries = branch ?? [];
+  const reply = entries.findLastIndex((entry) => entry?.type === "message" && entry.message?.role === "assistant");
+  return deliveredMessageIds(reply < 0 ? [] : entries.slice(0, reply));
 }

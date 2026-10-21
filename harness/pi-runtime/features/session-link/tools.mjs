@@ -1,5 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 
+import { DELIVERY_MODES } from "./message.mjs";
+
 // The conversation tools. Each one is a thin call into the engine's `sessionLink`; the engine
 // owns every rule about targets, rate limits and sizes and refuses by throwing an error with a
 // `code` (unavailable, invalid, too_long, unknown_session, self_send, duplicate, rate_limited,
@@ -107,6 +109,12 @@ export function createSessionTools(getLink, { companion = false } = {}) {
     : tools;
 }
 
+/** What the recipient did with a sent message, as the result says it. */
+const DELIVERY_TEXT = Object.freeze({
+  started: "It was idle and started a turn with it. ",
+  steered: "It joins the running turn at its next step. ",
+  queued: "It waits until the current run ends. ",
+});
 const SEND_ANSWER = "When you asked for an answer, use session_wait for it " +
   "instead of polling with session_read or sending follow-ups: " +
   "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. ";
@@ -276,8 +284,11 @@ function sessionTools(getLink, { companion }) {
       name: "session_send",
       label: "Send to conversation",
       description: "Send one message to another conversation. It appears there as a message from this conversation, not from the user, " +
-        "and wakes it if idle. A working conversation reads it after its current run ends, and work already pending there may come " +
-        "first. If its user stops that run, the message stays in its history without starting a turn, so no reply comes until the user continues. " +
+        "and wakes it if idle. If it is working, mode decides when it reads it: " +
+        "steer to correct or stop the work in progress (a scope fix, \"drop that\", \"stop\"): it joins the running turn at its next step; " +
+        "queue (default) for the next piece of work: it is read after the current run ends, and work already pending there may come first. " +
+        "If its user stops that run, the message stays in its history without starting a turn, so no reply comes until the user continues. " +
+        "The result's delivery says what happened: started (it was idle and began a turn), steered or queued. " +
         "Send only what the recipient must act on or know, in a few self-contained lines. " +
         "Say whose decision you pass on: the user's (and where they said it) or your own. " +
         "The recipient replies only when asked " +
@@ -290,18 +301,22 @@ function sessionTools(getLink, { companion }) {
         properties: {
           sessionId: { type: "string", minLength: 1, description: "Target session id from session_list." },
           text: { type: "string", minLength: 1, description: "The message, at most 8000 characters." },
+          mode: { type: "string", enum: [...DELIVERY_MODES], description: "How a working conversation takes it: steer (into the running turn, for a correction or stop) " +
+            "or queue (after the current run, for the next task). Default queue. An idle conversation starts a turn either way." },
         },
       },
       async execute(_id, params, signal, _onUpdate, ctx) {
         const from = ownSessionId(ctx);
-        const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text }), signal);
+        const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text,
+          ...(params.mode === undefined ? {} : { mode: params.mode }) }), signal);
         const to = result.to ?? {};
         const next = companion ? "If you asked for an answer, it will arrive here as a message."
           : typeof result.cursor === "string" && result.cursor
           ? `If you asked for an answer, use session_wait with afterCursor ${JSON.stringify(result.cursor)} for it.`
           : "If you asked for an answer, use session_wait for it.";
         return {
-          content: [text(`Sent to "${to.title ?? params.sessionId}" (${to.sessionId ?? params.sessionId}, ${to.status ?? "unknown status"}). ${next}\n${json(result)}`)],
+          content: [text(`Sent to "${to.title ?? params.sessionId}" (${to.sessionId ?? params.sessionId}, ${to.status ?? "unknown status"}). ` +
+            `${DELIVERY_TEXT[result.delivery] ?? ""}${next}\n${json(result)}`)],
           details: result,
         };
       },
