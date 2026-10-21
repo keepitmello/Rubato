@@ -5,7 +5,7 @@ import { COMPANION_ENTRY } from '../../companion/companion.mjs';
 import { SessionClient } from './client.mjs';
 import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
-import { UI_METHODS } from './contracts.mjs';
+import { AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
 import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 import { EFFORT_LEVELS } from '../../pi-runtime/features/session-link/tools.mjs';
@@ -527,6 +527,23 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
   const cursorOf = (state) => encodeCursor({ v: 1, final: state.final?.entryId ?? null, leaf: state.leaf,
     waiting: state.status === 'waiting', ui: [...state.ui].sort() });
 
+  /**
+   * The waits a lead's last turn left that will wake it again: the terminal's awaited wakes (the
+   * ones the app keeps a turn open for) and subagents still running or owing their completion.
+   * null when no runtime holds the conversation; a source that cannot answer holds nothing.
+   */
+  async function awaitedWork(id) {
+    const worker = need().host.getSessionWorker(id);
+    if (!worker) return null;
+    const ask = (name) => {
+      let timer;
+      return Promise.race([worker.request({ type: 'extension_request', name }).catch(() => undefined),
+        new Promise((done) => { timer = setTimeout(done, WARMING_ASK_MS); })]).finally(() => clearTimeout(timer));
+    };
+    const [wakes, tasks] = await Promise.all([ask(AWAITED_WAKES_REQUEST), ask(PENDING_WORK_REQUEST)]);
+    const count = (value) => { const number = Number(value); return Number.isFinite(number) && number > 0 ? number : 0; };
+    return (Array.isArray(wakes?.items) ? wakes.items.length : 0) + count(tasks?.active) + count(tasks?.undelivered);
+  }
   /** The companion's handoffs are followed while they can still go on (companion-follow.mjs). */
   const fromCompanion = (id) => row(id)?.companion === true;
   function createCompanionFollower({ store, onError }) {
@@ -534,7 +551,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     const listeners = new Map();
     const asked = new Map();
     const orders = new Map();
-    return createFollower({ store, onError, pollMs: followPollMs,
+    return createFollower({ store, onError, pollMs: followPollMs, awaiting: awaitedWork,
       inspect: async (id, record) => {
         const described = await describe(id);
         const current = await snapshot(id, seen, listeners, asked);

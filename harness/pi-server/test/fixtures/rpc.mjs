@@ -9,6 +9,8 @@ let running = false;
 let timer;
 let ui;
 let pendingWork = 0;
+/** Background commands and monitors whose completion would wake the session (terminal pending-work). */
+let terminalWork = 0;
 // The cache warmer's live state as `get_cache_warming` reports it.
 let warming = { enabled: true, hours: 2, state: 'inactive' };
 // The service-tier extension's live state; `/fast on|off` flips it like the real command.
@@ -86,6 +88,10 @@ lines.on('line', (line) => {
               current_tool: 'read src/foo.ts', last_assistant_line: 'looking at middleware', turns: 1, tool_calls: 1 } }],
         } });
         timer = setTimeout(settle, 50);
+      }
+      else if (command.message === 'busy-terminal' || command.message === 'idle-terminal') {
+        terminalWork = command.message === 'busy-terminal' ? 1 : 0;
+        timer = setTimeout(settle, 10);
       }
       else if (command.message === 'busy-children' || command.message === 'idle-children') {
         pendingWork = command.message === 'busy-children' ? 1 : 0;
@@ -186,6 +192,8 @@ lines.on('line', (line) => {
       if (command.name === 'rubato.service-tier.status') { data = fast; break; }
       if (command.name === 'rubato.session-link.deliver') {
         const mode = running ? 'steer' : 'turn';
+        // A delivered `busy-children` ends its turn with a subagent still running.
+        if (command.data.text === 'busy-children') pendingWork = 1;
         deliveries.push({ data: command.data, mode });
         if (scripted.length) { data = scripted.shift(); break; }
         manager.appendCustomMessageEntry('rubato-session-message', `from ${command.data.from.title}: ${command.data.text}`, true, command.data);
@@ -203,6 +211,8 @@ lines.on('line', (line) => {
       }
       if (command.name === 'fixture.session-link.deliveries') { data = deliveries; break; }
       if (command.name === 'fixture.session-link.answer') { scripted.push(command.data); data = null; break; }
+      if (command.name === 'fixture.pending-work') { pendingWork = command.data; data = null; break; }
+      if (command.name === 'rubato.terminal.pending-work') { data = { active: terminalWork, undelivered: 0 }; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }
       data = { active: pendingWork }; break;
     default: emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unsupported fixture command' }); return;

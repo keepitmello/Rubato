@@ -17,4 +17,10 @@ export const COMMANDS = new Set([
 /** Pi answered the command and refused it; its reason is for the person, not a server fault. */
 export class PiCommandRejected extends Error {}
 export const UI_METHODS = new Set(['select', 'confirm', 'input', 'editor']);
+/** Answered by the task extension: how many approved children still have work to do. */
+export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
+/** Answered by the terminal extension: background commands and monitors whose completion will wake the session. */
+export const TERMINAL_PENDING_WORK_REQUEST = 'rubato.terminal.pending-work';
+/** Answered by the terminal extension: the waits an idle agent ended its turn on (pending-work.ts terminalAwaitedWakes). */
+export const AWAITED_WAKES_REQUEST = 'rubato.terminal.awaited-wakes';
 export const json = (value) => JSON.parse(JSON.stringify(value));

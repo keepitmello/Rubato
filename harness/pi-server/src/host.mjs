@@ -5,7 +5,10 @@ import { randomUUID } from 'node:crypto';
 import { RemoteServiceProvider, createRemoteServiceEndpoint, replicatedState, RemoteServiceError } from '@earendil-works/chord';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createUnixServer } from '@earendil-works/pi-server/unix';
-import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, PiCommandRejected, json } from './contracts.mjs';
+import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, PiCommandRejected, json,
+  AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, TERMINAL_PENDING_WORK_REQUEST } from './contracts.mjs';
+
+export { AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, TERMINAL_PENDING_WORK_REQUEST };
 import { SessionFiles } from './session-files.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { forkSessionFile } from './session-link.mjs';
@@ -13,12 +16,9 @@ import { RpcWorker } from './rpc-worker.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
 
 const invalid = (message) => new RemoteServiceError('service_invalid_value', message);
-/** Answered by the task extension: how many approved children still have work to do. */
-export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
 // `get_service_tier` is not a Pi RPC command; it reads the service-tier extension's
 // live state so a presentation can see what the next request will carry.
 export const SERVICE_TIER_REQUEST = 'rubato.service-tier.status';
-export const AWAITED_WAKES_REQUEST = 'rubato.terminal.awaited-wakes';
 /** Answered by the task extension: the message one of the session's children is writing now. */
 export const TASK_LIVE_MESSAGE_REQUEST = 'rubato.task.live-message';
 /**
@@ -147,9 +147,11 @@ class RuntimeHandle {
   /**
    * Idle means "nothing to do", not merely "no window and no lead turn". A lead whose
    * approved children are still executing keeps its runtime: unloading would suspend
-   * the children with it. Ask the runtime once; a runtime that cannot answer (no task
-   * extension, request error) unloads as before. Deferral re-arms the same idle timer,
-   * so the children's own budgets and stop policy decide when the lead may go.
+   * the children with it. So does a lead that ended its turn on a background command or
+   * monitor: their completion wakes it with the turn that carries its result, and an
+   * unloaded runtime takes that wake with it. Ask the runtime once; a runtime that cannot
+   * answer (no task or terminal extension, request error) unloads as before. Deferral
+   * re-arms the same idle timer, so the work's own deadlines decide when the lead may go.
    */
   async unloadWhenIdle() {
     if (this.closed || this.attachments || this.calls || this.running || this.pendingUi.size) return;
@@ -167,13 +169,14 @@ class RuntimeHandle {
    * next idle check then unloads the runtime.
    */
   async pendingWork() {
-    const [tasks, warming] = await Promise.all([
+    const [tasks, terminal, warming] = await Promise.all([
       this.worker.request({ type: 'extension_request', name: PENDING_WORK_REQUEST }).catch(() => undefined),
+      this.worker.request({ type: 'extension_request', name: TERMINAL_PENDING_WORK_REQUEST }).catch(() => undefined),
       this.worker.request({ type: 'get_cache_warming' }).catch(() => undefined),
     ]);
-    const active = Number(tasks?.active);
+    const count = (value) => { const number = Number(value); return Number.isFinite(number) && number > 0 ? number : 0; };
     const warmingDue = ['scheduled', 'refreshing'].includes(warming?.status?.state) ? 1 : 0;
-    return (Number.isFinite(active) && active > 0 ? active : 0) + warmingDue;
+    return count(tasks?.active) + count(terminal?.active) + warmingDue;
   }
   async command(command) {
     if (!command || !COMMANDS.has(command.type)) throw invalid('Unsupported command for an attached session');

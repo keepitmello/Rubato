@@ -137,6 +137,28 @@ test('idle unload waits while approved children still have work, then proceeds',
   assert.equal(env.host.metrics.runtimeStarts, 1);
 });
 
+test('idle unload waits while a background command would still wake the session, then proceeds', async (t) => {
+  const env = await setup(t, { idleMs: 30, pollMs: 0 });
+  const client = await env.client();
+  const session = await client.create({ cwd: env.root, title: 'Waiting on a build' });
+  await client.attach(session.sessionId);
+  const original = await client.snapshot();
+  await client.command({ type: 'prompt', message: 'busy-terminal' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await delay(150);
+  const held = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
+  assert.equal(held.runtimeId, original.runtimeId, 'unloading would drop the wake that carries its result');
+  await client.attach(session.sessionId);
+  await client.command({ type: 'prompt', message: 'idle-terminal' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await until(async () => {
+    const item = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
+    return item?.runtimeId === null;
+  });
+});
+
 test('a scheduled cache refresh keeps a detached runtime; switching a session off lets only that one go', async (t) => {
   const env = await setup(t, { idleMs: 30, pollMs: 0 });
   const client = await env.client();

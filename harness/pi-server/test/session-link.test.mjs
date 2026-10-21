@@ -862,6 +862,22 @@ test("the companion hears once when a lead it started or sent work to ends its t
   assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
 });
 
+test("a lead that ends its turn with a subagent still running is told only once that work is done, with its newest answer", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const notices = async () => env.host.getSessionWorker(segno.id) ? (await env.deliveries(segno.id)).filter((item) => item.data.kind === 'notice') : [];
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Build', text: 'busy-children' });
+  await until(async () => env.row(created.sessionId)?.status === 'idle' && (await env.deliveries(created.sessionId)).length === 1);
+  await delay(300);
+  assert.deepEqual(await notices(), [], 'ended on a wait: not the end');
+  await env.host.getSessionWorker(created.sessionId).request({ type: 'extension_request', name: 'fixture.pending-work', data: 0 });
+  // Told after the grace a wait's wake gets to start the next turn (companion-follow AWAIT_GRACE_MS).
+  for (let i = 0; i < 200 && (await notices()).length === 0; i++) await delay(50);
+  assert.match((await notices())[0].data.text, /^Finished its turn\.\n\nIts answer:\nreply: busy-children/);
+  await delay(200);
+  assert.equal((await notices()).length, 1, 'told once');
+});
+
 test("Rubato's own notice wakes a conversation as a notice from Rubato", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });

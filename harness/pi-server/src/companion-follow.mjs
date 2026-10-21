@@ -3,11 +3,16 @@
 // notice when that work ends: the turn finished, was stopped, failed, or stopped to ask the user.
 // The notice goes into the companion's conversation like a session message, so it wakes it.
 //
-// A lead often ends its first turn waiting (a build, a monitor) and writes its real result in a
-// later turn woken by that background work. So an end is not where following stops: the follower
-// keeps watching while the lead's runtime stays loaded — background work it is waiting on holds the
-// runtime (pi-server host.mjs pendingWork) — and tells each later end once. It stops once the runtime
-// unloads with no turn running, or the turn's runtime goes away mid-turn (told as lost).
+// A turn that ends on a wait is not the end of the work. A lead often closes a turn waiting on a
+// background command, a monitor or a subagent, and writes its result in the turn their completion
+// wakes. While such a wait is left (`awaiting`, the same waits that keep a turn open in the app),
+// the end is held; once none is left, the newest answer is told once. A stop or an error is told
+// at once, as the app ends those turns at once too.
+//
+// After that the follower keeps watching while the lead's runtime stays loaded — pending work
+// holds it (pi-server host.mjs pendingWork) — and tells any later end once, so a result written
+// after a wait it could not see still arrives. It stops once the runtime unloads with no turn
+// running, or the turn's runtime goes away mid-turn (told as lost).
 //
 // What is followed is saved (when a store is given), so an engine restart in the middle of a lead's
 // turn still ends in a notice.
@@ -15,6 +20,11 @@
 const BUSY = new Set(['running', 'starting', 'waiting']);
 /** A followed runtime that went away mid-turn and stayed away this long has stopped. */
 export const LOST_AFTER_MS = 60_000;
+/**
+ * A wait that ended starts the lead's next turn a moment later; a held end waits this long with
+ * nothing left before it is told (the app's AWAIT_GRACE_MS, t3-integration events.mjs).
+ */
+export const AWAIT_GRACE_MS = 3_000;
 /** A notice that cannot be delivered is dropped after this many tries. */
 export const NOTICE_TRIES = 5;
 
@@ -26,6 +36,7 @@ export function noticeText(outcome, current) {
     case 'stopped': return `Was stopped before finishing.${answer('Its last words', current.final)}`;
     case 'failed': return `Ended with an error.${answer('Its last words', current.final ?? current.latestAssistant)}`;
     case 'lost': return 'Stopped mid-turn without finishing: its runtime went away.';
+    case 'lost-waiting': return `Stopped while waiting on background work: its runtime went away before the work woke it.${answer('Its last words', current.final)}`;
     case 'needs-attention': return `Is waiting for the user to answer it${current.latestTool?.name ? ` (${current.latestTool.name})` : ''}.` +
       answer('What it said', current.latestAssistant);
     default: throw new TypeError(`Unknown outcome: ${outcome}`);
@@ -68,10 +79,13 @@ export function judge(record, current, at) {
  * @param {(id: string) => Promise<{ status: string, title?: string, final?: object, latestAssistant?: object, latestTool?: object, ui: string[] }>} options.inspect
  *   the followed conversation now; throws with code `unknown_session` once it is gone
  * @param {(companionId: string, targetId: string, text: string) => Promise<unknown>} options.notify
+ * @param {(id: string) => Promise<number | null>} [options.awaiting]
+ *   how many waits the lead's last turn left that will wake it again (background commands,
+ *   monitors, subagents); null when no runtime holds the conversation. Asked only when a turn ended.
  * @param {{ load: () => object, save: (records: object) => void, finished?: (entry: object) => void, paused?: () => boolean }} [options.store]
  *   `paused` true holds every notice (the companion is turned off) until it reads false again.
  */
-export function createFollower({ inspect, notify, store, onError = () => {}, pollMs = 2000, now = Date.now }) {
+export function createFollower({ inspect, notify, awaiting = async () => 0, store, onError = () => {}, pollMs = 2000, now = Date.now }) {
   const records = new Map(Object.entries(safe(() => store?.load(), onError) ?? {}).filter(([, record]) => valid(record)));
   let timer;
   let polling;
@@ -93,6 +107,7 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       if (record.ended && !record.started) record.since = at;
       record.started = true;
       delete record.storedSince;
+      delete record.emptySince;
     }
     else if (current.status === 'stored') record.storedSince ??= at;
     else delete record.storedSince;
@@ -103,7 +118,24 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       if (current.pending.length > 0 || current.status === 'waiting') record.asked = true;
       else delete record.asked;
     }
-    const outcome = judge(record, current, at);
+    let outcome = judge(record, current, at);
+    if (outcome === 'completed') {
+      const left = await awaiting(id);
+      if (left > 0) {
+        // Ended on a wait: the turn that wait wakes carries the result.
+        const changed = record.holding !== true || record.emptySince !== undefined;
+        record.holding = true;
+        delete record.emptySince;
+        return changed || record.started !== startedBefore || (record.asked === true) !== askedBefore;
+      }
+      if (record.holding && left === null) outcome = 'lost-waiting';
+      else if (record.holding) {
+        // The wait just ended; its wake starts the next turn a moment later.
+        const first = record.emptySince === undefined;
+        record.emptySince ??= at;
+        if (at - record.emptySince < AWAIT_GRACE_MS) return first;
+      }
+    }
     // After an end, a runtime unloaded with nothing running cannot be woken by its own work again.
     if (!outcome && record.ended && !record.started && current.status === 'stored') { records.delete(id); return true; }
     // Saved once seen: an engine killed mid-turn leaves the lead stored, and only a saved `started`
@@ -129,7 +161,7 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       record.base.ui = [...new Set([...record.base.ui, ...current.ui])];
       record.asked = true;
     } else {
-      if (outcome === 'lost' || current.status === 'error') records.delete(id);
+      if (outcome === 'lost' || outcome === 'lost-waiting' || current.status === 'error') records.delete(id);
       else {
         // Told once: only a final written after this one is a new end. Its later turns are no
         // handoff of their own, so neither the handed message nor a busy turn's skip applies.
@@ -143,9 +175,11 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
         delete record.asked;
         delete record.storedSince;
         delete record.failures;
+        delete record.holding;
+        delete record.emptySince;
       }
       // What the companion's space lists as recently finished (harness/companion panel.json).
-      if (store?.finished) safe(() => store.finished({ sessionId: id, outcome, at: now(),
+      if (store?.finished) safe(() => store.finished({ sessionId: id, outcome: outcome === 'lost-waiting' ? 'lost' : outcome, at: now(),
         ...(current.title ? { title: current.title } : {}), ...(current.cwd ? { cwd: current.cwd } : {}) }), onError);
     }
     return true;
