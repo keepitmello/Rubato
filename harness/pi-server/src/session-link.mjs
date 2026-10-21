@@ -10,6 +10,7 @@ import { sideChatEntries } from '../../pi-runtime/features/session-link/side-cha
 import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 import { EFFORT_LEVELS } from '../../pi-runtime/features/session-link/tools.mjs';
 import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
+import { cacheSnapshot } from '../../pi-runtime/features/statusline/statusline.mjs';
 import { createInspector, isAgentId, readEntries, searchTerms, turnAround, windowTurn, INSPECT_LIMITS } from './session-inspect.mjs';
 
 /** Answered by the session-link extension inside the target runtime. */
@@ -20,7 +21,7 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
   waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
-const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'channel', 'telegramSend', 'companionSettings'];
+const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming', 'channel', 'telegramSend', 'companionSettings'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
@@ -28,6 +29,8 @@ const VIEWS = new Set(['messages', 'notes', 'board']);
 export const TAIL_BYTES = Object.freeze([256 * 1024, 4 * 1024 * 1024, 16 * 1024 * 1024]);
 const BUSY = new Set(['running', 'starting', 'waiting']);
 const POLL_MS = 250;
+/** How long a live runtime gets to report its warmer before the transcript answers instead. */
+const WARMING_ASK_MS = 1500;
 
 const fail = (code, message) => Object.assign(new Error(message), { code });
 const clamp = (value, fallback, min, max, name) => {
@@ -150,6 +153,56 @@ function modelOf(entries) {
   const answer = entries.findLast((entry) => isAssistant(entry) && entry.message.model);
   return selected ? `${selected.provider}/${selected.modelId}`
     : answer ? [answer.message.provider, answer.message.model].filter(Boolean).join('/') : null;
+}
+
+const hasUsage = (entry) => isAssistant(entry) && entry.message.usage && typeof entry.message.usage === 'object';
+/** An answer whose request reached the cache (statusline latestCacheObservation skips the others). */
+const touchedCache = (entry) => hasUsage(entry)
+  && ['input', 'cacheRead', 'cacheWrite'].some((key) => Number(entry.message.usage[key]) > 0);
+/** Pi's context size of one answer (compaction.js calculateContextTokens): what its request held plus what it wrote. */
+const contextTokensOf = (usage) => Number(usage.totalTokens)
+  || ['input', 'output', 'cacheRead', 'cacheWrite'].reduce((sum, key) => sum + (Number(usage[key]) || 0), 0);
+
+/**
+ * What a transcript says about its prompt cache: the model whose cache it is, the entries from
+ * its newest answer on (the warmer's `cache_warm` refreshes follow it), cut to what the
+ * statusline's cache judgment reads, and roughly how many tokens the next request carries.
+ * A compaction after the newest answer leaves the size unknown until the next answer.
+ */
+export function transcriptCache(branch) {
+  const last = branch.findLastIndex(touchedCache);
+  const valid = branch.findLast((entry) => hasUsage(entry) && entry.message.stopReason !== 'aborted'
+    && entry.message.stopReason !== 'error' && contextTokensOf(entry.message.usage) > 0);
+  const compacted = valid && branch.slice(branch.indexOf(valid) + 1).some((entry) => entry.type === 'compaction');
+  const contextTokens = valid && !compacted ? contextTokensOf(valid.message.usage) : null;
+  if (last < 0) return { model: undefined, recent: [], contextTokens };
+  const { provider, api, model } = branch[last].message;
+  const recent = branch.slice(last).flatMap((entry) => entry.type === 'usage'
+    ? [{ type: entry.type, kind: entry.kind, usage: entry.usage, note: entry.note, timestamp: entry.timestamp }]
+    : isAssistant(entry) ? [{ type: entry.type, message: { role: 'assistant', usage: entry.message.usage,
+      timing: entry.message.timing, timestamp: entry.message.timestamp } }] : []);
+  return { model: { provider, api, id: model }, recent, contextTokens };
+}
+
+/**
+ * The cache as a sender reads it: `warm` (the next message reads the context from cache) until
+ * `expiresAt`, `cold` (it is read again at full price) or `unknown` (the provider names no lifetime,
+ * or nothing was sent yet). `warmingUntil` is when an active warmer stops refreshing it.
+ */
+export function cacheView(snapshot, nowMs, warmingUntil) {
+  const state = snapshot?.state === 'warm' && Number.isFinite(snapshot.expiresAt) && snapshot.expiresAt <= nowMs ? 'cold'
+    : snapshot?.state === 'warm' || snapshot?.state === 'cold' ? snapshot.state : 'unknown';
+  return { state,
+    ...(state === 'warm' && Number.isFinite(snapshot.expiresAt)
+      ? { expiresAt: snapshot.expiresAt, minutesLeft: Math.max(0, Math.floor((snapshot.expiresAt - nowMs) / 60000)) } : {}),
+    ...(Number.isFinite(warmingUntil) ? { warmingUntil } : {}) };
+}
+
+/** The warmer's end as `get_cache_warming` reports it, when it is still going to refresh. */
+function warmingEnd(value) {
+  if (!['scheduled', 'refreshing'].includes(value?.status?.state)) return undefined;
+  return Number.isFinite(value.status.until) ? value.status.until
+    : Number.isFinite(value.sessionUntil) ? value.sessionUntil : undefined;
 }
 
 /** The newest `count` readable messages of a transcript's live branch, oldest first. */
@@ -289,6 +342,38 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     const live = Boolean(need().host.getSessionWorker(id));
     return { sessionId: id, title: metadata.title ?? '', cwd: metadata.cwd ?? '', status: live ? 'idle' : 'stored',
       updatedAt: metadata.modifiedAt ?? null, messageCount: metadata.messageCount ?? 0, live };
+  }
+  /** The transcript's cache facts, parsed again only when the file changed. */
+  const transcripts = new Map();
+  async function transcriptFacts(id) {
+    const file = await locate(id);
+    const stats = await stat(file).catch(() => undefined);
+    const key = stats ? `${stats.size}:${stats.mtimeMs}` : 'absent';
+    const known = transcripts.get(file);
+    if (known?.key === key) return known.facts;
+    const { branch } = await readBranch(file, (entries) => entries.some(touchedCache));
+    const facts = transcriptCache(branch);
+    transcripts.set(file, { key, facts });
+    return facts;
+  }
+  /**
+   * Whether a conversation's prompt cache is warm and how big its context is, so a sender can
+   * tell a cheap follow-up from one that re-reads the whole context. A loaded runtime answers
+   * from its warmer (the refreshes it will still send count); a stored one runs no warmer, so its
+   * transcript answers. Never attaches: looking must not load a runtime.
+   */
+  async function cacheFacts(id) {
+    const facts = await transcriptFacts(id).catch(() => ({ recent: [], contextTokens: null }));
+    const worker = need().host.getSessionWorker(id);
+    let timer;
+    const live = worker ? await Promise.race([
+      worker.request({ type: 'get_cache_warming' }).catch(() => undefined),
+      new Promise((done) => { timer = setTimeout(done, WARMING_ASK_MS); }),
+    ]).finally(() => clearTimeout(timer)) : undefined;
+    const at = now();
+    const cache = live?.cache ? cacheView(live.cache, at, warmingEnd(live))
+      : cacheView(facts.model ? cacheSnapshot(facts.recent, facts.model, at) : undefined, at);
+    return { cache, contextTokens: facts.contextTokens };
   }
   /**
    * The sender's own name and folder, and whether it is the companion (its words then reach the
@@ -481,8 +566,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       const ordered = matches.map((item, index) => ({ item, index }))
         .sort((a, b) => (live(b.item) - live(a.item)) || ((b.item.modifiedAt ?? 0) - (a.item.modifiedAt ?? 0)) || (a.index - b.index))
         .map(({ item }) => item);
-      return { sessions: ordered.slice(0, max).map((item) => ({ sessionId: item.sessionId, title: item.title, cwd: item.cwd,
-        status: item.status, live: live(item), updatedAt: item.modifiedAt ?? null, messageCount: item.messageCount ?? 0 })),
+      return { sessions: await Promise.all(ordered.slice(0, max).map(async (item) => ({ sessionId: item.sessionId, title: item.title, cwd: item.cwd,
+        status: item.status, live: live(item), updatedAt: item.modifiedAt ?? null, messageCount: item.messageCount ?? 0,
+        ...await cacheFacts(item.sessionId) }))),
       truncated: ordered.length > max };
     },
     /**
@@ -525,7 +611,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         ? await recentMessages(file, sessionId, { count, chars, tools })
         : await turnMessages([file], sessionId, entryId, { count, chars, tools });
       const result = {
-        session: { ...session, model: read.model, updatedAt: described.updatedAt, messageCount: described.messageCount },
+        session: { ...session, model: read.model, updatedAt: described.updatedAt, messageCount: described.messageCount,
+          ...await cacheFacts(sessionId) },
         messages: read.messages,
         ...(read.around ? { around: read.around } : {}),
         truncated: read.truncated,
@@ -718,6 +805,32 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         }
       }
       return { sessionId: metadata.id, title: metadata.title, cwd: metadata.cwd, copiedMessages };
+    },
+    /**
+     * One conversation's cache warmer, the switch the app's context ring has: `enabled` turns it
+     * on or off for that conversation, `hours` ends it that many hours from now (the runtime
+     * checks the range). Like the ring, it goes through a short-lived attachment, which loads a
+     * stored conversation for the switch; the engine keeps a runtime loaded while its warmer is due.
+     */
+    async cacheWarming({ sessionId, enabled, hours } = {}) {
+      requireId(sessionId, 'sessionId');
+      if (enabled !== undefined && typeof enabled !== 'boolean') throw fail('invalid', 'enabled must be a boolean');
+      if (hours !== undefined && !Number.isInteger(hours)) throw fail('invalid', 'hours must be a whole number of hours from now');
+      if (enabled === undefined && hours === undefined) throw fail('invalid', 'pass enabled, hours or both');
+      const described = await describe(sessionId);
+      const command = { type: 'set_session_cache_warming', ...(enabled === undefined ? {} : { enabled }), ...(hours === undefined ? {} : { hours }) };
+      const value = await withClient(async (client) => {
+        try { await client.attach(sessionId); }
+        catch (error) { throw fail(/not found/i.test(error?.message) ? 'unknown_session' : 'delivery_failed', `Could not open conversation ${sessionId}: ${error?.message ?? error}`); }
+        try { return await client.command(command); }
+        catch (error) { throw fail(/must be/.test(error?.message) ? 'invalid' : 'unavailable', error?.message ?? String(error)); }
+        finally { await client.detach().catch(() => {}); }
+      });
+      const at = now();
+      return { sessionId, title: described.title,
+        warming: { mode: value?.mode ?? null, enabled: value?.sessionEnabled === true,
+          until: Number.isFinite(value?.sessionUntil) ? value.sessionUntil : null },
+        cache: cacheView(value?.cache, at, warmingEnd(value)) };
     },
     /**
      * The companion's settings, read or changed by talking to it (harness/companion/settings.mjs):

@@ -102,7 +102,7 @@ test('a hosted candidate delivers a session message and starts a turn', { skip: 
   await client.attach(target.sessionId);
   const session = engine.host.getSessionWorker(target.sessionId).runtime.session;
   const tools = session.getAllTools().filter((tool) => tool.name.startsWith('session_'));
-  assert.deepEqual(tools.map((tool) => tool.name), ['session_list', 'session_read', 'session_search', 'session_wait', 'session_send', 'session_create', 'session_fork']);
+  assert.deepEqual(tools.map((tool) => tool.name), ['session_list', 'session_read', 'session_search', 'session_wait', 'session_send', 'session_create', 'session_fork', 'session_cache_warming']);
   assert.ok(tools.every((tool) => tool.exposure === 'search'));
   assert.deepEqual(session.getActiveToolNames().filter((name) => name.startsWith('session_')), []);
   await client.command({ type: 'set_model', provider: 'fixture', modelId: 'local' });

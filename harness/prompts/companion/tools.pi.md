@@ -6,6 +6,7 @@
 |---|---|
 | 대화 보기 | `session_list`, `session_read`, `session_search` |
 | 리드 띄우기·말 걸기·가지 치기 | `session_create`, `session_send`, `session_fork` |
+| 대화 캐시 데우기 | `session_cache_warming` |
 | 사용자한테 말하기 | `reply`, 목소리가 정해져 있으면 `say` |
 | 다음에 들여다볼 때 | `wake_wish` |
 | 내 기록과 기억 | `segno_record`, `segno_commit`, `segno_search` |
@@ -26,6 +27,8 @@
 - `session_create`는 폴더 하나에서 첫 메시지(내 브리프)로 리드를 띄워. 무슨 일인지 말해 주는 짧은 제목을 달아.
   - 리드가 돌 모델은 `model`, 생각 깊이는 `effort`(off·minimal·low·medium·high·xhigh·max)로 골라. 모델은 `anthropic/claude-opus-5-5`처럼 써도 되고 `claude-opus-5-5`처럼 이름만 써도 돼. 안 주면 사용자 기본값이야. 없는 모델을 주면 쓸 수 있는 목록이 돌아오니까 거기서 다시 골라.
 - `session_send`는 이미 있는 대화에 후속·답·정정을 건네. `session_fork`는 일이 갈라져야 할 때 한 대화의 끝난 이력을 새 대화로 복사해.
+- `session_list`와 `session_read`의 각 대화에는 `cache`랑 `contextTokens`가 붙어. `cache.state`가 warm이면 다음 메시지가 캐시에서 읽혀 싸고, cold면 컨텍스트 전체(`contextTokens`쯤)를 제값에 다시 읽어. 무거운 리드가 cold면 이어 보낼지, 새 리드를 띄울지 그걸 보고 정해.
+- `session_cache_warming`은 앱의 컨텍스트 링 스위치랑 같아. 대화마다 캐시 워머를 끄고 켜거나(`enabled`) 지금부터 몇 시간 데울지(`hours`, 1~24) 정해. 기본은 사용자의 마지막 메시지 뒤 두 시간이야.
 - 다른 대화를 기다리거나 지켜보는 도구는 없고 `monitor`도 없어. 답과 끝은 메시지로 나한테 와. 그래서 일을 넘기면 셸로 엿보지 않고 턴을 끝내.
 
 ## 사용자한테 말하기

@@ -42,7 +42,7 @@ function fakePi() {
 function fakeLink(answers = {}) {
   const calls = [];
   const link = {};
-  for (const method of ["list", "read", "search", "wait", "send", "create", "fork"]) {
+  for (const method of ["list", "read", "search", "wait", "send", "create", "fork", "cacheWarming"]) {
     link[method] = async (args) => {
       calls.push({ method, args });
       const answer = answers[method];
@@ -81,7 +81,7 @@ test("without a sessionLink no conversation tool is registered, but received mes
 
 test("the conversation tools carry the frozen names and descriptions that state the operating rules", () => {
   const pi = install(fakeLink().link);
-  assert.deepEqual([...pi.tools.keys()], ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork"]);
+  assert.deepEqual([...pi.tools.keys()], ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork", "session_cache_warming"]);
   assert.deepEqual([...pi.tools.keys()], [...SESSION_TOOL_NAMES]);
   for (const tool of pi.tools.values()) {
     assert.ok(tool.description.length > 40, tool.name);
@@ -164,6 +164,26 @@ test("each tool calls its sessionLink method with this conversation's ids and re
   await execute(pi, "session_fork", { sessionId: "01b", text: "continue the migration" });
   assert.deepEqual(calls.at(-1), { method: "fork", args: { sessionId: "01b", text: "continue the migration", from: SELF } },
     "the fork's first message is attributed to this conversation");
+});
+
+test("session_cache_warming passes only what was asked and says whether warming runs", async () => {
+  const answer = (warming) => ({ sessionId: "01b", title: "Lead", warming, cache: { state: "warm", expiresAt: 2, minutesLeft: 30 } });
+  const replies = [answer({ mode: "idle", enabled: true, until: Date.UTC(2026, 9, 21, 18) }), answer({ mode: "idle", enabled: false, until: null }),
+    answer({ mode: "off", enabled: true, until: null })];
+  const { link, calls } = fakeLink({ cacheWarming: () => replies.shift() });
+  const pi = install(link);
+  let result = await execute(pi, "session_cache_warming", { sessionId: "01b", hours: 6 });
+  assert.deepEqual(calls.at(-1), { method: "cacheWarming", args: { sessionId: "01b", hours: 6 } });
+  assert.match(result.content[0].text, /^Warming is on for "Lead" until 2026-10-21T18:00:00.000Z\./);
+  assert.equal(result.details.cache.minutesLeft, 30);
+  result = await execute(pi, "session_cache_warming", { sessionId: "01b", enabled: false });
+  assert.deepEqual(calls.at(-1), { method: "cacheWarming", args: { sessionId: "01b", enabled: false } });
+  assert.match(result.content[0].text, /^Warming is off for "Lead"\./);
+  result = await execute(pi, "session_cache_warming", { sessionId: "01b", enabled: true });
+  assert.match(result.content[0].text, /^Cache warming is off in the user's settings/);
+  const hours = pi.tools.get("session_cache_warming").parameters.properties.hours;
+  assert.deepEqual([hours.minimum, hours.maximum], [1, 24]);
+  assert.match(pi.tools.get("session_list").description, /cold means the next message reads the whole context again/);
 });
 
 const refused = (code, message) => Object.assign(new Error(message), { code });
