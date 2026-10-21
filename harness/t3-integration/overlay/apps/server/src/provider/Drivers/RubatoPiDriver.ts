@@ -120,6 +120,8 @@ export interface PiBridge {
   followEngineRun(threadId: string, sessionId: string): Promise<void>;
   /** The open stream T3 holds on a thread, if any. */
   rpcFor(threadId: string): unknown;
+  /** Whether T3 keeps the thread's stream however long it idles (Segno's conversation). */
+  keepsStream?(threadId: string): boolean;
   /** A typed `/rewind N`: refuses when the thread has fewer than N turns before the running one. */
   checkRewind?: (threadId: string, turns: number) => Promise<void>;
   /** A typed `/rewind N`: once its turn settled, T3 reverts it and the N turns before it (RubatoPiSessions.ts). */
@@ -292,6 +294,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       selectionRecord: (selection) => (selection.options?.length ? { type: "rubato_selection", options: selection.options } : null),
       // Restarting Rubato closes every connection: idle threads just stop, a cut-off reply says so.
       transportClosedMessage: "Rubato restarted or disconnected while writing this reply, so it was cut off. Send your message again to continue.",
+      // Segno's conversation keeps its stream however long it idles (bridge keepsStream).
+      keepsLoadedWhileIdle: (threadId) => bridge.keepsStream?.(threadId) === true,
       forkSession: (input) => Effect.tryPromise({
         try: () => bridge.forkForThread({ source: input.sourceNativeId, beforeEntryId: input.beforeEntryId }),
         catch: (cause) => new PiRpcError({ operation: "fork", detail: detail(cause), cause }),

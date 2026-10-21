@@ -165,3 +165,22 @@ test("T3's old V1 path refuses Segno's conversation: only the V2 stream keeps it
       /V2 stream/);
   } finally { await bridge.close(); }
 });
+
+// The user, 2026-10-21: Segno's stream is the one T3 does not let go after its 30-minute idle
+// window (RubatoPiDriver keepsLoadedWhileIdle asks the bridge), so a reply shows when it is said.
+test("T3 keeps Segno's stream however long it idles; any other thread's stream goes as before", async (t) => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/rubato-test.json', instanceId: 'rubato-test', backfillMs: 60_000 });
+  t.after(() => bridge.close());
+  const segno = await stream({ companion: true });
+  const lead = await stream({ companion: false });
+  lead.conn.threadId = 't2';
+  for (const one of [segno, lead]) one.client.detach = async () => {};
+  bridge.rpcConnections.add(segno.conn);
+  bridge.rpcConnections.add(lead.conn);
+  assert.equal(bridge.keepsStream('t1'), true);
+  assert.equal(bridge.keepsStream('t2'), false);
+  assert.equal(bridge.keepsStream('no-stream'), false);
+  await segno.conn.close(new Error('closed'));
+  assert.equal(bridge.keepsStream('t1'), false, 'a closed stream keeps nothing');
+});

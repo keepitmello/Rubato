@@ -453,6 +453,14 @@ export class RubatoPiBridge {
   rpcFor(threadId) {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
   }
+  /**
+   * Whether T3 keeps the thread's stream however long it idles (RubatoPiDriver keepsLoadedWhileIdle):
+   * Segno's conversation, so what Segno says with reply reaches the thread when it is said, not at
+   * the person's next message. Every other thread lets its stream go after T3's idle window.
+   */
+  keepsStream(threadId) {
+    return this.rpcFor(threadId)?.companion === true;
+  }
   // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
   async inventory() {
     const sessions = await this.viaInventory((client) => client.list());
