@@ -137,16 +137,31 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   const working = await post('art', { state: 'working' });
   assert.notEqual(working.body.art.url, art.body.art.url, 'each expression is its own picture');
   assert.equal((await post('art', { state: 'dancing' })).status, 400);
-  // Open inbox items without a lead are rows; one a lead took is that lead's row instead.
+  // Segno's inbox is its own worklist: the panel shows the work handed to leads, not the inbox.
   const { openInbox } = await import('../../companion/inbox.mjs');
   const box = openInbox({ env });
   box.add({ title: '앱이 자꾸 죽어요', source: 'telegram', sourceRef: 'telegram:-1:7', reporter: 'Gildong' });
-  box.add({ title: '로그인 버그', source: 'telegram', sourceRef: 'telegram:-1:8', leadSessionId: 'run' });
-  box.add({ title: '끝난 일', source: 'user' });
-  box.update('S-3', { status: 'done' });
   box.close();
   const withInbox = await post('panel');
-  assert.deepEqual(withInbox.body.inbox.map((item) => [item.title, item.source, item.reporter]), [['앱이 자꾸 죽어요', 'telegram', 'Gildong']]);
+  assert.equal(withInbox.body.inbox, undefined);
+  assert.deepEqual(withInbox.body.leads.map((lead) => lead.title), ['Login timeout']);
+});
+
+test('the person closes finished work in the panel and it stays closed; the leads stay', async (t) => {
+  const { env, post } = await setup(t);
+  const { writePanel, readDismissed } = await import('../../companion/companion.mjs');
+  const at = Date.now() - 60_000;
+  writePanel({ leads: [{ sessionId: 'run', title: 'Login timeout', cwd: '/w/hash-game', state: 'running', since: 1 }],
+    finished: [{ sessionId: 'done', title: 'Payments', cwd: '/w/pay', outcome: 'completed', at },
+      { sessionId: 'gone', title: 'Docs', cwd: '/w/docs', outcome: 'stopped', at: at + 1 }] }, env);
+  const closed = await post('dismiss', { endings: [{ sessionId: 'done', at }] });
+  assert.equal(closed.status, 200);
+  assert.deepEqual(closed.body.finished.map((entry) => entry.sessionId), ['gone']);
+  assert.deepEqual(closed.body.leads.map((lead) => lead.sessionId), ['run']);
+  assert.deepEqual((await post('panel')).body.finished.map((entry) => entry.sessionId), ['gone']);
+  assert.equal(readDismissed(env).length, 1);
+  assert.equal((await post('dismiss', { endings: [{ sessionId: 'done' }] })).status, 400);
+  assert.equal((await post('dismiss', {})).status, 400);
 });
 
 test('the Segno space asks the server for the inbox and gets the open work with counts', async (t) => {

@@ -1,7 +1,17 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { SegnoLead, SegnoPanel } from "../../state/rubatoCompanion";
-import { NIGHT_HOURS, stageStateOf } from "./RubatoSegnoSpace";
+import { createUiTranslator, type UiDictionary } from "../../rubatoI18n";
+import korean from "../../rubatoI18n.ko.json";
+import type { SegnoFinished, SegnoLead, SegnoPanel } from "../../state/rubatoCompanion";
+import {
+  NIGHT_HOURS,
+  elapsed,
+  endingKey,
+  endingStatus,
+  leadStatus,
+  leadsInOrder,
+  stageStateOf,
+} from "./RubatoSegnoSpace";
 
 const lead = (state: SegnoLead["state"]): SegnoLead => ({
   sessionId: `s-${state}`,
@@ -44,5 +54,51 @@ describe("stageStateOf", () => {
     expect(stageStateOf(panel({ leads: [lead("running"), lead("asked")] }), at(3))).toBe(
       "waiting",
     );
+  });
+});
+
+const MIN = 60_000;
+const ending = (outcome: SegnoFinished["outcome"], at: number): SegnoFinished => ({
+  sessionId: `s-${outcome}`,
+  title: outcome,
+  cwd: "/work/app",
+  outcome,
+  at,
+});
+const ko = createUiTranslator(korean as unknown as UiDictionary);
+
+describe("the task panel's rows", () => {
+  it("say how long in the unit a person would", () => {
+    expect(elapsed(0, 30_000)).toBeNull();
+    expect(elapsed(0, 12 * MIN)).toEqual({ n: 12, unit: "min" });
+    expect(elapsed(0, 3 * 60 * MIN)).toEqual({ n: 3, unit: "hr" });
+    expect(elapsed(0, 50 * 60 * MIN)).toEqual({ n: 2, unit: "day" });
+  });
+
+  it("say what a lead is doing and since when, in Korean too", () => {
+    const now = 100 * MIN;
+    const running = { ...lead("running"), since: now - 12 * MIN };
+    expect(leadStatus(running, now)).toBe("Working for 12 min");
+    expect(ko.lookup(leadStatus(running, now))).toBe("12분째 작업 중");
+    expect(ko.lookup(leadStatus({ ...running, since: now }, now))).toBe("방금 시작함");
+    expect(ko.lookup(leadStatus(lead("asked"), now))).toBe("답을 기다리는 중");
+    expect(ko.lookup(leadStatus(lead("queued"), now))).toBe("아직 시작 전");
+  });
+
+  it("say how handed work ended and how long ago, in Korean too", () => {
+    const now = 1000 * MIN;
+    expect(ko.lookup(endingStatus(ending("completed", now - 4 * MIN), now))).toBe("4분 전 완료");
+    expect(ko.lookup(endingStatus(ending("failed", now - 3 * 60 * MIN), now))).toBe("3시간 전 실패");
+    expect(ko.lookup(endingStatus(ending("stopped", now), now))).toBe("방금 중단됨");
+    expect(ko.lookup(endingStatus(ending("lost", now - 25 * 60 * MIN), now))).toBe("1일 전 중간에 끊김");
+  });
+
+  it("put the leads that wait for the person first", () => {
+    const order = leadsInOrder([lead("queued"), lead("running"), lead("asked")]).map((row) => row.state);
+    expect(order).toEqual(["asked", "running", "queued"]);
+  });
+
+  it("close one ending, not every ending of the same conversation", () => {
+    expect(endingKey(ending("completed", 1))).not.toBe(endingKey(ending("completed", 2)));
   });
 });

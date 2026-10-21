@@ -137,26 +137,14 @@ export interface SegnoHeldMessage {
   readonly to: { readonly chatId: string; readonly name: string | null } | null;
 }
 
-/** An open item in Segno's inbox that no lead took yet (harness/companion inbox.mjs). */
-export interface SegnoInboxItem {
-  readonly id: string;
-  readonly title: string;
-  readonly source: string;
-  readonly reporter: string | null;
-  readonly status: "open" | "in-progress" | "waiting";
-  readonly createdAt: string;
-}
-
 /** Segno's expression on its stage (harness/companion art/stage-<state>.webp). */
 export type SegnoStageState = "idle" | "working" | "waiting" | "night";
 
-/** What the task panel beside Segno's chat shows. */
+/** What the task panel beside Segno's chat shows: finished work stays until the person closes it. */
 export interface SegnoPanel {
   readonly leads: readonly SegnoLead[];
   readonly finished: readonly SegnoFinished[];
   readonly held: readonly SegnoHeldMessage[];
-  /** Absent from a server without the inbox. */
-  readonly inbox?: readonly SegnoInboxItem[];
 }
 
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
@@ -195,8 +183,11 @@ export const rubatoCompanion = {
    */
   decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject", text?: string) =>
     call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision, ...(text === undefined ? {} : { text }) }),
-  /** The task panel beside Segno's chat: leads it follows, recent endings, held messages. */
+  /** The task panel beside Segno's chat: leads it follows, endings not closed yet, held messages. */
   panel: (env: EnvironmentId | null) => call<SegnoPanel>(env, "panel"),
+  /** Closes finished work in the panel for good; the conversations stay. Answers the panel after. */
+  dismiss: (env: EnvironmentId | null, endings: ReadonlyArray<Pick<SegnoFinished, "sessionId" | "at">>) =>
+    call<SegnoPanel>(env, "dismiss", { endings: endings.map(({ sessionId, at }) => ({ sessionId, at })) }),
   /** Segno's art for one expression of its space, as a data URL; `version` changes when the file is swapped. */
   art: (env: EnvironmentId | null, state: SegnoStageState = "idle") =>
     call<{ art: { url: string; version: number } }>(env, "art", { state }),
