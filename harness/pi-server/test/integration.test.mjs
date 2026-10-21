@@ -137,10 +137,22 @@ test('idle unload waits while approved children still have work, then proceeds',
   assert.equal(env.host.metrics.runtimeStarts, 1);
 });
 
-test('idle unload waits while a background command would still wake the session, then proceeds', async (t) => {
+test('a conversation the companion does not follow unloads on its idle even with a background command pending', async (t) => {
+  const env = await setup(t, { idleMs: 30, pollMs: 0 });
+  const client = await env.client();
+  const session = await client.create({ cwd: env.root, title: 'Not followed' });
+  await client.attach(session.sessionId);
+  await client.command({ type: 'prompt', message: 'busy-terminal' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  await client.detach();
+  await until(async () => (await client.list()).find((entry) => entry.sessionId === session.sessionId)?.runtimeId === null);
+});
+
+test('a conversation the host is told to hold keeps its runtime while a background command is pending, then unloads', async (t) => {
   const env = await setup(t, { idleMs: 30, pollMs: 0 });
   const client = await env.client();
   const session = await client.create({ cwd: env.root, title: 'Waiting on a build' });
+  env.host.holdBackgroundFor((id) => id === session.sessionId);
   await client.attach(session.sessionId);
   const original = await client.snapshot();
   await client.command({ type: 'prompt', message: 'busy-terminal' });
@@ -153,10 +165,7 @@ test('idle unload waits while a background command would still wake the session,
   await client.command({ type: 'prompt', message: 'idle-terminal' });
   await until(async () => !(await client.snapshot()).state.isStreaming);
   await client.detach();
-  await until(async () => {
-    const item = (await client.list()).find((entry) => entry.sessionId === session.sessionId);
-    return item?.runtimeId === null;
-  });
+  await until(async () => (await client.list()).find((entry) => entry.sessionId === session.sessionId)?.runtimeId === null);
 });
 
 test('a scheduled cache refresh keeps a detached runtime; switching a session off lets only that one go', async (t) => {

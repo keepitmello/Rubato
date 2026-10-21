@@ -892,6 +892,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         cwds: () => rows().map((item) => item.cwd).filter(Boolean), titleOf: (id) => row(id)?.title, locate });
       bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
       bound.follower = createCompanionFollower({ store: followStore, onError });
+      // Only the companion's leads keep their runtime for a pending background command: its wake
+      // carries the result the companion is told (companion-follow.mjs).
+      host.holdBackgroundFor?.((id) => bound?.follower.following().includes(id) === true);
     },
     /** Rubato's own word to a conversation (`kind: 'notice'`); it wakes the conversation like any delivery. */
     async notice({ to, about, text } = {}) {
@@ -939,6 +942,6 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       bound.telegramSend = send;
     },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
-    close() { void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
+    close() { bound?.host.holdBackgroundFor?.(undefined); void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
   };
 }
