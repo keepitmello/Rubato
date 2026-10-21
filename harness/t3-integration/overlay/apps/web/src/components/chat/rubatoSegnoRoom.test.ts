@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 import {
   arrivals,
   GROUP_GAP_MS,
+  personText,
   SEPARATOR_GAP_MS,
   segnoChatItems,
   segnoIsWriting,
@@ -95,5 +96,22 @@ describe("Segno's chat room", () => {
     expect(arrivals([{ id: "a", at: 100 }, { id: "b", at: 150 }, { id: "c", at: 200 }], known)).toEqual([]);
     expect(arrivals([{ id: "a", at: 100 }, { id: "c", at: 200 }, { id: "d", at: 260 }], known)).toEqual(["d"]);
     expect(arrivals([{ id: "d", at: 260 }, { id: "e", at: 260 }], known)).toEqual(["e"]);
+  });
+});
+
+describe("the person's pictures", () => {
+  const image = { type: "image", id: "img-1", name: "image.png", mimeType: "image/png", sizeBytes: 10 } as const;
+  const file = { type: "file", id: "file-1", name: "notes.pdf", mimeType: "application/pdf", sizeBytes: 10 } as const;
+
+  it("drops the picture's context link from the words and keeps other links as their label", () => {
+    expect(personText("이거 봐 ![image.png](t3-context://v1/image/image_275a022f)")).toBe("이거 봐");
+    expect(personText("[notes.pdf](t3-context://v1/file/file_1) 읽어 줘")).toBe("notes.pdf 읽어 줘");
+  });
+
+  it("draws pictures in the bubble and lists only the other files by name", () => {
+    const [bubble] = segnoChatItems([
+      { id: "m1", role: "user", text: "![image.png](t3-context://v1/image/image_1)", createdAt: "2026-10-21T10:00:00Z", streaming: false, attachments: [image, file] },
+    ]).filter((item) => item.kind === "bubble");
+    expect(bubble).toMatchObject({ text: "", images: [image], attachmentNames: ["notes.pdf"] });
   });
 });

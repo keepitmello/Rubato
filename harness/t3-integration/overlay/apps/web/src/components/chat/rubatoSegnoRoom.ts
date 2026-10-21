@@ -3,6 +3,9 @@
 // rev 11), so every message is a bubble: the person's on the right, Segno's on the left. Messages from
 // one side close together form a group whose last bubble carries the tail; a long gap or a new day
 // gets a time line between bubbles instead of a time on every message (user f38c36a6).
+import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
+
+import { isImageAttachment, type ChatAttachment, type ChatImageAttachment } from "../../types";
 
 /** Messages from one side within this gap of each other belong to one group. */
 export const GROUP_GAP_MS = 3 * 60_000;
@@ -17,7 +20,7 @@ export interface SegnoChatMessageInput {
   readonly text: string;
   readonly createdAt: string;
   readonly streaming: boolean;
-  readonly attachments?: ReadonlyArray<{ readonly name?: string | undefined }> | undefined;
+  readonly attachments?: ReadonlyArray<ChatAttachment> | undefined;
 }
 
 export type SegnoChatItem =
@@ -29,12 +32,24 @@ export type SegnoChatItem =
       readonly text: string;
       readonly at: number;
       readonly streaming: boolean;
+      /** The person's pictures, drawn in the bubble (RubatoSegnoChat.tsx). */
+      readonly images: ReadonlyArray<ChatImageAttachment>;
+      /** Names of the other files the person sent. */
       readonly attachmentNames: readonly string[];
       /** The first bubble of its group: the group gets its full gap above. */
       readonly groupStart: boolean;
       /** The last bubble of its group: it carries the tail. */
       readonly groupEnd: boolean;
     };
+
+/**
+ * The person's words as the bubble shows them. T3 writes an attached picture into the message as a
+ * context link (`![image.png](t3-context://…)`); the picture itself is drawn from the attachment, so
+ * the link goes, and any other context link reads as its label.
+ */
+export function personText(text: string): string {
+  return replaceComposerContextReferences(text, (reference) => (reference.image ? "" : reference.label)).trim();
+}
 
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
@@ -63,10 +78,14 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
       kind: "bubble",
       id: message.id,
       side,
-      text: message.text,
+      text: side === "me" ? personText(message.text) : message.text,
       at,
       streaming: message.streaming,
-      attachmentNames: (message.attachments ?? []).map((attachment) => attachment.name ?? "").filter(Boolean),
+      images: (message.attachments ?? []).filter(isImageAttachment),
+      attachmentNames: (message.attachments ?? [])
+        .filter((attachment) => !isImageAttachment(attachment))
+        .map((attachment) => attachment.name ?? "")
+        .filter(Boolean),
       groupStart:
         separated || previous === null || previous.side !== side || at - previous.at >= GROUP_GAP_MS,
       groupEnd: !nextJoins,

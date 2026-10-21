@@ -73,6 +73,7 @@ export const companionEdits = {
         + '                  entries={displayedTimeline.entries}\n'
         + '                  working={!paintOnlyDisplayedTimeline && isWorking}\n'
         + '                  cwd={gitCwd ?? undefined}\n'
+        + '                  environmentId={displayedThreadRef?.environmentId ?? activeThread.environmentId}\n'
         + '                  bottomInset={composerTimelineInset}\n'
         + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
         + '                    ? {}\n'

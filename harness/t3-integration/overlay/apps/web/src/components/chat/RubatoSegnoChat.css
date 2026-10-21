@@ -115,7 +115,29 @@
   transform: scaleX(-1);
 }
 
-/* ---- Attachments the person sent ---- */
+/* ---- Pictures the person sent: inside the bubble, above the words ---- */
+[data-rubato-segno-images] {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8rem, 1fr));
+  gap: 0.25rem;
+  max-width: 16rem;
+}
+[data-rubato-segno-images]:not(:last-child) {
+  margin-bottom: 0.35rem;
+}
+[data-rubato-segno-images] img {
+  display: block;
+  width: 100%;
+  max-height: 14rem;
+  object-fit: cover;
+  border-radius: 0.75rem;
+}
+[data-rubato-segno-image-pending] {
+  font-size: 0.75rem;
+  opacity: 0.85;
+}
+
+/* ---- Other files the person sent ---- */
 [data-rubato-segno-attachments] {
   display: flex;
   flex-wrap: wrap;

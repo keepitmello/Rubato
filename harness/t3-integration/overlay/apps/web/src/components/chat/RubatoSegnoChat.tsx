@@ -7,8 +7,12 @@
 // prefers-reduced-motion (RubatoSegnoChat.css).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import type { EnvironmentId } from "@t3tools/contracts";
+
+import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
-import type { TimelineEntry } from "../../session-logic";
+import { selectMessageImageResources, type TimelineEntry } from "../../session-logic";
+import type { ChatImageAttachment } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import {
   arrivals,
@@ -59,14 +63,37 @@ function Tail() {
   );
 }
 
+/** The person's pictures, drawn the way the ordinary thread draws them (MessagesTimeline). */
+function Images({ images, environmentId }: { images: ReadonlyArray<ChatImageAttachment>; environmentId: EnvironmentId }) {
+  const resources = useMemo(() => selectMessageImageResources(images), [images]);
+  const urls = useAssetUrls(environmentId, resources);
+  const urlById = new Map(resources.flatMap((resource, index) => (urls[index] ? [[resource.attachmentId, urls[index]!] as const] : [])));
+  return (
+    <div data-rubato-segno-images="">
+      {images.map((image) => {
+        const src = urlById.get(image.id) ?? image.previewUrl;
+        return src ? (
+          <a key={image.id} href={src} target="_blank" rel="noreferrer">
+            <img src={src} alt={image.name ?? ""} />
+          </a>
+        ) : (
+          <span key={image.id} data-rubato-segno-image-pending="">{image.name}</span>
+        );
+      })}
+    </div>
+  );
+}
+
 function Bubble({
   item,
   enter,
   cwd,
+  environmentId,
 }: {
   item: Extract<SegnoChatItem, { kind: "bubble" }>;
   enter: boolean;
   cwd: string | undefined;
+  environmentId: EnvironmentId | undefined;
 }) {
   return (
     <div
@@ -77,11 +104,12 @@ function Bubble({
       data-enter={enter ? (item.side === "me" ? "send" : "arrive") : undefined}
     >
       <div data-rubato-segno-bubble="" data-thread-find-text="">
+        {item.images.length > 0 && environmentId ? <Images images={item.images} environmentId={environmentId} /> : null}
         {item.side === "segno" ? (
           <ChatMarkdown text={item.text} cwd={cwd} isStreaming={item.streaming} lineBreaks />
-        ) : (
+        ) : item.text ? (
           <p className="whitespace-pre-wrap break-words">{item.text}</p>
-        )}
+        ) : null}
         {item.attachmentNames.length > 0 ? (
           <div data-rubato-segno-attachments="">
             {item.attachmentNames.map((name) => (
@@ -112,6 +140,8 @@ export function RubatoSegnoChat(props: {
   entries: ReadonlyArray<TimelineEntry>;
   working: boolean;
   cwd: string | undefined;
+  /** Where the thread's attachments are served from. */
+  environmentId?: EnvironmentId | undefined;
   /** Room kept under the last bubble for the composer that floats over the room. */
   bottomInset: number;
   historyControls?: SegnoHistoryControls | undefined;
@@ -191,7 +221,7 @@ export function RubatoSegnoChat(props: {
               {separatorLabel(item.at, now, locale ?? navigator.language)}
             </div>
           ) : (
-            <Bubble key={item.id} item={item} enter={animated.current.has(item.id)} cwd={props.cwd} />
+            <Bubble key={item.id} item={item} enter={animated.current.has(item.id)} cwd={props.cwd} environmentId={props.environmentId} />
           ),
         )}
         {writing ? <Writing /> : null}
