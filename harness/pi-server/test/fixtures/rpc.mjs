@@ -14,6 +14,12 @@ let warming = { enabled: true, hours: 2, state: 'inactive' };
 // The service-tier extension's live state; `/fast on|off` flips it like the real command.
 let fast = { active: false, supported: true };
 let blockMessages = false;
+// What `set_model` can pick and the efforts each allows; an unsupported effort drops to the nearest lower one.
+const MODELS = { 'fixture/local': ['off'], 'fixture/deep': ['off', 'minimal', 'low', 'medium', 'high'] };
+let model = 'fixture/local';
+let thinkingLevel = 'off';
+const clamp = (level) => { const allowed = MODELS[model]; const order = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  return order.slice(0, order.indexOf(level) + 1).findLast((item) => allowed.includes(item)) ?? 'off'; };
 // What the session-link extension would have received: a steer while running, a new turn when idle.
 const deliveries = [];
 // Answers a test scripts for the next deliveries, as the real handler words them.
@@ -34,7 +40,12 @@ lines.on('line', (line) => {
   if (command.type === 'extension_ui_response') { ui = command; settle(); return; }
   let data = null;
   switch (command.type) {
-    case 'get_state': data = { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), isStreaming: running, isCompacting: false, pendingMessageCount: 0 }; break;
+    case 'get_state': data = { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), isStreaming: running, isCompacting: false, pendingMessageCount: 0,
+      model: { provider: model.split('/')[0], id: model.split('/')[1] }, thinkingLevel }; break;
+    case 'set_model':
+      if (!MODELS[`${command.provider}/${command.modelId}`]) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: `Model not found: ${command.provider}/${command.modelId}` }); return; }
+      model = `${command.provider}/${command.modelId}`; thinkingLevel = clamp(thinkingLevel); break;
+    case 'set_thinking_level': thinkingLevel = clamp(command.level); break;
     case 'get_messages':
       if (blockMessages) return;
       data = { messages: manager.getBranch().filter((item) => item.type === 'message').map((item) => item.message) }; break;

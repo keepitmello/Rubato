@@ -300,6 +300,27 @@ test('create makes a conversation in the folder and delivers its first message a
   await assert.rejects(env.api.create({ from: a.id, cwd: 'relative', text: 'x' }), { code: 'invalid' });
 });
 
+test('create selects the model and effort before the first message, and reports what took effect', async (t) => {
+  const env = await setup(t);
+  const a = await env.make('Maker');
+  const created = await env.api.create({ from: a.id, cwd: env.root, title: 'Deep', text: 'think hard', model: 'fixture/deep', thinking: 'max' });
+  assert.deepEqual(keys(created), ['cwd', 'model', 'sessionId', 'status', 'thinking', 'title']);
+  assert.equal(created.model, 'fixture/deep');
+  assert.equal(created.thinking, 'high', 'an effort the model lacks drops to its nearest one, and the answer says so');
+  const worker = env.host.getSessionWorker(created.sessionId);
+  assert.deepEqual((await worker.request({ type: 'get_state' })).model, { provider: 'fixture', id: 'deep' }, 'the runtime that got the first message runs on it');
+  assert.deepEqual((await env.deliveries(created.sessionId)).map((item) => item.data.text), ['think hard']);
+
+  const effortOnly = await env.api.create({ from: a.id, cwd: env.root, text: 'default model', thinking: 'low' });
+  assert.equal(effortOnly.model, 'fixture/local');
+  assert.equal(effortOnly.thinking, 'off');
+
+  await assert.rejects(env.api.create({ from: a.id, cwd: env.root, text: 'x', model: 'deep' }), { code: 'invalid', message: /provider\/model-id/ });
+  await assert.rejects(env.api.create({ from: a.id, cwd: env.root, text: 'y', thinking: 'huge' }), { code: 'invalid', message: /thinking must be one of/ });
+  await assert.rejects(env.api.create({ from: a.id, cwd: env.root, text: 'z', model: 'fixture/missing' }),
+    { code: 'invalid', message: /but its first message was not delivered: could not select fixture\/missing: Model not found/ });
+});
+
 test('safety: oversized text, self-send, unknown target, duplicate and rate limits are refused before delivery', async (t) => {
   let clock = 1_000_000;
   const env = await setup(t, { now: () => clock });

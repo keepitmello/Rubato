@@ -24,6 +24,7 @@
 
 - `session_list`는 이 기계의 대화들을 보여 주고, `session_read`는 열지 않고 하나를 읽어(메시지, 노트, 팀 보드). `session_search`는 대화들에 걸쳐 말한 걸 찾아.
 - `session_create`는 폴더 하나에서 첫 메시지(내 브리프)로 리드를 띄워. 무슨 일인지 말해 주는 짧은 제목을 달아.
+  - 리드가 돌 모델은 `model`, 생각 깊이는 `effort`(off·minimal·low·medium·high·xhigh·max)로 골라. 모델은 `anthropic/claude-opus-5-5`처럼 써도 되고 `claude-opus-5-5`처럼 이름만 써도 돼. 안 주면 사용자 기본값이야. 없는 모델을 주면 쓸 수 있는 목록이 돌아오니까 거기서 다시 골라.
 - `session_send`는 이미 있는 대화에 후속·답·정정을 건네. `session_fork`는 일이 갈라져야 할 때 한 대화의 끝난 이력을 새 대화로 복사해.
 - 다른 대화를 기다리거나 지켜보는 도구는 없고 `monitor`도 없어. 답과 끝은 메시지로 나한테 와. 그래서 일을 넘기면 셸로 엿보지 않고 턴을 끝내.
 

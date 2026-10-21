@@ -8,6 +8,7 @@ import { readSessionMetadata } from './session-metadata.mjs';
 import { UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
 import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
+import { EFFORT_LEVELS } from '../../pi-runtime/features/session-link/tools.mjs';
 import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { createInspector, isAgentId, readEntries, searchTerms, turnAround, windowTurn, INSPECT_LIMITS } from './session-inspect.mjs';
 
@@ -347,15 +348,16 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
    * Attach exactly like a GUI does, so the official router loads (or reuses) the one
    * runtime for this session file, then hand the message to that runtime's extension.
    * The attachment also keeps the runtime from idling out during the call.
-   * Resolves to the handler's answer.
+   * `prepare(worker)` runs in that runtime before the message goes in. Resolves to the handler's answer.
    */
-  async function deliver(to, data) {
+  async function deliver(to, data, prepare) {
     return withClient(async (client) => {
       try { await client.attach(to); }
       catch (error) { throw fail(/not found/i.test(error?.message) ? 'unknown_session' : 'delivery_failed', `Could not open conversation ${to}: ${error?.message ?? error}`); }
       try {
         const worker = need().host.getSessionWorker(to);
         if (!worker) throw fail('delivery_failed', `Conversation ${to} has no running engine after attach`);
+        if (prepare) await prepare(worker);
         try { return await worker.request({ type: 'extension_request', name: DELIVER_REQUEST, data }); }
         catch (error) {
           throw fail('delivery_failed', /Unknown extension RPC request/.test(error?.message)
@@ -651,10 +653,17 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         duplicate: typeof answer?.duplicate === 'boolean' ? answer.duplicate : null,
         state: answer?.state === 'queued' || answer?.state === 'written' ? answer.state : null };
     },
-    async create({ from, cwd, title, text } = {}) {
+    /**
+     * `model` ("provider/model-id") and `thinking` (an effort level) are selected in the new
+     * runtime before its first message, so the first turn already runs on them. The model clamps
+     * an unsupported level to its nearest one; the answer reports what took effect.
+     */
+    async create({ from, cwd, title, text, model, thinking } = {}) {
       requireId(from, 'from'); requireText(text);
       if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw fail('invalid', 'cwd must be an absolute path');
       if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw fail('invalid', 'title must be a non-empty string of at most 512 characters');
+      if (model !== undefined && (typeof model !== 'string' || !/^[^/\s]+\/\S+$/.test(model))) throw fail('invalid', 'model must be "provider/model-id"');
+      if (thinking !== undefined && !EFFORT_LEVELS.includes(thinking)) throw fail('invalid', `thinking must be one of ${EFFORT_LEVELS.join(', ')}`);
       const origin = await sender(from);
       // A repeated create is a second conversation, so it counts as a duplicate per folder.
       const release = admit(from, `create:${cwd}`, text, { inbound: false });
@@ -666,11 +675,26 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         throw fail('invalid', `Could not create a conversation in ${cwd}: ${error?.message ?? error}`);
       }
       received(from, created.sessionId, text);
-      try { await deliver(created.sessionId, envelope({ messageId: randomUUID(), kind: 'create', from: origin, text })); }
+      let selected;
+      const select = model === undefined && thinking === undefined ? undefined : async (worker) => {
+        try {
+          if (model !== undefined) {
+            const split = model.indexOf('/');
+            await worker.request({ type: 'set_model', provider: model.slice(0, split), modelId: model.slice(split + 1) });
+          }
+          if (thinking !== undefined) await worker.request({ type: 'set_thinking_level', level: thinking });
+          const state = await worker.request({ type: 'get_state' });
+          selected = { model: state?.model?.provider && state?.model?.id ? `${state.model.provider}/${state.model.id}` : null,
+            thinking: state?.thinkingLevel ?? null };
+        } catch (error) {
+          throw fail('invalid', `could not select ${[model, thinking && `effort ${thinking}`].filter(Boolean).join(' at ')}: ${error?.message ?? error}`);
+        }
+      };
+      try { await deliver(created.sessionId, envelope({ messageId: randomUUID(), kind: 'create', from: origin, text }), select); }
       catch (error) { throw fail(error.code ?? 'delivery_failed', `Created conversation ${created.sessionId}, but its first message was not delivered: ${error.message}`); }
       if (fromCompanion(from)) need().follower.follow(created.sessionId, from);
       const described = await describe(created.sessionId);
-      return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status };
+      return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status, ...selected };
     },
     /** `from` is optional and additive: the first message's sender defaults to the forked conversation. */
     async fork({ sessionId, text, from } = {}) {

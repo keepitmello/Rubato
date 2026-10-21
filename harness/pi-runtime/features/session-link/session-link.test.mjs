@@ -6,7 +6,7 @@ import { InteractiveMode, getMarkdownTheme, initTheme } from "@earendil-works/pi
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { COMPANION_WITHHELD_TOOLS, DELIVER_REQUEST, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
+import { COMPANION_WITHHELD_TOOLS, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
 
 initTheme("dark");
 
@@ -167,6 +167,30 @@ test("each tool calls its sessionLink method with this conversation's ids and re
 });
 
 const refused = (code, message) => Object.assign(new Error(message), { code });
+
+test("session_create picks the model by full or bare id and passes the effort; a wrong model never reaches the engine", async () => {
+  const { link, calls } = fakeLink({
+    create: (args) => ({ sessionId: "01new", title: "New", cwd: args.cwd, status: "running",
+      ...(args.model || args.thinking ? { model: args.model ?? "anthropic/claude-opus-5-5", thinking: args.thinking ?? null } : {}) }),
+  });
+  const pi = install(link);
+  const models = [{ provider: "anthropic", id: "claude-opus-5-5" }, { provider: "anthropic", id: "shared" }, { provider: "cursor", id: "shared" }];
+  const withModels = { ...ctx, modelRegistry: { getAvailable: () => models } };
+
+  let result = await execute(pi, "session_create", { text: "go", model: "Claude-Opus-5-5", effort: "high" }, withModels);
+  assert.deepEqual(calls.at(-1).args, { from: SELF, cwd: "/work/lead", text: "go", model: "anthropic/claude-opus-5-5", thinking: "high" });
+  assert.match(result.content[0].text, /It runs on anthropic\/claude-opus-5-5 at high effort\./);
+  await execute(pi, "session_create", { text: "go2", model: "cursor/shared" }, withModels);
+  assert.equal(calls.at(-1).args.model, "cursor/shared");
+  await execute(pi, "session_create", { text: "go3", effort: "low" }, withModels);
+  assert.deepEqual(calls.at(-1).args, { from: SELF, cwd: "/work/lead", text: "go3", thinking: "low" }, "effort alone keeps the default model");
+
+  const before = calls.length;
+  await assert.rejects(execute(pi, "session_create", { text: "x", model: "shared" }, withModels), /several providers; pass one of: anthropic\/shared, cursor\/shared/);
+  await assert.rejects(execute(pi, "session_create", { text: "x", model: "gpt-9" }, withModels), /not available .*Available: anthropic\/claude-opus-5-5, anthropic\/shared, cursor\/shared/);
+  assert.equal(calls.length, before);
+  assert.deepEqual(pi.tools.get("session_create").parameters.properties.effort.enum, [...EFFORT_LEVELS]);
+});
 
 test("engine refusals surface as tool errors carrying their code, and a wait on this conversation itself is refused before the engine", async () => {
   const { link, calls } = fakeLink({
