@@ -198,8 +198,11 @@ test("the space beside Segno's chat lists what it follows and what recently fini
     { sessionId: 'ask', title: 'Deploy', cwd: '/w/ops', status: 'waiting' },
     { sessionId: 'answered', title: 'Docs', cwd: '/w/docs', status: 'idle' },
     { sessionId: 'again', title: 'Payments v2', cwd: '/w/pay', status: 'running' },
+    { sessionId: 'done', title: 'Fix login', cwd: '/w/app', status: 'idle' },
   ];
-  const following = { run: { since: now - 60_000 }, ask: { since: now - 30_000 }, answered: { since: now - 90_000, asked: true }, again: { since: now - 10 } };
+  // 'done' ended and is still followed for what its background work wakes: idle, it stays finished.
+  const following = { run: { since: now - 60_000 }, ask: { since: now - 30_000 }, answered: { since: now - 90_000, asked: true }, again: { since: now - 10 },
+    done: { since: now - 2000, ended: true } };
   const panel = composePanel({ following, finished: readFinished(env, { now }), rows });
   assert.deepEqual(panel.leads.map((lead) => [lead.sessionId, lead.state, lead.title]), [
     ['answered', 'asked', 'Docs'], ['run', 'running', 'Login timeout'], ['ask', 'asked', 'Deploy'], ['again', 'running', 'Payments v2']]);
@@ -210,6 +213,11 @@ test("the space beside Segno's chat lists what it follows and what recently fini
   assert.equal(writePanel(panel, env), true);
   assert.equal(writePanel(panel, env), false, 'an unchanged panel is not rewritten');
   assert.deepEqual(readPanel(env).leads, panel.leads);
+  // Woken again by its own work, it is listed as working, not as finished.
+  const woken = composePanel({ following, finished: readFinished(env, { now }),
+    rows: rows.map((row) => row.sessionId === 'done' ? { ...row, status: 'running' } : row) });
+  assert.equal(woken.leads.find((lead) => lead.sessionId === 'done')?.state, 'running');
+  assert.deepEqual(woken.finished, []);
 });
 
 test("an ending the person closed leaves the space for good; the same conversation finishing again shows anew", async (t) => {

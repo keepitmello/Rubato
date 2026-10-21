@@ -527,7 +527,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
   const cursorOf = (state) => encodeCursor({ v: 1, final: state.final?.entryId ?? null, leaf: state.leaf,
     waiting: state.status === 'waiting', ui: [...state.ui].sort() });
 
-  /** The companion's handoffs are followed until they end (companion-follow.mjs). */
+  /** The companion's handoffs are followed while they can still go on (companion-follow.mjs). */
   const fromCompanion = (id) => row(id)?.companion === true;
   function createCompanionFollower({ store, onError }) {
     const seen = new Map();

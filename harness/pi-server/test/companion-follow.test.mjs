@@ -17,7 +17,7 @@ function world() {
   return { state, notices, follower, tick: (ms) => { at += ms; } };
 }
 
-test('a finished turn is told once with its answer, then the conversation is no longer followed', async (t) => {
+test('a finished turn is told once with its answer; once its runtime unloads idle the conversation is no longer followed', async (t) => {
   const w = world();
   const f = w.follower();
   t.after(() => f.close());
@@ -28,9 +28,81 @@ test('a finished turn is told once with its answer, then the conversation is no 
   w.state.set('lead', { status: 'idle', final: { entryId: 'e1', text: 'done: fixed' } });
   await f.poll();
   assert.deepEqual(w.notices, [{ companionId: 'segno', targetId: 'lead', text: 'Finished its turn.\n\nIts answer:\ndone: fixed' }]);
-  assert.deepEqual(f.following(), []);
+  assert.deepEqual(f.following({ ended: true }), ['lead'], 'its loaded runtime may still be woken by its own work');
   await f.poll();
   assert.equal(w.notices.length, 1);
+  w.state.set('lead', { status: 'stored', final: { entryId: 'e1', text: 'done: fixed' } });
+  await f.poll();
+  assert.deepEqual(f.following(), []);
+  assert.equal(w.notices.length, 1, 'unloading idle is not an end to tell');
+});
+
+test('a lead that ends its handed turn waiting and is woken by its background work tells every later end once', async (t) => {
+  // The 10-22 tgd lead: "waiting for the flush", several woken turns, then the real result.
+  const w = world();
+  const finished = [];
+  let saved = {};
+  const store = { load: () => saved, save: (records) => { saved = JSON.parse(JSON.stringify(records)); }, finished: (entry) => finished.push(entry) };
+  const f = w.follower({ store });
+  t.after(() => f.close());
+  f.follow('lead', 'segno');
+  w.state.set('lead', { status: 'running' });
+  await f.poll();
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f1', text: 'waiting for the flush' } });
+  await f.poll();
+  await f.poll();
+  assert.deepEqual(w.notices.map((n) => n.text), ['Finished its turn.\n\nIts answer:\nwaiting for the flush']);
+  assert.equal(saved.lead.ended, true, 'kept across an engine restart');
+
+  // A background job finishes and wakes it: that turn counts from now on the panel.
+  w.tick(60_000);
+  w.state.set('lead', { status: 'running', final: { entryId: 'f1', text: 'waiting for the flush' } });
+  await f.poll();
+  assert.equal(saved.lead.since, 60_000);
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f2', text: 'the path is fine: it was late' } });
+  await f.poll();
+  await f.poll();
+  // Woken and ended between two looks: told too.
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f3', text: 'checked the logs too' } });
+  await f.poll();
+  await f.poll();
+  assert.deepEqual(w.notices.map((n) => n.text).slice(1), [
+    'Finished its turn.\n\nIts answer:\nthe path is fine: it was late',
+    'Finished its turn.\n\nIts answer:\nchecked the logs too']);
+  assert.deepEqual(finished.map((entry) => entry.outcome), ['completed', 'completed', 'completed']);
+  assert.ok(w.notices.every((n) => n.companionId === 'segno' && n.targetId === 'lead'));
+});
+
+test('a lead followed on after its end is told lost when its runtime goes away mid-turn', async (t) => {
+  const w = world();
+  const f = w.follower();
+  t.after(() => f.close());
+  f.follow('lead', 'segno');
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f1', text: 'waiting' } });
+  await f.poll();
+  w.state.set('lead', { status: 'running', final: { entryId: 'f1', text: 'waiting' } });
+  await f.poll();
+  w.state.set('lead', { status: 'stored', final: { entryId: 'f1', text: 'waiting' } });
+  await f.poll();
+  w.tick(LOST_AFTER_MS);
+  await f.poll();
+  assert.deepEqual(w.notices.map((n) => n.text), ['Finished its turn.\n\nIts answer:\nwaiting', noticeText('lost', {})]);
+  assert.deepEqual(f.following(), []);
+});
+
+test('new work handed to a lead followed on after its end is a new handoff', async (t) => {
+  const w = world();
+  let saved = {};
+  const f = w.follower({ store: { load: () => saved, save: (records) => { saved = JSON.parse(JSON.stringify(records)); } } });
+  t.after(() => f.close());
+  f.follow('lead', 'segno');
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f1', text: 'first' } });
+  await f.poll();
+  w.tick(5000);
+  f.follow('lead', 'segno', { final: 'f1', messageId: 'm2' });
+  assert.deepEqual([saved.lead.ended, saved.lead.since, saved.lead.messageId, saved.lead.base.final], [undefined, 5000, 'm2', 'f1']);
+  await f.poll();
+  assert.equal(w.notices.length, 1, 'the end already told is not told again');
 });
 
 test('a stop, an error and a question to the user are each told as what they are', async (t) => {
@@ -48,7 +120,8 @@ test('a stop, an error and a question to the user are each told as what they are
   assert.equal(text.failed, 'Ended with an error.');
   assert.equal(text.asking, 'Is waiting for the user to answer it (ask).\n\nWhat it said:\nDeploy now?');
   assert.equal(text.crashed, 'Ended with an error.');
-  assert.deepEqual(f.following(), ['asking'], 'a question is not the end: its turn goes on once the user answers');
+  assert.deepEqual(f.following({ ended: false }), ['asking'], 'a question is not the end: its turn goes on once the user answers');
+  assert.deepEqual(f.following({ ended: true }).sort(), ['failed', 'stopped'], 'a runtime that errored is not followed on');
   await f.poll();
   assert.equal(w.notices.length, 4, 'the same question is not told twice');
   w.state.set('asking', { status: 'idle', final: { entryId: 'a', text: 'deployed' } });
@@ -172,7 +245,7 @@ test('work handed to a busy lead is told when the turn that read it ends, even w
   transcript.push({ entryId: 'msg', messageId: 'm1' }, { entryId: 'f2', final: true, text: 'handed work done' });
   await f.poll();
   assert.deepEqual(notices, ['Finished its turn.\n\nIts answer:\nhanded work done']);
-  assert.deepEqual(f.following(), []);
+  assert.deepEqual(f.following({ ended: false }), []);
   await f.close();
 });
 

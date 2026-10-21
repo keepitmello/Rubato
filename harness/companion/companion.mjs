@@ -190,7 +190,7 @@ export function writeState(patch, env = process.env) {
 }
 
 /**
- * The conversations the engine follows for the companion until their handed work ends
+ * The conversations the engine follows for the companion while their handed work can still go on
  * (pi-server companion-follow.mjs), kept across engine restarts.
  */
 export function followingStore(env = process.env) {
@@ -261,13 +261,17 @@ const LEAD_BUSY = new Set(['starting', 'running', 'waiting']);
 export function composePanel({ following = {}, finished = [], rows = [] }) {
   const byId = new Map(rows.map((row) => [row.sessionId, row]));
   const describe = (id) => { const row = byId.get(id); return row ? { title: row.title ?? null, cwd: row.cwd ?? null } : {}; };
-  const leads = Object.entries(following).map(([sessionId, record]) => {
+  const leads = Object.entries(following).flatMap(([sessionId, record]) => {
     const row = byId.get(sessionId);
     const asked = record?.asked === true || row?.status === 'waiting';
-    return { sessionId, ...describe(sessionId), state: asked ? 'asked' : LEAD_BUSY.has(row?.status) ? 'running' : 'queued',
-      since: Number.isFinite(record?.since) ? record.since : null };
+    const busy = LEAD_BUSY.has(row?.status);
+    // A lead whose handed turn ended is still followed for what its background work wakes; it is
+    // listed as working again only while such a turn runs, and stays among the finished meanwhile.
+    if (record?.ended === true && !asked && !busy) return [];
+    return [{ sessionId, ...describe(sessionId), state: asked ? 'asked' : busy ? 'running' : 'queued',
+      since: Number.isFinite(record?.since) ? record.since : null }];
   }).sort((a, b) => (a.since ?? 0) - (b.since ?? 0));
-  const followed = new Set(Object.keys(following));
+  const followed = new Set(leads.map((lead) => lead.sessionId));
   const done = finished.filter((entry) => !followed.has(entry.sessionId))
     .map((entry) => ({ sessionId: entry.sessionId, title: byId.get(entry.sessionId)?.title ?? entry.title ?? null,
       cwd: byId.get(entry.sessionId)?.cwd ?? entry.cwd ?? null, outcome: entry.outcome, at: entry.at }));

@@ -3,6 +3,12 @@
 // notice when that work ends: the turn finished, was stopped, failed, or stopped to ask the user.
 // The notice goes into the companion's conversation like a session message, so it wakes it.
 //
+// A lead often ends its first turn waiting (a build, a monitor) and writes its real result in a
+// later turn woken by that background work. So an end is not where following stops: the follower
+// keeps watching while the lead's runtime stays loaded — background work it is waiting on holds the
+// runtime (pi-server host.mjs pendingWork) — and tells each later end once. It stops once the runtime
+// unloads with no turn running, or the turn's runtime goes away mid-turn (told as lost).
+//
 // What is followed is saved (when a store is given), so an engine restart in the middle of a lead's
 // turn still ends in a notice.
 
@@ -82,7 +88,12 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     const at = now();
     const startedBefore = record.started;
     const askedBefore = record.asked === true;
-    if (BUSY.has(current.status)) { record.started = true; delete record.storedSince; }
+    if (BUSY.has(current.status)) {
+      // A lead woken again after its handed turn ended: the panel counts this turn from now.
+      if (record.ended && !record.started) record.since = at;
+      record.started = true;
+      delete record.storedSince;
+    }
     else if (current.status === 'stored') record.storedSince ??= at;
     else delete record.storedSince;
     // Whether it waits on the person now. A question asked mid-turn leaves the turn `running`, so the
@@ -93,6 +104,8 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       else delete record.asked;
     }
     const outcome = judge(record, current, at);
+    // After an end, a runtime unloaded with nothing running cannot be woken by its own work again.
+    if (!outcome && record.ended && !record.started && current.status === 'stored') { records.delete(id); return true; }
     // Saved once seen: an engine killed mid-turn leaves the lead stored, and only a saved `started`
     // lets the next engine report it lost.
     if (!outcome) return record.started !== startedBefore || (record.asked === true) !== askedBefore;
@@ -116,7 +129,21 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
       record.base.ui = [...new Set([...record.base.ui, ...current.ui])];
       record.asked = true;
     } else {
-      records.delete(id);
+      if (outcome === 'lost' || current.status === 'error') records.delete(id);
+      else {
+        // Told once: only a final written after this one is a new end. Its later turns are no
+        // handoff of their own, so neither the handed message nor a busy turn's skip applies.
+        record.ended = true;
+        record.base.final = current.final?.entryId ?? record.base.final;
+        record.base.waiting = false;
+        record.base.ui = [...new Set([...record.base.ui, ...current.ui])];
+        record.started = false;
+        record.skip = 0;
+        delete record.messageId;
+        delete record.asked;
+        delete record.storedSince;
+        delete record.failures;
+      }
       // What the companion's space lists as recently finished (harness/companion panel.json).
       if (store?.finished) safe(() => store.finished({ sessionId: id, outcome, at: now(),
         ...(current.title ? { title: current.title } : {}), ...(current.cwd ? { cwd: current.cwd } : {}) }), onError);
@@ -154,12 +181,15 @@ export function createFollower({ inspect, notify, store, onError = () => {}, pol
     follow(targetId, companionId, { final = null, busy = false, messageId } = {}) {
       if (closed) return;
       const previous = records.get(targetId);
+      // A lead followed on after its last end gets new work: that work starts now.
+      const since = previous && !previous.ended ? previous.since : now();
       records.set(targetId, { companionId, base: { final: previous?.base.final ?? final, waiting: false, ui: previous?.base.ui ?? [] },
-        ...(messageId ? { messageId } : { skip: busy ? 1 : 0 }), started: busy, since: previous?.since ?? now() });
+        ...(messageId ? { messageId } : { skip: busy ? 1 : 0 }), started: busy, since });
       save();
       if (!polling) schedule();
     },
-    following() { return [...records.keys()]; },
+    /** Every conversation still followed; `ended` true for those whose handed turn already ended. */
+    following({ ended } = {}) { return [...records].filter(([, record]) => ended === undefined || Boolean(record.ended) === ended).map(([id]) => id); },
     /** Checks every followed conversation now (tests, and a caller that knows something changed). */
     poll: () => polling ??= poll().finally(() => { polling = undefined; }),
     async close() { closed = true; clearTimeout(timer); await polling; },
