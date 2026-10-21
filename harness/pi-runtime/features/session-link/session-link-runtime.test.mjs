@@ -44,7 +44,7 @@ after(() => {
   rmSync(scratch, { recursive: true, force: true });
 });
 
-const SESSION_TOOLS = ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork"];
+const SESSION_TOOLS = ["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork", "session_cache_warming"];
 const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
 
 async function openSession(name, sessionLink, env = {}) {

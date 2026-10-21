@@ -76,9 +76,9 @@ async function writeSession(dir, cwd, entries) {
   return { id, file, entries: chained };
 }
 
-test('the extension-facing object has exactly its ten methods and refuses until the engine binds it', async () => {
+test('the extension-facing object has exactly its eleven methods and refuses until the engine binds it', async () => {
   const link = createSessionLink();
-  assert.deepEqual(keys(link.api), ['channel', 'companionSettings', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
+  assert.deepEqual(keys(link.api), ['cacheWarming', 'channel', 'companionSettings', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
   assert.ok(Object.isFrozen(link.api));
   for (const name of Object.keys(link.api)) {
     await assert.rejects(link.api[name]({}), /session link is not available in this process/);
@@ -101,7 +101,7 @@ test('list: frozen row shape, live sessions first, query and cwd filters, limit 
   const all = await env.api.list();
   assert.deepEqual(keys(all), ['sessions', 'truncated']);
   assert.equal(all.truncated, false);
-  assert.deepEqual(keys(all.sessions[0]), ['cwd', 'live', 'messageCount', 'sessionId', 'status', 'title', 'updatedAt']);
+  assert.deepEqual(keys(all.sessions[0]), ['cache', 'contextTokens', 'cwd', 'live', 'messageCount', 'sessionId', 'status', 'title', 'updatedAt']);
   assert.equal(all.sessions[0].sessionId, alpha.id, 'the loaded session comes first');
   assert.equal(all.sessions[0].live, true);
   assert.equal(all.sessions.find((item) => item.sessionId === beta.id).live, false);
@@ -131,7 +131,7 @@ test('read: frozen shape, visible roles only, tool names without tool output, bo
   await env.listed(session.id);
   const result = await env.api.read({ sessionId: session.id, maxCharsPerMessage: 12 });
   assert.deepEqual(keys(result), ['messages', 'session', 'truncated']);
-  assert.deepEqual(keys(result.session), ['cwd', 'messageCount', 'model', 'sessionId', 'status', 'title', 'updatedAt']);
+  assert.deepEqual(keys(result.session), ['cache', 'contextTokens', 'cwd', 'messageCount', 'model', 'sessionId', 'status', 'title', 'updatedAt']);
   assert.equal(result.session.title, 'Readable');
   assert.equal(result.session.model, 'fixture/local');
   assert.equal(result.session.status, 'stored');
@@ -945,4 +945,72 @@ test("only the companion's conversation reaches the settings, through the facade
   const lead = await env.make('Lead');
   await assert.rejects(env.link.api.companionSettings({ sessionId: lead.id, action: 'show' }), { code: 'not_companion' });
   await assert.rejects(env.link.api.companionSettings({ action: 'show' }), { code: 'invalid' });
+});
+
+const answered = (provider, usage, { at = Date.now(), api, stopReason = 'stop' } = {}) => ({ type: 'message', message: { role: 'assistant',
+  content: [{ type: 'text', text: 'done' }], stopReason, provider, model: `${provider}-model`, ...(api ? { api } : {}), usage, timestamp: at } });
+const MINUTE = 60_000;
+
+test('list and read tell a warm cache from a cold one, and how big the context is, from a stored transcript', async (t) => {
+  const env = await setup(t);
+  const usage = { input: 200, output: 300, cacheRead: 90_000, cacheWrite: 500, totalTokens: 91_000 };
+  const warm = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', usage, { at: Date.now() - 10 * MINUTE })]);
+  const cold = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', usage, { at: Date.now() - 2 * 60 * MINUTE })]);
+  // A warmer refresh 50 minutes after the answer moves the lifetime with it.
+  const refreshed = await writeSession(env.sessionsDir, env.root, [user('go'), answered('openai-codex', usage, { at: Date.now() - 50 * MINUTE }),
+    { type: 'usage', kind: 'cache_warm', usage: { input: 0, output: 0, cacheRead: 90_000, cacheWrite: 0 }, timestamp: new Date(Date.now() - 5 * MINUTE).toISOString() }]);
+  const opaque = await writeSession(env.sessionsDir, env.root, [user('go'), answered('xai', { input: 10, output: 5, cacheRead: 0, cacheWrite: 0 })]);
+  const compacted = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', usage),
+    { type: 'compaction', summary: 'earlier work', firstKeptEntryId: 'e0', tokensBefore: 91_000 }]);
+  const fresh = await writeSession(env.sessionsDir, env.root, [user('nothing answered yet')]);
+  for (const session of [warm, cold, refreshed, opaque, compacted, fresh]) await env.listed(session.id);
+
+  const rows = new Map((await env.api.list({ limit: 50 })).sessions.map((row) => [row.sessionId, row]));
+  const warmRow = rows.get(warm.id);
+  assert.equal(warmRow.cache.state, 'warm');
+  assert.equal(warmRow.cache.expiresAt, warm.entries[1].message.timestamp + 60 * MINUTE, "Anthropic's 1h lifetime from the answer");
+  assert.ok(warmRow.cache.minutesLeft >= 49 && warmRow.cache.minutesLeft <= 50, `${warmRow.cache.minutesLeft} minutes left`);
+  assert.equal(warmRow.contextTokens, 91_000, "the newest answer's total");
+  assert.deepEqual(rows.get(cold.id).cache, { state: 'cold' });
+  assert.equal(rows.get(cold.id).contextTokens, 91_000, 'a cold conversation still says what it would re-read');
+  assert.equal(rows.get(refreshed.id).cache.state, 'warm', 'a refresh restarts the 30-minute Codex lifetime');
+  assert.equal(rows.get(refreshed.id).cache.expiresAt, Date.parse(refreshed.entries[2].timestamp) + 30 * MINUTE);
+  assert.deepEqual(rows.get(opaque.id).cache, { state: 'unknown' }, 'a provider without a lifetime is not guessed');
+  assert.equal(rows.get(opaque.id).contextTokens, 15);
+  assert.equal(rows.get(compacted.id).contextTokens, null, 'after a compaction the next request is smaller than the last answer said');
+  assert.deepEqual(rows.get(fresh.id).cache, { state: 'unknown' });
+  assert.equal(rows.get(fresh.id).contextTokens, null);
+
+  const read = await env.api.read({ sessionId: warm.id });
+  assert.deepEqual(read.session.cache, warmRow.cache);
+  assert.equal(read.session.contextTokens, 91_000);
+  assert.equal(env.row(warm.id).runtimeId, null, 'looking at the cache loads no runtime');
+});
+
+test("a loaded conversation's cache comes from its warmer, with the end of the refreshes it will still send", async (t) => {
+  const env = await setup(t, { now: () => 1_789_999_000_000 });
+  const session = await env.make('Warm lead');
+  const client = await env.client();
+  await client.attach(session.id);
+  await client.command({ type: 'prompt', message: 'warm-cache' });
+  await until(async () => !(await client.snapshot()).state.isStreaming);
+  const row = (await env.api.list()).sessions.find((item) => item.sessionId === session.id);
+  // The fixture's warmer: warm until 1_790_000_000_000, scheduled through its two-hour session end.
+  assert.deepEqual(row.cache, { state: 'warm', expiresAt: 1_790_000_000_000, minutesLeft: 16, warmingUntil: 1_790_000_000_000 + 2 * 3_600_000 });
+});
+
+test('cacheWarming sets one conversation\'s warmer the way the context ring does, and refuses what the ring would', async (t) => {
+  const env = await setup(t, { now: () => 1_789_999_000_000 });
+  const session = await env.make('Long lead');
+  const longer = await env.api.cacheWarming({ sessionId: session.id, hours: 6 });
+  assert.deepEqual(longer, { sessionId: session.id, title: 'Long lead',
+    warming: { mode: 'idle', enabled: true, until: 1_790_000_000_000 + 6 * 3_600_000 },
+    cache: { state: 'warm', expiresAt: 1_790_000_000_000, minutesLeft: 16 } });
+  const off = await env.api.cacheWarming({ sessionId: session.id, enabled: false });
+  assert.equal(off.warming.enabled, false);
+  assert.equal(off.cache.warmingUntil, undefined);
+  await assert.rejects(env.api.cacheWarming({ sessionId: session.id }), { code: 'invalid' });
+  await assert.rejects(env.api.cacheWarming({ sessionId: session.id, hours: 1.5 }), { code: 'invalid' });
+  await assert.rejects(env.api.cacheWarming({ sessionId: session.id, enabled: 'yes' }), { code: 'invalid' });
+  await assert.rejects(env.api.cacheWarming({ sessionId: randomUUID(), hours: 3 }), { code: 'unknown_session' });
 });
