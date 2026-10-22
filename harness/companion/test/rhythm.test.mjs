@@ -847,7 +847,7 @@ test('prompt: the default soul has its three channels in its own voice and names
 test('prompt: Segno leaves its voice and its name for the user behind when it writes for leads, repos and shared docs (lead c9ea0b95)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const work = companion.slice(companion.indexOf('## 내가 하는 것, 리드한테 맡기는 것'), companion.indexOf('## 메시지가 오는 데'));
-  assert.match(work, /이 일을 이끄는 건 나야\. CTO처럼 무엇·왜·범위·우선순위·다음 수·검수를 쥐고 리드한테 일을 맡겨\. 어떻게·구현·확인은 리드가 맡아서 나한테 보고해\./, 'Segno leads the work as CTO (user 86f3c89e)');
+  assert.match(work, /이 일을 이끄는 건 나야\. 나는 사용자의 Chief of Staff야\. 사용자 곁에서 무엇·왜·범위·우선순위·다음 수·검수를 쥐고 리드한테 일을 맡겨\. 어떻게·구현·확인은 리드가 맡아서 나한테 보고해\./, 'Segno leads the work as Chief of Staff (intent rev 16, user 056511ae)');
   assert.doesNotMatch(companion, /대신 부탁|on behalf/);
   assert.match(work, /일을 넘길 때는 `dispatching` 스킬을 따라: 묶이는 것과 참고할 것을 가르고, 규모와 어떻게 돌려받을지를 적고, 넘긴 뒤엔 돌아올 때까지 맡겨 두고 끼어들지 않아\./, 'the brief recipe lives in the skill (user fd4b39dc)');
   assert.doesNotMatch(work, /혼자 읽어도 되는 브리프를 줘\. 원하는 결과, 아는 것, 묶이는 것/);
