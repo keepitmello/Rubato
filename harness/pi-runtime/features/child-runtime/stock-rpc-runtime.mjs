@@ -160,21 +160,21 @@ export async function createStockChildInProcessSession(options = {}, {
   if (typeof cwd !== "string" || cwd.length === 0) throw new Error("stock child in-process session requires cwd")
   if (typeof agentDir !== "string" || agentDir.length === 0) throw new Error("stock child in-process session requires agentDir")
   if (!settingsManager) throw new Error("stock child in-process session requires settingsManager")
-  // Skills and the project's instruction files (AGENTS.md / CLAUDE.md) load as they do for the lead
-  // and for a child in its own process: the agent role prompt tells a subagent to read its brief with
-  // Skill(dispatched), and a child that cannot see that skill reported it "not in this environment".
-  // Extensions still come only from the child factories below.
+  // The child loads what the lead and a child in its own process load: the user's own extensions
+  // (a billing guard and tools among them), skills, prompt templates, themes and the project's
+  // instruction files (AGENTS.md / CLAUDE.md). The agent role prompt tells a subagent to read its
+  // brief with Skill(dispatched); a child that could not see that skill reported it "not in this
+  // environment". Rubato's own features come from the child factories below.
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
-    noExtensions: true,
-    noPromptTemplates: true,
-    noThemes: true,
     extensionFactories,
   })
   await resourceLoader.reload()
-  const errors = resourceLoader.getExtensions()?.errors ?? []
+  // A child factory that fails to load stops the child; a user extension that fails to load is left
+  // out and the child runs, as the lead does.
+  const errors = (resourceLoader.getExtensions()?.errors ?? []).filter((entry) => String(entry?.path ?? "").startsWith("<inline:"))
   if (errors.length > 0) throw new Error(`child extension load failed: ${JSON.stringify(errors)}`)
   const customTools = Array.isArray(options.customTools)
     ? options.customTools.filter((tool) => !CHILD_OWNED_FILE_TOOLS.has(tool?.name))

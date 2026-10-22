@@ -58,7 +58,7 @@ describe("stock Pi child RPC runtime", () => {
       /requires createAgentSession/
     )
   })
-  test("an in-process child sees the skills and project instructions a lead sees", async (t) => {
+  test("an in-process child loads the user's extensions, skills and project instructions a lead loads", async (t) => {
     const root = mkdtempSync(join(tmpdir(), "rubato-inproc-skills-"))
     t.after(() => rm(root, { recursive: true, force: true }))
     const cwd = join(root, "cwd")
@@ -68,6 +68,9 @@ describe("stock Pi child RPC runtime", () => {
     writeFileSync(join(agentDir, "skills", "dispatched", "SKILL.md"),
       "---\nname: dispatched\ndescription: Contract for a session that works from a delegated brief.\n---\n\n# Dispatched\n")
     writeFileSync(join(cwd, "AGENTS.md"), "# Project rules\nCommit with the project's style.\n")
+    mkdirSync(join(agentDir, "extensions"))
+    writeFileSync(join(agentDir, "extensions", "user-guard.ts"),
+      "export default function (pi) { pi.on(\"before_provider_request\", () => undefined) }\n")
     let loader
     class RecordingLoader extends DefaultResourceLoader {
       constructor(options) { super(options); loader = this }
@@ -78,7 +81,25 @@ describe("stock Pi child RPC runtime", () => {
     })
     assert.ok(loader.getSkills().skills.some((skill) => skill.name === "dispatched"), "the brief contract skill is listed")
     assert.ok(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(cwd, "AGENTS.md")), "project instructions load")
-    assert.deepEqual(loader.getExtensions().extensions, [], "extensions still come only from the child factories")
+    assert.ok(loader.getExtensions().extensions.some((extension) => extension.path === join(agentDir, "extensions", "user-guard.ts")),
+      "the user's own extension loads")
+    assert.deepEqual(loader.getExtensions().errors, [])
+  })
+  test("a user extension that fails to load is left out and the child still starts; a broken child factory still stops it", async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "rubato-inproc-exterr-"))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const cwd = join(root, "cwd")
+    const agentDir = join(root, "agent")
+    mkdirSync(join(agentDir, "extensions"), { recursive: true })
+    mkdirSync(cwd)
+    writeFileSync(join(agentDir, "extensions", "broken.ts"), "import \"/nonexistent/fish-tts.mjs\"\nexport default function () {}\n")
+    const seams = { createAgentSession: async () => ({ session: { bindExtensions: async () => {} } }), DefaultResourceLoader }
+    const options = { cwd, agentDir, settingsManager: SettingsManager.inMemory() }
+    await createStockChildInProcessSession(options, seams)
+    await assert.rejects(
+      () => createStockChildInProcessSession(options, { ...seams, extensionFactories: [{ name: "child-feature", factory: () => { throw new Error("boom") } }] }),
+      /child extension load failed/,
+    )
   })
 
   test("resolves the installed stock export, not Senpi's rpc entry", () => {
