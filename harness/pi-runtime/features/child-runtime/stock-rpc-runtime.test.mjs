@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import assert from "node:assert/strict"
 import { once } from "node:events"
 import { describe, test } from "node:test"
-import { createAgentSession, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent"
 import { Type } from "typebox"
 
 import {
@@ -57,6 +57,28 @@ describe("stock Pi child RPC runtime", () => {
       () => createStockChildInProcessSession({ cwd: RUNTIME_ROOT, agentDir: RUNTIME_ROOT, settingsManager: {} }),
       /requires createAgentSession/
     )
+  })
+  test("an in-process child sees the skills and project instructions a lead sees", async (t) => {
+    const root = mkdtempSync(join(tmpdir(), "rubato-inproc-skills-"))
+    t.after(() => rm(root, { recursive: true, force: true }))
+    const cwd = join(root, "cwd")
+    const agentDir = join(root, "agent")
+    mkdirSync(join(agentDir, "skills", "dispatched"), { recursive: true })
+    mkdirSync(cwd)
+    writeFileSync(join(agentDir, "skills", "dispatched", "SKILL.md"),
+      "---\nname: dispatched\ndescription: Contract for a session that works from a delegated brief.\n---\n\n# Dispatched\n")
+    writeFileSync(join(cwd, "AGENTS.md"), "# Project rules\nCommit with the project's style.\n")
+    let loader
+    class RecordingLoader extends DefaultResourceLoader {
+      constructor(options) { super(options); loader = this }
+    }
+    await createStockChildInProcessSession({ cwd, agentDir, settingsManager: SettingsManager.inMemory() }, {
+      createAgentSession: async () => ({ session: { bindExtensions: async () => {} } }),
+      DefaultResourceLoader: RecordingLoader,
+    })
+    assert.ok(loader.getSkills().skills.some((skill) => skill.name === "dispatched"), "the brief contract skill is listed")
+    assert.ok(loader.getAgentsFiles().agentsFiles.some((file) => file.path === join(cwd, "AGENTS.md")), "project instructions load")
+    assert.deepEqual(loader.getExtensions().extensions, [], "extensions still come only from the child factories")
   })
 
   test("resolves the installed stock export, not Senpi's rpc entry", () => {

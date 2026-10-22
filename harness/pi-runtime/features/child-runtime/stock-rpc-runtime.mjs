@@ -160,15 +160,17 @@ export async function createStockChildInProcessSession(options = {}, {
   if (typeof cwd !== "string" || cwd.length === 0) throw new Error("stock child in-process session requires cwd")
   if (typeof agentDir !== "string" || agentDir.length === 0) throw new Error("stock child in-process session requires agentDir")
   if (!settingsManager) throw new Error("stock child in-process session requires settingsManager")
+  // Skills and the project's instruction files (AGENTS.md / CLAUDE.md) load as they do for the lead
+  // and for a child in its own process: the agent role prompt tells a subagent to read its brief with
+  // Skill(dispatched), and a child that cannot see that skill reported it "not in this environment".
+  // Extensions still come only from the child factories below.
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
     settingsManager,
     noExtensions: true,
-    noSkills: true,
     noPromptTemplates: true,
     noThemes: true,
-    noContextFiles: true,
     extensionFactories,
   })
   await resourceLoader.reload()
