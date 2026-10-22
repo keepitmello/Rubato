@@ -287,8 +287,9 @@ export function RubatoProjectRail() {
             />
           </PopoverPopup>
         </Popover>
-        {/* Segno, switched off after it was set up: one click turns it back on (intent rev 8). */}
-        {companion.status && !companion.status.settings.enabled && companion.status.sessionId !== null ? (
+        {/* Segno while it is off, never turned on included: a new device starts with it off, and one
+            click turns it on (intent rev 8, "the same for every user and device"). */}
+        {companion.status && !companion.status.settings.enabled ? (
           <RailButton
             label="Segno (off) · turn on"
             onClick={() => {
