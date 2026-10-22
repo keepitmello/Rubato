@@ -15,9 +15,13 @@ import { ANTIGRAVITY_API } from "../../../rubato-pi/src/antigravity-api.mjs";
 import { feature, patches } from "./patches.mjs";
 import {
 	AUDIO_MIME_TYPE,
+	MAX_REQUEST_VIDEOS,
 	MEDIA_BYTE_LIMIT,
 	MEDIA_SHORT_SIDE,
 	VIDEO_MIME_TYPE,
+	VIDEO_OMITTED_TEXT,
+	installVideoLimit,
+	limitRequestVideos,
 	mediaKind,
 	readMediaFile,
 	watchesMedia,
@@ -139,6 +143,68 @@ test("missing ffmpeg is reported, not thrown", async () => {
 	};
 	const { content } = await readMediaFile("/x/a.mp4", gemini(), { exec });
 	assert.match(content[0].text, /needs ffmpeg/);
+});
+
+const videoRead = (n) => ({
+	role: "toolResult",
+	toolCallId: `read-${n}`,
+	content: [
+		{ type: "text", text: `Read video file [video/mp4] clip-${n}.mp4: 0:00–0:10 of 0:10` },
+		{ type: "image", data: Buffer.from(`clip-${n}`).toString("base64"), mimeType: VIDEO_MIME_TYPE },
+	],
+});
+const videosIn = (messages) => messages.flatMap((message) => message.content)
+	.filter((block) => block.type === "image" && block.mimeType === VIDEO_MIME_TYPE)
+	.map((block) => Buffer.from(block.data, "base64").toString());
+const transcript = (count) => Array.from({ length: count }, (_, i) => [
+	{ role: "user", content: [{ type: "text", text: `turn ${i + 1}` }] },
+	videoRead(i + 1),
+]).flat();
+
+test("up to the video cap the request is sent unchanged", () => {
+	const messages = transcript(MAX_REQUEST_VIDEOS);
+	assert.equal(limitRequestVideos(messages), messages);
+});
+
+test("the video past the cap drops every older video and only the newest stays", () => {
+	const messages = transcript(MAX_REQUEST_VIDEOS + 1);
+	const limited = limitRequestVideos(messages);
+	assert.deepEqual(videosIn(limited), [`clip-${MAX_REQUEST_VIDEOS + 1}`]);
+	const first = limited[1];
+	assert.equal(first.content[0].text, messages[1].content[0].text, "the read note naming the file stays");
+	assert.deepEqual(first.content[1], { type: "text", text: VIDEO_OMITTED_TEXT });
+	assert.equal(videosIn(messages).length, MAX_REQUEST_VIDEOS + 1, "the session history keeps every clip");
+});
+
+test("dropped videos stay dropped, so later requests keep the same prefix until the cap is reached again", () => {
+	const atDrop = limitRequestVideos(transcript(MAX_REQUEST_VIDEOS + 1));
+	for (let count = MAX_REQUEST_VIDEOS + 1; count <= 2 * MAX_REQUEST_VIDEOS; count += 1) {
+		const limited = limitRequestVideos(transcript(count));
+		assert.deepEqual(limited.slice(0, atDrop.length), atDrop, `request with ${count} videos`);
+		assert.equal(videosIn(limited).length, count - MAX_REQUEST_VIDEOS);
+	}
+	const again = limitRequestVideos(transcript(2 * MAX_REQUEST_VIDEOS + 1));
+	assert.deepEqual(videosIn(again), [`clip-${2 * MAX_REQUEST_VIDEOS + 1}`]);
+});
+
+test("videos in one message count one by one, and audio and images are not videos", () => {
+	const many = { role: "user", content: Array.from({ length: MAX_REQUEST_VIDEOS + 2 }, (_, i) =>
+		({ type: "image", data: Buffer.from(`clip-${i + 1}`).toString("base64"), mimeType: VIDEO_MIME_TYPE })) };
+	const others = { role: "user", content: [
+		{ type: "image", data: "YXVkaW8=", mimeType: AUDIO_MIME_TYPE },
+		{ type: "image", data: "aW1hZ2U=", mimeType: "image/png" },
+	] };
+	const limited = limitRequestVideos([many, others]);
+	assert.deepEqual(videosIn(limited), [`clip-${MAX_REQUEST_VIDEOS + 1}`, `clip-${MAX_REQUEST_VIDEOS + 2}`]);
+	assert.equal(limited[1], others);
+});
+
+test("the installed context hook returns the limited request only when it changes", async () => {
+	const handlers = {};
+	installVideoLimit({ on(event, handler) { handlers[event] = handler; } });
+	assert.equal(await handlers.context({ messages: transcript(MAX_REQUEST_VIDEOS) }), undefined);
+	const result = await handlers.context({ messages: transcript(MAX_REQUEST_VIDEOS + 1) });
+	assert.deepEqual(videosIn(result.messages), [`clip-${MAX_REQUEST_VIDEOS + 1}`]);
 });
 
 test("stock targets match the media patch preimages", () => {

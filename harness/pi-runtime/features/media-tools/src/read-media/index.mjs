@@ -37,6 +37,63 @@ export const MEDIA_BYTE_LIMIT = 12 * 1024 * 1024;
 export const VIDEO_MIME_TYPE = "video/mp4";
 export const AUDIO_MIME_TYPE = "audio/mp3";
 
+/**
+ * Vertex rejects a request with more video parts than this: "Unable to submit request because
+ * it has 13 video files but the model only supports up to 10" (400 INVALID_ARGUMENT, 2026-10-22).
+ */
+export const MAX_REQUEST_VIDEOS = 10;
+
+export const VIDEO_OMITTED_TEXT =
+	`[Video omitted: a request carries at most ${MAX_REQUEST_VIDEOS} videos, so older ones were dropped. Read the file again to see it.]`;
+
+function isVideoBlock(block) {
+	return block?.type === "image" && typeof block.data === "string" && /^video\//i.test(String(block.mimeType));
+}
+
+/**
+ * Keeps the request at or under `max` video parts. Walking the history in order, the video that
+ * would be one too many drops every video before it, so only the newest stays.
+ *
+ * Dropping changes the prompt prefix and misses the cache from the first dropped video on; that
+ * miss is the only one until `max` more videos arrive. Per video read, the cost of carrying the
+ * kept videos on every turn and of the miss both grow with how many are kept, so keeping one
+ * is the cheapest; a dropped clip costs one re-read when the model needs it again.
+ *
+ * The decisions are a function of the transcript alone and the transcript only grows, so every
+ * later request and a restarted session drop the same videos and keep the same prefix.
+ */
+export function limitRequestVideos(messages, max = MAX_REQUEST_VIDEOS) {
+	if (!Array.isArray(messages)) return messages;
+	const dropped = new Set();
+	let kept = [];
+	messages.forEach((message, messageIndex) => {
+		if (!Array.isArray(message?.content)) return;
+		message.content.forEach((block, blockIndex) => {
+			if (!isVideoBlock(block)) return;
+			if (kept.length >= max) {
+				for (const key of kept) dropped.add(key);
+				kept = [];
+			}
+			kept.push(`${messageIndex}:${blockIndex}`);
+		});
+	});
+	if (dropped.size === 0) return messages;
+	return messages.map((message, messageIndex) => {
+		if (!Array.isArray(message?.content)) return message;
+		if (!message.content.some((_, blockIndex) => dropped.has(`${messageIndex}:${blockIndex}`))) return message;
+		const content = message.content.map((block, blockIndex) =>
+			dropped.has(`${messageIndex}:${blockIndex}`) ? text(VIDEO_OMITTED_TEXT) : block);
+		return { ...message, content };
+	});
+}
+
+export function installVideoLimit(pi) {
+	pi.on("context", (event) => {
+		const messages = limitRequestVideos(event.messages);
+		if (messages !== event.messages) return { messages };
+	});
+}
+
 export function mediaKind(path) {
 	const extension = extname(String(path)).toLowerCase();
 	if (VIDEO_EXTENSIONS.has(extension)) return "video";
@@ -98,7 +155,9 @@ function formatMegabytes(bytes) {
 	return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }
 
-const text = (value) => ({ type: "text", text: value });
+function text(value) {
+	return { type: "text", text: value };
+}
 
 /**
  * Returns undefined for files that are not video or audio, so `read` goes on as before.

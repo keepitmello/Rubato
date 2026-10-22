@@ -4,6 +4,7 @@ import anthropicBashExtension from "./anthropic-bash/index.js";
 import webfetchExtension, { isWebfetchEnabled } from "./webfetch/index.js";
 import lookAtExtension from "./look-at/index.js";
 import { installImageLimit } from "./host/image-limit.mjs";
+import { installVideoLimit } from "./read-media/index.mjs";
 
 export {
 	imageGenExtension,
@@ -16,6 +17,7 @@ export {
 
 export function registerMediaTools(pi, host = {}) {
 	installImageLimit(pi);
+	installVideoLimit(pi);
 	webfetchExtension(pi);
 	lookAtExtension(pi, host);
 	imageGenExtension(pi);
