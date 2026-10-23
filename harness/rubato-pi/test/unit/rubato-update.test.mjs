@@ -508,7 +508,9 @@ test("unattended update restarts the profile engine when pi-server source change
   assert.doesNotMatch(testOut, /프로필 엔진 재시작/);
 });
 
-test("a registered scheduler is restarted when its source changes, and left alone otherwise", () => {
+// The scheduler runs inside the profile engine now (scheduler/src/service.mjs), not as its own
+// launchd job: its source change restarts the engine, and the old job is never kickstarted.
+test("a scheduler source change restarts the profile engine, not the old scheduler job", () => {
   const launchctl = (fixture) => {
     const bin = join(fixture.root, "fake-launchctl");
     write(bin, `#!/bin/sh\nprintf 'launchctl %s\\n' "$*" >> "$RUBATO_TEST_TRACE"\n`);
@@ -517,7 +519,9 @@ test("a registered scheduler is restarted when its source changes, and left alon
   };
   const changed = setupFixture({ schedulerSrc: true });
   runUpdate(changed, { env: { RUBATO_LAUNCHCTL_BIN: launchctl(changed) } });
-  assert.match(readFileSync(changed.trace, "utf8"), /launchctl kickstart -k gui\/\d+\/com\.keepitmello\.rubato\.scheduler/);
+  const changedTrace = readFileSync(changed.trace, "utf8");
+  assert.match(changedTrace, /^restart-profile-engine$/m);
+  assert.doesNotMatch(changedTrace, /kickstart -k gui\/\d+\/com\.keepitmello\.rubato\.scheduler/);
   const unrelated = setupFixture({});
   runUpdate(unrelated, { env: { RUBATO_LAUNCHCTL_BIN: launchctl(unrelated) } });
   const trace = existsSync(unrelated.trace) ? readFileSync(unrelated.trace, "utf8") : "";

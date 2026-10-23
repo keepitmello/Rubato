@@ -37,6 +37,7 @@ function viaRuntime(provider) {
 // 파생되는 현재 세대 opus 행은 피커 명단이 소유한다.
 const DERIVED_OPUS = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-opus-5-"));
 const DERIVED_SONNET = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-sonnet-5-"));
+const DERIVED_HAIKU = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-haiku-5-"));
 
 /** 실제 token 과 겹칠 수 없는 값. 접두만 진짜와 같게 둔다 — 그 접두가 판정을 만든다. */
 const SETUP_TOKEN = `${CLAUDE_SETUP_TOKEN_PREFIX}-test-only-not-a-real-token`;
@@ -223,23 +224,27 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
   // 싣기 시작하면 파생은 사라지고 pin 행이 그대로 쓰인다 (pi 1.0.1 은 opus/sonnet 5.5 를 싣는다).
   // 파생 행마다 계정 행 `[sub]`·`[sub2]` 사본도 함께 생긴다.
   const derived = ours.filter((model) => !byId.has(model.id));
-  const expectedDerived = [DERIVED_OPUS, DERIVED_SONNET].filter((id) => !byId.has(id));
+  const expectedDerived = [DERIVED_OPUS, DERIVED_SONNET, DERIVED_HAIKU].filter((id) => !byId.has(id));
   assert.deepEqual(
-    derived.map((model) => model.id).filter((id) => !/-sub2?$/.test(id)),
-    expectedDerived,
+    derived.map((model) => model.id).filter((id) => !/-sub2?$/.test(id)).sort(),
+    [...expectedDerived].sort(),
   );
   const derivedById = new Map(derived.map((model) => [model.id, model]));
-  if (expectedDerived.length === 0) return;
 
   // 파생 행의 틀도 손으로 적지 않았다. Opus 는 id·표시명·가격만 다르고 나머지는 틀 그대로다.
-  const { id: _opusId, name: _opusName, cost: _opusCost, ...opusRest } = derivedById.get(DERIVED_OPUS);
-  const { id: _opusTplId, name: _opusTplName, cost: _opusTplCost, ...opusTemplateRest } = byId.get("claude-opus-5");
-  assert.deepEqual(opusRest, opusTemplateRest);
+  if (derivedById.has(DERIVED_OPUS)) {
+    const { id: _opusId, name: _opusName, cost: _opusCost, ...opusRest } = derivedById.get(DERIVED_OPUS);
+    const { id: _opusTplId, name: _opusTplName, cost: _opusTplCost, ...opusTemplateRest } = byId.get("claude-opus-5");
+    assert.deepEqual(opusRest, opusTemplateRest);
+  }
 
-  // Sonnet 5.5 는 가격까지 Sonnet 5 와 같다 — id·표시명만 다르다.
-  const { id: _sonnetId, name: _sonnetName, ...sonnetRest } = derivedById.get(DERIVED_SONNET);
-  const { id: _sonnetTplId, name: _sonnetTplName, ...sonnetTemplateRest } = byId.get("claude-sonnet-5");
-  assert.deepEqual(sonnetRest, sonnetTemplateRest);
+  // Sonnet 5.5 와 Haiku 5.5 는 가격까지 틀(Sonnet 5, Haiku 4.5)과 같다 — id·표시명만 다르다.
+  for (const [id, templateId] of [[DERIVED_SONNET, "claude-sonnet-5"], [DERIVED_HAIKU, "claude-haiku-4-5"]]) {
+    if (!derivedById.has(id)) continue;
+    const { id: _id, name: _name, ...rest } = derivedById.get(id);
+    const { id: _tplId, name: _tplName, ...templateRest } = byId.get(templateId);
+    assert.deepEqual(rest, templateRest);
+  }
 });
 
 // -------------------------------------------------------------- Kiro wire

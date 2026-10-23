@@ -57,15 +57,15 @@ function harness(t) {
   };
 }
 
-test("no alias runs the deepseek lane and stdout is the worker's final answer", (t) => {
+test("no alias runs the ultrafast lane and stdout is the worker's final answer", (t) => {
   const box = harness(t);
-  const explicit = box.run(["job-a", "deepseek"], "find the leak\n");
+  const explicit = box.run(["job-a", "ultrafast"], "find the leak\n");
   assert.equal(explicit.status, 0, explicit.stderr);
-  const deepseekArgs = box.args();
+  const ultrafastArgs = box.args();
   const result = box.run(["job-a"], "find the leak\n");
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "worker-ok\n");
-  assert.deepEqual(box.args(), deepseekArgs);
+  assert.deepEqual(box.args(), ultrafastArgs);
   assert.deepEqual(box.args().slice(0, 5), [
     "--print",
     "--session-dir",

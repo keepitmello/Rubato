@@ -263,12 +263,12 @@ test("hub failure exits nonzero and names the old hub as still running", (t) => 
 test("restart closes with the one thing the user must do, only when a session was cut", (t) => {
   const restarted = restartHarness(t, { engineToken: "restarted", hubPresent: true }).run(["restart"]);
   assert.equal(restarted.status, 0, restarted.stderr);
-  assert.match(restarted.stdout, /rubato.* 를 다시 실행해 이어가세요/);
-  assert.equal(restarted.stdout.match(/다시 실행해 이어가세요/g).length, 1);
+  assert.match(restarted.stdout, /rubato.* 를 다시 실행해 붙으세요/);
+  assert.equal(restarted.stdout.match(/다시 실행해 붙으세요/g).length, 1);
   // Nothing was cut: no instruction to reattach anything.
   const dead = restartHarness(t, { engineToken: "dead", hubPresent: true }).run(["restart"]);
   assert.equal(dead.status, 0, dead.stderr);
-  assert.doesNotMatch(dead.stdout, /다시 실행해 이어가세요/);
+  assert.doesNotMatch(dead.stdout, /다시 실행해 붙으세요/);
 });
 
 test("restart says the app reads the new bridge code without rebuilding for it", () => {
