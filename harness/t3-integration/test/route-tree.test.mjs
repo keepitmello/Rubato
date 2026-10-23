@@ -38,7 +38,10 @@ test('settings and top-level route tree edits equal the router generator output'
   // The generator comes with the router plugin the web build runs.
   const plugin = createRequire(path.join(source, 'apps/web/package.json')).resolve('@tanstack/router-plugin/package.json');
   const {Generator, getConfig} = await import(pathToFileURL(createRequire(plugin).resolve('@tanstack/router-generator')));
-  const config = getConfig({routesDirectory: routes, generatedRouteTree: path.join(root, 'routeTree.gen.ts'), autoCodeSplitting: true}, root);
+  const config = getConfig({routesDirectory: routes, generatedRouteTree: path.join(root, 'routeTree.gen.ts'), autoCodeSplitting: true,
+    // Its scratch files must be on the output's disk: it renames them into place, and the repo
+    // and the temp directory are different devices on CI (EXDEV).
+    tmpDir: path.join(root, '.tanstack', 'tmp')}, root);
   await new Generator({config, root}).run();
   assert.equal(applied, await readFile(path.join(root, 'routeTree.gen.ts'), 'utf8'));
 });

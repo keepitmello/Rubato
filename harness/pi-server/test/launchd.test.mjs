@@ -19,6 +19,9 @@ import { createScheduleStore } from '../../../packages/schedule-core/src/index.m
 const fakeLaunchd = fileURLToPath(new URL('./fixtures/fake-launchd.mjs', import.meta.url));
 const daemon = fileURLToPath(new URL('../../scheduler/src/daemon.mjs', import.meta.url));
 const TEST_LABEL = 'com.keepitmello.rubato.test.engine-unit';
+// Starters and restarts ask launchd only on macOS (launchd.mjs engineLaunchdApplies); elsewhere
+// they start and stop the engine themselves, so these paths exist only there.
+const MAC_ONLY = { skip: process.platform !== 'darwin' && 'launchd manages the engine only on macOS' };
 
 const until = async (predicate, label, ms = 30_000) => {
   const deadline = Date.now() + ms;
@@ -112,7 +115,7 @@ test('registering moves an older install over: the engine job is loaded and the 
   assert.equal(box.starts().filter((line) => line.startsWith(TEST_LABEL)).length, 1);
 });
 
-test('with launchd keeping the engine: killed, it comes back; starters ask launchd and never start a second engine; a restart drains and launchd starts the next one; the scheduler runs inside it', async (t) => {
+test('with launchd keeping the engine: killed, it comes back; starters ask launchd and never start a second engine; a restart drains and launchd starts the next one; the scheduler runs inside it', MAC_ONLY, async (t) => {
   const box = await sandbox(t);
   await ensureEngineLaunchAgent({ env: box.env, agentDir: box.agentDir });
   const options = { descriptorPath: box.descriptorPath, env: box.env, runtimeRoot: null, timeoutMs: 40_000 };
@@ -150,7 +153,7 @@ test('with launchd keeping the engine: killed, it comes back; starters ask launc
   await until(() => store.schedulerStatus().running && store.schedulerStatus().pid === afterRestart[0], 'scheduler beats in the next engine');
 });
 
-test('an engine the app started before the job existed keeps the profile; the job waits and takes over when it ends', async (t) => {
+test('an engine the app started before the job existed keeps the profile; the job waits and takes over when it ends', MAC_ONLY, async (t) => {
   const box = await sandbox(t);
   // The app's engine: started on demand, before any job.
   const off = { launchd: { manages: () => false, kickstart: async () => false } };
@@ -173,7 +176,7 @@ test('an engine the app started before the job existed keeps the profile; the jo
   assert.deepEqual(engineProcesses(box.agentDir), [standby]);
 });
 
-test('a restart reloads a job whose definition changed, through launchd rather than a second signal', async (t) => {
+test('a restart reloads a job whose definition changed, through launchd rather than a second signal', MAC_ONLY, async (t) => {
   const box = await sandbox(t);
   await ensureEngineLaunchAgent({ env: box.env, agentDir: box.agentDir });
   await ensureProfileEngine({ descriptorPath: box.descriptorPath, env: box.env, runtimeRoot: null, timeoutMs: 40_000 });
