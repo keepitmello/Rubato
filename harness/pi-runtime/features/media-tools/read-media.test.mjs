@@ -11,7 +11,7 @@ import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { feature as parityGapsFeature } from "../parity-gaps/feature.mjs";
 import { toolExecutionFeature } from "../tool-execution/index.mjs";
-import { ANTIGRAVITY_API } from "../../../rubato-pi/src/antigravity-api.mjs";
+import { ANTIGRAVITY_API } from "../../../rubato-pi/src/antigravity-id.mjs";
 import { feature, patches } from "./patches.mjs";
 import {
 	AUDIO_MIME_TYPE,

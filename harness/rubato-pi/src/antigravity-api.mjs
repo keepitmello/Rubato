@@ -18,7 +18,7 @@ const {
 import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { nextAntigravityEnvelope } from "./antigravity-state.mjs";
 
-export const ANTIGRAVITY_API = "rubato-antigravity";
+export { ANTIGRAVITY_API } from "./antigravity-id.mjs";
 export const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_PROJECT_ENV = "RUBATO_ANTIGRAVITY_PROJECT";
 
