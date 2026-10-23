@@ -471,5 +471,9 @@ export async function startSessionServer(options) {
   try { await host.start(); await server.start(); }
   catch (error) { await server.close().catch(() => {}); await host.close(); throw error; }
   let closing;
-  return { host, server, serverId, close: () => closing ??= (async () => { await server.close(); await host.close(); })() };
+  let closingStep;
+  return { host, server, serverId, get closingStep() { return closingStep; }, close: () => closing ??= (async () => {
+    closingStep = 'socket server'; await server.close();
+    closingStep = 'conversations'; await host.close();
+  })() };
 }

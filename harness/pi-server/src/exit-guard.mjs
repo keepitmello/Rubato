@@ -4,14 +4,15 @@
 // throwaway test extension that exited after its `session_start` closed every open session.
 //
 // The engine itself never leaves that way: it closes on SIGINT/SIGTERM from outside
-// (cli.mjs) and lets the event loop drain, and terminal presentations exit through their own
-// TerminalProcess. So inside the engine those calls are refused. The caller gets an error —
-// an extension handler reports it as an extension error — and the other conversations keep
-// running. A refusal thrown from a timer or a promise would otherwise surface as an uncaught
-// error and crash the engine anyway, so only that error is absorbed there; every other
-// uncaught error still ends the process as Node would.
+// (cli.mjs) and ends through `exitEngine` (engine-stop.mjs), and terminal presentations exit
+// through their own TerminalProcess. So inside the engine those calls are refused. The caller
+// gets an error — an extension handler reports it as an extension error — and the other
+// conversations keep running. A refusal thrown from a timer or a promise would otherwise
+// surface as an uncaught error and crash the engine anyway, so only that error is absorbed
+// there; every other uncaught error still ends the process as Node would.
 const REFUSED = Symbol.for('rubato.hostedExitRefused');
 const INSTALLED = Symbol.for('rubato.hostedExitGuard');
+const OWN_EXIT = Symbol.for('rubato.engineExit');
 
 export class HostedExitRefused extends Error {
   constructor(call) {
@@ -23,10 +24,14 @@ export class HostedExitRefused extends Error {
 
 export const isHostedExitRefused = error => Boolean(error?.[REFUSED]);
 
+/** The engine's own way out past the guard, for its stop (engine-stop.mjs) and nothing hosted. */
+export const exitEngine = (code, proc = process) => (proc[OWN_EXIT] ?? proc.exit).call(proc, code);
+
 export function installExitGuard({ proc = process, report = error => console.error(`rubato-pi-server: ${error.stack}`) } = {}) {
   if (proc[INSTALLED]) return false;
   const exit = proc.exit;
   const kill = proc.kill;
+  proc[OWN_EXIT] = exit;
   const refuse = call => {
     const error = new HostedExitRefused(call);
     report(error);

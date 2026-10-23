@@ -108,18 +108,29 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     const resumed = resumeAfterRestart({ descriptor, resumeFile, onError }).catch((error) => { onError(error); return []; });
     const gate = drainGate ?? await hosted?.loadDrainGate();
     let closing;
+    // Which close step is running, for the log when a stopped engine does not end (engine-stop.mjs).
+    let closingStep;
     const drainStop = new AbortController();
-    return { ...service, descriptorPath, descriptor, resumed, residents, close: ({ drain = false } = {}) => closing ??= (async () => {
+    return { ...service, descriptorPath, descriptor, resumed, residents,
+      get closingStep() { return closingStep === 'session server' ? service.closingStep ?? closingStep : closingStep; },
+      close: ({ drain = false } = {}) => closing ??= (async () => {
       // The services stop first, so none starts new work while the engine drains.
+      closingStep = 'resident services';
       await residents?.close().catch(onError);
       // A restart lets running work reach the gate first; a second stop signal ends the wait.
       if (drain && !compromised) {
+        closingStep = 'resume of the previous restart';
         await Promise.race([resumed, new Promise((resolve) => setTimeout(resolve, 10_000).unref?.())]);
+        closingStep = 'drain';
         await drainForRestart({ host: service.host, gate, resumeFile, signal: drainStop.signal, onError,
           ...(drainTimeoutMs === undefined ? {} : { timeoutMs: drainTimeoutMs }) }).catch(onError);
       }
       hosted?.sessionLink.close();
-      try { await terminalServer?.close(); await service.close(); } finally { if (!compromised) await release(); }
+      try {
+        closingStep = 'terminal server'; await terminalServer?.close();
+        closingStep = 'session server'; await service.close();
+      } finally { closingStep = 'profile lock'; if (!compromised) await release(); }
+      closingStep = 'closed';
     })(), stopDraining: () => drainStop.abort() };
   } catch (error) {
     await residents?.close().catch(() => {});

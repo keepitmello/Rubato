@@ -23,6 +23,9 @@ ok()   { printf '  %s✓%s %s\n' "$GRN" "$RST" "$1"; }
 warn() { printf '  %s!%s %s\n' "$YEL" "$RST" "$1"; }
 err()  { printf '  %s✗%s %s\n' "$RED" "$RST" "$1" >&2; }
 fail() { err "$1"; exit 1; }
+# 받은 코드가 아직 돌지 않는 실패. 남은 단계는 계속하되 마지막에 성공이라고 하지 않는다.
+old_code=0
+stale() { warn "$1"; old_code=1; }
 
 MODE=interactive
 case "${1-}" in
@@ -631,11 +634,11 @@ if [ "$need_hub" = 1 ] && [ "$need_profile" != 1 ]; then
   # 손으로 할 때도 허브만 짚는다. `rubato restart` 는 프로필 엔진까지
   # 재시작하므로, 허브 하나 실패한 자리에서 권하면 대화를 죽인다.
   if [ -z "$HUB_NODE" ]; then
-    warn "node 가 없어 remote hub 를 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
+    stale "node 가 없어 remote hub 를 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
   elif "$HUB_NODE" "$HERE/rubato-hub-restart.mjs" >/dev/null 2>&1; then
     ok "remote hub 재시작"
   else
-    warn "remote hub 재시작 실패. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
+    stale "remote hub 재시작 실패. 옛 코드가 그대로입니다 — 손으로: node $HERE/rubato-hub-restart.mjs"
   fi
 fi
 
@@ -644,7 +647,7 @@ fi
 # 쓰지 않는다.
 if [ "$need_profile" = 1 ]; then
   if [ -z "$NODE" ]; then
-    warn "node 가 없어 프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다"
+    stale "node 가 없어 프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다"
   else
     if PROFILE_OUT="$("$NODE" "$HERE/restart-profile-engine.mjs")"; then
       case "$PROFILE_OUT" in
@@ -654,9 +657,9 @@ if [ "$need_profile" = 1 ]; then
       esac
     else
       case "$PROFILE_OUT" in
-        no-pid*) warn "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
-        timeout*) warn "프로필 엔진이 SIGTERM 을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
-        *) warn "프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+        no-pid*) stale "프로필 엔진 소켓은 살아 있는데 프로세스를 찾지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+        timeout*) stale "프로필 엔진이 SIGTERM 을 받고도 끝나지 않았습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
+        *) stale "프로필 엔진을 재시작하지 못했습니다. 옛 코드가 그대로입니다 — 손으로: pgrep -lf 'cli.mjs --agent-dir'" ;;
       esac
     fi
   fi
@@ -674,4 +677,8 @@ fi
 date +%s > "$STAMP"
 sync_speed_data
 sync_ssh_remotes
+if [ "$old_code" = 1 ]; then
+  printf '\n%s✗%s 소스는 받았지만 위에서 실패한 것은 아직 옛 코드로 돌고 있습니다. 업데이트가 끝나지 않았습니다.\n\n' "$RED" "$RST" >&2
+  exit 1
+fi
 printf '\n%s✓%s 업데이트를 마쳤습니다. %s열린 CLI 터미널은 다시 붙여야 해요.%s\n\n' "$GRN" "$RST" "$DIM" "$RST"
