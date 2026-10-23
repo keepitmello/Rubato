@@ -751,7 +751,8 @@ test('the dream finds mail and calendar tools and keeps its PATH on macOS, Linux
   const env = sandbox(t);
   const dir = path.join(env.HOME, 'tools');
   mkdirSync(dir);
-  writeFileSync(path.join(dir, 'himalaya.exe'), '');
+  // Named as PATHEXT spells it: Windows matches the extension in any case, Linux CI's filesystem does not.
+  writeFileSync(path.join(dir, 'himalaya.EXE'), '');
   writeFileSync(path.join(dir, 'khal'), '#!/bin/sh\n', { mode: 0o755 });
   // Windows: the variable is Path, the delimiter ';', and the command carries an extension from PATHEXT.
   assert.equal(commandExists('himalaya', { Path: `C:\\nowhere;${dir}`, PATHEXT: '.COM;.EXE' }, 'win32'), true);

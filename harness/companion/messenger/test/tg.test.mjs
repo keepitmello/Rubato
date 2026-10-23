@@ -40,8 +40,9 @@ test('the tg client is looked up on the given environment\'s search path, with W
   const { mkdtempSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-tg-path-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  writeFileSync(path.join(dir, 'tg.cmd'), '@echo off');
-  // Windows matches the extension in any case (and so does this test's filesystem, on a Mac).
+  // Named as PATHEXT spells it: Windows matches the extension in any case, but this test's
+  // filesystem may not (Linux CI).
+  writeFileSync(path.join(dir, 'tg.CMD'), '@echo off');
   assert.equal(resolveBinary('tg', { Path: `C:\\nowhere;${dir}`, PATHEXT: '.EXE;.CMD' }, 'win32')?.toLowerCase(), path.join(dir, 'tg.cmd').toLowerCase());
   assert.equal(resolveBinary('tg', { Path: dir, PATHEXT: '.EXE' }, 'win32'), undefined, 'only the extensions PATHEXT names');
   writeFileSync(path.join(dir, 'tg'), '#!/bin/sh\n');
