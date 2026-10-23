@@ -79,17 +79,20 @@ function setupFixture({ dirty = false, conflict = false, evidence = false, decoy
     write(join(seed, "harness/rubato-pi/scripts/auto-sync-speed-data.mjs"),
       'import { appendFileSync } from "node:fs";\nappendFileSync(process.env.RUBATO_TEST_TRACE, "speed-data\\n");\nprocess.exitCode = Number(process.env.RUBATO_TEST_SPEED_EXIT ?? 0);\n');
   }
+  // Any pull that touches harness/ restarts the profile engine. The helper only records: nothing
+  // here reaches a real profile engine, and a restart that fails fails the update.
+  write(join(seed, "harness/scripts/restart-profile-engine.mjs"),
+    'import { appendFileSync } from "node:fs";\n' +
+    'appendFileSync(process.env.RUBATO_TEST_TRACE, "restart-profile-engine\\n");\n' +
+    'process.stdout.write(`${process.env.RUBATO_TEST_ENGINE_OUT ?? "restarted"}\\n`);\n' +
+    'process.exitCode = Number(process.env.RUBATO_TEST_ENGINE_EXIT ?? 0);\n');
   if (staleEngine) {
-    // The installed engine is behind the source, so the build really replaces it. Both
-    // helpers only record: nothing here reaches a real engine or profile engine.
+    // The installed engine is behind the source, so the build really replaces it. The build
+    // helper only records too.
     write(join(seed, "harness/scripts/build-active-engine.mjs"),
       'import { appendFileSync } from "node:fs";\n' +
       'if (process.argv[2] === "--check") process.exit(10);\n' +
       'appendFileSync(process.env.RUBATO_TEST_TRACE, `build owner=${process.env.RUBATO_PROFILE_RESTART_OWNER ?? ""}\\n`);\n');
-    write(join(seed, "harness/scripts/restart-profile-engine.mjs"),
-      'import { appendFileSync } from "node:fs";\n' +
-      'appendFileSync(process.env.RUBATO_TEST_TRACE, "restart-profile-engine\\n");\n' +
-      'process.stdout.write("restarted\\n");\n');
   }
   if (skillUpdate) {
     write(join(seed, "harness/skills/demo/SKILL.md"), "v1\n");
@@ -561,6 +564,18 @@ test("profile engine restart failure names the old engine as still running", () 
   assert.match(src, /timeout\*/);
   assert.match(src, /소켓은 살아 있는데 프로세스를 찾지 못했습니다/);
   assert.match(src, /SIGTERM 을 받고도 끝나지 않았습니다/);
+});
+
+// 2026-10-23: the old engine outlived its SIGTERM, the updater warned that the old code still ran,
+// and then printed "업데이트를 마쳤습니다" anyway — the app read it as done while no engine answered.
+test("an update whose profile engine restart times out does not report success", () => {
+  const fixture = setupFixture({ profileTest: true, staleEngine: true });
+  const result = runUpdate(fixture, { env: { RUBATO_TEST_ENGINE_OUT: "timeout 780", RUBATO_TEST_ENGINE_EXIT: "1" } });
+  const out = `${result.stdout}\n${result.stderr}`;
+  assert.notEqual(result.status, 0, out);
+  assert.match(out, /SIGTERM 을 받고도 끝나지 않았습니다/);
+  assert.match(out, /업데이트가 끝나지 않았습니다/);
+  assert.doesNotMatch(out, /업데이트를 마쳤습니다/);
 });
 
 // A machine that edited the pin or the overlay locally has nothing to pull,

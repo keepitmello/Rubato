@@ -5,7 +5,8 @@ import { serveProfile } from './profile-server.mjs';
 import { resolveLaunchAgentDir } from '../../rubato-pi/src/launch.mjs';
 import { installedSharedRuntime } from './discovery.mjs';
 import { errorLog } from './error-log.mjs';
-import { installExitGuard } from './exit-guard.mjs';
+import { exitEngine, installExitGuard } from './exit-guard.mjs';
+import { closeAndExit, EXIT_GRACE_MS } from './engine-stop.mjs';
 import { loginShellPath, mergePaths } from './launchd.mjs';
 import { rmSync } from 'node:fs';
 import { listenerPid } from '../../scripts/profile-engine-pid.mjs';
@@ -31,7 +32,8 @@ try {
     // during startup closes the engine as soon as it is up. `on`, not `once`: a second signal
     // must still find our handler.
     // A stop drains first: running work reaches the drain gate and the next engine continues
-    // it (drain.mjs). A second stop signal cuts the wait short.
+    // it (drain.mjs). A second stop signal cuts the wait short. A stopped engine always ends,
+    // even when a close step or a leftover handle would hold it (engine-stop.mjs).
     let service;
     let stopRequested = false;
     let closing = false;
@@ -40,7 +42,8 @@ try {
       if (!service) return;
       if (closing) { service.stopDraining?.(); return; }
       closing = true;
-      try { await service.close({ drain: true }); } catch (error) { console.error(error); process.exitCode = 1; }
+      process.exitCode = await closeAndExit(service, { exit: exitEngine,
+        log: (line) => console.error(`${new Date().toISOString()} ${line}`) });
     };
     process.on('SIGINT', stop); process.on('SIGTERM', stop);
     const idleMs = values['idle-ms'] === 'never' ? null : Number(values['idle-ms'] ?? 60000);
@@ -86,4 +89,6 @@ try {
     ? `${new Date().toISOString()} rubato-pi-server: another engine holds this profile; this start is not needed`
     : `rubato-pi-server: ${error.message}`);
   process.exitCode = 1;
+  // A start that failed serves nothing either, so nothing it left open may keep it alive.
+  setTimeout(() => exitEngine(1), EXIT_GRACE_MS).unref();
 }
