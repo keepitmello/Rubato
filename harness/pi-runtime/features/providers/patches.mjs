@@ -340,6 +340,7 @@ const rubatoSources = Object.freeze([
   "anthropic-server-compaction.mjs",
   "anthropic-setup-token.mjs",
   "antigravity-api.mjs",
+  "antigravity-id.mjs",
   "antigravity-oauth-login.mjs",
   "antigravity-route.mjs",
   "antigravity-state.mjs",

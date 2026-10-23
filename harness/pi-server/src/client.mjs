@@ -26,10 +26,9 @@ export class SessionClient {
     if (this.closed) throw new Error('SessionClient is closed');
     await this.client.connect(); return this;
   }
-  call(service, member, args, session = false) {
+  call(service, member, args, session = false, timeoutMs = session ? this.sessionTimeoutMs : this.timeoutMs) {
     const target = session ? this.client.attachment : { serverId: this.client.serverId };
     if (!target) return Promise.reject(new Error('No session is attached'));
-    const timeoutMs = session ? this.sessionTimeoutMs : this.timeoutMs;
     const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : undefined;
     return this.client.request(target, { serviceId: service.id, member, args: JSON.parse(JSON.stringify(args)) }, signal);
   }
@@ -38,7 +37,9 @@ export class SessionClient {
   catalogue(cwd) { return this.call(Directory, 'catalogue', [cwd]); }
   create(options) { return this.call(Management, 'create', [options]); }
   fork(id, options = {}) { return this.call(Management, 'fork', [id, options]); }
-  attach(id) { return this.call(Management, 'attach', [id]); }
+  // Attaching starts the session's runtime, which waits on the agent like session control does,
+  // so it has the session deadline, not the directory/management one.
+  attach(id) { return this.call(Management, 'attach', [id], false, this.sessionTimeoutMs); }
   detach() { return this.call(Management, 'detach', []); }
   unload(id) { return this.call(Management, 'unload', [id]); }
   discard(id) { return this.call(Management, 'discard', [id]); }

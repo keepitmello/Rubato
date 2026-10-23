@@ -140,6 +140,7 @@
     "apps/web/src/components/ThreadRouteView.tsx": "9b3df122ff161177145b7d90ad457557e3ba779180565def402a08772ef20fa1",
     "apps/web/src/components/ThreadNotificationCoordinator.tsx": "072dc10a27a00cf4f5ad0dc83c98afcca209f6968539dcf56bcc51bc095bee29",
     "apps/server/src/relay/AgentAwarenessRelay.ts": "73587158701b2341050aaed62a5d5fc2a92b7d2008a4b1ffa19516de884ca990",
+    "apps/server/src/cloud/CloudLink.lifecycle.test.ts": "13929b58ad7ee0c1f6a29719a8affc0d0d304ff290d102012aa63bc9a9a81335",
     "packages/provider-core/src/server/ProviderAdapter.ts": "06281daa7520a384eab4b2c58952796298e6b144fb65ea0236591c1bbd5730bf",
     "apps/server/src/orchestration-v2/ProviderSessionManager.ts": "1be48f716eccb4e6f897dad7db76930fc54d24ac809d6eedb0de7e6acb1a1184",
     "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts": "f9e6e56e5b2dfa06c912e85e485979d94894957739d6ff962f9e2154b3f39b72"

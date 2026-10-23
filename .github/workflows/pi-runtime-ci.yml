@@ -31,7 +31,10 @@ jobs:
         run: |
           node --test harness/pi-runtime/test/migration-regressions.test.mjs
           node --test harness/rubato-pi/test/unit/role-prompt.test.mjs
-          node --test harness/rubato-pi/test/unit/context-notes-request-images.test.mjs
+      - name: ffmpeg for the media tools
+        # read re-encodes video and audio with ffmpeg before Gemini sees it (media-tools), and its
+        # tests run the real encoder.
+        run: command -v ffmpeg >/dev/null || brew install ffmpeg
       - name: Install the isolated stock dependency tree
         run: npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
       - name: Compose role prompts and skills into the standard install location

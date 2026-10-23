@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { promisify, stripVTControlCharacters } from 'node:util';
 
 // Closing the right panel's last tab used to hide the column; it now lands on the
 // panel's own launcher (right-panel-edits.mjs). That we can only see through the
@@ -30,7 +30,9 @@ test('closing the last right-panel tab returns to the surface launcher', {
     assert.fail(`${error.stdout ?? ''}\n${error.stderr ?? ''}\n${error.message}`);
   }
   t.diagnostic(result.stdout);
+  // The runner colours its summary when it detects CI.
+  const out = stripVTControlCharacters(result.stdout);
   // Both files ran: upstream's store tests and ours.
-  assert.match(result.stdout, /Test Files\s+2 passed/);
-  assert.doesNotMatch(result.stdout, /FAIL/);
+  assert.match(out, /Test Files\s+2 passed/);
+  assert.doesNotMatch(out, /FAIL/);
 });

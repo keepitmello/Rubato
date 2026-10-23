@@ -295,6 +295,10 @@ const edits = {
     ['    drain: worker.drain,\n',
       '    publishPending: (threadId) => Effect.sync(() => publishRetries.get(threadId)?.timer !== undefined),\n'],
   ],
+  // Upstream's idle relay stand-in has to carry the method the relay gains above.
+  'apps/server/src/cloud/CloudLink.lifecycle.test.ts': [
+    ['  drain: Effect.void,\n', '  publishPending: () => Effect.succeed(false),\n'],
+  ],
   'apps/server/src/serverRuntimeStartup.ts': [
     ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\nimport * as Schedule from "effect/Schedule";\n'],
     // Sessions started elsewhere show as threads once commands are accepted (RubatoPiInventory.ts).

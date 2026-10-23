@@ -266,13 +266,16 @@ test('a fork at a reply copies the conversation up to the end of that reply\'s t
   ].map((entry, index) => ({ id: `e${index}`, parentId: index ? `e${index - 1}` : null, timestamp: stamp, ...entry }));
   await writeFile(file, [{ type: 'session', version: 3, id, timestamp: stamp, cwd: env.root }, ...entries].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
   await until(async () => (await client.list()).some((entry) => entry.sessionId === id));
-  const texts = async (sessionId) => (await client.transcript(sessionId)).messages.map((entry) => entry.content[0].text);
+  // A hidden custom message comes as Pi's live list carries it (session-files.mjs receivedRow).
+  const texts = async (sessionId) => (await client.transcript(sessionId)).messages
+    .map((entry) => entry.role === 'custom' ? `(hidden ${entry.customType})` : entry.content[0].text);
 
   const atFirst = await client.fork(id, { title: 'Source (fork)', at: messageFingerprint(entries[3].message) });
   assert.deepEqual(await texts(atFirst.sessionId), ['first', 'looking', 'found', 'first answer'],
     'the turn ends before the next input, an injected one included');
   const atLast = await client.fork(id, { at: messageFingerprint(entries[6].message) });
-  assert.deepEqual(await texts(atLast.sessionId), ['first', 'looking', 'found', 'first answer', 'second', 'second answer']);
+  assert.deepEqual(await texts(atLast.sessionId),
+    ['first', 'looking', 'found', 'first answer', '(hidden rubato.note)', 'second', 'second answer']);
   await assert.rejects(client.fork(id, { at: 'not-a-fingerprint' }), /Invalid at/);
   await assert.rejects(client.fork(id, { at: '0'.repeat(24) }), /not on this conversation/);
 });
@@ -309,8 +312,9 @@ test('a side chat fork carries the hidden notice after the copied history and is
   assert.equal(body[2].parentId, 'e1');
   assert.equal(body[3].parentId, body[2].id);
   assert.equal(new Set(written.map((entry) => entry.id)).size, written.length, 'entry ids stay unique');
-  assert.deepEqual((await client.transcript(side.sessionId)).messages.map((entry) => entry.role), ['user', 'assistant'],
-    'the notice is not a transcript row');
+  // The notice comes hidden, as Pi's live list carries it, so the app shows no row for it.
+  assert.deepEqual((await client.transcript(side.sessionId)).messages.map((entry) => [entry.role, entry.display]),
+    [['user', undefined], ['assistant', undefined], ['custom', false]], 'the notice is not a visible transcript row');
 
   await assert.rejects(client.discard(id), /Only a side chat/);
   await assert.rejects(client.discard(plain.sessionId), /Only a side chat/);
