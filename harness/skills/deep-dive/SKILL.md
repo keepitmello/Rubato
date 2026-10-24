@@ -1,6 +1,6 @@
 ---
 name: deep-dive
-description: "Use when the user names deep-dive (딥다이브, 깊은 조사), or a consequential decision turns on conflicting or missing evidence a quick lookup won't settle. Not for ordinary research, code walkthroughs or fact checks."
+description: "Use when the user asks for a deep-dive (딥다이브, 깊은 조사) into evidence, or a consequential decision turns on conflicting or missing evidence a quick lookup won't settle. Not for code walkthroughs, ordinary research or fact checks."
 ---
 
 # Research what could change the answer
