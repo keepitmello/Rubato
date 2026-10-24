@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { COMMANDS } from '../src/contracts.mjs';
-import { workerRequest, SERVICE_TIER_REQUEST, AWAITED_WAKES_REQUEST, TASK_LIVE_MESSAGE_REQUEST } from '../src/host.mjs';
+import { workerRequest, SERVICE_TIER_REQUEST, AWAITED_WAKES_REQUEST, TASK_LIVE_MESSAGE_REQUEST, TASK_SNAPSHOT_REQUEST } from '../src/host.mjs';
 import { TERMINAL_AWAITED_WAKES_REQUEST } from '../../pi-runtime/features/terminal/src/host/monitor-state-event.ts';
 
 test('child controls reach the task extension as its own requests', () => {
@@ -15,6 +15,8 @@ test('child controls reach the task extension as its own requests', () => {
   assert.ok(COMMANDS.has('task_live_message'));
   assert.deepEqual(workerRequest({ type: 'task_live_message', taskId: 'st_a' }),
     { type: 'extension_request', name: TASK_LIVE_MESSAGE_REQUEST, data: { task_id: 'st_a' } });
+  assert.ok(COMMANDS.has('get_task_snapshot'));
+  assert.deepEqual(workerRequest({ type: 'get_task_snapshot' }), { type: 'extension_request', name: TASK_SNAPSHOT_REQUEST });
 });
 
 test('Pi commands pass through and the service tier still asks its extension', () => {

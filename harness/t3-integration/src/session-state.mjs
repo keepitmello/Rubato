@@ -106,6 +106,11 @@ export class SessionStateFold {
     this.agents.set(taskId, row);
     this.changed();
   }
+  /** An agent is working, or resting on work of its own that will wake it: its next change is still to come. */
+  hasAgentsUnderWay() {
+    return [...this.agents.values()].some((row) => row.taskType !== 'local_workflow'
+      && (row.status === 'running' || row.status === 'waiting' || (row.status === 'idle' && row.awaiting?.length > 0)));
+  }
   setCache(value) { this.cache = value ?? null; }
   snapshot() {
     const rows = [...this.agents.values()];

@@ -25,6 +25,12 @@ import {
 
 const TASK_UPDATED_EVENT = "rubato.task.updated"
 /**
+ * The snapshot `rubato.task.updated` carries, answered on request. That event goes out only when
+ * something changes, so a host that was not listening then (its stream let go of an idle lead, or
+ * the event fell out of the engine's buffer before it attached) asks for the current one.
+ */
+export const TASK_SNAPSHOT_REQUEST = "rubato.task.snapshot"
+/**
  * Answered for the hosting server before it reclaims an idle lead: approved children that still
  * have work (queued, or running on a live handle). The host defers the unload while this is > 0,
  * so children are not suspended just because the lead's own turn is idle and no window is open.
@@ -83,23 +89,25 @@ export function wireTaskRpcBridge(
     }
   }
 
+  const snapshotOf = (sessionId: string, selection: ReturnType<typeof recordsForSession>) => ({
+    parent_session_id: sessionId,
+    tasks: selection.records.map((record) => {
+      const watch = watches.get(record.task_id)?.watch
+      return taskSnapshot(
+        record,
+        isLive(record) ? engine.manager.runStatsSnapshot?.(record.task_id) : undefined,
+        liveProgress.get(record.task_id) ?? watch?.progress(),
+        watch?.turn(),
+      )
+    }),
+    ...(selection.truncatedTasks === 0 ? {} : { truncated_tasks: selection.truncatedTasks }),
+  })
+
   const emit = (selection = activeSessionId === undefined ? undefined : recordsForSession(activeSessionId)): void => {
     const sessionId = activeSessionId
     if (disposed || sessionId === undefined || pi.rpc?.emit === undefined) return
     if (selection === undefined) return
-    const data = {
-      parent_session_id: sessionId,
-      tasks: selection.records.map((record) => {
-        const watch = watches.get(record.task_id)?.watch
-        return taskSnapshot(
-          record,
-          isLive(record) ? engine.manager.runStatsSnapshot?.(record.task_id) : undefined,
-          liveProgress.get(record.task_id) ?? watch?.progress(),
-          watch?.turn(),
-        )
-      }),
-      ...(selection.truncatedTasks === 0 ? {} : { truncated_tasks: selection.truncatedTasks }),
-    }
+    const data = snapshotOf(sessionId, selection)
     const fingerprint = JSON.stringify(data)
     if (fingerprint === lastSnapshot) return
     lastSnapshot = fingerprint
@@ -198,6 +206,11 @@ export function wireTaskRpcBridge(
   }
 
   registerTaskHandlers(pi, engine, () => (disposed ? undefined : activeSessionId), coordinator)
+  pi.rpc?.handle?.(TASK_SNAPSHOT_REQUEST, async () => {
+    const sessionId = disposed ? undefined : activeSessionId
+    if (sessionId === undefined) return unavailable()
+    return snapshotOf(sessionId, recordsForSession(sessionId))
+  })
   pi.rpc?.handle?.(LIVE_MESSAGE_REQUEST, async (data) => {
     const sessionId = disposed ? undefined : activeSessionId
     if (sessionId === undefined) return unavailable()

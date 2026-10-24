@@ -456,10 +456,13 @@ export class RubatoPiBridge {
   /**
    * Whether T3 keeps the thread's stream however long it idles (RubatoPiDriver keepsLoadedWhileIdle):
    * Segno's conversation, so what Segno says with reply reaches the thread when it is said, not at
-   * the person's next message. Every other thread lets its stream go after T3's idle window.
+   * the person's next message; and a lead whose agents are still under way, so the Agents panel
+   * sees them work and finish (only this stream carries their changes). Every other thread lets
+   * its stream go after T3's idle window.
    */
   keepsStream(threadId) {
-    return this.rpcFor(threadId)?.companion === true;
+    const rpc = this.rpcFor(threadId);
+    return rpc?.companion === true || rpc?.fold?.hasAgentsUnderWay() === true;
   }
   // 앱에 실어 보내는 목록. 앱이 만든 세션은 정책과 무관하게 앱의 것이다.
   async inventory() {
