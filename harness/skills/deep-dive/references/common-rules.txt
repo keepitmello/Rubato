@@ -1,0 +1,24 @@
+COLLECTION CONTRACT
+
+Adapt the context and relevant fields to this assignment. Give each isolated collector the contract it needs in the input it can actually read. When collecting directly, use this only for details the task needs.
+
+CONTEXT
+State the question, why it matters, the user's binding constraints, relevant observations and what remains unresolved. Give current explanations as hypotheses and known names as search leads. Preserve room for unfamiliar sources and high-quality indirect findings. State the allowed scope, deadline or resource boundary when one exists.
+
+EVIDENCE
+- Read the relevant part of a source before using it to support a claim. Keep inaccessible items and search snippets as leads, with the access gap stated. Say what was read: full text, a specific section, abstract, code at a revision, or a secondary account. Opening a source establishes access, not truth.
+- Trace important claims to the original observation, record, rule, study or discussion. An original community report is primary evidence of that person's experience. A company statement establishes what the company states; a source repeating it adds no independent observation.
+- Attach a usable locator to each consequential claim: exact URL or local file and section, author or organization when available, relevant date, and version, jurisdiction or population where these change the meaning. Distinguish publication date from when the described event occurred.
+- Preserve short original-language quotations where wording matters, alongside an explanation in the user's language when useful. For measurements, preserve what was measured, how, on whom or what, the comparison, units, sample or denominator, and conditions that change the result. Treat numerical claims from a participant or vendor as their reports unless independently checked.
+- Explain what the evidence contributes and how far it reaches. Weigh methods, direct access to the event, incentives, independent recurrence and relevance. Formats such as academic paper, documentation, marketing or forum post are descriptions, not a universal ranking. Repeated complaints can reveal a failure mode without giving its population frequency.
+- Seek consequential contrary results and abandoned or changed decisions. Preserve the difference between a proposal, a stated reason, an implementation attempt, a shipped change and an observed outcome. Check whether apparent conflicts come from different conditions. Infer beyond explicit statements when warranted, and explain the observations supporting that inference.
+- Record useful gaps with the search scope, access limits and terminology tried. Missing publication does not establish that a practice, internal experiment or rationale never existed. Explain what observation could distinguish the remaining explanations.
+
+RETURN
+Return an answer to the assigned question with traceable findings, material disagreements and gaps. If assigned collection for another judge, explain what the evidence supports while leaving the final choice to that judge. Keep uncertain indirect findings separately reachable. Preserve conditions that could reverse a finding even in the shortest summary.
+
+Use source identifiers or compact records when they help traceability; no fixed taxonomy, source count or mandatory empty sections are needed. For browser collectors whose returns will be merged, a plain-text shape worked well: numbered sources (title, author or organization, date, locator, what was read, finding, short quote), then disagreements, then gaps. State who read or rechecked a decisive claim and what was checked. Do not upgrade inherited access reports into your own verification.
+
+Save images or other artifacts only when they help inspect a relevant observation and the task permits it; record their source and what they show. Follow the collection tool's file-handling rules. A concept image can show a visual possibility, not actual adoption or usability.
+
+Stop when the assigned question has useful coverage, or return the material gap and the next promising observation within the agreed resource boundary. Recover execution failures through the relevant tool's existing contract.
