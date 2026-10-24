@@ -566,3 +566,60 @@ test('the watchdog also moves an idle stream to the next engine; one that never 
   assert.equal(closed.length, 1);
   assert.match(String(closed[0]?.message ?? closed[0]), /could not reach the new engine/);
 });
+
+// The Agents panel's rows (session-state.mjs) hear an agent only through this stream, and the engine
+// tells a change once. Seen 2026-10-25: T3 let an idle lead's stream go while its agent worked, the
+// agent finished unheard, and the change had left the engine's buffer by the next attach, so the
+// panel said "working · quiet 50m" for good.
+import { SessionStateFold } from '../src/session-state.mjs';
+import { RubatoPiBridge } from '../src/bridge.mjs';
+
+const taskTick = (task) => ({ type: 'extension_event', name: 'rubato.task.updated', data: { parent_session_id: 's1', tasks: [task] } });
+const working = { task_id: 'st_a', task_summary: 'Run the A/B', status: 'running', live_progress: { last_assistant_line: 'While that runs…' } };
+const finished = { task_id: 'st_a', task_summary: 'Run the A/B', status: 'completed', residency_state: 'resident', final_response: 'Round 2 is done.' };
+const answered = () => new Promise((resolve) => setTimeout(resolve, 5));
+function foldedConnection(answers) {
+  const fold = new SessionStateFold({ threadId: 't1', sessionId: 's1' });
+  const client = fakeClient(answers);
+  const { conn } = connection(client, { stateFor: () => fold });
+  return { fold, client, conn, status: () => fold.snapshot().agents.find((agent) => agent.taskId === 'st_a')?.status };
+}
+
+test('an agent that finished while no stream watched reads finished once a stream attaches', async () => {
+  const { client, conn, status } = foldedConnection({ get_task_snapshot: { parent_session_id: 's1', tasks: [finished] } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  // All the buffer still holds is the agent at work.
+  client.listener({ runtimeId: 'r1', sequence: 7, status: 'idle', events: [{ sequence: 7, event: taskTick(working) }] });
+  await answered();
+  assert.equal(status(), 'completed');
+  assert.equal(client.commands.filter((command) => command.type === 'get_task_snapshot').length, 1);
+});
+
+test('a stretch of records the stream missed is made up by asking again; an engine that cannot answer changes nothing', async () => {
+  const { client, conn, status } = foldedConnection({ get_task_snapshot: new Error('unknown extension request') });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'idle', events: [{ sequence: 1, event: taskTick(working) }] });
+  await answered();
+  assert.equal(status(), 'running');
+  client.answers = { get_task_snapshot: { parent_session_id: 's1', tasks: [finished] } };
+  client.command = async (command) => { client.commands.push(command); return client.answers[command.type]; };
+  client.listener({ runtimeId: 'r1', sequence: 400, status: 'idle', events: [{ sequence: 400, event: { type: 'message_end', message: { role: 'user', content: 'hi' } } }] });
+  await answered();
+  assert.equal(status(), 'completed');
+});
+
+test("T3 keeps a lead's stream while its agents work, and lets it go once they are done or only wait for mail", async (t) => {
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/rubato-test.json', instanceId: 'rubato-test', backfillMs: 60_000 });
+  t.after(() => bridge.close());
+  const { fold, client, conn } = foldedConnection({ get_task_snapshot: { parent_session_id: 's1', tasks: [] } });
+  client.detach = async () => {};
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  conn.fold = fold;
+  bridge.rpcConnections.add(conn);
+  fold.feed(taskTick(working));
+  assert.equal(bridge.keepsStream('t1'), true);
+  fold.feed(taskTick({ ...finished, member_turn: { state: 'resting', awaiting: [{ id: 'bg1', description: 'the wave' }] } }));
+  assert.equal(bridge.keepsStream('t1'), true, 'resting on work of its own that will wake it');
+  fold.feed(taskTick(finished));
+  assert.equal(bridge.keepsStream('t1'), false);
+});

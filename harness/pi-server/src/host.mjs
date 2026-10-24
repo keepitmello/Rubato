@@ -21,16 +21,19 @@ const invalid = (message) => new RemoteServiceError('service_invalid_value', mes
 export const SERVICE_TIER_REQUEST = 'rubato.service-tier.status';
 /** Answered by the task extension: the message one of the session's children is writing now. */
 export const TASK_LIVE_MESSAGE_REQUEST = 'rubato.task.live-message';
+/** Answered by the task extension: the session's children as `rubato.task.updated` carries them, now. */
+export const TASK_SNAPSHOT_REQUEST = 'rubato.task.snapshot';
 /**
  * The Pi request an attached command becomes. `get_service_tier`, `get_awaited_wakes`,
- * `task_send`, `task_cancel` and `task_live_message` are not Pi RPC commands: they ask the extensions that own
- * them. The task ones reach the session's own children only (the task extension checks the parent).
+ * `task_send`, `task_cancel`, `task_live_message` and `get_task_snapshot` are not Pi RPC commands: they ask the
+ * extensions that own them. The task ones reach the session's own children only (the task extension checks the parent).
  */
 export function workerRequest(command) {
   if (command.type === 'get_service_tier') return { type: 'extension_request', name: SERVICE_TIER_REQUEST };
   if (command.type === 'get_awaited_wakes') return { type: 'extension_request', name: AWAITED_WAKES_REQUEST };
   if (command.type === 'task_send')
     return { type: 'extension_request', name: 'rubato.task.send', data: { to: command.taskId, message: command.message } };
+  if (command.type === 'get_task_snapshot') return { type: 'extension_request', name: TASK_SNAPSHOT_REQUEST };
   if (command.type === 'task_live_message')
     return { type: 'extension_request', name: TASK_LIVE_MESSAGE_REQUEST, data: { task_id: command.taskId } };
   if (command.type === 'task_cancel')

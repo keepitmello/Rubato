@@ -5,7 +5,7 @@ import type { TaskRunStats } from "@rubato/task"
 
 import { taskRecord } from "./event-bridge.test-fixtures"
 import { wireHarness } from "./event-bridge.test-harness"
-import { LIVE_MESSAGE_REQUEST, USER_CHILD_MESSAGE_TYPE } from "./task-rpc-bridge"
+import { LIVE_MESSAGE_REQUEST, TASK_SNAPSHOT_REQUEST, USER_CHILD_MESSAGE_TYPE } from "./task-rpc-bridge"
 import { boundedTaskOutput } from "./task-rpc-codec"
 
 describe("event-bridge native task telemetry and controls", () => {
@@ -189,6 +189,7 @@ describe("event-bridge native task telemetry and controls", () => {
       "rubato.task.output",
       "rubato.task.pending-work",
       "rubato.task.send",
+      "rubato.task.snapshot",
     ])
     await pi.dispatch("session_start", {}, {})
 
@@ -329,6 +330,30 @@ describe("event-bridge native task telemetry and controls", () => {
     emitChildEvent(running.task_id, { type: "message_end", message: partial })
     await expect(ask(running.task_id)).resolves.toMatchObject({ message: null })
     await expect(ask(foreign.task_id)).resolves.toMatchObject({ kind: "not_found" })
+  })
+
+  it("#given a child that settled after its change event went out #when a host asks for the snapshot #then it gets the current state of this session's children", async () => {
+    const running = taskRecord({ task_id: "st_asked", status: "running" })
+    const foreign = taskRecord({
+      task_id: "st_foreign",
+      status: "running",
+      parent_session_id: "other-session",
+      root_session_id: "other-session",
+    })
+    const { pi, records, emitStoreMutation, invokeRpc } = wireHarness("parent-session", {
+      records: { [running.task_id]: running, [foreign.task_id]: foreign },
+      withRpc: true,
+    })
+    await pi.dispatch("session_start", {}, {})
+    records[running.task_id] = taskRecord({ ...running, status: "completed", final_response: "done" })
+    emitStoreMutation()
+    const emitted = pi.rpcEvents.filter((entry) => entry.name === "rubato.task.updated").at(-1)?.data
+
+    // Nothing changes from here, so nothing is emitted again; the answer is the state, not a replay.
+    const answer = (await invokeRpc(TASK_SNAPSHOT_REQUEST, {})) as { parent_session_id?: string; tasks?: Array<Record<string, unknown>> }
+    expect(answer).toEqual(emitted as typeof answer)
+    expect(answer.parent_session_id).toBe("parent-session")
+    expect(answer.tasks?.map((task) => [task.task_id, task.status])).toEqual([[running.task_id, "completed"]])
   })
 
   it("#given a live child subscription #when the task settles #then the bridge unsubscribes and ignores later child events", async () => {
