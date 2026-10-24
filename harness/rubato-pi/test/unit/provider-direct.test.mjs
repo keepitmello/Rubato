@@ -17,6 +17,7 @@ import {
   daybreakModels,
   directProviders as nativeDirectProviders,
   fable51Models,
+  CODEX_CONTEXT_WINDOWS,
   gpt6CodexModels,
   nativeProviderFactoryLoader,
   providerDirectEnabled,
@@ -193,7 +194,7 @@ test("정리 단계가 직결 provider 를 지우지 않는다", async (t) => {
   }
 });
 
-test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다", async () => {
+test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 고, 넓게 여는 모델만 예외다", async () => {
   const [codex] = await directProviders();
   assert.equal(codex.id, "openai-codex");
   const models = new Map(codex.getModels().map((model) => [model.id, model]));
@@ -202,7 +203,15 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 다"
   assert.equal(models.get("gpt-5.6-sol").contextWindow, 272_000);
   assert.equal(models.get("gpt-5.6-terra").contextWindow, 272_000);
   assert.equal(models.get("gpt-5.6-luna").contextWindow, 272_000);
-  assert.ok([...models.values()].every((model) => model.contextWindow <= 272_000));
+  // 계정 별칭(`-sub`)은 원래 모델의 창을 물려받는다.
+  const wireId = (id) => id.replace(/-sub2?$/, "");
+  assert.ok([...models.values()].filter((model) => !(wireId(model.id) in CODEX_CONTEXT_WINDOWS))
+    .every((model) => model.contextWindow <= 272_000));
+  assert.equal(models.get("gpt-6.1-sol-sub")?.contextWindow ?? CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"],
+    CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
+  // pin 카탈로그는 6.1 Sol 을 272K 로 적지만 Codex 백엔드는 그보다 넓게 연다.
+  assert.equal(models.get("gpt-6.1-sol").contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
+  assert.ok(CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"] > 272_000);
   // Stock pi 의 catalog 에는 `-fast` 행이 없다. /fast 는 service-tier 가 payload 로 싣고,
   // Fast 행은 아래 Daybreak 파생뿐이다.
   assert.equal(models.get("gpt-5.6-sol").serviceTier, undefined, "base 에는 tier 가 없다");
@@ -258,7 +267,7 @@ test("GPT-6.1 Sol 은 6 Sol 과 같은 형태로 주입되고 피커의 6 Sol �
   const [sol61] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
   assert.equal(sol61.id, "gpt-6.1-sol");
   assert.equal(sol61.name, "GPT-6.1 Sol");
-  assert.equal(sol61.contextWindow, 272_000);
+  assert.equal(sol61.contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
   // 6.1 은 6 과 캐시 읽기만 반값이다. 입력·출력·캐시 쓰기와 272K 초과 구간은 같다.
   assert.deepEqual(sol61.cost, {
     input: 2,

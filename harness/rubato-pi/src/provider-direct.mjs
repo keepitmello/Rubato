@@ -312,6 +312,15 @@ export function daybreakModels(nativeModels) {
 const GPT6_CODEX_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]);
 
 /**
+ * Codex 레인의 기본 창은 272K 이고, 그보다 넓게 여는 모델만 여기에 적는다. 값은 Codex 백엔드
+ * `/codex/models` 응답의 `context_window` 다 — pin 카탈로그(pi-ai 1.0.1)는 6.1 Sol 도 272K 로
+ * 적어 둔다. 6.1 Sol 은 2026-10-24 응답에서 500,000 이었고(client_version 0.164.0), 같은 날
+ * 326,290 토큰 입력 요청이 정상 완료됐다. 272K 를 넘는 입력은 `cost.tiers` 의 장문 단가로 계상된다.
+ */
+const CODEX_DEFAULT_CONTEXT_WINDOW = 272_000;
+export const CODEX_CONTEXT_WINDOWS = Object.freeze({ "gpt-6.1-sol": 500_000 });
+
+/**
  * 핀 카탈로그(pi-ai 0.86.1)에 아직 없는 GPT-6 세 행.
  *
  * 정의는 상류 0.87.1 의 `dist/providers/data/openai-codex.json` 에서 그대로 옮겼다.
@@ -320,7 +329,7 @@ const GPT6_CODEX_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])
  * (2/10 대 5/30) thinkingLevelMap 이 off·low·medium 을 더 갖는다.
  *
  * `gpt-6.1-sol` 은 상류 카탈로그에 아직 없어서 Codex 백엔드 `/codex/models` 응답으로 확인했다:
- * 컨텍스트 272K·같은 effort 단계·같은 입력 형식. 가격은 응답에 없어 OpenAI 가격표
+ * 같은 effort 단계·같은 입력 형식. 창은 위 `CODEX_CONTEXT_WINDOWS` 가 정한다. 가격은 응답에 없어 OpenAI 가격표
  * (developers.openai.com/api/docs/pricing, 2026-09-30)에서 옮겼다 — 6-sol 과 캐시 읽기만
  * 다르다(0.20 → 0.10, 272K 초과 0.40 → 0.20). 상류가 6.1 을 싣는 날 이 행은 스스로 빈다.
  * 6-sol 행은 기존 세션·설정이
@@ -394,7 +403,7 @@ const GPT6_CODEX_ROWS = Object.freeze([
     reasoning: true,
     input: ["text", "image"],
     cost: GPT61_SOL_COST,
-    contextWindow: 272_000,
+    contextWindow: CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"],
     maxTokens: 128_000,
     thinkingLevelMap: GPT6_CODEX_THINKING_LEVEL_MAP,
     compat: GPT6_CODEX_COMPAT,
@@ -483,13 +492,13 @@ function withMaxTokensCap(provider, cap) {
   };
 }
 
-function withContextWindowCap(provider, cap) {
+function withContextWindowCap(provider, cap, windows = {}) {
   const nativeGetModels = provider.getModels.bind(provider);
   return {
     ...provider,
     getModels: () => nativeGetModels().map((model) => ({
       ...model,
-      contextWindow: Math.min(model.contextWindow, cap),
+      contextWindow: windows[model.id] ?? Math.min(model.contextWindow, cap),
     })),
   };
 }
@@ -534,7 +543,7 @@ export async function directProviders({
     nativeFactoryLoader("google-vertex.js", "googleVertexProvider"),
   ]);
 
-  const codexNative = withContextWindowCap(openaiCodexProvider(), 272_000);
+  const codexNative = withContextWindowCap(openaiCodexProvider(), CODEX_DEFAULT_CONTEXT_WINDOW, CODEX_CONTEXT_WINDOWS);
   const codexNativeModels = codexNative.getModels();
   const codex = withPickerIds(
     withExtraModels(codexNative, [
