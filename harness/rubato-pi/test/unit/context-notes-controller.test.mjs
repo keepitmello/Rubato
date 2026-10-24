@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
-import { NOTE_ENTRY, SOURCE, decodeBootstrap, messageText } from "../../src/context-notes/protocol.mjs";
+import { CHECKPOINT_NOTE, NOTE_ENTRY, SOURCE, decodeBootstrap, messageText } from "../../src/context-notes/protocol.mjs";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
 
 function setup(t) {
@@ -12,7 +12,7 @@ function setup(t) {
   t.after(()=>c.close());
   return {...f,c};
 }
-const save=(f,text="Goal: fix cache. Next: run tests. Original requirement in history.")=>f.c.writeNote({path:"work.md",text},f.ctx,{operationId:"save1"});
+const save=(f,text="Goal: fix cache. Next: run tests. Original requirement in history.")=>f.c.writeNote({path:CHECKPOINT_NOTE,text},f.ctx,{operationId:"save1"});
 
 test("new_context schedules at tool boundary; new active input has only hints", async(t)=>{
   const f=setup(t); const old=f.c.window.windowId;
@@ -25,12 +25,12 @@ test("new_context schedules at tool boundary; new active input has only hints", 
   assert.equal(f.c.window.number,1); assert.notEqual(f.c.window.windowId,old);
   const active=f.build().messages;
   assert.equal(active.length,1); assert.equal(active[0].role,"user");
-  const text=messageText(active[0]); assert.ok(text.includes("work.md"));
+  const text=messageText(active[0]); assert.ok(text.includes(CHECKPOINT_NOTE));
   assert.ok(!text.includes("PRIVATE CHECKPOINT BODY")); assert.ok(!text.includes("Fix the cache"));
   assert.equal(JSON.stringify(f.entries.find(e=>e.id===original.id)),raw);
   assert.ok(f.c.store.readItem({window_id:old,item_id:original.id}).content.includes("Fix the cache"));
   assert.equal(f.c.store.listItems({query:"last tool"},true).items.length,1);
-  assert.equal(f.c.store.noteText("work.md"),"PRIVATE CHECKPOINT BODY");
+  assert.equal(f.c.store.noteText(CHECKPOINT_NOTE),"PRIVATE CHECKPOINT BODY");
   assert.equal(f.c.store.diagnostics().filter(e=>e.event==="transition_committed").length,1);
 });
 test("window reset requires a checkpoint and cannot silently use a summary", async(t)=>{
@@ -56,7 +56,7 @@ test("engine rejects stale apply without advancing window", async(t)=>{
   const f=setup(t); save(f); const old=f.c.window.windowId;
   f.ctx.applyCompaction=async()=>({applied:false,reason:"stale"});
   await assert.rejects(f.c.roll(f.ctx),/stale/);
-  assert.equal(f.c.window.windowId,old); assert.ok(f.c.store.noteText("work.md"));
+  assert.equal(f.c.window.windowId,old); assert.ok(f.c.store.noteText(CHECKPOINT_NOTE));
   assert.ok(f.build().messages.some(m=>messageText(m).includes("Fix the cache")));
 });
 test("post-commit hook rejection does not cause duplicate reset", async(t)=>{
@@ -113,9 +113,9 @@ test("large notes enforce UTF-8 byte limit and append is exact", (t)=>{
   const f=setup(t);
   assert.throws(()=>save(f,"가".repeat(333334)),/1,000,000/);
   save(f,"A");
-  const first=f.c.writeNote({path:"work.md",text:"B"},f.ctx,{append:true,operationId:"append1"});
-  const repeated=f.c.writeNote({path:"work.md",text:"B"},f.ctx,{append:true,operationId:"append1"});
-  assert.equal(f.c.store.noteText("work.md"),"AB"); assert.equal(first.revision_id,repeated.revision_id);
+  const first=f.c.writeNote({path:CHECKPOINT_NOTE,text:"B"},f.ctx,{append:true,operationId:"append1"});
+  const repeated=f.c.writeNote({path:CHECKPOINT_NOTE,text:"B"},f.ctx,{append:true,operationId:"append1"});
+  assert.equal(f.c.store.noteText(CHECKPOINT_NOTE),"AB"); assert.equal(first.revision_id,repeated.revision_id);
 });
 test("failed journal flush refuses success and prevents a reset", async(t)=>{
   const f=setup(t); f.c.flushJournal=()=>{throw new Error("disk failure");};
@@ -125,7 +125,7 @@ test("failed journal flush refuses success and prevents a reset", async(t)=>{
 test("resume recovers window and checkpoint from persisted journal", async(t)=>{
   const f=setup(t); save(f); await f.c.roll(f.ctx); const id=f.c.window.windowId; f.c.close();
   const next=new ContextNotesController(f.pi,f.ctx,{requireEngine:false});
-  try { assert.equal(next.window.windowId,id); assert.ok(next.store.noteText("work.md")); }
+  try { assert.equal(next.window.windowId,id); assert.ok(next.store.noteText(CHECKPOINT_NOTE)); }
   finally { next.close(); }
 });
 test("manual command uses the same model via a queued checkpoint request", async(t)=>{
@@ -148,7 +148,7 @@ test("an incomplete checkpoint gets one repair turn before stopping", async(t)=>
   f.append({type:"custom_message",...f.sent.at(-1)[0]});
   f.addMessage("assistant","still no checkpoint");
   await f.c.turnEnd({},f.ctx);
-  assert.match(f.c.paused,/최신 작업 노트가 완성되지 않았/);
+  assert.match(f.c.paused,new RegExp(`최신 ${CHECKPOINT_NOTE}가 완성되지 않았`));
   assert.equal(f.abort.signal.aborted,true); assert.equal(f.sent.length,2);
   assert.equal(f.c.checkpointRequested,false); assert.equal(f.c.window.number,0);
 });
@@ -286,7 +286,7 @@ test("a new request that overflows the window before any note covers it still re
   const hint=decodeBootstrap(f.c.bootstrap).hint;
   assert.match(hint,/Now rewrite question two around the payment work\./);
   assert.match(hint,/history_list_items role=user/);
-  assert.match(hint,/"work\.md"/,"the earlier note is still listed");
+  assert.ok(hint.includes(`"${CHECKPOINT_NOTE}"`),"the earlier note is still listed");
 });
 test("past the target line a repair turn that writes no note at all still cuts", async(t)=>{
   const f=setup(t);

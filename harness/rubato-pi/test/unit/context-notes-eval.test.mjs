@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
+import { CHECKPOINT_NOTE } from "../../src/context-notes/protocol.mjs";
 
 function setup(t) {
   const f = fakeSession(t);
@@ -28,7 +29,7 @@ function evalResult(f, names, { id = "eval-1", ...details } = {}) {
 }
 
 function save(f) {
-  f.c.writeNote({ path: "work.md", text: "Current goal, progress and next steps" }, f.ctx);
+  f.c.writeNote({ path: CHECKPOINT_NOTE, text: "Current goal, progress and next steps" }, f.ctx);
 }
 
 test("note and new_context in one eval commit after the wrapper result", async (t) => {

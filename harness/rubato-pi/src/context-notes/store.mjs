@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createHash } from "node:crypto";
 import { mkdirSync, lstatSync, chmodSync, readdirSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { INIT_ENTRY, NOTE_ENTRY, SOURCE, branchWindow, codepointSlice, isWindowCompaction,
+import { CHECKPOINT_NOTE, INIT_ENTRY, NOTE_ENTRY, SOURCE, branchWindow, codepointSlice, isWindowCompaction,
   messageText, notePath, notePrefix, validateWindow } from "./protocol.mjs";
 
 export function databasePath(agentDir, sessionId) {
@@ -223,9 +223,10 @@ export class ContextNotesStore {
     return current;
   }
 
-  latestNoteForWindow(windowId, userId) {
-    return [...this.noteVersions.values()].filter((note) => note.windowId === windowId &&
-      note.throughUserId === userId && note.text.trim()).sort((a, b) => b.ordinal - a.ordinal)[0];
+  /** The checkpoint note, if it was saved in this window after the latest user request. */
+  checkpointNote(windowId, userId) {
+    const note = this.noteVersions.get(CHECKPOINT_NOTE);
+    return note && note.windowId === windowId && note.throughUserId === userId && note.text.trim() ? note : undefined;
   }
 
   noteForOperation(operationId) {

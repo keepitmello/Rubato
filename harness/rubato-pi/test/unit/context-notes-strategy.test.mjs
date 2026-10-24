@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
 import { ContextNotesController, GUIDANCE, guidanceFor, periodicNotesNudge } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
-import { NUDGE_ENTRY, REMINDER_ENTRY, messageText } from "../../src/context-notes/protocol.mjs";
+import { CHECKPOINT_NOTE, NUDGE_ENTRY, REMINDER_ENTRY, messageText } from "../../src/context-notes/protocol.mjs";
 import { BYTE_NUDGE_TEXT, NUDGE_TEXT, REMINDER_TEXT } from "../../src/context-notes/reminder.mjs";
 import { REQUEST_BYTE_WARNING } from "../../src/context-notes/request-budget.mjs";
 
@@ -35,11 +35,11 @@ function setup(t, model, env = {}, runtimeEnv = undefined) {
     c.refresh(f.ctx);
   };
   // A turn that only saves the note: the note stays fresh at the turn boundary.
-  const save = (text = "Goal, decisions, progress, next step; see window/item refs.") => {
+  const save = (text = "Goal, decisions, progress, next step; see window/item refs.", path = CHECKPOINT_NOTE) => {
     const id = `note-${++call}`;
     f.addMessage("assistant", [{ type: "toolCall", id, name: "notes_write_file", arguments: {} }],
       { stopReason: "toolUse", usage: { input: tokens - 500, output: 500, cacheRead: 0, cacheWrite: 0 } });
-    c.writeNote({ path: "work.md", text }, f.ctx, { operationId: id });
+    c.writeNote({ path, text }, f.ctx, { operationId: id });
     f.addMessage("toolResult", "saved", { toolName: "notes_write_file", toolCallId: id });
     c.refresh(f.ctx);
   };
@@ -262,6 +262,39 @@ test("user turns since the last note nudge before the full interval", (t) => {
   f.save();
   for (let i = 0; i < 4; i++) { f.addMessage("user", `next ${i}`); f.work(60_000 + i * 10_000); }
   assert.equal(count(f.prepare(), NUDGE_TEXT), 2, "a note resets the count; four more turns nudge again");
+});
+
+test("only the checkpoint note can carry a window; other notes are reference material", async (t) => {
+  const f = setup(t, ASTRA);
+  f.work(20_000);
+  f.save("Segno outfit palette: grey tone-on-tone.", "design.md");
+  assert.throws(() => f.c.requestWindow(f.ctx), new RegExp(CHECKPOINT_NOTE));
+  // Past the target line a turn that ended on the reference note alone is not a fresh checkpoint.
+  f.work(Math.ceil(f.c.usage().target) + 1_000);
+  f.save("Updated palette.", "design.md");
+  await f.c.turnEnd({}, f.ctx);
+  assert.equal(f.c.window.number, 0);
+  assert.match(messageText(f.sent.at(-1)), new RegExp(CHECKPOINT_NOTE), "the checkpoint turn names the note it needs");
+  f.save();
+  await f.c.turnEnd({}, f.ctx);
+  assert.equal(f.c.window.number, 1);
+});
+
+test("saving another note file does not reset the nudge count", (t) => {
+  const f = setup(t, OPUS); // 200K interval
+  f.work(10_000); f.save();
+  f.work(150_000); f.save("tried X, failed because Y", "scratch.md");
+  f.work(230_000);
+  assert.equal(count(f.prepare(), NUDGE_TEXT), 1, "220K since the checkpoint note, whatever else was written");
+});
+
+test("the guidance keeps one checkpoint note that also holds what failed", () => {
+  for (const model of [ASTRA, GROK, OPUS, DEEPSEEK]) {
+    const text = guidanceFor(model);
+    assert.ok(text.includes(CHECKPOINT_NOTE));
+    assert.match(text, /tried and failed/);
+    assert.doesNotMatch(text, /log\.md/);
+  }
 });
 
 test("a nudge stored with an earlier text still opens and is resent byte for byte", (t) => {

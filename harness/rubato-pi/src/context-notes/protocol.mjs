@@ -5,6 +5,12 @@ export const INIT_ENTRY = "rubato.context-window.init.v1";
 export const PREPARE_ENTRY = "rubato.context-window.prepare.v1";
 export const MODE_ENTRY = "rubato.context-mode.v1";
 export const NOTE_ENTRY = "rubato.context-note.v1";
+/**
+ * The note a window change carries forward. Other note files are reference material; only a
+ * save of this one counts as a checkpoint, so a model that writes elsewhere cannot hand the
+ * next window a stale current state.
+ */
+export const CHECKPOINT_NOTE = "now.md";
 export const REMINDER_ENTRY = "rubato.context-window.reminder.v1";
 export const NUDGE_ENTRY = "rubato.context-note.nudge.v1";
 export const BOOTSTRAP_PREFIX = "<rubato_context_window_v1>\n";

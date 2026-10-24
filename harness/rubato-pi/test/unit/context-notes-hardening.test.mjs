@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
 import { ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
-import { REMINDER_ENTRY, NOTE_ENTRY, SOURCE, INIT_ENTRY, messageText, initialWindow, nextWindow,
+import { CHECKPOINT_NOTE, REMINDER_ENTRY, NOTE_ENTRY, SOURCE, INIT_ENTRY, messageText, initialWindow, nextWindow,
   encodeBootstrap, validateWindow, branchWindow, notePrefix } from "../../src/context-notes/protocol.mjs";
 import { REMINDER_TEXT } from "../../src/context-notes/reminder.mjs";
 import { ContextNotesStore } from "../../src/context-notes/store.mjs";
@@ -21,7 +21,7 @@ function setup(t) {
   return { ...f, c, options };
 }
 function save(f, text = "Goal / decisions / current progress / next steps") {
-  return f.c.writeNote({ path: "work.md", text }, f.ctx, { operationId: "note-call" });
+  return f.c.writeNote({ path: CHECKPOINT_NOTE, text }, f.ctx, { operationId: "note-call" });
 }
 function near(f) { f.addMessage("toolResult", "a".repeat(19000), { toolName: "read", toolCallId: "read1" }); }
 function prepared(f) { return f.c.prepareContext({ messages: f.build().messages }, f.ctx).messages; }
@@ -125,12 +125,12 @@ test("a thrown post-commit failure quarantines, then reopening can recover", asy
   assert.equal(f.c.window.number, 1); assert.throws(() => prepared(f), /후처리/);
   const id = f.c.window.windowId; f.c.close();
   const c = new ContextNotesController(f.pi, f.ctx, f.options); t.after(() => c.close());
-  assert.equal(c.window.windowId, id); assert.ok(c.store.noteText("work.md"));
+  assert.equal(c.window.windowId, id); assert.ok(c.store.noteText(CHECKPOINT_NOTE));
 });
 test("same call id with different parameters is rejected without another write", (t) => {
   const f = setup(t); save(f, "first");
   assert.throws(() => save(f, "second"), /같은 도구 호출/);
-  assert.equal(f.c.store.noteText("work.md"), "first");
+  assert.equal(f.c.store.noteText(CHECKPOINT_NOTE), "first");
 });
 test("duplicate session gate cannot overwrite a live owner", () => withNotes(() => {
   const close = registerSessionGate("duplicate-owner", () => {});
@@ -197,7 +197,7 @@ test("note list has a usable cursor and directory prefix does not match sibling 
 });
 test("empty historical windows remain reachable with pagination", async (t) => {
   const f = setup(t); save(f); await f.c.roll(f.ctx);
-  f.c.writeNote({ path: "work.md", text: "next" }, f.ctx); await f.c.roll(f.ctx);
+  f.c.writeNote({ path: CHECKPOINT_NOTE, text: "next" }, f.ctx); await f.c.roll(f.ctx);
   const a = f.c.store.listWindows({ limit: 1 });
   const b = f.c.store.listWindows({ limit: 1, after_window_id: a.next_after_window_id });
   const c = f.c.store.listWindows({ limit: 1, after_window_id: b.next_after_window_id });
@@ -242,7 +242,7 @@ test("note data cannot override the journal entry id", (t) => {
   const branch = f.branch(); const entry = branch.findLast(e => e.customType === NOTE_ENTRY);
   entry.data.id = "forged-id";
   f.c.store.sync(branch);
-  assert.equal(f.c.store.noteVersions.get("work.md").id, entry.id);
+  assert.equal(f.c.store.noteVersions.get(CHECKPOINT_NOTE).id, entry.id);
 });
 test("commit fence lets a last-resort cut through with no note at all", async (t) => {
   const f = setup(t); const apply = f.ctx.applyCompaction;

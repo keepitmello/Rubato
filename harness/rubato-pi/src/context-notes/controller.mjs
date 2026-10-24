@@ -8,15 +8,16 @@ import { assertEngineParts, registerSessionGate } from "./engine-gate.mjs";
 import { ContextNotesStore, databasePath } from "./store.mjs";
 import { requestByteSize, REQUEST_BYTE_WARNING, REQUEST_BYTE_CHECKPOINT, REQUEST_BYTE_LIMIT,
   REQUEST_BYTE_REFUSAL } from "./request-budget.mjs";
-import { SOURCE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
+import { SOURCE, CHECKPOINT_NOTE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
 
-const NOTES_TOOLS_TEXT = `Write notes for yourself after this conversation is gone. Keep now.md short, start it after
-the first unit of work, and rewrite it first whenever it stops being true: the user's goal,
-their standing requirements and corrections, decisions in force, state and next steps, each
-with its window_id/item_id. Only then, if useful, append to log.md what should not be retried,
-with why. Update when the user adds or corrects something. history_list_windows,
-history_list_items, history_search_contents and history_read_item recover the original record.`;
+const NOTES_TOOLS_TEXT = `Write notes for yourself after this conversation is gone. Keep ${CHECKPOINT_NOTE} short, start it
+after the first unit of work, and rewrite it whenever it stops being true: the user's goal,
+their standing requirements and corrections, decisions in force, what was tried and failed
+and why, state and next steps, each with its window_id/item_id. Only ${CHECKPOINT_NOTE} saved after the
+latest user message counts as a checkpoint; other note files are reference material. Update
+when the user adds or corrects something. history_list_windows, history_list_items,
+history_search_contents and history_read_item recover the original record.`;
 
 const NEW_WINDOW_TEXT = `The new window contains stable instructions, window IDs and a small list of note paths.
 Read relevant notes first and follow their references into history when needed. Scope
@@ -269,7 +270,7 @@ export class ContextNotesController {
     for (let i = branch.length - 1; i >= 0; i -= 1) {
       const entry = branch[i];
       if (entry.type === "custom" && entry.data?.windowId === windowId &&
-          (entry.customType === NOTE_ENTRY || entry.customType === NUDGE_ENTRY)) {
+          ((entry.customType === NOTE_ENTRY && entry.data.path === CHECKPOINT_NOTE) || entry.customType === NUDGE_ENTRY)) {
         const at = entry.customType === NOTE_ENTRY ? entry.data.savedAtTokens : entry.data.atTokens;
         previous = Number.isFinite(at) && at > 0 ? at : undefined;
         start = i;
@@ -459,8 +460,8 @@ export class ContextNotesController {
   requestWindow(ctx, signal) {
     signal?.throwIfAborted();
     this.refresh(ctx);
-    const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
-    if (!note) throw new Error("현재 요청을 반영한 작업 노트를 먼저 저장해 주세요. 이전 문맥은 그대로 유지했어요.");
+    const note = this.store.checkpointNote(this.window.windowId, this.lastUser);
+    if (!note) throw new Error(`현재 요청을 반영한 ${CHECKPOINT_NOTE}를 먼저 저장해 주세요. 다른 노트 파일은 체크포인트로 치지 않아요. 이전 문맥은 그대로 유지했어요.`);
     // A nested new_context call can run before its outer eval has returned.
     // Only scheduling may defer that receipt; roll and the engine commit gate
     // both require the completed, management-only tool round.
@@ -510,7 +511,7 @@ export class ContextNotesController {
     if (this.fatal) throw new Error(this.fatal);
     const old = this.window;
     const throughUserId = this.lastUser;
-    const note = this.store.latestNoteForWindow(old.windowId, this.lastUser);
+    const note = this.store.checkpointNote(old.windowId, this.lastUser);
     // A hard cut is the last resort and needs no note: the person's latest request rides in
     // the new window's opening (carryOverHint), and everything before it stays in history.
     if (!note && reason !== "hard") throw new Error("새 사용자 요청을 반영한 노트가 없어서 문맥 전환을 중단했어요. 노트를 갱신해 주세요.");
@@ -624,7 +625,7 @@ export class ContextNotesController {
         await this.roll(ctx, "tool");
       } else if (this.checkpointRequested || ctx.model?.contextWindow) {
         const usage = this.usage();
-        const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
+        const note = this.store.checkpointNote(this.window.windowId, this.lastUser);
         let fresh = false;
         if (note) {
           try { assertCheckpointFresh(this.store.branch, note); fresh = true; }
@@ -638,7 +639,7 @@ export class ContextNotesController {
               entry.details?.requestId === this.checkpointRequestId)) {
             // A steering request can wait behind another notification. A turn
             // that has not received it is not a failed checkpoint attempt.
-            throw new CheckpointRefreshRequired("체크포인트 전용 턴에 최신 작업 노트가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.");
+            throw new CheckpointRefreshRequired(`체크포인트 전용 턴에 최신 ${CHECKPOINT_NOTE}가 완성되지 않았어요. 이전 문맥은 그대로 유지했어요.`);
           }
         } else if (usage.requestBytes >= REQUEST_BYTE_CHECKPOINT ||
             (ctx.model?.contextWindow && (past(usage.hard) || past(usage.target)))) {
@@ -665,7 +666,7 @@ export class ContextNotesController {
       if (error instanceof CheckpointRefreshRequired && !this.fatal && !ctx.signal?.aborted) {
         try {
           const usage = this.usage();
-          const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
+          const note = this.store.checkpointNote(this.window.windowId, this.lastUser);
           const noRepairTurn = this.checkpointRetried || usage.tokens >= usage.full;
           // From the target line the window only serves the hand-over; past it a failed
           // repair turn cuts too (2026-10-12: aborted at 255k, 3k under the hard line).
@@ -703,7 +704,7 @@ export class ContextNotesController {
     this.paused = null;
     this.pi.sendMessage({ customType: "rubato-context-checkpoint-request", display: true,
       details: { windowId: this.window.windowId, requestId: this.checkpointRequestId },
-      content: `${reason ? `${reason}\n노트 저장 뒤 도착한 결과와 안내까지 반영해서 다시 저장해 주세요.\n` : ""}지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 notes 도구에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요.` },
+      content: `${reason ? `${reason}\n노트 저장 뒤 도착한 결과와 안내까지 반영해서 다시 저장해 주세요.\n` : ""}지금은 체크포인트 전용 턴이에요. 다른 작업을 진행하지 말고 현재 작업의 목표·결정·진행·실패 이유·다음 단계와 원문 항목 위치를 ${CHECKPOINT_NOTE}에 저장한 뒤 new_context를 호출해 주세요. 다른 모델로 요약하지 마세요.` },
     { triggerTurn: true, deliverAs: "steer" });
     this.showStatus();
     return { requested: true };
@@ -711,7 +712,7 @@ export class ContextNotesController {
 
   async manual(ctx) {
     this.refresh(ctx, true);
-    const note = this.store.latestNoteForWindow(this.window.windowId, this.lastUser);
+    const note = this.store.checkpointNote(this.window.windowId, this.lastUser);
     if (ctx.isIdle() && note) {
       let fresh = true;
       try { assertCheckpointFresh(this.store.branch, note); } catch { fresh = false; }
