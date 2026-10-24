@@ -1,6 +1,6 @@
-# Worked example: should an agent harness limit its skill catalog?
+# Skill catalog: should an agent harness limit it? (2026-10-25)
 
-A real run from 2026-10-25, shortened. The topic is incidental; the shape is the point. Read only the part you need.
+A real run, shortened. The topic is incidental; the shape is the point.
 
 ## The question as opened
 

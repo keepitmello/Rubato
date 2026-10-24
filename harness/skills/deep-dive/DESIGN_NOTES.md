@@ -1,39 +1,26 @@
 # Design notes
 
-## Origin
+## Shape
 
-Extracted from one research round that its user judged far better than earlier ones: a 2026-10 question about showing many personal photos on a map in a private app. It opened the question, ran parallel browser strands under one rule set, had the owner re-fetch key claims, wrote a digest without a recommendation, and then added an outside judgment and an independent context-aware critique. A first draft kept those as five ordered stages. An outside review, done with GPT-6 Pro, judged the draft against the metaframe design and the original artifacts; this version follows that review.
+A short core and three cases. The core holds the default path with its stop points and the few moves that capable models skip unless told. The cases show the rest by example. General evidence-weighing advice is left out on purpose: models already weigh vendor benchmarks, repeated claims and dated sources well without it.
 
-## What produced the quality, and stays
+## How it got here
 
-- Candidates and current explanations held as hypotheses, while the user's goal, constraints and accepted results stay binding.
-- Open delegation backed by concrete search footholds (named authors, papers, projects, threads) that the collector may correct.
-- Following decision histories (requests, rejected attempts, shipped changes, reversals), not only finished products or announcements.
-- Current local observations travelling with outside research.
-- Rechecking the claims that carry the conclusion, including their scope, version and contrary results.
-- An evidence handoff without the sender's verdict when another judge follows.
+1. **Origin.** Extracted from one research round that its user judged far better than earlier ones (`cases/photo-map.md`).
+2. **First draft.** Five ordered stages with quotas: strands, sources per strand, recheck counts.
+3. **Outside review.** A GPT-6 Pro review, judged against the metaframe design and the original artifacts, removed the quotas and the source-format grading.
+4. **Second run.** A different topic produced `cases/skill-catalog.md` and fixed three unclear points.
+5. **Blind A/B.** A blind A/B against the official skills tree (Opus and Sol, real engine) showed where the skill changed behaviour:
+   - first briefs that carried the user's words, rejected options with their reasons, and candidates held as hypotheses;
+   - evidence handoffs without a recommendation.
 
-## What was removed, and why
+   General evidence handling was mostly fine without it. The text was then cut down to those moves plus cases.
 
-- The fixed stage sequence. Collection and interpretation interleave in real research; the separation that matters is in what is handed off.
-- Quotas (strand counts, sources per strand, recheck counts, image counts, fixed times). They described one run's workload, not a quality criterion.
-- "VERIFIED" and a ranking by source format. Opening a source shows access, not support or applicability.
-- "A round that only confirms the favourite has failed." Keeping the current choice after facing counterevidence is a valid result.
+## Two decisions from the user
 
-## Errors in the origin run that shaped the rules
-
-- A summary kept "fewer map pins, more bookings" from an Airbnb experiment and dropped that random removal lowered bookings.
-- One maintainer's "arbitrarily" for a 30 m clustering radius became "all these defaults are undocumented guesses". A missing public rationale is a search gap.
-- A 2016 web-tool default was marked VERIFIED and read as current mobile behaviour. Scope and version were lost.
-
-## Second run
-
-A different topic (should an agent harness limit its skill catalog) was run with this skill; `references/example.md` is its shortened record. The owner reported three unclear points, now resolved in the text: which claims to recheck in a handoff without a recommendation, whether the owner may fetch primary material while collectors run, and who decides on a fresh judgment.
-
-## Description
-
-The description names the workflow so a user can call it, and otherwise requires a consequential decision that a quick lookup will not settle. Intensity words alone ("thorough") do not trigger it.
+- **Stepwise.** The intent is a concrete, stepwise round. The steps stay visible as a default path, and any step can be the stop.
+- **Conclusion on request.** The round ends with decision material. A recommendation comes only when the user asks for a conclusion. Choices that depend on the user's taste or experience go back to them, by comparison or by seeing.
 
 ## Revising
 
-Change a passage when a real run shows a misfire, a wrongly transferred claim or a needlessly long round, and replace the passage instead of appending a rule.
+Add or replace a case when a real run teaches something the current cases do not show. Add a line to the core only for a move that models still skip after seeing the cases.

@@ -3,32 +3,37 @@ name: deep-dive
 description: "Use when the user asks for a deep-dive (딥다이브, 깊은 조사) into evidence, or a consequential decision turns on conflicting or missing evidence a quick lookup won't settle. Not for code walkthroughs, ordinary research or fact checks."
 ---
 
-# Research what could change the answer
+# Deep-dive
 
-Produce the explanation or decision the user needs. Preserve their outcome, explicit constraints and accepted results; treat explanations and proposed solutions as hypotheses. Carry the user's words, actual observations and the conditions of past failures together. Widen the question when useful. Keeping the current approach can be the right result.
+A stepwise research round for a decision that matters. The user decides. The round gives them decision material they can trust, and a conclusion only when they ask for one.
 
-## Follow the missing evidence
+## Default path
 
-Choose collection paths around consequential unknowns, using current artifacts as well as outside sources. Parallelize when separate paths add useful coverage. Use known names and terms as leads, and search beyond them for competing explanations and unfamiliar work. Preserve high-quality indirect findings even before their application is clear. Whoever owns the research may fetch primary material directly while collectors run; that also serves the later recheck. When a return is shallow, diagnose the missing access, vocabulary or scope and repair that path.
+Open the question → collect in parallel strands → recheck what the decision leans on against the originals → curate → independent judgment, when wanted → the user's choice.
 
-## Keep the conditions with the claim
+Any step can be the stop: report there, and let the user say whether to go on. Loop back when a step exposes a gap.
 
-Separate what was read from what it supports. Weigh direct observation, methods, independent recurrence, incentives and relevance to this question. Source formats are not strength grades. Trace repeated reports to their origin. Recheck the claims carrying the conclusion against underlying material (in an evidence handoff, the claims a judge is most likely to lean on: those that would confirm or overturn a premise or option), including dates, versions, measurements and contrary results. Preserve those conditions in summaries. Missing public accounts establish a search gap, not the absence of private practice or internal reasoning.
+## What capable models skip unless told
 
-## Keep evidence usable before committing
+- Every brief and collector prompt carries the user's own words, the facts they set, and the options they already rejected, with the reasons.
+- Current candidates and explanations are hypotheses. Keeping the current approach is a valid outcome.
+- A collector in its own session, such as a browser agent, reads only the text it receives. Paste the context and the collection rules into its prompt; a file path is not enough.
+- Seed each strand with the names you already know (authors, papers, projects, threads) as leads it may correct.
+- Curated material interprets the evidence but recommends nothing. End with:
+  - the strongest findings, with the conditions that bound them
+  - the premises that were checked
+  - the evidence that conflicts
+  - the gaps
+  - the choices that depend on the user's taste or experience
 
-For a later judge, hand off evidence without a preferred recommendation; interpretation and weighing still belong in that material. Whoever owns the judgment adds fresh judgment when a different interpretation could change the answer enough to justify its cost; a collector handing off evidence leaves that call to the judge. Give independent readers the task, constraints and evidence before another verdict. A reader shown that verdict provides critique. Resolve disagreement through evidence or a specific user-only preference, rather than votes or forced opposition.
+  Recommend when the user asks for a conclusion.
 
-## Finish with the requested answer
+## Cases
 
-Continue for a specific unresolved question and a practical observation worth its cost. Stop collecting when the main conclusion has faced the strongest relevant counterevidence and remaining gaps would not change the useful answer. When a material gap needs a local test, user experience or unavailable access, identify that next observation. Distinguish sufficient evidence from a budget-limited stop. In either case, give the best-supported explanation or recommendation, with the limits that could change it.
+Read the one closest to your run.
 
-Keep existing ownership and authority. Aside owns browser collection, Outpost external judgment and packet delivery, agent-taskforce execution shape, and dispatching handoffs; follow their skills when using those capabilities. Discussion and reframing retain their existing owners and contracts.
+- `cases/photo-map.md`: the origin run. A UI question was widened, six strands ran, a claim was corrected on recheck, and a split judgment went to the user as mock-ups to decide by seeing.
+- `cases/skill-catalog.md`: a harness-policy question run as an evidence handoff that stopped at the digest.
+- `cases/brief-contrast.md`: one request briefed with and without the moves above.
 
-## Read only what this run needs
-
-- Preparing collection: [common-rules.txt](references/common-rules.txt). Include the relevant contract in each isolated collector's actual input.
-- Delegating research: [brief.md](references/brief.md).
-- Choosing or repairing coverage: [strands.md](references/strands.md).
-- Merging findings or handing them to a judge: [digest.md](references/digest.md).
-- Needing a worked shape: [example.md](references/example.md), one real run shortened.
+Aside and Outpost keep their own skills for how to run them.
