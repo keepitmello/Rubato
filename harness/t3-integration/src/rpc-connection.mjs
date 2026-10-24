@@ -224,6 +224,20 @@ export class RubatoRpcConnection {
       } catch { /* an engine without the warmer leaves the ring as it was */ }
     })().finally(() => { this.cacheRefresh = undefined; });
   }
+  /**
+   * The session's agents as the engine holds them now, into the Agents panel's rows. The engine
+   * sends them only when one changes, and keeps its last few hundred records: an agent that
+   * finished while T3 had let this stream go (after its idle window), or whose change the buffer
+   * dropped before this stream attached, would read as working for good.
+   */
+  async refreshTasks() {
+    const asked = this.sessionId;
+    if (!this.fold || !asked) return;
+    let data;
+    try { data = await this.command({ type: 'get_task_snapshot' }); } catch { return; } // an older engine: the next change tells
+    if (this.closed || this.sessionId !== asked || !Array.isArray(data?.tasks)) return;
+    this.fold?.feed({ type: 'extension_event', name: 'rubato.task.updated', data });
+  }
   onState(state) {
     if (this.closed || !state) return;
     if (this.runtimeId === undefined) {
@@ -240,6 +254,7 @@ export class RubatoRpcConnection {
       }
       if (state.status !== 'running') this.run = null;
       if (state.restarting === true) this.beginRestart(state);
+      void this.refreshTasks();
       return;
     }
     if (state.runtimeId !== this.runtimeId) {
@@ -248,10 +263,13 @@ export class RubatoRpcConnection {
       // continued.
       this.runtimeId = state.runtimeId;
       this.sequence = 0;
+      void this.refreshTasks();
     }
     const records = (state.events ?? []).filter((record) => record.sequence > this.sequence);
-    if (records.length && records[0].sequence !== this.sequence + 1)
+    if (records.length && records[0].sequence !== this.sequence + 1) {
       this.log('events skipped', `${this.sessionId} ${this.sequence}→${records[0].sequence}`);
+      void this.refreshTasks();
+    }
     for (const record of records) {
       this.sequence = record.sequence;
       if (this.resumeWatch && record.event?.type === 'agent_start') this.resumeWatch.resumed = true;
