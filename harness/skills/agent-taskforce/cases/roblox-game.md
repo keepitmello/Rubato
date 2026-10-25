@@ -28,7 +28,7 @@ belonged only to this run.
 ## Moves and their effects
 
 **Two first judgments, then a comparison (round 5).** The second map draft felt
-lukewarm. After a deep-dive, the lead wrote its own map into a note before
+lukewarm. After a broad research round, the lead wrote its own map into a note before
 reading 클롱이, and 클롱이 wrote without the lead's draft. Both arrived at the
 same skeleton: bend the course and let each load cut the corners differently,
 with failures landing on a lower catch floor and the goal and collapse in sight.
@@ -69,7 +69,7 @@ played the whole flow of carrying ore and using it. The next step became a
 playable flow slice, not more tuning of item strength.
 
 **The lead's own read.** Asked how far it could take map design, the lead said
-it applies principles well but its first-instinct layouts are weak; deep-dive
+it applies principles well but its first-instinct layouts are weak; researched
 evidence, 클롱이's independent judgment and the user's own play were the process
 that suited it.
 
