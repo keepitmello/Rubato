@@ -66,3 +66,16 @@ Preserve historical scenario IDs in `09-regression-scenarios.md`; explicitly rev
 only expectations this decision supersedes. Static prompt/assembly tests and the
 live cases in `harness/prompts/evals/rail-choice.yaml` test different things.
 The Codex operating edition is outside this revision. Do not regenerate it.
+
+## 클롱이 revision, 2026-10-26
+
+Origin: a Roblox game run (`cases/roblox-game.md`) that its user judged
+unusually productive. Two user decisions: 클롱이 is the name of each session's
+companion, everywhere; and the guidance takes the form "what we did and what it
+changed", not a procedure to repeat. Added `teammate/klong.md`, the "A
+continuing companion: 클롱이" pattern, the case, a trigger clause and six
+scenarios. A GPT-6 Pro review detached 클롱이 from the lead building, separated
+proposal from verdict and the two kinds of independence, and moved the model
+trial and file formats into the case. Add or replace a case when a real run
+teaches something the current one does not show; add a line to the core only
+for a move that runs still skip after seeing the case.

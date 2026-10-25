@@ -24,6 +24,34 @@ handles consequential intent choices and fulfillment communication, not a third
 technical pass. Same-family verification is possible with a fresh independent
 context; family diversity is optional.
 
+## A continuing companion: 클롱이
+
+Use a continuing reviewer when earlier decisions and rejected alternatives
+make later reviews materially better, or when the user asks for that
+companion. 클롱이 is its name in any project; it is not a default member of
+every session. It can accompany direct work or a continuing owner; keep the
+existing implementation responsibility and the user's delegation.
+
+When the lead and 클롱이 form answers to the same open question, the lead
+records its own position before reading the return and leaves that new answer
+out of the review brief. This preserves differences that would otherwise
+disappear before comparison.
+
+Keep a role doc in the project: the role in the user's words, the model and why,
+what to always read, the review folder, and what each round adopted, declined
+or left open, with reasons. Canonical decisions remain the authority; the
+review record explains how they were reached. Brief 클롱이 to read
+`teammate/klong.md` and that role doc; the verifier role alone does not carry
+the companion part.
+
+Resolve findings with the current builder within the existing authority. Bring
+the user material differences that require their decision, with a
+recommendation and its reason.
+
+`cases/roblox-game.md` shows one run. There the user asked the lead to build
+stage 1 directly and planned owner-led implementation from stage 2 while the
+companion kept reviewing.
+
 ## Independent outcomes with explicit integration
 
 Two or more owners carry independently useful outcomes and exchange interfaces
