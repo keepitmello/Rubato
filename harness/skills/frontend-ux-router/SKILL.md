@@ -17,6 +17,8 @@ When the result is crowded, remove duplicate explanation or establish hierarchy 
 
 Reference material supplies relationships, not a mandatory bundle of parts. Compare coherent experiences when the question is about the whole result, and isolate a variable when its effect is the question. There is no required candidate count, one-button quota, one-device rule or automatic mixture of the user's favorite parts. Express mood through a coherent visual and interaction system, rather than a label or isolated effect.
 
+When choosing how a moment should read, name the person's question ("did it save?", "can I undo?") and check the project's existing matches first. Look for expressions that answer it, then ask which relationship and conditions would carry over here. Keep useful matches and their evidence in the project's table so later screens reuse the reasoning; see `references/proven-expressions.md`.
+
 If words remain difficult after being simplified, inspect the missing context or the choice of scene. More labels cannot rescue a misleading task model. A local defect calls for a local repair; repeated repairs that undermine each other can justify redesign inside the approved dimensions. Preserve explicit freezes, not every value of a baseline kept only for comparison.
 
 ## Evidence and completion
@@ -35,6 +37,7 @@ Within the assignment, return a judgment-ready artifact and repair omissions you
 | Review, labeling, comparison, moderation, generated evidence, synchronized media, private encodings, or repeated task confusion | `references/task-evidence-design.md` |
 | Concrete failure example: data-first screen, comment-like copy, invented encodings, seven failed patches | `references/task-design-failure-case-study.md` |
 | Independent comprehension review of a built screen | `references/fresh-eyes-review.md` |
+| Matching a moment to an expression people already know; the project's proven-expression table | `references/proven-expressions.md` |
 | Research question, user evidence, usability test, product validation | `references/software-ux-research/guide.md` |
 | Navigation, grouping, hierarchy, labels, search, discoverability | `references/information-architecture/guide.md` |
 | Loading, empty, success, error, permission, offline, onboarding, notifications | `references/performance-states-patterns/guide.md` |
