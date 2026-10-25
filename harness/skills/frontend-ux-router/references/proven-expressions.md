@@ -21,8 +21,8 @@ change that relationship here. A relationship can carry across fields; a
 surface that looks close can fail to carry.
 
 If the table leaves a consequential choice unresolved, investigate the missing
-difference. Use a quick lookup when it settles the question; use deep-dive when
-conflicting or missing evidence needs a deeper round.
+difference. Use a quick lookup when it settles the question, and a deeper
+research round when conflicting or missing evidence needs one.
 
 ## The table
 
@@ -48,7 +48,7 @@ to test. Calculation suggested an advantage, and the built course was then
 measured because the fastest load changed with the settings. The question and
 mechanism transferred; the route and numbers were worked out locally.
 
-For services, a photo-map deep-dive found two open-source photo apps that,
+For services, research for a photo-map app found two open-source photo apps that,
 after years of user requests, changed a cluster tap from zooming in to opening
 the photos. That is a candidate to examine for photo browsing, not a decision
 for the current screen.
