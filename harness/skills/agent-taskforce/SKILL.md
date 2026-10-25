@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "Read when work splits into outcomes that can progress on their own, long execution would crowd the user conversation, an independent check could change acceptance, or a second Agent is about to go toward the same goal. Chooses between direct work, subagents and a team (team_create), and confirms one readable intent/roster proposal with the user."
+description: "Read when work splits into outcomes that can progress on their own, long execution would crowd the user conversation, an independent check could change acceptance, a second Agent is about to go toward the same goal, or the user asks for 클롱이 (a continuing companion reviewer). Chooses between direct work, subagents and a team (team_create), and confirms one readable intent/roster proposal with the user."
 ---
 
 # Agent Taskforce
@@ -13,6 +13,8 @@ evidence and verdicts. These are responsibility boundaries, not model tiers.
 ## Which role are you in?
 
 - Deciding on or operating a team: read `LEAD.md`.
+- Attaching 클롱이 to a session: read `references/02-team-patterns.md`
+  "A continuing companion: 클롱이".
 - Assigned as an owner or verifier: read `TEAMMATE.md` and its matching contract.
 - Revising this skill: start from `references/07-source-map.md` and preserve the
   regression scenarios; do not turn observed incidents into a standing bureaucracy.

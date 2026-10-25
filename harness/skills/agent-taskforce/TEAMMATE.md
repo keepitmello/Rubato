@@ -4,6 +4,7 @@ Read the contract for your assigned role before dependent work:
 
 - Owner: `teammate/workstream-owner.md`
 - Verifier: `teammate/independent-verifier.md`
+- 클롱이: `teammate/klong.md`, on top of the verifier contract
 
 Read `runtimes/` for the actual tools.
 
