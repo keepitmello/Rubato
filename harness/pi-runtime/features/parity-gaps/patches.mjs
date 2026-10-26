@@ -46,6 +46,19 @@ export function patchPromptCacheTtl(source) {
   );
 }
 
+// Stock treats every assistant block that is not text or thinking as a tool call. A
+// provider-native block (an Anthropic server compaction, a server tool use) has no `name`, so
+// estimating a turn that still holds one threw "reading 'length'" before every request: an
+// aborted answer that kept its server compaction block locked its session (2026-10-26).
+export function patchEstimateProviderNative(source) {
+  return replaceOnce(
+    source,
+    "        else {\n            chars += block.name.length + safeJsonStringify(block.arguments).length;\n        }\n",
+    "        else if (block.type === \"toolCall\") {\n            chars += block.name.length + safeJsonStringify(block.arguments).length;\n        }\n        else {\n            chars += safeJsonStringify(block.raw ?? block).length;\n        }\n",
+    "estimate-provider-native",
+  );
+}
+
 export function patchAuthStorage(source) {
   let next = replaceOnce(
     source,
@@ -153,6 +166,7 @@ export const patches = Object.freeze([
   patch("overflow", PI_AI, "dist/utils/overflow.js", "85570a78e9ba3e0322fe1b3f14c991b6a439b1d3eb89af306e2e7e9ade3d53b4", patchOverflow),
   patch("google-input-guard", PI_AI, "dist/api/google-shared.js", "0254007d8b7f0ebeb2b00f6a940041012c45220369f604f999c8e7019d36972a", patchGoogleSharedInputGuard),
   patch("prompt-cache-ttl", PI_AI, "dist/api/openai-responses.js", "8a294f760ea70459c6d41c83878a8d0cda5dd4780c46b490c85e0d3495471e3e", patchPromptCacheTtl),
+  patch("estimate-provider-native", PI_AI, "dist/utils/estimate.js", "ad08d86f790f6113d82610d9b0d5007eb8ebd27245409cc7262aed0b43613ced", patchEstimateProviderNative),
   patch("auth-storage", AGENT, "dist/core/auth-storage.js", "0b45029901579032b19273a1427f63b622df8e1aaf9ea185eb932c0d4898998c", patchAuthStorage),
   patch("tool-descriptions", AGENT, "dist/core/tools/tool-definition-wrapper.js", "02fe785c52294d14216605d40d5592ac2accd1a3125891523e2a6c87feb5810c", patchToolDescriptions),
 ]);
