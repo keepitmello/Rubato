@@ -1,6 +1,6 @@
 ---
 name: work-intent
-description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read before starting anything bigger than a small local fix, and for durable work, continuing owners or a referenced intent. Small local work stays inline."
+description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read before starting whenever you would have to decide what to make or how far to go, and for durable work, continuing owners or a referenced intent. A request that already says what to make and how far stays inline."
 ---
 
 # Work intent
@@ -31,7 +31,7 @@ or specification can already express the requested change: link it and the relev
 sections rather than translating it into another authoritative document. Otherwise use
 `intent/<stable-id>/intent.md` under the lead's canonical project root, with
 [the template](templates/intent.md). Update the same record rather than making version,
-final or new copies. Small work needs neither an intent file nor an approval ritual.
+final or new copies. A request that already says what to make and how far needs neither an intent file nor an approval ritual.
 
 ## Investigate, then recommend
 
@@ -71,7 +71,7 @@ not a dump of parser headings, IDs or paths.
 Link existing frame/spec clauses instead of duplicating what they own. Roster and run
 progress stay in the mission; brief discovery findings need no separate report.
 
-Whenever the work is bigger than a small local fix, team or not, show the user your
+Whenever you would have to decide what to make or how far to go, team or not, show the user your
 reading of it before starting anything: the intended result, the recommended direction
 and why, what stays unchanged, and how completion will be checked. For a taskforce, add
 the smallest role/model/effort roster with plain-language responsibilities so it is
@@ -101,7 +101,7 @@ blocks safe, meaningful discovery itself or prevents proposing any viable direct
 Otherwise batch remaining material choices into that proposal, with a recommendation and
 its consequence. Outcome-blocking choices stay open until the human resolves them or
 explicitly delegates a bounded choice. Local methods inside accepted scope stay autonomous.
-For substantial non-team work, use the same evidence-first approach without inventing a
+For non-team work where you decide what to make or how far to go, use the same evidence-first approach without inventing a
 roster: the proposal is shorter, but it is still shown and answered before dependent work.
 
 Intent/roster confirmation preserves independent frame, model, budget, delivery and runtime
