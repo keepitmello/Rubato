@@ -111,6 +111,27 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
     }
   }
 
+  function adoptWake(taskId: string): boolean {
+    const record = tryLoad(taskId)
+    const handle = port.liveHandle(taskId)
+    if (record === undefined || handle?.adoptRun === undefined) return false
+    if (messageability(record.status, record.residency_state) !== "revive") return false
+    const reservation = port.reserveForRevive(taskId)
+    if (!reservation.ok) return false
+    try {
+      handle.adoptRun()
+      const revived = buildRevived(record, nowIso())
+      port.store.replace(revived)
+      port.store.appendEvent(taskId, { type: "revived", payload: { run_epoch: revived.notification.run_epoch, cause: "self_wake" } })
+      reservation.commit()
+      return true
+    } catch (error) {
+      reservation.release()
+      log("senpi-task self-wake adoption failed", { taskId, error: String(error) })
+      return false
+    }
+  }
+
   function enqueuePending(record: TaskRecord, message: string, deliverAs: SendDelivery): SendOutcome {
     let position = 0
     const updated = port.store.mutate(record.task_id, (fresh) => {
@@ -267,7 +288,7 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
     })
   }
 
-  return { sendToTask, interruptTask, cancelTask, notifyStarted, dropPending }
+  return { sendToTask, interruptTask, cancelTask, notifyStarted, dropPending, adoptWake }
 }
 
 function scopeDenied(record: TaskRecord, input: SendInput): SendOutcome | undefined {

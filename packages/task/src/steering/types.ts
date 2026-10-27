@@ -75,6 +75,10 @@ export type SteeringEngine = {
   // Called by the manager when a task is forgotten (destroyed/evicted/failed to launch) so buffered
   // messages for a child that will never start are not retained for the session.
   dropPending(taskId: string): void
+  // Called by the manager when a settled child starts a turn its own background work woke (a late
+  // monitor event, a background exit). Reopens the record as a new run so it does not say "done"
+  // while the child works, and the dispatcher gets that run's answer. False when it cannot.
+  adoptWake(taskId: string): boolean
 }
 
 export type { TaskRecord }

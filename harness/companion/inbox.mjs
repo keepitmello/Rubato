@@ -159,7 +159,8 @@ export function openInbox({ env = process.env, now = Date.now } = {}) {
       db.exec('COMMIT');
       return { item: byId(id), duplicate: false };
     } catch (error) {
-      db.exec('ROLLBACK');
+      // SQLite already rolled back on some errors (a full disk); a second ROLLBACK would hide it.
+      if (db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
   }
@@ -210,7 +211,8 @@ export function openInbox({ env = process.env, now = Date.now } = {}) {
       if (text) note(current.id, 'note', String(text), when);
       db.exec('COMMIT');
     } catch (error) {
-      db.exec('ROLLBACK');
+      // SQLite already rolled back on some errors (a full disk); a second ROLLBACK would hide it.
+      if (db.isTransaction) db.exec('ROLLBACK');
       throw error;
     }
     return byId(current.id);

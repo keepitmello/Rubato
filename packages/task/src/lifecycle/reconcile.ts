@@ -52,7 +52,12 @@ export async function reconcileOnSessionStart(
   // respawned leftover process children into every new session and paid a 5s SIGTERM wait
   // per live pid. Reap without adopting; scoped revival below still restores THIS session.
   for (const record of candidates) {
-    if (record.parent_session_id === parentSessionId || record.residency_state !== "resident") continue
+    if (record.parent_session_id === parentSessionId) continue
+    if (isOrphanedDrain(context, record)) {
+      outcomes.push(settleOrphanedDrain(context, record))
+      continue
+    }
+    if (record.residency_state !== "resident") continue
     // A multi-session host (one shared process, one engine + registry PER session) reaches this
     // loop for every sibling session's children. Such a record carries THIS host_pid yet is absent
     // from this session's registry, which is indistinguishable from a crashed-process orphan by
@@ -267,6 +272,29 @@ async function terminateClaimedPid(context: LifecycleContext, record: TaskRecord
     context.store.appendEvent(record.task_id, { type: "reconcile_terminated", payload: { pid, signal: "SIGKILL" } })
   }
   return !context.signaller.isAlive(pid)
+}
+
+// Dispose and evict leave a running record for the run's late outcome to settle. When the process
+// that held the run is gone, that outcome never comes: the record would say "running" until its
+// parent conversation reopens, and the TTL sweep keeps non-terminal records forever.
+function isOrphanedDrain(context: LifecycleContext, record: TaskRecord): boolean {
+  return !TERMINAL_STATUSES.has(record.status)
+    && (record.residency_state === "disposed" || record.residency_state === "evicted")
+    && record.host_pid !== context.hostPid
+}
+
+function settleOrphanedDrain(context: LifecycleContext, record: TaskRecord): ReconcileOutcome {
+  const message = "its process exited before the run settled"
+  let applied = false
+  context.store.mutate(record.task_id, (fresh) => {
+    if (!isOrphanedDrain(context, fresh) || hasForeignLiveOwner(context, fresh)) return fresh
+    const result = markRecordLostForReconciliation(fresh, { timestamp: nowIso(context), error_message: message })
+    applied = result.applied
+    return result.applied ? result.record : fresh
+  })
+  if (!applied) return { task_id: record.task_id, kind: "deferred", reason: "orphaned_drain_changed" }
+  context.store.appendEvent(record.task_id, { type: "reconcile_lost", payload: { reason: message } })
+  return { task_id: record.task_id, kind: "lost", reason: "orphaned_drain" }
 }
 
 function hasForeignLiveOwner(context: LifecycleContext, record: TaskRecord): boolean {

@@ -667,12 +667,16 @@ class TaskManagerImpl implements TaskManager {
   }
 
   // One child subscription feeds BOTH durable facts: the JSONL transcript log and the run-stats
-  // tracker whose snapshot lands on the terminal record. Looked up per event so a revive can
+  // tracker whose snapshot lands on the terminal record. The stats listener also adopts turns the
+  // child starts on its own after its run settled. Looked up per event so a revive can
   // swap in a fresh tracker without resubscribing.
   #subscribeChildFacts(handle: ManagedChildHandle, taskId: string): () => void {
     const transcript = subscribeTranscriptLog(handle, this.#options.store, taskId)
     this.#runStats.set(taskId, createRunStatsTracker(this.#now(), this.#now))
     const stats = handle.subscribe((event) => {
+      // A turn that starts with no run tracked was woken by the child's own background work. It is
+      // adopted first so the new run's stats tracker sees the turn from its start.
+      if (event.type === "agent_start" && handle.isRunActive?.() === false) this.#steering.adoptWake(taskId)
       this.#runStats.get(taskId)?.accept(event)
     })
     return () => {

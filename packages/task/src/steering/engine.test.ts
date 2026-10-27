@@ -521,3 +521,54 @@ describe("steering a run that already ended", () => {
     expect(fake.steerCalls).toEqual(["keep going"])
   })
 })
+
+describe("adopting a turn a settled child woke on its own", () => {
+  test("#given a completed resident child #when its own background work wakes a turn #then the record reopens as a new run on the same handle", () => {
+    // given
+    const harness = makeHarness()
+    const record = harness.seedRecord()
+    toCompleted(harness, record)
+    const fake = makeFakeHandle(record.task_id, "in-process")
+    let adopted = 0
+    harness.setLive(record.task_id, { ...fake.handle, isRunActive: () => false, adoptRun: () => { adopted += 1 } })
+
+    // when
+    const reopened = harness.engine.adoptWake(record.task_id)
+
+    // then
+    expect(reopened).toBe(true)
+    expect(adopted).toBe(1)
+    const fresh = harness.store.load(record.task_id)
+    expect(fresh?.status).toBe("running")
+    expect(fresh?.notification.run_epoch).toBe(record.notification.run_epoch + 1)
+    expect(fresh?.final_response).toBeUndefined()
+  })
+
+  test.each([
+    ["a cancelled child", (harness: SteeringHarness, record: TaskRecord) => {
+      toRunning(harness, record)
+      harness.store.transition(record.task_id, { type: "cancel", timestamp: new Date().toISOString() })
+    }],
+    ["a still-running child", (harness: SteeringHarness, record: TaskRecord) => toRunning(harness, record)],
+  ] as const)("#given %s #when a turn starts #then nothing is adopted", (_label, prepare) => {
+    const harness = makeHarness()
+    const record = harness.seedRecord()
+    prepare(harness, record)
+    const fake = makeFakeHandle(record.task_id, "in-process")
+    let adopted = 0
+    harness.setLive(record.task_id, { ...fake.handle, isRunActive: () => false, adoptRun: () => { adopted += 1 } })
+
+    expect(harness.engine.adoptWake(record.task_id)).toBe(false)
+    expect(adopted).toBe(0)
+  })
+
+  test("#given an rpc child without adoption #when a turn starts #then the record is left to its own watch", () => {
+    const harness = makeHarness()
+    const record = harness.seedRecord()
+    toCompleted(harness, record)
+    harness.setLive(record.task_id, makeFakeHandle(record.task_id, "rpc").handle)
+
+    expect(harness.engine.adoptWake(record.task_id)).toBe(false)
+    expect(harness.store.load(record.task_id)?.status).toBe("completed")
+  })
+})

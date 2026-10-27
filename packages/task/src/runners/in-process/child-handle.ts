@@ -26,7 +26,9 @@ export type ChildSession = {
   readonly extensionRunner?: ChildExtensionRunner
   // No active agent run. A wake (a monitor event, a background exit) starts a run on an idle session.
   readonly isIdle?: boolean
-  prompt(text: string): Promise<void>
+  // With streamingBehavior the engine decides in one step: an idle session starts a run, a busy one
+  // queues the message for after the current run. Without it a busy session rejects the prompt.
+  prompt(text: string, options?: { readonly streamingBehavior?: "steer" | "followUp" }): Promise<void>
   // Stock pi 1.0 resolves these with a "handled" | "queued" disposition; the runner does not need it.
   steer(text: string): Promise<unknown>
   followUp(text: string): Promise<unknown>
@@ -63,6 +65,8 @@ export type ChildHandle = {
   // True from a turn's start until its run settles, holding for background work included. After
   // that a steer only queues on the idle session and nothing reads it.
   isRunActive(): boolean
+  // Track the turn the child's own background work just woke, after its run settled, as a new run.
+  adoptRun(): void
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
   abort(): Promise<void>
@@ -232,15 +236,20 @@ async function holdForPendingWork(
 // A prompt turn is a TRACKED async op: the promise is created and its rejection handled at the
 // call site, so steering can happen WHILE it runs and no rejection ever escapes. The same routine
 // drives the initial prompt and every revive follow-up (a fresh turn on an idle resident session).
+// A run adopted from a turn the child's own background work woke (text undefined) sends no prompt:
+// it follows the turn already running.
 async function runTurn(
   session: ChildSession,
-  text: string,
+  text: string | undefined,
   isAborted: () => boolean,
   observation: TurnObservation,
   hold: () => Promise<void>,
 ): Promise<RunnerOutcome> {
   try {
-    await session.prompt(text)
+    // A child also runs turns its own background work wakes, after its tracked run settled. A
+    // revive that lands in such a turn joins it as a follow-up instead of being rejected as busy.
+    if (text !== undefined) await session.prompt(text, { streamingBehavior: "followUp" })
+    if (session.isIdle === false) await session.waitForIdle?.()
   } catch (error) {
     if (isAborted()) return { status: "cancelled" }
     if (error instanceof Error) {
@@ -330,10 +339,10 @@ function createTrackedChildHandle(
   }
 
   // A message queued on an idle session waits for a run that never starts, so a message that
-  // arrives while the run is held between turns opens the next turn itself. If the session cannot
-  // take a prompt right now, the message stays queued for the next wake.
+  // arrives while the run is held between turns opens the next turn itself. If a wake turn is
+  // already running, the message follows it.
   const deliverWhileHeld = (text: string): void => {
-    const delivery: Promise<void> = session.prompt(text).catch(() => session.followUp(text)).then(() => undefined, () => undefined)
+    const delivery: Promise<void> = session.prompt(text, { streamingBehavior: "followUp" }).then(() => undefined, () => undefined)
     heldPrompts.add(delivery)
     void delivery.then(() => heldPrompts.delete(delivery))
   }
@@ -341,7 +350,7 @@ function createTrackedChildHandle(
 
   // Start a fresh tracked turn and mark it active until it settles. waitForIdle() always returns the
   // CURRENT turn, so a revive follow-up re-arms it to the new turn instead of a stale resolved one.
-  const beginTurn = (text: string): void => {
+  const beginTurn = (text: string | undefined): void => {
     aborted = false
     turnActive = true
     observation.text = undefined
@@ -364,6 +373,10 @@ function createTrackedChildHandle(
     task_id: taskId,
     sessionId: session.sessionId,
     isRunActive: () => turnActive,
+    adoptRun: () => {
+      if (turnActive || disposed) return
+      beginTurn(undefined)
+    },
     steer: async (text) => {
       if (heldIdle()) {
         deliverWhileHeld(text)

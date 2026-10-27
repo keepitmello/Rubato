@@ -92,3 +92,22 @@ test('the items no lead holds yet are their own list: what still waits to be han
   inbox.update('S-1', { leadSessionId: 'lead-2' });
   assert.deepEqual(inbox.list({ unlinked: true }), []);
 });
+
+test('a full disk is reported as itself, not as a failed rollback', async (t) => {
+  const { DatabaseSync } = await import('node:sqlite');
+  const env = sandbox(t);
+  const inbox = openInbox({ env, now: clock() });
+  t.after(() => inbox.close());
+  inbox.add({ title: '공간 있을 때', source: 'user' });
+  // Every transaction from here on runs on a database that cannot grow, the way a full disk behaves.
+  const exec = DatabaseSync.prototype.exec;
+  DatabaseSync.prototype.exec = function (sql) {
+    const result = exec.call(this, sql);
+    if (sql === 'BEGIN') exec.call(this, `PRAGMA max_page_count = ${this.prepare('PRAGMA page_count').get().page_count}`);
+    return result;
+  };
+  t.after(() => { DatabaseSync.prototype.exec = exec; });
+  assert.throws(() => inbox.add({ title: '공간 없을 때', body: 'x'.repeat(200_000), source: 'user' }), /database or disk is full/);
+  DatabaseSync.prototype.exec = exec;
+  assert.equal(inbox.list().length, 1, 'the failed report left nothing behind');
+});

@@ -730,3 +730,52 @@ describe("reconcileOnSessionStart cross-process ownership", () => {
     expect(store.load("st_00000022")?.status).toBe("lost")
   })
 })
+
+describe("reconcileOnSessionStart orphaned drains", () => {
+  const thisPid = 1111
+  const deadPid = 7777
+  const livePid = 4242
+
+  async function reconcileDrain(input: { readonly host_pid: number; readonly alive: readonly number[]; readonly residency_state?: "disposed" | "evicted" }) {
+    const store = tempStore()
+    seedRecord(store, {
+      task_id: "st_00000031",
+      parent_session_id: "old-session",
+      status: "running",
+      residency_state: input.residency_state ?? "disposed",
+      execution_mode: "in-process",
+      host_pid: input.host_pid,
+    })
+    const lifecycle = createTaskLifecycle({
+      store,
+      registry: new FakeRegistry(),
+      config: settings(),
+      now,
+      signaller: fakeSignaller(new Set(input.alive), []),
+      hostPid: thisPid,
+    })
+    const result = await lifecycle.reconcileOnSessionStart("new-session")
+    return { store, result }
+  }
+
+  test.each(["disposed", "evicted"] as const)("#given another session's %s record still running after its process died #when a session starts #then it is marked lost", async (residency) => {
+    const { store, result } = await reconcileDrain({ host_pid: deadPid, alive: [], residency_state: residency })
+
+    expect(result.outcomes.map((outcome) => [outcome.task_id, outcome.kind])).toContainEqual(["st_00000031", "lost"])
+    expect(store.load("st_00000031")?.status).toBe("lost")
+    expect(readEvents(store, "st_00000031")).toContain("reconcile_lost")
+  })
+
+  test("#given the process holding the drain is alive #when a session starts #then the late outcome is left to settle it", async () => {
+    const { store } = await reconcileDrain({ host_pid: livePid, alive: [livePid] })
+
+    expect(store.load("st_00000031")?.status).toBe("running")
+    expect(readEvents(store, "st_00000031")).not.toContain("reconcile_lost")
+  })
+
+  test("#given the drain belongs to a sibling session in this process #when a session starts #then it is left alone", async () => {
+    const { store } = await reconcileDrain({ host_pid: thisPid, alive: [thisPid] })
+
+    expect(store.load("st_00000031")?.status).toBe("running")
+  })
+})

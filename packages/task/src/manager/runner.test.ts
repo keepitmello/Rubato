@@ -26,6 +26,7 @@ function fakeInProcessHandle(outcome: RunnerOutcome): InProcessChildHandle {
     task_id: "st_00000001",
     sessionId: "child-1",
     isRunActive: () => false,
+    adoptRun: () => {},
     steer: () => Promise.resolve(),
     followUp: () => Promise.resolve(),
     abort: () => Promise.resolve(),
