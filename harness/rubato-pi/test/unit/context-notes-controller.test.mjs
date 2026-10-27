@@ -391,3 +391,15 @@ test("engine mirror trimming cannot hide prior original history or rewrite IDs",
   assert.equal(f.c.lastUser,user.id);
   assert.equal(f.c.window.number,1);
 });
+test("a full disk stops turns only until space is back", (t)=>{
+  const f=setup(t); const db=f.c.store.db;
+  db.exec(`PRAGMA max_page_count=${db.prepare("PRAGMA page_count").get().page_count}`);
+  const big=f.addMessage("user","x".repeat(200_000));
+  assert.throws(()=>f.c.refresh(f.ctx),/database or disk is full/);
+  assert.equal(f.c.fatal,null);
+  assert.throws(()=>f.c.admit([]),/database or disk is full/);
+  db.exec("PRAGMA max_page_count=1073741823");
+  f.c.admit([]);
+  assert.equal(f.c.storageFailure,null);
+  assert.ok(f.c.store.listItems({ role:"user" }).items.some((item)=>item.item_id===big.id));
+});

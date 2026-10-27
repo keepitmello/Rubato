@@ -29,6 +29,8 @@ export type ManagedChildHandle = {
   readonly sessionId: string | undefined
   readonly pid: number | undefined
   readonly spawnSpec?: RpcSpawnSpec
+  // Whether the run the record calls "running" is still going. In-process only; absent means unknown.
+  isRunActive?(): boolean
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
   abort(): Promise<void>
@@ -49,6 +51,7 @@ export function adaptInProcessHandle(handle: InProcessChildHandle): ManagedChild
     task_id: handle.task_id,
     sessionId: handle.sessionId,
     pid: undefined,
+    isRunActive: () => handle.isRunActive(),
     steer: (text) => handle.steer(text),
     followUp: (text) => handle.followUp(text),
     abort: () => handle.abort(),

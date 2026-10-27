@@ -60,6 +60,9 @@ export type RunnerOutcome =
 export type ChildHandle = {
   readonly task_id: string
   readonly sessionId: string
+  // True from a turn's start until its run settles, holding for background work included. After
+  // that a steer only queues on the idle session and nothing reads it.
+  isRunActive(): boolean
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
   abort(): Promise<void>
@@ -360,6 +363,7 @@ function createTrackedChildHandle(
   const handle: ChildHandle = {
     task_id: taskId,
     sessionId: session.sessionId,
+    isRunActive: () => turnActive,
     steer: async (text) => {
       if (heldIdle()) {
         deliverWhileHeld(text)

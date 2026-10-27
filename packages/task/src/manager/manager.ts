@@ -76,6 +76,8 @@ type RpcRespawnRunner = {
 
 type TaskManagerImplOptions = TaskManagerOptions & {
   readonly rpcRespawnRunner?: RpcRespawnRunner
+  // Wait between retries of a settled run's record write; injectable for tests.
+  readonly outcomeRetrySleep?: (ms: number) => Promise<void>
 }
 
 type ReattachingTaskManager = TaskManager & {
@@ -198,6 +200,7 @@ class TaskManagerImpl implements TaskManager {
       releaseSlot: (taskId, model, epoch) => this.#releaseSlot(taskId, model, epoch),
       settleWaiters: (taskId) => this.#settleWaiters(taskId),
       tryRuntimeFallback: (input) => this.#tryRuntimeFallback(input),
+      ...(options.outcomeRetrySleep === undefined ? {} : { sleep: options.outcomeRetrySleep }),
     })
     registerLifecycleReattachPorts(options.store, {
       reserve: (record) => this.#reserveForReattach(record),

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
 import type { TaskRecord } from "../state"
-import { createTaskRecordStore } from "../store"
+import { createTaskRecordStore, type TaskRecordStore } from "../store"
 import {
   baseSpec,
   cleanupProjects,
@@ -12,6 +12,22 @@ import {
 afterEach(cleanupProjects)
 
 const iso = (): string => new Date().toISOString()
+
+// The record write of one transition type throws, the way a full disk makes it throw.
+function failWrites(store: TaskRecordStore, type: string, times: number): { readonly attempts: () => number } {
+  const transition = store.transition.bind(store)
+  let attempts = 0
+  Object.assign(store, {
+    transition: ((taskId, event) => {
+      if (event.type === type) {
+        attempts += 1
+        if (attempts <= times) throw new Error("ENOSPC: no space left on device")
+      }
+      return transition(taskId, event)
+    }) satisfies TaskRecordStore["transition"],
+  })
+  return { attempts: () => attempts }
+}
 
 describe("TaskManager outcome guards", () => {
   test("#given a running resident child #when suspension forgets its handle and the abort settles cancelled #then the record stays running+persisted_only and no waiter settles with a terminal", async () => {
@@ -183,5 +199,79 @@ describe("TaskManager background intent", () => {
     // then
     expect(promoted).toBe(true)
     expect(manager.wasBackground("st_0000ffff")).toBe(true)
+  })
+
+})
+
+describe("TaskManager settled-run record writes", () => {
+  test("#given the record cannot be written for a while (full disk) #when the run fails #then the fail write is retried until the record leaves running", async () => {
+    // given
+    const delays: number[] = []
+    const { manager, store, inProcess } = makeManager({
+      outcomeRetrySleep: async (ms) => {
+        delays.push(ms)
+      },
+    })
+    const started = await manager.start(baseSpec())
+    if (started.kind !== "started") throw new Error("expected started")
+    const taskId = started.task_id
+    const waiter = manager.waitFor(taskId)
+    failWrites(store, "fail", 2)
+
+    // when
+    inProcess.handles.get(taskId)?.settle({
+      status: "error",
+      failure: { kind: "child-turn-failed", message: "database or disk is full" },
+    })
+    const record = await waiter
+
+    // then
+    expect(delays).toEqual([1_000, 2_000])
+    expect(record.status).toBe("error")
+    expect(store.load(taskId)?.error_message).toBe("database or disk is full")
+  })
+
+  test("#given the record cannot be written for a while #when the run completes #then the completion is retried and the answer is kept", async () => {
+    // given
+    const { manager, store, inProcess } = makeManager({ outcomeRetrySleep: async () => {} })
+    const started = await manager.start(baseSpec())
+    if (started.kind !== "started") throw new Error("expected started")
+    const taskId = started.task_id
+    const waiter = manager.waitFor(taskId)
+    failWrites(store, "complete", 1)
+
+    // when
+    inProcess.handles.get(taskId)?.settle({ status: "completed", finalResponse: "done" })
+    const record = await waiter
+
+    // then
+    expect(record.status).toBe("completed")
+    expect(record.final_response).toBe("done")
+  })
+
+  test("#given a fail write is being retried #when the manager stops owning the run #then the retry stops and leaves the record alone", async () => {
+    // given
+    let release: () => void = () => {}
+    const { manager, store, inProcess } = makeManager({
+      outcomeRetrySleep: () => new Promise<void>((resolve) => { release = resolve }),
+    })
+    const started = await manager.start(baseSpec())
+    if (started.kind !== "started") throw new Error("expected started")
+    const taskId = started.task_id
+    const writes = failWrites(store, "fail", Number.POSITIVE_INFINITY)
+    inProcess.handles.get(taskId)?.settle({
+      status: "error",
+      failure: { kind: "child-turn-failed", message: "boom" },
+    })
+    await flush()
+
+    // when
+    manager.forget(taskId)
+    release()
+    await flush()
+
+    // then
+    expect(writes.attempts()).toBe(1)
+    expect(store.load(taskId)?.status).toBe("running")
   })
 })

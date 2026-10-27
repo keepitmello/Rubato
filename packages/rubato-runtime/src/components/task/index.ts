@@ -19,6 +19,7 @@ import {
 } from "@rubato/task"
 
 import type { Task } from "@rubato/team-core/types"
+import { configureSharedSubunitLogger } from "@rubato/utils"
 
 import type { ComponentContext, RubatoComponent, SenpiExtensionAPI } from "../../extension/types"
 import { registerTaskCommands } from "./commands"
@@ -74,6 +75,13 @@ export function createTaskComponent(options: TaskComponentOptions = {}): RubatoC
         ctx.logger.warn("Rubato task component skipped: missing ExtensionAPI capabilities", { missing })
         return
       }
+
+      // The task engine reports its failures (a settled run it could not save, a failed respawn)
+      // through the shared subunit log, which nothing had wired: they vanished. Only the task
+      // subunits go to the component log; model resolution and the like stay quiet.
+      configureSharedSubunitLogger((message, data) => {
+        if (message.startsWith("senpi-task") || message.startsWith("rubato-runtime")) ctx.logger.warn(message, data)
+      })
 
       const cwd = options.resolveCwd?.() ?? sessionCwd(pi)
       const loaded = loadConfig({ cwd })

@@ -90,3 +90,13 @@ test("immutable archive rejects overwritten originals instead of corrupting hist
   const changed=structuredClone(f.branch()); changed.at(-1).message.content="changed";
   assert.throws(()=>f.store.sync(changed));
 });
+test("a full disk surfaces as itself and leaves the archive usable", (t) => {
+  const f=setup(t); f.store.sync(f.branch());
+  const pages=f.store.db.prepare("PRAGMA page_count").get().page_count;
+  f.store.db.exec(`PRAGMA max_page_count=${pages}`);
+  f.addMessage("user", "x".repeat(200_000));
+  assert.throws(()=>f.store.sync(f.branch()), /database or disk is full/);
+  f.store.db.exec("PRAGMA max_page_count=1073741823");
+  f.store.sync(f.branch());
+  assert.equal(f.store.listItems({ role: "user" }).items.length, 1);
+});
