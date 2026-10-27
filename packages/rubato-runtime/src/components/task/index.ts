@@ -3,6 +3,7 @@ import {
   buildLeadTeamTools,
   createLeadDeliveryJournal,
   createTaskCancelTool,
+  createTaskPauseTool,
   createTaskSendTool,
   createTaskTool,
   listTeamTasks,
@@ -211,6 +212,7 @@ function registerTaskTools(
     }),
   })
   pi.registerTool({ ...createTaskCancelTool({ manager }) })
+  pi.registerTool({ ...createTaskPauseTool({ manager }) })
   // AgentOutput is gone from the model surface. A delegated result arrives as a completion pointer
   // plus a result file path; peeking a child's transcript was how the lead's context filled up with
   // execution logs, and the runtime's own diagnostics (status UI, /tasks, run logs) stay available to

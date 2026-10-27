@@ -90,7 +90,7 @@ try {
   const leadOnly = ["memory", "memory_apply_patch", "schedule", "mcp__rubato-memory_memory", "mcp__rubato-memory_memory_apply_patch", "team_create", "team_add_member", "team_replace_member", "team_delete", "team_send",
     "team_shutdown_request", "team_approve_shutdown", "team_reject_shutdown",
     "team_task_create", "team_task_get", "team_task_list", "team_task_update"];
-  const agentFamily = ["Agent", "AgentSend", "AgentCancel"];
+  const agentFamily = ["Agent", "AgentSend", "AgentCancel", "AgentPause"];
   let childRunners;
   createStockTaskRunnerFactories({ agentDir, modelRuntime, createTaskRunnerFactories: (options) => { childRunners = options; return {}; } });
   const childTools = async ({ member = false, inProcess = false }) => {

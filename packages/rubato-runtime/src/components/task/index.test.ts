@@ -22,7 +22,7 @@ import { createSessionTransitionBridge } from "./session-transition-bridge"
 
 // AgentOutput is gone from the model surface: a delegated result arrives as a completion pointer
 // plus its result file path.
-const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel"]
+const TASK_TOOL_NAMES = ["Agent", "AgentSend", "AgentCancel", "AgentPause"]
 const TEAM_TOOL_NAMES = [
   "team_create",
   "team_add_member",

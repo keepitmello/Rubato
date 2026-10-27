@@ -18,6 +18,7 @@ export type CallerSessionResolver = (ctx: SessionIdCarrier) => string | undefine
 // every mutation goes through these public manager APIs.
 export type SendManager = Pick<TaskManager, "sendToTask" | "list">
 export type CancelManager = Pick<TaskManager, "cancelTask" | "get">
+export type PauseManager = Pick<TaskManager, "interruptTask" | "list">
 
 export type SendResultDetails =
   | { readonly kind: "steered"; readonly agentId: string; readonly status: TaskStatus; readonly delivered: "steer" }
@@ -48,3 +49,12 @@ export type CancelResultDetails =
 
 export type SendToolResult = AgentToolResult<SendResultDetails>
 export type CancelToolResult = AgentToolResult<CancelResultDetails>
+
+export type PauseResultDetails =
+  | { readonly kind: "paused"; readonly agentIds: readonly string[]; readonly team_run_id?: string }
+  | { readonly kind: "noop"; readonly agentId: string; readonly status: TaskStatus; readonly reason: string }
+  | { readonly kind: "team_noop"; readonly team_run_id: string; readonly reason: string }
+  | { readonly kind: "not_found"; readonly reason: string }
+  | { readonly kind: "invalid_arguments"; readonly reason: string }
+
+export type PauseToolResult = AgentToolResult<PauseResultDetails>
