@@ -161,6 +161,8 @@ function sessionTools(getLink, { companion }) {
         "By default: its status and recent messages (user and assistant text, messages from other conversations, and the names of tools " +
         "each assistant message used), plus the subagents and team runs a conversation started, each with its st_ id. " +
         "A conversation's session also carries cache and contextTokens, as in session_list. " +
+        "A subagent's lastActivityAt is when its transcript last grew (a message, a tool result or a notification): " +
+        "one still running whose lastActivityAt is long past is waiting or stuck, not working. " +
         "entryId (from session_search or an earlier read) reads the one turn holding that entry instead. includeTools adds each tool call's " +
         "input and the tool output, clipped. view \"notes\" reads its context notes; view \"board\" reads the shared board and latest team " +
         "messages of the team runs it led or belongs to. " +

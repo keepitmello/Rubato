@@ -71,6 +71,16 @@ export function createSteeringEngine(port: SteeringPort): SteeringEngine {
   }
 
   async function steerRunning(record: TaskRecord, handle: ManagedChildHandle, message: string, deliverAs: SendDelivery): Promise<SendOutcome> {
+    // The record lags the run when saving the settled result fails (a full disk): the session is
+    // idle, a steer only queues there, and "delivered" would be a lie.
+    if (handle.isRunActive?.() === false) {
+      return {
+        kind: "not_continuable",
+        task_id: record.task_id,
+        reason: `Task ${record.task_id}'s run has ended, but its record still says running while the result is being saved. The message was not delivered.`,
+        suggestion: "Send it again in a moment; once the record shows the result, the send starts a new run.",
+      }
+    }
     if (deliverAs === "steer") await handle.steer(message)
     else await handle.followUp(message)
     // The run epoch scopes this send to the run it steered: a later revive starts a fresh epoch,

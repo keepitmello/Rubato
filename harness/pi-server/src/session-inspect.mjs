@@ -60,6 +60,16 @@ async function jsonlFiles(dir) {
   return (await list(dir)).filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map((entry) => path.join(dir, entry.name)).sort();
 }
 
+/**
+ * When a subagent last did something: its transcript grows with every message, tool result and
+ * notification. Its record only changes when its status does, so a run that died or hangs keeps
+ * an old updatedAt next to "running" and looks the same as one that is working.
+ */
+async function lastActivity(files) {
+  const file = files.at(-1);
+  return file ? ms((await stat(file).catch(() => undefined))?.mtimeMs) : null;
+}
+
 /** First line of a transcript: its header (`id`, `cwd`), read without loading the file. */
 export async function readHeader(file) {
   let handle;
@@ -320,7 +330,7 @@ export function createInspector({ agentDir, sessionsDir, cwds, titleOf = () => u
   const memberOf = (teams, agentId) => {
     for (const team of teams) for (const [name, id] of Object.entries(team.members)) if (id === agentId) return { team, name };
   };
-  function agentRow(record, teams, { from } = {}) {
+  function agentRow(record, teams, { from, lastActivityAt } = {}) {
     const member = memberOf(teams, record.task_id);
     return {
       agentId: record.task_id,
@@ -331,6 +341,7 @@ export function createInspector({ agentDir, sessionsDir, cwds, titleOf = () => u
       ...(member ? { team: { teamRunId: member.team.state.teamRunId, teamName: member.team.state.teamName ?? null, member: member.name } } : {}),
       createdAt: ms(record.created_at),
       updatedAt: ms(record.updated_at),
+      lastActivityAt: lastActivityAt ?? null,
     };
   }
   function teamRow(team, records) {
@@ -366,7 +377,10 @@ export function createInspector({ agentDir, sessionsDir, cwds, titleOf = () => u
       const runs = await teamsIn(stateDir);
       const mine = records.filter((record) => record.parent_session_id === sessionId || record.root_session_id === sessionId)
         .sort((a, b) => (ms(a.created_at) ?? 0) - (ms(b.created_at) ?? 0));
-      agents.push(...mine.map((record) => agentRow(record, runs, { from: sessionId })));
+      for (const record of mine) {
+        const lastActivityAt = await lastActivity(await jsonlFiles(agentSessionDir(stateDir, record.task_id)));
+        agents.push(agentRow(record, runs, { from: sessionId, lastActivityAt }));
+      }
       teams.push(...runs.filter((team) => team.state.leadSessionId === sessionId).map((team) => teamRow(team, records)));
     }
     const max = INSPECT_LIMITS.agentsMax;
@@ -389,7 +403,7 @@ export function createInspector({ agentDir, sessionsDir, cwds, titleOf = () => u
       member: memberOf(runs, agentId),
       runs,
       info: {
-        ...agentRow(found.record, runs),
+        ...agentRow(found.record, runs, { lastActivityAt: await lastActivity(files) }),
         parentSessionId: found.record.parent_session_id ?? null,
         rootSessionId: found.record.root_session_id ?? null,
         cwd: found.project,

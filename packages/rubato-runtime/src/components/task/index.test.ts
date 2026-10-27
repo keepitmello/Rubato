@@ -13,6 +13,8 @@ import {
   type TaskRecord,
 } from "@rubato/task"
 
+import { configureSharedSubunitLogger, log } from "@rubato/utils"
+
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import type { ComponentContext, ComponentLogger } from "../../extension/types"
 import { composeTaskEngine, type TaskEngine } from "./engine"
@@ -181,6 +183,27 @@ function toolNames(pi: FakeExtensionAPI): string[] {
 describe("rubato-runtime task component wiring", () => {
   beforeEach(() => {
     delete process.env.RUBATO_TASK_MEMBER
+  })
+
+  it("#given the task component registered #when the task engine logs a failure #then it reaches the component log and other subunits stay quiet", () => {
+    // given
+    const pi = new FakeExtensionAPI()
+    const logger = createLogger()
+    createTaskComponent({ resolveCwd: () => tempProject() }).register(pi, ctxFor(pi, logger))
+
+    try {
+      // when
+      log("senpi-task manager outcome write failed; retrying", { taskId: "st_1" })
+      log("Model resolved via system default", { model: "m" })
+
+      // then
+      expect(logger.entries.filter((entry) => entry.level === "warn").map((entry) => entry.message)).toContain(
+        "senpi-task manager outcome write failed; retrying",
+      )
+      expect(logger.entries.map((entry) => entry.message)).not.toContain("Model resolved via system default")
+    } finally {
+      configureSharedSubunitLogger(undefined)
+    }
   })
 
   it("#given an explicit team member process #when the task component registers #then Agent tools are wired without lead team tools", () => {

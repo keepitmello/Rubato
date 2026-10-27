@@ -148,6 +148,7 @@ export function makeManager(options: {
   inProcess?: FakeRunner
   process?: FakeRunner
   admit?: AdmitResident
+  outcomeRetrySleep?: (ms: number) => Promise<void>
 } = {}) {
   const project = options.project ?? tempProject()
   const store = createTaskRecordStore({ project_dir: project })
@@ -160,6 +161,7 @@ export function makeManager(options: {
     config: options.config ?? settings({ default_concurrency: 5, max_depth: 1 }),
     cwd: project,
     ...(options.admit !== undefined && { admit: options.admit }),
+    ...(options.outcomeRetrySleep !== undefined && { outcomeRetrySleep: options.outcomeRetrySleep }),
   })
   return { manager, store, inProcess, process: processRunner, project }
 }

@@ -158,7 +158,12 @@ export class ContextNotesStore {
   transaction(fn) {
     this.db.exec("BEGIN IMMEDIATE");
     try { const result = fn(); this.db.exec("COMMIT"); return result; }
-    catch (error) { this.db.exec("ROLLBACK"); throw error; }
+    catch (error) {
+      // SQLite rolls the whole transaction back by itself on some errors (a full disk among
+      // them). A ROLLBACK then fails with "no transaction is active" and hides the real error.
+      if (this.db.isTransaction) this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   // The session journal is authoritative, including note revisions and window

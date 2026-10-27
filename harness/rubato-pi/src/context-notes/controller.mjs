@@ -130,6 +130,12 @@ class HardLineRefusal extends Error {}
 class FullWindowRefusal extends Error {}
 class RequestByteRefusal extends Error {}
 
+// A full disk is a state of the machine, not of this session.
+function storageFull(error) {
+  if (error?.code === "ENOSPC" || error?.code === "EDQUOT") return true;
+  return error?.code === "ERR_SQLITE_ERROR" && (error.errcode & 0xff) === 13; // SQLITE_FULL
+}
+
 export class ContextNotesController {
   constructor(pi, ctx, options = {}) {
     this.pi = pi;
@@ -146,6 +152,7 @@ export class ContextNotesController {
     this.checkpointRequestId = null;
     this.checkpointRetried = false;
     this.fatal = null;
+    this.storageFailure = null;
     this.paused = null;
     this.leaf = undefined;
     this.transitioning = false;
@@ -171,7 +178,16 @@ export class ContextNotesController {
 
   readBranch(manager) {
     try { return readAuthoritativeBranch(manager); }
-    catch (error) { this.fatal = error.message ?? String(error); throw error; }
+    catch (error) { this.latch(error); throw error; }
+  }
+
+  // A failure here stops every later turn at the provider gate. A full disk stops only the
+  // turns until space is back: the gate syncs again first, instead of the session failing
+  // with the same error until it is reopened.
+  latch(error) {
+    const message = error?.message ?? String(error);
+    if (storageFull(error)) this.storageFailure = message;
+    else this.fatal = message;
   }
 
   refresh(ctx = this.ctx, force = false) {
@@ -188,7 +204,7 @@ export class ContextNotesController {
       branch = this.readBranch(ctx.sessionManager);
     }
     try { this.window = this.store.sync(branch); }
-    catch (error) { this.fatal = error.message ?? String(error); throw error; }
+    catch (error) { this.latch(error); throw error; }
     this.leaf = ctx.sessionManager.getLeafId?.() ?? leaf;
     this.lastUser = lastUserId(branch);
     let activeWindow = this.window.firstWindowId;
@@ -225,12 +241,12 @@ export class ContextNotesController {
 
   flush(manager, entryId) {
     try { this.flushJournal(manager, entryId); }
-    catch (error) { this.fatal = error.message ?? String(error); throw error; }
+    catch (error) { this.latch(error); throw error; }
   }
 
   record(event, data = {}) {
     try { this.store.record(event, { ...data, model: this.ctx.model?.id ?? null, provider: this.ctx.model?.provider ?? null }); }
-    catch (error) { this.fatal = error.message ?? String(error); throw error; }
+    catch (error) { this.latch(error); throw error; }
   }
 
   usage(messages = this.activeMessages) {
@@ -295,6 +311,10 @@ export class ContextNotesController {
 
   admit(messages) {
     if (this.fatal) throw new Error(this.fatal);
+    if (this.storageFailure) {
+      this.refresh(this.ctx, true);
+      this.storageFailure = null;
+    }
     if (this.closed) throw new Error("문맥 관리 세션이 닫혔어요.");
     if (this.requireEngine) assertEngineParts();
     // The SDK owns a remote conversation we cannot reset or prevent from

@@ -165,4 +165,23 @@ describe("createChildHandle pending-work hold", () => {
 
     expect(await settledWithin(handle.waitForIdle(), 500)).toEqual({ status: "completed", finalResponse: "Waiting on the monitor." })
   })
+
+  test("#given a run held for background work #when the wake turn settles the run #then the handle stops reporting an active run", async () => {
+    // given a child waiting between turns on its background measurement
+    const fake = createHoldSession()
+    const handle = createChildHandle({ taskId: "task-1", session: fake.session, promptText: "measure", hold: FAST_HOLD })
+    fake.pending.value = { active: 1, undelivered: 0 }
+    fake.endRun("Measurements run in the background; I'll pick them up.")
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(handle.isRunActive()).toBe(true)
+
+    // when the measurement's exit wakes it and that turn ends the run
+    fake.wake()
+    fake.pending.value = { active: 0, undelivered: 0 }
+    fake.endRun("The measurement failed: no space left on device.")
+    await handle.waitForIdle()
+
+    // then nothing reads a steer any more, and the handle says so
+    expect(handle.isRunActive()).toBe(false)
+  })
 })

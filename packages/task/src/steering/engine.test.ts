@@ -483,3 +483,41 @@ describe("durable prelaunch steering", () => {
     expect(restarted.store.load(record.task_id)?.pending_steering ?? []).toEqual([])
   })
 })
+
+describe("steering a run that already ended", () => {
+  test.each(["steer", "followUp"] as const)(
+    "#given a record still running whose in-process run has settled #when sent as %s #then nothing is queued and the send says it was not delivered",
+    async (deliverAs) => {
+      // given - the settled result could not be saved yet (a full disk), so the record lags the run
+      const harness = makeHarness()
+      const record = harness.seedRecord()
+      toRunning(harness, record)
+      const fake = makeFakeHandle(record.task_id, "in-process")
+      harness.setLive(record.task_id, { ...fake.handle, isRunActive: () => false })
+
+      // when
+      const outcome = await harness.engine.sendToTask({ idOrName: record.task_id, message: "status?", deliverAs })
+
+      // then
+      expect(outcome.kind).toBe("not_continuable")
+      if (outcome.kind !== "not_continuable") throw new Error("expected not_continuable")
+      expect(outcome.reason).toContain("not delivered")
+      expect(fake.steerCalls).toEqual([])
+      expect(fake.followUpCalls).toEqual([])
+      expect(harness.store.load(record.task_id)?.status).toBe("running")
+    },
+  )
+
+  test("#given a running record whose run is still active #when sent a steer #then it is delivered as before", async () => {
+    const harness = makeHarness()
+    const record = harness.seedRecord()
+    toRunning(harness, record)
+    const fake = makeFakeHandle(record.task_id, "in-process")
+    harness.setLive(record.task_id, { ...fake.handle, isRunActive: () => true })
+
+    const outcome = await harness.engine.sendToTask({ idOrName: record.task_id, message: "keep going", deliverAs: "steer" })
+
+    expect(outcome.kind).toBe("steered")
+    expect(fake.steerCalls).toEqual(["keep going"])
+  })
+})

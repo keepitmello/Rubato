@@ -815,6 +815,27 @@ test('read: a conversation lists its subagents and team runs; an st_ id reads th
   assert.equal(env.host.metrics.runtimeStarts, 0);
 });
 
+test('read: a subagent shows when its transcript last grew, apart from when its record last changed', async (t) => {
+  const env = await setup(t);
+  const { utimes } = await import('node:fs/promises');
+  const stateDir = path.join(env.root, '.rubato', 'senpi-task');
+  const lead = await writeSession(env.sessionsDir, env.root, [user('measure it'), assistant('started')]);
+  await env.listed(lead.id);
+  const child = await writeAgent(stateDir, 'st_d1', { parent: lead.id, summary: 'measure', status: 'running',
+    entries: [user('brief'), assistant('measuring in the background; I will pick it up')] });
+  const quietSince = new Date(Date.now() - 2 * 60 * 60 * 1000);
+  await utimes(child.file, quietSince, quietSince);
+
+  const overview = await env.api.read({ sessionId: lead.id });
+  const row = overview.agents.find((agent) => agent.agentId === 'st_d1');
+  assert.equal(row.status, 'running');
+  assert.equal(row.lastActivityAt, quietSince.getTime(), 'the overview row carries the last transcript write');
+  assert.ok(row.updatedAt - row.lastActivityAt > 60 * 60 * 1000, 'a fresh record does not hide two quiet hours');
+
+  const agent = await env.api.read({ sessionId: 'st_d1' });
+  assert.equal(agent.agent.lastActivityAt, quietSince.getTime());
+});
+
 test('read view notes: the current version of each context note, one note by path, none when it kept none', async (t) => {
   const env = await setup(t);
   const { mkdir } = await import('node:fs/promises');
