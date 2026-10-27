@@ -16,6 +16,8 @@ type HoldSessionControls = {
   readonly pending: { value: ChildPendingWork }
   readonly prompts: string[]
   readonly steers: string[]
+  // Messages a busy session queued to run after its current turn.
+  readonly queued: string[]
   // The model answers the current run with this text and the run ends.
   endRun(text: string): void
   // A background completion wakes the idle session with a new run (monitor event, bash exit).
@@ -29,6 +31,7 @@ function createHoldSession(): HoldSessionControls {
   const pending = { value: { active: 0, undelivered: 0 } as ChildPendingWork }
   const prompts: string[] = []
   const steers: string[] = []
+  const queued: string[] = []
   let busy = false
   let lastText: string | undefined
   let settlePrompt: (() => void) | undefined
@@ -39,6 +42,12 @@ function createHoldSession(): HoldSessionControls {
   const endRun = (text: string): void => {
     emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" } })
     lastText = text
+    // Like the engine, a run takes its queued follow-ups before it ends.
+    const next = queued.shift()
+    if (next !== undefined) {
+      prompts.push(next)
+      return
+    }
     busy = false
     const settle = settlePrompt
     settlePrompt = undefined
@@ -57,7 +66,14 @@ function createHoldSession(): HoldSessionControls {
     get isIdle() {
       return !busy
     },
-    prompt(text: string) {
+    prompt(text: string, options?: { readonly streamingBehavior?: "steer" | "followUp" }) {
+      if (busy) {
+        if (options?.streamingBehavior === undefined) {
+          return Promise.reject(new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message."))
+        }
+        queued.push(text)
+        return Promise.resolve()
+      }
       prompts.push(text)
       busy = true
       return new Promise<void>((resolve) => {
@@ -77,7 +93,7 @@ function createHoldSession(): HoldSessionControls {
     waitForIdle: () => (busy ? new Promise<void>((resolve) => idleWaiters.push(resolve)) : Promise.resolve()),
     dispose() {},
   }
-  return { session, pending, prompts, steers, endRun, wake: () => void (busy = true) }
+  return { session, pending, prompts, steers, queued, endRun, wake: () => void (busy = true) }
 }
 
 async function settledWithin(outcome: Promise<RunnerOutcome>, ms: number): Promise<RunnerOutcome | "pending"> {
@@ -182,6 +198,47 @@ describe("createChildHandle pending-work hold", () => {
     await handle.waitForIdle()
 
     // then nothing reads a steer any more, and the handle says so
+    expect(handle.isRunActive()).toBe(false)
+  })
+
+  test("#given a settled run and a turn its own monitor woke #when the dispatcher revives it #then the message follows that turn instead of failing as busy", async () => {
+    // given a run that settled, then a late monitor event that woke the child on its own
+    const fake = createHoldSession()
+    const handle = createChildHandle({ taskId: "task-1", session: fake.session, promptText: "export", hold: FAST_HOLD })
+    fake.endRun("Exports done.")
+    expect(await handle.waitForIdle()).toEqual({ status: "completed", finalResponse: "Exports done." })
+    fake.wake()
+
+    // when the dispatcher revives it while that turn runs
+    await handle.followUp("Which renderer do you recommend?")
+
+    // then the message waits for the woken turn and gets its own answer
+    expect(fake.queued).toEqual(["Which renderer do you recommend?"])
+    fake.endRun("Late batch result noted.")
+    expect(fake.prompts).toEqual(["export", "Which renderer do you recommend?"])
+    fake.endRun("Per-frame rendering.")
+    const outcome = await handle.waitForIdle()
+    if (outcome.status !== "completed") throw new Error(`expected completion, got ${JSON.stringify(outcome)}`)
+    expect(outcome.finalResponse).toContain("Per-frame rendering.")
+  })
+
+  test("#given a settled run #when the child's own monitor wakes a turn and the run is adopted #then that turn's answer is the new run's outcome", async () => {
+    // given the dispatcher already has the run's waiting line as its answer
+    const fake = createHoldSession()
+    const handle = createChildHandle({ taskId: "task-1", session: fake.session, promptText: "export batch", hold: FAST_HOLD })
+    fake.endRun("First export done; waiting for the rest.")
+    await handle.waitForIdle()
+    expect(handle.isRunActive()).toBe(false)
+
+    // when a late monitor event wakes the child and the manager adopts that turn
+    fake.wake()
+    handle.adoptRun()
+
+    // then the turn is tracked and its report settles the adopted run
+    expect(handle.isRunActive()).toBe(true)
+    expect(fake.prompts).toEqual(["export batch"])
+    fake.endRun("All five exports done; per-frame rendering wins.")
+    expect(await handle.waitForIdle()).toEqual({ status: "completed", finalResponse: "All five exports done; per-frame rendering wins." })
     expect(handle.isRunActive()).toBe(false)
   })
 })

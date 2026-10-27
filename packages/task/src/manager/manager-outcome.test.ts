@@ -275,3 +275,37 @@ describe("TaskManager settled-run record writes", () => {
     expect(store.load(taskId)?.status).toBe("running")
   })
 })
+
+describe("TaskManager self-woken turns", () => {
+  test("#given a completed in-process child #when its own monitor wakes a turn #then the record runs again and the waiter gets that turn's report", async () => {
+    // given
+    const { manager, store, inProcess } = makeManager({})
+    const started = await manager.start(baseSpec())
+    if (started.kind !== "started") throw new Error("expected started")
+    const taskId = started.task_id
+    const fake = inProcess.handles.get(taskId)
+    if (fake === undefined) throw new Error("expected handle")
+    let active = true
+    Object.assign(fake.handle, { isRunActive: () => active, adoptRun: () => { active = true } })
+    fake.emit({ type: "agent_start" })
+    expect(store.load(taskId)?.notification.run_epoch).toBe(0)
+    active = false
+    fake.settle({ status: "completed", finalResponse: "First export done; waiting for the rest." })
+    await flush()
+    expect(store.load(taskId)?.status).toBe("completed")
+
+    // when
+    fake.emit({ type: "agent_start" })
+
+    // then
+    const reopened = store.load(taskId)
+    expect(reopened?.status).toBe("running")
+    expect(reopened?.notification.run_epoch).toBe(1)
+    const waiter = manager.waitFor(taskId)
+    active = false
+    fake.settle({ status: "completed", finalResponse: "All five exports done." })
+    const record = await waiter
+    expect(record.status).toBe("completed")
+    expect(record.final_response).toBe("All five exports done.")
+  })
+})
