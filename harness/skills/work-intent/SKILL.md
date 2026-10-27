@@ -1,6 +1,6 @@
 ---
 name: work-intent
-description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read for durable work, continuing owners or a referenced intent. Small local work stays inline."
+description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read before starting anything bigger than a small local fix, and for durable work, continuing owners or a referenced intent. Small local work stays inline."
 ---
 
 # Work intent
@@ -71,8 +71,8 @@ not a dump of parser headings, IDs or paths.
 Link existing frame/spec clauses instead of duplicating what they own. Roster and run
 progress stay in the mission; brief discovery findings need no separate report.
 
-Whenever the work is large enough to record an intent, team or not, show the user your
-reading of it before activating anything: the intended result, the recommended direction
+Whenever the work is bigger than a small local fix, team or not, show the user your
+reading of it before starting anything: the intended result, the recommended direction
 and why, what stays unchanged, and how completion will be checked. For a taskforce, add
 the smallest role/model/effort roster with plain-language responsibilities so it is
 **one combined proposal**. Use [the message guide](templates/approval-message.md); omit
