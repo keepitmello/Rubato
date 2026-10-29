@@ -10,10 +10,10 @@ import { join } from "node:path"
 import { createNodeGitExec, selfRepoPath } from "@rubato/memory-core"
 
 import type { Git } from "../dream/runner"
-import { ASK_ID, type AskRequest, type AskResult } from "./ask"
+import { ASK_ID, describeChanges, type AskLanded, type AskRequest, type AskResult } from "./ask"
 import { collectPending, readInputsLedger } from "./observations"
 import { listRecords, plainLine, type EvidenceLine } from "./records"
-import { readJsonFile, userStore } from "./store"
+import { readJsonFile, userStore, type UserStore } from "./store"
 import { readSummary } from "./summary"
 
 const ASKS_SHOWN = 20
@@ -116,11 +116,12 @@ export async function composeUserView(memoryRoot: string, options: { readonly no
       waiting: pending.runs.length,
     },
     legacyProfile: legacyText === "" ? "none" : pending.legacyProfile === undefined ? "carried" : "waiting",
-    asks: await recentAsks(store.asks, alive),
+    asks: await recentAsks(store, alive, git),
   }
 }
 
-async function recentAsks(asksDir: string, alive: (pid: number) => boolean): Promise<UserMemoryAsk[]> {
+async function recentAsks(store: UserStore, alive: (pid: number) => boolean, git: Git): Promise<UserMemoryAsk[]> {
+  const asksDir = store.asks
   let names: string[] = []
   try {
     names = readdirSync(asksDir).filter((name) => ASK_ID.test(name))
@@ -132,9 +133,9 @@ async function recentAsks(asksDir: string, alive: (pid: number) => boolean): Pro
     const dir = join(asksDir, id)
     const request = await readJsonFile<AskRequest>(join(dir, "request.json"))
     if (request === undefined || typeof request.text !== "string") continue
-    const result = await readJsonFile<AskResult>(join(dir, "result.json")) ?? null
     const marker = await readJsonFile<{ pid?: number }>(join(dir, "running.json"))
     const running = typeof marker?.pid === "number" && alive(marker.pid)
+    const result = await readJsonFile<AskResult>(join(dir, "result.json")) ?? (running ? null : await landedWithoutResult(dir, id, request, git, store))
     const state: UserMemoryAsk["state"] = result !== null ? result.status : running ? "working" : "failed"
     asks.push({
       id,
@@ -146,6 +147,25 @@ async function recentAsks(asksDir: string, alive: (pid: number) => boolean): Pro
     })
   }
   return asks.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, ASKS_SHOWN)
+}
+
+/**
+ * A run that died after its change landed (landed.json, no result.json): what it changed is read from the
+ * store, so the page says it was saved instead of "nothing changed".
+ */
+async function landedWithoutResult(dir: string, id: string, request: AskRequest, git: Git, store: UserStore): Promise<AskResult | null> {
+  const repo = store.paths.repo
+  const landed = await readJsonFile<AskLanded>(join(dir, "landed.json"))
+  if (landed === undefined || typeof landed.base !== "string" || typeof landed.revision !== "string") return null
+  const summary = await readSummary(store)
+  let changes: AskResult["changes"] = []
+  const problems: NonNullable<AskResult["problems"]>[number][] = ["reply-lost"]
+  try {
+    changes = describeChanges(await listRecords(git, repo, landed.base), await listRecords(git, repo, landed.revision), summary, summary)
+  } catch {
+    problems.push("changes-unread")
+  }
+  return { id, status: "done", changes, forgotten: [], attempts: [], startedAt: request.createdAt, finishedAt: landed.at, revision: landed.revision, problems }
 }
 
 async function lastLogLine(dir: string): Promise<string> {

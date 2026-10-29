@@ -70,6 +70,20 @@ export interface AskResult {
   readonly reason?: string
   /** Store revision after the change landed. */
   readonly revision?: string
+  /**
+   * The change landed, but something after it did not finish: the forget was not recorded, the summary
+   * was not refreshed, what changed could not be read back, or the run stopped before replying.
+   */
+  readonly problems?: readonly AskProblem[]
+}
+
+export type AskProblem = "forget-unrecorded" | "summary-stale" | "changes-unread" | "reply-lost"
+
+/** Written under the writer lock the moment a request's change lands: proof it landed if the run dies after. */
+export interface AskLanded {
+  readonly base: string
+  readonly revision: string
+  readonly at: string
 }
 
 export interface RunUserAskOptions {
@@ -220,6 +234,14 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
     return undefined
   }
   const produced = commits.length === 0 ? baseRevision : (await git(store.paths.repo, ["rev-parse", branch])).stdout.trim()
+  let forgetUnrecorded = false
+  const recordForgets = async () => {
+    try {
+      await addTombstones(store, forget)
+    } catch {
+      forgetUnrecorded = true
+    }
+  }
   const landed = commits.length === 0
     ? await underWriterLock(store.paths, store.id, "user memory forget", async () => {
       const problem = await stillIn("HEAD")
@@ -237,16 +259,40 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
       // The user's own words in this request are newer than any forget: saying it again is allowed.
       newerEvidence: [{ text: request.text, at: startedAt }],
       checkMerged: stillIn,
-      afterMerge: () => addTombstones(store, forget),
+      afterMerge: async () => {
+        const head = (await git(store.paths.repo, ["rev-parse", "HEAD"])).stdout.trim()
+        const marker: AskLanded = { base: baseRevision, revision: head, at: new Date(now()).toISOString() }
+        await writeJsonFile(join(askDir(store, request.id), "landed.json"), marker).catch(() => undefined)
+        await recordForgets()
+      },
     })
-  await deleteBranch(git, store.paths.repo, branch)
+  await deleteBranch(git, store.paths.repo, branch).catch(() => undefined)
   if (landed !== true) return done("failed", { ...modelField, reason: `${landed}; nothing was changed` })
 
-  await refreshSummary(store, git, accepted.summary, produced)
-  const revision = (await git(store.paths.repo, ["rev-parse", "HEAD"])).stdout.trim()
-  const after = await listRecords(git, store.paths.repo, revision)
-  const changes = describeChanges(before, after, summaryBefore, await readSummary(store))
-  return done("done", { ...modelField, reply: accepted.reply, changes, forgotten: forget.map((entry) => ({ what: entry.what })), revision })
+  // From here the change is in the store: whatever fails after it is reported with it, never as "nothing changed".
+  const problems: AskProblem[] = forgetUnrecorded ? ["forget-unrecorded"] : []
+  try {
+    await refreshSummary(store, git, accepted.summary, produced)
+  } catch {
+    problems.push("summary-stale")
+  }
+  let changes: AskChange[] = []
+  let revision: string | undefined
+  try {
+    revision = (await git(store.paths.repo, ["rev-parse", "HEAD"])).stdout.trim()
+    const after = await listRecords(git, store.paths.repo, revision)
+    changes = describeChanges(before, after, summaryBefore, await readSummary(store).catch(() => summaryBefore))
+  } catch {
+    problems.push("changes-unread")
+  }
+  return done("done", {
+    ...modelField,
+    reply: accepted.reply,
+    changes,
+    forgotten: forget.map((entry) => ({ what: entry.what })),
+    ...(revision === undefined ? {} : { revision }),
+    ...(problems.length === 0 ? {} : { problems }),
+  })
 }
 
 /** What the child left must hold up: a reply, and every forget named and actually gone from the store. */

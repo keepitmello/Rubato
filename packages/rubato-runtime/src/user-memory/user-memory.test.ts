@@ -383,6 +383,32 @@ describe("asking about, correcting and forgetting what is remembered", () => {
     expect(userFiles(w.memoryRoot)).toContain(BUSAN)
   })
 
+  test("a change that landed is reported as saved even when the summary cannot be written after it", async () => {
+    const w = await remembered()
+    rmSync(w.user.summary, { force: true })
+    mkdirSync(w.user.summary, { recursive: true })
+    const result = await ask(w.memoryRoot, "q9", "CORRECT Prefers short answers, except in design reviews", SHORT)
+    expect(result.status).toBe("done")
+    expect(result.problems).toEqual(["summary-stale"])
+    expect(result.changes.map((change) => [change.path, change.change])).toEqual([[SHORT, "modified"]])
+    expect(readFileSync(join(w.user.paths.repo, SHORT), "utf8")).toContain("except in design reviews")
+  })
+
+  test("a run that dies after its change landed reads as saved, with what changed read from the store", async () => {
+    const w = await remembered()
+    const store = userStore(w.memoryRoot)
+    const base = git(w.user.paths.repo, "rev-parse", "HEAD").trim()
+    git(w.user.paths.repo, "rm", "-q", BUSAN)
+    git(w.user.paths.repo, "commit", "-q", "-m", "merge(ask): q10")
+    const revision = git(w.user.paths.repo, "rev-parse", "HEAD").trim()
+    mkdirSync(join(store.asks, "q10"), { recursive: true })
+    writeFileSync(join(store.asks, "q10", "request.json"), JSON.stringify({ id: "q10", text: "FORGET Busan", focus: { path: BUSAN }, createdAt: new Date(NOW).toISOString() }))
+    writeFileSync(join(store.asks, "q10", "running.json"), JSON.stringify({ pid: 999_999_999 }))
+    writeFileSync(join(store.asks, "q10", "landed.json"), JSON.stringify({ base, revision, at: new Date(NOW).toISOString() }))
+    const view = await composeUserView(w.memoryRoot, { now: NOW, alive: () => false })
+    expect(view.asks[0]).toMatchObject({ id: "q10", state: "done", result: { status: "done", problems: ["reply-lost"], changes: [{ path: BUSAN, change: "deleted", before: "기억: Lives in Busan" }] } })
+  })
+
   test("one request at a time: a second while the first works is told to wait", async () => {
     const w = await remembered()
     let inner: Awaited<ReturnType<typeof ask>> | undefined
