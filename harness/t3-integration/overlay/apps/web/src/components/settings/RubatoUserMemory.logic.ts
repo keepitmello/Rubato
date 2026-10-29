@@ -51,6 +51,17 @@ export function pollDelay(view: Pick<UserMemoryView, "asks" | "dream"> | null): 
   return null;
 }
 
+/**
+ * When to read the memory again: soon after a failed refresh (whatever was going on), often while a
+ * request the server accepted is not in the view yet, else as `pollDelay` says. Nothing before the first read.
+ */
+export function refreshDelay(view: Pick<UserMemoryView, "asks" | "dream"> | null, refreshFailed: boolean, acceptedNotShown: number): number | null {
+  if (view === null) return null;
+  if (refreshFailed) return 5_000;
+  if (acceptedNotShown > 0) return 2_000;
+  return pollDelay(view);
+}
+
 /** Records the newest finished request changed: the list marks them so the result is visible in place. */
 export function justChanged(asks: readonly UserMemoryAsk[]): ReadonlyMap<string, UserMemoryChange> {
   const latest = asks.find((ask) => ask.state !== "working");

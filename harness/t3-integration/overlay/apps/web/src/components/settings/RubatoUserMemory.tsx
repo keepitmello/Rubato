@@ -33,8 +33,8 @@ import {
   itemBasis,
   justChanged,
   overviewLine,
-  pollDelay,
   presetRequest,
+  refreshDelay,
   problemTexts,
   threadAsks,
   topicTitle,
@@ -85,13 +85,27 @@ export function UserMemoryPanel({
   const [sentHere, setSentHere] = useState<ReadonlySet<string>>(new Set());
   const composerRef = useRef<HTMLTextAreaElement | null>(null);
 
+  // A refresh that fails keeps the last view on screen, says so, and keeps trying; `attempts` re-arms the
+  // follow-up timer after every try, failed or not.
+  const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [attempts, setAttempts] = useState(0);
+  // Requests the server accepted that the last view does not show yet: shown as working until it does.
+  const [accepted, setAccepted] = useState<readonly UserMemoryAsk[]>([]);
+
   const load = useCallback(async () => {
     if (environmentId === null) return;
     try {
-      setView(await rubatoMemory.userView(environmentId));
+      const next = await rubatoMemory.userView(environmentId);
+      setView(next);
       setLoadError(null);
+      setRefreshError(null);
+      setAccepted((current) => current.filter((ask) => !next.asks.some((shown) => shown.id === ask.id)));
     } catch (cause) {
-      setLoadError(cause instanceof Error ? cause.message : String(cause));
+      const message = cause instanceof Error ? cause.message : String(cause);
+      setLoadError(message);
+      setRefreshError(message);
+    } finally {
+      setAttempts((value) => value + 1);
     }
   }, [environmentId]);
 
@@ -99,15 +113,17 @@ export function UserMemoryPanel({
     void load();
   }, [load]);
 
-  // While a request is handled (or a dream updates the memory), look again until it ends.
-  const delay = pollDelay(view);
+  const asks: readonly UserMemoryAsk[] = view ? [...accepted, ...view.asks] : accepted;
+  // While a request is handled (or a dream updates the memory), look again until it ends; after a failed
+  // refresh, try again shortly whatever was going on.
+  const delay = refreshDelay(view, refreshError !== null, accepted.length);
   useEffect(() => {
     if (delay === null) return;
     const timer = window.setTimeout(() => void load(), delay);
     return () => window.clearTimeout(timer);
-  }, [delay, view, load]);
+  }, [delay, attempts, load]);
 
-  const working = view ? workingAsk(view.asks) : null;
+  const working = workingAsk(asks);
   const busy = sending || working !== null;
 
   const send = async (request: string, about: Focus | null, { fromComposer }: { fromComposer: boolean }): Promise<boolean> => {
@@ -118,6 +134,10 @@ export function UserMemoryPanel({
     try {
       const started = await rubatoMemory.userAsk(environmentId, trimmed, about);
       setSentHere((current) => new Set([...current, started.id]));
+      setAccepted((current) => [
+        { id: started.id, text: trimmed, focus: about, createdAt: started.createdAt, state: "working", result: null },
+        ...current,
+      ]);
       if (fromComposer) {
         setText("");
         setFocus(null);
@@ -168,13 +188,13 @@ export function UserMemoryPanel({
     );
   }
 
-  const changed = justChanged(view.asks);
+  const changed = justChanged(asks);
   const paths = new Set(view.topics.flatMap((topic) => topic.items.map((item) => item.path)));
   // A request sent here about one line answers on that line; a forgotten line stays as a crossed-out
   // row until the page is left, so the result is seen where it happened.
-  const inlineAsk = (path: string) => view.asks.find((ask) => sentHere.has(ask.id) && ask.focus?.path === path) ?? null;
-  const forgottenHere = view.asks.filter((ask) => sentHere.has(ask.id) && ask.state === "done" && ask.focus && !paths.has(ask.focus.path));
-  const shownInline = new Set(view.asks.filter((ask) => sentHere.has(ask.id) && ask.focus !== null).map((ask) => ask.id));
+  const inlineAsk = (path: string) => asks.find((ask) => sentHere.has(ask.id) && ask.focus?.path === path) ?? null;
+  const forgottenHere = asks.filter((ask) => sentHere.has(ask.id) && ask.state === "done" && ask.focus && !paths.has(ask.focus.path));
+  const shownInline = new Set(asks.filter((ask) => sentHere.has(ask.id) && ask.focus !== null).map((ask) => ask.id));
   const topicIds = [...new Set([...view.topics.map((topic) => topic.id), ...forgottenHere.map((ask) => topicOf(ask.focus!.path))])];
   return (
     <>
@@ -188,6 +208,24 @@ export function UserMemoryPanel({
           }
           status={<DreamState view={view} />}
         />
+        {refreshError !== null ? (
+          <SettingsRow
+            className="bg-warning/8"
+            title={<span className="text-warning-foreground">Could not refresh what Rubato remembers</span>}
+            description={
+              <span className="block">
+                <span>Showing what was last read. Trying again every few seconds.</span>{" "}
+                <span translate="no">{refreshError.split("\n")[0]}</span>
+              </span>
+            }
+            control={
+              <Button size="xs" variant="outline" onClick={() => void load()}>
+                <RefreshCwIcon className="size-3" />
+                Try again
+              </Button>
+            }
+          />
+        ) : null}
         {view.legacyProfile === "waiting" ? (
           <SettingsRow
             title="Your old user.md will move in here"
@@ -211,7 +249,7 @@ export function UserMemoryPanel({
             onSend={() => void send(text, focus, { fromComposer: true })}
           />
           <AskThread
-            {...threadAsks(view.asks, sentHere, shownInline, Date.now())}
+            {...threadAsks(asks, sentHere, shownInline, Date.now())}
             busy={busy}
             onRetry={(ask) =>
               void send(ask.text, ask.focus ? { path: ask.focus.path, text: ask.focus.text ?? "" } : null, { fromComposer: false })

@@ -9,6 +9,7 @@ import {
   overviewLine,
   pollDelay,
   problemTexts,
+  refreshDelay,
   threadAsks,
   topicTitle,
   workingAsk,
@@ -55,6 +56,13 @@ describe("following a request", () => {
     expect(pollDelay({ asks: [ask({})], dream: { ...idle, running: true } })).toBe(15_000);
     expect(pollDelay({ asks: [ask({})], dream: idle })).toBeNull();
     expect(workingAsk([ask({}), ask({ id: "b", state: "working", result: null })])?.id).toBe("b");
+  });
+  it("keeps trying after a failed refresh and while an accepted request is not shown yet", () => {
+    const quiet = { asks: [ask({})], dream: idle };
+    expect(refreshDelay(null, true, 1)).toBeNull();
+    expect(refreshDelay(quiet, true, 0)).toBe(5_000);
+    expect(refreshDelay(quiet, false, 1)).toBe(2_000);
+    expect(refreshDelay(quiet, false, 0)).toBeNull();
   });
   it("marks in the list only what the newest finished request changed, never a forgotten line", () => {
     const changes = [
