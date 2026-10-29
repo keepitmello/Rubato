@@ -8,6 +8,7 @@ import {
   justChanged,
   overviewLine,
   pollDelay,
+  problemTexts,
   threadAsks,
   topicTitle,
   workingAsk,
@@ -87,5 +88,16 @@ describe("the request thread", () => {
     const { current, earlier } = threadAsks(asks, new Set(["retry", "inline"]), new Set(["inline"]), now);
     expect(current.map((entry) => entry.id)).toEqual(["retry", "fresh-failure", "working"]);
     expect(earlier.map((entry) => entry.id)).toEqual(["old", "old-failure"]);
+  });
+});
+
+describe("a request that landed with loose ends", () => {
+  it("says it was saved, and what is still owed", () => {
+    const landed = ask({ result: { status: "done", changes: [], forgotten: [], finishedAt: "t", problems: ["reply-lost", "forget-unrecorded"] } });
+    expect(problemTexts(landed)).toEqual([
+      "Saved, but Rubato stopped before it could reply. This is what changed.",
+      "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.",
+    ]);
+    expect(problemTexts(ask({}))).toEqual([]);
   });
 });

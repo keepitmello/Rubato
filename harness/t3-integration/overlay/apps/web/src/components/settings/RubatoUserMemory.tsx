@@ -35,6 +35,7 @@ import {
   overviewLine,
   pollDelay,
   presetRequest,
+  problemTexts,
   threadAsks,
   topicTitle,
   workingAsk,
@@ -440,11 +441,17 @@ function AskCard({ ask, busy, compact = false, onRetry, onEdit }: { ask: UserMem
                 {result.reply}
               </p>
             ) : null}
+            {problemTexts(ask).map((text) => (
+              <p key={text} className="flex items-start gap-1.5 text-xs text-warning-foreground">
+                <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
+                {text}
+              </p>
+            ))}
             {result.changes.length > 0 ? (
               <ChangeList changes={result.changes} />
-            ) : (
+            ) : (result.problems ?? []).length === 0 ? (
               <p className="text-xs text-muted-foreground">Nothing in your memory changed.</p>
-            )}
+            ) : null}
             {result.changes.length > 0 ? (
               <p className="flex items-center gap-1 text-xs text-success-foreground">
                 <CheckIcon className="size-3" />

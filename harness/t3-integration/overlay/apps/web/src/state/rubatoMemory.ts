@@ -196,6 +196,8 @@ export interface UserMemoryAskResult {
   readonly model?: string;
   readonly finishedAt: string;
   readonly reason?: string;
+  /** The change landed, but something after it did not finish. */
+  readonly problems?: ReadonlyArray<"forget-unrecorded" | "summary-stale" | "changes-unread" | "reply-lost">;
 }
 
 export interface UserMemoryAsk {

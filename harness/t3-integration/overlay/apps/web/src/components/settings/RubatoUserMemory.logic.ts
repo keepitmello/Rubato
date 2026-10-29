@@ -122,3 +122,15 @@ export function threadAsks(
   }
   return { current, earlier };
 }
+
+const PROBLEM_TEXT: Record<NonNullable<UserMemoryAsk["result"]>["problems"] extends ReadonlyArray<infer P> | undefined ? P : never, string> = {
+  "reply-lost": "Saved, but Rubato stopped before it could reply. This is what changed.",
+  "summary-stale": "Saved. Its summary line catches up on the next dream; until then the list shows the saved wording.",
+  "changes-unread": "Saved, but what changed could not be read back. The list shows your memory as it is now.",
+  "forget-unrecorded": "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.",
+};
+
+/** What a landed request still owes the person, in words; empty when everything after the save finished. */
+export function problemTexts(ask: UserMemoryAsk): string[] {
+  return (ask.result?.problems ?? []).map((problem) => PROBLEM_TEXT[problem]).filter(Boolean);
+}
