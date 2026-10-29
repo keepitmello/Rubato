@@ -25,7 +25,7 @@ import redis
 
 
 import msearch_intent
-from msearch_scope import USER_STORE, in_scopes, resolve_store, search_scopes
+from msearch_scope import EMPTY_PROJECT, NO_STORE, USER_STORE, in_scopes, resolve_store, search_scopes
 from msearch_config import (
     CHANNEL_ID,
     CHANNEL_KEY_ID,
@@ -1204,11 +1204,14 @@ def current_scope() -> str | None:
 
 
 
-WIDENED_SCOPE_NOTICE = "(이 폴더에는 기억 저장소가 없어 모든 저장소에서 찾았다. 다른 프로젝트의 판단일 수 있다.)"
+SCOPE_NOTICES = {
+    NO_STORE: "(이 폴더에는 프로젝트 기억 저장소가 없어 사용자에 대한 기억만 찾았다. 모든 프로젝트를 보려면 -a.)",
+    EMPTY_PROJECT: "(이 프로젝트에는 아직 색인된 기억이 없어 사용자에 대한 기억만 찾았다. 다른 프로젝트까지 보려면 -a.)",
+}
 
 
-def resolve_scope(args: argparse.Namespace) -> tuple[frozenset[str] | None, bool]:
-    """(저장소 집합, 넓혔나). 집합이 None 이면 전체 검색. 규칙은 `msearch_scope.search_scopes`."""
+def resolve_scope(args: argparse.Namespace) -> tuple[frozenset[str] | None, str | None]:
+    """(저장소 집합, 알림). 집합이 None 이면 전체 검색. 규칙은 `msearch_scope.search_scopes`."""
     if args.all or args.scope or args.user:
         return search_scopes(None, [], everything=args.all, scope=args.scope, user_only=args.user)
     return search_scopes(current_scope(), indexed_scopes())
@@ -1301,14 +1304,15 @@ def run_cli(args: argparse.Namespace) -> int:
         print("query is required", file=sys.stderr)
         return 2
     ensure_index_fresh(quiet=args.json)
-    scope, widened = resolve_scope(args)
+    scope, notice = resolve_scope(args)
     memories = search_results(query, limit=args.limit, scope=scope)
     # --json 은 기억 목록 계약 그대로 둔다. intent 는 사람이 읽는 출력에만 따로 붙는다.
     intent_scope = project_scope(scope)
     intents = [] if args.json or intent_scope == "" else search_intents_any_language(query, intent_scope)
     if not memories:
         log_recall(query, [], caller="cli")
-        print("[]" if args.json else msearch_intent.render("NO RELEVANT MEMORY", intents, Path.cwd()))
+        empty = "NO RELEVANT MEMORY" if notice is None else f"NO RELEVANT MEMORY\n\n{SCOPE_NOTICES[notice]}"
+        print("[]" if args.json else msearch_intent.render(empty, intents, Path.cwd()))
         return 0
     log_recall(query, memories, caller="cli")
     memories = answer_symptom_hits(memories)
@@ -1316,8 +1320,8 @@ def run_cli(args: argparse.Namespace) -> int:
         print(json_context(memories))
     else:
         rendered = format_context(memories, include_paths=True)
-        if widened:
-            rendered = f"{rendered}\n\n{WIDENED_SCOPE_NOTICE}"
+        if notice is not None:
+            rendered = f"{rendered}\n\n{SCOPE_NOTICES[notice]}"
         print(msearch_intent.render(rendered, intents, Path.cwd()))
     return 0
 

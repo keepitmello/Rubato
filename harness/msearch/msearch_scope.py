@@ -142,6 +142,10 @@ def resolve_store(cwd: Path, agents_dir: Path, home: Path | None = None) -> str 
     return None
 
 
+NO_STORE = "no-store"
+EMPTY_PROJECT = "empty-project"
+
+
 def search_scopes(
     current: str | None,
     indexed: list[str],
@@ -149,25 +153,26 @@ def search_scopes(
     everything: bool = False,
     scope: str | None = None,
     user_only: bool = False,
-) -> tuple[frozenset[str] | None, bool]:
-    """검색할 저장소 집합과 넓혔는지. 집합이 None 이면 전체.
+) -> tuple[frozenset[str] | None, str | None]:
+    """검색할 저장소 집합과, 결과에 붙일 알림. 집합이 None 이면 전체.
 
     - `-a`: 전체.
     - `--scope X`: X 하나.
     - `--user`: 사용자 저장소 하나.
     - 기본: 현재 저장소와 사용자 저장소. 사용자에 대한 사실은 프로젝트를 가리지 않고 필요하고,
-      다른 프로젝트의 판단은 이 프로젝트의 답이 아니다.
-    - 현재 저장소가 없거나 색인에 없으면 전체로 넓히고 넓혔다고 알린다.
+      다른 프로젝트의 판단은 이 프로젝트의 답이 아니다. 그래서 묻지 않으면 넓히지 않는다.
+      현재 저장소가 없으면 사용자 저장소만 보고 `NO_STORE`, 아직 기억이 없으면 `EMPTY_PROJECT` 를
+      알린다 — 다른 프로젝트까지 보려면 `-a` 라고 말해 주려는 것이다.
     """
     if everything:
-        return None, False
+        return None, None
     if scope:
-        return frozenset({scope}), False
+        return frozenset({scope}), None
     if user_only:
-        return frozenset({USER_STORE}), False
-    if current is not None and current in indexed:
-        return frozenset({current, USER_STORE}), False
-    return None, True
+        return frozenset({USER_STORE}), None
+    if current is None:
+        return frozenset({USER_STORE}), NO_STORE
+    return frozenset({current, USER_STORE}), None if current in indexed else EMPTY_PROJECT
 
 
 def in_scopes(rel_path: str, scopes: frozenset[str] | None) -> bool:

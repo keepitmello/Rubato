@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from msearch_scope import USER_STORE, in_scopes, resolve_store, sanitize_to_slug, search_scopes, short_hash
+from msearch_scope import EMPTY_PROJECT, NO_STORE, USER_STORE, in_scopes, resolve_store, sanitize_to_slug, search_scopes, short_hash
 
 
 def git_repo(path: Path) -> Path:
@@ -94,30 +94,30 @@ class SearchScopesTest(unittest.TestCase):
 
     def test_default_is_the_current_project_plus_the_user(self) -> None:
         indexed = ["project-a", "project-b", USER_STORE]
-        scopes, widened = search_scopes("project-a", indexed)
-        self.assertFalse(widened)
+        scopes, notice = search_scopes("project-a", indexed)
+        self.assertIsNone(notice)
         self.assertEqual(self.kept(scopes), [self.hits[0], self.hits[2]])
         scopes, _ = search_scopes("project-b", indexed)
         self.assertEqual(self.kept(scopes), [self.hits[1], self.hits[2]])
 
-    def test_user_memory_is_found_even_before_the_project_has_any(self) -> None:
-        scopes, widened = search_scopes("project-a", ["project-a", USER_STORE])
-        self.assertIn(USER_STORE, scopes or set())
-        self.assertFalse(widened)
+    def test_a_project_without_memory_yet_gets_the_user_and_never_other_projects(self) -> None:
+        scopes, notice = search_scopes("project-new", ["project-b", USER_STORE])
+        self.assertEqual(self.kept(scopes), [self.hits[2]])
+        self.assertEqual(notice, EMPTY_PROJECT)
 
     def test_user_flag_searches_only_the_user(self) -> None:
-        scopes, widened = search_scopes(None, [], user_only=True)
+        scopes, notice = search_scopes(None, [], user_only=True)
         self.assertEqual(self.kept(scopes), [self.hits[2]])
-        self.assertFalse(widened)
+        self.assertIsNone(notice)
 
     def test_explicit_scope_and_all(self) -> None:
         self.assertEqual(self.kept(search_scopes(None, [], scope="project-b")[0]), [self.hits[1]])
         self.assertEqual(self.kept(search_scopes(None, [], everything=True)[0]), self.hits)
 
-    def test_no_store_here_widens_and_says_so(self) -> None:
-        scopes, widened = search_scopes(None, ["project-a", USER_STORE])
-        self.assertIsNone(scopes)
-        self.assertTrue(widened)
+    def test_no_store_here_searches_the_user_only_and_says_so(self) -> None:
+        scopes, notice = search_scopes(None, ["project-a", USER_STORE])
+        self.assertEqual(self.kept(scopes), [self.hits[2]])
+        self.assertEqual(notice, NO_STORE)
 
     def test_no_folder_resolves_to_the_user_store(self) -> None:
         with tempfile.TemporaryDirectory(prefix="msearch-scope-") as tmp:
