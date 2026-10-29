@@ -41,11 +41,14 @@ import type { SqlError } from "effect/sql/SqlError";
 import * as EventStore from "./orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import { forkParked } from "./serverActivation.ts";
 
 export const RETENTION = {
   eventDays: 3,
   receiptDays: 3,
   interval: Duration.hours(6),
+  /** Let the initial window and its history load before competing for the writer connection. */
+  startupDelay: Duration.seconds(30),
   /** Rows one statement may touch. */
   chunk: 500,
   /** Free pages one incremental_vacuum transaction returns to the disk. */
@@ -234,13 +237,16 @@ export const retentionMaintenanceLayer = ProjectionMaintenance.layer.pipe(
 );
 
 /**
- * A pass at startup and every RETENTION.interval after it, in the background: walking a large
- * history can take minutes and must not hold up the backend's readiness. Before the file is
+ * A pass after activation and the initial window's grace period, then every RETENTION.interval.
+ * A fork alone is not enough: compaction uses synchronous SQLite on the same event loop as
+ * startup. Park it at the server's existing activation boundary. Before the file is
  * incremental, the one-time VACUUM runs before the layer is ready, since it holds the connection.
  */
 export const rubatoStateRetentionLayer = Layer.effectDiscard(Effect.gen(function* () {
   const mode = yield* autoVacuumMode.pipe(Effect.orElseSucceed(() => AUTO_VACUUM_INCREMENTAL));
   if (mode !== AUTO_VACUUM_INCREMENTAL) yield* step("compact", compactOnce, false);
   const pass = step("pass", runRetention, undefined);
-  yield* Effect.forkScoped(pass.pipe(Effect.repeat(Schedule.spaced(RETENTION.interval))));
+  yield* forkParked(Effect.sleep(RETENTION.startupDelay).pipe(
+    Effect.andThen(pass.pipe(Effect.repeat(Schedule.spaced(RETENTION.interval)))),
+  ));
 })).pipe(Layer.provide(retentionMaintenanceLayer));

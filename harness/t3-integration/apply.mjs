@@ -131,7 +131,14 @@ const edits = {
       '  }\n',
       'replace'],
   ],
+  // A native Dock launch has no terminal to show progress. Reuse the existing connecting
+  // window on every platform while the backend becomes ready, not only on WSL.
+  'apps/desktop/src/app/DesktopApp.ts': [
+    ['    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {\n      yield* desktopWindow.showConnectingSplash;\n    }',
+      '    // Rubato: native launches show progress even before the server is ready.\n    yield* desktopWindow.showConnectingSplash;', 'replace'],
+  ],
   'apps/desktop/src/window/DesktopWindow.ts': [
+    ['<div class="label">Connecting to WSL…</div>', '<div class="label">Rubato를 여는 중…</div>', 'replace'],
     // macOS 권한 설정 화면(permission-edits.mjs)의 IPC 도 여기서 건다.
     ['import * as Electron from "electron";', 'import { attachRubatoUpdates } from "../updates/RubatoUpdates.ts";\nimport { attachRubatoPermissions } from "../permissions/RubatoPermissions.ts";\n'],
     ['    window.webContents.on("did-finish-load", () => {',

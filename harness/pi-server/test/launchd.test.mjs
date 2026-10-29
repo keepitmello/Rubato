@@ -10,6 +10,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import {
   ENGINE_CLI, ENGINE_LAUNCHD_LABEL, EXIT_TIMEOUT_S, LEGACY_SCHEDULER_LABEL, engineJob, engineJobPid, ensureEngineLaunchAgent,
   launchdManagesEngine, plistAgentDir, removeEngineLaunchAgent, renderEngineLaunchAgent,
+  reloadEngineJob,
 } from '../src/launchd.mjs';
 import { ensureProfileEngine, socketAlive } from '../src/discovery.mjs';
 import { readDescriptor } from '../src/descriptor.mjs';
@@ -87,6 +88,24 @@ test('only test labels may replace the real one, and a test label never reaches 
   assert.equal(job.legacySchedulerLabel, 'com.keepitmello.rubato.test.scheduler');
   assert.equal(engineJob({ HOME: '/h' }, { uid: 501 }).legacySchedulerLabel, LEGACY_SCHEDULER_LABEL);
   assert.equal(engineJob({ HOME: '/h' }).plistPath, `/h/Library/LaunchAgents/${ENGINE_LAUNCHD_LABEL}.plist`);
+});
+
+test('reload accepts a concurrent bootstrap but never hides a failed load or unload', async t => {
+  const home = await mkdtemp('/tmp/rbld-race-');
+  t.after(() => rm(home, { recursive: true, force: true }));
+  const launchctl = path.join(home, 'launchctl');
+  writeFileSync(launchctl, `#!/bin/sh
+case "$1" in
+  bootout) [ "$MODE" != unload-failed ] ;;
+  bootstrap) exit 5 ;;
+  print) [ "$MODE" != load-failed ] ;;
+  *) exit 0 ;;
+esac
+`, { mode: 0o755 });
+  const env = { HOME: home, RUBATO_LAUNCHCTL_BIN: launchctl, RUBATO_ENGINE_LAUNCHD_LABEL: TEST_LABEL };
+  await reloadEngineJob({ env: { ...env, MODE: 'raced' } });
+  await assert.rejects(reloadEngineJob({ env: { ...env, MODE: 'load-failed' } }), /bootstrap/);
+  await assert.rejects(reloadEngineJob({ env: { ...env, MODE: 'unload-failed' } }), /bootout/);
 });
 
 test('profile registration survives launchd handoff without carrying private companion credentials', async t => {

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { chmodSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -24,6 +24,23 @@ test('Darwin plan still creates /Applications/Rubato.app', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\/Applications\/Rubato\.app/);
   assert.doesNotMatch(result.stdout, /start-gui\.sh \(T3 electron\)/);
+});
+
+test('a private release cannot replace the account app or settings without an explicit app target', (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-private-gui-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const script = fileURLToPath(new URL('../install-macos-app.sh', import.meta.url));
+  const env = { ...process.env, HOME: homedir(), RUBATO_T3_SOURCE: root };
+  delete env.RUBATO_T3_APP;
+  const refused = spawnSync('bash', [script, '--check-target'], { encoding: 'utf8', env });
+  assert.equal(refused.status, 1, refused.stderr);
+  assert.match(refused.stderr, /별도 T3 소스로 기본 Rubato 앱을 교체하지 않습니다/);
+  assert.deepEqual(readdirSync(root), [], 'validation writes no bundle or settings');
+  const explicit = spawnSync('bash', [script, '--check-target'], { encoding: 'utf8', env: { ...env, RUBATO_T3_APP: path.join(root, 'Test.app') } });
+  assert.equal(explicit.status, 0, explicit.stderr);
+  const normal = spawnSync('bash', [script, '--check-target'], { encoding: 'utf8', env: { ...env, RUBATO_T3_SOURCE: path.join(homedir(), '.rubato/t3-source') } });
+  assert.equal(normal.status, 0, normal.stderr);
+  assert.ok(src.indexOf('"$HERE/install-macos-app.sh" --check-target') < src.indexOf('prepare_sources()'), 'checked before shared settings or sources change');
 });
 
 test('non-Darwin plan builds desktop without a macOS app bundle', () => {
@@ -435,9 +452,17 @@ test('install-macos-app signs the runtime bundle only when it changed', (t) => {
   const run = () => runShell([`BUNDLE='${bundle}'`, `HERE='${root}'`, 'HOME_LINE=""', step]);
   for (let index = 0; index < 2; index += 1) assert.equal(run().status, 0);
   assert.equal(readFileSync(log, 'utf8'), 'sign\n', 'unchanged: signed once');
+  const entry = path.join(bundle, 'Contents/Resources/app/index.js');
+  const installedEntry = readFileSync(entry, 'utf8');
+  writeFileSync(entry, `${installedEntry}\n// temporary diagnostic\n`);
+  assert.equal(run().status, 0);
+  assert.equal(readFileSync(entry, 'utf8'), installedEntry);
+  assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\n', 'repairing the entry signs even when its target fingerprint matches the old stamp');
+  assert.equal(run().status, 0);
+  assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\n', 'the repaired entry remains stable');
   writeFileSync(path.join(root, '.electron-runtime', 'metadata.json'), '{"v":2}\n');
   assert.equal(run().status, 0);
-  assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\n', 'the launcher remade the bundle');
+  assert.equal(readFileSync(log, 'utf8'), 'sign\nsign\nsign\n', 'the launcher remade the bundle');
 });
 
 // After a prepare under the same lock, the install that runs with the app closed

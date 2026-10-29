@@ -28,6 +28,10 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   await mkdir(path.join(root,'apps/desktop/src/updates'),{recursive:true});
   await mkdir(path.join(root,'apps/web/src/components/desktop'),{recursive:true});
   const first=await applyIntegration({t3:root});
+  const desktopApp = await readFile(path.join(root, 'apps/desktop/src/app/DesktopApp.ts'), 'utf8');
+  assert.doesNotMatch(desktopApp, /if \(settings\.wslOnly === true && settings\.wslBackendEnabled === true\)/);
+  assert.ok(desktopApp.indexOf('yield* desktopWindow.showConnectingSplash;') < desktopApp.indexOf('yield* primaryBackend.start;'));
+  assert.match(await readFile(path.join(root, 'apps/desktop/src/window/DesktopWindow.ts'), 'utf8'), /Rubato를 여는 중/);
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
   assert.equal(first.changes.length,Object.keys(installed.files).length);
   // Account roles belong in settings, not in the conversation composer.

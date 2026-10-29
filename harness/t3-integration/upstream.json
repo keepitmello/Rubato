@@ -4,6 +4,7 @@
     "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "519c9ecbdad5bb156bfe19fdd53b18362c5c3a3efe4b51b896cba352b627fffb",
     "apps/desktop/src/main.ts": "58529a5a1c5d532a996ccd8f4293dfb595d99c3aa7740a1419f64b0e327569b0",
     "apps/desktop/src/app/DesktopClerk.ts": "189a5f5018d7ad78e26e2f38d55b70eb12e56f861c5b2791725c45f6b216c2fa",
+    "apps/desktop/src/app/DesktopApp.ts": "dfdce36ea16f782bc2b95f300bf33aed97f2a36cdad3ae0a148d15ccbc9494fb",
     "apps/desktop/src/window/DesktopWindow.ts": "ee41e4e303e2b81d0e3aaf990cdd497b0a4e458100709afbaa2a720f33c94589",
     "apps/desktop/src/window/DesktopApplicationMenu.ts": "2d052d9530de8446a99920daa54a8dc9c65974e35e49f6b11a4cf4721c40ad61",
     "apps/desktop/src/preload.ts": "53defb933c7700ebc13721da184c933bf82194a1406d8a878c6ee15bb64c1008",

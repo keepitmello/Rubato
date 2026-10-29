@@ -1,7 +1,7 @@
 // Retention for the GUI server's state DB on T3's V2 orchestrator (RubatoStateRetention.ts).
 // Upstream keeps every event and receipt, never calls its own compaction, and starts
 // statev2.sqlite as a full copy of the V1 database. The server's persistence layer gains a
-// job that prunes at startup and every 6 hours and switches the file to incremental
+// job that prunes after activation/initial UI loading and every 6 hours, and switches the file to incremental
 // auto-vacuum the first time.
 //
 // Only the server takes the job: the CLI opens the same file through its own layers.

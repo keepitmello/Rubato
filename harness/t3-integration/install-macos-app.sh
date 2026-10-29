@@ -21,6 +21,19 @@ BUNDLE="$DESKTOP/.electron-runtime/Rubato.app"
 
 . "$HERE/../scripts/find-node.sh"
 . "$HERE/../scripts/account-home.sh"
+
+# A private release/test tree must not silently become the account's Rubato app.
+# Validate before making its same-id bundle, and before install-gui writes shared settings.
+if [ -z "${RUBATO_T3_APP-}" ] && rubato_home_is_account_home && [ "$T3_DIR" != "$HOME/.rubato/t3-source" ]; then
+  ACTUAL_SOURCE="$(cd "$T3_DIR" 2>/dev/null && pwd -P)" || ACTUAL_SOURCE=''
+  ACCOUNT_SOURCE="$(cd "$HOME/.rubato/t3-source" 2>/dev/null && pwd -P)" || ACCOUNT_SOURCE=''
+  if [ -z "$ACTUAL_SOURCE" ] || [ -z "$ACCOUNT_SOURCE" ] || [ "$ACTUAL_SOURCE" != "$ACCOUNT_SOURCE" ]; then
+    printf '별도 T3 소스로 기본 Rubato 앱을 교체하지 않습니다: %s\n기본 설치 경로를 쓰거나 RUBATO_T3_APP으로 별도 앱 경로를 지정하세요.\n' "$T3_DIR" >&2
+    exit 1
+  fi
+fi
+[ "${1-}" != --check-target ] || exit 0
+
 NODE="$(rubato_find_node)" || { printf 'Node 24+ 가 없다\n' >&2; exit 1; }
 
 # 번들은 T3 런처가 만든다. 여기서 직접 만들면 서명·헬퍼 번들 이름이 갈라진다.
@@ -50,12 +63,14 @@ fi
 
 ENTRY="$BUNDLE/Contents/Resources/app"
 mkdir -p "$ENTRY"
+ENTRY_CHANGED=0
 # 내용이 같으면 쓰지 않는다. 쓰면 아래에서 번들 전체를 다시 서명해야 한다.
 write_if_changed() {
   local target="$1" next
   next="$(cat)"
   [ -f "$target" ] && [ "$(cat "$target")" = "$next" ] && return 0
   printf '%s\n' "$next" > "$target"
+  ENTRY_CHANGED=1
 }
 write_if_changed "$ENTRY/package.json" <<'JSON'
 { "name": "rubato", "productName": "Rubato", "main": "index.js" }
@@ -80,7 +95,7 @@ JS
 # 진입점을 고치면 위 두 파일이 바뀐다. 290MB 번들을 재시작마다 다시 서명하고 있었다.
 SIGN_STAMP="$(dirname "$BUNDLE")/.rubato-signed"
 SIGN_WANT="$(cat "$(dirname "$BUNDLE")/metadata.json" "$ENTRY/package.json" "$ENTRY/index.js" 2>/dev/null | shasum -a 256 | cut -d' ' -f1)"
-if [ "$(cat "$SIGN_STAMP" 2>/dev/null || true)" != "$SIGN_WANT" ]; then
+if [ "$ENTRY_CHANGED" = 1 ] || [ "$(cat "$SIGN_STAMP" 2>/dev/null || true)" != "$SIGN_WANT" ]; then
   bash "$HERE/mac-signing.sh" sign "$BUNDLE" || true
   printf '%s\n' "$SIGN_WANT" > "$SIGN_STAMP"
 fi
@@ -92,9 +107,15 @@ fi
 # is still made, but the account's link and apps stay as they are (account-home.sh).
 if [ -n "${RUBATO_T3_APP-}" ] || rubato_home_is_account_home; then
   if [ ! -L "$APP" ] || [ "$(readlink "$APP")" != "$BUNDLE" ]; then
+    # Unregister the old destination before replacing the alias. Otherwise macOS may keep
+    # opening that same-id app even when /Applications points at the new one.
+    PREVIOUS="$APP"
+    [ ! -L "$APP" ] || PREVIOUS="$(readlink "$APP")"
+    [ ! -d "$PREVIOUS" ] || "$LSREGISTER" -u "$PREVIOUS" >/dev/null 2>&1 || true
     rm -rf "$APP"
     ln -s "$BUNDLE" "$APP"
   fi
+  "$LSREGISTER" -f "$BUNDLE" >/dev/null 2>&1 || true
   if [ -z "${RUBATO_T3_APP-}" ] && [ -d "/Applications/T3 Code.app" ]; then
     rm -rf "/Applications/T3 Code.app"
   fi

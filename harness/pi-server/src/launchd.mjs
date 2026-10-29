@@ -255,9 +255,16 @@ export async function ensureEngineLaunchAgent({ env = process.env, agentDir = pa
 
 /** Reloads the job so launchd runs its current definition. Ends the running engine (SIGTERM, drain). */
 export async function reloadEngineJob({ env = process.env, job = engineJob(env) } = {}) {
-  await run(job, ['bootout', job.target], env).catch(() => {});
+  await run(job, ['bootout', job.target], env).catch(async (error) => {
+    if (await engineJobLoaded(job, env)) throw error;
+  });
   await run(job, ['enable', job.target], env).catch(() => {});
-  await run(job, ['bootstrap', job.domain, job.plistPath], env);
+  try { await run(job, ['bootstrap', job.domain, job.plistPath], env); }
+  catch (error) {
+    // A reconnecting app may load the same current definition after our bootout.
+    // Only an actually loaded job makes that duplicate bootstrap harmless.
+    if (!await engineJobLoaded(job, env)) throw error;
+  }
 }
 
 /** Unloads and deletes the job (the engine stops; the next starter spawns one on demand again). */

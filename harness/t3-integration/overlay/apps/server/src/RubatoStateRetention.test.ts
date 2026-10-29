@@ -10,6 +10,7 @@ import {
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as DateTime from "effect/DateTime";
+import * as Deferred from "effect/Deferred";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -24,6 +25,7 @@ import * as EventSink from "./orchestration-v2/EventSink.ts";
 import * as EventStore from "./orchestration-v2/EventStore.ts";
 import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
+import { ServerActivation } from "./serverActivation.ts";
 import {
   RETENTION, UNREAD_V1_TABLES, autoVacuumMode, compactOnce, pruneReceipts, pruneSupersededTurnItems,
   pruneUnreadV1Tables, releaseFreePages, rubatoStateRetentionLayer, runRetention,
@@ -212,7 +214,7 @@ it.live("a file switched to incremental auto-vacuum once gives freed pages back 
     Effect.ensuring(Effect.sync(() => rmSync(folder, { recursive: true, force: true }))));
 });
 
-it.effect("the server's layer runs a pass at startup and again every interval", () =>
+it.effect("retention waits for server activation and initial UI loading, then repeats every interval", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const receipt = (id: string) => sql`INSERT INTO orchestration_command_receipts
@@ -221,7 +223,16 @@ it.effect("the server's layer runs a pass at startup and again every interval", 
     const left = () => sql<{ readonly id: string }>`SELECT command_id AS id FROM orchestration_command_receipts ORDER BY id`;
     yield* TestClock.setTime(Date.now());
     yield* receipt("before-start");
-    yield* Layer.build(rubatoStateRetentionLayer);
+    const activation = yield* Deferred.make<void>();
+    yield* Layer.build(rubatoStateRetentionLayer).pipe(
+      Effect.provideService(ServerActivation, Deferred.await(activation)),
+    );
+    yield* TestClock.adjust(Duration.hours(1));
+    assert.deepStrictEqual((yield* left()).map((row) => row.id), ["before-start"], "no scan before activation");
+    yield* Deferred.succeed(activation, undefined);
+    yield* TestClock.adjust(Duration.seconds(1));
+    assert.deepStrictEqual((yield* left()).map((row) => row.id), ["before-start"], "initial UI load has priority");
+    yield* TestClock.adjust(RETENTION.startupDelay);
     for (let turn = 0; turn < 50 && (yield* left()).length > 0; turn += 1) yield* TestClock.adjust(Duration.millis(10));
     assert.deepStrictEqual(yield* left(), []);
     yield* receipt("after-first-pass");

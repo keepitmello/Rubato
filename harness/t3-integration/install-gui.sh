@@ -253,6 +253,9 @@ fi
 # 소스를 핀 + overlay 로 맞추고 설정·진입점을 쓴다. restart-gui.sh 가 같은 잠금 안에서
 # 방금 --prepare 로 이 일을 마쳤으면(RUBATO_GUI_PREPARED=1) 앱이 내려간 사이에 다시 하지
 # 않는다 — 그동안 소스가 바뀔 틈이 없고, 앱이 꺼져 있는 시간만 1초 남짓 는다.
+if is_darwin; then
+  bash "$HERE/install-macos-app.sh" --check-target || exit 1
+fi
 prepare_sources() {
 mkdir -p "$(dirname "$T3_DIR")" "$T3_HOME/userdata"
 if [ ! -d "$T3_DIR/.git" ]; then
