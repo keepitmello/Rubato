@@ -4552,7 +4552,8 @@
   "Saved, but what changed could not be read back. The list shows your memory as it is now.": "저장했지만 바뀐 것을 다시 읽지 못했습니다. 목록에는 지금 메모리가 그대로 보입니다.",
   "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.": "지웠지만 잊은 것으로 적지 못해서 예전 대화가 다시 가져올 수 있습니다. 확실히 하려면 한 번 더 잊기를 누르세요.",
   "Why do you remember this? What did I say?": "이건 왜 기억해? 내가 뭐라고 했어?",
-  "Forget this.": "이거 잊어 줘."
+  "Forget this.": "이거 잊어 줘.",
+  "About this line:": "이 항목에 대한 요청:"
  },
  "templates": [
   [
@@ -7950,10 +7951,6 @@
   [
    "Said in {0}",
    "{0}에서 한 말"
-  ],
-  [
-   "About “{0}”",
-   "“{0}”에 대해"
   ],
   [
    "Only applies: {0}",

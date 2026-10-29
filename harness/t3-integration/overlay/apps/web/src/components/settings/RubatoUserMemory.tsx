@@ -441,7 +441,9 @@ function AskCard({ ask, busy, compact = false, onRetry, onEdit }: { ask: UserMem
           {ask.text}
         </p>
         {ask.focus?.text && !compact ? (
-          <p className="max-w-[90%] text-right text-xs text-muted-foreground">{`About “${ask.focus.text}”`}</p>
+          <p className="max-w-[90%] text-right text-xs text-muted-foreground">
+            <span>About this line:</span> <span translate="no">“{ask.focus.text}”</span>
+          </p>
         ) : null}
       </div>
       <div className="mt-2" aria-live="polite">
