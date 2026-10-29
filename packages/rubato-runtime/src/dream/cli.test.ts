@@ -224,3 +224,20 @@ describe("dreamLadder", () => {
     ])
   })
 })
+
+describe("rubato dream and the shared user store", () => {
+  test("#given the shared user store on disk #when status is read #then it is not listed as a project store", () => {
+    const status = dreamStatus(undefined, ["proj", "user.shared"]) as { stores: { store: string }[] }
+    expect(status.stores.map((entry) => entry.store)).toEqual(["proj"])
+  })
+
+  test("#given nothing new for any store or the user #when --due runs #then it ends without starting a model", () => {
+    const home = mkdtempSync(join(tmpdir(), "dream-cli-test-"))
+    dirs.push(home)
+    // A memory root of its own: the default root belongs to the installed Rubato only (live-guard.ts).
+    mkdirSync(join(home, "memory", "agents", "user.shared", "repo", ".git"), { recursive: true })
+    const env: NodeJS.ProcessEnv = { PATH: process.env.PATH, HOME: home, RUBATO_MEMORY_HOME: join(home, "memory"), RUBATO_PI_CODING_AGENT_DIR: join(home, "agent") }
+    const out = execFileSync(process.execPath, [join(import.meta.dir, "cli.ts"), "--due", "--json"], { cwd: home, env, encoding: "utf8" })
+    expect(JSON.parse(out)).toEqual({ runs: [] })
+  })
+})
