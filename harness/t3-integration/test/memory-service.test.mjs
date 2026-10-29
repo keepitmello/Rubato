@@ -7,7 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { ADOPT_SUBJECT, createMemoryService, handleMemoryRequest } from '../src/memory/service.mjs';
+import { ADOPT_SUBJECT, USER_STORE, createMemoryService, handleMemoryRequest } from '../src/memory/service.mjs';
 
 const git = (cwd, ...args) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
 const bunAvailable = (() => { try { execFileSync('bun', ['--version']); return true; } catch { return false; } })();
@@ -215,30 +215,85 @@ test('settings writes keep the user file and commit the self store', async (t) =
   await assert.rejects(f.service.handle('config', { store: 'ghost', enabled: true }), /No memory store/);
 
   const selfRepo = path.join(f.home, '.rubato', 'memory', 'self', 'repo');
-  assert.deepEqual(await f.service.handle('self', {}), { user: '', soul: '', repo: false });
-  const saved = await f.service.handle('self-save', { file: 'user.md', content: '# user\n\n- 첫 줄' });
+  assert.deepEqual(await f.service.handle('self', {}), { soul: '', repo: false });
+  const saved = await f.service.handle('self-save', { file: 'soul.md', content: '말투: 반말' });
   assert.match(saved.commit, /^[0-9a-f]{40}$/);
-  assert.equal(await readFile(path.join(selfRepo, 'user.md'), 'utf8'), '# user\n\n- 첫 줄\n');
-  assert.match(git(selfRepo, 'log', '-1', '--format=%s'), /^user\.md: edit in settings \(\+\d+ -\d+\)$/);
-  assert.equal((await f.service.handle('self-save', { file: 'user.md', content: '# user\n\n- 첫 줄\n' })).commit, null, 'no change, no commit');
-  await f.service.handle('self-save', { file: 'soul.md', content: '말투: 반말\n', summary: '말투 정리' });
+  assert.equal(await readFile(path.join(selfRepo, 'soul.md'), 'utf8'), '말투: 반말\n');
+  assert.match(git(selfRepo, 'log', '-1', '--format=%s'), /^soul\.md: edit in settings \(\+\d+ -\d+\)$/);
+  assert.equal((await f.service.handle('self-save', { file: 'soul.md', content: '말투: 반말\n' })).commit, null, 'no change, no commit');
+  await f.service.handle('self-save', { content: '말투: 반말, 짧게\n', summary: '말투 정리' });
   assert.equal(git(selfRepo, 'log', '-1', '--format=%s'), 'soul.md: 말투 정리');
-  await assert.rejects(f.service.handle('self-save', { file: '../x.md', content: '' }), /user\.md or soul\.md/);
+  // Facts about the user are asked for, not typed into a file that rides every prompt.
+  await assert.rejects(f.service.handle('self-save', { file: 'user.md', content: '- 첫 줄' }), /Only soul\.md/);
+  await assert.rejects(f.service.handle('self-save', { file: '../x.md', content: '' }), /Only soul\.md/);
+  for (const gone of ['suggestions', 'add-suggestions', 'dismiss-suggestions'])
+    await assert.rejects(f.service.handle(gone, { lines: ['x'] }), /Unknown memory action/);
+});
 
-  // What the dreams noticed about the user: every run's lines in one list, each once, newest first.
-  await landedDream(f, 'dream-c', 'fourth');
-  await landedDream(f, 'dream-d', 'fifth', undefined, { startedAt: '2026-09-27T01:00:00.000Z' });
-  await writeFile(path.join(f.store, 'runtime', 'dream', 'runs', 'dream-d', 'out', 'user-candidates.md'), '- 짧은 답을 좋아한다\n- base 에 바로 푸시한다\n');
-  const texts = async () => (await f.service.handle('suggestions', {})).suggestions.map((entry) => entry.text);
-  assert.deepEqual(await texts(), ['짧은 답을 좋아한다', 'base 에 바로 푸시한다', '한국어 반말을 좋아한다']);
-  const added = await f.service.handle('add-suggestions', { lines: ['base 에 바로 푸시한다'] });
-  assert.equal(added.added, 1);
-  assert.equal(await readFile(path.join(selfRepo, 'user.md'), 'utf8'), '# user\n\n- 첫 줄\n- base 에 바로 푸시한다\n');
-  assert.equal(git(selfRepo, 'log', '-1', '--format=%s'), 'user.md: add 1 line the dream noticed');
-  await f.service.handle('dismiss-suggestions', { lines: ['짧은 답을 좋아한다'] });
-  assert.deepEqual(await texts(), ['한국어 반말을 좋아한다'], 'added and dismissed lines leave the list');
-  await assert.rejects(f.service.handle('add-suggestions', { lines: ['지어낸 줄'] }), /not among the suggestions/);
-  await assert.rejects(f.service.handle('dismiss-suggestions', { lines: [] }), /at least one/);
+// Stands in for `rubato`: `memory ask` is a FIXTURE model turn (writes result.json after a pause);
+// everything else is the real launcher, so `memory view` reads what that fixture left.
+async function askingRubato(home, { pauseMs = 300, fail = false } = {}) {
+  const script = path.join(home, 'fake-rubato.sh');
+  const launcher = new URL('../../scripts/rubato-pi.sh', import.meta.url).pathname;
+  await writeFile(script, `#!/bin/sh
+if [ "$1" = memory ] && [ "$2" = ask ]; then
+  dir="$HOME/.rubato/memory/agents/${USER_STORE}/runtime/asks/$3"
+  sleep ${pauseMs / 1000}
+  ${fail ? 'echo "provider said no" >&2; exit 1' : `printf '%s' '{"id":"'"$3"'","status":"done","reply":"기억할게요.","changes":[],"forgotten":[],"attempts":[],"startedAt":"x","finishedAt":"y"}' > "$dir/result.json"`}
+  exit 0
+fi
+exec /bin/sh "${launcher}" "$@"
+`, { mode: 0o755 });
+  return ['/bin/sh', script];
+}
+
+test('the user memory is read through rubato memory and changed by asking', { skip: !bunAvailable && 'bun is not installed' }, async (t) => {
+  const f = await fixture(t);
+  const service = createMemoryService({ env: { ...process.env, HOME: f.home, RUBATO_MEMORY_HOME: '' }, msearch: '/nonexistent/msearch', rubato: await askingRubato(f.home) });
+  const empty = await service.handle('user-view', {});
+  assert.deepEqual([empty.exists, empty.count, empty.asks], [false, 0, []]);
+
+  await assert.rejects(service.handle('user-ask', { text: '   ' }), /Write what you want/);
+  await assert.rejects(service.handle('user-ask', { text: 'x'.repeat(4001) }), /under 4000/);
+  await assert.rejects(service.handle('user-ask', { text: '왜?', focus: { path: '../escape.md' } }), /not valid/);
+  await assert.rejects(service.handle('user-ask', { text: '왜?', focus: { path: '/etc/x.md' } }), /not valid/);
+
+  const started = await service.handle('user-ask', { text: '짧게 답해 줘. 기억해.', focus: { path: 'preferences/answers.md', text: '짧은 답' } });
+  assert.match(started.id, /^ask-/);
+  // One at a time: the page cannot send a second while the first is being handled.
+  await assert.rejects(service.handle('user-ask', { text: '또' }), (error) => error.status === 409 && /still working/.test(error.message));
+  const working = (await service.handle('user-view', {})).asks[0];
+  assert.deepEqual([working.id, working.state, working.text, working.focus], [started.id, 'working', '짧게 답해 줘. 기억해.', { path: 'preferences/answers.md', text: '짧은 답' }]);
+  const askDir = path.join(f.home, '.rubato', 'memory', 'agents', USER_STORE, 'runtime', 'asks', started.id);
+  for (let attempt = 0; attempt < 100 && !(await readFile(path.join(askDir, 'result.json'), 'utf8').catch(() => '')); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  for (let attempt = 0; attempt < 100 && (await service.handle('user-view', {})).asks[0].state === 'working'; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 50));
+  const done = (await service.handle('user-view', {})).asks[0];
+  assert.deepEqual([done.state, done.result.reply], ['done', '기억할게요.']);
+
+  // A request whose process dies without a result reads as failed, with the last line it printed.
+  const failing = createMemoryService({ env: { ...process.env, HOME: f.home, RUBATO_MEMORY_HOME: '' }, rubato: await askingRubato(f.home, { pauseMs: 0, fail: true }) });
+  const broken = await failing.handle('user-ask', { text: '잊어 줘' });
+  let seen;
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    seen = (await failing.handle('user-view', {})).asks.find((ask) => ask.id === broken.id);
+    if (seen.state !== 'working') break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  assert.deepEqual([seen.state, seen.result.reason], ['failed', 'provider said no']);
+
+  // The shared user store is not a project: it is not listed with them.
+  const userRepo = path.join(f.home, '.rubato', 'memory', 'agents', USER_STORE, 'repo');
+  await mkdir(path.join(userRepo, 'preferences'), { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', userRepo]);
+  await writeFile(path.join(userRepo, 'preferences', 'answers.md'), '---\ndescription: Short answers\n---\n\n## Conclusion\n- Short answers, conclusion first.\n');
+  git(userRepo, 'add', '-A');
+  git(userRepo, 'commit', '-q', '-m', 'seed');
+  assert.deepEqual((await service.handle('stores', {})).stores.map((s) => s.store), ['scratch']);
+  assert.deepEqual((await service.handle('activity', {})).items.map((item) => item.store).filter((store) => store === USER_STORE), []);
+  // Search still finds it, named as the user's.
+  assert.deepEqual((await service.handle('search', { query: 'conclusion first' })).results.map((hit) => [hit.store, hit.path]), [[USER_STORE, 'preferences/answers.md']]);
+  const view = await service.handle('user-view', {});
+  assert.deepEqual(view.topics.map((topic) => [topic.id, topic.items.map((item) => item.text)]), [['preferences', ['Short answers, conclusion first.']]]);
 });
 
 test('HTTP exchange maps actions, bodies and errors', async (t) => {
@@ -249,7 +304,7 @@ test('HTTP exchange maps actions, bodies and errors', async (t) => {
     }));
     return { status: response.status, body: await response.json() };
   };
-  assert.deepEqual(await call('self', undefined, 'GET'), { status: 200, body: { user: '', soul: '', repo: false } });
+  assert.deepEqual(await call('self', undefined, 'GET'), { status: 200, body: { soul: '', repo: false } });
   assert.equal((await call('nope', {})).status, 404);
   assert.equal((await call('runs', { store: '../x' })).status, 400);
   assert.equal((await call('runs', 'not json')).status, 400);

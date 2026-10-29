@@ -208,8 +208,22 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
     return done("done", { ...modelField, reply: accepted.reply, revision: baseRevision })
   }
   const forget = accepted.forget
+  // What was forgotten must be gone from the store as it will be, not only from this request's copy:
+  // another writer may have landed the same claim meanwhile.
+  const stillIn = async (revision: string) => {
+    if (forget.length === 0) return undefined
+    const records = await listRecords(git, store.paths.repo, revision)
+    for (const tombstone of forget) {
+      const still = records.find((record) => matchedTerms(record.text, tombstone).length > 0)
+      if (still !== undefined) return `the forgotten claim is still in ${still.path}`
+    }
+    return undefined
+  }
+  const produced = commits.length === 0 ? baseRevision : (await git(store.paths.repo, ["rev-parse", branch])).stdout.trim()
   const landed = commits.length === 0
     ? await underWriterLock(store.paths, store.id, "user memory forget", async () => {
+      const problem = await stillIn("HEAD")
+      if (problem !== undefined) return problem
       await addTombstones(store, forget)
       return true as const
     })
@@ -222,12 +236,13 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
       ledgerFor: () => readLedger(store),
       // The user's own words in this request are newer than any forget: saying it again is allowed.
       newerEvidence: [{ text: request.text, at: startedAt }],
+      checkMerged: stillIn,
       afterMerge: () => addTombstones(store, forget),
     })
   await deleteBranch(git, store.paths.repo, branch)
   if (landed !== true) return done("failed", { ...modelField, reason: `${landed}; nothing was changed` })
 
-  await refreshSummary(store, git, accepted.summary)
+  await refreshSummary(store, git, accepted.summary, produced)
   const revision = (await git(store.paths.repo, ["rev-parse", "HEAD"])).stdout.trim()
   const after = await listRecords(git, store.paths.repo, revision)
   const changes = describeChanges(before, after, summaryBefore, await readSummary(store))

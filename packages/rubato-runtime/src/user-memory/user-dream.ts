@@ -188,6 +188,8 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   await rm(worktree, { recursive: true, force: true })
   if (commits.length === 0) {
     await deleteBranch(git, store.paths.repo, branch)
+    // Records were right as they were; a curator may still have described them for the user.
+    await refreshSummary(store, git, await readJsonFile<SummaryOut>(join(outDir, "summary.json")), baseRevision)
     return finish("noop", modelField)
   }
   if (!existsSync(join(outDir, "report.md"))) {
@@ -195,12 +197,13 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
     return finish("failed", { ...modelField, commits, reason: "the user dream committed but wrote no report; nothing published" })
   }
 
+  const produced = (await git(store.paths.repo, ["rev-parse", branch])).stdout.trim()
   const landed = await landGuarded({ store, git, repo, branch, subject: `merge(dream): ${runId}`, ledgerFor: () => readLedger(store), newerEvidence: evidenceOf(kept) })
   await deleteBranch(git, store.paths.repo, branch)
   if (landed !== true) return finish("failed", { ...modelField, commits, baseRevision, reason: `${landed}; its observations stay for the next run` })
 
   await writeJsonFile(join(store.observations, `${runId}.json`), kept)
-  await refreshSummary(store, git, await readJsonFile<SummaryOut>(join(outDir, "summary.json")))
+  await refreshSummary(store, git, await readJsonFile<SummaryOut>(join(outDir, "summary.json")), produced)
   return finish("merged", { ...modelField, commits, baseRevision })
 }
 
@@ -220,6 +223,8 @@ export async function landGuarded(input: {
   readonly subject: string
   readonly ledgerFor: () => Promise<Ledger>
   readonly newerEvidence: readonly { readonly text: string; readonly at?: string }[]
+  /** A last word on the tree the merge would produce (an ask: what it forgot is gone from it). */
+  readonly checkMerged?: (tree: string) => Promise<string | undefined>
   readonly afterMerge?: () => Promise<void>
 }): Promise<true | string> {
   const { store, git, repo, branch } = input
@@ -229,6 +234,12 @@ export async function landGuarded(input: {
     if (back.length > 0) {
       const first = back[0]!
       return `it would bring back something the user asked to forget (${first.path}: ${first.what})`
+    }
+    if (input.checkMerged !== undefined) {
+      const tree = await git(store.paths.repo, ["merge-tree", "--write-tree", "HEAD", branch])
+      if (tree.code !== 0) return `merge failed: ${(tree.stdout.split("\n").find((line) => line.startsWith("CONFLICT")) ?? "conflict").trim()}`
+      const problem = await input.checkMerged(tree.stdout.split("\n")[0]!.trim())
+      if (problem !== undefined) return problem
     }
     const merge = await git(store.paths.repo, [...AS_DREAM, "merge", "--no-ff", "-m", input.subject, branch])
     if (merge.code !== 0) {
@@ -240,11 +251,15 @@ export async function landGuarded(input: {
   })
 }
 
-/** The display summary after a landing: the curator's new lines attach to the blobs now in the store. */
-export async function refreshSummary(store: UserStore, git: Git, out: SummaryOut | undefined): Promise<void> {
-  const records = await listRecords(git, store.paths.repo, "HEAD")
-  const blobs = new Map(records.map((record) => [record.path, record.blob]))
-  await writeSummary(store, mergeSummary(await readSummary(store), out, blobs))
+/**
+ * The display summary after a curator ran: its lines attach to the records as it left them at
+ * `produced` (its branch head, or the base it read when it changed nothing), and only where the store
+ * still holds those versions now.
+ */
+export async function refreshSummary(store: UserStore, git: Git, out: SummaryOut | undefined, produced?: string): Promise<void> {
+  const blobsAt = async (revision: string) => new Map((await listRecords(git, store.paths.repo, revision)).map((record) => [record.path, record.blob]))
+  const current = await blobsAt("HEAD")
+  await writeSummary(store, mergeSummary(await readSummary(store), out, current, produced === undefined ? undefined : await blobsAt(produced)))
 }
 
 function renderObservations(list: readonly Observation[]): string {

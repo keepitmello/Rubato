@@ -10,8 +10,13 @@
 //   ~/.rubato/rubato.jsonc  memory.dream.{models,stores.<name>.enabled}, titles.models
 //                           (titles.models is not memory: it is the session-title ladder, which the
 //                           Stats card shares. It lives here because this module owns the config writer.)
-//   <memory>/self/repo/{user.md,soul.md}                  every save is a commit
-//   <memory>/self/dismissed-suggestions.json             {lines}: dream suggestions the user waved off
+//   <memory>/self/repo/soul.md                           the explicit personality setting; every save is a commit
+//
+// What Rubato remembers about the user is the shared user store (agents/user.shared), read and changed
+// through its own contract, not by path:
+//   rubato memory view --json            topics, lines, evidence, requests, dream state
+//   rubato memory ask <id> --json        a model handles agents/user.shared/runtime/asks/<id>/request.json
+//                                        (minutes at most: detached; result.json is read back by view)
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, openSync, closeSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
@@ -36,7 +41,11 @@ const REASONING = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', '
 const LADDER_MAX = 8;
 const SHA = /^[0-9a-f]{7,64}$/;
 const BRANCH = /^dream\/[A-Za-z0-9._-]+$/;
-const SELF_FILES = new Set(['user.md', 'soul.md']);
+const SELF_FILES = new Set(['soul.md']);
+// The shared user store (memory-core USER_STORE_ID). No folder resolves to it; it is not a project.
+export const USER_STORE = 'user.shared';
+const ASK_TEXT_MAX = 4000;
+const RECORD_PATH = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\/[A-Za-z0-9][A-Za-z0-9._-]*)*\.md$/;
 const ACTIVITY_PAGE = 20;
 const ACTIVITY_MAX = 200;
 const SEARCH_MAX = 20;
@@ -94,18 +103,18 @@ export function createMemoryService(options = {}) {
     });
   }
   const git = (cwd, args, options) => run(['git', '-C', cwd, ...args], options);
-  async function cli(args, timeoutMs) {
-    const result = await run([...rubato, 'dream', ...args], { timeoutMs });
+  async function cli(args, timeoutMs, command = 'dream') {
+    const result = await run([...rubato, command, ...args], { timeoutMs });
     if (result.code !== 0) {
       // The CLI prints the stack of what failed; the page shows the sentence.
       const detail = (result.stderr || result.stdout).trim().split('\n')
         .filter((line) => !/^\s+at /.test(line))
-        .map((line) => line.replace(/^rubato dream: (Error: )?/, ''))
+        .map((line) => line.replace(/^rubato (dream|memory): (Error: )?/, ''))
         .slice(-6).join('\n');
-      throw new MemoryRequestError(502, 'dream-cli-failed', detail || `rubato dream exited with code ${result.code}.`);
+      throw new MemoryRequestError(502, `${command}-cli-failed`, detail || `rubato ${command} exited with code ${result.code}.`);
     }
     try { return JSON.parse(result.stdout); }
-    catch { throw new MemoryRequestError(502, 'dream-cli-output', 'rubato dream --json did not print JSON.'); }
+    catch { throw new MemoryRequestError(502, `${command}-cli-output`, `rubato ${command} --json did not print JSON.`); }
   }
 
   // A store is what the CLI would list: a directory under agents/ holding a git repo.
@@ -285,15 +294,6 @@ export function createMemoryService(options = {}) {
     return changes;
   }
 
-  function candidateLines(text) {
-    if (!text) return [];
-    return text.split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line !== '' && !line.startsWith('#'))
-      .map((line) => line.replace(/^[-*]\s+/, '').trim())
-      .filter((line) => line !== '');
-  }
-
   async function runDetail({ store, runId }) {
     const paths = storePaths(assertStore(store));
     assertRunId(runId);
@@ -444,12 +444,13 @@ export function createMemoryService(options = {}) {
   }
 
   async function readSelf() {
-    const [user, soul] = await Promise.all([readText(path.join(selfRepo, 'user.md')), readText(path.join(selfRepo, 'soul.md'))]);
-    return { user: user ?? '', soul: soul ?? '', repo: existsSync(path.join(selfRepo, '.git')) };
+    const soul = await readText(path.join(selfRepo, 'soul.md'));
+    return { soul: soul ?? '', repo: existsSync(path.join(selfRepo, '.git')) };
   }
 
-  async function saveSelf({ file, content, summary }) {
-    if (!SELF_FILES.has(file)) throw bad('File must be user.md or soul.md.');
+  // Facts about the user are not edited as a file any more: they are asked for in the user memory.
+  async function saveSelf({ file = 'soul.md', content, summary }) {
+    if (!SELF_FILES.has(file)) throw bad('Only soul.md is edited here. Tell Rubato what to remember about you instead.');
     if (typeof content !== 'string' || content.length > 1024 * 1024) throw bad('Content must be text under 1 MB.');
     if (summary !== undefined && typeof summary !== 'string') throw bad('Summary must be text.');
     await ensureSelfRepo();
@@ -461,52 +462,60 @@ export function createMemoryService(options = {}) {
     return { file, commit: await commitSelf(file, `${file}: ${note}`) };
   }
 
-  // What the dreams noticed about the user, from every store's recent runs, in one list: lines already
-  // in user.md or dismissed here are left out, and a line several runs repeat shows once.
-  const dismissedFile = path.join(memoryRoot, 'self', 'dismissed-suggestions.json');
-  const SUGGESTION_RUNS = 30;
-  async function suggestions() {
-    const userText = (await readText(path.join(selfRepo, 'user.md'))) ?? '';
-    const dismissed = new Set((await readJson(dismissedFile))?.lines ?? []);
-    const found = new Map();
-    for (const store of await listStores()) {
-      const paths = storePaths(store);
-      const newest = (await runRecords(paths))
-        .sort(([a, x], [b, y]) => String(y.startedAt ?? b).localeCompare(String(x.startedAt ?? a)))
-        .slice(0, SUGGESTION_RUNS);
-      for (const [runId, record] of newest) {
-        for (const text of candidateLines(await readText(path.join(paths.runs, runId, 'out', 'user-candidates.md')))) {
-          if (found.has(text) || dismissed.has(text) || userText.includes(text)) continue;
-          found.set(text, { text, store, runId, at: record.startedAt ?? null });
-        }
-      }
+  // --- The shared memory about the user.
+
+  const userRuntime = path.join(memoryRoot, 'agents', USER_STORE, 'runtime');
+
+  async function userView() {
+    return cli(['view', '--json'], 60_000, 'memory');
+  }
+
+  async function askRunning() {
+    let names = [];
+    try { names = await readdir(path.join(userRuntime, 'asks')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const name of names) {
+      if (!RUN_ID.test(name)) continue;
+      const dir = path.join(userRuntime, 'asks', name);
+      if (existsSync(path.join(dir, 'result.json'))) continue;
+      const marker = await readJson(path.join(dir, 'running.json'));
+      if (marker && alive(marker.pid)) return name;
     }
-    return { suggestions: [...found.values()].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? ''))) };
+    return null;
   }
 
-  function chosenLines(lines, offered) {
-    if (!Array.isArray(lines) || lines.length === 0 || lines.some((line) => typeof line !== 'string')) throw bad('Choose at least one line.');
-    if (lines.some((line) => !offered.has(line))) throw bad('A chosen line is not among the suggestions.');
-    return [...new Set(lines)];
-  }
-
-  async function addSuggestions({ lines }) {
-    const chosen = chosenLines(lines, new Set((await suggestions()).suggestions.map((entry) => entry.text)));
-    await ensureSelfRepo();
-    const target = path.join(selfRepo, 'user.md');
-    const before = (await readText(target)) ?? '';
-    const base = before === '' || before.endsWith('\n') ? before : `${before}\n`;
-    await atomicWrite(target, `${base}${chosen.map((line) => `- ${line}`).join('\n')}\n`);
-    const commit = await commitSelf('user.md', `user.md: add ${chosen.length} line${chosen.length === 1 ? '' : 's'} the dream noticed`);
-    return { file: 'user.md', added: chosen.length, commit };
-  }
-
-  async function dismissSuggestions({ lines }) {
-    const chosen = chosenLines(lines, new Set((await suggestions()).suggestions.map((entry) => entry.text)));
-    const before = (await readJson(dismissedFile))?.lines ?? [];
-    await mkdir(path.dirname(dismissedFile), { recursive: true });
-    await atomicWrite(dismissedFile, `${JSON.stringify({ lines: [...before, ...chosen] }, null, 2)}\n`);
-    return { dismissed: chosen.length };
+  // A request about the user memory: written where the CLI reads it, then handed to a detached
+  // `rubato memory ask`. The page follows it through `user-view` until result.json appears.
+  async function userAsk({ text, focus }) {
+    if (typeof text !== 'string' || text.trim() === '') throw bad('Write what you want to ask or change.');
+    if (text.length > ASK_TEXT_MAX) throw bad(`Keep it under ${ASK_TEXT_MAX} characters.`);
+    let target = null;
+    if (focus !== undefined && focus !== null) {
+      if (typeof focus !== 'object' || typeof focus.path !== 'string' || !RECORD_PATH.test(focus.path) || focus.path.split('/').some((part) => part === '..'))
+        throw bad('That memory is not valid.');
+      if (focus.text !== undefined && (typeof focus.text !== 'string' || focus.text.length > 1000)) throw bad('That memory is not valid.');
+      target = { path: focus.path, ...(focus.text === undefined ? {} : { text: focus.text }) };
+    }
+    const busy = await askRunning();
+    if (busy) throw new MemoryRequestError(409, 'asking', 'Rubato is still working on your last request.');
+    const createdAt = new Date().toISOString();
+    const id = `ask-${createdAt.replace(/[:.]/g, '-')}-${randomUUID().slice(0, 6)}`;
+    const dir = path.join(userRuntime, 'asks', id);
+    await mkdir(dir, { recursive: true });
+    await atomicWrite(path.join(dir, 'request.json'), `${JSON.stringify({ id, text: text.trim(), focus: target, createdAt }, null, 2)}\n`);
+    const out = openSync(path.join(dir, 'stdout.json'), 'w');
+    const err = openSync(path.join(dir, 'log.txt'), 'w');
+    let child;
+    try {
+      // Detached: closing the app must not cut a change in half.
+      child = spawn(rubato[0], [...rubato.slice(1), 'memory', 'ask', id, '--json'], { cwd: home, env: childEnv, detached: true, stdio: ['ignore', out, err] });
+    } finally {
+      closeSync(out);
+      closeSync(err);
+    }
+    await atomicWrite(path.join(dir, 'running.json'), `${JSON.stringify({ pid: child.pid, startedAt: createdAt }, null, 2)}\n`);
+    child.once('error', () => undefined);
+    child.unref();
+    return { id, createdAt };
   }
 
   // --- Stores as the user sees them: which project each belongs to, what is in it.
@@ -514,7 +523,7 @@ export function createMemoryService(options = {}) {
   async function listStores() {
     let names = [];
     try { names = await readdir(path.join(memoryRoot, 'agents')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    return names.filter((name) => STORE_NAME.test(name) && existsSync(path.join(storePaths(name).repo, '.git'))).sort();
+    return names.filter((name) => name !== USER_STORE && STORE_NAME.test(name) && existsSync(path.join(storePaths(name).repo, '.git'))).sort();
   }
 
   // Everything in the store's working tree but git's own directory. Symlinks are
@@ -629,7 +638,8 @@ export function createMemoryService(options = {}) {
 
   async function plainSearch(needle) {
     const results = [];
-    for (const store of await listStores()) {
+    const userRepo = existsSync(path.join(storePaths(USER_STORE).repo, '.git')) ? [USER_STORE] : [];
+    for (const store of [...await listStores(), ...userRepo]) {
       const paths = storePaths(store);
       for (const file of await walk(paths.repo)) {
         if (!file.endsWith('.md')) continue;
@@ -784,11 +794,10 @@ export function createMemoryService(options = {}) {
     'title-models': () => titleModels(),
     self: () => readSelf(),
     'self-save': (input) => saveSelf(input),
-    suggestions: () => suggestions(),
-    'add-suggestions': (input) => addSuggestions(input),
+    'user-view': () => userView(),
+    'user-ask': (input) => userAsk(input),
     activity: (input) => activity(input),
     search: (input) => search(input),
-    'dismiss-suggestions': (input) => dismissSuggestions(input),
   };
   return {
     actions: Object.keys(actions),

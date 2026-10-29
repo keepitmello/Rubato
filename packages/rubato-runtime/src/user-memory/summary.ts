@@ -32,19 +32,26 @@ export async function readSummary(store: UserStore): Promise<SummaryCache> {
 }
 
 /**
- * The cache after a landing: lines for records that still exist at the same blob stay, the curator's new
- * lines attach to the blobs that landed, and lines for records that are gone drop.
+ * The cache after a curator ran. A new line attaches to the blob of the record as the curator left it
+ * (`produced`), and only while the store still holds that very blob (`current`): a record that changed
+ * in between keeps its own conclusion until a curator describes the new version. Lines for records that
+ * changed or are gone drop. Without `produced`, nothing new attaches.
  */
-export function mergeSummary(cache: SummaryCache, out: SummaryOut | undefined, blobs: ReadonlyMap<string, string>): SummaryCache {
+export function mergeSummary(
+  cache: SummaryCache,
+  out: SummaryOut | undefined,
+  current: ReadonlyMap<string, string>,
+  produced?: ReadonlyMap<string, string>,
+): SummaryCache {
   const items: Record<string, { blob: string; text: string }> = {}
   for (const [path, item] of Object.entries(cache.items)) {
-    if (blobs.get(path) === item.blob) items[path] = item
+    if (current.get(path) === item.blob) items[path] = item
   }
   for (const [path, text] of Object.entries(stringMap(out?.items))) {
-    const blob = blobs.get(path)
-    if (blob !== undefined && text.trim() !== "") items[path] = { blob, text: text.trim() }
+    const blob = produced?.get(path)
+    if (blob !== undefined && current.get(path) === blob && text.trim() !== "") items[path] = { blob, text: text.trim() }
   }
-  const folders = new Set([...blobs.keys()].map((path) => path.includes("/") ? path.slice(0, path.indexOf("/")) : ""))
+  const folders = new Set([...current.keys()].map((path) => path.includes("/") ? path.slice(0, path.indexOf("/")) : ""))
   const topics = Object.fromEntries(Object.entries({ ...cache.topics, ...stringMap(out?.topics) })
     .filter(([folder, title]) => folders.has(folder) && title.trim() !== ""))
   const language = typeof out?.language === "string" && out.language.trim() !== "" ? out.language.trim() : cache.language

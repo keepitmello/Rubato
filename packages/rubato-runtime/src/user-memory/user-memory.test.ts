@@ -18,7 +18,7 @@ import { runUserAsk } from "./ask"
 import { readLedger } from "./ledger"
 import { parseEvidence, parseRecord } from "./records"
 import { userStore } from "./store"
-import { readSummary } from "./summary"
+import { mergeSummary, readSummary } from "./summary"
 import { runUserDream, userDreamDue } from "./user-dream"
 import { composeUserView } from "./view"
 
@@ -359,6 +359,27 @@ describe("asking about, correcting and forgetting what is remembered", () => {
     expect((await readLedger(w.user)).forgotten).toEqual([])
   })
 
+  test("a forget is checked against the store as it will be: a copy another writer landed meanwhile fails it", async () => {
+    const w = await remembered()
+    const store = userStore(w.memoryRoot)
+    mkdirSync(join(store.asks, "q8"), { recursive: true })
+    writeFileSync(join(store.asks, "q8", "request.json"), JSON.stringify({ id: "q8", text: "FORGET Busan", focus: { path: BUSAN }, createdAt: new Date(NOW).toISOString() }))
+    const result = await runUserAsk({
+      memoryRoot: w.memoryRoot, id: "q8", ladder: [{ model: "fixture/model" }], launch, systemPrompt: "p", env: process.env, now: () => NOW,
+      spawnChild: async (input) => {
+        mkdirSync(join(w.user.paths.repo, "background"), { recursive: true })
+        writeFileSync(join(w.user.paths.repo, "background/home.md"), "---\ndescription: Home\n---\n\n## Conclusion\n- Lives in Busan\n")
+        git(w.user.paths.repo, "add", "-A")
+        git(w.user.paths.repo, "commit", "-q", "-m", "another writer")
+        return stewardChild(input)
+      },
+    })
+    expect(result).toMatchObject({ status: "failed", forgotten: [] })
+    expect(result.reason).toContain("background/home.md")
+    expect((await readLedger(w.user)).forgotten).toEqual([])
+    expect(userFiles(w.memoryRoot)).toContain(BUSAN)
+  })
+
   test("one request at a time: a second while the first works is told to wait", async () => {
     const w = await remembered()
     let inner: Awaited<ReturnType<typeof ask>> | undefined
@@ -417,6 +438,30 @@ describe("the view", () => {
     expect(view.topics).toEqual([expect.objectContaining({ id: "preferences", title: "선호", items: [expect.objectContaining({ text: "Likes tables and diagrams", summarized: false })] })])
     expect(view.count).toBe(1)
     expect(view.revision).toMatch(/^[0-9a-f]{40}$/)
+  })
+
+  test("a curator that only describes records (no commit) still updates what the page reads", async () => {
+    const w = world()
+    w.project("alpha")
+    await projectDream(w.memoryRoot, "alpha", [sessionFile(join(w.root, "alpha"), "sa", [["2026-09-28T01:00:00.000Z", "claim: Likes tables | 표"]])])
+    await userDream(w.memoryRoot, async (input) => {
+      await curatingChild()(input)
+      writeFileSync(join(input.env.OUT_DIR!, "summary.json"), JSON.stringify({ items: {} }))
+      return { code: 0 }
+    })
+    const record = await userDream(w.memoryRoot, async ({ env }) => {
+      writeFileSync(join(env.OUT_DIR!, "summary.json"), JSON.stringify({ language: "ko", topics: { preferences: "선호" }, items: { "preferences/likes-tables.md": "표로 보는 걸 좋아해요." } }))
+      return { code: 0 }
+    }, { force: true })
+    expect(record.status).toBe("noop")
+    const view = await composeUserView(w.memoryRoot, { now: NOW })
+    expect(view.topics[0]?.items[0]).toMatchObject({ text: "표로 보는 걸 좋아해요.", summarized: true })
+  })
+
+  test("a summary line attaches only to the version of the record it was written from", () => {
+    const merged = mergeSummary({ topics: {}, items: {} }, { items: { "a.md": "old line", "b.md": "fresh line" } }, new Map([["a.md", "blob-new"], ["b.md", "blob-b"]]), new Map([["a.md", "blob-old"], ["b.md", "blob-b"]]))
+    expect(merged.items).toEqual({ "b.md": { blob: "blob-b", text: "fresh line" } })
+    expect(mergeSummary({ topics: {}, items: {} }, { items: { "b.md": "x" } }, new Map([["b.md", "blob-b"]])).items).toEqual({})
   })
 
   test("an empty memory reads as empty", async () => {
