@@ -295,6 +295,42 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
   })
 }
 
+/**
+ * Records the forgets of a request whose change landed but whose ledger write failed ("forget-unrecorded"),
+ * from what the model named in that run. The words must still be absent from the store; then they join
+ * the ledger under the writer lock and the problem leaves the request's result.
+ */
+export async function recordForgetsAgain(memoryRoot: string, id: string, now: () => number = Date.now): Promise<AskResult> {
+  const store = userStore(memoryRoot)
+  if (!ASK_ID.test(id)) throw new Error(`not a request id: ${id}`)
+  const resultPath = join(askDir(store, id), "result.json")
+  const result = await readJsonFile<AskResult>(resultPath)
+  if (result === undefined || !(result.problems ?? []).includes("forget-unrecorded")) throw new Error("this request has nothing left to record")
+  const out = await readJsonFile<{ forget?: unknown }>(join(askDir(store, id), "run", "out", "result.json"))
+  const at = result.startedAt
+  const forget: Tombstone[] = []
+  for (const entry of Array.isArray(out?.forget) ? out.forget as ForgetOut[] : []) {
+    const terms = Array.isArray(entry.terms) ? entry.terms.filter((term): term is string => typeof term === "string" && term.trim() !== "") : []
+    if (typeof entry.what === "string" && terms.length > 0) forget.push({ what: entry.what, terms, at, askId: id })
+  }
+  if (forget.length === 0) throw new Error("the request did not say what to keep out")
+  const exec = createNodeGitExec()
+  const git: Git = async (cwd, argv) => exec.run(argv, { cwd, timeoutMs: 60_000 })
+  await underWriterLock(store.paths, store.id, "user memory forget again", async () => {
+    const records = await listRecords(git, store.paths.repo, "HEAD")
+    for (const tombstone of forget) {
+      const still = records.find((record) => matchedTerms(record.text, tombstone).length > 0)
+      if (still !== undefined) throw new Error(`it is in memory again (${still.path}); forget it from that line`)
+    }
+    await addTombstones(store, forget)
+  })
+  const problems = (result.problems ?? []).filter((problem) => problem !== "forget-unrecorded")
+  const { problems: _old, ...rest } = result
+  const next: AskResult = { ...rest, ...(problems.length === 0 ? {} : { problems }), finishedAt: new Date(now()).toISOString() }
+  await writeJsonFile(resultPath, next)
+  return next
+}
+
 /** What the child left must hold up: a reply, and every forget named and actually gone from the store. */
 async function checkOutput(git: Git, worktree: string, outDir: string, at: string, askId: string) {
   const reply = (await readFile(join(outDir, "reply.md"), "utf8").catch(() => "")).trim()

@@ -8,6 +8,7 @@ import {
   justChanged,
   overviewLine,
   pollDelay,
+  forgottenRows,
   problemTexts,
   refreshDelay,
   threadAsks,
@@ -104,8 +105,21 @@ describe("a request that landed with loose ends", () => {
     const landed = ask({ result: { status: "done", changes: [], forgotten: [], finishedAt: "t", problems: ["reply-lost", "forget-unrecorded"] } });
     expect(problemTexts(landed)).toEqual([
       "Saved, but Rubato stopped before it could reply. This is what changed.",
-      "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.",
+      "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back.",
     ]);
     expect(problemTexts(ask({}))).toEqual([]);
+  });
+});
+
+describe("forgotten rows", () => {
+  it("shows one row per forgotten line, from the request that deleted it", () => {
+    const path = "background/machines.md";
+    const corrected = ask({ id: "fix", focus: { path }, createdAt: "2026-10-29T03:04:00.000Z", result: { status: "done", changes: [{ path, topic: "background", change: "modified", before: "a", after: "b" }], forgotten: [], finishedAt: "t" } });
+    const forgot = ask({ id: "forget", focus: { path }, createdAt: "2026-10-29T03:05:00.000Z", result: { status: "done", changes: [{ path, topic: "background", change: "deleted", before: "b" }], forgotten: [{ what: "x" }], finishedAt: "t" } });
+    const again = ask({ id: "forget-again", focus: { path }, createdAt: "2026-10-29T03:06:00.000Z", result: { status: "done", changes: [{ path, topic: "background", change: "deleted", before: "b" }], forgotten: [{ what: "x" }], finishedAt: "t" } });
+    const sent = new Set(["fix", "forget", "forget-again"]);
+    expect(forgottenRows([forgot, corrected], sent, new Set()).map((entry) => entry.id)).toEqual(["forget"]);
+    expect(forgottenRows([again, forgot, corrected], sent, new Set()).map((entry) => entry.id)).toEqual(["forget-again"]);
+    expect(forgottenRows([forgot, corrected], sent, new Set([path]))).toEqual([]);
   });
 });

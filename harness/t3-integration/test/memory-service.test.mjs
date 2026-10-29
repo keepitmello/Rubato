@@ -257,6 +257,8 @@ test('the user memory is read through rubato memory and changed by asking', { sk
   await assert.rejects(service.handle('user-ask', { text: 'x'.repeat(4001) }), /under 4000/);
   await assert.rejects(service.handle('user-ask', { text: '왜?', focus: { path: '../escape.md' } }), /not valid/);
   await assert.rejects(service.handle('user-ask', { text: '왜?', focus: { path: '/etc/x.md' } }), /not valid/);
+  await assert.rejects(service.handle('user-reforget', { id: '../x' }), /not valid/);
+  await assert.rejects(service.handle('user-reforget', { id: 'ask-none' }), /nothing left to record|nothing ran/);
 
   const started = await service.handle('user-ask', { text: '짧게 답해 줘. 기억해.', focus: { path: 'preferences/answers.md', text: '짧은 답' } });
   assert.match(started.id, /^ask-/);

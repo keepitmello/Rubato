@@ -4,6 +4,7 @@
 //   rubato memory view --json        what is remembered: topics, lines, evidence, requests, dream state
 //   rubato memory ask <id> --json    handle the request in runtime/asks/<id>/request.json (a model answers
 //                                    and changes the memory); the outcome goes to result.json and stdout
+//   rubato memory reforget <id> --json  record the forgets of a landed request whose ledger write failed
 
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -18,7 +19,7 @@ import { childEnv } from "../dream/child-env"
 import { dreamLadder } from "../dream/ladder"
 import { resolveLaunch } from "../dream/launch"
 import { liveMemoryVerdict } from "../dream/live-guard"
-import { ASK_ID, runUserAsk } from "./ask"
+import { ASK_ID, recordForgetsAgain, runUserAsk } from "./ask"
 import { composeUserView } from "./view"
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -29,6 +30,19 @@ async function main(argv: readonly string[]): Promise<number> {
   const memoryRoot = resolveMemoryRoot(env, homedir())
   if (command === "view") {
     process.stdout.write(`${JSON.stringify(await composeUserView(memoryRoot), null, 2)}\n`)
+    return 0
+  }
+  if (command === "reforget") {
+    if (id === undefined || !ASK_ID.test(id)) {
+      process.stderr.write("rubato memory: reforget needs a request id\n")
+      return 2
+    }
+    const verdict = liveMemoryVerdict({ env, home: homedir(), cliPath: join(here, "..", "dream", "cli.ts") })
+    if (!verdict.allowed) {
+      process.stderr.write(`rubato memory: ${verdict.reason}; nothing ran\n`)
+      return 2
+    }
+    process.stdout.write(`${JSON.stringify(await recordForgetsAgain(memoryRoot, id), null, 2)}\n`)
     return 0
   }
   if (command === "ask") {
@@ -54,7 +68,7 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`)
     return result.status === "done" ? 0 : 1
   }
-  process.stderr.write("usage: rubato memory view --json | rubato memory ask <id> --json\n")
+  process.stderr.write("usage: rubato memory view --json | rubato memory ask <id> --json | rubato memory reforget <id> --json\n")
   return 2
 }
 

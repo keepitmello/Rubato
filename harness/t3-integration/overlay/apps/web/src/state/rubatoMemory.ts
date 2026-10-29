@@ -330,6 +330,8 @@ export const rubatoMemory = {
     }),
   /** What Rubato remembers about the user, with the requests made about it and how they ended. */
   userView: (env: EnvironmentId | null) => call<UserMemoryView>(env, "user-view"),
+  /** Records the forget of a landed request whose ledger write failed (problems: forget-unrecorded). */
+  userReforget: (env: EnvironmentId | null, id: string) => call<UserMemoryAskResult>(env, "user-reforget", { id }),
   /** Hands a request to a model; follow it through userView until it is no longer working. */
   userAsk: (
     env: EnvironmentId | null,

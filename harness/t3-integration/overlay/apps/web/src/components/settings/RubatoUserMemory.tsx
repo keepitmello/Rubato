@@ -30,8 +30,10 @@ import {
   evidenceSource,
   FAILURE_TEXTS,
   failureText,
+  forgottenRows,
   itemBasis,
   justChanged,
+  needsForgetRecorded,
   overviewLine,
   presetRequest,
   refreshDelay,
@@ -193,7 +195,16 @@ export function UserMemoryPanel({
   // A request sent here about one line answers on that line; a forgotten line stays as a crossed-out
   // row until the page is left, so the result is seen where it happened.
   const inlineAsk = (path: string) => asks.find((ask) => sentHere.has(ask.id) && ask.focus?.path === path) ?? null;
-  const forgottenHere = asks.filter((ask) => sentHere.has(ask.id) && ask.state === "done" && ask.focus && !paths.has(ask.focus.path));
+  const forgottenHere = forgottenRows(asks, sentHere, paths);
+  const recordForget = async (ask: UserMemoryAsk) => {
+    try {
+      await rubatoMemory.userReforget(environmentId, ask.id);
+      toastManager.add({ type: "success", title: "Noted as forgotten" });
+    } catch (cause) {
+      toastManager.add({ type: "error", title: "Could not note it as forgotten", description: cause instanceof Error ? cause.message : String(cause) });
+    }
+    await load();
+  };
   const shownInline = new Set(asks.filter((ask) => sentHere.has(ask.id) && ask.focus !== null).map((ask) => ask.id));
   const topicIds = [...new Set([...view.topics.map((topic) => topic.id), ...forgottenHere.map((ask) => topicOf(ask.focus!.path))])];
   return (
@@ -255,6 +266,7 @@ export function UserMemoryPanel({
               void send(ask.text, ask.focus ? { path: ask.focus.path, text: ask.focus.text ?? "" } : null, { fromComposer: false })
             }
             onEdit={editAgain}
+            onRecord={(ask) => void recordForget(ask)}
           />
         </SettingsRow>
       </SettingsSection>
@@ -278,7 +290,7 @@ export function UserMemoryPanel({
             {forgottenHere
               .filter((ask) => topicOf(ask.focus!.path) === id)
               .map((ask) => (
-                <ForgottenRow key={ask.id} ask={ask} />
+                <ForgottenRow key={ask.id} ask={ask} onRecord={() => void recordForget(ask)} />
               ))}
           </SettingsSection>
         );
@@ -292,7 +304,7 @@ function topicOf(path: string): string {
 }
 
 /** A line forgotten from this page, kept in place as crossed out so the result is visible where it was. */
-function ForgottenRow({ ask }: { ask: UserMemoryAsk }) {
+function ForgottenRow({ ask, onRecord }: { ask: UserMemoryAsk; onRecord: () => void }) {
   const before = ask.result?.changes.find((change) => change.path === ask.focus?.path)?.before ?? ask.focus?.text ?? "";
   const problems = problemTexts(ask);
   return (
@@ -327,6 +339,13 @@ function ForgottenRow({ ask }: { ask: UserMemoryAsk }) {
             </span>
           ) : null}
         </span>
+      }
+      control={
+        needsForgetRecorded(ask) ? (
+          <Button size="xs" variant="outline" onClick={onRecord}>
+            Note it as forgotten
+          </Button>
+        ) : undefined
       }
     />
   );
@@ -442,12 +461,14 @@ function AskThread({
   busy,
   onRetry,
   onEdit,
+  onRecord,
 }: {
   current: readonly UserMemoryAsk[];
   earlier: readonly UserMemoryAsk[];
   busy: boolean;
   onRetry: (ask: UserMemoryAsk) => void;
   onEdit: (ask: UserMemoryAsk) => void;
+  onRecord: (ask: UserMemoryAsk) => void;
 }) {
   const [showEarlier, setShowEarlier] = useState(false);
   if (current.length === 0 && earlier.length === 0) return null;
@@ -457,7 +478,7 @@ function AskThread({
       {shown.length > 0 ? (
         <ol className="space-y-2" aria-label="Your requests">
           {shown.map((ask) => (
-            <AskCard key={ask.id} ask={ask} busy={busy} onRetry={() => onRetry(ask)} onEdit={() => onEdit(ask)} />
+            <AskCard key={ask.id} ask={ask} busy={busy} onRetry={() => onRetry(ask)} onEdit={() => onEdit(ask)} onRecord={() => onRecord(ask)} />
           ))}
         </ol>
       ) : null}
@@ -470,7 +491,7 @@ function AskThread({
   );
 }
 
-function AskCard({ ask, busy, compact = false, onRetry, onEdit }: { ask: UserMemoryAsk; busy: boolean; compact?: boolean; onRetry: () => void; onEdit: () => void }) {
+function AskCard({ ask, busy, compact = false, onRetry, onEdit, onRecord }: { ask: UserMemoryAsk; busy: boolean; compact?: boolean; onRetry: () => void; onEdit: () => void; onRecord?: () => void }) {
   const result = ask.result;
   return (
     <li className="rounded-lg border border-border/70 bg-card/40 px-3 py-2.5 text-sm" data-ask-state={ask.state}>
@@ -503,6 +524,11 @@ function AskCard({ ask, busy, compact = false, onRetry, onEdit }: { ask: UserMem
                 {text}
               </p>
             ))}
+            {needsForgetRecorded(ask) && onRecord ? (
+              <Button size="xs" variant="outline" onClick={onRecord}>
+                Note it as forgotten
+              </Button>
+            ) : null}
             {result.changes.length > 0 ? (
               <ChangeList changes={result.changes} />
             ) : (result.problems ?? []).length === 0 ? (

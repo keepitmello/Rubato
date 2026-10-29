@@ -17,6 +17,7 @@
 //   rubato memory view --json            topics, lines, evidence, requests, dream state
 //   rubato memory ask <id> --json        a model handles agents/user.shared/runtime/asks/<id>/request.json
 //                                        (minutes at most: detached; result.json is read back by view)
+//   rubato memory reforget <id> --json   records a landed forget whose ledger write failed
 import { execFile, spawn } from 'node:child_process';
 import { existsSync, openSync, closeSync } from 'node:fs';
 import { lstat, mkdir, readFile, readdir, rename, unlink, writeFile } from 'node:fs/promises';
@@ -483,6 +484,12 @@ export function createMemoryService(options = {}) {
     return null;
   }
 
+  // A forget that landed without its ledger entry: record it from that request's own run.
+  async function userReforget({ id }) {
+    if (typeof id !== 'string' || !RUN_ID.test(id)) throw bad('Request id is not valid.');
+    return cli(['reforget', id, '--json'], 60_000, 'memory');
+  }
+
   // A request about the user memory: written where the CLI reads it, then handed to a detached
   // `rubato memory ask`. The page follows it through `user-view` until result.json appears.
   async function userAsk({ text, focus }) {
@@ -796,6 +803,7 @@ export function createMemoryService(options = {}) {
     'self-save': (input) => saveSelf(input),
     'user-view': () => userView(),
     'user-ask': (input) => userAsk(input),
+    'user-reforget': (input) => userReforget(input),
     activity: (input) => activity(input),
     search: (input) => search(input),
   };

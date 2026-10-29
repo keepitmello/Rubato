@@ -14,7 +14,7 @@ import { USER_STORE_ID, buildIdentityPaths } from "@rubato/memory-core"
 import { runDream, type SpawnChild } from "../dream/runner"
 import type { SessionFile } from "../dream/stores"
 import { listExistingStores } from "../dream/stores"
-import { runUserAsk } from "./ask"
+import { recordForgetsAgain, runUserAsk } from "./ask"
 import { readLedger } from "./ledger"
 import { parseEvidence, parseRecord } from "./records"
 import { userStore } from "./store"
@@ -392,6 +392,21 @@ describe("asking about, correcting and forgetting what is remembered", () => {
     expect(result.problems).toEqual(["summary-stale"])
     expect(result.changes.map((change) => [change.path, change.change])).toEqual([[SHORT, "modified"]])
     expect(readFileSync(join(w.user.paths.repo, SHORT), "utf8")).toContain("except in design reviews")
+  })
+
+  test("a forget whose ledger write failed can be recorded again from that request, once the words are still gone", async () => {
+    const w = await remembered()
+    const store = userStore(w.memoryRoot)
+    rmSync(store.ledger, { force: true })
+    mkdirSync(store.ledger, { recursive: true })
+    const result = await ask(w.memoryRoot, "q11", "FORGET Busan,부산", BUSAN, NOW + 1000)
+    expect(result).toMatchObject({ status: "done", problems: ["forget-unrecorded"] })
+    expect(userFiles(w.memoryRoot)).toEqual([SHORT])
+    rmSync(store.ledger, { recursive: true, force: true })
+    const again = await recordForgetsAgain(w.memoryRoot, "q11")
+    expect(again.problems).toBeUndefined()
+    expect((await readLedger(w.user)).forgotten.map((entry) => entry.terms)).toEqual([["Busan", "부산"]])
+    await expect(recordForgetsAgain(w.memoryRoot, "q11")).rejects.toThrow("nothing left to record")
   })
 
   test("a run that dies after its change landed reads as saved, with what changed read from the store", async () => {

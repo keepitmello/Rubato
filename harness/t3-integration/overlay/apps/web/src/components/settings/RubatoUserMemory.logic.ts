@@ -138,10 +138,31 @@ const PROBLEM_TEXT: Record<NonNullable<UserMemoryAsk["result"]>["problems"] exte
   "reply-lost": "Saved, but Rubato stopped before it could reply. This is what changed.",
   "summary-stale": "Saved. Its summary line catches up on the next dream; until then the list shows the saved wording.",
   "changes-unread": "Saved, but what changed could not be read back. The list shows your memory as it is now.",
-  "forget-unrecorded": "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.",
+  "forget-unrecorded": "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back.",
 };
 
 /** What a landed request still owes the person, in words; empty when everything after the save finished. */
 export function problemTexts(ask: UserMemoryAsk): string[] {
   return (ask.result?.problems ?? []).map((problem) => PROBLEM_TEXT[problem]).filter(Boolean);
+}
+
+/**
+ * Lines forgotten from this page, one row per line: the newest request that actually deleted it (a later
+ * correction of the same line, or an older request about it, does not make a second row).
+ */
+export function forgottenRows(asks: readonly UserMemoryAsk[], sentHere: ReadonlySet<string>, present: ReadonlySet<string>): UserMemoryAsk[] {
+  const seen = new Set<string>();
+  const rows: UserMemoryAsk[] = [];
+  for (const ask of asks) {
+    const path = ask.focus?.path;
+    if (!path || seen.has(path) || present.has(path) || !sentHere.has(ask.id) || ask.state !== "done") continue;
+    if (!ask.result?.changes.some((change) => change.path === path && change.change === "deleted")) continue;
+    seen.add(path);
+    rows.push(ask);
+  }
+  return rows;
+}
+
+export function needsForgetRecorded(ask: UserMemoryAsk): boolean {
+  return (ask.result?.problems ?? []).includes("forget-unrecorded");
 }

@@ -4550,12 +4550,15 @@
   "Saved, but Rubato stopped before it could reply. This is what changed.": "저장했지만 Rubato가 답하기 전에 멈췄습니다. 바뀐 것은 이렇습니다.",
   "Saved. Its summary line catches up on the next dream; until then the list shows the saved wording.": "저장했습니다. 요약 문장은 다음 꿈에서 따라오고, 그때까지 목록에는 저장된 문장이 보입니다.",
   "Saved, but what changed could not be read back. The list shows your memory as it is now.": "저장했지만 바뀐 것을 다시 읽지 못했습니다. 목록에는 지금 메모리가 그대로 보입니다.",
-  "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back. Forget it again to be sure.": "지웠지만 잊은 것으로 적지 못해서 예전 대화가 다시 가져올 수 있습니다. 확실히 하려면 한 번 더 잊기를 누르세요.",
+  "Removed, but Rubato could not note it as forgotten, so an old conversation might bring it back.": "지웠지만 잊은 것으로 적지 못해서 예전 대화가 다시 가져올 수 있습니다.",
   "Why do you remember this? What did I say?": "이건 왜 기억해? 내가 뭐라고 했어?",
   "Forget this.": "이거 잊어 줘.",
   "About this line:": "이 항목에 대한 요청:",
   "Could not refresh what Rubato remembers": "Rubato가 기억하는 내용을 새로 불러오지 못했습니다",
-  "Showing what was last read. Trying again every few seconds.": "마지막으로 읽은 내용을 보여 줍니다. 몇 초마다 다시 시도합니다."
+  "Showing what was last read. Trying again every few seconds.": "마지막으로 읽은 내용을 보여 줍니다. 몇 초마다 다시 시도합니다.",
+  "Note it as forgotten": "잊은 것으로 적기",
+  "Noted as forgotten": "잊은 것으로 적었습니다",
+  "Could not note it as forgotten": "잊은 것으로 적지 못했습니다"
  },
  "templates": [
   [
