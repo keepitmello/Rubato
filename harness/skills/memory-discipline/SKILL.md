@@ -28,7 +28,7 @@ Never write tool-call logs, intermediate attempts, commit hashes, exact counts, 
 | A judgement whose answer you would **overwrite** if it changed | `decisions/<question>.md` |
 | A fact you **look up** and update but never reverse | `reference/<topic>.md` |
 | A repeatable procedure | `skills/<name>/SKILL.md` |
-| A durable fact or preference about the user | Leave it for the dream; it maintains the user file |
+| A durable fact or preference about the user | Leave it for the dream; it keeps the shared user memory |
 | Ephemeral state or speculation | Nowhere |
 
 ## One file, one question
@@ -77,6 +77,6 @@ When a thread of work closes, not every turn: per-turn writes splinter one episo
 
 ## Commands
 
-- `msearch "<query>"`: search this project's memory; `-a` searches every store. Query in English, the language the records are written in, with short anchors (a component, an error, a decision). A raw error or the user's own words also match, because `## Symptom` keeps them verbatim.
+- `msearch "<query>"`: search this project's memory together with the shared memory about the user; `-u` searches only the user's, `-a` every store. Query in English, the language the records are written in, with short anchors (a component, an error, a decision). A raw error or the user's own words also match, because `## Symptom` keeps them verbatim.
 - `memory` and `memory_apply_patch`: how a session writes memory. Each change is committed with the `reason` you give, which is what `git log` shows later. Load them with `tool_search` when they are not active. A file written with a shell or a file tool is committed by the next writer under a generic message, so its reason is lost.
-- `rubato dream [<store>]`: run the dream now. It writes what the sessions left out, resolves contradictions and duplicates in place, and updates the user file. A store written before memory moved to English is translated once on its next dream (`rubato dream --migrate <store>` runs it now); `harness/README.md` has the details.
+- `rubato dream [<store>]`: run the dream now. It writes what the sessions left out, resolves contradictions and duplicates in place, and passes what it noticed about the user to the user dream, which keeps the shared user memory. A store written before memory moved to English is translated once on its next dream (`rubato dream --migrate <store>` runs it now); `harness/README.md` has the details.
