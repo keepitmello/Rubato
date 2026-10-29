@@ -136,7 +136,6 @@
   "Add remote machines with simulator or emulator runtimes installed, and the selected environments will connect over SSH and set up device tools automatically.": "시뮬레이터나 에뮬레이터 런타임이 설치된 원격 머신을 추가하면, 선택한 환경이 SSH로 연결하여 기기 도구를 자동으로 설정합니다.",
   "Add route": "경로 추가하기",
   "Add T3 Connect": "T3 Connect 추가하기",
-  "Add the ones every session should know about you. Dismissed lines do not come back.": "모든 세션이 알아야 할 항목을 추가하세요. 무시한 줄은 다시 표시되지 않습니다.",
   "Add theme": "테마 추가하기",
   "Add this binding to your Hyprland config, then save.": "이 바인딩을 Hyprland 설정에 추가한 뒤 저장하세요.",
   "Add to agent": "에이전트에 추가하기",
@@ -1311,7 +1310,6 @@
   "Every layer being merged must be open and ready for review.": "merge할 모든 레이어는 열려 있고 리뷰 준비 상태여야 합니다.",
   "Every project is on the list": "모든 프로젝트가 이미 목록에 있어",
   "Every project path gets its own sidebar row.": "모든 프로젝트 경로가 사이드바에서 각자의 행으로 표시됩니다.",
-  "Every session starts with these. Each save is committed to the self memory store.": "모든 세션은 이 내용으로 시작합니다. 저장할 때마다 self 기억 repo에 커밋됩니다.",
   "Everything outside code blocks and the terminal.": "코드 블록과 터미널을 제외한 모든 영역에 적용됩니다.",
   "Excluded": "제외됨",
   "Executable": "실행 파일",
@@ -1451,7 +1449,6 @@
   "From cache": "캐시 읽기",
   "From queue": "큐에서 전송",
   "From t3.json": "t3.json에서",
-  "From your sessions": "세션에서 발견된 항목",
   "Fuchsia": "자홍색",
   "Full": "전체",
   "Full access": "전체 권한",
@@ -3435,7 +3432,6 @@
   "Sort pull requests: Merge readiness": "PR 정렬: merge 준비 상태",
   "Sort themes": "테마 정렬",
   "Sort threads": "스레드 정렬",
-  "soul.md — how the agent works with you": "soul.md — 에이전트가 함께 일하는 방식",
   "Sounds": "소리",
   "Source": "소스",
   "Source control": "버전 관리",
@@ -4177,7 +4173,6 @@
   "Used for thread titles and other generated text on connected devices with this provider. Source control can override it.": "이 프로바이더를 사용하는 연결된 기기에서 스레드 제목 및 기타 생성 텍스트에 사용됩니다. 버전 관리에서 재정의할 수 있습니다.",
   "Used in your home folder": "홈 폴더에서 사용됨",
   "User message": "사용자 메시지",
-  "user.md — who you are": "user.md — 사용자 소개",
   "user@host or SSH alias": "user@host 또는 SSH 별칭",
   "Username": "사용자 이름",
   "Uses the custom binary path below. Installation keeps that path.": "아래의 사용자 지정 바이너리 경로를 사용합니다. 설치 시 해당 경로가 유지됩니다.",
@@ -4488,7 +4483,70 @@
   "New default": "새 기본값",
   "Segno will look at it": "세뇨가 곧 볼 거야",
   "It reads your file and Rubato's, then tells you what it recommends. Nothing changes until you say so.": "내 파일과 루바토 기본값을 읽고 뭘 권하는지 알려줍니다. 내가 말하기 전에는 아무것도 바뀌지 않습니다.",
-  "Could not ask Segno to review": "세뇨에게 검토를 맡길 수 없습니다"
+  "Could not ask Segno to review": "세뇨에게 검토를 맡길 수 없습니다",
+  "What Rubato remembers about you": "Rubato가 기억하는 나",
+  "Could not load what Rubato remembers": "Rubato가 기억하는 내용을 불러올 수 없습니다",
+  "Loading what Rubato remembers": "Rubato가 기억하는 내용을 불러오는 중",
+  "As you work, the daily dream notes lasting things about you, like how you like answers and how you decide, and keeps them here. You can also tell Rubato directly below.": "작업하는 동안 매일 도는 꿈이 답변 취향이나 결정하는 방식처럼 오래가는 내용을 알아채 여기에 둡니다. 아래에서 Rubato에게 직접 말할 수도 있어요.",
+  "Agents look these up when a question needs them. None of it is added to every conversation.": "에이전트는 필요할 때만 이 내용을 찾아봅니다. 모든 대화에 붙지는 않습니다.",
+  "Your old user.md will move in here": "예전 user.md가 이곳으로 옮겨집니다",
+  "The next dream turns it into the lines below. The file itself stays as it is, and it is no longer added to every conversation.": "다음 꿈이 그 내용을 아래 항목으로 정리합니다. 파일은 그대로 남고, 더 이상 모든 대화에 붙지 않습니다.",
+  "Ask or tell Rubato": "Rubato에게 묻고 말하기",
+  "Ask about anything it remembers, or say something new to remember. To change one line, use the buttons next to it.": "기억하는 내용을 무엇이든 묻거나, 새로 기억할 것을 말하세요. 한 항목만 고치려면 그 옆의 버튼을 쓰세요.",
+  "Updating from recent conversations": "최근 대화로 업데이트하는 중",
+  "New notes are added on the next dream": "새로 알아챈 내용은 다음 꿈에서 더해집니다",
+  "Asking about": "이 항목에 대해",
+  "Stop asking about this line": "이 항목 선택 해제하기",
+  "Ask or tell Rubato about what it remembers": "Rubato가 기억하는 내용에 대해 묻거나 말하기",
+  "What should it say instead? Or ask why it remembers this.": "대신 무엇이라고 기억해야 하나요? 왜 기억하는지 물어도 됩니다.",
+  "e.g. Why do you think I prefer short answers? / That's not true anymore. / Remember that I review on my phone.": "예: 내가 짧은 답을 좋아한다고 왜 생각해? / 그건 이제 아니야. / 리뷰는 폰으로 한다는 걸 기억해 줘.",
+  "Wait for the request below to finish.": "아래 요청이 끝날 때까지 기다려 주세요.",
+  "Your requests": "내 요청",
+  "Hide earlier requests": "이전 요청 숨기기",
+  "Rubato is looking at your memory. This usually takes under a minute.": "Rubato가 메모리를 살펴보고 있습니다. 보통 1분 안에 끝납니다.",
+  "Nothing in your memory changed.": "메모리에서 바뀐 것은 없습니다.",
+  "Edit request": "요청 고치기",
+  "What changed": "바뀐 것",
+  "Now remembered": "새로 기억함",
+  "Forgotten": "잊음",
+  "Just changed": "방금 바뀜",
+  "Why?": "왜?",
+  "Correct": "고치기",
+  "Forget": "잊기",
+  "Keep": "그대로 두기",
+  "No words of yours were kept for this one.": "이 항목에는 남겨 둔 말이 없습니다.",
+  "Why Rubato remembers this": "Rubato가 이것을 기억하는 이유",
+  "Ask Rubato to explain": "Rubato에게 설명 요청하기",
+  "What should it remember instead?": "대신 무엇을 기억할까요?",
+  "What is true instead, or when it applies. e.g. Only for code reviews; for design talks I want detail.": "대신 맞는 내용이나 적용되는 때를 적어 주세요. 예: 코드 리뷰 때만 그래. 설계 얘기는 자세히 듣고 싶어.",
+  "Send correction": "고친 내용 보내기",
+  "Confirm forgetting": "잊기 확인",
+  "Forget this? Rubato removes it and will not learn it again from old conversations.": "이 내용을 잊을까요? Rubato가 지우고, 예전 대화에서 다시 배우지 않습니다.",
+  "Removed from memory and search.": "메모리와 검색에서 지웠습니다.",
+  "How agents work with you": "에이전트가 일하는 방식",
+  "Personality": "성격",
+  "Added to every new conversation, exactly as you write it. Rubato never changes it on its own.": "적은 그대로 모든 새 대화에 붙습니다. Rubato가 스스로 바꾸지 않습니다.",
+  "Saved. New conversations use it.": "저장했습니다. 새 대화부터 반영됩니다.",
+  "No changes to save": "저장할 변경 사항이 없습니다",
+  "Could not save": "저장할 수 없습니다",
+  "Could not send the request": "요청을 보낼 수 없습니다",
+  "Nothing is remembered about you yet.": "아직 기억하는 내용이 없습니다.",
+  "Rubato remembers 1 thing about you, in 1 topic.": "Rubato가 기억하는 내용은 1가지이고, 1개 주제에 있습니다.",
+  "From something you said": "한 번 하신 말에서",
+  "You told Rubato here": "여기서 직접 말함",
+  "Your old profile": "예전 프로필",
+  "Noticed in a conversation": "대화에서 알아챔",
+  "Another request was still being handled.": "다른 요청을 처리하는 중이었습니다.",
+  "No model is set for memory. Pick one in the Settings tab here.": "메모리에 쓸 모델이 없습니다. 이 화면의 설정 탭에서 고르세요.",
+  "The change would have brought back something you asked to forget.": "잊어 달라고 한 내용을 되살리는 변경이라 넣지 않았습니다.",
+  "It could not remove every copy of that, so nothing was forgotten.": "그 내용을 모두 지우지 못해서 아무것도 잊지 않았습니다.",
+  "Your memory changed while this was being handled. Try again.": "처리하는 동안 메모리가 바뀌었습니다. 다시 시도하세요.",
+  "The request stopped before it finished.": "요청이 끝나기 전에 멈췄습니다.",
+  "Preferences": "선호",
+  "Working style": "일하는 방식",
+  "Constraints": "꼭 지킬 것",
+  "Could not load the memory": "메모리를 불러올 수 없습니다",
+  "Nothing was changed.": "바뀐 것은 없습니다."
  },
  "templates": [
   [
@@ -5528,10 +5586,6 @@
    "{0} 프로젝트를 내 프로젝트에 추가하기"
   ],
   [
-   "Add {0} to user.md",
-   "user.md에 {0} 추가하기"
-  ],
-  [
    "Add a model to {0}",
    "{0}에 모델 추가하기"
   ],
@@ -5546,10 +5600,6 @@
   [
    "Add it to an agent, e.g. claude mcp add --transport http t3 {0}",
    "에이전트에 추가하세요. 예: claude mcp add --transport http t3 {0}"
-  ],
-  [
-   "Added {0} to user.md",
-   "user.md에 {0} 추가됨"
   ],
   [
    "Added to {0} for {1}.{2}",
@@ -7400,10 +7450,6 @@
    "diff를 불러올 수 없어 발췌를 표시할 수 없습니다: {0}"
   ],
   [
-   "The dream noticed about you · {0}",
-   "꿈이 파악한 사용자 정보 · {0}"
-  ],
-  [
    "The name is chosen by the agent. Approval returns to {0} on the computer that opened this page. Only approve a sign-in you just started.",
    "이름은 에이전트가 지정합니다. 승인하면 이 페이지를 연 컴퓨터의 {0}(으)로 돌아갑니다. 방금 직접 시작한 로그인만 승인하세요."
   ],
@@ -7862,6 +7908,54 @@
   [
    "Cut off {0} days ago",
    "{0}일 전 중간에 끊김"
+  ],
+  [
+   "Not sent: {0}",
+   "보내지 못했습니다: {0}"
+  ],
+  [
+   "Earlier requests ({0})",
+   "이전 요청 ({0})"
+  ],
+  [
+   "Rubato remembers {0} things about you, in {1} topics.",
+   "Rubato가 기억하는 내용은 {0}가지이고, {1}개 주제로 나뉩니다."
+  ],
+  [
+   "Rubato remembers {0} things about you, in 1 topic.",
+   "Rubato가 기억하는 내용은 {0}가지이고, 1개 주제에 있습니다."
+  ],
+  [
+   "From {0} things you said",
+   "{0}번 하신 말에서"
+  ],
+  [
+   "From something you said · latest {0}",
+   "한 번 하신 말에서 · 최근 {0}"
+  ],
+  [
+   "From {0} things you said · latest {1}",
+   "{0}번 하신 말에서 · 최근 {1}"
+  ],
+  [
+   "Last noted {0}",
+   "마지막 기록 {0}"
+  ],
+  [
+   "Said in {0}",
+   "{0}에서 한 말"
+  ],
+  [
+   "About “{0}”",
+   "“{0}”에 대해"
+  ],
+  [
+   "Only applies: {0}",
+   "적용 범위: {0}"
+  ],
+  [
+   "Saved {0}. Agents' search uses it from now on.",
+   "{0} 저장했습니다. 이제부터 에이전트 검색에 반영됩니다."
   ]
  ]
 }

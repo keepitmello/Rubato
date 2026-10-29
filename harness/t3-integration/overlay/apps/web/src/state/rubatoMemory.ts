@@ -91,14 +91,6 @@ export interface DreamAttempt {
   readonly error?: string;
 }
 
-/** A line a dream noticed about the user, not yet in user.md and not dismissed. */
-export interface DreamSuggestion {
-  readonly text: string;
-  readonly store: string;
-  readonly runId: string;
-  readonly at: string | null;
-}
-
 /** One commit on a store's main line, read for the overview: who wrote it and what it touched. */
 export interface MemoryActivity {
   readonly store: string;
@@ -151,10 +143,85 @@ export interface DreamRunDetail extends DreamRunSummary {
   };
 }
 
+/** The explicit personality setting (soul.md): added to every conversation. */
 export interface SelfFiles {
-  readonly user: string;
   readonly soul: string;
   readonly repo: boolean;
+}
+
+/** The shared store that holds what Rubato remembers about the user (memory-core USER_STORE_ID). */
+export const USER_STORE = "user.shared";
+
+export interface UserMemoryEvidence {
+  readonly raw: string;
+  readonly date?: string;
+  readonly where?: string;
+  /** The user's own words, verbatim. */
+  readonly quote?: string;
+}
+
+export interface UserMemoryItem {
+  readonly path: string;
+  /** The line the user reads: the summary in their language, else the record's own conclusion. */
+  readonly text: string;
+  readonly summarized: boolean;
+  readonly conclusion: readonly string[];
+  readonly scope: readonly string[];
+  readonly evidence: readonly UserMemoryEvidence[];
+  readonly updatedAt: string | null;
+}
+
+export interface UserMemoryTopic {
+  readonly id: string;
+  readonly title: string | null;
+  readonly items: readonly UserMemoryItem[];
+}
+
+export interface UserMemoryChange {
+  readonly path: string;
+  readonly topic: string;
+  readonly change: "added" | "modified" | "deleted" | "renamed";
+  readonly from?: string;
+  readonly before?: string;
+  readonly after?: string;
+}
+
+export interface UserMemoryAskResult {
+  readonly status: "done" | "failed" | "busy";
+  /** The model's answer, in the user's language. */
+  readonly reply?: string;
+  /** What actually changed in the store, read back after it landed. */
+  readonly changes: readonly UserMemoryChange[];
+  readonly forgotten: ReadonlyArray<{ readonly what: string }>;
+  readonly model?: string;
+  readonly finishedAt: string;
+  readonly reason?: string;
+}
+
+export interface UserMemoryAsk {
+  readonly id: string;
+  readonly text: string;
+  readonly focus: { readonly path: string; readonly text?: string } | null;
+  readonly createdAt: string;
+  readonly state: "working" | "done" | "failed" | "busy";
+  readonly result: UserMemoryAskResult | null;
+}
+
+export interface UserMemoryView {
+  readonly exists: boolean;
+  readonly revision: string | null;
+  readonly updatedAt: string | null;
+  readonly language: string | null;
+  readonly topics: readonly UserMemoryTopic[];
+  readonly count: number;
+  readonly dream: {
+    readonly running: boolean;
+    readonly lastAt: string | null;
+    readonly lastStatus: string | null;
+    readonly waiting: number;
+  };
+  readonly legacyProfile: "none" | "waiting" | "carried";
+  readonly asks: readonly UserMemoryAsk[];
 }
 
 export class MemoryRequestError extends Error {
@@ -253,20 +320,18 @@ export const rubatoMemory = {
   titleModels: (env: EnvironmentId | null) =>
     call<{ models: DreamModel[]; custom: boolean }>(env, "title-models"),
   self: (env: EnvironmentId | null) => call<SelfFiles>(env, "self"),
-  saveSelf: (
-    env: EnvironmentId | null,
-    file: "user.md" | "soul.md",
-    content: string,
-    summary?: string,
-  ) =>
+  saveSoul: (env: EnvironmentId | null, content: string, summary?: string) =>
     call<{ file: string; commit: string | null }>(env, "self-save", {
-      file,
+      file: "soul.md",
       content,
       ...(summary ? { summary } : {}),
     }),
-  suggestions: (env: EnvironmentId | null) => call<{ suggestions: DreamSuggestion[] }>(env, "suggestions"),
-  addSuggestions: (env: EnvironmentId | null, lines: readonly string[]) =>
-    call<{ added: number; commit: string | null }>(env, "add-suggestions", { lines }),
-  dismissSuggestions: (env: EnvironmentId | null, lines: readonly string[]) =>
-    call<{ dismissed: number }>(env, "dismiss-suggestions", { lines }),
+  /** What Rubato remembers about the user, with the requests made about it and how they ended. */
+  userView: (env: EnvironmentId | null) => call<UserMemoryView>(env, "user-view"),
+  /** Hands a request to a model; follow it through userView until it is no longer working. */
+  userAsk: (
+    env: EnvironmentId | null,
+    text: string,
+    focus: { readonly path: string; readonly text?: string } | null,
+  ) => call<{ id: string; createdAt: string }>(env, "user-ask", { text, ...(focus ? { focus } : {}) }),
 };

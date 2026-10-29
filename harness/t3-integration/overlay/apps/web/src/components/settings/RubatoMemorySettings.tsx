@@ -32,19 +32,18 @@ import {
   type DreamReasoning,
   type DreamRunDetail,
   type DreamRunSummary,
-  type DreamSuggestion,
   type MemoryActivity,
   type MemoryFileEntry,
   type MemorySearchHit,
   type MemoryStatus,
   type MemoryStoreStatus,
   type MemoryStoreSummary,
+  USER_STORE,
 } from "../../state/rubatoMemory";
 import ChatMarkdown from "../ChatMarkdown";
 import { iconForProviderModel } from "../chat/rubatoModelIcons";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
-import { Checkbox } from "../ui/checkbox";
 import { Input } from "../ui/input";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { Spinner } from "../ui/spinner";
@@ -63,6 +62,7 @@ import {
   splitQuiet,
   type BadgeVariant,
 } from "./RubatoMemorySettings.logic";
+import { PersonalitySection, UserMemoryPanel } from "./RubatoUserMemory";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -177,18 +177,9 @@ export function RubatoMemorySettingsPanel() {
   const [opened, setOpened] = useState<OpenTarget | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
   const [historySignal, setHistorySignal] = useState(0);
-  const [suggestions, setSuggestions] = useState<DreamSuggestion[] | null>(null);
+  // A remembered line about the user to bring into view on the About you tab (from a search result).
+  const [userHighlight, setUserHighlight] = useState<string | null>(null);
   const loadingRef = useRef(false);
-
-  const loadSuggestions = useCallback(async () => {
-    if (environmentId === null) return;
-    try {
-      setSuggestions((await rubatoMemory.suggestions(environmentId)).suggestions);
-    } catch {
-      // The list is optional; the About you tab says nothing rather than fail the page.
-      setSuggestions([]);
-    }
-  }, [environmentId]);
 
   const loadStores = useCallback(async () => {
     if (environmentId === null) return;
@@ -209,7 +200,6 @@ export function RubatoMemorySettingsPanel() {
     try {
       await Promise.all([
         loadStores(),
-        loadSuggestions(),
         rubatoMemory.status(environmentId).then(
           (next) => {
             setStatus(next);
@@ -222,7 +212,7 @@ export function RubatoMemorySettingsPanel() {
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [environmentId, loadStores, loadSuggestions]);
+  }, [environmentId, loadStores]);
 
   useEffect(() => {
     void refresh();
@@ -343,9 +333,7 @@ export function RubatoMemorySettingsPanel() {
         >
           {TABS.map((entry) => (
             <Toggle key={entry.value} value={entry.value}>
-              {entry.value === "you" && suggestions && suggestions.length > 0
-                ? `${entry.label} · ${suggestions.length}`
-                : entry.label}
+              {entry.label}
             </Toggle>
           ))}
         </ToggleGroup>
@@ -367,21 +355,21 @@ export function RubatoMemorySettingsPanel() {
             home={home}
             loading={loading}
             onRefresh={() => void refresh()}
-            onOpen={setOpened}
+            onOpen={(target) => {
+              // What Rubato remembers about the user lives on its own tab, not as a project.
+              if (target.store === USER_STORE) {
+                setUserHighlight(target.file ?? null);
+                setTab("you");
+              } else setOpened(target);
+            }}
           />
         )
       ) : null}
 
       {tab === "you" ? (
         <>
-          {suggestions && suggestions.length > 0 ? (
-            <SuggestionsSection
-              environmentId={environmentId}
-              suggestions={suggestions}
-              onChanged={() => void loadSuggestions()}
-            />
-          ) : null}
-          <SelfFilesSection environmentId={environmentId} />
+          <UserMemoryPanel environmentId={environmentId} highlight={userHighlight} />
+          <PersonalitySection environmentId={environmentId} />
         </>
       ) : null}
 
@@ -613,7 +601,9 @@ function MemorySearch({ environmentId, onOpen }: { environmentId: EnvironmentId;
           title={
             <span className="flex min-w-0 items-baseline gap-2">
               <span className="truncate font-mono text-xs">{hit.path}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{hit.store}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {hit.store === USER_STORE ? "About you" : hit.store}
+              </span>
             </span>
           }
           description={hit.description ?? hit.preview}
@@ -1441,224 +1431,6 @@ function FileViewer({
         ) : null}
       </div>
     </div>
-  );
-}
-
-/** What the dreams noticed about the user, from every project, waiting to be added to user.md or dismissed. */
-function SuggestionsSection({
-  environmentId,
-  suggestions,
-  onChanged,
-}: {
-  environmentId: EnvironmentId;
-  suggestions: readonly DreamSuggestion[];
-  onChanged: () => void;
-}) {
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
-  const [busy, setBusy] = useState<"add" | "dismiss" | null>(null);
-  const allChosen = chosen.size === suggestions.length;
-
-  const act = async (kind: "add" | "dismiss") => {
-    const lines = suggestions.map((entry) => entry.text).filter((text) => chosen.has(text));
-    setBusy(kind);
-    try {
-      if (kind === "add") {
-        const result = await rubatoMemory.addSuggestions(environmentId, lines);
-        toastManager.add({ type: "success", title: `Added ${count(result.added, "line")} to user.md` });
-        window.dispatchEvent(new CustomEvent("rubato-memory-self-changed"));
-      } else {
-        await rubatoMemory.dismissSuggestions(environmentId, lines);
-      }
-      setChosen(new Set());
-      onChanged();
-    } catch (cause) {
-      reportError(kind === "add" ? "Could not add to user.md" : "Could not dismiss", cause);
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  return (
-    <SettingsSection
-      id="memory-suggestions"
-      title={`The dream noticed about you · ${suggestions.length}`}
-      headerAction={
-        <div className="flex gap-1">
-          <Button size="xs" variant="ghost" onClick={() => setChosen(allChosen ? new Set() : new Set(suggestions.map((entry) => entry.text)))}>
-            {allChosen ? "Select none" : "Select all"}
-          </Button>
-          <Button size="xs" variant="ghost" disabled={chosen.size === 0 || busy !== null} onClick={() => void act("dismiss")}>
-            {busy === "dismiss" ? <Spinner className="size-3" /> : null}
-            Dismiss
-          </Button>
-          <Button size="xs" disabled={chosen.size === 0 || busy !== null} onClick={() => void act("add")}>
-            {busy === "add" ? <Spinner className="size-3" /> : null}
-            Add {chosen.size > 0 ? count(chosen.size, "line") : ""} to user.md
-          </Button>
-        </div>
-      }
-    >
-      <SettingsRow
-        title="From your sessions"
-        description="Add the ones every session should know about you. Dismissed lines do not come back."
-      >
-        <ul className="space-y-1.5 pt-2 pb-3">
-          {suggestions.map((entry) => (
-            <li key={entry.text} className="flex items-start gap-2 text-sm">
-              <Checkbox
-                className="mt-0.5"
-                aria-label={entry.text}
-                checked={chosen.has(entry.text)}
-                onCheckedChange={(checked) =>
-                  setChosen((current) => {
-                    const next = new Set(current);
-                    if (checked) next.add(entry.text);
-                    else next.delete(entry.text);
-                    return next;
-                  })
-                }
-              />
-              <span className="min-w-0">
-                {entry.text}
-                <span className="ms-2 text-xs text-muted-foreground">{entry.store}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
-      </SettingsRow>
-    </SettingsSection>
-  );
-}
-
-function SelfFilesSection({ environmentId }: { environmentId: EnvironmentId }) {
-  const [file, setFile] = useState<"user.md" | "soul.md">("user.md");
-  const [saved, setSaved] = useState<{ "user.md": string; "soul.md": string } | null>(null);
-  const [drafts, setDrafts] = useState<{ "user.md": string; "soul.md": string } | null>(null);
-  const [summary, setSummary] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    if (environmentId === null) return;
-    try {
-      const result = await rubatoMemory.self(environmentId);
-      const next = { "user.md": result.user, "soul.md": result.soul };
-      setSaved(next);
-      setDrafts((current) => {
-        if (current === null) return next;
-        // Keep what the user is typing; take the file for anything untouched.
-        return {
-          "user.md": current["user.md"] === saved?.["user.md"] ? next["user.md"] : current["user.md"],
-          "soul.md": current["soul.md"] === saved?.["soul.md"] ? next["soul.md"] : current["soul.md"],
-        };
-      });
-      setError(null);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    }
-  }, [environmentId, saved]);
-  const loadRef = useRef(load);
-  loadRef.current = load;
-
-  useEffect(() => {
-    void loadRef.current();
-    const reload = () => void loadRef.current();
-    window.addEventListener("rubato-memory-self-changed", reload);
-    return () => window.removeEventListener("rubato-memory-self-changed", reload);
-  }, [environmentId]);
-
-  const dirty = saved !== null && drafts !== null && drafts[file] !== saved[file];
-  const save = async () => {
-    if (!drafts) return;
-    setSaving(true);
-    try {
-      const result = await rubatoMemory.saveSelf(environmentId, file, drafts[file], summary.trim() || undefined);
-      setSummary("");
-      toastManager.add({
-        type: "success",
-        title: result.commit ? `Saved and committed ${file}` : `No changes to ${file}`,
-      });
-      const content = drafts[file].length === 0 || drafts[file].endsWith("\n") ? drafts[file] : `${drafts[file]}\n`;
-      setSaved((current) => (current ? { ...current, [file]: content } : current));
-      setDrafts((current) => (current ? { ...current, [file]: content } : current));
-    } catch (cause) {
-      reportError(`Could not save ${file}`, cause);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <SettingsSection
-      id="memory-self"
-      title="About you"
-      headerAction={
-        <div className="flex gap-1">
-          {(["user.md", "soul.md"] as const).map((name) => (
-            <Button
-              key={name}
-              size="xs"
-              variant={file === name ? "secondary" : "ghost"}
-              onClick={() => setFile(name)}
-            >
-              {name}
-              {saved && drafts && drafts[name] !== saved[name] ? " •" : ""}
-            </Button>
-          ))}
-        </div>
-      }
-    >
-      <SettingsRow
-        title={file === "user.md" ? "user.md — who you are" : "soul.md — how the agent works with you"}
-        description="Every session starts with these. Each save is committed to the self memory store."
-      >
-        {error ? <p className="pb-3 text-sm text-destructive-foreground">{error}</p> : null}
-        {drafts === null && !error ? (
-          <div className="flex items-center gap-2 pb-3 text-sm text-muted-foreground">
-            <Spinner className="size-3.5" /> Loading
-          </div>
-        ) : null}
-        {drafts ? (
-          <div className="space-y-2 pt-2 pb-3">
-            <Textarea
-              aria-label={file}
-              className="font-mono text-xs"
-              value={drafts[file]}
-              onChange={(event) => {
-                const value = event.currentTarget.value;
-                setDrafts((current) => (current ? { ...current, [file]: value } : current));
-              }}
-              rows={14}
-              placeholder={file === "user.md" ? "- Prefers short answers" : "- Lead with the conclusion"}
-            />
-            <div className="flex items-center gap-2">
-              <Input
-                size="sm"
-                className="flex-1"
-                value={summary}
-                onChange={(event) => setSummary(event.currentTarget.value)}
-                placeholder="Commit message (optional)"
-                aria-label="Commit message"
-              />
-              <Button
-                size="xs"
-                variant="ghost"
-                disabled={!dirty || saving}
-                onClick={() =>
-                  setDrafts((current) => (current && saved ? { ...current, [file]: saved[file] } : current))
-                }
-              >
-                Revert
-              </Button>
-              <Button size="xs" disabled={!dirty || saving} onClick={() => void save()}>
-                {saving ? <Spinner className="size-3" /> : null}
-                Save
-              </Button>
-            </div>
-          </div>
-        ) : null}
-      </SettingsRow>
-    </SettingsSection>
   );
 }
 
