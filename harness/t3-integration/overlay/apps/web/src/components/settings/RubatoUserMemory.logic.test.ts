@@ -70,9 +70,14 @@ describe("following a request", () => {
       { path: "p/a.md", topic: "p", change: "modified" as const, before: "x", after: "y" },
       { path: "p/b.md", topic: "p", change: "deleted" as const, before: "z" },
     ];
-    const latest = ask({ result: { status: "done", changes, forgotten: [], finishedAt: "t" } });
-    expect([...justChanged([latest]).keys()]).toEqual(["p/a.md"]);
-    expect(justChanged([ask({ id: "new", state: "failed", result: null }), latest]).size).toBe(0);
+    const latest = ask({ result: { status: "done", changes, forgotten: [], finishedAt: "2026-10-29T00:00:00.000Z" } });
+    const soon = Date.parse("2026-10-29T00:05:00.000Z");
+    expect([...justChanged([latest], new Set(), soon).keys()]).toEqual(["p/a.md"]);
+    expect(justChanged([ask({ id: "new", state: "failed", result: null }), latest], new Set(), soon).size).toBe(0);
+    // A day later it is no longer "just" changed, unless it was sent from this page.
+    const later = Date.parse("2026-10-30T00:00:00.000Z");
+    expect(justChanged([latest], new Set(), later).size).toBe(0);
+    expect(justChanged([latest], new Set([latest.id]), later).size).toBe(1);
   });
   it("explains a failure in plain words and keeps an unknown reason as it is", () => {
     expect(failureText(ask({ state: "busy", result: null }))).toBe("Another request was still being handled.");

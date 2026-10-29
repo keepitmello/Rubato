@@ -190,7 +190,7 @@ export function UserMemoryPanel({
     );
   }
 
-  const changed = justChanged(asks);
+  const changed = justChanged(asks, sentHere);
   const paths = new Set(view.topics.flatMap((topic) => topic.items.map((item) => item.path)));
   // A request sent here about one line answers on that line; a forgotten line stays as a crossed-out
   // row until the page is left, so the result is seen where it happened.

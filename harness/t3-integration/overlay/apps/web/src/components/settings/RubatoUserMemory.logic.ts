@@ -62,10 +62,16 @@ export function refreshDelay(view: Pick<UserMemoryView, "asks" | "dream"> | null
   return pollDelay(view);
 }
 
-/** Records the newest finished request changed: the list marks them so the result is visible in place. */
-export function justChanged(asks: readonly UserMemoryAsk[]): ReadonlyMap<string, UserMemoryChange> {
+const JUST_MS = 15 * 60 * 1000;
+
+/**
+ * Records the newest finished request changed, marked in the list so the result shows in place: a request
+ * sent from this page, or one that finished in the last few minutes. Forgotten lines are not marked here.
+ */
+export function justChanged(asks: readonly UserMemoryAsk[], sentHere: ReadonlySet<string> = new Set(), now = Date.now()): ReadonlyMap<string, UserMemoryChange> {
   const latest = asks.find((ask) => ask.state !== "working");
-  const changes = latest?.state === "done" ? latest.result?.changes ?? [] : [];
+  const recent = latest !== undefined && (sentHere.has(latest.id) || now - Date.parse(latest.result?.finishedAt ?? "") < JUST_MS);
+  const changes = latest?.state === "done" && recent ? latest.result?.changes ?? [] : [];
   return new Map(changes.filter((change) => change.change !== "deleted").map((change) => [change.path, change]));
 }
 
