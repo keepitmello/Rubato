@@ -419,7 +419,7 @@ function Composer({
       />
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs text-muted-foreground">
-          {working ? "Wait for the request below to finish." : "⌘/Ctrl Enter to send"}
+          {working ? "Wait for your current request to finish." : "⌘/Ctrl Enter to send"}
         </span>
         <Button type="submit" size="xs" disabled={busy || text.trim() === ""}>
           {sending ? <Spinner className="size-3" /> : <SendIcon className="size-3" />}
