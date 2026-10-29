@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpath
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
-import { GitMemoryRepo } from "@rubato/memory-core"
+import { GitMemoryRepo, USER_STORE_ID } from "@rubato/memory-core"
 
 import { FakeExtensionAPI } from "../../../test-support/fake-extension-api"
 import { rmSyncEfaultTolerant } from "./teardown.test-support"
@@ -142,31 +142,46 @@ describe("stores are named only", () => {
   })
 })
 
-describe("resident user.md and soul.md", () => {
+describe("resident soul.md; facts about the user stay out of the prompt", () => {
   function writeSelf(memoryHome: string, files: Record<string, string>) {
     const dir = join(memoryHome, "self", "repo")
     mkdirSync(dir, { recursive: true })
     for (const [name, content] of Object.entries(files)) writeFileSync(join(dir, name), content)
   }
 
-  test("#given user.md and soul.md #when the prompt is composed #then both ride the system prompt, fixed at session start", async () => {
+  test("#given soul.md #when the prompt is composed #then it rides the system prompt, fixed at session start", async () => {
     const { pi, session, memoryHome } = setup()
-    writeSelf(memoryHome, { "user.md": "Prefers Korean.\n", "soul.md": "Dry humour.\n" })
+    writeSelf(memoryHome, { "soul.md": "Dry humour.\n" })
 
     await pi.dispatch("session_start", {}, session)
     const first = await composedPrompt(pi, session)
-    writeSelf(memoryHome, { "user.md": "Edited mid-session.\n" })
+    writeSelf(memoryHome, { "soul.md": "Edited mid-session.\n" })
     const second = await composedPrompt(pi, session)
 
-    expect(first).toContain("Prefers Korean.")
     expect(first).toContain("Dry humour.")
     expect(first.startsWith("BASE")).toBe(true)
     expect(second).toBe(first)
   })
 
+  test("#given a legacy user.md and a populated shared user store #when the prompt is composed #then neither is loaded", async () => {
+    const { pi, session, memoryHome } = setup()
+    writeSelf(memoryHome, { "user.md": "Prefers Korean (legacy profile).\n", "soul.md": "Dry humour.\n" })
+    const userRepo = join(memoryHome, "agents", USER_STORE_ID, "repo", "preferences")
+    mkdirSync(userRepo, { recursive: true })
+    writeFileSync(join(userRepo, "answer-length.md"), "---\ndescription: The user wants short answers.\n---\n\n## Conclusion\n- Short answers, conclusion first.\n")
+
+    await pi.dispatch("session_start", {}, session)
+    const prompt = await composedPrompt(pi, session)
+
+    expect(prompt).toContain("Dry humour.")
+    expect(prompt).not.toContain("Prefers Korean")
+    expect(prompt).not.toContain("Short answers, conclusion first.")
+    expect(prompt).not.toContain("user.md")
+  })
+
   test("#given missing or empty files #when the prompt is composed #then memory adds nothing", async () => {
     const { pi, session, memoryHome } = setup()
-    writeSelf(memoryHome, { "user.md": "  \n" })
+    writeSelf(memoryHome, { "soul.md": "  \n", "user.md": "Legacy only.\n" })
 
     await pi.dispatch("session_start", {}, session)
 
@@ -174,10 +189,10 @@ describe("resident user.md and soul.md", () => {
     expect(pi.entries.some((entry) => entry.customType === RESIDENT_ENTRY_TYPE)).toBe(false)
   })
 
-  test("#given a resumed session that recorded its snapshot #when it starts again after an edit #then it keeps the recorded block", async () => {
+  test("#given a resumed session that recorded its snapshot #when it starts again after an edit #then it keeps the recorded personality", async () => {
     const { pi, memoryHome } = setup()
-    writeSelf(memoryHome, { "user.md": "Changed since.\n" })
-    const recorded = { type: "custom", customType: RESIDENT_ENTRY_TYPE, data: { block: "<memory>\n<user>Recorded.</user>\n</memory>" } }
+    writeSelf(memoryHome, { "soul.md": "Changed since.\n" })
+    const recorded = { type: "custom", customType: RESIDENT_ENTRY_TYPE, data: { block: "<memory>\n<soul path=\"/s/soul.md\">\nRecorded.\n</soul>\n</memory>" } }
     const session = sessionContext({ entries: [recorded] })
 
     await pi.dispatch("session_start", {}, session)
@@ -185,6 +200,36 @@ describe("resident user.md and soul.md", () => {
 
     expect(prompt).toContain("Recorded.")
     expect(prompt).not.toContain("Changed since.")
+  })
+
+  test("#given a resumed session recorded with a legacy user section #when it starts again #then the personality stays and the profile goes", async () => {
+    const { pi } = setup()
+    const block = [
+      "<memory>",
+      "<user path=\"/s/user.md\">\nLives by the marsh.\nA profile line quoting </user> literally.\n</user>",
+      "",
+      "<soul path=\"/s/soul.md\">\nCalm and concise.\n</soul>",
+      "</memory>",
+    ].join("\n")
+    const session = sessionContext({ entries: [{ type: "custom", customType: RESIDENT_ENTRY_TYPE, data: { block } }] })
+
+    await pi.dispatch("session_start", {}, session)
+    const prompt = await composedPrompt(pi, session)
+
+    expect(prompt).toContain("Calm and concise.")
+    expect(prompt).not.toContain("marsh")
+    expect(prompt).not.toContain("literally")
+    expect(prompt).not.toContain("<user")
+  })
+
+  test("#given a resumed session whose recorded block held only a user section #when it starts again #then memory adds nothing", async () => {
+    const { pi } = setup()
+    const recorded = { type: "custom", customType: RESIDENT_ENTRY_TYPE, data: { block: "<memory>\n<user>Recorded.</user>\n</memory>" } }
+    const session = sessionContext({ entries: [recorded] })
+
+    await pi.dispatch("session_start", {}, session)
+
+    expect(await composedPrompt(pi, session)).toBe("BASE")
   })
 
   test("#given no self store #when a session starts #then it is created with an empty commit", async () => {

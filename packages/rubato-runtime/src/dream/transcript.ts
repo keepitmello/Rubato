@@ -20,6 +20,13 @@ export interface CondensedSession {
   readonly markdown: string
   /** Messages newer than `since`. Zero means the session has nothing new to read. */
   readonly messages: number
+  /** The user's turns that were read, with when each was said: where a quoted fact about the user gets its time. */
+  readonly userTurns: readonly UserTurn[]
+}
+
+export interface UserTurn {
+  readonly at: string
+  readonly text: string
 }
 
 type Json = Record<string, unknown>
@@ -44,6 +51,7 @@ export function condenseSession(path: string, sinceMs: number): CondensedSession
   let lastAt: string | undefined
   let messages = 0
   const parts: string[] = []
+  const userTurns: UserTurn[] = []
   let reply: string | undefined
   const closeTurn = () => {
     if (reply !== undefined) parts.push(`\n## assistant\n\n${reply}\n`)
@@ -62,7 +70,10 @@ export function condenseSession(path: string, sinceMs: number): CondensedSession
     const text = joinText(Array.isArray(message.content) ? message.content.filter(isRecord) : [])
     if (message.role === "user") {
       closeTurn()
-      if (text !== "") parts.push(`\n## user\n\n${text}\n`)
+      if (text !== "") {
+        parts.push(`\n## user · ${at}\n\n${text}\n`)
+        userTurns.push({ at, text })
+      }
     } else if (message.role === "assistant" && text !== "") {
       reply = text
     }
@@ -75,6 +86,7 @@ export function condenseSession(path: string, sinceMs: number): CondensedSession
     ...(lastAt === undefined ? {} : { lastAt }),
     markdown: [title, ...parts].join("\n"),
     messages,
+    userTurns,
   }
 }
 

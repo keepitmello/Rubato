@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from msearch_scope import resolve_store, sanitize_to_slug, short_hash
+from msearch_scope import USER_STORE, in_scopes, resolve_store, sanitize_to_slug, search_scopes, short_hash
 
 
 def git_repo(path: Path) -> Path:
@@ -78,3 +78,53 @@ class ResolveStoreTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SearchScopesTest(unittest.TestCase):
+    """기본 검색은 현재 프로젝트와 공용 사용자 기억이고, 다른 프로젝트는 묻지 않으면 안 섞인다."""
+
+    hits = [
+        "project-a/repo/decisions/why-a.md",
+        "project-b/repo/decisions/why-b.md",
+        f"{USER_STORE}/repo/preferences/answer-length.md",
+    ]
+
+    def kept(self, scopes: frozenset[str] | None) -> list[str]:
+        return [hit for hit in self.hits if in_scopes(hit, scopes)]
+
+    def test_default_is_the_current_project_plus_the_user(self) -> None:
+        indexed = ["project-a", "project-b", USER_STORE]
+        scopes, widened = search_scopes("project-a", indexed)
+        self.assertFalse(widened)
+        self.assertEqual(self.kept(scopes), [self.hits[0], self.hits[2]])
+        scopes, _ = search_scopes("project-b", indexed)
+        self.assertEqual(self.kept(scopes), [self.hits[1], self.hits[2]])
+
+    def test_user_memory_is_found_even_before_the_project_has_any(self) -> None:
+        scopes, widened = search_scopes("project-a", ["project-a", USER_STORE])
+        self.assertIn(USER_STORE, scopes or set())
+        self.assertFalse(widened)
+
+    def test_user_flag_searches_only_the_user(self) -> None:
+        scopes, widened = search_scopes(None, [], user_only=True)
+        self.assertEqual(self.kept(scopes), [self.hits[2]])
+        self.assertFalse(widened)
+
+    def test_explicit_scope_and_all(self) -> None:
+        self.assertEqual(self.kept(search_scopes(None, [], scope="project-b")[0]), [self.hits[1]])
+        self.assertEqual(self.kept(search_scopes(None, [], everything=True)[0]), self.hits)
+
+    def test_no_store_here_widens_and_says_so(self) -> None:
+        scopes, widened = search_scopes(None, ["project-a", USER_STORE])
+        self.assertIsNone(scopes)
+        self.assertTrue(widened)
+
+    def test_no_folder_resolves_to_the_user_store(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="msearch-scope-") as tmp:
+            root = Path(os.path.realpath(tmp))
+            repo = git_repo(root / "user.shared")
+            self.assertNotEqual(resolve_store(repo, root / "agents", root), USER_STORE)
+            config = root / "named" / ".rubato"
+            config.mkdir(parents=True)
+            (config / "rubato.jsonc").write_text('{"memory": {"agent": "user.shared"}}')
+            self.assertNotEqual(resolve_store(root / "named", root / "agents", root), USER_STORE)

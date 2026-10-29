@@ -40,6 +40,11 @@ if [ "${1-}" = "dream" ]; then
   # 기억 저장소별 꿈. bun 은 설치 요건이라 여기서 바로 부른다.
   exec bun "$HERE/../../packages/rubato-runtime/src/dream/cli.ts" "$@"
 fi
+if [ "${1-}" = "memory" ]; then
+  shift
+  # 사용자에 대한 공용 기억: 설정 › 기억 화면이 읽고(view) 요청을 맡긴다(ask).
+  exec bun "$HERE/../../packages/rubato-runtime/src/user-memory/cli.ts" "$@"
+fi
 if [ "${1-}" = "aside-cursor" ]; then
   shift
   exec "$HERE/rubato-aside-cursor.sh" "$@"

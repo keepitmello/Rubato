@@ -7,10 +7,10 @@ The store exists so a future session can learn **why** things are the way they a
 ## Inputs
 
 - `$MEMORY_DIR`: a git worktree of the store, on its own branch. Edit and commit here only; do not merge, rebase, check out or reset. The runner lands your branch.
-- `$TRANSCRIPTS_DIR`: the sessions opened in this project since the last dream, one markdown file per session. Each user turn appears as the user's message and the assistant's last reply of that turn; the work in between is left out. Take decisions and symptoms from the user's words, and reasons from the replies.
+- `$TRANSCRIPTS_DIR`: the sessions opened in this project since the last dream, one markdown file per session. Each user turn appears as the user's message (headed with when it was said) and the assistant's last reply of that turn; the work in between is left out. Take decisions and symptoms from the user's words, and reasons from the replies.
 - `$CHANGES_PATH`: the commits made since the last dream in the project repositories, with the files each touched.
 - `$PROJECT_DIRS`: the project repositories, colon-separated. Read the current code here to check claims; never edit them.
-- `$OUT_DIR`: where you write `report.md` and, if any, `user-candidates.md`. Never commit these.
+- `$OUT_DIR`: where you write `report.md` and, if any, `user-observations.jsonl`. Never commit these.
 
 Read with bounded commands (`wc -c`, `rg`, `sed -n`). Read every transcript at least once.
 
@@ -32,7 +32,7 @@ An open question is allowed as one `Open:` line naming what is unresolved and wh
 2. **Check what the code changed.** For each file path in `$CHANGES_PATH`, `rg` the store for that path, its basename and the symbols the commit subjects name. Every store file that mentions them gets its claims checked against the current code in `$PROJECT_DIRS`: a claim that no longer holds is rewritten to the current answer when the transcripts or the code say what it is, and deleted otherwise. A path or setting that no longer exists is never left in a Conclusion.
 3. **Capture.** From the transcripts, pick what passes "What belongs in the store". Rewrite the file that owns the question; create one only for a new question. Paste the user's original words or the raw error into `## Symptom`, unchanged.
 4. **Resolve.** Walk the store for contradictions and duplicates. Keep the answer the latest evidence supports, delete the other claim, merge duplicate files into the better home and delete the rest. Leave no markers or comments. Status paragraphs and history talk you meet while doing this are deleted too.
-5. **User facts.** Durable facts and preferences about the user (how they decide, what they expect from the agent, standing constraints) go to `$OUT_DIR/user-candidates.md`, one line each with the quoted evidence. Do not write them into the store.
+5. **The user.** Durable facts and preferences about the person that hold across projects (how they decide, what they expect from an agent, how they like answers, standing constraints) go to `$OUT_DIR/user-observations.jsonl`, one JSON object per line: `{"claim": "<English statement>", "quote": "<the user's words, verbatim>", "session": "<session id>"}`. Quote the user, never the assistant. They reach the shared user memory automatically, with your quote as evidence; nobody approves them. A preference about this project only (its conventions, its commit language) is a project judgement and belongs in the store. Do not write facts about the user into the store.
 
 Write in English, including the report, whatever language the transcripts use. The user's own words stay verbatim in their original language: `## Symptom` text and quoted requests, corrections and constraints are pasted, never translated or reworded. When you rewrite a file that is still in another language, write the whole file in English and keep its quotes and `## Symptom` text byte for byte. Keep file names kebab-case questions.
 

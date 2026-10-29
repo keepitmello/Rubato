@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, realpathSync, statSync } from "node:fs"
 import { join } from "node:path"
 
-import { resolveProjectStore, type MemoryIdentityPaths } from "@rubato/memory-core"
+import { isUserStore, resolveProjectStore, type MemoryIdentityPaths } from "@rubato/memory-core"
 
 import { readSessionHeader } from "./transcript"
 
@@ -121,12 +121,12 @@ function sessionFiles(root: string): string[] {
   return files
 }
 
-/** Stores that already exist on disk. */
+/** Project stores that already exist on disk; the shared user store has its own dream (user-memory/). */
 export function listExistingStores(memoryRoot: string): string[] {
   const agents = join(memoryRoot, "agents")
   if (!existsSync(agents)) return []
   return readdirSync(agents)
-    .filter((name) => existsSync(join(agents, name, "repo", ".git")))
+    .filter((name) => !isUserStore(name) && existsSync(join(agents, name, "repo", ".git")))
     .sort()
 }
 

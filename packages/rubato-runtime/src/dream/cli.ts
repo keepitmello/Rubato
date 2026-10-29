@@ -10,6 +10,9 @@
 //   --json                    machine-readable output (the GUI reads this)
 //   --trial [--base REV] [--since ISO] <store>
 //                             run without merging: result stays on a branch, the clock does not move
+//   --user                    run the user dream now: what project dreams noticed about the person goes
+//                             into the shared user store (it otherwise runs after project dreams, on
+//                             --due and after named runs, whenever there is something new)
 
 import { readFileSync } from "node:fs"
 import { homedir } from "node:os"
@@ -34,6 +37,8 @@ import { agentDir, childEnv } from "./child-env"
 import { liveMemoryVerdict } from "./live-guard"
 import { languageMigrationDue, runLanguageMigration } from "./migrate-language"
 import { companionOnlyStore, countStoreFiles, createStoreNameResolver, listExistingStores, sameFolder, scanStoreSessions, type SessionFile } from "./stores"
+import { resolveLaunch } from "./launch"
+import { runUserDream, userDreamDue } from "../user-memory/user-dream"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const repoRoot = join(here, "..", "..", "..", "..")
@@ -62,11 +67,12 @@ async function main(argv: readonly string[]): Promise<number> {
   const base = optionValue(argv, "--base")
   const sinceIso = optionValue(argv, "--since")
   const migrateStore = optionValue(argv, "--migrate")
+  const userNow = argv.includes("--user")
   const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since", "--migrate"].includes(argv[index - 1] ?? ""))
   const env = process.env
   const now = Date.now()
   const revertStore = optionValue(argv, "--revert")
-  const writes = due || named.length > 0 || revertStore !== undefined || migrateStore !== undefined
+  const writes = due || named.length > 0 || revertStore !== undefined || migrateStore !== undefined || userNow
 
   // Only the installed Rubato on the default profile touches the default memory root (live-guard.ts).
   // Any other copy may still read the status; it writes nothing, the user config included.
@@ -158,13 +164,13 @@ async function main(argv: readonly string[]): Promise<number> {
     })
   }
 
-  if (!due && named.length === 0 && migrateStore === undefined) {
+  if (!due && named.length === 0 && migrateStore === undefined && !userNow) {
     if (json) process.stdout.write(`${JSON.stringify({ models, stores: statuses }, null, 2)}\n`)
     else printStatuses(statuses, models)
     return 0
   }
 
-  const targets = migrateStore !== undefined ? [] : due ? statuses.filter((status) => status.due).map((status) => status.store) : named
+  const targets = migrateStore !== undefined || userNow ? [] : due ? statuses.filter((status) => status.due).map((status) => status.store) : named
   // The English migration runs once per store, before that store's next dream: every enabled store on
   // `--due` (new sessions or not, so a quiet store migrates too), each named store, or `--migrate`.
   const migrations = migrateStore !== undefined
@@ -179,8 +185,12 @@ async function main(argv: readonly string[]): Promise<number> {
     process.stderr.write(`rubato dream: no memory store named ${unknown.join(", ")}\n`)
     return 2
   }
+  // The user dream follows project dreams (they are what notice things about the person), on --due and
+  // after named runs, whenever something waits; `--user` runs it now. Never on trials or migrations.
+  const userDream = userNow ? "now" : !trial && migrateStore === undefined && (due || named.length > 0) ? "if-due" : "no"
+  const userWaiting = userDream === "if-due" && await userDreamDue(memoryRoot, now, minGapMs)
   // Nothing due is the common answer to the session-start/end ask: finish before touching the engine.
-  if (targets.length === 0 && migrations.length === 0) {
+  if (targets.length === 0 && migrations.length === 0 && userDream !== "now" && !userWaiting) {
     if (json) process.stdout.write(`${JSON.stringify({ runs: [] }, null, 2)}\n`)
     return 0
   }
@@ -222,6 +232,20 @@ async function main(argv: readonly string[]): Promise<number> {
     records.push(record)
     if (!json) process.stderr.write(`dream: ${store} ${record.status}${record.reason === undefined ? "" : ` (${record.reason})`} ${record.commits.length} commit(s)${record.branch === undefined ? "" : ` on ${record.branch}`}\n`)
   }
+  if (userDream === "now" || (userDream === "if-due" && (userWaiting || await userDreamDue(memoryRoot, now, minGapMs)))) {
+    if (!json) process.stderr.write("dream: user memory …\n")
+    const record = await runUserDream({
+      memoryRoot,
+      ladder: models,
+      launch,
+      systemPrompt: readFileSync(join(here, "..", "user-memory", "user-dream-persona.md"), "utf8"),
+      env: childEnv(env),
+      force: userDream === "now",
+      retryGapMs: minGapMs,
+    })
+    if (record.runId !== "" || userDream === "now") records.push(record)
+    if (!json) process.stderr.write(`dream: user memory ${record.status}${record.reason === undefined ? "" : ` (${record.reason})`} ${record.commits.length} commit(s)\n`)
+  }
   if (json) process.stdout.write(`${JSON.stringify({ runs: records }, null, 2)}\n`)
   return records.some((record) => record.status === "failed") ? 1 : 0
 }
@@ -248,17 +272,6 @@ function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]
 async function companionHome(env: NodeJS.ProcessEnv): Promise<string> {
   const home = await import(join(repoRoot, "harness", "companion", "home.mjs"))
   return home.companionHomeFor(env) as string
-}
-
-async function resolveLaunch(env: NodeJS.ProcessEnv) {
-  const enginePaths = await import(join(repoRoot, "harness", "rubato-pi", "src", "engine-paths.mjs"))
-  const childRuntime = await import(join(repoRoot, "harness", "pi-runtime", "features", "child-runtime", "stock-rpc-runtime.mjs"))
-  const root: string = enginePaths.resolvePiEngineDir(env)
-  return childRuntime.resolvePiMemoryChildLaunch({ root }) as {
-    command: string
-    prefixArgs: readonly string[]
-    env?: Readonly<Record<string, string>>
-  }
 }
 
 main(process.argv.slice(2)).then(

@@ -15,6 +15,7 @@ import {
 } from "@rubato/memory-core"
 import { launchProductModel } from "@rubato/model-core"
 
+import { OBSERVATIONS_FILE, OBSERVATIONS_OUT, normalizeObservations } from "../user-memory/observations"
 import { condenseSession, type CondensedSession } from "./transcript"
 import type { SessionFile } from "./stores"
 
@@ -290,6 +291,13 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   if (!childOk) {
     await removeWorktree(repo, git, worktree, branch)
     return finish("failed", { ...modelField, reason: "every model in the ladder failed; see child-*.log" })
+  }
+  // What the child noticed about the user, each quote dated from the session it came from. The user
+  // dream takes these from runs that finish merged or noop (user-memory/observations.ts).
+  const noticed = await readFile(join(outDir, OBSERVATIONS_OUT), "utf8").catch(() => "")
+  if (noticed.trim() !== "") {
+    const observations = normalizeObservations(noticed, picked, { project: options.store, runId, seenAt: startedAt })
+    await writeFile(join(runDir, OBSERVATIONS_FILE), `${JSON.stringify(observations, null, 2)}\n`, "utf8")
   }
   if ((await git(worktree, ["status", "--porcelain"])).stdout.trim() !== "") {
     await git(worktree, ["add", "-A"])

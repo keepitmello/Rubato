@@ -25,7 +25,7 @@ import redis
 
 
 import msearch_intent
-from msearch_scope import resolve_store
+from msearch_scope import USER_STORE, in_scopes, resolve_store, search_scopes
 from msearch_config import (
     CHANNEL_ID,
     CHANNEL_KEY_ID,
@@ -1086,21 +1086,13 @@ def select_result_amount(memories: list[dict[str, object]], limit: int) -> list[
     return selected
 
 
-def scope_filter(memories: list[dict[str, object]], scope: str | None) -> list[dict[str, object]]:
-    """한 저장소로 좁힌다. scope 가 None 이면 전체.
+def scope_filter(memories: list[dict[str, object]], scopes: frozenset[str] | None) -> list[dict[str, object]]:
+    """저장소 집합으로 좁힌다. None 이면 전체.
 
     색인은 메모리 루트를 통째로 훑으므로 rel_path 가 `<identity>/repo/...` 로
-    시작한다. 그 첫 조각이 곳 저장소 id 다.
+    시작한다. 그 첫 조각이 저장소 id 다.
     """
-    if scope is None:
-        return memories
-    kept: list[dict[str, object]] = []
-    for memory in memories:
-        rel = str(memory.get("rel_path", ""))
-        head = rel.split("/", 1)[0]
-        if head == scope:
-            kept.append(memory)
-    return kept
+    return [memory for memory in memories if in_scopes(str(memory.get("rel_path", "")), scopes)]
 
 
 # Records are written in English; a query with Hangul also runs as its English rendering, so a
@@ -1175,7 +1167,7 @@ def merge_ranked(*lists: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def search_results(
-    query: str, limit: int = RETURN_K, scope: str | None = None
+    query: str, limit: int = RETURN_K, scope: frozenset[str] | None = None
 ) -> list[dict[str, object]]:
     # 좁힐 때는 후보를 떄떄하게 뽑아야 한다. 랭킹을 끝낸 뒤 걸러내면 다른 저장소가
     # 상위를 차지한 만큼 번째 손이가 빈다.
@@ -1215,20 +1207,19 @@ def current_scope() -> str | None:
 WIDENED_SCOPE_NOTICE = "(이 폴더에는 기억 저장소가 없어 모든 저장소에서 찾았다. 다른 프로젝트의 판단일 수 있다.)"
 
 
-def resolve_scope(args: argparse.Namespace) -> tuple[str | None, bool]:
-    """(스코프, 넓혔나). 스코프 None 이면 전체 검색.
+def resolve_scope(args: argparse.Namespace) -> tuple[frozenset[str] | None, bool]:
+    """(저장소 집합, 넓혔나). 집합이 None 이면 전체 검색. 규칙은 `msearch_scope.search_scopes`."""
+    if args.all or args.scope or args.user:
+        return search_scopes(None, [], everything=args.all, scope=args.scope, user_only=args.user)
+    return search_scopes(current_scope(), indexed_scopes())
 
-    기본은 현재 프로젝트다. 현재 폴더에 저장소가 없으면 전체로 넓히되, 넓혔다는 사실을
-    결과에 붙인다 — 조용히 넓히면 다른 프로젝트의 결정이 이 프로젝트의 답처럼 읽힌다.
-    """
-    if args.all:
-        return None, False
-    if args.scope:
-        return args.scope, False
-    scope = current_scope()
-    if scope is not None and scope in indexed_scopes():
-        return scope, False
-    return None, True
+
+def project_scope(scopes: frozenset[str] | None) -> str | None:
+    """합의 기록을 고를 프로젝트 저장소. 사용자 저장소엔 프로젝트 루트가 없다."""
+    if scopes is None:
+        return None
+    projects = sorted(scope for scope in scopes if scope != USER_STORE)
+    return projects[0] if projects else ""
 
 
 def ensure_index_fresh(quiet: bool = True) -> None:
@@ -1302,7 +1293,8 @@ def run_cli(args: argparse.Namespace) -> int:
             return 1
         here = current_scope()
         for scope in scopes:
-            print(f"{'* ' if scope == here else '  '}{scope}")
+            note = "  (사용자에 대한 기억, 기본 검색에 늘 포함)" if scope == USER_STORE else ""
+            print(f"{'* ' if scope == here else '  '}{scope}{note}")
         return 0
     query = " ".join(args.query).strip()
     if not query:
@@ -1312,7 +1304,8 @@ def run_cli(args: argparse.Namespace) -> int:
     scope, widened = resolve_scope(args)
     memories = search_results(query, limit=args.limit, scope=scope)
     # --json 은 기억 목록 계약 그대로 둔다. intent 는 사람이 읽는 출력에만 따로 붙는다.
-    intents = [] if args.json else search_intents_any_language(query, scope)
+    intent_scope = project_scope(scope)
+    intents = [] if args.json or intent_scope == "" else search_intents_any_language(query, intent_scope)
     if not memories:
         log_recall(query, [], caller="cli")
         print("[]" if args.json else msearch_intent.render("NO RELEVANT MEMORY", intents, Path.cwd()))
@@ -1336,12 +1329,18 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         "--all",
         "-a",
         action="store_true",
-        help="search every memory store, not just the current project's",
+        help="search every memory store, not just the current project's and the user's",
     )
     parser.add_argument(
         "--scope",
         metavar="ID",
         help="search one memory store by its identity id (see --list-scopes)",
+    )
+    parser.add_argument(
+        "--user",
+        "-u",
+        action="store_true",
+        help="search only the shared memory about the user",
     )
     parser.add_argument(
         "--list-scopes",

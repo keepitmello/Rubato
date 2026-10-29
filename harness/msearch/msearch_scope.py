@@ -11,6 +11,10 @@
   3. 홈 디렉터리 그 자체면 `home`.
   4. 그 밖에는 저장소가 없다.
 
+사용자에 대한 기억은 프로젝트 저장소가 아니라 공용 사용자 저장소(`USER_STORE`) 하나에 있다.
+어느 폴더도 그 이름으로 풀리지 않는다(위 규칙이 만드는 이름은 [a-z0-9-] 뿐이고 이 이름엔 점이 있다).
+기본 검색은 현재 저장소와 사용자 저장소를 함께 본다 — `search_scopes` 가 그 규칙이다.
+
 표준 라이브러리만 쓴다 — 검색 의존성 없이 시험할 수 있어야 한다.
 """
 
@@ -25,6 +29,8 @@ import unicodedata
 from pathlib import Path
 
 STORE_FILE = "store.json"
+#: 공용 사용자 저장소. 엔진 `packages/memory-core/src/identity/layout.ts` 의 USER_STORE_ID 와 같다.
+USER_STORE = "user.shared"
 HOME_STORE = "home"
 FALLBACK_SLUG = "agent"
 MAX_SLUG_LENGTH = 40
@@ -134,3 +140,36 @@ def resolve_store(cwd: Path, agents_dir: Path, home: Path | None = None) -> str 
     if os.path.realpath(cwd) == os.path.realpath(home_dir):
         return HOME_STORE
     return None
+
+
+def search_scopes(
+    current: str | None,
+    indexed: list[str],
+    *,
+    everything: bool = False,
+    scope: str | None = None,
+    user_only: bool = False,
+) -> tuple[frozenset[str] | None, bool]:
+    """검색할 저장소 집합과 넓혔는지. 집합이 None 이면 전체.
+
+    - `-a`: 전체.
+    - `--scope X`: X 하나.
+    - `--user`: 사용자 저장소 하나.
+    - 기본: 현재 저장소와 사용자 저장소. 사용자에 대한 사실은 프로젝트를 가리지 않고 필요하고,
+      다른 프로젝트의 판단은 이 프로젝트의 답이 아니다.
+    - 현재 저장소가 없거나 색인에 없으면 전체로 넓히고 넓혔다고 알린다.
+    """
+    if everything:
+        return None, False
+    if scope:
+        return frozenset({scope}), False
+    if user_only:
+        return frozenset({USER_STORE}), False
+    if current is not None and current in indexed:
+        return frozenset({current, USER_STORE}), False
+    return None, True
+
+
+def in_scopes(rel_path: str, scopes: frozenset[str] | None) -> bool:
+    """색인의 rel_path(`<저장소>/repo/...`)가 집합 안의 저장소 것인가. None 이면 전부."""
+    return scopes is None or rel_path.split("/", 1)[0] in scopes
