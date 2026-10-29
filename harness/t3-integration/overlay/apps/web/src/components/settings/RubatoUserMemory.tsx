@@ -256,6 +256,7 @@ function topicOf(path: string): string {
 /** A line forgotten from this page, kept in place as crossed out so the result is visible where it was. */
 function ForgottenRow({ ask }: { ask: UserMemoryAsk }) {
   const before = ask.result?.changes.find((change) => change.path === ask.focus?.path)?.before ?? ask.focus?.text ?? "";
+  const problems = problemTexts(ask);
   return (
     <SettingsRow
       className="bg-muted/30"
@@ -268,10 +269,25 @@ function ForgottenRow({ ask }: { ask: UserMemoryAsk }) {
         </span>
       }
       description={
-        <span className="flex items-center gap-1">
-          <CheckIcon className="size-3" />
-          Removed from memory and search.
-          {ask.result?.reply ? <span translate="no"> {ask.result.reply}</span> : null}
+        <span className="block space-y-1">
+          {problems.length === 0 ? (
+            <span className="flex items-center gap-1">
+              <CheckIcon className="size-3" />
+              Removed from memory and search.
+            </span>
+          ) : (
+            problems.map((text) => (
+              <span key={text} className="flex items-start gap-1 text-warning-foreground">
+                <AlertCircleIcon className="mt-0.5 size-3 shrink-0" />
+                {text}
+              </span>
+            ))
+          )}
+          {ask.result?.reply ? (
+            <span translate="no" className="block">
+              {ask.result.reply}
+            </span>
+          ) : null}
         </span>
       }
     />
