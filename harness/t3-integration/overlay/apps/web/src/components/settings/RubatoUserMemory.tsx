@@ -621,7 +621,7 @@ function RememberedItem({
           {item.scope.length > 0 ? (
             <p className="text-xs text-muted-foreground">{`Only applies: ${item.scope.join("; ")}`}</p>
           ) : null}
-          <Button size="xs" variant="outline" disabled={busy} onClick={() => void submit(presetRequest("why"))}>
+          <Button size="xs" variant="outline" disabled={busy} onClick={() => void submit(uiText(presetRequest("why")))}>
             <MessageCircleQuestionIcon className="size-3" />
             Ask Rubato to explain
           </Button>
@@ -664,7 +664,7 @@ function RememberedItem({
       {mode === "forget" ? (
         <div role="group" aria-label="Confirm forgetting" className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-destructive/30 bg-destructive/6 px-2.5 py-2 text-xs">
           <span className="min-w-0 flex-1">Forget this? Rubato removes it and will not learn it again from old conversations.</span>
-          <Button size="xs" variant="destructive" disabled={busy} onClick={() => void submit(presetRequest("forget"))}>
+          <Button size="xs" variant="destructive" disabled={busy} onClick={() => void submit(uiText(presetRequest("forget")))}>
             Forget
           </Button>
           <Button size="xs" variant="ghost" onClick={() => setMode("idle")}>

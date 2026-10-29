@@ -33,7 +33,7 @@ If you changed anything, commit from `$MEMORY_DIR`:
 cd "$MEMORY_DIR" && git add -A && git commit -m "ask: <one-line summary>"
 ```
 
-Write `$OUT_DIR/reply.md` in the language of the user's request, speaking to them: the first sentence answers; then what you changed in plain words. No file paths, no markdown headings, at most a few short sentences. Never claim a change you did not make.
+Write `$OUT_DIR/reply.md` in the language the user reads their memory in (the summary's language in `$SUMMARY_IN`; when it has none, the language of their request), speaking to them: the first sentence answers; then what you changed in plain words. No file paths, no markdown headings, at most a few short sentences. Never claim a change you did not make.
 
 Write `$OUT_DIR/result.json`:
 
@@ -45,6 +45,6 @@ Write `$OUT_DIR/result.json`:
 ```
 
 - `forget`: one entry per forgotten claim, empty otherwise. Give terms in every language the claim was written or said in (for example the English record words and the user's Korean words). Choose terms that appear nowhere in what stays; the runner refuses the result if any record still contains one.
-- `summary.items`: one sentence, in the summary's language (or the request's language when there is none), for every record you created or changed, saying to the user what is now remembered, with its scope. `topics`: a title for any new folder.
+- `summary.items`: one sentence, in that same language, for every record you created or changed, saying to the user what is now remembered, with its scope. `topics`: a title for any new folder.
 
 Your final message is one line: `ASK_DONE`.
