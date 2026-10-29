@@ -51,7 +51,7 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **ambiguous-root-cause** — 원인이 세 가설 중 하나, 담당자가 첫 가설에 매몰. → 독립 가설과 반증 테스트를 배정하고, 재현 합의 전에 리드가 원인을 고르지 않는다.
 - **owner-asks-lead-to-debug** — owner가 로그 전부를 보내고 다음 커맨드를 골라달라 함. → peer/verifier 직접 도움을 우선하고, 리드에게는 compact decision request만 허용한다.
 - **resume-with-lost-teammates** — 세션 resume 후 이전 팀원이 존재하지 않음. → 죽은 팀원에게 메시지하지 않고, canonical 상태를 읽는 fresh teammate를 spawn한다.
-- **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 시작 전에 무엇을 돌리는지와 예상 소요를 메시지 채널로 통지한다. 통지된 침묵에 리드가 반복 상태 확인을 보내지 않는다.
+- **long-silent-measurement-loop** — owner가 수십 분짜리 측정 루프를 시작하려 함. → 무엇을 돌리는지와 예상 대기를 보드에 남긴다. 피어의 의존 작업이나 공유 자원에 영향이 있을 때 그 피어에게 알린다. 리드는 예상된 침묵을 정체로 보거나 시작 보고를 요구하지 않는다. (2026-10-29: 관측 가능성은 보존하고 리드 호출 의무를 제거)
 - **local-subagent-outside-the-bus** — 오너가 일부를 서브에이전트에 맡기려 해. → 별도 문맥·병렬 진행·새 증거·승인된 자원 활용의 이익을 전달·재독·통합 비용과 비교해. 절감치를 지어내지 않고, 보조자도 배정된 범위 안에서는 판단해. 결과 책임은 오너가 유지해.
 - **owner-respawns-for-follow-up** — 조사 결과 뒤에 승인된 구현이 이어져. → 같은 세션을 이어 써. 다른 결과, 독립 검토, 풀리지 않는 잘못된 전제, 복구 불가능한 세션 또는 근거와 승인이 있는 재배정만 새 문맥을 정당화해.
 - **uncommitted-result-invisible** — 승인된 전달계약이 branch commit을 요구하는데 owner가 자기 worktree에 파일만 만들고 완료 보고 시도. → 보고 전에 그 계약에 맞춰 커밋한다. 전달계약이 없으면 커밋을 권한으로 추론하지 않고 합의된 artifact/evidence를 반환한다.
@@ -61,11 +61,17 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **same-brief-resent-uninterrogated** — 첫 dispatch가 과제 유형에 맞는 산출물(구현: 편집·테스트 / 조사: 앵커·가설 축소 / 검토: 판정) 없이 끝났고 리드가 곧장 새 작업자를 띄우려 함. → 같은 세션에 어떤 전제·제약이 막았는지 증거와 함께 먼저 묻는다(8/21 실측: 끊고 물었더니 정확한 진단이 나왔다). 원인 분류(인프라 / 표면 규모 / 브리프 충돌 / 라우팅) 없이 같은 브리프를 재전송하지 않는다. 작업자 교체는 프레임 전환이 아니다.
 - **headless-owner-can-orchestrate** — 헤드리스 경로(`rubato dispatch` 등)로 띄운 owner 가 자기 서브에이전트를 필요로 함. → 하네스의 spawn 표면이 있다고 읽고 쓴다. "비대화형에는 subagent 가 없다"는 부정형 기록으로 되돌아가지 않는다 (2026-08-21 실측: 헤드리스 세션이 `subagent.create` + `inspect.wait` 로 자식을 만들어 결과를 회수).
 - **pattern-kill-in-shared-space** — owner가 자기 테스트 서버를 `pkill -f`로 정리하려 함. → 패턴 kill을 쓰지 않고 자기가 만든 식별자로만 정리한다.
-- **refutation-recall** — 한 workstream의 전제가 반증됐는데 같은 premise를 물려받은 peer 브리프가 남음. → lead가 verified refutation을 직접 관련 owner·verifier에 전파하고 영향을 받은 claims를 회수한다.
+- **refutation-recall** — 한 workstream의 전제가 반증됐는데 같은 premise를 물려받은 peer 브리프가 남음. → 발견한 담당자가 영향받는 owner·verifier에게 근거를 직접 보내고 기술 통합 담당자가 정정을 조율한다. 리드는 자신만 가진 관련 사실을 보태거나 사용자에게 이미 전달한 판단을 정정한다. 영향받는 주장 회수는 생략하지 않되 리드를 필수 중계자로 삼지 않는다. (2026-10-29)
 - **lead-reads-child-body** — 팀이 있는 리드가 자식 전사·final을 읽으려 함. → 조회 도구를 모델 표면에서 제거한다. 완료는 status pointer와 결과 파일 경로이고 본문은 그 파일·보드에 있다. 리드와 오너 모두 전사를 재생하지 않고 결과 파일을 읽는다.
 - **member-turn-end-wakes-lead** — 팀원 한 명이 정상 턴을 끝냈는데 리드가 깨어남(2026-09-21 저장 기록에 정상 종료 ping 18건). → 팀원의 정상 종료는 침묵한다. 결과 본문은 파일로 남기고 epoch만 기록한다. 리드는 배정된 보드 작업이 전부 닫히고 팀원이 모두 park된 뒤 결과 경로를 담은 종합 알림으로 한 번 깨운다. 실패·취소·보드 미기록·대기 중 메일은 종합 완료로 오인하지 않는다.
 - **lead-takes-back-work** — 오너가 빈 답이나 막힘으로 돌아왔는데 리드가 제품 패치를 회수함. → 같은 오너에게 결정을 보내거나 피어를 붙이거나 교체한다. 리드가 다음 구현자가 되지 않는다. 팀 문서(mission, brief, 노트)를 쓰는 것은 회수가 아니다.
 - **subagent-open-item-dropped** — 서브에이전트가 반환문에 "아직 열려 있음" 항목을 적었는데 오너 최종 보고에서 빠짐. → 오너는 서브에이전트의 열린 항목을 해결함·이유와 함께 남김·넘김 중 하나로 자기 결과에 싣는다. (2026-10-03 pi 1.0 런: Antigravity 테스트 간헐 실패가 서브에이전트 반환에만 있고 오너 보고·검증 판정·사용자 요약 어디에도 오르지 않음)
+- **brief-recreates-progress-reporting** — 리드가 자율 작업을 배정하면서 "검사를 시작할 때마다 사용량과 남은 검증을 알려라"를 넣으려 함. → 승인된 사용량과 진행은 보드에 두고, 추가 권한이 필요한 결정을 보고 조건으로 삼는다. 사용자가 명시한 보고 시점은 보존한다.
+- **lead-relays-existing-peer-check** — 오너가 검증자에게 이미 재검사를 요청하고 결과도 직접 받음. → 리드는 같은 검사를 다시 배정하거나 같은 결과를 재전송하지 않는다. 실제 빠진 증거나 사용자 결정이 있으면 그 차이만 전달한다.
+- **outcome-write-grant** — 결과 완성에 로컬 마이그레이션이 필요하지만 리드가 예상한 구현 파일 목록에는 없음. → 처음 배정할 때 결과에 필요한 코드·테스트·문서·로컬 마이그레이션을 포함하는 한정된 쓰기 영역과 피어 간 인계 권한을 준다. 이미 명시된 허용 목록을 팀원이 임의로 넓히거나 운영 적용 권한으로 해석하지 않는다.
+- **quiet-artifact-turn** — 이미 받은 검증을 결과 문서나 보드에 반영하고 끝냄. → 새로 행동할 피어가 없으면 메시지 없이 끝낸다. 하네스가 team_send 누락만으로 재기동하지 않는다. 실제 후속 메시지 수신과 보드 기반 종합 완료는 유지한다.
+- **peer-checkpoint-not-play-by-play** — 수정 시작·검사 중·통과를 연달아 보고하려 함. → 피어가 재검증할 수 있는 개정과 근거를 준비된 체크포인트로 보낸다. 단, 새 결함·막힘·기존 판정 철회는 필요한 피어에게 지체 없이 전달한다. 메시지 횟수 제한이나 일괄 지연으로 협업을 막지 않는다.
+- **lead-action-still-required** — 팀원이 추가 비용·범위 변경·사용자에게 한 약속의 정정 또는 권한 안에서 풀 수 없는 막힘을 발견함. → 조용한 작업 원칙을 이유로 숨기지 않고, 근거·선택지·추천과 함께 리드에게 필요한 결정을 요청한다.
 
 ## Verification and measurement
 

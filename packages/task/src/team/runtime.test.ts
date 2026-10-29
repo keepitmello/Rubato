@@ -151,7 +151,7 @@ describe("createTeam", () => {
     })
   })
 
-  test("#given member prompts #when members start #then every bootstrap teaches injection-driven work after the role", async () => {
+  test("#given member prompts #when members start #then every bootstrap teaches injection-driven work before the assignment", async () => {
     // given
     const stateDir = stateDirConfig(tempProjectDir())
     const manager = new FakeTeamManager()
@@ -178,11 +178,13 @@ describe("createTeam", () => {
     const [alphaStart, betaStart] = manager.started
     for (const start of [alphaStart, betaStart]) {
       expect(start?.prompt).toContain("team_send")
+      const turnEnd = start?.prompt.toLowerCase().indexOf("end your turn") ?? -1
+      expect(turnEnd).toBeGreaterThanOrEqual(0)
+      expect(turnEnd).toBeLessThan(start?.prompt.lastIndexOf("task "))
     }
     expect(alphaStart?.prompt).toContain("'alpha'")
     expect(alphaStart?.prompt).toContain("'squad'")
     expect(alphaStart?.prompt).toContain("task alpha")
-    expect(alphaStart?.prompt.indexOf("end your turn")).toBeLessThan(alphaStart?.prompt.indexOf("task alpha"))
     expect(betaStart?.prompt).toContain("'beta'")
     expect(betaStart?.prompt).toContain("'squad'")
   })

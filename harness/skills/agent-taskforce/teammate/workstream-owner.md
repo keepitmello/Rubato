@@ -35,15 +35,17 @@ writer where surfaces converge.
 
 Resolve technical issues with the affected owners and verifier. Bring
 changes to accepted scope, public commitments, resource authority or user preferences
-to the lead with evidence, viable options and a recommendation.
+to the lead with evidence, viable options and a recommendation. Also notify the
+lead when a conclusion already communicated to the user must be corrected.
 
 When a verifier refutes a method, keep correction and the recheck request with the
 responsible owner even if the lead originally suggested it. Send the changed
 artifact/revision back to that verifier.
 
-When evidence invalidates a premise shared with other owners, notify them and the
-lead promptly. The lead can recall affected claims; you still own the technical
-investigation or correction assigned to you.
+When evidence invalidates a shared premise or verdict, promptly send the changed
+fact and evidence to every affected owner and verifier. The integration owner
+coordinates cross-stream correction; local refutations do not require a lead relay.
+You still own the investigation or correction assigned to you.
 
 ## Subagents
 
@@ -72,9 +74,11 @@ with you and sets its own checks first; send it each checkpoint as it lands
 take its defects and rechecks directly. Only a separate session's check counts as
 independent.
 
-Send actionable findings directly to named peers. Keep trial-and-error and long logs
-in the artifact. Notify the status surface or affected peers before a long-running
-build or measurement.
+Send new findings and ready checkpoints to peers whose work or judgment needs them,
+not a separate message for each edit or check started. Keep ordinary progress on
+the board and trial-and-error in the artifact. Make a long-running build or
+measurement visible there; message a peer when its dependency or shared resource
+is affected. An artifact-only update needs no acknowledgement or follow-up report.
 
 ## Boundaries and valid returns
 

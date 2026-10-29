@@ -99,9 +99,12 @@ the member mark it completed when that assigned work is finished — the runtime
 aggregate wake for a finished batch is keyed on the run's board, so an unrecorded
 assignment cannot be reported as done.
 
-Notice patterns across streams, and propagate verified refutations to every affected
-owner. Preserve contradictions without deciding a technical cause from authority
-alone. A named owner synthesizes technical evidence or implements a shared fix.
+Notice patterns across streams without becoming their technical relay. The
+responsible owners and verifier exchange refutations and rechecks directly; the
+integration owner coordinates corrections across streams. Do not reassign or
+redistribute a check they already own. When only you hold a relevant fact or user
+decision, send it to the affected owner. Correct user-facing claims that no longer
+hold; leave technical synthesis and repair with its owner.
 
 When an owner returns short or reports a block, recover the cause in that session
 as Skill(dispatching) "When it comes back short" describes. The work stays with
@@ -114,9 +117,10 @@ behavior. An approved verifier independently challenges the result and, when
 material, the acceptance criterion. The verifier sends defects directly to the
 owner; criterion or intent changes come to you.
 
-Review the decisive artifacts and what their evidence actually establishes. Request
-a missing check from its responsible owner or verifier, and accept on that
-evidence. If no independent verifier is warranted,
+At a decision or handoff, review the decisive artifacts and what their evidence
+actually establishes. Ordinary progress stays on the board, not in reports addressed
+to you. Request a genuinely missing check from its responsible owner or verifier,
+rather than a check already underway, and accept on that evidence. If no independent verifier is warranted,
 use reproducible owner/integration evidence without calling it independent.
 
 For a long or consequential run, a fresh milestone review may challenge shared

@@ -33,7 +33,6 @@ export type MemberTaskSendDeps = {
   /** The live roster; members added or removed after this process started. Falls back to `members`. */
   readonly currentMembers?: () => Promise<readonly string[]>
   readonly appendEvent?: (taskId: string, event: PersistedTaskEvent) => void
-  readonly onSent?: () => void
   readonly now?: () => number
   readonly newMessageId?: () => string
   readonly isCurrentMember?: () => Promise<boolean>
@@ -80,7 +79,6 @@ export async function runMemberTaskSend(
     type: "team_message_sent",
     payload: { message_id: message.messageId, from: message.from, to: message.to, kind: message.kind },
   })
-  deps.onSent?.()
   // A member cannot see task records: say what storage establishes and no more.
   return toolResult(`Message enqueued to ${input.to} (id: ${message.messageId}). Stored in the recipient inbox; delivery and processing are unconfirmed until the recipient acts on it.`, {
     kind: "team_message",
@@ -106,7 +104,7 @@ export function createMemberTaskSendTool(
     label: "Team Send",
     // A member's work is team_send and the board, so they must be live from the first turn.
     exposure: "direct",
-    description: "Send a durable message to a peer. Technical defects, counterevidence and rechecks go directly to the responsible owner, even when the lead proposed the method. Send the lead intent/criterion/authority changes or an unresolvable execution failure, not routine technical relay. Send only what the recipient must act on, in a few lines; do not acknowledge or thank a message that asks nothing. Enqueued is not evidence of receipt or action.",
+    description: "Send a durable message that enters the recipient's work at the next tool-batch boundary, or wakes it if idle; this is not passive status. Send new evidence, defects, retractions, unblockers and ready handoffs directly to the peers whose work or judgment needs them. Keep routine progress on the board; do not acknowledge a message that asks nothing. Contact the lead for a decision beyond peer authority, an unresolvable execution failure or a user-facing claim that must be corrected, not routine technical relay. Use a few lines plus artifact/revision links. Enqueued is not evidence of receipt or action.",
     parameters: MemberTaskSendParams,
     execute: (_toolCallId, params) => runMemberTaskSend(deps, params),
   })

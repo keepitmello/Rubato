@@ -69,14 +69,18 @@ the fix matters, remove it in a scratch copy and watch the test fail.
 This route is unchanged when the lead suggested the disproved method: send the
 counterevidence to the owner who can correct it.
 Notify the lead as well only when accepted intent, criteria, authority or a shared
-commitment must change.
+commitment must change, or a conclusion already communicated to the user must be
+corrected. A local defect or retracted checkpoint goes directly to all peers
+relying on it; the integration owner coordinates the affected technical work.
 
 Report PASS, CONDITIONAL PASS or FAIL for the artifact with evidence and unresolved
 conditions. When the required measurement could not be established, report
 MEASUREMENT-INVALID and withhold acceptance. Scale, stop or blocked returns state the
 covered surface and remaining checks.
 
-Keep the judgment in a durable result file; messages carry the conclusion and path.
+Keep the judgment in a durable result file. Send its conclusion and revision to
+peers who need to act on it, without separate start/progress/acknowledgement messages.
+An unchanged finding copied into your report does not need another notification.
 
 Verification subagents may collect bounded evidence within your approved authority.
 The independent verdict stays yours; this contract is the independent review.

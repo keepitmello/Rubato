@@ -28,11 +28,6 @@ import {
 } from "./identity"
 import { createMemberSelfPoller, type MemberSelfPoller } from "./self-poller"
 import { createQaAfterInjectHold } from "./qa-inject-hold"
-import {
-  TEAM_REPORT_REMINDER_CONTENT,
-  TEAM_REPORT_REMINDER_TYPE,
-  createReportReminder,
-} from "./report-reminder"
 import { createMemberTaskSendTool } from "./tools"
 import { readMemberTaskMap } from "../member-map"
 import { TEAM_MESSAGE_CUSTOM_TYPE } from "../messaging/message"
@@ -155,17 +150,6 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     store.appendEvent(parsed.taskId, event)
   }
   const runtime: ActiveRuntime = { poller: undefined as never, started: false }
-  const reminder = createReportReminder(() => {
-    if (!runtime.started) return
-    pi.sendMessage(
-      {
-        customType: TEAM_REPORT_REMINDER_TYPE,
-        content: TEAM_REPORT_REMINDER_CONTENT,
-        display: false,
-      },
-      { triggerTurn: true, deliverAs: "steer" },
-    )
-  })
   const isCurrentMember = async (): Promise<boolean> => {
     const { runtimeDir } = resolveTeamRuntimeDirs(
       { project_dir: parsed.stateDir, task: { state_dir: parsed.stateDir } },
@@ -180,7 +164,6 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     sessionDir: parsed.sessionDir,
     isCurrentMember,
     inject: (content, messageId) => {
-      reminder.onInboundWork()
       pi.sendMessage(
         {
           customType: TEAM_MESSAGE_CUSTOM_TYPE,
@@ -205,15 +188,12 @@ export default async function registerMemberExtension(pi: ExtensionAPI): Promise
     currentMembers: async () => liveMemberNames(await loadRuntimeState(parsed.teamRunId, parsed.config)),
     isCurrentMember,
     appendEvent: (taskId, event) => store.appendEvent(taskId, event),
-    onSent: () => reminder.onTeamSend(),
   }))
   for (const tool of buildMemberTeamBoardTools({ service: createMemberBoardService(parsed) })) {
     pi.registerTool(tool)
   }
   pi.on("session_start", () => startRuntime(runtime))
   pi.on("session_shutdown", () => stopRuntime(pi, runtime))
-  pi.on("agent_start", () => reminder.onTurnStart())
-  pi.on("agent_settled", () => reminder.onTurnSettled())
 }
 
 async function startRuntime(runtime: ActiveRuntime): Promise<void> {

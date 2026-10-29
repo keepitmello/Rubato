@@ -39,7 +39,7 @@ export const TeamSendParams = Type.Object({
 export type TeamSendToolInput = Static<typeof TeamSendParams>
 
 const SEND_DESCRIPTION = [
-  "Send a durable team mailbox message to a member, the lead, or '*' (lead-only broadcast).",
+  "Send a durable team mailbox message to a member, the lead, or '*' (lead-only broadcast). It enters the recipient's work at the next tool-batch boundary, or wakes it if idle; this is not passive status.",
   "Send only what the recipient must act on, in a few lines; do not acknowledge or thank a message that asks nothing.",
   "This is team mail, not an Agent session: use AgentSend to continue a spawned Agent.",
 ].join(" ")

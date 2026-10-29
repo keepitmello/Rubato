@@ -21,7 +21,13 @@ Binding: the things you are the canon of:
 
 - The outcome and why it matters.
 - Done evidence: what will count as done for this outcome.
-- Write ownership and off-limits paths; these protect other sessions' work.
+- Write ownership sufficient to finish the outcome, and explicit off-limits paths
+  that protect other sessions' work. Grant a bounded area including its necessary
+  code, tests, documentation and local migration files, rather than only the files
+  you predict will change. Name shared writers and who can agree their handoffs.
+  Authoring a local migration does not authorize applying it to production.
+  Existing explicit allowlists, user freezes and forbidden paths remain binding;
+  missing a path from a narrow grant is not permission to expand it.
 - The scale: what the assignment is sized for (which areas, investigation or implementation), so the worker can tell when the real surface is larger and come back with its size before going deep. Say that such a return, with the surface still open, is valid and not proof that the outcome is satisfied. Do not put a time, spend or tool-call limit in the brief: a clock makes the worker hurry and trade depth for speed. Elapsed time and spend are your own checks (see While it is out).
 - Constraints that carry a named authority source: the user asked for it, a spec or active frame states it, an external contract or another session's ownership requires it. Name the source next to the constraint.
 - Frozen items: values, behaviors, feels, layouts, or copy the user has locked ("keep this", "do not touch", "freeze"). List each one in the brief with its source and date ("physics constants and the formula that uses them: frozen, user, 2026-08-14"). A frozen item that lives only in a document the worker was not told to read does not exist for that worker. If the task cannot be completed without changing a frozen item, the worker stops and returns with that conflict; it does not choose between the task and the freeze, and it does not satisfy the freeze by leaving the old value in a comment while replacing what uses it.
@@ -44,6 +50,12 @@ Two boundary cases, drawn from a real incident:
 - Lead vs fence: "`transcript_blocks.zig` is probably where entries are assembled; verify" is a lead the worker may overrule. "`runtime.zig` is held by another session today; do not write it" is a fence, and stays one even if the worker disagrees.
 
 Some assignments carry one more line. For technical integration, name the accountable owner and the shared write surface. For independent verification, send authoritative artifacts, acceptance criteria and actual state, not the producer's reasoning or desired verdict. For discovery ahead of a decision, state discovery-only authority, read scope, permitted disposable checks and the scale. Carry directly relevant prior failures with their conditions as source references, not as technique bans or a demand to reread the whole history.
+
+Do not add routine reporting duties to a teammate's brief: starts, per-check progress
+and resource use within approval belong on the board. Name the decision that needs
+the lead, not a cadence for keeping it informed. Technical checkpoints go to the peer
+whose work or judgment needs them; taskforce's communication contract governs that
+exchange. An explicit user-requested reporting checkpoint still holds.
 
 ## Carry the intent reference
 

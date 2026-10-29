@@ -101,18 +101,29 @@ what blocked the previous attempt.
 
 ## Communication and refutation
 
-Status surfaces carry ordinary progress; artifacts carry detailed results. Messages
-carry material facts, impact, the affected peer and evidence references. Owner-verifier
-correction is direct. Avoid play-by-play, praise that hardens a tentative explanation,
-and relaying peer questions through the lead.
+Status surfaces carry ordinary progress and approved resource consumption;
+artifacts carry detailed results. Messages carry new evidence, defects, retractions,
+unblockers or ready handoffs that change the recipient's work or judgment. Include
+the changed fact, impact and artifact/revision, not a running account of edits and
+checks. No acknowledgement is needed when nothing is asked or changed. A quiet
+artifact or board update is a valid turn, not a missing report.
 
-The lead retains cross-stream visibility and the conversation's reasons. It can
-notice a shared pattern and identify who should examine it; an owner performs the
-technical synthesis. Decision-changing evidence goes to the peers it affects — a
-verified refutation, and equally an accepted result or new user feedback that changes
-an ongoing assignment's premise. Send the changed fact, its artifact or revision and
-the remaining question; recall affected claims before their results are relied on.
-No broadcast, no per-turn digest, and a changed observation grants no new authority.
+Owner-verifier correction is direct. Send a refuted premise or verdict promptly to
+every peer relying on it, so none keeps building on a withdrawn claim. The integration
+owner coordinates cross-stream technical correction. Keep useful checkpoints;
+neither a message quota nor delaying all mail protects this evidence path.
+
+Contact the lead when its authority or the user's decision is needed, when a
+user-facing commitment or conclusion must be corrected, or on a supported scale
+return or unresolvable block. Technical changes within approved authority are not
+lead decisions merely because several peers are affected. Routine completion uses
+the runtime's result/board path, not an extra report from every member.
+
+The lead retains cross-stream visibility through those artifacts and the user's
+conversation. It contributes facts or accepted decisions the peers do not yet have,
+without reassigning their checks or forwarding their existing exchange. A changed
+observation grants no new authority; peer evidence does not replace the recipient's
+technical judgment or the verifier's independent verdict.
 
 ## Decision rights
 

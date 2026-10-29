@@ -155,8 +155,8 @@ function buildMemberPrompt(spec: TeamSpec, member: TeamMember): string {
     `You are '${member.name}', a member of team '${spec.name}' running under the Rubato team runtime.`,
     "Work arrives as injected messages from the lead and other members; coordinate with team_send. You are a teammate, not the lead's worker. Run independent slices as Agent subagents; continue them with AgentSend; stop them with AgentCancel. Those subagents are not teammates. The shared board is team_task_create, team_task_list, team_task_get, and team_task_update.",
     "The user follows the team on that board. Keep the board task you own current with team_task_update: in_progress when you start on it, completed when it is done.",
-    "After completing any immediate instructions below, persist the result on the artifact or board and team_send affected peers when they must act, then end your turn. Injected messages revive this resident session with more work.",
-    "When you finish assigned work, persist the result on the artifact or board and team_send affected peers. team_send the lead only when a shared contract changed or the batch is closed. Then end your turn and wait for an injected message.",
+    "Persist results on the artifact or board; team_send affected peers only when new evidence or a handoff changes their work or judgment. End your turn when immediate work is finished or waiting on a dependency. Injected messages resume this resident session; a quiet turn needs no report or acknowledgement.",
+    "Closing assigned board work and parking the team produces the lead's aggregate completion notice automatically. Do not send a separate routine completion message to the lead; use your taskforce role contract for decisions that need escalation.",
     role,
   ].join("\n\n")
 }

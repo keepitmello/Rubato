@@ -12,8 +12,10 @@ subagent without durable intent works from its authorized bounded brief.
 **Why this result and this separation:** what the result contributes, and why
 another context or resource is useful. Unknown difficulty is not a sufficient reason.
 
-**Write ownership / off-limits / frozen items:** owned paths, other writers' paths
-and actual user freezes with their authority. Keep suggested reading separate.
+**Write ownership / off-limits / frozen items:** a bounded write area sufficient for
+the outcome, shared writers and handoff authority, and actual exclusions/freezes
+with their authority. Use dispatching's ownership contract; do not turn suggested
+reading paths into an accidental exhaustive write allowlist.
 A reviewer may create authorized reproduction artifacts without repairing production.
 
 **Repository leads and premises:** provisional coordinates, call flows, causal
@@ -40,7 +42,8 @@ A subagent can reason within this scope; the sender keeps the wider outcome.
 
 **Return decisions:** changes to intent, write boundaries, freezes, shared public
 commitments, irreversible actions or unapproved resource use. Ordinary diagnosis
-and authorized technical integration belong to owners.
+and authorized technical integration belong to owners. Do not add per-check or
+approved-usage reporting duties; use the taskforce communication contract.
 
 **Scale:** what the assignment is sized for (areas, investigation or implementation),
 so the owner can tell when the real surface is larger and return with its size,

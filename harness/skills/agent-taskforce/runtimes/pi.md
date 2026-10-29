@@ -60,8 +60,12 @@ are normalized to lowercase-hyphen form, and the result reports the actual name.
 A team lead and an owner read the result artifact or board rather than replaying a
 child's transcript; a completion carries its result file path. A teammate's normal
 turn end does not wake the lead — one aggregate wake arrives when the run's assigned
-board work is closed. The lead's own discovery subagent is distinct from a
-continuing owner.
+board work is closed and its members are parked. Do not duplicate that notice with
+individual completion messages to the lead. `team_send` is active delivery, not a
+passive status entry: it wakes an idle recipient or enters its work at the next
+tool-batch boundary. Follow the role's communication contract to choose recipients.
+A quiet artifact/board update does not trigger a reporting reminder. The lead's own
+discovery subagent is distinct from a continuing owner.
 
 `worktreePath` provisions an actual worktree. It does not isolate ports, processes,
 memory or quotas. Allocate shared resources when contention matters. The integration

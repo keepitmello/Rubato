@@ -12,8 +12,8 @@ import { TEAM_BOARD_TOOL_NAMES } from "@rubato/team-core/team-tasklist"
 import { writeMemberTaskMap } from "../member-map"
 import { resolveTeamRuntimeDirs } from "../storage"
 
-import registerMemberExtension from "./index"
-import { TEAM_REPORT_REMINDER_CONTENT, TEAM_REPORT_REMINDER_TYPE } from "./report-reminder"
+import registerMemberExtension, { createMemberBoardService, parseMemberExtensionEnv } from "./index"
+import { TEAM_MESSAGE_CUSTOM_TYPE } from "../messaging/message"
 
 const TEAM_RUN_ID = "77777777-7777-4777-8777-777777777777"
 const MESSAGE_ID = "88888888-8888-4888-8888-888888888888"
@@ -110,13 +110,19 @@ describe("member extension lifecycle", () => {
     }
   })
 
-  test("#given a settled turn with no team_send #when agent_settled fires #then the member is reminded once", async () => {
-    const root = mkdtempSync(join(tmpdir(), "senpi-member-reminder-"))
+  test.each(["artifact", "board"] as const)("#given a %s-only update #when the member settles without team_send #then it stays quiet until real peer work arrives", async (surface) => {
+    const root = mkdtempSync(join(tmpdir(), "senpi-member-quiet-"))
     roots.push(root)
     const stateDir = join(root, "state")
     const sessionDir = join(root, "sessions")
     const config = TeamModeConfigSchema.parse({ base_dir: join(stateDir, "teams") })
     mkdirSync(sessionDir, { recursive: true })
+    const { runtimeDir } = resolveTeamRuntimeDirs({ project_dir: root, task: { state_dir: stateDir } }, TEAM_RUN_ID)
+    mkdirSync(runtimeDir, { recursive: true })
+    await writeMemberTaskMap(
+      runtimeDir,
+      { alice: "st_00000001" },
+    )
 
     const handlers = new Map<string, Array<() => unknown | Promise<unknown>>>()
     const injected: Array<{ message: Record<string, unknown>; options: Record<string, unknown> | undefined }> = []
@@ -153,20 +159,46 @@ describe("member extension lifecycle", () => {
       loading = false
       await dispatch(handlers, "session_start")
       await dispatch(handlers, "agent_start")
+      if (surface === "artifact") {
+        writeFileSync(join(root, "result.md"), "Existing evidence incorporated; no new peer action.\n")
+      } else {
+        const board = createMemberBoardService(parseMemberExtensionEnv(process.env))
+        const task = await board.createTask(TEAM_RUN_ID, {
+          subject: "Retain checked evidence",
+          description: "No new peer action.",
+          status: "pending",
+        })
+        for (const status of ["claimed", "in_progress", "completed"] as const) {
+          await board.updateTask({ teamRunId: TEAM_RUN_ID, taskId: task.id, status })
+        }
+        expect((await board.getTask(TEAM_RUN_ID, task.id)).status).toBe("completed")
+      }
       await dispatch(handlers, "agent_settled")
       await dispatch(handlers, "agent_start")
       await dispatch(handlers, "agent_settled")
+      expect(injected).toEqual([])
 
-      expect(injected).toEqual([
-        {
-          message: {
-            customType: TEAM_REPORT_REMINDER_TYPE,
-            content: TEAM_REPORT_REMINDER_CONTENT,
-            display: false,
-          },
-          options: { triggerTurn: true, deliverAs: "steer" },
-        },
-      ])
+      // Quiet completion must not disable real peer handoffs or critical corrections.
+      await sendMessage({
+        version: 1,
+        messageId: MESSAGE_ID,
+        from: "bob",
+        to: "alice",
+        kind: "message",
+        body: "The retained snapshot is mutable; repair it before relying on that verdict.",
+        timestamp: 1,
+      }, TEAM_RUN_ID, config, { isLead: false, activeMembers: ["alice", "bob"] })
+      const deadline = Date.now() + 5_000
+      while (injected.length === 0 && Date.now() < deadline) await Bun.sleep(25)
+      expect(injected).toHaveLength(1)
+      expect(injected[0]?.message.customType).toBe(TEAM_MESSAGE_CUSTOM_TYPE)
+      expect(injected[0]?.message.content).toContain("snapshot is mutable")
+      expect(injected[0]?.options).toEqual({ triggerTurn: true, deliverAs: "steer" })
+
+      // Receiving information alone does not create an acknowledgement obligation.
+      await dispatch(handlers, "agent_start")
+      await dispatch(handlers, "agent_settled")
+      expect(injected).toHaveLength(1)
     } finally {
       await dispatch(handlers, "session_shutdown")
       restoreMemberEnv(previous)
