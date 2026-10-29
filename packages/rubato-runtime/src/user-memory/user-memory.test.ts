@@ -3,7 +3,7 @@
 // these tests prove what the runners do with a model's work (landing, evidence, forgetting, summary,
 // concurrency), not what a real model would write.
 
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test"
 import { execFileSync } from "node:child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -21,6 +21,9 @@ import { userStore } from "./store"
 import { mergeSummary, readSummary } from "./summary"
 import { runUserDream, userDreamDue } from "./user-dream"
 import { composeUserView } from "./view"
+
+// Each test runs several real git repositories and runners end to end; a busy machine takes seconds.
+setDefaultTimeout(60_000)
 
 const dirs: string[] = []
 afterEach(() => {
