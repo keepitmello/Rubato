@@ -2,6 +2,7 @@ import { open, readFile, stat, writeFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { COMPANION_ENTRY } from '../../companion/companion.mjs';
+import { companionEnv } from '../../companion/registry.mjs';
 import { SessionClient } from './client.mjs';
 import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
@@ -385,7 +386,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
    */
   async function sender(id) {
     const known = row(id);
-    if (known) return { sessionId: id, title: known.title, cwd: known.cwd, ...(known.companion === true ? { companion: true } : {}) };
+    if (known) return { sessionId: id, title: known.title, cwd: known.cwd,
+      ...(known.companion === true ? { companion: true, companionId: known.companionId ?? 'segno' } : {}) };
     const worker = need().host.getSessionWorker(id);
     // A new CLI conversation has no file until its first answer, but it is live.
     if (worker) {
@@ -465,7 +467,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         ...(from.name ? { name: from.name } : {}), ...(from.messageId === undefined ? {} : { messageId: from.messageId }) }, text,
         ...(attachments === undefined ? {} : { attachments }) };
     return { v: 1, messageId, kind, from: { sessionId: from.sessionId, title: from.title, cwd: from.cwd,
-      ...(from.companion === true ? { companion: true } : {}) }, text };
+      ...(from.companion === true ? { companion: true, companionId: from.companionId ?? 'segno' } : {}) }, text };
   }
   const messageIdOf = (value) => {
     if (value === undefined) return randomUUID();
@@ -761,7 +763,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       const data = envelope({ messageId: id, kind: 'message', from: origin, text });
       try { answer = await deliver(to, mode === 'steer' ? { ...data, mode } : data); }
       catch (error) { release(); throw error; }
-      if (fromCompanion(from)) need().follower.follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
+      if (fromCompanion(from)) need().followerFor(from).follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
       const target = await describe(to);
       // What the target's handler said, never more: an older runtime answers without these.
       return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status },
@@ -808,7 +810,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       };
       try { await deliver(created.sessionId, envelope({ messageId: randomUUID(), kind: 'create', from: origin, text }), select); }
       catch (error) { throw fail(error.code ?? 'delivery_failed', `Created conversation ${created.sessionId}, but its first message was not delivered: ${error.message}`); }
-      if (fromCompanion(from)) need().follower.follow(created.sessionId, from);
+      if (fromCompanion(from)) need().followerFor(from).follow(created.sessionId, from);
       const described = await describe(created.sessionId);
       return { sessionId: created.sessionId, title: described.title, cwd: described.cwd, status: described.status, ...selected };
     },
@@ -870,7 +872,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       const { sessionsDir } = need();
       if (row(sessionId) && row(sessionId).companion !== true) throw fail('not_companion', "Only Segno's own conversation has settings");
       const { companionSettings } = await import('../../companion/settings.mjs');
-      try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change } }); }
+      try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change },
+        env: companionEnv(row(sessionId)?.companionId) }); }
       catch (error) { throw error?.name === 'SettingsRefused' ? fail(error.code, error.message) : error; }
     },
     /**
@@ -882,6 +885,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     async telegramSend(request = {}) {
       if (!request || typeof request !== 'object' || Array.isArray(request)) throw fail('invalid', 'telegramSend takes one request object');
       if (!bound) throw fail('unavailable', 'This engine has no messenger');
+      if (!fromCompanion(request.sessionId)) throw fail('not_companion', 'Only a companion conversation can send through its messenger');
       const send = bound.telegramSend;
       if (typeof send !== 'function') throw fail('unavailable', 'The messenger is not running in this engine');
       const { to, name, ...rest } = request;
@@ -895,7 +899,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     api: facade,
     ...facade,
     /** `followStore` keeps the companion's followed handoffs across restarts (harness/companion followingStore). */
-    bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore }) {
+    bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore, followStores }) {
       if (bound) throw new Error('session link is already bound');
       if (!host?.directory || typeof host.getSessionWorker !== 'function') throw new TypeError('session link requires a session host');
       if (!path.isAbsolute(sessionsDir ?? '') || !socketPath || !serverId) throw new TypeError('session link requires sessionsDir, socketPath and serverId');
@@ -904,6 +908,9 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         cwds: () => rows().map((item) => item.cwd).filter(Boolean), titleOf: (id) => row(id)?.title, locate });
       bound = { host, sessionsDir, socketPath, serverId, onError, inspector };
       bound.follower = createCompanionFollower({ store: followStore, onError });
+      bound.followers = new Map(Object.entries(followStores ?? {}).map(([id, store]) =>
+        [id, createCompanionFollower({ store, onError })]));
+      bound.followerFor = (sessionId) => bound.followers.get(row(sessionId)?.companionId ?? 'segno') ?? bound.follower;
     },
     /** Rubato's own word to a conversation (`kind: 'notice'`); it wakes the conversation like any delivery. */
     async notice({ to, about, text } = {}) {
@@ -951,6 +958,10 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       bound.telegramSend = send;
     },
     /** Unbinds: waits return, later calls refuse, and a restarted engine may bind again. */
-    close() { void bound?.follower.close(); bound = undefined; for (const waiter of waiters) waiter.stop?.(); },
+    close() {
+      void bound?.follower.close();
+      for (const follower of bound?.followers?.values() ?? []) void follower.close();
+      bound = undefined; for (const waiter of waiters) waiter.stop?.();
+    },
   };
 }

@@ -163,7 +163,7 @@ rubato dream --user           # 사용자 꿈을 지금 실행
 
 | 자리 | 맡는 것 |
 |---|---|
-| `harness/companion/` | 세뇨 파일들의 위치와 형식, 엔진 keeper(붙잡아 두기·하트비트·안부·깨어나기·잠), 일정 찌르기와 일정 파일 형식(`schedule.mjs`), 세계 조각(`world.mjs`) |
+| `harness/companion/` | [동반자 등록·개인 홈·선택 기능 설정](companion/README.md), 상주·꿈·일정·기록 |
 | `harness/prompts/companion/*.pi.md` | 프롬프트 조각 기본값과 시계가 깨울 때 쓰는 글(안부·깨어나기·떠올리기). 사용자가 고친 조각은 `~/.rubato/companion/prompt/` 에, 늘 들고 있는 기억은 `~/.rubato/companion/memory/MEMORY.md` 에 둔다 |
 | `harness/pi-server/src/companion-follow.mjs` | 세뇨가 넘긴 일이 끝났을 때 보내는 알림 |
 

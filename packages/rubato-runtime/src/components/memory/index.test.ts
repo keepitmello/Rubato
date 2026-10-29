@@ -63,6 +63,14 @@ async function composedPrompt(pi: MemoryFakeExtensionAPI, session: unknown): Pro
 }
 
 describe("createMemoryComponent", () => {
+  test("#given a companion with an authoritative home repository #when registered #then no parallel memory tools or store are created", async () => {
+    const { cwd, memoryHome } = fixture()
+    const pi = new MemoryFakeExtensionAPI()
+    createMemoryComponent({ env: { RUBATO_MEMORY_HOME: memoryHome, RUBATO_COMPANION_RECORDS_ONLY: "1" },
+      resolveCwd: () => cwd, loadConfig: () => loadedMemoryConfig(memorySettings({ agent: "other" })) }).register(pi, componentContext())
+    expect({ handlers: pi.handlers, tools: pi.tools, commands: pi.commands }).toEqual({ handlers: [], tools: [], commands: [] })
+    expect(existsSync(memoryHome)).toBe(false)
+  })
   test("#given missing custom-entry capabilities #when registered #then it warns once and registers nothing", () => {
     const pi = new FakeExtensionAPI()
     ;(pi as { appendEntry?: unknown }).appendEntry = undefined

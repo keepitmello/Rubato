@@ -16,6 +16,7 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import {
   acceptCompanionStatus,
   rubatoCompanion,
+  selectCompanion,
   useReadyEnvironmentId,
   useRubatoCompanion,
   type CompanionPiece,
@@ -221,6 +222,7 @@ const HELD_KIND = (message: TelegramHeldMessage): string =>
   message.target?.name ?? message.target?.chatId ?? "you";
 
 function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
+  const title = useRubatoCompanion().status?.title ?? "Segno";
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
   const [token, setToken] = useState("");
   const [voiceKey, setVoiceKey] = useState("");
@@ -295,7 +297,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
           <SettingsRow
             id="rubato-companion-telegram-enabled"
             title="Telegram"
-            description="Talk to Segno from your own Telegram chat. Anything Segno writes to someone else waits here for you."
+            description={`Talk to ${title} from your own Telegram chat. Anything ${title} writes to someone else waits here for you.`}
             status={state}
             control={
               <Switch
@@ -337,7 +339,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
                   description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
                   control={
                     <Button size="sm" variant="outline" disabled={busy}
-                      onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, "Segno"))}>
+                      onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, title))}>
                       {busy ? <Spinner className="size-3.5" /> : null}
                       Create the bot
                     </Button>
@@ -348,8 +350,8 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
           ) : (
             <SettingsRow
               id="rubato-companion-telegram-bot"
-              title={telegram.bot.name ?? "Segno's bot"}
-              description={telegram.bot.username ? `@${telegram.bot.username}` : "The bot Rubato made for Segno."}
+              title={telegram.bot.name ?? `${title}'s bot`}
+              description={telegram.bot.username ? `@${telegram.bot.username}` : `The bot Rubato made for ${title}.`}
               status={telegram.bot.token ? <Badge variant="outline">{telegram.bot.token}</Badge> : null}
             />
           )}
@@ -391,7 +393,7 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
           <SettingsRow
             id="rubato-companion-telegram-approval"
             title="Hold messages to others"
-            description="Anything Segno writes to someone other than you waits here, and in your Telegram chat, until you approve it."
+            description={`Anything ${title} writes to someone other than you waits here, and in your Telegram chat, until you approve it.`}
             control={
               <Switch
                 aria-label="Hold messages to others"
@@ -403,14 +405,14 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
           />
           <SettingsRow
             id="rubato-companion-voice"
-            title="Segno's voice"
-            description="Voice replies speak in this Fish Audio voice. Ask Segno to pick or change it."
+            title={`${title}'s voice`}
+            description={`Voice replies speak in this Fish Audio voice. Ask ${title} to pick or change it.`}
             status={<Badge variant="outline">{telegram.settings.voice?.voiceId ?? "Not chosen"}</Badge>}
           />
           <SettingsRow
             id="rubato-companion-voice-key"
             title="Fish Audio key"
-            description="Voice replies need a Fish Audio API key. Give it to Segno, or paste it here."
+            description={`Voice replies need a Fish Audio API key. Give it to ${title}, or paste it here.`}
             status={<Badge variant={telegram.fishKey ? "success" : "outline"}>{telegram.fishKey ?? "Not set"}</Badge>}
             control={
               <span className="flex items-center gap-2">
@@ -459,9 +461,25 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
 }
 
 export function RubatoCompanionSettingsPanel() {
+  const { companions, selectedId } = useRubatoCompanion();
+  return <>
+    {companions.length > 1 ? <SettingsSection title="Companion">
+      <SettingsRow title="Companion" control={
+        <select aria-label="Companion" value={selectedId} onChange={event => selectCompanion(event.target.value)}
+          className="rounded-md border bg-background px-3 py-2 text-sm">
+          {companions.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
+        </select>
+      } />
+    </SettingsSection> : null}
+    <CompanionSettingsBody key={selectedId} />
+  </>;
+}
+
+function CompanionSettingsBody() {
   const navigate = useNavigate();
   const environmentId = useReadyEnvironmentId();
   const { status, threadId } = useRubatoCompanion();
+  const title = status?.title ?? "Segno";
   const [pieces, setPieces] = useState<CompanionPiece[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -508,7 +526,7 @@ export function RubatoCompanionSettingsPanel() {
       setReviewPending(true);
       toastManager.add({
         type: "info",
-        title: "Segno will look at it",
+        title: `${title} will look at it`,
         description: "It reads your file and Rubato's, then tells you what it recommends. Nothing changes until you say so.",
       });
     } catch (cause) {
@@ -538,7 +556,7 @@ export function RubatoCompanionSettingsPanel() {
 
   return (
     <>
-      <SettingsSection id="rubato-companion" title="Segno">
+      <SettingsSection id="rubato-companion" title={title}>
         {error ? <SettingsRow title="Could not read the companion" description={error} /> : null}
         {settings === undefined && !error ? (
           <SettingsRow title="Reading the companion" control={<Spinner className="size-4" />} />
@@ -547,12 +565,12 @@ export function RubatoCompanionSettingsPanel() {
           <>
             <SettingsRow
               id="rubato-companion-enabled"
-              title="Segno"
+              title={title}
               description="One conversation that is always on. You talk to it; it starts lead conversations for the work, follows them and tells you how they went."
               status={state}
               control={
                 <Switch
-                  aria-label="Turn Segno on"
+                  aria-label={`Turn ${title} on`}
                   checked={enabled}
                   disabled={busy}
                   onCheckedChange={(next) => void save({ enabled: next })}
@@ -562,8 +580,8 @@ export function RubatoCompanionSettingsPanel() {
             {enabled ? (
               <SettingsRow
                 id="rubato-companion-open"
-                title="Talk to Segno"
-                description="Segno also has its own button on the left rail."
+                title={`Talk to ${title}`}
+                description={`${title} also has its own button on the left rail.`}
                 control={
                   <Button
                     size="sm"
@@ -585,7 +603,7 @@ export function RubatoCompanionSettingsPanel() {
             <SettingsRow
               id="rubato-companion-heartbeat"
               title="Heartbeat"
-              description="Segno looks over the work it follows on a schedule and only writes when something needs you."
+              description={`${title} looks over the work it follows on a schedule and only writes when something needs you.`}
               control={
                 <span className="flex items-center gap-2">
                   <Select
@@ -623,7 +641,7 @@ export function RubatoCompanionSettingsPanel() {
             <SettingsRow
               id="rubato-companion-greetings"
               title="Night and morning greetings"
-              description="At 00:07 Segno writes the day's diary and says good night; at 09:07 it says good morning with the day's report: what came in, what finished, what is still running and what waits for you."
+              description={`At 00:07 ${title} writes the day's diary and says good night; at 09:07 it says good morning with the day's report: what came in, what finished, what is still running and what waits for you.`}
               control={
                 <Switch
                   aria-label="Night and morning greetings"
@@ -638,24 +656,24 @@ export function RubatoCompanionSettingsPanel() {
               title="Schedule"
               description={
                 settings.schedule.sources.length === 0
-                  ? "No calendar or schedule file yet. Tell Segno where yours is (a calendar's ICS address, an .ics file or a schedule file) and it sets it here; it nudges you 3 hours and 1 hour before a timed item and at 22:00 about tomorrow."
-                  : `Segno reads ${settings.schedule.sources
+                  ? `No calendar or schedule file yet. Tell ${title} where yours is (a calendar's ICS address, an .ics file or a schedule file) and it sets it here; it nudges you 3 hours and 1 hour before a timed item and at 22:00 about tomorrow.`
+                  : `${title} reads ${settings.schedule.sources
                       .map((source) => source.name ?? source.location)
-                      .join(", ")}. Tell Segno to add or remove one.`
+                      .join(", ")}. Tell ${title} to add or remove one.`
               }
             />
           </>
         ) : null}
       </SettingsSection>
       <TelegramPanel environmentId={environmentId} />
-      <SettingsSection id="rubato-companion-prompt" title="Segno's prompt">
+      <SettingsSection id="rubato-companion-prompt" title={`${title}'s prompt`}>
         {pieces === null && !error ? (
           <SettingsRow title="Reading the prompt" control={<Spinner className="size-4" />} />
         ) : null}
         <SettingsRow
           id="rubato-companion-review"
           title="Rubato's defaults"
-          description="When Rubato changes who Segno is by default, Segno compares it with your own file and tells you what it recommends. Nothing is merged without you."
+          description={`When Rubato changes who ${title} is by default, ${title} compares it with your own file and tells you what it recommends. Nothing is merged without you.`}
           status={
             pieces?.some((piece) => piece.defaultChanged) ? (
               <Badge variant="warning">Default update available</Badge>
@@ -665,7 +683,7 @@ export function RubatoCompanionSettingsPanel() {
           }
           control={
             <Button size="sm" variant="outline" disabled={busy || pieces === null} onClick={() => void reviewPersona()}>
-              Have Segno review it
+              Have {title} review it
             </Button>
           }
         />

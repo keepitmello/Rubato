@@ -39,6 +39,7 @@ export const projectRailOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectRail.logic.test.ts',
   'apps/web/src/components/sidebar/rubatoProjectList.ts',
   'apps/web/src/components/sidebar/RubatoProjectRail.tsx',
+  'apps/web/src/components/sidebar/rubatoCompanionRailAction.ts',
   'apps/web/src/components/sidebar/RubatoProjectPicker.tsx',
   'apps/web/src/components/sidebar/RubatoScopeLabel.tsx',
   'apps/web/src/components/sidebar/RubatoThreadLine.tsx',

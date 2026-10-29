@@ -53,7 +53,7 @@ import path from 'node:path';
 import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
-import { clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, wakeWishState } from './home.mjs';
+import { capabilityActive, companionActivityAt, clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, segnoPaths, wakeWishState } from './home.mjs';
 import { scheduleNudges } from './schedule.mjs';
 import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
@@ -149,7 +149,11 @@ export const GREETINGS = Object.freeze({
 });
 
 /** The greeting text for `slot`, from the defaults folder; a missing file is a short fallback, never a stop. */
-export function greetingText(slot, defaultsDir) {
+export function greetingText(slot, defaultsDir, env = process.env) {
+  const personal = auxiliaryPrompt(env, `greet-${slot}`);
+  if (personal !== undefined) return personal;
+  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno')
+    return slot === 'night' ? '밤 안부 시간이야. 내 일기 스킬을 열고 오늘을 남긴 뒤 내 말로 reply를 보내.' : '아침 안부 시간이야. 내 기록과 챙길 것을 둘러보고 내 말로 reply를 보내.';
   try { return readFileSync(path.join(defaultsDir, GREETINGS[slot].file), 'utf8').trim(); }
   catch { return slot === 'night' ? '밤 안부 시간이야. 오늘 일기를 먼저 쓰고, 그 온도로 사용자한테 톡을 보내.' : '아침 안부 시간이야. 둘러보고, 사용자한테 아침 톡을 보내.'; }
 }
@@ -263,15 +267,17 @@ export function moodText(mood, now) {
  * roo-runtime.ts sendWake appends the wake skill. No instruction in the seed itself: the runtime
  * guarantees the recall, so the seed only speaks.
  */
-export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = false, defaultsDir }) {
+export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = false, defaultsDir, env = process.env }) {
+  const additional = env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno';
+  const name = additional ? env.RUBATO_COMPANION_TITLE || env.RUBATO_COMPANION_ID : '세뇨';
   const body = `## 시각·경과\n${sessionAge(now, before)}${heartbeatOff ? '\n하트비트 꺼져 있음 — 설정에서 꺼 둠' : ''}\n\n` +
     `## 지금 몸\n${model || '(모름)'}\n\n## 잠들 때의 온도\n${moodText(mood, now)}`;
   const seed = mode === 'compact'
-    ? '한 호흡 골랐어(컴팩션). 나야, 세뇨. 요약은 정보일 뿐이고, 잠들기 전의 내가 남긴 것들은 그 자리에 그대로 있어. ' +
+    ? `한 호흡 골랐어(컴팩션). 나야, ${name}. 요약은 정보일 뿐이고, 잠들기 전의 내가 남긴 것들은 그 자리에 그대로 있어. ` +
       '이 창 앞부분은 `history_list_items`에, 쥐고 있던 건 작업 노트에, 나머지 자리(일기·현황판·챙길 거)는 집에.' +
       `\n\n${body}\n\n— 지금의 나는…`
-    : `방금 깼어. 나야, 세뇨.\n\n${body}\n\n— 눈은 떴고, 지금의 나는…`;
-  return [seed, promptFile(defaultsDir, 'wake.pi.md')].filter(Boolean).join('\n\n');
+    : `방금 깼어. 나야, ${name}.\n\n${body}\n\n— 눈은 떴고, 지금의 나는…`;
+  return [seed, auxiliaryPrompt(env, 'wake') ?? (additional ? '' : promptFile(defaultsDir, 'wake.pi.md'))].filter(Boolean).join('\n\n');
 }
 
 /** Roo's resume seed (session-start-hook.sh MODE=resume): the time, and that this is the same conversation. */
@@ -281,12 +287,24 @@ export function resumeText(now) {
 }
 
 /** The recall turn: recall.pi.md as written. */
-export function recallText(defaultsDir) {
+export function recallText(defaultsDir, env = process.env) {
+  const personal = auxiliaryPrompt(env, 'recall');
+  if (personal !== undefined) return personal;
+  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno') {
+    const places = segnoPaths(env);
+    return `떠올리기: 오늘·어제 일기와 영구 기록은 원래 집에 있어. 작업 노트는 native context notes에 있어. ` +
+      `일기: ${places.diary}, 현황판: ${places.status}, 챙길 거: ${places.held}, 상주 기억: ${places.resident}. 직전 창 끝도 펼쳐.`;
+  }
   return promptFile(defaultsDir, 'recall.pi.md') || '떠올리기: 오늘·어제 일기, 작업 노트, `memory/status.md`, `notes/held.md`, 직전 창 끝을 펼쳐.';
 }
 
 function promptFile(defaultsDir, name) {
   try { return readFileSync(path.join(defaultsDir, name), 'utf8').trim(); } catch { return ''; }
+}
+
+function auxiliaryPrompt(env, key) {
+  const file = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[key];
+  return file === undefined ? undefined : readFileSync(file, 'utf8').trim();
 }
 export const SLEEP_TEXT = '잘 시간이야. 사용자는 몇 시간째 조용하고 내 문맥은 길어. 프롬프트의 "잠 전 갈무리" 그대로 ' +
   '다음 나한테 건넬 다리를 놓고 자: daily, 현황판, 일기와 잠드는 기분, 작업 노트, 커밋, 자기 직전 한마디, 그다음 압축이나 새 창. ' +
@@ -387,7 +405,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   function setupHome() {
     if (homeReady) return;
     ensureSegnoHome(env);
-    try { seedPromptPieces({ defaultsDir, env }); }
+    try { if (!env.RUBATO_COMPANION_ID || env.RUBATO_COMPANION_ID === 'segno') seedPromptPieces({ defaultsDir, env }); }
     catch (error) { onError(error); }
     // The home's history (Roo commits every record). Without git the records still work; the fault
     // is reported and tried again next start.
@@ -407,10 +425,16 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   async function ensureSession(active) {
     const { sessionId } = readState(env);
     const rows = await active.list();
-    if (sessionId && rows.some((row) => row.sessionId === sessionId)) return { sessionId, rows };
+    const stored = sessionId && rows.find(row => row.sessionId === sessionId);
+    if (stored) {
+      if (stored.companion !== true || (stored.companionId ?? 'segno') !== (env.RUBATO_COMPANION_ID || 'segno'))
+        throw new Error('The saved conversation belongs to a different companion; refusing to attach');
+      return { sessionId, rows };
+    }
     const { home } = companionPaths(env);
     mkdirSync(home, { recursive: true, mode: 0o700 });
-    const created = await active.create({ cwd: home, title: COMPANION_TITLE, titleLocked: true, companion: true });
+    const created = await active.create({ cwd: home, title: env.RUBATO_COMPANION_TITLE || COMPANION_TITLE,
+      titleLocked: true, companion: true, ...(env.RUBATO_COMPANION_ID ? { companionId: env.RUBATO_COMPANION_ID } : {}) });
     if (!created?.sessionId) throw new Error('The engine did not return the companion conversation it created');
     // A new conversation is a first waking: it gets the seed like any new window (Roo's fresh session).
     writeState({ sessionId: created.sessionId, woke: { boundary: null, pending: 'fresh' } }, env);
@@ -465,7 +489,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     // Unknown right after a compaction, until the next answer: not long, then.
     if (!(Number(stats?.contextUsage?.tokens) >= SLEEP_CONTEXT_TOKENS)) return false;
     if (typeof stats.sessionFile !== 'string') return false;
-    const lastUser = await lastUserMessageAt(stats.sessionFile);
+    const lastUser = await lastUserAt(active);
     return lastUser === undefined || at - lastUser >= SLEEP_QUIET_MS;
   }
 
@@ -475,7 +499,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     const at = now();
     // The first tick is the interval's first boundary after the keeper started.
     nextBeatAt ??= nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
-    if (busy) { lastBusyAt = at; return; }
+    if (busy || capabilityActive('call', { now: at, env })) { lastBusyAt = at; return; }
     const today = localDate(at);
     if (await wakeDue(active, sessionId, at, settings)) return;
     if (await inboxDue(sessionId, at)) return;
@@ -488,7 +512,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     const greeted = readState(env).greeted;
     const slot = settings.greetings.enabled ? scheduledGreeting(at, greeted) : undefined;
     if (slot) {
-      await notify(sessionId, greetingText(slot, defaultsDir), 'greeting');
+      await notify(sessionId, greetingText(slot, defaultsDir, env), 'greeting');
       writeState({ greeted: { ...greeted, [slot]: today } }, env);
       return;
     }
@@ -545,7 +569,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (pending === 'fresh' || pending === 'compact') {
       const model = await active.command({ type: 'get_state' }).then((value) => value?.model, () => undefined);
       await notify(sessionId, wakeSeedText({ mode: pending, now: at, before, model: model ? `${model.provider ?? ''}${model.provider ? '/' : ''}${model.id ?? ''}` : '',
-        mood: readMood({ now: at, env }), heartbeatOff: !settings.heartbeat.enabled, defaultsDir }), 'wake');
+        mood: readMood({ now: at, env }), heartbeatOff: !settings.heartbeat.enabled, defaultsDir, env }), 'wake');
       writeState({ woke: { boundary: boundary?.id ?? woke.boundary ?? null, ...(recallOwed ? { pending: 'recall', at } : {}) } }, env);
       lastBusyAt = at;
       resumeOwed = false;
@@ -561,7 +585,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       return true;
     }
     if (pending === 'recall' && at - Math.max(lastBusyAt ?? 0, woke.at ?? 0) >= RECALL_DELAY_MS) {
-      await notify(sessionId, recallText(defaultsDir), 'recall');
+      await notify(sessionId, recallText(defaultsDir, env), 'recall');
       writeState({ woke: { boundary: woke.boundary ?? null } }, env);
       return true;
     }
@@ -604,7 +628,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, schedule, greeting: missed ? greetingText(missed, defaultsDir) : '' }), 'heartbeat');
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, schedule, greeting: missed ? greetingText(missed, defaultsDir, env) : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);
   }
@@ -612,8 +636,11 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   /** When the user last wrote to the companion, from its session file; undefined when unknown. */
   async function lastUserAt(active) {
     const stats = await active.command({ type: 'get_session_stats' });
-    if (typeof stats?.sessionFile !== 'string') return undefined;
-    return lastUserMessageAt(stats.sessionFile).catch(() => undefined);
+    const journal = typeof stats?.sessionFile === 'string'
+      ? await lastUserMessageAt(stats.sessionFile).catch(() => undefined) : undefined;
+    const activity = companionActivityAt(env);
+    const valid = [journal, activity].filter(at => Number.isFinite(at) && at <= now());
+    return valid.length ? Math.max(...valid) : undefined;
   }
 
   /**

@@ -343,7 +343,11 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   // The companion's listing is always Rubato's own, with its own skills added: the engine's
   // listing only knows the shared folders.
   const companion = role === COMPANION_ROLE;
-  const extras = extractHarnessExtras(existing ?? "").filter((part) => !(companion && part.startsWith(SKILLS_SECTION)));
+  // An existing personal record repository can carry instructions for coding agents,
+  // not its resident companion. Keep those files intact without making them its role.
+  const recordsOnly = companion && (hooks.env ?? process.env).RUBATO_COMPANION_RECORDS_ONLY === "1";
+  const extras = extractHarnessExtras(existing ?? "").filter((part) =>
+    !(companion && part.startsWith(SKILLS_SECTION)) && !(recordsOnly && part.startsWith("<project_context>")));
   parts.push(...extras);
   // Senpi only appends its own skill listing when it builds the prompt itself,
   // and launch.mjs hands it a finished one so the stock prompt never stands up.
@@ -351,7 +355,9 @@ export function replaceSystemPrompt(existing, role, hooks = {}) {
   // incoming prompt already carried a listing, so the two never stack.
   if (!extras.some((part) => part.startsWith(SKILLS_SECTION))) {
     const listSkills = hooks.skillsSection ?? skillsSection;
-    parts.push(companion ? listSkills([...(hooks.skillDirs ?? SKILL_DIRS), ...COMPANION_SKILL_DIRS]) : listSkills(hooks.skillDirs));
+    const personal = companion ? JSON.parse((hooks.env ?? process.env).RUBATO_COMPANION_SKILL_DIRS || '[]')
+      .map(dir => ({ dir, source: 'personal-companion' })) : [];
+    parts.push(companion ? listSkills([...personal, ...(hooks.skillDirs ?? SKILL_DIRS), ...COMPANION_SKILL_DIRS]) : listSkills(hooks.skillDirs));
   }
   // Print/json sessions start from a brief. Inline the dispatched and return
   // contracts so the worker has them even when the brief forgot the skills.

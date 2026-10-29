@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -297,5 +298,8 @@ export function loadBootChrome() {
 }
 
 export function loadPinnedPiTui() {
-  return import("@earendil-works/pi-tui");
+  // Resolve from the package's physical location so its own dependencies stay
+  // reachable when node_modules uses an isolated, symlinked package store.
+  const entry = realpathSync(fileURLToPath(import.meta.resolve("@earendil-works/pi-tui")));
+  return import(pathToFileURL(entry).href);
 }

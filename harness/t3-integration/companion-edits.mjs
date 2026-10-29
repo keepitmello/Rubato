@@ -11,12 +11,15 @@
 export const companionOverlays = [
   'apps/server/src/RubatoCompanion.ts',
   'apps/web/src/state/rubatoCompanion.ts',
+  'apps/web/src/state/rubatoCompanion.test.tsx',
+  'apps/web/src/hooks/rubatoCompanionProjectBoundary.test.ts',
   'apps/web/src/components/settings/RubatoCompanionSettings.tsx',
   'apps/web/src/components/sidebar/RubatoSegnoIcon.tsx',
   'apps/web/src/routes/settings.companion.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.css',
   'apps/web/src/components/chat/RubatoSegnoSpace.test.ts',
+  'apps/web/src/components/chat/RubatoCompanionRooms.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoSidebar.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoNotice.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.tsx',
@@ -99,11 +102,14 @@ export const companionEdits = {
   // project nor the headline's picker offers it.
   'apps/web/src/hooks/useHandleNewThread.ts': [
     ['  const rubatoFirstGroup = useSidebarProjectGroups().find((group) => group.isScratch !== true);\n',
-      '  const rubatoCompanionHome = useRubatoCompanion().status?.home;\n'
+      '  const rubatoCompanionHomes = useRubatoCompanion().companions.map(item => item.home);\n'
         + '  const rubatoFirstGroup = useSidebarProjectGroups().find(\n'
-        + '    (group) => group.isScratch !== true && !isCompanionProject(group, rubatoCompanionHome),\n'
-        + '  );\n',
+        + '    (group) => group.isScratch !== true && !rubatoCompanionHomes.some(home => isCompanionProject(group, home)),\n'
+        + '  );\n'
+        + '  const rubatoFallbackProject = orderedProjects.find(project => !rubatoCompanionHomes.some(home => isCompanionProject(project, home)));\n',
       'replace'],
+    ['      : orderedProjects[0]\n        ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)\n        : null,\n',
+      '      : rubatoFallbackProject\n        ? scopeProjectRef(rubatoFallbackProject.environmentId, rubatoFallbackProject.id)\n        : null,\n', 'replace'],
     ['import { useSidebarProjectGroups } from "./useSidebarProjectGroups";\n',
       'import { isCompanionProject, useRubatoCompanion } from "../state/rubatoCompanion";\n'],
   ],
@@ -111,17 +117,17 @@ export const companionEdits = {
     ['vi.mock("./useSidebarProjectGroups", () => ({ useSidebarProjectGroups: () => [] }));\n',
       'vi.mock("../state/rubatoCompanion", () => ({\n'
         + '  isCompanionProject: () => false,\n'
-        + '  useRubatoCompanion: () => ({ status: null, threadId: null }),\n'
+        + '  useRubatoCompanion: () => ({ status: null, threadId: null, companions: [] }),\n'
         + '}));\n'],
   ],
   'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
     ['  const projectGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;',
       '  const rubatoOrderedGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;\n'
         + '  // Rubato: Segno\'s own folder is not offered as a project (companion-edits.mjs).\n'
-        + '  const rubatoCompanionHome = useRubatoCompanion().status?.home;\n'
+        + '  const rubatoCompanionHomes = useRubatoCompanion().companions.map(item => item.home);\n'
         + '  const projectGroups = useMemo(\n'
-        + '    () => rubatoOrderedGroups.filter((group) => !isCompanionProject(group, rubatoCompanionHome)),\n'
-        + '    [rubatoOrderedGroups, rubatoCompanionHome],\n'
+        + '    () => rubatoOrderedGroups.filter((group) => !rubatoCompanionHomes.some(home => isCompanionProject(group, home))),\n'
+        + '    [rubatoOrderedGroups, rubatoCompanionHomes],\n'
         + '  );',
       'replace'],
     ['import { ProjectFavicon } from "../ProjectFavicon";\n',
@@ -160,14 +166,15 @@ export const companionEdits = {
   'apps/web/src/components/ThreadRouteView.tsx': [
     ['  let view: React.ReactNode = null;\n',
       '  // Rubato: Segno\'s thread opens in its own space (companion-edits.mjs).\n'
-        + '  const rubatoCompanionThreadId = useRubatoCompanion().threadId;\n'
-        + '  const rubatoSegnoSpace = target.kind === "server" && rubatoCompanionThreadId === target.threadRef.threadId;\n'],
+        + '  const rubatoCompanionView = useRubatoCompanion();\n'
+        + '  const rubatoCurrentCompanion = target.kind === "server" ? rubatoCompanionView.companions.find(item => item.threadId === target.threadRef.threadId) : undefined;\n'
+        + '  const rubatoSegnoSpace = rubatoCurrentCompanion !== undefined;\n'],
     ['    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">\n      {view}\n    </SidebarInset>\n',
       '    <SidebarInset\n'
         + '      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"\n'
         + '      data-rubato-segno-space-host={rubatoSegnoSpace ? "" : undefined}\n'
         + '    >\n'
-        + '      {rubatoSegnoSpace ? <RubatoSegnoSpace>{view}</RubatoSegnoSpace> : view}\n'
+        + '      {rubatoSegnoSpace ? <RubatoSegnoSpace key={rubatoCurrentCompanion!.id} companionId={rubatoCurrentCompanion!.id}>{view}</RubatoSegnoSpace> : view}\n'
         + '    </SidebarInset>\n',
       'replace'],
     ['import { SidebarInset } from "./ui/sidebar";\n',

@@ -124,16 +124,19 @@ async function main(argv: readonly string[]): Promise<number> {
   }
   // The companion's conversations and its store are dreamed by the companion's own dream
   // (harness/companion/dream), in its voice; this one would read them as coding sessions.
-  const companionFolder = await companionHome(env)
+  const companions = await companionProfiles(env)
   const resolveStore = createStoreNameResolver((cwd) => loadSenpiRubatoConfig({ cwd, env }).config.memory?.agent, env)
   const scan = scanStoreSessions({
     sessionsRoot: join(agentDir(env), "sessions"),
     sinceMs: (store, sessionId) => trialSinceMs ?? sessionSinceMs(states.get(store) ?? {}, sessionId, now),
     resolveStore,
-    skipFolder: (cwd) => sameFolder(cwd, companionFolder),
+    skipFolder: (cwd) => companions.some(profile => sameFolder(cwd, profile.home)),
   })
-  const companionStore = companionOnlyStore({ companionFolder, resolveStore, folders: scan.folders })
-  if (companionStore !== undefined) {
+  const companionStores = new Set(companions.flatMap(profile => {
+    const resolved = companionOnlyStore({ companionFolder: profile.home, resolveStore, folders: scan.folders })
+    return [...(resolved ? [resolved] : []), ...(profile.id !== "segno" ? [profile.memoryAgent] : [])]
+  }))
+  for (const companionStore of companionStores) {
     if ([...named, migrateStore].includes(companionStore)) {
       process.stderr.write(`rubato dream: ${companionStore} is the companion's memory; the companion dreams it itself\n`)
       return 2
@@ -268,10 +271,10 @@ function printStatuses(all: readonly StoreStatus[], models: readonly DreamRung[]
   }
 }
 
-/** The companion's folder, by the companion's own rule (harness/companion/home.mjs). */
-async function companionHome(env: NodeJS.ProcessEnv): Promise<string> {
-  const home = await import(join(repoRoot, "harness", "companion", "home.mjs"))
-  return home.companionHomeFor(env) as string
+/** Registration owns identity and home; the coding dream cannot claim any companion's records. */
+async function companionProfiles(env: NodeJS.ProcessEnv): Promise<Array<{ id: string; home: string; memoryAgent: string }>> {
+  const registry = await import(join(repoRoot, "harness", "companion", "registry.mjs"))
+  return registry.listCompanions(env)
 }
 
 main(process.argv.slice(2)).then(

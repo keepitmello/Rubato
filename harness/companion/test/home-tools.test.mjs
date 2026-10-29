@@ -43,6 +43,25 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   assert.match(diary, /## 버그 리포트가 들어온 오후/);
 });
 
+test('two hosted companion tool factories write only to their explicit home, never the shared process home', async t => {
+  const a = sandbox(t), b = sandbox(t);
+  const toolsA = toolsOf({ env: a }), toolsB = toolsOf({ env: b });
+  await toolsA.get('segno_record').execute('a', { kind: 'daily', text: 'Only companion A' });
+  await toolsB.get('segno_record').execute('b', { kind: 'daily', text: 'Only companion B' });
+  assert.match(readRecord('daily', { env: a }), /Only companion A/);
+  assert.doesNotMatch(readRecord('daily', { env: a }), /Only companion B/);
+  assert.match(readRecord('daily', { env: b }), /Only companion B/);
+  await toolsA.get('reply').execute('ra', { text: 'Reply from A' });
+  await toolsB.get('reply').execute('rb', { text: 'Reply from B' });
+  assert.deepEqual(sentMessages({ env: a }).map(row => row.text), ['Reply from A']);
+  assert.deepEqual(sentMessages({ env: b }).map(row => row.text), ['Reply from B']);
+  await toolsA.get('inbox_add').execute('ia', { title: 'Issue A' });
+  assert.equal((await toolsB.get('inbox_list').execute('ib', {})).details.items.length, 0);
+  await toolsB.get('wake_wish').execute('wb', { when: '30', reason: 'B only' });
+  assert.equal(readWakeWish(a), undefined);
+  assert.equal(readWakeWish(b).reason, 'B only');
+});
+
 test('the companion lists, adds, links and closes inbox items with its tools', async (t) => {
   const env = sandbox(t);
   const before = { ...process.env };

@@ -10,7 +10,7 @@ import {
   enqueueMessage, listOutbox, pairedChatId, readBot, readHandoff, readIntent, readPairing, readSecret, readState, writeDecision,
   writeIntent, writeSecret, writeState, messengerPaths,
 } from '../store.mjs';
-import { writeState as writeCompanionState } from '../../companion.mjs';
+import { writeState as writeCompanionState, writeSettings as writeCompanionSettings } from '../../companion.mjs';
 
 test('the token is stored 0600 and Settings shows it as it is', async (t) => {
   const box = sandbox(t);
@@ -19,6 +19,31 @@ test('the token is stored 0600 and Settings shows it as it is', async (t) => {
   assert.equal(readBot(box.env).token, TOKEN);
   const { mode } = await import('node:fs').then(({ statSync }) => ({ mode: statSync(messengerPaths(box.env).secret).mode & 0o777 }));
   assert.equal(mode, 0o600);
+});
+
+test('pairing, control replies, approvals and off messages name the owning companion, never a sibling', async t => {
+  const box = sandbox(t);
+  Object.assign(box.env, { RUBATO_COMPANION_ID: 'other', RUBATO_COMPANION_TITLE: 'Other companion' });
+  writeSecret(TOKEN, box.env);
+  writeCompanionState({ sessionId: 'S1' }, box.env);
+  writeIntent({ action: 'pair' }, box.env);
+  const fake = fakeTelegram();
+  const { service } = start({ ...box, fake, sessionStats: async () => ({ contextUsage: { percent: 25 } }) });
+  t.after(() => service.close());
+  await settle(service);
+  fake.message({ chatId: USER_CHAT, text: readPairing(box.env).code });
+  await settle(service);
+  for (const text of ['/companion', '/context', '/heartbeat off']) {
+    fake.message({ chatId: USER_CHAT, text }); await settle(service);
+    assert.match(fake.sent.at(-1).text, /Other companion/);
+  }
+  await service.send({ to: GROUP_CHAT, text: 'Explicit held message' });
+  assert.match(fake.sent.at(-1).text, /Other companion/);
+  writeCompanionSettings({ enabled: false }, box.env);
+  fake.message({ chatId: USER_CHAT, text: 'while off' }); await settle(service);
+  assert.match(fake.sent.at(-1).text, /Other companion.*꺼져/);
+  assert.match(fake.sent.at(-1).text, /\/companion on/);
+  assert.doesNotMatch(fake.sent.map(row => row.text).join('\n'), /세뇨|Segno/);
 });
 
 test('pairing waits for the code, and binds only the chat that sent it', async (t) => {

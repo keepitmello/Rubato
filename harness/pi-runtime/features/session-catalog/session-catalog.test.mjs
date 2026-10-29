@@ -96,8 +96,42 @@ function sessionJsonl({ id, cwd, text, timestamp }) {
 
 preparePatchedPackage();
 
+test("actual SDK restores a durable empty conversation's selected model and effort without a turn", async () => {
+  const sdk = await import(pathToFileURL(join(patchedPackage, "dist/index.js")).href);
+  const cwd = join(scratchRoot, "empty-body"), agentDir = join(cwd, "agent");
+  mkdirSync(agentDir, { recursive: true });
+  writeFileSync(join(agentDir, "models.json"), JSON.stringify({ providers: { fixture: {
+    api: "openai-completions", apiKey: "unused-offline-key", baseUrl: "http://127.0.0.1:9/v1",
+    models: ["global-default", "selected-body"].map(id => ({
+      id, name: id, reasoning: true, input: ["text"], contextWindow: 128000, maxTokens: 256,
+    })),
+  } } }));
+  const sessionFile = join(cwd, "empty.jsonl");
+  writeFileSync(sessionFile, JSON.stringify({
+    type: "session", version: 3, id: "empty-body", cwd, timestamp: new Date().toISOString(),
+  }) + "\n");
+  const manager = sdk.SessionManager.open(sessionFile);
+  manager.appendModelChange("fixture", "selected-body");
+  manager.appendThinkingLevelChange("high");
+  const settingsManager = sdk.SettingsManager.inMemory({
+    defaultProvider: "fixture", defaultModel: "global-default", defaultThinkingLevel: "low",
+  });
+  const resourceLoader = new sdk.DefaultResourceLoader({ cwd, agentDir, settingsManager,
+    noExtensions: true, noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
+  await resourceLoader.reload();
+  const { session } = await sdk.createAgentSession({ cwd, agentDir, settingsManager, resourceLoader,
+    sessionManager: sdk.SessionManager.open(sessionFile), tools: [] });
+  try {
+    assert.equal(session.model.id, "selected-body");
+    assert.equal(session.thinkingLevel, "high");
+    assert.equal(session.sessionManager.buildSessionContext().messages.length, 0);
+    assert.equal(settingsManager.getDefaultModel(), "global-default");
+    assert.equal(settingsManager.getDefaultThinkingLevel(), "low");
+  } finally { session.dispose(); }
+});
+
 test("manifest is stock-version locked, additive, drift-strict, and valid JavaScript", () => {
-  assert.equal(patches.length, 2);
+  assert.equal(patches.length, 3);
   assert.deepEqual(files.map((file) => file.path), [
     "dist/rubato-features/session-catalog/catalog.mjs",
   ]);

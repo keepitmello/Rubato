@@ -15,6 +15,18 @@ const here = dirname(fileURLToPath(import.meta.url));
 const promptHref = pathToFileURL(resolve(here, "../../../rubato-pi/src/system-prompt.mjs")).href;
 const roleHref = pathToFileURL(resolve(here, "../../../rubato-pi/src/role-contract.mjs")).href;
 
+test("a records-only companion does not inherit its archive's coding-agent role", () => {
+  const existing = "<project_context>ARCHIVED_CODING_ROLE</project_context>\nCurrent working directory: /private/archive";
+  const hooks = { loadRolePrompt: () => "OWN_COMPANION_ROLE", skillsSection: () => "",
+    env: { RUBATO_COMPANION_RECORDS_ONLY: "1" }, argv: [] };
+  const extra = replaceSystemPrompt(existing, COMPANION_ROLE, hooks);
+  assert.match(extra, /OWN_COMPANION_ROLE/);
+  assert.match(extra, /Current working directory/);
+  assert.doesNotMatch(extra, /ARCHIVED_CODING_ROLE/);
+  assert.match(replaceSystemPrompt(existing, COMPANION_ROLE, { ...hooks, env: {} }), /ARCHIVED_CODING_ROLE/);
+  assert.match(replaceSystemPrompt(existing, "lead", hooks), /ARCHIVED_CODING_ROLE/);
+});
+
 test("rubato-role-prompt factory name is toggleable", () => {
   const factories = createRolePromptExtensionFactories({ env: {} });
   assert.deepEqual(factories.map((entry) => entry.name), [ROLE_PROMPT_FACTORY_NAME]);

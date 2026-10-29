@@ -102,6 +102,7 @@ function readDirJson(dir) {
 
 /** Fish Audio's model for Segno's voice replies (Roo's tts-adapter.ts FISH_DEFAULT_MODEL). */
 export const DEFAULT_VOICE_MODEL = 's2.1-pro-free';
+export const DEFAULT_VOICE_TEMPERATURE = 0.3;
 
 export const DEFAULT_MESSENGER_SETTINGS = Object.freeze({
   enabled: true,
@@ -111,7 +112,7 @@ export const DEFAULT_MESSENGER_SETTINGS = Object.freeze({
    * Segno's voice for voice replies: a Fish Audio voice id. None until the person picks one, and
    * until then a voice reply says so instead of speaking in a voice nobody chose.
    */
-  voice: Object.freeze({ voiceId: null, model: DEFAULT_VOICE_MODEL }),
+  voice: Object.freeze({ voiceId: null, model: DEFAULT_VOICE_MODEL, temperature: DEFAULT_VOICE_TEMPERATURE }),
 });
 
 const VOICE_ID = /^[A-Za-z0-9_-]{8,64}$/;
@@ -125,6 +126,8 @@ export function normalizeMessengerSettings(value) {
     voice: {
       voiceId: typeof voice.voiceId === 'string' && VOICE_ID.test(voice.voiceId) ? voice.voiceId : null,
       model: typeof voice.model === 'string' && voice.model.trim() ? voice.model.trim() : DEFAULT_VOICE_MODEL,
+      temperature: typeof voice.temperature === 'number' && Number.isFinite(voice.temperature) && voice.temperature >= 0
+        ? voice.temperature : DEFAULT_VOICE_TEMPERATURE,
     },
   };
 }
@@ -139,11 +142,13 @@ export function writeMessengerSettings(patch, env = process.env) {
     if (patch[field] !== undefined && typeof patch[field] !== 'boolean') throw new TypeError(`${field} must be true or false`);
   if (patch.voice !== undefined) {
     if (!patch.voice || typeof patch.voice !== 'object') throw new TypeError('voice must be an object');
-    const { voiceId, model } = patch.voice;
+    const { voiceId, model, temperature } = patch.voice;
     if (voiceId !== undefined && voiceId !== null && !(typeof voiceId === 'string' && VOICE_ID.test(voiceId)))
       throw new TypeError('voice.voiceId must be a Fish Audio voice id or null');
     if (model !== undefined && !(typeof model === 'string' && model.trim() && model.length <= 100))
       throw new TypeError('voice.model must be a Fish Audio model name');
+    if (temperature !== undefined && !(typeof temperature === 'number' && Number.isFinite(temperature) && temperature >= 0))
+      throw new TypeError('voice.temperature must be a nonnegative finite number');
   }
   const current = readMessengerSettings(env);
   const next = normalizeMessengerSettings({ ...current, ...patch, voice: { ...current.voice, ...patch.voice } });

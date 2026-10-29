@@ -1,6 +1,7 @@
 import { statSync } from 'node:fs';
 import { COMPANION_TARGET } from '../../../packages/schedule-core/src/index.mjs';
 import { readState as readCompanionState } from '../../companion/companion.mjs';
+import { companionEnv } from '../../companion/registry.mjs';
 
 // One run = one ordinary session in the profile engine, created, prompted and watched to the
 // end of its first turn. The engine keeps the conversation (JSONL) and T3 projects it into a
@@ -27,8 +28,9 @@ export function messageText(taskName, text) {
  * Segno does not leave the task pointing at the old one.
  */
 export function resolveTarget(sendTo, { env = process.env } = {}) {
-  if (sendTo !== COMPANION_TARGET) return sendTo;
-  const sessionId = readCompanionState(env)?.sessionId;
+  if (sendTo !== COMPANION_TARGET && !sendTo?.startsWith('companion:')) return sendTo;
+  const scoped = sendTo.startsWith('companion:') ? companionEnv(sendTo.slice('companion:'.length), env) : env;
+  const sessionId = readCompanionState(scoped)?.sessionId;
   if (typeof sessionId !== 'string' || !sessionId) throw new Error('Segno has no conversation yet (turn the companion on in Settings › Companion).');
   return sessionId;
 }

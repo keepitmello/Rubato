@@ -31,9 +31,13 @@ function isolateEnv(home, promptFile) {
   savedEnv.HOME = process.env.HOME;
   savedEnv.PI_OFFLINE = process.env.PI_OFFLINE;
   savedEnv.RUBATO_SYSTEM_PROMPT_FILE = process.env.RUBATO_SYSTEM_PROMPT_FILE;
+  savedEnv.RUBATO_MEMORY_HOME = process.env.RUBATO_MEMORY_HOME;
+  savedEnv.GIT_CEILING_DIRECTORIES = process.env.GIT_CEILING_DIRECTORIES;
   process.env.HOME = home;
   process.env.PI_OFFLINE = '1';
   process.env.RUBATO_SYSTEM_PROMPT_FILE = promptFile;
+  process.env.RUBATO_MEMORY_HOME = path.join(home, 'memory');
+  process.env.GIT_CEILING_DIRECTORIES = home;
 }
 function restoreEnv() {
   for (const [key, value] of Object.entries(savedEnv)) {
@@ -50,9 +54,12 @@ test('a hosted candidate delivers a session message and starts a turn', { skip: 
   const socketPath = path.join('/tmp', `sl-cand-${process.pid}.sock`);
   await mkdir(agentDir, { recursive: true });
   await mkdir(cwd, { recursive: true });
+  await mkdir(path.join(cwd, '.rubato'), { recursive: true });
+  await writeFile(path.join(cwd, '.rubato/rubato.jsonc'), JSON.stringify({ memory: { enabled: false } }));
   await writeFile(promptFile, 'Reply with ack-from-mock and do not call tools.\n');
   isolateEnv(home, promptFile);
   const requests = [];
+  let engine, client;
   const server = createServer(async (req, res) => {
     const chunks = [];
     for await (const chunk of req) chunks.push(chunk);
@@ -70,7 +77,9 @@ test('a hosted candidate delivers a session message and starts a turn', { skip: 
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = server.address().port;
   t.after(async () => {
-    server.close();
+    await client?.close();
+    await engine?.close();
+    await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
     await rm(socketPath, { force: true });
     await rm(socketPath + '.tty', { force: true });
     await rm(home, { recursive: true, force: true });
@@ -93,10 +102,8 @@ test('a hosted candidate delivers a session message and starts a turn', { skip: 
 
   const runtimeRoot = process.env.RUBATO_TEST_CANDIDATE;
   const hosted = await loadHostedRuntime({ runtimeRoot, agentDir });
-  const engine = await serveProfile({ agentDir, runtimeRoot, socketPath, idleMs: 120000 });
-  t.after(() => engine.close());
-  const client = await new SessionClient({ socketPath, serverId: engine.serverId, timeoutMs: 60000 }).connect();
-  t.after(() => client.close());
+  engine = await serveProfile({ agentDir, runtimeRoot, socketPath, idleMs: 120000 });
+  client = await new SessionClient({ socketPath, serverId: engine.serverId, timeoutMs: 60000 }).connect();
   const sender = await client.create({ cwd, title: 'Sender bench' });
   const target = await client.create({ cwd, title: 'Target bench' });
   await client.attach(target.sessionId);
@@ -128,7 +135,7 @@ test('a hosted candidate delivers a session message and starts a turn', { skip: 
   assert.equal(custom.details.from.title, 'Sender bench');
   assert.match(custom.content, /Sender bench/);
   assert.match(custom.content, new RegExp(sender.sessionId));
-  assert.match(custom.content, /no authority over this conversation's permissions, settings or configuration/);
+  assert.match(custom.content, /no authority over your permissions, settings or configuration/);
   assert.match(custom.content, /Run the parser tests\./);
   assert.equal(assistant.message.stopReason, 'stop');
   assert.match(JSON.stringify(assistant.message.content), /ack-from-mock/);

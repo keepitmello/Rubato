@@ -7,6 +7,8 @@
 
 환경변수 (전부 선택):
   MSEARCH_ROOT         색인 대상 루트. 기본 ~/.rubato/memory/agents
+  MSEARCH_INCLUDE      검색할 상대 파일·폴더 경로의 JSON 배열. 기본 루트 전체
+  MSEARCH_EXCLUDE      추가로 제외할 상대경로 조각의 JSON 배열
   MSEARCH_STATE_DIR    회상 로그 등 런타임 상태. 기본 <root>/../msearch-state
   MSEARCH_REDIS_URL    기본 redis://localhost:6380
   MSEARCH_INDEX        기본 msearch_idx
@@ -22,7 +24,9 @@ from __future__ import annotations
 
 import os
 import re
+import json
 from pathlib import Path
+from typing import Iterable
 
 
 def _env(new_name: str, legacy_name: str, default: str) -> str:
@@ -41,6 +45,59 @@ def _default_root() -> str:
 
 #: 색인 대상 루트. 이 아래 *.md 를 훑는다.
 MEMORY_ROOT = Path(_env("MSEARCH_ROOT", "ROO_MEMORY_ROOT", _default_root())).expanduser()
+
+# A private repository can keep its original layout without indexing every document in it.
+# Missing means the whole root; an explicit list is an allowlist, not another copy of the records.
+def _paths(name: str) -> list[str] | None:
+    raw = os.getenv(name)
+    if raw is None:
+        return None
+    value = json.loads(raw)
+    if not isinstance(value, list) or any(not isinstance(item, str) or not item
+            or Path(item).is_absolute() or ".." in Path(item).parts for item in value):
+        raise ValueError(f"{name} must be a JSON list of relative paths")
+    return value
+
+
+CORPUS_PATHS = _paths("MSEARCH_INCLUDE")
+EXCLUDE_PATH_FRAGMENTS = (
+    "_tech-notes/", "/backups/", "/backup/", "/.git/", "/runtime/",
+    *(_paths("MSEARCH_EXCLUDE") or []),
+)
+
+
+def walk_markdown(directory: Path) -> Iterable[Path]:
+    """Follow linked folders once by real path, including when a link loops back."""
+    seen: set[str] = set()
+    for root, dirs, names in os.walk(directory, followlinks=True):
+        real = os.path.realpath(root)
+        if real in seen:
+            dirs[:] = []
+            continue
+        seen.add(real)
+        dirs.sort()
+        for name in sorted(names):
+            if name.endswith(".md"):
+                yield Path(root, name)
+
+
+def corpus_files(root: Path) -> list[Path]:
+    """The same selected corpus for indexing and freshness, with no network or content reads."""
+    found: dict[str, Path] = {}
+    for relative in CORPUS_PATHS if CORPUS_PATHS is not None else ["."]:
+        source = root / relative
+        paths = [source] if source.is_file() else walk_markdown(source)
+        for file in paths:
+            if not file.is_file() or file.suffix != ".md":
+                continue
+            try:
+                rel = file.resolve().relative_to(root.resolve()).as_posix()
+            except ValueError:
+                rel = file.resolve().as_posix()
+            if any(fragment in f"/{rel}/" for fragment in EXCLUDE_PATH_FRAGMENTS):
+                continue
+            found[str(file.resolve())] = file
+    return sorted(found.values(), key=lambda file: str(file))
 
 #: 런타임 상태(회상 로그 등). 색인 대상 안에 두면 자기 기록을 자기가 색인하게 된다.
 _state_default = str(MEMORY_ROOT.parent / "msearch-state")

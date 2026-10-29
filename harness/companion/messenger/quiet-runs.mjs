@@ -1,11 +1,5 @@
-// Which input opened each run of Segno's conversation, read one message at a time: the Telegram
-// mirror (sync.mjs) sends nothing from a run Rubato's clock started, and the settings tool
-// (harness/companion/settings.mjs, through sync.mjs runAt) lets only a run the person opened change a
-// setting. A run is quiet when the first input it takes is a clock wake, and stays quiet until another
-// input joins it; a turn opened by work finishing belongs to the run that launched the work.
-//
-// Segno's thread in the app does not use this: it is a chat log of the person's messages and what
-// Segno says with reply or say (t3-integration companion-thread.mjs, said-echo.mjs).
+// Journal-shape compatibility helpers. origin.mjs owns settings authority; sync.mjs
+// owns explicit output receipts. Neither derives authorization from a reply target.
 const SESSION_MESSAGE_TYPE = 'rubato-session-message';
 /** The wakes of Rubato's clock (harness/companion keeper.mjs). */
 export const QUIET_WAKES = Object.freeze(['heartbeat', 'greeting', 'wake', 'recall', 'daily-report', 'sleep']);

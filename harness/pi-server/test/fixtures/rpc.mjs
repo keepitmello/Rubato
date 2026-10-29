@@ -44,6 +44,8 @@ lines.on('line', (line) => {
   switch (command.type) {
     case 'get_state': data = { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(), isStreaming: running, isCompacting: false, pendingMessageCount: 0,
       model: { provider: model.split('/')[0], id: model.split('/')[1] }, thinkingLevel }; break;
+    case 'get_session_stats': data = { sessionId: manager.getSessionId(), sessionFile: manager.getSessionFile(),
+      contextUsage: { tokens: null, contextWindow: 1_000_000, percent: null } }; break;
     case 'set_model':
       if (!MODELS[`${command.provider}/${command.modelId}`]) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: `Model not found: ${command.provider}/${command.modelId}` }); return; }
       model = `${command.provider}/${command.modelId}`; thinkingLevel = clamp(thinkingLevel); break;

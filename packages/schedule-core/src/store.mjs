@@ -68,7 +68,7 @@ export function validateSendTo(value) {
   if (value === null || value === undefined) return null;
   const target = typeof value === 'string' ? value.trim() : value;
   if (target === '') return null;
-  if (target === COMPANION_TARGET || (typeof target === 'string' && SESSION_ID.test(target))) return target;
+  if (target === COMPANION_TARGET || (typeof target === 'string' && (/^companion:[a-z][a-z0-9-]{0,47}$/.test(target) || SESSION_ID.test(target)))) return target;
   throw invalid('Send to "companion" (Segno) or a conversation id, or leave it empty to start a new session.', 'sendTo');
 }
 

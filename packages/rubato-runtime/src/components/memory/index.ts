@@ -72,6 +72,9 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
   return {
     name: "memory",
     register(pi: SenpiExtensionAPI, ctx: ComponentContext): void {
+      // An existing private companion home is already its authoritative record repository.
+      // Native companion-home tools own those records; a second generic store would split them.
+      if (env.RUBATO_COMPANION_RECORDS_ONLY === "1") return
       const cwd = resolveCwd()
       const bootConfig = resolveMemoryConfig(loadConfig({ cwd }))
       if (!isEnabled(bootConfig, ctx)) return

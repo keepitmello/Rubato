@@ -107,7 +107,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
         ? { renderCoda: false }
         : { renderCoda: false, loadRolePrompt: () => (role === COMPANION_ROLE ? pinAtBoundary : pin)(id, ctx, ROLE_PROMPT_ENTRY_TYPE,
           () => loadRolePrompt(role, { env })) };
-      const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, hooks);
+      const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, { ...hooks, env });
       let composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
       if (id !== undefined) {
         for (const section of sections) {

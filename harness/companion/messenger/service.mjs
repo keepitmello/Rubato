@@ -9,9 +9,8 @@
 //     words, with no authority over Segno's settings;
 //   - photos, files and voice messages arrive with it: a photo as an image Segno sees, a file
 //     saved where Segno can open it, a voice message transcribed (media.mjs, Roo's daemon);
-//   - the app and Telegram show the same conversation: every word of Segno's the app shows goes
-//     to the person's Telegram, and a run the app hides stays out of it (sync.mjs); the answer to
-//     another person is held;
+//   - the app and Telegram share the explicit reply mouth. Ordinary assistant text stays private
+//     in every run (sync.mjs); explicit telegram_send to anyone else waits for approval;
 //   - Segno's Telegram tools send text, files and voice notes, react and edit (Roo's
 //     telegram_reply, react, edit_message); anything addressed to another chat is held until the
 //     person approves it, from the Telegram card or from Settings › Companion;
@@ -37,7 +36,7 @@ import { freshRun, locateTranscript, readEntriesFrom, runAt, stepRun } from './s
 import { mediaOf, saveMedia, transcribeMedia } from './media.mjs';
 import { prepareReplyPayload, telegramText } from './reply-text.mjs';
 import { synthesizeVoice } from './voice.mjs';
-import { SEGNO_OFF_TEXT, contextText, heartbeatText, parseControlCommand, segnoText } from './commands.mjs';
+import { companionOffText, contextText, heartbeatText, parseControlCommand, segnoText } from './commands.mjs';
 import { botUsernameCandidates } from './scripts/create-bot.mjs';
 import { readSettings as readCompanionSettings, readState as readCompanionState, writeSettings as writeCompanionSettings } from '../companion.mjs';
 import { openInbox } from '../inbox.mjs';
@@ -57,12 +56,6 @@ const typingDelay = (random = Math.random) => (random() < TYPING.fastStartProbab
   : TYPING.slowStartMinMs + Math.floor(random() * (TYPING.slowStartMaxMs - TYPING.slowStartMinMs)));
 
 /** How a voice message reaches the conversation as words: OpenAI transcription with the Mac's voice-input key. */
-const STT_PROMPT = [
-  'A voice message the person sent their companion Segno on Telegram.',
-  'Write what was said. Do not summarize, translate, reorder or polish it.',
-  'The primary language is Korean. Keep English technical terms and names in their original spelling.',
-].join(' ');
-
 /** Transcribes with the key and model the person set for voice input (~/.rubato/voice.json), as Roo's daemon does with its own key. */
 export function defaultTranscriber(env = process.env) {
   return async ({ bytes, ext, mime }) => {
@@ -70,8 +63,12 @@ export function defaultTranscriber(env = process.env) {
     const { transcribeAudio } = await import('../../t3-integration/src/voice/transcribe.mjs');
     const { config } = settings.createVoiceConfigReader(settings.voiceConfigPath(env))();
     const model = typeof config?.model === 'string' && config.model.trim() ? config.model.trim() : settings.DEFAULT_VOICE_MODEL;
+    const title = env.RUBATO_COMPANION_TITLE || 'Segno';
+    const prompt = [`A voice message the person sent their companion ${title} on Telegram.`,
+      'Write what was said. Do not summarize, translate, reorder or polish it.',
+      'The primary language is Korean. Keep English technical terms and names in their original spelling.'].join(' ');
     const { text } = await transcribeAudio({ apiKey: settings.voiceApiKey(config, env), model, audio: bytes,
-      filename: `voice.${ext}`, contentType: mime || 'audio/ogg', prompt: STT_PROMPT, hints: ['Segno', '세뇨', 'Rubato', '루바토'] });
+      filename: `voice.${ext}`, contentType: mime || 'audio/ogg', prompt, hints: [title, 'Rubato', '루바토'] });
     return { text, engine: `openai/${model}` };
   };
 }
@@ -179,6 +176,9 @@ export function startCompanionMessenger({
   signal, pollMs = 1000, longPollSeconds = 25, now = Date.now,
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
+  const additional = env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno';
+  const title = additional ? env.RUBATO_COMPANION_TITLE || env.RUBATO_COMPANION_ID : '세뇨';
+  const commandName = additional ? 'companion' : 'segno';
   const sessionsDir = agentDir ? path.join(agentDir, 'sessions') : undefined;
   let closed = false;
   let api;
@@ -193,7 +193,7 @@ export function startCompanionMessenger({
   const failures = new Map();
   /** Since when updates wait for Segno's conversation to exist. */
   let waitingSince;
-  const notReady = () => Object.assign(new Error("Segno's conversation is not running yet"), { code: 'not-ready' });
+  const notReady = () => Object.assign(new Error(`${title}'s conversation is not running yet`), { code: 'not-ready' });
   const stop = new AbortController();
   if (signal) signal.addEventListener('abort', () => stop.abort(), { once: true });
 
@@ -298,7 +298,7 @@ export function startCompanionMessenger({
         log('token-saved', { username: me.username });
       } else if (intent.action === 'create-bot') {
         if (!createBot) throw new Error('making a bot is not available in this build');
-        const made = await createBot({ name: intent.name, username: intent.username });
+        const made = await createBot({ name: intent.name ?? (additional ? title : undefined), username: intent.username });
         writeSecret(made.token, env);
         if (made.username || made.name) writeBotIdentity({ username: made.username, name: made.name }, env);
         writeHandoff({ intentAt: intent.at, result: 'bot-created' }, env);
@@ -352,7 +352,7 @@ export function startCompanionMessenger({
       if (command) { await answerCommand(client, chatId, command); return; }
       // Segno is off: its conversation is not woken; the person hears how to turn it back on.
       if (!readCompanionSettings(env).enabled) {
-        await serial(() => client.sendMessage({ chatId, text: SEGNO_OFF_TEXT }));
+        await serial(() => client.sendMessage({ chatId, text: companionOffText({ title, command: commandName }) }));
         log('inbound-while-off', { chatId });
         return;
       }
@@ -379,7 +379,7 @@ export function startCompanionMessenger({
       if (pairing.code && typed === pairing.code) {
         writePairing({ status: 'paired', chat: { chatId, name: nameOf(message.from, message.chat),
           ...(message.from?.username ? { username: message.from.username } : {}), pairedAt: new Date(now()).toISOString() } }, env);
-        await client.sendMessage({ chatId, text: '연결됐습니다. 이제 여기서 세뇨와 이야기하면 됩니다.' });
+        await client.sendMessage({ chatId, text: `연결됐습니다. 이제 여기서 ${title}와 이야기하면 됩니다.` });
         log('paired', { chatId });
         return;
       }
@@ -418,20 +418,20 @@ export function startCompanionMessenger({
     if (command === 'context') {
       const sessionId = readCompanionState(env).sessionId;
       try {
-        if (!sessionId) throw new Error('세뇨 대화가 아직 없음');
+        if (!sessionId) throw new Error(`${title} 대화가 아직 없음`);
         if (typeof sessionStats !== 'function') throw new Error('이 엔진은 세션 통계를 주지 않음');
         const stats = await sessionStats(sessionId);
-        text = contextText({ usage: stats?.contextUsage });
-      } catch (error) { text = contextText({ error: error?.message ?? String(error) }); }
+        text = contextText({ usage: stats?.contextUsage, title });
+      } catch (error) { text = contextText({ error: error?.message ?? String(error), title }); }
     } else if (command === 'segno') {
       try {
         const before = readCompanionSettings(env).enabled;
-        if (enable === undefined) text = segnoText({ enabled: before, changed: false });
-        else { writeCompanionSettings({ enabled: enable }, env); text = segnoText({ enabled: enable, changed: before !== enable }); }
-      } catch (error) { text = segnoText({ error: error?.message ?? String(error) }); }
+        if (enable === undefined) text = segnoText({ enabled: before, changed: false, title, command: commandName });
+        else { writeCompanionSettings({ enabled: enable }, env); text = segnoText({ enabled: enable, changed: before !== enable, title, command: commandName }); }
+      } catch (error) { text = segnoText({ error: error?.message ?? String(error), title, command: commandName }); }
     } else {
-      try { writeCompanionSettings({ heartbeat: { enabled: enable } }, env); text = heartbeatText({ enabled: enable }); }
-      catch (error) { text = heartbeatText({ error: error?.message ?? String(error) }); }
+      try { writeCompanionSettings({ heartbeat: { enabled: enable } }, env); text = heartbeatText({ enabled: enable, title }); }
+      catch (error) { text = heartbeatText({ error: error?.message ?? String(error), title }); }
     }
     await serial(() => client.sendMessage({ chatId, text }));
     log('command', { command, ...(enable === undefined ? {} : { enable }) });
@@ -602,7 +602,7 @@ export function startCompanionMessenger({
     const target = row.target.name ?? row.target.chatId;
     const sent = await client.sendMessage({
       chatId: pairedChatId(env),
-      text: `세뇨가 ${target}에게 보내려 합니다.\n\n${preview(describeRow(row))}`,
+      text: `${title}가 ${target}에게 보내려 합니다.\n\n${preview(describeRow(row))}`,
       keyboard: [[{ text: BUTTON_APPROVE, callback_data: `approve:${row.id}` }, { text: BUTTON_REJECT, callback_data: `reject:${row.id}` }]],
     });
     updateOutboxRow(row.id, { approvalMessageId: sent?.message_id, approvalChatId: pairedChatId(env) }, env);
@@ -771,20 +771,10 @@ export function startCompanionMessenger({
   }
 
   /**
-   * One text Segno said, where the app shows it: the person's own chat for every run but one
-   * another person started, whose answer is held for approval. A text before a tool call goes
-   * without a notification; the run's last answer notifies.
+   * The explicit reply mouth always addresses the paired person. Other-chat sends go through
+   * sendRequest's approval path, never an inferred target from the surrounding transcript.
    */
   async function sendSaid(client, said, { sentParts, onPart, countParts }) {
-    const trigger = said.trigger ?? { kind: 'unknown' };
-    if (trigger.kind === 'channel' && !trigger.isUser) {
-      if (!said.final) return;
-      const chatId = trigger.chatId;
-      if (!chatId) throw new Error('the message that woke this turn names no chat to answer');
-      enqueueMessage({ text: said.text, target: { chatId, ...(trigger.name ? { name: trigger.name } : {}) }, source: 'reply',
-        heldReason: '답장은 사용자 승인을 기다립니다' }, env);
-      return;
-    }
     const chatId = pairedChatId(env);
     if (!chatId) return;
     const text = telegramText(said.text);

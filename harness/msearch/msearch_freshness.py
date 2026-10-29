@@ -41,7 +41,7 @@ def _rel(path: Path, root: Path) -> str:
         return str(resolved.relative_to(root))
     except ValueError:
         try:
-            return str(resolved.relative_to(Path.home()))
+            return "~/" + str(resolved.relative_to(Path.home()))
         except ValueError:
             return str(resolved)
 
@@ -51,17 +51,7 @@ def _file_id(path: Path, root: Path) -> str:
 
 
 def _corpus(root: Path) -> list[Path]:
-    if not root.exists():
-        return []
-    skip = ("/.git/", "/runtime/", "/backups/", "/backup/", "/_tech-notes/")
-    found: list[Path] = []
-    for path in root.rglob("*.md"):
-        marker = "/" + str(path) + "/"
-        if any(fragment in marker for fragment in skip):
-            continue
-        if path.is_file():
-            found.append(path)
-    return found
+    return config.corpus_files(root)
 
 
 def is_stale(client) -> bool:

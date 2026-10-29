@@ -89,6 +89,19 @@ test('only test labels may replace the real one, and a test label never reaches 
   assert.equal(engineJob({ HOME: '/h' }).plistPath, `/h/Library/LaunchAgents/${ENGINE_LAUNCHD_LABEL}.plist`);
 });
 
+test('profile registration survives launchd handoff without carrying private companion credentials', async t => {
+  const box = await sandbox(t);
+  const registry = path.join(box.home, 'local-companions.json');
+  writeFileSync(registry, JSON.stringify({ companions: [] }));
+  const env = { ...box.env, RUBATO_COMPANIONS_FILE: registry,
+    RUBATO_DEFAULT_COMPANION_HOME: path.join(box.home, 'default-home'), ROO_PRIVATE_SECRET: 'MUST_NOT_CARRY' };
+  await ensureEngineLaunchAgent({ env, agentDir: box.agentDir });
+  const plist = readFileSync(engineJob(env).plistPath, 'utf8');
+  assert.ok(plist.includes(`<key>RUBATO_COMPANIONS_FILE</key><string>${registry}</string>`));
+  assert.ok(plist.includes(`<key>RUBATO_DEFAULT_COMPANION_HOME</key><string>${env.RUBATO_DEFAULT_COMPANION_HOME}</string>`));
+  assert.doesNotMatch(plist, /ROO_PRIVATE_SECRET|MUST_NOT_CARRY/);
+});
+
 test('registering moves an older install over: the engine job is loaded and the scheduler job removed; again, nothing changes', async (t) => {
   const box = await sandbox(t);
   const job = engineJob(box.env);

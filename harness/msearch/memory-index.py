@@ -15,7 +15,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import re
 import struct
 import sys
@@ -30,6 +29,7 @@ import redis
 
 
 import msearch_intent
+import msearch_config as config
 from msearch_config import (
     CHANNEL_ID,
     CHANNEL_KEY_ID,
@@ -150,27 +150,7 @@ def tokenize_ko(text: str) -> str:
 #  · backups — 백업 사본 (중복·노이즈)
 #  · .git — 메모리 저장소는 git 레포라 객체/로그가 같이 잎힌다
 #  · runtime — 반사 실행 기록·큐·저널 (기억이 아니라 기계 상태)
-EXCLUDE_PATH_FRAGMENTS = (
-    "_tech-notes/",
-    "/backups/",
-    "/backup/",
-    "/.git/",
-    "/runtime/",
-)
-
-# 루트 상주 문서 — 매 세션 프롬프트에 주입되는 정본.
-# 색인에 없으면 "내 문서에 뭐라고 써 있지"를 검색으로 확인할 통로가 없다 [08-02].
-# rubato 메모리에서는 이들이 각 identity 저장소의 repo/system/ 아래 살아서
-# 아래 rglob 이 이미 집는다. 다른 레이아웃을 가리킬 때를 위해 남겨둔다.
-RESIDENT_DOCS = (
-    "USER.md",
-    "SOUL.md",
-    "MEMORY.md",
-    "COMPANION.md",
-    "TOOLS.md",
-    "IDENTITY.md",
-)
-
+EXCLUDE_PATH_FRAGMENTS = config.EXCLUDE_PATH_FRAGMENTS
 
 def is_excluded(file_path: Path) -> bool:
     normalized = "/" + rel_path(file_path).replace("\\", "/") + "/"
@@ -178,46 +158,11 @@ def is_excluded(file_path: Path) -> bool:
 
 
 def walk_markdown(directory: Path) -> Iterable[Path]:
-    """Every *.md under `directory`, linked folders included.
-
-    A folder is walked once by its real path, so a loop of links or a second link to the same
-    place adds nothing. pathlib's rglob(recurse_symlinks=True) has no such guard: two loop links
-    in one folder branch at every level until the OS link limit, and the walk does not end.
-    """
-    seen: set[str] = set()
-    for root, dirs, names in os.walk(directory, followlinks=True):
-        real = os.path.realpath(root)
-        if real in seen:
-            dirs[:] = []
-            continue
-        seen.add(real)
-        dirs.sort()
-        for name in sorted(names):
-            if name.endswith(".md"):
-                yield Path(root, name)
+    return config.walk_markdown(directory)
 
 
 def discover_markdown_files() -> list[Path]:
-    # 원본은 세 디렉터리를 이름으로 박아둔다. 그것은 채널 레이아웃이 고정이기 때문이었고,
-    # 여기서는 루트 아래에 identity 저장소가 몇 개든 생길 수 있다. 루트를 통째로 훑되,
-    # 저장소의 .git 과 런타임 산출물은 제외한다.
-    source_dirs = [PROJECT_ROOT]
-    files: list[Path] = []
-    for directory in source_dirs:
-        if directory.exists():
-            # 링크한 폴더도 따라간다: 레포 문서를 정본으로 두고 기억 자리에 링크로 걸면
-            # 그 안의 문서가 찾혀야 한다. 폴더는 실제 경로로 한 번만 걷고(walk_markdown),
-            # 같은 파일이 여러 경로로 잡히면 아래에서 실제 경로 하나로 모은다.
-            files.extend(
-                path for path in walk_markdown(directory)
-                if path.is_file() and not is_excluded(path)
-            )
-    # 재귀 스캔 금지 — 명시한 루트 문서만.
-    files.extend(
-        path for name in RESIDENT_DOCS
-        if (path := PROJECT_ROOT / name).is_file()
-    )
-    return sorted({rel_path(path): path for path in files}.values(), key=lambda path: rel_path(path))
+    return sorted(config.corpus_files(PROJECT_ROOT), key=rel_path)
 
 
 def rel_path(file_path: Path) -> str:

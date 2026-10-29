@@ -100,6 +100,28 @@ describe("rubato dream and the companion's store", () => {
     expect(result.stderr).toContain("the companion dreams it itself")
     expect(existsSync(join(home, "memory", "agents", "segno", "runtime", "dream", "runs"))).toBe(false)
   })
+
+  test("#given an additional registered companion #when the coding dream scans #then its store and conversations are excluded", () => {
+    const home = storesHome(["segno", "other", "ordinary"])
+    companionFolder(home, "segno")
+    const privateHome = join(home, "original-repo")
+    mkdirSync(join(privateHome, ".rubato"), { recursive: true })
+    writeFileSync(join(privateHome, ".rubato", "rubato.jsonc"), JSON.stringify({ memory: { agent: "other" } }))
+    writeFileSync(join(home, ".rubato", "companions.json"), JSON.stringify({ companions: [
+      { id: "other", title: "Other", home: privateHome, memoryAgent: "other" },
+    ] }))
+    mkdirSync(join(home, "agent", "sessions"), { recursive: true })
+    writeFileSync(join(home, "agent", "sessions", "other.jsonl"), [
+      { type: "session", version: 3, id: "other-session", timestamp: new Date().toISOString(), cwd: privateHome },
+      { type: "custom", customType: "rubato.companion", data: { id: "other" } },
+      { type: "message", message: { role: "user", content: "private companion record", timestamp: Date.now() } },
+    ].map(line => JSON.stringify(line)).join("\n") + "\n")
+    expect(listed(home)).toEqual(["ordinary"])
+    const result = cli(home, ["other"])
+    expect(result.status).toBe(2)
+    expect(result.stderr).toContain("the companion dreams it itself")
+    expect(existsSync(join(home, "memory", "agents", "other", "runtime", "dream", "runs"))).toBe(false)
+  })
 })
 
 function koreanStore(memory: string, store: string): string {

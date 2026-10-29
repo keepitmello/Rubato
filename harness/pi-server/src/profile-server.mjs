@@ -8,8 +8,9 @@ import { SessionWorker } from './session-worker.mjs';
 import { readDescriptor } from './descriptor.mjs';
 import { drainForRestart, resumeAfterRestart, resumeFilePath } from './drain.mjs';
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from '../../rubato-pi/src/session-defaults.mjs';
-import { RESIDENT_SERVICES, startResidentServices } from './resident-services.mjs';
+import { residentServices, startResidentServices } from './resident-services.mjs';
 import { followingStore } from '../../companion/companion.mjs';
+import { companionEnv, companionServiceName, listCompanions } from '../../companion/registry.mjs';
 export { readDescriptor } from './descriptor.mjs';
 
 /**
@@ -70,7 +71,8 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     });
     hosted?.bindHost(service.host);
     hosted?.sessionLink.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId, onError,
-      ...(resident ? { followStore: followingStore() } : {}) });
+      ...(resident ? { followStores: Object.fromEntries(listCompanions().map((profile) =>
+        [profile.id, followingStore(companionEnv(profile.id))])) } : {}) });
     if (compromised) throw compromised;
     const descriptor = { version: 1, serverId: service.serverId, socketPath };
     if (hosted) {
@@ -95,12 +97,15 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
           return sessionLink.channel(args);
         },
       } : {};
-      const services = Array.isArray(resident) ? resident : RESIDENT_SERVICES;
+      const services = Array.isArray(resident) ? resident : residentServices();
       residents = startResidentServices({ services,
         context: { agentDir, socketPath, serverId: service.serverId }, host, onError, log, timings: residentTimings });
       // The companion's telegram_send queues through the messenger service (harness/companion/messenger).
-      if (sessionLink?.attachTelegram && services.some((entry) => entry.name === 'messenger')) {
-        sessionLink.attachTelegram((args) => residents.call('messenger', 'send', args));
+      if (sessionLink?.attachTelegram && services.some((entry) => entry.name === 'messenger' || entry.name.startsWith('messenger:'))) {
+        sessionLink.attachTelegram((args) => {
+          const profileId = service.host.directory.value.sessions.find((item) => item.sessionId === args.sessionId)?.companionId;
+          return residents.call(companionServiceName('messenger', profileId), 'send', args);
+        });
       }
     }
     // What the previous engine was running when a restart closed it (drain.mjs).

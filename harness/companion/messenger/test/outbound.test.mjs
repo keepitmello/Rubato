@@ -5,9 +5,9 @@ import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { listOutbox, messengerPaths, writeDecision, writeMessengerSettings } from '../store.mjs';
+import { DEFAULT_VOICE_MODEL, listOutbox, messengerPaths, writeDecision, writeMessengerSettings } from '../store.mjs';
 import { GROUP_CHAT, USER_CHAT, paired, settle } from './helpers.mjs';
-import { synthesizeVoice, oggOpusSeconds } from '../voice.mjs';
+import { FISH_TEMPERATURE, FISH_LATENCY, synthesizeVoice, oggOpusSeconds } from '../voice.mjs';
 
 const sentLog = (box) => {
   try { return readFileSync(messengerPaths(box.env).sent, 'utf8').trim().split('\n').map((line) => JSON.parse(line)); }
@@ -80,14 +80,30 @@ test('Fish Audio is asked for Opus in the chosen voice, and the key never leaves
   const env = { ...box.env, FISH_API_KEY: 'fish-secret' };
   const voice = await synthesizeVoice('안녕', { env, fetch: async (url, init) => { asked.push({ url, init }); return new Response(oggBytes()); } });
   const body = JSON.parse(asked[0].init.body);
-  assert.deepEqual([body.reference_id, body.format, body.latency, body.temperature], ['fixturevoice0001', 'opus', 'balanced', 0.3]);
+  assert.deepEqual([body.reference_id, body.format, body.latency, body.temperature], ['fixturevoice0001', 'opus', FISH_LATENCY, FISH_TEMPERATURE]);
   assert.equal(asked[0].init.headers.authorization, 'Bearer fish-secret');
-  assert.equal(asked[0].init.headers.model, 's2.1-pro-free');
+  assert.equal(asked[0].init.headers.model, DEFAULT_VOICE_MODEL);
   assert.equal(voice.durationSec, 3);
   assert.equal(oggOpusSeconds(readFileSync(voice.path)), 3);
   await assert.rejects(synthesizeVoice('안녕', { env, fetch: async () => new Response('nope', { status: 402 }) }),
     (error) => /HTTP 402/.test(error.message) && !/fish-secret/.test(error.message));
   await assert.rejects(synthesizeVoice('안녕', { env, fetch: async () => new Response('ID3notogg') }), /Ogg\/Opus/);
+});
+
+test('an existing voice keeps its temperature and private pronunciation without changing written text', async t => {
+  const box = await paired(t), dictionary = path.join(box.dir, 'pronunciation.json');
+  const original = JSON.stringify({ rules: [{ from: 'source', to: 'spoken' }, { from: 'spoken', to: 'not chained' }] });
+  writeFileSync(dictionary, original);
+  writeMessengerSettings({ voice: { voiceId: 'fixturevoice0001', temperature: 0.65 } }, box.env);
+  const asked = [];
+  await synthesizeVoice('source source', { env: { ...box.env, FISH_API_KEY: 'fake-private',
+    RUBATO_COMPANION_TTS_PRONUNCIATION_FILE: dictionary }, fetch: async (_url, init) => {
+      asked.push(JSON.parse(init.body)); return new Response(oggBytes());
+    } });
+  assert.equal(asked[0].temperature, 0.65);
+  assert.equal(asked[0].text, 'spoken spoken');
+  assert.equal(readFileSync(dictionary, 'utf8'), original);
+  assert.throws(() => writeMessengerSettings({ voice: { temperature: -1 } }, box.env), /temperature/);
 });
 
 test("a reaction lands on the person's latest message unless Segno names one; an edit changes Segno's own", async (t) => {

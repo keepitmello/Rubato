@@ -293,6 +293,8 @@ export function stageArtFile(env = process.env, state = 'idle') {
   for (const name of [`stage-${state}.webp`, `stage-${state}.png`, 'stage.webp', 'stage.png']) {
     if (existsSync(path.join(own, name))) return path.join(own, name);
   }
+  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno')
+    throw Object.assign(new Error('No personal companion art is configured'), { code: 'ENOENT' });
   return path.join(import.meta.dirname, 'art', `stage-${state}.webp`);
 }
 
@@ -317,9 +319,13 @@ function pieceOf(id) {
 
 export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${pieceOf(id).id}.pi.md`);
 /** The resident memory piece lives with Segno's memory, where the dream keeps it, not under prompt/. */
-export const memoryPiecePath = (env = process.env) => path.join(companionHome(env), 'memory', 'MEMORY.md');
-export const personalPiecePath = (env, id) => (pieceOf(id).id === 'memory' ? memoryPiecePath(env)
-  : path.join(companionPaths(env).prompt, `${pieceOf(id).id}.md`));
+export const memoryPiecePath = (env = process.env) => path.join(companionHome(env),
+  JSON.parse(env.RUBATO_COMPANION_LAYOUT || '{}').resident || 'memory/MEMORY.md');
+export const personalPiecePath = (env, id) => {
+  pieceOf(id);
+  const mapped = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[id];
+  return mapped || (id === 'memory' ? memoryPiecePath(env) : path.join(companionPaths(env).prompt, `${id}.md`));
+};
 /** Where the default text a personal copy was seeded from is kept; never read by the composer. */
 export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
 /** The settings page's "have Segno look at it" request; the keeper reads it and wakes Segno. */
@@ -423,7 +429,10 @@ export function clearPersonaReviewRequest(env = process.env) {
 export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
   return PIECES.map(({ id, editable }) => {
     const defaultText = readFile(defaultPiecePath(defaultsDir, id)).trim();
-    const personal = editable ? readOptional(personalPiecePath(env, id), readFile) : undefined;
+    const mapped = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[id];
+    const personal = editable || mapped ? readOptional(personalPiecePath(env, id), readFile) : undefined;
+    if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno' && personal === undefined)
+      throw new TypeError(`Companion ${env.RUBATO_COMPANION_ID} has no private ${id} piece; refusing another persona's default`);
     if (personal === undefined) return { id, editable, defaultText };
     const base = readOptional(basePiecePath(env, id), readFile);
     const changed = base !== undefined && base !== defaultText;

@@ -85,9 +85,10 @@ test("Roo's three Telegram hands: send with files and voice, react, edit — eac
   assert.match(held.content[0].text, /Held for the person's approval/);
 });
 
-test("the send tool says the answers already reach Telegram, so Segno does not say them twice", () => {
+test("the send tool distinguishes explicit replies from private monologue", () => {
   const tool = toolOf(fakeLink());
-  assert.match(tool.description, /already reach the person's Telegram on their own/);
+  assert.match(tool.description, /explicit reply tool also reaches/);
+  assert.match(tool.description, /ordinary assistant text stays private/);
   assert.equal(tool.parameters.required, undefined, 'a voice-only or file-only message needs no text');
 });
 

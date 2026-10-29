@@ -20,6 +20,24 @@ import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 const at = (day, hour, minute = 0) => new Date(2026, 9, day, hour, minute).getTime();
 const HOUR = 60 * 60_000;
+
+test('existing-home wake, recall and greetings read own mapped texts; absent extra greetings never borrow default paths', t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'own-rhythm-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const files = {};
+  for (const name of ['wake', 'recall', 'greet-morning', 'greet-night']) {
+    files[name] = path.join(root, `${name}.md`);
+    writeFileSync(files[name], `OWN_RHYTHM_${name}`);
+  }
+  const env = { RUBATO_COMPANION_ID: 'other', RUBATO_COMPANION_PROMPT_FILES: JSON.stringify(files) };
+  assert.equal(greetingText('morning', defaultsDir, env), 'OWN_RHYTHM_greet-morning');
+  assert.equal(greetingText('night', defaultsDir, env), 'OWN_RHYTHM_greet-night');
+  assert.equal(recallText(defaultsDir, env), 'OWN_RHYTHM_recall');
+  assert.match(wakeSeedText({ mode: 'fresh', now: Date.now(), defaultsDir, env }), /OWN_RHYTHM_wake/);
+  assert.doesNotMatch(greetingText('morning', defaultsDir, { RUBATO_COMPANION_ID: 'other' }), /notes\/held|memory\/MEMORY/);
+  assert.match(greetingText('morning', defaultsDir, {}), /하루 보고/);
+  assert.throws(() => greetingText('night', defaultsDir, { ...env, RUBATO_COMPANION_PROMPT_FILES: JSON.stringify({ 'greet-night': path.join(root, 'missing') }) }), /ENOENT/);
+});
 /** This machine's zone at a moment, as the seed and the resume line write it. */
 const zone = (time) => { const m = -new Date(time).getTimezoneOffset(); const p = (n) => String(n).padStart(2, '0');
   return `UTC${m < 0 ? '-' : '+'}${p(Math.floor(Math.abs(m) / 60))}:${p(Math.abs(m) % 60)}`; };
@@ -36,7 +54,7 @@ function engineFor(env, { existing = true } = {}) {
   const engine = { sessions, sessionFile: path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl'), commands: [] };
   writeFileSync(engine.sessionFile, JSON.stringify({ type: 'session', id: 'segno' }) + '\n');
   if (existing) {
-    sessions.set('segno-1', { sessionId: 'segno-1', status: existing === 'stored' ? 'stored' : 'idle', runtimeId: existing === 'stored' ? null : 'r-segno-1' });
+    sessions.set('segno-1', { sessionId: 'segno-1', companion: true, status: existing === 'stored' ? 'stored' : 'idle', runtimeId: existing === 'stored' ? null : 'r-segno-1' });
     writeState({ sessionId: 'segno-1', woke: { boundary: null }, ...(existing === 'stored' ? {} : { runtimeId: 'r-segno-1' }) }, env);
   }
   engine.append = (...entries) => writeFileSync(engine.sessionFile, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n', { flag: 'a' });
@@ -45,7 +63,7 @@ function engineFor(env, { existing = true } = {}) {
     let attached;
     return {
       async list() { return [...sessions.values()].map((row) => ({ ...row })); },
-      async create() { sessions.set('segno-1', { sessionId: 'segno-1', status: 'stored', runtimeId: null }); return { sessionId: 'segno-1' }; },
+      async create() { sessions.set('segno-1', { sessionId: 'segno-1', companion: true, status: 'stored', runtimeId: null }); return { sessionId: 'segno-1' }; },
       async attach(id) { const row = sessions.get(id); Object.assign(row, { status: row.status === 'running' ? 'running' : 'idle', runtimeId: row.runtimeId ?? `r-${id}` }); attached = id; },
       async command(command) {
         engine.commands.push(command.type);

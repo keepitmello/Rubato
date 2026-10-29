@@ -114,6 +114,13 @@ describe("schedule tool", () => {
     expect(text(back)).toContain("folder:")
   })
 
+  it("#given an additional companion #when it schedules to companion #then the durable target follows its own identity", async () => {
+    const result = await runScheduleTool(store, { action: "create", name: "Own wake", prompt: "Look in.",
+      send_to: "companion", schedule: { kind: "daily", time: "20:00" } }, session, "other-session", "other")
+    expect(result.isError).toBeUndefined()
+    expect((await store.list()).tasks[0]!.sendTo).toBe("companion:other")
+  })
+
   it("#given send_to this without a conversation id #when it registers #then it refuses", async () => {
     const result = await runScheduleTool(store, { action: "create", name: "Here", prompt: "x", send_to: "this", schedule: { kind: "daily", time: "09:00" } }, session)
     expect(result.isError).toBe(true)

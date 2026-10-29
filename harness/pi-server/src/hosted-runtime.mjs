@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import { buildStockPiArgs, stockPiSupportEnv } from '../../rubato-pi/src/launch.mjs';
 import { createSessionLink } from './session-link.mjs';
 import { COMPANION_ROLE } from '../../companion/companion.mjs';
+import { clearCompanionEnv, companionEnv } from '../../companion/registry.mjs';
 
 // One engine process is a profile boundary. Do not let a second caller repin
 // process-level configuration while an existing profile has live runtimes.
@@ -39,7 +40,10 @@ export function announceUnloadOnDispose(runtime) {
  * companion's conversation (harness/companion) runs under its own role, whoever opens it.
  */
 export function workerEnv(metadata, creation, base = process.env) {
-  return { ...(creation?.env ?? base), ...(metadata?.companion ? { RUBATO_PI_ROLE: COMPANION_ROLE } : {}) };
+  const inherited = creation?.env ?? base;
+  return metadata?.companion
+    ? { ...companionEnv(metadata.companionId, inherited), RUBATO_PI_ROLE: COMPANION_ROLE }
+    : clearCompanionEnv(inherited);
 }
 
 export async function loadHostedRuntime({ runtimeRoot, agentDir }) {

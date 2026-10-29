@@ -11,6 +11,7 @@ import { companionSettings, isUserOrigin } from '../settings.mjs';
 import { readSettings, writeState } from '../companion.mjs';
 import { readMessengerSettings, writePairing, writeSecret } from '../messenger/store.mjs';
 import { answerEntry, appEntry, channelEntry, noticeEntry, wakeEntry } from '../messenger/test/helpers.mjs';
+import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 const TOKEN = '123456789:AAaaBBbbCCccDDddEEeeFFffGGhh';
@@ -229,6 +230,22 @@ test('a finished job no recorded launch names, or one in a batch with someone el
     launched('l2', 'a3-t0', 'st_user_job1'), batch]);
   await assert.rejects(box.call(change), (error) => error.code === 'not-the-user', "a batch with someone else's work");
   assert.equal(readMessengerSettings(box.env).approvalRequired, true);
+});
+
+test('machine wakes after a user revoke settings authority without changing the reply destination', async t => {
+  const box = setup(t);
+  for (const what of WAKES) {
+    box.transcript([appEntry('u1', 'hello'), answerEntry('a1', 'private thoughts'), wakeEntry('w1', what, 'machine context')]);
+    await assert.rejects(box.call({ action: 'change', change: { companion: { greetings: { enabled: false } } } }),
+      error => error.code === 'not-the-user', what);
+  }
+  box.transcript([appEntry('u1', 'start native work'),
+    { type: 'message', id: 'created', message: { role: 'toolResult', toolCallId: 'native-create', toolName: 'session_create',
+      details: { sessionId: 'native-child' }, isError: false, content: [{ type: 'text', text: 'created' }] } },
+    wakeEntry('w1', 'heartbeat', 'tick'),
+    noticeEntry('n1', 'completed native work', { sessionId: 'native-child' })]);
+  await box.call({ action: 'change', change: { companion: { greetings: { enabled: false } } } });
+  assert.equal(readSettings(box.env).greetings.enabled, false);
 });
 
 test('a write that fails midway (a folder that cannot be written) leaves nothing of the change behind', async (t) => {

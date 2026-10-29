@@ -21,7 +21,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
 import { usePullRequestsSupported } from "../../state/environments";
-import { acceptCompanionStatus, rubatoCompanion, useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
+import { acceptCompanionStatus, rubatoCompanion, selectCompanion, useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
 import { useStatsWarmup } from "../../state/rubatoStats";
 import { useUiStateStore } from "../../uiStateStore";
@@ -31,6 +31,7 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RubatoProjectPicker } from "./RubatoProjectPicker";
+import { companionRailAction } from "./rubatoCompanionRailAction";
 import { useOpenListAfterSegno } from "../chat/RubatoSegnoSpace";
 import { RubatoSegnoIcon } from "./RubatoSegnoIcon";
 import { useRubatoProjectList } from "./rubatoProjectList";
@@ -190,10 +191,8 @@ export function RubatoProjectRail() {
     : "Projects (⌘G)";
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
   // The router's pathname is percent-encoded, and Segno's thread id (an inventory import) has ':'.
-  const onSegno =
-    companion.threadId !== null &&
-    (pathname.endsWith(`/${encodeURIComponent(companion.threadId)}`) ||
-      pathname.endsWith(`/${companion.threadId}`));
+  const onSegno = companion.companions.some(item => item.threadId !== null &&
+    (pathname.endsWith(`/${encodeURIComponent(item.threadId)}`) || pathname.endsWith(`/${item.threadId}`)));
   // A project's thread list belongs to the ordinary routes, so a choice made in Segno's space
   // leaves it for home (user 412eb407), as the rail's other buttons do.
   const openListAfterSegno = useOpenListAfterSegno(onSegno);
@@ -287,43 +286,34 @@ export function RubatoProjectRail() {
             />
           </PopoverPopup>
         </Popover>
-        {/* Segno while it is off, never turned on included: a new device starts with it off, and one
-            click turns it on (intent rev 8, "the same for every user and device"). */}
-        {companion.status && !companion.status.settings.enabled ? (
+        {companion.companions.map(item => (
           <RailButton
-            label="Segno (off) · turn on"
+            key={item.id}
+            label={!item.settings.enabled ? `${item.title} (off) · turn on` : item.threadId === null ? `${item.title} (starting)` : item.title}
+            active={item.threadId !== null && (pathname.endsWith(`/${encodeURIComponent(item.threadId)}`) || pathname.endsWith(`/${item.threadId}`))}
             onClick={() => {
-              if (environmentId === null) return;
-              void rubatoCompanion
-                .saveSettings(environmentId, { enabled: true })
-                .then(acceptCompanionStatus)
-                .catch(() => void navigate({ to: "/settings/companion" }));
-            }}
-          >
-            <span className="opacity-40">
-              <RubatoSegnoIcon />
-            </span>
-          </RailButton>
-        ) : null}
-        {/* Segno, the always-on companion, while it is on (companion-edits.mjs). */}
-        {companion.status?.settings.enabled ? (
-          <RailButton
-            label={companion.threadId === null ? "Segno (starting)" : "Segno"}
-            active={onSegno}
-            onClick={() => {
-              if (companion.threadId === null || environmentId === null) {
+              selectCompanion(item.id);
+              const action = companionRailAction(item, environmentId);
+              if (action.kind === "enable") {
+                void rubatoCompanion.saveSettings(action.environmentId, { enabled: true })
+                  .then(acceptCompanionStatus).catch(() => void navigate({ to: "/settings/companion" }));
+                return;
+              }
+              if (action.kind === "settings") {
                 void navigate({ to: "/settings/companion" });
                 return;
               }
               void navigate({
                 to: "/$environmentId/$threadId",
-                params: { environmentId, threadId: companion.threadId },
+                params: { environmentId: action.environmentId, threadId: action.threadId },
               });
             }}
           >
-            <RubatoSegnoIcon />
+            <span className={item.settings.enabled ? "" : "opacity-40"}>
+              {item.id === "segno" ? <RubatoSegnoIcon /> : <span className="flex size-6 items-center justify-center rounded-full border text-xs font-medium" aria-hidden="true">{item.title.slice(0, 1)}</span>}
+            </span>
           </RailButton>
-        ) : null}
+        ))}
       </div>
       <div className="flex shrink-0 flex-col items-center gap-1 px-2 pt-2 pb-3">
         <RailSeparator />

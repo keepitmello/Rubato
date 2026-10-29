@@ -6,12 +6,13 @@
 // the app has one (RubatoSegnoSpace.css), and the chat, the composer and the panel stay opaque.
 import { useNavigate } from "@tanstack/react-router";
 import { CheckIcon, CircleAlertIcon, ClockIcon, MessageSquareIcon, PlayIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { cn } from "../../lib/utils";
 import {
   rubatoCompanion,
   useReadyEnvironmentId,
+  useRubatoCompanion,
   type SegnoFinished,
   type SegnoHeldMessage,
   type SegnoLead,
@@ -27,20 +28,23 @@ const PANEL_POLL_MS = 3_000;
 
 const EMPTY: SegnoPanel = { leads: [], finished: [], held: [] };
 /** The last panel the server gave, so coming back to the space starts from it, not from nothing. */
-let lastPanel: SegnoPanel | null = null;
+const lastPanels = new Map<string, SegnoPanel>();
+const CompanionSpace = createContext({ id: "segno", title: "Segno" });
 
 /** `known` is false until the server has answered once; Segno's face waits for it. */
-function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>) {
-  const [panel, setPanel] = useState<SegnoPanel | null>(lastPanel);
+function usePanel(environmentId: ReturnType<typeof useReadyEnvironmentId>, companionId: string) {
+  const key = `${environmentId}:${companionId}`;
+  const [panel, setPanel] = useState<SegnoPanel | null>(() => lastPanels.get(key) ?? null);
   const refresh = useCallback(async () => {
     if (environmentId === null) return;
     try {
-      lastPanel = await rubatoCompanion.panel(environmentId);
-      setPanel(lastPanel);
+      const next = await rubatoCompanion.panel(environmentId, companionId);
+      lastPanels.set(key, next);
+      setPanel(next);
     } catch {
       // A server without the route shows nothing.
     }
-  }, [environmentId]);
+  }, [environmentId, companionId, key]);
   useEffect(() => {
     void refresh();
     const timer = window.setInterval(() => void refresh(), PANEL_POLL_MS);
@@ -65,27 +69,33 @@ export function stageStateOf(panel: SegnoPanel, now: Date): SegnoStageState {
 }
 
 // Each expression loads once per app session, when it is first needed.
-const artCache = new Map<SegnoStageState, string>();
+const artCaches = new Map<string, Map<SegnoStageState, string>>();
 function useSegnoArt(
   environmentId: ReturnType<typeof useReadyEnvironmentId>,
   state: SegnoStageState | null,
+  companionId: string,
 ) {
-  const [loaded, setLoaded] = useState<ReadonlyMap<SegnoStageState, string>>(() => new Map(artCache));
+  const key = `${environmentId}:${companionId}`;
+  if (!artCaches.has(key)) artCaches.set(key, new Map());
+  const artCache = artCaches.get(key)!;
+  const [loaded, setLoaded] = useState(() => ({ key, art: new Map(artCache) }));
   useEffect(() => {
     if (state === null || artCache.has(state) || environmentId === null) return;
     let live = true;
     void rubatoCompanion
-      .art(environmentId, state)
+      .art(environmentId, state, companionId)
       .then(({ art }) => {
         artCache.set(state, art.url);
-        if (live) setLoaded(new Map(artCache));
+        if (live) setLoaded({ key, art: new Map(artCache) });
       })
       .catch(() => undefined);
     return () => {
       live = false;
     };
-  }, [environmentId, state]);
-  return loaded;
+  }, [environmentId, state, companionId, artCache, key]);
+  // A reused room must drop the other companion's loaded images in this render,
+  // not after an effect or a failed request for its own absent artwork.
+  return loaded.key === key ? loaded.art : new Map(artCache);
 }
 
 /**
@@ -262,17 +272,20 @@ export function useOpenListAfterSegno(inSegno: boolean): () => void {
   }, []);
 }
 
-export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
+export function RubatoSegnoSpace({ children, companionId = "segno" }: { children: ReactNode; companionId?: string }) {
   useThreadListFoldedHere();
   const environmentId = useReadyEnvironmentId();
-  const { panel, known, refresh } = usePanel(environmentId);
+  const choice = useRubatoCompanion().companions.find(item => item.id === companionId);
+  const identity = { id: companionId, title: choice?.title ?? "Segno" };
+  const { panel, known, refresh } = usePanel(environmentId, companionId);
   const now = useNow();
   const state = known ? stageStateOf(panel, new Date(now)) : null;
-  const art = useSegnoArt(environmentId, state);
+  const art = useSegnoArt(environmentId, state, companionId);
   const space = useRef<HTMLDivElement>(null);
   const stageWidth = useStageWidth(space);
   const compact = stageWidth > 0 && stageWidth < STAGE_FULL_PX;
   return (
+    <CompanionSpace.Provider value={identity}>
     <div ref={space} data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
       {/* The chat is the ordinary chat at its ordinary width. */}
       <div data-rubato-segno-chat="" className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -285,7 +298,7 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
       {stageWidth > 0 ? (
         <aside
           data-rubato-segno-stage={compact ? "compact" : "full"}
-          aria-label="Segno"
+          aria-label={identity.title}
           style={{ width: stageWidth, right: STAGE_EDGE_PX }}
           className="pointer-events-none absolute top-[3.25rem] bottom-0 flex min-h-0 flex-col"
         >
@@ -310,6 +323,7 @@ export function RubatoSegnoSpace({ children }: { children: ReactNode }) {
         </aside>
       ) : null}
     </div>
+    </CompanionSpace.Provider>
   );
 }
 
@@ -322,6 +336,7 @@ function CompactTaskPanel(props: {
   panel: SegnoPanel;
   onChanged: () => void;
 }) {
+  const identity = useContext(CompanionSpace);
   const [open, setOpen] = useState(false);
   const count = props.panel.leads.length + props.panel.held.length;
   if (count === 0 && props.panel.finished.length === 0) return null;
@@ -332,7 +347,7 @@ function CompactTaskPanel(props: {
       <button
         type="button"
         aria-expanded={open}
-        aria-label="Segno's tasks"
+        aria-label={`${identity.title}'s tasks`}
         onClick={() => setOpen((value) => !value)}
         className={cn(
           "ms-auto flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 text-card-foreground text-xs shadow-sm",
@@ -375,6 +390,7 @@ function SegnoTaskPanel({
   panel: SegnoPanel;
   onChanged: () => void;
 }) {
+  const identity = useContext(CompanionSpace);
   const now = useNow();
   // Closed rows leave at once; the server's answer follows.
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
@@ -388,7 +404,7 @@ function SegnoTaskPanel({
       if (environmentId === null || items.length === 0) return;
       setClosed((current) => new Set([...current, ...items.map(endingKey)]));
       try {
-        await rubatoCompanion.dismiss(environmentId, items);
+        await rubatoCompanion.dismiss(environmentId, items, identity.id);
       } catch {
         // The server kept them: they come back on the next look.
         setClosed((current) => {
@@ -399,7 +415,7 @@ function SegnoTaskPanel({
       }
       onChanged();
     },
-    [environmentId, onChanged],
+    [environmentId, onChanged, identity.id],
   );
   const underway = leads.length + panel.held.length;
   if (underway === 0 && finished.length === 0) return null;
@@ -408,7 +424,7 @@ function SegnoTaskPanel({
       data-rubato-segno-panel=""
       className="mb-3 flex max-h-[min(52vh,32rem)] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-sm"
     >
-      <header className="px-3.5 pt-2.5 pb-1 font-medium text-sm">Segno's tasks</header>
+      <header className="px-3.5 pt-2.5 pb-1 font-medium text-sm">{identity.title}'s tasks</header>
       <div className="flex min-h-0 flex-col overflow-y-auto pb-1">
         {underway > 0 ? (
           <>
@@ -611,6 +627,7 @@ function HeldRow({
   environmentId: ReturnType<typeof useReadyEnvironmentId>;
   onChanged: () => void;
 }) {
+  const identity = useContext(CompanionSpace);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(message.text);
   const [busy, setBusy] = useState(false);
@@ -626,7 +643,7 @@ function HeldRow({
     setBusy(true);
     try {
       const edited = decision === "approve" && editing && text.trim() !== message.text.trim() ? text : undefined;
-      await rubatoCompanion.decideTelegram(environmentId, message.id, decision, edited);
+      await rubatoCompanion.decideTelegram(environmentId, message.id, decision, edited, identity.id);
       onChanged();
     } finally {
       setBusy(false);

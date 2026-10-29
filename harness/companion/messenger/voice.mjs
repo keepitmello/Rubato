@@ -5,15 +5,15 @@
 //
 // Roo synthesizes WAV and encodes Opus with ffmpeg; this asks Fish for Opus directly, so nothing
 // outside Node is needed and the audio is still compressed once.
-import { mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { messengerPaths, readFishKey, readMessengerSettings } from './store.mjs';
+import { DEFAULT_VOICE_TEMPERATURE, messengerPaths, readFishKey, readMessengerSettings } from './store.mjs';
 
 export const FISH_ENDPOINT = 'https://api.fish.audio/v1/tts';
 // Roo's measured choices: `balanced` latency does not grow with length; temperature 0.3 made
 // repeated takes steadier with no loss of expression (tts-adapter.ts).
 export const FISH_LATENCY = 'balanced';
-export const FISH_TEMPERATURE = 0.3;
+export const FISH_TEMPERATURE = DEFAULT_VOICE_TEMPERATURE;
 export const VOICE_MAX_CHARS = 2000;
 const OUTPUT_TTL_MS = 24 * 60 * 60 * 1000;
 const TIMEOUT_MS = 60_000;
@@ -43,6 +43,24 @@ function pruneOld(dir, now) {
   } catch {}
 }
 
+/** A private pronunciation dictionary changes synthesis input only, never text or history. */
+export function pronunciationText(text, env = process.env) {
+  const file = env.RUBATO_COMPANION_TTS_PRONUNCIATION_FILE;
+  if (!file) return text;
+  let rules;
+  try {
+    rules = JSON.parse(readFileSync(file, 'utf8')).rules.filter(rule =>
+      typeof rule?.from === 'string' && rule.from && typeof rule.to === 'string');
+  } catch { return text; }
+  let spoken = '', index = 0;
+  while (index < text.length) {
+    const rule = rules.find(rule => text.startsWith(rule.from, index));
+    if (rule) { spoken += rule.to; index += rule.from.length; }
+    else spoken += text[index++];
+  }
+  return spoken;
+}
+
 /**
  * One voice note for `text`: `{ path, durationSec? }`. Errors name what is missing (no voice chosen,
  * no key) and never carry the key.
@@ -53,7 +71,7 @@ export async function synthesizeVoice(text, { env = process.env, fetch: call = g
   if (!spoken) throw new VoiceError('nothing to say');
   if (spoken.length > VOICE_MAX_CHARS) throw new VoiceError(`too long for a voice note: ${spoken.length} characters (at most ${VOICE_MAX_CHARS})`);
   const { voice } = readMessengerSettings(env);
-  if (!voice.voiceId) throw new VoiceError('no voice is chosen for Segno yet');
+  if (!voice.voiceId) throw new VoiceError(`no voice is chosen for ${env.RUBATO_COMPANION_TITLE || 'Segno'} yet`);
   const key = readFishKey(env);
   if (!key) throw new VoiceError('no Fish Audio key is set up');
   let response;
@@ -61,8 +79,8 @@ export async function synthesizeVoice(text, { env = process.env, fetch: call = g
     response = await call(baseUrl, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', model: voice.model },
-      body: JSON.stringify({ text: spoken, reference_id: voice.voiceId, format: 'opus', opus_bitrate: 48,
-        latency: FISH_LATENCY, temperature: FISH_TEMPERATURE }),
+      body: JSON.stringify({ text: pronunciationText(spoken, env), reference_id: voice.voiceId, format: 'opus', opus_bitrate: 48,
+        latency: FISH_LATENCY, temperature: voice.temperature ?? FISH_TEMPERATURE }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   } catch (error) {

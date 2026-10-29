@@ -28,16 +28,16 @@ export function useRubatoProjectList() {
   // under "All projects". The server marks it, and its path is the fallback.
   const { scratchWorkspaceRootFor } = useScratchProject();
   // Segno's own folder is not a project either: its conversation opens from the rail.
-  const companionHome = useRubatoCompanion().status?.home;
+  const companionHomes = useRubatoCompanion().companions.map(item => item.home);
   const groups = useMemo(
     () =>
       allGroups.filter(
         (group) =>
           group.isScratch !== true &&
           !isScratchProject(group, scratchWorkspaceRootFor(group.environmentId)) &&
-          !isCompanionProject(group, companionHome),
+          !companionHomes.some(home => isCompanionProject(group, home)),
       ),
-    [allGroups, scratchWorkspaceRootFor, companionHome],
+    [allGroups, scratchWorkspaceRootFor, companionHomes],
   );
   const threads = useThreadShells();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);

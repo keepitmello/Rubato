@@ -12,6 +12,7 @@ import { postRubato } from "./rubatoHttp";
 import { usePreparedConnection } from "./session";
 
 const COMPANION_ROUTE = "/rubato/companion";
+let selectedCompanionId = "segno";
 
 export interface CompanionSettings {
   readonly enabled: boolean;
@@ -25,6 +26,8 @@ export interface CompanionSettings {
 }
 
 export interface CompanionStatus {
+  readonly id?: string;
+  readonly title?: string;
   readonly settings: CompanionSettings;
   /** The companion's conversation, once the engine created it. */
   readonly sessionId: string | null;
@@ -32,6 +35,12 @@ export interface CompanionStatus {
   readonly home: string;
   /** The heartbeat intervals the engine accepts, in minutes. */
   readonly heartbeatMinutes: readonly number[];
+}
+
+export interface CompanionChoice extends CompanionStatus {
+  readonly id: string;
+  readonly title: string;
+  readonly threadId: string | null;
 }
 
 /** Where a held message is addressed: a chat other than the person's own. */
@@ -148,9 +157,11 @@ export interface SegnoPanel {
 }
 
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
-  postRubato<T>(env, COMPANION_ROUTE, action, body, "companion settings");
+  postRubato<T>(env, COMPANION_ROUTE, action,
+    action === "companions" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
 
 export const rubatoCompanion = {
+  companions: (env: EnvironmentId | null) => call<{ companions: Array<Omit<CompanionChoice, "threadId">> }>(env, "companions"),
   status: (env: EnvironmentId | null) => call<CompanionStatus>(env, "status"),
   saveSettings: (env: EnvironmentId | null, patch: CompanionSettingsPatch) =>
     call<CompanionStatus>(env, "save-settings", { patch }),
@@ -181,16 +192,16 @@ export const rubatoCompanion = {
    * Approves or refuses one message addressed to someone else; nothing is sent before this. An
    * approval may carry the text as the person edited it, which is what goes out.
    */
-  decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject", text?: string) =>
-    call<{ telegram: TelegramStatus }>(env, "telegram-decide", { id, decision, ...(text === undefined ? {} : { text }) }),
+  decideTelegram: (env: EnvironmentId | null, id: string, decision: "approve" | "reject", text?: string, companionId = selectedCompanionId) =>
+    call<{ telegram: TelegramStatus }>(env, "telegram-decide", { companionId, id, decision, ...(text === undefined ? {} : { text }) }),
   /** The task panel beside Segno's chat: leads it follows, endings not closed yet, held messages. */
-  panel: (env: EnvironmentId | null) => call<SegnoPanel>(env, "panel"),
+  panel: (env: EnvironmentId | null, companionId = selectedCompanionId) => call<SegnoPanel>(env, "panel", { companionId }),
   /** Closes finished work in the panel for good; the conversations stay. Answers the panel after. */
-  dismiss: (env: EnvironmentId | null, endings: ReadonlyArray<Pick<SegnoFinished, "sessionId" | "at">>) =>
-    call<SegnoPanel>(env, "dismiss", { endings: endings.map(({ sessionId, at }) => ({ sessionId, at })) }),
+  dismiss: (env: EnvironmentId | null, endings: ReadonlyArray<Pick<SegnoFinished, "sessionId" | "at">>, companionId = selectedCompanionId) =>
+    call<SegnoPanel>(env, "dismiss", { companionId, endings: endings.map(({ sessionId, at }) => ({ sessionId, at })) }),
   /** Segno's art for one expression of its space, as a data URL; `version` changes when the file is swapped. */
-  art: (env: EnvironmentId | null, state: SegnoStageState = "idle") =>
-    call<{ art: { url: string; version: number } }>(env, "art", { state }),
+  art: (env: EnvironmentId | null, state: SegnoStageState = "idle", companionId = selectedCompanionId) =>
+    call<{ art: { url: string; version: number } }>(env, "art", { state, companionId }),
   /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
   thread: (env: EnvironmentId | null, sessionId: string) =>
     call<{ threadId: string | null }>(env, "thread", { sessionId }),
@@ -210,13 +221,15 @@ export interface CompanionView {
   readonly status: CompanionStatus | null;
   /** Segno's T3 thread, once the app shows its conversation. */
   readonly threadId: string | null;
+  readonly selectedId: string;
+  readonly companions: readonly CompanionChoice[];
 }
 
 // One view shared by the rail, the sidebar and the settings page.
-let view: CompanionView = { status: null, threadId: null };
+let view: CompanionView = { status: null, threadId: null, selectedId: selectedCompanionId, companions: [] };
 const listeners = new Set<() => void>();
 const publish = (next: CompanionView) => {
-  if (next.status === view.status && next.threadId === view.threadId) return;
+  if (next.status === view.status && next.threadId === view.threadId && next.companions === view.companions && next.selectedId === view.selectedId) return;
   view = next;
   for (const listener of listeners) listener();
 };
@@ -227,8 +240,26 @@ const subscribe = (listener: () => void) => {
 
 /** Takes a status the settings page just saved, so the rail follows at once. */
 export function acceptCompanionStatus(status: CompanionStatus): void {
-  publish({ status, threadId: status.sessionId === view.status?.sessionId ? view.threadId : null });
+  const id = status.id ?? selectedCompanionId;
+  const companions = view.companions.map(item => item.id === id ? { ...item, ...status,
+    id: item.id, title: status.title ?? item.title,
+    threadId: item.sessionId === status.sessionId ? item.threadId : null } : item);
+  publish({ ...view, companions, ...(id === selectedCompanionId ?
+    { status, threadId: status.sessionId === view.status?.sessionId ? view.threadId : null } : {}) });
   void refresh(lastEnvironment);
+}
+
+/** A choice changes only what the person is viewing, never another companion's settings. */
+export function selectCompanion(id: string): void {
+  const item = view.companions.find(item => item.id === id);
+  if (!item) return;
+  selectedCompanionId = id;
+  publish({ ...view, selectedId: id, status: item, threadId: item.threadId });
+  void refresh(lastEnvironment);
+}
+
+export function companionForThread(threadId: string): CompanionChoice | undefined {
+  return view.companions.find(item => item.threadId === threadId);
 }
 
 let lastEnvironment: EnvironmentId | null = null;
@@ -237,14 +268,17 @@ function refresh(env: EnvironmentId | null): Promise<void> {
   if (env === null) return Promise.resolve();
   refreshing ??= (async () => {
     try {
-      const status = await rubatoCompanion.status(env);
-      const sameSession = status.sessionId !== null && status.sessionId === view.status?.sessionId;
-      let threadId = sameSession ? view.threadId : null;
-      if (status.sessionId !== null && threadId === null)
-        threadId = (
-          await rubatoCompanion.thread(env, status.sessionId).catch(() => ({ threadId: null }))
-        ).threadId;
-      publish({ status, threadId });
+      const { companions: statuses } = await rubatoCompanion.companions(env);
+      const companions = await Promise.all(statuses.map(async status => {
+        const previous = view.companions.find(item => item.id === status.id);
+        let threadId = status.sessionId !== null && status.sessionId === previous?.sessionId ? previous.threadId : null;
+        if (status.sessionId !== null && threadId === null)
+          threadId = (await rubatoCompanion.thread(env, status.sessionId).catch(() => ({ threadId: null }))).threadId;
+        return { ...status, threadId };
+      }));
+      const selected = companions.find(item => item.id === selectedCompanionId) ?? companions[0];
+      if (selected) selectedCompanionId = selected.id;
+      publish({ status: selected ?? null, threadId: selected?.threadId ?? null, selectedId: selectedCompanionId, companions });
     } catch {
       // No companion route on this server: nothing shows.
     } finally {
@@ -263,7 +297,7 @@ const SLOW_POLL_MS = 60_000;
 export function useRubatoCompanion(): CompanionView {
   const environmentId = useReadyEnvironmentId();
   const current = useSyncExternalStore(subscribe, () => view);
-  const waiting = current.status?.settings.enabled === true && current.threadId === null;
+  const waiting = current.companions.some(item => item.settings.enabled && item.threadId === null);
   useEffect(() => {
     if (environmentId === null) return;
     lastEnvironment = environmentId;
@@ -279,7 +313,7 @@ export function useRubatoCompanion(): CompanionView {
 
 /** Whether `threadId` is Segno's conversation, as far as the app knows it now. */
 export function isCompanionThread(threadId: string): boolean {
-  return view.threadId !== null && view.threadId === threadId;
+  return companionForThread(threadId) !== undefined || (view.threadId !== null && view.threadId === threadId);
 }
 
 /** At most this many characters of what Segno said show in a notification. */
@@ -291,6 +325,7 @@ export const SEGNO_NOTICE_CHARS = 120;
  */
 export function segnoNotice(
   said: string | null | undefined,
+  title = "Segno",
 ): { readonly title: string; readonly body: string } | null {
   if (typeof said !== "string") return null;
   const text = said
@@ -303,30 +338,31 @@ export function segnoNotice(
   if (!text) return null;
   const chars = [...text];
   const body = chars.length > SEGNO_NOTICE_CHARS ? `${chars.slice(0, SEGNO_NOTICE_CHARS - 1).join("").trimEnd()}…` : text;
-  return { title: "Segno", body };
+  return { title, body };
 }
 
 /** The thread list without Segno's conversation: it opens from the rail (companion-edits.mjs). */
 export function useWithoutCompanionThread<T extends { readonly id: string }>(
   threads: ReadonlyArray<T>,
 ): ReadonlyArray<T> {
-  const { threadId } = useRubatoCompanion();
+  const { companions } = useRubatoCompanion();
+  const threadIds = useMemo(() => new Set(companions.map(item => item.threadId).filter(Boolean)), [companions]);
   return useMemo(
     () =>
-      threadId === null || !threads.some((thread) => thread.id === threadId)
+      !threads.some((thread) => threadIds.has(thread.id))
         ? threads
-        : threads.filter((thread) => thread.id !== threadId),
-    [threadId, threads],
+        : threads.filter((thread) => !threadIds.has(thread.id)),
+    [threadIds, threads],
   );
 }
 
 /** `projects` without Segno's own folder: no list offers it as a place to start work. */
 export function useWithoutCompanionProjects<A extends ReadonlyArray<{ readonly workspaceRoot: string }>>(projects: A): A {
-  const home = useRubatoCompanion().status?.home;
+  const { companions } = useRubatoCompanion();
   return useMemo(
     () =>
-      (home == null ? projects : projects.filter((project) => !isCompanionProject(project, home))) as unknown as A,
-    [home, projects],
+      projects.filter(project => !companions.some(item => isCompanionProject(project, item.home))) as unknown as A,
+    [companions, projects],
   );
 }
 

@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
+import { PIECES, memoryPiecePath, writeSettings, writeState } from '../companion.mjs';
 import { REPLY_TOOL, SAY_TOOL, segnoPaths, segnoSearchEnv } from '../home.mjs';
 import { CADENCE_HOURS, DREAM_AT, DREAM_MODELS, MEMORY_GUARD, SEARCH_CASES, childArgs, guardResidentMemory, judgeSearchCase, weeklySearchCheck, commandExists, composeDreamPrompt, dreamDue, dreamPaths, FALLBACK_PATH, workEnv, exportTranscript, planDream,
   readDreamState, runCompanionDream, segnoSessionFiles } from '../dream/dream.mjs';
@@ -185,6 +185,16 @@ test("Segno's conversations are the ones whose folder is its home", (t) => {
   assert.deepEqual(segnoSessionFiles(env), [nested, own].sort());
 });
 
+test('a companion dream matches persisted identity, not another companion marker at the same path', t => {
+  const env = sandbox(t);
+  const legacy = segnoSession(env);
+  const other = segnoSession(env, { id: 'other', name: 'other.jsonl' });
+  writeFileSync(other, readFileSync(other, 'utf8').replace('"customType":"rubato.companion","data":{}',
+    '"customType":"rubato.companion","data":{"id":"other"}'));
+  assert.deepEqual(segnoSessionFiles(env), [legacy]);
+  assert.deepEqual(segnoSessionFiles({ ...env, RUBATO_COMPANION_ID: 'other' }), [other]);
+});
+
 test('the child is a print-mode engine run with file tools only and its own session folder', () => {
   const args = childArgs({ prefixArgs: ['cli.js', '-e', 'providers.mjs'] }, { promptPath: '/run/system-prompt.md',
     sessionDir: '/home/dream/runs/r/session', rung: DREAM_MODELS[0] });
@@ -228,6 +238,47 @@ function fakeDreamer({ edits, result, marker = 'MEMORY_DONE memory ok', onRun, c
 
 const launch = { command: 'node', prefixArgs: ['cli.js'], env: { RUBATO_CONTEXT_MODE: 'summary' } };
 const git = (home, ...args) => execFileSync('git', args, { cwd: home, encoding: 'utf8' });
+
+test('a registered dream keeps root-layout records in the existing repository and never reads its sibling', async t => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  env.RUBATO_COMPANION_ID = 'other';
+  env.RUBATO_COMPANION_LAYOUT = JSON.stringify({ resident: 'MEMORY.md', held: 'notes/original-held.md', status: 'memory/current.md' });
+  env.RUBATO_COMPANION_HISTORY_PATHS = JSON.stringify(['MEMORY.md', 'USER.md']);
+  env.RUBATO_COMPANION_DREAM_READ_PATHS = JSON.stringify(['docs/guide.md', 'USER.md']);
+  env.RUBATO_COMPANION_DREAM_WRITE_PATHS = JSON.stringify(['USER.md']);
+  const mapped = Object.fromEntries(PIECES.map(({ id }) => [id, write(env,
+    id === 'memory' ? 'MEMORY.md' : id === 'user' ? 'USER.md' : `private/${id}.md`, `own-${id}`)]));
+  env.RUBATO_COMPANION_PROMPT_FILES = JSON.stringify(mapped);
+  env.RUBATO_COMPANION_DREAM_INSTRUCTIONS = write(env, 'private/dream.md', 'Maintain my records using the native plan. Do not contact anyone.');
+  write(env, 'docs/guide.md', 'original documentation');
+  write(env, 'notes/original-held.md', '# Held\n');
+  write(env, 'memory/2026-10-20.md', '## 10:05\nown daily', at(20, 10, 5));
+  git(home, 'init', '--quiet');
+  git(home, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false', 'add', '.');
+  git(home, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', '-c', 'commit.gpgsign=false', 'commit', '-qm', 'original');
+  const original = git(home, 'rev-parse', 'HEAD').trim();
+  write(env, 'untracked.bin', 'keep');
+  const dreamer = fakeDreamer({ edits: { 'MEMORY.md': 'own-memory\nnew promise', 'USER.md': 'new current fact' },
+    result: { status: 'done', blocks: { distill: 'done' } },
+    onRun({ plan, home: copy }) {
+      assert.equal(plan.layout.resident, 'MEMORY.md');
+      assert.equal(plan.layout.held, 'notes/original-held.md');
+      assert.match(plan.memoryGuard.countCommand, / MEMORY.md$/);
+      assert.equal(readFileSync(path.join(copy, 'MEMORY.md'), 'utf8'), 'own-memory');
+      assert.equal(readFileSync(path.join(copy, 'docs/guide.md'), 'utf8'), 'original documentation');
+    } });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7),
+    defaultsDir, sessionFiles: () => [], manual: true });
+  assert.equal(record.status, 'done');
+  assert.equal(readFileSync(path.join(home, 'MEMORY.md'), 'utf8'), 'own-memory\nnew promise');
+  assert.equal(readFileSync(path.join(home, 'USER.md'), 'utf8'), 'new current fact');
+  assert.equal(existsSync(path.join(home, 'memory/MEMORY.md')), false, 'there is only one resident record');
+  assert.equal(git(home, 'rev-parse', 'HEAD^').trim(), original);
+  assert.match(git(home, 'status', '--porcelain'), /untracked.bin/);
+  const prompt = readFileSync(path.join(dreamPaths(env).runs, record.runId, 'system-prompt.md'), 'utf8');
+  assert.doesNotMatch(prompt, /세뇨|Chief of Staff/);
+});
 
 test('a dream turns the night\'s daily and diary into canonical and resident memory, commits only those, and Segno\'s conversation gains nothing', async (t) => {
   const env = sandbox(t);
@@ -656,6 +707,19 @@ test("the seen-mail ledger comes home only with the held list it feeds", async (
   const conflicted = await ledgerRun({ segnoEditsHeld: true });
   assert.deepEqual(conflicted.record.conflicts, ['notes/held.md']);
   assert.equal(conflicted.ledger['mail-42'], undefined);
+});
+
+test("an existing-home search check uses its mapped cases without borrowing the default corpus", t => {
+  const env = sandbox(t);
+  const own = 'tests/original-golden.json';
+  write(env, own, JSON.stringify({ cases: [{ query: "own", expected_any: [{ rel_path: "original.md" }] }] }));
+  write(env, SEARCH_CASES, JSON.stringify({ cases: [{ query: "wrong", expected_empty: true }] }));
+  const asked = [];
+  const result = weeklySearchCheck(env.RUBATO_COMPANION_HOME, query => {
+    asked.push(query); return [{ rel_path: "original.md" }];
+  }, { ...env, RUBATO_COMPANION_LAYOUT: JSON.stringify({ searchCases: own }) });
+  assert.deepEqual(asked, ["own"]);
+  assert.deepEqual(result, { status: "passed", passed: 1, total: 1 });
 });
 
 test("Sunday's search check: no cases is said as such, a sandbox does not run it, and each case must find one of its places", async (t) => {

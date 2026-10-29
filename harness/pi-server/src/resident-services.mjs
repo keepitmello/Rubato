@@ -24,6 +24,7 @@ import { spawn as spawnProcess } from 'node:child_process';
 import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { TELEGRAM_ENABLED } from '../../companion/messenger/store.mjs';
+import { companionEnv, companionServiceName, listCompanions } from '../../companion/registry.mjs';
 
 const here = import.meta.dirname;
 const THREAD = path.join(here, 'resident-thread.mjs');
@@ -39,6 +40,19 @@ export const RESIDENT_SERVICES = [
   ...(TELEGRAM_ENABLED ? [MESSENGER_SERVICE] : []),
   { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },
 ];
+
+/** Each companion capability has its own supervised failure boundary and private environment. */
+export function residentServices(env = process.env) {
+  const shared = RESIDENT_SERVICES.filter((item) => !['companion', 'companion-dream', 'messenger'].includes(item.name));
+  return [...listCompanions(env).flatMap((profile) => {
+    const scoped = companionEnv(profile.id, env);
+    const kinds = ['companion', 'companion-dream', ...(profile.telegram || TELEGRAM_ENABLED ? ['messenger'] : [])];
+    return kinds.map((kind) => {
+      const base = kind === 'messenger' ? MESSENGER_SERVICE : RESIDENT_SERVICES.find((item) => item.name === kind);
+      return { ...base, name: companionServiceName(kind, profile.id), options: { env: scoped } };
+    });
+  }), ...shared];
+}
 
 export const TIMINGS = Object.freeze({
   /** First wait before a failed service starts again; doubles per failure up to `restartMaxMs`. */
@@ -107,6 +121,7 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
       try {
         current = new Worker(THREAD, {
           workerData: { name: spec.name, module: spec.module, export: spec.export ?? 'start', options: spec.options ?? {}, context, hostMethods },
+          env: spec.options?.env ?? process.env,
           resourceLimits: { maxOldGenerationSizeMb: t.heapMb },
           stdout: false, stderr: false,
         });

@@ -46,16 +46,24 @@ export function companionHomeFor(env = process.env) {
 
 export function segnoPaths(env = process.env) {
   const home = companionHomeFor(env);
-  const memory = path.join(home, 'memory');
+  const layout = JSON.parse(env.RUBATO_COMPANION_LAYOUT || '{}');
+  const at = (key, fallback) => {
+    const relative = layout[key] ?? fallback;
+    if (typeof relative !== 'string' || path.isAbsolute(relative) || relative.split(/[\\/]/).includes('..'))
+      throw new TypeError(`Invalid companion layout: ${key}`);
+    return path.join(home, relative);
+  };
+  const memory = at('memory', 'memory');
   return {
     home,
     notes: path.join(home, 'notes'),
     memory,
-    diary: path.join(memory, 'diary'),
+    diary: at('diary', path.relative(home, path.join(memory, 'diary'))),
     wake: path.join(home, 'wake-wish.json'),
-    mood: path.join(home, 'mood.json'),
-    held: path.join(home, 'notes', 'held.md'),
-    status: path.join(memory, 'status.md'),
+    mood: at('mood', 'mood.json'),
+    held: at('held', 'notes/held.md'),
+    status: at('status', path.relative(home, path.join(memory, 'status.md'))),
+    resident: at('resident', 'memory/MEMORY.md'),
     seedHistory: path.join(home, 'seed-history.json'),
     messengerSent: path.join(home, 'messenger', 'sent.jsonl'),
     projectConfig: path.join(home, '.rubato', 'rubato.jsonc'),
@@ -118,6 +126,42 @@ function writeFileAtomic(file, text, env = process.env) {
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, text, { mode: 0o600 });
   renameSync(temporary, file);
+}
+
+// Capability presence is a renewable lease, not a durable "busy" flag. A dead transport must
+// not keep its companion awake forever, and an old connection must not erase a newer lease.
+export const CAPABILITY_LEASE_MS = 90_000;
+const capabilityPath = (name, env) => {
+  if (!/^[a-z][a-z0-9-]*$/.test(name)) throw new TypeError('invalid capability name');
+  return path.join(companionHomeFor(env), 'capabilities', `${name}.json`);
+};
+export function renewCapability(name, owner, { now = Date.now(), env = process.env } = {}) {
+  writeFileAtomic(capabilityPath(name, env), JSON.stringify({ owner, at: now }) + '\n', env);
+}
+export function clearCapability(name, owner, env = process.env) {
+  const file = capabilityPath(name, env);
+  try {
+    if (JSON.parse(readFileSync(file, 'utf8')).owner === owner) {
+      assertInHome(file, env);
+      rmSync(file, { force: true });
+    }
+  } catch (error) { if (error.code !== 'ENOENT') throw error; }
+}
+export function capabilityActive(name, { now = Date.now(), env = process.env } = {}) {
+  try {
+    const { at } = JSON.parse(readFileSync(capabilityPath(name, env), 'utf8'));
+    return Number.isFinite(at) && now >= at && now - at < CAPABILITY_LEASE_MS;
+  } catch { return false; }
+}
+export function noteCompanionActivity({ now = Date.now(), env = process.env } = {}) {
+  writeFileAtomic(path.join(companionHomeFor(env), 'capabilities', 'user-activity.json'),
+    JSON.stringify({ at: now }) + '\n', env);
+}
+export function companionActivityAt(env = process.env) {
+  try {
+    const { at } = JSON.parse(readFileSync(path.join(companionHomeFor(env), 'capabilities', 'user-activity.json'), 'utf8'));
+    return Number.isFinite(at) ? at : undefined;
+  } catch { return undefined; }
 }
 
 // ── wake wish ──────────────────────────────────────────────────────────────────────────────
@@ -195,7 +239,8 @@ export function ensureSegnoHome(env = process.env) {
   mkdirSync(paths.diary, { recursive: true, mode: 0o700 });
   let config = 'existing';
   if (!existsSync(paths.projectConfig)) {
-    writeFileAtomic(paths.projectConfig, JSON.stringify({ memory: { agent: SEGNO_MEMORY_AGENT } }, null, 2) + '\n', env);
+    writeFileAtomic(paths.projectConfig, JSON.stringify({ memory: { agent: env.RUBATO_COMPANION_MEMORY_AGENT || SEGNO_MEMORY_AGENT,
+      ...(env.RUBATO_COMPANION_RECORDS_ONLY === '1' ? { enabled: false } : {}) } }, null, 2) + '\n', env);
     config = 'written';
   }
   // The held list starts with its two places; a list Segno already keeps is its own.
@@ -302,7 +347,10 @@ export function commitOwned(paths, message, { env = process.env } = {}) {
     if (!item || !relative || relative.startsWith('..') || path.isAbsolute(relative) || item.split(/[\\/]/).includes('..')) throw new TypeError(`not inside the home: ${item}`);
     if (/\/$/.test(item) || (existsSync(path.join(home, relative)) && statSync(path.join(home, relative)).isDirectory()))
       throw new TypeError(`a folder is not a file: ${item} — name each file you changed`);
-    if (!/^(memory|notes|prompt)\//.test(relative)) throw new TypeError(`outside the history (memory/, notes/, prompt/): ${item}`);
+    const extra = JSON.parse(env.RUBATO_COMPANION_HISTORY_PATHS || '[]');
+    if (!/^(memory|notes|prompt)\//.test(relative) && !extra.some((entry) => entry.endsWith('/') ? relative.startsWith(entry) : relative === entry))
+      throw new TypeError(`outside the history (the companion's record paths): ${item}`);
+    assertInHome(path.join(home, relative), env);
     const tracked = git(home, ['--literal-pathspecs', 'ls-files', '-z', '--', relative]).split('\0').filter(Boolean);
     if (existsSync(path.join(home, relative)) || (tracked.length === 1 && tracked[0] === relative)) owned.push(relative);
   }
@@ -464,8 +512,12 @@ export function segnoSearchEnv(env = process.env) {
   // sandbox too.
   const live = path.join(userInfo().homedir, '.rubato', 'companion');
   const suffix = own === live ? '' : `_${createHash('sha256').update(own).digest('hex').slice(0, 10)}`;
-  return { ...env, MSEARCH_ROOT: segnoPaths(env).memory, MSEARCH_CHANNEL: `${SEGNO_SEARCH.channel}${suffix}`,
-    MSEARCH_INDEX: `${SEGNO_SEARCH.channel}${suffix}_idx`,
+  const channel = env.RUBATO_COMPANION_ID || SEGNO_SEARCH.channel;
+  return { ...env, MSEARCH_ROOT: env.RUBATO_COMPANION_SEARCH_PATHS ? own : segnoPaths(env).memory,
+    ...(env.RUBATO_COMPANION_SEARCH_PATHS ? { MSEARCH_INCLUDE: env.RUBATO_COMPANION_SEARCH_PATHS } : {}),
+    ...(env.RUBATO_COMPANION_SEARCH_EXCLUDE ? { MSEARCH_EXCLUDE: env.RUBATO_COMPANION_SEARCH_EXCLUDE } : {}),
+    MSEARCH_CHANNEL: `${channel}${suffix}`,
+    MSEARCH_INDEX: `${channel}${suffix}_idx`,
     MSEARCH_STATE_DIR: env.MSEARCH_STATE_DIR || path.join(home, '.rubato', 'memory', 'msearch-state') };
 }
 

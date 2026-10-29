@@ -9,7 +9,7 @@ import type { ClientSettings } from "@t3tools/contracts/settings";
 
 import { getClientSettings } from "../../hooks/useSettings";
 import { uiText } from "../../rubatoI18n";
-import { rubatoCompanion, segnoNotice } from "../../state/rubatoCompanion";
+import { companionForThread, rubatoCompanion, segnoNotice, selectCompanion } from "../../state/rubatoCompanion";
 import {
   hasDesktopNotifications,
   hasNotificationSound,
@@ -38,7 +38,8 @@ export async function notifySegnoCompletion(input: SegnoCompletion): Promise<voi
           .said(input.environmentId, input.threadId, input.runId)
           .then((answer) => answer.text)
           .catch(() => null);
-  const notice = segnoNotice(said);
+  const companion = companionForThread(input.threadId);
+  const notice = segnoNotice(said, companion?.title);
   if (notice === null) return;
   if (hasNotificationSound(input.mode)) {
     void playNotificationSound("completion", () =>
@@ -59,6 +60,7 @@ export async function notifySegnoCompletion(input: SegnoCompletion): Promise<voi
         children: "Open",
         onClick: () => {
           toastManager.close(toastId);
+          if (companion) selectCompanion(companion.id);
           input.open();
         },
       },
@@ -82,6 +84,7 @@ export async function notifySegnoCompletion(input: SegnoCompletion): Promise<voi
     notification.addEventListener("click", () => {
       notification.close();
       window.focus();
+      if (companion) selectCompanion(companion.id);
       input.open();
     });
   } catch {

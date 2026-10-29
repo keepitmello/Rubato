@@ -10,6 +10,16 @@ import { COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVEL
 
 initTheme("dark");
 
+test("an additional companion's work is framed under its actual identity, never Segno's", () => {
+  const input = parseDelivery({ v: 1, messageId: "private-work", kind: "create",
+    from: { sessionId: "other-session", title: "Other", cwd: "/private-home", companion: true, companionId: "other" },
+    text: "Check this work." });
+  const text = buildEnvelope(input);
+  assert.match(text, /Other, the user's companion/);
+  assert.match(text, /You are not Other/);
+  assert.doesNotMatch(text, /Segno|Chief of Staff/);
+});
+
 const SELF = "01self-session";
 const ctx = { cwd: "/work/lead", sessionManager: { getSessionId: () => SELF, getCwd: () => "/work/lead", getEntries: () => [] } };
 

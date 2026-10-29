@@ -11,11 +11,30 @@ import { isTitleLocked } from '../../pi-runtime/features/session-title/session-t
 import { createScheduleStore } from '../../../packages/schedule-core/src/index.mjs';
 import { createEngineConnector } from '../src/engine.mjs';
 import { createScheduler } from '../src/scheduler.mjs';
+import { resolveTarget } from '../src/runner.mjs';
 
 // End to end below the model: a real Pi server on a Unix socket, its session router and
 // JSONL files, the real engine connector reading a real descriptor, the real store and
 // scheduler. Only the model is the deterministic fixture child.
 const fixture = fileURLToPath(new URL('./fixtures/agent.mjs', import.meta.url));
+
+test('a named companion wake resolves its current private conversation without changing the default', async t => {
+  const env = await setup(t);
+  const scoped = await companionHome(env, 'original-session');
+  const other = path.join(env.root, 'other');
+  await mkdir(other);
+  await writeFile(path.join(other, 'state.json'), JSON.stringify({ sessionId: 'other-first' }));
+  const registry = path.join(env.root, 'companions.json');
+  await writeFile(registry, JSON.stringify({ companions: [
+    { id: 'other', title: 'Other', home: other, memoryAgent: 'other' },
+  ] }));
+  const input = { ...scoped, HOME: env.root, RUBATO_COMPANIONS_FILE: registry };
+  assert.equal(resolveTarget('companion', { env: input }), 'original-session');
+  assert.equal(resolveTarget('companion:other', { env: input }), 'other-first');
+  await writeFile(path.join(other, 'state.json'), JSON.stringify({ sessionId: 'other-current' }));
+  assert.equal(resolveTarget('companion:other', { env: input }), 'other-current');
+  assert.equal(resolveTarget('companion', { env: input }), 'original-session');
+});
 const until = async (predicate, ms = 15000) => {
   const deadline = Date.now() + ms;
   for (;;) { const value = await predicate(); if (value) return value; if (Date.now() > deadline) throw new Error('Condition did not settle'); await delay(25); }

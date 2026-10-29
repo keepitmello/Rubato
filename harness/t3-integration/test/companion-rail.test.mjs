@@ -3,17 +3,19 @@
 // saves `enabled: true`.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { companionRailAction } from '../overlay/apps/web/src/components/sidebar/rubatoCompanionRailAction.ts';
 
-const rail = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'overlay', 'apps', 'web', 'src', 'components', 'sidebar', 'RubatoProjectRail.tsx');
+test('an off companion can be turned on with or without an existing conversation', () => {
+  for (const id of ['segno', 'other']) for (const threadId of [null, 'existing-thread']) {
+    assert.deepEqual(companionRailAction({ id, threadId, settings: { enabled: false } }, 'environment'),
+      { kind: 'enable', companionId: id, environmentId: 'environment' });
+  }
+});
 
-test('the rail shows an off Segno, set up or not, and its button turns it on', async () => {
-  const source = await readFile(rail, 'utf8');
-  const off = source.slice(source.indexOf('Segno while it is off'), source.indexOf('Segno, the always-on companion'));
-  assert.match(off, /companion\.status && !companion\.status\.settings\.enabled \?/);
-  assert.doesNotMatch(off, /sessionId/, 'a device that never turned Segno on shows it too');
-  assert.match(off, /saveSettings\(environmentId, \{ enabled: true \}\)/);
-  assert.match(off, /acceptCompanionStatus/, 'the rail follows the saved status at once');
+test('a running companion opens only its own thread; missing connection or thread opens settings', () => {
+  const item = { id: 'other', threadId: 'own-thread', settings: { enabled: true } };
+  assert.deepEqual(companionRailAction(item, 'environment'),
+    { kind: 'open', companionId: 'other', environmentId: 'environment', threadId: 'own-thread' });
+  assert.deepEqual(companionRailAction({ ...item, threadId: null }, 'environment'), { kind: 'settings', companionId: 'other' });
+  assert.deepEqual(companionRailAction(item, null), { kind: 'settings', companionId: 'other' });
 });

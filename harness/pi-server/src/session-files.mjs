@@ -263,8 +263,10 @@ export class SessionFiles {
    * `companion` marks the conversation as the companion (harness/companion): the engine runs it
    * under the companion role.
    */
-  async create({ cwd, title, titleLocked = false, systemPrompt, companion = false } = {}) {
+  async create({ cwd, title, titleLocked = false, systemPrompt, companion = false, companionId } = {}) {
     if (typeof companion !== 'boolean') throw new TypeError('companion must be a boolean');
+    if (companionId !== undefined && (!companion || !/^[a-z][a-z0-9-]{0,47}$/.test(companionId)))
+      throw new TypeError('companionId needs a companion and a valid id');
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');
     if (title !== undefined && (typeof title !== 'string' || title.length > 512)) throw new TypeError('Invalid title');
     const replacement = systemPrompt === undefined || systemPrompt === null ? undefined : replacementEntry(systemPrompt);
@@ -282,7 +284,7 @@ export class SessionFiles {
     await writeFile(file, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
     if (title || replacement || companion) {
       const opened = SessionManager.open(file, this.root);
-      if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString() });
+      if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString(), ...(companionId ? { id: companionId } : {}) });
       if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);
       if (title) opened.appendSessionInfo(title);
       if (title && titleLocked === true) opened.appendCustomEntry(TITLE_ENTRY, { locked: true });

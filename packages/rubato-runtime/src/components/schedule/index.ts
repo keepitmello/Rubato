@@ -128,17 +128,19 @@ const schedulerNote = (store: ScheduleStore): string => (store.schedulerStatus()
   : "\nNote: the scheduler is not running on this Mac, so tasks will not run until it is started (`rubato schedule install`).")
 
 /** `this` is the calling conversation; everything else is checked by the store. */
-function resolveSendTo(value: string, sessionId: string | undefined): string | null {
+function resolveSendTo(value: string, sessionId: string | undefined, companionId?: string): string | null {
   const trimmed = value.trim()
   if (trimmed === "") return null
+  if (trimmed === COMPANION_TARGET && companionId && companionId !== "segno") return `companion:${companionId}`
   if (trimmed !== "this") return trimmed
   if (!sessionId) throw new ScheduleError("invalid", "This conversation has no id to send to; name a conversation id or \"companion\".", { field: "sendTo" })
   return sessionId
 }
 
-export async function runScheduleTool(store: ScheduleStore, params: ScheduleToolInput, sessionCwd: string, sessionId?: string): Promise<ToolResult> {
+export async function runScheduleTool(store: ScheduleStore, params: ScheduleToolInput, sessionCwd: string, sessionId?: string,
+  companionId?: string): Promise<ToolResult> {
   try {
-    const sendTo = params.send_to === undefined ? undefined : resolveSendTo(params.send_to, sessionId)
+    const sendTo = params.send_to === undefined ? undefined : resolveSendTo(params.send_to, sessionId, companionId)
     const fields = () => ({
       ...(sendTo === undefined ? {} : { sendTo }),
       ...(params.name === undefined ? {} : { name: params.name }),
@@ -217,7 +219,7 @@ export function createScheduleComponent(options: ScheduleComponentOptions = {}):
         exposure: "direct",
         executionMode: "sequential",
         execute: async (_toolCallId: string, params: ScheduleToolInput, _signal?: unknown, _onUpdate?: unknown, ctx?: { sessionManager?: { getSessionId?(): string } }) =>
-          runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd(), ctx?.sessionManager?.getSessionId?.()),
+          runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd(), ctx?.sessionManager?.getSessionId?.(), process.env.RUBATO_COMPANION_ID),
       })
     },
   }

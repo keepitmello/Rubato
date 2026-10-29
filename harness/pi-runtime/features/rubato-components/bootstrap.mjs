@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, realpath } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { PI_VERSION } from "./pi-version.mjs";
 import { DefaultResourceLoader, SettingsManager, createAgentSession } from "../../node_modules/@earendil-works/pi-coding-agent/dist/index.js";
 import { createPiRpcSpawnRuntime, createStockChildInProcessSession, loadPiChildInProcessFactories, resolvePiChildProviderProfile, resolveStockRpcEntry } from "../child-runtime/stock-rpc-runtime.mjs";
@@ -26,6 +26,7 @@ import { createSessionTitleFactories } from "../session-title/index.mjs";
 import { createSessionLinkFactories } from "../session-link/index.mjs";
 import { createCompanionMessengerFactories } from "../companion-messenger/index.mjs";
 import { createCompanionHomeFactories } from "../companion-home/index.mjs";
+import { createCompanionCallFactories } from "../companion-home/call.mjs";
 import { createAdapterHookFactories } from "../adapter-hooks/index.mjs";
 import { createRemoteSurfaceFactories } from "../remote-surface/index.mjs";
 import { createTuiInputFactories } from "../tui-input/index.mjs";
@@ -108,9 +109,20 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...createSessionLinkFactories({ sessionLink, companion: env.RUBATO_PI_ROLE === "companion" }),
     // The companion's only way out to a messenger; the message is queued and held for approval
     // unless it is addressed to the person (harness/companion/messenger).
-    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories({ sessionLink }) : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories({ sessionLink,
+      telegram: env.RUBATO_COMPANION_TELEGRAM === "1" }) : []),
     // Segno's daily/diary and inbox tools: its own home, no engine binding needed.
-    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionHomeFactories() : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionHomeFactories({ env }) : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionCallFactories({ env }) : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? JSON.parse(env.RUBATO_COMPANION_EXTENSIONS || "[]").map(file => ({
+      name: `personal-companion:${file}`,
+      factory: async pi => {
+        const extension = await import(pathToFileURL(file).href);
+        if (typeof extension.createExtension !== "function")
+          throw new TypeError(`A personal companion extension must export createExtension({env}): ${file}`);
+        return extension.createExtension({ env, runtimeRoot })(pi);
+      },
+    })) : []),
     ...createAdapterHookFactories(),
     ...createRemoteSurfaceFactories({ env, hosted }),
     ...createTuiInputFactories(),

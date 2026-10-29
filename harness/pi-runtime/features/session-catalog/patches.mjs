@@ -203,6 +203,19 @@ export type SessionListProgress = `,
   return next;
 }
 
+function patchSessionSelection(source) {
+  // An engine-created conversation already has a durable journal before its first
+  // user turn. Selecting its body must survive unload without inventing a user turn.
+  let next = replaceOnce(source,
+    `if (!model && hasExistingSession && sessionModel) {`,
+    `if (!model && sessionModel) {`,
+    "restore-empty-model");
+  return replaceOnce(next,
+    `if (thinkingLevel === undefined && hasExistingSession) {`,
+    `if (thinkingLevel === undefined && (hasExistingSession || hasThinkingEntry)) {`,
+    "restore-empty-thinking");
+}
+
 export const files = Object.freeze([
   Object.freeze({
     packageName: PACKAGE_NAME,
@@ -215,6 +228,7 @@ export const files = Object.freeze([
 export const patches = Object.freeze([
   patch("dist/core/session-manager.js", "046b6a1109ac3f0ed893bb85bf0648709362fa926a5da75761216cf2fcf9d926", patchSessionManagerRuntime),
   patch("dist/core/session-manager.d.ts", "2288b69c82272311dc877da61ff2057bb04df49038ddef7eef6c8753c09f5313", patchSessionManagerTypes),
+  patch("dist/core/sdk.js", "fe643170de3d259c7e06179d9e18270a009dfb54df915f6e3de515425b8d009b", patchSessionSelection),
 ]);
 
 export const feature = Object.freeze({ id: "session-catalog", patches, files });

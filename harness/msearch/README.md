@@ -158,6 +158,8 @@ API 키가 따로 필요하다. 비용은 `text-embedding-3-small` 기준 100만
 | 변수 | 기본값 | 뜻 |
 |------|--------|-----|
 | `MSEARCH_ROOT` | `~/.rubato/memory/agents` | 색인 대상 루트 |
+| `MSEARCH_INCLUDE` | 루트 전체 | 검색할 상대경로의 JSON 배열. 파일과 폴더를 함께 지정 |
+| `MSEARCH_EXCLUDE` | 추가 제외 없음 | 제외할 상대경로 조각의 JSON 배열 |
 | `MSEARCH_STATE_DIR` | `<root>/../msearch-state` | 회상 로그·`.env` 등 런타임 상태 |
 | `MSEARCH_REDIS_URL` | `redis://localhost:6380` | |
 | `MSEARCH_INDEX` | `msearch_idx` | RediSearch 인덱스 이름 |

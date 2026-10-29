@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
 import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
-import { readWakeWish, setWakeWish } from '../home.mjs';
+import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
 /** A keeper whose default pieces are the ones in this repository, not whatever this Mac has. */
@@ -43,7 +43,8 @@ function fakeEngine() {
       async create(options) {
         const sessionId = `s${sessions.size + 1}`;
         engine.created.push(options);
-        sessions.set(sessionId, { sessionId, status: 'stored', runtimeId: null, attachments: 0 });
+        sessions.set(sessionId, { sessionId, status: 'stored', runtimeId: null, attachments: 0,
+          companion: true, companionId: options.companionId ?? 'segno' });
         return { sessionId };
       },
       async attach(id) {
@@ -70,7 +71,7 @@ function fakeEngine() {
   engine.existing = (env) => {
     const sessionId = 'segno-1';
     // Already loaded, as after the keeper's first start: no resume line is owed.
-    sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0 });
+    sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0, companion: true, companionId: 'segno' });
     writeState({ sessionId, woke: { boundary: null }, runtimeId: `r-${sessionId}` }, env);
     return sessionId;
   };
@@ -107,7 +108,7 @@ test('the keeper comes back to the same conversation, and re-attaches when its r
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   const engine = fakeEngine();
-  engine.sessions.set('segno', { sessionId: 'segno', status: 'stored', runtimeId: null, attachments: 0 });
+  engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
   writeState({ sessionId: 'segno' }, env);
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
   t.after(() => keeper.close());
@@ -215,7 +216,7 @@ test('an existing home with an empty prompt folder is seeded when the keeper sta
   writeSettings({ enabled: true }, env);
   writeState({ sessionId: 'segno' }, env);
   const engine = fakeEngine();
-  engine.sessions.set('segno', { sessionId: 'segno', status: 'stored', runtimeId: null, attachments: 0 });
+  engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
   t.after(() => keeper.close());
   await keeper.ready;
@@ -232,7 +233,7 @@ test('the keeper leaves a prompt piece the person already has exactly as it is',
   mkdirSync(companionPaths(env).prompt, { recursive: true });
   writeFileSync(personalPiecePath(env, 'soul'), 'my own soul\n');
   const engine = fakeEngine();
-  engine.sessions.set('segno', { sessionId: 'segno', status: 'stored', runtimeId: null, attachments: 0 });
+  engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
   const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
   t.after(() => keeper.close());
   await keeper.ready;
@@ -279,6 +280,28 @@ test('sleep: at night, three quiet hours and a long context put Segno to sleep, 
   await n.poke(at(21, 2));
   assert.deepEqual(n.notices, [{ text: SLEEP_TEXT, what: 'sleep' }]);
   assert.equal(readState(n.env).sleptOn, '2026-10-21');
+});
+
+test('an active call suppresses the keeper rhythm, but a crashed call expires and cannot hold it awake', async t => {
+  const start = at(21, 1);
+  const n = await night(t, { entries: [userMessage(at(20, 22))], start: start - 1 });
+  renewCapability('call', 'new-connection', { now: start, env: n.env });
+  clearCapability('call', 'old-connection', n.env);
+  assert.equal(capabilityActive('call', { now: start, env: n.env }), true);
+  await n.poke(start);
+  assert.equal(n.sleeps(), 0);
+  await n.poke(start + CAPABILITY_LEASE_MS);
+  assert.equal(n.sleeps(), 1);
+});
+
+test('a real owner message in a retained capability counts as user activity for night sleep', async t => {
+  const start = at(21, 1);
+  const n = await night(t, { entries: [userMessage(at(20, 22))], start: start - 1 });
+  noteCompanionActivity({ now: start, env: n.env });
+  await n.poke(start);
+  assert.equal(n.sleeps(), 0);
+  await n.poke(start + SLEEP_QUIET_MS);
+  assert.equal(n.sleeps(), 1);
 });
 
 test('sleep: once per night, and again the next night', async (t) => {

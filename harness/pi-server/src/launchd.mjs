@@ -36,7 +36,8 @@ export const THROTTLE_S = 5;
 
 /** Settings a sandbox engine needs to find its own profile, engine build and homes. */
 const CARRIED_ENV = ['RUBATO_PI_CODING_AGENT_DIR', 'SENPI_CODING_AGENT_DIR', 'PI_CODING_AGENT_DIR', 'RUBATO_PI_ENGINE_DIR',
-  'RUBATO_STOCK_ENGINE_DIR', 'RUBATO_SCHEDULE_HOME', 'RUBATO_COMPANION_HOME', 'RUBATO_ENGINE_LAUNCHD_LABEL',
+  'RUBATO_STOCK_ENGINE_DIR', 'RUBATO_SCHEDULE_HOME', 'RUBATO_COMPANION_HOME', 'RUBATO_COMPANIONS_FILE',
+  'RUBATO_DEFAULT_COMPANION_HOME', 'RUBATO_ENGINE_LAUNCHD_LABEL',
   'RUBATO_LAUNCH_AGENTS_DIR', 'RUBATO_LAUNCHCTL_BIN'];
 
 const escapeXml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')

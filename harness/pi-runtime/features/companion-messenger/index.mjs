@@ -41,8 +41,9 @@ export function createCompanionMessengerFactories({ sessionLink, telegram = fals
   const telegramTools = telegram === true && typeof sessionLink?.telegramSend === "function";
   const settingsTool = typeof sessionLink?.companionSettings === "function";
   if (!telegramTools && !settingsTool) return [];
-  const call = async (request) => {
-    const row = await sessionLink.telegramSend(request);
+  const call = async (request, ctx) => {
+    const sessionId = ctx?.sessionManager?.getSessionId?.();
+    const row = await sessionLink.telegramSend({ ...request, ...(sessionId ? { sessionId } : {}) });
     return { content: [text(describeResult(row))],
       details: { id: row?.id, state: row?.state, target: row?.target, ...(row?.messageIds ? { messageIds: row.messageIds } : {}) } };
   };
@@ -63,8 +64,8 @@ function registerTelegramTools(pi, call) {
     searchKeywords: ["telegram", "message", "send", "reply", "voice", "file", "photo", "bug report", "메시지", "텔레그램", "음성"],
     description:
       "Send the person a Telegram message: text, files, a voice note, or text with a voice note. " +
-      "Your answers in this conversation already reach the person's Telegram on their own, so use this to speak from a turn they do not see, " +
-      "or to say something while you keep working. It also sends to another chat the person has shown you (a group where bug reports arrive); " +
+      "Your explicit reply tool also reaches the person's Telegram; ordinary assistant text stays private. Use this for Telegram-specific media " +
+      "or another chat the person has shown you (a group where bug reports arrive); " +
       "a message to anyone but the person is held for their approval: say what you wrote and that it waits for them. " +
       "Telegram shows plain text. Put long material in a .md file and send the file. " +
       "voice=true sends the text and a voice note, voice=\"only\" sends only the voice note; answer in the medium the person used. " +
@@ -82,9 +83,9 @@ function registerTelegramTools(pi, call) {
         name: NAME,
       },
     },
-    async execute(_id, params) {
+    async execute(_id, params, _signal, _onUpdate, ctx) {
       return call({ text: params.text, files: params.files, voice: params.voice, voiceText: params.voice_text,
-        sanitize: params.sanitize, to: params.to, name: params.name });
+        sanitize: params.sanitize, to: params.to, name: params.name }, ctx);
     },
   });
   pi.registerTool({
@@ -106,8 +107,8 @@ function registerTelegramTools(pi, call) {
         name: NAME,
       },
     },
-    async execute(_id, params) {
-      return call({ op: "react", emoji: params.emoji, messageId: params.message_id, to: params.to, name: params.name });
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      return call({ op: "react", emoji: params.emoji, messageId: params.message_id, to: params.to, name: params.name }, ctx);
     },
   });
   pi.registerTool({
@@ -128,8 +129,8 @@ function registerTelegramTools(pi, call) {
         name: NAME,
       },
     },
-    async execute(_id, params) {
-      return call({ op: "edit", messageId: params.message_id, text: params.text, to: params.to, name: params.name });
+    async execute(_id, params, _signal, _onUpdate, ctx) {
+      return call({ op: "edit", messageId: params.message_id, text: params.text, to: params.to, name: params.name }, ctx);
     },
   });
 }
@@ -137,7 +138,7 @@ function registerTelegramTools(pi, call) {
 function registerSettingsTool(pi, sessionLink, telegram) {
   pi.registerTool({
     name: COMPANION_SETTINGS_TOOL,
-    label: "Segno settings",
+    label: "Companion settings",
     exposure: "direct",
     searchKeywords: ["settings", "setting", "heartbeat", "greeting", "schedule", "prompt", ...(telegram ? ["voice", "telegram", "pair"] : []),
       "설정", "하트비트", "인사", "일정", ...(telegram ? ["목소리"] : [])],

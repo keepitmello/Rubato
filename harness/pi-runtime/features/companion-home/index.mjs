@@ -22,6 +22,7 @@
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
 import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { CALL_SAY_TOOL } from "./call.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
 import path from "node:path";
@@ -45,7 +46,7 @@ export function createReplyWait() {
     message(message) { if (message?.role === "user") turn = { replied: false, reminded: false }; },
     /** A reply or say that went through answers the turn. */
     toolEnd(event) {
-      if (turn && (event?.toolName === REPLY_TOOL || event?.toolName === SAY_TOOL) && event.isError !== true) turn.replied = true;
+      if (turn && [REPLY_TOOL, SAY_TOOL, CALL_SAY_TOOL].includes(event?.toolName) && event.isError !== true) turn.replied = true;
     },
     settled() {
       if (!turn) return false;
@@ -102,8 +103,8 @@ export function writeRefusal(event, { cwd, env = process.env } = {}) {
   return undefined;
 }
 
-export function createCompanionHomeFactories({ voice = false } = {}) {
-  const inbox = () => openInbox();
+export function createCompanionHomeFactories({ voice = false, env = process.env } = {}) {
+  const inbox = () => openInbox({ env });
   return [{
     name: "companion-home",
     factory: (pi) => {
@@ -129,6 +130,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
         },
         async execute(_id, params) {
           const written = record(params.kind, params.text, {
+            env,
             ...(params.heading ? { heading: params.heading } : {}),
             ...(params.name ? { name: params.name } : {}),
           });
@@ -153,7 +155,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           },
         },
         async execute(_id, params) {
-          const result = commitOwned(params.paths, params.message);
+          const result = commitOwned(params.paths, params.message, { env });
           return { content: [text(result.committed ? `Committed ${result.commit}: ${result.files.join(", ")}` : "Nothing changed; nothing committed.")],
             details: result };
         },
@@ -173,7 +175,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           properties: { query: { type: "string", minLength: 1 } },
         },
         async execute(_id, params) {
-          return { content: [text(searchSegnoMemory(params.query))] };
+          return { content: [text(searchSegnoMemory(params.query, { env }))] };
         },
       });
 
@@ -188,7 +190,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           "from an old memory. A seed given out stays out for thirty days.",
         parameters: { type: "object", additionalProperties: false, properties: { walk: { type: "boolean" } } },
         async execute(_id, params) {
-          const seed = oldMemorySeed({ walk: params?.walk === true });
+          const seed = oldMemorySeed({ walk: params?.walk === true, env });
           return { content: [text(seedText(seed))], details: seed ?? null };
         },
       });
@@ -203,7 +205,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           "random Wikipedia article. A title given out stays out for a week. Empty-handed when nothing could be fetched.",
         parameters: { type: "object", additionalProperties: false, properties: {} },
         async execute() {
-          const fragment = await worldFragment();
+          const fragment = await worldFragment({ env });
           return { content: [text(worldText(fragment))], details: fragment ?? null };
         },
       });
@@ -218,7 +220,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           "stays with you. It shows in your thread as your message and the app notifies their phone.",
         parameters: replyParameters("What you say to them, as it should read in your thread."),
         async execute(_id, params) {
-          const told = recordTold(params.text, { via: REPLY_TOOL });
+          const told = recordTold(params.text, { via: REPLY_TOOL, env });
           return { content: [text("Sent to the user.")], details: told };
         },
       });
@@ -231,14 +233,14 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
         description: "Say something to the user in your voice. Like reply, it is the only way these words reach them.",
         parameters: replyParameters("What you say aloud to them."),
         async execute(_id, params) {
-          const told = recordTold(params.text, { via: SAY_TOOL });
+          const told = recordTold(params.text, { via: SAY_TOOL, env });
           return { content: [text("Said to the user.")], details: told };
         },
       });
 
       // Segno writes only in its home, and never through a link out of it (user, 2026-10-21).
       pi.on("tool_call", (event, ctx) => {
-        const reason = writeRefusal(event, { cwd: ctx?.cwd });
+        const reason = writeRefusal(event, { cwd: ctx?.cwd, env });
         return reason ? { block: true, reason } : undefined;
       });
 
@@ -270,7 +272,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
         async execute(_id, params) {
           const days = params?.days ?? 2;
           const keyword = params?.keyword ?? "";
-          const rows = sentMessages({ days, keyword });
+          const rows = sentMessages({ days, keyword, env });
           return { content: [text(sentText(rows, { days, keyword }))], details: { rows } };
         },
       });
@@ -289,7 +291,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           properties: { which: { type: "string", enum: ["today", "tomorrow", "both"] } },
         },
         async execute(_id, params) {
-          return { content: [text(await showSchedule(params?.which ?? "both"))] };
+          return { content: [text(await showSchedule(params?.which ?? "both", { env }))] };
         },
       });
 
@@ -312,7 +314,7 @@ export function createCompanionHomeFactories({ voice = false } = {}) {
           },
         },
         async execute(_id, params) {
-          const wish = setWakeWish({ target: params.when, reason: params.reason });
+          const wish = setWakeWish({ target: params.when, reason: params.reason }, { env });
           return { content: [text(`WAKE_WISH_SET wishAt=${wish.wishAt}`)], details: wish };
         },
       });

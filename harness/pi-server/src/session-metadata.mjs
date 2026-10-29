@@ -14,7 +14,7 @@ export async function readSessionMetadata(file, stats) {
   if (!stats.size) return null;
   const input = createReadStream(file, { encoding: 'utf8', end: Number(stats.size) - 1 });
   const lines = createInterface({ input, crlfDelay: Infinity });
-  let header, name, firstMessage = '', messageCount = 0, lastActivityTime, sideChatOf, systemPrompt, companion = false;
+  let header, name, firstMessage = '', messageCount = 0, lastActivityTime, sideChatOf, systemPrompt, companion = false, companionId;
   try {
     for await (const line of lines) {
       let entry;
@@ -33,7 +33,10 @@ export async function readSessionMetadata(file, stats) {
         // never carries its text.
         if (entry.type === 'custom' && entry.customType === SYSTEM_PROMPT_REPLACEMENT_ENTRY && typeof entry.data?.value === 'string') systemPrompt = replacementSummary(entry.data);
         // Not Pi's: the conversation is the companion (harness/companion); the engine gives it that role.
-        if (entry.type === 'custom' && entry.customType === COMPANION_ENTRY) companion = true;
+        if (entry.type === 'custom' && entry.customType === COMPANION_ENTRY) {
+          companion = true;
+          companionId = entry.data?.id ?? 'segno';
+        }
         if (entry.type !== 'message') continue;
         messageCount++;
         const message = entry.message;
@@ -62,7 +65,7 @@ export async function readSessionMetadata(file, stats) {
       ? new Date(lastActivityTime).getTime() : !Number.isNaN(headerTime) ? headerTime : mtime;
     return { id: header.id, file, cwd: typeof header.cwd === 'string' ? header.cwd : '',
       title: name || firstMessage || '(no messages)', createdAt: new Date(header.timestamp).getTime(), modifiedAt, messageCount,
-      ...(sideChatOf ? { sideChatOf } : {}), ...(systemPrompt ? { systemPrompt } : {}), ...(companion ? { companion: true } : {}) };
+      ...(sideChatOf ? { sideChatOf } : {}), ...(systemPrompt ? { systemPrompt } : {}), ...(companion ? { companion: true, companionId } : {}) };
   } finally {
     lines.close();
     input.destroy();

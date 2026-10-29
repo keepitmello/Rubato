@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createPickerScreen, loadPinnedPiTui, pickerItems, renderPickerStars, startPickerBootChrome } from "../src/picker.mjs";
 
 const sessions = [{
@@ -54,6 +55,17 @@ test("picker loads pinned pi-tui without importing the Rubato engine", async () 
   const tui = await loadPinnedPiTui();
   assert.equal(typeof tui.SelectList, "function");
   assert.equal(typeof tui.TuiAltScreen, "function");
+});
+
+test("picker resolves transitive dependencies from the physical package under symlink-preserving resolution", () => {
+  const pickerUrl = new URL("../src/picker.mjs", import.meta.url).href;
+  const output = execFileSync(process.execPath, [
+    "--preserve-symlinks", "--input-type=module", "--eval",
+    `const { loadPinnedPiTui } = await import(${JSON.stringify(pickerUrl)});
+     const tui = await loadPinnedPiTui();
+     console.log(typeof tui.TuiAltScreen);`,
+  ], { encoding: "utf8" });
+  assert.equal(output.trim(), "function");
 });
 
 test("picker starts on New session and Right plus Enter attaches the selected session", async () => {

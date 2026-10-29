@@ -1,34 +1,19 @@
-// The app and Telegram show the same conversation (intent companion-segno rev 6: user items
-// bfe3d27d, a2b6ecc7, e78cafd6). Every word of Segno's the app thread shows also reaches the
-// person's Telegram, whichever side the turn came from; a run the app hides (Rubato's clock:
-// heartbeat, sleep, greetings…) stays out of Telegram too. The person's own app messages are not
-// copied to Telegram: Segno's answer has to read on its own there.
-//
-// Which runs stay out of Telegram is decided in quiet-runs.mjs (`quietStep`, QUIET_WAKES): a clock
-// wake opens a quiet run, the person's or anyone's message a shown one, and a run opened by
-// background work finishing follows the run that launched it. This steps through the transcript
-// with that function, one entry at a time, and an answer goes to whoever started the work: the
-// person, or another chat (held for approval). (Telegram is off in the product; store.mjs
-// TELEGRAM_ENABLED.)
-//
-// The transcript is read from a byte offset that only moves forward past whole lines, so a
-// transcript of any length is read once and never replayed. The run state that decides where an
-// answer goes (which input opened the run, whether it is quiet, what Segno already sent with
-// telegram_send in it) is carried with that offset.
+// The companion's explicit mouth is the same in the app and Telegram: successful reply/say
+// calls. Ordinary assistant text is private in every run, including user-opened turns.
+// telegram_send owns its own delivery; call_say and game tools belong to other transports.
 import { open, opendir } from 'node:fs/promises';
 import path from 'node:path';
-import { launchedIds, newQuietState, quietStep, reportedIds } from './quiet-runs.mjs';
+import { REPLY_TOOL, SAY_TOOL } from '../home.mjs';
+import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
 
-export const SESSION_MESSAGE_TYPE = 'rubato-session-message';
+export { SESSION_MESSAGE_TYPE };
 export const TELEGRAM_SEND_TOOL = 'telegram_send';
-/** One pass reads at most this much of a transcript; the rest waits for the next pass. */
 export const READ_CHUNK_BYTES = 8 * 1024 * 1024;
 
-/** The session file whose name ends with this session id (`<timestamp>_<id>.jsonl`). */
+/** The original session journal, not an arbitrary folder that contains its id. */
 export async function locateTranscript(sessionsDir, sessionId) {
   if (!sessionId) return undefined;
-  const suffix = `${sessionId}.jsonl`;
-  const found = [];
+  const suffix = `${sessionId}.jsonl`, found = [];
   async function walk(dir) {
     let handle;
     try { handle = await opendir(dir); } catch { return; }
@@ -39,27 +24,18 @@ export async function locateTranscript(sessionsDir, sessionId) {
     }
   }
   await walk(sessionsDir);
-  // The live transcript is the file named `<timestamp>_<session id>.jsonl`; a folder or a copy
-  // that merely carries the id in its name is not it.
-  return found.find((file) => path.basename(file).endsWith(`_${suffix}`)) ?? found[0];
+  return found.find(file => path.basename(file).endsWith(`_${suffix}`)) ?? found[0];
 }
 
-const textOf = (content) => typeof content === 'string' ? content
-  : Array.isArray(content) ? content.filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('\n') : '';
-const normalize = (text) => String(text ?? '').replace(/\s+/g, ' ').trim();
-
-/**
- * The whole lines written after `offset`: each entry with the byte offset just past it. A line
- * still being written (no newline yet) waits for the next read.
- */
+/** Complete journal lines only. An unfinished line waits for the next pass. */
 export async function readEntriesFrom(file, offset = 0, { maxBytes = READ_CHUNK_BYTES } = {}) {
   let handle;
-  try { handle = await open(file, 'r'); } catch (error) { if (error?.code === 'ENOENT') return { entries: [], size: 0, missing: true }; throw error; }
+  try { handle = await open(file, 'r'); }
+  catch (error) { if (error?.code === 'ENOENT') return { entries: [], size: 0, missing: true }; throw error; }
   try {
     const { size } = await handle.stat();
     if (offset >= size) return { entries: [], size };
-    const length = Math.min(size - offset, maxBytes);
-    const buffer = Buffer.alloc(length);
+    const length = Math.min(size - offset, maxBytes), buffer = Buffer.alloc(length);
     await handle.read(buffer, 0, length, offset);
     const entries = [];
     let start = 0;
@@ -70,169 +46,74 @@ export async function readEntriesFrom(file, offset = 0, { maxBytes = READ_CHUNK_
       try { entry = line.trim() ? JSON.parse(line) : undefined; } catch { entry = undefined; }
       entries.push({ entry, end: offset + start });
     }
-    // One line longer than a whole chunk would never complete; it is skipped rather than stall.
     if (entries.length === 0 && length === maxBytes) return { entries: [{ entry: undefined, end: offset + length }], size };
     return { entries, size };
   } finally { await handle.close(); }
 }
 
-/** Launches remembered for routing a completion; the oldest go first past this many. */
-const LAUNCHES_MAX = 2000;
-
-/**
- * The run state carried with the offset: a plain object, so it can be stored and read back.
- * `visibility` is quiet-runs.mjs's own state; `launches` says which input each piece of background
- * work was started under, so a completion's answer goes where the work came from.
- */
+// Persisted beside the byte cursor. A version boundary drops an old held assistant monologue;
+// it must not escape merely because Telegram was enabled after the reply-only contract changed.
 export function freshRun() {
-  return { quiet: false, visibility: newQuietState(), trigger: { kind: 'unknown' }, toolTexts: [], calls: {}, held: null, launches: {} };
+  return { version: 2, trigger: { kind: 'unknown' }, calls: {}, toolTexts: [] };
 }
-
-/** A transcript entry as the message quiet-runs.mjs reads (Pi's message list). */
-function messageOf(entry) {
-  if (entry?.type === 'message') return entry.message;
-  if (entry?.type === 'custom_message') {
-    return { role: 'custom', customType: entry.customType, content: entry.content, display: entry.display, details: entry.details };
-  }
-  return undefined;
-}
-
-/** What opened a run, from the input that started it. */
-function triggerOf(entry, { companionSessionId } = {}) {
+const normalize = value => String(value ?? '').replace(/\s+/g, ' ').trim();
+const resultText = message => (message.content ?? []).filter(part => part.type === 'text').map(part => part.text).join('');
+function triggerOf(entry) {
   if (entry.type === 'message') return { kind: 'app' };
   const details = entry.details ?? {};
-  if (details.kind === 'channel') {
-    return {
-      kind: 'channel',
-      isUser: details.from?.isUser === true,
-      chatId: details.from?.chatId === undefined ? undefined : String(details.from.chatId),
-      ...(details.from?.name ? { name: details.from.name } : {}),
-      ...(details.from?.messageId === undefined ? {} : { incomingMessageId: details.from.messageId }),
-    };
-  }
-  if (details.kind === 'wake') return { kind: 'wake', what: details.what };
-  if (details.kind === 'notice') {
-    const own = details.from?.sessionId === 'rubato' || (companionSessionId !== undefined && details.from?.sessionId === companionSessionId);
-    return { kind: 'notice', own, ...(own ? {} : { followed: details.from?.sessionId }) };
-  }
-  return { kind: details.kind ?? 'message' };
+  return details.kind === 'channel' ? { kind: 'channel', isUser: details.from?.isUser === true,
+    chatId: String(details.from?.chatId ?? ''), incomingMessageId: details.from?.messageId }
+    : { kind: details.kind ?? 'unknown', what: details.what };
 }
 
-/** telegram_send calls to the person in one assistant message: call id -> the texts it would send. */
-function toolSends(content) {
-  const calls = {};
-  for (const part of Array.isArray(content) ? content : []) {
-    if (part?.type !== 'toolCall' || part.name !== TELEGRAM_SEND_TOOL || typeof part.id !== 'string') continue;
-    const args = part.arguments ?? {};
-    const to = args.to;
-    if (!(to === undefined || to === null || to === '' || to === 'user')) continue;
-    calls[part.id] = [args.text, args.voice_text].filter((value) => typeof value === 'string' && value.trim()).map(normalize);
-  }
-  return calls;
-}
-
-const resultText = (content) => (Array.isArray(content) ? content : []).filter((part) => part?.type === 'text').map((part) => part.text ?? '').join('');
-/** The tool's own answer says the message reached the person, or will once Telegram is connected. */
-const delivered = (message) => message?.isError !== true && !/^Held for/.test(resultText(message?.content).trim());
-
-const isDuplicate = (run, text) => {
-  const said = normalize(text);
-  return said !== '' && run.toolTexts.some((sent) => sent === said || sent.includes(said));
-};
-
-function finish(run, said) {
-  return { ...said, duplicate: isDuplicate(run, said.text) };
-}
-
-/** A held text goes out now, judged against what was confirmed sent by then. */
-function release(run) {
-  const said = run.held;
-  run.held = null;
-  return said ? [finish(run, said)] : [];
-}
-
-function newInput(run, quiet, trigger) {
-  const out = release(run);
-  run.quiet = quiet;
-  run.trigger = trigger;
-  run.toolTexts = [];
-  run.calls = {};
-  return out;
-}
-
-/**
- * One transcript entry through the run state. Returns what is said out loud by now, in order:
- *   [{ entryId, text, final, trigger, quiet, duplicate }]
- * `final` is a run's last answer (it did not hand over to tools); a text before a tool call is
- * Segno speaking mid-work, which the app shows too. `quiet` answers stay in Segno's session.
- * `duplicate` is a text Segno already sent with telegram_send in the same run — counted only once
- * the tool's result says it went out, so a failed send never silences the answer. A text written
- * beside its own telegram_send call waits for that call's result before it is judged.
- */
-export function stepRun(run, entry, { companionSessionId } = {}) {
-  const message = messageOf(entry);
-  if (!message) return [];
-  run.calls ??= {};
-  run.held ??= null;
-  run.launches ??= {};
-  // A run state from before quietStep: its visibility starts from what it knew.
-  run.visibility ??= { ...newQuietState(), inQuiet: run.quiet === true };
-  const { quiet, launcher } = quietStep(run.visibility, message);
-  run.quiet = quiet;
-  if (entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE) {
-    return newInput(run, quiet, triggerOf(entry, { companionSessionId }));
-  }
-  if (message.role === 'user') return newInput(run, quiet, triggerOf(entry));
-  const reported = reportedIds(message);
-  if (reported.length) {
-    // Background work finishing opens a run that belongs to the run that launched the work. Work no
-    // launch on record names (started before this transcript was read, or forgotten) answers to
-    // nobody in particular, and a batch is the user's only if every piece in it was: `unverified`
-    // keeps such a run from counting as the user's (settings.mjs).
-    const owners = reported.map((id) => run.launches[id]);
-    const user = (owner) => owner?.kind === 'app' || (owner?.kind === 'channel' && owner.isUser === true);
-    const chosen = (launcher !== undefined ? run.launches[launcher] : undefined) ?? { kind: 'unknown' };
-    return newInput(run, quiet, owners.every(user) ? chosen : { ...chosen, unverified: true });
-  }
-  if (message.role === 'toolResult') {
-    for (const id of launchedIds(message)) {
-      delete run.launches[id];
-      run.launches[id] = run.trigger;
+/** Only a completed explicit mouth call yields outward words; plain assistant content never does. */
+export function stepRun(run, entry) {
+  if (run.version !== 2) { for (const key of Object.keys(run)) delete run[key]; Object.assign(run, freshRun()); }
+  const message = entry?.type === 'message' ? entry.message : undefined;
+  if (entry?.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE) {
+    // A game/call wake is machine context, not a different human reply target.
+    if (entry.details?.kind === 'channel') {
+      run.trigger = triggerOf(entry); run.toolTexts = [];
     }
-    const ids = Object.keys(run.launches);
-    for (const id of ids.slice(0, Math.max(0, ids.length - LAUNCHES_MAX))) delete run.launches[id];
-    if (message.toolName !== TELEGRAM_SEND_TOOL || !(message.toolCallId in run.calls)) return [];
-    if (delivered(message)) run.toolTexts.push(...run.calls[message.toolCallId]);
-    delete run.calls[message.toolCallId];
-    if (run.held && !run.held.waitFor.some((id) => id in run.calls)) return release(run);
     return [];
   }
-  if (message.role !== 'assistant') return [];
-  const out = release(run);
-  const calls = toolSends(message.content);
-  Object.assign(run.calls, calls);
-  const failed = message.stopReason === 'aborted' || message.stopReason === 'error';
-  const text = failed ? '' : textOf(message.content).trim();
-  const said = { entryId: entry.id, text, final: message.stopReason !== 'toolUse', trigger: run.trigger, quiet: run.quiet };
-  const waitFor = Object.keys(calls);
-  if (text && waitFor.length) { run.held = { ...said, waitFor }; return out; }
-  return [...out, finish(run, said)];
+  if (message?.role === 'user') { run.trigger = triggerOf(entry); run.toolTexts = []; return []; }
+  if (message?.role === 'assistant') {
+    if (!['error', 'aborted'].includes(message.stopReason)) {
+      for (const part of Array.isArray(message.content) ? message.content : []) {
+        if (part?.type !== 'toolCall' || typeof part.id !== 'string') continue;
+        const args = part.arguments ?? {};
+        if ([REPLY_TOOL, SAY_TOOL].includes(part.name) && typeof args.text === 'string' && args.text.trim())
+          run.calls[part.id] = { name: part.name, text: args.text.trim() };
+        else if (part.name === TELEGRAM_SEND_TOOL && [undefined, null, '', 'user'].includes(args.to))
+          run.calls[part.id] = { name: part.name, texts: [args.text, args.voice_text].filter(value => typeof value === 'string').map(normalize) };
+      }
+    }
+    // A silent final still ends typing. This is not a message to send.
+    return message.stopReason !== 'toolUse' ? [{ entryId: entry.id, text: '', final: true, quiet: true }] : [];
+  }
+  if (message?.role !== 'toolResult') return [];
+  const call = run.calls[message.toolCallId];
+  if (!call || message.toolName !== call.name) return [];
+  delete run.calls[message.toolCallId];
+  if (message.isError === true) return [];
+  if (call.name === TELEGRAM_SEND_TOOL) {
+    if (!/^Held for/.test(resultText(message).trim())) run.toolTexts.push(...call.texts);
+    return [];
+  }
+  return [{ entryId: entry.id, text: call.text, final: true, quiet: false,
+    // reply is explicitly addressed to the person, regardless of the surrounding channel.
+    trigger: { kind: 'reply' },
+    duplicate: run.toolTexts.some(sent => sent && sent.includes(normalize(call.text))) }];
 }
 
-/**
- * The run state at the end of what is already written, without saying anything: where a cursor
- * starts when the history is taken as read, so a run that is going on (a quiet one included)
- * keeps its place.
- */
-export async function runAt(file, { companionSessionId } = {}) {
+export async function runAt(file) {
   const run = freshRun();
   let offset = 0;
   for (;;) {
     const { entries } = await readEntriesFrom(file, offset);
     if (!entries.length) break;
-    for (const { entry, end } of entries) { stepRun(run, entry, { companionSessionId }); offset = end; }
+    for (const { entry, end } of entries) { stepRun(run, entry); offset = end; }
   }
-  // What was said before the cursor is history; nothing of it is still to be sent.
-  run.held = null;
   return { run, offset };
 }

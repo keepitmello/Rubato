@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm } from 'node:fs/promises';
-import { copyFileSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +39,33 @@ test('status starts off with no conversation, and turning it on is a saved setti
   const refused = await post('save-settings', { patch: { heartbeat: { everyMinutes: 3 } } });
   assert.equal(refused.status, 400);
   assert.equal(refused.body.error.code, 'invalid');
+});
+
+test('additional companions have separately selected app settings without changing Segno', async t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-companion-ui-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = { HOME: root, RUBATO_COMPANIONS_FILE: path.join(root, 'companions.json') };
+  const other = path.join(root, 'original-repo');
+  mkdirSync(other);
+  writeFileSync(env.RUBATO_COMPANIONS_FILE, JSON.stringify({ companions: [
+    { id: 'other', title: 'Other', home: other, memoryAgent: 'other', telegram: true },
+  ] }));
+  const service = createCompanionService({ env, defaultsDir });
+  await service.handle('save-settings', { patch: { enabled: true, heartbeat: { everyMinutes: 15 } } });
+  const segnoFile = path.join(root, '.rubato/companion/settings.json');
+  const before = readFileSync(segnoFile);
+  const status = await service.handle('save-settings', { companionId: 'other',
+    patch: { enabled: true, greetings: { enabled: false } } });
+  assert.equal(status.id, 'other');
+  assert.equal(status.title, 'Other');
+  assert.equal(status.home, other);
+  assert.equal(status.settings.greetings.enabled, false);
+  assert.deepEqual(readFileSync(segnoFile), before);
+  const list = await service.handle('companions', {});
+  assert.deepEqual(list.companions.map(item => [item.id, item.title]), [['segno', 'Segno'], ['other', 'Other']]);
+  assert.equal((await service.handle('telegram', { companionId: 'segno' })).telegram, null);
+  assert.notEqual((await service.handle('telegram', { companionId: 'other' })).telegram, null);
+  await assert.rejects(service.handle('save-settings', { companionId: 'missing', patch: { enabled: false } }), /Unknown companion/);
 });
 
 test('pieces list every piece with its default, and a saved piece is the person\'s until cleared', async (t) => {

@@ -9,7 +9,7 @@
 // Only the user changes a setting. The run the tool is called from must have been opened by the
 // user: their message in the app or in their paired Telegram chat. Another person's message, another
 // conversation, Rubato's clock, or work one of those started cannot — enforced here, from the
-// transcript, with the same run rule the app and Telegram use (messenger/sync.mjs).
+// transcript (origin.mjs). Its authority is separate from any remembered reply destination.
 //
 // The Telegram bot token and the Fish Audio key are plain settings like the rest (user items 0fc61da6,
 // 0020edac: Rubato runs on the user's own computer). While the product runs no Telegram
@@ -19,7 +19,8 @@ import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { basePiecePath, clearPersonaReviewRequest, companionPaths, personalPiecePath, readPersonaReviewRequest, readSettings, readState } from './companion.mjs';
 import { TELEGRAM_ENABLED, messengerPaths, readMessengerSettings } from './messenger/store.mjs';
-import { locateTranscript, runAt } from './messenger/sync.mjs';
+import { locateTranscript } from './messenger/sync.mjs';
+import { originAt } from './origin.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serviceFile = path.resolve(here, '..', 't3-integration', 'src', 'companion', 'service.mjs');
@@ -31,7 +32,7 @@ export class SettingsRefused extends Error {
   constructor(code, message) { super(message); this.name = 'SettingsRefused'; this.code = code; }
 }
 
-/** Whether the run that called the tool belongs to the user (sync.mjs triggers). */
+/** Whether the input or recorded work that called the tool belongs to the user. */
 export function isUserOrigin(trigger) {
   if (trigger?.unverified === true) return false;
   return trigger?.kind === 'app' || (trigger?.kind === 'channel' && trigger.isUser === true);
@@ -41,8 +42,7 @@ export function isUserOrigin(trigger) {
 export async function currentOrigin({ sessionsDir, sessionId }) {
   const file = await locateTranscript(sessionsDir, sessionId);
   if (!file) return { kind: 'unknown' };
-  const { run } = await runAt(file, { companionSessionId: sessionId });
-  return run.trigger ?? { kind: 'unknown' };
+  return originAt(file);
 }
 
 async function defaultService(env) {
@@ -221,7 +221,8 @@ async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED }
  * change?: { companion?, telegram?, pairing?, piece?, personaReview? } }.
  * `sessionId` is the calling conversation, which must be the companion's.
  */
-export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin, telegram = TELEGRAM_ENABLED } = {}) {
+export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin,
+  telegram = env.RUBATO_COMPANION_TELEGRAM === '1' || TELEGRAM_ENABLED } = {}) {
   const companionId = readState(env).sessionId;
   if (!sessionId || sessionId !== companionId) throw new SettingsRefused('not-companion', "Only Segno's own conversation has settings to change");
   const action = request.action ?? 'show';

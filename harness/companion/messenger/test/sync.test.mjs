@@ -1,279 +1,149 @@
-// The app and Telegram show the same conversation (intent companion-segno rev 6): every text of
-// Segno's the app thread shows reaches Telegram once, a run the app hides never does, and the
-// person's own app messages are not copied over.
+// Same mouth in the application and Telegram: successful explicit reply/say only.
 import assert from 'node:assert/strict';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import test from 'node:test';
-import { newQuietState, quietStep } from '../quiet-runs.mjs';
-import { readState, writeState, messengerPaths } from '../store.mjs';
+import { freshRun, readEntriesFrom, stepRun } from '../sync.mjs';
+import { REPLY_TOOL, SAY_TOOL } from '../../home.mjs';
+import { readState, writeState, messengerPaths, listOutbox } from '../store.mjs';
 import { GROUP_CHAT, USER_CHAT, answerEntry, appEntry, channelEntry, noticeEntry, paired, settle, toolEntry, transcript, wakeEntry } from './helpers.mjs';
-import { listOutbox } from '../store.mjs';
 
-const RECORDED = new URL('./fixtures/segno-recorded.jsonl', import.meta.url);
-const textOf = (content) => (Array.isArray(content) ? content : []).filter((part) => part?.type === 'text').map((part) => part.text).join('\n').trim();
-const sentTexts = (box) => box.fake.sent.filter((row) => row.chatId === USER_CHAT).map((row) => row.text);
+const sentTexts = box => box.fake.sent.filter(row => row.chatId === USER_CHAT && !/연결됐습니다/.test(row.text)).map(row => row.text);
+const mouth = (id, text, { name = REPLY_TOOL, isError = false } = {}) => [
+  answerEntry(`${id}-call`, 'PRIVATE BESIDE THE MOUTH', { stopReason: 'toolUse', tools: [{ name, arguments: { text } }] }),
+  toolEntry(`${id}-result`, name, isError ? 'failed' : 'Sent to the user.', { callId: `${id}-call-t0`, isError }),
+];
 
-/** The messages of quiet runs, by the mirror's own rule (quiet-runs.mjs quietStep). */
-function quietMessages(messages) {
-  const state = newQuietState();
-  return new Set(messages.filter((message) => quietStep(state, message).quiet));
-}
-
-/** What the mirror counts as shown and as hidden of Segno (quiet-runs.mjs). */
-function appShows(entries) {
-  const messages = entries.map((entry) => entry.type === 'custom_message'
-    ? { role: 'custom', customType: entry.customType, display: entry.display, details: entry.details }
-    : entry.type === 'message' ? entry.message : undefined).filter(Boolean);
-  const quiet = quietMessages(messages);
-  const shown = [];
-  const hidden = [];
-  for (const message of messages) {
-    if (message.role !== 'assistant') continue;
-    const text = message.stopReason === 'aborted' || message.stopReason === 'error' ? '' : textOf(message.content);
-    if (!text) continue;
-    (quiet.has(message) ? hidden : shown).push({ text, final: message.stopReason !== 'toolUse' });
-  }
-  return { shown, hidden };
-}
-
-test('a recorded Segno transcript: what the app shows reaches Telegram once, what it hides never does', async (t) => {
+test('a recorded legacy transcript cannot leak any assistant monologue when Telegram is enabled', async t => {
   const box = await paired(t);
-  const lines = readFileSync(RECORDED, 'utf8').trim().split('\n');
-  const entries = lines.map((line) => JSON.parse(line));
-  const { shown, hidden } = appShows(entries);
-  assert.ok(shown.length >= 20 && hidden.length >= 20, 'the recording has both app turns and clock turns');
-
-  // The conversation grows while the messenger watches it, a few entries at a time.
+  const lines = readFileSync(new URL('./fixtures/segno-recorded.jsonl', import.meta.url), 'utf8').trim().split('\n');
   const file = transcript(box, []);
-  for (let index = 0; index < lines.length; index += 17) {
-    appendFileSync(file, lines.slice(index, index + 17).join('\n') + '\n');
-    await settle(box.service);
+  for (let at = 0; at < lines.length; at += 17) {
+    appendFileSync(file, lines.slice(at, at + 17).join('\n') + '\n'); await settle(box.service);
   }
-  await settle(box.service);
-  await settle(box.service);
-
-  const sent = box.fake.sent.filter((row) => row.chatId === USER_CHAT && !/연결됐습니다/.test(row.text));
-  assert.deepEqual(sent.map((row) => row.text), shown.map((item) => item.text), 'every shown text, once each, in order');
-  assert.deepEqual(sent.map((row) => !row.disableNotification), shown.map((item) => item.final),
-    'only a run\'s last answer notifies; a text before a tool call arrives silently');
-  for (const { text } of hidden) assert.ok(!sentTexts(box).includes(text), `a clock run's text stayed out of Telegram: ${text}`);
-  assert.ok(!sentTexts(box).some((text) => /private thought|user says/.test(text)), 'no thinking and no copy of the person\'s app words');
-
-  const recorded = readFileSync(messengerPaths(box.env).sent, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-  assert.equal(recorded.filter((row) => row.via === 'auto').length, shown.length, 'sent.jsonl holds each one, as auto');
+  assert.deepEqual(sentTexts(box), []);
 });
 
-test("an answer to a turn that started in the app goes to Telegram; the person's app words do not", async (t) => {
-  const box = await paired(t);
-  transcript(box, [appEntry('a1', '앱에서 쓴 말'), answerEntry('a2', '앱에서 물어본 회의는 3시로 옮겼어.')]);
-  await settle(box.service);
-  assert.deepEqual(sentTexts(box).filter((text) => !/연결됐습니다/.test(text)), ['앱에서 물어본 회의는 3시로 옮겼어.']);
-});
-
-test('the answer to a Telegram message goes back to the chat as Roo does: no quote, with a notification', async (t) => {
-  const box = await paired(t);
-  transcript(box, [channelEntry('e1', { messageId: 501 }), answerEntry('e2', '네, 지금 확인할게요.')]);
-  await settle(box.service);
-  const reply = box.fake.sent.find((row) => row.text === '네, 지금 확인할게요.');
-  assert.equal(reply.chatId, USER_CHAT);
-  assert.equal(reply.replyToMessageId, undefined, 'Roo answers in the chat, it does not quote the message');
-  assert.equal(reply.disableNotification, false);
-  await settle(box.service);
-  assert.equal(sentTexts(box).filter((text) => text === '네, 지금 확인할게요.').length, 1);
-});
-
-test("Rubato's clock runs stay out of Telegram, whatever the wake: heartbeat, sleep, greeting, the old daily report", async (t) => {
-  const box = await paired(t);
-  const before = box.fake.sent.length;
-  transcript(box, [
-    wakeEntry('w1', 'heartbeat', 'tick 3'), answerEntry('w2', '리드 둘 다 아직 돌고 있어.'),
-    wakeEntry('w3', 'sleep', 'Time to sleep.'), answerEntry('w4', '오늘 기록 쓰고 잘게.'),
-    wakeEntry('w5', 'daily-report', 'It is nine.'), answerEntry('w6', '오늘 리포트.'),
-  ]);
-  await settle(box.service);
-  assert.equal(box.fake.sent.length, before);
-});
-
-test('a lead ending wakes Segno visibly in the app, so its answer reaches Telegram too', async (t) => {
-  const box = await paired(t);
-  transcript(box, [noticeEntry('n1', 'Finished its turn.', { sessionId: 'lead-1', title: '버그 수정', cwd: '/tmp' }), answerEntry('n2', '버그 수정 끝났어.')]);
-  await settle(box.service);
-  assert.ok(sentTexts(box).includes('버그 수정 끝났어.'));
-});
-
-test('a text Segno already sent with telegram_send in the same run is not sent again by the sync', async (t) => {
+test('ordinary text stays private for user, app, clock, completion, game and call turns', async t => {
   const box = await paired(t);
   transcript(box, [
-    channelEntry('d1'),
-    answerEntry('d2', '잠깐만, 확인해볼게.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '잠깐만, 확인해볼게.' } }] }),
-    toolEntry('d3', 'telegram_send', 'sent (id: 900)', { callId: 'd2-t0' }),
-    answerEntry('d4', '다 확인했어. 둘 다 정상이야.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '다 확인했어. 둘 다 정상이야.' } }] }),
-    toolEntry('d5', 'telegram_send', 'sent (id: 901)', { callId: 'd4-t0' }),
-    answerEntry('d6', '다 확인했어.'),
+    appEntry('a', 'user in app'), answerEntry('b', 'APP_PRIVATE'),
+    channelEntry('c'), answerEntry('d', 'TELEGRAM_PRIVATE'),
+    noticeEntry('e', 'work finished'), answerEntry('f', 'NOTICE_PRIVATE'),
+    ...['heartbeat', 'sleep', 'greeting', 'daily-report', 'game', 'call'].flatMap((what, index) =>
+      [wakeEntry(`w${index}`, what, `wake ${what}`), answerEntry(`p${index}`, `PRIVATE_${what}`)]),
+    answerEntry('game-tool', 'PRIVATE GAME', { stopReason: 'toolUse', tools: [{ name: 'mc_say', arguments: { text: 'game only' } }] }),
+    toolEntry('game-result', 'mc_say', 'ok', { callId: 'game-tool-t0' }),
+    answerEntry('call-tool', '', { stopReason: 'toolUse', tools: [{ name: 'call_say', arguments: { text: 'voice only' } }] }),
+    toolEntry('call-result', 'call_say', 'Delivered on the call.', { callId: 'call-tool-t0' }),
   ]);
   await settle(box.service);
-  const sent = sentTexts(box);
-  assert.ok(!sent.includes('잠깐만, 확인해볼게.'), 'the mid-work text equal to a tool message is not repeated');
-  assert.ok(!sent.includes('다 확인했어.'), 'a final answer the tool message already said is not repeated');
+  assert.deepEqual(sentTexts(box), []);
 });
 
-test('in a quiet run Segno speaks only through telegram_send; its answer stays in the session', async (t) => {
+test('only successful explicit replies mirror to the paired user, once, without quoting their message', async t => {
   const box = await paired(t);
-  const before = box.fake.sent.length;
-  transcript(box, [
-    wakeEntry('q1', 'heartbeat', 'tick 1'),
-    answerEntry('q2', '', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '밥은 먹었어?' } }] }),
-    toolEntry('q3', 'telegram_send', 'sent (id: 902)', { callId: 'q2-t0' }),
-    answerEntry('q4', '물어봤으니 기다리자.'),
-  ]);
+  transcript(box, [channelEntry('c', { messageId: 501 }), ...mouth('r', 'OUTWARD_REPLY'),
+    ...mouth('bad', 'FAILED_REPLY', { isError: true }), ...mouth('say', 'OUTWARD_SAY', { name: SAY_TOOL })]);
+  await settle(box.service); await settle(box.service);
+  assert.deepEqual(sentTexts(box), ['OUTWARD_REPLY', 'OUTWARD_SAY']);
+  const sent = box.fake.sent.find(row => row.text === 'OUTWARD_REPLY');
+  assert.equal(sent.replyToMessageId, undefined);
+  assert.equal(sent.disableNotification, false);
+  const recorded = readFileSync(messengerPaths(box.env).sent, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(recorded.filter(row => row.via === 'auto').length, 2);
+});
+
+test('a wake never silences an explicit reply, and a game event cannot redirect it to another chat', async t => {
+  const box = await paired(t);
+  transcript(box, [channelEntry('group', { isUser: false, chatId: GROUP_CHAT }),
+    wakeEntry('game', 'game', 'game event'), ...mouth('r', 'TO THE PERSON'),
+    wakeEntry('heartbeat', 'heartbeat', 'tick'), ...mouth('clock', 'ALSO TO THE PERSON')]);
   await settle(box.service);
-  assert.equal(box.fake.sent.length, before, 'the sync sends nothing for a quiet run (the tool sends its own message)');
+  assert.deepEqual(sentTexts(box), ['TO THE PERSON', 'ALSO TO THE PERSON']);
+  assert.equal(box.fake.sent.some(row => row.chatId === GROUP_CHAT), false);
+  assert.equal(listOutbox(box.env).filter(row => row.source === 'reply').length, 0);
 });
 
-test("another person's turn: the answer is held for approval, and Segno's mid-work words do not go to them", async (t) => {
+test('an explicit Telegram send is not mirrored; a matching reply does not duplicate a confirmed send', async t => {
   const box = await paired(t);
-  transcript(box, [
-    channelEntry('o1', { isUser: false, chatId: GROUP_CHAT, name: 'Gildong' }),
-    answerEntry('o2', '로그부터 볼게.', { stopReason: 'toolUse', tools: [{ name: 'read', arguments: {} }] }),
-    toolEntry('o3', 'read'),
-    answerEntry('o4', '재현 방법을 알려주세요.'),
-  ]);
+  transcript(box, [appEntry('u', 'hello'),
+    answerEntry('send', 'PRIVATE', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: 'already sent' } }] }),
+    toolEntry('sent', 'telegram_send', 'sent (id: 900)', { callId: 'send-t0' }),
+    ...mouth('same', 'already sent'), ...mouth('other', 'new explicit reply')]);
   await settle(box.service);
-  const held = listOutbox(box.env).filter((row) => row.source === 'reply');
-  assert.deepEqual(held.map((row) => [row.state, row.text]), [['held', '재현 방법을 알려주세요.']]);
-  assert.equal(box.fake.sent.filter((row) => row.chatId === GROUP_CHAT).length, 0);
+  assert.deepEqual(sentTexts(box), ['new explicit reply']);
 });
 
-test('a long answer that fails halfway resumes after the parts that went out, never resending them', async (t) => {
+test('a failed or held Telegram send cannot suppress an explicit reply', async t => {
+  for (const [index, isError, text] of [[0, true, 'failed'], [1, false, "Held for the person's approval"]]) {
+    const box = await paired(t);
+    transcript(box, [appEntry('u', 'hello'),
+      answerEntry(`send${index}`, '', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: 'explicit reply' } }] }),
+      toolEntry(`result${index}`, 'telegram_send', text, { callId: `send${index}-t0`, isError }),
+      ...mouth(`reply${index}`, 'explicit reply')]);
+    await settle(box.service);
+    assert.deepEqual(sentTexts(box), ['explicit reply']);
+  }
+});
+
+test('a split reply resumes after the parts already delivered, without repeating them', async t => {
   const box = await paired(t);
-  const long = Array.from({ length: 3 }, (_, index) => `${String(index).repeat(3000)}`).join('\n\n');
+  const long = ['0', '1', '2'].map(char => char.repeat(3000)).join('\n\n');
   const send = box.fake.api.sendMessage;
   let calls = 0;
-  box.fake.api.sendMessage = async (args) => { calls += 1; if (calls === 2) throw new Error('telegram hiccup'); return send(args); };
-  transcript(box, [appEntry('l1', '길게'), answerEntry('l2', long)]);
-  await settle(box.service);
-  await settle(box.service);
-  const parts = sentTexts(box).filter((text) => /^\d{3000}$/.test(text));
-  assert.deepEqual(parts.map((text) => text[0]), ['0', '1', '2'], 'each part once, in order');
+  box.fake.api.sendMessage = async args => { if (++calls === 2) throw new Error('telegram hiccup'); return send(args); };
+  transcript(box, [appEntry('u', 'long'), ...mouth('long', long)]);
+  await settle(box.service); await settle(box.service);
+  assert.deepEqual(sentTexts(box).map(text => text[0]), ['0', '1', '2']);
   assert.equal(box.errors.length, 1);
 });
 
-test('a transcript far past the old 256 KB tail still sends each new answer once', async (t) => {
+test('an existing old cursor drops its held monologue and does not replay history', async t => {
   const box = await paired(t);
-  const filler = Array.from({ length: 400 }, (_, index) => wakeEntry(`f${index}`, 'heartbeat', `tick ${index} ${'.'.repeat(800)}`));
-  const file = transcript(box, filler);
+  const file = transcript(box, [appEntry('u', 'hello')]);
   await settle(box.service);
-  for (let round = 0; round < 3; round += 1) {
-    appendFileSync(file, [appEntry(`u${round}`, `질문 ${round}`), answerEntry(`r${round}`, `답 ${round}`)].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
-    await settle(box.service);
-  }
+  const state = readState(box.env);
+  writeState({ transcript: { ...state.transcript, run: {
+    quiet: false, held: { text: 'OLD PRIVATE HELD TEXT', waitFor: [], final: true }, calls: {}, launches: {},
+  } } }, box.env);
+  appendFileSync(file, [...mouth('r', 'NEW EXPLICIT REPLY')].map(entry => JSON.stringify(entry)).join('\n') + '\n');
   await settle(box.service);
-  assert.deepEqual(sentTexts(box).filter((text) => /^답 /.test(text)), ['답 0', '답 1', '답 2']);
+  assert.deepEqual(sentTexts(box), ['NEW EXPLICIT REPLY']);
 });
 
-test('a cursor from before offsets is taken as read: nothing old is replayed', async (t) => {
+test('large journals and a partial last line do not lose or duplicate a reply receipt', async t => {
   const box = await paired(t);
-  const file = transcript(box, [appEntry('p1', '예전'), answerEntry('p2', '예전 답')]);
-  writeState({ transcript: { file, seen: 1 } }, box.env);
+  const file = transcript(box, Array.from({ length: 400 }, (_, i) => wakeEntry(`f${i}`, 'heartbeat', '.'.repeat(800))));
   await settle(box.service);
-  assert.ok(!sentTexts(box).includes('예전 답'));
-  appendFileSync(file, [appEntry('p3', '지금'), answerEntry('p4', '지금 답')].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  const [call, result] = mouth('tail', 'TAIL_REPLY');
+  appendFileSync(file, JSON.stringify(call) + '\n' + JSON.stringify(result));
   await settle(box.service);
-  assert.deepEqual(sentTexts(box).filter((text) => /답$/.test(text)), ['지금 답']);
-  assert.ok(Number.isInteger(readState(box.env).transcript.offset));
+  assert.deepEqual(sentTexts(box), []);
+  appendFileSync(file, '\n');
+  await settle(box.service); await settle(box.service);
+  assert.deepEqual(sentTexts(box), ['TAIL_REPLY']);
+  assert.deepEqual((await readEntriesFrom(file, readState(box.env).transcript.offset)).entries, []);
 });
 
-test('"typing…" shows while Segno works on a Telegram turn and stops at its answer', async (t) => {
+test('tool results need their own matching successful call, not a forged name or a failed generation', () => {
+  const run = freshRun();
+  const [call, result] = mouth('r', 'REAL');
+  stepRun(run, call);
+  assert.deepEqual(stepRun(run, toolEntry('wrong', 'mc_say', 'ok', { callId: 'r-call-t0' })), []);
+  assert.equal(stepRun(run, result)[0].text, 'REAL');
+  assert.deepEqual(stepRun(run, result), []);
+  const [failed, failedResult] = mouth('aborted', 'NO');
+  failed.message.stopReason = 'aborted';
+  stepRun(run, failed);
+  assert.deepEqual(stepRun(run, failedResult), []);
+});
+
+test('a silent final stops Telegram typing without sending monologue', async t => {
   const box = await paired(t, { typingDelay: () => 0 });
-  box.fake.message({ chatId: USER_CHAT, text: '이거 좀 봐줘', from: 'Wy' });
+  box.fake.message({ chatId: USER_CHAT, text: 'hello' });
   await settle(box.service);
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.ok(box.fake.actions.some((row) => row.chatId === USER_CHAT && row.action === 'typing'), 'typing started');
-  transcript(box, [channelEntry('y1'), answerEntry('y2', '봤어.')]);
+  transcript(box, [channelEntry('c'), answerEntry('final', 'PRIVATE_FINAL')]);
   await settle(box.service);
-  const count = box.fake.actions.length;
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  assert.equal(box.fake.actions.length, count, 'no typing after the answer');
-});
-
-test('a run that ends without words still stops the typing', async (t) => {
-  const box = await paired(t, { typingDelay: () => 60 });
-  box.fake.message({ chatId: USER_CHAT, text: '음', from: 'Wy' });
-  await settle(box.service);
-  transcript(box, [channelEntry('z1'), answerEntry('z2', '', { stopReason: 'aborted' })]);
-  await settle(box.service);
-  await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(box.fake.actions.length, 0, 'it never started: the run ended first');
-});
-
-test('a telegram_send that failed or was held does not silence the same words in the answer', async (t) => {
-  const box = await paired(t);
-  transcript(box, [
-    appEntry('f1', '회의 언제야?'),
-    answerEntry('f2', '', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '회의는 내일 3시야.' } }] }),
-    toolEntry('f3', 'telegram_send', 'telegram_send failed: Telegram API rejected it', { callId: 'f2-t0', isError: true }),
-    answerEntry('f4', '회의는 내일 3시야.'),
-    appEntry('f5', '그 사람한테도 알려줘'),
-    answerEntry('f6', '알렸어.', { stopReason: 'toolUse', tools: [{ name: 'telegram_send', arguments: { text: '알렸어.' } }] }),
-    toolEntry('f7', 'telegram_send', "Held for the person's approval before it goes anywhere (m_1).", { callId: 'f6-t0' }),
-    answerEntry('f8', '승인하면 나가.'),
-  ]);
-  await settle(box.service);
-  const sent = sentTexts(box);
-  assert.equal(sent.filter((text) => text === '회의는 내일 3시야.').length, 1, 'the failed send left the answer to say it');
-  assert.equal(sent.filter((text) => text === '알렸어.').length, 1, 'a wrongly addressed (held) send does not count as said to the person');
-});
-
-test('taking history as read keeps the run going on at the end: an answer to a clock run already open stays quiet', async (t) => {
-  const box = await paired(t);
-  const file = transcript(box, [appEntry('m1', '안녕'), answerEntry('m2', '안녕!'), wakeEntry('m3', 'heartbeat', 'tick 3')]);
-  writeState({ transcript: { file, seen: 1 } }, box.env);
-  await settle(box.service);
-  appendFileSync(file, JSON.stringify(answerEntry('m4', '혼자 정리하는 말.')) + '\n');
-  await settle(box.service);
-  assert.ok(!sentTexts(box).includes('혼자 정리하는 말.'));
-  assert.ok(!sentTexts(box).includes('안녕!'), 'the history itself is not replayed');
-  appendFileSync(file, [appEntry('m5', '뭐해'), answerEntry('m6', '정리 중이었어.')].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
-  await settle(box.service);
-  assert.ok(sentTexts(box).includes('정리 중이었어.'));
-});
-
-// Background work finishing opens a run of its own (quiet-runs.mjs quietStep): it belongs to the
-// run that launched the work, for what the app shows and for where Telegram sends the answer.
-const launched = (id, callId, agentId) => ({ type: 'message', id, message: { role: 'toolResult', toolCallId: callId, toolName: 'Agent',
-  details: { agentId, status: 'running', mode: 'spawn' }, isError: false, content: [{ type: 'text', text: 'started' }] } });
-const finished = (id, agentId) => ({ type: 'custom_message', id, customType: 'rubato.task.completion', display: false,
-  content: `completed ${agentId}`, details: [{ agentId, status: 'completed' }] });
-
-test("work started for another person finishes after the person's own turn: the answer is held for them, not sent to the person", async (t) => {
-  const box = await paired(t);
-  transcript(box, [
-    channelEntry('b1', { isUser: false, chatId: GROUP_CHAT, name: 'Gildong' }),
-    answerEntry('b2', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }),
-    launched('b3', 'b2-t0', 'st_repro_bug1'), answerEntry('b4', '원인 찾는 중입니다.'),
-    appEntry('b5', '오늘 뭐 먹지'), answerEntry('b6', '국수 어때?'),
-    finished('b7', 'st_repro_bug1'), answerEntry('b8', '원인을 찾았어요. 다음 버전에서 고칩니다.'),
-  ]);
-  await settle(box.service);
-  assert.ok(sentTexts(box).includes('국수 어때?'));
-  assert.ok(!sentTexts(box).includes('원인을 찾았어요. 다음 버전에서 고칩니다.'), 'not to the person');
-  const held = listOutbox(box.env).filter((row) => row.source === 'reply').map((row) => [row.target.chatId, row.text]);
-  assert.deepEqual(held, [[GROUP_CHAT, '원인 찾는 중입니다.'], [GROUP_CHAT, '원인을 찾았어요. 다음 버전에서 고칩니다.']]);
-});
-
-test("work the person asked for on Telegram finishes after a heartbeat: the answer reaches them, with a notification", async (t) => {
-  const box = await paired(t);
-  transcript(box, [
-    channelEntry('c1', { messageId: 700 }),
-    answerEntry('c2', '', { stopReason: 'toolUse', tools: [{ name: 'Agent', arguments: {} }] }),
-    launched('c3', 'c2-t0', 'st_build_0001'), answerEntry('c4', '빌드 돌려둘게.'),
-    wakeEntry('c5', 'heartbeat', 'tick'), answerEntry('c6', '조용히 기다린다.'),
-    finished('c7', 'st_build_0001'), answerEntry('c8', '빌드 끝났어. 다 통과야.'),
-  ]);
-  await settle(box.service);
-  const done = box.fake.sent.find((row) => row.text === '빌드 끝났어. 다 통과야.');
-  assert.ok(done, 'the answer to their request reached them');
-  assert.equal(done.disableNotification, false);
-  assert.ok(!sentTexts(box).includes('조용히 기다린다.'));
+  assert.deepEqual(sentTexts(box), []);
+  assert.deepEqual(box.errors, []);
 });

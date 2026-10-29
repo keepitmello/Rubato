@@ -993,16 +993,21 @@ test("a messenger's message carries the files it saved from Telegram to the conv
 
 test("the companion's Telegram tools reach the messenger through the facade the runtime holds, with their whole request", async (t) => {
   const env = await setup(t);
+  const companion = await env.make('Companion', { companion: true });
+  const sessionId = companion.id;
   const asked = [];
   env.link.attachTelegram(async (request) => { asked.push(request); return { id: 'm1' }; });
-  await env.link.api.telegramSend({ text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only' });
-  await env.link.api.telegramSend({ op: 'react', emoji: '👍', to: '', name: '  ' });
-  await env.link.api.telegramSend({ op: 'edit', messageId: 5, text: '고침', to: '-100', name: ' 그룹 ' });
+  await env.link.api.telegramSend({ sessionId, text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only' });
+  await env.link.api.telegramSend({ sessionId, op: 'react', emoji: '👍', to: '', name: '  ' });
+  await env.link.api.telegramSend({ sessionId, op: 'edit', messageId: 5, text: '고침', to: '-100', name: ' 그룹 ' });
   assert.deepEqual(asked, [
-    { text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only', to: 'user' },
-    { op: 'react', emoji: '👍', to: 'user' },
-    { op: 'edit', messageId: 5, text: '고침', to: '-100', name: '그룹' },
+    { sessionId, text: '사진 보낼게', files: ['/tmp/a.jpg'], voice: 'only', to: 'user' },
+    { sessionId, op: 'react', emoji: '👍', to: 'user' },
+    { sessionId, op: 'edit', messageId: 5, text: '고침', to: '-100', name: '그룹' },
   ]);
+  const lead = await env.make('Lead');
+  await assert.rejects(env.link.api.telegramSend({ sessionId: lead.id, text: 'no' }), { code: 'not_companion' });
+  await assert.rejects(env.link.api.telegramSend({ text: 'missing owner' }), { code: 'not_companion' });
   await assert.rejects(env.link.api.telegramSend([]), { code: 'invalid' });
 });
 

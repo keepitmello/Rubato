@@ -26,6 +26,7 @@ const tgFile = path.resolve(here, '..', '..', '..', 'companion', 'messenger', 't
 const pieceCopyFile = path.resolve(here, '..', '..', '..', 'companion', 'piece-copy.mjs');
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
+const registryFile = path.resolve(here, '..', '..', '..', 'companion', 'registry.mjs');
 
 export class CompanionRequestError extends Error {
   constructor(status, code, message) {
@@ -47,6 +48,7 @@ const TG_CACHE_MS = 30_000;
 export function createCompanionService(options = {}) {
   const env = options.env ?? process.env;
   let loaded;
+  const profiles = new Map();
   let tgProbe;
   function botCreation(tg, now = Date.now) {
     if (tgProbe && now() - tgProbe.at < TG_CACHE_MS) return tgProbe.value;
@@ -69,6 +71,8 @@ export function createCompanionService(options = {}) {
   }));
 
   const status = (companion) => ({
+    id: env.RUBATO_COMPANION_ID || 'segno',
+    title: env.RUBATO_COMPANION_TITLE || companion.COMPANION_TITLE,
     settings: companion.readSettings(env),
     sessionId: companion.readState(env).sessionId ?? null,
     home: companion.companionPaths(env).home,
@@ -82,7 +86,7 @@ export function createCompanionService(options = {}) {
     }
   };
 
-  const telegramOn = (messenger) => (options.telegram ?? messenger.TELEGRAM_ENABLED) === true;
+  const telegramOn = (messenger) => (options.telegram ?? (env.RUBATO_COMPANION_TELEGRAM === '1' || messenger.TELEGRAM_ENABLED)) === true;
 
   // What Segno holds for the person: the leads it follows and the endings the person has not
   // closed yet. Segno's inbox is Segno's own worklist and stays out of this panel.
@@ -101,6 +105,21 @@ export function createCompanionService(options = {}) {
   }
 
   async function handle(action, input) {
+    if (action === 'companions' || input?.companionId !== undefined) {
+      const { companionEnv, listCompanions } = await import(pathToFileURL(registryFile).href);
+      const registrations = listCompanions(env);
+      const serviceFor = id => {
+        if (!profiles.has(id)) profiles.set(id, createCompanionService({ ...options, env: companionEnv(id, env) }));
+        return profiles.get(id);
+      };
+      if (action === 'companions') return { companions: await Promise.all(registrations.map(async profile => ({
+        id: profile.id, title: profile.title, ...await serviceFor(profile.id).handle('status', {}),
+      }))) };
+      if (typeof input.companionId !== 'string' || !registrations.some(profile => profile.id === input.companionId))
+        throw new CompanionRequestError(400, 'invalid', 'Unknown companion.');
+      const { companionId, ...request } = input;
+      return serviceFor(companionId).handle(action, request);
+    }
     const { companion, messenger, inbox, tg, defaultsDir, withCopy } = await modules();
     // Each piece with what it is for (companion/piece-copy.mjs): the page and Segno read the same words.
     const pieces = () => companion.readPieces({ defaultsDir, env }).map(withCopy);
