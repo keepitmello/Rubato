@@ -112,7 +112,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
     ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionMessengerFactories({ sessionLink,
       telegram: env.RUBATO_COMPANION_TELEGRAM === "1" }) : []),
     // Segno's daily/diary and inbox tools: its own home, no engine binding needed.
-    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionHomeFactories({ env }) : []),
+    ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionHomeFactories({ sessionLink, env }) : []),
     ...(env.RUBATO_PI_ROLE === "companion" ? createCompanionCallFactories({ env }) : []),
     ...(env.RUBATO_PI_ROLE === "companion" ? JSON.parse(env.RUBATO_COMPANION_EXTENSIONS || "[]").map(file => ({
       name: `personal-companion:${file}`,

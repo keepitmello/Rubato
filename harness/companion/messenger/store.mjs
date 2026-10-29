@@ -304,7 +304,7 @@ export const FILES_MAX = 10;
  *   op 'edit'   new `text` for Segno's own `messageId`
  */
 export function enqueueMessage({ text, target, source = 'tool', heldReason, op = 'send', files, voice, voiceText, sanitize,
-  emoji, messageId } = {}, env = process.env) {
+  emoji, messageId, disableNotification } = {}, env = process.env) {
   if (!OUTBOX_OPS.includes(op)) throw new TypeError(`op must be one of ${OUTBOX_OPS.join(', ')}`);
   const hasText = typeof text === 'string' && text.trim() !== '';
   if (text !== undefined && !hasText) throw new TypeError('text must be a non-empty string');
@@ -335,6 +335,7 @@ export function enqueueMessage({ text, target, source = 'tool', heldReason, op =
     ...(voice === true || voice === 'only' ? { voice } : {}),
     ...(voiceText ? { voiceText } : {}),
     ...(sanitize === false ? { sanitize: false } : {}),
+    ...(disableNotification === true ? { disableNotification: true } : {}),
     ...(op === 'react' ? { emoji: emoji.trim() } : {}),
     ...(ids === undefined ? {} : { messageId: ids }),
     target: target === 'user' ? 'user' : { chatId: String(target.chatId), ...(target.name ? { name: target.name } : {}) },

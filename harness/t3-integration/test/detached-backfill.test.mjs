@@ -77,7 +77,19 @@ test("Segno's thread gets back only what Segno said with reply after a time with
   bridge.companionSession = async () => true;
   assert.ok(await until(() => appended.length >= 1));
   await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.deepEqual(appended.map(([, item]) => [item.text, item.ownRun === true]), [['점심 먹었어?', true]]);
+  assert.deepEqual(appended.map(([, item]) => [item.text, item.ownRun === true]), [['점심 먹었어?', false]], 'old history does not fire a fresh notification');
+});
+
+test('a companion restores Telegram history from before the app opened, even with no recorded stream gap', async (t) => {
+  const channel = { role: 'custom', customType: SESSION_MESSAGE_TYPE, timestamp: at(10),
+    details: { kind: 'channel', messageId: 'telegram:me:1', text: 'old Telegram words', from: { channel: 'telegram', isUser: true } } };
+  const { bridge, appended } = setup(t, { session: [channel, user('앱에서 시작', 40)],
+    thread: [{ role: 'user', text: '앱에서 시작', createdAt: new Date(at(40)).toISOString() }], gaps: [] });
+  bridge.companionSession = async () => true;
+  assert.ok(await until(() => appended.length === 1));
+  await bridge.backfillThread('T1', 'S1');
+  assert.deepEqual(appended.map(([, item]) => item.text), ['old Telegram words']);
+  assert.equal(appended[0][1].ownRun, false);
 });
 
 test("with T3's record of when the thread had no stream, only messages from those times are written", async (t) => {
@@ -202,8 +214,8 @@ test("Segno's reply sent while its thread has no stream reaches the thread throu
   for (const message of [user('풀 해도 돼?', 40), said('응, 받아도 돼.', 41),
     { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'text', text: '혼잣말.' },
       { type: 'toolCall', id: 'r1', name: 'reply', arguments: { text: '운영방에서 어드민 느리다고 태그 왔어.' } }],
-    timestamp: at(53), provider: 'anthropic', model: 'claude' },
-    { role: 'toolResult', toolCallId: 'r1', toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: at(53) },
+    timestamp: Date.now(), provider: 'anthropic', model: 'claude' },
+    { role: 'toolResult', toolCallId: 'r1', toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: Date.now() },
     said('리드 띄웠어, 혼잣말.', 54)]) manager.appendMessage(message);
 
   const stateDir = path.join(root, 'state');

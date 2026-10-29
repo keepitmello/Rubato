@@ -2,9 +2,8 @@
 // telegram_reply, react and edit_message (~/.claude/roo-channel/pi-roo/roo-runtime.ts,
 // plugins/telegram-daemon/telegram-tools.ts).
 //
-// The product runs no Telegram for now (harness/companion/messenger/store.mjs TELEGRAM_ENABLED), so
-// the Telegram tools register only with `telegram: true`, which nothing passes; Segno speaks to the
-// person in the app with `reply` (companion-home).
+// A profile enables its Telegram transport with `telegram: true`. Sending always belongs to
+// `reply` (companion-home); these tools only react to or edit existing transport messages.
 //
 // Segno writes; the engine's resident messenger decides. Each tool is a thin call into the
 // engine's `sessionLink.telegramSend`, which hands the request to the messenger
@@ -14,7 +13,8 @@
 export const TELEGRAM_SEND_TOOL = "telegram_send";
 export const TELEGRAM_REACT_TOOL = "telegram_react";
 export const TELEGRAM_EDIT_TOOL = "telegram_edit";
-export const TELEGRAM_TOOL_NAMES = Object.freeze([TELEGRAM_SEND_TOOL, TELEGRAM_REACT_TOOL, TELEGRAM_EDIT_TOOL]);
+// Sending to the person belongs to reply; these only act on an existing Telegram message.
+export const TELEGRAM_TOOL_NAMES = Object.freeze([TELEGRAM_REACT_TOOL, TELEGRAM_EDIT_TOOL]);
 /** Segno's settings by talking (harness/companion/settings.mjs, skill companion-settings). */
 export const COMPANION_SETTINGS_TOOL = "companion_settings";
 
@@ -58,37 +58,6 @@ export function createCompanionMessengerFactories({ sessionLink, telegram = fals
 
 function registerTelegramTools(pi, call) {
   pi.registerTool({
-    name: TELEGRAM_SEND_TOOL,
-    label: "Telegram",
-    exposure: "direct",
-    searchKeywords: ["telegram", "message", "send", "reply", "voice", "file", "photo", "bug report", "메시지", "텔레그램", "음성"],
-    description:
-      "Send the person a Telegram message: text, files, a voice note, or text with a voice note. " +
-      "Your explicit reply tool also reaches the person's Telegram; ordinary assistant text stays private. Use this for Telegram-specific media " +
-      "or another chat the person has shown you (a group where bug reports arrive); " +
-      "a message to anyone but the person is held for their approval: say what you wrote and that it waits for them. " +
-      "Telegram shows plain text. Put long material in a .md file and send the file. " +
-      "voice=true sends the text and a voice note, voice=\"only\" sends only the voice note; answer in the medium the person used. " +
-      "Answers with the sent message ids, which telegram_edit takes.",
-    parameters: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        text: { type: "string", minLength: 1, description: "The message, as it should read in Telegram." },
-        files: { type: "array", maxItems: 10, items: { type: "string" }, description: "Absolute paths of files to send; images go as photos, anything else as a document." },
-        voice: { anyOf: [{ type: "boolean" }, { type: "string", enum: ["only"] }], description: "true: the text and a voice note. \"only\": a voice note alone." },
-        voice_text: { type: "string", minLength: 1, description: "What the voice note says, when it should differ from the text." },
-        sanitize: { type: "boolean", description: "Default true: emphasis marks and voice tags come out of the text, emoticons and Markdown out of the voice. false sends both as written." },
-        to: TO,
-        name: NAME,
-      },
-    },
-    async execute(_id, params, _signal, _onUpdate, ctx) {
-      return call({ text: params.text, files: params.files, voice: params.voice, voiceText: params.voice_text,
-        sanitize: params.sanitize, to: params.to, name: params.name }, ctx);
-    },
-  });
-  pi.registerTool({
     name: TELEGRAM_REACT_TOOL,
     label: "Telegram reaction",
     exposure: "direct",
@@ -117,7 +86,8 @@ function registerTelegramTools(pi, call) {
     exposure: "direct",
     searchKeywords: ["telegram", "edit", "fix", "correct", "message", "수정", "고치기"],
     description:
-      "Change the text of a Telegram message you sent, by the id telegram_send answered with. An edit in another chat waits for the person's approval.",
+      "Change a Telegram message you sent, by its message id. This edits that transport copy, not the app history. " +
+      "An edit in another chat waits for the person's approval; use reply to send new words to the person.",
     parameters: {
       type: "object",
       additionalProperties: false,

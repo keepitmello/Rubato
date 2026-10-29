@@ -58,7 +58,8 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
   const shown = messages
     .filter((message) => message.role === "user" || message.role === "assistant")
     .map((message) => ({ message, at: Date.parse(message.createdAt) }))
-    .filter(({ message, at }) => Number.isFinite(at) && (message.text.trim() !== "" || (message.attachments?.length ?? 0) > 0));
+    .filter(({ message, at }) => Number.isFinite(at) && (message.text.trim() !== "" || (message.attachments?.length ?? 0) > 0))
+    .sort((a, b) => a.at - b.at);
   const items: SegnoChatItem[] = [];
   let previous: { side: SegnoChatSide; at: number } | null = null;
   for (let index = 0; index < shown.length; index += 1) {

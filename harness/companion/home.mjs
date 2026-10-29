@@ -550,6 +550,12 @@ export const REPLY_TOOL = 'reply';
 /** The same as a voice reply (Roo's voice=true); offered only once a voice is set. */
 export const SAY_TOOL = 'say';
 
+/** The same visible words in the app and the sent-message record, including media-only replies. */
+export function replyDisplayText({ text, voice_text, files } = {}) {
+  return [typeof text === 'string' && text.trim() ? text.trim() : String(voice_text ?? '').trim(),
+    ...(Array.isArray(files) ? files.map(file => `[${path.basename(file)}](<${file}>)`) : [])].filter(Boolean).join('\n\n');
+}
+
 /** Records one message `reply` or `say` showed the user, for `sentMessages`. */
 export function recordTold(text, { at = Date.now(), via = REPLY_TOOL, env = process.env } = {}) {
   if (typeof text !== 'string' || !text.trim()) throw new TypeError(`${via} needs some text`);
@@ -573,7 +579,7 @@ export function sentMessages({ days = 2, keyword = '', now = Date.now(), env = p
     let row;
     try { row = JSON.parse(line); } catch { continue; }
     const at = Date.parse(row?.at);
-    if (!Number.isFinite(at) || at < since || row.toUser === false) continue;
+    if (!Number.isFinite(at) || at < since || row.toUser === false || row.via === 'app-user') continue;
     const text = typeof row.text === 'string' ? row.text : '';
     if (needle && !text.toLowerCase().includes(needle)) continue;
     rows.push({ at, text, via: row.via ?? null, ...(row.media ? { media: row.media } : {}) });

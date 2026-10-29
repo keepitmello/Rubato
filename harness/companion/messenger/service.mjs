@@ -10,8 +10,8 @@
 //   - photos, files and voice messages arrive with it: a photo as an image Segno sees, a file
 //     saved where Segno can open it, a voice message transcribed (media.mjs, Roo's daemon);
 //   - the app and Telegram share the explicit reply mouth. Ordinary assistant text stays private
-//     in every run (sync.mjs); explicit telegram_send to anyone else waits for approval;
-//   - Segno's Telegram tools send text, files and voice notes, react and edit (Roo's
+//     in every run (sync.mjs); rich replies use this service's outbox directly;
+//   - reply sends text, files and voice notes; Telegram tools react and edit (Roo's
 //     telegram_reply, react, edit_message); anything addressed to another chat is held until the
 //     person approves it, from the Telegram card or from Settings › Companion;
 //   - "typing…" shows while Segno works on a Telegram turn, and /context and /heartbeat are
@@ -540,6 +540,7 @@ export function startCompanionMessenger({
   async function deliverRow(client, row, { text: editedText } = {}) {
     const chatId = chatOf(row);
     const toUser = row.target === 'user';
+    const notification = row.disableNotification ? { disableNotification: true } : {};
     const via = row.source === 'auto' ? 'auto' : 'tool';
     if (row.op === 'react') {
       await client.setMessageReaction({ chatId, messageId: row.messageId, emoji: row.emoji });
@@ -561,11 +562,11 @@ export function startCompanionMessenger({
     const total = (payload.text ? splitText(payload.text).length : 0) + files.length;
     try {
       for (const part of payload.text ? splitText(payload.text) : []) {
-        sent.push((await client.sendMessage({ chatId, text: part })).message_id);
+        sent.push((await client.sendMessage({ chatId, text: part, ...notification })).message_id);
       }
       for (const file of files) {
         const upload = PHOTO_EXTS.has(path.extname(file).toLowerCase()) ? client.sendPhoto : client.sendDocument;
-        sent.push((await upload({ chatId, file })).message_id);
+        sent.push((await upload({ chatId, file, ...notification })).message_id);
       }
     } catch (error) {
       throw Object.assign(new Error(`failed after ${sent.length} of ${total} part(s) went out: ${error?.message ?? error}`),
@@ -576,7 +577,7 @@ export function startCompanionMessenger({
       // A voice that fails never takes back text already sent; a voice-only reply fails as a whole.
       try {
         const voice = await synthesize(payload.voiceText);
-        sent.push((await client.sendVoice({ chatId, file: voice.path, durationSec: voice.durationSec })).message_id);
+        sent.push((await client.sendVoice({ chatId, file: voice.path, durationSec: voice.durationSec, ...notification })).message_id);
         note = payload.delivery === 'voice' ? ' (voice)' : ' + voice';
       } catch (error) {
         if (payload.delivery === 'voice') throw Object.assign(new Error(`voice-only reply failed: ${error?.message ?? error}`), { sentIds: sent });
@@ -586,7 +587,7 @@ export function startCompanionMessenger({
     const media = payload.delivery === 'voice' ? 'voice' : files.length
       ? (files.every((file) => PHOTO_EXTS.has(path.extname(file).toLowerCase())) ? 'photo' : 'document')
       : note === ' + voice' ? 'voice' : undefined;
-    recordSent({ at: new Date(now()).toISOString(), chatId, toUser, via,
+    if (row.source !== 'reply') recordSent({ at: new Date(now()).toISOString(), chatId, toUser, via,
       text: payload.text ?? payload.voiceText ?? files.map((file) => path.basename(file)).join(', '), ...(media ? { media } : {}) }, env);
     return { messageIds: sent, note };
   }
@@ -684,12 +685,17 @@ export function startCompanionMessenger({
   async function sendRequest(request = {}) {
     const op = request.op ?? 'send';
     const target = targetOf(request.to, request.name);
+    // Read the current journal, not the mirror cursor: a tool can run before the next sync pass.
+    const file = op === 'send' && target === 'user' && sessionsDir
+      ? await locateTranscript(sessionsDir, request.sessionId ?? readCompanionState(env).sessionId) : undefined;
+    const disableNotification = file ? (await runAt(file)).run.trigger.kind === 'app' : false;
     let messageId = request.messageId ?? request.message_id;
     if (op === 'react' && (messageId === undefined || messageId === null || messageId === '') && target === 'user') {
       messageId = readState(env).lastIncoming?.messageId;
       if (messageId === undefined) throw new Error('there is no Telegram message from the person to react to yet');
     }
-    const row = enqueueMessage({ op, target, source: 'tool', text: request.text, files: request.files,
+    const row = enqueueMessage({ op, target, source: request.source === 'reply' ? 'reply' : 'tool', text: request.text, files: request.files,
+      disableNotification,
       voice: request.voice, voiceText: request.voiceText ?? request.voice_text, sanitize: request.sanitize, emoji: request.emoji,
       ...(messageId === undefined || messageId === null || messageId === '' ? {} : { messageId }) }, env);
     const client = bot();
@@ -777,15 +783,17 @@ export function startCompanionMessenger({
   async function sendSaid(client, said, { sentParts, onPart, countParts }) {
     const chatId = pairedChatId(env);
     if (!chatId) return;
-    const text = telegramText(said.text);
+    const text = said.source === 'app-user' ? said.text : telegramText(said.text);
     const parts = splitText(text);
     countParts?.(parts.length);
-    stopTyping(chatId);
+    if (said.source !== 'app-user') stopTyping(chatId);
     for (let index = sentParts; index < parts.length; index += 1) {
-      await client.sendMessage({ chatId, text: parts[index], ...(said.final ? {} : { disableNotification: true }) });
+      await client.sendMessage({ chatId, text: parts[index],
+        ...(!said.final || said.disableNotification ? { disableNotification: true } : {}) });
       onPart(index + 1);
     }
-    recordSent({ at: new Date(now()).toISOString(), chatId, toUser: true, text, via: 'auto' }, env);
+    // reply records the person's visible answer once. Mirroring is delivery, not a second answer;
+    // app-user mirrors are the person's words, not the companion's sent_messages.
   }
 
   // ── the passes, and the loops around them ───────────────────────────────────────────────

@@ -51,6 +51,7 @@ export function fakeTelegram() {
   async function upload(kind, args) {
     const { readFile } = await import('node:fs/promises');
     const row = { kind, chatId: String(args.chatId), file: args.file, bytes: await readFile(args.file), durationSec: args.durationSec,
+      disableNotification: args.disableNotification === true,
       message_id: nextMessageId++ };
     uploads.push(row);
     return { message_id: row.message_id };

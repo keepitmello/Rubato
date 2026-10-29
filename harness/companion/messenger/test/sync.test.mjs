@@ -1,17 +1,71 @@
 // Same mouth in the application and Telegram: successful explicit reply/say only.
 import assert from 'node:assert/strict';
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import test from 'node:test';
 import { freshRun, readEntriesFrom, stepRun } from '../sync.mjs';
 import { REPLY_TOOL, SAY_TOOL } from '../../home.mjs';
 import { readState, writeState, messengerPaths, listOutbox } from '../store.mjs';
 import { GROUP_CHAT, USER_CHAT, answerEntry, appEntry, channelEntry, noticeEntry, paired, settle, toolEntry, transcript, wakeEntry } from './helpers.mjs';
 
-const sentTexts = box => box.fake.sent.filter(row => row.chatId === USER_CHAT && !/연결됐습니다/.test(row.text)).map(row => row.text);
+const sentTexts = box => box.fake.sent.filter(row => row.chatId === USER_CHAT
+  && !/연결됐습니다|^\[앱에서 보낸 내 메시지\]/.test(row.text)).map(row => row.text);
 const mouth = (id, text, { name = REPLY_TOOL, isError = false } = {}) => [
   answerEntry(`${id}-call`, 'PRIVATE BESIDE THE MOUTH', { stopReason: 'toolUse', tools: [{ name, arguments: { text } }] }),
   toolEntry(`${id}-result`, name, isError ? 'failed' : 'Sent to the user.', { callId: `${id}-call-t0`, isError }),
 ];
+
+test('new app messages mirror quietly to the paired chat once; Telegram, machine context and old history never replay', async t => {
+  const box = await paired(t);
+  const file = transcript(box, [appEntry('old', 'old history')]);
+  // First enabling the channel on an existing conversation starts at its end.
+  writeState({ transcript: undefined }, box.env);
+  await settle(box.service);
+  appendFileSync(file, [appEntry('new', 'hello from app'), appEntry('anchor', '<system>'),
+    appEntry('context', '<t3_context>private UI context</t3_context>visible words'), channelEntry('telegram'),
+    wakeEntry('wake', 'heartbeat', 'machine context'), ...mouth('r', 'reply')].map(JSON.stringify).join('\n') + '\n');
+  await settle(box.service); await settle(box.service);
+  const mirrored = box.fake.sent.filter(row => row.text.startsWith('[앱에서 보낸 내 메시지]'));
+  assert.deepEqual(mirrored.map(row => row.text), ['[앱에서 보낸 내 메시지]\nhello from app', '[앱에서 보낸 내 메시지]\nvisible words']);
+  assert.ok(mirrored.every(row => row.chatId === USER_CHAT && row.disableNotification === true));
+  assert.deepEqual(sentTexts(box), ['reply']);
+});
+
+test('app conversations mirror silently, while Telegram replies and proactive wakes retain notification sound', async t => {
+  const box = await paired(t);
+  transcript(box, [appEntry('app', 'app words'), ...mouth('app-reply', 'APP ANSWER'),
+    channelEntry('telegram'), appEntry('anchor', '<system>'), ...mouth('telegram-reply', 'TELEGRAM ANSWER'),
+    appEntry('again', 'more app words'), wakeEntry('wake', 'heartbeat', 'tick'), ...mouth('wake-reply', 'PROACTIVE')]);
+  await settle(box.service);
+  assert.equal(box.fake.sent.find(row => row.text === 'APP ANSWER').disableNotification, true);
+  assert.equal(box.fake.sent.find(row => row.text === 'TELEGRAM ANSWER').disableNotification, false);
+  assert.equal(box.fake.sent.find(row => row.text === 'PROACTIVE').disableNotification, false);
+});
+
+test('rich replies send app-origin text silently before the mirror catches up', async t => {
+  const box = await paired(t);
+  const file = transcript(box, [appEntry('app', 'app words')]);
+  await box.service.send({ text: 'DIRECT APP ANSWER' });
+  assert.equal(box.fake.sent.find(row => row.text === 'DIRECT APP ANSWER').disableNotification, true);
+  assert.equal(listOutbox(box.env).find(row => row.text === 'DIRECT APP ANSWER').disableNotification, true);
+  appendFileSync(file, JSON.stringify(channelEntry('telegram')) + '\n');
+  await box.service.send({ text: 'DIRECT TELEGRAM ANSWER' });
+  assert.equal(box.fake.sent.find(row => row.text === 'DIRECT TELEGRAM ANSWER').disableNotification, false);
+});
+
+test('app-origin reply photos, documents and voice are all silent and do not duplicate the reply record', async t => {
+  let voiceFile;
+  const box = await paired(t, { synthesize: async () => ({ path: voiceFile, durationSec: 1 }) });
+  const photo = `${box.dir}/photo.png`, document = `${box.dir}/note.txt`;
+  voiceFile = `${box.dir}/voice.ogg`;
+  for (const file of [photo, document, voiceFile]) writeFileSync(file, 'test payload');
+  transcript(box, [appEntry('app', 'app words')]);
+  const result = await box.service.send({ source: 'reply', text: 'rich answer', files: [photo, document], voice: true });
+  assert.equal(result.state, 'sent');
+  assert.equal(box.fake.sent.find(row => row.text === 'rich answer').disableNotification, true);
+  assert.deepEqual(box.fake.uploads.map(row => [row.kind, row.disableNotification]),
+    [['photo', true], ['document', true], ['voice', true]]);
+  assert.equal(existsSync(messengerPaths(box.env).sent), false, 'reply owns the record, not its transport');
+});
 
 test('a recorded legacy transcript cannot leak any assistant monologue when Telegram is enabled', async t => {
   const box = await paired(t);
@@ -49,8 +103,16 @@ test('only successful explicit replies mirror to the paired user, once, without 
   const sent = box.fake.sent.find(row => row.text === 'OUTWARD_REPLY');
   assert.equal(sent.replyToMessageId, undefined);
   assert.equal(sent.disableNotification, false);
-  const recorded = readFileSync(messengerPaths(box.env).sent, 'utf8').trim().split('\n').map(line => JSON.parse(line));
-  assert.equal(recorded.filter(row => row.via === 'auto').length, 2);
+  assert.equal(existsSync(messengerPaths(box.env).sent), false, 'mirror delivery must not duplicate reply records');
+});
+
+test('rich reply receipts are not mirrored a second time', async t => {
+  const box = await paired(t);
+  const entries = mouth('media', 'text already sent with the file');
+  entries[1].message.details = { telegram: { state: 'sent', messageIds: [99] } };
+  transcript(box, [channelEntry('input'), ...entries]);
+  await settle(box.service);
+  assert.deepEqual(sentTexts(box), []);
 });
 
 test('a wake never silences an explicit reply, and a game event cannot redirect it to another chat', async t => {

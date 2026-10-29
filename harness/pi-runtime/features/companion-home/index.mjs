@@ -6,8 +6,8 @@
 // - `segno_commit` commits the record files Segno changed to its home's history (Roo commit-owned.sh).
 // - `reply` is Segno's mouth (Roo's telegram_reply, intent companion-segno rev 11): in every turn,
 //   the one the user opened too, everything else Segno writes is its own monologue, and only what it
-//   sends with `reply` reaches its thread and the user's phone (bridge said-echo.mjs). `say` is the
-//   same as a voice reply; it is offered once a voice is set. Both are recorded for `sent_messages`.
+//   sends with `reply` reaches its thread and the user's phone (bridge said-echo.mjs). Files and
+//   voice are options of that same tool. Historical `say` replies remain readable.
 //   A turn the user opened that settles without either gets one reminder (Roo's
 //   telegram-reply-reminder.ts), which starts a turn of its own.
 // - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report that came in, what
@@ -21,7 +21,7 @@
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, replyDisplayText, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { CALL_SAY_TOOL } from "./call.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
@@ -43,7 +43,11 @@ export function createReplyWait() {
   let turn;
   return {
     /** A message entering the session (Pi's `message_start`): the user's own opens a turn to answer. */
-    message(message) { if (message?.role === "user") turn = { replied: false, reminded: false }; },
+    message(message) {
+      const channelUser = message?.role === "custom" && message.customType === "rubato-session-message"
+        && message.details?.kind === "channel" && message.details.from?.isUser === true;
+      if (message?.role === "user" || channelUser) turn = { replied: false, reminded: false };
+    },
     /** A reply or say that went through answers the turn. */
     toolEnd(event) {
       if (turn && [REPLY_TOOL, SAY_TOOL, CALL_SAY_TOOL].includes(event?.toolName) && event.isError !== true) turn.replied = true;
@@ -58,9 +62,15 @@ export function createReplyWait() {
   };
 }
 
-const replyParameters = (what) => ({
-  type: "object", additionalProperties: false, required: ["text"],
-  properties: { text: { type: "string", minLength: 1, description: what } },
+const replyParameters = (media) => ({
+  type: "object", additionalProperties: false, ...(media ? {} : { required: ["text"] }),
+  properties: { text: { type: "string", minLength: 1, description: "What you say to the person." },
+    ...(media ? {
+      files: { type: "array", maxItems: 10, items: { type: "string" }, description: "Absolute file paths. The connected messenger delivers them; the app keeps links." },
+      voice: { anyOf: [{ type: "boolean" }, { type: "string", enum: ["only"] }], description: "true adds a voice note; only sends voice in the messenger and keeps the words in the app." },
+      voice_text: { type: "string", minLength: 1, description: "Words to read aloud if different from text." },
+      sanitize: { type: "boolean", description: "Default true removes markup and voice control tags from the delivered text." },
+    } : {}) },
 });
 
 function itemLine(item) {
@@ -69,7 +79,6 @@ function itemLine(item) {
   return `${item.id} [${item.status}] ${item.title}${who}${lead}`;
 }
 
-/** `voice`: whether a voice is set, so `say` can speak (none can be yet; Segno then never sees `say`). */
 /** The file tools that write a path, and the field that names it. */
 const WRITING_TOOLS = Object.freeze({ write: "path", edit: "path" });
 /** What Segno reads when a write would go through a link out of its home. */
@@ -103,8 +112,9 @@ export function writeRefusal(event, { cwd, env = process.env } = {}) {
   return undefined;
 }
 
-export function createCompanionHomeFactories({ voice = false, env = process.env } = {}) {
+export function createCompanionHomeFactories({ sessionLink, env = process.env } = {}) {
   const inbox = () => openInbox({ env });
+  const media = env.RUBATO_COMPANION_TELEGRAM === "1" && typeof sessionLink?.telegramSend === "function";
   return [{
     name: "companion-home",
     factory: (pi) => {
@@ -217,24 +227,22 @@ export function createCompanionHomeFactories({ voice = false, env = process.env 
         searchKeywords: ["reply", "answer", "say", "message", "tell", "speak", "답", "말하기", "톡", "안부"],
         description:
           "Say something to the user. This is the only way your words reach them: what you write anywhere else, in any turn, " +
-          "stays with you. It shows in your thread as your message and the app notifies their phone.",
-        parameters: replyParameters("What you say to them, as it should read in your thread."),
-        async execute(_id, params) {
-          const told = recordTold(params.text, { via: REPLY_TOOL, env });
-          return { content: [text("Sent to the user.")], details: told };
-        },
-      });
-
-      if (voice) pi.registerTool({
-        name: SAY_TOOL,
-        label: "Say aloud",
-        exposure: "direct",
-        searchKeywords: ["say", "voice", "speak", "aloud", "목소리", "음성", "말하기"],
-        description: "Say something to the user in your voice. Like reply, it is the only way these words reach them.",
-        parameters: replyParameters("What you say aloud to them."),
-        async execute(_id, params) {
-          const told = recordTold(params.text, { via: SAY_TOOL, env });
-          return { content: [text("Said to the user.")], details: told };
+          "stays with you. The engine puts it in the app and mirrors it to connected messengers; app conversations mirror silently. " +
+          (media ? "Files and voice use this same tool. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
+        parameters: replyParameters(media),
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+          let telegram;
+          if (params.files?.length || params.voice === true || params.voice === "only" || params.voice_text) {
+            if (!media) throw new Error("No media messenger is connected to this companion.");
+            const sessionId = ctx?.sessionManager?.getSessionId?.();
+            const result = await sessionLink.telegramSend({ text: params.text, files: params.files, voice: params.voice,
+              voiceText: params.voice_text, sanitize: params.sanitize, to: "user", source: "reply", sessionId });
+            telegram = { state: result.state, messageIds: result.messageIds ?? [], ...(result.note ? { note: result.note } : {}) };
+            if (!["sent", "queued"].includes(telegram.state)) throw new Error("Reply media was not delivered.");
+          }
+          const told = recordTold(replyDisplayText(params), { via: REPLY_TOOL, env });
+          return { content: [text(telegram ? `Reply recorded in the app; messenger: ${JSON.stringify(telegram)}` : "Sent to the user.")],
+            details: { ...told, ...(telegram ? { telegram } : {}) } };
         },
       });
 

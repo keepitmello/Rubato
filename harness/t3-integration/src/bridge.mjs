@@ -808,14 +808,16 @@ export class RubatoPiBridge {
     const thread = await this.projectedThread(threadId);
     if (!thread) return false;
     const gaps = this.streamGaps ? await this.streamGaps(threadId) : undefined;
-    if (Array.isArray(gaps) && !gaps.length) return true;
-    const { messages } = await this.transcript(sessionId);
     const companion = await this.companionSession(sessionId);
+    if (!companion && Array.isArray(gaps) && !gaps.length) return true;
+    const { messages } = await this.transcript(sessionId);
     const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), thread.messages,
-      Array.isArray(gaps) ? { gaps } : {});
+      companion ? { chatLog: true } : Array.isArray(gaps) ? { gaps } : {});
     for (const { item, runId } of missing) {
       if (this.closed) return false;
-      await this.appendSessionMessage(threadId, backfillItem(item, threadId, runId));
+      // Restoring old chat history must not create fresh completion notifications.
+      const historical = companion && Date.parse(item.createdAt) < Date.now() - 60_000;
+      await this.appendSessionMessage(threadId, backfillItem(historical ? { ...item, ownRun: false } : item, threadId, runId));
     }
     if (missing.length) t3BridgeLog('backfilled', `${threadId} ${missing.length}`);
     return true;

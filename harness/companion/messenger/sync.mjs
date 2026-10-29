@@ -1,10 +1,10 @@
 // The companion's explicit mouth is the same in the app and Telegram: successful reply/say
 // calls. Ordinary assistant text is private in every run, including user-opened turns.
-// telegram_send owns its own delivery; call_say and game tools belong to other transports.
+// Historical telegram_send calls own their delivery; call_say and game tools use other transports.
 import { open, opendir } from 'node:fs/promises';
 import path from 'node:path';
 import { REPLY_TOOL, SAY_TOOL } from '../home.mjs';
-import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
+import { SESSION_MESSAGE_TYPE, SYSTEM_ANCHOR } from '../../pi-runtime/features/session-link/message.mjs';
 
 export { SESSION_MESSAGE_TYPE };
 export const TELEGRAM_SEND_TOOL = 'telegram_send';
@@ -66,18 +66,25 @@ function triggerOf(entry) {
     : { kind: details.kind ?? 'unknown', what: details.what };
 }
 
-/** Only a completed explicit mouth call yields outward words; plain assistant content never does. */
+/** Mirror the person's app words and completed explicit mouth calls, never private assistant text. */
 export function stepRun(run, entry) {
   if (run.version !== 2) { for (const key of Object.keys(run)) delete run[key]; Object.assign(run, freshRun()); }
   const message = entry?.type === 'message' ? entry.message : undefined;
   if (entry?.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE) {
-    // A game/call wake is machine context, not a different human reply target.
-    if (entry.details?.kind === 'channel') {
-      run.trigger = triggerOf(entry); run.toolTexts = [];
-    }
+    // Origin controls notification sound, never the paired reply destination.
+    run.trigger = triggerOf(entry);
+    if (entry.details?.kind === 'channel') run.toolTexts = [];
     return [];
   }
-  if (message?.role === 'user') { run.trigger = triggerOf(entry); run.toolTexts = []; return []; }
+  if (message?.role === 'user') {
+    const raw = typeof message.content === 'string' ? message.content : resultText(message);
+    // UI context envelopes and the engine's synthetic system anchor are not the person's words.
+    const text = raw.replace(/<t3_context[\s\S]*?<\/t3_context>/g, '').trim();
+    if (!text || text === SYSTEM_ANCHOR) return [];
+    run.trigger = triggerOf(entry); run.toolTexts = [];
+    return [{ entryId: entry.id, text: `[앱에서 보낸 내 메시지]\n${text}`, final: false, quiet: false,
+      source: 'app-user', disableNotification: true }];
+  }
   if (message?.role === 'assistant') {
     if (!['error', 'aborted'].includes(message.stopReason)) {
       for (const part of Array.isArray(message.content) ? message.content : []) {
@@ -97,11 +104,14 @@ export function stepRun(run, entry) {
   if (!call || message.toolName !== call.name) return [];
   delete run.calls[message.toolCallId];
   if (message.isError === true) return [];
+  // Rich reply already used the same messenger's durable outbox. Never send its text twice.
+  if (['sent', 'queued'].includes(message.details?.telegram?.state)) return [];
   if (call.name === TELEGRAM_SEND_TOOL) {
     if (!/^Held for/.test(resultText(message).trim())) run.toolTexts.push(...call.texts);
     return [];
   }
   return [{ entryId: entry.id, text: call.text, final: true, quiet: false,
+    disableNotification: run.trigger.kind === 'app',
     // reply is explicitly addressed to the person, regardless of the surrounding channel.
     trigger: { kind: 'reply' },
     duplicate: run.toolTexts.some(sent => sent && sent.includes(normalize(call.text))) }];

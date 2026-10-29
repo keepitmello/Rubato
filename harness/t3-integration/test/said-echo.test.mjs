@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
 import { sessionMessageId } from '../src/events.mjs';
-import { SAID_KIND, createSaidEcho, saidEchoes } from '../src/said-echo.mjs';
+import { SAID_KIND, channelItem, companionThreadItems, createSaidEcho, saidEchoes } from '../src/said-echo.mjs';
 import { REPLY_TOOL, SAY_TOOL } from '../../companion/home.mjs';
 
 const calling = (id, name, text, timestamp) => ({ role: 'assistant', stopReason: 'toolUse', timestamp,
@@ -32,6 +32,32 @@ test('live: one item per call, when its result says it went through', () => {
   const item = echo.accept({ type: 'message_end', message: result('r1', REPLY_TOOL, 2) });
   assert.equal(item.text, '산책 가자');
   assert.equal(echo.accept({ type: 'message_end', message: result('r1', REPLY_TOOL, 2) }), undefined, 'once');
+});
+
+test('Telegram inputs appear as the person in both companions, never a third party or a machine wake', () => {
+  const message = { role: 'custom', customType: 'rubato-session-message', timestamp: 5,
+    details: { kind: 'channel', messageId: 'telegram:1:2', text: 'from Telegram', from: { channel: 'telegram', isUser: true } } };
+  for (const id of ['roo-thread', 'segno-thread']) {
+    const item = channelItem(message, id);
+    assert.equal(item.id, sessionMessageId(id, 'telegram:1:2'));
+    assert.equal(item.context.records[0].payload.role, 'user');
+    assert.equal(item.text, 'from Telegram');
+    assert.deepEqual(companionThreadItems([message], id, () => { throw Error('not a plain message'); }), [item]);
+  }
+  assert.equal(channelItem({ ...message, details: { ...message.details, from: { channel: 'telegram', isUser: false } } }, 't'), undefined);
+  assert.equal(channelItem({ ...message, details: { ...message.details, kind: 'wake' } }, 't'), undefined);
+});
+
+test('only confirmed Telegram sends to the person appear in the app; a matching reply is not a duplicate', () => {
+  const send = (id, args, state = 'sent', target = 'user') => [
+    { ...calling(id, 'telegram_send', args.text, 1), content: [{ type: 'toolCall', id, name: 'telegram_send', arguments: args }] },
+    { ...result(id, 'telegram_send', 2), details: { state, target } },
+  ];
+  const messages = [...send('sent', { text: 'hello' }), calling('reply', 'reply', 'hello', 3), result('reply', 'reply', 4),
+    ...send('held', { text: 'do not show' }, 'held'), ...send('queued', { text: 'not sent yet' }, 'queued'),
+    ...send('other', { text: 'private group', to: '-123' }, 'sent', { chatId: '-123' }),
+    { role: 'user', content: 'again', timestamp: 7 }, calling('again', 'reply', 'hello', 8), result('again', 'reply', 9)];
+  assert.deepEqual([...saidEchoes(messages, 't').values()].map(item => item.text), ['hello', 'hello']);
 });
 
 test('after a time with no stream, the backfill writes what Segno said, once, under the live id', async () => {

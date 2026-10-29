@@ -50,7 +50,7 @@ const inGap = (gaps, createdAt) => {
  * thread shows is missing — on an empty thread all of them, and the words of whoever prompted the
  * engine too. An older one the thread lacks is left alone, as without `whole`.
  */
-export function missingItems(items, threadMessages, { gaps, whole = false } = {}) {
+export function missingItems(items, threadMessages, { gaps, whole = false, chatLog = false } = {}) {
   const projected = (items ?? []).filter((item) => sameWords(item.text));
   const shown = (threadMessages ?? []).filter((message) => sameWords(message.text));
   const starts = shown.map((message) => Date.parse(message.createdAt)).filter(Number.isFinite);
@@ -80,6 +80,10 @@ export function missingItems(items, threadMessages, { gaps, whole = false } = {}
     const paired = pairedWith.get(index);
     // A message T3 shows outside any run (a session message's bubble) keeps the run before it.
     if (paired) { anchored = true; runId = paired.runId ?? paired.turnId ?? runId; return; }
+    // A companion's projection is already only the person's conversation, not a copied work
+    // thread. Restore holes from any transport, even before the app first opened or while its
+    // stream was connected but an older filter discarded Telegram messages.
+    if (chatLog) { missing.push({ item, runId }); return; }
     if (whole && !(Date.parse(item.createdAt) < threadLast)) { missing.push({ item, runId }); return; }
     const theirs = item.role === 'assistant' || item.context !== undefined;
     const since = Date.parse(item.createdAt) >= threadStart;

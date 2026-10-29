@@ -31,7 +31,7 @@ const run = (input, ...tail) => [{ type: 'agent_start' }, { type: 'turn_start' }
 async function stream({ companion = true, messages = [] } = {}) {
   const commands = [];
   const client = { client: { connected: true }, listener: null, sequence: 0,
-    async attach() {}, async subscribeSession(listener) { client.listener = listener; return async () => {}; },
+    async attach() {}, async detach() {}, async subscribeSession(listener) { client.listener = listener; return async () => {}; },
     async command(command) {
       commands.push(command);
       if (command.type === 'prompt') return { disposition: 'started' };
@@ -126,6 +126,16 @@ test("the adapter's backfill (get_messages) of Segno's thread holds only the per
   assert.deepEqual(s.appended.map((item) => item.text), ['좋아!']);
   const lead = await stream({ companion: false, messages: stored });
   assert.equal((await lead.conn.request({ type: 'get_messages' })).messages.length, stored.length, 'any other thread gets its whole conversation');
+});
+
+test('a paired Telegram message reaches the live app once and reattach uses the same id', async () => {
+  const channel = { ...notice, details: { v: 1, messageId: 'telegram:me:42', kind: 'channel', text: '텔레에서 쓴 말',
+    from: { channel: 'telegram', isUser: true, chatId: 'me' } } };
+  const s = await stream({ messages: [channel] });
+  await s.publish(run(channel));
+  await s.conn.request({ type: 'get_messages' });
+  assert.deepEqual(s.appended.map(item => [item.text, item.context.records[0].payload.role]), [['텔레에서 쓴 말', 'user']]);
+  await s.conn.close();
 });
 
 test('any other conversation shows its turns whole, the ones T3 did not start too, and the messages other conversations send', async () => {

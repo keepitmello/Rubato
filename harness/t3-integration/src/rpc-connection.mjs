@@ -5,7 +5,7 @@ import { messageFingerprint } from '../../pi-runtime/features/conversation-rewin
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom } from './events.mjs';
 import { isBookkeepingTool } from './activity.mjs';
-import { createSaidEcho, saidEchoes } from './said-echo.mjs';
+import { channelItem, createSaidEcho, saidEchoes } from './said-echo.mjs';
 import { createCompanionStream } from './companion-thread.mjs';
 
 /**
@@ -416,10 +416,10 @@ export class RubatoRpcConnection {
    * so T3 writes it (RubatoPiSessions.ts); a replay after reattaching finds it there already.
    */
   sessionMessage(event) {
-    // Segno's thread is a chat log of the person and Segno (companion-thread.mjs): no other sender's message.
-    if (event?.type !== 'message_end' || this.companion) return;
+    // A companion keeps the person's Telegram messages, but never another agent or a wake.
+    if (event?.type !== 'message_end') return;
     let item;
-    try { item = sessionMessageFrom(event.message, this.threadId); } catch { return; }
+    try { item = this.companion ? channelItem(event.message, this.threadId) : sessionMessageFrom(event.message, this.threadId); } catch { return; }
     if (!item || this.sessionMessages.has(item.id) || !this.bridge.appendSessionMessage) return;
     this.sessionMessages.add(item.id);
     Promise.resolve(this.bridge.appendSessionMessage(this.threadId, item)).catch((error) => {
@@ -433,6 +433,7 @@ export class RubatoRpcConnection {
    * the thread is not written twice.
    */
   backfillSaidEchoes(messages) {
+    for (const message of messages ?? []) this.appendEcho(channelItem(message, this.threadId));
     for (const item of saidEchoes(messages, this.threadId).values()) this.appendEcho(item);
   }
   /** What Segno says with reply or say, written into the thread as its own message. */

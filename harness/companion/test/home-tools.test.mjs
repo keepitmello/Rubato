@@ -113,7 +113,7 @@ test('the companion sets its wake wish with its tool, the way Roo runs wake-wish
   assert.equal(readWakeWish(env).reason, '리드 둘 다 끝날 즈음 본다', 'a refused wish leaves the earlier one');
 });
 
-test('reply records what Segno said, and sent_messages finds it beside what Telegram delivered before; say waits for a voice', async (t) => {
+test('reply records what Segno said, and sent_messages preserves historical transport replies', async (t) => {
   const env = sandbox(t);
   const before = { ...process.env };
   Object.assign(process.env, env);
@@ -135,9 +135,42 @@ test('reply records what Segno said, and sent_messages finds it beside what Tele
   const listed = await tools.get('sent_messages').execute('c2', { keyword: '마감' });
   assert.match(listed.content[0].text, /오늘 마감 하나 있어/);
   await assert.rejects(async () => reply.execute('c3', { text: '  ' }), /needs some text/);
-  const voiced = toolsOf({ voice: true });
-  const said = await voiced.get(SAY_TOOL).execute('c4', { text: '잘 자' });
-  assert.equal(said.details.via, SAY_TOOL);
+  assert.equal(toolsOf({ voice: true }).has(SAY_TOOL), false, 'voice is a reply option, not a second mouth');
+});
+
+test('reply preserves text, files and voice through one mouth and records only successful or queued delivery', async t => {
+  const env = { ...sandbox(t), RUBATO_COMPANION_TELEGRAM: '1' };
+  const requests = [];
+  const sessionLink = { telegramSend: async request => { requests.push(request); return { state: 'sent', messageIds: [7] }; } };
+  const reply = toolsOf({ env, sessionLink }).get(REPLY_TOOL);
+  const ctx = { sessionManager: { getSessionId: () => 'own-session' } };
+  const answer = await reply.execute('rich', { text: '사진이야', files: ['/tmp/picture.png'], voice: true,
+    voice_text: '사진 보냈어' }, undefined, undefined, ctx);
+  assert.deepEqual(requests[0], { text: '사진이야', files: ['/tmp/picture.png'], voice: true, voiceText: '사진 보냈어',
+    sanitize: undefined, to: 'user', source: 'reply', sessionId: 'own-session' });
+  assert.equal(answer.details.telegram.state, 'sent');
+  assert.match(answer.details.text, /picture.png/);
+  assert.equal(sentMessages({ env }).length, 1);
+  await reply.execute('file', { files: ['/tmp/picture.png'] }, undefined, undefined, ctx);
+  await reply.execute('voice', { voice: 'only', voice_text: '목소리야' }, undefined, undefined, ctx);
+  assert.equal(sentMessages({ env }).length, 3);
+  sessionLink.telegramSend = async () => { throw new Error('delivery failed'); };
+  await assert.rejects(reply.execute('failed', { files: ['/tmp/picture.png'] }, undefined, undefined, ctx), /delivery failed/);
+  assert.equal(sentMessages({ env }).length, 3, 'a failed media delivery is not recorded as sent');
+  await assert.rejects(toolsOf({ env: sandbox(t) }).get(REPLY_TOOL).execute('off', { files: ['/tmp/picture.png'] }), /No media messenger/);
+});
+
+test('Telegram messages from the paired person wait for a reply just like app messages; groups and wakes do not', () => {
+  const wait = createReplyWait();
+  wait.message({ role: 'custom', customType: 'rubato-session-message', details: { kind: 'channel', from: { isUser: true } } });
+  assert.equal(wait.settled(), true);
+  wait.toolEnd({ toolName: REPLY_TOOL, isError: false });
+  assert.equal(wait.settled(), false);
+  for (const details of [{ kind: 'channel', from: { isUser: false } }, { kind: 'wake' }]) {
+    const other = createReplyWait();
+    other.message({ role: 'custom', customType: 'rubato-session-message', details });
+    assert.equal(other.settled(), false);
+  }
 });
 
 test("Roo's reminder: a turn the user opened that settles without a reply is reminded once, by a hidden turn of its own", () => {

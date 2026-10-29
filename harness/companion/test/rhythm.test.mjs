@@ -845,8 +845,8 @@ test('prompt: Segno speaks only in the app and only through reply — no Telegra
   }
   for (const name of ['greet-night', 'greet-morning']) assert.match(readFileSync(path.join(defaultsDir, `${name}.pi.md`), 'utf8'), /톡은 `reply`로/);
   const tools = readFileSync(path.join(defaultsDir, 'tools.pi.md'), 'utf8');
-  assert.match(tools, /\| 사용자한테 말하기 \| `reply`, 목소리가 정해져 있으면 `say` \|/);
-  assert.match(tools, /`say`는 같은 말을 내 목소리로 보내\. 목소리가 정해져 있을 때만 있는 도구야\./);
+  assert.match(tools, /\| 사용자한테 말하기 \| `reply` \|/);
+  assert.match(tools, /같은 입으로 보내/);
 });
 
 test('prompt: the default soul has its three channels in its own voice and names no tool or mechanics (users 6ce437ae, 0f850065)', () => {

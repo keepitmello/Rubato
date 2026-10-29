@@ -33,6 +33,10 @@ const bubbles = (items: ReturnType<typeof segnoChatItems>) =>
   );
 
 describe("Segno's chat room", () => {
+  it("places restored Telegram history by its original time, not its append order", () => {
+    const items = segnoChatItems([message("new", "assistant", 30_000), message("old", "user", 0)]);
+    expect(items.filter(item => item.kind === "bubble").map(item => item.id)).toEqual(["old", "new"]);
+  });
   it("puts the person on the right and Segno on the left, one time line at the top", () => {
     const items = segnoChatItems([message("a", "user", 0), message("b", "assistant", 30_000)]);
     expect(bubbles(items)).toEqual(["time:separator:a", "me:a:startend", "segno:b:startend"]);
