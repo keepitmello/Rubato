@@ -227,16 +227,19 @@ export async function runUpdate({
 }
 
 // macOS ends what a Dock-launched app started once that app quits, unless the person allowed the
-// app to run in the background: loginwindow terminates the app's coalition and Background Task
-// Management decides. A detached child (new session, new process group) is still in that
-// coalition, so a restart or update that quits the app also took down its own updater and the
-// script that reopens the app — "The operation was aborted", no window (2026-10-30, loginwindow
-// "killing coalition pid"). A launchd job starts in a coalition of its own, so the job is handed to
-// launchd and outlives the app the way the engine job does.
+// app to run in the background (loginwindow decides with Background Task Management). It ends the
+// app's coalition, which a detached child (new session, new process group) is still in, and it
+// unloads launchd jobs the app loaded that BTM does not manage. Both took the updater down with the
+// app it was restarting — "The operation was aborted", no window (2026-10-30/31, loginwindow
+// "killing coalition pid", "Unloading one-shot jobs for application"). A job defined in
+// ~/Library/LaunchAgents is managed by BTM and left alone, the way the engine job is. So the
+// updater is one standing agent there, idle until woken: the app writes what to run into a
+// request file and kickstarts it, and the job runs in launchd's coalition, not the app's.
 export const LAUNCHD_LABEL = 'com.keepitmello.rubato.gui-update';
 const IN_LAUNCHD = 'RUBATO_GUI_UPDATE_LAUNCHD';
-// launchd's own per-job values; the job gets fresh ones.
-const LAUNCHD_OWN_ENV = new Set(['XPC_SERVICE_NAME', 'XPC_FLAGS']);
+// launchd's own per-job values; the job's children get the job's.
+const LAUNCHD_OWN_ENV = new Set(['XPC_SERVICE_NAME', 'XPC_FLAGS', IN_LAUNCHD]);
+const requestPath = (directory) => path.join(directory, 'request.json');
 
 /** Whether `run`/`restart` hand the job to launchd: macOS, not already in the job, and the
  * account's own home or a caller that named its own launchctl (a test HOME never reaches launchd). */
@@ -248,23 +251,21 @@ export function launchdApplies(env = process.env, { platform = process.platform 
 
 const xml = (value) => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
   .replaceAll('"', '&quot;').replaceAll("'", '&apos;');
-// XML 1.0 has no form for these; a plist holding one does not load.
-const plistSafe = (value) => !/[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]/.test(value);
 
-/** A one-shot job: runs once when loaded, never again, and leaves the app it reopens running. */
-export function renderLaunchdJob({ label = LAUNCHD_LABEL, programArguments, env, cwd, logPath }) {
-  const vars = Object.fromEntries(Object.entries(env)
-    .filter(([key, value]) => typeof value === 'string' && !LAUNCHD_OWN_ENV.has(key) && plistSafe(key) && plistSafe(value)));
-  vars[IN_LAUNCHD] = '1';
+/** The standing agent. Its definition only changes with Node, the checkout or HOME, so BTM sees one
+ * item that stays put; what a run needs (command, token, environment) comes from the request. */
+export function renderLaunchdJob({ label = LAUNCHD_LABEL, node, script, cwd, home, logPath }) {
+  const vars = { HOME: home, PATH: [path.dirname(node), '/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'].join(':'),
+    [IN_LAUNCHD]: '1' };
   const dict = Object.keys(vars).sort().map((key) => `<key>${xml(key)}</key><string>${xml(vars[key])}</string>`).join('');
-  const args = programArguments.map((value) => `<string>${xml(value)}</string>`).join('');
+  const args = [node, script, 'launchd-job'].map((value) => `<string>${xml(value)}</string>`).join('');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
 <key>Label</key><string>${xml(label)}</string>
 <key>ProgramArguments</key><array>${args}</array>
 <key>WorkingDirectory</key><string>${xml(cwd)}</string>
-<key>RunAtLoad</key><true/><key>KeepAlive</key><false/>
+<key>RunAtLoad</key><false/><key>KeepAlive</key><false/>
 <key>AbandonProcessGroup</key><true/>
 <key>EnvironmentVariables</key><dict>${dict}</dict>
 <key>StandardOutPath</key><string>${xml(logPath)}</string>
@@ -274,14 +275,14 @@ export function renderLaunchdJob({ label = LAUNCHD_LABEL, programArguments, env,
 }
 
 /**
- * Loads `args` (`run|restart TOKEN APP_PID`) as this account's one gui-update job and returns once
- * launchd has it. The job's own lock still decides whether it runs; a job that is running now is
- * never booted out for a new one. The plist stays outside LaunchAgents: it is not a login item and
- * is gone from launchd after logout.
+ * Asks the standing agent to run `args` (`run|restart TOKEN APP_PID`) with `env`, and returns once
+ * launchd started it. The job's own lock still decides whether it runs; a job running now is
+ * neither replaced nor given a second request.
  * @returns {Promise<'launched' | 'duplicate'>}
  */
 export async function handOffToLaunchd(args, { env = process.env, label = LAUNCHD_LABEL,
   launchctl = env.RUBATO_LAUNCHCTL_BIN || '/bin/launchctl', uid = process.getuid?.(),
+  agentsDir = env.RUBATO_LAUNCH_AGENTS_DIR || path.join(env.HOME || homedir(), 'Library', 'LaunchAgents'),
   node = process.execPath, script = fileURLToPath(import.meta.url), cwd = repo, retryMs = 200 } = {}) {
   if (uid === undefined) throw new Error('launchd needs a user id');
   const directory = stateDirectory(env);
@@ -291,28 +292,56 @@ export async function handOffToLaunchd(args, { env = process.env, label = LAUNCH
   const domain = `gui/${uid}`;
   const target = `${domain}/${label}`;
   const launch = (...argv) => exec(launchctl, argv, { env, timeout: 30_000, maxBuffer: 1024 * 1024 });
-  const running = await launch('print', target).then(({ stdout }) => /^\s*pid = \d+/m.test(stdout), () => false);
-  if (running) return 'duplicate';
-  // The last job ran and ended; launchd still holds its definition under this label.
-  await launch('bootout', target).catch(() => {});
-  const plistPath = path.join(directory, `${label}.plist`);
-  await atomicJsonText(plistPath, renderLaunchdJob({ label, programArguments: [node, script, ...args], env, cwd,
-    logPath: path.join(directory, 'update.log') }));
-  // A bootout can return before launchd lets go of the label; the bootstrap then fails with EIO.
-  for (let attempt = 1; ; attempt++) {
-    try { await launch('bootstrap', domain, plistPath); return 'launched'; }
-    catch (error) {
-      if (attempt >= 10) throw new Error(`launchctl bootstrap failed: ${String(error.stderr || error.message).trim()}`, { cause: error });
-      await delay(retryMs);
+  const loaded = await launch('print', target).then(({ stdout }) => stdout, () => null);
+  if (loaded && /^\s*pid = \d+/m.test(loaded)) return 'duplicate';
+
+  const jobEnv = Object.fromEntries(Object.entries(env).filter(([key, value]) => typeof value === 'string' && !LAUNCHD_OWN_ENV.has(key)));
+  await atomicJson(requestPath(directory), { args, env: jobEnv, at: Date.now() });
+
+  const plistPath = path.join(agentsDir, `${label}.plist`);
+  // The one-shot definition an earlier handoff left beside the state; loginwindow unloaded its job.
+  await unlink(path.join(directory, `${label}.plist`)).catch(() => {});
+  const plist = renderLaunchdJob({ label, node, script, cwd, home: env.HOME || homedir(), logPath: path.join(directory, 'update.log') });
+  const previous = await readFile(plistPath, 'utf8').catch(() => null);
+  if (previous !== plist) {
+    await mkdir(agentsDir, { recursive: true });
+    await atomicText(plistPath, plist, 0o644);
+  }
+  const loadedFrom = loaded && /^\s*path = (.+)$/m.exec(loaded)?.[1]?.trim();
+  if (!loaded || previous !== plist || loadedFrom !== plistPath) {
+    if (loaded) await launch('bootout', target).catch(() => {});
+    // A bootout can return before launchd lets go of the label; the bootstrap then fails with EIO.
+    for (let attempt = 1; ; attempt++) {
+      try { await launch('bootstrap', domain, plistPath); break; }
+      catch (error) {
+        if (attempt >= 10) throw new Error(`launchctl bootstrap failed: ${String(error.stderr || error.message).trim()}`, { cause: error });
+        await delay(retryMs);
+      }
     }
   }
+  try { await launch('kickstart', target); }
+  catch (error) { throw new Error(`launchctl kickstart failed: ${String(error.stderr || error.message).trim()}`, { cause: error }); }
+  return 'launched';
 }
 
-async function atomicJsonText(file, text) {
+async function atomicText(file, text, mode = 0o600) {
   const temporary = `${file}.${process.pid}.tmp`;
-  const handle = await open(temporary, 'w', 0o600);
+  const handle = await open(temporary, 'w', mode);
   try { await handle.writeFile(text); } finally { await handle.close(); }
   try { await rename(temporary, file); } finally { await unlink(temporary).catch(() => {}); }
+}
+
+/** The standing agent's run: takes the request the app left (once) and runs it here. */
+export async function runLaunchdJob({ env = process.env, run = startJob } = {}) {
+  const file = requestPath(stateDirectory(env));
+  const request = await readJson(file);
+  await unlink(file).catch(() => {});
+  if (!request) return null;
+  const [command, token, pid] = Array.isArray(request.args) ? request.args : [];
+  if (command !== 'run' && command !== 'restart') throw new Error('Invalid update request');
+  const requestEnv = request.env && typeof request.env === 'object' ? request.env : {};
+  return run({ kind: command === 'run' ? 'update' : 'restart', token, parentPid: Number(pid),
+    env: { ...requestEnv, [IN_LAUNCHD]: '1' } });
 }
 
 /** The `run`/`restart` command: hands the job to launchd where that applies, else runs it here. A
@@ -350,6 +379,9 @@ if (process.argv[1] && await realpath(process.argv[1]).catch(() => '') === fileU
       const kind = process.argv[2] === 'run' ? 'update' : 'restart';
       const result = await startJob({ kind, token: process.argv[3], parentPid: Number(process.argv[4]) });
       process.exitCode = result?.status === 'failed' ? 1 : 0;
-    } else throw new Error('Usage: gui-update.mjs check | run TOKEN APP_PID | restart TOKEN APP_PID|0');
+    } else if (process.argv[2] === 'launchd-job') {
+      const result = await runLaunchdJob();
+      process.exitCode = result?.status === 'failed' ? 1 : 0;
+    } else throw new Error('Usage: gui-update.mjs check | run TOKEN APP_PID | restart TOKEN APP_PID|0 | launchd-job');
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }
