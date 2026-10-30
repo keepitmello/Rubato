@@ -111,8 +111,9 @@ export function createAppService(options = {}) {
 
   const updater = () => import(pathToFileURL(path.join(integration, 'gui-update.mjs')).href);
 
-  // Detached into its own session: the restart quits this app (and this server)
-  // before it reopens it, and must outlive both. The updater's lock is the one
+  // The restart quits this app (and this server) before it reopens it, and must
+  // outlive both. Detaching is not enough on macOS: the updater hands itself to
+  // launchd (gui-update.mjs handOffToLaunchd). The updater's lock is the one
   // guard against a second restart or an update at the same time; checking it
   // here only turns the common case into an answer instead of a silent no-op.
   async function restart() {
