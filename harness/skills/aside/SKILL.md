@@ -7,7 +7,7 @@ description: "Use when research quality depends on broad, fresh, high-recall evi
 # Aside browser
 
 Aside is an AI browser. Inside Aside, there is an intelligent agent designed to handle complex tasks across user's credentials, cookies, browsing history, and various websites the user uses.
-Hand all browser automation to Aside. Write JavaScript only when the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both in one request.
+Use it when the main quality bottleneck is breadth, recall or freshness. Hand all browser automation to Aside. Write JavaScript only when the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both in one request.
 
 `aside --help` and `aside <command> --help` print current flags and examples.
 
