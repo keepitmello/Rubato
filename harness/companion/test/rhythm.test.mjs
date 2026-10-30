@@ -98,21 +98,26 @@ const wakeLine = (env, time, marker, itemIds, text) => {
   writeFileSync(inboxWakePath(env), JSON.stringify({ v: 1, at: new Date(time).toISOString(), marker, itemIds, text }) + '\n', { flag: 'a' });
 };
 
-test('inbox: lines within five minutes of the first unread one go to Segno in one wake, once, after the window', async (t) => {
+test('inbox: lines within seconds of the first unread one go to Segno in one wake, once, after the window', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
   const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
-  wakeLine(env, at(21, 10, 1), 'b-1', ['i1'], '수진: @우용 로그인 안 돼요');
-  await k.poke(at(21, 10, 2));
-  wakeLine(env, at(21, 10, 4), 'b-2', ['i2'], '민호: @우용 배포 언제?');
-  await k.poke(at(21, 10, 5));
+  const s = (minute, second) => at(21, 10, minute) + second * 1000;
+  wakeLine(env, s(1, 10), 'b-1', ['i1'], '운영팀: 운영지출 승인 부탁드립니다.');
+  await k.poke(s(1, 12));
+  wakeLine(env, s(1, 15), 'b-2', ['i2'], '운영팀: @우용 @Deran');
+  await k.poke(s(1, 20));
   assert.equal(k.of('inbox').length, 0, 'the window is still open');
-  await k.poke(at(21, 10, 6));
+  await k.poke(s(1, 40));
   assert.deepEqual(k.of('inbox').map((notice) => notice.text), [inboxWakeText([
-    { marker: 'b-1', itemIds: ['i1'], text: '수진: @우용 로그인 안 돼요' }, { marker: 'b-2', itemIds: ['i2'], text: '민호: @우용 배포 언제?' }], at(21, 10, 6))]);
+    { marker: 'b-1', itemIds: ['i1'], text: '운영팀: 운영지출 승인 부탁드립니다.' }, { marker: 'b-2', itemIds: ['i2'], text: '운영팀: @우용 @Deran' }], s(1, 40))],
+  'a message and its tag line wake Segno together, well within a minute');
   assert.match(k.of('inbox')[0].text, /^INBOX marker=b-1,b-2 items=i1,i2 now="/);
   await k.poke(at(21, 10, 30));
   assert.equal(k.of('inbox').length, 1, 'each line wakes once');
+  wakeLine(env, s(31, 0), 'b-3', ['i3'], '운영팀: 네 감사합니다');
+  await k.poke(s(31, 50));
+  assert.match(k.of('inbox')[1]?.text ?? '', /^INBOX marker=b-3 items=i3 /, 'a later line is its own wake, again within a minute');
 });
 
 test('inbox: lines over an hour old are not woken for, fresh ones are even from before the keeper first looked; a half line waits; a cut file is read again', async (t) => {
@@ -166,7 +171,7 @@ test('inbox: while Segno is busy or switched off the lines wait; they come when 
 test('inbox: the wake kind is one the engine accepts, and Segno\'s rules say what an INBOX line is', () => {
   assert.ok(WAKES.includes('inbox'));
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
-  assert.match(companion, /사용자 일터 방에서 누가 사용자를 부르면 루바토가 `INBOX` 줄로 나를 깨워\. 5분 안에 온 건 한 번에/);
+  assert.match(companion, /사용자 일터 방에서 누가 사용자를 부르면 루바토가 `INBOX` 줄로 바로 나를 깨워\. 30초 안에 연달아 온 건 한 번에/);
   assert.match(companion, /그 밖에 일터 방에서 들어온 건 조용히 인박스에만 쌓이니 하트비트 때 둘러봐\./);
 });
 

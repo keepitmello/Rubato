@@ -524,8 +524,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
    * stopped (from the start the first time, and again after the file was cut shorter). A line more
    * than an hour old is not woken for: its item waits in the inbox for the heartbeat. So the keeper
    * and the listener can start in either order without losing a fresh line or waking for old ones.
-   * Lines that come within five minutes of the first unread one go to Segno together once those
-   * five minutes are over (user item 06ebe72b); the place moves on only after the wake went. While
+   * Lines that come within INBOX_WAKE_WINDOW_MS of the first unread one go to Segno together once
+   * that window is over; the place moves on only after the wake went. While
    * Segno is off the keeper does not tick, so lines wait for it.
    */
   async function inboxDue(sessionId, at) {

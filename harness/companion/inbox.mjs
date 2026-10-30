@@ -41,8 +41,12 @@ export function inboxWakePath(env = process.env) {
   return path.join(companionHomeFor(env), 'inbox', 'wake.jsonl');
 }
 
-/** Wake lines that come within this long of the first unread one go to Segno in one wake. */
-export const INBOX_WAKE_WINDOW_MS = 5 * 60_000;
+/**
+ * Wake lines that come within this long of the first unread one go to Segno in one wake: long enough
+ * for a message and the tag line right after it, short enough that a tag is not left waiting (user,
+ * 2026-10-30: a 5-minute window let the ops team's approval request wait 5 minutes).
+ */
+export const INBOX_WAKE_WINDOW_MS = 30_000;
 /** A line older than this when the keeper reads it is not woken for: the item waits in the inbox. */
 export const INBOX_WAKE_STALE_MS = 60 * 60_000;
 
