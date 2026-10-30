@@ -1,7 +1,7 @@
 ---
 name: "aside"
 version: 4
-description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or when the task requires direct browser interaction."
+description: "Use when research quality depends on broad, fresh, high-recall evidence collection, or when a task has to happen in the user's browser: logged-in sites, forms, carts and checkout."
 ---
 
 # Aside browser
@@ -45,6 +45,18 @@ same session. Do not start a second session.
 ```bash
 aside session resume <id> "Continue and return the final evidence"
 ```
+
+### Stop points and approvals
+
+When a flow has a step that cannot be undone, such as a payment, a submit or a send, write the stop point into the task. Aside stops there, leaves the tab open and reports what is on screen. When approval arrives, continue the same session with the one step left.
+
+```bash
+aside "Buy example.ai on Spaceship for 2 years with the saved card. Stop on the card's 3DS screen without pressing its final confirm button. Report the total, the term and any approval code on screen, verbatim."
+# after approval
+aside session resume <id> "Press the final confirm button on the 3DS screen, then report the order result and the expiry date"
+```
+
+Ask for the values you have to pass on (prices, codes, order numbers) verbatim in the report. Name tabs Aside should leave alone and the tab to bring back to the front when it finishes.
 
 ### Control sessions
 
@@ -107,6 +119,8 @@ Same Aside account, Remote Control enabled on the host. `aside login` once; afte
 ## Drive the browser with JavaScript
 
 Open this path when the user named Playwright, asked for a snapshot/locator script, or told you to attach to a given tab and run JS. Aside stays out.
+
+A stop point, an approval wait, a precise click or a value read off the screen does not open this path. The Aside session flow above covers them.
 
 ```bash
 aside repl "…"
