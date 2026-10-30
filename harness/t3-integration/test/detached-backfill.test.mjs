@@ -112,19 +112,6 @@ test('a thread with no gap in its stream is not read at all', async (t) => {
   assert.equal(reads, 0);
 });
 
-test('a session the engine-run follower is writing live is not read by the pass meanwhile', async (t) => {
-  let reads = 0;
-  const session = [...before, said('본 브랜치에 올라갔어.', 53)];
-  const { bridge, appended } = setup(t, { session, thread: shownThread });
-  bridge.engineFollowers = new Map([['S1', Promise.resolve({})]]);
-  const transcript = bridge.viaInventory;
-  bridge.viaInventory = async (call) => transcript((client) => call({ ...client, transcript: async (id) => { reads += 1; return client.transcript(id); } }));
-  await new Promise((resolve) => setTimeout(resolve, 150));
-  assert.equal(reads, 0);
-  bridge.engineFollowers.delete('S1');
-  assert.ok(await until(() => appended.length >= 1), 'once the follower lets go, the pass compares the thread again');
-});
-
 test("a side chat's copied history, older than the thread itself, is never written into it", async (t) => {
   const session = [said('부모 대화에서 한 말.', 10), ...before, said('본 브랜치에 올라갔어.', 53)];
   const { appended } = setup(t, { session, thread: shownThread });

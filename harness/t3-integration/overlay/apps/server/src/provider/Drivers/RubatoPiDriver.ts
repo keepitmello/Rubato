@@ -113,11 +113,10 @@ export interface PiBridge {
   projectedMessages: (threadId: string) => Promise<ReadonlyArray<{id: string; text: string; streaming: boolean}>>;
   /** Writes a message another conversation sent into the thread's session (RubatoPiSessions.ts binds it). */
   appendSessionMessage: (threadId: string, message: PiSessionMessage) => Promise<void>;
-  /** A run for a turn the engine runs while T3 holds no stream on the thread (bridge engine-runs.mjs); null when the thread runs something else. */
-  openEngineRun?: (threadId: string, request: {readonly sessionId: string}) => Promise<string | null>;
-  closeEngineRun?: (threadId: string, runId: string, status: "completed" | "interrupted" | "failed") => Promise<void>;
-  /** Shows a running engine session in its thread while it runs (bridge engine-runs.mjs). */
-  followEngineRun(threadId: string, sessionId: string): Promise<void>;
+  /** The message that shows a run the engine started as a turn of its thread; it never reaches Pi (bridge rpc-connection.mjs). */
+  readonly engineRunText: string;
+  /** The inventory sends `engineRunText` next for this thread: only that one shows the engine's run. */
+  markEngineRun(threadId: string): void;
   /** The open stream T3 holds on a thread, if any. */
   rpcFor(threadId: string): unknown;
   /** Whether T3 keeps the thread's stream however long it idles (Segno's conversation). */
@@ -136,6 +135,8 @@ export interface PiBridge {
   inventory(): Promise<ReadonlyArray<PiSummary>>;
   cursor(id: string): {kind: string; serverId: string; sessionId: string};
   transcript(id: string): Promise<{messages: ReadonlyArray<unknown>}>;
+  /** The model a running session runs on now ("provider/model-id"), or null. */
+  runningModel(sessionId: string): Promise<string | null>;
   /** A new session from `id`'s completed history, named `title` (pi-server Management fork). */
   forkSession(id: string, title: string, options?: {side?: boolean; at?: string}): Promise<PiSummary | undefined>;
   /** Deletes a side chat's session (pi-server Management discard); refuses any other. */

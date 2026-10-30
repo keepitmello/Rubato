@@ -44,18 +44,12 @@ const inGap = (gaps, createdAt) => {
  * when it is newer than the thread's first message, falls in one of `gaps` when T3's log gives them
  * (`{ from, to }` in ms), and is not the person's own words (the app writes those). It goes into
  * the run of the last item before it the thread holds in a run; one with nothing before it is left alone.
- *
- * `whole`: the thread has no stream on this session while it runs (engine-runs.mjs follows a
- * session the engine runs alone), so every message of the session newer than the last one the
- * thread shows is missing — on an empty thread all of them, and the words of whoever prompted the
- * engine too. An older one the thread lacks is left alone, as without `whole`.
  */
-export function missingItems(items, threadMessages, { gaps, whole = false, chatLog = false } = {}) {
+export function missingItems(items, threadMessages, { gaps, chatLog = false } = {}) {
   const projected = (items ?? []).filter((item) => sameWords(item.text));
   const shown = (threadMessages ?? []).filter((message) => sameWords(message.text));
   const starts = shown.map((message) => Date.parse(message.createdAt)).filter(Number.isFinite);
   const threadStart = starts.length ? Math.min(...starts) : Infinity;
-  const threadLast = starts.length ? Math.max(...starts) : -Infinity;
   // Each shown message pairs with the session message of the same words nearest to it in time: the
   // same words said twice ("Done.") are two messages, and the one the thread lacks is the other one.
   const byWords = new Map();
@@ -84,7 +78,6 @@ export function missingItems(items, threadMessages, { gaps, whole = false, chatL
     // thread. Restore holes from any transport, even before the app first opened or while its
     // stream was connected but an older filter discarded Telegram messages.
     if (chatLog) { missing.push({ item, runId }); return; }
-    if (whole && !(Date.parse(item.createdAt) < threadLast)) { missing.push({ item, runId }); return; }
     const theirs = item.role === 'assistant' || item.context !== undefined;
     const since = Date.parse(item.createdAt) >= threadStart;
     if (!theirs || !since || !inGap(gaps, item.createdAt) || !anchored) return;

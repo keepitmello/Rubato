@@ -9,7 +9,7 @@
  *   3. the thread id itself for a session the inventory imported:
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
-import { CommandId, OrchestrationMessageContext, ProviderInstanceId, RunId, ThreadId, TurnItemId, type OrchestrationV2Run } from "@t3tools/contracts";
+import { CommandId, OrchestrationMessageContext, ProviderInstanceId, RunId, ThreadId, TurnItemId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -21,7 +21,7 @@ import * as SqlClient from "effect/sql/SqlClient";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import { AgentAwarenessRelay } from "../relay/AgentAwarenessRelay.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
-import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isRubatoRun, nextTurnItemOrdinal, saidRunId, ENGINE_RUN_PREFIX,
+import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isRubatoRun, nextTurnItemOrdinal, saidRunId,
   type SessionMessage } from "./RubatoThreadImporter.ts";
 import { rubatoBridgeFor, type PiBridge, type PiSessionMessage } from "./Drivers/RubatoPiDriver.ts";
 
@@ -38,7 +38,7 @@ const senderSessionOf = (context: unknown): string | null => {
   const sessionId = record?.payload?.from?.sessionId;
   return typeof sessionId === "string" && sessionId !== "" ? sessionId : null;
 };
-const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+export const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 /**
  * When a run that carries Segno's words asks the relay again while its running state failed to
  * publish: the relay's own retry delays (AgentAwarenessRelay RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS).
@@ -291,35 +291,6 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
       return true as const;
     }));
-  /**
-   * A turn the engine runs while T3 holds no stream on the thread (bridge engine-runs.mjs): a run
-   * that shows running, so the thread reads as working and is not settled meanwhile. None while the
-   * thread runs something else; its messages then go in plainly.
-   */
-  const engineRuns = new Map<string, OrchestrationV2Run>();
-  const openEngineRun = (threadId: string, request: { readonly sessionId: string }) => ownRuns.withPermits(1)(Effect.gen(function* () {
-    if (Option.isNone(orchestrator) || Option.isNone(importer)) return null;
-    const thread = ThreadId.make(threadId);
-    const records = yield* orchestrator.value.getThreadRecords(thread, ["runs"]).pipe(
-      Effect.mapError(importFailure("Could not read the thread's runs")));
-    if (records.runs.some((run) => BUSY_RUN.has(run.status))) return null;
-    const shell = yield* orchestrator.value.getThreadShell(thread).pipe(Effect.mapError(importFailure("Could not read the thread")));
-    if (shell === null) return null;
-    const run = yield* importer.value.openRun({ threadId: thread, thread: records.thread,
-      runId: RunId.make(`${ENGINE_RUN_PREFIX}${request.sessionId}:${yield* Clock.currentTimeMillis}`),
-      runOrdinal: Math.max(0, ...records.runs.map((one) => one.ordinal)) + 1,
-      providerInstanceId: shell.modelSelection.instanceId, modelSelection: shell.modelSelection });
-    engineRuns.set(run.id, run);
-    return run.id as string;
-  }));
-  const closeEngineRun = (_threadId: string, runId: string, status: "completed" | "interrupted" | "failed") => Effect.gen(function* () {
-    const run = engineRuns.get(runId);
-    if (run === undefined || Option.isNone(importer) || Option.isNone(orchestrator)) return;
-    engineRuns.delete(runId);
-    yield* importer.value.closeRun({ run, status });
-    // A message the person sent meanwhile waited behind this run, as behind any run.
-    yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
-  });
   const appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.gen(function* () {
     if (Option.isNone(orchestrator) || Option.isNone(importer)) {
       return yield* new RubatoThreadImportError({ detail: "The thread writer is not running" });
@@ -352,9 +323,6 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
       bridge.checkRewind = (threadId: string, turns: number) => Effect.runPromise(checkRewind(threadId, turns));
       bridge.appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.runPromise(appendSessionMessage(threadId, item));
-      bridge.openEngineRun = (threadId: string, request: { readonly sessionId: string }) => Effect.runPromise(openEngineRun(threadId, request));
-      bridge.closeEngineRun = (threadId: string, runId: string, status: "completed" | "interrupted" | "failed") =>
-        Effect.runPromise(closeEngineRun(threadId, runId, status));
       // What a thread shows and when it had no stream: the bridge's backfill compares these with the session.
       bridge.projectedThread = (threadId: string) =>
         Effect.runPromise(threadMessages(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value),

@@ -623,3 +623,103 @@ test("T3 keeps a lead's stream while its agents work, and lets it go once they a
   fold.feed(taskTick(finished));
   assert.equal(bridge.keepsStream('t1'), false);
 });
+
+// A run the engine started while T3 held no stream (a lead Segno opened, a scheduled run): the
+// inventory sends ENGINE_RUN_TEXT (RubatoPiInventory.ts) and the turn T3 opens for it is that run,
+// shown as live as a turn the person started (user item a8508a74).
+import { ENGINE_RUN_TEXT, unshownEvents } from '../src/rpc-connection.mjs';
+
+const assistant = (text, extra = {}) => ({ role: 'assistant', content: [{ type: 'thinking', thinking: 'hmm' }, { type: 'text', text }], ...extra });
+const brief = { role: 'user', content: 'Build the parser.' };
+
+test("the inventory's words adopt the engine's run: Pi gets no prompt, and what the thread already shows is not shown again", async () => {
+  const client = fakeClient({ get_state: { isStreaming: true }, steer: { disposition: 'steered' } });
+  const { conn, records } = connection(client, { engineRunShows: new Set(['t1']),
+    projectedThread: async () => ({ messages: [{ text: 'Build the parser.' }, { text: 'Reading the grammar first.' }] }) });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 8, status: 'running', events: [
+    { sequence: 1, event: { type: 'agent_start' } },
+    { sequence: 2, event: { type: 'message_start', message: brief } },
+    { sequence: 3, event: { type: 'message_end', message: brief } },
+    { sequence: 4, event: { type: 'message_start', message: assistant('') } },
+    { sequence: 5, event: { type: 'message_end', message: assistant('Reading the grammar first.') } },
+    { sequence: 6, event: { type: 'tool_execution_start', toolCallId: 'c1', toolName: 'bash', args: {} } },
+    { sequence: 7, event: { type: 'message_start', message: assistant('') } },
+    { sequence: 8, event: { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: 'the lexer' } } }] });
+  conn.send({ type: 'prompt', message: ENGINE_RUN_TEXT, streamingBehavior: 'steer' });
+  await pause();
+  await conn.inbound;
+  assert.equal(client.commands.some((command) => command.type === 'prompt'), false, 'the words never reach the model');
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type),
+    ['agent_start', 'tool_execution_start', 'message_start', 'message_update']);
+  assert.equal(records.find((record) => record.type === 'message_update').assistantMessageEvent.type, 'thinking_delta', 'thinking shows');
+  assert.equal(conn.bridge.engineRunShows.has('t1'), false, 'the mark is used once');
+  // From here the turn is T3's like any other: a message the person sends while it runs steers it.
+  conn.send({ type: 'steer', message: 'Use the existing tokenizer.' });
+  await pause();
+  assert.ok(client.commands.some((command) => command.type === 'steer' && command.message === 'Use the existing tokenizer.'));
+});
+
+test('the same words without the inventory\'s mark are an ordinary prompt', async () => {
+  const client = fakeClient({ get_state: { isStreaming: true }, prompt: { disposition: 'started' } });
+  const { conn } = connection(client, { engineRunShows: new Set() });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 1, status: 'running', events: [{ sequence: 1, event: { type: 'agent_start' } }] });
+  conn.send({ type: 'prompt', message: ENGINE_RUN_TEXT, streamingBehavior: 'steer' });
+  await pause();
+  assert.ok(client.commands.some((command) => command.type === 'prompt' && command.message === ENGINE_RUN_TEXT));
+});
+
+test('a run that ended before its turn opened goes into the thread as stored messages, and the turn ends at once', async () => {
+  const backfills = [];
+  const client = fakeClient({ get_state: { isStreaming: false } });
+  const { conn, records } = connection(client, { engineRunShows: new Set(['t1']),
+    backfillThread: async (...args) => { backfills.push(args); return true; } });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  backfills.length = 0;
+  conn.send({ type: 'prompt', message: ENGINE_RUN_TEXT, streamingBehavior: 'steer' });
+  await pause();
+  await conn.inbound;
+  assert.equal(client.commands.some((command) => command.type === 'prompt'), false);
+  assert.deepEqual(backfills, [['t1', 's1', { everyHole: true }]]);
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type), ['agent_start', 'agent_settled']);
+});
+
+test('a run whose start the engine no longer holds still opens the turn and shows what came after the attach', async () => {
+  const client = fakeClient({ get_state: { isStreaming: true } });
+  const { conn, records } = connection(client, { engineRunShows: new Set(['t1']) });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 900, status: 'running', events: [{ sequence: 900, event: { type: 'tool_execution_update', toolCallId: 'c9' } }] });
+  client.listener({ runtimeId: 'r1', sequence: 901, status: 'running', events: [{ sequence: 901, event: { type: 'message_start', message: assistant('') } }] });
+  await conn.inbound;
+  records.length = 0;
+  conn.send({ type: 'prompt', message: ENGINE_RUN_TEXT, streamingBehavior: 'steer' });
+  await pause();
+  await conn.inbound;
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type), ['agent_start', 'message_start']);
+});
+
+test('a run that started live with no turn open is the adapter\'s wake, not replayed into the turn again', async () => {
+  const client = fakeClient({ get_state: { isStreaming: true } });
+  const { conn, records } = connection(client, { engineRunShows: new Set(['t1']) });
+  await conn.request({ type: 'switch_session', sessionPath: 's1' });
+  client.listener({ runtimeId: 'r1', sequence: 0, status: 'idle', events: [] });
+  client.listener({ runtimeId: 'r1', sequence: 2, status: 'running', events: [
+    { sequence: 1, event: { type: 'agent_start' } }, { sequence: 2, event: { type: 'message_start', message: assistant('') } }] });
+  conn.send({ type: 'prompt', message: ENGINE_RUN_TEXT, streamingBehavior: 'steer' });
+  await pause();
+  await conn.inbound;
+  assert.deepEqual(records.filter((record) => record.type !== 'response').map((record) => record.type), ['agent_start', 'message_start']);
+});
+
+test('a replay leaves out each finished message the thread shows, once per time it shows it', () => {
+  const said = (text) => [{ type: 'message_start', message: assistant('') }, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: text } },
+    { type: 'message_end', message: assistant(text) }];
+  const events = [{ type: 'agent_start' }, ...said('Done.'), { type: 'tool_execution_start', toolCallId: 'c1' }, ...said('Done.'),
+    { type: 'message_start', message: assistant('') }];
+  const kept = unshownEvents(events, [{ text: 'Done.' }]);
+  assert.deepEqual(kept.map((event) => event.type),
+    ['agent_start', 'tool_execution_start', 'message_start', 'message_update', 'message_end', 'message_start']);
+  assert.deepEqual(unshownEvents(events, undefined), events);
+});

@@ -4,11 +4,10 @@ import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
-import { followEngineRun } from './engine-runs.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
-import { RubatoRpcConnection, STEP_CONTINUE_TEXT, activeBranch, queuedMessagesInOrder, replyBefore, stepBatch } from './rpc-connection.mjs';
+import { RubatoRpcConnection, ENGINE_RUN_TEXT, STEP_CONTINUE_TEXT, activeBranch, queuedMessagesInOrder, replyBefore, stepBatch } from './rpc-connection.mjs';
 import { SessionStateFold } from './session-state.mjs';
 import { listSessionPrompts, openSessionPromptFolder, resolveSessionPrompt, SessionPromptError } from './session-prompts.mjs';
 import { readFile, rename, writeFile } from 'node:fs/promises';
@@ -220,6 +219,11 @@ export class RubatoPiBridge {
     // Threads whose step-rewind continue is on its way (RubatoStepRewind.ts marks one right before
     // it sends the text): only then is that text Pi's continue.
     this.stepContinues = new Set();
+    // What the inventory sends a thread whose session the engine runs while T3 holds no stream on
+    // it (RubatoPiInventory.ts): T3 opens the thread's stream for it as for any turn, and the stream
+    // shows the engine's run instead of prompting (rpc-connection.mjs ENGINE_RUN_TEXT).
+    this.engineRunText = ENGINE_RUN_TEXT;
+    this.engineRunShows = new Set();
     // threadId -> what /rubato/session-state answers (session-state.mjs), fed by V2 connections.
     // Each is saved under `sessionStateDir` (T3's state dir), so a GUI restart finds it again.
     this.sessionStates = new Map();
@@ -346,6 +350,8 @@ export class RubatoPiBridge {
   }
   /** The step-rewind continue route is about to send `stepContinueText` for this thread. */
   markStepContinue(threadId) { this.stepContinues.add(threadId); }
+  /** The inventory is about to send `engineRunText` for this thread. */
+  markEngineRun(threadId) { this.engineRunShows.add(threadId); }
   sessionState(threadId) {
     const fold = this.knownState(threadId);
     const snapshot = fold?.snapshot() ?? { speedIndex: null, agents: [], teams: [], cache: null };
@@ -418,37 +424,6 @@ export class RubatoPiBridge {
     for (const row of rows) if (typeof row?.sessionId === 'string') this.companionSessions.set(row.sessionId, row.companion === true);
     return this.companionSessions.get(sessionId) === true;
   }
-  /**
-   * Shows a session the engine runs while T3 holds no stream on its thread, as it runs
-   * (engine-runs.mjs). The inventory asks for each running session it finds; one follower per
-   * session, none for Segno's own conversation, none while T3 streams the thread itself. The T3
-   * server binds `openEngineRun` and `closeEngineRun` (RubatoPiSessions.ts); before that, nothing.
-   */
-  async followEngineRun(threadId, sessionId) {
-    this.engineFollowers ??= new Map();
-    if (this.closed || !threadId || !sessionId || this.engineFollowers.has(sessionId)) return;
-    if (typeof this.openEngineRun !== 'function' || typeof this.closeEngineRun !== 'function') return;
-    if (this.rpcFor(threadId) || this.sessions.has(threadId)) return;
-    const pending = (async () => {
-      if (await this.companionSession(sessionId)) return undefined;
-      return followEngineRun({ bridge: this, threadId, sessionId, throttleMs: this.engineRunThrottleMs ?? 1000,
-        ...(this.engineRunRetryMs ? { retryMs: this.engineRunRetryMs } : {}),
-        ...(this.engineRunWatchMs ? { watchMs: this.engineRunWatchMs } : {}),
-        ...(this.engineRunIdleGraceMs ? { idleGraceMs: this.engineRunIdleGraceMs } : {}),
-        connect: this.engineConnect ?? (async () => { await this.connection(); return new SessionClient({ ...this.descriptor, onError: this.onError }).connect(); }),
-        onEnd: () => { if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId); },
-        closed: () => this.closed,
-        log: (what, error) => t3BridgeLog(what, `${threadId} ${String(error?.message ?? error)}`) });
-    })();
-    this.engineFollowers.set(sessionId, pending);
-    try {
-      const follower = await pending;
-      if (!follower && this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId);
-    } catch (error) {
-      if (this.engineFollowers.get(sessionId) === pending) this.engineFollowers.delete(sessionId);
-      t3BridgeLog('engine run follow failed', `${threadId} ${String(error?.message ?? error)}`);
-    }
-  }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
@@ -472,6 +447,16 @@ export class RubatoPiBridge {
     return sessions.filter((entry) => !entry.sideChatOf && (this.claimed.has(entry.sessionId) || this.shows(entry)));
   }
   async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
+  /**
+   * The model a running session runs on now, as "provider/model-id", or null. A lead Segno opened
+   * runs on the model Segno chose before it has replied once; its thread starts on that model, so
+   * the turn that shows its run selects nothing new (RubatoPiInventory.ts).
+   */
+  async runningModel(sessionId) {
+    const state = await this.withSession(null, sessionId, (client) => client.command({ type: 'get_state' })).catch(() => null);
+    const model = state?.model;
+    return typeof model?.provider === 'string' && typeof model?.id === 'string' ? `${model.provider}/${model.id}` : null;
+  }
   // A new Pi session holding `sessionId`'s completed history (a running turn stays behind),
   // named `title`. The inventory shows it as a thread like any session started elsewhere.
   // `side` makes it a side chat (pi-runtime session-link/side-chat.mjs). `at`, the Pi
@@ -789,8 +774,7 @@ export class RubatoPiBridge {
         try { sessionId = JSON.parse(readFileSync(path.join(this.sessionStateDir, name), 'utf8'))?.sessionId; } catch { continue; }
         const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
         const moved = sessionMoved(row);
-        // A session the engine-run follower watches is written live (engine-runs.mjs); once it lets go, the session has moved since.
-        if (!Number.isFinite(moved) || this.rpcFor(threadId) || this.engineFollowers?.has(sessionId)) continue;
+        if (!Number.isFinite(moved) || this.rpcFor(threadId)) continue;
         if (this.backfilled.has(threadId) && moved <= this.backfilled.get(threadId)) continue;
         // A thread is done for this session state only once it was really compared: before the T3
         // server binds its thread reader (the first passes after startup) nothing is.
@@ -802,12 +786,14 @@ export class RubatoPiBridge {
   /**
    * Writes into `threadId` what its session holds from the times the thread had no stream. True once
    * the thread was compared with its session; false while the T3 server has not bound its reader.
+   * `everyHole`: every message the thread lacks counts, wherever T3's log says it had a stream — a
+   * run the engine finished on its own before the turn showing it opened (rpc-connection.mjs).
    */
-  async backfillThread(threadId, sessionId) {
+  async backfillThread(threadId, sessionId, { everyHole = false } = {}) {
     // T3's record of when the thread had no stream; without one (an older T3 server) every hole counts.
     const thread = await this.projectedThread(threadId);
     if (!thread) return false;
-    const gaps = this.streamGaps ? await this.streamGaps(threadId) : undefined;
+    const gaps = this.streamGaps && !everyHole ? await this.streamGaps(threadId) : undefined;
     const companion = await this.companionSession(sessionId);
     if (!companion && Array.isArray(gaps) && !gaps.length) return true;
     const { messages } = await this.transcript(sessionId);
@@ -1402,7 +1388,6 @@ export class RubatoPiBridge {
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));
     await Promise.all([...this.rpcConnections].map((connection) => connection.close()));
-    await Promise.all([...(this.engineFollowers?.values() ?? [])].map((pending) => pending.then((follower) => follower?.stop(), () => {})));
     await this.flushStates();
     await this.inventoryClient?.close();
   }

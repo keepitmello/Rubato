@@ -3,7 +3,8 @@ import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
 import { applySelectionOptions } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
-import { sessionMessageFrom } from './events.mjs';
+import { sessionMessageFrom, textOf } from './events.mjs';
+import { sameWords } from './backfill.mjs';
 import { isBookkeepingTool } from './activity.mjs';
 import { channelItem, createSaidEcho, saidEchoes } from './said-echo.mjs';
 import { createCompanionStream } from './companion-thread.mjs';
@@ -57,6 +58,11 @@ import { createCompanionStream } from './companion-thread.mjs';
  *   meantime goes to the next engine. When the app itself restarted, T3 sends its own
  *   continuation prompt; a session that is still running takes it as "show me the run" and
  *   gets no extra message.
+ * - A run the engine started while T3 held no stream on the thread (a lead Segno opened, a
+ *   scheduled run, team mail to a thread T3 let go idle) shows as an ordinary turn: the inventory
+ *   sends ENGINE_RUN_TEXT (RubatoPiInventory.ts), T3 opens this stream for it as for any turn, and
+ *   the prompt adopts the run instead of reaching Pi. From there it is the same turn as one the
+ *   person started: thinking, tools and steering included.
  */
 /** The active branch of a `get_entries` answer, root first. */
 export function activeBranch({ entries, leafId } = {}) {
@@ -111,6 +117,39 @@ export const RESTART_RECONNECT_MS = 90_000;
 export const RESTART_RESUME_GRACE_MS = 5_000;
 /** The prompt T3 sends a turn the app restart cut (T3 orchestration-v2 RestartContinuation.ts). */
 export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
+/** What the inventory sends a thread to show the run the engine started on its session; never reaches Pi. */
+export const ENGINE_RUN_TEXT = 'Show the run Rubato started.';
+/**
+ * The events of a run to replay into a turn, without the messages the thread already shows (an
+ * import or a backfill wrote them, or an earlier turn streamed them): each finished message whose
+ * words the thread holds goes, with its start and updates. The message still being written, tool
+ * runs and anything without words stay.
+ */
+export function unshownEvents(events, shownMessages) {
+  const shown = new Map();
+  for (const message of shownMessages ?? []) {
+    const words = sameWords(message?.text);
+    if (words) shown.set(words, (shown.get(words) ?? 0) + 1);
+  }
+  const kept = [];
+  let group = null;
+  for (const event of events) {
+    if (event?.type === 'message_start') { if (group) kept.push(...group); group = [event]; continue; }
+    if (event?.type === 'message_update' && group) { group.push(event); continue; }
+    if (event?.type === 'message_end') {
+      const words = sameWords(textOf(event.message));
+      const count = shown.get(words) ?? 0;
+      if (words && count > 0) { shown.set(words, count - 1); group = null; continue; }
+      kept.push(...(group ?? []), event);
+      group = null;
+      continue;
+    }
+    if (group) { kept.push(...group); group = null; }
+    kept.push(event);
+  }
+  if (group) kept.push(...group);
+  return kept;
+}
 /** Inputs that start or extend a run: during a restart they wait for the next engine. */
 const RUN_INPUTS = new Set(['prompt', 'steer', 'follow_up', 'continue', 'compact']);
 const nonempty = (value) => (typeof value === 'string' && value.trim() ? value.trim() : undefined);
@@ -252,7 +291,10 @@ export class RubatoRpcConnection {
         this.fold?.feed(record.event); this.sessionMessage(record.event); this.saidMessage(record.event);
         if (!this.companion) this.noteRun(record.event);
       }
+      // A run whose start the engine no longer holds is still the run going on: what comes next is part of it.
       if (state.status !== 'running') this.run = null;
+      else if (!this.companion) this.run ??= [{ type: 'agent_start' }];
+      this.runWoke = false;
       if (state.restarting === true) this.beginRestart(state);
       void this.refreshTasks();
       return;
@@ -404,8 +446,12 @@ export class RubatoRpcConnection {
     let state;
     try { state = await this.client.command({ type: 'get_state' }); } catch { return false; }
     if (!state?.isStreaming) return false;
-    const replay = this.run ?? [];
+    // A run that started live with no turn open reached the adapter as a wake, which it keeps
+    // and hands to this turn itself; a replay would show it twice.
+    const run = this.runWoke ? [] : this.run ?? [];
     this.run = null;
+    const shown = run.length ? await Promise.resolve(this.bridge.projectedThread?.(this.threadId)).catch(() => null) : null;
+    const replay = unshownEvents(run, shown?.messages);
     if (this.companion) this.companionStream.adopt();
     for (const event of replay) this.enqueue(() => this.process(event));
     return true;
@@ -465,6 +511,7 @@ export class RubatoRpcConnection {
     for (const shown of this.companion ? this.companionStream.accept(event) : [event]) {
       // A turn T3 starts fresh (not one held for the reminder) waits for its own reply.
       if (shown?.type === 'agent_start' && this.companion && !this.hold) { this.turnReplied = false; this.turnReminded = false; }
+      if (shown?.type === 'agent_start') this.runWoke = !this.asked;
       if (shown?.type === 'agent_settled') this.asked = false;
       this.noteRun(shown);
       this.enqueue(() => this.process(shown));
@@ -660,6 +707,15 @@ export class RubatoRpcConnection {
       }
       if (typeof command.message === 'string' && command.message.trim().endsWith(T3_RESTART_CONTINUE_TEXT)
         && !command.images?.length && await this.adoptRunningRun()) return { disposition: 'started' };
+      if (this.bridge.engineRunShows?.delete(this.threadId) && command.message === ENGINE_RUN_TEXT && !command.images?.length) {
+        // The engine's run, not a message for Pi. One that ended before the turn opened goes into the
+        // thread as stored messages, and its turn ends at once.
+        if (await this.adoptRunningRun()) return { disposition: 'started' };
+        this.asked = false;
+        await this.bridge.backfillThread?.(this.threadId, this.sessionId, { everyHole: true })?.catch?.((error) => this.log('backfill failed', error));
+        for (const event of [{ type: 'agent_start' }, { type: 'agent_settled' }]) this.enqueue(() => this.process(event));
+        return { disposition: 'started' };
+      }
     }
     if ((command.type === 'prompt' || command.type === 'steer') && typeof command.message === 'string') {
       const control = controlCommandFor(command.message);

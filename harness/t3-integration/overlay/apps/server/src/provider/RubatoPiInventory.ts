@@ -10,11 +10,14 @@
  * person deleted or archived is not brought back.
  *
  * A session the engine is running (a lead Segno opened, a scheduled run) is imported as active,
- * not settled, and followed while it runs so its thread shows it running and its turns as they
- * land (bridge engine-runs.mjs, user item 4c2a0df1). The same goes for a thread T3 let go idle
- * whose session the engine runs again. A session at rest is never held open.
+ * not settled, and its run shows as a turn of its thread like any other: thinking, tools and
+ * steering included (user items 4c2a0df1, a8508a74). The same goes for a thread T3 let go idle
+ * whose session the engine runs again. The inventory sends the thread the bridge's
+ * `engineRunText`; T3 opens the thread's stream for it as for any turn, and the stream adopts the
+ * engine's run instead of prompting (bridge rpc-connection.mjs ENGINE_RUN_TEXT). Segno's own
+ * conversation is a chat log and is left out (companion-thread.mjs).
  */
-import { CommandId, OrchestrationMessageContext, ProjectId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
+import { CommandId, MessageId, OrchestrationMessageContext, ProjectId, ThreadId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
@@ -26,7 +29,8 @@ import { ProjectService } from "../project/ProjectService.ts";
 import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import { isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary } from "./Drivers/RubatoPiDriver.ts";
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
-import { importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
+import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import { BUSY_RUN, importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
 import { RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
 
 // The loop passes every five seconds. A fork wants its new session shown now: it cuts the
@@ -62,6 +66,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   const importer = yield* Effect.serviceOption(RubatoThreadImporter);
   const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
   const crypto = yield* Effect.serviceOption(Crypto.Crypto);
+  const orchestrator = yield* Effect.serviceOption(Orchestrator.OrchestratorV2);
   if (Option.isNone(registry) || Option.isNone(projects) || Option.isNone(importer) || Option.isNone(sql) || Option.isNone(crypto))
     return { sync: Effect.void, start: Effect.void };
   const uuid = crypto.value.randomUUIDv4();
@@ -97,7 +102,10 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const snapshot = yield* instance.snapshot.getSnapshot;
     const lastModel = "model" in saved && typeof saved.model === "string" ? saved.model : null;
     const preferred = snapshot.models.find((model) => model.isDefault) ?? snapshot.models[0];
-    const model = lastModel ?? preferred?.slug;
+    // A running session's thread starts on the model it runs on: the turn that shows its run then
+    // selects nothing new, even before the session has replied once.
+    const running = engineRunning(entry) ? yield* Effect.promise(() => bridge.runningModel(entry.sessionId)) : null;
+    const model = running ?? lastModel ?? preferred?.slug;
     if (!model) return;
     const modelSelection: ModelSelection = { instanceId: instance.instanceId as ProviderInstanceId, model };
     const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId, { companion: entry.companion === true }).flatMap((message): PiSessionThreadInput["messages"] => {
@@ -123,23 +131,29 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   `.pipe(Effect.map((rows) => rows.length > 0));
 
   // The thread a running session shows in: the one bound to it, or the one the inventory imported.
-  const followSession = (instance: ProviderInstance, entry: PiSummary) => Effect.gen(function* () {
+  // While T3 holds its stream the adapter shows the run itself (a wake); while the thread runs or
+  // queues a turn, that turn has it.
+  const showEngineRun = (instance: ProviderInstance, entry: PiSummary) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
-    if (!bridge) return;
-    const bound = yield* threadOfPiSession(entry.sessionId);
-    const imported = importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
-    const threadId = bound ?? imported;
+    if (!bridge || entry.companion === true || Option.isNone(orchestrator)) return;
+    const threadId = (yield* threadOfPiSession(entry.sessionId)) ?? importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
     if (bridge.rpcFor(threadId) || !(yield* openThread(threadId))) return;
-    // The follower runs on its own; this pass does not wait for the session to finish.
-    yield* Effect.sync(() => { void bridge.followEngineRun(threadId, entry.sessionId); });
-  }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato session follow skipped", { sessionId: entry.sessionId, cause })));
+    const { runs } = yield* orchestrator.value.getThreadRecords(ThreadId.make(threadId), ["runs"]);
+    if (runs.some((run) => BUSY_RUN.has(run.status))) return;
+    const id = yield* uuid;
+    bridge.markEngineRun(threadId);
+    yield* orchestrator.value.dispatch({ type: "message.dispatch", commandId: CommandId.make(`rubato-engine-run:${id}`),
+      threadId: ThreadId.make(threadId), messageId: MessageId.make(`rubato-engine-run:${id}`), text: bridge.engineRunText,
+      notification: { source: { kind: "system" }, outcome: "updated", summary: "Rubato started this turn" },
+      attachments: [], dispatchMode: { type: "queue_after_active" }, createdBy: "agent", creationSource: "server" });
+  }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato engine run not shown", { sessionId: entry.sessionId, cause })));
 
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) return;
     const inventory = yield* Effect.tryPromise(() => bridge.inventory());
     for (const entry of inventory) yield* importSession(instance, entry);
-    for (const entry of inventory) if (engineRunning(entry)) yield* followSession(instance, entry);
+    for (const entry of inventory) if (engineRunning(entry)) yield* showEngineRun(instance, entry);
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
 
   const sync = Effect.gen(function* () {
