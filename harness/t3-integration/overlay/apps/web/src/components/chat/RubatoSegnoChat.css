@@ -228,3 +228,273 @@
 [data-rubato-segno-chat] [data-chat-composer-main-surface] {
   border-radius: 1.6rem;
 }
+
+/* ---- What the companion did between bubbles (RubatoSegnoInner.tsx, user f8828a9f) ----
+   One quiet line that opens in place: under a reply on the left, on its own in the middle when the
+   work led to no reply, and under the writing dots while the companion works. */
+[data-rubato-segno-span] {
+  --rubato-inner-dim: color-mix(in oklab, var(--muted-foreground) 82%, transparent);
+  --rubato-inner-rule: color-mix(in oklab, var(--border) 90%, transparent);
+  display: flex;
+  flex-direction: column;
+  padding-inline: 14px;
+  margin-top: 0.55rem;
+}
+[data-rubato-segno-span][data-placement="quiet"] {
+  align-items: center;
+  margin-block: 0.8rem 0.2rem;
+}
+[data-rubato-segno-span-line] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.15rem 0.6rem 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--rubato-inner-dim);
+  font-size: 0.75rem;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+[data-rubato-segno-span-line]:hover,
+[data-rubato-segno-span][data-open] > [data-rubato-segno-span-line] {
+  color: var(--foreground);
+  border-color: var(--rubato-inner-rule);
+  background: color-mix(in oklab, var(--muted) 55%, transparent);
+}
+[data-rubato-segno-span-line]:focus-visible {
+  outline: 2px solid color-mix(in oklab, var(--primary) 70%, transparent);
+  outline-offset: 2px;
+}
+[data-rubato-segno-span-line] > [data-part] + [data-part]::before {
+  content: "·";
+  margin-inline-end: 0.4rem;
+  opacity: 0.6;
+}
+[data-rubato-segno-chevron] {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+  opacity: 0.75;
+}
+[data-rubato-segno-span][data-open] [data-rubato-segno-chevron] {
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+[data-rubato-segno-rule] {
+  width: 2.6rem;
+  height: 1px;
+  background: var(--rubato-inner-rule);
+}
+[data-rubato-segno-live-dot] {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--primary);
+  animation: rubato-segno-live 1.4s ease-in-out infinite;
+}
+@keyframes rubato-segno-live {
+  50% { opacity: 0.35; }
+}
+
+/* The opened span: a thread of pieces hanging off a hairline, oldest first. */
+[data-rubato-segno-inner-panel] {
+  align-self: stretch;
+  margin: 0.35rem 0 0.4rem 0.55rem;
+  padding: 0.15rem 0 0.15rem 0.85rem;
+  border-left: 2px solid var(--rubato-inner-rule);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: color-mix(in oklab, var(--foreground) 80%, transparent);
+  max-width: 44rem;
+}
+[data-rubato-segno-span][data-placement="quiet"] > [data-rubato-segno-inner-panel] {
+  text-align: start;
+}
+[data-rubato-segno-inner-panel][data-loading] {
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-piece] {
+  margin-block: 0.3rem;
+}
+[data-rubato-segno-piece="thinking"] {
+  font-style: italic;
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-piece="error"] {
+  color: var(--destructive);
+}
+[data-rubato-segno-clamped] > p {
+  max-height: 7.5em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 70%, transparent);
+  mask-image: linear-gradient(to bottom, black 70%, transparent);
+}
+[data-rubato-segno-more] {
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  font-style: normal;
+  color: var(--rubato-inner-dim);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+[data-rubato-segno-tool] > button {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  text-align: start;
+  border-radius: 0.35rem;
+  padding: 0.05rem 0.25rem;
+  margin-inline-start: -0.25rem;
+}
+[data-rubato-segno-tool] > button:hover {
+  background: color-mix(in oklab, var(--muted) 60%, transparent);
+}
+[data-rubato-segno-tool-name] {
+  flex: none;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.74rem;
+  color: color-mix(in oklab, var(--primary) 75%, var(--foreground));
+}
+[data-rubato-segno-tool-summary] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-tool-state] {
+  flex: none;
+  margin-inline-start: auto;
+  font-size: 0.7rem;
+}
+[data-rubato-segno-tool][data-state="done"] [data-rubato-segno-tool-state]::after {
+  content: "✓";
+  color: color-mix(in oklab, var(--success, #3fa86b) 85%, var(--foreground));
+}
+[data-rubato-segno-tool][data-state="failed"] [data-rubato-segno-tool-state]::after {
+  content: "✕";
+  color: var(--destructive);
+}
+[data-rubato-segno-tool][data-state="running"] [data-rubato-segno-tool-state]::after {
+  content: "";
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 1.5px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: rubato-segno-spin 0.8s linear infinite;
+}
+@keyframes rubato-segno-spin {
+  to { transform: rotate(360deg); }
+}
+[data-rubato-segno-tool-detail] pre {
+  margin: 0.25rem 0 0.35rem;
+  padding: 0.4rem 0.55rem;
+  max-height: 14rem;
+  overflow: auto;
+  border-radius: 0.45rem;
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+[data-rubato-segno-tool-detail] pre[data-output] {
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-wake] > summary {
+  width: fit-content;
+  cursor: pointer;
+  list-style: none;
+  font-size: 0.72rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted) 70%, transparent);
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-wake] > summary::-webkit-details-marker {
+  display: none;
+}
+[data-rubato-segno-wake] > summary > span {
+  margin-inline-start: 0.3rem;
+  opacity: 0.75;
+}
+[data-rubato-segno-wake] > p {
+  margin: 0.3rem 0 0;
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-from-name] {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--rubato-inner-dim);
+}
+[data-rubato-segno-compaction] {
+  font-size: 0.72rem;
+  color: var(--rubato-inner-dim);
+  letter-spacing: 0.02em;
+}
+
+/* ---- The person's bubble's menu: copy, rewind from here ---- */
+[data-rubato-segno-row][data-side="me"] {
+  position: relative;
+}
+[data-rubato-segno-row][data-menu-open] > [data-rubato-segno-bubble] {
+  filter: brightness(1.08);
+}
+[data-rubato-segno-menu] {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  right: 14px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  width: min(16rem, 80%);
+  padding: 0.3rem;
+  border-radius: 0.7rem;
+  border: 1px solid var(--border);
+  background: var(--popover, var(--card));
+  color: var(--popover-foreground, var(--foreground));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 0.28);
+  font-size: 0.85rem;
+  animation: rubato-segno-arrive 160ms ease-out both;
+}
+[data-rubato-segno-menu] > button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  text-align: start;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.45rem;
+}
+[data-rubato-segno-menu] > button:hover,
+[data-rubato-segno-menu] > button:focus-visible {
+  outline: none;
+  background: color-mix(in oklab, var(--accent, var(--muted)) 85%, transparent);
+}
+[data-rubato-segno-menu] small {
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-rubato-segno-live-dot],
+  [data-rubato-segno-tool][data-state="running"] [data-rubato-segno-tool-state]::after,
+  [data-rubato-segno-menu] {
+    animation: none;
+  }
+  [data-rubato-segno-chevron] {
+    transition: none;
+  }
+}

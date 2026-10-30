@@ -147,3 +147,90 @@ export function arrivals(
   for (const bubble of bubbles) known.latest = Math.max(known.latest, bubble.at);
   return fresh;
 }
+
+// ── What the companion did between bubbles (user f8828a9f) ─────────────────────────────────────
+// The room shows only the person's messages and the companion's replies; the rest of its work —
+// thinking, words to itself, tools, what woke it — folds into one line between the bubbles and
+// opens in place (RubatoSegnoInner.tsx). The bridge reads it from the session file per span
+// (companion/inner.mjs): span i ends at bubble i, and one more runs on after the last bubble.
+
+/** Where a span's line goes and what it covers. */
+export interface SegnoSpanPlace {
+  /** The span's index in the bridge's answer. */
+  readonly index: number;
+  /** The span starts after this time (ms); null: from the conversation's start. */
+  readonly after: number | null;
+  /** The span ends at this time, inclusive; null: it runs on now. */
+  readonly until: number | null;
+  /**
+   * `attached`: the work behind a reply, above its bubble. `quiet`: work that led to no reply,
+   * as a line of its own. `live`: what the companion does right now, under its writing dots.
+   */
+  readonly placement: "attached" | "quiet" | "live";
+}
+
+export interface SegnoSpans {
+  /** The bubble times the bridge splits at, oldest first. */
+  readonly boundaries: readonly number[];
+  /** Where the first span starts; set while earlier history is not loaded, so it is not read whole. */
+  readonly after: number | undefined;
+  /** The span that ends at each bubble, by bubble id. */
+  readonly before: ReadonlyMap<string, SegnoSpanPlace>;
+  /** The span after the last bubble. */
+  readonly tail: SegnoSpanPlace;
+}
+
+export function segnoSpans(items: ReadonlyArray<SegnoChatItem>, options: { writing: boolean; partial: boolean }): SegnoSpans {
+  const bubbles = items.filter((item): item is Extract<SegnoChatItem, { kind: "bubble" }> => item.kind === "bubble");
+  const after = options.partial && bubbles.length > 0 ? bubbles[0]!.at : undefined;
+  const before = new Map<string, SegnoSpanPlace>();
+  bubbles.forEach((bubble, index) => {
+    before.set(bubble.id, {
+      index,
+      after: index === 0 ? (after ?? null) : bubbles[index - 1]!.at,
+      until: bubble.at,
+      placement: bubble.side === "segno" ? "attached" : "quiet",
+    });
+  });
+  return {
+    boundaries: bubbles.map((bubble) => bubble.at),
+    after,
+    before,
+    tail: {
+      index: bubbles.length,
+      after: bubbles.at(-1)?.at ?? after ?? null,
+      until: null,
+      placement: options.writing ? "live" : "quiet",
+    },
+  };
+}
+
+/** How long a span ran, in the room's language: "41s", "3m", "1h 20m". */
+export function spanDuration(ms: number, locale: string | undefined): string {
+  const unit = (value: number, name: "second" | "minute" | "hour") =>
+    new Intl.NumberFormat(locale, { style: "unit", unit: name, unitDisplay: "narrow" }).format(value);
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return unit(seconds, "second");
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return unit(minutes, "minute");
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  return rest === 0 ? unit(hours, "hour") : `${unit(hours, "hour")} ${unit(rest, "minute")}`;
+}
+
+/** The counts a span's line shows, each its own phrase so the interface translates it. */
+export function spanCounts(summary: {
+  readonly thinking: number;
+  readonly text: number;
+  readonly tools: number;
+  readonly wakes: number;
+  readonly messages: number;
+}): string[] {
+  const words: string[] = [];
+  const thoughts = summary.thinking + summary.text;
+  if (summary.wakes > 0) words.push(summary.wakes === 1 ? "1 wake" : `${summary.wakes} wakes`);
+  if (summary.messages > 0) words.push(summary.messages === 1 ? "1 message" : `${summary.messages} messages`);
+  if (thoughts > 0) words.push(thoughts === 1 ? "1 thought" : `${thoughts} thoughts`);
+  if (summary.tools > 0) words.push(summary.tools === 1 ? "1 tool" : `${summary.tools} tools`);
+  return words;
+}

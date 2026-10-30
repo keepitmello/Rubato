@@ -156,6 +156,37 @@ export interface SegnoPanel {
   readonly held: readonly SegnoHeldMessage[];
 }
 
+/** What a companion did in one span between its room's bubbles (bridge companion/inner.mjs). */
+export interface SegnoSpanSummary {
+  readonly thinking: number;
+  readonly text: number;
+  readonly tools: number;
+  readonly wakes: number;
+  readonly messages: number;
+  /** When the span's first and last piece happened, in ms; null for an empty span. */
+  readonly from: number | null;
+  readonly to: number | null;
+}
+
+/** One piece of a span, oldest first: its thinking, words to itself, a tool call, what woke it. */
+export type SegnoInnerItem =
+  | { readonly kind: "thinking" | "text" | "error"; readonly text: string; readonly at: number }
+  | {
+      readonly kind: "tool";
+      readonly id: string;
+      readonly name: string;
+      readonly summary: string;
+      readonly input: string;
+      readonly output?: string;
+      readonly isError?: boolean;
+      readonly at: number;
+      /** When its result came back; absent while it runs. */
+      readonly done?: number;
+    }
+  | { readonly kind: "wake"; readonly what: string; readonly text: string; readonly at: number }
+  | { readonly kind: "message"; readonly from: string; readonly text: string; readonly at: number }
+  | { readonly kind: "compaction"; readonly at: number };
+
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
   postRubato<T>(env, COMPANION_ROUTE, action,
     action === "companions" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
@@ -208,6 +239,23 @@ export const rubatoCompanion = {
   /** What Segno said in a run of its thread that just ended; null when it said nothing to the person. */
   said: (env: EnvironmentId | null, threadId: string, runId: string) =>
     call<{ text: string | null }>(env, "said", { threadId, runId }),
+  /**
+   * A summary of what the companion did in each span between the room's bubbles: span i ends at
+   * bubble i (`boundaries`, ms, oldest first) and the last span runs on after the last bubble.
+   */
+  inner: (env: EnvironmentId | null, companionId: string, boundaries: readonly number[], after?: number) =>
+    call<{ spans: ReadonlyArray<SegnoSpanSummary | null> }>(env, "inner", {
+      companionId,
+      boundaries,
+      ...(after === undefined ? {} : { after }),
+    }),
+  /** The pieces of one span: after `after`, up to and including `until` (null: up to now). */
+  innerItems: (env: EnvironmentId | null, companionId: string, after: number | null, until: number | null) =>
+    call<{ items: readonly SegnoInnerItem[] }>(env, "inner-items", {
+      companionId,
+      ...(after === null ? {} : { after }),
+      ...(until === null ? {} : { until }),
+    }),
 };
 
 /** The primary environment's id once its HTTP connection is ready; null until then. */

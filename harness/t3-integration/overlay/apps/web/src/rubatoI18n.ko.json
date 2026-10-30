@@ -1,5 +1,22 @@
 {
  "exact": {
+  "Working now": "지금 하는 중",
+  "1 wake": "깨어남 1",
+  "1 message": "메시지 1",
+  "1 thought": "생각 1",
+  "1 tool": "도구 1",
+  "Greeting": "안부",
+  "Woke up": "깨어남",
+  "Recalling": "떠올리기",
+  "Going to sleep": "잠들기",
+  "Work room": "일터 방",
+  "Persona review": "페르소나 검토",
+  "Another conversation": "다른 대화",
+  "Nothing yet.": "아직 없어요.",
+  "Could not read this part of the conversation.": "대화의 이 부분을 읽지 못했어요.",
+  "Rewind from here": "여기서부터 되감기",
+  "Could not rewind": "되감지 못했어요",
+  "This message and everything after it leave the conversation. Diary and record files stay.": "이 메시지와 그 뒤 대화가 지워져요. 일기와 기록 파일은 그대로 남아요.",
   "Approval needed": "승인 필요",
   "Segno is writing": "세뇨가 쓰는 중",
   "Input needed": "입력 필요",
@@ -7964,6 +7981,22 @@
   [
    "Saved {0}. Agents' search uses it from now on.",
    "{0} 저장했습니다. 이제부터 에이전트 검색에 반영됩니다."
+  ],
+  [
+   "{0} wakes",
+   "깨어남 {0}"
+  ],
+  [
+   "{0} messages",
+   "메시지 {0}"
+  ],
+  [
+   "{0} thoughts",
+   "생각 {0}"
+  ],
+  [
+   "{0} tools",
+   "도구 {0}"
   ]
  ]
 }

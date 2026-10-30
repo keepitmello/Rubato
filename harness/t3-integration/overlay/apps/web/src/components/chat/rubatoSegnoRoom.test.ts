@@ -7,7 +7,10 @@ import {
   SEPARATOR_GAP_MS,
   segnoChatItems,
   segnoIsWriting,
+  segnoSpans,
   separatorLabel,
+  spanCounts,
+  spanDuration,
   type SegnoChatMessageInput,
 } from "./rubatoSegnoRoom";
 
@@ -117,5 +120,37 @@ describe("the person's pictures", () => {
       { id: "m1", role: "user", text: "![image.png](t3-context://v1/image/image_1)", createdAt: "2026-10-21T10:00:00Z", streaming: false, attachments: [image, file] },
     ]).filter((item) => item.kind === "bubble");
     expect(bubble).toMatchObject({ text: "", images: [image], attachmentNames: ["notes.pdf"] });
+  });
+});
+
+describe("the work between bubbles (user f8828a9f)", () => {
+  const items = segnoChatItems([message("a", "user", 0), message("b", "assistant", 60_000), message("c", "user", 120_000)]);
+  const at = (offset: number) => base + offset;
+
+  it("puts the work behind a reply above it, work that led to no reply on its own line, and what runs now last", () => {
+    const spans = segnoSpans(items, { writing: false, partial: false });
+    expect(spans.boundaries).toEqual([at(0), at(60_000), at(120_000)]);
+    expect(spans.after).toBeUndefined();
+    expect(spans.before.get("a")).toEqual({ index: 0, after: null, until: at(0), placement: "quiet" });
+    expect(spans.before.get("b")).toEqual({ index: 1, after: at(0), until: at(60_000), placement: "attached" });
+    expect(spans.before.get("c")).toEqual({ index: 2, after: at(60_000), until: at(120_000), placement: "quiet" });
+    expect(spans.tail).toEqual({ index: 3, after: at(120_000), until: null, placement: "quiet" });
+    expect(segnoSpans(items, { writing: true, partial: false }).tail.placement).toBe("live");
+  });
+
+  it("does not read the whole conversation before the first loaded bubble while earlier history is not loaded", () => {
+    const spans = segnoSpans(items, { writing: false, partial: true });
+    expect(spans.after).toBe(at(0));
+    expect(spans.before.get("a")?.after).toBe(at(0));
+  });
+
+  it("names the counts one phrase each, and the time in the room's language", () => {
+    expect(spanCounts({ thinking: 1, text: 1, tools: 1, wakes: 2, messages: 0 })).toEqual(["2 wakes", "2 thoughts", "1 tool"]);
+    expect(spanCounts({ thinking: 0, text: 0, tools: 0, wakes: 0, messages: 1 })).toEqual(["1 message"]);
+    expect(spanDuration(41_000, "en-US")).toBe("41s");
+    expect(spanDuration(200, "en-US")).toBe("1s");
+    expect(spanDuration(3 * 60_000, "en-US")).toBe("3m");
+    expect(spanDuration(80 * 60_000, "en-US")).toBe("1h 20m");
+    expect(spanDuration(41_000, "ko-KR")).toBe("41초");
   });
 });

@@ -24,6 +24,7 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoNotice.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.css',
+  'apps/web/src/components/chat/RubatoSegnoInner.tsx',
   'apps/web/src/components/chat/rubatoSegnoRoom.ts',
   'apps/web/src/components/chat/rubatoSegnoRoom.test.ts',
   'apps/web/src/components/chat/RubatoSegnoNotice.test.tsx',
@@ -79,6 +80,7 @@ export const companionEdits = {
       'replace'],
     // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
     // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
+    // Its rewind is the timeline's own, with files left as they are (user f8828a9f).
     ['              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',
       '              {isCompanionThread(activeThread.id) ? (\n'
         + '                <RubatoSegnoChat\n'
@@ -87,6 +89,8 @@ export const companionEdits = {
         + '                  cwd={gitCwd ?? undefined}\n'
         + '                  environmentId={displayedThreadRef?.environmentId ?? activeThread.environmentId}\n'
         + '                  bottomInset={composerTimelineInset}\n'
+        + '                  threadId={activeThread.id}\n'
+        + '                  onRewind={(turnCount, messageId) => void onRevertToTurnCountRef.current(turnCount, messageId, false)}\n'
         + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
         + '                    ? {}\n'
         + '                    : { historyControls: threadHistoryControls })}\n'

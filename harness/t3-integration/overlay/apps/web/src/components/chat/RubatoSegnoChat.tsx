@@ -5,19 +5,40 @@
 // bounce in Segno's bubble while it writes an answer. A bubble that arrives while the room is open
 // springs in: up from the composer for the person's, a short pop for Segno's. Motion stops for
 // prefers-reduced-motion (RubatoSegnoChat.css).
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+//
+// Between the bubbles, one quiet line holds what the companion did there — thinking, words to itself,
+// tools, what woke it — and opens in place (RubatoSegnoInner.tsx, user f8828a9f). The person's own
+// bubble has a menu (right click, or a long press) with "Rewind from here": the conversation goes
+// back to just before that message and the message returns to the composer. Files stay: the
+// companion's home is its own record (diary, notes), committed as it goes.
+import {
+  type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId } from "@t3tools/contracts";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
 import { selectMessageImageResources, type TimelineEntry } from "../../session-logic";
 import type { ChatImageAttachment } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { stackedThreadToast, toastManager } from "../ui/toast";
+import { useRubatoCompanion } from "../../state/rubatoCompanion";
+import { messageRewindTarget } from "./RubatoMessageEdit";
+import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
 import {
   arrivals,
   segnoChatItems,
   segnoIsWriting,
+  segnoSpans,
   separatorLabel,
   type SegnoChatItem,
   type SegnoChatMessageInput,
@@ -84,17 +105,79 @@ function Images({ images, environmentId }: { images: ReadonlyArray<ChatImageAtta
   );
 }
 
+/** How long a finger rests on a bubble before its menu opens. */
+const LONG_PRESS_MS = 500;
+
+/** The person's bubble's menu: copy, and rewind the conversation to just before this message. */
+function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() => void) | undefined; onClose: () => void }) {
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const away = (event: PointerEvent) => {
+      if (!menu.current?.contains(event.target as Node)) onClose();
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("pointerdown", away, true);
+    window.addEventListener("keydown", key);
+    return () => {
+      window.removeEventListener("pointerdown", away, true);
+      window.removeEventListener("keydown", key);
+    };
+  }, [onClose]);
+  return (
+    <div ref={menu} role="menu" data-rubato-segno-menu="">
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() => {
+          void navigator.clipboard?.writeText(text);
+          onClose();
+        }}
+      >
+        Copy
+      </button>
+      {onRewind ? (
+        <button
+          type="button"
+          role="menuitem"
+          data-rubato-segno-rewind=""
+          onClick={() => {
+            onClose();
+            onRewind();
+          }}
+        >
+          <span>Rewind from here</span>
+          <small>This message and everything after it leave the conversation. Diary and record files stay.</small>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function Bubble({
   item,
   enter,
   cwd,
   environmentId,
+  onRewind,
 }: {
   item: Extract<SegnoChatItem, { kind: "bubble" }>;
   enter: boolean;
   cwd: string | undefined;
   environmentId: EnvironmentId | undefined;
+  /** The person's bubble only: rewinds the conversation to just before it. */
+  onRewind?: (() => void) | undefined;
 }) {
+  const [menu, setMenu] = useState(false);
+  const press = useRef<number | undefined>(undefined);
+  const mine = item.side === "me";
+  const endPress = () => {
+    if (press.current !== undefined) window.clearTimeout(press.current);
+    press.current = undefined;
+  };
+  const closeMenu = useCallback(() => setMenu(false), []);
   return (
     <div
       data-rubato-segno-row=""
@@ -102,8 +185,28 @@ function Bubble({
       data-group-start={item.groupStart ? "" : undefined}
       data-group-end={item.groupEnd ? "" : undefined}
       data-enter={enter ? (item.side === "me" ? "send" : "arrive") : undefined}
+      data-menu-open={menu ? "" : undefined}
     >
-      <div data-rubato-segno-bubble="" data-thread-find-text="">
+      <div
+        data-rubato-segno-bubble=""
+        data-thread-find-text=""
+        {...(mine
+          ? {
+              onContextMenu: (event: ReactMouseEvent) => {
+                event.preventDefault();
+                setMenu(true);
+              },
+              onPointerDown: (event: ReactPointerEvent) => {
+                if (event.pointerType !== "touch") return;
+                endPress();
+                press.current = window.setTimeout(() => setMenu(true), LONG_PRESS_MS);
+              },
+              onPointerUp: endPress,
+              onPointerMove: endPress,
+              onPointerCancel: endPress,
+            }
+          : {})}
+      >
         {item.images.length > 0 && environmentId ? <Images images={item.images} environmentId={environmentId} /> : null}
         {item.side === "segno" ? (
           <ChatMarkdown text={item.text} cwd={cwd} isStreaming={item.streaming} lineBreaks />
@@ -119,6 +222,7 @@ function Bubble({
         ) : null}
         {item.groupEnd ? <Tail /> : null}
       </div>
+      {menu ? <BubbleMenu text={item.text} onRewind={onRewind} onClose={closeMenu} /> : null}
     </div>
   );
 }
@@ -145,10 +249,57 @@ export function RubatoSegnoChat(props: {
   /** Room kept under the last bubble for the composer that floats over the room. */
   bottomInset: number;
   historyControls?: SegnoHistoryControls | undefined;
+  /** The companion's thread. */
+  threadId?: string | undefined;
+  /**
+   * Rewinds the conversation to `turnCount` turns and puts `messageId` back in the composer, files
+   * untouched (ChatView's revert, companion-edits.mjs).
+   */
+  onRewind?: ((turnCount: number, messageId: MessageId) => void) | undefined;
 }) {
   const items = useMemo(() => segnoChatItems(messagesOf(props.entries)), [props.entries]);
   const writing = segnoIsWriting(items, props.working);
   const locale = useLocale();
+  const companionId = useRubatoCompanion().companions.find((item) => item.threadId === props.threadId)?.id;
+  const partial = props.historyControls?.hasMoreHistory === true;
+  const spans = useMemo(() => segnoSpans(items, { writing: props.working, partial }), [items, props.working, partial]);
+  const summaries = useSegnoSpanSummaries({
+    environmentId: props.environmentId,
+    companionId,
+    boundaries: spans.boundaries,
+    after: spans.after,
+    working: props.working,
+  });
+  const { environmentId, threadId, onRewind } = props;
+  const rewind = useCallback(
+    async (messageId: string) => {
+      if (!environmentId || !threadId || !onRewind) return;
+      try {
+        const target = await messageRewindTarget(environmentId, threadId, messageId as MessageId);
+        onRewind(target.turnCount, messageId as MessageId);
+      } catch (error) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: "Could not rewind",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
+      }
+    },
+    [environmentId, threadId, onRewind],
+  );
+  const spanLine = (place: (typeof spans)["tail"] | undefined, key: string) =>
+    place ? (
+      <RubatoSegnoSpanLine
+        key={key}
+        place={place}
+        summary={summaries[place.index]}
+        companionId={companionId}
+        environmentId={environmentId}
+        locale={locale}
+      />
+    ) : null;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -215,16 +366,35 @@ export function RubatoSegnoChat(props: {
             {history.loading ? "Loading…" : "Load earlier messages"}
           </button>
         ) : null}
-        {items.map((item) =>
-          item.kind === "separator" ? (
-            <div key={item.id} data-rubato-segno-time="">
-              {separatorLabel(item.at, now, locale ?? navigator.language)}
-            </div>
-          ) : (
-            <Bubble key={item.id} item={item} enter={animated.current.has(item.id)} cwd={props.cwd} environmentId={props.environmentId} />
-          ),
-        )}
+        {items.map((item, index) => {
+          if (item.kind === "separator") {
+            // Work that led to no reply happened before the person's next message, so its line
+            // stands above that message's time line.
+            const next = items[index + 1];
+            const quiet = next?.kind === "bubble" && next.side === "me" ? spans.before.get(next.id) : undefined;
+            return [
+              spanLine(quiet, `span:${next?.id}`),
+              <div key={item.id} data-rubato-segno-time="">
+                {separatorLabel(item.at, now, locale ?? navigator.language)}
+              </div>,
+            ];
+          }
+          const separated = items[index - 1]?.kind === "separator";
+          const place = spans.before.get(item.id);
+          return [
+            item.side === "segno" || !separated ? spanLine(place, `span:${item.id}`) : null,
+            <Bubble
+              key={item.id}
+              item={item}
+              enter={animated.current.has(item.id)}
+              cwd={props.cwd}
+              environmentId={props.environmentId}
+              onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
+            />,
+          ];
+        })}
         {writing ? <Writing /> : null}
+        {spanLine(spans.tail, "span:tail")}
       </div>
     </div>
   );

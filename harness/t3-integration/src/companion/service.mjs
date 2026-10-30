@@ -17,6 +17,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { createInnerReader } from './inner.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const companionFile = path.resolve(here, '..', '..', '..', 'companion', 'companion.mjs');
@@ -50,6 +51,8 @@ export function createCompanionService(options = {}) {
   let loaded;
   const profiles = new Map();
   let tgProbe;
+  // The work between the room's bubbles, read from the companion's session file (inner.mjs).
+  const inner = options.inner ?? createInnerReader({ env });
   function botCreation(tg, now = Date.now) {
     if (tgProbe && now() - tgProbe.at < TG_CACHE_MS) return tgProbe.value;
     const value = tg.probeTg({ env });
@@ -194,6 +197,22 @@ export function createCompanionService(options = {}) {
       }
       case 'pieces':
         return { pieces: pieces() };
+      // What the companion did between the room's bubbles: a summary per span for the folded lines,
+      // and the items of one span when the person opens it (inner.mjs). `boundaries` are the bubble
+      // times in ms, oldest first; `after` is where the first span starts.
+      case 'inner': {
+        const sessionId = companion.readState(env).sessionId;
+        const boundaries = Array.isArray(input.boundaries) ? input.boundaries.filter(Number.isFinite) : null;
+        if (!boundaries) throw new CompanionRequestError(400, 'invalid', 'boundaries is missing.');
+        const after = Number.isFinite(input.after) ? input.after : -Infinity;
+        return { spans: sessionId ? await inner.summaries(sessionId, boundaries, after) : boundaries.concat(null).map(() => null) };
+      }
+      case 'inner-items': {
+        const sessionId = companion.readState(env).sessionId;
+        const after = Number.isFinite(input.after) ? input.after : -Infinity;
+        const until = Number.isFinite(input.until) ? input.until : null;
+        return { items: sessionId ? await inner.span(sessionId, after, until) : [] };
+      }
       case 'save-piece':
         if (typeof input.id !== 'string') throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => companion.writePiece(input.id, input.text, { defaultsDir, env }));
