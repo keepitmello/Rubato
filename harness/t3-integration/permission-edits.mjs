@@ -5,6 +5,8 @@
 // 데스크톱 쪽 등록(attachRubatoPermissions)은 DesktopWindow 편집이 apply.mjs 에
 // 있어서 거기서 같이 건다 — 같은 앵커에 두 번 붙이면 되돌리기가 어긋난다.
 export const permissionOverlays = [
+  'apps/desktop/src/permissions/CuaDaemon.ts',
+  'apps/desktop/src/permissions/CuaDaemon.test.ts',
   'apps/desktop/src/permissions/RubatoPermissions.ts',
   'apps/desktop/src/permissions/RubatoServices.ts',
   'apps/desktop/src/permissions/RubatoServices.test.ts',

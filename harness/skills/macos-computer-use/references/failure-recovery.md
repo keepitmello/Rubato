@@ -8,10 +8,11 @@ A row in System Settings can read "on" and still be denied: the grant is bound t
 
 ## Errors
 
-- `daemon is not running`: `open -g -a /Applications/CuaDriver.app`, then retry.
+- `daemon is not running`: `open -g -a /Applications/CuaDriver.app`, then retry. If it still says so while `pgrep -f "CuaDriver.app/Contents/MacOS/cua-driver serve"` lists a process, that instance lost its socket and `open` only reactivates it: `kill` that pid, open the app again, and check `cua-driver status`.
 - `stale_element_token`: the token came from another session or an older read. Put the same `"session"` label on every call and read again with `get_window_state`.
 - `ax_window_unresolved`: the window exists for WindowServer but has no accessibility window. Bring the app forward and read again; with Stage Manager on, strip windows often have none. If it stays empty, stop instead of guessing coordinates.
 - `window_id_not_found` / `window_owner_pid_mismatch`: list windows again; the window closed or belongs to another process.
+- An app that runs but has no window at all, and `open -a` brings none up (seen with System Settings), is stuck. Quitting and reopening it is the fix. Do that yourself only for an app with no unsaved work, such as System Settings; otherwise ask the user.
 - `Missing required integer field`: `call` takes JSON on stdin, not flags.
 - `"status":"refused"`: nothing was dispatched. Read again and retry once.
 - Any other failure during or after dispatch: treat delivery as unknown. Observe before deciding anything.

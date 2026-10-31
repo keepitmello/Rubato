@@ -14,6 +14,7 @@ import type {
 } from "@t3tools/contracts";
 import { MAC_PERMISSION_SETTINGS_URLS, type MacPermission } from "./MacPermission.ts";
 import { MacPermissionHelper, macAppBundlePath } from "./MacPermissionHelper.ts";
+import { startCuaDaemon } from "./CuaDaemon.ts";
 import { RUBATO_SERVICES, readServices, rubatoHarness, startService } from "./RubatoServices.ts";
 
 // macOS privacy permissions for the Rubato app and everything it spawns.
@@ -188,13 +189,23 @@ async function cuaState(): Promise<RubatoPermissionsState["cua"]> {
 }
 
 let cuaTask: Promise<unknown> | undefined;
-async function startCua() {
-  // LaunchServices, so the daemon is its own responsible process and asks with its own identity.
-  await exec("/usr/bin/open", ["-g", "-a", CUA_APP]).catch(() => undefined);
-  for (let i = 0; i < 20 && !/daemon is running/.test(await cuaText(["status"])); i++) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-}
+const startCua = () =>
+  startCuaDaemon({
+    running: async () => /daemon is running/.test(await cuaText(["status"])),
+    servePids: () =>
+      exec("/usr/bin/pgrep", ["-f", `^${CUA_BIN} serve`]).then(
+        ({ stdout }) => stdout.split(/\s+/).filter(Boolean).map(Number),
+        () => [],
+      ),
+    // LaunchServices, so the daemon is its own responsible process and asks with its own identity.
+    open: () => exec("/usr/bin/open", ["-g", "-a", CUA_APP]).then(() => undefined, () => undefined),
+    kill: (pid) => {
+      try {
+        process.kill(pid, "SIGTERM");
+      } catch {}
+    },
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  });
 
 async function cuaAction(action: RubatoPermissionAction) {
   if (action === "cua-start") return startCua();
