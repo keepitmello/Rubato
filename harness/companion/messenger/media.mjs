@@ -8,11 +8,19 @@
 import { createHash } from 'node:crypto';
 import { mkdirSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { DOWNLOAD_LIMIT_BYTES, redactToken } from './bot-api.mjs';
+import { DOWNLOAD_LIMIT_BYTES, isTransientTelegramError, redactToken } from './bot-api.mjs';
 import { messengerPaths } from './store.mjs';
 
 export const VOICE_TAG = '[voice]';
 export const VOICE_FAILURE_TAG = '[voice:전사 실패]';
+
+/**
+ * The waits between tries when Telegram cannot be reached for a file. One dropped connection
+ * must not turn a voice message into a failure tag for good: the update is already taken, so
+ * this is the only second chance the file gets.
+ */
+export const DOWNLOAD_RETRY_DELAYS_MS = Object.freeze([2_000, 5_000, 15_000]);
+const wait = (ms) => new Promise((resolve) => { setTimeout(resolve, ms).unref?.(); });
 
 const safeSegment = (value) => String(value ?? '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80) || 'unknown';
 const safeName = (value) => (typeof value === 'string' && value.trim() ? value.trim().replace(/[\\/\0]/g, '_').slice(0, 120) : undefined);
@@ -69,19 +77,32 @@ export function mediaOf(message) {
   return undefined;
 }
 
-/** The bytes of one Telegram file, and the path Telegram gave it. Refused above the Bot API's limit. */
-export async function downloadMedia(client, media) {
+/**
+ * The bytes of one Telegram file, and the path Telegram gave it. Refused above the Bot API's
+ * limit. A network failure or a 429/5xx is tried again after each of `retryDelaysMs`.
+ */
+export async function downloadMedia(client, media, { retryDelaysMs = DOWNLOAD_RETRY_DELAYS_MS, sleep = wait, aborted = () => false } = {}) {
   if (Number.isFinite(media.size) && media.size > DOWNLOAD_LIMIT_BYTES) throw new Error(`too large for a bot to download (${media.size} bytes)`);
-  const file = await client.getFile({ fileId: media.fileId });
-  if (!file?.file_path) throw new Error('Telegram returned no file path; the file may have expired');
-  const bytes = await client.downloadFile({ filePath: file.file_path });
-  if (!bytes?.length) throw new Error('Telegram returned an empty file');
-  return { bytes, filePath: file.file_path };
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      const file = await client.getFile({ fileId: media.fileId });
+      if (!file?.file_path) throw new Error('Telegram returned no file path; the file may have expired');
+      const bytes = await client.downloadFile({ filePath: file.file_path });
+      if (!bytes?.length) throw new Error('Telegram returned an empty file');
+      return { bytes, filePath: file.file_path };
+    } catch (error) {
+      if (!isTransientTelegramError(error) || attempt >= retryDelaysMs.length || aborted()) {
+        if (attempt > 0 && error instanceof Error) error.message = `${error.message} (after ${attempt + 1} tries)`;
+        throw error;
+      }
+      await sleep(Math.max(retryDelaysMs[attempt], (Number(error?.retryAfter) || 0) * 1000));
+    }
+  }
 }
 
 /** A received file saved under the companion's home: `<received>/<time>-<id>.<ext>`. */
-export async function saveMedia(client, media, { env, now = Date.now } = {}) {
-  const { bytes, filePath } = await downloadMedia(client, media);
+export async function saveMedia(client, media, { env, now = Date.now, retry } = {}) {
+  const { bytes, filePath } = await downloadMedia(client, media, retry);
   const dir = messengerPaths(env).received;
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const id = safeSegment(media.uniqueId ?? createHash('sha256').update(media.fileId).digest('hex').slice(0, 16));
@@ -103,7 +124,7 @@ function writeRecord(file, record) {
  * said stay in `<stt>/<time>-<id>/`, and the conversation gets `[voice]` and the transcript, or
  * the failure tag when it could not be heard. Never throws.
  */
-export async function transcribeMedia(client, media, { env, transcribe, receivedAt, chatId, messageId, reportError = () => {} }) {
+export async function transcribeMedia(client, media, { env, transcribe, receivedAt, chatId, messageId, reportError = () => {}, retry }) {
   const stamp = String(receivedAt ?? new Date().toISOString()).replace(/[^0-9]/g, '').slice(0, 17);
   const dir = path.join(messengerPaths(env).stt, `${stamp}-${safeSegment(media.uniqueId ?? `${chatId}-${messageId}`)}`);
   const base = { version: 1, receivedAt, kind: media.kind,
@@ -115,7 +136,7 @@ export async function transcribeMedia(client, media, { env, transcribe, received
   const record = (value) => { if (archived) try { writeRecord(path.join(dir, 'transcription.json'), { ...base, ...value }); } catch (error) { reportError(error); } };
   try {
     if (typeof transcribe !== 'function') throw new Error('voice transcription is not set up');
-    const { bytes, filePath } = await downloadMedia(client, media);
+    const { bytes, filePath } = await downloadMedia(client, media, retry);
     const ext = extOf(media.name ?? filePath, media.mime === 'audio/mpeg' ? 'mp3' : media.mime === 'audio/mp4' ? 'm4a' : 'ogg');
     const audioPath = path.join(dir, `audio.${ext}`);
     writeFileSync(audioPath, bytes, { mode: 0o600 });

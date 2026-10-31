@@ -24,6 +24,23 @@ export function redactToken(text) {
   return String(text ?? '').replace(/bot\d+:[A-Za-z0-9_-]+/g, 'bot[redacted]');
 }
 
+/**
+ * A failure that may pass if the same call is made again a little later: Telegram could not be
+ * reached (fetch rejected, the call timed out), or it answered 429 or 5xx.
+ */
+export function isTransientTelegramError(error) {
+  if (error?.transient === true) return true;
+  const code = Number(error?.code);
+  return error instanceof BotApiError && (code === 429 || code >= 500);
+}
+
+/** `fetch failed` says nothing; the code under it (ETIMEDOUT, ECONNRESET, UND_ERR_CONNECT_TIMEOUT…) does. */
+function networkReason(error) {
+  const message = redactToken(error?.message ?? error);
+  const code = error?.cause?.code ?? error?.cause?.name ?? error?.code;
+  return typeof code === 'string' && code && !message.includes(code) ? `${message} (${code})` : message;
+}
+
 export class BotApiError extends Error {
   constructor(method, { errorCode, description, retryAfter } = {}) {
     super(`${method}: ${description ?? 'request failed'}${errorCode ? ` (${errorCode})` : ''}`);
@@ -58,7 +75,7 @@ export function createBotApi({ token, baseUrl = TELEGRAM_API_BASE, fetch: call =
     } catch (error) {
       if (signal?.aborted) throw Object.assign(new Error(`${method}: aborted`), { name: 'AbortError', aborted: true });
       // A network failure's message may name the URL, and the URL holds the token.
-      throw new Error(`${method}: ${redactToken(error?.message ?? error)}`);
+      throw Object.assign(new Error(`${method}: ${networkReason(error)}`), { transient: true });
     } finally {
       clearTimeout(deadline);
       signal?.removeEventListener('abort', abort);
@@ -127,7 +144,11 @@ export function createBotApi({ token, baseUrl = TELEGRAM_API_BASE, fetch: call =
     async downloadFile({ filePath }, { signal } = {}) {
       let response;
       try { response = await call(`${root}/file/bot${token}/${filePath}`, { signal: signal ?? AbortSignal.timeout(120_000) }); }
-      catch { throw new BotApiError('downloadFile', { description: 'the file download failed' }); }
+      catch (error) {
+        const code = error?.cause?.code ?? error?.name;
+        throw Object.assign(new BotApiError('downloadFile', { description: `the file download failed${typeof code === 'string' && code ? ` (${code})` : ''}` }),
+          { transient: true });
+      }
       if (!response.ok) throw new BotApiError('downloadFile', { errorCode: response.status, description: 'the file download was refused' });
       return Buffer.from(await response.arrayBuffer());
     },

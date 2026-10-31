@@ -33,7 +33,7 @@ import {
   writeSecret, writeState,
 } from './store.mjs';
 import { freshRun, locateTranscript, readEntriesFrom, runAt, stepRun } from './sync.mjs';
-import { mediaOf, saveMedia, transcribeMedia } from './media.mjs';
+import { DOWNLOAD_RETRY_DELAYS_MS, mediaOf, saveMedia, transcribeMedia } from './media.mjs';
 import { prepareReplyPayload, telegramText } from './reply-text.mjs';
 import { synthesizeVoice } from './voice.mjs';
 import { companionOffText, contextText, heartbeatText, parseControlCommand, segnoText } from './commands.mjs';
@@ -159,6 +159,7 @@ function plainText(message) {
  *   synthesize?: (text: string) => Promise<{ path: string, durationSec?: number }>,
  *   sessionStats?: (sessionId: string) => Promise<{ contextUsage?: { tokens: number|null, contextWindow: number, percent: number|null } }>,
  *   typingDelay?: () => number,
+ *   downloadRetryDelaysMs?: readonly number[],
  *   signal?: AbortSignal,
  *   pollMs?: number,
  *   longPollSeconds?: number,
@@ -172,7 +173,7 @@ export function startCompanionMessenger({
   deliver, env = process.env, agentDir, onError = () => {}, log = () => {},
   createApi = (token) => createBotApi({ token, baseUrl: env.RUBATO_TELEGRAM_API_BASE || undefined }),
   createBot = createBotOverMtproto, transcribe = defaultTranscriber(env), synthesize = (text) => synthesizeVoice(text, { env }),
-  sessionStats, typingDelay: delayTyping = typingDelay,
+  sessionStats, typingDelay: delayTyping = typingDelay, downloadRetryDelaysMs = DOWNLOAD_RETRY_DELAYS_MS,
   signal, pollMs = 1000, longPollSeconds = 25, now = Date.now,
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
@@ -322,14 +323,15 @@ export function startCompanionMessenger({
   async function contentOf(client, message) {
     const media = mediaOf(message);
     if (!media) return { text: plainText(message), attachments: [] };
+    const retry = { retryDelaysMs: downloadRetryDelaysMs, sleep: (ms) => sleep(ms, stop.signal), aborted };
     if (media.kind === 'voice' || media.kind === 'audio') {
       const heard = await transcribeMedia(client, media, { env, transcribe, chatId: message.chat?.id, messageId: message.message_id,
-        receivedAt: new Date((message.date ?? now() / 1000) * 1000).toISOString(), reportError: onError });
+        receivedAt: new Date((message.date ?? now() / 1000) * 1000).toISOString(), reportError: onError, retry });
       if (heard.status === 'failed') log('voice-not-transcribed', { why: heard.error });
       return { text: heard.text, attachments: [] };
     }
     try {
-      const saved = await saveMedia(client, media, { env, now });
+      const saved = await saveMedia(client, media, { env, now, retry });
       return { text: media.text, attachments: [saved] };
     } catch (error) {
       log('attachment-not-saved', { kind: media.kind, why: error?.message });

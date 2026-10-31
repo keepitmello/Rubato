@@ -92,6 +92,48 @@ test("a voice message that cannot be heard arrives with Roo's failure tag, and t
   assert.doesNotMatch(record, /sk-abcdef/);
 });
 
+test('a voice message whose download drops once is fetched again and still arrives as words', async (t) => {
+  const box = await paired(t, { downloadRetryDelaysMs: [0, 0], transcribe: async () => ({ text: '다시 받았어', engine: 'fixture' }) });
+  box.fake.addFile('v3', 'voice/file_7.oga', Buffer.from('OggS-voice'));
+  const getFile = box.fake.api.getFile;
+  let calls = 0;
+  box.fake.api.getFile = async (args) => {
+    calls += 1;
+    if (calls === 1) throw Object.assign(new Error('getFile: fetch failed (UND_ERR_CONNECT_TIMEOUT)'), { transient: true });
+    return getFile(args);
+  };
+  box.fake.raw({ chatId: USER_CHAT, voice: { file_id: 'v3', file_unique_id: 'v3u', mime_type: 'audio/ogg' } });
+  await settle(box.service);
+  assert.equal(calls, 2);
+  assert.equal(box.delivered[0].text, '[voice]\n다시 받았어');
+  const [dir] = readdirSync(messengerPaths(box.env).stt);
+  assert.deepEqual(readdirSync(path.join(messengerPaths(box.env).stt, dir)).sort(), ['audio.ogg', 'transcription.json']);
+});
+
+test('a voice message Telegram never hands over fails after the retries, and the record says how many tries and why', async (t) => {
+  const box = await paired(t, { downloadRetryDelaysMs: [0, 0], transcribe: async () => ({ text: 'never', engine: 'fixture' }) });
+  let calls = 0;
+  box.fake.api.getFile = async () => { calls += 1; throw Object.assign(new Error('getFile: fetch failed (ECONNRESET)'), { transient: true }); };
+  box.fake.raw({ chatId: USER_CHAT, voice: { file_id: 'v4', file_unique_id: 'v4u' } });
+  await settle(box.service);
+  assert.equal(calls, 3);
+  assert.equal(box.delivered[0].text, '[voice:전사 실패]\n음성 내용을 전사하지 못했어.');
+  const [dir] = readdirSync(messengerPaths(box.env).stt);
+  const record = JSON.parse(readFileSync(path.join(messengerPaths(box.env).stt, dir, 'transcription.json'), 'utf8'));
+  assert.equal(record.error, 'getFile: fetch failed (ECONNRESET) (after 3 tries)');
+});
+
+test('a file Telegram refuses is not asked for again', async (t) => {
+  const box = await paired(t, { downloadRetryDelaysMs: [0, 0] });
+  let calls = 0;
+  const getFile = box.fake.api.getFile;
+  box.fake.api.getFile = async (args) => { calls += 1; return getFile(args); };
+  box.fake.raw({ chatId: USER_CHAT, photo: [{ file_id: 'missing', file_unique_id: 'm' }] });
+  await settle(box.service);
+  assert.equal(calls, 1);
+  assert.match(box.delivered[0].text, /invalid file_id/);
+});
+
 test("another person's photo reaches Segno too, still without the user's authority", async (t) => {
   const box = await paired(t);
   box.fake.addFile('g1', 'photos/g.jpg', JPEG);

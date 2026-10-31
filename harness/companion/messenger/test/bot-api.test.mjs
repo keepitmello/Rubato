@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { BotApiError, createBotApi } from '../bot-api.mjs';
+import { BotApiError, createBotApi, isTransientTelegramError } from '../bot-api.mjs';
 import { createFakeTelegramServer } from '../fake-telegram-server.mjs';
 
 test('the client talks HTTP to the Bot API, and a token never appears in what Settings shows', async (t) => {
@@ -92,4 +92,25 @@ test('a network failure never carries the token in its message', async () => {
     assert.doesNotMatch(error.message, /secretsecret/);
     return true;
   });
+});
+
+test('an unreachable Telegram is a failure worth trying again, and says why without the token', async () => {
+  const fetchFailed = (target) => Object.assign(new TypeError('fetch failed'),
+    { cause: Object.assign(new Error(`Connect Timeout Error (${target})`), { code: 'UND_ERR_CONNECT_TIMEOUT' }) });
+  const api = createBotApi({ token: '42:secretsecret', baseUrl: 'http://127.0.0.1:9',
+    fetch: async (target) => { throw fetchFailed(target); } });
+  await assert.rejects(api.getFile({ fileId: 'f' }), (error) => {
+    assert.equal(error.message, 'getFile: fetch failed (UND_ERR_CONNECT_TIMEOUT)');
+    assert.ok(isTransientTelegramError(error));
+    return true;
+  });
+  await assert.rejects(api.downloadFile({ filePath: 'voice/a.oga' }), (error) => {
+    assert.doesNotMatch(error.message, /secretsecret/);
+    assert.match(error.message, /UND_ERR_CONNECT_TIMEOUT/);
+    assert.ok(isTransientTelegramError(error));
+    return true;
+  });
+  assert.ok(isTransientTelegramError(new BotApiError('getFile', { errorCode: 502 })));
+  assert.ok(isTransientTelegramError(new BotApiError('getFile', { errorCode: 429, retryAfter: 1 })));
+  assert.ok(!isTransientTelegramError(new BotApiError('getFile', { errorCode: 400, description: 'Bad Request: invalid file_id' })));
 });
