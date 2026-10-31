@@ -53,3 +53,13 @@ Two slips got through, and they are the lessons:
 - An outside judgment received the digest, the user's words and the failed attempts. It reframed the question from "how to mark a cluster" to "what one mark stands for, and where a tap leads".
 - An independent session that knew the history argued with parts of it. It also caught the lead re-proposing a structure the user had rejected weeks before.
 - The two judgments disagreed on one point. That point went to the user as something to decide by seeing: real-scale mock-ups of both options, built from the user's own photo data. The research did not pre-empt that choice.
+
+## Follow-up: photo counts per place (2026-10)
+
+A later investigation for the same family of products asked how a map video should show one place with 3, 5, 10, 15 or more photos. One delegated owner ran it on the revised skill. It reframed the question from "pick one of three compositions" to "how a place's seconds are shared between big viewing, fast flow and a bundle", read the papers and product pages directly, and wrote their conditions into the record. Review still found:
+
+- Conditions written correctly in the evidence notes did not stop headings, the summary and the recommendations from stating stronger claims.
+- A tracking capacity measured under hard conditions ("as low as 1-2 objects", identical dots) became a general limit for photo cards. A flash count from an accessibility rule became a minimum display time per photo.
+- The owner had reframed the problem as time allocation, then did not put its own recommended compositions into the place's seconds. They did not fit.
+- Rereading the record did not catch these. Checking each drafted claim against its passage or calculation, with the assumptions needed to apply it, did.
+
