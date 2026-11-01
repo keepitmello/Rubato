@@ -191,6 +191,51 @@ test('append while a stream is open is bounded and cannot validate an incomplete
   assert.equal(io.reads.length, 2);
 });
 
+test('a file that grows is read from where the last scan stopped, and lists as a whole read of it would', async (t) => {
+  const { sessions, put, store } = await fixture(t);
+  const big = { type: 'message', timestamp, message: { role: 'toolResult', content: 'x'.repeat(4 << 20) } };
+  const a = await put('a.jsonl', [header('A'), message('user', 'first'), big]);
+  const ranges = [];
+  let listing = false;
+  const list = async () => { listing = true; try { return await store.list(); } finally { listing = false; } };
+  observeReads(t, (file, stream) => { if (listing && file === a) ranges.push(stream.start ?? 0); });
+  await list();
+  const grown = (await stat(a)).size;
+  const steps = [
+    [message('assistant', 'reply', { timestamp: 1790000000000 })],
+    [name('  named later  '), { type: 'custom', customType: 'rubato.companion', data: { id: 'roo' }, timestamp }],
+    '{"type":"session_info","name":"half',
+    'way"}\n',
+    [message('user', 'again', { timestamp: 1790000001000 }), 'not json', null],
+  ];
+  for (const step of steps) {
+    await appendFile(a, typeof step === 'string' ? step : jsonl(step));
+    const [listed] = await list();
+    const [whole] = await legacyList(sessions);
+    for (const key of ['id', 'cwd', 'title', 'createdAt', 'modifiedAt', 'messageCount']) assert.deepEqual(listed[key], whole[key], key);
+  }
+  assert.equal((await list())[0].companionId, 'roo');
+  assert.equal(ranges[0], 0);
+  assert.equal(ranges.length, 6, 'one read per scan of a changed file');
+  assert.ok(ranges.slice(1).every((start) => start >= grown), `later reads started at ${ranges.slice(1)}, before the 4MB already read`);
+});
+
+test('a file Pi rewrote in place is read again from its start', async (t) => {
+  const { put, store } = await fixture(t);
+  const a = await put('a.jsonl', [header('A', { version: 1 }), message('user', 'old first'), message('assistant', 'same tail')]);
+  assert.equal((await store.resolve('A')).title, 'old first');
+  // A migration rewrites the header and every entry, and may keep the last bytes as they were.
+  await writeFile(a, jsonl([header('A', { version: 3 }), message('user', 'migrated first', { id: 'm1' }), message('assistant', 'same tail')]));
+  assert.equal((await store.resolve('A')).title, 'migrated first');
+  const before = await stat(a);
+  // Same header, same last bytes, an earlier line changed: still read whole.
+  await writeFile(a, jsonl([header('A', { version: 3 }), message('user', 'edited first', { id: 'm1' }), message('assistant', 'same tail')]) + jsonl([name('grown')]));
+  assert.ok((await stat(a)).size > before.size);
+  assert.equal((await store.resolve('A')).title, 'grown');
+  await writeFile(a, jsonl([header('A', { version: 3 }), message('user', 'edited first', { id: 'm1' })]));
+  assert.equal((await store.resolve('A')).title, 'edited first');
+});
+
 test('canonical containment, symlink retargeting and duplicate identities retain safe resolution', async (t) => {
   const { root, sessions, put, store } = await fixture(t);
   const outside = path.join(root, 'outside.jsonl');

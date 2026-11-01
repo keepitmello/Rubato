@@ -104,6 +104,59 @@ test('turned on, the keeper creates the companion in its home once and keeps it 
   assert.equal(engine.attached(sessionId), 1, 'and is not attached twice');
 });
 
+test('the keeper reads the engine directory from its subscription, not by asking for the list each poll', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true }, env);
+  const engine = fakeEngine();
+  const sessionId = engine.existing(env);
+  let lists = 0;
+  let listeners = [];
+  const connect = engine.connect;
+  engine.connect = async () => {
+    const client = await connect();
+    const list = client.list;
+    client.list = async () => { lists++; return list(); };
+    client.subscribeDirectory = async (listener) => {
+      listeners.push(listener);
+      listener({ sessions: await list() });
+      return async () => { listeners = listeners.filter((item) => item !== listener); };
+    };
+    return client;
+  };
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  assert.equal(engine.attached(sessionId), 1);
+  const afterAttach = lists;
+  for (let i = 0; i < 5; i++) await keeper.poke();
+  assert.equal(lists, afterAttach, 'polls ask the engine for nothing');
+  assert.equal(engine.attached(sessionId), 1);
+  // The runtime ended; the delivered directory says so and the keeper attaches again.
+  engine.crash(sessionId);
+  for (const listener of listeners) listener({ sessions: [...engine.sessions.values()].map(({ attachments: _a, ...row }) => ({ ...row })) });
+  await keeper.poke();
+  assert.equal(engine.attached(sessionId), 1);
+  assert.equal(engine.created.length, 0);
+});
+
+test('a saved conversation missing from the delivered directory is looked up in the files before another is made', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true }, env);
+  const engine = fakeEngine();
+  const sessionId = engine.existing(env);
+  const connect = engine.connect;
+  engine.connect = async () => {
+    const client = await connect();
+    client.subscribeDirectory = async (listener) => { listener({ sessions: [] }); return async () => {}; };
+    return client;
+  };
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  assert.equal(engine.created.length, 0);
+  assert.equal(engine.attached(sessionId), 1);
+});
+
 test('the keeper comes back to the same conversation, and re-attaches when its runtime ended', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);

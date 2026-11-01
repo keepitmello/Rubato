@@ -384,6 +384,8 @@ export function localDate(at) {
 export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
   sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env) }) {
   let client;
+  // The engine's directory as its subscription last delivered it (see `open`).
+  let directory;
   let attachedTo;
   let closed = false;
   let ticking;
@@ -418,14 +420,40 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     sessionFileOf = undefined;
     const held = client;
     client = undefined;
+    directory = undefined;
     attachedTo = undefined;
     await held?.close().catch(onError);
   }
 
+  /**
+   * A client whose directory subscription is current. The engine keeps its directory fresh by
+   * itself, and a subscription delivers it at once and on every change. Asking for the list each
+   * poll made the engine scan every session file every three seconds per companion: with three
+   * large conversations running it could not open a new one within T3's 30 seconds (2026-11-01).
+   * A client without the subscription (a test double) is asked for the list instead.
+   */
+  async function open() {
+    const opened = await connect();
+    if (typeof opened.subscribeDirectory === 'function') {
+      // The first delivery arrives before this client is the keeper's; later ones only while it is.
+      let first;
+      await opened.subscribeDirectory((state) => { if (client === opened) directory = state.sessions; else first = state.sessions; });
+      directory = first;
+    }
+    return opened;
+  }
+
+  const rowsOf = async (active) => directory ?? await active.list();
+
   async function ensureSession(active) {
     const { sessionId } = readState(env);
-    const rows = await active.list();
-    const stored = sessionId && rows.find(row => row.sessionId === sessionId);
+    let rows = await rowsOf(active);
+    let stored = sessionId && rows.find(row => row.sessionId === sessionId);
+    // Not in the directory as delivered: the files decide before a second conversation is made.
+    if (sessionId && !stored && directory) {
+      rows = await active.list();
+      stored = rows.find(row => row.sessionId === sessionId);
+    }
     if (stored) {
       if (stored.companion !== true || (stored.companionId ?? 'segno') !== (env.RUBATO_COMPANION_ID || 'segno'))
         throw new Error('The saved conversation belongs to a different companion; refusing to attach');
@@ -449,13 +477,13 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       // starts: the memory store its folder writes to is decided from this folder's config, which
       // the session reads when it loads.
       setupHome();
-      client ??= await connect();
+      client ??= await open();
       const { sessionId, rows } = await ensureSession(client);
       const row = rows.find((item) => item.sessionId === sessionId);
       // A runtime that ended (an error, or the engine reclaimed it) took this attachment with it.
       const live = row && LIVE.has(row.status) && row.runtimeId !== null;
       if (attachedTo !== sessionId || !live) {
-        if (attachedTo !== undefined) { await release(); client = await connect(); }
+        if (attachedTo !== undefined) { await release(); client = await open(); }
         await client.attach(sessionId);
         attachedTo = sessionId;
         // A runtime this keeper has not seen before loaded the conversation from its file — after an

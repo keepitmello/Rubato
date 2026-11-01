@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
-import { readSessionMetadata, SESSION_METADATA_VERSION } from './session-metadata.mjs';
+import { readSessionMetadataFrom, SESSION_METADATA_VERSION } from './session-metadata.mjs';
 import { TITLE_ENTRY } from '../../pi-runtime/features/session-title/session-title.mjs';
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from '../../pi-runtime/features/session-prompt/patches.mjs';
 import { SESSION_MESSAGE } from './session-link.mjs';
@@ -87,6 +87,9 @@ const decodeDates = (metadata) => {
  */
 export class SessionFiles {
   #cache = new Map();
+  // How far each file was read in this process, so a file that grew is read from there
+  // (session-metadata.mjs readSessionMetadataFrom). Not saved: a restart reads a changed file once.
+  #progress = new Map();
   #touched = new Map();
   #refreshing;
   #index;
@@ -103,7 +106,7 @@ export class SessionFiles {
     this.#index = indexPath ? { path: indexPath, saveIntervalMs, onError } : undefined;
   }
   #remember(file, entry) { this.#cache.set(file, entry); this.#dirty = true; }
-  #forget(file) { if (this.#cache.delete(file)) this.#dirty = true; }
+  #forget(file) { this.#progress.delete(file); if (this.#cache.delete(file)) this.#dirty = true; }
   async #loadIndex(canonicalRoot) {
     if (!this.#index) return;
     let saved;
@@ -184,7 +187,9 @@ export class SessionFiles {
       const key = fingerprint(before);
       const cached = this.#cache.get(file);
       if (cached?.key === key) return cached.metadata;
-      const metadata = await readSessionMetadata(file, before);
+      const known = this.#progress.get(file);
+      const { metadata, progress } = await readSessionMetadataFrom(file, before,
+        known?.dev === before.dev && known.ino === before.ino ? known : undefined);
       const after = await stat(file, { bigint: true });
       // Bound the read at its starting size. An append/replace during parsing
       // must never validate a cache entry for bytes we did not actually parse.
@@ -192,6 +197,9 @@ export class SessionFiles {
       if (key === fingerprint(after) && unchangedPath) this.#remember(file, { key, metadata });
       else this.#forget(file);
       if (before.dev !== after.dev || before.ino !== after.ino || !unchangedPath) return null;
+      // What was read stays read even when the file grew meanwhile: the next scan continues from it.
+      if (progress) this.#progress.set(file, { ...progress, dev: before.dev, ino: before.ino });
+      else this.#progress.delete(file);
       return metadata;
     } catch {
       this.#forget(file);
@@ -222,6 +230,7 @@ export class SessionFiles {
     });
     // Discard deleted entries and failed discovery; no cache of full history.
     for (const file of [...this.#cache.keys()]) if (!present.has(file)) this.#forget(file);
+    for (const file of [...this.#progress.keys()]) if (!present.has(file)) this.#progress.delete(file);
     for (const file of [...this.#touched.keys()]) if (!present.has(file)) this.#touched.delete(file);
     this.#scheduleSave();
     return result.sort(newestFirst);
