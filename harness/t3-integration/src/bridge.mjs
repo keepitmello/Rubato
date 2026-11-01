@@ -773,13 +773,27 @@ export class RubatoPiBridge {
     return (this.backfilling ??= (async () => {
       let names;
       try { names = readdirSync(this.sessionStateDir).filter((name) => name.endsWith('.json') && !name.startsWith('.')); } catch { return; }
-      if (!names.length) return;
+      // With nothing saved, only companion conversations are looked at, and this pass never opens
+      // the engine connection for them: the inventory opens it within seconds of startup.
+      if (!names.length && !this.inventoryClient?.client.connected) return;
       const rows = new Map((await this.viaInventory((client) => client.list())).map((row) => [row.sessionId, row]));
+      const threads = new Map();
       for (const name of names) {
-        if (this.closed) return;
-        const threadId = decodeURIComponent(name.slice(0, -'.json'.length));
         let sessionId;
         try { sessionId = JSON.parse(readFileSync(path.join(this.sessionStateDir, name), 'utf8'))?.sessionId; } catch { continue; }
+        threads.set(decodeURIComponent(name.slice(0, -'.json'.length)), sessionId);
+      }
+      // A companion's conversation the keeper made has a thread from the inventory and no stream until
+      // the person writes to it, so no saved state names it: Segno's replies to a new conversation
+      // reached nothing (2026-11-01). Its thread has the inventory's id (RubatoPiSessions.ts importedPiThreadId).
+      for (const row of rows.values()) {
+        const serverId = row?.serverId ?? this.descriptor?.serverId;
+        if (row?.companion !== true || typeof row.sessionId !== 'string' || !serverId) continue;
+        const threadId = `import:${this.instanceId}:${serverId}:${row.sessionId}`;
+        if (!threads.has(threadId)) threads.set(threadId, row.sessionId);
+      }
+      for (const [threadId, sessionId] of threads) {
+        if (this.closed) return;
         const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
         const moved = sessionMoved(row);
         if (!Number.isFinite(moved) || this.rpcFor(threadId)) continue;

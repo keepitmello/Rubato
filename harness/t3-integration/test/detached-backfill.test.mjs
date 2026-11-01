@@ -224,3 +224,36 @@ test("Segno's reply sent while its thread has no stream reaches the thread throu
   assert.deepEqual(appended.map(([threadId, item]) => [threadId, item.text, item.ownRun === true]),
     [['T1', '운영방에서 어드민 느리다고 태그 왔어.', true]], 'only the reply, once, in a run of its own so the phone hears of it');
 });
+
+// 2026-11-01: the keeper moved Segno to a new conversation. Its thread came from the inventory and
+// the person had not written to it, so no saved state named it and Segno's replies reached nothing.
+test("a companion conversation no stream ever opened still gets Segno's replies, in its inventory thread", async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-backfill-fresh-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const stateDir = path.join(dir, 'state');
+  mkdirSync(stateDir, { recursive: true });
+  const threadId = 'import:rubato-test:srv:S9';
+  const session = [{ role: 'custom', customType: SESSION_MESSAGE_TYPE, display: false, content: 'wake', timestamp: at(10),
+      details: { v: 1, messageId: 'wake-10', kind: 'wake', what: 'wake', from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'wake' } },
+    said('깨어났어, 혼잣말.', 10),
+    { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'toolCall', id: 'r1', name: 'reply', arguments: { text: '쇼룸 확인 끝났어.' } }],
+      timestamp: at(45), provider: 'anthropic', model: 'claude' },
+    { role: 'toolResult', toolCallId: 'r1', toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: at(45) }];
+  const appended = [];
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(dir, 'none.json'), instanceId: 'rubato-test', sessionStateDir: stateDir,
+    backfillMs: 30,
+    projectedThread: async (id) => (id === threadId ? { messages: [], checkpoints: [] } : null),
+    appendSessionMessage: async (id, item) => { appended.push([id, item]); } });
+  bridge.viaInventory = async (call) => call({
+    list: async () => [{ sessionId: 'S9', serverId: 'srv', companion: true, companionId: 'segno', modifiedAt: at(45), touchedAt: at(45) },
+      { sessionId: 'L1', serverId: 'srv', title: 'a lead', modifiedAt: at(45), touchedAt: at(45) }],
+    transcript: async (id) => ({ messages: id === 'S9' ? session : [] }),
+  });
+  bridge.companionSession = async (id) => id === 'S9';
+  // Connected, as the inventory leaves the bridge seconds after startup.
+  bridge.inventoryClient = { client: { connected: true }, close: async () => {}, abandon: async () => {} };
+  t.after(() => bridge.close());
+  assert.ok(await until(() => appended.length >= 1));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(appended.map(([id, item]) => [id, item.text]), [[threadId, '쇼룸 확인 끝났어.']], 'only the reply, once, never the monologue');
+});
