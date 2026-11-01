@@ -194,3 +194,33 @@ test("T3 keeps Segno's stream however long it idles; any other thread's stream g
   await segno.conn.close(new Error('closed'));
   assert.equal(bridge.keepsStream('t1'), false, 'a closed stream keeps nothing');
 });
+
+test('a no from the engine is not kept: a session that shows its companion mark later is Segno\'s from then on', async (t) => {
+  const { RubatoPiBridge } = await import('../src/bridge.mjs');
+  const { mkdtempSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const path = await import('node:path');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-mark-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(dir, 'none.json'), instanceId: 'rubato-test', sessionStateDir: null });
+  let marked = false;
+  let failures = 0;
+  let lists = 0;
+  bridge.viaInventory = async (call) => call({ list: async () => {
+    lists++;
+    if (failures > 0) { failures--; throw new Error('The operation was aborted due to timeout'); }
+    return [{ sessionId: 'S1', ...(marked ? { companion: true } : {}) }];
+  } });
+  assert.equal(await bridge.companionSession('S1'), false, 'listed before its mark');
+  marked = true;
+  assert.equal(await bridge.companionSession('S1'), true, 'the mark counts once it is there');
+  const before = lists;
+  assert.equal(await bridge.companionSession('S1'), true);
+  assert.equal(lists, before, 'a yes is kept');
+  failures = 2;
+  assert.equal(await bridge.companionSession('S2', { retryMs: 1 }), false);
+  assert.equal(failures, 0, 'a list that fails is asked again');
+  marked = true; failures = 2;
+  bridge.companionSessions.delete('S1');
+  assert.equal(await bridge.companionSession('S1', { retryMs: 1 }), true, 'two timeouts do not turn Segno into a no');
+});

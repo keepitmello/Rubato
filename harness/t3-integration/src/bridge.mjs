@@ -413,16 +413,24 @@ export class RubatoPiBridge {
   }
   /**
    * Whether a session is Segno's own conversation, from the engine's session list (its `companion`
-   * mark). A session keeps what it is, so each answer is kept; an engine that cannot list says no.
+   * mark). Only a yes is kept: a session never loses the mark, but a no can be early or wrong. A
+   * no once kept, from a list that timed out on a busy engine or caught a session before its mark,
+   * showed Segno's new conversation as an ordinary thread for good: its wakes as turns, its replies
+   * nowhere (2026-11-01). A list that fails is asked again a few times before the answer is no.
    */
-  async companionSession(sessionId) {
+  async companionSession(sessionId, { attempts = 3, retryMs = 1000 } = {}) {
     if (typeof sessionId !== 'string' || !sessionId) return false;
     this.companionSessions ??= new Map();
-    if (this.companionSessions.has(sessionId)) return this.companionSessions.get(sessionId);
-    const rows = await this.viaInventory((client) => client.list()).catch(() => null);
-    if (!Array.isArray(rows)) return false;
-    for (const row of rows) if (typeof row?.sessionId === 'string') this.companionSessions.set(row.sessionId, row.companion === true);
-    return this.companionSessions.get(sessionId) === true;
+    if (this.companionSessions.get(sessionId) === true) return true;
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const rows = await this.viaInventory((client) => client.list()).catch(() => null);
+      if (Array.isArray(rows)) {
+        for (const row of rows) if (typeof row?.sessionId === 'string' && row.companion === true) this.companionSessions.set(row.sessionId, true);
+        return this.companionSessions.get(sessionId) === true;
+      }
+      if (attempt < attempts && !this.closed) await new Promise((resolve) => setTimeout(resolve, retryMs));
+    }
+    return false;
   }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {

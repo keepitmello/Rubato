@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { mkdir, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
+import { link, mkdir, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
 import { readSessionMetadataFrom, SESSION_METADATA_VERSION } from './session-metadata.mjs';
@@ -290,14 +290,22 @@ export class SessionFiles {
     // Pi deliberately delays initial writes until the first assistant message.
     // Persist its PUBLIC header, exclusively, so an empty created session can be
     // discovered after restart. No fake conversation entry or private SDK call.
-    await writeFile(file, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
-    if (title || replacement || companion) {
-      const opened = SessionManager.open(file, this.root);
-      if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString(), ...(companionId ? { id: companionId } : {}) });
-      if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);
-      if (title) opened.appendSessionInfo(title);
-      if (title && titleLocked === true) opened.appendCustomEntry(TITLE_ENTRY, { locked: true });
-    }
+    // The header and the entries that say what the session is are written beside it and the
+    // finished file is linked in at once: a scan between the header and the companion mark
+    // listed a companion conversation as an ordinary one, and the app showed it as one for
+    // good (2026-11-01). The `.tmp` name is not a session file to any scan.
+    const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
+    try {
+      await writeFile(temporary, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
+      if (title || replacement || companion) {
+        const opened = SessionManager.open(temporary, this.root);
+        if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString(), ...(companionId ? { id: companionId } : {}) });
+        if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);
+        if (title) opened.appendSessionInfo(title);
+        if (title && titleLocked === true) opened.appendCustomEntry(TITLE_ENTRY, { locked: true });
+      }
+      await link(temporary, file); // exclusive, as `wx` was: an existing file is never replaced
+    } finally { await rm(temporary, { force: true }); }
     const metadata = await this.#read(file, await realpath(this.root));
     if (!metadata) throw new SessionNotFoundError();
     return { ...metadata };

@@ -87,6 +87,22 @@ test('a session created as the companion carries its marker in the list, and a f
   await assert.rejects(store.create({ cwd: tmpdir(), companion: 'yes' }), /companion must be a boolean/);
 });
 
+test('a scan running while sessions are created never lists one without the marks it was created with', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  let creating = true;
+  const seen = [];
+  const watching = (async () => {
+    while (creating) seen.push(...await new SessionFiles(root).list());
+  })();
+  for (let i = 0; i < 30; i++) await store.create({ cwd: tmpdir(), title: 'Roo', titleLocked: true, companion: true, companionId: 'roo' });
+  creating = false;
+  await watching;
+  assert.ok(seen.length > 0, 'the scan saw sessions while they were made');
+  assert.deepEqual(seen.filter((row) => row.companion !== true || row.companionId !== 'roo' || row.title !== 'Roo'), []);
+});
+
 test('a transcript carries Pi\'s own custom messages hidden, so a client can tell whose turn follows a background finish', async (t) => {
   const { appendFile } = await import('node:fs/promises');
   const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));

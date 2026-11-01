@@ -368,6 +368,11 @@ export class RubatoRpcConnection {
           const client = await this.connectClient();
           try {
             await client.attach(this.sessionId);
+            // A no from before the restart may have come from an engine too busy to list.
+            if (!this.companion && await this.bridge.companionSession?.(this.sessionId) === true) {
+              this.companion = true;
+              this.companionStream.attached(false);
+            }
             // From here on, a run the next engine continued shows itself by its agent_start.
             restart.reattached = true;
             if (restart.inTurn) this.resumeWatch = restart;
