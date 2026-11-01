@@ -157,6 +157,26 @@ test('a saved conversation missing from the delivered directory is looked up in 
   assert.equal(engine.attached(sessionId), 1);
 });
 
+test('a saved conversation still on disk is never replaced, even when the engine list misses it', async (t) => {
+  const env = sandbox(t);
+  writeSettings({ enabled: true }, env);
+  const engine = fakeEngine();
+  writeState({ sessionId: 'roo-old', woke: { boundary: null } }, env);
+  let onDisk = true;
+  const errors = [];
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, sessionExists: async (id) => onDisk && id === 'roo-old',
+    onError: (error) => errors.push(String(error?.message ?? error)) });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  await keeper.poke();
+  assert.equal(engine.created.length, 0, 'no second conversation while the first is on disk');
+  assert.equal(readState(env).sessionId, 'roo-old');
+  assert.match(errors[0], /roo-old is on disk but not in the engine's list \(0 rows\)/);
+  onDisk = false;
+  await keeper.poke();
+  assert.equal(engine.created.length, 1, 'a conversation that is really gone is made again');
+});
+
 test('the keeper comes back to the same conversation, and re-attaches when its runtime ended', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);

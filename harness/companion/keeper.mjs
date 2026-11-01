@@ -382,7 +382,7 @@ export function localDate(at) {
  *   prompt pieces live (rubato-pi system-prompt companionDefaultsDir).
  */
 export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
-  sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env) }) {
+  sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env), sessionExists }) {
   let client;
   // The engine's directory as its subscription last delivered it (see `open`).
   let directory;
@@ -459,6 +459,11 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
         throw new Error('The saved conversation belongs to a different companion; refusing to attach');
       return { sessionId, rows };
     }
+    // A conversation whose file is still there is not gone, whatever the list said: across one
+    // restart Roo made three new conversations while its own stayed on disk (2026-11-01). The next
+    // poll asks again; the error says what the list held, for the log.
+    if (sessionId && await sessionExists?.(sessionId))
+      throw new Error(`The saved conversation ${sessionId} is on disk but not in the engine's list (${rows.length} rows${directory ? ', subscribed' : ''}); not making another`);
     const { home } = companionPaths(env);
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const created = await active.create({ cwd: home, title: env.RUBATO_COMPANION_TITLE || COMPANION_TITLE,
