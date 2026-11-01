@@ -77,7 +77,22 @@ test("only new sessions are balanced; turns, quota changes, pins and toggle chan
   assert.equal(await call("new-off"), "setup-token");
   delete state.credential.pinned;
   assert.equal(await call("new-sub", { id: `${modelId}-sub` }), "default");
-  await assert.rejects(call("manual", { id: `${modelId}-sub` }), /Start a new session/);
+  assert.equal(await call("manual", { id: `${modelId}-sub` }), "default", "picking the [sub] row moves the session to that account");
+  assert.equal(await call("manual", { id: `${modelId}-sub` }), "default", "and it stays there");
+  assert.equal(await call("manual", { id: ANTHROPIC_SUB_PICKER_IDS[1] }), "setup-token", "picking the plain row moves it back");
+  assert.equal(await call("manual", { id: ANTHROPIC_SUB_PICKER_IDS[1] }), "setup-token");
+});
+
+test("a picked account holds through limits and restarts; only another pick moves the session again", async (t) => {
+  const { home, modelId, state, call, createRuntime } = fixture(t);
+  assert.equal(await call("picked"), "setup-token");
+  assert.equal(await call("picked", { id: `${modelId}-sub`, runtime: createRuntime() }), "default");
+  state.failure = Object.assign(new Error("Too Many Requests"), { status: 429 });
+  await assert.rejects(call("picked", { id: `${modelId}-sub`, runtime: createRuntime() }), /Too Many Requests/);
+  state.failure = undefined;
+  setAccountLoadBalancing("anthropic", true, { home });
+  assert.equal(await call("picked", { id: `${modelId}-sub`, runtime: createRuntime() }), "default", "a limit or a setting does not move it");
+  assert.deepEqual(state.used.slice(-3).map((entry) => entry.account), ["default", "default", "default"]);
 });
 
 test("recreated runtimes and changing cache affinity retain the persisted thread account", async (t) => {

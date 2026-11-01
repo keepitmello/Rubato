@@ -190,6 +190,9 @@ export async function streamWithCredentialPool(runtime, method, model, context, 
         ? requiredAccountSlotName(model, slots)
         : sources.loadBalancing || sources.credential?.pinned ? undefined : requiredAccountSlotName(model, slots)),
       explicitSlotName: streamOptions?.slotName ?? (accountLaneOf(model) >= 0 ? requiredAccountSlotName(model, slots) : undefined),
+      // Which account row of the picker the model is (-1 the plain one, 0 `[sub]`, 1 `[sub2]`): picking
+      // another row moves the session to that account (rotation-stream.mjs).
+      accountPick: streamOptions?.slotName === undefined ? accountLaneOf(model) : undefined,
       serverRetryAfterMs: (slot) => retryAfterBySlot.get(slot?.name),
       ...(streamOptions?.sessionId !== undefined
         ? { affinityKey: streamOptions.sessionId }

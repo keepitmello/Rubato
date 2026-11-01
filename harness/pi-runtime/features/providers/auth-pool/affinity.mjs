@@ -13,7 +13,7 @@ export function boundSessionSlot(store, providerId, affinityKey) {
 
 export function bindSessionSlot(store, providerId, affinityKey, slot) {
   if (!store || affinityKey === undefined || !slot?.name) return slot;
-  store.set(affinityStoreKey(providerId, affinityKey), { name: slot.name, lane: slot.lane });
+  store.set(affinityStoreKey(providerId, affinityKey), { name: slot.name, lane: slot.lane, ...(slot.pick === undefined ? {} : { pick: slot.pick }) });
   return slot;
 }
 

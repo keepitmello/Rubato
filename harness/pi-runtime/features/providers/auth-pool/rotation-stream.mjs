@@ -208,8 +208,19 @@ export function streamWithCredentialRotation(options) {
     stickySlotName: () => readBound()?.name,
     select: async (candidates, slots = candidates) => {
       if (!fixedSession) return bindSessionSlot(store, providerId, affinityKey, await freeChoice(candidates, slots));
-      const bound = readBound() ?? await sources.repository.bindSessionSlot(
-        providerId, affinityKey, () => initialSlot(candidates, slots));
+      const pick = options.accountPick;
+      let bound = readBound() ?? await sources.repository.bindSessionSlot(
+        providerId, affinityKey, () => initialSlot(candidates, slots), pick);
+      // The account stays with the session; only the person moves it, by picking a model of another
+      // account row (`[sub]` and the plain row). A model of the same row, a limit, a retry or a
+      // settings change never does. A binding from before rows were kept learns its row now; its
+      // session moves only when the row picked names another account than the one it holds.
+      if (pick !== undefined && bound.pick !== pick) {
+        const moved = bound.pick !== undefined
+          || (options.explicitSlotName !== undefined && options.explicitSlotName !== bound.name);
+        const slot = moved ? initialSlot(candidates, slots) : bound;
+        bound = await sources.repository.rebindSessionSlot(providerId, affinityKey, { name: slot.name, lane: slot.lane }, pick);
+      }
       bindSessionSlot(store, providerId, affinityKey, bound);
       if (options.explicitSlotName && options.explicitSlotName !== bound.name) {
         throw new Error(`This session uses account '${bound.name}'. Start a new session to use '${options.explicitSlotName}'.`);

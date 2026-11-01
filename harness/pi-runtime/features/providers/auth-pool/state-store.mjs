@@ -102,15 +102,30 @@ export class CredentialSlotRepository {
     return createHmac("sha256", document.installationKey).update(sessionId).digest("hex");
   }
 
-  /** First assignment wins, including concurrent callers and other processes. */
-  async bindSessionSlot(providerId, sessionId, choose) {
+  /** First assignment wins, including concurrent callers and other processes. `pick`: rotation-stream.mjs. */
+  async bindSessionSlot(providerId, sessionId, choose, pick) {
     return this.withDocument((document) => {
       const provider = document.providers[providerId] ?? { lanes: {} };
       const key = this.sessionKey(document, sessionId);
       const existing = provider.sessions?.[key];
       if (existing) return { result: existing };
       const slot = choose();
-      const binding = { name: slot.name, lane: slot.lane };
+      const binding = { name: slot.name, lane: slot.lane, ...(pick === undefined ? {} : { pick }) };
+      return {
+        result: binding,
+        next: { ...document, providers: { ...document.providers,
+          [providerId]: { ...provider, sessions: { ...provider.sessions, [key]: binding } },
+        } },
+      };
+    });
+  }
+
+  /** The person picked another account for the session: its binding is that slot from now on. */
+  async rebindSessionSlot(providerId, sessionId, slot, pick) {
+    return this.withDocument((document) => {
+      const provider = document.providers[providerId] ?? { lanes: {} };
+      const key = this.sessionKey(document, sessionId);
+      const binding = { name: slot.name, lane: slot.lane, ...(pick === undefined ? {} : { pick }) };
       return {
         result: binding,
         next: { ...document, providers: { ...document.providers,

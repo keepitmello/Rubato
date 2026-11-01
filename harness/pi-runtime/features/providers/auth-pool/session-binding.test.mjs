@@ -83,3 +83,30 @@ test("corrupt persisted state fails closed rather than assigning another account
     "anthropic", "thread", () => ({ name: "other", lane: "stored" })), /refusing to reassign/);
   assert.equal(readFileSync(path, "utf8"), "{truncated");
 });
+
+test("a binding from before picks were kept learns its row, and moves only when the picked row names another account", async (t) => {
+  const path = fixture(t);
+  const repository = new CredentialSlotRepository(path);
+  const used = [];
+  const run = (sessionId, accountPick, explicitSlotName) => (async () => {
+    const stream = streamWithCredentialRotation({
+      affinityKey: sessionId, affinityStore: new Map(), accountPick, explicitSlotName,
+      ...(explicitSlotName ? { requiredSlotName: explicitSlotName } : {}),
+      sources: {
+        providerId: "anthropic", repository, policy: { affinity: false }, env: () => undefined,
+        credential: { type: "api_key", accounts: [{ name: "a", key: "a" }, { name: "b", key: "b" }] },
+      },
+      runAttempt: async (slot) => (async function* () { used.push(slot.name); yield { type: "done" }; })(),
+    });
+    for await (const _ of stream) { /* drain */ }
+    return used.at(-1);
+  })();
+  await repository.bindSessionSlot("anthropic", "old-plain", () => ({ name: "a", lane: "stored" }));
+  assert.equal(await run("old-plain", -1), "a");
+  assert.deepEqual(await repository.sessionBinding("anthropic", "old-plain"), { name: "a", lane: "stored", pick: -1 });
+  await repository.bindSessionSlot("anthropic", "old-sub", () => ({ name: "a", lane: "stored" }));
+  assert.equal(await run("old-sub", 0, "b"), "b", "a [sub] pick on a session held by the other account moves it");
+  assert.deepEqual(await repository.sessionBinding("anthropic", "old-sub"), { name: "b", lane: "stored", pick: 0 });
+  await repository.bindSessionSlot("anthropic", "old-sub-held", () => ({ name: "b", lane: "stored" }));
+  assert.equal(await run("old-sub-held", 0, "b"), "b", "the same account is kept, now with its row");
+});
