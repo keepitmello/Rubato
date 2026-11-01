@@ -60,6 +60,7 @@ import { companionEdits, companionOverlays, companionSettingsPages } from './com
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/server/src/provider/Drivers/RubatoPiDriver.test.ts', 'apps/server/src/provider/RubatoPiSessions.ts', 'apps/server/src/provider/RubatoPiInventory.ts', 'apps/web/src/components/RubatoIcon.tsx', 'apps/web/src/components/DeepSeekIcon.tsx', 'apps/web/src/components/OpenGatewayIcon.tsx', 'apps/web/src/components/ZhipuIcon.tsx', 'apps/web/src/components/GeminiIcon.tsx', 'apps/web/src/components/chat/rubatoModelIcons.tsx', 'apps/server/src/workspace/createWorkspaceFile.ts', 'apps/web/src/components/files/NewMarkdownNoteDialog.tsx', 'apps/desktop/src/updates/RubatoUpdates.ts', 'apps/web/src/components/desktop/RubatoUpdateDialog.tsx'];
+overlays.push('apps/web/src/environments/primary/auth.recovery.test.ts');
 // 값이 [anchor, addition] 이면 anchor 앞에 붙이고, [from, to, 'replace'] 면 갈아끼운다.
 // 앱 이름·번들 id·상태 경로는 T3 가 const 로 박아둬서 앞에 덧붙이는 것으로는 못 바꾼다.
 //
@@ -68,6 +69,14 @@ const overlays = ['apps/server/src/provider/Drivers/RubatoPiDriver.ts', 'apps/se
 // .electron-runtime 번들이라 그 경로로 켜면 맨 T3 가 떴다. 아이콘도 같은 이유로
 // 여기서 경로를 바꾸는 대신, 설치기가 T3 가 읽는 자리에 Rubato 것을 깔아둔다.
 const edits = {
+  // The desktop supervisor allows 60s for a backend restart. A transport failure
+  // is wrapped as HTTP 500 by auth.ts, but is not an actual server response.
+  'apps/web/src/environments/primary/auth.ts': [
+    ['  const startedAt = Date.now();\n  while (true) {', '  const startedAt = Date.now();\n  const timeoutMs = window.desktopBridge ? 60_000 : BOOTSTRAP_RETRY_TIMEOUT_MS;\n  while (true) {', 'replace'],
+    ['Date.now() - startedAt >= BOOTSTRAP_RETRY_TIMEOUT_MS', 'Date.now() - startedAt >= timeoutMs', 'replace'],
+    ['    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);', `    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) ||
+      (HttpClientError.isHttpClientError(error.cause) && error.cause.reason._tag === "TransportError");`, 'replace'],
+  ],
   // SSH 원격 환경. 원본은 원격에 GitHub 의 T3 릴리스를 받아 띄우는데, 그 서버에는
   // Rubato 제공자가 없다. 원격에도 Rubato 를 깔아 두고(install-gui.sh 가
   // ~/.rubato/t3-remote-server.mjs 를 만든다) 그것을 node 로 부른다. 경로는 원격

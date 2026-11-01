@@ -1,6 +1,7 @@
 {
   "upstreamCommit": "81493efb71e8e8244f95d3e9f71d8369654ab151",
   "targets": {
+    "apps/web/src/environments/primary/auth.ts": "f93127f900312cc0bc52c69af7be329f768925263a5cec4dfec480cdb9217a23",
     "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "519c9ecbdad5bb156bfe19fdd53b18362c5c3a3efe4b51b896cba352b627fffb",
     "apps/desktop/src/main.ts": "58529a5a1c5d532a996ccd8f4293dfb595d99c3aa7740a1419f64b0e327569b0",
     "apps/desktop/src/app/DesktopClerk.ts": "189a5f5018d7ad78e26e2f38d55b70eb12e56f861c5b2791725c45f6b216c2fa",

@@ -5,6 +5,8 @@
 // --system-prompt for its own role prompt, and the model then acts as an agent.
 import { spawn } from 'node:child_process';
 import { createReadStream } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { createInterface } from 'node:readline';
 import { loadTitleModels } from '../../../pi-runtime/features/session-title/session-title.mjs';
@@ -112,7 +114,23 @@ export async function readThinking(file, entryId) {
 export async function stockEngineLaunch(repoRoot, env) {
   const enginePaths = await import(path.join(repoRoot, 'harness', 'rubato-pi', 'src', 'engine-paths.mjs'));
   const childRuntime = await import(path.join(repoRoot, 'harness', 'pi-runtime', 'features', 'child-runtime', 'stock-rpc-runtime.mjs'));
-  return childRuntime.resolvePiMemoryChildLaunch({ root: enginePaths.resolvePiEngineDir(env) });
+  let execPath = process.execPath;
+  if (process.versions.electron) {
+    // Electron's Node mode is still the app executable. Pi's native modules can
+    // register it with macOS as another Rubato app; when that short-lived child
+    // exits, loginwindow can terminate the real app's helpers too. Never use it
+    // for story generation, even when ELECTRON_RUN_AS_NODE is already set.
+    const { listNodeCandidates, pickNode, nodeSatisfiesCandidate } = await import(path.join(repoRoot, 'harness', 'rubato-pi', 'src', 'select-node.mjs'));
+    const home = env.HOME ?? env.USERPROFILE ?? homedir();
+    // The CLI records its selected binary here, including nonstandard/Windows installs.
+    const remembered = await readFile(path.join(home, '.rubato-pi', 'node-path'), 'utf8').catch(() => '');
+    const node = pickNode(listNodeCandidates(home, [remembered.trim()].filter(Boolean)), {
+      accepts: (candidate) => nodeSatisfiesCandidate(candidate.text),
+    });
+    if (!node) throw new Error('Stats stories need a standalone Node.js 24.15+ or 26+.');
+    execPath = node.bin;
+  }
+  return childRuntime.resolvePiMemoryChildLaunch({ root: enginePaths.resolvePiEngineDir(env), execPath });
 }
 
 /** Runs one print-mode prompt with no tools, extensions or context files, and returns its stdout. */
