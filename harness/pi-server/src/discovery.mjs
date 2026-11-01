@@ -40,7 +40,9 @@ async function liveDescriptor(file) {
  * nothing here spawns a second one; `launchd` substitutes that lookup in tests.
  */
 export async function ensureProfileEngine({ descriptorPath, nodeBin = process.execPath, env = process.env,
-  runtimeRoot = installedSharedRuntime(env), requireTerminal = false, timeoutMs = 40000,
+  // A reader-version change invalidates the session index. Rebuilding several GB of
+  // history happens before the socket opens and can exceed the old 40-second limit.
+  runtimeRoot = installedSharedRuntime(env), requireTerminal = false, timeoutMs = 300_000,
   launchd = { manages: launchdManagesEngine, kickstart: kickstartEngine } }) {
   if (!path.isAbsolute(descriptorPath)) throw new TypeError('Descriptor path must be absolute');
   const agentDir = path.dirname(path.dirname(descriptorPath));

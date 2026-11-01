@@ -1,11 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import lockfile from 'proper-lockfile';
 import { restartProfileEngine } from '../../scripts/restart-profile-engine.mjs';
 import { ensureProfileEngine, socketAlive } from '../src/discovery.mjs';
+
+test('default startup wait allows a cold session index rebuild beyond forty seconds', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-cold-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const descriptorPath = path.join(root, 'server', 'connection.json');
+  const socketPath = path.join(root, 'pi.sock');
+  const descriptor = { version: 1, serverId: 'cold-index', socketPath };
+  const server = createServer((socket) => socket.end());
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const realNow = Date.now.bind(Date);
+  let elapsed = 0;
+  t.mock.method(Date, 'now', () => realNow() + elapsed);
+  let starts = 0;
+  const ready = await ensureProfileEngine({ descriptorPath, runtimeRoot: null,
+    env: { ...process.env, HOME: root },
+    launchd: { manages: () => true, kickstart: async () => {
+      starts++;
+      // No real forty-second sleep: the engine is still scanning at that boundary.
+      elapsed = 45_000;
+      await mkdir(path.dirname(descriptorPath), { recursive: true });
+      await writeFile(descriptorPath, JSON.stringify(descriptor));
+      await new Promise((resolve) => server.listen(socketPath, resolve));
+      return true;
+    } },
+  });
+  assert.deepEqual(ready, descriptor);
+  assert.equal(starts, 1, 'wait for the existing engine rather than spawn a replacement');
+});
 
 // During a restart the old engine still holds the profile lock while it puts its sessions
 // away, after its socket has already gone. The engine a client starts then exits at once

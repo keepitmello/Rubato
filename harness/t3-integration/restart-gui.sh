@@ -360,7 +360,10 @@ progress_start "데스크톱 앱을 켜는 중"
 if [ -n "${RUBATO_GUI_UPDATE_NODE-}" ]; then
   # GUI 업데이터가 자기 빌드 프로세스 그룹을 정리해도 새 앱은 살아야 한다.
   # nohup은 SIGHUP만 무시할 뿐 그룹을 나누지 않는다.
-  if "$RUBATO_GUI_UPDATE_NODE" "$HERE/detach-gui.mjs" "$START_GUI" "$GUI_LOG"; then
+  LAUNCH_APP=''
+  # An explicitly supplied launcher remains its owner's entry point (including tests).
+  is_darwin && [ "$START_GUI" = "$HERE/start-gui.sh" ] && LAUNCH_APP="$GUI_APP"
+  if "$RUBATO_GUI_UPDATE_NODE" "$HERE/detach-gui.mjs" "$START_GUI" "$GUI_LOG" "$LAUNCH_APP"; then
     progress_stop
     ui_ok "데스크톱 실행 요청 (창 준비는 GUI 업데이터가 확인합니다)"
   else
