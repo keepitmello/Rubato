@@ -15,6 +15,7 @@
 // The route's `thread` action is not here: finding the T3 thread of a session needs the T3
 // server's own bindings (RubatoCompanion.ts answers it).
 import { readFile, stat } from 'node:fs/promises';
+import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInnerReader } from './inner.mjs';
@@ -28,6 +29,8 @@ const pieceCopyFile = path.resolve(here, '..', '..', '..', 'companion', 'piece-c
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 const registryFile = path.resolve(here, '..', '..', '..', 'companion', 'registry.mjs');
+const descriptorFile = path.resolve(here, '..', '..', '..', 'pi-server', 'src', 'descriptor.mjs');
+const clientFile = path.resolve(here, '..', '..', '..', 'pi-server', 'src', 'client.mjs');
 
 export class CompanionRequestError extends Error {
   constructor(status, code, message) {
@@ -107,6 +110,16 @@ export function createCompanionService(options = {}) {
     return { leads, finished: open, held };
   }
 
+  /** The engine's session list, from this profile's engine (pi-server descriptor.mjs). */
+  async function engineSessions() {
+    const agentDir = env.RUBATO_PI_CODING_AGENT_DIR || path.join(env.HOME || homedir(), '.rubato-pi', 'agent');
+    const { readDescriptor } = await import(pathToFileURL(descriptorFile).href);
+    const { SessionClient } = await import(pathToFileURL(clientFile).href);
+    const descriptor = await readDescriptor(path.join(agentDir, 'server', 'connection.json'));
+    const client = await new SessionClient({ ...descriptor, timeoutMs: 5000 }).connect();
+    try { return await client.list(); } finally { await client.close().catch(() => {}); }
+  }
+
   async function handle(action, input) {
     if (action === 'companions' || input?.companionId !== undefined) {
       const { companionEnv, listCompanions } = await import(pathToFileURL(registryFile).href);
@@ -115,9 +128,13 @@ export function createCompanionService(options = {}) {
         if (!profiles.has(id)) profiles.set(id, createCompanionService({ ...options, env: companionEnv(id, env) }));
         return profiles.get(id);
       };
-      if (action === 'companions') return { companions: await Promise.all(registrations.map(async profile => ({
-        id: profile.id, title: profile.title, ...await serviceFor(profile.id).handle('status', {}),
-      }))) };
+      if (action === 'companions') {
+        const rows = await (options.listSessions ?? engineSessions)().catch(() => null);
+        return { companions: await Promise.all(registrations.map(async profile => ({
+          id: profile.id, title: profile.title, ...await serviceFor(profile.id).handle('status', {}),
+          conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
+        }))) };
+      }
       if (typeof input.companionId !== 'string' || !registrations.some(profile => profile.id === input.companionId))
         throw new CompanionRequestError(400, 'invalid', 'Unknown companion.');
       const { companionId, ...request } = input;
@@ -244,6 +261,15 @@ export async function handleCompanionRequest(service, request) {
     return Response.json({ error: { code: known ? error.code : 'failed', message: error instanceof Error ? error.message : String(error) } },
       { status: known ? error.status : 500 });
   }
+}
+
+/**
+ * Every conversation the engine holds with `companionId`'s mark: the one it runs in now and any it
+ * ran in before. None of them is a thread of the sidebar's (the rail opens the current one).
+ */
+export function companionConversations(rows, companionId) {
+  return rows.filter((row) => row?.companion === true && (row.companionId ?? 'segno') === companionId
+    && typeof row.sessionId === 'string').map((row) => row.sessionId);
 }
 
 let shared;

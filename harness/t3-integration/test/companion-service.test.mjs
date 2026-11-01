@@ -292,3 +292,25 @@ test('with Telegram off in the product, the page gets no Telegram status, every 
   assert.equal(store.readIntent(env), undefined, 'nothing was handed to a messenger');
   assert.deepEqual((await post('panel')).body.held, []);
 });
+
+test('the companion list names every conversation with each companion\'s mark, so none of them is a sidebar thread', async t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-companion-conversations-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = { HOME: root, RUBATO_COMPANIONS_FILE: path.join(root, 'companions.json') };
+  const roo = path.join(root, 'roo-home');
+  mkdirSync(roo);
+  writeFileSync(env.RUBATO_COMPANIONS_FILE, JSON.stringify({ companions: [{ id: 'roo', title: 'Roo', home: roo, memoryAgent: 'roo' }] }));
+  const rows = [
+    { sessionId: 'segno-now', companion: true, companionId: 'segno' },
+    { sessionId: 'segno-before', companion: true },
+    { sessionId: 'roo-now', companion: true, companionId: 'roo' },
+    { sessionId: 'roo-before', companion: true, companionId: 'roo' },
+    { sessionId: 'lead', title: 'a lead Segno opened' },
+  ];
+  const listed = await createCompanionService({ env, defaultsDir, listSessions: async () => rows }).handle('companions', {});
+  assert.deepEqual(listed.companions.map(item => [item.id, item.conversations]),
+    [['segno', ['segno-now', 'segno-before']], ['roo', ['roo-now', 'roo-before']]]);
+  const unanswered = await createCompanionService({ env, defaultsDir, listSessions: async () => { throw new Error('engine down'); } })
+    .handle('companions', {});
+  assert.deepEqual(unanswered.companions.map(item => item.conversations), [null, null], 'no engine answer is not an empty list');
+});

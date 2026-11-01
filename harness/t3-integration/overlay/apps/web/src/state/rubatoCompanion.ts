@@ -41,6 +41,10 @@ export interface CompanionChoice extends CompanionStatus {
   readonly id: string;
   readonly title: string;
   readonly threadId: string | null;
+  /** Every conversation with this companion's mark, the current one too; null when the engine did not answer. */
+  readonly conversations?: readonly string[] | null;
+  /** The T3 threads of those conversations that the app shows. */
+  readonly conversationThreadIds?: readonly string[];
 }
 
 /** Where a held message is addressed: a chat other than the person's own. */
@@ -192,7 +196,7 @@ const call = <T>(env: EnvironmentId | null, action: string, body: Record<string,
     action === "companions" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
 
 export const rubatoCompanion = {
-  companions: (env: EnvironmentId | null) => call<{ companions: Array<Omit<CompanionChoice, "threadId">> }>(env, "companions"),
+  companions: (env: EnvironmentId | null) => call<{ companions: Array<Omit<CompanionChoice, "threadId" | "conversationThreadIds">> }>(env, "companions"),
   status: (env: EnvironmentId | null) => call<CompanionStatus>(env, "status"),
   saveSettings: (env: EnvironmentId | null, patch: CompanionSettingsPatch) =>
     call<CompanionStatus>(env, "save-settings", { patch }),
@@ -312,6 +316,18 @@ export function companionForThread(threadId: string): CompanionChoice | undefine
 
 let lastEnvironment: EnvironmentId | null = null;
 let refreshing: Promise<void> | null = null;
+// A conversation's thread, once the app shows it; a session the app has not picked up is asked again.
+const threadOfSession = new Map<string, string>();
+async function threadsOf(env: EnvironmentId, sessionIds: readonly string[]): Promise<string[]> {
+  const found = await Promise.all(sessionIds.map(async sessionId => {
+    const known = threadOfSession.get(sessionId);
+    if (known) return known;
+    const { threadId } = await rubatoCompanion.thread(env, sessionId).catch(() => ({ threadId: null }));
+    if (threadId) threadOfSession.set(sessionId, threadId);
+    return threadId;
+  }));
+  return found.filter((threadId): threadId is string => typeof threadId === "string");
+}
 function refresh(env: EnvironmentId | null): Promise<void> {
   if (env === null) return Promise.resolve();
   refreshing ??= (async () => {
@@ -322,7 +338,11 @@ function refresh(env: EnvironmentId | null): Promise<void> {
         let threadId = status.sessionId !== null && status.sessionId === previous?.sessionId ? previous.threadId : null;
         if (status.sessionId !== null && threadId === null)
           threadId = (await rubatoCompanion.thread(env, status.sessionId).catch(() => ({ threadId: null }))).threadId;
-        return { ...status, threadId };
+        // An earlier conversation (the companion moved to a new one) is not a sidebar thread either.
+        const conversationThreadIds = Array.isArray(status.conversations)
+          ? await threadsOf(env, status.conversations)
+          : previous?.conversationThreadIds ?? [];
+        return { ...status, threadId, conversationThreadIds };
       }));
       const selected = companions.find(item => item.id === selectedCompanionId) ?? companions[0];
       if (selected) selectedCompanionId = selected.id;
@@ -389,12 +409,16 @@ export function segnoNotice(
   return { title, body };
 }
 
-/** The thread list without Segno's conversation: it opens from the rail (companion-edits.mjs). */
+/**
+ * The thread list without any companion's conversations: the current one opens from the rail
+ * (companion-edits.mjs), and one a companion moved on from is no thread of the person's.
+ */
 export function useWithoutCompanionThread<T extends { readonly id: string }>(
   threads: ReadonlyArray<T>,
 ): ReadonlyArray<T> {
   const { companions } = useRubatoCompanion();
-  const threadIds = useMemo(() => new Set(companions.map(item => item.threadId).filter(Boolean)), [companions]);
+  const threadIds = useMemo(() => new Set(companions.flatMap(item =>
+    [item.threadId, ...(item.conversationThreadIds ?? [])]).filter(Boolean)), [companions]);
   return useMemo(
     () =>
       !threads.some((thread) => threadIds.has(thread.id))
