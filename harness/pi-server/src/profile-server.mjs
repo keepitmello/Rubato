@@ -64,7 +64,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     service = await startSessionServer({ sessionsDir, socketPath,
       // Only the lock holder writes it, like the descriptor.
       sessionIndexPath: path.join(serverDir, 'session-index.json'),
-      serverId: previous?.serverId ?? randomUUID(), idleMs, onError,
+      serverId: previous?.serverId ?? randomUUID(), idleMs, onError, log,
       workerFactory: workerFactory ?? (hosted ? ((metadata, creation) => new SessionWorker(metadata, workerOptions(metadata, creation))) : ((metadata) => new RpcWorker(metadata, {
         env: { RUBATO_PI_CODING_AGENT_DIR: agentDir },
       }))),
