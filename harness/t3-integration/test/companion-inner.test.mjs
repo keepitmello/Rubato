@@ -80,8 +80,8 @@ test('spans split at the bubble times: a reply\'s own call lands before its bubb
   const spans = splitSpans(items, [10, 20, 30]);
   assert.deepEqual(spans.map((span) => span.map((item) => item.at)), [[5], [12, 20], [], [31]]);
   assert.deepEqual(splitSpans(items, [10, 20], 10).map((span) => span.length), [0, 2, 1], 'nothing before `after`');
-  assert.deepEqual(spanSummary(spans[1]), { thinking: 1, text: 0, tools: 1, wakes: 0, messages: 0, from: 12, to: 26 });
-  assert.deepEqual(spanSummary([]), { thinking: 0, text: 0, tools: 0, wakes: 0, messages: 0, from: null, to: null });
+  assert.deepEqual(spanSummary(spans[1]), { thinking: 1, text: 0, tools: 1, wakes: 0, wakeKinds: {}, messages: 0, from: 12, to: 26 });
+  assert.deepEqual(spanSummary([]), { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null });
 });
 
 test('a tool row names what the call was about', () => {
@@ -106,6 +106,7 @@ test('the room asks the companion service for span summaries and one span\'s pie
   writeState({ sessionId: 'S9' }, env);
   const { spans } = await post('inner', { boundaries: [1000, 1300] });
   assert.deepEqual(spans.map((span) => span && [span.wakes, span.thinking, span.tools]), [[1, 1, 0], [0, 0, 1], [0, 0, 0]]);
+  assert.deepEqual(spans[0].wakeKinds, { heartbeat: 1 }, 'the line names what woke it');
   const { items } = await post('inner-items', { after: 1000, until: 1300 });
   assert.deepEqual(items.map((item) => item.name), ['reply']);
   assert.deepEqual((await post('inner-items', { until: 1000 })).items.map((item) => item.kind), ['wake', 'thinking']);

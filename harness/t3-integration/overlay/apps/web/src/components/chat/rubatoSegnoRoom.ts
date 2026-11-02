@@ -249,18 +249,53 @@ export function spanDuration(ms: number, locale: string | undefined): string {
   return rest === 0 ? unit(hours, "hour") : `${unit(hours, "hour")} ${unit(rest, "minute")}`;
 }
 
-/** The counts a span's line shows, each its own phrase so the interface translates it. */
+/**
+ * What woke the companion, by its kind (keeper.mjs notify `what`, the scheduler, a voice call), as the
+ * folded line and the opened span name it. Each kind has its own name: only a heartbeat is called one
+ * (user ffaeed47).
+ */
+export const WAKE_LABELS: Readonly<Record<string, string>> = {
+  heartbeat: "Heartbeat",
+  greeting: "Greeting",
+  // A fresh session, one after compaction, or the same one after the engine restarted.
+  wake: "Started again",
+  recall: "Recalling",
+  sleep: "Going to sleep",
+  inbox: "Work room",
+  "persona-review": "Persona review",
+  schedule: "Scheduled task",
+  call: "Voice call",
+};
+/** A kind this room does not know yet. */
+export const OTHER_WAKE = "Other";
+
+/** The wakes of a span, one name and count per kind, in the order they first came. */
+export function wakeCounts(summary: {
+  readonly wakes: number;
+  readonly wakeKinds?: Readonly<Record<string, number>> | undefined;
+}): { label: string; count: number }[] {
+  const counts = new Map<string, number>();
+  let named = 0;
+  for (const [kind, count] of Object.entries(summary.wakeKinds ?? {})) {
+    if (count <= 0) continue;
+    const label = WAKE_LABELS[kind] ?? OTHER_WAKE;
+    counts.set(label, (counts.get(label) ?? 0) + count);
+    named += count;
+  }
+  // A bridge older than the kinds says only how many.
+  if (summary.wakes > named) counts.set(OTHER_WAKE, (counts.get(OTHER_WAKE) ?? 0) + summary.wakes - named);
+  return [...counts].map(([label, count]) => ({ label, count }));
+}
+
+/** The counts a span's line shows besides its wakes, each its own phrase so the interface translates it. */
 export function spanCounts(summary: {
   readonly thinking: number;
   readonly text: number;
   readonly tools: number;
-  readonly wakes: number;
   readonly messages: number;
 }): string[] {
   const words: string[] = [];
   const thoughts = summary.thinking + summary.text;
-  // Every wake reads as a heartbeat: the keeper's scheduled nudge is what wakes it (user f7c42421).
-  if (summary.wakes > 0) words.push(summary.wakes === 1 ? "1 heartbeat" : `${summary.wakes} heartbeats`);
   if (summary.messages > 0) words.push(summary.messages === 1 ? "1 message" : `${summary.messages} messages`);
   if (thoughts > 0) words.push(thoughts === 1 ? "1 thought" : `${thoughts} thoughts`);
   if (summary.tools > 0) words.push(summary.tools === 1 ? "1 tool" : `${summary.tools} tools`);

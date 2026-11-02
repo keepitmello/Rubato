@@ -82,6 +82,17 @@ describe("page translation", () => {
     expect(root.querySelector("span")!.textContent).toBe("My project");
   });
 
+  it("names a companion's wake in Korean and keeps its count beside it (RubatoSegnoInner)", async () => {
+    const korean = (await import("./rubatoI18n.ko.json")).default as unknown as UiDictionary;
+    const root = document.createElement("div");
+    root.innerHTML =
+      '<button><span data-part=""><span>Heartbeat</span> 2</span><span data-part=""><span>Work room</span> 1</span><span data-part="">3 thoughts</span></button>';
+    document.body.append(root);
+    page = createPageTranslation(root, createUiTranslator(korean));
+    page.start();
+    expect([...root.querySelectorAll("[data-part]")].map((part) => part.textContent)).toEqual(["하트비트 2", "일터 방 1", "생각 3"]);
+  });
+
   it("translates an icon and its label as the label", () => {
     const root = mount("<button><svg></svg>Cancel</button>");
     expect(root.querySelector("button")!.textContent).toBe("취소하기");

@@ -12,6 +12,7 @@ import {
   separatorLabel,
   spanCounts,
   spanDuration,
+  wakeCounts,
   type SegnoChatMessageInput,
 } from "./rubatoSegnoRoom";
 
@@ -172,9 +173,23 @@ describe("the work between bubbles (user f8828a9f)", () => {
     expect(spans.before.get("a")?.after).toBe(at(0));
   });
 
+  it("names each kind of wake by its own name; only a heartbeat is called one (user ffaeed47)", () => {
+    expect(wakeCounts({ wakes: 4, wakeKinds: { inbox: 1, heartbeat: 2, call: 1 } })).toEqual([
+      { label: "Work room", count: 1 },
+      { label: "Heartbeat", count: 2 },
+      { label: "Voice call", count: 1 },
+    ]);
+    expect(wakeCounts({ wakes: 2, wakeKinds: { wake: 1, someday: 1 } })).toEqual([
+      { label: "Started again", count: 1 },
+      { label: "Other", count: 1 },
+    ]);
+    expect(wakeCounts({ wakes: 1 })).toEqual([{ label: "Other", count: 1 }]);
+    expect(wakeCounts({ wakes: 0, wakeKinds: {} })).toEqual([]);
+  });
+
   it("names the counts one phrase each, and the time in the room's language", () => {
-    expect(spanCounts({ thinking: 1, text: 1, tools: 1, wakes: 2, messages: 0 })).toEqual(["2 heartbeats", "2 thoughts", "1 tool"]);
-    expect(spanCounts({ thinking: 0, text: 0, tools: 0, wakes: 0, messages: 1 })).toEqual(["1 message"]);
+    expect(spanCounts({ thinking: 1, text: 1, tools: 1, messages: 0 })).toEqual(["2 thoughts", "1 tool"]);
+    expect(spanCounts({ thinking: 0, text: 0, tools: 0, messages: 1 })).toEqual(["1 message"]);
     expect(spanDuration(41_000, "en-US")).toBe("41s");
     expect(spanDuration(200, "en-US")).toBe("1s");
     expect(spanDuration(3 * 60_000, "en-US")).toBe("3m");

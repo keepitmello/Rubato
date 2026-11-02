@@ -155,14 +155,21 @@ export async function sessionFile(sessionId, env = process.env) {
   return name ? path.join(dir, name) : undefined;
 }
 
-/** What a span holds, for its folded line: counts and when it ran. */
+/**
+ * What a span holds, for its folded line: counts and when it ran. `wakeKinds` counts what woke the
+ * companion by its kind (keeper.mjs notify `what`), in the order the kinds first came, so the line
+ * names each one — a heartbeat, the work room, a voice call — instead of one word for all.
+ */
 export function spanSummary(items) {
-  const summary = { thinking: 0, text: 0, tools: 0, wakes: 0, messages: 0, from: null, to: null };
+  const summary = { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null };
   for (const item of items) {
     if (item.kind === 'thinking') summary.thinking += 1;
     else if (item.kind === 'text') summary.text += 1;
     else if (item.kind === 'tool') summary.tools += 1;
-    else if (item.kind === 'wake') summary.wakes += 1;
+    else if (item.kind === 'wake') {
+      summary.wakes += 1;
+      summary.wakeKinds[item.what] = (summary.wakeKinds[item.what] ?? 0) + 1;
+    }
     else if (item.kind === 'message') summary.messages += 1;
     summary.from = summary.from === null ? item.at : Math.min(summary.from, item.at);
     summary.to = Math.max(summary.to ?? item.at, item.done ?? item.at);

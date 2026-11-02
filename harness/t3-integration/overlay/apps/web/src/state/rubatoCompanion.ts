@@ -166,6 +166,8 @@ export interface SegnoSpanSummary {
   readonly text: number;
   readonly tools: number;
   readonly wakes: number;
+  /** What woke the companion, by kind (keeper.mjs notify `what`), in the order they first came. */
+  readonly wakeKinds?: Readonly<Record<string, number>>;
   readonly messages: number;
   /** When the span's first and last piece happened, in ms; null for an empty span. */
   readonly from: number | null;

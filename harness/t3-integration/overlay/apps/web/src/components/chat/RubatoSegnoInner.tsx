@@ -8,21 +8,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 
 import { rubatoCompanion, type SegnoInnerItem, type SegnoSpanSummary } from "../../state/rubatoCompanion";
-import { spanCounts, spanDuration, type SegnoSpanPlace } from "./rubatoSegnoRoom";
+import { OTHER_WAKE, spanCounts, spanDuration, WAKE_LABELS, wakeCounts, type SegnoSpanPlace } from "./rubatoSegnoRoom";
 
 /** How often an open line that runs on now asks again. */
 const LIVE_POLL_MS = 2_500;
-
-/** What woke the companion, as the open line names it (keeper.mjs notify `what`). */
-const WAKE_LABELS: Readonly<Record<string, string>> = {
-  heartbeat: "Heartbeat",
-  greeting: "Greeting",
-  wake: "Heartbeat",
-  recall: "Recalling",
-  sleep: "Going to sleep",
-  inbox: "Work room",
-  "persona-review": "Persona review",
-};
 
 function clock(at: number, locale: string | undefined): string {
   return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(at);
@@ -76,7 +65,7 @@ function Piece({ item, locale }: { item: SegnoInnerItem; locale: string | undefi
       return (
         <details data-rubato-segno-wake="">
           <summary>
-            {WAKE_LABELS[item.what] ?? "Heartbeat"} <span>{clock(item.at, locale)}</span>
+            {WAKE_LABELS[item.what] ?? OTHER_WAKE} <span>{clock(item.at, locale)}</span>
           </summary>
           {item.text ? <p className="whitespace-pre-wrap break-words">{item.text}</p> : null}
         </details>
@@ -159,6 +148,7 @@ export function RubatoSegnoSpanLine(props: {
   const empty = !summary || summary.from === null;
   if (empty && !live) return null;
   const counts = summary && !empty ? spanCounts(summary) : [];
+  const wakes = summary && !empty ? wakeCounts(summary) : [];
   const duration =
     summary && summary.from !== null && summary.to !== null ? spanDuration(summary.to - summary.from, locale) : null;
 
@@ -168,6 +158,12 @@ export function RubatoSegnoSpanLine(props: {
         <span data-rubato-segno-chevron="" aria-hidden="true" />
         {live ? <span data-rubato-segno-live-dot="" aria-hidden="true" /> : null}
         {live ? <span data-part="">Working now</span> : null}
+        {/* The name is its own element, so the interface translates it; the count stays a number. */}
+        {wakes.map(({ label, count }) => (
+          <span key={`wake:${label}`} data-part="">
+            <span>{label}</span> {count}
+          </span>
+        ))}
         {counts.map((word) => (
           <span key={word} data-part="">
             {word}
