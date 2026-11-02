@@ -5,6 +5,7 @@ import { serveProfile } from './profile-server.mjs';
 import { resolveLaunchAgentDir } from '../../rubato-pi/src/launch.mjs';
 import { installedSharedRuntime } from './discovery.mjs';
 import { errorLog } from './error-log.mjs';
+import { watchStalls } from './perf-log.mjs';
 import { exitEngine, installExitGuard } from './exit-guard.mjs';
 import { closeAndExit, EXIT_GRACE_MS } from './engine-stop.mjs';
 import { loginShellPath, mergePaths } from './launchd.mjs';
@@ -79,6 +80,7 @@ try {
     }
     if (service) {
       console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
+      watchStalls({ log: options.log });
       if (stopRequested) await stop();
     }
   }

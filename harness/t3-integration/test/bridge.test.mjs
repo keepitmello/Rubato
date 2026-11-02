@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
+import { CATALOGUE_REUSE_MS, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -1677,6 +1677,26 @@ test('a session message id names the thread: the same thread on another Pi sessi
     assert.deepEqual(bridge.importedMessages('session', [{ entryId:'e1', ...sessionMessage() }], 'thread'), [liveIn('thread', 'other')]);
     assert.throws(() => bridge.importedMessages('session', [sessionMessage()]), /T3 thread/);
   } finally { await bridge.close(); }
+});
+
+test('an expired catalogue answers with the last list at once and renews it behind the answer', async (t) => {
+  // 회귀: 목록이 낡으면 새 스레드가 엔진이 대화 런타임 하나를 띄웠다 끌 때까지(6.5-10초) 기다렸다.
+  const { root, bridge } = await setup(t);
+  const first = await bridge.catalogue(root);
+  let release; let fetches = 0;
+  bridge.viaInventory = () => { fetches += 1; return new Promise((resolve) => { release = resolve; }); };
+  bridge.catalogues.get(root).at -= CATALOGUE_REUSE_MS;
+  const started = Date.now();
+  const answer = await bridge.catalogue(root);
+  assert.ok(Date.now() - started < 500, 'the last list does not wait for the renewal');
+  assert.deepEqual(answer.models, first.models);
+  assert.equal(fetches, 1);
+  await bridge.catalogue(root);
+  assert.equal(fetches, 1, 'a renewal on its way is shared, not started again');
+  release({ models: [], commands: [], model: { provider: 'p', id: 'renewed' } });
+  await delay(20);
+  assert.equal((await bridge.catalogue(root)).model?.id, 'renewed');
+  assert.equal(fetches, 1);
 });
 
 test('catalogue reuses a recent list until a fresh request drops every cached folder', async (t) => {

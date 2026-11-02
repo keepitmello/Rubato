@@ -90,6 +90,26 @@ test("immutable archive rejects overwritten originals instead of corrupting hist
   const changed=structuredClone(f.branch()); changed.at(-1).message.content="changed";
   assert.throws(()=>f.store.sync(changed));
 });
+test("entries already archived are not copied and compared again on the next sync", (t) => {
+  // 회귀: sync 가 새 항목마다 가지 전체를 JSON 으로 다시 만들고 저장본과 대조해, 긴 대화에서는
+  // 도구 호출 하나마다 엔진 스레드가 수 초씩 멈췄다.
+  const f = setup(t); f.addMessage("user", "first"); f.addMessage("assistant", "second");
+  const prepare = f.store.db.prepare.bind(f.store.db);
+  let originalsRead = 0;
+  f.store.db.prepare = (sql) => {
+    const statement = prepare(sql);
+    if (!/SELECT raw FROM items/.test(sql)) return statement;
+    return { get: (...args) => { originalsRead += 1; return statement.get(...args); } };
+  };
+  f.store.sync(f.branch());
+  assert.equal(originalsRead, 2);
+  f.addMessage("user", "third");
+  f.store.sync(f.branch());
+  assert.equal(originalsRead, 3, "only the new entry is compared");
+  assert.equal(f.store.listItems().items.length, 3);
+  const changed = structuredClone(f.branch()); changed.at(-1).message.content = "changed";
+  assert.throws(() => f.store.sync(changed), /변경/);
+});
 test("a full disk surfaces as itself and leaves the archive usable", (t) => {
   const f=setup(t); f.store.sync(f.branch());
   const pages=f.store.db.prepare("PRAGMA page_count").get().page_count;

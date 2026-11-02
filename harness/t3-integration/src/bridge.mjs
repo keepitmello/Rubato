@@ -80,6 +80,12 @@ function resolveNode() {
 const ensureDescriptor = descriptorPath => ensureProfileEngine({ descriptorPath, nodeBin: resolveNode() });
 /** How long a catalogue waits for an engine that is not connected before the last list stands in. */
 export const CATALOGUE_STALE_MS = 3000;
+/**
+ * How long a folder's catalogue is reused before the engine is asked again. Each answer starts and
+ * stops a whole conversation runtime on the engine's one thread, which every open conversation
+ * waits behind; a key added or removed asks again at once (`fresh`).
+ */
+export const CATALOGUE_REUSE_MS = 5 * 60_000;
 const STALE = Symbol('stale');
 t3BridgeLog('t3-bridge loaded');
 // A restart reopens the app only when the code recorded here has changed (code-fingerprint.mjs).
@@ -543,7 +549,7 @@ export class RubatoPiBridge {
   // Every side chat session, which the inventory leaves out (/rubato/side-chat lists and sweeps them).
   async sideChats() { return (await this.viaInventory((client) => client.list())).filter((entry) => entry.sideChatOf); }
   // `fresh` 는 사용자가 다시 받으라고 한 경우다(키 추가·삭제, Refresh). 그때는 모든 폴더의
-  // 재사용 목록을 버린다. 안 버리면 방금 넣은 키의 모델이 60초 안의 옛 목록에 가려
+  // 재사용 목록을 버린다. 안 버리면 방금 넣은 키의 모델이 재사용 중인 옛 목록에 가려
   // 설정 화면에 "No models listed" 로 굳는다(2026-10-12 NanoGPT).
   /**
    * The model picker's list, slash commands and skills for `cwd`. While the engine cannot answer —
@@ -555,7 +561,8 @@ export class RubatoPiBridge {
   async catalogue(cwd, { fresh = false } = {}) {
     if (fresh) this.catalogues.clear();
     let entry = this.catalogues.get(cwd);
-    if (!entry || Date.now() - entry.at >= 60000) {
+    const expired = Boolean(entry) && Date.now() - entry.at >= CATALOGUE_REUSE_MS;
+    if (!entry || expired) {
       const reachable = Boolean(this.inventoryClient?.client.connected);
       const fetched = (async () => {
         const raw = await this.viaInventory((client) => client.catalogue(cwd));
@@ -573,9 +580,15 @@ export class RubatoPiBridge {
         if (this.catalogues.get(cwd) === entry) this.catalogues.delete(cwd);
         throw error;
       });
-      entry = { at: Date.now(), value: fetched, reachable };
+      // An old list is renewed behind the answer: until the new one comes, whoever asks gets the
+      // last list at once instead of waiting the seconds a runtime takes to start (2026-11-02:
+      // 6.5-10s each).
+      const renewal = expired && this.lastCatalogues.has(cwd);
+      entry = { at: Date.now(), value: fetched, reachable, renewal };
+      if (renewal) fetched.then(() => { entry.renewal = false; }, () => {});
       this.catalogues.set(cwd, entry);
     }
+    if (entry.renewal) return this.lastCatalogues.get(cwd);
     // A cached answer still on its way counts too: whoever asks while the engine is away gets the
     // last list rather than waiting on that same fetch.
     return this.orLastCatalogue(cwd, entry.value, entry.reachable && Boolean(this.inventoryClient?.client.connected));

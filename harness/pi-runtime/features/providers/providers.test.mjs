@@ -815,3 +815,27 @@ test("Cursor summary frames are kept as cursor-summary, not Anthropic compaction
   assert.equal(session.state.currentThinkingBlock, null);
   assert.ok(session.events.some((event) => event.type === "thinking_end"));
 });
+
+test("a burst of provider registrations ends in one refresh, not one each", async (t) => {
+  // 회귀: 확장이 프로바이더를 등록·해제할 때마다 전체 refresh 가 따로 떠서, 대화 하나를 여는 데
+  // 51번이 겹쳐 돌았다(모델 목록 복제·프로바이더마다 인증 확인·Keychain 100번).
+  const session = await startSession(t, {
+    selectedModel: model({ provider: "kiro", id: "claude-opus-5", api: "anthropic-messages", baseUrl: "http://127.0.0.1:9" }),
+    env: environment({ KIRO_API_KEY: "kiro-test-not-real" }),
+  });
+  const runtime = session.modelRuntime;
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  let refreshes = 0;
+  const original = runtime.refresh.bind(runtime);
+  runtime.refresh = (options) => { refreshes += 1; return original(options); };
+  const settle = async () => { for (let i = 0; i < 3; i++) await new Promise((resolve) => setImmediate(resolve)); await runtime.registrationRefreshRun; };
+  const removable = runtime.getRegisteredProviderIds().filter((id) => id !== "kiro");
+  assert.ok(removable.length >= 3);
+  for (const id of removable.slice(0, -1)) runtime.unregisterProvider(id);
+  assert.equal(runtime.getRegisteredProviderIds().includes(removable[0]), false, "the snapshot changes at once");
+  await settle();
+  assert.equal(refreshes, 1);
+  runtime.unregisterProvider(removable.at(-1));
+  await settle();
+  assert.equal(refreshes, 2, "a change after the refresh ran gets its own");
+});

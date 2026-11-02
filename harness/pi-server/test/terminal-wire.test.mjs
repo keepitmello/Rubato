@@ -41,3 +41,10 @@ test('unhandled termination and startup signals close the presentation, not the 
   assert.throws(() => peer.signal('SIGKILL'), /Invalid/);
   terminal.closeStreams(); peer.closeStreams();
 });
+test('output written after the frontend left completes without an error, so a closing session cannot stop the engine', async () => {
+  const terminal = new TerminalProcess({ send: async () => {}, onExit: async () => {} });
+  terminal.stdout.end();
+  await new Promise((resolve, reject) => terminal.stdout.write('late flush', (error) => error ? reject(error) : resolve()));
+  terminal.closeStreams();
+  await new Promise((resolve, reject) => terminal.stderr.write('after destroy', (error) => error ? reject(error) : resolve()));
+});

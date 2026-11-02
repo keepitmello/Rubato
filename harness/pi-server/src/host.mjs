@@ -13,7 +13,36 @@ import { SessionFiles } from './session-files.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { forkSessionFile } from './session-link.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
-import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET } from './wire.mjs';
+import { SLOW_OPEN_MS } from './perf-log.mjs';
+import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET, FRAME_BUDGET } from './wire.mjs';
+
+const sameFields = (left, right) => {
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every((key) => Object.is(left[key], right[key]));
+};
+
+/**
+ * `wire` for the session list, remembering each session's wired row while its listing is the
+ * same. The list is rescanned every two seconds and holds every stored conversation (1,600+ on
+ * 2026-11-02), and wiring all of it each time held the engine's one thread 100-280 ms per scan.
+ * A list larger than one frame is wired whole, as before, so its largest strings give way first.
+ */
+export function directoryWire() {
+  let rows = new Map();
+  return (items) => {
+    const next = new Map();
+    let bytes = 2;
+    const wired = items.map((item) => {
+      const known = rows.get(item.file);
+      const row = known && sameFields(known.item, item) ? known : { item, ...measure(item) };
+      next.set(item.file, row);
+      bytes += row.bytes + 1;
+      return row.value;
+    });
+    rows = next;
+    return bytes > FRAME_BUDGET ? wire(items) : wired;
+  };
+}
 
 const invalid = (message) => new RemoteServiceError('service_invalid_value', message);
 // `get_service_tier` is not a Pi RPC command; it reads the service-tier extension's
@@ -252,7 +281,7 @@ class RuntimeHandle {
 
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
-  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath } = {}) {
+  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, log = () => {} } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   // `sessionIndexPath` keeps parsed session metadata across engine restarts (session-files.mjs).
   const files = new SessionFiles(sessionsDir, { indexPath: sessionIndexPath, onError });
@@ -268,6 +297,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   let refreshing;
   let stopped = false;
   const metrics = { runtimeStarts: 0, lists: 0, totalOpenMs: 0 };
+  const wireDirectory = directoryWire();
   const publish = () => {
     const sessions = records.map(({ file: _file, id, ...item }) => {
       const handle = handles.get(id);
@@ -284,7 +314,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   };
   // `touchedAt` tells a presentation how long a stored session's prompt cache can still live.
   const refresh = () => refreshing ??= (async () => { metrics.lists++;
-    records = wire((await files.list()).map((item) => ({ ...item, touchedAt: files.touchedAt(item.file) ?? null })));
+    records = wireDirectory((await files.list()).map((item) => ({ ...item, touchedAt: files.touchedAt(item.file) ?? null })));
     publish(); return directory.value; })()
     .finally(() => { refreshing = undefined; });
   const catalogue = (cwd) => {
@@ -292,6 +322,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     const existing = probes.get(cwd);
     if (existing) return existing;
     const operation = (async () => {
+      const began = performance.now();
       const root = await mkdtemp(path.join(tmpdir(), 'rubato-pi-catalogue-'));
       let worker;
       try {
@@ -302,7 +333,11 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
           worker.request({ type: 'get_available_models' }), worker.request({ type: 'get_commands' }),
         ]);
         return { models: models.models ?? [], commands: commands.commands ?? [], model: state.model ?? null };
-      } finally { await worker?.stop(); await rm(root, { force: true, recursive: true }); }
+      } finally {
+        await worker?.stop(); await rm(root, { force: true, recursive: true });
+        const ms = performance.now() - began;
+        if (ms >= SLOW_OPEN_MS) log(`catalogue ${cwd} in ${Math.round(ms)}ms`);
+      }
     })().finally(() => probes.delete(cwd));
     probes.set(cwd, operation);
     return operation;
@@ -381,7 +416,9 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       const handle = new RuntimeHandle(metadata, workerFactory(metadata, prepared.get(metadata.id)?.creation), { idleMs, changed: publish, adopt });
       handle.worker.presentationOwner = presentations.get(metadata.id);
       try { await handle.start(); } catch (error) { await handle.close(); throw error; }
-      metrics.runtimeStarts++; metrics.totalOpenMs += performance.now() - began;
+      const openMs = performance.now() - began;
+      metrics.runtimeStarts++; metrics.totalOpenMs += openMs;
+      if (openMs >= SLOW_OPEN_MS) log(`session ${metadata.id} opened in ${Math.round(openMs)}ms`);
       handles.set(handle.metadata.id, handle);
       handle.terminated.then(() => { if (handles.get(handle.metadata.id) === handle) handles.delete(handle.metadata.id); publish(); });
       publish();

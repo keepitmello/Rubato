@@ -100,3 +100,18 @@ test('session control RPCs do not inherit the directory AbortSignal timeout', as
   assert.equal(signals[0], undefined);
   assert.ok(signals[1] instanceof AbortSignal);
 });
+
+test('the session list rewires only the rows whose listing changed, and stays what wire gives', async () => {
+  const { directoryWire } = await import('../src/host.mjs');
+  const wireDirectory = directoryWire();
+  const meta = { tags: ['a'] };
+  const a = { file: '/s/a.jsonl', id: 'a', name: 'bad \uD800 text', meta, touchedAt: 1 };
+  const b = { file: '/s/b.jsonl', id: 'b', name: 'plain', meta, touchedAt: 1 };
+  const first = wireDirectory([a, b]);
+  assert.deepEqual(first, wire([a, b]));
+  const second = wireDirectory([{ ...a }, { ...b, touchedAt: 2 }]);
+  assert.equal(second[0], first[0], 'an unchanged listing keeps its wired row');
+  assert.notEqual(second[1], first[1]);
+  assert.equal(second[1].touchedAt, 2);
+  assert.deepEqual(wireDirectory([{ ...b, touchedAt: 2 }]), wire([{ ...b, touchedAt: 2 }]), 'a removed session leaves the list');
+});

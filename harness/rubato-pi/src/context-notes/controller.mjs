@@ -109,6 +109,15 @@ function identity(message) {
     message?.toolName, message?.content]);
 }
 
+// A stored entry's message does not change once appended, and refresh keys every message of
+// the branch on each new entry: in a long conversation that re-serialised all of it per tool call.
+const entryIdentities = new WeakMap();
+function entryIdentity(entry) {
+  let key = entryIdentities.get(entry);
+  if (key === undefined) { key = identity(entry.message); entryIdentities.set(entry, key); }
+  return key;
+}
+
 function estimateText(message) {
   if (typeof message?.content === "string") return message.content;
   if (!Array.isArray(message?.content)) return "";
@@ -217,7 +226,7 @@ export class ContextNotesController {
       if (entry.type !== "message") continue;
       const ref = { windowId: activeWindow, itemId: entry.id };
       this.referenceById.set(entry.id, ref);
-      const key = identity(entry.message);
+      const key = entryIdentity(entry);
       const matches = this.references.get(key) ?? [];
       matches.push(ref); this.references.set(key, matches);
       if (activeWindow === this.window.windowId) {

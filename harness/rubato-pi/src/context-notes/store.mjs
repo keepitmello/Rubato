@@ -107,6 +107,11 @@ export class ContextNotesStore {
     this.branch = [];
     this.current = undefined;
     this.closed = false;
+    // Branch entries already compared with the archive and stored. A session entry does not
+    // change once appended, so the same object needs neither another JSON copy nor another
+    // comparison. sync runs on every new entry; without this each tool call in a 140MB
+    // conversation copied and compared all 140MB again on the engine's shared thread.
+    this.archivedEntries = new WeakSet();
     if (path !== ":memory:") {
       mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
       if (lstatSync(dirname(path)).isSymbolicLink()) throw new Error("문맥 저장소 디렉터리에 심볼릭 링크를 사용할 수 없어요.");
@@ -184,6 +189,7 @@ export class ContextNotesStore {
     const getItem = this.db.prepare("SELECT raw FROM items WHERE id=?");
     const putActive = this.db.prepare("INSERT INTO active_items VALUES (?, ?)");
     const putNote = this.db.prepare("INSERT OR IGNORE INTO notes VALUES (?, ?, ?, ?, ?, ?, ?)");
+    const archivedNow = [];
     this.transaction(() => {
       this.db.exec("DELETE FROM active_items");
       putWindow.run(window.windowId, window.firstWindowId, window.previousWindowId, window.number);
@@ -211,6 +217,11 @@ export class ContextNotesStore {
         if (entry.type === "message") message = entry.message;
         else if (entry.type === "custom_message") message = { role: "user", content: entry.content };
         if (!message) continue;
+        if (this.archivedEntries.has(entry)) {
+          putActive.run(entry.id, ordinal);
+          activeIds.add(entry.id);
+          continue;
+        }
         const raw = JSON.stringify(entry);
         const existing = getItem.get(entry.id);
         if (existing && existing.raw !== raw) throw new Error(`기록 항목 ${entry.id}의 원문이 변경됐어요. 덮어쓰지 않고 멈췄어요.`);
@@ -219,8 +230,10 @@ export class ContextNotesStore {
           message.toolName ?? null, messageText(message), raw, String(entry.timestamp ?? ""));
         putActive.run(entry.id, ordinal);
         activeIds.add(entry.id);
+        archivedNow.push(entry);
       }
     });
+    for (const entry of archivedNow) this.archivedEntries.add(entry);
     this.branch = branch;
     this.current = current;
     this.noteVersions = notes;

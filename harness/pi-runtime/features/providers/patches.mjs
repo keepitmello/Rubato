@@ -269,7 +269,7 @@ function patchModelRuntimePool(sourceText) {
     completeSimple(model, context, options) {`,
     "runtime-stream-simple-pool",
   );
-  return replaceOnce(
+  next = replaceOnce(
     next,
     `    unregisterProvider(providerId) {
         this.extensionProviders.delete(providerId);
@@ -282,6 +282,44 @@ function patchModelRuntimePool(sourceText) {
         this.defaultBuiltins.delete(providerId);
         this.recomposeProvider(providerId);`,
     "unregister-drop-builtins",
+  );
+  return coalesceRegistrationRefresh(next);
+}
+
+const REGISTRATION_REFRESH = "        void this.refresh({ allowNetwork: false });\n";
+/** How many provider/virtual-model registration paths 1.0.1 ends with a refresh of its own. */
+export const REGISTRATION_REFRESH_SITES = 5;
+
+// Every provider an extension registers or removes started a whole refresh of its own: every
+// stored model list read and cloned, then every provider's auth checked. One conversation's
+// start ran 51 of them side by side (152 snapshot rebuilds, 100 Keychain processes), 4-7 s on
+// the engine's one thread that every open conversation shares (2026-11-02). The snapshot is
+// still rebuilt at once on each change; the refresh after a burst of them runs once.
+function coalesceRegistrationRefresh(sourceText) {
+  const sites = sourceText.split(REGISTRATION_REFRESH).length - 1;
+  if (sites !== REGISTRATION_REFRESH_SITES) {
+    throw new Error(`[providers:registration-refresh] expected ${REGISTRATION_REFRESH_SITES} stock refresh sites, found ${sites}`);
+  }
+  const next = sourceText.split(REGISTRATION_REFRESH).join("        this.queueRegistrationRefresh();\n");
+  return replaceOnce(
+    next,
+    "    registerNativeProvider(provider) {\n",
+    `    /** One refresh after the registrations of this turn of the event loop, at most one waiting. */
+    queueRegistrationRefresh() {
+        if (this.registrationRefreshQueued)
+            return;
+        this.registrationRefreshQueued = true;
+        this.registrationRefreshRun = (this.registrationRefreshRun ?? Promise.resolve())
+            .then(() => new Promise((resolve) => setImmediate(resolve)))
+            .then(() => {
+            this.registrationRefreshQueued = false;
+            return this.refresh({ allowNetwork: false });
+        })
+            .catch(() => undefined);
+    }
+    registerNativeProvider(provider) {
+`,
+    "registration-refresh-queue",
   );
 }
 

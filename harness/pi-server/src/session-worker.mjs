@@ -21,6 +21,20 @@ const trimHistoryImages = (value) => {
 /** One frame: what this boundary and the presentation transport carry (host.mjs maxFrameLength). */
 const FRAME_LIMIT = 32 * 1024 * 1024;
 
+/**
+ * A streaming update carries the reply written so far twice: as `message` and again as
+ * `assistantMessageEvent.partial`. Every update is copied, measured, published and encoded
+ * on the engine's one thread, so a long reply cost every open conversation twice its length
+ * per token. Presentations read `message` and the update's kind; the copy stays in-process,
+ * where extensions still see it.
+ */
+export const withoutDuplicatePartial = (value) => {
+  const update = value?.type === 'message_update' ? value.assistantMessageEvent : undefined;
+  if (!update || typeof update !== 'object' || !('partial' in update)) return value;
+  const { partial: _partial, ...rest } = update;
+  return { ...value, assistantMessageEvent: rest };
+};
+
 // get_entries lists every entry the session file holds: every branch, every tool output and
 // image. A 222MB session answered with 222MB, the frame limit stopped the session, and T3's
 // Pi adapter asks for that listing whenever it binds a thread, so every turn on it died
@@ -97,7 +111,7 @@ export class SessionWorker extends EventEmitter {
     const pendingCall = value?.type === 'response' ? this.pending.get(value.id) : undefined;
     let record;
     try {
-      const answer = !pendingCall || !value.success ? value
+      const answer = !pendingCall || !value.success ? withoutDuplicatePartial(value)
         : pendingCall.type === 'get_messages' ? trimHistoryImages(value)
         : pendingCall.type === 'get_entries' ? outlineEntries(value) : value;
       const encoded = JSON.stringify(answer);

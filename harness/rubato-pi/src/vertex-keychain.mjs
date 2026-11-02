@@ -9,7 +9,7 @@
 //     pi-runtime providers 기능의 google-vertex 패치가 연다.
 //   - 그 밖의 문자열: Vertex express 모드 API 키.
 import { execFile } from "node:child_process";
-import { isAbortError, readKeychainSecret } from "./keychain-secret.mjs";
+import { forgetKeychainSecrets, isAbortError, readKeychainSecret, readKeychainSecretShared } from "./keychain-secret.mjs";
 
 export const VERTEX_PROVIDER_ID = "google-vertex";
 export const VERTEX_KEYCHAIN_SERVICE = "vertex";
@@ -68,12 +68,8 @@ export function vertexAuthFromSecret(raw, { location } = {}) {
 }
 
 export function readVertexKeychainSecret({ spawnImpl, signal, account } = {}) {
-  return readKeychainSecret({
-    service: VERTEX_KEYCHAIN_SERVICE,
-    ...(account ? { account } : {}),
-    signal,
-    ...(spawnImpl ? { spawnImpl } : {}),
-  });
+  const request = { service: VERTEX_KEYCHAIN_SERVICE, ...(account ? { account } : {}), signal };
+  return spawnImpl ? readKeychainSecret({ ...request, spawnImpl }) : readKeychainSecretShared(request);
 }
 
 const VERTEX_KEYCHAIN_WRITE_ACCOUNT = "rubato";
@@ -95,7 +91,9 @@ export async function storeVertexKeychainSecret(raw, { execFileImpl, account = V
     throw new Error("서비스 계정 JSON(\"type\": \"service_account\") 이나 Vertex express API 키를 붙여넣어 주세요.");
   }
   await deleteVertexKeychainSecret({ execFileImpl });
-  if (!(await runSecurity(["add-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE, "-a", account, "-w", value], execFileImpl))) {
+  const stored = await runSecurity(["add-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE, "-a", account, "-w", value], execFileImpl);
+  forgetKeychainSecrets();
+  if (!stored) {
     throw new Error("Keychain 에 vertex 항목을 저장하지 못했습니다.");
   }
 }
@@ -104,6 +102,7 @@ export async function storeVertexKeychainSecret(raw, { execFileImpl, account = V
 export async function deleteVertexKeychainSecret({ execFileImpl } = {}) {
   let deleted = 0;
   while (deleted < 8 && (await runSecurity(["delete-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE], execFileImpl))) deleted += 1;
+  forgetKeychainSecrets();
   return deleted;
 }
 
