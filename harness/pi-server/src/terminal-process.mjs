@@ -22,6 +22,15 @@ export class TerminalProcess extends EventEmitter {
       writer.on('error', () => {});
       const write = writer.write.bind(writer);
       writer.write = (...args) => {
+        // Once the frontend is gone the stream is ended or destroyed, and Pi's shutdown still
+        // flushes what it buffered. That write failed into Pi's flush, out of the rpc shutdown
+        // and up as an uncaught error that stopped the engine and every conversation in it
+        // (2026-11-02). Nobody is left to read it, so it is dropped as written.
+        if (writer.writableEnded || writer.destroyed) {
+          const done = args.findLast((arg) => typeof arg === 'function');
+          if (done) queueMicrotask(() => done(null));
+          return false;
+        }
         if (writer.writableLength > 8 * 1024 * 1024) { void this.exit(1).catch(() => {}); return false; }
         return write(...args);
       };
