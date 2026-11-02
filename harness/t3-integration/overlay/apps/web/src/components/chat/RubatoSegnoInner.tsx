@@ -1,7 +1,7 @@
 // What the companion did between the room's bubbles (user f8828a9f): one quiet line that opens in
-// place. The line under a reply holds the work behind it; a line of its own holds work that led to
-// no reply (a heartbeat, a greeting it kept to itself); the line under the writing dots is what it
-// does right now. The room stays a chat log of the person's messages and the companion's replies:
+// place, always at the room's left edge (user f7c42421). The line under a reply holds the work behind
+// it; a line of its own holds work that led to no reply (a heartbeat, a greeting it kept to itself);
+// the line under the writing dots is what it does right now. The room stays a chat log of the person's messages and the companion's replies:
 // these pieces are read from the conversation's session file when the room asks (bridge
 // companion/inner.mjs), never written into the thread, so nothing here reaches the phone.
 import type { EnvironmentId } from "@t3tools/contracts";
@@ -17,7 +17,7 @@ const LIVE_POLL_MS = 2_500;
 const WAKE_LABELS: Readonly<Record<string, string>> = {
   heartbeat: "Heartbeat",
   greeting: "Greeting",
-  wake: "Woke up",
+  wake: "Heartbeat",
   recall: "Recalling",
   sleep: "Going to sleep",
   inbox: "Work room",
@@ -76,7 +76,7 @@ function Piece({ item, locale }: { item: SegnoInnerItem; locale: string | undefi
       return (
         <details data-rubato-segno-wake="">
           <summary>
-            {WAKE_LABELS[item.what] ?? "Woke up"} <span>{clock(item.at, locale)}</span>
+            {WAKE_LABELS[item.what] ?? "Heartbeat"} <span>{clock(item.at, locale)}</span>
           </summary>
           {item.text ? <p className="whitespace-pre-wrap break-words">{item.text}</p> : null}
         </details>
@@ -165,19 +165,15 @@ export function RubatoSegnoSpanLine(props: {
   return (
     <div data-rubato-segno-span="" data-placement={place.placement} data-open={open ? "" : undefined}>
       <button type="button" data-rubato-segno-span-line="" aria-expanded={open} onClick={() => setOpen(!open)}>
-        {place.placement === "quiet" ? <span data-rubato-segno-rule="" aria-hidden="true" /> : null}
         <span data-rubato-segno-chevron="" aria-hidden="true" />
         {live ? <span data-rubato-segno-live-dot="" aria-hidden="true" /> : null}
         {live ? <span data-part="">Working now</span> : null}
-        {/* A line of its own leads with how long the companion was at it; under a reply, what it did comes first. */}
-        {duration && place.placement === "quiet" ? <span data-part="">{duration}</span> : null}
         {counts.map((word) => (
           <span key={word} data-part="">
             {word}
           </span>
         ))}
-        {duration && place.placement === "attached" ? <span data-part="">{duration}</span> : null}
-        {place.placement === "quiet" ? <span data-rubato-segno-rule="" aria-hidden="true" /> : null}
+        {duration ? <span data-part="">{duration}</span> : null}
       </button>
       {open ? (
         items === null ? (

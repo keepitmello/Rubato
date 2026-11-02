@@ -259,7 +259,8 @@ export function spanCounts(summary: {
 }): string[] {
   const words: string[] = [];
   const thoughts = summary.thinking + summary.text;
-  if (summary.wakes > 0) words.push(summary.wakes === 1 ? "1 wake" : `${summary.wakes} wakes`);
+  // Every wake reads as a heartbeat: the keeper's scheduled nudge is what wakes it (user f7c42421).
+  if (summary.wakes > 0) words.push(summary.wakes === 1 ? "1 heartbeat" : `${summary.wakes} heartbeats`);
   if (summary.messages > 0) words.push(summary.messages === 1 ? "1 message" : `${summary.messages} messages`);
   if (thoughts > 0) words.push(thoughts === 1 ? "1 thought" : `${thoughts} thoughts`);
   if (summary.tools > 0) words.push(summary.tools === 1 ? "1 tool" : `${summary.tools} tools`);

@@ -173,7 +173,7 @@ describe("the work between bubbles (user f8828a9f)", () => {
   });
 
   it("names the counts one phrase each, and the time in the room's language", () => {
-    expect(spanCounts({ thinking: 1, text: 1, tools: 1, wakes: 2, messages: 0 })).toEqual(["2 wakes", "2 thoughts", "1 tool"]);
+    expect(spanCounts({ thinking: 1, text: 1, tools: 1, wakes: 2, messages: 0 })).toEqual(["2 heartbeats", "2 thoughts", "1 tool"]);
     expect(spanCounts({ thinking: 0, text: 0, tools: 0, wakes: 0, messages: 1 })).toEqual(["1 message"]);
     expect(spanDuration(41_000, "en-US")).toBe("41s");
     expect(spanDuration(200, "en-US")).toBe("1s");

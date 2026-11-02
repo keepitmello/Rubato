@@ -1,12 +1,12 @@
 {
  "exact": {
   "Working now": "지금 하는 중",
-  "1 wake": "깨어남 1",
+  "1 heartbeat": "하트비트 1",
+  "1 new message": "새 메시지 1개",
   "1 message": "메시지 1",
   "1 thought": "생각 1",
   "1 tool": "도구 1",
   "Greeting": "안부",
-  "Woke up": "깨어남",
   "Recalling": "떠올리기",
   "Going to sleep": "잠들기",
   "Work room": "일터 방",
@@ -7983,8 +7983,12 @@
    "{0} 저장했습니다. 이제부터 에이전트 검색에 반영됩니다."
   ],
   [
-   "{0} wakes",
-   "깨어남 {0}"
+   "{0} heartbeats",
+   "하트비트 {0}"
+  ],
+  [
+   "{0} new messages",
+   "새 메시지 {0}개"
   ],
   [
    "{0} messages",

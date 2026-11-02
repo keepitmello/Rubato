@@ -103,6 +103,12 @@ export const companionEdits = {
     ['                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n',
       '                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n              )}\n',
       'replace'],
+    // PageUp and PageDown in the composer move the room, which has no list of its own (user f7c42421).
+    ['      getContainer: () => legendListRef.current?.getScrollableNode() ?? null,\n',
+      '      getContainer: () =>\n'
+        + '        legendListRef.current?.getScrollableNode() ??\n'
+        + '        document.querySelector<HTMLElement>("[data-rubato-segno-scroller]"),\n',
+      'replace'],
     // The room floats its own "Scroll to end", from its own scroll (RubatoSegnoChat.tsx).
     ['              {showScrollToBottom && !isThreadFindActive && (\n',
       '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',

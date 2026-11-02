@@ -14,7 +14,10 @@
 //
 // The room has what an ordinary thread has for moving through a long conversation: the timeline at
 // its left edge, one mark per turn with the person's words and the answer on hover (T3's own
-// TimelineMinimap), and "Scroll to end" over the composer once the reader has left the end.
+// TimelineMinimap), and "Scroll to end" over the composer once the reader has left the end; it counts
+// the companion's messages that arrive meanwhile. Page keys move the room from the composer or from
+// anywhere outside a field, a bubble shows its time on hover, and either side's bubble has a menu
+// with Copy (user f7c42421).
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -128,7 +131,7 @@ function Images({ images, environmentId }: { images: ReadonlyArray<ChatImageAtta
 /** How long a finger rests on a bubble before its menu opens. */
 const LONG_PRESS_MS = 500;
 
-/** The person's bubble's menu: copy, and rewind the conversation to just before this message. */
+/** A bubble's menu: copy, and on the person's bubble rewind the conversation to just before it. */
 function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() => void) | undefined; onClose: () => void }) {
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -176,10 +179,31 @@ function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() =
   );
 }
 
+/** The hover time beside a bubble: the clock, with the full date on a longer hover. */
+function BubbleTime({ at, locale }: { at: number; locale: string | undefined }) {
+  const date = new Date(at);
+  return (
+    <time
+      data-rubato-segno-at=""
+      dateTime={date.toISOString()}
+      title={new Intl.DateTimeFormat(locale, { dateStyle: "full", timeStyle: "short" }).format(date)}
+    >
+      {new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(date)}
+    </time>
+  );
+}
+
+/** Text selected inside this element: the browser's own menu copies it, so ours stays away. */
+function selectsWithin(element: Element): boolean {
+  const selection = window.getSelection();
+  return selection !== null && !selection.isCollapsed && selection.toString().trim() !== "" && element.contains(selection.anchorNode);
+}
+
 function Bubble({
   item,
   enter,
   mark,
+  locale,
   cwd,
   environmentId,
   onRewind,
@@ -188,6 +212,7 @@ function Bubble({
   enter: boolean;
   /** The bubble starts a turn: the timeline at the left edge has a mark for it. */
   mark: boolean;
+  locale: string | undefined;
   cwd: string | undefined;
   environmentId: EnvironmentId | undefined;
   /** The person's bubble only: rewinds the conversation to just before it. */
@@ -195,7 +220,6 @@ function Bubble({
 }) {
   const [menu, setMenu] = useState(false);
   const press = useRef<number | undefined>(undefined);
-  const mine = item.side === "me";
   const endPress = () => {
     if (press.current !== undefined) window.clearTimeout(press.current);
     press.current = undefined;
@@ -214,22 +238,19 @@ function Bubble({
       <div
         data-rubato-segno-bubble=""
         data-thread-find-text=""
-        {...(mine
-          ? {
-              onContextMenu: (event: ReactMouseEvent) => {
-                event.preventDefault();
-                setMenu(true);
-              },
-              onPointerDown: (event: ReactPointerEvent) => {
-                if (event.pointerType !== "touch") return;
-                endPress();
-                press.current = window.setTimeout(() => setMenu(true), LONG_PRESS_MS);
-              },
-              onPointerUp: endPress,
-              onPointerMove: endPress,
-              onPointerCancel: endPress,
-            }
-          : {})}
+        onContextMenu={(event: ReactMouseEvent) => {
+          if (selectsWithin(event.currentTarget)) return;
+          event.preventDefault();
+          setMenu(true);
+        }}
+        onPointerDown={(event: ReactPointerEvent) => {
+          if (event.pointerType !== "touch") return;
+          endPress();
+          press.current = window.setTimeout(() => setMenu(true), LONG_PRESS_MS);
+        }}
+        onPointerUp={endPress}
+        onPointerMove={endPress}
+        onPointerCancel={endPress}
       >
         {item.images.length > 0 && environmentId ? <Images images={item.images} environmentId={environmentId} /> : null}
         {item.side === "segno" ? (
@@ -246,6 +267,7 @@ function Bubble({
         ) : null}
         {item.groupEnd ? <Tail /> : null}
       </div>
+      <BubbleTime at={item.at} locale={locale} />
       {menu ? <BubbleMenu text={item.text} onRewind={onRewind} onClose={closeMenu} /> : null}
     </div>
   );
@@ -335,6 +357,8 @@ export function RubatoSegnoChat(props: {
   // Bubbles already there when the room's history first arrives stay still; later ones spring in.
   const seen = useRef<{ ids: Set<string>; latest: number } | null>(null);
   const animated = useRef(new Set<string>());
+  // Bubbles that arrived since the last render, read once by the effect that follows them.
+  const fresh = useRef<string[]>([]);
   useMemo(() => {
     const bubbles = items.filter((item) => item.kind === "bubble");
     if (seen.current === null) {
@@ -342,7 +366,10 @@ export function RubatoSegnoChat(props: {
         seen.current = { ids: new Set(bubbles.map((item) => item.id)), latest: Math.max(...bubbles.map((item) => item.at)) };
       return;
     }
-    for (const id of arrivals(bubbles, seen.current)) animated.current.add(id);
+    for (const id of arrivals(bubbles, seen.current)) {
+      animated.current.add(id);
+      fresh.current.push(id);
+    }
   }, [items]);
 
   const marks = useMemo(() => segnoTurnMarks(items), [items]);
@@ -355,6 +382,8 @@ export function RubatoSegnoChat(props: {
   const glideUntil = useRef(0);
   const pillTimer = useRef<number | undefined>(undefined);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
+  // The companion's messages that arrived while the reader was away from the end.
+  const [unread, setUnread] = useState(0);
   const [stripMap] = useState(() => new Map<string, HTMLSpanElement>());
   const [currentMark, setCurrentMark] = useState<number | null>(null);
   const [gutter, setGutter] = useState({ persistent: false, hitStripWidth: 0 });
@@ -426,6 +455,7 @@ export function RubatoSegnoChat(props: {
       window.clearTimeout(pillTimer.current);
       pillTimer.current = undefined;
       setAwayFromEnd(false);
+      setUnread(0);
     } else if (pillTimer.current === undefined) {
       pillTimer.current = window.setTimeout(() => {
         pillTimer.current = undefined;
@@ -454,6 +484,63 @@ export function RubatoSegnoChat(props: {
     settlePill();
     element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
   }, [settlePill]);
+  // What just arrived: the person's own message brings the room to the end, as sending does in any
+  // messenger; the companion's, while the reader is up the conversation, counts on the pill.
+  useEffect(() => {
+    const arrived = fresh.current;
+    fresh.current = [];
+    if (arrived.length === 0) return;
+    const sides = new Map(items.flatMap((item) => (item.kind === "bubble" ? [[item.id, item.side] as const] : [])));
+    if (arrived.some((id) => sides.get(id) === "me")) glideToEnd();
+    else if (!atEnd.current) setUnread((count) => count + arrived.filter((id) => sides.get(id) === "segno").length);
+  }, [items, glideToEnd]);
+  // Page keys move the room when no field has them: PageUp/PageDown, the arrows, Home and End.
+  const bottomInset = props.bottomInset;
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const element = scroller.current;
+      if (!element || event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      const free =
+        target === document.body ||
+        target === document.documentElement ||
+        (target instanceof Element &&
+          element.contains(target) &&
+          target.closest("input, textarea, select, button, summary, a, [contenteditable]") === null);
+      if (!free || document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
+      const page = Math.max(40, element.clientHeight - bottomInset - 80);
+      const by = (delta: number, behavior: ScrollBehavior) => {
+        glideUntil.current = 0;
+        element.scrollBy({ top: delta, behavior });
+      };
+      switch (event.key) {
+        case "PageUp":
+          by(-page, "smooth");
+          break;
+        case "PageDown":
+          by(page, "smooth");
+          break;
+        case "ArrowUp":
+          by(-40, "auto");
+          break;
+        case "ArrowDown":
+          by(40, "auto");
+          break;
+        case "Home":
+          glideUntil.current = 0;
+          element.scrollTo({ top: 0, behavior: "smooth" });
+          break;
+        case "End":
+          glideToEnd();
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [bottomInset, glideToEnd]);
   const jumpToMark = useCallback((id: string) => {
     const element = scroller.current;
     const row = element?.querySelector<HTMLElement>(`[data-rubato-segno-mark="${CSS.escape(id)}"]`);
@@ -533,6 +620,7 @@ export function RubatoSegnoChat(props: {
               item={item}
               enter={animated.current.has(item.id)}
               mark={markIds.has(item.id)}
+              locale={locale}
               cwd={props.cwd}
               environmentId={props.environmentId}
               onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
@@ -566,7 +654,7 @@ export function RubatoSegnoChat(props: {
           variant="glass"
         >
           <ChevronDownIcon className="size-3.5" />
-          Scroll to end
+          {unread === 0 ? "Scroll to end" : unread === 1 ? "1 new message" : `${unread} new messages`}
         </Button>
       </div>
     ) : null}

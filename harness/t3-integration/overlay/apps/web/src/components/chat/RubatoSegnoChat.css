@@ -47,6 +47,27 @@
 [data-rubato-segno-row][data-side="segno"] {
   justify-content: flex-start;
 }
+/* The time beside a bubble, on hover: outside the bubble, at its foot. */
+[data-rubato-segno-at] {
+  align-self: flex-end;
+  flex: none;
+  padding-inline: 0.45rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+[data-side="me"] > [data-rubato-segno-at] {
+  order: -1;
+}
+[data-rubato-segno-row]:hover > [data-rubato-segno-at] {
+  opacity: 1;
+}
 
 /* ---- Bubbles ---- */
 [data-rubato-segno-bubble] {
@@ -232,8 +253,8 @@
 }
 
 /* ---- What the companion did between bubbles (RubatoSegnoInner.tsx, user f8828a9f) ----
-   One quiet line that opens in place: under a reply on the left, on its own in the middle when the
-   work led to no reply, and under the writing dots while the companion works. */
+   One quiet line that opens in place, always at the left edge (user f7c42421): under a reply, on its
+   own when the work led to no reply, and under the writing dots while the companion works. */
 [data-rubato-segno-span] {
   --rubato-inner-dim: color-mix(in oklab, var(--muted-foreground) 82%, transparent);
   --rubato-inner-rule: color-mix(in oklab, var(--border) 90%, transparent);
@@ -243,7 +264,6 @@
   margin-top: 0.55rem;
 }
 [data-rubato-segno-span][data-placement="quiet"] {
-  align-items: center;
   margin-block: 0.8rem 0.2rem;
 }
 [data-rubato-segno-span-line] {
@@ -289,11 +309,6 @@
 [data-rubato-segno-span][data-open] [data-rubato-segno-chevron] {
   transform: rotate(45deg) translate(-1px, -1px);
 }
-[data-rubato-segno-rule] {
-  width: 2.6rem;
-  height: 1px;
-  background: var(--rubato-inner-rule);
-}
 [data-rubato-segno-live-dot] {
   width: 0.4rem;
   height: 0.4rem;
@@ -315,9 +330,6 @@
   line-height: 1.5;
   color: color-mix(in oklab, var(--foreground) 80%, transparent);
   max-width: 44rem;
-}
-[data-rubato-segno-span][data-placement="quiet"] > [data-rubato-segno-inner-panel] {
-  text-align: start;
 }
 [data-rubato-segno-inner-panel][data-loading] {
   color: var(--rubato-inner-dim);
@@ -447,9 +459,13 @@
   letter-spacing: 0.02em;
 }
 
-/* ---- The person's bubble's menu: copy, rewind from here ---- */
-[data-rubato-segno-row][data-side="me"] {
+/* ---- A bubble's menu: copy, and on the person's bubble rewind from here ---- */
+[data-rubato-segno-row] {
   position: relative;
+}
+[data-rubato-segno-row][data-side="segno"] > [data-rubato-segno-menu] {
+  right: auto;
+  left: 14px;
 }
 [data-rubato-segno-row][data-menu-open] > [data-rubato-segno-bubble] {
   filter: brightness(1.08);

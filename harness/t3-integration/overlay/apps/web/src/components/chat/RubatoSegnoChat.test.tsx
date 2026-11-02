@@ -83,3 +83,81 @@ it("draws the timeline with one mark per turn, and shows Scroll to end only away
   scrollTo(scroller, 1500);
   expect(host.querySelector("button[aria-label='Scroll to end']")).toBeNull();
 });
+
+const render = (list: TimelineEntry[]) =>
+  act(() => root.render(<RubatoSegnoChat entries={list} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
+const pillText = () => host.querySelector("button[aria-label='Scroll to end']")?.textContent ?? null;
+
+it("counts the companion's messages that arrive while the reader is up the conversation", () => {
+  render(entries);
+  const scroller = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+  scrollTo(scroller, 200);
+  expect(pillText()).toBe("Scroll to end");
+
+  render([...entries, entry("e", "assistant", 4, "하나 더"), entry("f", "assistant", 5, "또 하나")]);
+  expect(pillText()).toBe("2 new messages");
+
+  scrollTo(scroller, 1500);
+  expect(pillText()).toBeNull();
+  scrollTo(scroller, 200);
+  expect(pillText()).toBe("Scroll to end");
+});
+
+it("brings the room to the end when the person's own message arrives", () => {
+  render(entries);
+  const scroller = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+  scrollTo(scroller, 200);
+  scroller.scrollTo = vi.fn();
+  render([...entries, entry("g", "user", 6, "보냈어")]);
+  expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 2000, behavior: "smooth" });
+  expect(pillText()).toBeNull();
+});
+
+it("moves the room with page keys when no field has them, and leaves the composer's keys alone", () => {
+  render(entries);
+  const scroller = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+  scrollTo(scroller, 1500);
+  scroller.scrollBy = vi.fn();
+  scroller.scrollTo = vi.fn();
+  act(() => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "PageUp", bubbles: true, cancelable: true }));
+  });
+  expect(scroller.scrollBy).toHaveBeenCalledWith({ top: -340, behavior: "smooth" });
+  act(() => {
+    document.body.dispatchEvent(new KeyboardEvent("keydown", { key: "Home", bubbles: true, cancelable: true }));
+  });
+  expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+
+  const field = document.createElement("textarea");
+  document.body.append(field);
+  act(() => {
+    field.dispatchEvent(new KeyboardEvent("keydown", { key: "PageDown", bubbles: true, cancelable: true }));
+  });
+  expect(scroller.scrollBy).toHaveBeenCalledTimes(1);
+  field.remove();
+});
+
+it("gives both sides' bubbles a menu with Copy, and rewind only to the person's; every bubble carries its time", () => {
+  act(() =>
+    root.render(
+      <RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" onRewind={() => {}} />,
+    ),
+  );
+  const bubble = (id: string) =>
+    [...host.querySelectorAll("[data-rubato-segno-row]")].find((row) => row.textContent?.includes(id))!.querySelector("[data-rubato-segno-bubble]")!;
+  act(() => {
+    bubble("고쳤어").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  });
+  let menu = host.querySelector("[data-rubato-segno-menu]")!;
+  expect([...menu.querySelectorAll("button")].map((button) => button.textContent)).toEqual(["Copy"]);
+  act(() => {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+  });
+  act(() => {
+    bubble("폴라리스 빼고").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  });
+  menu = host.querySelector("[data-rubato-segno-menu]")!;
+  expect(menu.querySelector("[data-rubato-segno-rewind]")).not.toBeNull();
+  expect(host.querySelectorAll("time[data-rubato-segno-at]")).toHaveLength(4);
+});
