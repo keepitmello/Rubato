@@ -17,6 +17,9 @@ export interface DeltaRead {
 	readonly droppedChars: number;
 }
 
+/** setTimeout's largest delay; a longer one would fire at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 /**
  * A live terminal session: a pi-pty {@link TerminalSession} plus an xterm screen model
  * and a bounded decoded-output buffer with a per-consumer read cursor. Reads are pure
@@ -42,6 +45,8 @@ export class TerminalRuntimeSession {
 	private consumed = 0;
 	private readonly outputListeners = new Set<(chunk: string) => void>();
 	private unsubscribeData: (() => void) | null = null;
+	/** The kill deadline fired before the command ended on its own. */
+	private deadlineReached = false;
 
 	constructor(command: string, options: TerminalRuntimeOptions) {
 		this.command = command;
@@ -51,7 +56,15 @@ export class TerminalRuntimeSession {
 			scrollback: options.scrollback ?? DEFAULT_SCROLLBACK,
 		});
 		ensureVendoredSenpiPtyPrebuilds();
-		this.session = new TerminalSession(options);
+		// The kill deadline is kept here and never handed to the PTY library. Its native deadline
+		// is a thread that sleeps the whole deadline even when the command ends at once, so every
+		// command run with a timeout or watched by a monitor left one behind for up to an hour
+		// (about 400 in the engine on 2026-11-02). This timer ends with the command.
+		const { timeoutMs, ...sessionOptions } = options;
+		if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
+			throw new Error("Invalid timeoutMs: must be a finite positive number");
+		}
+		this.session = new TerminalSession(sessionOptions);
 		this.unsubscribeData = this.session.onData((chunk) => {
 			const text = this.ingest(chunk);
 			if (text.length === 0) return;
@@ -64,6 +77,18 @@ export class TerminalRuntimeSession {
 			}
 		});
 		this.session.start();
+		if (timeoutMs !== undefined) this.armDeadline(timeoutMs);
+	}
+
+	private armDeadline(timeoutMs: number): void {
+		const timer = setTimeout(() => {
+			if (this.session.exited) return;
+			this.deadlineReached = true;
+			// What the library did at its deadline: SIGKILL to the command's process group.
+			this.session.kill("SIGKILL");
+		}, Math.min(timeoutMs, MAX_TIMER_MS));
+		timer.unref?.();
+		this.session.onExit(() => clearTimeout(timer));
 	}
 
 	get backend(): string | null {
@@ -75,7 +100,8 @@ export class TerminalRuntimeSession {
 	}
 
 	get exitResult(): TerminalSessionExit | null {
-		return this.session.exitResult;
+		const exit = this.session.exitResult;
+		return exit && this.deadlineReached ? { ...exit, cancelled: true, timedOut: true } : exit;
 	}
 
 	/** A sleep-wait one of whose background sessions has already exited and reported. */
