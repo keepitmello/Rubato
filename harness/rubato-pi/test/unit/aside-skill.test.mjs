@@ -13,3 +13,15 @@ test("bundled aside skill is account policy, not the Aside CLI stub", () => {
   assert.doesNotMatch(skill, /This file is only an entry point/);
   assert.doesNotMatch(skill, /MUST run `aside guide`/);
 });
+
+test("aside tasks are handed off in the background and collected on completion", () => {
+  const skill = readFileSync(bundled, "utf8");
+  assert.match(skill, /run_in_background: true/);
+  assert.match(skill, /Do not poll in between/);
+  assert.doesNotMatch(skill, /status update around every 60 seconds/);
+});
+
+test("aside handles logins and security checks itself", () => {
+  const skill = readFileSync(bundled, "utf8");
+  assert.match(skill, /clears security checks and CAPTCHAs itself/);
+});

@@ -38,8 +38,15 @@ Use `-m <provider/model>` only when the user names a different model that exists
 on this account.
 Never pass `openai/gpt-5.6-sol` or `cursor/gpt-5.6-sol`.
 
-After running the task, watch the run and give the user a status update around every 60 seconds.
-If the process exits or the session is `interrupted`/`terminated`, recover the
+### Hand it off, collect the result
+
+Start each task as its own background shell session (Bash `run_in_background: true`), one task per session; independent tasks can run side by side. Do not background it inside a foreground command (`&`, `nohup`, a subshell): the CLI dies with that terminal.
+
+Then do other work or end the turn. The harness reports when the session exits, and the final answer is in its output (`bash_output`). Do not poll in between: no `sleep` loops, no `aside session list` checks, no output-size watchers. Such a background session also keeps a subagent's run open until it exits and wakes it with the result; a process hidden with `&` or a persistent monitor does not, and the subagent returns before Aside has answered.
+
+Aside logs in when a site is logged out and clears security checks and CAPTCHAs itself. Do not write "do not log in" or "do not enter credentials" into the task, and do not fall back to public pages because a login wall appeared. Restrict only the write actions the user did not ask for (submitting, messaging, posting, paying).
+
+If the process exits without a final answer or the session is `interrupted`/`terminated`, recover the
 same session. Do not start a second session.
 
 ```bash
