@@ -205,3 +205,18 @@ test('an answer too large for a frame fails only its request, an event that larg
   f.worker.output({ type: 'fixture_event', text: 'x'.repeat(33 * 1024 * 1024) });
   assert.match((await f.worker.terminated).message, /Pi RPC frame exceeds limit/);
 });
+
+test('a streaming update leaves the engine with the reply once, not twice', async () => {
+  const a = fixture('a');
+  await a.worker.start();
+  const events = [];
+  a.worker.on('event', (event) => events.push(event));
+  const message = { role: 'assistant', content: [{ type: 'text', text: 'x'.repeat(4096) }] };
+  a.worker.output({ type: 'message_update', message,
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'x', partial: message } });
+  a.worker.output({ type: 'message_end', message });
+  assert.deepEqual(events[0], { type: 'message_update', message,
+    assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: 'x' } });
+  assert.deepEqual(events[1], { type: 'message_end', message });
+  await a.worker.stop();
+});
