@@ -181,6 +181,34 @@ describe("signals", () => {
     expect(resolveThreadSignal(seen, undefined)).toBeNull();
   });
 
+  it("drops a failure once the user opened the thread after it", () => {
+    const failed = { runtime: { status: "failed" }, latestRun: run(ago(HOUR)) };
+    expect(resolveThreadSignal(thread("t", "a", failed), undefined)).toBe("failed");
+    expect(
+      resolveThreadSignal(thread("t", "a", { ...failed, lastVisitedAt: ago(2 * HOUR) }), undefined),
+    ).toBe("failed");
+    expect(
+      resolveThreadSignal(thread("t", "a", { ...failed, lastVisitedAt: ago(0) }), undefined),
+    ).toBeNull();
+    expect(resolveThreadSignal(thread("t", "a", failed), ago(0))).toBeNull();
+  });
+
+  it("keeps a settled or snoozed thread quiet", () => {
+    const failed = { runtime: { status: "failed" }, latestRun: run(ago(HOUR)) };
+    const settled = thread("t", "a", { ...failed, settledOverride: "settled" });
+    expect(resolveThreadSignal(settled, undefined, ago(0))).toBeNull();
+    // Snoozed after the failure; a failure newer than the snooze wakes it instead.
+    const snoozed = thread("t", "a", {
+      runtime: { status: "failed", updatedAt: ago(HOUR) },
+      latestRun: run(ago(HOUR)),
+      snoozedAt: ago(HOUR / 2),
+      snoozedUntil: ago(-HOUR),
+    });
+    expect(resolveThreadSignal(snoozed, undefined, ago(0))).toBeNull();
+    expect(resolveThreadSignal(snoozed, undefined, ago(-2 * HOUR))).toBe("failed");
+    expect(signalByGroup([group("a")], [settled], {}).get("a")).toBeUndefined();
+  });
+
   it("gives each project its strongest thread", () => {
     const signals = signalByGroup(
       [group("a"), group("b")],

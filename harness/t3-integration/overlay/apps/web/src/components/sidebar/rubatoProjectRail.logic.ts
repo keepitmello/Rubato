@@ -266,20 +266,34 @@ export function strongerSignal(
 /**
  * The same reading the sidebar rows use (resolveSidebarThreadStatus and the
  * unseen-completion check): approval and input ask for the user, a failed
- * run is next, then a finished run the user has not opened, then work in
- * progress.
+ * run the user has not opened since it failed is next, then a finished run
+ * the user has not opened, then work in progress. A settled or snoozed
+ * thread raises nothing: the user put it away, and its shelf is where they
+ * find it again.
  */
 export function resolveThreadSignal(
   thread: ThreadShell,
   localLastVisitedAt: string | undefined,
+  now: string = new Date().toISOString(),
 ): RubatoSignal | null {
+  if (thread.settledOverride === "settled" || effectiveSnoozed(thread, { now })) return null;
   const status = resolveSidebarThreadStatus(thread);
   if (status === "approval" || status === "input") return "attention";
-  if (status === "failed" || status === "limited") return "failed";
   const lastVisitedAt = resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt);
+  if (status === "failed" || status === "limited") {
+    return failureSeen(thread, lastVisitedAt) ? null : "failed";
+  }
   if (hasUnseenCompletion({ ...thread, lastVisitedAt })) return "done";
   if (status === "working") return "working";
   return null;
+}
+
+/** Whether the user opened the thread after its latest run failed. */
+function failureSeen(thread: ThreadShell, lastVisitedAt: string | undefined): boolean {
+  const visitedMs = timestampMs(lastVisitedAt);
+  if (visitedMs === 0) return false;
+  const failedMs = timestampMs(thread.latestRun?.completedAt ?? thread.latestRun?.requestedAt);
+  return visitedMs >= failedMs;
 }
 
 export function threadKeyOf(thread: Pick<ThreadShell, "environmentId" | "id">): string {
