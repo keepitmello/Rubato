@@ -1,14 +1,15 @@
 // OpenCode Zen 키는 사용자가 Keychain 에 이미 넣어 둔다. `/login` 없이
 // `auth.apiKey.resolve` 가 그걸 읽게 한다. native `OPENCODE_API_KEY` 와 저장된
 // credential 이 먼저다 — 사용자가 명시한 값을 Keychain 이 덮지 않는다.
-import { isAbortError, readKeychainSecret } from "./keychain-secret.mjs";
+import { isAbortError, readKeychainSecret, readKeychainSecretShared } from "./keychain-secret.mjs";
 
 export const OPENCODE_KEYCHAIN_SERVICE = "opencode.ai";
 export const OPENCODE_KEYCHAIN_SOURCE = "opencode.ai Keychain";
 
 /** `security find-generic-password -s opencode.ai -w`. 없거나 못 읽으면 `undefined`. */
 export function readOpenCodeKeychainSecret({ spawnImpl, signal } = {}) {
-  return readKeychainSecret({ service: OPENCODE_KEYCHAIN_SERVICE, signal, ...(spawnImpl ? { spawnImpl } : {}) });
+  const request = { service: OPENCODE_KEYCHAIN_SERVICE, signal };
+  return spawnImpl ? readKeychainSecret({ ...request, spawnImpl }) : readKeychainSecretShared(request);
 }
 
 /**
