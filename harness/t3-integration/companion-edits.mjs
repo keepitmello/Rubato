@@ -24,6 +24,7 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoNotice.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.tsx',
   'apps/web/src/components/chat/RubatoSegnoChat.css',
+  'apps/web/src/components/chat/RubatoSegnoChat.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoInner.tsx',
   'apps/web/src/components/chat/rubatoSegnoRoom.ts',
   'apps/web/src/components/chat/rubatoSegnoRoom.test.ts',
@@ -89,6 +90,7 @@ export const companionEdits = {
         + '                  cwd={gitCwd ?? undefined}\n'
         + '                  environmentId={displayedThreadRef?.environmentId ?? activeThread.environmentId}\n'
         + '                  bottomInset={composerTimelineInset}\n'
+        + '                  scrollToEndClearance={scrollToEndClearance}\n'
         + '                  threadId={activeThread.id}\n'
         + '                  onRewind={(turnCount, messageId) => void onRevertToTurnCountRef.current(turnCount, messageId, false)}\n'
         + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
@@ -101,6 +103,15 @@ export const companionEdits = {
     ['                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n',
       '                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n              )}\n',
       'replace'],
+    // The room floats its own "Scroll to end", from its own scroll (RubatoSegnoChat.tsx).
+    ['              {showScrollToBottom && !isThreadFindActive && (\n',
+      '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',
+      'replace'],
+  ],
+  // The room draws the ordinary thread's timeline at its left edge, one mark per turn
+  // (RubatoSegnoChat.tsx, user 4e1d4d92).
+  'apps/web/src/components/chat/MessagesTimeline.tsx': [
+    ['function TimelineMinimap({\n', 'export function TimelineMinimap({\n', 'replace'],
   ],
   // Segno's own folder is not a project to start work in: neither the new thread's default
   // project nor the headline's picker offers it.

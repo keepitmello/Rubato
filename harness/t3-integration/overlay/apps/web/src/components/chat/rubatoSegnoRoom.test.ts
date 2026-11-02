@@ -8,6 +8,7 @@ import {
   segnoChatItems,
   segnoIsWriting,
   segnoSpans,
+  segnoTurnMarks,
   separatorLabel,
   spanCounts,
   spanDuration,
@@ -120,6 +121,33 @@ describe("the person's pictures", () => {
       { id: "m1", role: "user", text: "![image.png](t3-context://v1/image/image_1)", createdAt: "2026-10-21T10:00:00Z", streaming: false, attachments: [image, file] },
     ]).filter((item) => item.kind === "bubble");
     expect(bubble).toMatchObject({ text: "", images: [image], attachmentNames: ["notes.pdf"] });
+  });
+});
+
+describe("the room's timeline at its left edge", () => {
+  it("marks each turn at the person's first bubble, with the companion's answer before the person speaks again", () => {
+    const items = segnoChatItems([
+      message("hello", "assistant", 0, "좋은 아침"),
+      message("ask", "user", 60_000, "폴라리스 빼고"),
+      message("more", "user", 70_000, "나머지만 세션 띄워"),
+      message("ok", "assistant", 120_000, "고쳤어"),
+      message("done", "assistant", 130_000, "네 개 띄웠어"),
+      message("next", "user", 200_000, "고마워"),
+    ]);
+    const marks = segnoTurnMarks(items);
+    expect(marks.map((mark) => [mark.id, mark.userText, mark.assistantText])).toEqual([
+      ["ask", "폴라리스 빼고\n나머지만 세션 띄워", "고쳤어\n네 개 띄웠어"],
+      ["next", "고마워", null],
+    ]);
+    expect(items[marks[0]!.rowIndex]).toMatchObject({ kind: "bubble", id: "ask" });
+  });
+
+  it("names a turn of only pictures and files by their names", () => {
+    const image = { type: "image", id: "img-1", name: "image.png", mimeType: "image/png", sizeBytes: 10 } as const;
+    const items = segnoChatItems([
+      { id: "pic", role: "user", text: "![image.png](t3-context://v1/image/image_1)", createdAt: "2026-10-21T10:00:00Z", streaming: false, attachments: [image] },
+    ]);
+    expect(segnoTurnMarks(items)).toMatchObject([{ id: "pic", userText: "image.png", assistantText: null }]);
   });
 });
 

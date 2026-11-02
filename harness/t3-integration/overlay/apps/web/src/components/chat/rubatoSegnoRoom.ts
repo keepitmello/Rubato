@@ -6,6 +6,7 @@
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { isImageAttachment, type ChatAttachment, type ChatImageAttachment } from "../../types";
+import type { TimelineMinimapItem } from "./timelineMinimapItems";
 
 /** Messages from one side within this gap of each other belong to one group. */
 export const GROUP_GAP_MS = 3 * 60_000;
@@ -146,6 +147,36 @@ export function arrivals(
   }
   for (const bubble of bubbles) known.latest = Math.max(known.latest, bubble.at);
   return fresh;
+}
+
+/**
+ * The room's marks on the timeline at its left edge, the one an ordinary thread has (MessagesTimeline).
+ * A mark is one turn of the conversation: the person's bubbles in a row, and what the companion said
+ * before the person spoke again. The mark sits on the turn's first bubble; its preview shows the
+ * person's words and the companion's answer.
+ */
+export function segnoTurnMarks(items: ReadonlyArray<SegnoChatItem>): TimelineMinimapItem[] {
+  const marks: { id: string; rowIndex: number; asked: string[]; answered: string[] }[] = [];
+  let previousSide: SegnoChatSide | null = null;
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index]!;
+    if (item.kind !== "bubble") continue;
+    const words =
+      item.text.trim() || [...item.images.map((image) => image.name ?? ""), ...item.attachmentNames].filter(Boolean).join(", ");
+    if (item.side === "me") {
+      if (previousSide !== "me") marks.push({ id: item.id, rowIndex: index, asked: [], answered: [] });
+      if (words) marks.at(-1)!.asked.push(words);
+    } else if (marks.length > 0 && words) {
+      marks.at(-1)!.answered.push(words);
+    }
+    previousSide = item.side;
+  }
+  return marks.map((mark) => ({
+    id: mark.id,
+    rowIndex: mark.rowIndex,
+    userText: mark.asked.length > 0 ? mark.asked.join("\n") : null,
+    assistantText: mark.answered.length > 0 ? mark.answered.join("\n") : null,
+  }));
 }
 
 // ── What the companion did between bubbles (user f8828a9f) ─────────────────────────────────────

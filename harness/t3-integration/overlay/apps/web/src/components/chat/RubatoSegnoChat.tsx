@@ -11,6 +11,10 @@
 // bubble has a menu (right click, or a long press) with "Rewind from here": the conversation goes
 // back to just before that message and the message returns to the composer. Files stay: the
 // companion's home is its own record (diary, notes), committed as it goes.
+//
+// The room has what an ordinary thread has for moving through a long conversation: the timeline at
+// its left edge, one mark per turn with the person's words and the answer on hover (T3's own
+// TimelineMinimap), and "Scroll to end" over the composer once the reader has left the end.
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -24,21 +28,31 @@ import {
 } from "react";
 
 import type { EnvironmentId, MessageId } from "@t3tools/contracts";
+import { ChevronDownIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
 import { selectMessageImageResources, type TimelineEntry } from "../../session-logic";
 import type { ChatImageAttachment } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
+import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { useRubatoCompanion } from "../../state/rubatoCompanion";
 import { messageRewindTarget } from "./RubatoMessageEdit";
 import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
+import { TimelineMinimap } from "./MessagesTimeline";
+import {
+  resolveTimelineMinimapCurrentIndex,
+  resolveTimelineMinimapHasPersistentGutter,
+  resolveTimelineMinimapHitStripWidth,
+} from "./MessagesTimeline.logic";
+import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import {
   arrivals,
   segnoChatItems,
   segnoIsWriting,
   segnoSpans,
+  segnoTurnMarks,
   separatorLabel,
   type SegnoChatItem,
   type SegnoChatMessageInput,
@@ -47,6 +61,12 @@ import "./RubatoSegnoChat.css";
 
 /** Closer to the end than this, the room follows new bubbles down. */
 const FOLLOW_PX = 64;
+/** How long the room's own smooth scroll to the end may take; its frames do not count as leaving. */
+const GLIDE_MS = 1_000;
+/** "Scroll to end" waits this long after the reader leaves the end, so passing frames do not flash it. */
+const PILL_DELAY_MS = 150;
+/** Room left above a turn the timeline jumps to, under the title bar (the lane's pt-14). */
+const JUMP_TOP_PX = 64;
 
 export interface SegnoHistoryControls {
   readonly hasMoreHistory: boolean;
@@ -159,12 +179,15 @@ function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() =
 function Bubble({
   item,
   enter,
+  mark,
   cwd,
   environmentId,
   onRewind,
 }: {
   item: Extract<SegnoChatItem, { kind: "bubble" }>;
   enter: boolean;
+  /** The bubble starts a turn: the timeline at the left edge has a mark for it. */
+  mark: boolean;
   cwd: string | undefined;
   environmentId: EnvironmentId | undefined;
   /** The person's bubble only: rewinds the conversation to just before it. */
@@ -181,6 +204,7 @@ function Bubble({
   return (
     <div
       data-rubato-segno-row=""
+      data-rubato-segno-mark={mark ? item.id : undefined}
       data-side={item.side}
       data-group-start={item.groupStart ? "" : undefined}
       data-group-end={item.groupEnd ? "" : undefined}
@@ -248,6 +272,8 @@ export function RubatoSegnoChat(props: {
   environmentId?: EnvironmentId | undefined;
   /** Room kept under the last bubble for the composer that floats over the room. */
   bottomInset: number;
+  /** Where "Scroll to end" floats: just above the composer (ChatView measures it). */
+  scrollToEndClearance?: number | undefined;
   historyControls?: SegnoHistoryControls | undefined;
   /** The companion's thread. */
   threadId?: string | undefined;
@@ -319,14 +345,127 @@ export function RubatoSegnoChat(props: {
     for (const id of arrivals(bubbles, seen.current)) animated.current.add(id);
   }, [items]);
 
+  const marks = useMemo(() => segnoTurnMarks(items), [items]);
+  const markIds = useMemo(() => new Set(marks.map((mark) => mark.id)), [marks]);
   const scroller = useRef<HTMLDivElement>(null);
+  const lane = useRef<HTMLDivElement>(null);
   const atEnd = useRef(true);
   const opened = useRef(false);
+  // Until this time the room's own smooth scroll to the end is under way. A reader's gesture ends it.
+  const glideUntil = useRef(0);
+  const pillTimer = useRef<number | undefined>(undefined);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const [stripMap] = useState(() => new Map<string, HTMLSpanElement>());
+  const [currentMark, setCurrentMark] = useState<number | null>(null);
+  const [gutter, setGutter] = useState({ persistent: false, hitStripWidth: 0 });
+
+  // Which turns are in view, and which one the reader is at, the way the ordinary timeline works it out.
+  const placeMarks = useCallback(() => {
+    const element = scroller.current;
+    if (!element || marks.length === 0) return;
+    const box = element.getBoundingClientRect();
+    const rows = new Map<string, HTMLElement>();
+    for (const row of element.querySelectorAll<HTMLElement>("[data-rubato-segno-mark]"))
+      rows.set(row.dataset.rubatoSegnoMark!, row);
+    const scrollTop = element.scrollTop;
+    const scrollBottom = scrollTop + element.clientHeight;
+    const itemBounds = marks.map((mark) => {
+      const rect = rows.get(mark.id)?.getBoundingClientRect();
+      return rect ? { top: rect.top - box.top + scrollTop, height: rect.height } : { top: null, height: null };
+    });
+    for (const [index, mark] of marks.entries()) {
+      const strip = stripMap.get(mark.id);
+      const bounds = itemBounds[index]!;
+      const inView =
+        bounds.top !== null && bounds.top < scrollBottom && bounds.top + Math.max(1, bounds.height ?? 1) > scrollTop;
+      const next = inView ? "true" : "false";
+      if (strip && strip.dataset.inView !== next) strip.dataset.inView = next;
+    }
+    const next = resolveTimelineMinimapCurrentIndex({ scrollTop, scrollBottom, itemBounds });
+    setCurrentMark((current) => (current === next ? current : next));
+  }, [marks, stripMap]);
+  const markFrame = useRef<number | null>(null);
+  const schedulePlaceMarks = useCallback(() => {
+    if (markFrame.current !== null) return;
+    markFrame.current = requestAnimationFrame(() => {
+      markFrame.current = null;
+      placeMarks();
+    });
+  }, [placeMarks]);
+  useEffect(() => {
+    schedulePlaceMarks();
+    return () => {
+      if (markFrame.current !== null) cancelAnimationFrame(markFrame.current);
+      markFrame.current = null;
+    };
+  }, [schedulePlaceMarks]);
+  // The marks stay in the side gutter and never cover the bubbles; with no gutter they go inert.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const measure = () => {
+      const viewportWidth = element.getBoundingClientRect().width;
+      const contentWidth = lane.current?.getBoundingClientRect().width ?? viewportWidth;
+      const persistent = resolveTimelineMinimapHasPersistentGutter(viewportWidth, contentWidth);
+      const hitStripWidth = resolveTimelineMinimapHitStripWidth(viewportWidth, contentWidth);
+      setGutter((current) =>
+        current.persistent === persistent && current.hitStripWidth === hitStripWidth ? current : { persistent, hitStripWidth },
+      );
+      schedulePlaceMarks();
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    if (lane.current) observer.observe(lane.current);
+    return () => observer.disconnect();
+  }, [schedulePlaceMarks]);
+
+  const settlePill = useCallback(() => {
+    if (atEnd.current) {
+      window.clearTimeout(pillTimer.current);
+      pillTimer.current = undefined;
+      setAwayFromEnd(false);
+    } else if (pillTimer.current === undefined) {
+      pillTimer.current = window.setTimeout(() => {
+        pillTimer.current = undefined;
+        setAwayFromEnd(!atEnd.current);
+      }, PILL_DELAY_MS);
+    }
+  }, []);
+  useEffect(() => () => window.clearTimeout(pillTimer.current), []);
   const onScroll = useCallback(() => {
     const element = scroller.current;
     if (!element) return;
-    atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_PX;
+    const near = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_PX;
+    if (near) glideUntil.current = 0;
+    atEnd.current = near || performance.now() < glideUntil.current;
+    settlePill();
+    schedulePlaceMarks();
+  }, [settlePill, schedulePlaceMarks]);
+  const readerMoves = useCallback(() => {
+    glideUntil.current = 0;
   }, []);
+  const glideToEnd = useCallback(() => {
+    const element = scroller.current;
+    if (!element) return;
+    glideUntil.current = performance.now() + GLIDE_MS;
+    atEnd.current = true;
+    settlePill();
+    element.scrollTo({ top: element.scrollHeight, behavior: "smooth" });
+  }, [settlePill]);
+  const jumpToMark = useCallback((id: string) => {
+    const element = scroller.current;
+    const row = element?.querySelector<HTMLElement>(`[data-rubato-segno-mark="${CSS.escape(id)}"]`);
+    if (!element || !row) return;
+    glideUntil.current = 0;
+    const top = row.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
+    element.scrollTo({ top: Math.max(0, top - JUMP_TOP_PX), behavior: "smooth" });
+  }, []);
+  const forwardWheel = useCallback((event: WheelEvent) => {
+    if (scroller.current) forwardWheelToTimeline(event, scroller.current);
+  }, []);
+
   // Loading earlier history keeps the bubble in view where it was.
   const heightBeforeLoad = useRef<number | null>(null);
   useLayoutEffect(() => {
@@ -338,21 +477,27 @@ export function RubatoSegnoChat(props: {
       return;
     }
     if (!opened.current || atEnd.current) {
-      element.scrollTo({ top: element.scrollHeight, behavior: opened.current ? "smooth" : "instant" });
+      if (opened.current) glideToEnd();
+      else element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
       atEnd.current = true;
     }
     opened.current = true;
-  }, [items, writing, props.bottomInset]);
+  }, [items, writing, props.bottomInset, glideToEnd]);
 
   const history = props.historyControls;
   return (
+    <div data-rubato-segno-room="" className="relative flex min-h-0 flex-1 flex-col">
     <div
       ref={scroller}
       onScroll={onScroll}
-      data-rubato-segno-room=""
-      className="relative min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
+      onWheel={readerMoves}
+      onTouchStart={readerMoves}
+      onPointerDown={readerMoves}
+      onKeyDown={readerMoves}
+      data-rubato-segno-scroller=""
+      className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
     >
-      <div className="chat-content-lane flex flex-col pt-14" style={{ paddingBottom: props.bottomInset + 20 }}>
+      <div ref={lane} className="chat-content-lane flex flex-col pt-14" style={{ paddingBottom: props.bottomInset + 20 }}>
         {history?.hasMoreHistory ? (
           <button
             type="button"
@@ -387,6 +532,7 @@ export function RubatoSegnoChat(props: {
               key={item.id}
               item={item}
               enter={animated.current.has(item.id)}
+              mark={markIds.has(item.id)}
               cwd={props.cwd}
               environmentId={props.environmentId}
               onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
@@ -396,6 +542,34 @@ export function RubatoSegnoChat(props: {
         {writing ? <Writing /> : null}
         {spanLine(spans.tail, "span:tail")}
       </div>
+    </div>
+    <TimelineMinimap
+      items={marks}
+      hasPersistentGutter={gutter.persistent}
+      hitStripWidth={gutter.hitStripWidth}
+      currentIndex={currentMark}
+      stripMap={stripMap}
+      onWheel={forwardWheel}
+      onSelect={(mark) => jumpToMark(mark.id)}
+    />
+    {awayFromEnd ? (
+      <div
+        className="chat-scroll-to-bottom pointer-events-none absolute inset-x-0 z-30 flex justify-center py-1.5"
+        style={{ bottom: (props.scrollToEndClearance ?? props.bottomInset) + 4 }}
+      >
+        <Button
+          aria-label="Scroll to end"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={glideToEnd}
+          className="pointer-events-auto"
+          size="xs"
+          variant="glass"
+        >
+          <ChevronDownIcon className="size-3.5" />
+          Scroll to end
+        </Button>
+      </div>
+    ) : null}
     </div>
   );
 }

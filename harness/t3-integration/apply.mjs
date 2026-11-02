@@ -56,6 +56,7 @@ import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.m
 import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
 import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
+import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1855,6 +1856,10 @@ for (const [relative, changes] of Object.entries(settingsLayoutEdits)) {
 // Segno, the always-on companion; after the Settings layout, whose Settings lines it anchors on (companion-edits.mjs).
 overlays.push(...companionOverlays);
 for (const [relative, changes] of Object.entries(companionEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// "Scroll to end" shows under a held new turn too (scroll-to-end-edits.mjs).
+for (const [relative, changes] of Object.entries(scrollToEndEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 overlays.push(...i18nOverlays);

@@ -9,6 +9,8 @@
   --rubato-segno-text: var(--foreground);
   --rubato-bubble-radius: 1.15rem;
   --rubato-bubble-near: 0.4rem;
+}
+[data-rubato-segno-scroller] {
   scrollbar-gutter: stable;
 }
 /* The theme's dark action color is light with dark text; a bubble that size reads better deeper, with
