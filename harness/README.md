@@ -25,6 +25,20 @@ Codex 오류가 반복돼도 과거 생각 기록을 하나씩 빼는 자동 탐
 20 MiB를 넘으면 새 창으로도 줄일 수 없으므로 설정을 줄일 때까지 멈춘다.
 화면에 전달하는 대용량 기록의 이미지 생략은 표시 전용이며 모델 입력이나 원본을 바꾸지 않는다.
 
+## Claude 요청 이어 보내기
+
+Claude 요청은 Anthropic message threads(베타 `message-threads-2026-08-12`)로 나간다. 대화를
+한 번 통째로 보낸 뒤로는 직전 답 이후에 새로 생긴 메시지만 보내서, 긴 세션에서 첫 토큰이
+빨리 온다. 토큰·요금·사용 한도와 프롬프트 캐시는 그대로다. 구현과 판단 근거는
+`harness/rubato-pi/src/anthropic-message-threads.mjs` 머리 주석에 있다.
+
+다음 요청은 지금처럼 대화 전체를 thread 없이 보낸다: 서버 컴팩션 선 근처의 요청(Rubato
+인계 지침으로 압축되게), 서버가 한 번 압축한 대화, 캐시 데우기, 서버가 thread를 받지 않거나
+저장하지 않는 계정·대화. thread 요청이 실패하면 같은 호출 안에서 지금 방식으로 다시 보낸다.
+
+끄려면 `~/.rubato/rubato.jsonc` 에 `"providers": { "messageThreads": false }` 를 두거나
+(재시작 없이 다음 요청부터) 환경변수 `RUBATO_MESSAGE_THREADS=off` 로 띄운다.
+
 ## 설치
 
 요구 사항은 Node 24+와 bun 1.4+다.

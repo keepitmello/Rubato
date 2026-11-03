@@ -374,6 +374,7 @@ function patchRunnerFlushUnregister(sourceText) {
 
 const rubatoSources = Object.freeze([
   "account-lanes.mjs",
+  "anthropic-message-threads.mjs",
   "anthropic-server-compaction-wire.mjs",
   "anthropic-server-compaction.mjs",
   "anthropic-setup-token.mjs",

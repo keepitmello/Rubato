@@ -18,6 +18,7 @@ import { assertRequestWireBytes, assertRequestWireByteCount } from "./context-no
 import { senpiNested } from "./engine-paths.mjs";
 import { measurementRecorder, normalizeProviderUsage } from "./measurement-recorder.mjs";
 import { wrapAnthropicServerCompactionFetch } from "./anthropic-server-compaction-wire.mjs";
+import { messageThreads } from "./anthropic-message-threads.mjs";
 import { midConversationEffort } from "./mid-conversation-effort.mjs";
 import { PROCESS_STARTED_AT } from "./process-start.mjs";
 import { resolveUpstreamFetch } from "./upstream-dispatcher.mjs";
@@ -705,6 +706,12 @@ export function withRubatoStream(inner, { modelId = (model) => model?.id, report
     // google-generative-ai / google-vertex 는 `options.fetch !== globalThis.fetch`
     // 이면 던지므로 dispatcher 를 넣지 않는다.
     let fetchImpl = options.fetch ?? resolveStreamUpstreamFetch(model, options.env ?? process.env);
+    // Message threads go closest to the network: they turn the finished body (after effort and
+    // compaction rewrites) into a create or a continue, and resend it themselves when the API
+    // cannot continue. Everything above sees the full request as before.
+    if (model?.provider === "anthropic") {
+      fetchImpl = (options.messageThreads ?? messageThreads()).wrapFetch(fetchImpl, { env: options.env ?? process.env });
+    }
     if (isCacheAuditModel(model)) {
       let audit;
       try { audit = options.cacheAudit ?? cacheAudit(options.env ?? process.env); } catch {}

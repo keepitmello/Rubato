@@ -12,6 +12,7 @@ import { applyEdits, modify, parse as parseJsonc } from "jsonc-parser";
 
 export const DISABLED_PROVIDERS_PATH = Object.freeze(["providers", "disabled"]);
 export const LOAD_BALANCING_PATH = Object.freeze(["providers", "loadBalancing"]);
+export const MESSAGE_THREADS_PATH = Object.freeze(["providers", "messageThreads"]);
 
 /** Opt-in: absent settings preserve explicit base/sub account selection. */
 export function readAccountLoadBalancing({ home = process.env.HOME || homedir() } = {}) {
@@ -21,6 +22,37 @@ export function readAccountLoadBalancing({ home = process.env.HOME || homedir() 
   } catch {
     return new Set();
   }
+}
+
+/**
+ * Anthropic message threads (src/anthropic-message-threads.mjs) are on unless
+ * `providers.messageThreads` is `false`. A broken or missing file leaves them on.
+ */
+export function readMessageThreadsSetting({ home = process.env.HOME || homedir(), readFile = readFileSync } = {}) {
+  try {
+    const config = parseJsonc(readFile(providerConfigPath(home), "utf8"), [], { allowTrailingComma: true });
+    return config?.providers?.messageThreads !== false;
+  } catch {
+    return true;
+  }
+}
+
+let messageThreadsCached;
+
+/** The message-threads switch, re-read only when the file changes, so every request can ask. */
+export function currentMessageThreadsEnabled(home = process.env.HOME || homedir()) {
+  const file = providerConfigPath(home);
+  let stamp = "missing";
+  try {
+    const stat = statSync(file);
+    stamp = `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    // No file: on.
+  }
+  if (messageThreadsCached?.file === file && messageThreadsCached.stamp === stamp) return messageThreadsCached.value;
+  const value = stamp === "missing" ? true : readMessageThreadsSetting({ home });
+  messageThreadsCached = { file, stamp, value };
+  return value;
 }
 
 export function setAccountLoadBalancing(providerId, enabled, options = {}) {

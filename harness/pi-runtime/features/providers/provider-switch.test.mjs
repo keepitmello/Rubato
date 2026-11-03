@@ -11,6 +11,8 @@ import {
   withoutDisabledProviders,
   readAccountLoadBalancing,
   setAccountLoadBalancing,
+  readMessageThreadsSetting,
+  currentMessageThreadsEnabled,
 } from "./provider-switch.mjs";
 
 function home(text) {
@@ -94,4 +96,22 @@ test("account load balancing is opt-in, persists, and keeps other provider setti
     assert.match(readFileSync(join(dir, ".rubato", "rubato.jsonc"), "utf8"), /keep me/);
     assert.throws(() => setAccountLoadBalancing("cursor", true, { home: dir }), /supported for Anthropic/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("Anthropic message threads stay on unless providers.messageThreads is false, and a change is seen without a restart", () => {
+  const missing = home();
+  const broken = home("{ nope");
+  const off = home('{\n  // keep requests whole\n  "providers": { "messageThreads": false }\n}');
+  try {
+    assert.equal(readMessageThreadsSetting({ home: missing }), true);
+    assert.equal(readMessageThreadsSetting({ home: broken }), true);
+    assert.equal(readMessageThreadsSetting({ home: off }), false);
+    assert.equal(currentMessageThreadsEnabled(off), false);
+    const file = join(off, ".rubato", "rubato.jsonc");
+    writeFileSync(file, '{ "providers": { "messageThreads": true } }');
+    utimesSync(file, new Date(), new Date(Date.now() + 5_000));
+    assert.equal(currentMessageThreadsEnabled(off), true);
+  } finally {
+    for (const dir of [missing, broken, off]) rmSync(dir, { recursive: true, force: true });
+  }
 });

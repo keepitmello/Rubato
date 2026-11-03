@@ -7,6 +7,8 @@ import { builtinProviderIds, foreignProviderIds, installOpenAiApiRefusal } from 
 import { importLegacyDirectCredentials, unavailableDirectProviders } from "./src/credential-import.mjs";
 import { registerAccountCommand } from "./auth-pool/accounts.mjs";
 import { createSpeedIndexStore } from "./src/speed-index-store.mjs";
+import { MESSAGE_THREADS_SETTING } from "./src/anthropic-message-threads.mjs";
+import { currentMessageThreadsEnabled } from "./provider-switch.mjs";
 
 function sessionSpeedStore(agentDir, env) {
   if (env?.RUBATO_SPEED_INDEX === "0" || process.env.NODE_TEST_CONTEXT) return undefined;
@@ -103,6 +105,8 @@ export function createProvidersExtension(options = {}) {
       throw error;
     }
     installOpenAiApiRefusal(pi);
+    // The Anthropic request path asks this on every request; the file is re-read only when it changes.
+    globalThis[MESSAGE_THREADS_SETTING] = () => currentMessageThreadsEnabled(env?.HOME || undefined);
     if (antigravity.stateStore && antigravity.lineage) {
       registerAntigravityLifecycle(pi, { ...antigravity, env });
     }
