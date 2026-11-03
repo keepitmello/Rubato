@@ -137,6 +137,26 @@ test('a lead followed on after its end tells a later end once', async (t) => {
   assert.deepEqual(w.notices.map((n) => n.text), ['Finished its turn.\n\nIts answer:\ndone', 'Finished its turn.\n\nIts answer:\none more thing']);
 });
 
+test('a conversation not followed on (another companion) is told once and let go; one saved as ended is dropped untold', async (t) => {
+  const w = world();
+  let saved = { peer: { companionId: 'roo', base: { final: 'p0', waiting: false, ui: [] }, started: false, since: 0, ended: true, skip: 0 } };
+  const store = { load: () => saved, save: (records) => { saved = JSON.parse(JSON.stringify(records)); } };
+  const f = w.follower({ store, followsOn: (id) => !['segno', 'peer'].includes(id) });
+  t.after(() => f.close());
+  w.state.set('peer', { status: 'idle', final: { entryId: 'p1', text: 'woken by a notice' } });
+  await f.poll();
+  assert.deepEqual(w.notices, [], 'a later turn of a companion is not told');
+  assert.deepEqual(saved, {});
+  f.follow('segno', 'roo', { final: 's0', messageId: 'm1' });
+  w.state.set('segno', { status: 'idle', final: { entryId: 's1', text: 'hi Roo' }, handoff: 'before' });
+  await f.poll();
+  assert.deepEqual(w.notices.map((n) => n.text), ['Finished its turn.\n\nIts answer:\nhi Roo']);
+  assert.deepEqual(f.following(), []);
+  w.state.set('segno', { status: 'idle', final: { entryId: 's2', text: '.' } });
+  await f.poll();
+  assert.equal(w.notices.length, 1);
+});
+
 test('a lead followed on after its end is told lost when its runtime goes away mid-turn', async (t) => {
   const w = world();
   const f = w.follower();

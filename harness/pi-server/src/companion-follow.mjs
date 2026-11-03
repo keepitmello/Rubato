@@ -14,6 +14,10 @@
 // after a wait it could not see still arrives. It stops once the runtime unloads with no turn
 // running, or the turn's runtime goes away mid-turn (told as lost).
 //
+// A conversation that is not followed on (`followsOn` false: another companion) is told once and
+// then let go. A companion's runtime never unloads and its later turns are its own life, and two
+// companions that each sent the other a message would otherwise wake each other with every end.
+//
 // What is followed is saved (when a store is given), so an engine restart in the middle of a lead's
 // turn still ends in a notice.
 
@@ -84,8 +88,10 @@ export function judge(record, current, at) {
  *   monitors, subagents); null when no runtime holds the conversation. Asked only when a turn ended.
  * @param {{ load: () => object, save: (records: object) => void, finished?: (entry: object) => void, paused?: () => boolean }} [options.store]
  *   `paused` true holds every notice (the companion is turned off) until it reads false again.
+ * @param {(id: string) => boolean} [options.followsOn]
+ *   whether a conversation's later ends are told after its handed work ended; false lets it go once told.
  */
-export function createFollower({ inspect, notify, awaiting = async () => 0, store, onError = () => {}, pollMs = 2000, now = Date.now }) {
+export function createFollower({ inspect, notify, awaiting = async () => 0, store, followsOn = () => true, onError = () => {}, pollMs = 2000, now = Date.now }) {
   const records = new Map(Object.entries(safe(() => store?.load(), onError) ?? {}).filter(([, record]) => valid(record)));
   let timer;
   let polling;
@@ -93,6 +99,8 @@ export function createFollower({ inspect, notify, awaiting = async () => 0, stor
   const save = () => { if (store) safe(() => store.save(Object.fromEntries(records)), onError); };
 
   async function check(id, record) {
+    // Saved as ended before it was let go (an older engine): nothing of this handoff is left to tell.
+    if (record.ended && !followsOn(id)) { records.delete(id); return true; }
     let current;
     try { current = await inspect(id, record); }
     catch (error) {
@@ -161,7 +169,7 @@ export function createFollower({ inspect, notify, awaiting = async () => 0, stor
       record.base.ui = [...new Set([...record.base.ui, ...current.ui])];
       record.asked = true;
     } else {
-      if (outcome === 'lost' || outcome === 'lost-waiting' || current.status === 'error') records.delete(id);
+      if (outcome === 'lost' || outcome === 'lost-waiting' || current.status === 'error' || !followsOn(id)) records.delete(id);
       else {
         // Told once: only a final written after this one is a new end. Its later turns are no
         // handoff of their own, so neither the handed message nor a busy turn's skip applies.

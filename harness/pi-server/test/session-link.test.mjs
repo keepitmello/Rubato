@@ -902,6 +902,20 @@ test("the companion hears once when a lead it started or sent work to ends its t
   assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
 });
 
+test("two companions that each sent the other a message hear each answer once and do not wake each other with every later end", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const roo = await env.make('Roo', { companion: true, companionId: 'roo' });
+  const notices = async (id) => env.host.getSessionWorker(id) ? (await env.deliveries(id)).filter((item) => item.data.kind === 'notice') : [];
+  await env.api.send({ from: segno.id, to: roo.id, text: 'hello Roo' });
+  await env.api.send({ from: roo.id, to: segno.id, text: 'hello Segno' });
+  await until(async () => (await notices(segno.id)).length >= 1 && (await notices(roo.id)).length >= 1, 'each hears the answer');
+  // Each notice starts a turn of its own; under the old follow-on those ends were told back and forth.
+  await delay(1500);
+  assert.deepEqual((await notices(segno.id)).map((item) => item.data.text), ['Finished its turn.\n\nIts answer:\nreply: hello Roo']);
+  assert.deepEqual((await notices(roo.id)).map((item) => item.data.text), ['Finished its turn.\n\nIts answer:\nreply: hello Segno']);
+});
+
 test("a lead that ends its turn with a subagent still running is told only once that work is done, with its newest answer", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });

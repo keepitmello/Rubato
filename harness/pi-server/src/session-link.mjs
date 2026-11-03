@@ -558,6 +558,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     const asked = new Map();
     const orders = new Map();
     return createFollower({ store, onError, pollMs: followPollMs, awaiting: awaitedWork,
+      // Another companion answers once; its later turns are not work handed to it (companion-follow.mjs).
+      followsOn: (id) => !fromCompanion(id),
       inspect: async (id, record) => {
         const described = await describe(id);
         const current = await snapshot(id, seen, listeners, asked);
