@@ -21,19 +21,19 @@ function Rail({ inSegno }: { inSegno: boolean }) {
   openListAfterSegno = useOpenListAfterSegno(inSegno);
   return null;
 }
-function App({ inSegno, defaultOpen }: { inSegno: boolean; defaultOpen: boolean }) {
+function App({ inSegno, defaultOpen, room = "segno" }: { inSegno: boolean; defaultOpen: boolean; room?: string }) {
   return (
     <SidebarProvider defaultOpen={defaultOpen}>
       <Reader />
       <Rail inSegno={inSegno} />
-      {inSegno ? <SegnoSpace /> : null}
+      {inSegno ? <SegnoSpace key={room} /> : null}
     </SidebarProvider>
   );
 }
 
 let root: Root;
 let host: HTMLDivElement;
-const render = (props: { inSegno: boolean; defaultOpen: boolean }) =>
+const render = (props: { inSegno: boolean; defaultOpen: boolean; room?: string }) =>
   act(() => root.render(<App {...props} />));
 
 beforeEach(() => {
@@ -93,5 +93,17 @@ describe("the thread list in Segno's space", () => {
     expect(sidebar.open).toBe(true);
     await render({ inSegno: false, defaultOpen: false });
     expect(sidebar.open).toBe(false);
+  });
+
+  it("keeps the list folded when one companion's room hands over to another's (Segno to Roo)", async () => {
+    await render({ inSegno: false, defaultOpen: true });
+    await render({ inSegno: true, defaultOpen: true, room: "segno" });
+    expect(sidebar.open).toBe(false);
+    await render({ inSegno: true, defaultOpen: true, room: "roo" });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(sidebar.open).toBe(false);
+    await render({ inSegno: false, defaultOpen: true });
+    await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(sidebar.open).toBe(true);
   });
 });

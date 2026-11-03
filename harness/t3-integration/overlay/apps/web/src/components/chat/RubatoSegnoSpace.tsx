@@ -236,7 +236,15 @@ function useStageWidth(space: RefObject<HTMLDivElement | null>) {
 }
 
 /**
- * Segno's space starts with the thread list folded, so the stage gets that room; the rail stays and
+ * A room that hands over to another companion's room (Segno to Roo) unmounts and mounts in one
+ * commit. The leaving room restores the list as usual and notes the choice it restored for one tick;
+ * the arriving room takes that choice as its own "before" and folds the list again, instead of
+ * reading the list as it stood a moment ago and then being undone by the restore.
+ */
+let handedOver: { before: boolean } | null = null;
+
+/**
+ * A companion's space starts with the thread list folded, so the stage gets that room; the rail stays and
  * the sidebar toggle still opens the list here. Leaving for any other route puts the list back as
  * it was when the person came in, so their choice for ordinary routes is never overwritten.
  */
@@ -246,10 +254,16 @@ export function useThreadListFoldedHere() {
   latest.current = { open, setOpen };
   useEffect(() => {
     if (isMobile) return;
-    const before = latest.current.open;
-    if (before) void latest.current.setOpen(false);
+    const before = handedOver ? handedOver.before : latest.current.open;
+    handedOver = null;
+    if (latest.current.open || before) void latest.current.setOpen(false);
     return () => {
       if (latest.current.open !== before) void latest.current.setOpen(before);
+      const note = { before };
+      handedOver = note;
+      setTimeout(() => {
+        if (handedOver === note) handedOver = null;
+      }, 0);
     };
   }, [isMobile]);
 }
