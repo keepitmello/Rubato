@@ -101,15 +101,17 @@ function useSegnoArt(
 /**
  * The expressions stacked in one place; only the current one shows. A change of state cross-fades
  * once (RubatoSegnoSpace.css); nothing moves in between. Until the new picture has loaded, the one
- * before stays; before the first state is known, none shows. Segno stands in the bottom-right corner
- * at most 44rem tall: a companion beside the chat, not a figure the size of the window.
+ * before stays; before the first state is known, none shows. The box the pictures fill is sized by
+ * the stage (segnoStageLayout); each picture reports its proportions once it loads.
  */
 function SegnoArt({
   art,
   state,
+  onAspect,
 }: {
   art: ReadonlyMap<SegnoStageState, string>;
   state: SegnoStageState | null;
+  onAspect: (aspect: number) => void;
 }) {
   const lastShown = useRef<SegnoStageState | null>(null);
   const shown = state !== null && art.has(state) ? state : lastShown.current;
@@ -127,7 +129,11 @@ function SegnoArt({
           draggable={false}
           data-rubato-segno-art={key}
           data-shown={key === shown ? "" : undefined}
-          className="rubato-segno-art pointer-events-none absolute right-0 bottom-0 h-full max-h-[44rem] max-w-full select-none object-contain object-right-bottom"
+          onLoad={(event) => {
+            const { naturalWidth, naturalHeight } = event.currentTarget;
+            if (naturalWidth > 0 && naturalHeight > 0) onAspect(naturalWidth / naturalHeight);
+          }}
+          className="rubato-segno-art pointer-events-none absolute inset-0 h-full w-full select-none object-contain object-right-bottom"
         />
       ))}
     </>
@@ -197,42 +203,116 @@ const STAGE_PEEK_PX = 64;
 const STAGE_GAP_PX = 16;
 const STAGE_EDGE_PX = 8;
 
+/** Segno stands 55% of the space's height (user c89f28d1), within these bounds. */
+export const ART_SHARE = 0.55;
+export const ART_MIN_PX = 280;
+export const ART_MAX_PX = 800;
+/** The chat never narrows below this for Segno; past it Segno peeks from the edge. */
+export const CHAT_MIN_PX = 576;
+/** Segno shows while at least this share of the picture fits; less, and the chat gets the room. */
+export const ART_VISIBLE_MIN = 0.6;
+/** The proportions of the bundled pictures, until one has loaded. */
+const DEFAULT_ASPECT = 804 / 1100;
+
+export interface SegnoStageLayout {
+  readonly artHeight: number;
+  readonly artWidth: number;
+  /** Whether the picture shows at all. */
+  readonly showArt: boolean;
+  /** The widest the chat's column may be so Segno fits beside it; null leaves the chat alone. */
+  readonly chatRoom: number | null;
+}
+
 /**
- * How wide the stage can be: the room right of the chat's column. The chat keeps exactly the width
- * an ordinary thread has at this window size and chat-width setting (chat-width-edits.mjs) and sits
- * at the left of the space (RubatoSegnoSpace.css), so the stage gets all the room an ordinary
- * thread leaves on both sides of its column; the chat never narrows for Segno.
+ * Segno's size comes first and from the height alone, so it is the same share of the window at any
+ * width and whatever the task panel holds. The chat's column then makes room: it keeps its ordinary
+ * width where that fits and narrows down to CHAT_MIN_PX where not. Narrower still, Segno keeps its
+ * size and peeks from the right edge while most of the picture fits, and steps aside past that.
  */
-function useStageWidth(space: RefObject<HTMLDivElement | null>) {
-  const [width, setWidth] = useState(0);
+export function segnoStageLayout(input: {
+  /** The space's right edge and height, in px. */
+  readonly right: number;
+  readonly height: number;
+  /** Where the chat's column starts (the further right of the timeline and the composer). */
+  readonly columnLeft: number;
+  /** The picture's width over its height; 0 for a companion without pictures. */
+  readonly aspect: number;
+}): SegnoStageLayout {
+  const artHeight = Math.round(Math.min(ART_MAX_PX, Math.max(ART_MIN_PX, input.height * ART_SHARE)));
+  const artWidth = Math.round(artHeight * input.aspect);
+  if (artWidth <= 0) return { artHeight, artWidth: 0, showArt: false, chatRoom: null };
+  const stageRight = input.right - STAGE_EDGE_PX;
+  const room = stageRight - artWidth - STAGE_GAP_PX - input.columnLeft;
+  if (room >= CHAT_MIN_PX) return { artHeight, artWidth, showArt: true, chatRoom: Math.floor(room) };
+  const visible = stageRight - STAGE_GAP_PX - (input.columnLeft + CHAT_MIN_PX);
+  if (visible >= artWidth * ART_VISIBLE_MIN) return { artHeight, artWidth, showArt: true, chatRoom: CHAT_MIN_PX };
+  return { artHeight, artWidth, showArt: false, chatRoom: null };
+}
+
+/**
+ * The stage's layout and width. The chat sits at the left of the space (RubatoSegnoSpace.css) and
+ * takes `--rubato-segno-chat-room` as its widest; the stage is the room right of the chat's column,
+ * measured after the column has made room.
+ */
+function useStage(space: RefObject<HTMLDivElement | null>, aspect: number) {
+  const [stage, setStage] = useState<{ width: number; layout: SegnoStageLayout | null }>({ width: 0, layout: null });
   useEffect(() => {
     const root = space.current;
     if (!root) return;
     let lane: Element | null = null;
+    let composer: Element | null = null;
     const sizes = new ResizeObserver(() => measure());
     const measure = () => {
       if (!lane || !lane.isConnected) {
         lane = root.querySelector(".chat-content-lane");
         if (lane) sizes.observe(lane);
       }
+      if (!composer || !composer.isConnected) {
+        composer = root.querySelector('[data-chat-composer-stack="true"]');
+        if (composer) sizes.observe(composer);
+      }
+      const present = [lane, composer].filter((item): item is Element => item !== null);
+      if (present.length === 0) {
+        setStage({ width: 0, layout: null });
+        return;
+      }
       const outer = root.getBoundingClientRect();
-      const inner = lane?.getBoundingClientRect();
-      const free = inner ? outer.right - STAGE_EDGE_PX - (inner.right + STAGE_GAP_PX) : 0;
-      setWidth(free >= STAGE_PEEK_PX ? Math.floor(free) : 0);
+      const layout = segnoStageLayout({
+        right: outer.right,
+        height: outer.height,
+        columnLeft: Math.max(...present.map((item) => item.getBoundingClientRect().left)),
+        aspect,
+      });
+      // The column's start does not depend on its width, so setting the room and reading the
+      // column again settles in one pass.
+      if (layout.chatRoom === null) root.style.removeProperty("--rubato-segno-chat-room");
+      else root.style.setProperty("--rubato-segno-chat-room", `${layout.chatRoom}px`);
+      const columnRight = Math.max(...present.map((item) => item.getBoundingClientRect().right));
+      const free = outer.right - STAGE_EDGE_PX - (columnRight + STAGE_GAP_PX);
+      const width = layout.showArt || free >= STAGE_PEEK_PX ? Math.max(0, Math.floor(free)) : 0;
+      setStage((current) =>
+        current.width === width &&
+        current.layout?.artHeight === layout.artHeight &&
+        current.layout?.artWidth === layout.artWidth &&
+        current.layout?.showArt === layout.showArt
+          ? current
+          : { width, layout },
+      );
     };
     sizes.observe(root);
     // The column appears once the thread loads; look again when the chat's children change.
     const mutations = new MutationObserver(() => {
-      if (!lane || !lane.isConnected) measure();
+      if (!lane || !lane.isConnected || !composer || !composer.isConnected) measure();
     });
     mutations.observe(root, { childList: true, subtree: true });
     measure();
     return () => {
       sizes.disconnect();
       mutations.disconnect();
+      root.style.removeProperty("--rubato-segno-chat-room");
     };
-  }, [space]);
-  return width;
+  }, [space, aspect]);
+  return stage;
 }
 
 /**
@@ -296,7 +376,11 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
   const state = known ? stageStateOf(panel, new Date(now)) : null;
   const art = useSegnoArt(environmentId, state, companionId);
   const space = useRef<HTMLDivElement>(null);
-  const stageWidth = useStageWidth(space);
+  const [aspect, setAspect] = useState(DEFAULT_ASPECT);
+  // A companion without pictures leaves the chat its ordinary width.
+  const stage = useStage(space, art.size > 0 ? aspect : 0);
+  const stageWidth = stage.width;
+  const layout = art.size > 0 ? stage.layout : null;
   const compact = stageWidth > 0 && stageWidth < STAGE_FULL_PX;
   return (
     <CompanionSpace.Provider value={identity}>
@@ -306,9 +390,9 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
         {children}
       </div>
       {/* The stage stands in the room right of the chat's column, over the same surface: the panel
-          on top (below the title bar controls, at most 30rem wide against the edge), Segno in the
-          bottom-right corner of the height the panel leaves. With little room the panel folds into
-          a button and Segno peeks from the corner; with none, the stage steps aside. */}
+          on top (below the title bar controls, at most 30rem wide against the edge) floats over
+          Segno, who stands in the bottom-right corner at her own size (segnoStageLayout). With
+          little room the panel folds into a button; with none, the stage steps aside. */}
       {stageWidth > 0 ? (
         <aside
           data-rubato-segno-stage={compact ? "compact" : "full"}
@@ -316,7 +400,23 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
           style={{ width: stageWidth, right: STAGE_EDGE_PX }}
           className="pointer-events-none absolute top-[3.25rem] bottom-0 flex min-h-0 flex-col"
         >
-          <div className="pointer-events-auto relative ms-auto min-h-0 w-full max-w-[30rem] shrink-0">
+          {layout?.showArt ? (
+            // Clipped at the window's edge, so a narrow window shows Segno peeking from it.
+            <div className="absolute inset-y-0 left-0 overflow-hidden" style={{ right: -STAGE_EDGE_PX }}>
+              <div
+                className="absolute bottom-0"
+                style={{
+                  width: layout.artWidth,
+                  height: layout.artHeight,
+                  right: STAGE_EDGE_PX + Math.min(0, stageWidth - layout.artWidth),
+                }}
+                data-rubato-segno-state={state ?? undefined}
+              >
+                <SegnoArt art={art} state={state} onAspect={setAspect} />
+              </div>
+            </div>
+          ) : null}
+          <div className="pointer-events-auto relative z-10 ms-auto min-h-0 w-full max-w-[30rem] shrink-0">
             {compact ? (
               <CompactTaskPanel
                 environmentId={environmentId}
@@ -330,9 +430,6 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
                 onChanged={() => void refresh()}
               />
             )}
-          </div>
-          <div className="relative min-h-0 flex-1" data-rubato-segno-state={state ?? undefined}>
-            <SegnoArt art={art} state={state} />
           </div>
         </aside>
       ) : null}

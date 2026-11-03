@@ -42,16 +42,19 @@
   }
 }
 
-/* The chat keeps its ordinary width and sits toward the left of the space, a little off the edge,
-   so most of the room an ordinary thread leaves around its column is the stage's. The lane is
-   `width: 100%` up to its max width, so the inset comes off the width too and a narrow window does
-   not scroll sideways. */
+/* The chat sits toward the left of the space, off the edge by a margin that grows with the window
+   (user c89f28d1), so most of the room an ordinary thread leaves around its column is the stage's.
+   It keeps its ordinary width where Segno fits beside it and narrows to the room the stage leaves
+   (`--rubato-segno-chat-room`, set by RubatoSegnoSpace.tsx) where not. The lane is `width: 100%`
+   up to its max width, so the inset comes off the width too and a narrow window does not scroll
+   sideways. */
 [data-rubato-segno-chat] {
-  --rubato-segno-chat-inset: clamp(1rem, 4vw, 5rem);
+  --rubato-segno-chat-inset: clamp(2.5rem, 7vw, 8rem);
 }
 [data-rubato-segno-chat] .chat-content-lane,
-[data-rubato-segno-chat] .group\/composer-stack {
+[data-rubato-segno-chat] [data-chat-composer-stack="true"] {
   width: calc(100% - var(--rubato-segno-chat-inset));
+  max-width: min(var(--chat-content-max-width), var(--rubato-segno-chat-room, 100%));
   margin-inline-start: var(--rubato-segno-chat-inset);
   margin-inline-end: auto;
 }

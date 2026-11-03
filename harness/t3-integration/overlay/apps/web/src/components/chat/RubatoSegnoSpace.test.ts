@@ -4,12 +4,18 @@ import { createUiTranslator, type UiDictionary } from "../../rubatoI18n";
 import korean from "../../rubatoI18n.ko.json";
 import type { SegnoFinished, SegnoLead, SegnoPanel } from "../../state/rubatoCompanion";
 import {
+  ART_MAX_PX,
+  ART_MIN_PX,
+  ART_SHARE,
+  ART_VISIBLE_MIN,
+  CHAT_MIN_PX,
   NIGHT_HOURS,
   elapsed,
   endingKey,
   endingStatus,
   leadStatus,
   leadsInOrder,
+  segnoStageLayout,
   stageStateOf,
 } from "./RubatoSegnoSpace";
 
@@ -100,5 +106,51 @@ describe("the task panel's rows", () => {
 
   it("close one ending, not every ending of the same conversation", () => {
     expect(endingKey(ending("completed", 1))).not.toBe(endingKey(ending("completed", 2)));
+  });
+});
+
+describe("segnoStageLayout", () => {
+  const aspect = 804 / 1100;
+  const layout = (right: number, height: number, columnLeft = 150) =>
+    segnoStageLayout({ right, height, columnLeft, aspect });
+
+  it("sizes Segno by the height alone, the same share at any width", () => {
+    for (const [width, height] of [[2560, 1440], [1920, 1080], [1440, 900], [1280, 800], [1100, 800]] as const) {
+      const { artHeight, showArt } = layout(width, height);
+      expect(showArt).toBe(true);
+      expect(artHeight).toBe(Math.round(height * ART_SHARE));
+    }
+    expect(layout(1440, 900).artHeight).toBe(layout(2560, 900).artHeight);
+  });
+
+  it("keeps Segno within its bounds on very short and very tall windows", () => {
+    expect(layout(1920, 400).artHeight).toBe(ART_MIN_PX);
+    expect(layout(3840, 2160).artHeight).toBe(ART_MAX_PX);
+  });
+
+  it("narrows the chat to leave Segno her room, never below the chat's minimum", () => {
+    const wide = layout(1920, 1080);
+    expect(wide.chatRoom! + 150 + wide.artWidth).toBeLessThanOrEqual(1920);
+    const narrow = layout(1000, 800);
+    expect(narrow.showArt).toBe(true);
+    expect(narrow.chatRoom).toBe(CHAT_MIN_PX);
+  });
+
+  it("steps aside when too little of Segno would fit, and leaves the chat alone", () => {
+    const hidden = layout(900, 900);
+    expect(hidden.showArt).toBe(false);
+    expect(hidden.chatRoom).toBeNull();
+    // Just enough of the picture fits to show her peeking.
+    const art = layout(10_000, 900).artWidth;
+    const right = 150 + CHAT_MIN_PX + 16 + 8 + Math.ceil(art * ART_VISIBLE_MIN);
+    expect(layout(right, 900).showArt).toBe(true);
+    expect(layout(right - 2, 900).showArt).toBe(false);
+  });
+
+  it("leaves the chat alone for a companion without pictures", () => {
+    expect(segnoStageLayout({ right: 1440, height: 900, columnLeft: 150, aspect: 0 })).toMatchObject({
+      showArt: false,
+      chatRoom: null,
+    });
   });
 });
