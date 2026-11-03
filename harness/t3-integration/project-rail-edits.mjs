@@ -17,6 +17,10 @@
 //   rows as the client setting rubatoRecentLimit. It and the project's title
 //   are sections of the thread list (sidebar-blocks-edits.mjs); only an empty
 //   list shows them here, above where the list would be.
+// - The home filter (sidebar/RubatoHomeProjectFilter.tsx): with no project
+//   selected, a button beside Add project checks which projects the
+//   all-projects list shows. Unchecked ones leave that list and the Recent
+//   box; pinned threads and search keep them.
 // - The home row (chat/RubatoHomeProjects.tsx): on the new-thread screen, the
 //   project tabs and the selected project's newest threads along the bottom,
 //   inside the composer's width; the composer stays centered. Off by default:
@@ -44,6 +48,7 @@ export const projectRailOverlays = [
   'apps/web/src/components/sidebar/RubatoScopeLabel.tsx',
   'apps/web/src/components/sidebar/RubatoThreadLine.tsx',
   'apps/web/src/components/sidebar/RubatoRecentBox.tsx',
+  'apps/web/src/components/sidebar/RubatoHomeProjectFilter.tsx',
   'apps/web/src/components/chat/RubatoHomeProjects.tsx',
   'apps/web/src/components/settings/RubatoHomeProjectsSetting.tsx',
   'apps/web/src/components/settings/RubatoHomeProjectsSetting.test.ts',
@@ -132,14 +137,48 @@ export const projectRailEdits = {
     ],
     [
       '                </Combobox>\n              }\n              onNewProject={openAddProjectCommandPalette}\n',
-      '                </Combobox>\n                ) : null\n              }\n              onNewProject={openAddProjectCommandPalette}\n',
+      '                </Combobox>\n                ) : scopedProjectGroup === null ? (\n                  <RubatoHomeProjectFilter groups={projectGroups} threads={threads} />\n                ) : null\n              }\n              onNewProject={openAddProjectCommandPalette}\n',
+      'replace',
+    ],
+    // Home's header filter: the projects the user unchecked leave the
+    // all-projects list and the Recent box (RubatoHomeProjectFilter.tsx).
+    ['  // Configs identify scratch projects, so both they and live project snapshots\n',
+      [
+        '  // Rubato: the all-projects list without the projects the user unchecked',
+        '  // (RubatoHomeProjectFilter, project-rail-edits.mjs).',
+        '  const { hidden: rubatoHiddenProjects } = useRubatoHomeHiddenProjects();',
+        '  const rubatoAllProjectsThreads = useMemo(',
+        '    () => withoutHiddenProjects(threads, projectGroups, rubatoHiddenProjects),',
+        '    [projectGroups, rubatoHiddenProjects, threads],',
+        '  );',
+        '',
+      ].join('\n')],
+    [
+      '    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);\n',
+      [
+        '    const visible = filterSidebarV2VisibleThreads(',
+        '      scopedProjectKeys === null ? rubatoAllProjectsThreads : threads,',
+        '      scopedProjectKeys,',
+        '    );',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '    optimisticDrop,\n    scopedProjectKeys,\n',
+      '    optimisticDrop,\n    rubatoAllProjectsThreads,\n    scopedProjectKeys,\n',
       'replace',
     ],
     ['import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";\n',
       [
+        'import { RubatoHomeProjectFilter, useRubatoHomeHiddenProjects } from "./sidebar/RubatoHomeProjectFilter";',
         'import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";',
         'import { RubatoScopeLabel } from "./sidebar/RubatoScopeLabel";',
-        'import { scopedNewThreadProjectRef, selectRecentThreads } from "./sidebar/rubatoProjectRail.logic";',
+        'import {',
+        '  scopedNewThreadProjectRef,',
+        '  selectRecentThreads,',
+        '  withoutHiddenProjects,',
+        '} from "./sidebar/rubatoProjectRail.logic";',
         'import { clampRecentLimit } from "./sidebar/rubatoSidebarBlocks";',
         '',
       ].join('\n')],
@@ -154,7 +193,7 @@ export const projectRailEdits = {
         '    const capabilities = (thread: EnvironmentThreadShell) =>',
         '      serverConfigs.get(thread.environmentId)?.environment.capabilities;',
         '    return selectRecentThreads({',
-        '      threads,',
+        '      threads: rubatoAllProjectsThreads,',
         '      supportsSettlement: (thread) => capabilities(thread)?.threadSettlement === true,',
         '      supportsSnooze: (thread) => capabilities(thread)?.threadSnooze === true,',
         '      workingShelfEnabled,',
@@ -162,7 +201,14 @@ export const projectRailEdits = {
         '      now: new Date().toISOString(),',
         '      limit: clampRecentLimit(rubatoRecentLimit),',
         '    });',
-        '  }, [nowMinute, rubatoRecentLimit, scopedProjectKeys, serverConfigs, threads, workingShelfEnabled]);',
+        '  }, [',
+        '    nowMinute,',
+        '    rubatoAllProjectsThreads,',
+        '    rubatoRecentLimit,',
+        '    scopedProjectKeys,',
+        '    serverConfigs,',
+        '    workingShelfEnabled,',
+        '  ]);',
         '',
       ].join('\n')],
     ['          {!isSearchingThreads ? (\n            <TooltipProvider\n              key="sidebar-thread-tooltips-150"\n',

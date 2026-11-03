@@ -17,6 +17,8 @@ import {
   selectRecentThreads,
   signalByGroup,
   filterProjectList,
+  homeFilterProjects,
+  withoutHiddenProjects,
   strongerSignal,
   strongestUrgentSignal,
   urgentSignal,
@@ -336,5 +338,34 @@ describe("a new thread while one project is selected", () => {
 
   it("leaves T3's flow alone with no project selected", () => {
     expect(scopedNewThreadProjectRef({ group: null, contextProjectRef: local })).toBeNull();
+  });
+});
+
+describe("the home filter", () => {
+  const groups = [group("a"), group("b"), group("c")];
+
+  it("drops the unchecked projects' threads and keeps their pinned ones", () => {
+    const threads = [
+      thread("a1", "a"),
+      thread("b1", "b"),
+      thread("b2", "b", { pinnedAt: ago(HOUR) }),
+      thread("x1", "unknown"),
+    ];
+    const kept = withoutHiddenProjects(threads, groups, new Set(["b"]));
+    expect(kept.map((t) => t.id)).toEqual(["a1", "b2", "x1"]);
+  });
+
+  it("returns the same list when nothing is unchecked", () => {
+    const threads = [thread("a1", "a")];
+    expect(withoutHiddenProjects(threads, groups, new Set())).toBe(threads);
+  });
+
+  it("lists projects with a showable thread, newest first", () => {
+    const threads = [
+      thread("a1", "a", { latestUserAuthoredMessageAt: ago(3 * HOUR) }),
+      thread("b1", "b", { latestUserAuthoredMessageAt: ago(HOUR) }),
+      thread("c1", "c", { archivedAt: ago(HOUR) }),
+    ];
+    expect(homeFilterProjects(groups, threads).map((g) => g.projectKey)).toEqual(["b", "a"]);
   });
 });

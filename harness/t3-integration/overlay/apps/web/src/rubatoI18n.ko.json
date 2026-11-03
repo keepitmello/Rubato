@@ -4577,7 +4577,10 @@
   "Showing what was last read. Trying again every few seconds.": "마지막으로 읽은 내용을 보여 줍니다. 몇 초마다 다시 시도합니다.",
   "Note it as forgotten": "잊은 것으로 적기",
   "Noted as forgotten": "잊은 것으로 적었습니다",
-  "Could not note it as forgotten": "잊은 것으로 적지 못했습니다"
+  "Could not note it as forgotten": "잊은 것으로 적지 못했습니다",
+  "Projects in the list": "목록에 보일 프로젝트",
+  "Projects in the list: some hidden": "목록에 보일 프로젝트: 일부 숨김",
+  "Show in the list": "목록에 표시"
  },
  "templates": [
   [

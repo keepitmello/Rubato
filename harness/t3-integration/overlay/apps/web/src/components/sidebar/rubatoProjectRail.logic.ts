@@ -373,6 +373,36 @@ export function anyNeedsUser(signals: readonly (RubatoSignal | null | undefined)
 }
 
 /**
+ * The all-projects list without the projects the user unchecked in the
+ * header's filter (RubatoHomeProjectFilter.tsx). Pinned threads stay: the
+ * user put each of them there.
+ */
+export function withoutHiddenProjects<T extends ThreadShell>(
+  threads: readonly T[],
+  groups: readonly RubatoGroupLike[],
+  hidden: ReadonlySet<string>,
+): readonly T[] {
+  if (hidden.size === 0) return threads;
+  const byMember = groupKeyByMember(groups);
+  return threads.filter((thread) => {
+    if (thread.pinnedAt != null) return true;
+    const key = byMember.get(`${thread.environmentId}:${thread.projectId}`);
+    return key === undefined || !hidden.has(key);
+  });
+}
+
+/** The filter's rows: projects with a thread the sidebar can show, newest first. */
+export function homeFilterProjects<G extends RubatoGroupLike>(
+  groups: readonly G[],
+  threads: readonly ThreadShell[],
+): G[] {
+  const latest = lastActivityByGroup(groups, filterSidebarV2VisibleThreads(threads, null));
+  return groups
+    .filter((group) => latest.has(group.projectKey))
+    .toSorted((a, b) => (latest.get(b.projectKey) ?? 0) - (latest.get(a.projectKey) ?? 0));
+}
+
+/**
  * Where a new thread goes while the sidebar is narrowed to one project: the
  * current thread's own project when it belongs to that group, else the
  * group's member on the current thread's machine, else the group's own
