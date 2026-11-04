@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -231,8 +232,70 @@ class DoctorTest(Isolated):
         self.assertEqual(failure["stage"], "select-tier")
         self.assertEqual(failure["diag"]["tree"], '- button "X"')
 
+    def test_a_stalled_upload_is_run_again_not_healed(self) -> None:
+        ok = {"ok": True, "stage": "ready-to-send"}
+        with mock.patch.object(ENGINE, "rehearse", side_effect=[STALLED, ok]) as rehearse, \
+                mock.patch.object(ENGINE, "heal_screen_map") as heal, \
+                mock.patch.object(ENGINE, "live_check", return_value={"ok": True, "sent": True, "stage": "answered"}):
+            self.assertEqual(self.run_doctor(), 0)
+        self.assertEqual(rehearse.call_count, 2)
+        heal.assert_not_called()
+
+    def test_a_logged_out_page_is_reported_as_login_not_healed(self) -> None:
+        with mock.patch.object(ENGINE, "rehearse", return_value=LOGGED_OUT), \
+                mock.patch.object(ENGINE, "heal_screen_map") as heal, \
+                mock.patch.object(ENGINE, "live_check") as live, \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out:
+            self.assertEqual(self.run_doctor(), 75)
+        heal.assert_not_called()
+        live.assert_not_called()
+        self.assertIn("kind=logged-out", out.getvalue())
+        self.assertIn("다시 로그인", out.getvalue())
+
+
+# Shapes taken from real failed sends: the 2026-11-02 logout, and the
+# 2026-11-03 packet chip that never left "업로드 중".
+LOGGED_OUT = {
+    "ok": False,
+    "stage": "wait-project-composer",
+    "detail": "project composer not visible: expected 커리어의 새 채팅 found [] "
+    "url=https://chatgpt.com/auth/login?next=%2Fg%2Fg-p-x%2Fproject title=ChatGPT",
+}
+STALLED = {
+    "ok": False,
+    "stage": "ready-to-send",
+    "detail": "locator.waitFor: timed out after 60000ms waiting for #composer-submit-button",
+    "diag": {
+        "stage": "ready-to-send",
+        "url": PROJECT,
+        "tree": '- progressbar "outpost-83f4.md 업로드 중"\n- button "보내기" [ref=e134] [disabled]',
+    },
+}
+
+
+class FailureKindTest(unittest.TestCase):
+    def test_failures_that_are_not_a_changed_screen_are_told_apart(self) -> None:
+        self.assertEqual(ENGINE.failure_kind(LOGGED_OUT), "logged-out")
+        self.assertEqual(ENGINE.failure_kind(STALLED), "upload-stalled")
+        lost = ENGINE.failure_from_transcript("exit 75 — 전송 안 됨 (단계 불명)\n\nAside REPL exited before submission marker")
+        self.assertEqual(ENGINE.failure_kind(lost), "output-lost")
+        self.assertEqual(ENGINE.failure_kind({"stage": "select-tier", "detail": "tier button not visible"}), "")
+        done_uploading = {**STALLED, "diag": {**STALLED["diag"], "tree": '- button "보내기" [disabled]'}}
+        self.assertEqual(ENGINE.failure_kind(done_uploading), "")
+
+    def test_only_a_changed_screen_goes_to_the_heal_model(self) -> None:
+        self.assertFalse(ENGINE.healable(LOGGED_OUT))
+        self.assertFalse(ENGINE.healable(STALLED))
+        self.assertTrue(ENGINE.healable({"stage": "ready-to-send", "detail": "send button not visible"}))
+
 
 class SendAutoHealTest(Isolated):
+    def setUp(self) -> None:
+        super().setUp()
+        pause = mock.patch.object(ENGINE, "TRANSIENT_RETRY_PAUSE_SECONDS", 0)
+        pause.start()
+        self.addCleanup(pause.stop)
+
     def send(self, side_effect, heal_result):
         packet = self.root / ".outpost" / "run" / "packet.md"
         packet.parent.mkdir(parents=True)
@@ -299,6 +362,40 @@ class SendAutoHealTest(Isolated):
         self.assertEqual(code, 76)
         self.assertEqual(sends.call_count, 1)
         heal.assert_not_called()
+
+    def test_a_stalled_upload_is_sent_once_more_on_a_fresh_page(self) -> None:
+        stalled = RuntimeError(
+            "exit 75 — 전송 안 됨\n단계: ready-to-send (보내기 버튼)\n"
+            "OUTPOST_DIAG " + json.dumps(STALLED["diag"], ensure_ascii=False) + "\n"
+            "Error: OUTPOST_FAIL stage=ready-to-send locator.waitFor: timed out after 60000ms\n"
+            "backend: no turn with this id in the project; the packet was not sent"
+        )
+        code, sends, heal, result = self.send([stalled, self.DONE], {"ok": True, "attempts": 1, "result": {}})
+        self.assertEqual(code, 0)
+        self.assertEqual(sends.call_count, 2)
+        heal.assert_not_called()
+        self.assertTrue(result["ok"])
+
+    def test_lost_output_is_sent_once_more_and_a_second_loss_stays_unsent(self) -> None:
+        lost = RuntimeError(
+            "exit 75 — 전송 안 됨 (단계 불명)\n\nAside REPL exited before submission marker\n"
+            "backend: no turn with this id in the project; the packet was not sent"
+        )
+        code, sends, heal, result = self.send([lost, lost], {"ok": True, "attempts": 1, "result": {}})
+        self.assertEqual(code, 75)
+        self.assertEqual(sends.call_count, 2)
+        heal.assert_not_called()
+        self.assertEqual(result["status"], "not_sent")
+
+    def test_a_logged_out_page_is_not_retried_or_healed(self) -> None:
+        logged_out = RuntimeError("exit 75\nError: OUTPOST_FAIL stage=wait-project-composer " + LOGGED_OUT["detail"])
+        code, sends, heal, result = self.send([logged_out], {"ok": True, "attempts": 1, "result": {}})
+        self.assertEqual(code, 75)
+        self.assertEqual(sends.call_count, 1)
+        heal.assert_not_called()
+        self.assertEqual(result["status"], "not_sent")
+        stderr = (self.root / ".outpost" / "run" / "stderr.log").read_text(encoding="utf-8")
+        self.assertIn("다시 로그인", stderr)
 
 
 if __name__ == "__main__":

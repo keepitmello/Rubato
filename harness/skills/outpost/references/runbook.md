@@ -82,8 +82,20 @@ time. A step is given up after three tries without progress, twelve tries in
 all. The map validator refuses a `Pro` stop under `xhigh` and a `Sol` model.
 
 Rate limits, a lost daemon, and anything after the click are not screen
-changes and are never healed. A check that failed before any step ran means
-Aside was not answering; doctor waits for the daemon and runs it once more.
+changes and are never healed. Three more pre-submit failures are told apart
+from a screen change (`failure_kind()`), because they are what actually breaks
+sends and the heal model cannot fix them:
+
+- `logged-out` — the page landed on `chatgpt.com/auth/login`. Nothing is
+  retried; send and doctor say to log in again in Aside's browser.
+- `upload-stalled` — the send button timed out while the packet chip still
+  showed `업로드 중`. A fresh page uploads it again.
+- `output-lost` — the script left no stage (Aside dropped its output or was
+  restarting).
+
+For the last two, a send that the backend proves unsent waits 30 seconds and
+sends once more on a fresh page; doctor runs that check once more. A second
+failure exits `75` as usual.
 If the process dies mid-heal, the next read of the map restores the last map
 it had verified. A change in the flow itself — a new dialog, a new
 step — is beyond the map; doctor then stays red and names the stage, and the

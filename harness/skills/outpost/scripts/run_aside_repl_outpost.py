@@ -2394,12 +2394,45 @@ def failure_from_transcript(transcript: str) -> dict[str, Any]:
     }
 
 
+# Most pre-submit failures are not a changed screen. These kinds are told apart
+# so the heal model is not spent on them:
+#   logged-out      ChatGPT sent the page to its login screen; a person logs in.
+#   upload-stalled  the packet chip sat in "업로드 중" until the send button
+#                   timed out; a fresh page uploads it again.
+#   output-lost     the script left no stage at all: Aside dropped its output
+#                   or was restarting. Running it again is the fix.
+TRANSIENT_FAILURE_KINDS = frozenset({"upload-stalled", "output-lost"})
+TRANSIENT_RETRY_PAUSE_SECONDS = 30
+UPLOAD_PENDING_RE = re.compile(r'progressbar "[^"\n]*(?:업로드 중|[Uu]ploading)')
+
+
+def failure_kind(failure: dict[str, Any]) -> str:
+    """'logged-out', 'upload-stalled', 'output-lost', or '' for anything else."""
+    stage = str(failure.get("stage") or "")
+    diag = failure.get("diag") if isinstance(failure.get("diag"), dict) else {}
+    where = f"{failure.get('detail') or ''} {diag.get('url') or ''}"
+    if "/auth/login" in where:
+        return "logged-out"
+    if stage == "ready-to-send" and UPLOAD_PENDING_RE.search(str(diag.get("tree") or "")):
+        return "upload-stalled"
+    if stage_rank(stage) < 0 and not failure.get("sent"):
+        return "output-lost"
+    return ""
+
+
+LOGGED_OUT_HINT = (
+    "ChatGPT 로그인이 풀려 있다. 화면이 바뀐 게 아니라서 자동 수리는 하지 않았다. "
+    "Aside 브라우저에서 chatgpt.com 에 다시 로그인한 뒤 같은 패킷을 보내라."
+)
+
+
 def healable(failure: dict[str, Any]) -> bool:
     detail = str(failure.get("detail") or "")
     return (
         str(failure.get("stage") or "") in HEALABLE_STAGES
         and not failure.get("daemonLost")
         and "rate-limited" not in detail
+        and not failure_kind(failure)
     )
 
 
@@ -2542,6 +2575,8 @@ def format_step(name: str, result: dict[str, Any]) -> str:
         line += f" model={result['modelSlug']}"
     if result.get("healed"):
         line += f" healed_in={result['healed']}"
+    if not result.get("ok") and result.get("kind"):
+        line += f" kind={result['kind']}"
     if not result.get("ok") and result.get("detail"):
         line += f"\n  detail={result['detail']}"
     return line
@@ -2564,13 +2599,16 @@ def format_doctor_report(payload: dict[str, Any]) -> str:
     if blockers:
         lines.append("blockers=" + ",".join(str(b) for b in blockers))
     if not ok:
-        failed = [
-            str(step.get("stage") or "")
-            for step in (payload.get("pro"), payload.get("xhigh"))
-            if step and not step.get("ok")
+        failed_steps = [
+            step for step in (payload.get("pro"), payload.get("xhigh")) if step and not step.get("ok")
         ]
+        failed = [str(step.get("stage") or "") for step in failed_steps]
         if not failed:
             lines.append("exit 75 — Aside 데몬이 준비되지 않았다. 잠시 뒤 다시 돌려라.")
+        elif any(step.get("kind") == "logged-out" for step in failed_steps):
+            lines.append("exit 75 — " + LOGGED_OUT_HINT)
+        elif any(step.get("kind") == "upload-stalled" for step in failed_steps):
+            lines.append("exit 75 — ChatGPT 업로드가 두 번 다 멈췄다. 화면 문제가 아니다; 잠시 뒤 다시 돌려라.")
         elif any(stage_rank(stage) >= 0 or stage in {"answered", "await-response"} for stage in failed):
             lines.append("exit 75 — 전송 경로가 막혀 있고 자동 수리로도 풀리지 않았다. 코드 수정이 필요하다.")
         else:
@@ -2608,15 +2646,17 @@ def run_doctor(args: argparse.Namespace) -> int:
 
     def once_more_if_aside_failed(check: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         result = check()
-        # No stage means the script never ran a step: Aside was not answering,
-        # not a changed screen. Wait for the daemon and run it once more.
+        # No stage means the script never ran a step, and a stalled upload is
+        # ChatGPT's, not a changed screen. Wait for the daemon and run it once more.
         if (
             not result.get("ok")
             and not result.get("sent")
-            and stage_rank(str(result.get("stage") or "")) < 0
+            and failure_kind(result) in TRANSIENT_FAILURE_KINDS
             and ensure_aside_daemon() is None
         ):
             result = check()
+        if not result.get("ok"):
+            result = {**result, "kind": failure_kind(result)}
         return result
 
     def check_pro() -> dict[str, Any]:
@@ -3260,28 +3300,41 @@ def main(argv: Sequence[str]) -> int:
                 if isinstance(first, (SubmitUnknownError, SubmittedResponseError)):
                     raise
                 failure = failure_from_transcript(str(first))
-                if not (auto_heal_enabled() and healable(failure)):
+                kind = failure_kind(failure)
+                if kind == "logged-out":
+                    raise RuntimeError(f"{LOGGED_OUT_HINT}\n\n{first}") from first
+                if kind in TRANSIENT_FAILURE_KINDS:
+                    print(
+                        f"OUTPOST_RETRY reason={kind} stage={failure['stage']} — 전송 전 단계라 보낸 것은 없다. "
+                        "새 페이지에서 한 번 다시 보낸다.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    time.sleep(TRANSIENT_RETRY_PAUSE_SECONDS)
+                    ensure_aside_daemon()
+                elif auto_heal_enabled() and healable(failure):
+                    print(
+                        f"OUTPOST_HEAL start stage={failure['stage']} — 전송 전 단계라 보낸 것은 없다. "
+                        "화면 지도를 고친 뒤 한 번 다시 보낸다.",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    healed = heal_screen_map(
+                        failure,
+                        lambda: rehearse(
+                            project_url=project_url,
+                            project_name=project_name,
+                            quality=args.quality,
+                            conversation_url=conversation_url,
+                        ),
+                    )
+                    if not healed["ok"]:
+                        raise RuntimeError(
+                            f"{first}\n\n자동 수리 {healed['attempts']}회로도 풀리지 않았다 "
+                            f"(마지막 단계 {healed['result'].get('stage') or '-'})."
+                        ) from first
+                else:
                     raise
-                print(
-                    f"OUTPOST_HEAL start stage={failure['stage']} — 전송 전 단계라 보낸 것은 없다. "
-                    "화면 지도를 고친 뒤 한 번 다시 보낸다.",
-                    file=sys.stderr,
-                    flush=True,
-                )
-                healed = heal_screen_map(
-                    failure,
-                    lambda: rehearse(
-                        project_url=project_url,
-                        project_name=project_name,
-                        quality=args.quality,
-                        conversation_url=conversation_url,
-                    ),
-                )
-                if not healed["ok"]:
-                    raise RuntimeError(
-                        f"{first}\n\n자동 수리 {healed['attempts']}회로도 풀리지 않았다 "
-                        f"(마지막 단계 {healed['result'].get('stage') or '-'})."
-                    ) from first
                 (
                     submit_payload,
                     response_payload,
