@@ -5,7 +5,7 @@ import {
 	type TerminalSessionExit,
 	type TerminalSessionOptions,
 } from "@code-yeongyu/senpi-pty";
-import { ensureVendoredSenpiPtyPrebuilds } from "./native-prebuild.ts";
+import { loadTerminalNative } from "./native-prebuild.ts";
 import { DEFAULT_SCROLLBACK, MAX_SESSION_OUTPUT_CHARS } from "./shared.ts";
 
 export interface TerminalRuntimeOptions extends TerminalSessionOptions {
@@ -55,7 +55,6 @@ export class TerminalRuntimeSession {
 			rows: options.rows,
 			scrollback: options.scrollback ?? DEFAULT_SCROLLBACK,
 		});
-		ensureVendoredSenpiPtyPrebuilds();
 		// The kill deadline is kept here and never handed to the PTY library. Its native deadline
 		// is a thread that sleeps the whole deadline even when the command ends at once, so every
 		// command run with a timeout or watched by a monitor left one behind for up to an hour
@@ -64,7 +63,7 @@ export class TerminalRuntimeSession {
 		if (timeoutMs !== undefined && (!Number.isFinite(timeoutMs) || timeoutMs <= 0)) {
 			throw new Error("Invalid timeoutMs: must be a finite positive number");
 		}
-		this.session = new TerminalSession(sessionOptions);
+		this.session = new TerminalSession(sessionOptions, { nativeLoadResult: loadTerminalNative() });
 		this.unsubscribeData = this.session.onData((chunk) => {
 			const text = this.ingest(chunk);
 			if (text.length === 0) return;

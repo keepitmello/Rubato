@@ -1,0 +1,137 @@
+diff --git a/crates/senpi-pty/src/lib.rs b/crates/senpi-pty/src/lib.rs
+index 4f910cd..2eb89eb 100644
+--- a/crates/senpi-pty/src/lib.rs
++++ b/crates/senpi-pty/src/lib.rs
+@@ -24,6 +24,10 @@ use std::time::Duration;
+ /// binaries. See the sentinel export below.
+ const NATIVE_PTY_ABI_VERSION: &str = "1";
+ 
++/// Rubato's compatible ABI-1 build queues input instead of blocking the JavaScript thread.
++#[napi(js_name = "__rubatoPtyQueuedInput1")]
++pub fn rubato_pty_queued_input() -> bool { true }
++
+ #[napi(object)]
+ pub struct NativePtySessionOptions {
+     pub command: String,
+@@ -43,6 +47,12 @@ pub struct NativePtyExit {
+     pub timed_out: bool,
+ }
+ 
++#[napi(object)]
++pub struct NativePtyWriteResult {
++    pub ok: bool,
++    pub note: String,
++}
++
+ #[napi(js_name = "PtySession")]
+ pub struct NativePtySession {
+     session: Option<PtySession>,
+@@ -56,13 +66,18 @@ impl NativePtySession {
+     }
+ 
+     #[napi]
+-    pub fn write(&mut self, data: Either3<String, Buffer, Uint8Array>) -> NapiResult<()> {
++    pub fn write(&mut self, data: Either3<String, Buffer, Uint8Array>) -> NativePtyWriteResult {
+         let bytes = match data {
+             Either3::A(text) => text.into_bytes(),
+             Either3::B(buffer) => buffer.to_vec(),
+             Either3::C(array) => array.to_vec(),
+         };
+-        self.open_session()?.write(&bytes).map_err(to_napi_error)
++        // The JS adapter recognizes operation results, not Error objects returned as values
++        // by N-API. Report admission failure explicitly instead of silently claiming success.
++        match self.open_session().and_then(|session| session.write(&bytes).map_err(to_napi_error)) {
++            Ok(()) => NativePtyWriteResult { ok: true, note: "Queued input for terminal session.".into() },
++            Err(error) => NativePtyWriteResult { ok: false, note: error.to_string() },
++        }
+     }
+ 
+     #[napi]
+diff --git a/crates/senpi-pty/src/session.rs b/crates/senpi-pty/src/session.rs
+index 7f5be0a..016df99 100644
+--- a/crates/senpi-pty/src/session.rs
++++ b/crates/senpi-pty/src/session.rs
+@@ -6,6 +6,7 @@ use std::io::Write;
+ use std::path::PathBuf;
+ use std::sync::atomic::{AtomicBool, Ordering};
+ use std::sync::{Arc, Mutex};
++use std::sync::mpsc::{self, SyncSender};
+ use std::thread::JoinHandle;
+ use std::time::Duration;
+ 
+@@ -99,6 +100,8 @@ pub struct PtyExit {
+ pub struct PtySession {
+     master: Arc<Mutex<Option<Box<dyn MasterPty + Send>>>>,
+     writer: Arc<Mutex<Option<Box<dyn Write + Send>>>>,
++    input: Option<SyncSender<Vec<u8>>>,
++    input_error: Arc<Mutex<Option<String>>>,
+     child: Option<Box<dyn Child + Send + Sync>>,
+     killer: Box<dyn ChildKiller + Send + Sync>,
+     reader_thread: Arc<Mutex<Option<JoinHandle<()>>>>,
+@@ -194,6 +197,8 @@ impl PtySession {
+         Ok(Self {
+             master: Arc::new(Mutex::new(Some(pair.master))),
+             writer,
++            input: None,
++            input_error: Arc::new(Mutex::new(None)),
+             child: Some(child),
+             killer,
+             reader_thread: Arc::new(Mutex::new(Some(reader_thread))),
+@@ -210,17 +215,47 @@ impl PtySession {
+         if self.finished.load(Ordering::SeqCst) {
+             return Err(PtyError::new("pty session is closed"));
+         }
+-        // The first consumer write closes the ConPTY cursor-query auto-answer window.
++        if bytes.len() > 1024 * 1024 {
++            return Err(PtyError::new("pty input exceeds 1 MiB per write"));
++        }
++        if let Some(error) = self.input_error.lock().unwrap().as_ref() {
++            return Err(PtyError::new(error.clone()));
++        }
++        if self.input.is_none() {
++            // Never write on the JS thread. A child can stop reading while the PTY reader
++            // waits for its JS output callback: write_all on that thread deadlocks both.
++            // Bounded FIFO admission is synchronous; the writer owns delivery and backpressure.
++            let (send, receive) = mpsc::sync_channel::<Vec<u8>>(16);
++            let writer = Arc::clone(&self.writer);
++            let finished = Arc::clone(&self.finished);
++            let error = Arc::clone(&self.input_error);
++            std::thread::Builder::new().name("rubato-pty-writer".into()).spawn(move || {
++                while !finished.load(Ordering::SeqCst) {
++                    let bytes = match receive.recv_timeout(Duration::from_millis(100)) {
++                        Ok(bytes) => bytes,
++                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
++                        Err(mpsc::RecvTimeoutError::Disconnected) => break,
++                    };
++                    let result = (|| -> std::io::Result<()> {
++                        let mut guard = writer.lock().map_err(|_| std::io::Error::other("pty writer lock poisoned"))?;
++                        let writer = guard.as_mut().ok_or_else(|| std::io::Error::other("pty session is closed"))?;
++                        writer.write_all(&bytes)?;
++                        writer.flush()
++                    })();
++                    if let Err(cause) = result {
++                        *error.lock().unwrap() = Some(cause.to_string());
++                        break;
++                    }
++                }
++            })?;
++            self.input = Some(send);
++        }
++        self.input.as_ref().unwrap().try_send(bytes.to_vec()).map_err(|error| match error {
++            mpsc::TrySendError::Full(_) => PtyError::new("pty input queue is full; wait for the process to consume input"),
++            mpsc::TrySendError::Disconnected(_) => PtyError::new("pty input writer is closed"),
++        })?;
++        // The first accepted consumer write closes the ConPTY cursor-query auto-answer window.
+         self.user_wrote.store(true, Ordering::SeqCst);
+-        let mut guard = self
+-            .writer
+-            .lock()
+-            .map_err(|_| PtyError::new("pty writer lock poisoned"))?;
+-        let writer = guard
+-            .as_mut()
+-            .ok_or_else(|| PtyError::new("pty session is closed"))?;
+-        writer.write_all(bytes)?;
+-        writer.flush()?;
+         Ok(())
+     }
+ 

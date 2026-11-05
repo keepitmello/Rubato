@@ -2,8 +2,23 @@ import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadPtyNative } from "@code-yeongyu/senpi-pty";
 
 const require = createRequire(import.meta.url);
+
+/** Use Rubato's nonblocking-input build on the qualified host, without modifying npm's prebuild. */
+export function loadTerminalNative(): ReturnType<typeof loadPtyNative> {
+	ensureVendoredSenpiPtyPrebuilds();
+	if (process.platform !== "darwin" || process.arch !== "arm64") return loadPtyNative();
+	// The pinned package's public wrapper ignores loader options. Use its underlying
+	// loader so the vendored path still receives the ABI and quarantine checks.
+	const { loadNativePty } = require(join(senpiPtyPackageRoot(), "dist/loader.js"));
+	const loaded: ReturnType<typeof loadPtyNative> = loadNativePty({ moduleDir: dirname(fileURLToPath(import.meta.url)) });
+	if (!loaded.native) throw new Error(`Rubato PTY prebuild could not load: ${loaded.diagnostic.cause}`);
+	const queued = loaded.native.__rubatoPtyQueuedInput1;
+	if (typeof queued !== "function" || queued() !== true) throw new Error("Rubato PTY is missing its nonblocking-input build");
+	return loaded;
+}
 
 export interface EnsureVendoredPrebuildResult {
 	readonly packageRoot: string | null;
@@ -64,6 +79,8 @@ export function ensureVendoredSenpiPtyPrebuilds(): EnsureVendoredPrebuildResult 
 	}
 
 	for (const host of listVendoredPrebuildHosts(vendorRoot)) {
+		// Darwin is loaded directly from this feature: never replace npm's baseline binary.
+		if (host === "darwin-arm64") { skipped.push(host); continue; }
 		const source = vendoredPrebuildPath(vendorRoot, host);
 		const destination = contractPrebuildPath(packageRoot, host);
 		if (existsSync(destination)) {

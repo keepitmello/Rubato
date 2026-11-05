@@ -1,0 +1,19 @@
+{
+  "host": "darwin-arm64",
+  "sha256": "88992d05a4e664141f41013254aba0cb7848ddfc93b0d6f1e1fe5246b7763316",
+  "abi": "1",
+  "capability": "__rubatoPtyQueuedInput1",
+  "source": {
+    "repository": "https://github.com/code-yeongyu/senpi",
+    "commit": "b0a446488dafc813ec2ff56e515668c0fa990027",
+    "crate": "crates/senpi-pty",
+    "patch": "nonblocking-input.patch",
+    "patchSha256": "1bba4b5cb9bed634874c69634f3fe6890687be9b26004f5d627fa19156cef26f",
+    "cargoLockSha256": "941cd1116580fa5fa8f150748f12a03b138ab4b63563dd72112b1eb1b12c7c98"
+  },
+  "build": {
+    "rustc": "1.93.1 (01f6ddf75 2026-02-11)",
+    "command": "cargo build --locked --release -p senpi-pty",
+    "rebuild": "node native/build-darwin.mjs"
+  }
+}

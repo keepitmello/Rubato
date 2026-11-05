@@ -11,6 +11,7 @@ import { getShellConfig } from "./src/host/shell.ts";
 import { TerminalManager } from "./src/manager.ts";
 import {
 	contractPrebuildPath,
+	loadTerminalNative,
 	ensureVendoredSenpiPtyPrebuilds,
 	senpiPtyPackageRoot,
 	vendoredPrebuildPath,
@@ -74,7 +75,7 @@ test(
 				: `native artifact is only qualified on darwin-arm64, got ${process.platform}-${process.arch}`,
 	},
 	async (t) => {
-		const native = loadPtyNative();
+		const native = loadTerminalNative();
 		assert.notEqual(native.native, null, native.diagnostic?.cause);
 		assert.equal(native.diagnostic, null);
 		assert.equal(native.native.__senpiPtyAbi1(), "1");
