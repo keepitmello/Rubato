@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { ContextNotesController } from "../../src/context-notes/controller.mjs";
+import { assertStorageAvailable, ContextNotesController } from "../../src/context-notes/controller.mjs";
 import { contextNotesConfig } from "../../src/context-notes/config.mjs";
 import { CHECKPOINT_NOTE, NOTE_ENTRY, SOURCE, decodeBootstrap, messageText } from "../../src/context-notes/protocol.mjs";
 import { fakeSession } from "../helpers/context-notes-fake.mjs";
@@ -402,4 +402,42 @@ test("a full disk stops turns only until space is back", (t)=>{
   f.c.admit([]);
   assert.equal(f.c.storageFailure,null);
   assert.ok(f.c.store.listItems({ role:"user" }).items.some((item)=>item.item_id===big.id));
+});
+
+for (const errcode of [10, 778, 13]) {
+  test(`SQLite storage error ${errcode} refuses requests until a successful resync, without poisoning the session`, (t)=>{
+    const f=setup(t); const sync=f.c.store.sync.bind(f.c.store);
+    const error=Object.assign(new Error("disk I/O error"), {code:"ERR_SQLITE_ERROR",errcode});
+    f.c.store.sync=()=>{throw error;};
+    const request=f.addMessage("user","Keep this request after storage recovers.");
+    assert.throws(()=>f.c.refresh(f.ctx),e=>e===error);
+    f.c.fail(error,true); // turn_end's fatal report must not reclassify the same outage.
+    assert.equal(f.c.fatal,null);
+    assert.throws(()=>f.c.admit([]),e=>e===error);
+    f.c.store.sync=sync;
+    assert.doesNotThrow(()=>f.c.admit([]));
+    assert.equal(f.c.storageFailure,null);
+    assert.ok(f.c.store.listItems({role:"user"}).items.some(item=>item.item_id===request.id));
+  });
+}
+
+test("SQLite corruption still permanently refuses provider admission", (t)=>{
+  const f=setup(t);
+  const error=Object.assign(new Error("database disk image is malformed"), {code:"ERR_SQLITE_ERROR",errcode:11});
+  f.c.latch(error);
+  assert.throws(()=>f.c.admit([]),/malformed/);
+  assert.equal(f.c.storageFailure,null);
+});
+
+test("low disk space refuses admission clearly and recovers without dropping the pending input", (t)=>{
+  const f=setup(t);
+  let bavail=128;
+  f.c.checkStorage=file=>assertStorageAvailable(file,()=>({bavail,bsize:1024*1024}));
+  const request=f.addMessage("user","Preserve me while disk space is low.");
+  assert.throws(()=>f.c.admit([]),e=>e.code==="ENOSPC" && /128MB/.test(e.message));
+  assert.equal(f.c.fatal,null);
+  bavail=256;
+  assert.doesNotThrow(()=>f.c.admit([]));
+  assert.equal(f.c.storageFailure,null);
+  assert.ok(f.c.store.listItems({role:"user"}).items.some(item=>item.item_id===request.id));
 });

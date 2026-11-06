@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
@@ -135,4 +137,57 @@ test("a refused request names why the notes manager could not start, and recover
     assert.equal(second.calls(), 1, "the same runtime starts its manager on the next message");
     assert.equal(lastAssistant(second.session).stopReason, "stop");
   } finally { db.close(); await second.close(); }
+});
+
+test("the real agent refuses low disk space before the provider and resumes in the same runtime", async (t) => {
+  const ws = workspace("low-disk");
+  const live = await open({ ...ws, sessionManager: sdk.SessionManager.create(ws.cwd, ws.sessionDir) },
+    () => assistant("storage recovered"));
+  const original = fs.statfsSync;
+  let low = true;
+  t.mock.method(fs, "statfsSync", (file, ...args) => String(file).startsWith(ws.cwd) && low
+    ? { bavail: 128, bsize: 1024 * 1024 } : original(file, ...args));
+  syncBuiltinESMExports();
+  try {
+    await live.session.prompt("preserve the blocked request"); await settle();
+    assert.equal(live.calls(), 0);
+    assert.match(lastAssistant(live.session).errorMessage, /128MB/);
+    low = false;
+    await live.session.prompt("retry after freeing disk space"); await settle();
+    assert.equal(live.calls(), 1, JSON.stringify({ last: lastAssistant(live.session), errors: live.errors }));
+    assert.equal(lastAssistant(live.session).stopReason, "stop");
+    assert.ok(live.session.sessionManager.getBranch().some(entry =>
+      entry.message?.role === "user" && JSON.stringify(entry.message.content).includes("preserve the blocked request")));
+  } finally {
+    t.mock.restoreAll(); syncBuiltinESMExports();
+    await live.close();
+  }
+});
+
+test("a WAL I/O error in an already running notes manager does not permanently poison later turns", async (t) => {
+  const ws = workspace("wal-io-error");
+  const live = await open({ ...ws, sessionManager: sdk.SessionManager.create(ws.cwd, ws.sessionDir) },
+    () => assistant("storage recovered"));
+  const prepare = DatabaseSync.prototype.prepare;
+  let failing = false;
+  const failure = Object.assign(new Error("disk I/O error"), { code: "ERR_SQLITE_ERROR", errcode: 778 });
+  t.mock.method(DatabaseSync.prototype, "prepare", function (sql, ...args) {
+    if (failing && sql.startsWith("INSERT OR IGNORE INTO items")) throw failure;
+    return prepare.call(this, sql, ...args);
+  });
+  try {
+    await live.session.prompt("warm the notes manager"); await settle();
+    assert.equal(live.calls(), 1, JSON.stringify({ last: lastAssistant(live.session), errors: live.errors }));
+    failing = true;
+    await live.session.prompt("request during disk failure"); await settle();
+    assert.equal(live.calls(), 1, "no request crosses while the archive cannot sync");
+    assert.match(lastAssistant(live.session).errorMessage, /disk I\/O error/);
+    failing = false;
+    await live.session.prompt("retry after storage recovery"); await settle();
+    assert.equal(live.calls(), 2, JSON.stringify({ last: lastAssistant(live.session), errors: live.errors }));
+    assert.equal(lastAssistant(live.session).stopReason, "stop");
+  } finally {
+    t.mock.restoreAll();
+    await live.close();
+  }
 });

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { MESSAGE_CHARS, createScheduleStore } from '../src/index.mjs';
@@ -204,5 +204,16 @@ describe('concurrent writers', () => {
     writeFileSync(path.join(root, 'state.lock'), `999999 ${Date.now()}\n`);
     await store().create(input());
     expect(store().read().tasks).toHaveLength(1);
+  });
+
+  test('an old empty or partial lock from a failed disk write is taken over', async () => {
+    for (const text of ['', `${process.pid} `]) {
+      const lock = path.join(root, 'state.lock');
+      writeFileSync(lock, text);
+      const old = new Date(Date.now() - 60_000);
+      utimesSync(lock, old, old);
+      await store().create(input());
+    }
+    expect(store().read().tasks).toHaveLength(2);
   });
 });

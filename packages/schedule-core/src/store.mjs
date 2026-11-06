@@ -49,8 +49,12 @@ function readJson(file, fallback) {
 
 function writeAtomic(file, value) {
   const temporary = `${file}.${process.pid}.${randomUUID()}.tmp`;
-  writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
-  renameSync(temporary, file);
+  try {
+    writeFileSync(temporary, JSON.stringify(value, null, 2) + '\n', { mode: 0o600, flag: 'wx' });
+    renameSync(temporary, file);
+  } finally {
+    try { unlinkSync(temporary); } catch {}
+  }
 }
 
 function directoryOrThrow(cwd) {
@@ -173,8 +177,15 @@ export function createScheduleStore(options = {}) {
     for (;;) {
       try {
         const fd = openSync(files.lock, 'wx', 0o600);
-        writeFileSync(fd, `${process.pid} ${Date.now()}\n`);
-        closeSync(fd);
+        try {
+          try { writeFileSync(fd, `${process.pid} ${Date.now()}\n`); }
+          finally { closeSync(fd); }
+        } catch (error) {
+          // ENOSPC can leave an empty lock. No release callback exists yet, so
+          // acquisition itself must close the fd and remove the lock it owns.
+          try { unlinkSync(files.lock); } catch {}
+          throw error;
+        }
         return () => { try { unlinkSync(files.lock); } catch {} };
       } catch (error) {
         if (error.code !== 'EEXIST') throw error;
@@ -182,7 +193,13 @@ export function createScheduleStore(options = {}) {
       let holder = '';
       try { holder = readFileSync(files.lock, 'utf8'); } catch {}
       const [pid, at] = holder.trim().split(/\s+/).map(Number);
-      const stale = holder && (!pidAlive(pid) || Date.now() - at > LOCK_STALE_MS);
+      const validHolder = Number.isInteger(pid) && pid > 0 && Number.isFinite(at) && at > 0;
+      // Recover empty/partial locks from an older writer, but not the brief gap
+      // between a concurrent writer's exclusive open and its metadata write.
+      let stale = validHolder && (!pidAlive(pid) || Date.now() - at > LOCK_STALE_MS);
+      if (!validHolder) {
+        try { stale = Date.now() - statSync(files.lock).mtimeMs > LOCK_STALE_MS; } catch {}
+      }
       if (stale) { try { unlinkSync(files.lock); } catch {} continue; }
       if (Date.now() > deadline) throw new ScheduleError('busy', 'The schedule is busy; try again in a moment.');
       await sleep(20);

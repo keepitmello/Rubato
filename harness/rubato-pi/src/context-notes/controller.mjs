@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
+import { statfsSync } from "node:fs";
+import { dirname } from "node:path";
 import { BYTE_NUDGE_TEXT, NUDGE_TEXT, findNudges, findReminder, reminderAnchor, reminderIndex, reminderMessage } from "./reminder.mjs";
 import { assertCheckpointFresh, CheckpointRefreshRequired } from "./checkpoint.mjs";
 import { readAuthoritativeBranch } from "./history-source.mjs";
@@ -139,10 +141,27 @@ class HardLineRefusal extends Error {}
 class FullWindowRefusal extends Error {}
 class RequestByteRefusal extends Error {}
 
-// A full disk is a state of the machine, not of this session.
+// A full disk can also surface as an extended SQLITE_IOERR (e.g. a WAL write).
+// Neither is proof of corrupt session history. Retry the authoritative sync on
+// the next request; corruption/identity errors must still remain fatal.
 function storageFull(error) {
   if (error?.code === "ENOSPC" || error?.code === "EDQUOT") return true;
-  return error?.code === "ERR_SQLITE_ERROR" && (error.errcode & 0xff) === 13; // SQLITE_FULL
+  return error?.code === "ERR_SQLITE_ERROR" && [10, 13].includes(error.errcode & 0xff); // IOERR, FULL
+}
+
+// Leave room for the journal and SQLite WAL instead of starting another model
+// request on a nearly full volume. This is a safety margin, not a disk quota:
+// other processes can still consume it while a turn is running.
+export function assertStorageAvailable(file, statfs = statfsSync) {
+  if (!file) return;
+  // A new session gets its journal pathname before the first write creates the
+  // file. Its directory already exists and is on the journal's volume.
+  const { bavail, bsize } = statfs(dirname(file));
+  const available = Number(bavail) * Number(bsize);
+  if (available < 256 * 1024 * 1024) {
+    throw Object.assign(new Error(`디스크 여유 공간이 ${Math.max(0, Math.floor(available / 1024 / 1024))}MB뿐이에요. ` +
+      "대화 기록을 보호하려고 모델 요청을 중단했어요. 여유 공간을 확보한 뒤 같은 대화에서 다시 요청해 주세요 (최소 256MB)."), { code: "ENOSPC" });
+  }
 }
 
 export class ContextNotesController {
@@ -152,6 +171,7 @@ export class ContextNotesController {
     this.periodicNudge = periodicNotesNudge(options.env ?? process.env);
     this.requireEngine = options.requireEngine !== false;
     this.flushJournal = options.flushJournal ?? flushSessionJournal;
+    this.checkStorage = options.checkStorage ?? assertStorageAvailable;
     if (this.requireEngine) assertEngineParts();
     this.sessionId = ctx.sessionManager.getSessionId();
     this.store = options.store ?? new ContextNotesStore(databasePath(options.agentDir ?? ctx.agentDir, this.sessionId), this.config);
@@ -320,6 +340,8 @@ export class ContextNotesController {
 
   admit(messages) {
     if (this.fatal) throw new Error(this.fatal);
+    try { this.checkStorage(this.ctx.sessionManager.getSessionFile?.()); }
+    catch (error) { this.latch(error); throw error; }
     if (this.storageFailure) {
       this.refresh(this.ctx, true);
       this.storageFailure = null;
@@ -440,7 +462,12 @@ export class ContextNotesController {
 
   fail(error, fatal = false) {
     const message = error instanceof Error ? error.message : String(error);
-    if (fatal) this.fatal = message; else this.paused = message;
+    // turn_end reports failures as fatal because a transition may be unsafe.
+    // A storage outage during its refresh is still retryable; otherwise that
+    // later hook turns the same recoverable I/O error into a permanent latch.
+    if (storageFull(error)) { this.storageFailure = message; this.paused = message; }
+    else if (fatal) this.fatal = message;
+    else this.paused = message;
     try { this.record("paused", { reason: message }); } catch { /* original failure wins */ }
     this.ctx.ui?.notify?.(message, "error");
     this.showStatus();
