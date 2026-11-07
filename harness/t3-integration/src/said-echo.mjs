@@ -10,7 +10,7 @@
 // (RubatoPiSessions.ts appendOwnRun).
 import { SESSION_MESSAGE_TYPE, sessionMessageId } from './events.mjs';
 import { BACKFILL_KIND } from './backfill.mjs';
-import { REPLY_TOOL, SAY_TOOL, replyDisplayText } from '../../companion/home.mjs';
+import { REPLY_TOOL, SAY_TOOL, filesMarkdown, replyDisplayText } from '../../companion/home.mjs';
 
 export const SAID_KIND = 'rubato-said';
 const TELEGRAM_SEND = 'telegram_send';
@@ -45,13 +45,24 @@ function callsIn(message) {
   return calls;
 }
 
-/** The paired person's Telegram words are theirs, not an agent's envelope or a wake. */
+/**
+ * The words the messenger writes in place of a caption (media.mjs mediaOf): with the file itself
+ * shown, they say nothing.
+ */
+const MEDIA_PLACEHOLDER = /^\((?:photo|video|video note|animation|document(?::[^)]*)?)\)$/;
+
+/**
+ * The paired person's Telegram words are theirs, not an agent's envelope or a wake. The files they
+ * sent ride under the words as markdown lines (filesMarkdown), so the room draws a photo there.
+ */
 export function channelItem(message, threadId) {
   const details = message?.details;
   if (message?.role !== 'custom' || message.customType !== SESSION_MESSAGE_TYPE
     || details?.kind !== 'channel' || details.from?.channel !== 'telegram' || details.from?.isUser !== true
     || typeof details.messageId !== 'string' || !details.messageId.trim() || typeof details.text !== 'string') return;
-  const text = details.text.trim();
+  const files = filesMarkdown((Array.isArray(details.attachments) ? details.attachments : []).map((item) => item?.path));
+  const words = details.text.trim();
+  const text = [files.length && MEDIA_PLACEHOLDER.test(words) ? '' : words, ...files].filter(Boolean).join('\n\n');
   if (!text) return;
   return {
     id: sessionMessageId(threadId, details.messageId.trim()), role: 'user', text, createdAt: atOf(message.timestamp),

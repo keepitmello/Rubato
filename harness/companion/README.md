@@ -90,9 +90,12 @@ sessions still read them. Automatic per-message recall remains off.
 
 ## Optional transports
 
-`telegram: true` registers that profile's supervised messenger. `reply` remains its
-only answer tool, with optional files and voice; Telegram reaction/edit tools act on
-existing transport messages. There is no separate `telegram_send` tool. Its connection
+`reply` is every companion's only answer tool. Its `files` attach pictures, videos,
+documents and HTML pages with or without a messenger: the app draws pictures and videos
+in the message and opens other files in the side panel. `telegram: true` registers that
+profile's supervised messenger, which also sends those files and adds voice; Telegram
+reaction/edit tools act on existing transport messages. There is no separate
+`telegram_send` tool. Its connection
 and queue live under its own `messenger/` directory. Configure
 the connection using the existing messenger settings contract; do not copy another
 profile's credentials. One real bot must have one polling owner. Registration does

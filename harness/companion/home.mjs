@@ -550,10 +550,41 @@ export const REPLY_TOOL = 'reply';
 /** The same as a voice reply (Roo's voice=true); offered only once a voice is set. */
 export const SAY_TOOL = 'say';
 
+/** Files the app draws in the message itself, as an ordinary thread does (T3 ChatMarkdown: image or video). */
+export const INLINE_MEDIA_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp', '.avif',
+  '.mp4', '.m4v', '.mov', '.webm']);
+
+/**
+ * One markdown line per file for the app: a picture or a video drawn where it stands, any other file
+ * (a document, an HTML page) as a link that opens it in the side panel. Absolute paths only.
+ */
+export function filesMarkdown(files) {
+  return (Array.isArray(files) ? files : []).filter(file => typeof file === 'string' && path.isAbsolute(file.trim()))
+    .map(file => {
+      const name = path.basename(file.trim()).replace(/[[\]\\]/g, '_');
+      return `${INLINE_MEDIA_EXTS.has(path.extname(file.trim()).toLowerCase()) ? '!' : ''}[${name}](<${file.trim()}>)`;
+    });
+}
+
 /** The same visible words in the app and the sent-message record, including media-only replies. */
 export function replyDisplayText({ text, voice_text, files } = {}) {
   return [typeof text === 'string' && text.trim() ? text.trim() : String(voice_text ?? '').trim(),
-    ...(Array.isArray(files) ? files.map(file => `[${path.basename(file)}](<${file}>)`) : [])].filter(Boolean).join('\n\n');
+    ...filesMarkdown(files)].filter(Boolean).join('\n\n');
+}
+
+/**
+ * The files a reply may attach: absolute paths to regular files that exist. Throws naming the first
+ * that is not, so a broken attachment never reaches the person.
+ */
+export function attachableFiles(files) {
+  return (Array.isArray(files) ? files : []).map(file => {
+    const value = typeof file === 'string' ? file.trim() : '';
+    if (!value || !path.isAbsolute(value)) throw new Error(`files take absolute paths: ${JSON.stringify(file)}`);
+    let stats;
+    try { stats = statSync(value); } catch { throw new Error(`no such file: ${value}`); }
+    if (!stats.isFile()) throw new Error(`not a file: ${value}`);
+    return value;
+  });
 }
 
 /** Records one message `reply` or `say` showed the user, for `sentMessages`. */

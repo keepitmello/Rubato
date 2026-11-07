@@ -21,7 +21,7 @@
 // schedule.mjs). Those files are staged beside this one because the runtime build cannot reach
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
-import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, replyDisplayText, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, attachableFiles, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, replyDisplayText, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
 import { CALL_SAY_TOOL } from "./call.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
@@ -63,10 +63,12 @@ export function createReplyWait() {
 }
 
 const replyParameters = (media) => ({
-  type: "object", additionalProperties: false, ...(media ? {} : { required: ["text"] }),
+  type: "object", additionalProperties: false,
   properties: { text: { type: "string", minLength: 1, description: "What you say to the person." },
+    files: { type: "array", maxItems: 10, items: { type: "string" }, description: media
+      ? "Absolute file paths to attach: pictures, videos, documents, HTML pages. The app shows pictures and videos in the message and the rest as attachments that open; the connected messenger sends them too."
+      : "Absolute file paths to attach: pictures, videos, documents, HTML pages. The app shows pictures and videos in the message and the rest as attachments that open." },
     ...(media ? {
-      files: { type: "array", maxItems: 10, items: { type: "string" }, description: "Absolute file paths. The connected messenger delivers them; the app keeps links." },
       voice: { anyOf: [{ type: "boolean" }, { type: "string", enum: ["only"] }], description: "true adds a voice note; only sends voice in the messenger and keeps the words in the app." },
       voice_text: { type: "string", minLength: 1, description: "Words to read aloud if different from text." },
       sanitize: { type: "boolean", description: "Default true removes markup and voice control tags from the delivered text." },
@@ -228,12 +230,16 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         description:
           "Say something to the user. This is the only way your words reach them: what you write anywhere else, in any turn, " +
           "stays with you. The engine puts it in the app and mirrors it to connected messengers; app conversations mirror silently. " +
-          (media ? "Files and voice use this same tool. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
+          "Files you want to show or hand over (a picture, a video, a document, an HTML page) go with this same tool, never as a path in the words. " +
+          (media ? "Voice uses it too. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
         parameters: replyParameters(media),
         async execute(_id, params, _signal, _onUpdate, ctx) {
+          const files = attachableFiles(params.files);
           let telegram;
-          if (params.files?.length || params.voice === true || params.voice === "only" || params.voice_text) {
-            if (!media) throw new Error("No media messenger is connected to this companion.");
+          if (!media && (params.voice === true || params.voice === "only" || params.voice_text)) {
+            throw new Error("No media messenger is connected to this companion.");
+          }
+          if (media && (files.length || params.voice === true || params.voice === "only" || params.voice_text)) {
             const sessionId = ctx?.sessionManager?.getSessionId?.();
             const result = await sessionLink.telegramSend({ text: params.text, files: params.files, voice: params.voice,
               voiceText: params.voice_text, sanitize: params.sanitize, to: "user", source: "reply", sessionId });

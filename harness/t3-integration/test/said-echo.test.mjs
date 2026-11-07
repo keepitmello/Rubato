@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
-import { sessionMessageId } from '../src/events.mjs';
+import { SESSION_MESSAGE_TYPE, sessionMessageId } from '../src/events.mjs';
 import { SAID_KIND, channelItem, companionThreadItems, createSaidEcho, saidEchoes } from '../src/said-echo.mjs';
 import { REPLY_TOOL, SAY_TOOL } from '../../companion/home.mjs';
 
@@ -46,6 +46,27 @@ test('Telegram inputs appear as the person in both companions, never a third par
   }
   assert.equal(channelItem({ ...message, details: { ...message.details, from: { channel: 'telegram', isUser: false } } }, 't'), undefined);
   assert.equal(channelItem({ ...message, details: { ...message.details, kind: 'wake' } }, 't'), undefined);
+});
+
+test('a file the person sent on Telegram rides under their words, drawn in the room; the caption placeholder goes', () => {
+  const message = (text, attachments) => ({ role: 'custom', customType: SESSION_MESSAGE_TYPE, timestamp: 1,
+    details: { kind: 'channel', messageId: 'telegram:1:3', text, attachments, from: { channel: 'telegram', isUser: true } } });
+  const photo = { kind: 'photo', path: '/home/received/1-a.jpg', mime: 'image/jpeg' };
+  const doc = { kind: 'document', path: '/home/received/2-b.pdf', name: 'b.pdf' };
+  assert.equal(channelItem(message('(photo)', [photo]), 't').text, '![1-a.jpg](</home/received/1-a.jpg>)');
+  assert.equal(channelItem(message('이거 봐', [photo]), 't').text, '이거 봐\n\n![1-a.jpg](</home/received/1-a.jpg>)');
+  assert.equal(channelItem(message('(document: b.pdf)', [doc]), 't').text, '[2-b.pdf](</home/received/2-b.pdf>)');
+  assert.equal(channelItem(message('(photo)\n(photo could not be downloaded: gone)', []), 't').text,
+    '(photo)\n(photo could not be downloaded: gone)', 'a file that never arrived keeps the words that say so');
+});
+
+test('a reply with files shows each one on its own: a picture or video in place, any other file as a link', () => {
+  const messages = [
+    { role: 'assistant', stopReason: 'toolUse', timestamp: 1, content: [{ type: 'toolCall', id: 'f1', name: REPLY_TOOL,
+      arguments: { text: '여기', files: ['/out/a.png', '/out/clip.mp4', '/out/page.html'] } }] },
+    result('f1', REPLY_TOOL, 2)];
+  assert.deepEqual([...saidEchoes(messages, 't').values()].map(item => item.text),
+    ['여기\n\n![a.png](</out/a.png>)\n\n![clip.mp4](</out/clip.mp4>)\n\n[page.html](</out/page.html>)']);
 });
 
 test('only confirmed Telegram sends to the person appear in the app; a matching reply is not a duplicate', () => {

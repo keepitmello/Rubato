@@ -37,6 +37,12 @@ export type SegnoChatItem =
       readonly images: ReadonlyArray<ChatImageAttachment>;
       /** Names of the other files the person sent. */
       readonly attachmentNames: readonly string[];
+      /**
+       * The person's files sent from the messenger, one markdown line each (said-echo.mjs
+       * channelItem): drawn in the bubble as Segno's files are, a picture or video in place and
+       * any other file as a link that opens it.
+       */
+      readonly files: string;
       /** The first bubble of its group: the group gets its full gap above. */
       readonly groupStart: boolean;
       /** The last bubble of its group: it carries the tail. */
@@ -50,6 +56,27 @@ export type SegnoChatItem =
  */
 export function personText(text: string): string {
   return replaceComposerContextReferences(text, (reference) => (reference.image ? "" : reference.label)).trim();
+}
+
+/** A file line as the engine writes it (companion home.mjs filesMarkdown): `![name](</abs>)` or `[name](</abs>)`. */
+const FILE_LINE = /^!?\[([^\]\n]*)\]\(<(\/[^>\n]+)>\)$/;
+
+/** The person's words and their file lines, apart. */
+export function splitFileLines(text: string): { words: string; files: string } {
+  const blocks = text.split(/\n{2,}/);
+  const files = blocks.map((block) => block.trim()).filter((block) => FILE_LINE.test(block));
+  if (files.length === 0) return { words: text, files: "" };
+  const words = blocks.filter((block) => !FILE_LINE.test(block.trim())).join("\n\n").trim();
+  return { words, files: files.join("\n\n") };
+}
+
+/** A bubble's text for a one-line preview: each file line reads as its name. */
+export function previewText(text: string): string {
+  return text
+    .split(/\n{2,}/)
+    .map((block) => block.trim().replace(FILE_LINE, (_line, name: string) => name))
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
@@ -76,11 +103,12 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
       next.at - at < GROUP_GAP_MS &&
       next.at - at < SEPARATOR_GAP_MS &&
       sameDay(at, next.at);
+    const person = side === "me" ? splitFileLines(personText(message.text)) : null;
     items.push({
       kind: "bubble",
       id: message.id,
       side,
-      text: side === "me" ? personText(message.text) : message.text,
+      text: person ? person.words : message.text,
       at,
       streaming: message.streaming,
       images: (message.attachments ?? []).filter(isImageAttachment),
@@ -88,6 +116,7 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
         .filter((attachment) => !isImageAttachment(attachment))
         .map((attachment) => attachment.name ?? "")
         .filter(Boolean),
+      files: person ? person.files : "",
       groupStart:
         separated || previous === null || previous.side !== side || at - previous.at >= GROUP_GAP_MS,
       groupEnd: !nextJoins,
@@ -162,7 +191,10 @@ export function segnoTurnMarks(items: ReadonlyArray<SegnoChatItem>): TimelineMin
     const item = items[index]!;
     if (item.kind !== "bubble") continue;
     const words =
-      item.text.trim() || [...item.images.map((image) => image.name ?? ""), ...item.attachmentNames].filter(Boolean).join(", ");
+      previewText(item.text).trim() ||
+      [...item.images.map((image) => image.name ?? ""), ...item.attachmentNames, previewText(item.files)]
+        .filter(Boolean)
+        .join(", ");
     if (item.side === "me") {
       if (previousSide !== "me") marks.push({ id: item.id, rowIndex: index, asked: [], answered: [] });
       if (words) marks.at(-1)!.asked.push(words);

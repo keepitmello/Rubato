@@ -30,7 +30,8 @@ import {
   useSyncExternalStore,
 } from "react";
 
-import type { EnvironmentId, MessageId } from "@t3tools/contracts";
+import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ChevronDownIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
@@ -206,6 +207,7 @@ function Bubble({
   locale,
   cwd,
   environmentId,
+  threadRef,
   onRewind,
 }: {
   item: Extract<SegnoChatItem, { kind: "bubble" }>;
@@ -215,6 +217,12 @@ function Bubble({
   locale: string | undefined;
   cwd: string | undefined;
   environmentId: EnvironmentId | undefined;
+  /**
+   * The companion's thread: ChatMarkdown loads a file named by an absolute path through it, so a
+   * picture or a video the companion sent draws in place and any other file opens in the side panel,
+   * as in an ordinary thread.
+   */
+  threadRef: ScopedThreadRef | undefined;
   /** The person's bubble only: rewinds the conversation to just before it. */
   onRewind?: (() => void) | undefined;
 }) {
@@ -254,10 +262,11 @@ function Bubble({
       >
         {item.images.length > 0 && environmentId ? <Images images={item.images} environmentId={environmentId} /> : null}
         {item.side === "segno" ? (
-          <ChatMarkdown text={item.text} cwd={cwd} isStreaming={item.streaming} lineBreaks />
+          <ChatMarkdown text={item.text} cwd={cwd} threadRef={threadRef} isStreaming={item.streaming} lineBreaks />
         ) : item.text ? (
           <p className="whitespace-pre-wrap break-words">{item.text}</p>
         ) : null}
+        {item.files ? <ChatMarkdown text={item.files} cwd={cwd} threadRef={threadRef} isStreaming={false} /> : null}
         {item.attachmentNames.length > 0 ? (
           <div data-rubato-segno-attachments="">
             {item.attachmentNames.map((name) => (
@@ -319,6 +328,10 @@ export function RubatoSegnoChat(props: {
     working: props.working,
   });
   const { environmentId, threadId, onRewind } = props;
+  const threadRef = useMemo(
+    () => (environmentId && threadId ? scopeThreadRef(environmentId, ThreadId.make(threadId)) : undefined),
+    [environmentId, threadId],
+  );
   const rewind = useCallback(
     async (messageId: string) => {
       if (!environmentId || !threadId || !onRewind) return;
@@ -623,6 +636,7 @@ export function RubatoSegnoChat(props: {
               locale={locale}
               cwd={props.cwd}
               environmentId={props.environmentId}
+              threadRef={threadRef}
               onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
             />,
           ];

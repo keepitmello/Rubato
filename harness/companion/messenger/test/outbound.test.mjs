@@ -35,6 +35,22 @@ test('a message with files goes out as text, then each file as a photo or a docu
   assert.deepEqual(sentLog(box).at(-1), { at: sentLog(box).at(-1).at, chatId: USER_CHAT, toUser: true, text: '정리해서 보낼게', via: 'tool', media: 'document' });
 });
 
+test('a video goes out with its player; one Telegram refuses as a video still goes, as a document', async (t) => {
+  const box = await paired(t);
+  const clip = path.join(box.dir, 'clip.mp4');
+  const screen = path.join(box.dir, 'screen.mov');
+  writeFileSync(clip, 'mp4'); writeFileSync(screen, 'mov');
+  const row = await box.service.send({ files: [clip], to: 'user' });
+  assert.equal(row.state, 'sent');
+  assert.deepEqual(box.fake.uploads.map((upload) => [upload.kind, path.basename(upload.file)]), [['video', 'clip.mp4']]);
+  assert.equal(sentLog(box).at(-1).media, 'video');
+  box.fake.api.sendVideo = async () => { throw Object.assign(new Error('sendVideo: Bad Request: wrong file type (400)'), { code: 400 }); };
+  const refused = await box.service.send({ files: [screen], to: 'user' });
+  assert.equal(refused.state, 'sent');
+  assert.deepEqual(box.fake.uploads.map((upload) => [upload.kind, path.basename(upload.file)]).at(-1), ['document', 'screen.mov']);
+  assert.equal(refused.messageIds.length, 1);
+});
+
 test("the messenger's own files are never sent; a missing file fails the call and nothing is retried", async (t) => {
   const box = await paired(t);
   await assert.rejects(box.service.send({ files: [messengerPaths(box.env).secret], to: 'user' }), /belongs to the messenger/);

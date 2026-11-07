@@ -4,6 +4,8 @@ import {
   arrivals,
   GROUP_GAP_MS,
   personText,
+  previewText,
+  splitFileLines,
   SEPARATOR_GAP_MS,
   segnoChatItems,
   segnoIsWriting,
@@ -122,6 +124,37 @@ describe("the person's pictures", () => {
       { id: "m1", role: "user", text: "![image.png](t3-context://v1/image/image_1)", createdAt: "2026-10-21T10:00:00Z", streaming: false, attachments: [image, file] },
     ]).filter((item) => item.kind === "bubble");
     expect(bubble).toMatchObject({ text: "", images: [image], attachmentNames: ["notes.pdf"] });
+  });
+});
+
+describe("files that came by path", () => {
+  it("takes the person's messenger files out of the words and keeps them to draw", () => {
+    const [bubble] = segnoChatItems([
+      { id: "t1", role: "user", text: "이거 봐\n\n![1-a.jpg](</home/received/1-a.jpg>)\n\n[b.pdf](</home/received/b.pdf>)", createdAt: "2026-10-21T10:00:00Z", streaming: false },
+    ]).filter((item) => item.kind === "bubble");
+    expect(bubble).toMatchObject({
+      text: "이거 봐",
+      files: "![1-a.jpg](</home/received/1-a.jpg>)\n\n[b.pdf](</home/received/b.pdf>)",
+    });
+  });
+
+  it("leaves the person's own words alone, links and blank lines included", () => {
+    const words = "봐 [이거](</tmp/x.png>) 어때\n\n\n둘째 줄";
+    expect(splitFileLines(words)).toEqual({ words, files: "" });
+  });
+
+  it("keeps the companion's file lines in its words, for its markdown to draw", () => {
+    const text = "만들었어\n\n![shot.png](</out/shot.png>)";
+    const [bubble] = segnoChatItems([
+      { id: "s1", role: "assistant", text, createdAt: "2026-10-21T10:00:00Z", streaming: false },
+    ]).filter((item) => item.kind === "bubble");
+    expect(bubble).toMatchObject({ text, files: "" });
+  });
+
+  it("reads a file line as its name in a preview", () => {
+    expect(previewText("만들었어\n\n![shot.png](</out/shot.png>)\n\n[page.html](</out/page.html>)")).toBe(
+      "만들었어\n\nshot.png\n\npage.html",
+    );
   });
 });
 

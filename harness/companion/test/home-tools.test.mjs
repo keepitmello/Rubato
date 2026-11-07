@@ -6,7 +6,7 @@ import test from 'node:test';
 import { REPLY_REMINDER, REPLY_REMINDER_TYPE, createCompanionHomeFactories, createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { openInbox } from '../inbox.mjs';
 import { REPLY_TOOL, SAY_TOOL, readRecord, readWakeWish, sentMessages } from '../home.mjs';
-import { appendFileSync, mkdirSync } from 'node:fs';
+import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 
 function sandbox(t) {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-segno-tools-'));
@@ -125,7 +125,8 @@ test('reply records what Segno said, and sent_messages preserves historical tran
   const tools = toolsOf();
   assert.equal(tools.has(SAY_TOOL), false, 'no voice is set, so Segno does not see say');
   const reply = tools.get(REPLY_TOOL);
-  assert.deepEqual(reply.parameters.required, ['text']);
+  assert.equal(reply.parameters.required, undefined, 'files alone are a reply too');
+  assert.deepEqual(Object.keys(reply.parameters.properties).sort(), ['files', 'text'], 'no messenger: files, but no voice');
   assert.doesNotMatch(reply.description, /telegram/i);
   const answer = await reply.execute('c1', { text: '좋은 아침! 오늘 마감 하나 있어.' });
   assert.deepEqual(Object.keys(answer.details).sort(), ['at', 'text', 'toUser', 'via']);
@@ -144,20 +145,41 @@ test('reply preserves text, files and voice through one mouth and records only s
   const sessionLink = { telegramSend: async request => { requests.push(request); return { state: 'sent', messageIds: [7] }; } };
   const reply = toolsOf({ env, sessionLink }).get(REPLY_TOOL);
   const ctx = { sessionManager: { getSessionId: () => 'own-session' } };
-  const answer = await reply.execute('rich', { text: '사진이야', files: ['/tmp/picture.png'], voice: true,
+  const picture = path.join(env.HOME, 'picture.png');
+  writeFileSync(picture, 'png');
+  await assert.rejects(reply.execute('missing', { files: [path.join(env.HOME, 'gone.png')] }, undefined, undefined, ctx), /no such file/);
+  assert.equal(requests.length, 0, 'a missing file stops the reply before anything goes out');
+  const answer = await reply.execute('rich', { text: '사진이야', files: [picture], voice: true,
     voice_text: '사진 보냈어' }, undefined, undefined, ctx);
-  assert.deepEqual(requests[0], { text: '사진이야', files: ['/tmp/picture.png'], voice: true, voiceText: '사진 보냈어',
+  assert.deepEqual(requests[0], { text: '사진이야', files: [picture], voice: true, voiceText: '사진 보냈어',
     sanitize: undefined, to: 'user', source: 'reply', sessionId: 'own-session' });
   assert.equal(answer.details.telegram.state, 'sent');
   assert.match(answer.details.text, /picture.png/);
   assert.equal(sentMessages({ env }).length, 1);
-  await reply.execute('file', { files: ['/tmp/picture.png'] }, undefined, undefined, ctx);
+  await reply.execute('file', { files: [picture] }, undefined, undefined, ctx);
   await reply.execute('voice', { voice: 'only', voice_text: '목소리야' }, undefined, undefined, ctx);
   assert.equal(sentMessages({ env }).length, 3);
   sessionLink.telegramSend = async () => { throw new Error('delivery failed'); };
-  await assert.rejects(reply.execute('failed', { files: ['/tmp/picture.png'] }, undefined, undefined, ctx), /delivery failed/);
+  await assert.rejects(reply.execute('failed', { files: [picture] }, undefined, undefined, ctx), /delivery failed/);
   assert.equal(sentMessages({ env }).length, 3, 'a failed media delivery is not recorded as sent');
-  await assert.rejects(toolsOf({ env: sandbox(t) }).get(REPLY_TOOL).execute('off', { files: ['/tmp/picture.png'] }), /No media messenger/);
+  await assert.rejects(toolsOf({ env: sandbox(t) }).get(REPLY_TOOL).execute('off', { text: '들어 봐', voice: 'only' }), /No media messenger/);
+});
+
+test('with no messenger, reply still attaches files: the app shows them, nothing is sent elsewhere', async t => {
+  const env = sandbox(t);
+  const reply = toolsOf({ env, sessionLink: { telegramSend: async () => { throw new Error('must not be called'); } } }).get(REPLY_TOOL);
+  const picture = path.join(env.HOME, 'shot.png');
+  const page = path.join(env.HOME, 'report.html');
+  writeFileSync(picture, 'png');
+  writeFileSync(page, '<p>hi</p>');
+  const answer = await reply.execute('app', { text: '만들었어', files: [picture, page] });
+  assert.equal(answer.content[0].text, 'Sent to the user.');
+  assert.equal(answer.details.text, `만들었어\n\n![shot.png](<${picture}>)\n\n[report.html](<${page}>)`);
+  const filesOnly = await reply.execute('only', { files: [picture] });
+  assert.equal(filesOnly.details.text, `![shot.png](<${picture}>)`);
+  await assert.rejects(reply.execute('rel', { text: 'x', files: ['shot.png'] }), /absolute paths/);
+  await assert.rejects(reply.execute('dir', { text: 'x', files: [env.HOME] }), /not a file/);
+  assert.equal(sentMessages({ env }).length, 2, 'refused replies are not recorded as said');
 });
 
 test('Telegram messages from the paired person wait for a reply just like app messages; groups and wakes do not', () => {

@@ -16,7 +16,8 @@ export const UPLOAD_LIMIT_BYTES = 50 * 1024 * 1024;
 
 const MIME_BY_EXT = Object.freeze({ '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.gif': 'image/gif',
   '.webp': 'image/webp', '.ogg': 'audio/ogg', '.oga': 'audio/ogg', '.opus': 'audio/ogg', '.mp3': 'audio/mpeg',
-  '.m4a': 'audio/mp4', '.pdf': 'application/pdf', '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json' });
+  '.m4a': 'audio/mp4', '.pdf': 'application/pdf', '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json',
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime', '.html': 'text/html' });
 const mimeOf = (file) => MIME_BY_EXT[path.extname(file).toLowerCase()] ?? 'application/octet-stream';
 
 /** A message that may carry a bot token (a file URL does) with the token taken out. */
@@ -129,6 +130,10 @@ export function createBotApi({ token, baseUrl = TELEGRAM_API_BASE, fetch: call =
       upload('sendPhoto', 'photo', file, { ...common({ chatId, replyToMessageId, disableNotification }), caption }, options),
     sendDocument: ({ chatId, file, caption, replyToMessageId, disableNotification }, options) =>
       upload('sendDocument', 'document', file, { ...common({ chatId, replyToMessageId, disableNotification }), caption }, options),
+    /** A video shown with its player in the chat; Telegram takes MPEG-4. */
+    sendVideo: ({ chatId, file, caption, replyToMessageId, disableNotification }, options) =>
+      upload('sendVideo', 'video', file, { ...common({ chatId, replyToMessageId, disableNotification }), caption,
+        supports_streaming: true }, options),
     /** A voice note: OGG/Opus (or MP3, M4A) shown as a playable bubble. */
     sendVoice: ({ chatId, file, durationSec, replyToMessageId, disableNotification }, options) =>
       upload('sendVoice', 'voice', file, { ...common({ chatId, replyToMessageId, disableNotification }),

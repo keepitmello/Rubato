@@ -38,6 +38,7 @@ export function createFakeTelegramServer({ token = '123456:test', port = 0 } = {
     },
     sendPhoto: (params) => uploaded('photo', params),
     sendDocument: (params) => uploaded('document', params),
+    sendVideo: (params) => uploaded('video', params),
     sendVoice: (params) => uploaded('voice', params),
     sendChatAction: (params) => { actions.push({ chatId: String(params.chat_id), action: params.action, at: Date.now() }); return true; },
     setMessageReaction: (params) => {

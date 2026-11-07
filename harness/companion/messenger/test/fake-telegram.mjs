@@ -32,6 +32,7 @@ export function fakeTelegram() {
     async editMessageText(args) { edited.push(args); return true; },
     async sendPhoto(args) { return upload('photo', args); },
     async sendDocument(args) { return upload('document', args); },
+    async sendVideo(args) { return upload('video', args); },
     async sendVoice(args) { return upload('voice', args); },
     async sendChatAction(args) { actions.push({ ...args, at: Date.now() }); return true; },
     async setMessageReaction(args) { reactions.push(args); return true; },

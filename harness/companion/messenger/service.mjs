@@ -42,6 +42,8 @@ import { readSettings as readCompanionSettings, readState as readCompanionState,
 import { openInbox } from '../inbox.mjs';
 
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
+/** Videos that go out with Telegram's player; one Telegram refuses still goes, as a document. */
+const VIDEO_EXTS = new Set(['.mp4', '.m4v', '.mov']);
 
 /**
  * "typing…" in the chat Segno works on a message from, the person's or another's (Roo's
@@ -567,7 +569,15 @@ export function startCompanionMessenger({
         sent.push((await client.sendMessage({ chatId, text: part, ...notification })).message_id);
       }
       for (const file of files) {
-        const upload = PHOTO_EXTS.has(path.extname(file).toLowerCase()) ? client.sendPhoto : client.sendDocument;
+        const ext = path.extname(file).toLowerCase();
+        if (VIDEO_EXTS.has(ext) && typeof client.sendVideo === 'function') {
+          let message;
+          try { message = await client.sendVideo({ chatId, file, ...notification }); }
+          catch (error) { if (error?.code !== 400) throw error; message = await client.sendDocument({ chatId, file, ...notification }); }
+          sent.push(message.message_id);
+          continue;
+        }
+        const upload = PHOTO_EXTS.has(ext) ? client.sendPhoto : client.sendDocument;
         sent.push((await upload({ chatId, file, ...notification })).message_id);
       }
     } catch (error) {
@@ -587,7 +597,8 @@ export function startCompanionMessenger({
       }
     }
     const media = payload.delivery === 'voice' ? 'voice' : files.length
-      ? (files.every((file) => PHOTO_EXTS.has(path.extname(file).toLowerCase())) ? 'photo' : 'document')
+      ? (files.every((file) => PHOTO_EXTS.has(path.extname(file).toLowerCase())) ? 'photo'
+        : files.every((file) => VIDEO_EXTS.has(path.extname(file).toLowerCase())) ? 'video' : 'document')
       : note === ' + voice' ? 'voice' : undefined;
     if (row.source !== 'reply') recordSent({ at: new Date(now()).toISOString(), chatId, toUser, via,
       text: payload.text ?? payload.voiceText ?? files.map((file) => path.basename(file)).join(', '), ...(media ? { media } : {}) }, env);
