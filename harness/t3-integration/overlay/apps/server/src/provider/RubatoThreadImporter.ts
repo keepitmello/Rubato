@@ -247,6 +247,41 @@ const make = Effect.gen(function* () {
     return cutRunId;
   });
   /**
+   * The companion room's rewind (RubatoCompanionRewind.ts): the person's message and everything
+   * after it leave the thread. Each later run is recorded as rolled back. The rows at and after the
+   * message in the run it sits in move onto a rolled-back run of their own, as a step rewind's cut
+   * does; that run keeps its earlier rows and its status.
+   */
+  const rollBackFrom = (input: RollBackFromInput) => Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the rewind's events")));
+    const events: Array<OrchestrationV2DomainEvent> = [];
+    for (const run of input.runs) {
+      events.push({ id: yield* event(), type: "run.updated", threadId: input.threadId, runId: run.id,
+        providerInstanceId: run.providerInstanceId, occurredAt: now,
+        payload: { ...run, status: "rolled_back", queuePosition: null, completedAt: run.completedAt ?? now } });
+    }
+    const cut = input.cut;
+    if (cut !== undefined && (cut.items.length > 0 || cut.messages.length > 0)) {
+      const cutRunId = RunId.make(`${cut.run.id}:rubato-companion-cut:${DateTime.toEpochMillis(now)}`);
+      events.push({ id: yield* event(), type: "run.updated", threadId: input.threadId, runId: cutRunId,
+        providerInstanceId: cut.run.providerInstanceId, occurredAt: now,
+        payload: { ...cut.run, id: cutRunId, ordinal: cut.nextOrdinal, status: "rolled_back", checkpointId: null,
+          queuePosition: null, completedAt: cut.run.completedAt ?? cut.run.startedAt ?? now } });
+      for (const item of cut.items) {
+        events.push({ id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: now,
+          payload: { ...item, runId: cutRunId } });
+      }
+      for (const message of cut.messages) {
+        events.push({ id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: now,
+          payload: { ...message, runId: cutRunId } });
+      }
+    }
+    if (events.length === 0) return;
+    yield* eventSink.write({ events }).pipe(Effect.mapError(importFailure("Could not write the rewind")));
+  });
+  /**
    * A notice row in a thread outside any turn (the voice service's queued, sent and failed
    * notices). `ordinal` is the thread's next turn-item ordinal; the caller reads it.
    */
@@ -313,7 +348,7 @@ const make = Effect.gen(function* () {
     ] }).pipe(Effect.mapError(importFailure("Could not write Segno's message")));
     return runId;
   });
-  return { importPiSessionThread, cutRun, appendNotice, appendSessionMessage, appendOwnRun };
+  return { importPiSessionThread, cutRun, rollBackFrom, appendNotice, appendSessionMessage, appendOwnRun };
 });
 
 export interface OwnRunInput {
@@ -358,9 +393,18 @@ export interface CutRunInput {
   readonly messages: ReadonlyArray<OrchestrationV2ConversationMessage>;
 }
 
+export interface RollBackFromInput {
+  readonly threadId: ThreadId;
+  /** Whole runs that leave the thread. */
+  readonly runs: ReadonlyArray<OrchestrationV2Run>;
+  /** Rows of a run that stays: `run` is the template of the rolled-back run they move onto. */
+  readonly cut?: CutRunInput;
+}
+
 export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, {
   readonly importPiSessionThread: (input: PiSessionThreadInput) => Effect.Effect<ThreadId, RubatoThreadImportError>;
   readonly cutRun: (input: CutRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
+  readonly rollBackFrom: (input: RollBackFromInput) => Effect.Effect<void, RubatoThreadImportError>;
   readonly appendNotice: (input: NoticeInput) => Effect.Effect<void, RubatoThreadImportError>;
   readonly appendSessionMessage: (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
     Effect.Effect<void, RubatoThreadImportError>;

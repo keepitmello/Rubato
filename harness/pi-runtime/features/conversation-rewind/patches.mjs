@@ -6,8 +6,9 @@
 // moves the leaf within the same session tree (Pi's /tree), so the session id,
 // its children and the abandoned branch all stay.
 //
-// A rewind names either the turns the app keeps (`keep`/`skip`) or a finished tool step
-// (`step`, the call id), which keeps that step's results and drops everything after.
+// A rewind names the turns the app keeps (`keep`/`skip`), a finished tool step (`step`, the
+// call id), which keeps that step's results and drops everything after, or one input
+// (`before`, its entry id), which it drops with everything after (the companion room).
 // `continue` then runs again from those results with no new message: the same run a
 // woken session starts, so the system prompt and tools are composed exactly as they were
 // and the request reads the cached prefix.
@@ -22,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_NAME = "@earendil-works/pi-coding-agent";
 import { PI_VERSION as VERSION } from "../../pi-version.mjs";
-const IMPORT = 'import { findRewindTarget, findStepTarget, REWIND_MARK, unansweredToolCalls, RESTART_TOOL_RESULT } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
+const IMPORT = 'import { findBeforeTarget, findRewindTarget, findStepTarget, REWIND_MARK, unansweredToolCalls, RESTART_TOOL_RESULT } from "../../rubato-features/conversation-rewind/rewind.mjs";\n';
 const ANCHOR = '            case "get_fork_messages": {';
 
 function replaceOnce(source, before, after, label) {
@@ -43,10 +44,13 @@ export function patchRpcRewind(source) {
                 const step = command.step !== undefined;
                 let targetId;
                 try {
-                    // A step names where to land; a turn rewind names the first entry it drops.
+                    // A step names where to land; a turn rewind, or a rewind before an input,
+                    // names the first entry it drops.
                     targetId = step
                         ? findStepTarget(manager.getBranch(), command.step)
-                        : findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip });
+                        : command.before !== undefined
+                            ? findBeforeTarget(manager.getBranch(), command.before)
+                            : findRewindTarget(manager.getBranch(), { keep: command.keep, skip: command.skip });
                 }
                 catch (failure) {
                     return error(id, "rewind", failure instanceof Error ? failure.message : String(failure));

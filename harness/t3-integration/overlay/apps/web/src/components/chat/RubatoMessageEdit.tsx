@@ -74,6 +74,25 @@ export function messageRewindTarget(
   );
 }
 
+/**
+ * Rewinds a companion room to just before one of the person's messages (RubatoCompanionRewind.ts).
+ * Its thread is a chat log with no checkpoints, so the message names the place itself; the engine
+ * and the thread both drop it and everything after.
+ */
+export async function rewindCompanionMessage(
+  environmentId: EnvironmentId,
+  threadId: string,
+  messageId: MessageId,
+): Promise<void> {
+  await postRubato<Record<string, never>>(
+    environmentId,
+    "/rubato/companion-room",
+    "rewind",
+    { threadId, messageId },
+    "companion rewinds",
+  );
+}
+
 export interface EditableText {
   readonly text: string;
   /** The context links the placeholders stand for; placeholder #n is links[n - 1]. */

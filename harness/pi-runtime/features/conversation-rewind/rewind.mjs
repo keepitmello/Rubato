@@ -57,6 +57,19 @@ export function findRewindTarget(branch, { keep, skip = 0 } = {}) {
 }
 
 const isAssistant = (entry) => entry.type === "message" && entry.message?.role === "assistant";
+
+/**
+ * The first entry a rewind to just before one input drops: that input itself. The companion room
+ * names the person's message (a prompt typed in the app, or a messenger message delivered into
+ * the session), because its thread is a chat log with no turns to count.
+ */
+export function findBeforeTarget(branch, entryId) {
+  if (typeof entryId !== "string" || entryId.length === 0) throw new Error("A rewind before a message must name it");
+  const entry = branch.find((candidate) => candidate.id === entryId);
+  if (!entry) throw new Error("This message is not on the current branch");
+  if (!isInput(entry)) throw new Error("Only a message can be rewound to");
+  return entry.id;
+}
 const callsOf = (entry) => (Array.isArray(entry.message?.content) ? entry.message.content : [])
   .filter((part) => part?.type === "toolCall" && typeof part.id === "string")
   .map((part) => part.id);

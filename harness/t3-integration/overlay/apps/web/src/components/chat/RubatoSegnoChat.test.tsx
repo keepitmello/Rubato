@@ -138,9 +138,10 @@ it("moves the room with page keys when no field has them, and leaves the compose
 });
 
 it("gives both sides' bubbles a menu with Copy, and rewind only to the person's; every bubble carries its time", () => {
+  const onRewind = vi.fn();
   act(() =>
     root.render(
-      <RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" onRewind={() => {}} />,
+      <RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" onRewind={onRewind} />,
     ),
   );
   const bubble = (id: string) =>
@@ -158,8 +159,10 @@ it("gives both sides' bubbles a menu with Copy, and rewind only to the person's;
     bubble("폴라리스 빼고").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
   });
   menu = host.querySelector("[data-rubato-segno-menu]")!;
-  expect(menu.querySelector("[data-rubato-segno-rewind]")).not.toBeNull();
   expect(host.querySelectorAll("time[data-rubato-segno-at]")).toHaveLength(4);
+  // The message names where the rewind lands: no checkpoint is asked for first.
+  act(() => menu.querySelector<HTMLButtonElement>("[data-rubato-segno-rewind]")!.click());
+  expect(onRewind).toHaveBeenCalledWith("a");
 });
 
 it("puts a pencil on the person's bubbles only, and the pencil or the menu turns that bubble into an editor", () => {

@@ -9,7 +9,7 @@ import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { CATALOGUE_REUSE_MS, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
+import { CATALOGUE_REUSE_MS, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
@@ -1717,4 +1717,28 @@ test('catalogue reuses a recent list until a fresh request drops every cached fo
   // fresh 는 다른 폴더의 재사용 목록도 버린다. 작업 폴더 피커도 새 키의 모델을 본다.
   await bridge.catalogue(other);
   assert.equal(fetches, 4);
+});
+
+test('the companion room names a person\'s message to the engine by its messenger id, or by its words after the app sent it', () => {
+  const telegram = (id, messageId, words) => ({ id, type: 'custom_message', customType: 'rubato-session-message', timestamp: '2026-11-08T10:00:00.000Z',
+    content: words, display: true, details: { v: 1, messageId: `m-${messageId}`, kind: 'channel', text: words,
+      from: { channel: 'telegram', chatId: '7', isUser: true, messageId } } });
+  const prompt = (id, words, at) => ({ id, type: 'message', timestamp: new Date(at).toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: words }], timestamp: at } });
+  const sent = Date.parse('2026-11-08T10:00:00.000Z');
+  const branch = [
+    telegram('tg', 31493, '혹시 노트에 적었으면 지워'),
+    prompt('quick', '노보링크 쪽에 답해줘', sent + 200),
+    // Sent while a turn ran: the engine took it in when that turn ended, minutes later.
+    prompt('queued', '아까 그것도 실수야', sent + 6 * 60_000),
+    prompt('picture', '[Image: a.png; ref=r1] 이게 뭐야\n\n<t3_context version="1">\n<context kind="image" id="r1">\n</context>\n</t3_context>', sent + 300),
+  ];
+  assert.equal(companionEntry(branch, 'room', { messageId: sessionMessageId('room', 'm-31493') }), 'tg');
+  const typed = (text, at = sent) => companionEntry(branch, 'room', { messageId: 'app-1', text, createdAt: new Date(at).toISOString() });
+  assert.equal(typed('노보링크 쪽에 답해줘'), 'quick');
+  assert.equal(typed('아까 그것도 실수야', sent + 10_000), 'queued');
+  assert.equal(typed('![a.png](t3-context://v1/image/r1) 이게 뭐야'), 'picture');
+  // Words the engine never took in, or a message with no id, name nothing rather than a neighbour.
+  assert.equal(typed('보낸 적 없는 말'), null);
+  assert.equal(companionEntry(branch, 'room', { text: '노보링크 쪽에 답해줘', createdAt: new Date(sent).toISOString() }), null);
 });

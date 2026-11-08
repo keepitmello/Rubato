@@ -42,11 +42,9 @@ import { selectMessageImageResources, type TimelineEntry } from "../../session-l
 import type { ChatImageAttachment, ChatMessage } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
-import { stackedThreadToast, toastManager } from "../ui/toast";
 import { useRubatoCompanion } from "../../state/rubatoCompanion";
 import {
   editRubatoMessage,
-  messageRewindTarget,
   RubatoEditMessageButton,
   RubatoMessageEditor,
   useRubatoMessageEditing,
@@ -376,10 +374,10 @@ export function RubatoSegnoChat(props: {
   /** ChatView's key for the thread, which its message edit host answers to (RubatoMessageEdit.tsx). */
   threadKey?: string | undefined;
   /**
-   * Rewinds the conversation to `turnCount` turns and puts `messageId` back in the composer, files
-   * untouched (ChatView's revert, companion-edits.mjs).
+   * Rewinds the conversation to just before `messageId` and puts it back in the composer, files
+   * untouched (ChatView's revert, which a companion room takes through RubatoCompanionRewind.ts).
    */
-  onRewind?: ((turnCount: number, messageId: MessageId) => void) | undefined;
+  onRewind?: ((messageId: MessageId) => void) | undefined;
 }) {
   const items = useMemo(() => segnoChatItems(messagesOf(props.entries)), [props.entries]);
   const messageById = useMemo(() => {
@@ -408,24 +406,7 @@ export function RubatoSegnoChat(props: {
     () => (environmentId && threadId ? scopeThreadRef(environmentId, ThreadId.make(threadId)) : undefined),
     [environmentId, threadId],
   );
-  const rewind = useCallback(
-    async (messageId: string) => {
-      if (!environmentId || !threadId || !onRewind) return;
-      try {
-        const target = await messageRewindTarget(environmentId, threadId, messageId as MessageId);
-        onRewind(target.turnCount, messageId as MessageId);
-      } catch (error) {
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: "Could not rewind",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
-    },
-    [environmentId, threadId, onRewind],
-  );
+  const rewind = useCallback((messageId: string) => onRewind?.(messageId as MessageId), [onRewind]);
   const spanLine = (place: (typeof spans)["tail"] | undefined, key: string) =>
     place ? (
       <RubatoSegnoSpanLine
@@ -713,7 +694,7 @@ export function RubatoSegnoChat(props: {
               cwd={props.cwd}
               environmentId={props.environmentId}
               threadRef={threadRef}
-              onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
+              onRewind={item.side === "me" && onRewind && threadId ? () => rewind(item.id) : undefined}
               edit={item.side === "me" ? editOf(item.id) : undefined}
             />,
           ];

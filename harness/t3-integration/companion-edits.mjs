@@ -10,6 +10,8 @@
 // Registered after settings-layout-edits.mjs, whose Settings lines these anchor on.
 export const companionOverlays = [
   'apps/server/src/RubatoCompanion.ts',
+  'apps/server/src/RubatoCompanionRewind.ts',
+  'apps/server/src/RubatoCompanionRewind.test.ts',
   'apps/web/src/state/rubatoCompanion.ts',
   'apps/web/src/state/rubatoCompanion.test.tsx',
   'apps/web/src/hooks/rubatoCompanionProjectBoundary.test.ts',
@@ -37,8 +39,8 @@ export const companionSettingsPages = ['companion'];
 
 export const companionEdits = {
   'apps/server/src/server.ts': [
-    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\n'],
-    ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n    rubatoCompanionRewindRouteLayer,\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/chat"\n', '  | "/settings/companion"\n'],
@@ -69,7 +71,31 @@ export const companionEdits = {
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       'replace'],
-    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\n'],
+    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
+    // The room's "Rewind from here" and its edit: a companion's thread holds no checkpoints, so the
+    // message names where the rewind lands (RubatoCompanionRewind.ts, user 4c412ab9). The message
+    // still returns to the composer the way T3's revert puts it there.
+    ['      const commandId = CommandId.make(randomUUID());\n'
+        + '      await waitForRevertedMessage(routeThreadRef, messageId, turnCount, commandId, async () => {\n'
+        + '        const result = await revertThreadCheckpoint({\n'
+        + '          environmentId,\n'
+        + '          input: { commandId, threadId: activeThread.id, turnCount, restoreFiles },\n'
+        + '        });\n'
+        + '        if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
+        + '      });\n',
+      '      if (isCompanionThread(activeThread.id)) {\n'
+        + '        await rewindCompanionMessage(environmentId, activeThread.id, messageId);\n'
+        + '      } else {\n'
+        + '        const commandId = CommandId.make(randomUUID());\n'
+        + '        await waitForRevertedMessage(routeThreadRef, messageId, turnCount, commandId, async () => {\n'
+        + '          const result = await revertThreadCheckpoint({\n'
+        + '            environmentId,\n'
+        + '            input: { commandId, threadId: activeThread.id, turnCount, restoreFiles },\n'
+        + '          });\n'
+        + '          if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
+        + '        });\n'
+        + '      }\n',
+      'replace'],
     // Segno's thread has no workspace or version control of its own: the floating thread details
     // (workspace, open in editor, branch, publish, changes) and the button that toggles them stay
     // out of Segno's space (user 2026-10-21). Every other thread keeps them.
@@ -94,7 +120,7 @@ export const companionEdits = {
         + '                  scrollToEndClearance={scrollToEndClearance}\n'
         + '                  threadId={activeThread.id}\n'
         + '                  threadKey={routeThreadKey}\n'
-        + '                  onRewind={(turnCount, messageId) => void onRevertToTurnCountRef.current(turnCount, messageId, false)}\n'
+        + '                  onRewind={(messageId) => void onRevertToTurnCountRef.current(0, messageId, false)}\n'
         + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
         + '                    ? {}\n'
         + '                    : { historyControls: threadHistoryControls })}\n'

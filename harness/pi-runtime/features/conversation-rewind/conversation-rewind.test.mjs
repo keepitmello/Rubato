@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { feature, files, patches, patchRpcRewind } from "./patches.mjs";
-import { findRewindTarget, findStepTarget, messageFingerprint, RESTART_TOOL_RESULT, unansweredToolCalls } from "./rewind.mjs";
+import { findBeforeTarget, findRewindTarget, findStepTarget, messageFingerprint, RESTART_TOOL_RESULT, unansweredToolCalls } from "./rewind.mjs";
 
 const featureDir = dirname(fileURLToPath(import.meta.url));
 const stockRpc = join(featureDir, "../../node_modules/@earendil-works/pi-coding-agent/dist/modes/rpc/rpc-mode.js");
@@ -24,6 +24,7 @@ test("descriptor is stock-locked, listed on the candidate, and adds the rewind c
   assert.match(patched, /case "rewind": \{/);
   assert.match(patched, /session\.navigateTree\(targetId, \{ summarize: false \}\)/);
   assert.match(patched, /findStepTarget\(manager\.getBranch\(\), command\.step\)/);
+  assert.match(patched, /findBeforeTarget\(manager\.getBranch\(\), command\.before\)/);
   assert.match(patched, /case "continue": \{/);
   // A continuation adds nothing to the history: the run answers the tool results there.
   assert.match(patched, /session\._runAgentPrompt\(\[\]\)/);
@@ -175,4 +176,20 @@ test("a restart's resume answers only the calls the last reply never got a resul
   assert.deepEqual(unansweredToolCalls([{ role: "user" }, assistant([{ type: "text", text: "done" }], "stop")]), []);
   assert.deepEqual(unansweredToolCalls([assistant([call("a")]), { role: "user" }]), []);
   assert.match(RESTART_TOOL_RESULT, /did not finish/);
+});
+
+test("a rewind before a message drops that message, whether typed or delivered, and refuses anything else", () => {
+  const branch = conversation([
+    ["user", "first"],
+    ["assistant", "one"],
+    ["wake", "a messenger message"],
+    ["assistant", "two"],
+    ["user", "second"],
+    ["assistant", "three"],
+  ]);
+  assert.equal(findBeforeTarget(branch, idOf(branch, "user", "second")), idOf(branch, "user", "second"));
+  assert.equal(findBeforeTarget(branch, idOf(branch, "wake", "a messenger message")), idOf(branch, "wake", "a messenger message"));
+  assert.throws(() => findBeforeTarget(branch, idOf(branch, "assistant", "two")), /Only a message/);
+  assert.throws(() => findBeforeTarget(branch, "gone"), /not on the current branch/);
+  assert.throws(() => findBeforeTarget(branch, ""), /must name it/);
 });

@@ -2,7 +2,7 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
-import { companionThreadItems, saidEchoes } from './said-echo.mjs';
+import { channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
@@ -196,6 +196,49 @@ function revertPending(thread, { dropped, cut }) {
   if (!cut) return false;
   return [...thread.messages, ...(thread.activities ?? [])].some((row) => later(row.createdAt, cut.after)
     && (row.turnId === cut.turnId || (row.role === 'user' && row.turnId == null)));
+}
+/**
+ * How long after the app stamped a prompt the engine may take it in: a message sent while a turn
+ * runs waits in the queue until that turn ends. The engine stamps a prompt a moment after the app.
+ */
+const PROMPT_QUEUE_MS = 30 * 60_000;
+const PROMPT_SKEW_MS = 5_000;
+/**
+ * A prompt's words without its attachments: the app writes a picture as a context link, the engine
+ * as an image note followed by the context block the app sent along.
+ */
+const promptWords = (text) => String(text ?? '')
+  .replace(/<t3_context[\s\S]*?<\/t3_context>/g, ' ')
+  .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+  .replace(/\[Image[^\]]*\]/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
+const userText = (message) => (typeof message?.content === 'string' ? message.content
+  : (Array.isArray(message?.content) ? message.content : []).filter((part) => part?.type === 'text').map((part) => part.text).join(''));
+/**
+ * The engine entry of one of the person's messages in a companion thread, for the room's edit and
+ * rewind (RubatoCompanionRewind.ts). A messenger message carries its own id, and the thread's id
+ * for it is made from that (said-echo channelItem). A prompt typed in the app carries none: it is
+ * the first user message with the same words the engine took in after the app sent it. Null when
+ * the engine holds no such message.
+ */
+export function companionEntry(branch, threadId, { messageId, text, createdAt } = {}) {
+  if (typeof messageId !== 'string' || messageId.length === 0) return null;
+  for (const entry of branch ?? []) {
+    if (entry?.type !== 'custom_message') continue;
+    const item = channelItem({ role: 'custom', customType: entry.customType, content: entry.content,
+      details: entry.details, timestamp: entry.timestamp }, threadId);
+    if (item !== undefined && item.id === messageId) return entry.id;
+  }
+  const at = Date.parse(createdAt);
+  if (!Number.isFinite(at)) return null;
+  const words = promptWords(text);
+  for (const entry of branch ?? []) {
+    if (entry?.type !== 'message' || entry.message?.role !== 'user') continue;
+    const after = Number(entry.message.timestamp ?? Date.parse(entry.timestamp)) - at;
+    if (after > -PROMPT_SKEW_MS && after < PROMPT_QUEUE_MS && promptWords(userText(entry.message)) === words) return entry.id;
+  }
+  return null;
 }
 /** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
 const BACKFILL_MS = 5000;
@@ -524,6 +567,21 @@ export class RubatoPiBridge {
       const result = await client.command({ type: 'rewind', step: toolCallId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
       return { batch };
+    });
+  }
+  /**
+   * The companion room's rewind (RubatoCompanionRewind.ts): the session goes back to just before
+   * one of the person's messages and drops it with everything after (conversation-rewind
+   * `before`). The room's thread is a chat log with no turns to count, so the message names itself.
+   */
+  async rewindBeforeMessage({ threadId, sessionId, messageId, text, createdAt }) {
+    return this.withSession(threadId, sessionId, async (client) => {
+      const entryId = companionEntry(activeBranch(await client.command({ type: 'get_entries' })), threadId,
+        { messageId, text, createdAt });
+      if (entryId === null) throw new Error('Rubato cannot find this message in the conversation');
+      const result = await client.command({ type: 'rewind', before: entryId });
+      if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');
+      return { entryId };
     });
   }
   // Deletes a side chat's session; the engine refuses any other conversation.

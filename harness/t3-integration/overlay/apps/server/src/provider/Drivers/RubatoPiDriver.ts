@@ -92,6 +92,11 @@ export interface PiRpcBridgeConnection {
 export interface PiBridge {
   /** A step rewind: lands the session after the batch of `toolCallId`; that batch's call ids. */
   rewindToStep(input: {threadId: string; sessionId: string; toolCallId: string}): Promise<{batch: ReadonlyArray<string>}>;
+  /**
+   * The companion room's rewind: the session goes back to just before one of the person's messages
+   * in a companion thread, found by its id or its words and time; fails when the engine cannot find it.
+   */
+  rewindBeforeMessage(input: {threadId: string; sessionId: string; messageId: string; text: string; createdAt: string}): Promise<{entryId: string}>;
   /** The call ids made together with `toolCallId`; fails when the engine no longer holds that step. */
   stepBatch(input: {threadId: string; sessionId: string; toolCallId: string}): Promise<ReadonlyArray<string>>;
   /** The message a step rewind's continue sends; the engine connection runs on without it. */
