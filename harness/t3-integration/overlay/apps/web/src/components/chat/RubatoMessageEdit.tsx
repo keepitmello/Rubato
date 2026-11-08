@@ -218,6 +218,11 @@ export function useRubatoMessageEditing(threadKey: string, messageId: MessageId)
   return useSyncExternalStore(subscribe, read, read);
 }
 
+/** Opens the editor on a message of mine, as the pencil does (the companion room's menu). */
+export function editRubatoMessage(threadKey: string, messageId: MessageId) {
+  setEditing(threadKey, messageId);
+}
+
 /** ChatView lends the edit its rewind and send. */
 export function useRubatoMessageEditHost(
   threadKey: string,

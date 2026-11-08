@@ -63,10 +63,38 @@
   transition: opacity 120ms ease;
 }
 [data-side="me"] > [data-rubato-segno-at] {
-  order: -1;
+  order: -2;
 }
 [data-rubato-segno-row]:hover > [data-rubato-segno-at] {
   opacity: 1;
+}
+/* The pencil on the person's bubble, between the time and the bubble: grey like an ordinary
+   thread's, shown on hover or when a key reaches it. */
+[data-rubato-segno-edit] {
+  order: -1;
+  align-self: flex-end;
+  flex: none;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+[data-rubato-segno-row]:hover > [data-rubato-segno-edit],
+[data-rubato-segno-edit]:focus-within {
+  opacity: 1;
+}
+/* The bubble being edited reads as an input, on the composer's raised surface. */
+[data-rubato-segno-editor] {
+  width: min(75%, 34rem);
+  padding: 0.6rem 0.8rem;
+  border-radius: var(--rubato-bubble-radius);
+  border: 1px solid var(--input, var(--border));
+  background: var(--card);
+  color: var(--foreground);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.16);
+  transition: border-color 120ms ease;
+}
+[data-rubato-segno-editor]:focus-within {
+  border-color: var(--ring);
 }
 
 /* ---- Bubbles ---- */

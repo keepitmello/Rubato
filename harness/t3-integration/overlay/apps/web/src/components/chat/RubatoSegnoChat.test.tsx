@@ -161,3 +161,43 @@ it("gives both sides' bubbles a menu with Copy, and rewind only to the person's;
   expect(menu.querySelector("[data-rubato-segno-rewind]")).not.toBeNull();
   expect(host.querySelectorAll("time[data-rubato-segno-at]")).toHaveLength(4);
 });
+
+it("puts a pencil on the person's bubbles only, and the pencil or the menu turns that bubble into an editor", () => {
+  act(() =>
+    root.render(
+      <RubatoSegnoChat
+        entries={entries}
+        working={false}
+        cwd={undefined}
+        bottomInset={80}
+        threadId="segno-thread"
+        threadKey="env:segno-thread"
+        onRewind={() => {}}
+      />,
+    ),
+  );
+  const row = (text: string) => [...host.querySelectorAll("[data-rubato-segno-row]")].find((item) => item.textContent?.includes(text))!;
+  expect(row("고쳤어").querySelector("[data-rubato-segno-edit]")).toBeNull();
+  const pencil = row("폴라리스 빼고").querySelector<HTMLButtonElement>("[data-rubato-segno-edit] button[aria-label='Edit message']");
+  expect(pencil).not.toBeNull();
+  expect(pencil!.disabled).toBe(false);
+
+  act(() => pencil!.click());
+  const editor = host.querySelector<HTMLTextAreaElement>("[data-rubato-segno-editor] textarea");
+  expect(editor?.value).toBe("폴라리스 빼고");
+  act(() => {
+    editor!.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  });
+  expect(host.querySelector("[data-rubato-segno-editor]")).toBeNull();
+
+  act(() => {
+    row("고마워").querySelector("[data-rubato-segno-bubble]")!.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+  });
+  act(() => host.querySelector<HTMLButtonElement>("[data-rubato-segno-edit-item]")!.click());
+  expect(host.querySelector<HTMLTextAreaElement>("[data-rubato-segno-editor] textarea")?.value).toBe("고마워");
+});
+
+it("leaves the pencil out when the room has no edit host to answer it", () => {
+  act(() => root.render(<RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
+  expect(host.querySelector("[data-rubato-segno-edit]")).toBeNull();
+});

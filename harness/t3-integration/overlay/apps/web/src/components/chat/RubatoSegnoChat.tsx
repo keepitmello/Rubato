@@ -8,9 +8,11 @@
 //
 // Between the bubbles, one quiet line holds what the companion did there — thinking, words to itself,
 // tools, what woke it — and opens in place (RubatoSegnoInner.tsx, user f8828a9f). The person's own
-// bubble has a menu (right click, or a long press) with "Rewind from here": the conversation goes
-// back to just before that message and the message returns to the composer. Files stay: the
-// companion's home is its own record (diary, notes), committed as it goes.
+// bubble shows a pencil on hover, as an ordinary thread does (RubatoMessageEdit.tsx, user 97580a28):
+// the bubble becomes an editor, and sending rewinds to just before that message and sends the edit.
+// Its menu (right click, or a long press) offers the same edit, and "Rewind from here": the
+// conversation goes back to just before that message and the message returns to the composer.
+// Files stay either way: the companion's home is its own record (diary, notes), committed as it goes.
 //
 // The room has what an ordinary thread has for moving through a long conversation: the timeline at
 // its left edge, one mark per turn with the person's words and the answer on hover (T3's own
@@ -37,12 +39,18 @@ import { ChevronDownIcon } from "lucide-react";
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
 import { selectMessageImageResources, type TimelineEntry } from "../../session-logic";
-import type { ChatImageAttachment } from "../../types";
+import type { ChatImageAttachment, ChatMessage } from "../../types";
 import ChatMarkdown from "../ChatMarkdown";
 import { Button } from "../ui/button";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { useRubatoCompanion } from "../../state/rubatoCompanion";
-import { messageRewindTarget } from "./RubatoMessageEdit";
+import {
+  editRubatoMessage,
+  messageRewindTarget,
+  RubatoEditMessageButton,
+  RubatoMessageEditor,
+  useRubatoMessageEditing,
+} from "./RubatoMessageEdit";
 import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
 import { TimelineMinimap } from "./MessagesTimeline";
 import {
@@ -132,8 +140,18 @@ function Images({ images, environmentId }: { images: ReadonlyArray<ChatImageAtta
 /** How long a finger rests on a bubble before its menu opens. */
 const LONG_PRESS_MS = 500;
 
-/** A bubble's menu: copy, and on the person's bubble rewind the conversation to just before it. */
-function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() => void) | undefined; onClose: () => void }) {
+/** A bubble's menu: copy, and on the person's bubble edit it or rewind the conversation to just before it. */
+function BubbleMenu({
+  text,
+  onEdit,
+  onRewind,
+  onClose,
+}: {
+  text: string;
+  onEdit: (() => void) | undefined;
+  onRewind: (() => void) | undefined;
+  onClose: () => void;
+}) {
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     menu.current?.querySelector<HTMLButtonElement>("button")?.focus();
@@ -162,6 +180,19 @@ function BubbleMenu({ text, onRewind, onClose }: { text: string; onRewind: (() =
       >
         Copy
       </button>
+      {onEdit ? (
+        <button
+          type="button"
+          role="menuitem"
+          data-rubato-segno-edit-item=""
+          onClick={() => {
+            onClose();
+            onEdit();
+          }}
+        >
+          Edit message
+        </button>
+      ) : null}
       {onRewind ? (
         <button
           type="button"
@@ -200,6 +231,14 @@ function selectsWithin(element: Element): boolean {
   return selection !== null && !selection.isCollapsed && selection.toString().trim() !== "" && element.contains(selection.anchorNode);
 }
 
+/** What editing the person's bubble needs: ChatView's edit host is keyed by the thread. */
+interface BubbleEdit {
+  threadKey: string;
+  message: ChatMessage;
+  /** A turn runs: the editor keeps its draft and waits to send. */
+  busy: boolean;
+}
+
 function Bubble({
   item,
   enter,
@@ -209,6 +248,7 @@ function Bubble({
   environmentId,
   threadRef,
   onRewind,
+  edit,
 }: {
   item: Extract<SegnoChatItem, { kind: "bubble" }>;
   enter: boolean;
@@ -225,6 +265,8 @@ function Bubble({
   threadRef: ScopedThreadRef | undefined;
   /** The person's bubble only: rewinds the conversation to just before it. */
   onRewind?: (() => void) | undefined;
+  /** The person's bubble only: edits it in place. */
+  edit?: BubbleEdit | undefined;
 }) {
   const [menu, setMenu] = useState(false);
   const press = useRef<number | undefined>(undefined);
@@ -233,6 +275,16 @@ function Bubble({
     press.current = undefined;
   };
   const closeMenu = useCallback(() => setMenu(false), []);
+  const editing = useRubatoMessageEditing(edit?.threadKey ?? "", item.id as MessageId);
+  if (editing && edit) {
+    return (
+      <div data-rubato-segno-row="" data-side={item.side} data-group-start="" data-group-end="" data-editing="">
+        <div data-rubato-segno-editor="">
+          <RubatoMessageEditor threadKey={edit.threadKey} message={edit.message} busy={edit.busy} />
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       data-rubato-segno-row=""
@@ -277,7 +329,20 @@ function Bubble({
         {item.groupEnd ? <Tail /> : null}
       </div>
       <BubbleTime at={item.at} locale={locale} />
-      {menu ? <BubbleMenu text={item.text} onRewind={onRewind} onClose={closeMenu} /> : null}
+      {edit ? (
+        <span data-rubato-segno-edit="">
+          {/* Opens while the companion works too: the editor keeps the draft and waits to send. */}
+          <RubatoEditMessageButton threadKey={edit.threadKey} messageId={edit.message.id} busy={false} />
+        </span>
+      ) : null}
+      {menu ? (
+        <BubbleMenu
+          text={item.text}
+          onEdit={edit ? () => editRubatoMessage(edit.threadKey, edit.message.id) : undefined}
+          onRewind={onRewind}
+          onClose={closeMenu}
+        />
+      ) : null}
     </div>
   );
 }
@@ -308,6 +373,8 @@ export function RubatoSegnoChat(props: {
   historyControls?: SegnoHistoryControls | undefined;
   /** The companion's thread. */
   threadId?: string | undefined;
+  /** ChatView's key for the thread, which its message edit host answers to (RubatoMessageEdit.tsx). */
+  threadKey?: string | undefined;
   /**
    * Rewinds the conversation to `turnCount` turns and puts `messageId` back in the composer, files
    * untouched (ChatView's revert, companion-edits.mjs).
@@ -315,6 +382,11 @@ export function RubatoSegnoChat(props: {
   onRewind?: ((turnCount: number, messageId: MessageId) => void) | undefined;
 }) {
   const items = useMemo(() => segnoChatItems(messagesOf(props.entries)), [props.entries]);
+  const messageById = useMemo(() => {
+    const byId = new Map<string, ChatMessage>();
+    for (const entry of props.entries) if (entry.kind === "message") byId.set(entry.message.id, entry.message);
+    return byId;
+  }, [props.entries]);
   const writing = segnoIsWriting(items, props.working);
   const locale = useLocale();
   const companionId = useRubatoCompanion().companions.find((item) => item.threadId === props.threadId)?.id;
@@ -327,7 +399,11 @@ export function RubatoSegnoChat(props: {
     after: spans.after,
     working: props.working,
   });
-  const { environmentId, threadId, onRewind } = props;
+  const { environmentId, threadId, threadKey, onRewind } = props;
+  const editOf = (id: string): BubbleEdit | undefined => {
+    const message = threadKey ? messageById.get(id) : undefined;
+    return message && threadKey && message.role === "user" ? { threadKey, message, busy: props.working } : undefined;
+  };
   const threadRef = useMemo(
     () => (environmentId && threadId ? scopeThreadRef(environmentId, ThreadId.make(threadId)) : undefined),
     [environmentId, threadId],
@@ -638,6 +714,7 @@ export function RubatoSegnoChat(props: {
               environmentId={props.environmentId}
               threadRef={threadRef}
               onRewind={item.side === "me" && onRewind && threadId ? () => void rewind(item.id) : undefined}
+              edit={item.side === "me" ? editOf(item.id) : undefined}
             />,
           ];
         })}
