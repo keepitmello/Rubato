@@ -202,6 +202,9 @@ function revertPending(thread, { dropped, cut }) {
  * runs waits in the queue until that turn ends. The engine stamps a prompt a moment after the app.
  */
 const PROMPT_QUEUE_MS = 30 * 60_000;
+/** How long the room's rewind waits for the companion's own work to stop: 10 s. */
+const COMPANION_STOP_POLL_MS = 100;
+const COMPANION_STOP_TRIES = 100;
 const PROMPT_SKEW_MS = 5_000;
 /**
  * A prompt's words without its attachments: the app writes a picture as a context link, the engine
@@ -576,8 +579,22 @@ export class RubatoPiBridge {
    */
   async rewindBeforeMessage({ threadId, sessionId, messageId, text, createdAt }) {
     return this.withSession(threadId, sessionId, async (client) => {
-      const entryId = companionEntry(activeBranch(await client.command({ type: 'get_entries' })), threadId,
+      const find = async () => companionEntry(activeBranch(await client.command({ type: 'get_entries' })), threadId,
         { messageId, text, createdAt });
+      if (await find() === null) throw new Error('Rubato cannot find this message in the conversation');
+      // The room has no Stop for the companion's own work (a wake, a retry), and that work comes
+      // after the message, so the rewind drops it anyway: it stops first. Compaction is not cut.
+      let state = await client.command({ type: 'get_state' });
+      if (state?.isCompacting) throw new Error('The companion is compacting its conversation; try again when it finishes');
+      if (state?.isStreaming) {
+        await client.command({ type: 'abort' });
+        for (let tries = 0; state?.isStreaming && tries < COMPANION_STOP_TRIES; tries++) {
+          await delay(COMPANION_STOP_POLL_MS);
+          state = await client.command({ type: 'get_state' });
+        }
+        if (state?.isStreaming) throw new Error('The companion did not stop its current work; try again');
+      }
+      const entryId = await find();
       if (entryId === null) throw new Error('Rubato cannot find this message in the conversation');
       const result = await client.command({ type: 'rewind', before: entryId });
       if (result?.cancelled) throw new Error('Rubato declined the rewind; see its notice in the conversation');

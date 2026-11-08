@@ -1742,3 +1742,34 @@ test('the companion room names a person\'s message to the engine by its messenge
   assert.equal(typed('보낸 적 없는 말'), null);
   assert.equal(companionEntry(branch, 'room', { text: '노보링크 쪽에 답해줘', createdAt: new Date(sent).toISOString() }), null);
 });
+
+test('the companion room\'s rewind stops the companion\'s own work first, and touches nothing when it cannot find the message', async () => {
+  const at = Date.parse('2026-11-08T11:00:00.000Z');
+  const branch = [{ id: 'typed', type: 'message', timestamp: new Date(at).toISOString(),
+    message: { role: 'user', content: [{ type: 'text', text: '고쳐줘' }], timestamp: at + 100 } }];
+  const run = async ({ streaming = false, compacting = false, text = '고쳐줘' } = {}) => {
+    const sent = [];
+    const bridge = new RubatoPiBridge({ descriptorPath: '/missing', instanceId: 'rubato' });
+    bridge.withSession = async (_threadId, _sessionId, use) => use({ command: async (command) => {
+      sent.push(command.type);
+      if (command.type === 'get_entries') return { entries: branch, leafId: 'typed' };
+      if (command.type === 'get_state') return { isStreaming: streaming, isCompacting: compacting };
+      if (command.type === 'abort') { streaming = false; return {}; }
+      if (command.type === 'rewind') return { cancelled: false, moved: true };
+      return {};
+    } });
+    const outcome = await bridge.rewindBeforeMessage({ threadId: 'room', sessionId: 's', messageId: 'app-1', text,
+      createdAt: new Date(at).toISOString() }).then((value) => value, (error) => error);
+    return { sent, outcome };
+  };
+  const working = await run({ streaming: true });
+  assert.deepEqual(working.outcome, { entryId: 'typed' });
+  assert.deepEqual(working.sent, ['get_entries', 'get_state', 'abort', 'get_state', 'get_entries', 'rewind']);
+  assert.deepEqual((await run()).sent, ['get_entries', 'get_state', 'get_entries', 'rewind']);
+  const missing = await run({ streaming: true, text: '보낸 적 없는 말' });
+  assert.match(missing.outcome.message, /cannot find this message/);
+  assert.deepEqual(missing.sent, ['get_entries']);
+  const compacting = await run({ streaming: true, compacting: true });
+  assert.match(compacting.outcome.message, /compacting/);
+  assert.equal(compacting.sent.includes('abort'), false);
+});
