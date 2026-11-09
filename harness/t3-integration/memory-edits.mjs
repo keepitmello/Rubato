@@ -4,6 +4,8 @@
 export const memoryOverlays = [
   'apps/server/src/RubatoMemory.ts',
   'apps/web/src/state/rubatoMemory.ts',
+  // A companion's own records, read for the memory page and Segno's room panel; sends go through its conversation.
+  'apps/web/src/state/rubatoSegnoMemory.ts',
   // Auth for fetches to Rubato routes; the voice client uses it too.
   'apps/web/src/state/rubatoHttp.ts',
   'apps/web/src/state/rubatoHttp.test.ts',

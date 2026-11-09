@@ -27,6 +27,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
 import { TITLE_MODELS, titleLadder } from '../../../pi-runtime/features/session-title/session-title.mjs';
+import { createCompanionMemory, CompanionMemoryError } from './companion.mjs';
+import { createInsights } from './insights.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
@@ -69,6 +71,9 @@ const bad = (message) => new MemoryRequestError(400, 'bad-request', message);
  * @param {{ env?: NodeJS.ProcessEnv, rubato?: readonly string[], msearch?: string }} [options]
  *   `rubato` is the argv prefix that runs the CLI; default: this checkout's launcher.
  *   `msearch` is the search entry point; default: this checkout's harness/msearch/msearch.
+ *   `complete` answers one print-mode prompt ({systemPrompt, prompt} → {text, model}); default: the
+ *   stock engine on the dream's model ladder (stats/stories.mjs runPrint).
+ *   `loadCompanions` stands in for harness/companion's registry (tests).
  */
 export function createMemoryService(options = {}) {
   const env = options.env ?? process.env;
@@ -83,6 +88,8 @@ export function createMemoryService(options = {}) {
     '/opt/homebrew/bin', '/usr/local/bin', env.PATH ?? '/usr/bin:/bin',
   ].join(path.delimiter) };
   const running = new Map();
+  // What the page keeps for itself: never memory, only views of it (insights, sent marks).
+  const cacheDir = path.join(home, '.rubato', 'cache', 'memory-page');
 
   const storePaths = (store) => {
     const root = path.join(memoryRoot, 'agents', store);
@@ -572,15 +579,27 @@ export function createMemoryService(options = {}) {
       roots,
       home: meta ? meta.home === true : null,
       files: files.length,
+      // A store an agent opened but never wrote to is not memory; the page does not list it as one.
+      empty: files.length === 0,
       lastChangeAt: last.code === 0 && last.stdout.trim() !== '' ? last.stdout.trim() : null,
-      lastRun: finished ? lastRunOf(summarize(...finished)) : null,
+      lastRun: finished ? { ...lastRunOf(summarize(...finished)), changed: await changedCount(paths, finished[1]) } : null,
       enabled: config.memory?.dream?.stores?.[store]?.enabled !== false,
       running,
     };
   }
 
-  function lastRunOf({ runId, status, startedAt, finishedAt, reason, attempts, landed: inStore }) {
-    return { runId, status, startedAt, finishedAt, reason, attempts, landed: inStore };
+  function lastRunOf({ runId, status, startedAt, finishedAt, reason, attempts, landed: inStore, sessions, model }) {
+    return { runId, status, startedAt, finishedAt, reason, attempts, landed: inStore, sessions, model };
+  }
+
+  // How many files a run changed in the store (0 when it changed nothing or did not land).
+  async function changedCount(paths, record) {
+    if (!landed(record)) return 0;
+    const range = rangeOf(record);
+    if (range === null) return 0;
+    let listed = await git(paths.repo, [...DIFF, '--name-only', range[0], range[1], '--']);
+    if (listed.code !== 0 && range[0].endsWith('^')) listed = await git(paths.repo, [...DIFF, '--name-only', EMPTY_TREE, range[1], '--']);
+    return listed.code === 0 ? listed.stdout.split('\n').filter(Boolean).length : 0;
   }
 
   // --- The overview: what changed lately across every store, and search over all of them.
@@ -679,16 +698,219 @@ export function createMemoryService(options = {}) {
   async function files({ store }) {
     const paths = storePaths(assertStore(store));
     const list = await walk(paths.repo);
+    const touched = await lastTouched(paths);
     const entries = await Promise.all(list.map(async (file) => {
       let description = null;
+      let title = null;
       if (file.endsWith('.md')) {
         const head = await readHead(path.join(paths.repo, file), 4096);
         description = descriptionOf(head);
+        title = titleOf(head);
       }
-      return { path: file, description };
+      const last = touched.get(file);
+      return { path: file, description, title, kind: kindOf(file), changedAt: last?.at ?? null, writer: last?.writer ?? null };
     }));
     return { store, files: entries, truncated: list.length >= 5000 };
   }
+
+  // The newest commit that touched each file, from one walk over the recent history.
+  async function lastTouched(paths) {
+    const touched = new Map();
+    const log = await git(paths.repo, ['-c', 'core.quotePath=false', 'log', '-n600', '--name-only', '--format=%x1e%cI%x1f%s%x1f%b%x1f']);
+    if (log.code !== 0) return touched;
+    for (const chunk of log.stdout.split('\x1e').slice(1)) {
+      const [at, subject, body, rest = ''] = chunk.split('\x1f');
+      const writer = writerOf(subject, body);
+      for (const name of rest.split('\n').map((line) => line.trim()).filter(Boolean)) {
+        if (!touched.has(name)) touched.set(name, { at, writer });
+      }
+    }
+    return touched;
+  }
+
+  // How the page names who wrote a commit: a dream, the person from this page, or a session.
+  function writerOf(subject, body) {
+    if (subject.startsWith('merge(dream): ') || subject.startsWith('dream:') || subject.startsWith('dream(')) return 'dream';
+    if (body.includes(SETTINGS_TRAILER)) return 'you';
+    return 'session';
+  }
+
+  // --- One question's history: every commit that changed the file, and what each changed.
+
+  async function fileHistory({ store, path: relative }) {
+    const paths = storePaths(assertStore(store));
+    const file = await storeFileOrGone(store, relative);
+    const runsByCommit = new Map();
+    for (const [runId, record] of await runRecords(paths)) {
+      for (const sha of Array.isArray(record.commits) ? record.commits : []) if (SHA.test(sha)) runsByCommit.set(sha, runId);
+    }
+    const log = await git(paths.repo, ['-c', 'core.quotePath=false', 'log', '-n40', '--follow', '--name-status', '--format=%x1e%H%x1f%cI%x1f%s%x1f%b%x1f', '--', file]);
+    if (log.code !== 0) return { store, path: file, commits: [] };
+    const commits = [];
+    for (const chunk of log.stdout.split('\x1e').slice(1)) {
+      const [sha, at, subject, body, rest = ''] = chunk.split('\x1f');
+      const status = rest.trim().split('\n')[0]?.split('\t') ?? [];
+      const change = (status[0] ?? '').startsWith('A') ? 'added' : (status[0] ?? '').startsWith('D') ? 'deleted' : (status[0] ?? '').startsWith('R') ? 'renamed' : 'modified';
+      const writer = writerOf(subject, body);
+      const runId = runsByCommit.get(sha);
+      commits.push({
+        sha, at, writer, change,
+        // The path the file had at that commit (a rename follows it back).
+        path: change === 'renamed' && status[2] ? status[2] : (status[1] ?? file),
+        ...(change === 'renamed' && status[1] ? { from: status[1] } : {}),
+        text: subject === ADOPT_SUBJECT ? null : subject.replace(/^dream:\s*/, ''),
+        adopted: subject === ADOPT_SUBJECT,
+        ...(runId ? { runId } : {}),
+      });
+    }
+    return { store, path: file, commits };
+  }
+
+  // A file the page names, which may already be deleted (its history is still there).
+  async function storeFileOrGone(store, relative) {
+    try { return (await storeFile(store, relative)).relative; }
+    catch (error) {
+      if (!(error instanceof MemoryRequestError) || error.code !== 'no-file') throw error;
+      return relative;
+    }
+  }
+
+  async function fileDiff({ store, path: relative, sha }) {
+    const paths = storePaths(assertStore(store));
+    if (typeof sha !== 'string' || !SHA.test(sha)) throw bad('Commit is not valid.');
+    const file = await storeFileOrGone(store, relative);
+    if (typeof file !== 'string' || !RECORD_PATH.test(file) || file.split('/').includes('..')) throw bad('File path is not valid.');
+    const shown = await git(paths.repo, ['-c', 'core.quotePath=false', 'show', '--no-color', '--no-ext-diff', '-M', '--format=', sha, '--', file]);
+    if (shown.code !== 0) throw new MemoryRequestError(404, 'no-commit', shown.stderr.trim().split('\n')[0] || 'That change is not in the history.');
+    const truncated = shown.stdout.length > DIFF_LIMIT;
+    return { store, path: file, sha, diff: truncated ? shown.stdout.slice(0, DIFF_LIMIT) : shown.stdout, truncated };
+  }
+
+  // --- This week per project: what changed, who changed it, and why (for the one-line summary).
+
+  async function projectChanges({ days } = {}) {
+    const span = Number.isInteger(days) ? Math.min(Math.max(days, 1), 60) : 7;
+    const since = new Date(Date.now() - span * 86_400_000).toISOString();
+    const projects = [];
+    for (const store of await listStores()) {
+      const paths = storePaths(store);
+      const log = await git(paths.repo, [
+        '-c', 'core.quotePath=false', 'log', '--first-parent', '--diff-merges=first-parent', '--name-status',
+        `--since=${since}`, '-n200', '--format=%x1e%H%x1f%cI%x1f%s%x1f%b%x1f',
+      ]);
+      if (log.code !== 0) continue;
+      const writers = { dream: 0, session: 0, you: 0 };
+      const files = new Map();
+      const reasons = [];
+      let head = null;
+      let latest = null;
+      for (const chunk of log.stdout.split('\x1e').slice(1)) {
+        const [sha, at, subject, body, rest = ''] = chunk.split('\x1f');
+        const touched = rest.split('\n').filter(Boolean);
+        if (touched.length === 0) continue;
+        head ??= sha;
+        latest ??= at;
+        writers[writerOf(subject, body)] += 1;
+        const described = await describeCommit(paths, subject, body);
+        if (described.text && reasons.length < 6) reasons.push(described.text);
+        // Oldest last: a file added earlier in the week and edited since still counts as new.
+        for (const line of touched) {
+          const [status = '', first, second] = line.split('\t');
+          const change = status.startsWith('A') ? 'added' : status.startsWith('D') ? 'deleted' : status.startsWith('R') ? 'renamed' : 'modified';
+          const name = change === 'renamed' && second ? second : first;
+          const seen = files.get(name);
+          if (!seen) files.set(name, { path: name, change });
+          else if (change === 'added' && seen.change !== 'deleted') seen.change = 'added';
+        }
+      }
+      if (head === null) continue;
+      const list = [];
+      for (const entry of files.values()) {
+        let title = null;
+        if (entry.path.endsWith('.md') && entry.change !== 'deleted') {
+          const content = await readText(path.join(paths.repo, entry.path)).catch(() => undefined);
+          if (content !== undefined) title = titleOf(content) ?? descriptionOf(content);
+        }
+        list.push({ ...entry, kind: kindOf(entry.path), title });
+      }
+      projects.push({ store, key: head, at: latest, writers, files: list, reasons });
+    }
+    projects.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    return { since, days: span, projects };
+  }
+
+  // --- The page's own model calls (insights.mjs): one cheap call, cached until its input changes.
+
+  // The dream's ladder, as the user set it (memory.dream.models), else what the CLI resolves.
+  async function memoryLadder() {
+    const configured = parseConfig((await readConfigText()).text)?.memory?.dream?.models;
+    const rungs = (Array.isArray(configured) ? configured : []).map((entry) => (typeof entry === 'string' ? { model: entry } : entry))
+      .filter((entry) => typeof entry?.model === 'string' && MODEL_ID.test(entry.model))
+      .map((entry) => ({ model: entry.model, reasoning: REASONING.has(entry.reasoning) ? entry.reasoning : null }));
+    if (rungs.length > 0) return rungs;
+    return ladderOf(await cli(['--json'], 120_000));
+  }
+
+  const complete = options.complete ?? (async ({ systemPrompt, prompt }) => {
+    const { stockEngineLaunch, runPrint } = await import('../stats/stories.mjs');
+    const launch = await stockEngineLaunch(repoRoot, childEnv);
+    const failures = [];
+    for (const rung of await memoryLadder()) {
+      // OpenGateway is never used for the page's calls, whatever the ladder says (user constraint no-opengateway).
+      if (rung.model.startsWith('opengateway/')) continue;
+      try {
+        const text = await runPrint({ launch, env: childEnv, model: rung.model, reasoning: rung.reasoning ?? 'low', systemPrompt, prompt });
+        return { text, model: rung.model };
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    throw new Error(failures.join('; ') || 'No model to ask.');
+  });
+  const insightStore = createInsights({ cacheDir, complete });
+  const companionMemory = createCompanionMemory({
+    env, cacheDir, run: (argv) => run(argv, { timeoutMs: 30_000 }),
+    ...(options.loadCompanions ? { loadCompanions: options.loadCompanions } : {}),
+  });
+  const LANGUAGE = /^[A-Za-z][A-Za-z ()-]{1,40}$/;
+
+  /**
+   * Overlaps between the shared user memory and each companion's lines about the person, and one
+   * line per project for this week. `start: false` only reads what is cached.
+   */
+  async function insights({ language, start = true, days } = {}) {
+    const tongue = typeof language === 'string' && LANGUAGE.test(language) ? language : 'English';
+    const [view, changes, registered] = await Promise.all([
+      userView().catch(() => null),
+      projectChanges({ days }),
+      companionMemory.companions().catch(() => ({ companions: [] })),
+    ]);
+    const shared = (view?.topics ?? []).flatMap((topic) => topic.items.map((item) => ({
+      id: item.path, text: (item.conclusion?.length ? item.conclusion.join(' ') : item.text).slice(0, 600),
+    })));
+    const overlaps = {};
+    for (const entry of registered.companions) {
+      if (!entry.hasMemory) continue;
+      const lines = (await companionMemory.about(await companionMemory.profile(entry.id)).catch(() => []))
+        .filter((line) => line.kind === 'user').map((line) => ({ id: line.id, text: line.text.slice(0, 600) }));
+      if (lines.length === 0) continue;
+      overlaps[entry.id] = await insightStore.overlaps({ language: tongue, shared, companion: { id: entry.id, title: entry.title, lines } }, { start });
+    }
+    const projects = await insightStore.projects({
+      language: tongue,
+      projects: changes.projects.map((project) => ({ store: project.store, key: project.key, files: project.files, reasons: project.reasons })),
+    }, { start });
+    return { language: tongue, overlaps, projects, changes };
+  }
+
+  // A companion route's error, in this module's shape.
+  const viaCompanion = (work) => async (input) => {
+    try { return await work(input); }
+    catch (error) {
+      if (error instanceof CompanionMemoryError) throw new MemoryRequestError(error.status, error.code, error.message);
+      throw error;
+    }
+  };
 
   async function readHead(file, bytes) {
     const { open } = await import('node:fs/promises');
@@ -806,6 +1028,19 @@ export function createMemoryService(options = {}) {
     'user-reforget': (input) => userReforget(input),
     activity: (input) => activity(input),
     search: (input) => search(input),
+    'file-history': (input) => fileHistory(input),
+    'file-diff': (input) => fileDiff(input),
+    'project-changes': (input) => projectChanges(input),
+    insights: (input) => insights(input),
+    // A companion's own records (companion.mjs), read-only; `companionId` defaults to Segno.
+    companions: viaCompanion(() => companionMemory.companions()),
+    'companion-memory': viaCompanion((input) => companionMemory.memory(input)),
+    'companion-file': viaCompanion((input) => companionMemory.file(input)),
+    'companion-search': viaCompanion((input) => companionMemory.search(input)),
+    'companion-changes': viaCompanion((input) => companionMemory.changes(input)),
+    'companion-history': viaCompanion((input) => companionMemory.history(input)),
+    'companion-diff': viaCompanion((input) => companionMemory.diff(input)),
+    'companion-sent': viaCompanion((input) => companionMemory.markSent(input)),
   };
   return {
     actions: Object.keys(actions),
@@ -845,6 +1080,21 @@ function reportOutline(report) {
     .filter(Boolean);
   const summary = lines(SUMMARY_SECTIONS).map((line) => line.trim()).filter(Boolean).join(' ');
   return { summary: summary || null, bullets };
+}
+
+// A memory file's question: its first `# ` heading after the front matter.
+function titleOf(text) {
+  const body = String(text ?? '').replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '');
+  const match = /^#\s+(.+?)\s*$/m.exec(body);
+  return match ? match[1] : null;
+}
+
+// What kind of answer a file holds, from the folder the store keeps it in.
+function kindOf(file) {
+  if (file.startsWith('decisions/')) return 'decision';
+  if (file.startsWith('reference/')) return 'reference';
+  if (file.startsWith('skills/')) return 'skill';
+  return 'other';
 }
 
 // The text of a memory file without its front matter, cut to a line or two for a result list.
