@@ -40,7 +40,8 @@ const SERVICE_TIER_APIS = new Set([
   "openai-completions",
 ]);
 // 5-5 가 5 보다 앞에 온다 — 아니면 `claude-opus-5-5` 가 `5` 로만 매칭되고 꼬리에서 죽는다.
-const ANTHROPIC_FAST_MODEL_ID = /^claude-opus-(?:5-5|5|4-8)(?:-\d{8})?$/;
+// Fable 은 5.2 만 Fast 를 받는다 (공식 가격표 Fast mode 절, 2026-11-10).
+const ANTHROPIC_FAST_MODEL_ID = /^claude-(?:opus-(?:5-5|5|4-8)|fable-5-2)(?:-\d{8})?$/;
 
 export function isPickerModel(item, current = null) {
   return admitProductCatalogItems([item], {

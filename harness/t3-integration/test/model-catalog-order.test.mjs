@@ -86,6 +86,8 @@ test('reasoning models expose effort, and fast-capable models expose Fast', () =
   assert.deepEqual(fable.optionDescriptors.map((item) => item.id), ['reasoningEffort']);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-opus-5-5', api: 'anthropic-messages' }), true);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-1', api: 'anthropic-messages' }), false);
+  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-2', api: 'anthropic-messages' }), true);
+  assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-2-sub', api: 'anthropic-messages' }), true);
 });
 
 test('T3 catalogue shows manual Anthropic account copies after all base models', () => {
