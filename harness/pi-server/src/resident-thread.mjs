@@ -80,6 +80,8 @@ const ctx = {
 
 let api;
 let closing;
+// The companion home this service keeps, when it is a companion service (companion-claim.mjs).
+let releaseClaim;
 parentPort.on('message', async (message) => {
   switch (message?.type) {
     case 'ping': post({ type: 'pong' }); return;
@@ -120,6 +122,7 @@ parentPort.on('message', async (message) => {
       closing ??= (async () => {
         stop.abort();
         try { await api?.close?.(); } catch (error) { ctx.onError(error); }
+        try { await releaseClaim?.(); } catch (error) { ctx.onError(error); }
         post({ type: 'closed' });
         process.exit(0);
       })();
@@ -128,6 +131,13 @@ parentPort.on('message', async (message) => {
   }
 });
 
+if (options.claim) {
+  const { claimCompanionHome } = await import('./companion-claim.mjs');
+  // A claim lost while running (the refresh stalled and another engine took it) ends this thread;
+  // the supervisor starts it again, and the new start claims afresh or finds the home kept.
+  releaseClaim = await claimCompanionHome({ ...options.claim, agentDir: context.agentDir,
+    onCompromised: (error) => { ctx.onError(error); process.exit(1); } });
+}
 const loaded = await import(pathToFileURL(modulePath).href);
 if (typeof loaded[exportName] !== 'function') throw new Error(`${modulePath} does not export ${exportName}()`);
 api = await loaded[exportName](ctx) ?? {};

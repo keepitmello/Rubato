@@ -126,6 +126,11 @@ test('services and search indices are distinct while Segno Telegram remains off'
   assert.notEqual(a.MSEARCH_INDEX, b.MSEARCH_INDEX);
   assert.equal(b.MSEARCH_ROOT, path.join(profile.home, 'memory'));
   assert.equal(services.find(s => s.name === 'messenger:other').options.env.RUBATO_COMPANION_TELEGRAM, '1');
+  // Every companion service claims its own kind in its own home; the shared services claim nothing.
+  assert.deepEqual(services.find(s => s.name === 'companion:other').options.claim, { home: profile.home, kind: 'companion' });
+  assert.deepEqual(services.find(s => s.name === 'messenger:other').options.claim, { home: profile.home, kind: 'messenger' });
+  assert.equal(services.find(s => s.name === 'companion-dream').options.claim.home, listCompanions(env)[0].home);
+  assert.equal(services.find(s => s.name === 'scheduler').options?.claim, undefined);
 });
 
 test('duplicate homes, memory agents and IDs cannot register aliases to another companion', t => {

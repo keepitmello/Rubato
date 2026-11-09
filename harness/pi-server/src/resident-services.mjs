@@ -49,7 +49,8 @@ export function residentServices(env = process.env) {
     const kinds = ['companion', 'companion-dream', ...(profile.telegram || TELEGRAM_ENABLED ? ['messenger'] : [])];
     return kinds.map((kind) => {
       const base = kind === 'messenger' ? MESSENGER_SERVICE : RESIDENT_SERVICES.find((item) => item.name === kind);
-      return { ...base, name: companionServiceName(kind, profile.id), options: { env: scoped } };
+      // One engine keeps a companion home (companion-claim.mjs).
+      return { ...base, name: companionServiceName(kind, profile.id), options: { env: scoped, claim: { home: profile.home, kind } } };
     });
   }), ...shared];
 }

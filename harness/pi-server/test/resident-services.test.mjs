@@ -179,3 +179,36 @@ test('a service that keeps failing backs off instead of spinning', async (t) => 
   assert.ok(state.starts >= 3 && state.starts <= 6, `starts: ${state.starts}`);
   assert.equal(state.status, 'restarting');
 });
+
+test('two engines and one companion home: only the engine that claimed it runs the service, the other names the holder and takes over once it closes', async (t) => {
+  // 2026-11-09: an isolated engine that inherited the companions file drove the live Roo home
+  // beside the live engine, and the two keepers flipped Roo's conversation six times.
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-resident-claim-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const home = path.join(root, 'companion-home');
+  const engine = (name) => {
+    const agentDir = path.join(root, name);
+    const errors = [];
+    const residents = startResidentServices({
+      services: [{ name: 'companion', module: faultModule, options: { marker: path.join(root, `${name}.marker`), claim: { home, kind: 'companion' } } }],
+      context: { agentDir, socketPath: path.join(root, `${name}.sock`), serverId: name },
+      onError: (error) => errors.push(error.message), timings: { ...FAST, restartMinMs: 100, restartMaxMs: 300 },
+    });
+    t.after(() => residents.close());
+    return { agentDir, errors, residents };
+  };
+  const live = engine('live');
+  await live.residents.ready;
+  assert.deepEqual(await lines(path.join(root, 'live.marker')), ['start']);
+
+  const isolated = engine('isolated');
+  await until(() => isolated.errors.some((line) => line.includes(`is kept by the engine at ${live.agentDir}`)), 'the second engine names the holder');
+  await delay(500);
+  assert.deepEqual(await lines(path.join(root, 'isolated.marker')), [], 'the second engine never started the companion service');
+  assert.deepEqual(await lines(path.join(root, 'live.marker')), ['start'], 'the holder kept running undisturbed');
+
+  await live.residents.close();
+  await until(async () => (await lines(path.join(root, 'isolated.marker'))).includes('start'), 'the second engine takes the home over');
+  const owner = JSON.parse(await readFile(path.join(home, '.engine-claims', 'companion.owner.json'), 'utf8'));
+  assert.equal(owner.agentDir, isolated.agentDir);
+});
