@@ -137,6 +137,8 @@ export function piSupportEnv() {
     RUBATO_ROLE_CONTRACT_MODULE: pathToFileURL(join(here, "role-contract.mjs")).href,
     // The memory component asks `rubato dream --due` at session start and end; this is the CLI it runs.
     RUBATO_DREAM_CLI: join(here, "..", "..", "..", "packages", "rubato-runtime", "src", "dream", "cli.ts"),
+    // memory_search runs this msearch wrapper; without it the tool falls back to msearch on PATH.
+    RUBATO_MSEARCH_CLI: join(here, "..", "..", "msearch", "msearch"),
   };
 }
 

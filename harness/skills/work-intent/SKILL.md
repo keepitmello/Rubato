@@ -21,7 +21,7 @@ worktree change, failed verification or different team composition. A fresh run 
 not a fresh intent. Read candidates; similar filenames alone do not establish sameness.
 
 A different outcome on the same systems still inherits from earlier intents, whatever
-their status. Find them in the intent home or with `msearch`. A user constraint or
+their status. Find them in the intent home or with `memory_search` (`msearch` from a shell). A user constraint or
 correction recorded there that still holds goes into the new record's Constraints with
 its source, so the next run inherits it from the record rather than from whoever
 happens to remember it.

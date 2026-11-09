@@ -63,7 +63,7 @@ The file does not speak about time: no "this used to be B", no dated sections, n
 Writing is read-modify-write:
 
 ```
-1. msearch "<the question>"   is a file already answering it?
+1. memory_search "<the question>"   is a file already answering it?
 2. found      -> edit it: overwrite Conclusion, add the rejected candidate to Rationale
 3. not found  -> create it
 4. meaningless now -> delete it
@@ -77,6 +77,6 @@ When a thread of work closes, not every turn: per-turn writes splinter one episo
 
 ## Commands
 
-- `msearch "<query>"`: search this project's memory together with the shared memory about the user; `-u` searches only the user's, `-a` every store. Query in English, the language the records are written in, with short anchors (a component, an error, a decision). A raw error or the user's own words also match, because `## Symptom` keeps them verbatim.
+- `memory_search` in Rubato, `msearch "<query>"` from a shell elsewhere: search this project's memory together with the shared memory about the user; scope `user` (`-u`) searches only the user's, `all` (`-a`) every store. Query in English, the language the records are written in, with short anchors (a component, an error, a decision). A raw error or the user's own words also match, because `## Symptom` keeps them verbatim.
 - `memory` and `memory_apply_patch`: how a session writes memory. Each change is committed with the `reason` you give, which is what `git log` shows later. Load them with `tool_search` when they are not active. A file written with a shell or a file tool is committed by the next writer under a generic message, so its reason is lost.
 - `rubato dream [<store>]`: run the dream now. It writes what the sessions left out, resolves contradictions and duplicates in place, and passes what it noticed about the user to the user dream, which keeps the shared user memory. A store written before memory moved to English is translated once on its next dream (`rubato dream --migrate <store>` runs it now); `harness/README.md` has the details.

@@ -17,7 +17,7 @@ export const SLIM_DESCRIPTIONS = Object.freeze({
     "Create a team run from a named spec or an inline spec. The current session is the lead. Before spawning, read agent-taskforce LEAD.md and runtimes/pi.md, then present the smallest intent/roster proposal and wait for explicit confirmation. inline_spec takes precedence over team_name. Members run as background children. Each member needs kind owner|verifier and an exact model from the same live catalog as Agent; effort is optional. Member prompts MUST be in English. Returns invalid_arguments, spec_error, or runtime_error on failure. To change a running team's roster, add with team_add_member or remove with team_shutdown_request (find them via tool_search); do not create a second team.",
 
   memory:
-    'Write markdown memories in the Rubato memory repo; changes auto-commit. Frontmatter description is required on create; read_only: "true" blocks modification. Ops: str_replace, insert, delete, rename, update_description, create. Paths must be inside the memory repo. Keep [[path]] references consistent when creating or deleting.',
+    'Write markdown memories in the Rubato memory repo; changes auto-commit. Before creating a file, find the one that already owns the question with memory_search. Frontmatter description is required on create; read_only: "true" blocks modification. Ops: str_replace, insert, delete, rename, update_description, create. Paths must be inside the memory repo. Keep [[path]] references consistent when creating or deleting.',
 
   memory_apply_patch:
     "Apply a codex-style patch to memory files, then auto-commit. Required: reason (commit message), input (*** Begin Patch ... *** End Patch). Paths must be inside the memory repo. read_only files cannot be modified.",

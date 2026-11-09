@@ -31,6 +31,7 @@ import {
   MEMORY_TOOL_NAME,
 } from "./tool-metadata"
 import { registerMemoryToolSurface } from "./tools"
+import { registerMemorySearchTool } from "./search-tool"
 import { isRecord, sessionIdFrom } from "./wiring-context"
 
 const GLOBAL_DISABLED_FLAG = "rubato-disabled"
@@ -109,6 +110,8 @@ export function createMemoryComponent(options: MemoryComponentOptions = {}): Rub
 
       // Boot snapshot: tool registration must not re-read config.
       registerMemoryToolSurface(pi, activeContext, { exposure: bootConfig.tool_exposure })
+      // Search does not need a bound store: msearch falls back to the memory about the user.
+      registerMemorySearchTool(pi, { env, resolveCwd })
       pi.on("tool_call", (payload, eventCtx) => {
         if (!isRecord(payload) || !isMemoryToolName(payload.toolName) || !isRecord(payload.input)) return
         const sessionId = sessionIdFrom(eventCtx)

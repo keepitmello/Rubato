@@ -4,6 +4,10 @@
 
 export const MEMORY_TOOL_NAME = "memory"
 export const MEMORY_APPLY_PATCH_TOOL_NAME = "memory_apply_patch"
+export const MEMORY_SEARCH_TOOL_NAME = "memory_search"
+
+export const MEMORY_SEARCH_DESCRIPTION =
+  "Search memory written in earlier sessions: why past decisions were made, reference facts, what is known about the user, and agreed intents. Use it before grepping or listing ~/.rubato/memory, and before writing memory, to find the file that already owns the question. Each result names its file as a [path] line; read that file for the whole answer. NO RELEVANT MEMORY means nothing matched."
 
 // MCP surface identity. Rubato's Claude-compatible MCP adapter names catalog tools
 // `mcp__<server>_<tool>` with non-alphanumerics (except dash/underscore) sanitized, so the
@@ -20,6 +24,8 @@ export const MEMORY_TOOL_DESCRIPTION = [
   "Edits this project's Rubato memory store and commits each change with the reason you give.",
   "",
   "Before writing, read Skill(memory-discipline): it decides whether something is worth keeping and which file owns it. In short: write when a thread of work closes, only the why git cannot answer, and keep one current answer per file (overwrite or delete; never append corrections beside it).",
+  "",
+  "Find the file that already owns the question with memory_search before creating one.",
   "",
   "Memory files are markdown documents with YAML frontmatter. Frontmatter carries a `description` (required on create; it is what search shows) and may set `read_only: \"true\"` to block modification. Edits preserve existing frontmatter.",
   "",
