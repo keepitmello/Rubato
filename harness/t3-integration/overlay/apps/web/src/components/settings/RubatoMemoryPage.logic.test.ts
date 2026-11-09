@@ -14,6 +14,7 @@ import {
   placeCompanionLines,
   projectLine,
   questionTitle,
+  relativeTime,
 } from "./RubatoMemoryPage.logic";
 
 const store = (name: string, fields: Partial<MemoryStoreSummary> = {}): MemoryStoreSummary => ({
@@ -160,6 +161,17 @@ describe("questions", () => {
   });
   it("read as their question", () => {
     expect(files.map(questionTitle)).toEqual(["App rewind does not change the session", "Computer use backend", "old thing"]);
+  });
+});
+
+describe("relativeTime", () => {
+  it("follows the interface language each time, so a switch to Korean is not stuck in English", () => {
+    const now = Date.parse("2026-11-09T12:00:00Z");
+    expect(relativeTime("2026-11-09T00:00:00Z", "en", now)).toBe("12 hours ago");
+    expect(relativeTime("2026-11-09T00:00:00Z", "ko", now)).toBe("12시간 전");
+    expect(relativeTime("2026-11-07T12:00:00Z", "ko", now)).toBe("그저께");
+    expect(relativeTime("2026-11-09T12:00:00Z", "en", now)).toBe("now");
+    expect(relativeTime(null, "ko", now)).toBe("");
   });
 });
 

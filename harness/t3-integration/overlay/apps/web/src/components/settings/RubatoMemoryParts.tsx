@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
-import { UI_LANGUAGE_STORAGE_KEY, uiText } from "../../rubatoI18n";
+import { uiLanguage, uiText } from "../../rubatoI18n";
+import { relativeTime } from "./RubatoMemoryPage.logic";
 import { requestConfirmDialog } from "../../confirmDialog";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -109,21 +110,9 @@ export function Muted({ children, className }: { children: ReactNode; className?
   return <div className={cn("mt-0.5 text-xs text-muted-foreground", className)}>{children}</div>;
 }
 
-// Relative times in the interface language; the dictionary cannot template every unit.
-function korean(): boolean {
-  return typeof window !== "undefined" && window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === "ko";
-}
-let relative: Intl.RelativeTimeFormat | null = null;
+// Relative times in the interface language as it is now (the dictionary cannot template every unit).
 export function ago(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  relative ??= new Intl.RelativeTimeFormat(korean() ? "ko" : "en", { numeric: "auto" });
-  const seconds = Math.round((then - Date.now()) / 1000);
-  for (const [unit, size] of [["day", 86_400], ["hour", 3_600], ["minute", 60]] as const) {
-    if (Math.abs(seconds) >= size) return relative.format(Math.round(seconds / size), unit);
-  }
-  return relative.format(0, "second");
+  return relativeTime(iso, uiLanguage());
 }
 
 /** A date and time, short: "11-09 03:00". */
