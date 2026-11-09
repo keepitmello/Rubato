@@ -290,7 +290,7 @@ function LineRow({
         <div className="min-w-0 flex-1">
           <span translate="no">{item.text}</span>
           <Muted>
-            <Dots parts={[item.refs ? { keep: item.refs } : null, item.sent ? `Sent to ${view.title} ${ago(item.sent)}` : null]} />
+            <Dots parts={[item.refs ? { keep: item.refs } : null, item.sent ? `Sent to ${view.title}` : null, item.sent ? ago(item.sent) : null]} />
           </Muted>
           {open ? (
             <AnswerBox

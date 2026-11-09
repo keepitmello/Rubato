@@ -448,7 +448,13 @@ function CompanionLine({
               {overlap.note ? <span translate="no">{overlap.note}</span> : null}
             </span>
           ) : null}
-          {sent ? <span className="block text-xs text-muted-foreground">{`Sent to ${companion.title} ${ago(sent)}`}</span> : null}
+          {sent ? (
+            <span className="block text-xs text-muted-foreground">
+              <span>{`Sent to ${companion.title}`}</span>
+              {" · "}
+              <span>{ago(sent)}</span>
+            </span>
+          ) : null}
           {shared ? <span className="block text-xs text-success-foreground">Sent to the shared memory. The answer shows above.</span> : null}
         </span>
       }

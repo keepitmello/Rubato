@@ -27,6 +27,7 @@ import { DreamView } from "./RubatoMemoryDream";
 import {
   changePhrases,
   fallbackTopics,
+  foldNeeds,
   insightLanguage,
   listedStores,
   meCounts,
@@ -449,7 +450,8 @@ function NeedsYouCard({
   const segnoTitle = data.segno?.title ?? "Segno";
   const sender = useCompanionSender(data.environmentId, data.segno?.id ?? "segno");
   const [answering, setAnswering] = useState<string | null>(null);
-  const shown = needs.slice(0, 5);
+  const [all, setAll] = useState(false);
+  const shown = all ? needs : foldNeeds(needs);
   return (
     <MemoryCard title="Needs you" aside={<span>{`${needs.length} items`}</span>}>
       {needs.length === 0 ? (
@@ -563,9 +565,9 @@ function NeedsYouCard({
           </MemoryRow>
         );
       })}
-      {needs.length > shown.length ? (
-        <MemoryRow onClick={() => onGo("segno", { segno: null })}>
-          <span className="text-xs text-muted-foreground">{`${needs.length - shown.length} more`}</span>
+      {needs.length > foldNeeds(needs).length ? (
+        <MemoryRow onClick={() => setAll(!all)}>
+          <span className="text-xs text-muted-foreground">{all ? "Show fewer" : `Show all ${needs.length}`}</span>
         </MemoryRow>
       ) : null}
     </MemoryCard>

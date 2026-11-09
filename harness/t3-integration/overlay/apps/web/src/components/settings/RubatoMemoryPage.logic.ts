@@ -74,6 +74,28 @@ export function needsYou(input: {
     .map(({ item }) => item);
 }
 
+/**
+ * The "needs you" card folded: the first `max` items with at most `perKind` of one kind, so a long
+ * list of questions does not hide the overlaps and failures behind it. Order is kept.
+ */
+export function foldNeeds<T extends { readonly kind: string }>(items: readonly T[], max = 5, perKind = 2): T[] {
+  const taken = new Map<string, number>();
+  const shown: T[] = [];
+  for (const item of items) {
+    if (shown.length >= max) break;
+    const n = taken.get(item.kind) ?? 0;
+    if (n >= perKind) continue;
+    taken.set(item.kind, n + 1);
+    shown.push(item);
+  }
+  // Fewer kinds than room: fill up with the rest, still in order.
+  for (const item of items) {
+    if (shown.length >= max) break;
+    if (!shown.includes(item)) shown.push(item);
+  }
+  return items.filter((item) => shown.includes(item));
+}
+
 export interface ChangeCounts {
   readonly added: number;
   readonly modified: number;
