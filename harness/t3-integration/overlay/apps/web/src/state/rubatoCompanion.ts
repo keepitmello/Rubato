@@ -185,6 +185,8 @@ export interface SegnoLaunch {
   readonly sessionId: string | null;
   readonly title: string | null;
   readonly model: string | null;
+  /** A fork without a first message waits for the person; anything else starts working. */
+  readonly startsWork: boolean;
   readonly at: number;
   readonly done: number | null;
   readonly error: string | null;

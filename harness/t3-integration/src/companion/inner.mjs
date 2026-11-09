@@ -99,7 +99,9 @@ export function entryItems(entry, calls) {
         const args = part.arguments && typeof part.arguments === 'object' ? part.arguments : {};
         if (LAUNCH_TOOLS[tool.name]) Object.defineProperty(tool, 'launch', { enumerable: false, writable: true,
           value: { tool: LAUNCH_TOOLS[tool.name], title: typeof args.title === 'string' ? args.title : null,
-            model: typeof args.model === 'string' ? args.model : null, sessionId: null } });
+            model: typeof args.model === 'string' ? args.model : null, sessionId: null,
+            // A fork without a first message waits for the person; anything else starts working.
+            startsWork: tool.name === 'session_create' || typeof args.text === 'string' } });
         if (tool.name === 'segno_commit') Object.defineProperty(tool, 'commit', { enumerable: false, writable: true,
           value: { message: typeof args.message === 'string' ? oneLine(args.message, 400) : '',
             files: Array.isArray(args.paths) ? args.paths.filter((file) => typeof file === 'string') : [], sha: null } });

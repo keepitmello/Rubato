@@ -9,9 +9,17 @@ vi.mock("../../state/rubatoCompanion", () => ({
   useRubatoCompanion: () => ({ companions: [{ id: "segno", threadId: "segno-thread" }] }),
   rubatoCompanion: { innerSummaries: async () => ({ spans: [] }) },
 }));
+const spanState = vi.hoisted(() => ({ summaries: [] as unknown[] }));
 vi.mock("./RubatoSegnoInner", () => ({
   RubatoSegnoSpanLine: () => null,
-  useSegnoSpanSummaries: () => [],
+  useSegnoSpanSummaries: () => spanState.summaries,
+}));
+vi.mock("./RubatoWorkCard", () => ({
+  RubatoWorkCard: ({ launch }: { launch: { title: string; sessionId: string } }) => (
+    <div data-testid="work-card" data-session={launch.sessionId}>
+      {launch.title}
+    </div>
+  ),
 }));
 vi.mock("../ChatMarkdown", () => ({ default: ({ text }: { text: string }) => <p>{text}</p> }));
 vi.mock("../ui/tooltip", () => ({
@@ -46,6 +54,7 @@ beforeEach(() => {
   root = createRoot(host);
 });
 afterEach(() => {
+  spanState.summaries = [];
   act(() => root.unmount());
   host.remove();
   vi.useRealTimers();
@@ -203,4 +212,30 @@ it("puts a pencil on the person's bubbles only, and the pencil or the menu turns
 it("leaves the pencil out when the room has no edit host to answer it", () => {
   act(() => root.render(<RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
   expect(host.querySelector("[data-rubato-segno-edit]")).toBeNull();
+});
+
+it("puts a conversation Segno launched below the reply it led to, and a committed record as one grey line", () => {
+  const summary = (fields: Record<string, unknown>) => ({ thinking: 0, text: 0, tools: 1, wakes: 0, messages: 0, from: 1, to: 2, ...fields });
+  spanState.summaries = [
+    null,
+    summary({
+      launches: [{ id: "k1", tool: "create", sessionId: "S2", title: "원화 출금 설계", model: null, startsWork: true, at: 1, done: 2, error: null }],
+      commits: [{ id: "k2", message: "카줌 셀러 컨택은 수찬 전화 먼저", files: ["memory/status.md"], sha: "5f8e228", at: new Date(2026, 10, 2, 9, 1).getTime() }],
+    }),
+    null,
+    null,
+    null,
+  ];
+  act(() => root.render(<RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
+  const lane = host.querySelector(".chat-content-lane")!;
+  const order = [...lane.children].map((child) =>
+    child.querySelector("[data-testid='work-card']") ? "card"
+      : child.hasAttribute("data-rubato-segno-memory-change") ? "memory"
+      : child.textContent?.includes("고쳤어") ? "reply" : null,
+  ).filter(Boolean);
+  expect(order).toEqual(["reply", "card", "memory"]);
+  const line = host.querySelector("[data-rubato-segno-memory-change]")!;
+  expect(line.textContent).toContain("Memory changed · “카줌 셀러 컨택은 수찬 전화 먼저”");
+  expect(host.querySelectorAll("[data-rubato-segno-memory-change]")).toHaveLength(1);
+  expect(host.querySelector("[data-testid='work-card']")!.getAttribute("data-session")).toBe("S2");
 });

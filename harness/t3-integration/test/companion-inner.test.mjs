@@ -104,9 +104,9 @@ test('a span names the conversations the companion started or forked and the rec
   const items = await createSessionReader(file).items();
   const summary = spanSummary(items);
   assert.deepEqual(summary.launches, [
-    { id: 'k1', tool: 'create', title: '원화 출금 설계', model: 'anthropic/claude-opus-5-5-sub', sessionId: 'S2', at: 2000, done: 2100, error: null },
-    { id: 'k2', tool: 'fork', title: 'Fork of it', model: null, sessionId: 'S3', at: 2200, done: 2300, error: null },
-    { id: 'k3', tool: 'create', title: null, model: null, sessionId: null, at: 2400, done: 2500, error: 'Could not create a conversation in /nope' },
+    { id: 'k1', tool: 'create', title: '원화 출금 설계', model: 'anthropic/claude-opus-5-5-sub', sessionId: 'S2', startsWork: true, at: 2000, done: 2100, error: null },
+    { id: 'k2', tool: 'fork', title: 'Fork of it', model: null, sessionId: 'S3', startsWork: false, at: 2200, done: 2300, error: null },
+    { id: 'k3', tool: 'create', title: null, model: null, sessionId: null, startsWork: true, at: 2400, done: 2500, error: 'Could not create a conversation in /nope' },
   ]);
   assert.deepEqual(summary.commits, [{ id: 'k4', message: '카줌 셀러 컨택은 수찬 전화 먼저', files: ['memory/status.md'], sha: '5f8e228', at: 2700 }],
     'a commit that changed nothing leaves no line');

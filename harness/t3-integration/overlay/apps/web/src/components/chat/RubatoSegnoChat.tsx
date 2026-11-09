@@ -14,6 +14,12 @@
 // conversation goes back to just before that message and the message returns to the composer.
 // Files stay either way: the companion's home is its own record (diary, notes), committed as it goes.
 //
+// Two things the companion did stay out of that line, because the person needs them without opening
+// it: a conversation it started or forked shows as a work card that follows that conversation live
+// (RubatoWorkCard.tsx), and a record it committed to its home leaves one grey line with its own words
+// for the change ("Memory changed · …"), read from the conversation's own segno_commit call — so the
+// line is this conversation's change, not a file change seen from outside.
+//
 // The room has what an ordinary thread has for moving through a long conversation: the timeline at
 // its left edge, one mark per turn with the person's words and the answer on hover (T3's own
 // TimelineMinimap), and "Scroll to end" over the composer once the reader has left the end; it counts
@@ -50,6 +56,9 @@ import {
   useRubatoMessageEditing,
 } from "./RubatoMessageEdit";
 import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
+import { RubatoWorkCard } from "./RubatoWorkCard";
+import { rubatoLaunchOfSegno } from "./rubatoWorkCardModel";
+import type { SegnoSpanSummary } from "../../state/rubatoCompanion";
 import { TimelineMinimap } from "./MessagesTimeline";
 import {
   resolveTimelineMinimapCurrentIndex,
@@ -407,8 +416,11 @@ export function RubatoSegnoChat(props: {
     [environmentId, threadId],
   );
   const rewind = useCallback((messageId: string) => onRewind?.(messageId as MessageId), [onRewind]);
+  // The work behind a reply stands above its bubble; what came of it (cards, memory changes) below.
+  const spanOutcome = (place: (typeof spans)["tail"] | undefined, key: string) =>
+    place ? <SegnoSpanOutcome key={`${key}:outcome`} summary={summaries[place.index]} environmentId={environmentId} locale={locale} /> : null;
   const spanLine = (place: (typeof spans)["tail"] | undefined, key: string) =>
-    place ? (
+    place ? [
       <RubatoSegnoSpanLine
         key={key}
         place={place}
@@ -416,8 +428,9 @@ export function RubatoSegnoChat(props: {
         companionId={companionId}
         environmentId={environmentId}
         locale={locale}
-      />
-    ) : null;
+      />,
+      place.placement === "attached" ? null : spanOutcome(place, key),
+    ] : null;
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -697,6 +710,7 @@ export function RubatoSegnoChat(props: {
               onRewind={item.side === "me" && onRewind && threadId ? () => rewind(item.id) : undefined}
               edit={item.side === "me" ? editOf(item.id) : undefined}
             />,
+            place?.placement === "attached" ? spanOutcome(place, `span:${item.id}`) : null,
           ];
         })}
         {writing ? <Writing /> : null}
@@ -731,5 +745,49 @@ export function RubatoSegnoChat(props: {
       </div>
     ) : null}
     </div>
+  );
+}
+
+function clockAt(at: number, locale: string | undefined): string {
+  return new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(at);
+}
+
+/**
+ * What came of one span that the person should see without opening its line: the conversations the
+ * companion launched, as work cards, and each record it committed, as one grey line.
+ */
+function SegnoSpanOutcome({
+  summary,
+  environmentId,
+  locale,
+}: {
+  summary: SegnoSpanSummary | null | undefined;
+  environmentId: EnvironmentId | undefined;
+  locale: string | undefined;
+}) {
+  const launches = summary?.launches ?? [];
+  const commits = summary?.commits ?? [];
+  if (launches.length === 0 && commits.length === 0) return null;
+  return (
+    <>
+      {launches.map((launch) => (
+        <div key={`launch:${launch.id}`} data-rubato-segno-work="">
+          <RubatoWorkCard launch={rubatoLaunchOfSegno(launch)} environmentId={environmentId ?? null} />
+        </div>
+      ))}
+      {commits.map((commit) => (
+        <p key={`commit:${commit.id}`} data-rubato-segno-memory-change="" title={commit.files.join("\n")}>
+          <span>Memory changed</span>
+          {commit.message ? (
+            <>
+              {" · "}
+              <span translate="no">“{commit.message}”</span>
+            </>
+          ) : null}
+          {" · "}
+          <span>{clockAt(commit.at, locale)}</span>
+        </p>
+      ))}
+    </>
   );
 }
