@@ -12,7 +12,7 @@ import {
 import { Fragment, useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
-import { UI_LANGUAGE_STORAGE_KEY, uiText } from "../../rubatoI18n";
+import { uiText } from "../../rubatoI18n";
 import {
   rubatoMemory,
   type UserMemoryAsk,
@@ -46,6 +46,7 @@ import {
 } from "./RubatoUserMemory.logic";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 import type { PlacedLines } from "./RubatoMemoryPage.logic";
+import { ago } from "./RubatoMemoryParts";
 
 // Settings > Memory > About you. What Rubato remembers about the person, read as a short summary by
 // topic, and a conversation with a model about it: ask why, correct, narrow, forget, or tell it
@@ -55,21 +56,6 @@ import type { PlacedLines } from "./RubatoMemoryPage.logic";
 type EnvironmentId = Parameters<typeof rubatoMemory.userView>[0];
 type Focus = { readonly path: string; readonly text: string };
 
-// Relative times are written in the interface language here; the dictionary cannot template every unit.
-const relativeFormat = new Intl.RelativeTimeFormat(
-  typeof window !== "undefined" && window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === "ko" ? "ko" : "en",
-  { numeric: "auto" },
-);
-function ago(iso: string | null | undefined): string {
-  if (!iso) return "";
-  const then = Date.parse(iso);
-  if (!Number.isFinite(then)) return "";
-  const seconds = Math.round((then - Date.now()) / 1000);
-  for (const [unit, size] of [["day", 86_400], ["hour", 3_600], ["minute", 60]] as const) {
-    if (Math.abs(seconds) >= size) return relativeFormat.format(Math.round(seconds / size), unit);
-  }
-  return "just now";
-}
 
 
 /**

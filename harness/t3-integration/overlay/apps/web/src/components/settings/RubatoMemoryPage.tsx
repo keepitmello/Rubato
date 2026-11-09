@@ -3,10 +3,10 @@
 // changed), Segno (its status board, questions, records, people) and the dream (state per store and
 // the model ladder). The server half is harness/t3-integration/src/memory/service.mjs.
 import { BrainIcon, CalendarDaysIcon, FolderIcon, MoonIcon, SearchIcon, SparklesIcon, UserIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
-import { uiLanguage, uiText } from "../../rubatoI18n";
+import { subscribeUiLanguage, uiLanguage, uiText } from "../../rubatoI18n";
 import {
   rubatoMemory,
   type MemoryInsights,
@@ -186,6 +186,8 @@ function useMemoryPageData(environmentId: EnvironmentId): MemoryPageData {
 }
 
 export function RubatoMemoryPage() {
+  // A language switch draws the page again, so times and model summaries follow it.
+  useSyncExternalStore(subscribeUiLanguage, uiLanguage);
   const environmentId = useReadyEnvironmentId();
   const initial = useMemo(readAddress, []);
   const [view, setView] = useState<MemoryView>(initial.view);

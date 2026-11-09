@@ -13,6 +13,29 @@ import type { SegnoAboutLine, SegnoMemoryView } from "../../state/rubatoSegnoMem
 export type MemoryView = "home" | "me" | "projects" | "segno" | "dream";
 export const MEMORY_VIEWS: readonly MemoryView[] = ["home", "me", "projects", "segno", "dream"];
 
+const relativeFormats = new Map<string, Intl.RelativeTimeFormat>();
+
+/**
+ * "12 hours ago" / "12시간 전" in `language`, read each time: the person can switch the interface
+ * language while the page is open, and a formatter kept from before would stay in the old one.
+ */
+export function relativeTime(iso: string | null | undefined, language: string, now = Date.now()): string {
+  if (!iso) return "";
+  const then = Date.parse(iso);
+  if (!Number.isFinite(then)) return "";
+  const locale = language === "ko" ? "ko" : "en";
+  let format = relativeFormats.get(locale);
+  if (!format) {
+    format = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
+    relativeFormats.set(locale, format);
+  }
+  const seconds = Math.round((then - now) / 1000);
+  for (const [unit, size] of [["day", 86_400], ["hour", 3_600], ["minute", 60]] as const) {
+    if (Math.abs(seconds) >= size) return format.format(Math.round(seconds / size), unit);
+  }
+  return format.format(0, "second");
+}
+
 /** The language the page asks the model to write in: the interface language. */
 export function insightLanguage(uiLanguage: string | null): string {
   return uiLanguage === "ko" ? "Korean" : "English";
