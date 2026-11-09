@@ -14,7 +14,7 @@ export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-fr
 export const VERTEX_PICKER_IDS = Object.freeze(["gemini-4-argon"]);
 
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
-  "claude-fable-5-1",
+  "claude-fable-5-2",
   "claude-opus-5-5",
   "claude-sonnet-5-5",
   "claude-haiku-5-5",
@@ -33,7 +33,7 @@ export const CODEX_PICKER_IDS = Object.freeze([
 export const CODEX_SUB_PICKER_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-astra"]);
 
 /** Anthropic `[sub]` 는 Fable, Opus, Sonnet 만. Haiku 는 한 계정으로만 고른다. */
-export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5-5"]);
+export const ANTHROPIC_SUB_PICKER_IDS = Object.freeze(["claude-fable-5-2", "claude-opus-5-5", "claude-sonnet-5-5"]);
 
 export const SUB_MODEL_SUFFIX = "-sub";
 export const SUB2_MODEL_SUFFIX = "-sub2";

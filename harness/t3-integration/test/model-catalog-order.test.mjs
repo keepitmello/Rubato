@@ -42,7 +42,7 @@ test('T3 catalogue keeps the curated /model set and drops provider extras', () =
     `cursor/${CURSOR_GROK_BASE_ID}`,
   ]);
   // 라벨 텍스트는 세대별 사실이다 — 세대가 바뀌면 사람이 한 번 확인한다.
-  assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.1');
+  assert.equal(modelPickerLabel(catalog[1]), 'Fable 5.2');
   assert.equal(modelPickerLabel(catalog[3]), 'Grok 4.7');
   assert.equal(modelPickerLabel(catalog[4]), 'Grok 4.7 fast');
   // 앞은 Codex 전부 + anthropic 첫 행이다 — provider 경계가 계약이다.
@@ -102,9 +102,9 @@ test('T3 catalogue shows manual Anthropic account copies after all base models',
     `anthropic/${fable}-sub`,
     `anthropic/${opus}-sub`,
   ]);
-  assert.equal(modelPickerLabel(catalog[0]), 'Fable 5.1');
+  assert.equal(modelPickerLabel(catalog[0]), 'Fable 5.2');
   assert.equal(modelPickerLabel(catalog[1]), 'Opus 5.5');
-  assert.equal(modelPickerLabel(catalog[2]), 'Fable 5.1 [sub]');
+  assert.equal(modelPickerLabel(catalog[2]), 'Fable 5.2 [sub]');
   assert.equal(modelPickerLabel(catalog[3]), 'Opus 5.5 [sub]');  assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub`, api: 'anthropic-messages' }), true);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub2`, api: 'anthropic-messages' }), true);
 });

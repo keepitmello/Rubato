@@ -367,3 +367,8 @@ test("account rows [sub] and [sub2] are judged on the model, not the account suf
   }
   assert.equal(isMidConversationEffortModel("claude-haiku-5-5-sub2"), false);
 });
+
+test("Fable 5.2 freezes effort mid-conversation like 5.1", () => {
+  assert.equal(isMidConversationEffortModel("claude-fable-5-2"), true);
+  assert.equal(isMidConversationEffortModel("claude-fable-5-1"), true);
+});

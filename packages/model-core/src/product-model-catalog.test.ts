@@ -121,7 +121,7 @@ describe("product model catalog", () => {
     // 라벨 텍스트는 세대별 사실이다 (Opus/Fable 의 현재 세대 이름).
     expect(productCatalogLabel({ provider: "anthropic", id: OPUS })).toBe("Opus 5.5")
     expect(productCatalogLabel({ provider: "anthropic", id: `${OPUS}-sub` })).toBe("Opus 5.5 [sub]")
-    expect(productCatalogLabel({ provider: "anthropic", id: `${FABLE}-sub` })).toBe("Fable 5.1 [sub]")
+    expect(productCatalogLabel({ provider: "anthropic", id: `${FABLE}-sub` })).toBe("Fable 5.2 [sub]")
     expect(isProductCatalogSlug(`anthropic/${OPUS}-sub`)).toBe(true)
     expect(isProductCatalogSlug(`anthropic/${FABLE}-sub`)).toBe(true)
     expect(admitProductCatalogItems([

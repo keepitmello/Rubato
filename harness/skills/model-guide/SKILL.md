@@ -83,7 +83,7 @@ a preset by its own configured policy; any result still needs its approval.
 
 ## Approval
 
-Fable (including Fable 5.1), and Astra as an owner or subagent, require explicit
+Fable, and Astra as an owner or subagent, require explicit
 user approval naming the outcome, model and effort before assignment. A readable
 combined intent/roster approval satisfies that gate when it includes those
 commitments. An approval covers its stated scope, not the whole pool. Astra as

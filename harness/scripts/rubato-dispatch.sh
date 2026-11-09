@@ -20,7 +20,7 @@ The worker is a fresh Rubato session in ~/.rubato-pi/agent, not a child of the
 caller: the caller's Pi session env (PI_CODING_AGENT_DIR, PI_MODEL, ...) is dropped,
 so a Pi-based caller's extensions do not load into the worker.
 
---model takes a full id like anthropic/claude-fable-5-1 and wins over the alias.
+--model takes a full id like anthropic/claude-fable-5-2 and wins over the alias.
 --effort sets :LEVEL (senpi --model form). It replaces an alias's default level;
 with --model it is appended only when the id has no :suffix yet.
 
@@ -29,7 +29,7 @@ Models (no alias = ultrafast):
   deepseek  b-ai/deepseek-v4.1-flash:high
   grok      xai/grok-4.7
   grokfast  cursor/grok-4.7
-  fable     anthropic/claude-fable-5-1
+  fable     anthropic/claude-fable-5-2
   astra     openai-codex/gpt-6-astra:xhigh
   opus      anthropic/claude-opus-5-5:high
   opussub   anthropic/claude-opus-5-5-sub:high
@@ -53,7 +53,7 @@ alias_to_model() {
     deepseek) echo "b-ai/deepseek-v4.1-flash:high" ;;
     grok) echo "xai/grok-4.7" ;;
     grokfast) echo "cursor/grok-4.7" ;;
-    fable) echo "anthropic/claude-fable-5-1" ;;
+    fable) echo "anthropic/claude-fable-5-2" ;;
     astra) echo "openai-codex/gpt-6-astra:xhigh" ;;
     opus) echo "anthropic/claude-opus-5-5:high" ;;
     opussub) echo "anthropic/claude-opus-5-5-sub:high" ;;

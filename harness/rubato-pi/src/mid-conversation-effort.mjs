@@ -15,6 +15,7 @@ import { createHash } from "node:crypto";
 export const MID_CONVERSATION_EFFORT_BETA = "mid-conversation-output-config-2026-07-01";
 
 export const MID_CONVERSATION_EFFORT_MODELS = Object.freeze([
+  "claude-fable-5-2",
   "claude-fable-5-1",
   "claude-mythos-5-1",
   "claude-opus-5-5",

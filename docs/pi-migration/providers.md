@@ -101,7 +101,7 @@ The current picker policy is explicit (`picker-catalog.mjs:6-25`):
 - Codex: `gpt-6.1-sol`, `gpt-6-luna`, `gpt-6-astra`, and
   `gpt-daybreak-blue-latest`;
 - xAI: `grok-4.7`;
-- Anthropic: `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`,
+- Anthropic: `claude-fable-5-2`, `claude-opus-5-5`, `claude-sonnet-5-5`,
   `claude-haiku-5-5`;
 - OpenCode: `muse-spark-1.3-contributor-free`;
 - Vertex: `gemini-4-argon`;
@@ -112,8 +112,8 @@ Picker filtering does not delete the provider's stored catalog. Daybreak is deri
 adds low/medium/high/xhigh/max (`provider-direct.mjs:105-165`). GPT-6 Sol and Luna are not derived:
 the pin (0.86.1) stops at 5.6, so their rows are injected verbatim from the upstream 0.87.1 catalog
 (`gpt6CodexModels`, same file) and the injection empties itself once the pin carries the ids.
-Fable 5.1 is derived only if the
-native catalog lacks it (`provider-direct.mjs:127-137`). xAI keeps the native thinking map and caps
+Fable 5.1 and 5.2 are derived from Fable 5 only if the
+native catalog lacks them; 5.2 overrides the price (`fable51Models`, `fable52Models` in `provider-direct.mjs`). xAI keeps the native thinking map and caps
 `maxTokens` to 65,536 so `max_output_tokens` remains stable across turns
 (`provider-direct.mjs:212-236,280-284`).
 

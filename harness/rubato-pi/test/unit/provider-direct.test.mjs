@@ -17,6 +17,7 @@ import {
   daybreakModels,
   directProviders as nativeDirectProviders,
   fable51Models,
+  fable52Models,
   CODEX_CONTEXT_WINDOWS,
   gpt6CodexModels,
   nativeProviderFactoryLoader,
@@ -316,16 +317,42 @@ test("Fable 5.1 은 pin 의 Fable 5에서 id·이름만 덮는다", () => {
     cost: { input: 10, output: 50 },
   };
   const [model] = fable51Models([template]);
-  assert.equal(model.id, FABLE_ID);
+  assert.equal(model.id, "claude-fable-5-1");
   assert.equal(model.name, "Fable 5.1");
   assert.equal(model.api, "anthropic-messages");
   assert.deepEqual(model.thinkingLevelMap, template.thinkingLevelMap);
   assert.deepEqual(model.cost, template.cost);
-  assert.deepEqual(fable51Models([{ ...template, id: FABLE_ID }]), []);
+  assert.deepEqual(fable51Models([{ ...template, id: "claude-fable-5-1" }]), []);
 });
 
 test("Fable 5.1 파생은 틀이 없으면 조용히 넘어가지 않는다", () => {
   assert.throws(() => fable51Models([{ id: "claude-opus-5" }]), /claude-fable-5/);
+});
+
+test("Fable 5.2 는 Fable 5.1 에서 id·이름·가격만 덮는다", () => {
+  const fable51 = {
+    id: "claude-fable-5-1",
+    name: "Claude Fable 5.1",
+    api: "anthropic-messages",
+    thinkingLevelMap: { xhigh: "xhigh", max: "max" },
+    compat: { supportsMidConvoEffort: true },
+    cost: { input: 10, output: 50, cacheRead: 0.25, cacheWrite: 12.5 },
+  };
+  const [model] = fable52Models([{ ...fable51, id: "claude-fable-5", compat: {} }, fable51]);
+  assert.equal(model.id, FABLE_ID);
+  assert.equal(model.name, "Fable 5.2");
+  assert.deepEqual(model.compat, fable51.compat, "틀은 Fable 5 가 아니라 5.1 이다");
+  assert.deepEqual(model.thinkingLevelMap, fable51.thinkingLevelMap);
+  // 공식 가격표 2026-11-10: $8 / $40, cache hit $0.20, 5m write $10.
+  assert.deepEqual(model.cost, { input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 });
+  assert.deepEqual(fable52Models([fable51, { ...fable51, id: FABLE_ID }]), []);
+});
+
+test("Fable 5.2 는 pin 에 5.1 이 없으면 Fable 5 에서 만든 5.1 행을 틀로 쓴다", () => {
+  const [model] = fable52Models([{ id: "claude-fable-5", name: "Claude Fable 5", api: "anthropic-messages" }]);
+  assert.equal(model.id, FABLE_ID);
+  assert.equal(model.api, "anthropic-messages");
+  assert.throws(() => fable52Models([{ id: "claude-opus-5" }]), /claude-fable-5/);
 });
 
 test("xAI: pinned 현재 grok 의 xhigh 가 picker 와 wire 에 남는다", async () => {

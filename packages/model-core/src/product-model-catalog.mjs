@@ -28,7 +28,7 @@ export const CURSOR_GROK_BASE_ID = "grok-4.7";
 export const PRODUCT_MODEL_ORDER = Object.freeze({
   "openai-codex": Object.freeze(["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra", "gpt-daybreak-blue-latest"]),
   anthropic: Object.freeze([
-    "claude-fable-5-1",
+    "claude-fable-5-2",
     "claude-opus-5-5",
     "claude-sonnet-5-5",
     "claude-haiku-5-5",

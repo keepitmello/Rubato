@@ -38,6 +38,7 @@ function viaRuntime(provider) {
 const DERIVED_OPUS = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-opus-5-"));
 const DERIVED_SONNET = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-sonnet-5-"));
 const DERIVED_HAIKU = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-haiku-5-"));
+const DERIVED_FABLE = ANTHROPIC_PICKER_IDS.find((id) => id.startsWith("claude-fable-5-"));
 
 /** 실제 token 과 겹칠 수 없는 값. 접두만 진짜와 같게 둔다 — 그 접두가 판정을 만든다. */
 const SETUP_TOKEN = `${CLAUDE_SETUP_TOKEN_PREFIX}-test-only-not-a-real-token`;
@@ -224,7 +225,7 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
   // 싣기 시작하면 파생은 사라지고 pin 행이 그대로 쓰인다 (pi 1.0.1 은 opus/sonnet 5.5 를 싣는다).
   // 파생 행마다 계정 행 `[sub]`·`[sub2]` 사본도 함께 생긴다.
   const derived = ours.filter((model) => !byId.has(model.id));
-  const expectedDerived = [DERIVED_OPUS, DERIVED_SONNET, DERIVED_HAIKU].filter((id) => !byId.has(id));
+  const expectedDerived = [DERIVED_FABLE, DERIVED_OPUS, DERIVED_SONNET, DERIVED_HAIKU].filter((id) => !byId.has(id));
   assert.deepEqual(
     derived.map((model) => model.id).filter((id) => !/-sub2?$/.test(id)).sort(),
     [...expectedDerived].sort(),
@@ -236,6 +237,13 @@ test("pinned Anthropic 모델 metadata 를 다시 적지 않았다", async () =>
     const { id: _opusId, name: _opusName, cost: _opusCost, ...opusRest } = derivedById.get(DERIVED_OPUS);
     const { id: _opusTplId, name: _opusTplName, cost: _opusTplCost, ...opusTemplateRest } = byId.get("claude-opus-5");
     assert.deepEqual(opusRest, opusTemplateRest);
+  }
+
+  // Fable 5.2 도 id·표시명·가격만 다르고 나머지는 5.1 틀 그대로다.
+  if (derivedById.has(DERIVED_FABLE) && byId.has("claude-fable-5-1")) {
+    const { id: _fId, name: _fName, cost: _fCost, ...fableRest } = derivedById.get(DERIVED_FABLE);
+    const { id: _fTplId, name: _fTplName, cost: _fTplCost, ...fableTemplateRest } = byId.get("claude-fable-5-1");
+    assert.deepEqual(fableRest, fableTemplateRest);
   }
 
   // Sonnet 5.5 와 Haiku 5.5 는 가격까지 틀(Sonnet 5, Haiku 4.5)과 같다 — id·표시명만 다르다.

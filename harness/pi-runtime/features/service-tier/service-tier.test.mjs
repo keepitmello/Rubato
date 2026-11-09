@@ -523,6 +523,14 @@ test("a [sub] account clone is judged on the model, not on the account suffix", 
   assert.equal(supportsFastMode(gatewaySub), false);
 });
 
+test("Fable gets Fast from 5.2 on; 5.1 and 5 stay without it", () => {
+  const fable = (id) => ({ ...MODELS.anthropic, id, name: id });
+  assert.equal(fastWireMode(fable("claude-fable-5-2")), "anthropic-fast");
+  assert.equal(fastWireMode(fable("claude-fable-5-2-sub")), "anthropic-fast");
+  assert.equal(supportsFastMode(fable("claude-fable-5-1")), false);
+  assert.equal(supportsFastMode(fable("claude-fable-5")), false);
+});
+
 const CODEX = {
   id: "gpt-5.6-sol",
   provider: "openai-codex",

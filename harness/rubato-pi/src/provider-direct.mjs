@@ -141,6 +141,37 @@ export function fable51Models(nativeModels) {
   }];
 }
 
+const FABLE_52_ID = "claude-fable-5-2";
+
+/**
+ * Fable 5.2 의 가격은 Fable 5.1 과 **다르다**. 틀에서 물려받으면 25% 과다 계상된다.
+ *
+ * 공식 가격표(platform.claude.com/docs/en/about-claude/pricing, 2026-11-10)의
+ * Fable 5.2 행: base input $8 / 5m cache write $10 / cache hit $0.20 / output $40.
+ * Fable 5.1 은 $10 / $12.50 / $0.25 / $50 이다. cache hit 은 base input 의 0.025배라는
+ * 각주가 0.20 을 확인해 준다.
+ */
+const FABLE_52_COST = Object.freeze({ input: 8, output: 40, cacheRead: 0.2, cacheWrite: 10 });
+
+/**
+ * Fable 5.2 는 pinned anthropic catalog 에 없어 Fable 5.1 에서 파생한다.
+ * `GET /v1/models`(2026-11-10)의 창(1M)·출력(128k)·effort(low~max)·adaptive thinking 이
+ * 5.1 과 같아 id·표시명·**가격**만 덮는다. 틀이 Fable 5 가 아닌 이유: pin 의 Fable 5 행은
+ * 대화 중 effort 표시가 없고 Opus 로 넘기는 `allowedFallbackModels` 를 싣는데, 5.1 행에는
+ * 둘 다 5.2 와 맞게 들어 있다. pin 에 5.1 이 없으면 `fable51Models` 가 만든 행을 쓴다.
+ * Claude Code 하한(2.1.290)은 `transforms/misc-claude-code-version.mjs` 가 소유한다.
+ */
+export function fable52Models(nativeModels) {
+  if (nativeModels.some((model) => model.id === FABLE_52_ID)) return [];
+  const template = nativeModels.find((model) => model.id === FABLE_51_ID) ?? fable51Models(nativeModels)[0];
+  return [{
+    ...template,
+    id: FABLE_52_ID,
+    name: "Fable 5.2",
+    cost: FABLE_52_COST,
+  }];
+}
+
 const OPUS_55_ID = "claude-opus-5-5";
 const OPUS_55_TEMPLATE_ID = "claude-opus-5";
 
@@ -568,12 +599,14 @@ export async function directProviders({
   );
 
   // Anthropic 은 pinned provider + setup-token fallback resolver 하나다. wire 와
-  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1·Opus 5.5·Sonnet 5.5·Haiku 5.5 는 pin 에 없어
-  // 각각 Fable 5·Opus 5·Sonnet 5·Haiku 4.5 에서 파생한다.
-  // 피커는 현재 세대(fable 5.1, opus 5.5, sonnet 5.5, haiku 5.5)로 줄인다.
+  // tool 이름 규칙은 pin 이 소유한다. Fable 5.1·5.2·Opus 5.5·Sonnet 5.5·Haiku 5.5 는 pin 에 없어
+  // 각각 Fable 5·Opus 5·Sonnet 5·Haiku 4.5 에서 파생한다. Fable 5.1 은 피커에서 빠졌지만
+  // 그 id 로 저장된 세션·설정이 계속 열리도록 정의는 남긴다.
+  // 피커는 현재 세대(fable 5.2, opus 5.5, sonnet 5.5, haiku 5.5)로 줄인다.
   const anthropicBase = withClaudeSetupToken(anthropicProvider(), anthropic ?? { env });
   const anthropicNative = withPickerIds(
     withExtraModels(anthropicBase, [
+      ...fable52Models(anthropicBase.getModels()),
       ...fable51Models(anthropicBase.getModels()),
       ...opus55Models(anthropicBase.getModels()),
       ...sonnet55Models(anthropicBase.getModels()),

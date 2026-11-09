@@ -28,6 +28,7 @@ export const HARD_SAFETY_STRATEGY = "hard-safety";
 export const ANTHROPIC_SERVER_COMPACTION_MODEL_IDS = Object.freeze([
   "claude-opus-5-5",
   "claude-sonnet-5-5",
+  "claude-fable-5-2",
   "claude-fable-5-1",
 ]);
 
