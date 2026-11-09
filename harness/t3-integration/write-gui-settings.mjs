@@ -62,16 +62,15 @@ settings.providerInstances = instances;
 const prefs = settings.providerModelPreferences && typeof settings.providerModelPreferences === 'object'
   ? settings.providerModelPreferences : {};
 const rubatoPrefs = prefs.rubato && typeof prefs.rubato === 'object' ? prefs.rubato : {};
-// 목록 순서는 취향이다. 처음에는 우리가 큐레이트한 순서를 넣고, 그 뒤로는
-// 사용자가 바꾼 순서를 지킨다. 새로 생긴 모델만 뒤에 붙인다 — 안 그러면 카탈로그에
-// 추가된 모델이 이 사람 화면에는 영영 안 나온다.
-const curated = catalogSlugs();
-const keptOrder = Array.isArray(rubatoPrefs.modelOrder) ? rubatoPrefs.modelOrder : null;
+// 숨긴 모델은 취향이라 지킨다. 목록 순서는 배선이라 매번 카탈로그 순서로 쓴다.
+// 앱에는 Rubato 모델 순서를 바꾸는 화면이 없다 — 설정 화면이 순서 편집이 있는
+// upstream 패널 대신 RubatoProvidersSettings 로 갈아 끼워져 있다. 그래서 저장된
+// 순서는 언제나 예전 설치가 넣은 카탈로그 사본이었고, 그걸 "사용자 순서"로 지키며
+// 새 모델을 끝에 붙이자 세대 교체(Fable 5.1 → 5.2, Haiku 4.5 → 5.5)마다 새 모델이
+// 목록 맨 아래로 밀렸다 (2026-11-10).
 prefs.rubato = {
   hiddenModels: Array.isArray(rubatoPrefs.hiddenModels) ? rubatoPrefs.hiddenModels : [],
-  modelOrder: keptOrder
-    ? [...keptOrder, ...curated.filter((slug) => !keptOrder.includes(slug))]
-    : curated,
+  modelOrder: catalogSlugs(),
 };
 settings.providerModelPreferences = prefs;
 

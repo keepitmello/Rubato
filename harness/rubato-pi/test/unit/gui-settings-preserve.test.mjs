@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
+import { PRODUCT_MODEL_ORDER, catalogSlugs } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 
 // 설치기가 시드하는 기본 모델은 제품 카탈로그의 현재 xai 행이다.
 const DEFAULT_MODEL = `xai/${PRODUCT_MODEL_ORDER.xai[0]}`;
@@ -101,13 +101,17 @@ test("wiring is rewritten every time, because the repo can move", (t) => {
   assert.equal(settings.providerInstances.rubato.config.bridgeModule, "/repo/harness/t3-integration/src/bridge.mjs");
 });
 
-test("a reordered model list survives, and new models join the end", (t) => {
+test("model order follows the catalog, because the app has no screen to reorder Rubato models", (t) => {
+  // 예전 설치가 넣은 사본: 5.1 자리가 남아 있고, 그 뒤 세대 교체로 5.2 가 끝에 붙었다.
   const { settings } = writeSettings(t, {
-    providerModelPreferences: { rubato: { hiddenModels: ["xai/grok-4.7"], modelOrder: ["anthropic/claude-opus-5"] } },
+    providerModelPreferences: {
+      rubato: {
+        hiddenModels: ["xai/grok-4.7"],
+        modelOrder: ["anthropic/claude-fable-5-1", "anthropic/claude-opus-5-5", ...catalogSlugs().slice(1).reverse()],
+      },
+    },
   });
-  const order = settings.providerModelPreferences.rubato.modelOrder;
-  assert.equal(order[0], "anthropic/claude-opus-5");
-  assert.ok(order.length > 1, "catalog models should be appended");
+  assert.deepEqual(settings.providerModelPreferences.rubato.modelOrder, catalogSlugs());
   assert.deepEqual(settings.providerModelPreferences.rubato.hiddenModels, ["xai/grok-4.7"]);
 });
 
