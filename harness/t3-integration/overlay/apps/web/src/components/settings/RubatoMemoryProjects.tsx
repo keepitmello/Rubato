@@ -13,7 +13,7 @@ import { toastManager } from "../ui/toast";
 import { filterQuestions, listedStores, questionTitle, type QuestionFilter } from "./RubatoMemoryPage.logic";
 import type { MemoryPageData } from "./RubatoMemoryPage";
 import { ago, confirmAction, Dots, MemoryCard, MemoryRow, Muted, reportError, Tag, ViewHeading } from "./RubatoMemoryParts";
-import { DiffView, FileViewer, tildePath, useAskInChat, whereLabel } from "./RubatoMemorySettings";
+import { DiffView, FileViewer, tildePath, useAskInChat } from "./RubatoMemorySettings";
 
 export type ProjectTarget = { readonly store: string; readonly file?: string };
 
@@ -25,6 +25,13 @@ const KIND_TAG = {
 } as const;
 
 const WRITER_LABEL = { dream: "Dream", session: "Session", you: "You" } as const;
+
+/** Where a store is used, as line parts: the words translate, the folders stay as they are. */
+function where(store: MemoryStoreSummary, home: string | null): Array<string | { readonly keep: string; readonly lead: string }> {
+  if (store.home) return ["Used in your home folder"];
+  if (store.roots && store.roots.length > 0) return [{ lead: "Used in", keep: store.roots.map((root) => tildePath(root, home)).join(", ") }];
+  return ["No project folder recorded yet"];
+}
 
 function homeOf(memoryRoot: string | null): string | null {
   return memoryRoot?.endsWith("/.rubato/memory") ? memoryRoot.slice(0, -"/.rubato/memory".length) : null;
@@ -71,7 +78,7 @@ export function ProjectsView({
               <span className="text-xs text-muted-foreground">{`${entry.files} questions`}</span>
             </div>
             <Muted>
-              <Dots parts={[{ keep: whereLabel(entry, home) }, entry.lastChangeAt ? `Updated ${ago(entry.lastChangeAt)}` : null]} />
+              <Dots parts={[...where(entry, home), entry.lastChangeAt ? `Updated ${ago(entry.lastChangeAt)}` : null]} />
             </Muted>
           </MemoryRow>
         ))}
@@ -177,7 +184,7 @@ function StoreQuestions({
             <span translate="no">{store.store}</span>
           </h2>
           <p className="text-sm text-muted-foreground">
-            <Dots parts={[{ keep: whereLabel(store, home) }, `${store.files} questions`, store.enabled ? "Daily dream on" : "Daily dream off"]} />
+            <Dots parts={[...where(store, home), `${store.files} questions`, store.enabled ? "Daily dream on" : "Daily dream off"]} />
           </p>
           <p className="text-xs text-muted-foreground">One file is one question's current answer. They show as questions here, not folders.</p>
         </div>
@@ -202,7 +209,7 @@ function StoreQuestions({
 
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-48 flex-1">
-          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <SearchIcon className="pointer-events-none absolute start-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input className="ps-9" placeholder="Find in this project" value={query} aria-label="Find in this project" onChange={(event) => setQuery(event.currentTarget.value)} />
         </div>
         {(
@@ -325,7 +332,7 @@ function QuestionDetail({
           </p>
         </div>
         <div className="pt-1">
-          <FileViewer environmentId={data.environmentId} store={store.store} path={entry.path} onAsk={onAsk} onSaved={onChanged} />
+          <FileViewer environmentId={data.environmentId} store={store.store} path={entry.path} onAsk={onAsk} onSaved={onChanged} withoutHeading />
         </div>
       </MemoryCard>
       <FileHistory data={data} store={store.store} path={entry.path} />

@@ -20,7 +20,7 @@ import { Spinner } from "../ui/spinner";
 import { toastManager } from "../ui/toast";
 import { oldestRef, openItems } from "./RubatoMemoryPage.logic";
 import type { MemoryPageData } from "./RubatoMemoryPage";
-import { AnswerBox, ago, Dots, MemoryCard, MemoryRow, monthDay, Muted, Tag, ViewHeading } from "./RubatoMemoryParts";
+import { AnswerBox, ago, Dots, MemoryCard, MemoryRow, monthDay, Muted, namedInInterface, Tag, ViewHeading } from "./RubatoMemoryParts";
 import { DiffView } from "./RubatoMemorySettings";
 
 export type SegnoTarget = { readonly path: string };
@@ -50,7 +50,7 @@ export function SegnoView({
     let cancelled = false;
     rubatoSegnoMemory.memory(data.environmentId, companionId).then(
       (view) => {
-        if (!cancelled) setOther(view);
+        if (!cancelled) setOther(namedInInterface(view));
       },
       () => undefined,
     );
@@ -59,7 +59,7 @@ export function SegnoView({
     };
   }, [companionId, data.environmentId, data.segno?.id]);
   const view = other ?? (companionId === (data.segno?.id ?? "segno") ? data.segno : null);
-  const reload = other ? async () => setOther(await rubatoSegnoMemory.memory(data.environmentId, companionId)) : data.reloadSegno;
+  const reload = other ? async () => setOther(namedInInterface(await rubatoSegnoMemory.memory(data.environmentId, companionId))) : data.reloadSegno;
   const choices = companions.filter((entry) => entry.hasMemory);
 
   if (data.segnoError && !view) return <p className="text-sm text-destructive-foreground">{data.segnoError}</p>;

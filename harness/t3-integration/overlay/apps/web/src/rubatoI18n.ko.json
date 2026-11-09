@@ -4679,7 +4679,10 @@
   "Nothing found.": "찾은 게 없어.",
   "Nothing kept about you yet.": "아직 남긴 게 없어.",
   "Between us": "우리 사이",
-  "Ask to change": "고쳐 달라고 하기"
+  "Ask to change": "고쳐 달라고 하기",
+  "Used in": "사용 위치",
+  "Dream models": "꿈 모델",
+  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다."
  },
  "templates": [
   [
@@ -8409,6 +8412,10 @@
   [
    "Updated {0}. Click a line to ask for a change; the request goes into the composer.",
    "{0} 갱신. 줄을 누르면 고쳐 달라는 요청이 입력창에 채워져."
+  ],
+  [
+   "{0} days",
+   "{0}일"
   ]
  ]
 }
