@@ -38,6 +38,9 @@ export function agentEndOutcome(
   const messageText = assistant === undefined ? undefined : extractAssistantText(assistant)
   const final = messageText ?? (observedText !== baseline ? observedText : undefined)
   if (final !== undefined && final.length > 0) return { status: "completed", finalResponse: final }
+  // An assistant message that stopped normally with no text is a turn the model chose to end without
+  // a final message (a teammate parking to wait, a thinking-only close). It is not a failure.
+  if (stopReason === "stop") return { status: "completed", finalResponse: "" }
   return {
     status: "error",
     failure: { kind: "child-turn-failed", message: errorMessage ?? "RPC child turn produced no assistant output" },

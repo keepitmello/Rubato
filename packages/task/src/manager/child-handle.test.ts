@@ -124,7 +124,7 @@ describe("adaptRpcHandle", () => {
     expect(outcome).toEqual({ status: "cancelled" })
   })
 
-  test("#given an rpc clean turn with no assistant output #when adapted #then the outcome is a child-turn error", async () => {
+  test("#given an rpc turn whose terminal message stopped normally without text #when adapted #then it completes with no final message", async () => {
     // given
     const handle = adaptRpcHandle(fakeRpcHandle({ terminal: { stopReason: "stop" } }))
 
@@ -132,10 +132,7 @@ describe("adaptRpcHandle", () => {
     const outcome = await handle.waitForOutcome()
 
     // then
-    expect(outcome).toEqual({
-      status: "error",
-      failure: { kind: "child-turn-failed", message: "child turn produced no assistant output" },
-    })
+    expect(outcome).toEqual({ status: "completed", finalResponse: "" })
   })
 
   test("#given an rpc clean turn with assistant text #when adapted #then the outcome is completed", async () => {

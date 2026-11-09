@@ -163,6 +163,9 @@ function turnOutcome(session: ChildSession, observation: TurnObservation): Runne
   if (final !== undefined && final.length > 0 && final !== observation.baseline) {
     return { status: "completed", finalResponse: final }
   }
+  // This run's last assistant message stopped normally but wrote no text: the model ended its turn
+  // without a final message (a teammate parking to wait). Only a run with no such message is a failure.
+  if (observation.stopReason === "stop") return { status: "completed", finalResponse: "" }
   return {
     status: "error",
     failure: {

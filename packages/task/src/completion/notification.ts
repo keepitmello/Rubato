@@ -107,6 +107,11 @@ function completionDetailLines(detail: CompletionDetails, width: number | undefi
   const id = normalizeRendererText(detail.agentId)
   const line = name === id ? `${status} ${id}` : `${status} ${name} ${id}`
   const lines = [width === undefined ? line : excerptRendererPromptText(line, width)]
+  if (detail.status === "completed" && detail.final_response.trim().length === 0) {
+    // A turn closed without a final message: say so, rather than pointing the parent at an empty file.
+    const note = "result none: ended its turn without a final message"
+    return [...lines, width === undefined ? note : excerptRendererPromptText(note, width)]
+  }
   // The pointer is what the parent acts on; without it the notification is a wake with no address.
   if (detail.final_response_file === undefined) return lines
   const result = `result ${normalizeRendererText(detail.final_response_file)}`
