@@ -18,13 +18,18 @@
 //   its options menu drops "Sort projects" for Edit project list....
 // - Settings > Projects, before a project is chosen, is the list itself
 //   (settings/RubatoProjectListSettings.tsx): drag to reorder, − and + between
-//   the sections, Add project, a name opens that project's settings. The page
+//   the sections, the trash removes a project from Rubato, Add project, a
+//   name opens that project's settings. The rail's Projects window, the
+//   sidebar's project filter and the headline's picker end in Edit projects,
+//   which opens this list. The page
 //   is laid out like Rubato's other settings pages (settings/rubatoSettingsLayout.ts),
 //   and T3's sort select has no row there: the list is the order.
 export const projectOrderOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectOrder.ts',
   'apps/web/src/components/sidebar/rubatoProjectOrder.test.ts',
   'apps/web/src/components/settings/RubatoProjectListSettings.tsx',
+  'apps/web/src/components/sidebar/rubatoRemoveProject.ts',
+  'apps/web/src/components/sidebar/rubatoRemoveProject.test.ts',
 ];
 
 const ORDER_IMPORT = 'import { inProjectOrder, useRubatoProjectOrder } from "./sidebar/rubatoProjectOrder";\n';
@@ -201,6 +206,33 @@ export const projectOrderEdits = {
         + '      ),\n',
       'replace',
     ],
+    // Edit projects trails Add project and opens Settings > Projects, where a
+    // project is reordered or removed from Rubato.
+    ['import { FolderPlusIcon } from "lucide-react";\n',
+      'import { FolderPlusIcon, PencilIcon } from "lucide-react";\n', 'replace'],
+    ['import { ProjectEnvironmentBadge } from "../ProjectEnvironmentBadge";\n',
+      'import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";\n'],
+    ['const ADD_PROJECT_VALUE = "add-project";\n',
+      'const ADD_PROJECT_VALUE = "add-project";\n'
+        + '// Rubato: the "Edit projects" row (project-order-edits.mjs).\n'
+        + 'const EDIT_PROJECTS_VALUE = "rubato-edit-projects";\n', 'replace'],
+    ['  const { environments } = useEnvironments();\n',
+      '  const rubatoOpenProjectList = useOpenRubatoProjectList();\n'],
+    ['      { value: ADD_PROJECT_VALUE, label: "Add project" },\n',
+      '      { value: ADD_PROJECT_VALUE, label: "Add project" },\n'
+        + '      { value: EDIT_PROJECTS_VALUE, label: "Edit projects" },\n', 'replace'],
+    ['        item.value !== ADD_PROJECT_VALUE &&\n',
+      '        item.value !== ADD_PROJECT_VALUE &&\n        item.value !== EDIT_PROJECTS_VALUE &&\n', 'replace'],
+    ['          openAddProject();\n          return;\n        }\n',
+      '          openAddProject();\n          return;\n        }\n'
+        + '        if (item.value === EDIT_PROJECTS_VALUE) {\n'
+        + '          void rubatoOpenProjectList();\n'
+        + '          return;\n'
+        + '        }\n', 'replace'],
+    ['                  <FolderPlusIcon className="size-4 shrink-0" />\n',
+      '                  <FolderPlusIcon className="size-4 shrink-0" />\n'
+        + '                ) : item.value === EDIT_PROJECTS_VALUE ? (\n'
+        + '                  <PencilIcon className="size-4 shrink-0" />\n', 'replace'],
   ],
   'apps/web/src/hooks/useHandleNewThread.ts': [
     ['import { useClientSettings } from "./useSettings";\n',

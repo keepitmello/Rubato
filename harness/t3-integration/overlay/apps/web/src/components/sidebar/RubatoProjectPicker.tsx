@@ -1,9 +1,10 @@
 // The window the rail's Projects button opens. Projects are told apart here by
 // name, never by a bare icon on the rail: a search field, All projects, the
-// user's projects, the others, and Add project. The same window edits the
-// shared list (rubatoProjectList.ts): rows reorder by drag, − moves a project
-// to the others, + brings one back. Removing a project from Rubato stays in
-// T3's project settings, whose confirmation spells out what is deleted.
+// user's projects, the others, Add project and Edit projects. The same window
+// edits the shared list (rubatoProjectList.ts): rows reorder by drag, − moves a
+// project to the others, + brings one back, and the context menu removes one
+// from Rubato (rubatoRemoveProject.ts). Edit projects opens Settings > Projects,
+// where every row shows its handle and its trash.
 import {
   DndContext,
   PointerSensor,
@@ -15,7 +16,7 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { LayersIcon, MinusIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { LayersIcon, MinusIcon, PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { readLocalApi } from "../../localApi";
@@ -50,7 +51,9 @@ export interface RubatoProjectPickerProps {
   onAdd: (projectKey: string) => void;
   onMove: (projectKey: string, overKey: string) => void;
   onAddProject: () => void;
+  onEditProjects: () => void;
   onProjectSettings: (group: SidebarProjectSnapshot) => void;
+  onRemoveProject: (group: SidebarProjectSnapshot) => void;
 }
 
 type Row = { kind: "all" } | { kind: "project"; group: SidebarProjectSnapshot; listed: boolean };
@@ -185,7 +188,8 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
     );
     if (clicked === "unlist") props.onRemove(group.projectKey);
     else if (clicked === "list") props.onAdd(group.projectKey);
-    else if (clicked === "settings" || clicked === "remove") props.onProjectSettings(group);
+    else if (clicked === "settings") props.onProjectSettings(group);
+    else if (clicked === "remove") props.onRemoveProject(group);
   };
 
   const rowIndex = (key: string) =>
@@ -281,6 +285,14 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
       >
         <PlusIcon className="size-4 shrink-0" />
         Add project
+      </button>
+      <button
+        type="button"
+        onClick={props.onEditProjects}
+        className="flex h-8 items-center gap-2.5 rounded-md px-2.5 text-sm text-muted-foreground outline-hidden hover:bg-accent/60 hover:text-foreground"
+      >
+        <PencilIcon className="size-4 shrink-0" />
+        Edit projects
       </button>
     </div>
   );

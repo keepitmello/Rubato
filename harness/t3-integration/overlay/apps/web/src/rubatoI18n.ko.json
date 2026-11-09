@@ -2283,7 +2283,6 @@
   "One literal argument per row, in launch order.": "실행 순서대로 한 줄에 리터럴 인수 하나씩 입력합니다.",
   "One moment while this environment verifies the agent's request.": "이 환경에서 에이전트의 요청을 확인하는 동안 잠시만 기다려 주세요.",
   "One or two letters or numbers.": "글자나 숫자 1~2자.",
-  "One order for every place that lists projects: the Projects window, the home tabs and the new-thread pickers. Drag to reorder, and choose a project to open its settings, where you can remove it.": "프로젝트가 나오는 모든 곳이 이 순서를 따릅니다. 프로젝트 창, 홈 탭, 새 스레드 선택기가 모두 같습니다. 끌어서 순서를 바꾸고, 프로젝트를 누르면 그 프로젝트의 설정이 열립니다. 거기서 프로젝트를 지울 수도 있습니다.",
   "Only available in the desktop app.": "데스크톱 앱에서만 사용할 수 있습니다.",
   "Only invited people": "초대된 사람만",
   "Only the box you write prompts in. Mono works well here.": "프롬프트를 입력하는 상자에만 적용됩니다. 고정폭 글꼴이 잘 어울립니다.",
@@ -3033,7 +3032,7 @@
   "Review your usage settings in ChatGPT to continue.": "계속하려면 ChatGPT에서 사용량 설정을 확인하세요.",
   "Reviewers": "리뷰어",
   "Reviewers loading": "리뷰어 불러오는 중",
-  "Reviewing": "리뷰 중",
+  "Reviewing": "검토 중",
   "Revoke": "철회하기",
   "Revoke others": "다른 연결 철회하기",
   "Revoked 1 other client": "다른 클라이언트 1개의 권한을 해제했습니다",
@@ -4492,7 +4491,6 @@
   "Or let Rubato make it": "아니면 루바토가 만들게",
   "Default update available": "기본값 업데이트 있음",
   "Have Segno review it": "세뇨한테 검토 맡기기",
-  "Reviewing": "검토 중",
   "Rubato's defaults": "루바토 기본값",
   "When Rubato changes who Segno is by default, Segno compares it with your own file and tells you what it recommends. Nothing is merged without you.": "루바토가 세뇨의 기본값을 바꾸면, 세뇨가 내 파일과 비교해서 뭘 권하는지 알려줍니다. 내 허락 없이 합치지 않습니다.",
   "What Rubato changed": "루바토가 바꾼 것",
@@ -4580,7 +4578,13 @@
   "Could not note it as forgotten": "잊은 것으로 적지 못했습니다",
   "Projects in the list": "목록에 보일 프로젝트",
   "Projects in the list: some hidden": "목록에 보일 프로젝트: 일부 숨김",
-  "Show in the list": "목록에 표시"
+  "Show in the list": "목록에 표시",
+  "One order for every place that lists projects: the Projects window, the home tabs and the new-thread pickers. Drag to reorder, and use the trash to remove a project from Rubato.": "프로젝트가 나오는 모든 곳이 이 순서를 따릅니다. 프로젝트 창, 홈 탭, 새 스레드 선택기가 모두 같습니다. 끌어서 순서를 바꾸고, 휴지통을 누르면 Rubato에서 프로젝트를 제거합니다.",
+  "Edit projects": "프로젝트 편집하기",
+  "Edit projects…": "프로젝트 편집하기…",
+  "This permanently clears conversation history for those threads and any archived threads.": "그 스레드와 아카이브된 스레드의 대화 기록이 영구히 지워집니다.",
+  "This permanently clears any archived conversation history.": "아카이브된 대화 기록도 영구히 지워집니다.",
+  "This removes only the project entries, not the files on disk.": "프로젝트 항목만 제거하고 디스크의 파일은 그대로 둡니다."
  },
  "templates": [
   [
@@ -8002,6 +8006,26 @@
   [
    "{0} tools",
    "도구 {0}"
+  ],
+  [
+   "Remove project \"{0}\" and delete its 1 thread?",
+   "\"{0}\" 프로젝트를 제거하고 스레드 1개를 삭제할까요?"
+  ],
+  [
+   "Remove project \"{0}\" and delete its {1} threads?",
+   "\"{0}\" 프로젝트를 제거하고 스레드 {1}개를 삭제할까요?"
+  ],
+  [
+   "Remove project \"{0}\"?",
+   "\"{0}\" 프로젝트를 제거할까요?"
+  ],
+  [
+   "Path: {0}",
+   "경로: {0}"
+  ],
+  [
+   "Remove {0} from Rubato",
+   "Rubato에서 {0} 제거하기"
   ]
  ]
 }

@@ -1,7 +1,8 @@
 // The header button beside Add project while no project is selected: a
 // checklist of the projects in the all-projects list. Unchecking one keeps its
 // threads out of that list and out of the Recent box; pinned threads and
-// search still show them. The choice stays on this device.
+// search still show them. The choice stays on this device. Edit projects at
+// the bottom opens Settings > Projects, where a project is removed from Rubato.
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import * as Schema from "effect/Schema";
 import { ListFilterIcon } from "lucide-react";
@@ -10,6 +11,7 @@ import { useCallback, useMemo } from "react";
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";
 import {
   Menu,
   MenuCheckboxItem,
@@ -39,6 +41,7 @@ export function RubatoHomeProjectFilter(props: {
   threads: readonly EnvironmentThreadShell[];
 }) {
   const { hidden, setHidden } = useRubatoHomeHiddenProjects();
+  const openProjectList = useOpenRubatoProjectList();
   const rows = useMemo(
     () => homeFilterProjects(props.groups, props.threads),
     [props.groups, props.threads],
@@ -89,12 +92,9 @@ export function RubatoHomeProjectFilter(props: {
             </MenuCheckboxItem>
           ))}
         </MenuGroup>
-        {narrowed ? (
-          <>
-            <MenuSeparator />
-            <MenuItem onClick={() => setHidden(NONE)}>Show all projects</MenuItem>
-          </>
-        ) : null}
+        <MenuSeparator />
+        {narrowed ? <MenuItem onClick={() => setHidden(NONE)}>Show all projects</MenuItem> : null}
+        <MenuItem onClick={() => void openProjectList()}>Edit projects…</MenuItem>
       </MenuPopup>
     </Menu>
   );

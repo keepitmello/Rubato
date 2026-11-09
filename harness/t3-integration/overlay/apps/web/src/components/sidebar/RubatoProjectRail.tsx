@@ -31,6 +31,8 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RubatoProjectPicker } from "./RubatoProjectPicker";
+import { useRubatoRemoveProject } from "./rubatoRemoveProject";
+import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";
 import { companionRailAction } from "./rubatoCompanionRailAction";
 import { useOpenListAfterSegno } from "../chat/RubatoSegnoSpace";
 import { RubatoSegnoIcon } from "./RubatoSegnoIcon";
@@ -167,6 +169,8 @@ export function RubatoProjectRail() {
   const scheduleSignal = useScheduleSignal();
   const { list, signals, lastActivity, remove, add, move } = useRubatoProjectList();
   const [pickerOpen, setPickerOpen] = useState(false);
+  const removeProject = useRubatoRemoveProject();
+  const openProjectList = useOpenRubatoProjectList();
   const companion = useRubatoCompanion();
   const environmentId = useReadyEnvironmentId();
 
@@ -279,10 +283,15 @@ export function RubatoProjectRail() {
                 setPickerOpen(false);
                 openCommandPalette({ open: "add-project" });
               }}
+              onEditProjects={() => {
+                setPickerOpen(false);
+                void openProjectList();
+              }}
               onProjectSettings={(group) => {
                 setPickerOpen(false);
                 void navigate({ to: "/projects/$projectKey", params: { projectKey: group.projectKey } });
               }}
+              onRemoveProject={(group) => void removeProject(group)}
             />
           </PopoverPopup>
         </Popover>

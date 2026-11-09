@@ -2,8 +2,9 @@
 // orders and puts away projects for every surface that lists them
 // (sidebar/rubatoProjectOrder.ts, project-order-edits.mjs). Rows reorder by
 // drag (or the keyboard), − moves a project to the others, + brings one back,
-// Add project opens the command palette's add flow, and a name opens that
-// project's own settings, where removing it from Rubato spells out what is deleted.
+// the trash removes it from Rubato after a confirmation that names what is
+// deleted (sidebar/rubatoRemoveProject.ts), Add project opens the command
+// palette's add flow, and a name opens that project's own settings.
 import {
   DndContext,
   KeyboardSensor,
@@ -22,7 +23,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useNavigate } from "@tanstack/react-router";
-import { FolderPlusIcon, GripVerticalIcon, MinusIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import {
+  FolderPlusIcon,
+  GripVerticalIcon,
+  MinusIcon,
+  PlusIcon,
+  RotateCcwIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useCallback } from "react";
 
 import { openCommandPalette } from "../../commandPaletteBus";
@@ -31,6 +39,7 @@ import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { activityLabel } from "../sidebar/RubatoProjectPicker";
 import { useRubatoProjectList } from "../sidebar/rubatoProjectList";
+import { useRubatoRemoveProject } from "../sidebar/rubatoRemoveProject";
 import { Button } from "../ui/button";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
@@ -55,6 +64,7 @@ function ProjectListRow(props: {
   activity: string;
   onOpen: () => void;
   onToggleListed: () => void;
+  onRemove: () => void;
 }) {
   const sortable = useSortable({ id: props.group.projectKey, disabled: !props.listed });
   const name = props.group.displayName;
@@ -116,12 +126,23 @@ function ProjectListRow(props: {
       >
         {props.listed ? <MinusIcon className="size-3.5" /> : <PlusIcon className="size-3.5" />}
       </Button>
+      <Button
+        size="icon-xs"
+        variant="ghost"
+        aria-label={`Remove ${name} from Rubato`}
+        title="Remove project from Rubato…"
+        className="text-muted-foreground hover:text-destructive"
+        onClick={props.onRemove}
+      >
+        <Trash2Icon className="size-3.5" />
+      </Button>
     </div>
   );
 }
 
 export function RubatoProjectListSettings() {
   const { list, lastActivity, remove, add, move, reset, edited } = useRubatoProjectList();
+  const removeProject = useRubatoRemoveProject();
   const { selectScope } = useSettingsScope();
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -140,6 +161,7 @@ export function RubatoProjectListSettings() {
       activity={activityLabel(lastActivity.get(group.projectKey))}
       onOpen={() => selectScope({ project: group.projectKey })}
       onToggleListed={() => (listed ? remove(group.projectKey) : add(group.projectKey))}
+      onRemove={() => void removeProject(group)}
     />
   );
 
@@ -147,8 +169,7 @@ export function RubatoProjectListSettings() {
     <SettingsPageContainer>
       <p className="px-3 text-sm text-muted-foreground sm:px-4">
         One order for every place that lists projects: the Projects window, the home tabs and the
-        new-thread pickers. Drag to reorder, and choose a project to open its settings, where you
-        can remove it.
+        new-thread pickers. Drag to reorder, and use the trash to remove a project from Rubato.
       </p>
       <SettingsSection
         id="rubato-project-list"
