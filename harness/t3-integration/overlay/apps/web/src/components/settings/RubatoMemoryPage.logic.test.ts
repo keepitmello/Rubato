@@ -6,6 +6,7 @@ import {
   changePhrases,
   fallbackTopics,
   filterQuestions,
+  foldNeeds,
   insightLanguage,
   listedStores,
   needsYou,
@@ -85,6 +86,14 @@ describe("needsYou", () => {
       dismissed: new Set(["ask-1", "empty:quiet"]),
     });
     expect(items.map((item) => item.id)).toEqual(["ask-2"]);
+  });
+});
+
+describe("foldNeeds", () => {
+  it("keeps at most two of a kind so the other kinds show, then fills up in order", () => {
+    const items = ["q1", "q2", "q3", "q4", "o1", "o2", "o3", "p1", "e1"].map((id) => ({ id, kind: id[0]! }));
+    expect(foldNeeds(items).map((item) => item.id)).toEqual(["q1", "q2", "o1", "o2", "p1"]);
+    expect(foldNeeds(items.filter((item) => item.kind === "q")).map((item) => item.id)).toEqual(["q1", "q2", "q3", "q4"]);
   });
 });
 

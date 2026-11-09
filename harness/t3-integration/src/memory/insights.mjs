@@ -23,7 +23,7 @@ Find the pairs where a line in B covers the same point as a line in A ("same"), 
 Reply with one JSON object and nothing else:
 {"pairs": [{"b": "<id from list B>", "a": "<id from list A>", "relation": "same" | "overlap" | "conflict", "note": "<one short sentence for the person>"}]}
 
-- note: in the language you are told to write in, plain and short. Say what the two have in common or how they disagree. In Korean, use 반말 like a friend.
+- note: in the language you are told to write in, plain and short. Say what the two have in common or how they disagree. Never call them "A" or "B": the person sees the two lines one above the other, so say "the shared line" and "the companion's line" if you must name them. In Korean, write in polite 합니다체 like the rest of the app.
 - Use only ids that appear in the lists. At most one pair per line of B: the closest one.`;
 
 export const PROJECTS_SYSTEM_PROMPT = `You tell a person, in one plain line per project, what changed in their coding agents' project memory recently.
@@ -33,7 +33,7 @@ For each project you get the questions (files) that were created, rewritten or d
 Reply with one JSON object and nothing else:
 {"lines": {"<project>": "<one line>"}}
 
-- One line per project, at most about 90 characters, in the language you are told to write in.
+- One line per project, at most about 90 characters, in the language you are told to write in (in Korean, a noun phrase, no sentence ending).
 - Name the topics in everyday words, the way the person would say them; join two or three with " · ". No file names, no counts (the page shows counts), no "the dream".
 - Use only what the material says.`;
 
