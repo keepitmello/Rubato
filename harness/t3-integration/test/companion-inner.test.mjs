@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createInnerReader, createSessionReader, splitSpans, spanSummary, toolSummary } from '../src/companion/inner.mjs';
+import { commitResult, createInnerReader, createSessionReader, launchResult, splitSpans, spanSummary, toolSummary } from '../src/companion/inner.mjs';
 import { createCompanionService, handleCompanionRequest } from '../src/companion/service.mjs';
 import { writeState } from '../../companion/companion.mjs';
 
@@ -80,8 +80,44 @@ test('spans split at the bubble times: a reply\'s own call lands before its bubb
   const spans = splitSpans(items, [10, 20, 30]);
   assert.deepEqual(spans.map((span) => span.map((item) => item.at)), [[5], [12, 20], [], [31]]);
   assert.deepEqual(splitSpans(items, [10, 20], 10).map((span) => span.length), [0, 2, 1], 'nothing before `after`');
-  assert.deepEqual(spanSummary(spans[1]), { thinking: 1, text: 0, tools: 1, wakes: 0, wakeKinds: {}, messages: 0, from: 12, to: 26 });
-  assert.deepEqual(spanSummary([]), { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null });
+  assert.deepEqual(spanSummary(spans[1]), { thinking: 1, text: 0, tools: 1, wakes: 0, wakeKinds: {}, messages: 0, from: 12, to: 26, launches: [], commits: [] });
+  assert.deepEqual(spanSummary([]), { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null, launches: [], commits: [] });
+});
+
+test('a span names the conversations the companion started or forked and the records it committed', async (t) => {
+  const dir = sessionDir(t);
+  const file = path.join(dir, 'agent', 'sessions', 'x_S1.jsonl');
+  const json = (value) => JSON.stringify(value, null, 2);
+  const a = person(null, '리드 하나 띄워줘', 1000);
+  const b = said(a.id, 2000, [{ type: 'toolCall', id: 'k1', name: 'session_create',
+    arguments: { cwd: '/w', title: '원화 출금 설계', model: 'anthropic/claude-opus-5-5-sub', text: 'x'.repeat(2000) } }]);
+  const c = result(b.id, 2100, 'k1', `Created "원화 출금 설계" (S2) in /w; it is running.\n${json({ sessionId: 'S2', title: '원화 출금 설계', cwd: '/w', status: 'running', model: 'anthropic/claude-opus-5-5-sub' })}`);
+  const d = said(c.id, 2200, [{ type: 'toolCall', id: 'k2', name: 'session_fork', arguments: {} }]);
+  const e = result(d.id, 2300, 'k2', `Forked into "Fork of it" (S3) with 4 messages.\n${json({ sessionId: 'S3', title: 'Fork of it', cwd: '/w', copiedMessages: 4 })}`);
+  const f = said(e.id, 2400, [{ type: 'toolCall', id: 'k3', name: 'session_create', arguments: { text: 'y' } }]);
+  const g = result(f.id, 2500, 'k3', 'Could not create a conversation in /nope', true);
+  const h = said(g.id, 2600, [{ type: 'toolCall', id: 'k4', name: 'segno_commit', arguments: { paths: ['memory/status.md'], message: '카줌 셀러 컨택은 수찬 전화 먼저' } }]);
+  const i = result(h.id, 2700, 'k4', 'Committed 5f8e228: memory/status.md');
+  const j = said(i.id, 2800, [{ type: 'toolCall', id: 'k5', name: 'segno_commit', arguments: { paths: ['memory/us.md'], message: 'nothing' } }]);
+  const k = result(j.id, 2900, 'k5', 'Nothing changed; nothing committed.');
+  writeFileSync(file, [a, b, c, d, e, f, g, h, i, j, k].map(line).join(''));
+  const items = await createSessionReader(file).items();
+  const summary = spanSummary(items);
+  assert.deepEqual(summary.launches, [
+    { id: 'k1', tool: 'create', title: '원화 출금 설계', model: 'anthropic/claude-opus-5-5-sub', sessionId: 'S2', startsWork: true, at: 2000, done: 2100, error: null },
+    { id: 'k2', tool: 'fork', title: 'Fork of it', model: null, sessionId: 'S3', startsWork: false, at: 2200, done: 2300, error: null },
+    { id: 'k3', tool: 'create', title: null, model: null, sessionId: null, startsWork: true, at: 2400, done: 2500, error: 'Could not create a conversation in /nope' },
+  ]);
+  assert.deepEqual(summary.commits, [{ id: 'k4', message: '카줌 셀러 컨택은 수찬 전화 먼저', files: ['memory/status.md'], sha: '5f8e228', at: 2700 }],
+    'a commit that changed nothing leaves no line');
+  assert.equal(items[0].launch.sessionId, 'S2');
+  assert.equal(Object.keys(items[0]).includes('launch'), false, 'the opened span\'s pieces stay as they were');
+});
+
+test('a launch result names its conversation even when the JSON is cut short', () => {
+  assert.deepEqual(launchResult('Created "a (b)" (S9) in /w; it is running.\n{"sessionId": "S9", "ti'), { sessionId: 'S9', title: 'a (b)', model: null });
+  assert.equal(launchResult('something else'), null);
+  assert.equal(commitResult('Nothing changed; nothing committed.'), null);
 });
 
 test('a tool row names what the call was about', () => {

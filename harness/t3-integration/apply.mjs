@@ -29,6 +29,7 @@ import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edit
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { sidebarModelIconEdits, sidebarModelIconOverlays } from './sidebar-model-icon-edits.mjs';
 import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
+import { workCardEdits, workCardOverlays } from './work-card-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
 import { soundEdits, soundOverlays } from './sound-edits.mjs';
@@ -1860,6 +1861,12 @@ for (const [relative, changes] of Object.entries(companionEdits)) {
 }
 // "Scroll to end" shows under a held new turn too (scroll-to-end-edits.mjs).
 for (const [relative, changes] of Object.entries(scrollToEndEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Work cards for conversations launched with session_create / session_fork; its MessagesTimeline
+// import anchors beside agents-surface-edits' own (work-card-edits.mjs).
+overlays.push(...workCardOverlays);
+for (const [relative, changes] of Object.entries(workCardEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 overlays.push(...i18nOverlays);

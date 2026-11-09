@@ -172,6 +172,33 @@ export interface SegnoSpanSummary {
   /** When the span's first and last piece happened, in ms; null for an empty span. */
   readonly from: number | null;
   readonly to: number | null;
+  /** Conversations the companion started or forked in the span (bridge companion/inner.mjs); a card each. */
+  readonly launches?: ReadonlyArray<SegnoLaunch>;
+  /** Records it committed to its home in the span; one grey line each. */
+  readonly commits?: ReadonlyArray<SegnoCommit>;
+}
+
+/** A session_create or session_fork call; `sessionId` is null until (or unless) it succeeded. */
+export interface SegnoLaunch {
+  readonly id: string;
+  readonly tool: "create" | "fork";
+  readonly sessionId: string | null;
+  readonly title: string | null;
+  readonly model: string | null;
+  /** A fork without a first message waits for the person; anything else starts working. */
+  readonly startsWork: boolean;
+  readonly at: number;
+  readonly done: number | null;
+  readonly error: string | null;
+}
+
+/** A segno_commit that changed something: the companion's own words for it and the files. */
+export interface SegnoCommit {
+  readonly id: string;
+  readonly message: string;
+  readonly files: readonly string[];
+  readonly sha: string;
+  readonly at: number;
 }
 
 /** One piece of a span, oldest first: its thinking, words to itself, a tool call, what woke it. */

@@ -42,6 +42,33 @@ const atOf = (value) => {
 };
 
 /**
+ * A call that started or forked another conversation (session-link tools.mjs): the room draws it
+ * as a work card (chat/RubatoWorkCard.tsx). Its result names the new conversation: the text opens
+ * with `Created "<title>" (<id>)` or `Forked into "<title>" (<id>)` and ends with the engine's JSON.
+ */
+export const LAUNCH_TOOLS = { session_create: 'create', session_fork: 'fork' };
+export function launchResult(text) {
+  const body = String(text ?? '');
+  const json = body.indexOf('\n{');
+  if (json >= 0) {
+    try {
+      const parsed = JSON.parse(body.slice(json + 1));
+      if (typeof parsed?.sessionId === 'string' && parsed.sessionId)
+        return { sessionId: parsed.sessionId, title: typeof parsed.title === 'string' ? parsed.title : null,
+          model: typeof parsed.model === 'string' ? parsed.model : null };
+    } catch { /* cut short: the line below still names it */ }
+  }
+  const head = /^(?:Created|Forked into) "([^]*?)" \(([^()\s]+)\)/.exec(body);
+  return head ? { sessionId: head[2], title: head[1], model: null } : null;
+}
+
+/** A segno_commit result (companion-home index.mjs): `Committed <sha>: <files>`, or nothing changed. */
+export function commitResult(text) {
+  const match = /^Committed ([0-9a-f]{4,64})\b/.exec(String(text ?? ''));
+  return match ? match[1] : null;
+}
+
+/**
  * The items one session entry contributes, oldest first. The person's own messages are bubbles, so
  * they contribute none. A tool result lands on its call (`calls`, by call id).
  */
@@ -69,6 +96,15 @@ export function entryItems(entry, calls) {
       else if (part?.type === 'toolCall') {
         const tool = { kind: 'tool', id: String(part.id ?? ''), name: String(part.name ?? 'tool'),
           summary: toolSummary(part.name, part.arguments), input: bounded(inputOf(part.arguments), LIMITS.input), at };
+        const args = part.arguments && typeof part.arguments === 'object' ? part.arguments : {};
+        if (LAUNCH_TOOLS[tool.name]) Object.defineProperty(tool, 'launch', { enumerable: false, writable: true,
+          value: { tool: LAUNCH_TOOLS[tool.name], title: typeof args.title === 'string' ? args.title : null,
+            model: typeof args.model === 'string' ? args.model : null, sessionId: null,
+            // A fork without a first message waits for the person; anything else starts working.
+            startsWork: tool.name === 'session_create' || typeof args.text === 'string' } });
+        if (tool.name === 'segno_commit') Object.defineProperty(tool, 'commit', { enumerable: false, writable: true,
+          value: { message: typeof args.message === 'string' ? oneLine(args.message, 400) : '',
+            files: Array.isArray(args.paths) ? args.paths.filter((file) => typeof file === 'string') : [], sha: null } });
         items.push(tool);
         if (tool.id) calls.set(tool.id, tool);
       }
@@ -79,7 +115,10 @@ export function entryItems(entry, calls) {
   if (message.role === 'toolResult') {
     const tool = calls.get(String(message.toolCallId ?? ''));
     if (tool) {
-      tool.output = bounded(textOf(message.content), LIMITS.output);
+      const full = textOf(message.content);
+      if (tool.launch && !message.isError) Object.assign(tool.launch, launchResult(full) ?? {});
+      if (tool.commit && !message.isError) tool.commit.sha = commitResult(full);
+      tool.output = bounded(full, LIMITS.output);
       if (message.isError) tool.isError = true;
       tool.done = at;
     }
@@ -161,11 +200,18 @@ export async function sessionFile(sessionId, env = process.env) {
  * names each one — a heartbeat, the work room, a voice call — instead of one word for all.
  */
 export function spanSummary(items) {
-  const summary = { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null };
+  const summary = { thinking: 0, text: 0, tools: 0, wakes: 0, wakeKinds: {}, messages: 0, from: null, to: null, launches: [], commits: [] };
   for (const item of items) {
     if (item.kind === 'thinking') summary.thinking += 1;
     else if (item.kind === 'text') summary.text += 1;
-    else if (item.kind === 'tool') summary.tools += 1;
+    else if (item.kind === 'tool') {
+      summary.tools += 1;
+      // The conversations it started (a card each) and the records it committed (one grey line each).
+      if (item.launch) summary.launches.push({ id: item.id, ...item.launch, at: item.at, done: item.done ?? null,
+        error: item.isError ? oneLine(item.output ?? '', 300) : null });
+      if (item.commit?.sha) summary.commits.push({ id: item.id, message: item.commit.message, files: item.commit.files,
+        sha: item.commit.sha, at: item.done ?? item.at });
+    }
     else if (item.kind === 'wake') {
       summary.wakes += 1;
       summary.wakeKinds[item.what] = (summary.wakeKinds[item.what] ?? 0) + 1;

@@ -544,3 +544,20 @@
     transition: none;
   }
 }
+
+/* ---- What came of the companion's work ---- */
+/* A conversation it launched: the work card, at Segno's side of the room (RubatoWorkCard.tsx). */
+[data-rubato-segno-work] {
+  display: flex;
+  padding-inline: 14px;
+  margin-top: 0.4rem;
+}
+/* A record it committed: one quiet grey line in the middle (mockup room: 기억 고침 · "…" · 방금). */
+[data-rubato-segno-memory-change] {
+  margin: 0.45rem 2rem 0.2rem;
+  text-align: center;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+  overflow-wrap: anywhere;
+}

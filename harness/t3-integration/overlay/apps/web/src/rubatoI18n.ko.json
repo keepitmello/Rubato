@@ -4663,7 +4663,23 @@
   "Once a day it reads the new sessions and tidies memory. This shows where each store stands now, not every run.": "하루 한 번 새 세션을 읽고 메모리를 정리합니다. 실행 기록 대신 저장소마다 지금 상태만 보여 줍니다.",
   "Could not start the dream": "꿈을 시작할 수 없습니다",
   "Could not save the setting": "설정을 저장할 수 없습니다",
-  "Could not search memory": "메모리를 검색할 수 없습니다"
+  "Could not search memory": "메모리를 검색할 수 없습니다",
+  "Waiting for you": "답을 기다려",
+  "· Fork": "· 분기",
+  "New conversation": "새 대화",
+  "Looking for the conversation": "대화를 찾는 중",
+  "Memory changed": "기억 고침",
+  "Questions": "물어볼 것",
+  "The status board is empty.": "현황판이 비어 있어.",
+  "No questions right now.": "지금은 물어볼 게 없어.",
+  "An answer goes into this conversation as your message.": "답은 이 대화에 내 메시지로 들어가.",
+  "Suggestion": "제안",
+  "Answer again": "다시 답하기",
+  "Sent": "보냄",
+  "Nothing found.": "찾은 게 없어.",
+  "Nothing kept about you yet.": "아직 남긴 게 없어.",
+  "Between us": "우리 사이",
+  "Ask to change": "고쳐 달라고 하기"
  },
  "templates": [
   [
@@ -8365,6 +8381,34 @@
   [
    "Could not delete {0}",
    "{0}을(를) 삭제할 수 없습니다"
+  ],
+  [
+   "Answered {0}",
+   "{0} 답함"
+  ],
+  [
+   "Asked {0}",
+   "{0} 요청함"
+  ],
+  [
+   "Search {0}'s memory",
+   "{0} 기억에서 찾기"
+  ],
+  [
+   "{0}'s records",
+   "{0}의 기록"
+  ],
+  [
+   "{0} keeps no records yet.",
+   "{0}는 아직 남긴 기록이 없어."
+  ],
+  [
+   "Click a line and the request to change or forget it goes into the composer. Send it, and {0} makes the change.",
+   "줄을 누르면 고쳐 달라거나 잊어 달라는 요청이 입력창에 채워져. 보내면 {0}가 고쳐."
+  ],
+  [
+   "Updated {0}. Click a line to ask for a change; the request goes into the composer.",
+   "{0} 갱신. 줄을 누르면 고쳐 달라는 요청이 입력창에 채워져."
   ]
  ]
 }
