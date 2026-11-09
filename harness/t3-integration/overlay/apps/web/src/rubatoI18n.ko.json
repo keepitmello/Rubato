@@ -4584,7 +4584,86 @@
   "Edit projects…": "프로젝트 편집하기…",
   "This permanently clears conversation history for those threads and any archived threads.": "그 스레드와 아카이브된 스레드의 대화 기록이 영구히 지워집니다.",
   "This permanently clears any archived conversation history.": "아카이브된 대화 기록도 영구히 지워집니다.",
-  "This removes only the project entries, not the files on disk.": "프로젝트 항목만 제거하고 디스크의 파일은 그대로 둡니다."
+  "This removes only the project entries, not the files on disk.": "프로젝트 항목만 제거하고 디스크의 파일은 그대로 둡니다.",
+  "This can take several minutes.": "몇 분 걸릴 수 있습니다.",
+  "Tried from the top": "위에서부터 시도합니다",
+  "Reading the dream settings": "꿈 설정을 읽는 중",
+  "Each store": "저장소별 상태",
+  "Its last run": "마지막 실행",
+  "What it changed": "바꾼 내용 보기",
+  "Why": "이유 보기",
+  "Dreaming": "꿈 실행 중",
+  "Its own nightly dream": "세뇨가 밤마다 따로 꾸는 꿈",
+  "No dream has run yet": "아직 꿈을 실행한 적이 없습니다",
+  "No model was tried.": "시도한 모델이 없습니다.",
+  "At a glance": "한눈에",
+  "Me": "나",
+  "Whose memory": "누구에 대한 메모리인가",
+  "Upkeep": "관리",
+  "Every agent reads": "모든 에이전트가 읽음",
+  "That project's lead reads": "그 프로젝트의 리드가 읽음",
+  "Only Segno reads": "Segno만 읽음",
+  "Recently changed": "최근 바뀐 것",
+  "Nothing changed this week.": "이번 주에 바뀐 것이 없습니다.",
+  "Writing a plain summary for each project…": "프로젝트마다 쉬운 요약을 쓰는 중…",
+  "Needs you": "확인이 필요한 것",
+  "Nothing waits for you.": "확인할 것이 없습니다.",
+  "Answer": "답하기",
+  "Proposal": "제안",
+  "Compare": "비교하기",
+  "Conflict": "충돌",
+  "Overlap": "겹침",
+  "Every agent:": "모든 에이전트:",
+  "See why": "이유 보기",
+  "Dream failed": "꿈 실패",
+  "Got it": "확인",
+  "Empty": "빈 저장소",
+  "Opened by an agent but nothing was ever saved, so they are not listed as memory.": "에이전트가 열기만 하고 아무것도 저장하지 않아서 메모리 목록에 넣지 않습니다.",
+  "Search all memory: a decision, a person's name, an error, a file…": "모든 메모리에서 찾기: 결정, 사람 이름, 에러, 파일…",
+  "All agents": "모든 에이전트",
+  "Every lead, teammate and companion reads it": "모든 리드, 팀원, 컴패니언이 읽습니다",
+  "Checking where the two overlap…": "두 메모리가 겹치는 곳을 확인하는 중…",
+  "Decision": "판단",
+  "Fact": "사실",
+  "A project's memory appears the first time an agent saves something in it.": "에이전트가 처음 무언가를 저장하면 그 프로젝트의 메모리가 생깁니다.",
+  "Dream on": "꿈 켜짐",
+  "Dream off": "꿈 꺼짐",
+  "Daily dream on": "일일 꿈 켜짐",
+  "One file is one question's current answer. They show as questions here, not folders.": "파일 하나가 질문 하나의 지금 답입니다. 여기서는 폴더 대신 질문으로 보여 줍니다.",
+  "Find in this project": "이 프로젝트에서 찾기",
+  "No question matches.": "맞는 질문이 없습니다.",
+  "How this answer changed": "이 답이 바뀐 과정",
+  "git history": "git 기록",
+  "Took in an edit a session made outside the memory tools": "세션이 메모리 도구 밖에서 고친 내용을 받아들임",
+  "Saved without a reason": "이유 없이 저장됨",
+  "Status board": "현황판",
+  "Questions for you": "물어볼 것",
+  "Records": "기록",
+  "Between the two of you": "둘 사이",
+  "By date": "날짜별",
+  "No records yet.": "아직 기록이 없습니다.",
+  "Diary": "일기",
+  "Daily record": "일별 기록",
+  "Weekly look back": "주간 정리",
+  "People and companies": "사람·업체",
+  "None yet.": "아직 없습니다.",
+  "How it changed": "바뀐 과정",
+  "Sent to the shared memory. The answer shows above.": "공용 메모리로 보냈습니다. 답은 위에 나옵니다.",
+  "Share with all agents": "모두에게 알리기",
+  "Confirm sharing": "알리기 확인",
+  "Changed this week": "이번 주 바뀐 것",
+  "Changed nothing": "바꾼 것 없음",
+  "Created": "새로 씀",
+  "Says the same as the line above.": "위 줄과 같은 말입니다.",
+  "Overlaps the line above.": "위 줄과 겹칩니다.",
+  "Seems to contradict the line above.": "위 줄과 부딪쳐 보입니다.",
+  "What Rubato remembers, and what needs a look from you.": "Rubato가 기억하는 것, 그리고 확인이 필요한 것입니다.",
+  "What agents know about you. Every line says who reads it.": "에이전트들이 아는 나입니다. 줄마다 누가 읽는지 붙어 있습니다.",
+  "Each project keeps its own memory; only that project's lead reads it.": "프로젝트마다 자기 메모리를 따로 둡니다. 그 프로젝트의 리드만 읽습니다.",
+  "Once a day it reads the new sessions and tidies memory. This shows where each store stands now, not every run.": "하루 한 번 새 세션을 읽고 메모리를 정리합니다. 실행 기록 대신 저장소마다 지금 상태만 보여 줍니다.",
+  "Could not start the dream": "꿈을 시작할 수 없습니다",
+  "Could not save the setting": "설정을 저장할 수 없습니다",
+  "Could not search memory": "메모리를 검색할 수 없습니다"
  },
  "templates": [
   [
@@ -8026,6 +8105,266 @@
   [
    "Remove {0} from Rubato",
    "Rubato에서 {0} 제거하기"
+  ],
+  [
+   "{0} places",
+   "{0}곳"
+  ],
+  [
+   "{0} open",
+   "열린 일 {0}"
+  ],
+  [
+   "Me · {0}",
+   "나 · {0}"
+  ],
+  [
+   "Projects · {0}",
+   "프로젝트 · {0}곳"
+  ],
+  [
+   "Only {0} reads",
+   "{0}만 읽음"
+  ],
+  [
+   "{0} · {1} open",
+   "{0} · 열린 일 {1}"
+  ],
+  [
+   "Last {0} days · by project",
+   "최근 {0}일 · 프로젝트별"
+  ],
+  [
+   "{0} more",
+   "{0}개 더"
+  ],
+  [
+   "{0} items",
+   "{0}건"
+  ],
+  [
+   "{0} is not in the app right now.",
+   "{0}가 지금 앱에 없습니다."
+  ],
+  [
+   "{0} asks",
+   "{0}가 물어봄"
+  ],
+  [
+   "{0} · questions",
+   "{0} · 물어볼 것"
+  ],
+  [
+   "Sent to {0}",
+   "{0}에게 보냈습니다"
+  ],
+  [
+   "{0} suggests a line for its prompt",
+   "{0}가 자기 프롬프트에 넣을 줄을 제안했습니다"
+  ],
+  [
+   "{0} only:",
+   "{0}만 앎:"
+  ],
+  [
+   "{0} only",
+   "{0}만"
+  ],
+  [
+   "{0} only {1}",
+   "{0}만 아는 것 {1}"
+  ],
+  [
+   "Send to {0}",
+   "{0}에게 보내기"
+  ],
+  [
+   "{0} empty not shown",
+   "빈 저장소 {0}곳은 숨김"
+  ],
+  [
+   "{0} questions",
+   "질문 {0}개"
+  ],
+  [
+   "Delete the memory of {0}",
+   "{0} 메모리 삭제하기"
+  ],
+  [
+   "{0} changes · git history",
+   "변경 {0}번 · git 기록"
+  ],
+  [
+   "{0} is not in the app right now, so answers cannot be sent. Turn it on in Settings › Companion.",
+   "{0}가 지금 앱에 없어서 답을 보낼 수 없습니다. 설정 › 컴패니언에서 켜세요."
+  ],
+  [
+   "{0} keeps it current",
+   "{0}가 계속 갱신합니다"
+  ],
+  [
+   "{0} items · answers go to {1}'s conversation",
+   "{0}건 · 답은 {1} 대화로 갑니다"
+  ],
+  [
+   "{0} has nothing to ask.",
+   "{0}가 물어볼 것이 없습니다."
+  ],
+  [
+   "All {0} days",
+   "{0}일 모두 보기"
+  ],
+  [
+   "Ask {0}",
+   "{0}에게 말하기"
+  ],
+  [
+   "What should {0} change or know? It goes to {1}'s conversation as your message.",
+   "{0}가 무엇을 바꾸거나 알아야 하나요? 내 메시지로 {1} 대화에 갑니다."
+  ],
+  [
+   "Only {0} knows",
+   "{0}만 아는 것"
+  ],
+  [
+   "{0} noticed",
+   "{0}가 알게 된 것"
+  ],
+  [
+   "Sent to {0} {1}",
+   "{1} {0}에게 보냄"
+  ],
+  [
+   "Ask {0} to change",
+   "{0}에게 고쳐 달라고 하기"
+  ],
+  [
+   "Every lead, teammate and {0} will know this. Rubato writes it into the shared memory in English and keeps your words as they are.",
+   "모든 리드, 팀원, {0}가 알게 됩니다. Rubato가 공용 메모리에 영어로 적고, 내가 한 말은 그대로 둡니다."
+  ],
+  [
+   "{0} decisions changed",
+   "판단 {0}개 고침"
+  ],
+  [
+   "{0} new decisions",
+   "판단 {0}개 새로 씀"
+  ],
+  [
+   "{0} facts changed",
+   "사실 {0}개 고침"
+  ],
+  [
+   "{0} new facts",
+   "사실 {0}개 새로 씀"
+  ],
+  [
+   "{0} notes changed",
+   "노트 {0}개 바뀜"
+  ],
+  [
+   "{0} removed",
+   "{0}개 지움"
+  ],
+  [
+   "dream {0}",
+   "꿈 {0}"
+  ],
+  [
+   "session {0}",
+   "세션 {0}"
+  ],
+  [
+   "you {0}",
+   "나 {0}"
+  ],
+  [
+   "{0} days of records",
+   "기록 {0}일"
+  ],
+  [
+   "{0} people and companies",
+   "사람·업체 {0}"
+  ],
+  [
+   "{0} diary days",
+   "일기 {0}일"
+  ],
+  [
+   "{0} weeks",
+   "주간 {0}"
+  ],
+  [
+   "Oldest from {0}",
+   "가장 오래된 것 {0}"
+  ],
+  [
+   "Read {0} sessions",
+   "세션 {0}개 읽음"
+  ],
+  [
+   "Changed {0} questions",
+   "질문 {0}개 바꿈"
+  ],
+  [
+   "Dreaming now, started {0}",
+   "꿈 실행 중, {0} 시작"
+  ],
+  [
+   "All {0}",
+   "전체 {0}"
+  ],
+  [
+   "Decisions {0}",
+   "판단 {0}"
+  ],
+  [
+   "Facts {0}",
+   "사실 {0}"
+  ],
+  [
+   "Could not send to {0}",
+   "{0}에게 보낼 수 없습니다"
+  ],
+  [
+   "{0} reads it in its conversation.",
+   "{0}가 대화에서 읽습니다."
+  ],
+  [
+   "{0} changes its own notes when it reads it.",
+   "{0}가 읽고 자기 기록을 고칩니다."
+  ],
+  [
+   "Your answer for {0}",
+   "{0}에게 줄 답"
+  ],
+  [
+   "Your answer. It goes to {0}'s conversation as your message.",
+   "답을 적으세요. 내 메시지로 {0} 대화에 갑니다."
+  ],
+  [
+   "What should {0} change?",
+   "{0}가 무엇을 고쳐야 하나요?"
+  ],
+  [
+   "Tell {0} what is true instead, or to forget it. It goes to {1}'s conversation.",
+   "{0}에게 무엇이 맞는지, 또는 잊으라고 말하세요. {1} 대화로 갑니다."
+  ],
+  [
+   "What {0} holds and records. Only {1} reads it; it changes when you tell {2}.",
+   "{0}가 쥐고 있는 일과 기록입니다. {1}만 읽고, {2}에게 말하면 바뀝니다."
+  ],
+  [
+   "What {0} learned on its own; only {1} reads it",
+   "{0}가 겪으며 알게 된 것, {1}만 읽습니다"
+  ],
+  [
+   "Remember this for all agents. {0} noted it about me:",
+   "모든 에이전트가 알게 기억해 줘. {0}가 나에 대해 적어 둔 거야:"
+  ],
+  [
+   "Could not delete {0}",
+   "{0}을(를) 삭제할 수 없습니다"
   ]
  ]
 }

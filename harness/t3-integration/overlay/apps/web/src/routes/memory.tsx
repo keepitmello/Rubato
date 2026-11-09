@@ -1,12 +1,12 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { RubatoStandalonePage } from "../components/RubatoStandalonePage";
-import { RubatoMemorySettingsPanel } from "../components/settings/RubatoMemorySettings";
+import { RubatoMemoryPage } from "../components/settings/RubatoMemoryPage";
 
 function MemoryPage() {
   return (
     <RubatoStandalonePage title="Memory">
-      <RubatoMemorySettingsPanel />
+      <RubatoMemoryPage />
     </RubatoStandalonePage>
   );
 }

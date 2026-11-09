@@ -9,7 +9,7 @@ import {
   Trash2Icon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 import { cn } from "../../lib/utils";
 import { UI_LANGUAGE_STORAGE_KEY, uiText } from "../../rubatoI18n";
@@ -19,7 +19,9 @@ import {
   type UserMemoryChange,
   type UserMemoryItem,
   type UserMemoryView,
+  type MemoryOverlap,
 } from "../../state/rubatoMemory";
+import type { SegnoAboutLine } from "../../state/rubatoSegnoMemory";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
@@ -43,6 +45,7 @@ import {
   workingAsk,
 } from "./RubatoUserMemory.logic";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
+import type { PlacedLines } from "./RubatoMemoryPage.logic";
 
 // Settings > Memory > About you. What Rubato remembers about the person, read as a short summary by
 // topic, and a conversation with a model about it: ask why, correct, narrow, forget, or tell it
@@ -69,13 +72,36 @@ function ago(iso: string | null | undefined): string {
 }
 
 
+/**
+ * A companion's own lines about the person, shown beside the shared memory on the Me view. The page
+ * never edits them: a change is asked of the companion in its conversation.
+ */
+export interface CompanionLinesForMe {
+  readonly id: string;
+  readonly title: string;
+  readonly placed: PlacedLines;
+  /** Whether the overlap check is still being written ("working") or could not run. */
+  readonly overlapStatus: "ready" | "working" | "failed" | "idle" | null;
+  /** False while the companion's conversation is not in the app: asking it is not possible. */
+  readonly canAsk: boolean;
+  /** Sends the person's request about one line to the companion; true once it is in its conversation. */
+  readonly onAsk: (line: SegnoAboutLine, request: string) => Promise<boolean>;
+  /** Overlaps the person chose to keep as they are, on this device. */
+  readonly kept: ReadonlySet<string>;
+  readonly onKeep: (overlap: MemoryOverlap) => void;
+}
+
 export function UserMemoryPanel({
   environmentId,
   highlight,
+  companion = null,
+  footer = null,
 }: {
   environmentId: EnvironmentId;
   /** A remembered line to bring into view (a search result opened from the overview). */
   highlight: string | null;
+  companion?: CompanionLinesForMe | null;
+  footer?: ReactNode;
 }) {
   const [view, setView] = useState<UserMemoryView | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -276,16 +302,28 @@ export function UserMemoryPanel({
         return (
           <SettingsSection key={id} id={`memory-you-${id || "other"}`} title={topicTitle(topic)}>
             {topic.items.map((item) => (
-              <RememberedItem
-                key={item.path}
-                item={item}
-                changed={changed.get(item.path) ?? null}
-                ask={inlineAsk(item.path)}
-                highlighted={highlight === item.path}
-                busy={busy}
-                onSend={(request) => send(request, { path: item.path, text: item.text }, { fromComposer: false })}
-                onEdit={editAgain}
-              />
+              <Fragment key={item.path}>
+                <RememberedItem
+                  item={item}
+                  changed={changed.get(item.path) ?? null}
+                  ask={inlineAsk(item.path)}
+                  highlighted={highlight === item.path}
+                  busy={busy}
+                  tagged={companion !== null}
+                  onSend={(request) => send(request, { path: item.path, text: item.text }, { fromComposer: false })}
+                  onEdit={editAgain}
+                />
+                {(companion?.placed.besideShared.get(item.path) ?? []).map(({ line, overlap }) => (
+                  <CompanionLine
+                    key={line.id}
+                    companion={companion!}
+                    line={line}
+                    overlap={companion!.kept.has(overlapKey(overlap)) ? null : overlap}
+                    busy={busy}
+                    onShare={() => send(shareRequest(companion!.title, line.text), null, { fromComposer: false })}
+                  />
+                ))}
+              </Fragment>
             ))}
             {forgottenHere
               .filter((ask) => topicOf(ask.focus!.path) === id)
@@ -295,7 +333,199 @@ export function UserMemoryPanel({
           </SettingsSection>
         );
       })}
+
+      {companion && companion.placed.alone.length > 0 ? (
+        <SettingsSection id={`memory-you-${companion.id}`} title={`Only ${companion.title} knows`}>
+          {companion.placed.alone.map((line) => (
+            <CompanionLine
+              key={line.id}
+              companion={companion}
+              line={line}
+              overlap={null}
+              busy={busy}
+              onShare={() => send(shareRequest(companion.title, line.text), null, { fromComposer: false })}
+            />
+          ))}
+        </SettingsSection>
+      ) : null}
+      {footer}
     </>
+  );
+}
+
+export const overlapKey = (overlap: MemoryOverlap) => `${overlap.line}:${overlap.shared}`;
+
+/** The request that copies a companion's line into the shared memory, written as the person would ask. */
+export function shareRequest(title: string, line: string): string {
+  return `${uiText(`Remember this for all agents. ${title} noted it about me:`)}\n“${line}”`;
+}
+
+const RELATION_TEXT: Record<MemoryOverlap["relation"], string> = {
+  same: "Says the same as the line above.",
+  overlap: "Overlaps the line above.",
+  conflict: "Seems to contradict the line above.",
+};
+
+/**
+ * One of the companion's lines about the person: who reads it, where the companion noted it from,
+ * how it relates to the shared line above it, and what the person can do. Sharing asks the shared
+ * memory to take it in (the same request a person types); changing it asks the companion.
+ */
+function CompanionLine({
+  companion,
+  line,
+  overlap,
+  busy,
+  onShare,
+}: {
+  companion: CompanionLinesForMe;
+  line: SegnoAboutLine;
+  overlap: MemoryOverlap | null;
+  busy: boolean;
+  onShare: () => Promise<boolean>;
+}) {
+  const [mode, setMode] = useState<"idle" | "ask" | "share">("idle");
+  const [draft, setDraft] = useState("");
+  const [sending, setSending] = useState(false);
+  const [shared, setShared] = useState(false);
+  const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    if (mode === "ask") editorRef.current?.focus();
+  }, [mode]);
+  const ask = async () => {
+    if (draft.trim() === "" || sending) return;
+    setSending(true);
+    try {
+      if (await companion.onAsk(line, draft)) {
+        setDraft("");
+        setMode("idle");
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+  const share = async () => {
+    setSending(true);
+    try {
+      if (await onShare()) {
+        setShared(true);
+        setMode("idle");
+      }
+    } finally {
+      setSending(false);
+    }
+  };
+  const sent = line.sent && Date.parse(line.sent) > Date.parse(line.updatedAt ?? "1970-01-01") ? line.sent : null;
+  return (
+    <SettingsRow
+      data-companion-line={line.id}
+      className={cn("ps-6 sm:ps-8", overlap && "bg-violet-500/4")}
+      title={
+        <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          <Badge variant="outline" className="border-violet-500/30 bg-violet-500/10 text-violet-700 dark:text-violet-300">
+            {`${companion.title} only`}
+          </Badge>
+          <span translate="no" className="font-normal">
+            {line.text}
+          </span>
+        </span>
+      }
+      description={
+        <span className="block space-y-1.5">
+          <span className="block">
+            {`${companion.title} noticed`}
+            {line.refs ? <span translate="no">{` · ${line.refs}`}</span> : null}
+          </span>
+          {overlap ? (
+            <span
+              role="note"
+              className={cn(
+                "block rounded-md px-2.5 py-1.5 text-xs",
+                overlap.relation === "conflict" ? "bg-warning/10 text-warning-foreground" : "bg-violet-500/8 text-foreground/80",
+              )}
+            >
+              <span className="font-medium">{RELATION_TEXT[overlap.relation]}</span>{" "}
+              {overlap.note ? <span translate="no">{overlap.note}</span> : null}
+            </span>
+          ) : null}
+          {sent ? <span className="block text-xs text-muted-foreground">{`Sent to ${companion.title} ${ago(sent)}`}</span> : null}
+          {shared ? <span className="block text-xs text-success-foreground">Sent to the shared memory. The answer shows above.</span> : null}
+        </span>
+      }
+      control={
+        <span className="flex flex-wrap justify-end gap-0.5">
+          <Button size="xs" variant={overlap ? "default" : "ghost"} disabled={busy || sending || shared} onClick={() => setMode(mode === "share" ? "idle" : "share")}>
+            <ArrowRightIcon className="size-3" />
+            Share with all agents
+          </Button>
+          <Button
+            size="xs"
+            variant="ghost"
+            disabled={!companion.canAsk || sending}
+            title={companion.canAsk ? undefined : `${companion.title} is not in the app right now.`}
+            aria-expanded={mode === "ask"}
+            onClick={() => setMode(mode === "ask" ? "idle" : "ask")}
+          >
+            <PencilIcon className="size-3" />
+            {`Ask ${companion.title} to change`}
+          </Button>
+          {overlap ? (
+            <Button size="xs" variant="ghost" onClick={() => companion.onKeep(overlap)}>
+              Keep both
+            </Button>
+          ) : null}
+        </span>
+      }
+    >
+      {mode === "share" ? (
+        <div role="group" aria-label="Confirm sharing" className="mb-3 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/30 px-2.5 py-2 text-xs">
+          <span className="min-w-0 flex-1">
+            {`Every lead, teammate and ${companion.title} will know this. Rubato writes it into the shared memory in English and keeps your words as they are.`}
+          </span>
+          <Button size="xs" disabled={busy || sending} onClick={() => void share()}>
+            {sending ? <Spinner className="size-3" /> : <SendIcon className="size-3" />}
+            Share
+          </Button>
+          <Button size="xs" variant="ghost" onClick={() => setMode("idle")}>
+            Cancel
+          </Button>
+        </div>
+      ) : null}
+      {mode === "ask" ? (
+        <form
+          className="space-y-2 pb-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void ask();
+          }}
+        >
+          <Textarea
+            ref={editorRef}
+            aria-label={uiText(`What should ${companion.title} change?`)}
+            rows={2}
+            value={draft}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                event.preventDefault();
+                void ask();
+              }
+              if (event.key === "Escape") setMode("idle");
+            }}
+            placeholder={uiText(`Tell ${companion.title} what is true instead, or to forget it. It goes to ${companion.title}'s conversation.`)}
+          />
+          <div className="flex items-center justify-end gap-2">
+            <Button type="button" size="xs" variant="ghost" onClick={() => setMode("idle")}>
+              Cancel
+            </Button>
+            <Button type="submit" size="xs" disabled={sending || draft.trim() === ""}>
+              {sending ? <Spinner className="size-3" /> : <SendIcon className="size-3" />}
+              {`Send to ${companion.title}`}
+            </Button>
+          </div>
+        </form>
+      ) : null}
+    </SettingsRow>
   );
 }
 
@@ -604,10 +834,13 @@ function RememberedItem({
   ask,
   highlighted,
   busy,
+  tagged = false,
   onSend,
   onEdit,
 }: {
   item: UserMemoryItem;
+  /** Shown next to a companion's own lines: say that every agent reads this one. */
+  tagged?: boolean;
   changed: UserMemoryChange | null;
   /** The newest request sent from this page about this line, shown under it. */
   ask: UserMemoryAsk | null;
@@ -639,6 +872,11 @@ function RememberedItem({
       className={cn(highlighted && "bg-info/8", changed && ask?.state !== "working" && "bg-success/6")}
       title={
         <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+          {tagged ? (
+            <Badge variant="outline" className="border-teal-600/30 bg-teal-600/10 text-teal-700 dark:text-teal-300">
+              All agents
+            </Badge>
+          ) : null}
           <span translate="no" className="font-normal">
             {item.text}
           </span>
