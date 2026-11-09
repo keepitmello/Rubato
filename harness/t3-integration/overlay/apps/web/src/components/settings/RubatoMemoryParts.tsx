@@ -9,6 +9,7 @@ import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import type { SegnoMemoryView } from "../../state/rubatoSegnoMemory";
 
 export function MemoryCard({
   title,
@@ -252,17 +253,33 @@ export function AnswerBox({
  * Parts of one line joined with " · ", each its own element so the interface translation finds every
  * part on its own. `keep` parts are a person's or a model's words and stay as written.
  */
-export function Dots({ parts }: { parts: ReadonlyArray<string | { readonly keep: string } | null | false | undefined> }) {
-  const shown = parts.filter((part): part is string | { readonly keep: string } => Boolean(part));
+type DotPart = string | { readonly keep: string; readonly lead?: string };
+
+export function Dots({ parts }: { parts: ReadonlyArray<DotPart | null | false | undefined> }) {
+  const shown = parts.filter((part): part is DotPart => Boolean(part));
   return (
     <>
       {shown.map((part, index) => (
         // Parts have no identity beyond their place in the line.
         <span key={index}>
           {index > 0 ? " · " : null}
-          {typeof part === "string" ? <span>{part}</span> : <span translate="no">{part.keep}</span>}
+          {typeof part === "string" ? (
+            <span>{part}</span>
+          ) : (
+            <>
+              {part.lead ? <span>{part.lead}</span> : null}
+              {part.lead ? " " : null}
+              <span translate="no">{part.keep}</span>
+            </>
+          )}
         </span>
       ))}
     </>
   );
 }
+
+/** A companion's view with its name as the interface says it ("Segno" is 세뇨 in Korean). */
+export function namedInInterface(view: SegnoMemoryView): SegnoMemoryView {
+  return { ...view, title: uiText(view.title) };
+}
+

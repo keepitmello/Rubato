@@ -86,7 +86,12 @@ export function DreamView({ data, onOpenStore }: { data: MemoryPageData; onOpenS
           </MemoryRow>
         ) : (
           <div className="px-1 pb-1">
-            <DreamModelsEditor models={data.status.models} onChange={(models) => void setModels(models)} />
+            <DreamModelsEditor
+              models={data.status.models}
+              onChange={(models) => void setModels(models)}
+              title="Dream models"
+              description="It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list."
+            />
           </div>
         )}
       </MemoryCard>

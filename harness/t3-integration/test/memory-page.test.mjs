@@ -267,3 +267,31 @@ test('markdown helpers', () => {
   assert.deepEqual(cleanPairs({ pairs: [{ b: 'x', a: 'y', relation: 'conflict', note: 'n' }, { b: 'x', a: 'y', relation: 'same' }, { b: 'z', a: 'y', relation: 'maybe' }] },
     { shared: [{ id: 'y' }], lines: [{ id: 'x' }, { id: 'z' }] }), [{ line: 'x', shared: 'y', relation: 'conflict', note: 'n' }]);
 });
+
+test('the page\'s model call runs on the dream ladder with this profile\'s credentials, never through OpenGateway', async (t) => {
+  const home = await mkdtemp(path.join(tmpdir(), 'rb-memory-print-'));
+  t.after(() => rm(home, { recursive: true, force: true }));
+  await mkdir(path.join(home, '.rubato'), { recursive: true });
+  await writeFile(path.join(home, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [{ "model": "opengateway/deepseek/deepseek-v4.1-flash-ultrafast" }, { "model": "openai-codex/gpt-6.1-sol", "reasoning": "low" }] } } }\n');
+  const runs = [];
+  const service = createMemoryService({
+    env: { ...process.env, HOME: home, RUBATO_MEMORY_HOME: '', RUBATO_PI_CODING_AGENT_DIR: path.join(home, 'agent'), PI_CODING_AGENT_DIR: '/elsewhere' },
+    msearch: '/nonexistent/msearch',
+    rubato: ['/bin/sh', '-c', `printf '%s' '{"topics":[{"id":"t","title":null,"items":[{"path":"t/a.md","text":"a","conclusion":["A."]}]}]}'`, 'sh'],
+    loadCompanions: async () => ({ list: () => [{ id: 'segno', title: 'Segno' }], paths: () => ({ home, memory: path.join(home, 'none'), diary: path.join(home, 'none', 'diary'), status: path.join(home, 'none', 'status.md') }) }),
+    stories: {
+      stockEngineLaunch: async (_root, env) => ({ command: 'node', prefixArgs: [], env: {}, seenAgentDir: env.PI_CODING_AGENT_DIR }),
+      runPrint: async (request) => { runs.push(request); return '{"lines":{}}'; },
+    },
+  });
+  const repo = path.join(home, '.rubato', 'memory', 'agents', 'p', 'repo');
+  await mkdir(repo, { recursive: true });
+  execFileSync('git', ['init', '-q', '-b', 'main', repo]);
+  await writeFile(path.join(repo, 'a.md'), '# A\n');
+  git(repo, 'add', '-A');
+  git(repo, 'commit', '-q', '-m', 'dream: a');
+  await service.handle('insights', { language: 'Korean' });
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(runs.map((run) => [run.model, run.reasoning]), [['openai-codex/gpt-6.1-sol', 'low']]);
+  assert.equal(runs[0].env.PI_CODING_AGENT_DIR, path.join(home, 'agent'));
+});

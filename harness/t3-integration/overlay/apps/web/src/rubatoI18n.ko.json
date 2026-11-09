@@ -4663,7 +4663,10 @@
   "Once a day it reads the new sessions and tidies memory. This shows where each store stands now, not every run.": "하루 한 번 새 세션을 읽고 메모리를 정리합니다. 실행 기록 대신 저장소마다 지금 상태만 보여 줍니다.",
   "Could not start the dream": "꿈을 시작할 수 없습니다",
   "Could not save the setting": "설정을 저장할 수 없습니다",
-  "Could not search memory": "메모리를 검색할 수 없습니다"
+  "Could not search memory": "메모리를 검색할 수 없습니다",
+  "Used in": "사용 위치",
+  "Dream models": "꿈 모델",
+  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다."
  },
  "templates": [
   [
@@ -8365,6 +8368,10 @@
   [
    "Could not delete {0}",
    "{0}을(를) 삭제할 수 없습니다"
+  ],
+  [
+   "{0} days",
+   "{0}일"
   ]
  ]
 }

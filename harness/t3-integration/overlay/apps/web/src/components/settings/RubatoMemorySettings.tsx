@@ -16,7 +16,6 @@ import * as Option from "effect/Option";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
-import { requestConfirmDialog } from "../../confirmDialog";
 import { useNewThreadHandler } from "../../hooks/useHandleNewThread";
 import { cn } from "../../lib/utils";
 import { useProjects } from "../../state/entities";
@@ -54,11 +53,6 @@ function reportError(title: string, error: unknown) {
   });
 }
 
-async function confirm(message: string, destructive = false): Promise<boolean> {
-  const answer = requestConfirmDialog(message, { variant: destructive ? "destructive" : "default" });
-  return answer ? await answer : window.confirm(message);
-}
-
 /** The primary environment's id once its HTTP connection is ready; null until then. */
 export function useReadyEnvironmentId(): EnvironmentId {
   const environmentId = usePrimaryEnvironmentId();
@@ -76,13 +70,6 @@ export type StoreView = MemoryStoreSummary & {
 
 export function tildePath(value: string, home: string | null): string {
   return home && (value === home || value.startsWith(`${home}/`)) ? `~${value.slice(home.length)}` : value;
-}
-
-export function whereLabel(store: StoreView, home: string | null): string {
-  if (store.home) return "Used in your home folder";
-  if (store.roots && store.roots.length > 0)
-    return `Used in ${store.roots.map((root) => tildePath(root, home)).join(", ")}`;
-  return "No project folder recorded yet";
 }
 
 type AskAbout = Parameters<typeof chatPrompt>[1];
@@ -313,12 +300,15 @@ export function FileViewer({
   path,
   onAsk,
   onSaved,
+  withoutHeading = false,
 }: {
   environmentId: EnvironmentId;
   store: string;
   path: string;
   onAsk: () => void;
   onSaved: () => void;
+  /** The page already shows the file's question above it: leave its first `# ` heading out of the body. */
+  withoutHeading?: boolean;
 }) {
   const [content, setContent] = useState<{ text: string; truncated: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -393,7 +383,8 @@ export function FileViewer({
         </div>
       </div>
     );
-  const body = path.endsWith(".md") ? content.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") : null;
+  const stripped = path.endsWith(".md") ? content.text.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, "") : null;
+  const body = stripped !== null && withoutHeading ? stripped.replace(/^\s*#\s+.*\r?\n/, "") : stripped;
   return (
     <div className="mx-2 mb-2 rounded-lg border border-border/60">
       <div className="flex justify-end gap-1 px-2 pt-2">

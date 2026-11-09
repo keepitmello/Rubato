@@ -38,7 +38,7 @@ import {
   type MemoryView,
   type NeedsYou,
 } from "./RubatoMemoryPage.logic";
-import { AnswerBox, ago, Dots, MemoryCard, MemoryRow, Muted, reportError, Tag, useDismissed, ViewHeading } from "./RubatoMemoryParts";
+import { AnswerBox, ago, Dots, MemoryCard, MemoryRow, Muted, namedInInterface, reportError, Tag, useDismissed, ViewHeading } from "./RubatoMemoryParts";
 import { ProjectsView, type ProjectTarget } from "./RubatoMemoryProjects";
 import { SegnoView, type SegnoTarget } from "./RubatoMemorySegno";
 import { overlapKey, PersonalitySection, UserMemoryPanel } from "./RubatoUserMemory";
@@ -134,7 +134,7 @@ function useMemoryPageData(environmentId: EnvironmentId): MemoryPageData {
   const reloadSegno = useCallback(async () => {
     if (environmentId === null) return;
     try {
-      setSegno(await rubatoSegnoMemory.memory(environmentId));
+      setSegno(namedInInterface(await rubatoSegnoMemory.memory(environmentId)));
       setSegnoError(null);
     } catch (error) {
       setSegnoError(error instanceof Error ? error.message : String(error));
@@ -291,7 +291,16 @@ function GlanceView({
       <ViewHeading title="At a glance" sub="What Rubato remembers, and what needs a look from you." />
       <GlanceSearch environmentId={data.environmentId} segnoTitle={segno?.title ?? "Segno"} onGo={onGo} />
       <div className="grid gap-3 sm:grid-cols-3">
-        <Tile onClick={() => onGo("me")} tag={<Tag tone="all">Every agent reads</Tag>} title={`Me · ${counts.shared + counts.companion}`}>
+        <Tile
+          onClick={() => onGo("me")}
+          tag={<Tag tone="all">Every agent reads</Tag>}
+          title={
+            <>
+              <span>Me</span>
+              {` · ${counts.shared + counts.companion}`}
+            </>
+          }
+        >
           <Dots
             parts={[
               ...counts.topics.map((topic) => ({ keep: `${topic.title ?? topic.id} ${topic.n}` })),
@@ -299,14 +308,33 @@ function GlanceView({
             ]}
           />
         </Tile>
-        <Tile onClick={() => onGo("projects", { project: null })} tag={<Tag tone="decision">That project's lead reads</Tag>} title={listed ? `Projects · ${listed.length}` : "Projects"}>
+        <Tile
+          onClick={() => onGo("projects", { project: null })}
+          tag={<Tag tone="decision">That project's lead reads</Tag>}
+          title={
+            <>
+              <span>Projects</span>
+              {listed ? ` · ${listed.length}` : ""}
+            </>
+          }
+        >
           <Dots parts={topStores.map((store) => ({ keep: `${store.store} ${store.files}` }))} />
           {listed && listed.length > topStores.length ? " …" : ""}
         </Tile>
         <Tile
           onClick={() => onGo("segno", { segno: null })}
           tag={<Tag tone="companion">{segno ? `Only ${segno.title} reads` : "Only Segno reads"}</Tag>}
-          title={segno ? `${segno.title} · ${openItems(segno)} open` : "Segno"}
+          title={
+            segno ? (
+              <>
+                <span>{segno.title}</span>
+                {" · "}
+                <span>{`${openItems(segno)} open`}</span>
+              </>
+            ) : (
+              "Segno"
+            )
+          }
         >
           {segno ? (
             <Dots
@@ -421,7 +449,7 @@ function NeedsYouCard({
   const segnoTitle = data.segno?.title ?? "Segno";
   const sender = useCompanionSender(data.environmentId, data.segno?.id ?? "segno");
   const [answering, setAnswering] = useState<string | null>(null);
-  const shown = needs.slice(0, 8);
+  const shown = needs.slice(0, 5);
   return (
     <MemoryCard title="Needs you" aside={<span>{`${needs.length} items`}</span>}>
       {needs.length === 0 ? (
@@ -586,7 +614,7 @@ function GlanceSearch({
           void submit();
         }}
       >
-        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        <SearchIcon className="pointer-events-none absolute start-3 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
           className="ps-9"
           placeholder="Search all memory: a decision, a person's name, an error, a file…"

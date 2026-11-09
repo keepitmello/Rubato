@@ -73,7 +73,7 @@ const bad = (message) => new MemoryRequestError(400, 'bad-request', message);
  *   `msearch` is the search entry point; default: this checkout's harness/msearch/msearch.
  *   `complete` answers one print-mode prompt ({systemPrompt, prompt} → {text, model}); default: the
  *   stock engine on the dream's model ladder (stats/stories.mjs runPrint).
- *   `loadCompanions` stands in for harness/companion's registry (tests).
+ *   `loadCompanions` stands in for harness/companion's registry, `stories` for stats/stories.mjs (tests).
  */
 export function createMemoryService(options = {}) {
   const env = options.env ?? process.env;
@@ -851,15 +851,19 @@ export function createMemoryService(options = {}) {
     return ladderOf(await cli(['--json'], 120_000));
   }
 
+  // The stock engine finds credentials through PI_CODING_AGENT_DIR, which the app does not set: name this
+  // profile's agent directory (the one `rubato memory ask` and the dream children use) explicitly.
+  const agentDir = env.RUBATO_PI_CODING_AGENT_DIR?.trim() ? path.resolve(env.RUBATO_PI_CODING_AGENT_DIR) : path.join(home, '.rubato-pi', 'agent');
+  const printEnv = { ...childEnv, PI_CODING_AGENT_DIR: agentDir, RUBATO_PI_CODING_AGENT_DIR: agentDir };
   const complete = options.complete ?? (async ({ systemPrompt, prompt }) => {
-    const { stockEngineLaunch, runPrint } = await import('../stats/stories.mjs');
-    const launch = await stockEngineLaunch(repoRoot, childEnv);
+    const { stockEngineLaunch, runPrint } = options.stories ?? await import('../stats/stories.mjs');
+    const launch = await stockEngineLaunch(repoRoot, printEnv);
     const failures = [];
     for (const rung of await memoryLadder()) {
       // OpenGateway is never used for the page's calls, whatever the ladder says (user constraint no-opengateway).
       if (rung.model.startsWith('opengateway/')) continue;
       try {
-        const text = await runPrint({ launch, env: childEnv, model: rung.model, reasoning: rung.reasoning ?? 'low', systemPrompt, prompt });
+        const text = await runPrint({ launch, env: printEnv, model: rung.model, reasoning: rung.reasoning ?? 'low', systemPrompt, prompt });
         return { text, model: rung.model };
       } catch (error) {
         failures.push(error instanceof Error ? error.message : String(error));
