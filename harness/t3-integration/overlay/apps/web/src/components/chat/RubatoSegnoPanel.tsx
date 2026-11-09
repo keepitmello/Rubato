@@ -145,7 +145,7 @@ export function RubatoSegnoPanel({
             data-rubato-segno-panel-tab={item.id}
             onClick={() => setTab(item.id)}
             className={cn(
-              "flex cursor-pointer items-center gap-1 rounded-md px-2 py-1 text-[.8rem] transition-colors",
+              "flex shrink-0 cursor-pointer items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-[.8rem] transition-colors",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               tab === item.id ? "bg-primary/12 font-semibold text-primary" : "text-muted-foreground hover:text-foreground",
             )}

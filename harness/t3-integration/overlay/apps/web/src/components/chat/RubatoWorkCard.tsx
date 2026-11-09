@@ -3,7 +3,8 @@
 // in an ordinary thread's timeline (MessagesTimeline, work-card-edits.mjs) and in a companion's
 // room (RubatoSegnoChat.tsx), and follows the launched thread live.
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ThreadId, type EnvironmentId } from "@t3tools/contracts";
+import { turnItemDetailRevision, turnItemNeedsDetailFetch } from "@t3tools/client-runtime/work-log/item-detail";
+import { ThreadId, type EnvironmentId, type OrchestrationV2ProjectedTurnItem } from "@t3tools/contracts";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ChevronRightIcon,
@@ -18,9 +19,11 @@ import { useEffect, useMemo, useState } from "react";
 
 import { cn } from "~/lib/utils";
 import { useThreadShell } from "../../state/entities";
+import { useTurnItemDetail } from "../../state/queries";
 import { rubatoCompanion } from "../../state/rubatoCompanion";
 import {
   type RubatoLaunch,
+  rubatoLaunchOfItem,
   WORK_CARD_WORDS,
   type WorkCardState,
   workCardModelLabel,
@@ -183,4 +186,34 @@ export function RubatoWorkCard({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The card for a launch call in an ordinary thread's timeline. The timeline item carries no output
+ * (T3 fetches it when a row opens), so the card asks for the item's detail, as the row inspector
+ * does (V2ItemInspector), to learn which conversation the call started.
+ */
+export function RubatoTimelineWorkCard({
+  projectedItem,
+  environmentId,
+}: {
+  projectedItem: OrchestrationV2ProjectedTurnItem;
+  environmentId: EnvironmentId | null | undefined;
+}) {
+  const wire = projectedItem.item;
+  const fetches = turnItemNeedsDetailFetch(wire);
+  const detail = useTurnItemDetail(
+    fetches && environmentId
+      ? {
+          environmentId,
+          threadId: projectedItem.sourceThreadId,
+          itemId: projectedItem.sourceItemId,
+          revision: turnItemDetailRevision(wire),
+        }
+      : null,
+  );
+  const fetched = detail.data?.item;
+  const item = fetched?.type === wire.type ? fetched : wire;
+  const launch = rubatoLaunchOfItem(item, { outputPending: fetches && item === wire });
+  return launch ? <RubatoWorkCard launch={launch} environmentId={environmentId} /> : null;
 }
