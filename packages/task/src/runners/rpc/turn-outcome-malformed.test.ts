@@ -9,6 +9,34 @@ function malformedAgentEnd(overrides: Record<string, unknown>): AgentEndEvent {
 }
 
 describe("agentEndOutcome hostile wire payloads", () => {
+  describe("#given an assistant message that stopped normally with no text", () => {
+    it("#when the outcome is derived #then the turn completes with no final message", () => {
+      // given a thinking-only close, as a teammate parking to wait produces
+      const event = malformedAgentEnd({
+        messages: [{ role: "assistant", stopReason: "stop", content: [{ type: "thinking", thinking: "" }, { type: "text", text: "" }] }],
+      })
+
+      // when
+      const outcome = agentEndOutcome(event, undefined, undefined)
+
+      // then
+      expect(outcome).toEqual({ status: "completed", finalResponse: "" })
+    })
+  })
+
+  describe("#given an assistant message cut off at the length limit with no text", () => {
+    it("#when the outcome is derived #then it stays an error", () => {
+      // given
+      const event = malformedAgentEnd({ messages: [{ role: "assistant", stopReason: "length", content: [] }] })
+
+      // when
+      const outcome = agentEndOutcome(event, undefined, undefined)
+
+      // then
+      expect(outcome.status).toBe("error")
+    })
+  })
+
   describe("#given an agent_end whose messages field is absent", () => {
     it("#when the outcome is derived #then it degrades to a terminal error instead of throwing", () => {
       // given

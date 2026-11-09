@@ -115,6 +115,18 @@ describe("buildCompletionDetails", () => {
     expect(readFileSync(details.final_response_file!, "utf8")).toBe("")
   })
 
+  test("#given a completed child with no final message #when the notification is built #then it says so instead of pointing at an empty file", () => {
+    // given
+    const details = buildCompletionDetails(completedRecord({ final_response: "" }), { stateDir: tempStateDir() })
+
+    // when
+    const message = buildCompletionMessage([details])
+
+    // then
+    expect(message.content).toContain("result none: ended its turn without a final message")
+    expect(message.content).not.toContain(details.final_response_file!)
+  })
+
   test("#given resident completed record #when details built #then continuation hint names AgentSend but never AgentOutput", () => {
     // given
     const record = completedRecord()

@@ -88,6 +88,34 @@ describe("createChildHandle turn outcomes", () => {
     expect(outcome.failure.message).toContain("no assistant output")
   })
 
+  test("#given a turn whose last assistant message stopped normally without text #when the prompt resolves #then it completes with no final message", async () => {
+    // given a child that thought and then ended its turn without writing (a teammate parking to wait)
+    const fake = createEmittingSession()
+    const handle = createChildHandle({ taskId: "task-1", session: fake.session, promptText: "review this" })
+
+    // when the textless turn settles
+    fake.emit(assistantEnd("", "stop"))
+    fake.resolvePrompt()
+    const outcome = await handle.waitForIdle()
+
+    // then
+    expect(outcome).toEqual({ status: "completed", finalResponse: "" })
+  })
+
+  test("#given a turn cut off at the length limit without text #when the prompt resolves #then it stays an error", async () => {
+    // given
+    const fake = createEmittingSession()
+    const handle = createChildHandle({ taskId: "task-1", session: fake.session, promptText: "review this" })
+
+    // when
+    fake.emit(assistantEnd("", "length"))
+    fake.resolvePrompt()
+    const outcome = await handle.waitForIdle()
+
+    // then
+    expect(outcome.status).toBe("error")
+  })
+
   test("#given a revived child whose new turn produces nothing #when the revive turn resolves #then the stale previous response is NOT reused as a fresh completion", async () => {
     // given a first turn that completed with real output
     const fake = createEmittingSession()

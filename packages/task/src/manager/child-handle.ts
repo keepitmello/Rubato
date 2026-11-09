@@ -120,6 +120,8 @@ async function rpcOutcome(handle: RpcChildHandle): Promise<RunnerOutcome> {
   // cannot silently reuse the previous turn's final text.
   const finalResponse = hasTerminalReader ? terminal?.text : handle.lastAssistantText()
   if (finalResponse !== undefined && finalResponse.length > 0) return { status: "completed", finalResponse }
+  // A terminal message that stopped normally with no text ended the turn without a final message.
+  if (hasTerminalReader && terminal?.stopReason === "stop") return { status: "completed", finalResponse: "" }
   return {
     status: "error",
     failure: {
