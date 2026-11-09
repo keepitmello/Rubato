@@ -4,6 +4,7 @@ import {
   isRubatoLaunchItem,
   launchResultOf,
   rubatoLaunchOfItem,
+  rubatoLaunchOfSegno,
   workCardModelLabel,
   workCardState,
   workCardUpdatedAt,
@@ -47,6 +48,7 @@ describe("work cards for launched conversations", () => {
       startsWork: true,
       error: null,
       pending: false,
+      launchedAt: null,
     });
     const fork = rubatoLaunchOfItem(
       item("session_fork", "completed", {}, { content: [{ type: "text", text: 'Forked into "A (fork)" (S3) with 4 messages.' }] }),
@@ -71,9 +73,10 @@ describe("work cards for launched conversations", () => {
   });
 
   it("follows the launched thread: starting, working, waiting for the person, done, failed, stopped", () => {
-    const launch = { error: null, pending: false, startsWork: true };
-    expect(workCardState(launch, null)).toBe("starting");
-    expect(workCardState(launch, shell())).toBe("starting");
+    const NOW = Date.parse(AT);
+    const launch = { error: null, pending: false, startsWork: true, launchedAt: NOW - 10_000 };
+    expect(workCardState(launch, null, NOW)).toBe("starting");
+    expect(workCardState(launch, shell(), NOW)).toBe("starting");
     expect(workCardState(launch, shell({ runtime: { status: "running" }, latestRun: run("running") }))).toBe("working");
     expect(workCardState(launch, shell({ runtime: { status: "running" }, hasPendingUserInput: true }))).toBe("waiting");
     expect(workCardState(launch, shell({ hasPendingApprovals: true }))).toBe("waiting");
@@ -81,8 +84,16 @@ describe("work cards for launched conversations", () => {
     expect(workCardState(launch, shell({ runtime: { status: "failed" }, latestRun: run("failed") }))).toBe("failed");
     expect(workCardState(launch, shell({ runtime: { status: "idle" }, latestRun: run("interrupted") }))).toBe("stopped");
     expect(workCardState(launch, shell({ latestRun: run("cancelled") }))).toBe("stopped");
-    expect(workCardState(launch, shell({ visibleItemCount: 3 })), "imported after it already answered").toBe("done");
     expect(workCardState({ ...launch, startsWork: false }, shell()), "a fork with no message waits for the person").toBe("waiting");
+  });
+
+  it("claims no outcome from messages alone: with no run, it is starting, then not running", () => {
+    const NOW = Date.parse(AT);
+    const launch = { error: null, pending: false, startsWork: true, launchedAt: NOW - 10_000 };
+    // A fork with a message brings its history along before its own run shows (sol-verifier checkpoint 1).
+    expect(workCardState(launch, shell({ visibleItemCount: 20 }), NOW)).toBe("starting");
+    expect(workCardState({ ...launch, launchedAt: NOW - 5 * 60_000 }, shell({ visibleItemCount: 20 }), NOW)).toBe("idle");
+    expect(workCardState({ ...launch, launchedAt: null }, shell({ visibleItemCount: 20 }), NOW)).toBe("starting");
   });
 
   it("shows the model without its vendor and the latest time the thread moved", () => {
@@ -97,5 +108,13 @@ describe("work cards for launched conversations", () => {
       } as never),
     ).toBe("2026-11-09T04:05:00.000Z");
     expect(workCardUpdatedAt(null)).toBeNull();
+  });
+
+  it("reads a companion's launch from its session file the same way", () => {
+    const base = { id: "k", tool: "create" as const, title: "t", model: null, startsWork: true, at: 1 };
+    expect(rubatoLaunchOfSegno({ ...base, sessionId: null, done: null, error: null })).toMatchObject({ pending: true, error: null });
+    expect(rubatoLaunchOfSegno({ ...base, sessionId: "S2", done: 2, error: null })).toMatchObject({ pending: false, sessionId: "S2", error: null, launchedAt: 2 });
+    expect(rubatoLaunchOfSegno({ ...base, sessionId: null, done: 2, error: null }).error).toBe("The result names no conversation.");
+    expect(rubatoLaunchOfSegno({ ...base, sessionId: null, done: 2, error: "boom" }).error).toBe("boom");
   });
 });

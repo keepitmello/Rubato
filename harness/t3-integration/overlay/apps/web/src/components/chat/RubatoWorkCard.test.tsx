@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vite-plus/test";
 
@@ -6,9 +7,15 @@ vi.mock("@tanstack/react-router", () => ({ useNavigate: () => () => undefined })
 vi.mock("../../state/entities", () => ({
   useThreadShell: (ref: { threadId: string } | null) => (ref ? (shells.get(ref.threadId) ?? null) : null),
 }));
-vi.mock("../../state/rubatoCompanion", () => ({ rubatoCompanion: { thread: async () => ({ threadId: null }) } }));
+const threads = vi.hoisted(() => new Map<string, string | null>());
+vi.mock("../../state/rubatoCompanion", () => ({
+  rubatoCompanion: { thread: async (env: string, sessionId: string) => ({ threadId: threads.get(`${env}:${sessionId}`) ?? null }) },
+}));
 
-import { RubatoWorkCard } from "./RubatoWorkCard";
+import { act } from "react";
+import { createRoot } from "react-dom/client";
+
+import { RubatoWorkCard, useLaunchedThreadId } from "./RubatoWorkCard";
 
 const launch = {
   tool: "create" as const,
@@ -18,6 +25,7 @@ const launch = {
   startsWork: true,
   error: null,
   pending: false,
+  launchedAt: null,
 };
 
 describe("the work card", () => {
@@ -44,5 +52,28 @@ describe("the work card", () => {
     const html = renderToStaticMarkup(<RubatoWorkCard launch={{ ...launch, tool: "fork", title: null }} environmentId={"env" as never} />);
     expect(html).toContain("· Fork");
     expect(html).toContain('data-rubato-work-card-tool="fork"');
+  });
+});
+
+describe("finding the launched thread", () => {
+  it("drops the thread it found once the card shows another conversation or environment", async () => {
+    // @ts-expect-error React's act environment flag
+    globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+    threads.set("E:A", "thread-A");
+    const seen: Array<string | null> = [];
+    function Probe({ env, sessionId }: { env: string; sessionId: string }) {
+      seen.push(useLaunchedThreadId(env as never, sessionId));
+      return null;
+    }
+    const host = document.createElement("div");
+    const root = createRoot(host);
+    await act(async () => root.render(<Probe env="E" sessionId="A" />));
+    await act(async () => {});
+    expect(seen.at(-1)).toBe("thread-A");
+    await act(async () => root.render(<Probe env="E" sessionId="B" />));
+    expect(seen.at(-1), "another conversation").toBeNull();
+    await act(async () => root.render(<Probe env="F" sessionId="A" />));
+    expect(seen.at(-1), "the same conversation in another environment").toBeNull();
+    act(() => root.unmount());
   });
 });

@@ -38,12 +38,17 @@ const foundThreads = new Map<string, string>();
 /** The thread that shows `sessionId`, from the server's session-to-thread lookup; null until found. */
 export function useLaunchedThreadId(environmentId: EnvironmentId | null | undefined, sessionId: string | null): string | null {
   const key = environmentId && sessionId ? `${environmentId}:${sessionId}` : null;
-  const [threadId, setThreadId] = useState<string | null>(() => (key ? (foundThreads.get(key) ?? null) : null));
+  // The answer belongs to the key it was found for: a card that comes to show another conversation
+  // (or environment) drops the old thread in the same render, so Open never goes to the previous one.
+  const [found, setFound] = useState<{ key: string | null; threadId: string | null }>(() => ({
+    key,
+    threadId: key ? (foundThreads.get(key) ?? null) : null,
+  }));
   useEffect(() => {
     if (!key || !environmentId || !sessionId) return;
     const known = foundThreads.get(key);
     if (known) {
-      setThreadId(known);
+      setFound({ key, threadId: known });
       return;
     }
     let stopped = false;
@@ -55,7 +60,7 @@ export function useLaunchedThreadId(environmentId: EnvironmentId | null | undefi
         if (stopped) return;
         if (answer.threadId) {
           foundThreads.set(key, answer.threadId);
-          setThreadId(answer.threadId);
+          setFound({ key, threadId: answer.threadId });
           return;
         }
       } catch {
@@ -69,7 +74,8 @@ export function useLaunchedThreadId(environmentId: EnvironmentId | null | undefi
       if (timer !== undefined) window.clearTimeout(timer);
     };
   }, [key, environmentId, sessionId]);
-  return threadId;
+  if (found.key === key) return found.threadId;
+  return key ? (foundThreads.get(key) ?? null) : null;
 }
 
 function StateIcon({ state }: { state: WorkCardState }) {
@@ -87,6 +93,8 @@ function StateIcon({ state }: { state: WorkCardState }) {
       return <CircleXIcon aria-hidden="true" className={cn(className, "text-destructive")} />;
     case "stopped":
       return <CircleStopIcon aria-hidden="true" className={cn(className, "text-muted-foreground")} />;
+    case "idle":
+      return <CircleDashedIcon aria-hidden="true" className={cn(className, "text-muted-foreground/70")} />;
   }
 }
 
@@ -112,15 +120,16 @@ export function RubatoWorkCard({
     [environmentId, threadId],
   );
   const shell = useThreadShell(ref);
-  const state = workCardState(launch, shell);
   const title = shell?.title || launch.title || (launch.tool === "fork" ? "Fork" : "New conversation");
   const model = workCardModelLabel(shell?.modelSelection.model ?? launch.model);
   const updatedAt = workCardUpdatedAt(shell);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    // Often enough that "Starting" gives way within its grace (rubatoWorkCardModel START_GRACE_MS).
+    const timer = window.setInterval(() => setNow(Date.now()), 15_000);
     return () => window.clearInterval(timer);
   }, []);
+  const state = workCardState(launch, shell, now);
   const open =
     environmentId && threadId
       ? () => void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } })

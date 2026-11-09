@@ -10,6 +10,8 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/models";
 import type { OrchestrationV2TurnItem } from "@t3tools/contracts";
 
+import type { SegnoLaunch } from "../../state/rubatoCompanion";
+
 export const LAUNCH_TOOL_KINDS: Readonly<Record<string, "create" | "fork">> = {
   session_create: "create",
   session_fork: "fork",
@@ -28,9 +30,18 @@ export interface RubatoLaunch {
   readonly error: string | null;
   /** The call still runs. */
   readonly pending: boolean;
+  /** When the call returned (ms); null while it runs or when unknown. */
+  readonly launchedAt: number | null;
 }
 
-export type WorkCardState = "starting" | "working" | "waiting" | "done" | "failed" | "stopped";
+/**
+ * `idle`: the thread shows no run of its own — the engine finished (or never ran) it before the app
+ * imported it — so the card names no outcome it has not seen.
+ */
+export type WorkCardState = "starting" | "working" | "waiting" | "done" | "failed" | "stopped" | "idle";
+
+/** How long after its launch a conversation with no run yet still counts as starting. */
+export const START_GRACE_MS = 90_000;
 
 /**
  * The new conversation's id, title and model from a launch call's result text: it opens with
@@ -96,18 +107,42 @@ export function rubatoLaunchOfItem(item: OrchestrationV2TurnItem): RubatoLaunch 
     startsWork: tool === "create" || stringField(input, "text") !== null,
     error: failed ? text.trim() || "The conversation did not start." : !pending && result === null ? "The result names no conversation." : null,
     pending,
+    launchedAt: item.completedAt ? Date.parse(String(item.completedAt)) || null : null,
+  };
+}
+
+/** The launch a companion's room read from its session file (bridge companion/inner.mjs). */
+export function rubatoLaunchOfSegno(launch: SegnoLaunch): RubatoLaunch {
+  const pending = launch.done === null && launch.error === null;
+  return {
+    tool: launch.tool,
+    sessionId: launch.sessionId,
+    title: launch.title,
+    model: launch.model,
+    startsWork: launch.startsWork !== false,
+    error: launch.error ?? (!pending && launch.sessionId === null ? "The result names no conversation." : null),
+    pending,
+    launchedAt: launch.done,
   };
 }
 
 type ShellState = Pick<
   EnvironmentThreadShell,
-  "runtime" | "latestRun" | "hasPendingApprovals" | "hasPendingUserInput" | "pendingSubagentRequest" | "visibleItemCount"
+  "runtime" | "latestRun" | "hasPendingApprovals" | "hasPendingUserInput" | "pendingSubagentRequest"
 >;
 
 const ACTIVE = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 
-/** How the launched conversation is doing, from its thread (null while the thread is not found). */
-export function workCardState(launch: Pick<RubatoLaunch, "error" | "pending" | "startsWork">, shell: ShellState | null): WorkCardState {
+/**
+ * How the launched conversation is doing, from its thread (null while the thread is not found). Only a
+ * run the thread shows says it finished, failed or stopped: the messages a fork or an import brings
+ * along are no proof that the requested work ran.
+ */
+export function workCardState(
+  launch: Pick<RubatoLaunch, "error" | "pending" | "startsWork" | "launchedAt">,
+  shell: ShellState | null,
+  now: number = Date.now(),
+): WorkCardState {
   if (launch.error !== null) return "failed";
   if (launch.pending || shell === null) return "starting";
   if (shell.hasPendingApprovals || shell.hasPendingUserInput || (shell.pendingSubagentRequest ?? null) !== null) return "waiting";
@@ -120,10 +155,10 @@ export function workCardState(launch: Pick<RubatoLaunch, "error" | "pending" | "
     if (run.status === "failed") return "failed";
     return "stopped";
   }
-  // No run yet: a fork without a message is ready for the person; a created conversation whose
-  // first run the inventory has not shown yet is still starting, unless it already holds a reply.
+  // No run yet: a fork without a message is ready for the person; otherwise the inventory shows the
+  // first run within seconds, and past that the card says only that nothing runs.
   if (!launch.startsWork) return "waiting";
-  return shell.visibleItemCount > 1 ? "done" : "starting";
+  return launch.launchedAt === null || now - launch.launchedAt < START_GRACE_MS ? "starting" : "idle";
 }
 
 export const WORK_CARD_WORDS: Record<WorkCardState, string> = {
@@ -133,6 +168,7 @@ export const WORK_CARD_WORDS: Record<WorkCardState, string> = {
   done: "Done",
   failed: "Failed",
   stopped: "Stopped",
+  idle: "Not running",
 };
 
 /** "anthropic/claude-opus-5-5-sub" → "opus-5-5-sub": the model id without its vendor. */
