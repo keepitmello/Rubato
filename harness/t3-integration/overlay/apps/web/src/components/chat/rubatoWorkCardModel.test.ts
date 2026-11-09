@@ -66,6 +66,13 @@ describe("work cards for launched conversations", () => {
     expect(workCardState(failed, shell())).toBe("failed");
   });
 
+  it("waits for a withheld output instead of calling the launch failed", () => {
+    const withheld = rubatoLaunchOfItem(item("session_create", "completed", { title: "A", text: "go" }), { outputPending: true })!;
+    expect(withheld).toMatchObject({ pending: true, error: null, title: "A" });
+    const failed = rubatoLaunchOfItem(item("session_create", "failed", { text: "go" }), { outputPending: true })!;
+    expect(workCardState(failed, null)).toBe("failed");
+  });
+
   it("never claims an outcome for a result that names no conversation", () => {
     const odd = rubatoLaunchOfItem(item("session_create", "completed", { text: "go" }, "ok"))!;
     expect(odd.sessionId).toBeNull();

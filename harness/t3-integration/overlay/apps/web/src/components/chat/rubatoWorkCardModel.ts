@@ -90,14 +90,18 @@ export function isRubatoLaunchItem(item: Pick<OrchestrationV2TurnItem, "type"> &
   return item.type === "dynamic_tool" && typeof item.toolName === "string" && item.toolName in LAUNCH_TOOL_KINDS;
 }
 
-/** The launch a lead thread's tool item is, or null for any other item. */
-export function rubatoLaunchOfItem(item: OrchestrationV2TurnItem): RubatoLaunch | null {
+/**
+ * The launch a lead thread's tool item is, or null for any other item. The timeline withholds a
+ * tool's output until it is asked for (turnItemNeedsDetailFetch); `outputPending` says that ask is
+ * still out, so a finished call reads as starting until its result names the conversation.
+ */
+export function rubatoLaunchOfItem(item: OrchestrationV2TurnItem, options: { outputPending?: boolean } = {}): RubatoLaunch | null {
   if (item.type !== "dynamic_tool" || item.toolName === null || !(item.toolName in LAUNCH_TOOL_KINDS)) return null;
   const tool = LAUNCH_TOOL_KINDS[item.toolName]!;
   const input = item.input;
   const text = toolOutputText(item.output);
   const failed = item.status === "failed" || item.status === "interrupted" || item.status === "cancelled";
-  const pending = !failed && item.status !== "completed";
+  const pending = !failed && (item.status !== "completed" || options.outputPending === true);
   const result = failed || pending ? null : launchResultOf(text);
   return {
     tool,
@@ -105,7 +109,9 @@ export function rubatoLaunchOfItem(item: OrchestrationV2TurnItem): RubatoLaunch 
     title: result?.title ?? stringField(input, "title"),
     model: result?.model ?? stringField(input, "model"),
     startsWork: tool === "create" || stringField(input, "text") !== null,
-    error: failed ? text.trim() || "The conversation did not start." : !pending && result === null ? "The result names no conversation." : null,
+    error: failed
+      ? text.trim() || (options.outputPending ? "" : "The conversation did not start.")
+      : !pending && result === null ? "The result names no conversation." : null,
     pending,
     launchedAt: item.completedAt ? Date.parse(String(item.completedAt)) || null : null,
   };

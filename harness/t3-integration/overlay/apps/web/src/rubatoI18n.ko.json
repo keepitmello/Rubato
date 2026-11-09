@@ -4664,20 +4664,19 @@
   "Could not start the dream": "꿈을 시작할 수 없습니다",
   "Could not save the setting": "설정을 저장할 수 없습니다",
   "Could not search memory": "메모리를 검색할 수 없습니다",
-  "Waiting for you": "답을 기다려",
-  "· Fork": "· 분기",
+  "Waiting for you": "답을 기다리는 중",
   "New conversation": "새 대화",
   "Looking for the conversation": "대화를 찾는 중",
-  "Memory changed": "기억 고침",
+  "Memory changed": "메모리 고침",
   "Questions": "물어볼 것",
-  "The status board is empty.": "현황판이 비어 있어.",
-  "No questions right now.": "지금은 물어볼 게 없어.",
-  "An answer goes into this conversation as your message.": "답은 이 대화에 내 메시지로 들어가.",
+  "The status board is empty.": "현황판이 비어 있습니다.",
+  "No questions right now.": "지금은 물어볼 것이 없습니다.",
+  "An answer goes into this conversation as your message.": "답은 이 대화에 내 메시지로 들어갑니다.",
   "Suggestion": "제안",
   "Answer again": "다시 답하기",
   "Sent": "보냄",
-  "Nothing found.": "찾은 게 없어.",
-  "Nothing kept about you yet.": "아직 남긴 게 없어.",
+  "Nothing found.": "찾은 것이 없습니다.",
+  "Nothing kept about you yet.": "아직 남긴 것이 없습니다.",
   "Between us": "우리 사이",
   "Ask to change": "고쳐 달라고 하기",
   "Used in": "사용 위치",
@@ -8403,15 +8402,15 @@
   ],
   [
    "{0} keeps no records yet.",
-   "{0}는 아직 남긴 기록이 없어."
+   "{0}는 아직 남긴 기록이 없습니다."
   ],
   [
    "Click a line and the request to change or forget it goes into the composer. Send it, and {0} makes the change.",
-   "줄을 누르면 고쳐 달라거나 잊어 달라는 요청이 입력창에 채워져. 보내면 {0}가 고쳐."
+   "줄을 누르면 고쳐 달라거나 잊어 달라는 요청이 입력창에 채워집니다. 보내면 {0}가 고칩니다."
   ],
   [
    "Updated {0}. Click a line to ask for a change; the request goes into the composer.",
-   "{0} 갱신. 줄을 누르면 고쳐 달라는 요청이 입력창에 채워져."
+   "{0} 갱신. 줄을 누르면 고쳐 달라는 요청이 입력창에 채워집니다."
   ],
   [
    "{0} days",

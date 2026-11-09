@@ -33,12 +33,12 @@ export const workCardEdits = {
   ],
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
     ['import { formatDuration } from "@t3tools/shared/orchestrationTiming";\n',
-      'import { RubatoWorkCard } from "./RubatoWorkCard";\nimport { rubatoLaunchOfItem } from "./rubatoWorkCardModel";\n'],
+      'import { RubatoTimelineWorkCard } from "./RubatoWorkCard";\nimport { isRubatoLaunchItem } from "./rubatoWorkCardModel";\n'],
     ['  const { item, visibility, sourceThreadId } = row.projectedItem;\n',
       '  const { item, visibility, sourceThreadId } = row.projectedItem;\n'
         + '  // Rubato: a launched conversation\'s card (work-card-edits.mjs).\n'
-        + '  const rubatoLaunch = rubatoLaunchOfItem(item);\n'
-        + '  if (rubatoLaunch) return <RubatoWorkCard launch={rubatoLaunch} environmentId={ctx.activeThreadEnvironmentId} />;\n',
+        + '  if (isRubatoLaunchItem(item))\n'
+        + '    return <RubatoTimelineWorkCard projectedItem={row.projectedItem} environmentId={ctx.activeThreadEnvironmentId} />;\n',
       'replace'],
   ],
 };
