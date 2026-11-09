@@ -1,11 +1,12 @@
 // Segno's space: its conversation on the left, Segno on the right (companion-edits.mjs wraps the
-// chat of Segno's thread in this). The stage carries the task panel — the work Segno handed to
+// chat of Segno's thread in this), and at the far right the side panel with what Segno keeps —
+// status board, questions, memory, records (RubatoSegnoPanel.tsx) — which the person can close. The stage carries the task panel — the work Segno handed to
 // leads, running or finished until the person closes it, and the replies to other people that wait
 // for the person — and Segno's art.
 // Everything reads the theme's own colors; the space is see-through to the window material where
 // the app has one (RubatoSegnoSpace.css), and the chat, the composer and the panel stay opaque.
 import { useNavigate } from "@tanstack/react-router";
-import { CheckIcon, CircleAlertIcon, ClockIcon, MessageSquareIcon, PlayIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
+import { CheckIcon, CircleAlertIcon, ClockIcon, MessageSquareIcon, NotebookTextIcon, PlayIcon, SquareIcon, UnplugIcon, XIcon } from "lucide-react";
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 
 import { cn } from "../../lib/utils";
@@ -21,6 +22,7 @@ import {
 } from "../../state/rubatoCompanion";
 import { Button } from "../ui/button";
 import { useSidebar } from "../ui/sidebar";
+import { RubatoSegnoPanel, useSegnoPanelOpen } from "./RubatoSegnoPanel";
 import "./RubatoSegnoSpace.css";
 
 /** How often the panel looks again; the engine rewrites it within seconds of a change. */
@@ -382,8 +384,10 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
   const stageWidth = stage.width;
   const layout = art.size > 0 ? stage.layout : null;
   const compact = stageWidth > 0 && stageWidth < STAGE_FULL_PX;
+  const [panelOpen, setPanelOpen] = useSegnoPanelOpen();
   return (
     <CompanionSpace.Provider value={identity}>
+    <div className="flex min-h-0 min-w-0 flex-1">
     <div ref={space} data-rubato-segno-space="" className="relative flex min-h-0 min-w-0 flex-1">
       {/* The chat is the ordinary chat at its ordinary width. */}
       <div data-rubato-segno-chat="" className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -433,6 +437,31 @@ export function RubatoSegnoSpace({ children, companionId = "segno" }: { children
           </div>
         </aside>
       ) : null}
+      {panelOpen ? null : (
+        <button
+          type="button"
+          aria-label={`${identity.title}'s records`}
+          title={`${identity.title}'s records`}
+          data-rubato-segno-panel-open=""
+          onClick={() => setPanelOpen(true)}
+          className={cn(
+            "absolute top-[3.4rem] right-3 z-20 flex size-8 cursor-pointer items-center justify-center rounded-lg border border-border bg-card text-muted-foreground shadow-xs [&_svg]:size-4",
+            "hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          )}
+        >
+          <NotebookTextIcon />
+        </button>
+      )}
+    </div>
+    {panelOpen ? (
+      <RubatoSegnoPanel
+        environmentId={environmentId}
+        companionId={companionId}
+        companionTitle={identity.title}
+        threadId={choice?.threadId ?? null}
+        onClose={() => setPanelOpen(false)}
+      />
+    ) : null}
     </div>
     </CompanionSpace.Provider>
   );

@@ -28,6 +28,9 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoChat.css',
   'apps/web/src/components/chat/RubatoSegnoChat.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoInner.tsx',
+  // The room's side panel: status board, questions, memory, records (intent memory-redesign-work-cards).
+  'apps/web/src/components/chat/RubatoSegnoPanel.tsx',
+  'apps/web/src/components/chat/RubatoSegnoPanel.test.tsx',
   'apps/web/src/components/chat/rubatoSegnoRoom.ts',
   'apps/web/src/components/chat/rubatoSegnoRoom.test.ts',
   'apps/web/src/components/chat/RubatoSegnoNotice.test.tsx',
