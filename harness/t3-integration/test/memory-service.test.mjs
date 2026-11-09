@@ -132,6 +132,8 @@ test('a run reads as one card per changed file, and the store says how its last 
   }]);
   assert.deepEqual(await lastRun(), {
     runId: 'dream-a', status: 'merged', startedAt: '2026-09-26T01:00:00.000Z', finishedAt: '2026-09-26T01:10:00.000Z', attempts: [], landed: true,
+    // What it read and what it changed, for the Dream view.
+    sessions: 1, model: 'b-ai/deepseek-v4.1-flash', changed: 1,
   });
 
   // A newer run that failed is the news; a skipped or trial run says nothing about the store.
@@ -140,6 +142,7 @@ test('a run reads as one card per changed file, and the store says how its last 
   await writeRun(f.store, 'dream-d', { startedAt: '2026-09-29T01:00:00.000Z', status: 'trial' });
   assert.deepEqual(await lastRun(), {
     runId: 'dream-b', status: 'failed', startedAt: '2026-09-27T01:00:00.000Z', reason: 'merge failed: conflict', attempts: [], landed: false,
+    sessions: 1, model: 'b-ai/deepseek-v4.1-flash', changed: 0,
   });
 
   // A dream an earlier version held for approval and that was never approved did not land.
@@ -338,11 +341,12 @@ test('stores are listed with their project, browsed, pruned and archived', async
   assert.equal((await f.service.handle('stores', {})).stores.find((s) => s.store === 'older').enabled, false);
 
   const browsed = await f.service.handle('files', { store: 'scratch' });
-  assert.deepEqual(browsed.files, [
-    { path: 'decisions/gui.md', description: 'Settings copy is English' },
-    { path: 'decisions/plain.md', description: null },
-    { path: 'notes.md', description: null },
+  assert.deepEqual(browsed.files.map(({ changedAt, ...file }) => file), [
+    { path: 'decisions/gui.md', description: 'Settings copy is English', title: 'GUI', kind: 'decision', writer: 'session' },
+    { path: 'decisions/plain.md', description: null, title: 'no frontmatter', kind: 'decision', writer: 'session' },
+    { path: 'notes.md', description: null, title: null, kind: 'other', writer: 'session' },
   ]);
+  assert.ok(browsed.files.every((file) => Number.isFinite(Date.parse(file.changedAt))));
   assert.match((await f.service.handle('file', { store: 'scratch', path: 'decisions/gui.md' })).content, /# GUI/);
   for (const bad of ['../older/repo/x.md', '/etc/passwd', '.git/config', 'decisions/../../x', 'decisions\\gui.md'])
     await assert.rejects(f.service.handle('file', { store: 'scratch', path: bad }), /not valid|No file/, bad);

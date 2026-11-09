@@ -34,6 +34,8 @@ export interface MemoryStoreSummary {
   readonly roots: readonly string[] | null;
   readonly home: boolean | null;
   readonly files: number;
+  /** Opened by an agent but never written to: not memory, so the page does not list it. */
+  readonly empty: boolean;
   readonly lastChangeAt: string | null;
   /** The newest dream that ran to an end (not skipped, not a trial). */
   readonly lastRun: {
@@ -44,14 +46,84 @@ export interface MemoryStoreSummary {
     readonly reason?: string;
     readonly attempts: ReadonlyArray<DreamAttempt>;
     readonly landed: boolean;
+    /** Sessions it read. */
+    readonly sessions?: number;
+    readonly model?: string;
+    /** Files it changed in the store (0 when it did not land). */
+    readonly changed?: number;
   } | null;
   readonly enabled: boolean;
   readonly running: { readonly startedAt?: string; readonly source: "gui" | "other" } | null;
 }
 
+export type MemoryFileKind = "decision" | "reference" | "skill" | "other";
+export type MemoryWriter = "dream" | "session" | "you";
+
+/** One file of a store: one question's current answer. */
 export interface MemoryFileEntry {
   readonly path: string;
   readonly description: string | null;
+  /** Its `# ` heading: the question it answers. */
+  readonly title?: string | null;
+  readonly kind?: MemoryFileKind;
+  readonly changedAt?: string | null;
+  readonly writer?: MemoryWriter | null;
+}
+
+/** One commit in a question's history. */
+export interface MemoryFileCommit {
+  readonly sha: string;
+  readonly at: string;
+  readonly writer: MemoryWriter;
+  readonly change: DreamChangeKind;
+  readonly path: string;
+  readonly from?: string;
+  /** The commit's reason; null when a session's edit was taken in without one. */
+  readonly text: string | null;
+  readonly adopted: boolean;
+  readonly runId?: string;
+}
+
+/** One project's changes over the last days, for the one-line summary. */
+export interface ProjectChanges {
+  readonly store: string;
+  readonly key: string;
+  readonly at: string;
+  readonly writers: Readonly<Record<MemoryWriter, number>>;
+  readonly files: ReadonlyArray<{
+    readonly path: string;
+    readonly change: DreamChangeKind;
+    readonly kind: MemoryFileKind;
+    readonly title: string | null;
+  }>;
+  readonly reasons: readonly string[];
+}
+
+/** A cached model answer: ready, being written (with the last one, `stale`), failed, or not started. */
+export interface InsightState<T> {
+  readonly status: "ready" | "working" | "failed" | "idle";
+  readonly value: T | null;
+  readonly stale?: boolean;
+  readonly error?: string;
+  readonly at?: string;
+  readonly model?: string | null;
+}
+
+/** A companion's line about the person that says the same as, adds to, or contradicts a shared one. */
+export interface MemoryOverlap {
+  /** The companion line's id (rubatoSegnoMemory SegnoAboutLine.id). */
+  readonly line: string;
+  /** The shared record's path. */
+  readonly shared: string;
+  readonly relation: "same" | "overlap" | "conflict";
+  readonly note: string;
+}
+
+export interface MemoryInsights {
+  readonly language: string;
+  readonly overlaps: Readonly<Record<string, InsightState<{ readonly pairs: readonly MemoryOverlap[] }>>>;
+  readonly projects: InsightState<{ readonly lines: Readonly<Record<string, string>> }>;
+  readonly changes: { readonly since: string; readonly days: number; readonly projects: readonly ProjectChanges[] };
 }
 
 export type DreamReasoning = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -300,6 +372,18 @@ export const rubatoMemory = {
   status: (env: EnvironmentId | null) => call<MemoryStatus>(env, "status"),
   activity: (env: EnvironmentId | null, limit: number) =>
     call<{ items: MemoryActivity[] }>(env, "activity", { limit }),
+  /** Every commit that changed one file, newest first. */
+  fileHistory: (env: EnvironmentId | null, store: string, path: string) =>
+    call<{ store: string; path: string; commits: MemoryFileCommit[] }>(env, "file-history", { store, path }),
+  fileDiff: (env: EnvironmentId | null, store: string, path: string, sha: string) =>
+    call<{ store: string; path: string; sha: string; diff: string; truncated: boolean }>(env, "file-diff", { store, path, sha }),
+  /**
+   * This week per project, the overlaps between the shared user memory and each companion's lines,
+   * and one plain line per project in `language`. A missing answer starts one model call in the
+   * background (`start: false` only reads); poll while a status is "working".
+   */
+  insights: (env: EnvironmentId | null, language: string, start = true) =>
+    call<MemoryInsights>(env, "insights", { language, start }),
   search: (env: EnvironmentId | null, query: string) =>
     call<{ engine: "msearch" | "plain"; results: MemorySearchHit[] }>(env, "search", { query }),
   runs: (env: EnvironmentId | null, store: string) =>
