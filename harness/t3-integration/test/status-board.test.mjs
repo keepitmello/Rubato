@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { BOARD_LIMITS, lifecycleOf, readStatusBoard, sayLine, transcriptFacts } from '../src/status-board/scan.mjs';
@@ -168,6 +168,36 @@ test('a last entry longer than the tail is read whole: a big tool result keeps t
   assert.equal(member.turnOpen, true);
   // Unread: what it last said stays the line read before, not the one hidden behind the big entry.
   assert.equal(member.narration, 'Reading the whole log.');
+});
+
+test('words before a big result are kept: carried from the last read, or found by reading further back', async (t) => {
+  const f = await fixture(t);
+  await f.record('st_11', { status: 'running', pid: 111 });
+  const big = (offsetMs, bytes) => line({ type: 'message', timestamp: iso(offsetMs),
+    message: { role: 'toolResult', toolCallId: 'c', content: [said('y'.repeat(bytes))] } });
+  // Two calls in one step: a big result, then a small one, so the last line is whole in the tail.
+  const head = assistant(-9_000, [said('Reading both logs.'), call('read', { path: '/w/a.log' }), call('read', { path: '/w/b.log' })], 'toolUse');
+  const file = await f.transcript('st_11', head, -9_000);
+  const read = async () => (await readStatusBoard({ cwds: [f.cwd], now: NOW, agentDir: f.agentDir, alive: () => true })).groups[0].members[0];
+  assert.equal((await read()).narration, 'Reading both logs.');
+  await writeFile(file, big(-6_000, BOARD_LIMITS.tailBytes * 2) + result(-5_000), { flag: 'a' });
+  await utimes(file, new Date(NOW - 5_000), new Date(NOW - 5_000));
+  let member = await read();
+  assert.equal(member.turnOpen, true);
+  assert.equal(member.narration, 'Reading both logs.', 'carried from the read before');
+  assert.ok(member.steps.some((step) => step.text === 'read /w/a.log'));
+  // A first read of the same file (a fresh server) reads back until it finds the words.
+  const fresh = await mkdtemp(path.join(tmpdir(), 'rb-status-board-copy-'));
+  t.after(() => rm(fresh, { recursive: true, force: true }));
+  const g = { ...f, cwd: path.join(fresh, 'project'), state: path.join(fresh, 'project', '.rubato', 'task') };
+  await mkdir(path.join(g.state, 'tasks'), { recursive: true });
+  await writeFile(path.join(g.state, 'tasks', 'st_11.json'), JSON.stringify({ task_id: 'st_11', status: 'running', residency_state: 'resident', pid: 111, created_at: iso(-600_000) }));
+  const dir = path.join(g.state, 'children', 'st_11', 'sessions', 'st_11');
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, path.basename(file)), await readFile(file));
+  member = (await readStatusBoard({ cwds: [g.cwd], now: NOW, agentDir: f.agentDir, alive: () => true })).groups[0].members[0];
+  assert.equal(member.turnOpen, true);
+  assert.equal(member.narration, 'Reading both logs.');
 });
 
 test('the service answers unchanged when the caller holds the same version', async () => {

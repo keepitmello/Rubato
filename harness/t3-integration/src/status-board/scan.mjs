@@ -136,36 +136,54 @@ export function transcriptFacts(text, { cwd } = {}) {
 const tails = new Map();
 const counts = new Map();
 
+// A transcript only grows, so what an earlier read of the same file found still stands when the
+// newer tail does not reach back to it (a big tool result between the last words and the end).
+const sameStep = (a, b) => a.at === b.at && a.kind === b.kind && a.text === b.text;
+function carried(previous, next) {
+  if (!previous) return next;
+  const merge = (older, newer, limit) => [...older.filter((step) => !newer.some((each) => sameStep(each, step))), ...newer].slice(-limit);
+  return {
+    ...next,
+    narration: next.narration ?? previous.narration,
+    model: next.model ?? previous.model,
+    steps: merge(previous.steps, next.steps, BOARD_LIMITS.steps),
+    allSays: merge(previous.allSays, next.allSays, BOARD_LIMITS.log),
+  };
+}
+
 async function tailFacts(file, cwd) {
   const info = await stat(file).catch(() => undefined);
   if (!info) return null;
   const version = `${info.size}:${Math.trunc(info.mtimeMs)}`;
   const held = tails.get(file);
   if (held?.version === version) return held.facts;
-  let text = null;
+  const previous = held && info.size >= held.size ? held.facts : null;
+  let facts = null;
   let handle;
   try {
     handle = await open(file, 'r');
-    // Widen until the last entry is whole: a region that starts inside it has no line break
-    // before its final byte.
+    // Widen until the last entry is whole (a region that starts inside it has no line break before
+    // its final byte), and on a first read until something the agent said is in it.
     for (let length = Math.min(info.size, BOARD_LIMITS.tailBytes); ; length = Math.min(info.size, BOARD_LIMITS.tailMaxBytes, length * 4)) {
       const buffer = Buffer.alloc(length);
       await handle.read(buffer, 0, length, info.size - length);
       const cut = length < info.size;
-      if (!cut || buffer.lastIndexOf(10, buffer.length - 2) !== -1) {
-        text = buffer.toString('utf8');
+      const whole = !cut || buffer.lastIndexOf(10, buffer.length - 2) !== -1;
+      if (whole) {
+        let text = buffer.toString('utf8');
         // A cut first line is not an entry.
         if (cut) text = text.slice(text.indexOf('\n') + 1);
-        break;
+        facts = transcriptFacts(text, { cwd });
+        if (!cut || facts.narration || previous?.narration) break;
       }
       if (length >= BOARD_LIMITS.tailMaxBytes) break;
     }
   } catch { return null; } finally { await handle?.close(); }
   // Past the cap the last entry stays unread. One that large is a tool's output, not the model's
   // answer, so the turn is still open; what the agent last said stays what it was.
-  const facts = text !== null ? transcriptFacts(text, { cwd })
-    : { ...(held?.facts ?? transcriptFacts('', { cwd })), turnOpen: true, pendingTool: null };
-  tails.set(file, { version, facts });
+  facts = facts ? carried(previous, facts)
+    : { ...(previous ?? transcriptFacts('', { cwd })), turnOpen: true, pendingTool: null };
+  tails.set(file, { version, size: info.size, facts });
   return facts;
 }
 
