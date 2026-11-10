@@ -7,6 +7,7 @@ import {
   boardCounts,
   boardSections,
   combinedLog,
+  formatSpan,
   groupViews,
   shortModelName,
   unavailableReason,
@@ -233,6 +234,12 @@ describe("opening a card's conversation", () => {
 });
 
 describe("names and log", () => {
+  it("counts run time in minutes, hours, then days", () => {
+    expect(formatSpan(NOW - 12 * 60_000, NOW)).toBe("12m");
+    expect(formatSpan(NOW - (2 * HOUR + 7 * 60_000), NOW)).toBe("2h 07m");
+    expect(formatSpan(NOW - (30 * DAY + 4 * HOUR), NOW)).toBe("30d 4h");
+  });
+
   it("names models as people say them, the catalogue first", () => {
     expect(shortModelName("anthropic/claude-opus-5-5")).toBe("Opus 5.5");
     expect(shortModelName("openai-codex/gpt-6.1-sol")).toBe("GPT 6.1 Sol");

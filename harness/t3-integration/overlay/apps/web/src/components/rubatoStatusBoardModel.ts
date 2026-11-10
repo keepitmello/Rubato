@@ -191,12 +191,14 @@ export function clockTime(at: number | null, seconds = false): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}${seconds ? `:${pad(date.getSeconds())}` : ""}`;
 }
 
-/** "12m", "1h 05m": how long something has run, for counted meta lines. */
+/** "12m", "1h 05m", "30d 4h": how long something has run, for counted meta lines. */
 export function formatSpan(fromMs: number | null, toMs: number): string | null {
   if (fromMs === null) return null;
   const minutes = Math.max(0, Math.floor((toMs - fromMs) / 60_000));
   if (minutes < 60) return `${minutes}m`;
-  return `${Math.floor(minutes / 60)}h ${String(minutes % 60).padStart(2, "0")}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 /** "14:05" today, "11/09 14:05" before: when a team's work last moved. */
