@@ -5,6 +5,7 @@
 // `compact_context` makes the next request carry the server-compaction edit once with Anthropic's
 // minimum trigger. The server summarizes; the adapter keeps and resends that block as it does at
 // the safety line.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { anthropicServerCompactionArmed, supportsAnthropicServerCompaction } from "./anthropic-server-compaction.mjs";
 import { compactNowPayload } from "./anthropic-server-compaction-wire.mjs";
 
@@ -13,9 +14,11 @@ export const COMPACT_NOW_FACTORY_NAME = "rubato-compact-now";
 
 const text = (value) => ({ type: "text", text: value });
 
-// Pi's cache warmer replays the last request with max_tokens 1 (core/cache-warmer.js); a
-// compaction there would be thrown away with its answer.
-const isCacheWarm = (payload) => payload?.max_tokens === 1;
+// The cache warmer replays the last request unchanged and stops after prefill; a compaction there
+// would be thrown away with its answer. The warmer runs each refresh inside this scope
+// (isCacheWarmRequest in cache-warming/patches.mjs), shared through the global symbol.
+const cacheWarmScope = () => (globalThis[Symbol.for("rubato.cache-warm-scope")] ??= new AsyncLocalStorage());
+const isCacheWarm = () => cacheWarmScope().getStore() === true;
 
 /**
  * @param {{ armed?: () => boolean }} [options] whether the server-compaction adapter is in place
@@ -52,7 +55,7 @@ export function createCompactNowExtension({ armed = anthropicServerCompactionArm
       },
     });
     pi.on("before_provider_request", (event) => {
-      if (!pending || isCacheWarm(event.payload)) return undefined;
+      if (!pending || isCacheWarm()) return undefined;
       const { keep } = pending;
       pending = false;
       return compactNowPayload(event.payload, { keep }) ?? undefined;

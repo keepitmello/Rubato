@@ -15,7 +15,7 @@ const scratch = mkdtempSync(join(tmpdir(), "rubato-cache-warming-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 const staged = await stagePiRuntime({ sourceRoot, outputRoot: join(scratch, "stage"), features: [cacheWarmingFeature] });
 const runtime = resolvePiRuntime({ root: staged.root });
-const { CacheWarmer, RUBATO_CACHE_LIFETIME_MS } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
+const { CacheWarmer, RUBATO_CACHE_LIFETIME_MS, isCacheWarmRequest } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/cache-warmer.js")).href);
 const { SessionManager } = await import(pathToFileURL(join(runtime.codingAgentDir, "dist/core/session-manager.js")).href);
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
@@ -36,12 +36,13 @@ function harness(provider, userAt, warmUsage = usage) {
   const calls = [];
   const models = {
     streamSimple(requestModel, _context, options) {
-      calls.push(options);
+      calls.push({ ...options, warmScope: isCacheWarmRequest() });
+      options = calls.at(-1);
       const stream = new AssistantMessageEventStream();
       const message = { role: "assistant", provider: requestModel.provider, model: requestModel.id, usage: warmUsage, stopReason: "stop", content: [] };
       queueMicrotask(() => {
         stream.push({ type: "start", partial: message });
-        if (provider === "openai-codex") {
+        if (provider !== "google-vertex") {
           stream.push({ type: "text_start", contentIndex: 0, partial: message });
           options.signal.addEventListener("abort", () => stream.push({ type: "error", reason: "aborted", error: { ...message, stopReason: "aborted" } }));
           return;
@@ -77,12 +78,39 @@ test("Claude warms every 40 minutes until two hours after the latest user input"
   await advance(40 * MIN);
   await advance(40 * MIN);
   assert.equal(warms.length, 2);
-  assert.equal(calls[0].maxTokens, 1);
+  assert.equal(warms[0].note, "stopped after prefill");
   // The next refresh would land at 2h, the horizon: warming stops instead.
   await advance(40 * MIN);
   assert.equal(warms.length, 2);
   assert.equal(warmer.status.state, "inactive");
   assert.match(warmer.status.reason, /warming window ended/);
+});
+
+// A one-token Claude replay warmed a copy of the cache that the person's next request never read.
+test("a Claude refresh sends the request's own output cap and stops after prefill", async (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer, warms, calls } = harness("anthropic", 0);
+  const options = { maxTokens: 64_000, reasoning: "high", sessionId: "s" };
+  warmer.start({ model: model("anthropic"), context: {}, options }, () => true);
+  warmer.onAgentSettled();
+  await advance(40 * MIN);
+  assert.equal(warms.length, 1);
+  assert.equal(calls[0].maxTokens, 64_000);
+  assert.equal(calls[0].reasoning, "high");
+  assert.equal(calls[0].signal.aborted, true, "aborted once the prefix was processed");
+  assert.equal(warms[0].note, "stopped after prefill");
+  assert.equal(calls[0].warmScope, true, "payload handlers can tell the replay apart");
+  assert.equal(isCacheWarmRequest(), false, "and only while it is in flight");
+});
+
+test("a budget-thinking Claude request is warmed: the replay keeps the budget it derives from max_tokens", (t) => {
+  mock.timers.enable({ apis: ["setTimeout", "Date"], now: 0 });
+  t.after(() => mock.timers.reset());
+  const { warmer } = harness("anthropic", 0);
+  warmer.start({ model: model("anthropic"), context: {}, options: { reasoning: "high" } }, () => true);
+  warmer.onAgentSettled();
+  assert.equal(warmer.status.state, "scheduled");
 });
 
 test("Codex warms every 20 minutes and stops each refresh after prefill", async (t) => {
