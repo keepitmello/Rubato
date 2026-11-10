@@ -1,5 +1,6 @@
 // The status board's row at the top of the thread sidebar (status-board-edits.mjs), with how
-// many agents are at work now. The count turns amber while one of them has stalled.
+// many agents are at work now. The count turns amber while one of them, or a team's remaining
+// work, has stalled; with nobody at work a stalled team still shows, as "!".
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ActivityIcon } from "lucide-react";
 
@@ -18,6 +19,7 @@ export function RubatoStatusBoardEntry() {
   const now = useBoardNow(board);
   const counts = boardCounts(board, now);
   const atWork = counts.working + counts.stalled;
+  const warn = counts.stalled > 0 || counts.stalledTeams > 0;
   return (
     <button
       type="button"
@@ -32,15 +34,19 @@ export function RubatoStatusBoardEntry() {
     >
       <ActivityIcon aria-hidden className={cn("size-4 shrink-0", atWork > 0 ? "text-info" : "text-sidebar-muted-foreground")} />
       <span className="min-w-0 flex-1 truncate">Status board</span>
-      {atWork > 0 ? (
+      {atWork > 0 || warn ? (
         <span
-          aria-label={counts.stalled > 0 ? `${atWork} at work, ${counts.stalled} stalled` : `${atWork} at work`}
+          aria-label={[
+            `${atWork} at work`,
+            ...(counts.stalled > 0 ? [`${counts.stalled} stalled`] : []),
+            ...(counts.stalledTeams > 0 ? [`${counts.stalledTeams} teams stalled`] : []),
+          ].join(", ")}
           className={cn(
             "flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1.5 text-[.68rem] font-semibold tabular-nums",
-            counts.stalled > 0 ? "bg-warning/20 text-warning-foreground" : "bg-info/20 text-info-foreground",
+            warn ? "bg-warning/20 text-warning-foreground" : "bg-info/20 text-info-foreground",
           )}
         >
-          {atWork}
+          {atWork > 0 ? atWork : "!"}
         </span>
       ) : null}
     </button>

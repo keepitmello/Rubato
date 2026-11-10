@@ -14,6 +14,10 @@
 //   lifecycle   live | ended | failed | stopped | lost
 //   turnOpen    its transcript ends inside a turn (a tool or the model is still to answer)
 //   lastActivityAt  when its transcript last grew: session_read's clock (lastActivity)
+//   open        where its view lives: the Pi session whose app thread shows it (`hostSessionId`),
+//               the agent to open there (`agentId`, none for a lead's own thread), and whether
+//               it left any history to show (`history`). The page asks the T3 server which thread
+//               that session is (RubatoStatusBoardThreads.ts); `reason` says why there is none.
 import { open, readdir, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -275,6 +279,7 @@ async function childNode(stateDir, taskId, record, { cwd, alive = processAlive }
     toolCalls: tally?.toolCalls ?? null,
     messages: tally?.messages ?? null,
     parentSessionId: nonempty(record?.parent_session_id),
+    open: null,
   };
 }
 
@@ -322,6 +327,8 @@ async function leadNode(sessionId, { agentDir, cwd, now }) {
     turnOpen: facts?.turnOpen ?? false,
     pendingTool: facts?.pendingTool ?? null,
     lastActivityAt: lastAt,
+    // A lead's view is its own thread, which holds its history.
+    open: sessionId ? { hostSessionId: sessionId, agentId: null, history: true } : null,
     startedAt: null,
     endedAt: null,
     narration: facts?.narration?.text ?? null,
@@ -335,6 +342,11 @@ async function leadNode(sessionId, { agentDir, cwd, now }) {
 
 const BOARD_STATUS = new Set(['pending', 'claimed', 'in_progress', 'completed']);
 
+/**
+ * A team's board: the items shown, at most BOARD_LIMITS.boardItems, open ones first so unfinished
+ * work never drops out of sight; and the count over every item, which the page's work state
+ * reads, so a long board's open item or newest change is never cut off with the display.
+ */
 async function boardOf(runDir) {
   const dir = path.join(runDir, 'tasks');
   const files = (await names(dir)).filter((name) => /^\d+\.json$/.test(name));
@@ -349,7 +361,14 @@ async function boardOf(runDir) {
       updatedAt: ms(item.updatedAt),
     }))
     .sort((a, b) => Number(a.id) - Number(b.id));
-  return items.slice(-BOARD_LIMITS.boardItems);
+  const open = items.filter((item) => item.status !== 'completed');
+  const done = items.filter((item) => item.status === 'completed');
+  const shown = new Set([...open, ...done.slice(-Math.max(0, BOARD_LIMITS.boardItems - open.length))].slice(0, BOARD_LIMITS.boardItems));
+  const updated = items.reduce((at, item) => (item.updatedAt !== null && (at === null || item.updatedAt > at) ? item.updatedAt : at), null);
+  return {
+    items: items.filter((item) => shown.has(item)),
+    summary: { total: items.length, open: open.length, updatedAt: updated },
+  };
 }
 
 /** What every node said, newest last, each line with who said it. */
@@ -382,7 +401,10 @@ async function readTeam(stateDir, runId, records, options) {
     if (shutDown && node.lifecycle !== 'live') node.lifecycle = node.lifecycle === 'ended' ? 'ended' : 'stopped';
     if (shutDown && node.lifecycle === 'live' && !record) node.lifecycle = 'stopped';
     const declared = member.model && typeof member.model === 'object' ? `${member.model.providerID}/${member.model.modelID}` : null;
-    return { ...node, name: member.name, role: member.kind ?? 'member', model: node.model ?? declared };
+    const leadSessionId = nonempty(state.leadSessionId);
+    // A member's conversation opens in the Agents panel of its lead's thread.
+    const open = taskId && leadSessionId ? { hostSessionId: leadSessionId, agentId: taskId, history: Boolean(node.sessionId) } : null;
+    return { ...node, name: member.name, role: member.kind ?? 'member', model: node.model ?? declared, open };
   }));
   const lead = await leadNode(nonempty(state.leadSessionId), { ...options, cwd: options.cwd });
   const startedAt = ms(state.createdAt);
@@ -395,7 +417,7 @@ async function readTeam(stateDir, runId, records, options) {
     startedAt,
     lead: publicNode(lead),
     members: members.map(publicNode),
-    board: await boardOf(runDir),
+    ...await boardOf(runDir).then(({ items, summary }) => ({ board: items, boardSummary: summary })),
     log: logOf([lead, ...members], startedAt),
   };
 }
@@ -403,7 +425,7 @@ async function readTeam(stateDir, runId, records, options) {
 const EMPTY_NODE = Object.freeze({
   id: '', sessionId: null, task: null, model: null, effort: null, status: null, lifecycle: 'lost', turnOpen: false,
   pendingTool: null, lastActivityAt: null, startedAt: null, endedAt: null, narration: null, steps: [], says: [],
-  toolCalls: null, messages: null, parentSessionId: null,
+  toolCalls: null, messages: null, parentSessionId: null, open: null,
 });
 
 /** Every record in a state dir by task id; unreadable ones are skipped. */
@@ -440,7 +462,7 @@ async function readProject(cwd, options) {
     const nodes = await Promise.all(standalone.map((record) => childNode(stateDir, record.task_id, record, { ...options, cwd })));
     // A subagent a team member started sits under that member's name.
     const memberBySession = new Map(teams.flatMap((team) => team.members.filter((member) => member.sessionId)
-      .map((member) => [member.sessionId, { team: team.name, member: member.name }])));
+      .map((member) => [member.sessionId, { team: team.name, member: member.name, open: member.open }])));
     const byParent = new Map();
     for (const node of nodes) {
       const key = node.parentSessionId ?? 'unknown';
@@ -449,9 +471,12 @@ async function readProject(cwd, options) {
     for (const [parent, children] of byParent) {
       const owner = memberBySession.get(parent);
       const lead = owner
-        ? { ...EMPTY_NODE, id: parent, sessionId: parent, name: owner.member, role: 'member', lifecycle: 'live' }
+        ? { ...EMPTY_NODE, id: parent, sessionId: parent, name: owner.member, role: 'member', lifecycle: 'live', open: owner.open }
         : await leadNode(parent === 'unknown' ? null : parent, { ...options, cwd });
-      const named = children.map((node) => ({ ...node, name: node.task ?? node.id, role: 'subagent' }));
+      // A subagent a member started lives in that member's session, which no app thread shows.
+      const named = children.map((node) => ({ ...node, name: node.task ?? node.id, role: 'subagent',
+        open: owner ? { hostSessionId: null, agentId: node.id, history: Boolean(node.sessionId), reason: 'nested' }
+          : parent === 'unknown' ? null : { hostSessionId: parent, agentId: node.id, history: Boolean(node.sessionId) } }));
       const startedAt = Math.min(...named.map((node) => node.startedAt ?? Infinity));
       groups.push({
         kind: 'agents',
@@ -477,7 +502,7 @@ async function readProject(cwd, options) {
 export async function readStatusBoard({ cwds = [], now = Date.now(), agentDir = piAgentDir(), alive = processAlive } = {}) {
   const folders = [...new Set(cwds.filter((cwd) => typeof cwd === 'string' && path.isAbsolute(cwd)).map((cwd) => path.resolve(cwd)))];
   const groups = (await Promise.all(folders.map((cwd) => readProject(cwd, { now, agentDir, alive }).catch(() => [])))).flat();
-  // Teams first, oldest first: an update never reshuffles what stays on screen.
-  groups.sort((a, b) => (a.kind === b.kind ? 0 : a.kind === 'team' ? -1 : 1) || (a.startedAt ?? 0) - (b.startedAt ?? 0));
+  // Newest first, ties by id, as the page shows them (rubatoStatusBoardModel.ts orders them again).
+  groups.sort((a, b) => (b.startedAt ?? -Infinity) - (a.startedAt ?? -Infinity) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return { now, groups };
 }

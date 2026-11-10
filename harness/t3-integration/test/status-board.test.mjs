@@ -121,6 +121,24 @@ test('a team: each member alive or not, last activity from its transcript, its b
   assert.deepEqual(team.log.map((entry) => `${entry.who}: ${entry.text}`), [
     'checker2: Waiting for builder2.', 'lead: Team started.', 'builder2: Wiring the upload route.', 'builder2: Running the tests now.']);
   assert.ok(!('says' in byName.builder2), 'the answer carries steps and the log, not every line twice');
+  // Each card says where its conversation is: the lead's own thread, a member in the lead's Agents panel.
+  assert.deepEqual(team.lead.open, { hostSessionId: LEAD, agentId: null, history: true });
+  assert.deepEqual(byName.builder2.open, { hostSessionId: LEAD, agentId: 'st_1', history: true });
+  assert.deepEqual(byName.gone.open, { hostSessionId: LEAD, agentId: 'st_5', history: false }, 'no transcript: nothing to show');
+});
+
+test('a long board counts every item: an open one past the display limit is kept and counted', async (t) => {
+  const f = await fixture(t);
+  await writeFile(path.join(f.run, 'state.json'), JSON.stringify({ teamRunId: 'run-1', teamName: 'long', status: 'active',
+    createdAt: NOW - 3 * 86_400_000, leadSessionId: LEAD, members: [] }));
+  await writeFile(path.join(f.run, 'task-members.json'), '{}');
+  await writeFile(path.join(f.run, 'tasks', '1.json'), JSON.stringify({ id: '1', subject: 'open one', status: 'in_progress', updatedAt: NOW - 60_000 }));
+  for (let id = 2; id <= BOARD_LIMITS.boardItems + 1; id += 1)
+    await writeFile(path.join(f.run, 'tasks', `${id}.json`), JSON.stringify({ id: String(id), subject: `done ${id}`, status: 'completed', updatedAt: NOW - 2 * 86_400_000 }));
+  const [team] = (await readStatusBoard({ cwds: [f.cwd], now: NOW, agentDir: f.agentDir, alive: () => true })).groups;
+  assert.equal(team.board.length, BOARD_LIMITS.boardItems);
+  assert.equal(team.board[0].id, '1', 'the open item stays in what is shown');
+  assert.deepEqual(team.boardSummary, { total: BOARD_LIMITS.boardItems + 1, open: 1, updatedAt: NOW - 60_000 });
 });
 
 test('standalone subagents sit under the conversation that started them; long-finished ones drop off', async (t) => {
@@ -135,6 +153,18 @@ test('standalone subagents sit under the conversation that started them; long-fi
   assert.equal(group.lead.role, 'lead');
   assert.deepEqual(group.members.map((member) => [member.name, member.role, member.turnOpen, member.lastActivityAt]),
     [['Check the API', 'subagent', true, NOW - 400_000]]);
+  assert.deepEqual(group.members[0].open, { hostSessionId: LEAD, agentId: 'st_7', history: true });
+});
+
+test('groups come newest-created first, ties by id', async (t) => {
+  const f = await fixture(t);
+  for (const [runId, createdAgo] of [['run-a', 3_600_000], ['run-c', 60_000], ['run-b', 3_600_000]]) {
+    const dir = path.join(f.state, 'teams', 'runtime', runId);
+    await mkdir(dir, { recursive: true });
+    await writeFile(path.join(dir, 'state.json'), JSON.stringify({ teamRunId: runId, teamName: runId, status: 'active', createdAt: NOW - createdAgo, members: [] }));
+  }
+  const board = await readStatusBoard({ cwds: [f.cwd], now: NOW, agentDir: f.agentDir, alive: () => true });
+  assert.deepEqual(board.groups.map((group) => group.id), ['run-c', 'run-a', 'run-b']);
 });
 
 test('a long transcript is read from its end only', async (t) => {

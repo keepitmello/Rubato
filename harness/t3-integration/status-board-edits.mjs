@@ -6,13 +6,16 @@
 // reads the same answer for its rows (agents-surface-edits.mjs), so both views say the same.
 //
 // - server: src/status-board/{scan,service}.mjs behind /rubato/status-board (RubatoServiceRoute.ts);
-//   the clock is session_read's (pi-server session-inspect.mjs lastActivity).
+//   the clock is session_read's (pi-server session-inspect.mjs lastActivity). A card opens its
+//   conversation: /rubato/board-threads (RubatoStatusBoardThreads.ts) tells which app thread
+//   shows a Pi session, by the lookup the inventory uses.
 // - web: state/rubatoStatusBoard.ts polls it, one poller for every reader;
 //   components/rubatoLiveness.ts is the rule, rubatoStatusBoardModel.ts the page model,
 //   RubatoStatusBoardPage.tsx the page and sidebar/RubatoStatusBoardEntry.tsx the row;
 //   routes/board.tsx is the page (its route-tree lines are in route-tree-edits.mjs).
 // Registered after the sidebar edits it sits beside.
 export const statusBoardOverlays = [
+  'apps/server/src/RubatoStatusBoardThreads.ts',
   'apps/web/src/state/rubatoStatusBoard.ts',
   'apps/web/src/components/rubatoLiveness.ts',
   'apps/web/src/components/rubatoLiveness.test.ts',
@@ -27,8 +30,8 @@ export const statusBoardOverlays = [
 
 export const statusBoardEdits = {
   'apps/server/src/server.ts': [
-    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoStatusBoardRouteLayer } from "./RubatoServiceRoute.ts";\n'],
-    ['    DeviceHubProxy.layer,\n', '    rubatoStatusBoardRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoStatusBoardRouteLayer } from "./RubatoServiceRoute.ts";\nimport { rubatoStatusBoardThreadsRouteLayer } from "./RubatoStatusBoardThreads.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoStatusBoardRouteLayer,\n    rubatoStatusBoardThreadsRouteLayer,\n'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
     ['import { RubatoRecentBox } from "./sidebar/RubatoRecentBox";\n',

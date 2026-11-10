@@ -2,7 +2,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import type { Lifecycle } from "../components/rubatoLiveness";
-import { postRubato } from "./rubatoHttp";
+import { postRubato, rubatoHttpAccess } from "./rubatoHttp";
+import { readPreparedConnection } from "./session";
 
 /**
  * The status board's data (현황판): every team and standalone subagent in the app's projects,
@@ -14,6 +15,19 @@ export interface BoardStep {
   readonly at: number | null;
   readonly kind: "say" | "tool";
   readonly text: string;
+}
+
+/**
+ * Where a card's conversation is: the Pi session whose app thread shows it, and in that thread
+ * the agent to open (none for a lead, whose thread is its conversation). `history` is false when
+ * the agent left nothing to read (evicted, cleaned up); `reason` "nested" marks a subagent a
+ * member started, which lives in that member's session and no app thread.
+ */
+export interface BoardOpen {
+  readonly hostSessionId: string | null;
+  readonly agentId: string | null;
+  readonly history: boolean;
+  readonly reason?: "nested";
 }
 
 export interface BoardNode {
@@ -42,6 +56,8 @@ export interface BoardNode {
   readonly toolCalls: number | null;
   readonly messages: number | null;
   readonly parentSessionId: string | null;
+  /** Where its conversation opens; null when the board cannot tell. */
+  readonly open?: BoardOpen | null;
 }
 
 export interface BoardItem {
@@ -70,7 +86,10 @@ export interface BoardGroup {
   readonly startedAt: number | null;
   readonly lead: BoardNode;
   readonly members: ReadonlyArray<BoardNode>;
+  /** The items shown: open ones first, then the newest completed, at most the server's limit. */
   readonly board: ReadonlyArray<BoardItem> | null;
+  /** Counted over every item, shown or not. */
+  readonly boardSummary?: { readonly total: number; readonly open: number; readonly updatedAt: number | null } | null;
   readonly log: ReadonlyArray<BoardLogLine>;
 }
 
@@ -231,4 +250,74 @@ const readTick = () => tickNow;
 export function useBoardNow(boardValue: StatusBoard | null): number {
   const now = useSyncExternalStore(subscribeTick, readTick, readTick);
   return now - (boardValue?.clockOffset ?? 0);
+}
+
+// Which app thread shows each Pi session (/rubato/board-threads), asked once per new session.
+const THREADS_ROUTE = "/rubato/board-threads";
+const threadsBySession = new Map<string, { readonly thread: string | null; readonly at: number }>();
+/** A session no thread showed is asked again after this: the inventory may import it since. */
+const NO_THREAD_RETRY_MS = 30_000;
+const threadListeners = new Set<() => void>();
+let threadsVersion = 0;
+const asking = new Set<string>();
+
+async function askThreads(environmentId: EnvironmentId, sessionIds: ReadonlyArray<string>) {
+  const now = Date.now();
+  const missing = sessionIds.filter((id) => {
+    const held = threadsBySession.get(id);
+    return !asking.has(id) && (held === undefined || (held.thread === null && now - held.at > NO_THREAD_RETRY_MS));
+  });
+  if (missing.length === 0) return;
+  for (const id of missing) asking.add(id);
+  try {
+    const prepared = readPreparedConnection(environmentId);
+    const access = prepared ? await rubatoHttpAccess(prepared) : null;
+    if (!access) return;
+    const response = await fetch(`${access.baseUrl}${THREADS_ROUTE}`, {
+      method: "POST",
+      credentials: access.credentials,
+      headers: { ...access.headers, "content-type": "application/json" },
+      body: JSON.stringify({ sessionIds: missing }),
+    });
+    if (!response.ok) return;
+    const answer = (await response.json().catch(() => null)) as { threads?: Record<string, string | null> } | null;
+    for (const id of missing) threadsBySession.set(id, { thread: answer?.threads?.[id] ?? null, at: Date.now() });
+    threadsVersion += 1;
+    for (const listener of threadListeners) listener();
+  } catch {
+    // Asked again when the board next shows it.
+  } finally {
+    for (const id of missing) asking.delete(id);
+  }
+}
+
+/**
+ * The app thread of each host session the board shows: a thread id, null when no thread shows
+ * it, undefined while it is being asked.
+ */
+export function useBoardThreads(
+  environmentId: EnvironmentId | null,
+  boardValue: StatusBoard | null,
+): (sessionId: string | null | undefined) => string | null | undefined {
+  const ids = useMemo(() => {
+    const hosts = new Set<string>();
+    for (const group of boardValue?.groups ?? [])
+      for (const node of [group.lead, ...group.members])
+        if (node.open?.hostSessionId) hosts.add(node.open.hostSessionId);
+    return [...hosts].toSorted().join("\n");
+  }, [boardValue]);
+  // Asked with each board answer, so a session no thread showed is found once one does.
+  useEffect(() => {
+    if (environmentId === null || ids === "") return;
+    void askThreads(environmentId, ids.split("\n"));
+  }, [environmentId, ids, boardValue]);
+  useSyncExternalStore(
+    (listener) => {
+      threadListeners.add(listener);
+      return () => threadListeners.delete(listener);
+    },
+    () => threadsVersion,
+    () => threadsVersion,
+  );
+  return (sessionId) => (sessionId ? threadsBySession.get(sessionId)?.thread : null);
 }

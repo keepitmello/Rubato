@@ -1,12 +1,20 @@
 // The status board (현황판): who is working on what, right now, across the app's projects.
-// Each team (or the subagents one conversation started) is a card: its lead on the left,
-// a line to each member on the right with what the member last said, how long ago it last
-// moved and its recent steps; then the team's board, and one combined log at the bottom.
-// Numbers are counted (tool calls, messages, minutes), never estimated. Whether a member is
-// working, stalled, waiting or lost is rubatoLiveness.ts, the rule the Agents panel uses too.
+// Each team (or the subagents one conversation started) is a card, newest first: its lead on the
+// left, a line to each member on the right with what the member last said, how long ago it last
+// moved and its recent steps; then the team's board, and one combined log at the bottom. Teams
+// whose own work has been quiet over a day fold into "Past teams" below. A team says where its
+// work stands (rubatoStatusBoardModel.ts teamWork) apart from whether its members' sessions are
+// up; each card opens the conversation it shows. Numbers are counted, never estimated. Whether a
+// member is working, stalled, waiting or lost is rubatoLiveness.ts, the rule the Agents panel uses.
 import { useAtomValue } from "@effect/atom-react";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { useNavigate } from "@tanstack/react-router";
 import {
+  ArrowUpRightIcon,
   BotIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   CircleCheckIcon,
   CircleDashedIcon,
   CircleDotIcon,
@@ -21,23 +29,37 @@ import {
   UsersIcon,
   WrenchIcon,
 } from "lucide-react";
-import { memo, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
 
 import { cn } from "../lib/utils";
 import { primaryServerProvidersAtom } from "../state/server";
-import { type BoardItem, type BoardNode, useBoardNow, useStatusBoard } from "../state/rubatoStatusBoard";
+import { useRightPanelStore } from "../rightPanelStore";
+import { setOpenedInPanel } from "../rubatoPanelViews";
+import {
+  type BoardItem,
+  type BoardNode,
+  type BoardOpen,
+  useBoardNow,
+  useBoardThreads,
+  useStatusBoard,
+} from "../state/rubatoStatusBoard";
 import { ScrollArea } from "./ui/scroll-area";
 import { LIVENESS_VISUALS, STALL_AFTER_MS, formatAgo, type Liveness } from "./rubatoLiveness";
 import {
   type BoardFilter,
   type GroupView,
   type NodeView,
+  type TeamWork,
+  PAST_AFTER_MS,
   boardCounts,
+  boardSections,
   clockTime,
   combinedLog,
   formatSpan,
-  groupViews,
   shortModelName,
+  sinceLabel,
+  unavailableReason,
+  workReason,
 } from "./rubatoStatusBoardModel";
 import { useBoardFolders } from "./rubatoBoardFolders";
 
@@ -62,10 +84,15 @@ export function RubatoStatusBoardPanel() {
   const now = useBoardNow(board);
   const models = useModelNames();
   const [filter, setFilter] = useState<BoardFilter>("all");
+  const [showPast, setShowPast] = useState(false);
+  const threadOf = useBoardThreads(environmentId, board);
+  const opener = useOpener(environmentId, threadOf);
   const counts = boardCounts(board, now);
-  const views = groupViews(board, now, filter);
-  const log = combinedLog(groupViews(board, now));
+  const sections = boardSections(board, now, filter);
+  // The log follows current work; a past team's lines are in its own card.
+  const log = combinedLog(boardSections(board, now).current);
   return (
+    <OpenContext.Provider value={opener}>
     <ScrollArea className="min-h-0 flex-1" scrollFade>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pt-5 pb-10" data-rubato-status-board="">
         <header className="flex flex-col gap-3">
@@ -77,15 +104,15 @@ export function RubatoStatusBoardPanel() {
             <span className="tabular-nums text-foreground">{counts.working}</span>
             <span aria-hidden>·</span>
             <span>Stalled</span>
-            <span className={cn("tabular-nums", counts.stalled > 0 ? "text-warning-foreground" : "text-foreground")}>
-              {counts.stalled}
+            <span className={cn("tabular-nums", counts.stalled + counts.stalledTeams > 0 ? "text-warning-foreground" : "text-foreground")}>
+              {counts.stalled + counts.stalledTeams}
             </span>
           </p>
           <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Filter">
             <FilterChip value="all" current={filter} onChange={setFilter} label="All" count={counts.working + counts.stalled + counts.resting + counts.lost} />
             <FilterChip value="working" current={filter} onChange={setFilter} label="Working" count={counts.working} state="working" />
             <FilterChip value="resting" current={filter} onChange={setFilter} label="Waiting" count={counts.resting} state="resting" />
-            <FilterChip value="stalled" current={filter} onChange={setFilter} label="Stalled" count={counts.stalled} state="stalled" />
+            <FilterChip value="stalled" current={filter} onChange={setFilter} label="Stalled" count={counts.stalled + counts.stalledTeams} state="stalled" />
             <FilterChip value="lost" current={filter} onChange={setFilter} label="Lost" count={counts.lost} state="lost" />
             <span className="ml-auto text-xs text-muted-foreground/80">
               {`Stalled after ${STALL_AFTER_MS / 60_000} min without activity`}
@@ -94,18 +121,104 @@ export function RubatoStatusBoardPanel() {
         </header>
         {board === null ? (
           <p className="py-16 text-center text-sm text-muted-foreground">Reading agents…</p>
-        ) : views.length === 0 ? (
+        ) : sections.current.length === 0 ? (
           <p className="py-16 text-center text-sm text-muted-foreground">
-            {filter === "all" ? "No teams or subagents in your projects right now." : "Nothing in this state."}
+            {filter === "all" ? "No teams or subagents are at work right now." : "Nothing in this state."}
           </p>
         ) : (
-          views.map((view) => <GroupCard key={view.group.id} view={view} now={now} models={models} />)
+          sections.current.map((view) => <GroupCard key={view.group.id} view={view} now={now} models={models} />)
         )}
+        {sections.past.length > 0 ? (
+          <section className="flex flex-col gap-3" data-rubato-board-past="">
+            <button
+              type="button"
+              aria-expanded={showPast}
+              onClick={() => setShowPast((value) => !value)}
+              className="flex items-center gap-2 self-start rounded-md px-1.5 py-1 text-sm text-muted-foreground hover:bg-accent/50 hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              {showPast ? <ChevronDownIcon aria-hidden className="size-4" /> : <ChevronRightIcon aria-hidden className="size-4" />}
+              <span>Past teams</span>
+              <span className="tabular-nums">{sections.past.length}</span>
+              <span className="text-xs text-muted-foreground/70">{`Quiet for over ${PAST_HOURS} hours`}</span>
+            </button>
+            {showPast
+              ? sections.past.map((view) => <GroupCard key={view.group.id} view={view} now={now} models={models} />)
+              : null}
+          </section>
+        ) : null}
         {log.length > 0 ? <LogPanel lines={log} /> : null}
       </div>
     </ScrollArea>
+    </OpenContext.Provider>
   );
 }
+
+const PAST_HOURS = PAST_AFTER_MS / 3_600_000;
+
+/** Opens a card's conversation: a lead's thread, or a member in its lead thread's Agents panel. */
+type Opener = (open: BoardOpen, threadId: string) => void;
+type ThreadOf = (sessionId: string | null | undefined) => string | null | undefined;
+const OpenContext = createContext<{ readonly open: Opener; readonly threadOf: ThreadOf } | null>(null);
+
+function useOpener(environmentId: EnvironmentId | null, threadOf: ThreadOf) {
+  const navigate = useNavigate();
+  const open = useCallback<Opener>(
+    (target, threadId) => {
+      if (environmentId === null) return;
+      if (target.agentId) {
+        const ref = scopeThreadRef(environmentId, threadId as ThreadId);
+        setOpenedInPanel("agents", scopedThreadKey(ref), target.agentId);
+        useRightPanelStore.getState().open(ref, "agents");
+      }
+      void navigate({ to: "/$environmentId/$threadId", params: { environmentId, threadId } });
+    },
+    [environmentId, navigate],
+  );
+  return useMemo(() => ({ open, threadOf }), [open, threadOf]);
+}
+
+function OpenButton({ target, name, kind }: { target: BoardOpen | null | undefined; name: string; kind: "lead" | "agent" }) {
+  const context = useContext(OpenContext);
+  const thread = context?.threadOf(target?.hostSessionId);
+  const reason = unavailableReason(target, thread);
+  const label = kind === "lead" ? "Open conversation" : "Open agent";
+  if (reason === null && target && thread) {
+    return (
+      <button
+        type="button"
+        data-rubato-board-open={kind}
+        aria-label={`${label}: ${name}`}
+        onClick={() => context?.open(target, thread)}
+        className="flex h-6 shrink-0 items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring"
+      >
+        <span>{label}</span>
+        <ArrowUpRightIcon aria-hidden className="size-3.5" />
+      </button>
+    );
+  }
+  return (
+    <button
+      type="button"
+      aria-disabled="true"
+      data-rubato-board-open="unavailable"
+      aria-label={`${label}: ${name}. ${reason ?? "Finding its conversation…"}`}
+      title={reason ?? undefined}
+      className="flex h-6 shrink-0 cursor-default items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground/60 focus-visible:outline-2 focus-visible:outline-ring"
+    >
+      <span>{reason ?? "Finding its conversation…"}</span>
+    </button>
+  );
+}
+
+const WORK_VISUALS: Record<TeamWork["state"], { readonly label: string; readonly className: string } | null> = {
+  working: { label: "Working", className: "border-info/40 text-info-foreground" },
+  completed: { label: "Completed", className: "border-success/40 text-success-foreground" },
+  stalled: { label: "Stalled", className: "border-warning/50 text-warning-foreground" },
+  waiting: { label: "Waiting", className: "border-border text-muted-foreground" },
+  idle: null,
+};
+
+
 
 function FilterChip(props: {
   value: BoardFilter;
@@ -156,8 +269,14 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
   const title = group.kind === "team" ? group.name : (group.name ?? "Subagents");
   const folder = group.cwd.split("/").filter(Boolean).at(-1) ?? group.cwd;
   const elapsed = formatSpan(group.startedAt, now);
+  const reason = group.kind === "team" ? workReason(view.work, now) : null;
   return (
-    <section className="rounded-xl border border-border/80 bg-card/40" data-rubato-board-group={group.kind}>
+    <section
+      className="rounded-xl border border-border/80 bg-card/40"
+      data-rubato-board-group={group.kind}
+      data-rubato-board-id={group.id}
+      data-rubato-board-past={view.past ? "" : undefined}
+    >
       <header className="flex items-center gap-2.5 border-b border-border/60 px-4 py-3">
         {group.kind === "team" ? (
           <UsersIcon aria-hidden className="size-4 text-muted-foreground" />
@@ -168,6 +287,14 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
           {title}
         </h2>
         {group.kind === "team" ? <span className="text-xs text-muted-foreground">Team</span> : null}
+        {WORK_VISUALS[view.work.state] && group.kind === "team" ? (
+          <span
+            data-rubato-board-work={view.work.state}
+            className={cn("rounded-full border px-2 py-0.5 text-[.7rem] font-medium", WORK_VISUALS[view.work.state]!.className)}
+          >
+            {WORK_VISUALS[view.work.state]!.label}
+          </span>
+        ) : null}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           <span translate="no">{folder}</span>
           {elapsed ? (
@@ -179,6 +306,21 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
           ) : null}
         </span>
       </header>
+      {reason ? (
+        <p
+          data-rubato-board-work-reason=""
+          className={cn(
+            "border-b border-border/60 px-4 py-2 text-xs",
+            view.work.state === "stalled" ? "text-warning-foreground" : "text-success-foreground",
+          )}
+        >
+          {reason}
+        </p>
+      ) : view.past ? (
+        <p className="border-b border-border/60 px-4 py-2 text-xs text-muted-foreground">
+          {`No member or work item has moved since ${sinceLabel(view.work.lastMovedAt, now)}`}
+        </p>
+      ) : null}
       <div className="grid grid-cols-1 gap-y-3 p-4 lg:grid-cols-[minmax(13rem,17rem)_2.5rem_minmax(0,1fr)]">
         <LeadBox view={view.lead} now={now} models={models} />
         <div aria-hidden className="hidden self-center lg:block">
@@ -263,6 +405,9 @@ function LeadBox({ view, now, models }: { view: NodeView; now: number; models: R
           {node.narration}
         </p>
       ) : null}
+      <div className="flex justify-end">
+        <OpenButton target={node.open} name={isLead ? "Lead" : (node.name ?? node.id)} kind={isLead ? "lead" : "agent"} />
+      </div>
     </div>
   );
 }
@@ -318,7 +463,12 @@ const MemberCard = memo(function MemberCard({
         </div>
         <StateBadge view={view} now={now} />
       </div>
-      <MetaLine node={node} liveness={liveness} ran={ran} />
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <MetaLine node={node} liveness={liveness} ran={ran} />
+        </div>
+        <OpenButton target={node.open} name={node.name ?? node.id} kind="agent" />
+      </div>
       {node.steps.length > 0 ? <Steps node={node} /> : null}
     </article>
   );
