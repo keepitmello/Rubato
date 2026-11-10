@@ -247,10 +247,16 @@ function subscribeTick(listener: () => void) {
 const readTick = () => tickNow;
 
 /** Now, in the server's time, refreshed every second while something shows it. */
-export function useBoardNow(boardValue: StatusBoard | null): number {
-  const now = useSyncExternalStore(subscribeTick, readTick, readTick);
+export function useBoardNow(boardValue: StatusBoard | null, stepMs = 1_000): number {
+  // A reader that needs only coarse time re-renders once a step, not once a second: the page's
+  // states move every few seconds, while only the "12s ago" texts tick every second.
+  const read = () => Math.floor(tickNow / stepMs) * stepMs;
+  const now = useSyncExternalStore(subscribeTick, read, read);
   return now - (boardValue?.clockOffset ?? 0);
 }
+
+/** How often the board's states (working → stalled, team states, past teams) are worked out again. */
+export const BOARD_STATE_STEP_MS = 5_000;
 
 // Which app thread shows each Pi session (/rubato/board-threads), asked once per new session.
 const THREADS_ROUTE = "/rubato/board-threads";

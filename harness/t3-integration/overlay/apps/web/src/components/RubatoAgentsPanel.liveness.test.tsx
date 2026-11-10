@@ -32,6 +32,7 @@ vi.mock("../state/rubatoStatusBoard", () => ({
   useStatusBoard: () => BOARD,
   useBoardNodes: (board: StatusBoard | null) => new Map((board?.groups ?? []).flatMap((group) => group.members.map((member) => [member.id, member]))),
   useBoardNow: () => NOW,
+  BOARD_STATE_STEP_MS: 5_000,
 }));
 
 const { RubatoAgentsPanel } = await import("./RubatoAgentsPanel");

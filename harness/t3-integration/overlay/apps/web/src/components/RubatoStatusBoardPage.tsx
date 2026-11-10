@@ -39,12 +39,15 @@ import {
   type BoardItem,
   type BoardNode,
   type BoardOpen,
+  type StatusBoard,
+  BOARD_STATE_STEP_MS,
   useBoardNow,
   useBoardThreads,
   useStatusBoard,
 } from "../state/rubatoStatusBoard";
 import { ScrollArea } from "./ui/scroll-area";
-import { LIVENESS_VISUALS, STALL_AFTER_MS, formatAgo, type Liveness } from "./rubatoLiveness";
+import { BoardAgo, BoardSpan } from "./RubatoBoardClock";
+import { LIVENESS_VISUALS, STALL_AFTER_MS, type Liveness } from "./rubatoLiveness";
 import {
   type BoardFilter,
   type GroupView,
@@ -55,7 +58,6 @@ import {
   boardSections,
   clockTime,
   combinedLog,
-  formatSpan,
   shortModelName,
   sinceLabel,
   unavailableReason,
@@ -81,17 +83,19 @@ function useModelNames(): ReadonlyMap<string, string> {
 export function RubatoStatusBoardPanel() {
   const { environmentId, folders } = useBoardFolders();
   const board = useStatusBoard(environmentId, folders, true);
-  const now = useBoardNow(board);
+  // States are worked out every few seconds; the "12s ago" texts tick on their own (RubatoBoardClock).
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
   const models = useModelNames();
   const [filter, setFilter] = useState<BoardFilter>("all");
   const [showPast, setShowPast] = useState(false);
   const threadOf = useBoardThreads(environmentId, board);
   const opener = useOpener(environmentId, threadOf);
-  const counts = boardCounts(board, now);
-  const sections = boardSections(board, now, filter);
+  const counts = useMemo(() => boardCounts(board, now), [board, now]);
+  const sections = useMemo(() => boardSections(board, now, filter), [board, now, filter]);
   // The log follows current work; a past team's lines are in its own card.
-  const log = combinedLog(boardSections(board, now).current);
+  const log = useMemo(() => combinedLog(boardSections(board, now).current), [board, now]);
   return (
+    <BoardContext.Provider value={board}>
     <OpenContext.Provider value={opener}>
     <ScrollArea className="min-h-0 flex-1" scrollFade>
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-4 px-6 pt-5 pb-10" data-rubato-status-board="">
@@ -150,8 +154,12 @@ export function RubatoStatusBoardPanel() {
       </div>
     </ScrollArea>
     </OpenContext.Provider>
+    </BoardContext.Provider>
   );
 }
+
+/** The board answer, for the ticking texts deep in the cards. */
+const BoardContext = createContext<StatusBoard | null>(null);
 
 const PAST_HOURS = PAST_AFTER_MS / 3_600_000;
 
@@ -253,16 +261,21 @@ function Dot({ state, className }: { state: Liveness; className?: string }) {
   return <span aria-hidden className={cn("size-2 shrink-0 rounded-full", LIVENESS_VISUALS[state].dotClass, className)} />;
 }
 
-function StateBadge({ view, now }: { view: NodeView; now: number }) {
+function StateBadge({ view }: { view: NodeView }) {
   const visuals = LIVENESS_VISUALS[view.liveness];
-  const ago = formatAgo(view.node.lastActivityAt, now);
+  const board = useContext(BoardContext);
+  const at = view.node.lastActivityAt;
   return (
     <span className="flex shrink-0 flex-col items-end gap-0.5 text-right">
       <span className={cn("flex items-center gap-1.5 text-xs font-medium", visuals.textClass)} data-liveness={view.liveness}>
         <Dot state={view.liveness} />
         <span>{visuals.label}</span>
       </span>
-      {ago ? <span className="text-[.7rem] tabular-nums text-muted-foreground" data-rubato-ago="">{ago}</span> : null}
+      {at !== null ? (
+        <span className="text-[.7rem] tabular-nums text-muted-foreground" data-rubato-ago="">
+          <BoardAgo at={at} board={board} />
+        </span>
+      ) : null}
     </span>
   );
 }
@@ -271,7 +284,7 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
   const { group } = view;
   const title = group.kind === "team" ? group.name : (group.name ?? "Subagents");
   const folder = group.cwd.split("/").filter(Boolean).at(-1) ?? group.cwd;
-  const elapsed = formatSpan(group.startedAt, now);
+  const board = useContext(BoardContext);
   const reason = group.kind === "team" ? workReason(view.work, now) : null;
   return (
     <section
@@ -300,11 +313,13 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
         ) : null}
         <span className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           <span translate="no">{folder}</span>
-          {elapsed ? (
+          {group.startedAt !== null ? (
             <>
               <span aria-hidden>·</span>
               <ClockIcon aria-hidden className="size-3" />
-              <span className="tabular-nums">{elapsed}</span>
+              <span className="tabular-nums">
+                <BoardSpan from={group.startedAt} to={null} board={board} />
+              </span>
             </>
           ) : null}
         </span>
@@ -325,7 +340,7 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-y-3 p-4 lg:grid-cols-[minmax(13rem,17rem)_2.5rem_minmax(0,1fr)]">
-        <LeadBox view={view.lead} now={now} models={models} />
+        <LeadBox view={view.lead} models={models} />
         <div aria-hidden className="hidden self-center lg:block">
           <div className="h-px w-full bg-border" />
         </div>
@@ -335,7 +350,7 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
           ) : (
             view.members.map((member, index) => (
               <Branch key={member.node.id} first={index === 0} last={index === view.members.length - 1} state={member.liveness}>
-                <MemberCard view={member} now={now} models={models} />
+                <MemberCard view={member} models={models} />
               </Branch>
             ))
           )}
@@ -374,7 +389,7 @@ function roleIcon(role: string | null | undefined): LucideIcon {
   return ROLE_ICONS[role ?? ""] ?? BotIcon;
 }
 
-function LeadBox({ view, now, models }: { view: NodeView; now: number; models: ReadonlyMap<string, string> }) {
+function LeadBox({ view, models }: { view: NodeView; models: ReadonlyMap<string, string> }) {
   const { node } = view;
   const Icon = roleIcon(node.role);
   const model = shortModelName(node.model, models);
@@ -401,7 +416,7 @@ function LeadBox({ view, now, models }: { view: NodeView; now: number; models: R
             </span>
           ) : null}
         </span>
-        {isLead ? <StateBadge view={view} now={now} /> : null}
+        {isLead ? <StateBadge view={view} /> : null}
       </div>
       {isLead && node.narration ? (
         <p className="line-clamp-2 text-xs text-muted-foreground" translate="no" title={node.narration}>
@@ -417,17 +432,16 @@ function LeadBox({ view, now, models }: { view: NodeView; now: number; models: R
 
 const MemberCard = memo(function MemberCard({
   view,
-  now,
   models,
 }: {
   view: NodeView;
-  now: number;
   models: ReadonlyMap<string, string>;
 }) {
   const { node, liveness } = view;
   const Icon = roleIcon(node.role);
   const model = shortModelName(node.model, models);
-  const ran = formatSpan(node.startedAt, node.endedAt ?? now);
+  const board = useContext(BoardContext);
+  const ran = node.startedAt !== null ? <BoardSpan from={node.startedAt} to={node.endedAt} board={board} /> : null;
   const dim = liveness === "lost";
   return (
     <article
@@ -464,7 +478,7 @@ const MemberCard = memo(function MemberCard({
             {node.narration ?? <span className="font-normal text-muted-foreground">{node.task ?? "—"}</span>}
           </p>
         </div>
-        <StateBadge view={view} now={now} />
+        <StateBadge view={view} />
       </div>
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
@@ -475,10 +489,12 @@ const MemberCard = memo(function MemberCard({
       {node.steps.length > 0 ? <Steps node={node} /> : null}
     </article>
   );
-});
+},
+// A card re-renders when its member's answer or state changes, not on every pass of the page.
+(prev, next) => prev.view.node === next.view.node && prev.view.liveness === next.view.liveness && prev.models === next.models);
 
 /** Counted facts only: tool calls, messages, how long it has run, and what it waits on. */
-function MetaLine({ node, liveness, ran }: { node: BoardNode; liveness: Liveness; ran: string | null }) {
+function MetaLine({ node, liveness, ran }: { node: BoardNode; liveness: Liveness; ran: React.ReactNode }) {
   return (
     <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 pl-9.5 text-[.72rem] text-muted-foreground">
       {node.toolCalls !== null ? (
@@ -614,7 +630,7 @@ const WHO_CLASS: Record<string, string> = {
   verifier: "text-warning-foreground",
 };
 
-function LogPanel({ lines }: { lines: ReturnType<typeof combinedLog> }) {
+const LogPanel = memo(function LogPanel({ lines }: { lines: ReturnType<typeof combinedLog> }) {
   return (
     <section className="rounded-xl border border-border/80 bg-card/40" data-rubato-board-log="">
       <header className="flex items-center gap-2 border-b border-border/60 px-4 py-2.5">
@@ -637,4 +653,6 @@ function LogPanel({ lines }: { lines: ReturnType<typeof combinedLog> }) {
       </ol>
     </section>
   );
-}
+},
+// New lines change its last entry or its length; nothing else on screen does.
+(prev, next) => prev.lines.length === next.lines.length && prev.lines.at(-1)?.at === next.lines.at(-1)?.at && prev.lines.at(-1)?.text === next.lines.at(-1)?.text);

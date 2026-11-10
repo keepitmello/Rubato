@@ -24,6 +24,7 @@ export const statusBoardOverlays = [
   'apps/web/src/components/rubatoBoardFolders.ts',
   'apps/web/src/components/sidebar/RubatoStatusBoardEntry.tsx',
   'apps/web/src/components/RubatoStatusBoardPage.tsx',
+  'apps/web/src/components/RubatoBoardClock.tsx',
   'apps/web/src/routes/board.tsx',
   'apps/web/src/components/RubatoAgentsPanel.liveness.test.tsx',
 ];

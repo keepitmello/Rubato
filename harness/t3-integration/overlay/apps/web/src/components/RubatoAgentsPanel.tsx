@@ -52,7 +52,15 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
 import { RubatoAgentSession } from "./RubatoAgentSession";
-import { type BoardNode, useBoardNodes, useBoardNow, useStatusBoard, type StatusBoard } from "../state/rubatoStatusBoard";
+import {
+  BOARD_STATE_STEP_MS,
+  type BoardNode,
+  useBoardNodes,
+  useBoardNow,
+  useStatusBoard,
+  type StatusBoard,
+} from "../state/rubatoStatusBoard";
+import { BoardAgo } from "./RubatoBoardClock";
 import { LIVENESS_VISUALS, formatAgo, livenessOf, type Liveness } from "./rubatoLiveness";
 import { useBoardFolders } from "./rubatoBoardFolders";
 import {
@@ -93,10 +101,15 @@ export function rowLiveness(
   return { liveness: livenessOf(node, now), ago: formatAgo(node.lastActivityAt, now) };
 }
 
+/** The row's liveness, worked out every few seconds; its "12s ago" ticks on its own (BoardAgo). */
 function useRowLiveness(agent: RuntimeSubagent) {
   const { board, nodes } = useContext(BoardContext);
-  const now = useBoardNow(board);
-  return rowLiveness(nodes.get(agent.id), now);
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
+  const node = nodes.get(agent.id);
+  return useMemo(() => {
+    const alive = rowLiveness(node, now);
+    return alive ? { ...alive, at: node?.lastActivityAt ?? null, board } : null;
+  }, [node, now, board]);
 }
 
 /**
@@ -118,7 +131,7 @@ export function liveDisplayState(
 /** Each agent's state as its row shows it, for the counts beside them. */
 function useLiveStates(agents: ReadonlyArray<RuntimeSubagent>, inTeam: boolean): AgentDisplayState[] {
   const { board, nodes } = useContext(BoardContext);
-  const now = useBoardNow(board);
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
   return agents.map((agent) => liveDisplayState(agent, inTeam, rowLiveness(nodes.get(agent.id), now)));
 }
 
@@ -314,7 +327,7 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
           {alive?.ago ? (
             <span className={cn(override ? LIVENESS_VISUALS[override].textClass : undefined)} data-rubato-ago="">
               {" · "}
-              {alive.ago}
+              <BoardAgo at={alive.at} board={alive.board} />
             </span>
           ) : null}
         </span>
@@ -707,7 +720,7 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
         ) : null}
         {alive?.ago ? (
           <span className={cn(override ? LIVENESS_VISUALS[override].textClass : undefined)} data-rubato-ago="">
-            · {alive.ago}
+            · <BoardAgo at={alive.at} board={alive.board} />
           </span>
         ) : null}
       </p>

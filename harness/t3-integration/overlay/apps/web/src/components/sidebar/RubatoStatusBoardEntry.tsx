@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 import { ActivityIcon } from "lucide-react";
 
 import { cn } from "../../lib/utils";
-import { useBoardNow, useStatusBoard } from "../../state/rubatoStatusBoard";
+import { BOARD_STATE_STEP_MS, useBoardNow, useStatusBoard } from "../../state/rubatoStatusBoard";
 import { boardCounts } from "../rubatoStatusBoardModel";
 import { useBoardFolders } from "../rubatoBoardFolders";
 
@@ -16,7 +16,7 @@ export function RubatoStatusBoardEntry() {
   const onPage = useLocation({ select: (location) => location.pathname === STATUS_BOARD_PATH });
   const { environmentId, folders } = useBoardFolders();
   const board = useStatusBoard(environmentId, folders, onPage);
-  const now = useBoardNow(board);
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
   const counts = boardCounts(board, now);
   const atWork = counts.working + counts.stalled;
   const warn = counts.stalled > 0 || counts.stalledTeams > 0;
