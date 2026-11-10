@@ -29,7 +29,7 @@ import {
   UsersIcon,
   WrenchIcon,
 } from "lucide-react";
-import { createContext, memo, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, memo, useCallback, useContext, useId, useMemo, useState } from "react";
 
 import { cn } from "../lib/utils";
 import { primaryServerProvidersAtom } from "../state/server";
@@ -182,6 +182,7 @@ function OpenButton({ target, name, kind }: { target: BoardOpen | null | undefin
   const thread = context?.threadOf(target?.hostSessionId);
   const reason = unavailableReason(target, thread);
   const label = kind === "lead" ? "Open conversation" : "Open agent";
+  const reasonId = useId();
   if (reason === null && target && thread) {
     return (
       <button
@@ -201,11 +202,13 @@ function OpenButton({ target, name, kind }: { target: BoardOpen | null | undefin
       type="button"
       aria-disabled="true"
       data-rubato-board-open="unavailable"
-      aria-label={`${label}: ${name}. ${reason ?? "Finding its conversation…"}`}
+      // Name and reason are each their own text, so the Korean interface translates both.
+      aria-label={`${label}: ${name}`}
+      aria-describedby={reasonId}
       title={reason ?? undefined}
       className="flex h-6 shrink-0 cursor-default items-center gap-1 rounded-md px-1.5 text-xs text-muted-foreground/60 focus-visible:outline-2 focus-visible:outline-ring"
     >
-      <span>{reason ?? "Finding its conversation…"}</span>
+      <span id={reasonId}>{reason ?? "Finding its conversation…"}</span>
     </button>
   );
 }
