@@ -41,7 +41,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   opencode: Object.freeze(["muse-spark-1.3-contributor-free"]),
   "b-ai": Object.freeze(["deepseek-v4.1-flash"]),
   // OpenGateway 의 id 는 `제작사/모델` 이라 슬래시를 품는다. 슬러그는 첫 슬래시에서만 프로바이더를 가른다.
-  opengateway: Object.freeze(["deepseek/deepseek-v4.1-flash-ultrafast"]),
+  opengateway: Object.freeze(["deepseek/deepseek-v4.1-flash-ultrafast", "deepseek/deepseek-v4.1-flash-eco"]),
   nanogpt: Object.freeze(["z-ai/glm-5.3-uncensored", "z-ai/glm-5.3-flash-uncensored"]),
 });
 

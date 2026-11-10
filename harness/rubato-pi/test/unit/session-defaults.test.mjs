@@ -7,6 +7,7 @@ import {
   DEFAULT_NANOGPT_PROVIDER,
   DEFAULT_OPENGATEWAY_PROVIDER,
   DISABLED_BUILTIN_EXTENSIONS,
+  OPENGATEWAY_FLASH_ECO_MODEL_ID,
   OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
   OPENGATEWAY_PROVIDER_ID,
   openGatewayProviderLooksCurrent,
@@ -432,8 +433,39 @@ test("옛 safety buffer 만 있는 설정은 현재가 아니다", () => {
 
 // OpenGateway: 피커 카탈로그와 models.json 템플릿이 같은 모델 id 를 가리켜야 피커에 행이 뜬다.
 test("opengateway 템플릿의 모델 id 는 피커 카탈로그가 소유한 id 와 같다", () => {
-  assert.deepEqual([...PRODUCT_MODEL_ORDER[OPENGATEWAY_PROVIDER_ID]], [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
-  assert.deepEqual(DEFAULT_OPENGATEWAY_PROVIDER.models.map((model) => model.id), [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
+  const ids = [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID, OPENGATEWAY_FLASH_ECO_MODEL_ID];
+  assert.deepEqual([...PRODUCT_MODEL_ORDER[OPENGATEWAY_PROVIDER_ID]], ids);
+  assert.deepEqual(DEFAULT_OPENGATEWAY_PROVIDER.models.map((model) => model.id), ids);
+});
+
+test("ultrafast 만 있는 옛 models.json 은 현재가 아니고, 다음 기동에 eco 행이 더해진다", () => {
+  // 회귀 방지: 첫 행만 보는 현재성 판정이면 이미 설치된 기기는 eco 를 영영 못 받는다.
+  const ultrafastOnly = {
+    ...DEFAULT_OPENGATEWAY_PROVIDER,
+    models: DEFAULT_OPENGATEWAY_PROVIDER.models.filter((model) => model.id === OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID),
+  };
+  const stale = {
+    providers: {
+      [BAI_PROVIDER_ID]: DEFAULT_BAI_PROVIDER,
+      [OPENGATEWAY_PROVIDER_ID]: ultrafastOnly,
+      [NANOGPT_PROVIDER_ID]: DEFAULT_NANOGPT_PROVIDER,
+    },
+    disabledProviders: foreignProviderIds(),
+  };
+  assert.equal(openGatewayProviderLooksCurrent(stale.providers), false);
+  assert.equal(modelsLookCurrent(stale), false);
+  const next = ensureModelsConfig("/tmp/agent", {
+    exists: () => true,
+    readFile: () => JSON.stringify(stale),
+    writeFile: () => {},
+  });
+  const models = next.providers[OPENGATEWAY_PROVIDER_ID].models;
+  assert.deepEqual(models.map((model) => model.id), [OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID, OPENGATEWAY_FLASH_ECO_MODEL_ID]);
+  const eco = models[1];
+  assert.equal(eco.name, "v4.1 Flash Eco");
+  assert.deepEqual(eco.input, ["text", "image"]);
+  assert.deepEqual(eco.compat, models[0].compat);
+  assert.equal(modelsLookCurrent(next), true);
 });
 
 test("opengateway 를 foreign 으로 끈 옛 파일은 다음 기동에 회수되고 행이 생긴다", () => {
@@ -477,7 +509,11 @@ test("opengateway 키와 사용자가 추가한 행은 템플릿이 덮지 않�
   });
   const provider = next.providers[OPENGATEWAY_PROVIDER_ID];
   assert.equal(provider.apiKey, "local-keep");
-  assert.deepEqual(provider.models.map((model) => model.id), ["z-ai/glm-5.3-ultrafast", OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID]);
+  assert.deepEqual(provider.models.map((model) => model.id), [
+    "z-ai/glm-5.3-ultrafast",
+    OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
+    OPENGATEWAY_FLASH_ECO_MODEL_ID,
+  ]);
   assert.deepEqual(provider.models[1].input, ["text", "image"]);
   assert.equal(openGatewayProviderLooksCurrent(next.providers), true);
 });
