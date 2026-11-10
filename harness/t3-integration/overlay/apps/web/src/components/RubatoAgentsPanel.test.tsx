@@ -6,14 +6,15 @@ import { describe, expect, it, vi } from "vite-plus/test";
 vi.mock("./chat/MessagesTimeline", () => ({ MessagesTimeline: () => null }));
 
 import {
-  QUIET_AFTER_MS,
   RubatoAgentsPanel,
   agentMetaParts,
   boardTaskStateLabel,
   findPanelAgent,
-  quietLabel,
+  rowLiveness,
   splitAgentsByActivity,
 } from "./RubatoAgentsPanel";
+import type { BoardNode } from "../state/rubatoStatusBoard";
+import { STALL_AFTER_MS } from "./rubatoLiveness";
 
 const AT = "2026-09-27T03:00:00.000Z";
 
@@ -148,12 +149,18 @@ describe("RubatoAgentsPanel", () => {
     expect(boardTaskStateLabel(task("pending", null), [])).toBe("open");
   });
 
-  it("a live agent reads quiet only after two minutes without an update", () => {
+  it("a row takes the status board's liveness: stalled past the threshold, lost when its process is gone", () => {
     const start = Date.parse(AT);
-    const live = agent({ id: "st_a" });
-    expect(quietLabel(live, start + QUIET_AFTER_MS - 1)).toBeNull();
-    expect(quietLabel(live, start + 3 * 60_000)).toBe("quiet 3m");
-    expect(quietLabel(agent({ id: "st_b", status: "completed" }), start + 10 * 60_000)).toBeNull();
+    const node = (overrides: Partial<BoardNode>): BoardNode => ({
+      id: "st_a", sessionId: null, task: null, model: null, effort: null, status: "running", lifecycle: "live",
+      turnOpen: true, pendingTool: null, lastActivityAt: start, startedAt: start, endedAt: null, narration: null,
+      steps: [], toolCalls: null, messages: null, parentSessionId: null, ...overrides,
+    });
+    expect(rowLiveness(undefined, start)).toBeNull();
+    expect(rowLiveness(node({}), start + 12_000)).toEqual({ liveness: "working", ago: "12s ago" });
+    expect(rowLiveness(node({}), start + STALL_AFTER_MS)).toEqual({ liveness: "stalled", ago: "5m ago" });
+    expect(rowLiveness(node({ lifecycle: "lost" }), start + 1_000)?.liveness).toBe("lost");
+    expect(rowLiveness(node({ turnOpen: false }), start + STALL_AFTER_MS * 3)?.liveness).toBe("resting");
   });
 
   it("working agents stay open on top; finished and idle ones fold below, newest first", () => {

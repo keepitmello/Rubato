@@ -5,7 +5,10 @@
  *   1. what the agent is working on (the spawn's own words, uncut), after its team name if any
  *   2. its state (rubatoAgentStatus agentDisplayState) and what goes with it: what it does now,
  *      the job it waits on, its latest report, or how it ended
- *   3. role · model as the picker names it · Speed · turn N (· quiet 3m when stalled)
+ *   3. role · model as the picker names it · Speed · turn N · when it last moved
+ * Whether it is alive is the status board's rule over the same answer (rubatoLiveness.ts):
+ * a member quiet past the threshold reads "Stalled", one whose process is gone "Lost", whatever
+ * its record still says.
  * A team member that got a team message since the engine started watching it adds one line
  * between 2 and 3: who sent its latest assignment and the summary they gave it.
  * Taskforces (team_create) sit above plain agents as cards: members first, then the shared
@@ -37,8 +40,8 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useId,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -49,6 +52,17 @@ import { ScrollArea } from "~/components/ui/scroll-area";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { setOpenedInPanel, useOpenedInPanel } from "../rubatoPanelViews";
 import { RubatoAgentSession } from "./RubatoAgentSession";
+import {
+  BOARD_STATE_STEP_MS,
+  type BoardNode,
+  useBoardNodes,
+  useBoardNow,
+  useStatusBoard,
+  type StatusBoard,
+} from "../state/rubatoStatusBoard";
+import { BoardAgo } from "./RubatoBoardClock";
+import { LIVENESS_VISUALS, formatAgo, livenessOf, type Liveness } from "./rubatoLiveness";
+import { useBoardFolders } from "./rubatoBoardFolders";
 import {
   AGENT_STATE_VISUALS,
   AgentElapsed,
@@ -69,27 +83,56 @@ export { agentTaskLabel, formatElapsedSeconds } from "./rubatoAgentStatus";
 /** A row opens its agent's conversation in place of the list. */
 const OpenAgentContext = createContext<(agentId: string) => void>(() => undefined);
 
-/** A live agent with no update for this long shows how long it has been quiet. */
-export const QUIET_AFTER_MS = 120_000;
+/** The status board's answer, which says for each agent whether it is alive and when it last moved. */
+const BoardContext = createContext<{ board: StatusBoard | null; nodes: ReadonlyMap<string, BoardNode> }>({
+  board: null,
+  nodes: new Map(),
+});
 
-/** "quiet 3m" once a live agent has sent nothing for QUIET_AFTER_MS; null otherwise. */
-export function quietLabel(agent: RuntimeSubagent, now: number): string | null {
-  if (!isLive(agent.status)) return null;
-  const last = Date.parse(agent.updatedAt);
-  if (Number.isNaN(last) || now - last < QUIET_AFTER_MS) return null;
-  return `quiet ${Math.floor((now - last) / 60_000)}m`;
+/**
+ * The board's word on a row, when it has one: the liveness rule's state and "12s ago". An
+ * ended agent keeps the row's own ending; the board only adds when it last moved.
+ */
+export function rowLiveness(
+  node: BoardNode | undefined,
+  now: number,
+): { readonly liveness: Liveness; readonly ago: string | null } | null {
+  if (!node) return null;
+  return { liveness: livenessOf(node, now), ago: formatAgo(node.lastActivityAt, now) };
 }
 
-function useQuietLabel(agent: RuntimeSubagent): string | null {
-  const [now, setNow] = useState(() => Date.now());
-  const live = isLive(agent.status);
-  useEffect(() => {
-    if (!live) return;
-    setNow(Date.now());
-    const id = setInterval(() => setNow(Date.now()), 15_000);
-    return () => clearInterval(id);
-  }, [live, agent.updatedAt]);
-  return quietLabel(agent, now);
+/** The row's liveness, worked out every few seconds; its "12s ago" ticks on its own (BoardAgo). */
+function useRowLiveness(agent: RuntimeSubagent) {
+  const { board, nodes } = useContext(BoardContext);
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
+  const node = nodes.get(agent.id);
+  return useMemo(() => {
+    const alive = rowLiveness(node, now);
+    return alive ? { ...alive, at: node?.lastActivityAt ?? null, board } : null;
+  }, [node, now, board]);
+}
+
+/**
+ * A row's state with the board's word: a running agent that stalled or whose process is gone reads
+ * so. Working, resting and ended stay the engine's: it hears a turn start or end, a background job
+ * and a member's wait before the transcript grows, so its word there is newer than the file's tail.
+ * Only what the engine cannot say of a dead or silent child comes from the board.
+ */
+export function liveDisplayState(
+  agent: RuntimeSubagent,
+  inTeam: boolean,
+  alive: ReturnType<typeof rowLiveness>,
+): AgentDisplayState {
+  const state = agentDisplayState(agent, inTeam);
+  if (!alive || isSettled(agent.status)) return state;
+  return alive.liveness === "stalled" || alive.liveness === "lost" ? alive.liveness : state;
+}
+
+/** Each agent's state as its row shows it, for the counts beside them. */
+function useLiveStates(agents: ReadonlyArray<RuntimeSubagent>, inTeam: boolean): AgentDisplayState[] {
+  const { board, nodes } = useContext(BoardContext);
+  const now = useBoardNow(board, BOARD_STATE_STEP_MS);
+  return agents.map((agent) => liveDisplayState(agent, inTeam, rowLiveness(nodes.get(agent.id), now)));
 }
 
 /**
@@ -219,7 +262,10 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
   const statusLabel = agentStatusLabel(agent, state);
   const line = agentStateParts(agent, inTeam);
   const assignment = inTeam ? assignmentLabel(agent) : null;
-  const quiet = useQuietLabel(agent);
+  const alive = useRowLiveness(agent);
+  // A stalled or lost agent reads as that, even while its record says it runs.
+  const live = liveDisplayState(agent, inTeam, alive);
+  const override = live === "stalled" || live === "lost" ? live : null;
   const task = agentTaskLabel(agent);
   const meta = agentMetaParts(agent);
   const metaRow = assignment ? "row-start-4" : "row-start-3";
@@ -227,8 +273,9 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
     <div className="min-w-0">
       <button
         type="button"
-        aria-label={`${task}: open conversation. ${statusLabel}`}
-        data-state={state}
+        aria-label={`${task}: open conversation. ${override ? AGENT_STATE_VISUALS[override].label : statusLabel}`}
+        data-state={live}
+        data-liveness={alive?.liveness}
         onClick={() => openAgent(agent.id)}
         className={cn(
           "grid w-full cursor-pointer grid-cols-[0.375rem_minmax(0,1fr)_auto] items-center gap-x-2 rounded-md px-1.5 py-1 text-left hover:bg-accent/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
@@ -238,7 +285,7 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
         )}
       >
         <span className="col-start-1 row-start-1 flex items-center">
-          <StatusDot state={state} />
+          <StatusDot state={live} />
         </span>
         <span className="col-start-2 row-start-1 min-w-0 truncate text-sm font-medium" title={task}>
           {inTeam && agent.memberName ? (
@@ -261,7 +308,11 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
             agent.status === "failed" ? "text-destructive-foreground" : "text-muted-foreground",
           )}
         >
-          <StateLine {...line} />
+          {override ? (
+            <StateLine label={AGENT_STATE_VISUALS[override].label} detail={line.detail} />
+          ) : (
+            <StateLine {...line} />
+          )}
         </span>
         {assignment ? (
           <span
@@ -273,9 +324,14 @@ function AgentRow({ agent, inTeam = false }: { agent: RuntimeSubagent; inTeam?: 
         ) : null}
         <span className={cn("col-start-2 col-end-4 truncate font-mono text-[.7rem] tabular-nums text-muted-foreground/70", metaRow)}>
           {meta.join(" · ")}
-          {quiet ? <span className="text-warning-foreground"> · {quiet}</span> : null}
+          {alive?.ago ? (
+            <span className={cn(override ? LIVENESS_VISUALS[override].textClass : undefined)} data-rubato-ago="">
+              {" · "}
+              <BoardAgo at={alive.at} board={alive.board} />
+            </span>
+          ) : null}
         </span>
-        <span className="sr-only">{statusLabel}</span>
+        <span className="sr-only">{override ? AGENT_STATE_VISUALS[override].label : statusLabel}</span>
       </button>
     </div>
   );
@@ -302,7 +358,7 @@ export function teamCountsLabel(members: ReadonlyArray<RuntimeSubagent>, inTeam 
 
 /** The same counts with each part its own text, so the Korean interface finds every one. */
 function CountParts({ members, inTeam = false }: { members: ReadonlyArray<RuntimeSubagent>; inTeam?: boolean }) {
-  const parts = teamCountsParts(members, inTeam);
+  const parts = stateCountParts(useLiveStates(members, inTeam));
   if (parts.length === 0) return <span>starting</span>;
   return (
     <span>
@@ -631,7 +687,9 @@ export function findPanelAgent(
 
 function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam: boolean }) {
   const task = agentTaskLabel(agent);
-  const quiet = useQuietLabel(agent);
+  const alive = useRowLiveness(agent);
+  const live = liveDisplayState(agent, inTeam, alive);
+  const override = live === "stalled" || live === "lost" ? live : null;
   const state = agentDisplayState(agent, inTeam);
   const job = state === "background" ? awaitedWorkLabel(agent) : null;
   const assignment = inTeam ? assignmentLabel(agent) : null;
@@ -644,8 +702,10 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
         {task}
       </p>
       <p className="flex min-w-0 items-center gap-1.5 font-mono text-[.7rem] text-muted-foreground/80">
-        <StatusDot state={state} />
-        <span>{agentStatusLabel(agent, state)}</span>
+        <StatusDot state={live} />
+        <span className={override ? LIVENESS_VISUALS[override].textClass : undefined}>
+          {override ? AGENT_STATE_VISUALS[override].label : agentStatusLabel(agent, state)}
+        </span>
         {job ? (
           <>
             <span aria-hidden>·</span>
@@ -658,7 +718,11 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
             <AgentElapsed agent={agent} />
           </>
         ) : null}
-        {quiet ? <span className="text-warning-foreground">· {quiet}</span> : null}
+        {alive?.ago ? (
+          <span className={cn(override ? LIVENESS_VISUALS[override].textClass : undefined)} data-rubato-ago="">
+            · <BoardAgo at={alive.at} board={alive.board} />
+          </span>
+        ) : null}
       </p>
       {assignment ? (
         <p className="truncate text-[.7rem] text-muted-foreground/80">
@@ -669,6 +733,36 @@ function AgentSessionHeader({ agent, inTeam }: { agent: RuntimeSubagent; inTeam:
         {agentMetaParts(agent).join(" · ")}
       </p>
     </div>
+  );
+}
+
+/** The panel's totals; a running agent the board calls stalled or lost counts as that, not as working. */
+function PanelFooter({ model }: { model: AgentPanelModel }) {
+  const rows = [
+    ...model.workflows.flatMap((group) => teamMembers(group).map((agent) => [agent, true] as const)),
+    ...model.directAgents.map((agent) => [agent, false] as const),
+  ];
+  // Each row counted in the state its own row shows (members as members: resting is "waiting").
+  const states = [
+    ...useLiveStates(rows.filter(([, inTeam]) => inTeam).map(([agent]) => agent), true),
+    ...useLiveStates(rows.filter(([, inTeam]) => !inTeam).map(([agent]) => agent), false),
+  ];
+  const count = (...wanted: AgentDisplayState[]) => states.filter((state) => wanted.includes(state)).length;
+  const working = count("working");
+  const stalled = count("stalled");
+  const lost = count("lost");
+  const background = count("background");
+  const idle = count("waiting", "idle");
+  const settled = count("completed", "failed", "stopped");
+  return (
+    <footer className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
+      {working > 0 ? <span className="text-info-foreground">● {working} working</span> : null}
+      {stalled > 0 ? <span className="text-warning-foreground">{stalled} stalled</span> : null}
+      {lost > 0 ? <span className="text-destructive-foreground">{lost} lost</span> : null}
+      {background > 0 ? <span>{background} on a job</span> : null}
+      {idle > 0 ? <span>{idle} idle</span> : null}
+      {settled > 0 ? <span>{settled} settled</span> : null}
+    </footer>
   );
 }
 
@@ -695,10 +789,20 @@ export function RubatoAgentsPanel({
     [threadKey],
   );
   const openAgent = useCallback((agentId: string) => setOpened(agentId), [setOpened]);
+  // The status board's answer for this thread's folder too, for each row's liveness.
+  const { environmentId: boardEnvironmentId, folders } = useBoardFolders();
+  const boardFolders = useMemo(
+    () => (cwd && !folders.includes(cwd) ? [...folders, cwd] : folders),
+    [cwd, folders],
+  );
+  const board = useStatusBoard(boardEnvironmentId, boardFolders, model.hasAgents);
+  const nodes = useBoardNodes(board);
+  const boardValue = useMemo(() => ({ board, nodes }), [board, nodes]);
   const found = openedId ? findPanelAgent(model, openedId) : null;
   if (found) {
     const { agent, inTeam } = found;
     return (
+      <BoardContext.Provider value={boardValue}>
       <RubatoAgentSession
         key={agent.id}
         target={
@@ -711,6 +815,7 @@ export function RubatoAgentsPanel({
         header={<AgentSessionHeader agent={agent} inTeam={inTeam} />}
         onBack={() => setOpened(null)}
       />
+      </BoardContext.Provider>
     );
   }
   if (!model.hasAgents) {
@@ -728,6 +833,7 @@ export function RubatoAgentsPanel({
   const hasTeams = model.workflows.length > 0;
   return (
     <OpenAgentContext.Provider value={openAgent}>
+    <BoardContext.Provider value={boardValue}>
     <div className="flex h-full min-h-0 flex-col">
       <ScrollArea className="min-h-0 flex-1">
         <div className="flex flex-col gap-3 p-2">
@@ -747,17 +853,9 @@ export function RubatoAgentsPanel({
           ) : null}
         </div>
       </ScrollArea>
-      <footer className="flex items-center gap-2 border-t border-border/60 px-3 py-1.5 font-mono text-[.7rem] text-muted-foreground">
-        {model.runningCount + model.waitingCount > 0 ? (
-          <span className="text-info-foreground">
-            ● {model.runningCount + model.waitingCount} working
-          </span>
-        ) : null}
-        {model.backgroundCount > 0 ? <span>{model.backgroundCount} on a job</span> : null}
-        {model.idleCount > 0 ? <span>{model.idleCount} idle</span> : null}
-        {model.settledCount > 0 ? <span>{model.settledCount} settled</span> : null}
-      </footer>
+      <PanelFooter model={model} />
     </div>
+    </BoardContext.Provider>
     </OpenAgentContext.Provider>
   );
 }

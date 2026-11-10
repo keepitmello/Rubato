@@ -179,3 +179,13 @@ export const rubatoStatsRouteLayer = serviceRouteLayer({
   handler: "handleStatsRequest",
   name: "stats",
 });
+
+// The status board (status-board-edits.mjs): every team and subagent in the app's projects,
+// read off disk with each member's last activity (src/status-board/scan.mjs).
+export const rubatoStatusBoardRouteLayer = serviceRouteLayer({
+  route: "/rubato/status-board",
+  file: "status-board/service.mjs",
+  service: "statusBoardService",
+  handler: "handleStatusBoardRequest",
+  name: "status-board",
+});

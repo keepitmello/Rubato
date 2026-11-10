@@ -4681,7 +4681,29 @@
   "Ask to change": "고쳐 달라고 하기",
   "Used in": "사용 위치",
   "Dream models": "꿈 모델",
-  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다."
+  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다.",
+  "Teams": "팀",
+  "Stalled": "멈춤",
+  "Lost": "끊김",
+  "Reading agents…": "에이전트를 읽는 중…",
+  "No teams or subagents in your projects right now.": "지금 프로젝트에서 도는 팀이나 서브에이전트가 없습니다.",
+  "Nothing in this state.": "이 상태인 항목이 없습니다.",
+  "No member is running.": "실행 중인 멤버가 없습니다.",
+  "Its process is gone": "프로세스가 사라졌습니다",
+  "Claimed": "맡음",
+  "Pending": "대기",
+  "Hide completed": "완료 항목 숨기기",
+  "Log": "로그",
+  "Subagents": "서브에이전트",
+  "Past teams": "지난 팀",
+  "No teams or subagents are at work right now.": "지금 일하는 팀이나 서브에이전트가 없습니다.",
+  "Open conversation": "대화 열기",
+  "Open agent": "에이전트 열기",
+  "Not linked to a conversation": "연결된 대화가 없습니다",
+  "Opens inside its parent agent's conversation": "상위 에이전트의 대화 안에서 열립니다",
+  "No saved conversation": "저장된 대화가 없습니다",
+  "Its conversation isn't in the app": "앱에 이 대화가 없습니다",
+  "Finding its conversation…": "대화를 찾는 중…"
  },
  "templates": [
   [
@@ -8419,6 +8441,66 @@
   [
    "Show all {0}",
    "{0}개 모두 보기"
+  ],
+  [
+   "{0} completed",
+   "완료 {0}개"
+  ],
+  [
+   "{0} at work",
+   "{0}개 작업 중"
+  ],
+  [
+   "{0} at work, {1} stalled",
+   "{0}개 작업 중, {1}개 멈춤"
+  ],
+  [
+   "Stalled after {0} min without activity",
+   "{0}분 동안 활동이 없으면 멈춤으로 표시합니다"
+  ],
+  [
+   "{0} stalled",
+   "{0}개 멈춤"
+  ],
+  [
+   "{0} lost",
+   "{0}개 끊김"
+  ],
+  [
+   "Quiet for over {0} hours",
+   "{0}시간 넘게 조용함"
+  ],
+  [
+   "No member or work item has moved since {0}",
+   "{0} 이후 움직인 멤버나 작업이 없습니다"
+  ],
+  [
+   "All {0} work items are done · members are free for new work",
+   "작업 {0}개를 모두 마쳤습니다 · 멤버는 새 일을 받을 수 있습니다"
+  ],
+  [
+   "{0} work items left · no member has worked since {1}",
+   "남은 작업 {0}개 · {1} 이후 일한 멤버가 없습니다"
+  ],
+  [
+   "A member's turn has been quiet for over {0} min",
+   "한 멤버의 턴이 {0}분 넘게 조용합니다"
+  ],
+  [
+   "Open conversation: {0}",
+   "대화 열기: {0}"
+  ],
+  [
+   "Open agent: {0}",
+   "에이전트 열기: {0}"
+  ],
+  [
+   "{0} at work, {1} teams stalled",
+   "{0}개 작업 중, 팀 {1}개 멈춤"
+  ],
+  [
+   "{0} at work, {1} stalled, {2} teams stalled",
+   "{0}개 작업 중, {1}개 멈춤, 팀 {2}개 멈춤"
   ]
  ]
 }

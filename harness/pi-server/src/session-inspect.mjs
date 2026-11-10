@@ -56,16 +56,17 @@ export const agentSessionDir = (stateDir, agentId) => path.join(stateDir, 'child
 export const notesDatabasePath = (agentDir, sessionUuid) =>
   path.join(agentDir, 'context-notes', `${createHash('sha256').update(sessionUuid).digest('hex')}.sqlite`);
 
-async function jsonlFiles(dir) {
+export async function jsonlFiles(dir) {
   return (await list(dir)).filter((entry) => entry.isFile() && entry.name.endsWith('.jsonl')).map((entry) => path.join(dir, entry.name)).sort();
 }
 
 /**
  * When a subagent last did something: its transcript grows with every message, tool result and
  * notification. Its record only changes when its status does, so a run that died or hangs keeps
- * an old updatedAt next to "running" and looks the same as one that is working.
+ * an old updatedAt next to "running" and looks the same as one that is working. The app's status
+ * board reads the same clock (harness/t3-integration/src/status-board/scan.mjs).
  */
-async function lastActivity(files) {
+export async function lastActivity(files) {
   const file = files.at(-1);
   return file ? ms((await stat(file).catch(() => undefined))?.mtimeMs) : null;
 }
