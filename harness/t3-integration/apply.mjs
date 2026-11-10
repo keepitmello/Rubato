@@ -58,6 +58,7 @@ import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
 import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
 import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
+import { statusBoardEdits, statusBoardOverlays } from './status-board-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1867,6 +1868,11 @@ for (const [relative, changes] of Object.entries(scrollToEndEdits)) {
 // import anchors beside agents-surface-edits' own (work-card-edits.mjs).
 overlays.push(...workCardOverlays);
 for (const [relative, changes] of Object.entries(workCardEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The status board (현황판) at the top of the thread sidebar; after the sidebar edits it sits beside (status-board-edits.mjs).
+overlays.push(...statusBoardOverlays);
+for (const [relative, changes] of Object.entries(statusBoardEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 overlays.push(...i18nOverlays);

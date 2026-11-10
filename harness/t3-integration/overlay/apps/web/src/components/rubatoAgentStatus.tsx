@@ -16,6 +16,9 @@ import type {
 /**
  * What an agent is doing, as a person reads it:
  * - working: a turn runs (in-flight states all read as one).
+ * - stalled, lost: what the status board's liveness rule (rubatoLiveness.ts) says of a working
+ *   one whose turn has gone quiet past the threshold, or whose process is gone; only the Agents
+ *   panel, which reads that answer, shows them.
  * - background: its turn ended on work of its own that will wake it (a bounded background
  *   command, a monitor that has not reported); `awaiting` names it.
  * - waiting: a team member resting with nothing of its own pending; only a message wakes it.
@@ -24,12 +27,14 @@ import type {
  */
 export type AgentDisplayState =
   | "working"
+  | "stalled"
   | "background"
   | "waiting"
   | "idle"
   | "completed"
   | "failed"
-  | "stopped";
+  | "stopped"
+  | "lost";
 
 export function agentDisplayState(
   agent: Pick<RuntimeSubagent, "status"> & { readonly awaiting?: RuntimeSubagent["awaiting"] },
@@ -64,12 +69,14 @@ export const AGENT_STATE_VISUALS: Record<
   { readonly dotClass: string; readonly glyphClass: string; readonly label: string; readonly countWord: string }
 > = {
   working: { dotClass: "bg-info", glyphClass: "bg-info ring-2 ring-info/25 animate-pulse", label: "Working", countWord: "working" },
+  stalled: { dotClass: "bg-warning", glyphClass: "bg-warning", label: "Stalled", countWord: "stalled" },
   background: { dotClass: ON_JOB, glyphClass: ON_JOB, label: "Background job", countWord: "on a job" },
   waiting: { dotClass: RESTING_RING, glyphClass: RESTING_RING, label: "Waiting for instructions", countWord: "waiting" },
   idle: { dotClass: RESTING_RING, glyphClass: RESTING_RING, label: "Idle · resumable", countWord: "idle" },
   completed: { dotClass: "bg-success", glyphClass: "bg-success", label: "Completed", countWord: "done" },
   failed: { dotClass: "bg-destructive", glyphClass: "bg-destructive", label: "Failed", countWord: "failed" },
   stopped: { dotClass: "bg-muted-foreground/60", glyphClass: "bg-muted-foreground/40", label: "Stopped", countWord: "stopped" },
+  lost: { dotClass: "bg-destructive/70", glyphClass: "bg-destructive/70", label: "Lost", countWord: "lost" },
 };
 
 /** "2 working", "1 on a job", … in the states' order, nonzero only; each part is its own entry for translation. */
