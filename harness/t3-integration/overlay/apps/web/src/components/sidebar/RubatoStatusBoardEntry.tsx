@@ -36,11 +36,15 @@ export function RubatoStatusBoardEntry() {
       <span className="min-w-0 flex-1 truncate">Status board</span>
       {atWork > 0 || warn ? (
         <span
-          aria-label={[
-            `${atWork} at work`,
-            ...(counts.stalled > 0 ? [`${counts.stalled} stalled`] : []),
-            ...(counts.stalledTeams > 0 ? [`${counts.stalledTeams} teams stalled`] : []),
-          ].join(", ")}
+          aria-label={
+            counts.stalled > 0 && counts.stalledTeams > 0
+              ? `${atWork} at work, ${counts.stalled} stalled, ${counts.stalledTeams} teams stalled`
+              : counts.stalled > 0
+                ? `${atWork} at work, ${counts.stalled} stalled`
+                : counts.stalledTeams > 0
+                  ? `${atWork} at work, ${counts.stalledTeams} teams stalled`
+                  : `${atWork} at work`
+          }
           className={cn(
             "flex h-4.5 min-w-4.5 items-center justify-center rounded-full px-1.5 text-[.68rem] font-semibold tabular-nums",
             warn ? "bg-warning/20 text-warning-foreground" : "bg-info/20 text-info-foreground",
