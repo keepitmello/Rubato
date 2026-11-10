@@ -99,7 +99,12 @@ function useRowLiveness(agent: RuntimeSubagent) {
   return rowLiveness(nodes.get(agent.id), now);
 }
 
-/** A row's state with the board's word: a running agent that stalled or whose process is gone reads so. */
+/**
+ * A row's state with the board's word: a running agent that stalled or whose process is gone reads
+ * so. Working, resting and ended stay the engine's: it hears a turn start or end, a background job
+ * and a member's wait before the transcript grows, so its word there is newer than the file's tail.
+ * Only what the engine cannot say of a dead or silent child comes from the board.
+ */
 export function liveDisplayState(
   agent: RuntimeSubagent,
   inTeam: boolean,
