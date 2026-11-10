@@ -10,6 +10,7 @@
 // Registered after settings-layout-edits.mjs, whose Settings lines these anchor on.
 export const companionOverlays = [
   'apps/server/src/RubatoCompanion.ts',
+  'apps/server/src/RubatoCompanion.test.ts',
   'apps/server/src/RubatoCompanionRewind.ts',
   'apps/server/src/RubatoCompanionRewind.test.ts',
   'apps/web/src/state/rubatoCompanion.ts',

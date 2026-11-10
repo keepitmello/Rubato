@@ -266,9 +266,13 @@ export const rubatoCompanion = {
   /** Segno's art for one expression of its space, as a data URL; `version` changes when the file is swapped. */
   art: (env: EnvironmentId | null, state: SegnoStageState = "idle", companionId = selectedCompanionId) =>
     call<{ art: { url: string; version: number } }>(env, "art", { state, companionId }),
-  /** The T3 thread that shows the companion's conversation; null until the app has picked it up. */
-  thread: (env: EnvironmentId | null, sessionId: string) =>
-    call<{ threadId: string | null }>(env, "thread", { sessionId }),
+  /**
+   * The T3 thread that shows the companion's conversation; null until the app has picked it up.
+   * `current` marks the conversation it runs in now: that thread is its room, and the server takes
+   * it out of the archive (RubatoCompanion.ts companionRoom).
+   */
+  thread: (env: EnvironmentId | null, sessionId: string, current = false) =>
+    call<{ threadId: string | null }>(env, "thread", current ? { sessionId, current } : { sessionId }),
   /** What Segno said in a run of its thread that just ended; null when it said nothing to the person. */
   said: (env: EnvironmentId | null, threadId: string, runId: string) =>
     call<{ text: string | null }>(env, "said", { threadId, runId }),
@@ -364,9 +368,11 @@ function refresh(env: EnvironmentId | null): Promise<void> {
       const { companions: statuses } = await rubatoCompanion.companions(env);
       const companions = await Promise.all(statuses.map(async status => {
         const previous = view.companions.find(item => item.id === status.id);
-        let threadId = status.sessionId !== null && status.sessionId === previous?.sessionId ? previous.threadId : null;
-        if (status.sessionId !== null && threadId === null)
-          threadId = (await rubatoCompanion.thread(env, status.sessionId).catch(() => ({ threadId: null }))).threadId;
+        const known = status.sessionId !== null && status.sessionId === previous?.sessionId ? previous.threadId : null;
+        // Asked on every refresh, not kept: a room thread archived while the app runs comes back
+        // out of the archive within one refresh.
+        const threadId = status.sessionId === null ? null
+          : (await rubatoCompanion.thread(env, status.sessionId, true).catch(() => ({ threadId: known }))).threadId;
         // An earlier conversation (the companion moved to a new one) is not a sidebar thread either.
         const conversationThreadIds = Array.isArray(status.conversations)
           ? await threadsOf(env, status.conversations)

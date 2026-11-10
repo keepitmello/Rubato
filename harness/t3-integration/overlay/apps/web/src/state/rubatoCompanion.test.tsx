@@ -57,6 +57,9 @@ it("the rendered picker switches homes and subsequent settings requests without 
   await vi.waitFor(() => expect(host.querySelectorAll("select[aria-label=Companion] option")).toHaveLength(2));
   expect(isCompanionThread("thread-1")).toBe(true);
   expect(isCompanionThread("thread-2")).toBe(true);
+  // Each companion's current conversation is asked as its room, which the server keeps out of the archive.
+  expect(fake.calls.filter(item => item.action === "thread").map(item => [item.body.sessionId, item.body.current]))
+    .toEqual(expect.arrayContaining([["s1", true], ["s2", true]]));
   expect(companionForThread("thread-2")?.home).toBe("/original-repo");
   const picker = host.querySelector<HTMLSelectElement>("select[aria-label=Companion]")!;
   await act(async () => { picker.value = "other"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
