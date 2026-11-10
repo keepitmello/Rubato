@@ -23,6 +23,11 @@ import { taskStateDir } from '../agents/transcript.mjs';
 export const BOARD_LIMITS = Object.freeze({
   /** Bytes read from a transcript's end: enough for the last steps, never the whole file. */
   tailBytes: 192 * 1024,
+  /**
+   * How far the read widens when the last entry alone is longer than the tail (a big tool result,
+   * an image): its kind decides whether the turn is open, so it has to be read whole.
+   */
+  tailMaxBytes: 8 * 1024 * 1024,
   steps: 6,
   log: 40,
   boardItems: 40,
@@ -137,18 +142,29 @@ async function tailFacts(file, cwd) {
   const version = `${info.size}:${Math.trunc(info.mtimeMs)}`;
   const held = tails.get(file);
   if (held?.version === version) return held.facts;
-  let text = '';
+  let text = null;
   let handle;
   try {
     handle = await open(file, 'r');
-    const length = Math.min(info.size, BOARD_LIMITS.tailBytes);
-    const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, info.size - length);
-    text = buffer.toString('utf8');
-    // A cut first line is not an entry.
-    if (length < info.size) text = text.slice(text.indexOf('\n') + 1);
+    // Widen until the last entry is whole: a region that starts inside it has no line break
+    // before its final byte.
+    for (let length = Math.min(info.size, BOARD_LIMITS.tailBytes); ; length = Math.min(info.size, BOARD_LIMITS.tailMaxBytes, length * 4)) {
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, info.size - length);
+      const cut = length < info.size;
+      if (!cut || buffer.lastIndexOf(10, buffer.length - 2) !== -1) {
+        text = buffer.toString('utf8');
+        // A cut first line is not an entry.
+        if (cut) text = text.slice(text.indexOf('\n') + 1);
+        break;
+      }
+      if (length >= BOARD_LIMITS.tailMaxBytes) break;
+    }
   } catch { return null; } finally { await handle?.close(); }
-  const facts = transcriptFacts(text, { cwd });
+  // Past the cap the last entry stays unread. One that large is a tool's output, not the model's
+  // answer, so the turn is still open; what the agent last said stays what it was.
+  const facts = text !== null ? transcriptFacts(text, { cwd })
+    : { ...(held?.facts ?? transcriptFacts('', { cwd })), turnOpen: true, pendingTool: null };
   tails.set(file, { version, facts });
   return facts;
 }

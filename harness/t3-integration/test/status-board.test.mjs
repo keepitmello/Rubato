@@ -149,6 +149,27 @@ test('a long transcript is read from its end only', async (t) => {
   assert.ok(member.steps.length <= BOARD_LIMITS.steps);
 });
 
+test('a last entry longer than the tail is read whole: a big tool result keeps the turn open and the narration', async (t) => {
+  const f = await fixture(t);
+  await f.record('st_10', { status: 'running', pid: 110 });
+  const big = (offsetMs, bytes) => line({ type: 'message', timestamp: iso(offsetMs),
+    message: { role: 'toolResult', toolCallId: 'c', content: [said('y'.repeat(bytes))] } });
+  await f.transcript('st_10', assistant(-9_000, [said('Reading the whole log.'), call('read', { path: '/w/big.log' })], 'toolUse')
+    + big(-5_000, BOARD_LIMITS.tailBytes + 5_000), -5_000);
+  let board = await readStatusBoard({ cwds: [f.cwd], now: NOW, agentDir: f.agentDir, alive: () => true });
+  let [member] = board.groups[0].members;
+  assert.equal(member.turnOpen, true);
+  assert.equal(member.narration, 'Reading the whole log.');
+  assert.equal(member.lastActivityAt, NOW - 5_000);
+  // Past the cap it is not read, and the turn is still not called closed.
+  await f.transcript('st_10', assistant(-3_000, [said('Done reading.')], 'stop') + big(-2_000, BOARD_LIMITS.tailMaxBytes + 1_000), -2_000);
+  board = await readStatusBoard({ cwds: [f.cwd], now: NOW, agentDir: f.agentDir, alive: () => true });
+  [member] = board.groups[0].members;
+  assert.equal(member.turnOpen, true);
+  // Unread: what it last said stays the line read before, not the one hidden behind the big entry.
+  assert.equal(member.narration, 'Reading the whole log.');
+});
+
 test('the service answers unchanged when the caller holds the same version', async () => {
   let reads = 0;
   let now = NOW;
