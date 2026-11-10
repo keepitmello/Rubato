@@ -20,7 +20,7 @@ import {
 // 테스트가 먼저 깨지고, 고치는 일은 값을 다시 베끼는 일이 된다.
 const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
 const BAI_FLASH = PRODUCT_MODEL_ORDER["b-ai"][0]
-const OPENGATEWAY_FLASH = PRODUCT_MODEL_ORDER.opengateway[0]
+const [OPENGATEWAY_FLASH, OPENGATEWAY_FLASH_ECO] = PRODUCT_MODEL_ORDER.opengateway
 const [FABLE, OPUS] = PRODUCT_MODEL_ORDER.anthropic
 const [SOL] = PRODUCT_MODEL_ORDER["openai-codex"]
 const pick = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`
@@ -103,8 +103,10 @@ describe("product model catalog", () => {
     expect(catalogSlugs()).toContain(`opengateway/${OPENGATEWAY_FLASH}`)
     expect(isProductCatalogSlug(`opengateway/${OPENGATEWAY_FLASH}`)).toBe(true)
     expect(productCatalogLabel({ provider: "opengateway", id: OPENGATEWAY_FLASH })).toBe("v4.1 Flash Ultrafast")
-    expect(admitProductCatalogItems([{ provider: "opengateway", id: OPENGATEWAY_FLASH }, { provider: "opengateway", id: "z-ai/glm-5.3" }]).map(pick)).toEqual([
+    expect(productCatalogLabel({ provider: "opengateway", id: OPENGATEWAY_FLASH_ECO })).toBe("v4.1 Flash Eco")
+    expect(admitProductCatalogItems([{ provider: "opengateway", id: OPENGATEWAY_FLASH }, { provider: "opengateway", id: OPENGATEWAY_FLASH_ECO }, { provider: "opengateway", id: "z-ai/glm-5.3" }]).map(pick)).toEqual([
       `opengateway/${OPENGATEWAY_FLASH}`,
+      `opengateway/${OPENGATEWAY_FLASH_ECO}`,
     ])
     // NanoGPT 는 GLM 5.3 Uncensored 와 Flash Uncensored 두 행만 피커에 들인다.
     const [NANOGPT_GLM, NANOGPT_GLM_FLASH] = PRODUCT_MODEL_ORDER.nanogpt

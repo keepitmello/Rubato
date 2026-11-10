@@ -640,7 +640,7 @@ function apiKeyNotes(providerId) {
   if (providerId === "kiro") return ["키 대신 이 스크립트를 써도 됩니다: harness/scripts/kiro-setup.sh"];
   if (providerId === "opencode") return ["Keychain 서비스 opencode.ai 에 넣어 두어도 됩니다."];
   if (providerId === "b-ai") return ["B.AI 키입니다. 모델은 DeepSeek V4.1 Flash."];
-  if (providerId === "opengateway") return ["opengateway.ai 대시보드(API Keys → Create Key)에서 만든 키입니다. 모델은 DeepSeek V4.1 Flash Ultrafast."];
+  if (providerId === "opengateway") return ["opengateway.ai 대시보드(API Keys → Create Key)에서 만든 키입니다. 모델은 DeepSeek V4.1 Flash Ultrafast 와 Eco."];
   if (providerId === VERTEX_PROVIDER_ID) return ["서비스 계정 JSON(키 파일 경로도 됩니다)이나 Vertex express API 키입니다. macOS Keychain 서비스 vertex 에 저장합니다. 모델은 Gemini 4 Argon."];
   if (providerId === "nanogpt") return ["nano-gpt.com/api 에서 만든 키입니다. 모델은 GLM 5.3 Uncensored 와 GLM 5.3 Flash Uncensored."];
   return [];

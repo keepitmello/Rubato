@@ -17,9 +17,15 @@
 // an end set after the latest input stands as set, shorter than two hours too; a later input
 // still gets its two hours unless the set end reaches further (`warmingDeadline`).
 //
-// Codex has no output-token cap on the wire, so a replay would generate a whole turn. Its refresh
-// stops at the first output event instead: by then the prompt prefix has been processed, which is
-// what refreshes the cache entry.
+// A refresh stops at the first output event instead of capping output: by then the prompt prefix
+// has been processed, which is what refreshes the cache entry. Codex has no output-token cap on
+// the wire. Claude has one, but a one-token Claude replay did not share the real request's cache:
+// on Rubato's request path it read and wrote a copy of its own, so the warmer kept that copy alive
+// while the person's next turn missed and re-wrote the whole thread (2026-11-10: turns after a
+// warm read their cache 16 times in 54, turns without one 1161 in 1188; a replay identical but for
+// `max_tokens` re-wrote the messages, the same replay with the request's own `max_tokens` read all
+// of them and wrote nothing). A Claude refresh therefore sends the request unchanged and stops
+// after prefill, so nothing the server keys on can differ.
 //
 // The warmer keeps going while the transcript still extends the request it holds, compared by
 // message identity. Pi rebuilds the transcript from the session at every turn boundary, and the
@@ -68,6 +74,17 @@ export function patchCacheWarmer(source) {
     next,
     `/** Refresh at 90% of the TTL while preserving at least ten seconds of margin. */`,
     `/**
+ * Marks the async work of one refresh. A Claude refresh sends the request as it was, max_tokens
+ * included, so a before_provider_request handler cannot tell it from the person's request by
+ * its payload; it asks isCacheWarmRequest() instead. The instance lives under a global symbol
+ * so extensions loaded from another module graph read the same one.
+ */
+import { AsyncLocalStorage } from "node:async_hooks";
+const CACHE_WARM_SCOPE = (globalThis[Symbol.for("rubato.cache-warm-scope")] ??= new AsyncLocalStorage());
+export function isCacheWarmRequest() {
+    return CACHE_WARM_SCOPE.getStore() === true;
+}
+/**
  * How long a cache entry lives once written: Anthropic's 1h tier, Codex's 30m, and for Gemini on
  * Vertex the low end of the 15-20 minute TTL the Gemini 4 Argon developer guide gives
  * (implicit caching only, no explicit TTL to read; the hard ceiling is 24h after creation).
@@ -102,9 +119,12 @@ export function rubatoWarmingIntervalMs(model) {
 export function warmMissedCache(model, usage) {
     return model?.provider === "google-vertex" && usage !== undefined && !(usage.cacheRead > 0);
 }
-/** Providers whose replay cannot be capped at one output token; the refresh stops after prefill. */
+/**
+ * Refreshes that send the request unchanged and stop after prefill: Codex cannot cap output on
+ * the wire, and a capped Claude replay warms a cache the next real request never reads.
+ */
 function stopsAfterPrefill(model) {
-    return model?.provider === "openai-codex";
+    return model?.provider === "openai-codex" || model?.api === "anthropic-messages";
 }
 /**
  * Whether the latest response carried an Anthropic server compaction block. After one, the
@@ -189,8 +209,9 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
     return model.compat?.forceAdaptiveThinking === true;`,
     `    if (!options?.reasoning || model.api !== "anthropic-messages")
         return true;
-    // Managed-effort models always send adaptive thinking (anthropic-messages buildParams).
-    return model.compat?.forceAdaptiveThinking === true || model.compat?.supportsMidConvoEffort === true;`,
+    // A Claude refresh keeps the request's own max_tokens (stopsAfterPrefill), so the thinking
+    // budget and the cache key it feeds are the ones the real request sent.
+    return true;`,
     "replayable",
   );
   next = replaceOnce(
@@ -297,24 +318,26 @@ export function warmingDeadline(entries, preference = sessionWarming(entries)) {
             let prefillOnly = false;
             let message;
             try {
-                const events = this.models.streamSimple(run.model, run.context, {
-                    ...run.options,
-                    maxTokens: 1,
-                    maxRetries: 0,
-                    signal: warmController.signal,
-                });
-                if (stopsAfterPrefill(run.model)) {
-                    for await (const event of events) {
-                        if (event.type === "done" || event.type === "error")
-                            break;
-                        if (event.type !== "start") {
-                            prefillOnly = true;
-                            warmController.abort();
-                            break;
+                message = await CACHE_WARM_SCOPE.run(true, async () => {
+                    const events = this.models.streamSimple(run.model, run.context, {
+                        ...run.options,
+                        ...(stopsAfterPrefill(run.model) ? {} : { maxTokens: 1 }),
+                        maxRetries: 0,
+                        signal: warmController.signal,
+                    });
+                    if (stopsAfterPrefill(run.model)) {
+                        for await (const event of events) {
+                            if (event.type === "done" || event.type === "error")
+                                break;
+                            if (event.type !== "start") {
+                                prefillOnly = true;
+                                warmController.abort();
+                                break;
+                            }
                         }
                     }
-                }
-                message = await events.result();
+                    return events.result();
+                });
             }
             finally {
                 run.controller.signal.removeEventListener("abort", abortWarm);

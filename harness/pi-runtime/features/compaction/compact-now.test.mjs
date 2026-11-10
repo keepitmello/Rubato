@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { AsyncLocalStorage } from "node:async_hooks";
 import test from "node:test";
 import { ANTHROPIC_SERVER_COMPACTION_MODEL_IDS } from "./context-budget.mjs";
 import { ANTHROPIC_SERVER_COMPACTION_EDIT_TYPE } from "./anthropic-server-compaction.mjs";
@@ -40,7 +41,9 @@ test("compact_context makes the next request compact on the server, once", async
 test("the cache warmer's replay does not take the compaction", async () => {
   const segno = load();
   await segno.call(CLAUDE);
-  const warm = segno.send(request(CLAUDE, { max_tokens: 1 }));
+  // The warmer sends the request as it was; only its scope tells the replay apart.
+  const scope = (globalThis[Symbol.for("rubato.cache-warm-scope")] ??= new AsyncLocalStorage());
+  const warm = scope.run(true, () => segno.send(request()));
   assert.notEqual(triggerOf(warm).value, ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN);
   assert.equal(triggerOf(segno.send(request())).value, ANTHROPIC_SERVER_COMPACTION_TRIGGER_MIN, "the next real request does");
 });

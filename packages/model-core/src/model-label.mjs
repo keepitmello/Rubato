@@ -36,6 +36,7 @@ const EXACT_LABELS = Object.freeze({
   "gemini-4-argon": "Gemini 4 Argon",
   "deepseek-v4.1-flash": "v4.1 Flash",
   "deepseek-v4.1-flash-ultrafast": "v4.1 Flash Ultrafast",
+  "deepseek-v4.1-flash-eco": "v4.1 Flash Eco",
   "glm-5.3-uncensored": "GLM 5.3 Uncensored",
   "glm-5.3-flash-uncensored": "GLM 5.3 Flash Uncensored",
 });

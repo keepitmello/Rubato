@@ -66,8 +66,14 @@ export const DEFAULT_BAI_PROVIDER = Object.freeze({
 export const OPENGATEWAY_BASE_URL = "https://apis.opengateway.ai/v1";
 /** OpenGateway 모델 id 는 `제작사/모델` 이라 슬래시를 품는다. 피커 슬러그는 `opengateway/deepseek/…`. */
 export const OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID = "deepseek/deepseek-v4.1-flash-ultrafast";
+/** Ultrafast 와 같은 모델을 더 느리고 훨씬 싸게 판다. 배치·밤샘 에이전트용이다. */
+export const OPENGATEWAY_FLASH_ECO_MODEL_ID = "deepseek/deepseek-v4.1-flash-eco";
 
-/** Pi custom provider. 키는 `rubato auth` 가 auth.json 에 두고, 환경변수는 대체 경로다. */
+/**
+ * Pi custom provider. 키는 `rubato auth` 가 auth.json 에 두고, 환경변수는 대체 경로다.
+ * 두 행은 같은 모델이라 능력 한 벌을 나눠 쓰고 속도와 값만 다르다. 값은 게이트웨이가
+ * 일정에 따라 할인율을 바꾸므로 `cost` 를 박지 않는다 — `GET /v1/models` 의 pricing 이 정본이다.
+ */
 export const DEFAULT_OPENGATEWAY_PROVIDER = Object.freeze({
   name: "OpenGateway",
   baseUrl: OPENGATEWAY_BASE_URL,
@@ -78,6 +84,11 @@ export const DEFAULT_OPENGATEWAY_PROVIDER = Object.freeze({
     Object.freeze({
       id: OPENGATEWAY_FLASH_ULTRAFAST_MODEL_ID,
       name: "v4.1 Flash Ultrafast",
+      ...DEEPSEEK_FLASH_CAPABILITIES,
+    }),
+    Object.freeze({
+      id: OPENGATEWAY_FLASH_ECO_MODEL_ID,
+      name: "v4.1 Flash Eco",
       ...DEEPSEEK_FLASH_CAPABILITIES,
     }),
   ]),
@@ -131,8 +142,9 @@ function rowMatchesTemplate(row, template) {
 export function openGatewayProviderLooksCurrent(providers) {
   const provider = providers?.[OPENGATEWAY_PROVIDER_ID];
   if (!isPlainObject(provider) || !Array.isArray(provider.models)) return false;
-  const template = DEFAULT_OPENGATEWAY_PROVIDER.models[0];
-  return provider.models.some((model) => model?.id === template.id && rowMatchesTemplate(model, template));
+  return DEFAULT_OPENGATEWAY_PROVIDER.models.every((template) =>
+    provider.models.some((model) => model?.id === template.id && rowMatchesTemplate(model, template)),
+  );
 }
 
 // b.ai 와 달리 OpenGateway 는 다른 모델 행을 걷지 않는다 — 이 키로 나가는 요청의 모델
@@ -140,11 +152,12 @@ export function openGatewayProviderLooksCurrent(providers) {
 function ensureOpenGatewayProvider(providers) {
   const next = { ...providers };
   const existing = isPlainObject(next[OPENGATEWAY_PROVIDER_ID]) ? next[OPENGATEWAY_PROVIDER_ID] : null;
-  const template = DEFAULT_OPENGATEWAY_PROVIDER.models[0];
   const models = Array.isArray(existing?.models) ? [...existing.models] : [];
-  const index = models.findIndex((model) => model?.id === template.id);
-  if (index === -1) models.push(structuredClone(template));
-  else models[index] = { ...models[index], ...structuredClone(template) };
+  for (const template of DEFAULT_OPENGATEWAY_PROVIDER.models) {
+    const index = models.findIndex((model) => model?.id === template.id);
+    if (index === -1) models.push(structuredClone(template));
+    else models[index] = { ...models[index], ...structuredClone(template) };
+  }
   next[OPENGATEWAY_PROVIDER_ID] = { ...structuredClone(DEFAULT_OPENGATEWAY_PROVIDER), ...existing, models };
   return next;
 }

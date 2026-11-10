@@ -5,6 +5,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { OPENGATEWAY_FLASH_ECO_MODEL_ID } from "../../src/session-defaults.mjs";
 
 const dispatchSource = fileURLToPath(new URL("../../../scripts/rubato-dispatch.sh", import.meta.url));
 
@@ -74,6 +75,13 @@ test("no alias runs the ultrafast lane and stdout is the worker's final answer",
     "job-a",
   ]);
   assert.equal(box.stdin(), "find the leak\n");
+});
+
+test("eco runs the cheap OpenGateway lane of the same DeepSeek model", (t) => {
+  const box = harness(t);
+  const result = box.run(["job-a", "eco"]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(box.args().at(-1), `opengateway/${OPENGATEWAY_FLASH_ECO_MODEL_ID}:high`);
 });
 
 test("--effort replaces an alias's default level", (t) => {

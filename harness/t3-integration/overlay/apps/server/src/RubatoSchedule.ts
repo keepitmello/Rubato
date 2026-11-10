@@ -22,7 +22,7 @@ const spec: ServiceSpec = {
 
 /**
  * The `thread` action: which T3 thread shows a Pi session (`{ sessionId }` in the body), or null
- * while the app has not picked the session up yet. RubatoCompanion.ts answers with it too.
+ * while the app has not picked the session up yet.
  */
 export const sessionThread = (
   request: HttpServerRequest.HttpServerRequest,
