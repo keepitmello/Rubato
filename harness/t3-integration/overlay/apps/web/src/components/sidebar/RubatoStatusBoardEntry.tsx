@@ -26,8 +26,8 @@ export function RubatoStatusBoardEntry() {
       onClick={() => void navigate({ to: STATUS_BOARD_PATH })}
       className={cn(
         "mt-1.5 flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm text-sidebar-foreground/90",
-        "hover:bg-sidebar-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
-        onPage && "bg-sidebar-accent font-medium text-sidebar-foreground",
+        "hover:bg-sidebar-row-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
+        onPage && "bg-sidebar-row-active font-medium text-sidebar-foreground",
       )}
     >
       <ActivityIcon aria-hidden className={cn("size-4 shrink-0", atWork > 0 ? "text-info" : "text-sidebar-muted-foreground")} />
