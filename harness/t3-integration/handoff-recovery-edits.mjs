@@ -210,13 +210,211 @@ const KEPT_NATIVE_TEST = `  // Rubato (handoff-recovery-edits.mjs): the fresh-th
 
 `;
 
+// Without measured usage on the provider thread, upstream charges a returning native thread
+// with the UTF-8 bytes of everything the app recorded for it, tool output included. A session
+// that compacts or swaps its own context (Rubato's context notes) holds far less: a gpt-6.1-sol
+// session at 122k of its 500k window was charged 574k, the budget fell to zero, and every turn
+// was refused before it could report the usage that would have cleared it. The session is
+// asked first; the byte count stays the fallback for providers that cannot say.
+const READ_CONTEXT_TOKENS_FIELD_ANCHOR = `  readonly canReuseContextUsage?: (previous: ModelSelection, next: ModelSelection) => boolean;
+`;
+
+const READ_CONTEXT_TOKENS_FIELD = `  readonly canReuseContextUsage?: (previous: ModelSelection, next: ModelSelection) => boolean;
+  /**
+   * Rubato (handoff-recovery-edits.mjs): tokens the native thread holds now, as the provider
+   * counts them. A handoff budget asks this before it counts the app's saved transcript,
+   * which overstates a session that compacts or swaps its own context.
+   */
+  readonly readContextTokens?: Effect.Effect<number | undefined>;
+`;
+
+const PI_READ_CONTEXT_TOKENS_ANCHOR = `        ensureThread: (threadInput) =>
+`;
+
+const PI_READ_CONTEXT_TOKENS = `        // Rubato (handoff-recovery-edits.mjs): Pi's own count, from the session stats.
+        readContextTokens: DateTime.now.pipe(
+          Effect.flatMap((now) => readTokenUsage(null, now)),
+          Effect.map((usage) => usage?.usedTokens),
+        ),
+`;
+
+const PI_READ_CONTEXT_TOKENS_TEST_ANCHOR = `  it.effect("budgets legacy native history with Pi's selected model capacity", () =>
+`;
+
+const PI_READ_CONTEXT_TOKENS_TEST = `  // Rubato: handoff-recovery-edits.mjs lets a handoff budget ask Pi what the session holds.
+  it.effect("reads the session's context tokens from Pi's session stats", () =>
+    Effect.gen(function* () {
+      const fake = yield* makeFakePi;
+      const { runtime } = yield* openRuntime(fake);
+      yield* runtime.ensureThread({
+        threadId: THREAD_ID,
+        modelSelection: modelSelection("default"),
+        runtimePolicy,
+      });
+      fake.queueStats({ contextUsage: { tokens: 122_103, contextWindow: 500_000 } });
+      assert.equal(yield* runtime.readContextTokens!, 122_103);
+      fake.queueStats({});
+      assert.isUndefined(yield* runtime.readContextTokens!);
+    }).pipe(Effect.scoped, Effect.provide(layerTest)),
+  );
+
+`;
+
+const MEASURED_ESTIMATE_ANCHOR = `      const nativeContextEstimate = Effect.gen(function* () {
+`;
+
+const MEASURED_ESTIMATE = `      const nativeContextEstimate = Effect.gen(function* () {
+        // Rubato (handoff-recovery-edits.mjs): ask the session what its native thread
+        // holds before counting this thread's saved text.
+        if (sameNativeThread && session.readContextTokens !== undefined) {
+          const measured = yield* session.readContextTokens;
+          if (measured !== undefined) return measured;
+        }
+`;
+
+const TEST_ADAPTER_FIELD_ANCHOR = `  readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
+`;
+
+const TEST_ADAPTER_FIELD = `  readonly getModelContextWindow?: (selection: ModelSelection) => number | undefined;
+  readonly readContextTokens?: Effect.Effect<number | undefined>;
+`;
+
+const TEST_ADAPTER_RUNTIME_ANCHOR = `          ...(input.canReuseContextUsage === undefined
+            ? {}
+            : { canReuseContextUsage: input.canReuseContextUsage }),
+`;
+
+const TEST_ADAPTER_RUNTIME = `          ...(input.canReuseContextUsage === undefined
+            ? {}
+            : { canReuseContextUsage: input.canReuseContextUsage }),
+          ...(input.readContextTokens === undefined
+            ? {}
+            : { readContextTokens: input.readContextTokens }),
+`;
+
+const MEASURED_RETURN_TEST = `  // Rubato (handoff-recovery-edits.mjs): the target's saved transcript outgrew its window,
+  // its session did not.
+  it.live.each(["measured", "unmeasured"] as const)(
+    "budgets a handoff back to a native thread with %s session context",
+    (measurement) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const cwd = yield* checkpointWorkspace(\`handoff-measured-\${measurement}\`);
+          const capturedTurns = yield* Ref.make<ReadonlyArray<CapturedTurn>>([]);
+          const layerRegistry = ProviderAdapterRegistry.layerFromAdapters([
+            makeTestAdapter({
+              instanceId: CODEX_MODEL_SELECTION.instanceId,
+              driver: CODEX_DRIVER,
+              capabilities: CodexProviderCapabilitiesV2,
+              modelSelection: CODEX_MODEL_SELECTION,
+              responseByRunOrdinal: { 1: "Original work", 3: "Codex follow-up" },
+              capturedTurns,
+            }),
+            makeTestAdapter({
+              instanceId: CLAUDE_MODEL_SELECTION.instanceId,
+              driver: CLAUDE_DRIVER,
+              capabilities: ClaudeProviderCapabilitiesV2,
+              modelSelection: CLAUDE_MODEL_SELECTION,
+              // Saved text past the window; the session compacted it away.
+              responseByRunOrdinal: { 2: "y".repeat(40_000), 4: "Claude resumed" },
+              capturedTurns,
+              getModelContextWindow: () => 32_000,
+              ...(measurement === "measured" ? { readContextTokens: Effect.succeed(4_000) } : {}),
+            }),
+          ]);
+          yield* Effect.gen(function* () {
+            const orchestrator = yield* Orchestrator.OrchestratorV2;
+            const worker = yield* EffectWorker.OrchestrationEffectWorkerV2;
+            const dispatch = (ordinal: number, text: string, selection: ModelSelection) =>
+              orchestrator.dispatch({
+                type: "message.dispatch",
+                commandId: CommandId.make(\`measured:\${ordinal}\`),
+                threadId,
+                messageId: MessageId.make(\`measured:\${ordinal}\`),
+                createdBy: "user",
+                creationSource: "web",
+                text,
+                attachments: [],
+                modelSelection: selection,
+                dispatchMode: { type: "start_immediately" },
+              });
+            const wait = (ordinal: number) =>
+              orchestrator.streamStoredEvents.pipe(
+                Stream.filter(
+                  ({ event }) =>
+                    event.type === "run.updated" &&
+                    event.payload.ordinal === ordinal &&
+                    (event.payload.status === "completed" || event.payload.status === "failed"),
+                ),
+                Stream.runHead,
+                Effect.andThen(worker.drain()),
+                Effect.andThen(orchestrator.getThreadProjection(threadId)),
+                Effect.map((projection) => projection.runs.find((run) => run.ordinal === ordinal)!),
+              );
+            yield* orchestrator.dispatch({
+              type: "thread.create",
+              commandId: CommandId.make("measured:create"),
+              threadId,
+              projectId,
+              createdBy: "user",
+              creationSource: "web",
+              title: "Measured return",
+              modelSelection: CODEX_MODEL_SELECTION,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+            });
+            yield* dispatch(1, "Original request", CODEX_MODEL_SELECTION);
+            assert.equal((yield* wait(1)).status, "completed");
+            yield* dispatch(2, "Long target work", CLAUDE_MODEL_SELECTION);
+            assert.equal((yield* wait(2)).status, "completed");
+            yield* dispatch(3, "Back on Codex", CODEX_MODEL_SELECTION);
+            assert.equal((yield* wait(3)).status, "completed");
+            yield* dispatch(4, "Return to Claude", CLAUDE_MODEL_SELECTION);
+            assert.equal(
+              (yield* wait(4)).status,
+              measurement === "measured" ? "completed" : "failed",
+            );
+            if (measurement === "measured")
+              assert.include((yield* Ref.get(capturedTurns)).at(-1)!.text, "Codex follow-up");
+          }).pipe(
+            Effect.provide(
+              ProviderReplayHarness.layerWithRegistry(
+                {
+                  name: \`handoff-measured-\${measurement}\`,
+                  runtimePolicyOverride: { cwd, approvalPolicy: "never", sandboxPolicy: { type: "readOnly" } },
+                },
+                layerRegistry,
+              ),
+            ),
+          );
+        }),
+      ),
+  );
+
+`;
+
 export const handoffRecoveryEdits = {
+  'packages/provider-core/src/server/ProviderAdapter.ts': [
+    [READ_CONTEXT_TOKENS_FIELD_ANCHOR, READ_CONTEXT_TOKENS_FIELD, 'replace'],
+  ],
+  'packages/provider-pi/src/server/adapter.ts': [
+    [PI_READ_CONTEXT_TOKENS_ANCHOR, PI_READ_CONTEXT_TOKENS],
+  ],
+  'packages/provider-pi/src/server/adapter.test.ts': [
+    [PI_READ_CONTEXT_TOKENS_TEST_ANCHOR, PI_READ_CONTEXT_TOKENS_TEST],
+  ],
   'apps/server/src/orchestration-v2/ProviderTurnStartService.ts': [
     [KEPT_NATIVE_ANCHOR, KEPT_NATIVE, 'replace'],
+    [MEASURED_ESTIMATE_ANCHOR, MEASURED_ESTIMATE, 'replace'],
   ],
   'apps/server/src/orchestration-v2/testkit/ProviderSwitch.integration.test.ts': [
     [FAIL_INJECTION_FIELD, INJECTS_HISTORY_FIELD, 'replace'],
+    [TEST_ADAPTER_FIELD_ANCHOR, TEST_ADAPTER_FIELD, 'replace'],
+    [TEST_ADAPTER_RUNTIME_ANCHOR, TEST_ADAPTER_RUNTIME, 'replace'],
     [ACK_ANCHOR, ACK_HONOURS_INJECTS_HISTORY, 'replace'],
     [NATIVE_LEGACY_ANCHOR, KEPT_NATIVE_TEST],
+    [NATIVE_LEGACY_ANCHOR, MEASURED_RETURN_TEST],
   ],
 };

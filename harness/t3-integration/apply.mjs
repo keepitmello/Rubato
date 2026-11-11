@@ -1791,7 +1791,7 @@ overlays.push(...legacyImportOverlays);
 for (const [relative, changes] of Object.entries(legacyImportEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// A provider that keeps its native thread through the uncertain-delivery fallback re-delivers instead of failing every turn (handoff-recovery-edits.mjs).
+// Context handoffs into a provider that keeps its own thread: an uncertain delivery is re-delivered, and the budget asks the session what it holds (handoff-recovery-edits.mjs).
 for (const [relative, changes] of Object.entries(handoffRecoveryEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
