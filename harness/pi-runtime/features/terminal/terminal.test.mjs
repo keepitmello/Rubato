@@ -656,6 +656,7 @@ async function startTerminal(t, terminalSettings) {
 		waitForSent,
 		pending: () => rpc.get("rubato.terminal.pending-work")(),
 		awaited: () => rpc.get(TERMINAL_AWAITED_WAKES_REQUEST)(),
+		personSays: (text) => handlers.get("input")({ type: "input", text, source: "rpc" }),
 	};
 }
 
@@ -757,4 +758,53 @@ test("a command that outgrew the foreground window is awaited; a server left in 
 	const deadline = Date.now() + 2_000;
 	while (awaited().items.length > 0 && Date.now() < deadline) await delay(25);
 	assert.deepEqual(awaited(), { items: [] });
+});
+
+test("a command the agent left running stops holding the turn once the person speaks again, and still wakes", async (t) => {
+	const previous = process.env.PI_BASH_FOREGROUND_SECONDS;
+	process.env.PI_BASH_FOREGROUND_SECONDS = "0.2";
+	t.after(() => {
+		if (previous === undefined) delete process.env.PI_BASH_FOREGROUND_SECONDS;
+		else process.env.PI_BASH_FOREGROUND_SECONDS = previous;
+	});
+	const { tools, sent, waitForSent, awaited, pending, personSays } = await startTerminal(t, { notify: "wake" });
+
+	const slow = await tools.get("bash").execute("call-1", {
+		command: "sleep 1.5; echo searched",
+		description: "search the home folder",
+		timeout: 20,
+	});
+	assert.equal(slow.details?.auto_detached, true);
+	assert.deepEqual(awaited().items.map((entry) => entry.description), ["search the home folder"]);
+
+	await delay(5);
+	personSays("why is the turn still open?");
+	assert.deepEqual(awaited(), { items: [] }, "a wait set before the latest message no longer holds the turn");
+	assert.equal(pending().active, 1, "the runtime still keeps it, so its completion can arrive");
+
+	const tests = await tools.get("bash").execute("call-2", {
+		command: "exec sleep 30",
+		description: "unit tests",
+		timeout: 20,
+	});
+	assert.equal(tests.details?.auto_detached, true);
+	assert.deepEqual(
+		awaited().items.map((entry) => entry.description),
+		["unit tests"],
+		"a wait set after the message still holds it",
+	);
+
+	await waitForSent(1);
+	assert.match(sent[0].message.content, /searched/);
+	assert.equal(sent[0].options.triggerTurn, true, "the left-behind command still wakes the agent");
+	await tools.get("kill_bash").execute("call-3", { all: true });
+});
+
+test("kill_bash all counts only the sessions it stopped", async (t) => {
+	const { tools } = await startTerminal(t, { notify: "wake" });
+	await tools.get("bash").execute("call-1", { command: "echo one" });
+	await tools.get("bash").execute("call-2", { command: "echo two" });
+	await tools.get("bash").execute("call-3", { command: "exec sleep 30", run_in_background: true });
+	const killed = await tools.get("kill_bash").execute("call-4", { all: true });
+	assert.equal(killed.content[0].text, "Killed 1 session(s).");
 });

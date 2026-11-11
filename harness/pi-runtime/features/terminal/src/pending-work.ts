@@ -85,17 +85,24 @@ function awaitedLabel(id: string, description: string | undefined): string {
  * and a monitor that has a deadline and has not reported. Each of them wakes the agent soon,
  * so a client may keep the turn open instead of announcing it done. A session with no deadline
  * (a dev server) and a persistent watch are left out: the agent may leave them running and
- * have finished. Nothing is awaited when notifications cannot reach the agent.
+ * have finished. A wait set before the person's latest message is left out too: they have moved
+ * on, so a slow search the agent gave up on must not keep each later turn open until its deadline.
+ * Its completion still wakes the agent. Nothing is awaited when notifications cannot reach the agent.
  */
 export function terminalAwaitedWakes(input: {
 	readonly delivers: boolean;
 	readonly backgrounds: readonly HeldBackground[];
 	readonly monitors: readonly HeldMonitor[];
+	/** The person's latest message; waits started before it are not awaited. */
+	readonly setSinceMs?: number;
 }): AwaitedWake[] {
 	if (!input.delivers) return [];
+	const since = input.setSinceMs ?? 0;
 	return [
 		// A monitor's description is written for a reader; a session's is often its command.
 		...input.monitors.filter((entry) => !entry.persistent && !entry.reported),
 		...input.backgrounds.filter((entry) => entry.bounded),
-	].map((entry) => ({ id: entry.id, description: awaitedLabel(entry.id, entry.description) }));
+	]
+		.filter((entry) => entry.startedAtMs >= since)
+		.map((entry) => ({ id: entry.id, description: awaitedLabel(entry.id, entry.description) }));
 }

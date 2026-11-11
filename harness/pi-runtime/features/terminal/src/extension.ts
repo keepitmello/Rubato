@@ -50,6 +50,8 @@ interface TerminalExtensionState {
 	/** Manifest recorder; present only while this process owns the session's lease. */
 	manifestWriter: TerminalManifestWriter | null;
 	recordedBackgroundIds: Set<string>;
+	/** When the person last sent a message; a wait set before it no longer holds their turn open. */
+	lastPersonInputAtMs: number;
 }
 
 export interface TerminalExtensionHost {
@@ -356,6 +358,7 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 		lease: null,
 		manifestWriter: null,
 		recordedBackgroundIds: new Set(),
+		lastPersonInputAtMs: 0,
 	};
 	const toolCtx = buildToolContext(pi, state, host);
 
@@ -398,7 +401,9 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 			nowMs: Date.now(),
 		}),
 	);
-	pi.rpc?.handle(TERMINAL_AWAITED_WAKES_REQUEST, () => ({ items: terminalAwaitedWakes(heldWork()) }));
+	pi.rpc?.handle(TERMINAL_AWAITED_WAKES_REQUEST, () => ({
+		items: terminalAwaitedWakes({ ...heldWork(), setSinceMs: state.lastPersonInputAtMs }),
+	}));
 
 	pi.on("session_start", async (event, ctx) => {
 		state.ctx = ctx;
@@ -454,6 +459,7 @@ export function registerTerminalExtension(pi: ExtensionAPI, host: TerminalExtens
 
 	pi.on("input", (event) => {
 		if (event.source === "extension") return;
+		state.lastPersonInputAtMs = Date.now();
 		state.monitorNotifier?.noteActivity();
 		const resumed = state.bundle?.monitors.resume() ?? [];
 		if (resumed.length > 0) state.monitorNotifier?.resume(resumed.map((monitor) => monitor.id));

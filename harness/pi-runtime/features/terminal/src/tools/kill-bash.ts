@@ -24,7 +24,8 @@ export function createKillBashTool(ctx: TerminalToolContext) {
 		parameters: killBashSchema,
 		async execute(_toolCallId: string, input: KillBashInput, _signal?: AbortSignal): Promise<TerminalToolResult> {
 			if (input.all) {
-				const terminalCount = ctx.manager.size;
+				// Finished sessions stay listed for a last output read; only running ones are killed.
+				const terminalCount = ctx.manager.list().filter(({ runtime }) => !runtime.exited).length;
 				const fileCount = (await ctx.monitorRegistry?.stopAllFiles()) ?? 0;
 				for (const { runtime } of ctx.manager.list()) runtime.killedByAgent = true;
 				await ctx.manager.teardown();
