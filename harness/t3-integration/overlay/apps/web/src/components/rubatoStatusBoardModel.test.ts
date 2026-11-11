@@ -294,8 +294,10 @@ describe("one lead, its teams beneath", () => {
     expect(blocks).toHaveLength(2);
   });
 
-  it("never merges leads it cannot identify", () => {
+  it("never merges leads it cannot identify, not even one team run id seen in two environments", () => {
     expect(leadBlocks(boardSections(board([led("a", null, HOUR), led("b", null, 2 * HOUR)]), NOW).current)).toHaveLength(2);
+    const twin = (environmentId: string) => led("run-1", null, HOUR, { environmentId });
+    expect(leadBlocks(boardSections(board([twin("env-1"), twin("env-2")]), NOW).current)).toHaveLength(2);
   });
 
   it("orders blocks by their newest team, and teams newest first inside", () => {

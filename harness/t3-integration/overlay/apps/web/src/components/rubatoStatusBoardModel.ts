@@ -127,7 +127,11 @@ const matches = (view: NodeView, filter: BoardFilter) => filter === "all" || vie
 export function leadKeyOf(group: BoardGroup, environmentId: string | null | undefined): string {
   const sessionId = group.lead.sessionId;
   const environment = group.environmentId ?? environmentId ?? "";
-  return sessionId ? `lead\u0000${environment}\u0000${sessionId}` : `group\u0000${group.id}`;
+  // A lead it cannot name stays with its own group alone, which is itself one only in its folder
+  // and environment: two environments can hold the same team run id.
+  return sessionId
+    ? `lead\u0000${environment}\u0000${sessionId}`
+    : `group\u0000${environment}\u0000${group.cwd}\u0000${group.id}`;
 }
 
 function viewOf(group: BoardGroup, now: number, filter: BoardFilter, environmentId: string | null | undefined): GroupView | null {
