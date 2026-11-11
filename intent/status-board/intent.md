@@ -46,10 +46,13 @@ status board page that shows, per team and per standalone subagent:
 3. Whether it is alive: time since its last activity ("12초 전"); after a stall threshold it turns into a visible
    stalled state; evicted/lost sessions must not read as working.
 4. Where it has been: recent steps per member, the team's board items with status/owner, and a combined log at the bottom.
-5. Find current work first: teams are ordered newest-created first, with deterministic ties. Teams whose
+5. Find current work first: lead groups are ordered by their newest-created team, and teams within
+   each group are ordered newest-created first, with deterministic ties. This hierarchical order
+   follows the accepted shared-lead grouping in item 8; teams do not need to remain globally interleaved.
+   Teams whose
    own members and work items have been quiet for over 24 hours appear in a collapsed "지난 팀" section
    below current work, even when their stored team status still says active. Expanding that section shows
-   the retained information in newest-first order; nothing is deleted or closed in the runtime.
+   the retained information in the same hierarchical newest-first order; nothing is deleted or closed in the runtime.
 6. Distinguish work completion from session availability. A team with a nonempty, fully completed work
    board and no member currently executing is visibly completed, not merely waiting for a message.
    A team with unfinished work and no executing member, quiet past the existing stall threshold, is
@@ -62,7 +65,7 @@ status board page that shows, per team and per standalone subagent:
    do not fabricate a conversation for missing/evicted history, and make an unavailable destination clear.
 8. A lead conversation shared by multiple teams is shown once, with those teams grouped underneath.
    Group by actual conversation identity in its environment, never by display name alone.
-   Keep distinct conversations/environments separate. Preserve newest-created-first team ordering,
+   Keep distinct conversations/environments separate. Preserve the hierarchical newest-created-first ordering in item 5,
    independent past-team folding, per-team work states and member navigation. Expanding past work
    must not produce a second visible copy of the same lead. Counts must not count a shared lead twice.
 Look and feel per the accepted mockup: calm dev-tool style, dark-theme friendly, consistent with the app.
