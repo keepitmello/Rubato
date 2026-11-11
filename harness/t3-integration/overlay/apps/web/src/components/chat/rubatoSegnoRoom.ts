@@ -2,7 +2,8 @@
 // The thread holds the person's messages and what Segno sent with reply or say (intent companion-segno
 // rev 11), so every message is a bubble: the person's on the right, Segno's on the left. Messages from
 // one side close together form a group whose last bubble carries the tail; a long gap or a new day
-// gets a time line between bubbles instead of a time on every message (user f38c36a6).
+// gets a time line between bubbles instead of a time on every message (user f38c36a6). The room draws
+// the latest days and cuts them by day, each under its own name (user 1d2f3875).
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { isImageAttachment, type ChatAttachment, type ChatImageAttachment } from "../../types";
@@ -140,24 +141,49 @@ export function segnoIsWriting(items: ReadonlyArray<SegnoChatItem>, working: boo
   return false;
 }
 
-/** The time line's words: a time today, "yesterday" and a time, or a date and a time. */
-export function separatorLabel(at: number, now: number, locale: string): string {
-  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(at);
-  if (sameDay(at, now)) return time;
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-  if (sameDay(at, yesterday.getTime())) {
-    const word = new Intl.RelativeTimeFormat(locale, { numeric: "auto" }).format(-1, "day");
-    return `${word} ${time}`;
+/** How many of the latest days the room draws when it opens; scrolling up draws one more day each time. */
+export const ROOM_RECENT_DAYS = 3;
+
+const dayOf = (at: number) => new Date(at).toDateString();
+
+/**
+ * Where the room starts drawing: the first item of the latest `days` days that have messages, so a
+ * week away still opens on three days of conversation. Each day starts with a time line.
+ */
+export function segnoDrawStart(items: ReadonlyArray<SegnoChatItem>, days: number): number {
+  let seen = 0;
+  let current: string | null = null;
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const day = dayOf(items[index]!.at);
+    if (day === current) continue;
+    if (seen === days) return index + 1;
+    seen += 1;
+    current = day;
   }
-  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
-  const date = new Intl.DateTimeFormat(locale, {
-    ...(sameYear ? {} : { year: "numeric" }),
-    month: "long",
-    day: "numeric",
-    weekday: "short",
-  }).format(at);
-  return `${date} ${time}`;
+  return 0;
+}
+
+/** How many days the room must draw so the item at `index` is drawn. */
+export function segnoDaysThrough(items: ReadonlyArray<SegnoChatItem>, index: number): number {
+  const days = new Set<string>();
+  for (let at = Math.max(0, index); at < items.length; at += 1) days.add(dayOf(items[at]!.at));
+  return Math.max(1, days.size);
+}
+
+/** The drawn items cut at each new day, as index ranges [from, to). */
+export function segnoDays(
+  items: ReadonlyArray<SegnoChatItem>,
+  start: number,
+): Array<{ readonly key: string; readonly at: number; readonly from: number; readonly to: number }> {
+  const days: Array<{ key: string; at: number; from: number; to: number }> = [];
+  for (let index = Math.max(0, start); index < items.length; index += 1) {
+    const at = items[index]!.at;
+    const key = dayOf(at);
+    const last = days.at(-1);
+    if (last && last.key === key) last.to = index + 1;
+    else days.push({ key, at, from: index, to: index + 1 });
+  }
+  return days;
 }
 
 /**

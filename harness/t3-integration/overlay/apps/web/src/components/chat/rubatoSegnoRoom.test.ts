@@ -8,10 +8,12 @@ import {
   splitFileLines,
   SEPARATOR_GAP_MS,
   segnoChatItems,
+  segnoDays,
+  segnoDaysThrough,
+  segnoDrawStart,
   segnoIsWriting,
   segnoSpans,
   segnoTurnMarks,
-  separatorLabel,
   spanCounts,
   spanDuration,
   wakeCounts,
@@ -94,12 +96,29 @@ describe("Segno's chat room", () => {
     expect(segnoIsWriting([], true)).toBe(false);
   });
 
-  it("writes the time line as a time today, yesterday with a time, or a date", () => {
-    const now = base + 5 * 60 * 60_000;
-    expect(separatorLabel(base, now, "en-US")).toBe("9:00 AM");
-    expect(separatorLabel(base - 24 * 60 * 60_000, now, "en-US")).toBe("yesterday 9:00 AM");
-    expect(separatorLabel(base - 3 * 24 * 60 * 60_000, now, "en-US")).toBe("Sun, October 18 9:00 AM");
-    expect(separatorLabel(base - 24 * 60 * 60_000, now, "ko-KR")).toBe("어제 오전 9:00");
+  it("draws the latest days that have messages, and cuts them by day", () => {
+    const day = 24 * 60 * 60_000;
+    // Four days with messages, and a quiet week between the first and the rest.
+    const items = segnoChatItems([
+      message("d0", "user", -10 * day),
+      message("d1a", "user", -2 * day),
+      message("d1b", "assistant", -2 * day + 60_000),
+      message("d2", "user", -day),
+      message("d3a", "user", 0),
+      message("d3b", "assistant", 60_000),
+    ]);
+    const start = segnoDrawStart(items, 3);
+    expect(items[start]).toMatchObject({ kind: "separator", id: "separator:d1a" });
+    expect(segnoDrawStart(items, 4)).toBe(0);
+    expect(segnoDrawStart(items, 9)).toBe(0);
+    expect(segnoDays(items, start).map((range) => items.slice(range.from, range.to).filter((item) => item.kind === "bubble").map((item) => item.id))).toEqual([
+      ["d1a", "d1b"],
+      ["d2"],
+      ["d3a", "d3b"],
+    ]);
+    const first = items.findIndex((item) => item.id === "d0");
+    expect(segnoDaysThrough(items, first)).toBe(4);
+    expect(segnoDrawStart(items, segnoDaysThrough(items, first))).toBeLessThanOrEqual(first);
   });
 
   it("springs in only bubbles newer than what the room knew; earlier history loads in still", () => {

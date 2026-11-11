@@ -212,6 +212,28 @@
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
 }
+/* ---- Days: each under its name, which stays at the top while the day scrolls by ---- */
+[data-rubato-segno-day] {
+  display: flex;
+  flex-direction: column;
+}
+[data-rubato-segno-day-name] {
+  position: sticky;
+  top: 3.25rem;
+  z-index: 5;
+  display: flex;
+  justify-content: center;
+  margin: 1.1rem 0 -0.4rem;
+  pointer-events: none;
+}
+[data-rubato-segno-day-name] > span {
+  border-radius: 999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+  box-shadow: var(--rb-shadow-float);
+}
 [data-rubato-segno-earlier] {
   align-self: center;
   margin-bottom: 0.5rem;

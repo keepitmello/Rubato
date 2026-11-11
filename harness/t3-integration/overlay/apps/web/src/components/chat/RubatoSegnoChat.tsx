@@ -21,11 +21,13 @@
 // line is this conversation's change, not a file change seen from outside.
 //
 // The room has what an ordinary thread has for moving through a long conversation: the timeline at
-// its left edge, one mark per turn with the person's words and the answer on hover (T3's own
-// TimelineMinimap), and "Scroll to end" over the composer once the reader has left the end; it counts
-// the companion's messages that arrive meanwhile. Page keys move the room from the composer or from
-// anywhere outside a field, a bubble shows its time on hover, and either side's bubble has a menu
-// with Copy (user f7c42421).
+// its left edge, one mark per turn with the person's words and the answer on hover (the same
+// RubatoTimelineRail an ordinary thread draws), and "Scroll to end" over the composer once the reader
+// has left the end; it counts the companion's messages that arrive meanwhile. The room draws its
+// latest three days, each under its day's name that stays at the top while the day scrolls by, and
+// draws the day before as the reader nears the top. Page keys move the room from the composer or
+// from anywhere outside a field, a bubble shows its time on hover, and either side's bubble has a
+// menu with Copy (user f7c42421).
 import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
@@ -59,7 +61,8 @@ import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
 import { RubatoWorkCard } from "./RubatoWorkCard";
 import { rubatoLaunchOfSegno } from "./rubatoWorkCardModel";
 import type { SegnoSpanSummary } from "../../state/rubatoCompanion";
-import { TimelineMinimap } from "./MessagesTimeline";
+import { RubatoTimelineRail } from "./RubatoTimelineRail";
+import { railDayTitle } from "./rubatoTimelineRail.logic";
 import {
   resolveTimelineMinimapCurrentIndex,
   resolveTimelineMinimapHasPersistentGutter,
@@ -68,11 +71,14 @@ import {
 import { forwardWheelToTimeline } from "./timelineMinimapWheel";
 import {
   arrivals,
+  ROOM_RECENT_DAYS,
   segnoChatItems,
+  segnoDays,
+  segnoDaysThrough,
+  segnoDrawStart,
   segnoIsWriting,
   segnoSpans,
   segnoTurnMarks,
-  separatorLabel,
   type SegnoChatItem,
   type SegnoChatMessageInput,
 } from "./rubatoSegnoRoom";
@@ -86,6 +92,8 @@ const GLIDE_MS = 1_000;
 const PILL_DELAY_MS = 150;
 /** Room left above a turn the timeline jumps to, under the title bar (the lane's pt-14). */
 const JUMP_TOP_PX = 64;
+/** Closer to the top than this, the room draws the day before (or asks for earlier history). */
+const EARLIER_PX = 200;
 
 export interface SegnoHistoryControls {
   readonly hasMoreHistory: boolean;
@@ -471,6 +479,58 @@ export function RubatoSegnoChat(props: {
   const [currentMark, setCurrentMark] = useState<number | null>(null);
   const [gutter, setGutter] = useState({ persistent: false, hitStripWidth: 0 });
 
+  // The room draws its latest days (user 1d2f3875). Near the top it draws one more day; once every
+  // loaded day is drawn it asks the thread for earlier history. The timeline at the left edge keeps
+  // a mark for every loaded turn, the undrawn ones dimmer; choosing one draws back to its day.
+  const [drawnDays, setDrawnDays] = useState(ROOM_RECENT_DAYS);
+  const drawStart = useMemo(() => segnoDrawStart(items, drawnDays), [items, drawnDays]);
+  const days = useMemo(() => segnoDays(items, drawStart), [items, drawStart]);
+  const markTimes = useMemo(() => marks.map((mark) => items[mark.rowIndex]?.at ?? null), [marks, items]);
+  const undrawnMarks = useMemo(
+    () => new Set(marks.filter((mark) => mark.rowIndex < drawStart).map((mark) => mark.id)),
+    [marks, drawStart],
+  );
+  const history = props.historyControls;
+  // What the reader looks at before more is drawn above it, so it stays where it was on screen.
+  const anchorBeforeDraw = useRef<{ row: HTMLElement; top: number } | null>(null);
+  const awaitingHistory = useRef(false);
+  // A mark on a day not drawn yet: the room draws back to it, then goes there.
+  const pendingJump = useRef<string | null>(null);
+  const holdReadingPosition = useCallback(() => {
+    const element = scroller.current;
+    if (!element) return;
+    const top = element.getBoundingClientRect().top;
+    for (const row of element.querySelectorAll<HTMLElement>("[data-rubato-segno-row]")) {
+      const box = row.getBoundingClientRect();
+      if (box.bottom > top) {
+        anchorBeforeDraw.current = { row, top: box.top - top };
+        return;
+      }
+    }
+  }, []);
+  const drawEarlier = useCallback(() => {
+    if (anchorBeforeDraw.current !== null || pendingJump.current !== null) return;
+    if (drawStart > 0) {
+      holdReadingPosition();
+      setDrawnDays((count) => count + 1);
+    } else if (history?.hasMoreHistory && !history.loading) {
+      holdReadingPosition();
+      awaitingHistory.current = true;
+      history.onLoadEarlier();
+    }
+  }, [drawStart, history, holdReadingPosition]);
+  const drawEarlierRef = useRef(drawEarlier);
+  useLayoutEffect(() => {
+    drawEarlierRef.current = drawEarlier;
+  }, [drawEarlier]);
+  // History that failed to arrive leaves nothing to hold.
+  const historyLoading = history?.loading === true;
+  useEffect(() => {
+    if (historyLoading || !awaitingHistory.current) return;
+    awaitingHistory.current = false;
+    anchorBeforeDraw.current = null;
+  }, [historyLoading]);
+
   // Which turns are in view, and which one the reader is at, the way the ordinary timeline works it out.
   const placeMarks = useCallback(() => {
     const element = scroller.current;
@@ -555,6 +615,8 @@ export function RubatoSegnoChat(props: {
     atEnd.current = near || performance.now() < glideUntil.current;
     settlePill();
     schedulePlaceMarks();
+    if (opened.current && element.scrollTop < EARLIER_PX && element.scrollHeight > element.clientHeight)
+      drawEarlierRef.current();
   }, [settlePill, schedulePlaceMarks]);
   const readerMoves = useCallback(() => {
     glideUntil.current = 0;
@@ -625,25 +687,48 @@ export function RubatoSegnoChat(props: {
     return () => document.removeEventListener("keydown", onKey);
   }, [bottomInset, glideToEnd]);
   const jumpToMark = useCallback((id: string) => {
+    const mark = marks.find((each) => each.id === id);
+    if (mark && mark.rowIndex < drawStart) {
+      pendingJump.current = id;
+      anchorBeforeDraw.current = null;
+      setDrawnDays(segnoDaysThrough(items, mark.rowIndex));
+      return;
+    }
     const element = scroller.current;
     const row = element?.querySelector<HTMLElement>(`[data-rubato-segno-mark="${CSS.escape(id)}"]`);
     if (!element || !row) return;
     glideUntil.current = 0;
     const top = row.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
     element.scrollTo({ top: Math.max(0, top - JUMP_TOP_PX), behavior: "smooth" });
-  }, []);
+  }, [marks, drawStart, items]);
   const forwardWheel = useCallback((event: WheelEvent) => {
     if (scroller.current) forwardWheelToTimeline(event, scroller.current);
   }, []);
 
-  // Loading earlier history keeps the bubble in view where it was.
-  const heightBeforeLoad = useRef<number | null>(null);
+  // Drawing earlier days keeps the bubble in view where it was.
   useLayoutEffect(() => {
     const element = scroller.current;
     if (!element) return;
-    if (heightBeforeLoad.current !== null) {
-      element.scrollTop += element.scrollHeight - heightBeforeLoad.current;
-      heightBeforeLoad.current = null;
+    if (pendingJump.current !== null) {
+      const row = element.querySelector<HTMLElement>(`[data-rubato-segno-mark="${CSS.escape(pendingJump.current)}"]`);
+      pendingJump.current = null;
+      if (row) {
+        glideUntil.current = 0;
+        atEnd.current = false;
+        const top = row.getBoundingClientRect().top - element.getBoundingClientRect().top + element.scrollTop;
+        element.scrollTo({ top: Math.max(0, top - JUMP_TOP_PX), behavior: "instant" });
+      }
+      return;
+    }
+    const anchor = anchorBeforeDraw.current;
+    if (anchor !== null) {
+      anchorBeforeDraw.current = null;
+      if (anchor.row.isConnected) {
+        element.scrollTop += anchor.row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
+      }
+      // Earlier history may land on days not drawn yet; still at the top, the room draws on.
+      if (element.scrollTop < EARLIER_PX && element.scrollHeight > element.clientHeight)
+        requestAnimationFrame(() => drawEarlierRef.current());
       return;
     }
     if (!opened.current || atEnd.current) {
@@ -652,9 +737,8 @@ export function RubatoSegnoChat(props: {
       atEnd.current = true;
     }
     opened.current = true;
-  }, [items, writing, props.bottomInset, glideToEnd]);
+  }, [items, writing, props.bottomInset, glideToEnd, drawStart]);
 
-  const history = props.historyControls;
   return (
     <div data-rubato-segno-room="" className="relative flex min-h-0 flex-1 flex-col">
     <div
@@ -668,20 +752,18 @@ export function RubatoSegnoChat(props: {
       className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
     >
       <div ref={lane} className="chat-content-lane flex flex-col pt-14" style={{ paddingBottom: props.bottomInset + 20 }}>
-        {history?.hasMoreHistory ? (
-          <button
-            type="button"
-            data-rubato-segno-earlier=""
-            disabled={history.loading}
-            onClick={() => {
-              heightBeforeLoad.current = scroller.current?.scrollHeight ?? null;
-              history.onLoadEarlier();
-            }}
-          >
-            {history.loading ? "Loading…" : "Load earlier messages"}
+        {drawStart > 0 || history?.hasMoreHistory ? (
+          <button type="button" data-rubato-segno-earlier="" disabled={history?.loading === true} onClick={drawEarlier}>
+            {history?.loading ? "Loading…" : "Load earlier messages"}
           </button>
         ) : null}
-        {items.map((item, index) => {
+        {days.map((day) => (
+          <section key={day.key} data-rubato-segno-day="">
+            <div data-rubato-segno-day-name="">
+              <span className="surface-glass">{railDayTitle(day.at, now, locale)}</span>
+            </div>
+            {items.slice(day.from, day.to).map((item, offset) => {
+          const index = day.from + offset;
           if (item.kind === "separator") {
             // Work that led to no reply happened before the person's next message, so its line
             // stands above that message's time line.
@@ -690,7 +772,7 @@ export function RubatoSegnoChat(props: {
             return [
               spanLine(quiet, `span:${next?.id}`),
               <div key={item.id} data-rubato-segno-time="">
-                {separatorLabel(item.at, now, locale ?? navigator.language)}
+                {clockAt(item.at, locale)}
               </div>,
             ];
           }
@@ -712,13 +794,17 @@ export function RubatoSegnoChat(props: {
             />,
             place?.placement === "attached" ? spanOutcome(place, `span:${item.id}`) : null,
           ];
-        })}
+            })}
+          </section>
+        ))}
         {writing ? <Writing /> : null}
         {spanLine(spans.tail, "span:tail")}
       </div>
     </div>
-    <TimelineMinimap
+    <RubatoTimelineRail
       items={marks}
+      times={markTimes}
+      pendingIds={undrawnMarks}
       hasPersistentGutter={gutter.persistent}
       hitStripWidth={gutter.hitStripWidth}
       currentIndex={currentMark}

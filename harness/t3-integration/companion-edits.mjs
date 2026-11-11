@@ -146,11 +146,6 @@ export const companionEdits = {
       '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',
       'replace'],
   ],
-  // The room draws the ordinary thread's timeline at its left edge, one mark per turn
-  // (RubatoSegnoChat.tsx, user 4e1d4d92).
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['function TimelineMinimap({\n', 'export function TimelineMinimap({\n', 'replace'],
-  ],
   // Segno's own folder is not a project to start work in: neither the new thread's default
   // project nor the headline's picker offers it.
   'apps/web/src/hooks/useHandleNewThread.ts': [

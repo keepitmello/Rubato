@@ -228,7 +228,7 @@ it("puts a conversation Segno launched below the reply it led to, and a committe
   ];
   act(() => root.render(<RubatoSegnoChat entries={entries} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
   const lane = host.querySelector(".chat-content-lane")!;
-  const order = [...lane.children].map((child) =>
+  const order = [...lane.querySelectorAll(":scope > [data-rubato-segno-day] > *")].map((child) =>
     child.querySelector("[data-testid='work-card']") ? "card"
       : child.hasAttribute("data-rubato-segno-memory-change") ? "memory"
       : child.textContent?.includes("고쳤어") ? "reply" : null,
@@ -238,4 +238,31 @@ it("puts a conversation Segno launched below the reply it led to, and a committe
   expect(line.textContent).toContain("Memory changed · “카줌 셀러 컨택은 수찬 전화 먼저”");
   expect(host.querySelectorAll("[data-rubato-segno-memory-change]")).toHaveLength(1);
   expect(host.querySelector("[data-testid='work-card']")!.getAttribute("data-session")).toBe("S2");
+});
+
+it("draws the latest three days under their names, one more near the top, and back to an undrawn turn", () => {
+  const at = (date: number, hour: number) => new Date(2026, 10, date, hour).toISOString();
+  const said = (id: string, role: "user" | "assistant", when: string) =>
+    ({ kind: "message", id, createdAt: when, message: { id, role, text: id, createdAt: when, streaming: false } }) as unknown as TimelineEntry;
+  const week = [5, 6, 7, 8, 9].flatMap((date) => [said(`q${date}`, "user", at(date, 9)), said(`a${date}`, "assistant", at(date, 10))]);
+  act(() => root.render(<RubatoSegnoChat entries={week} working={false} cwd={undefined} bottomInset={80} threadId="segno-thread" />));
+  const drawn = () => [...host.querySelectorAll("[data-rubato-segno-mark]")].map((row) => row.getAttribute("data-rubato-segno-mark"));
+  expect(drawn()).toEqual(["q7", "q8", "q9"]);
+  expect([...host.querySelectorAll("[data-rubato-segno-day-name]")].map((name) => name.textContent)).toEqual([
+    "Saturday, November 7",
+    "Sunday, November 8",
+    "Monday, November 9",
+  ]);
+  // The timeline keeps every turn; the two undrawn days are dimmer.
+  const strip = (index: number) => host.querySelector(`[data-rail-index="${index}"] [data-minimap-strip]`)!;
+  expect(host.querySelectorAll("[data-rail-index]")).toHaveLength(5);
+  expect(strip(0).getAttribute("data-pending")).toBe("true");
+  expect(strip(2).hasAttribute("data-pending")).toBe(false);
+
+  scrollTo(host.querySelector("[data-rubato-segno-scroller]")!, 100);
+  expect(drawn()).toEqual(["q6", "q7", "q8", "q9"]);
+
+  act(() => host.querySelector(`[data-rail-index="0"]`)!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  expect(drawn()).toEqual(["q5", "q6", "q7", "q8", "q9"]);
+  expect(strip(0).hasAttribute("data-pending")).toBe(false);
 });

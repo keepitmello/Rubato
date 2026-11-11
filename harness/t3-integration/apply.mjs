@@ -58,6 +58,7 @@ import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
 import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
 import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
+import { timelineRailEdits, timelineRailOverlays } from './timeline-rail-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1871,6 +1872,11 @@ for (const [relative, changes] of Object.entries(workCardEdits)) {
 }
 overlays.push(...i18nOverlays);
 for (const [relative, changes] of Object.entries(i18nEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The timeline rail at a thread's left edge keeps its spacing, scrolls and names the days (timeline-rail-edits.mjs).
+overlays.push(...timelineRailOverlays);
+for (const [relative, changes] of Object.entries(timelineRailEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

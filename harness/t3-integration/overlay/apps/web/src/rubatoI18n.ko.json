@@ -4681,7 +4681,10 @@
   "Ask to change": "고쳐 달라고 하기",
   "Used in": "사용 위치",
   "Dream models": "꿈 모델",
-  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다."
+  "It uses the first one that answers. Rubato's own memory requests (asking, summaries, overlaps) use the same list.": "먼저 답하는 모델을 씁니다. 메모리에 묻기, 요약, 겹침 확인도 같은 목록을 씁니다.",
+  "Previous turn": "이전 턴",
+  "Next turn": "다음 턴",
+  "Click to load that day and go there": "클릭하면 그날까지 불러와 이동합니다"
  },
  "templates": [
   [
