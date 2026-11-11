@@ -1,6 +1,6 @@
 # Intent: 현황판 — a live status board tab in the Rubato desktop app sidebar
 
-Status: active — accepted by user (Rubato session 01a1b592, reply item 3517e662 "저렇게가자", 2026-11-10); usability and status corrections accepted in window 01a1c444, reply item 215e6088.
+Status: active — accepted by user (Rubato session 01a1b592, reply item 3517e662 "저렇게가자", 2026-11-10); usability and status corrections accepted in window 01a1c444, reply item 215e6088; shared-lead grouping accepted in the same window, reply item c48cc703, 2026-11-11.
 
 ## Originating request
 
@@ -19,6 +19,13 @@ and show newest first; flag unfinished work when all members are idle; show comp
 completed rather than waiting; let cards open their conversations.
 User approval (item 215e6088):
 > ㅇㅇ 고치자 그리고 뜨는 순서도 최신순으로 뜨게 해야할듯 오래된게 먼저 뜨고 그러네 고치자
+
+Shared-lead correction (window 01a1c444, screenshot item c34d5bd4, approval item c48cc703):
+> 같은 세션이 두개가 뜨는거같아
+> 다시 진행하자 그리고 같은 리드 대화 두번 표시되는것도 수정해
+
+The accepted correction shows the same lead conversation once, with its multiple teams beneath it;
+it does not merge or delete the teams.
 
 Reference screenshot (style inspiration only, not a spec): /Users/wy/.rubato/t3-home/userdata/attachments/38889810-b07d-49d9-ab1c-72b281d43217-792e294f-c0b7-4386-8650-43688f8a46df.png
 Accepted mockup (direction, AI-generated; text is illustrative): /Users/wy/Github-repos/generated-images/rubato-status-board-a.png
@@ -53,6 +60,11 @@ status board page that shows, per team and per standalone subagent:
 7. Follow up from the board: lead and member cards provide keyboard-accessible navigation to the
    corresponding existing conversation/agent view. Use the app's actual thread/environment linkage;
    do not fabricate a conversation for missing/evicted history, and make an unavailable destination clear.
+8. A lead conversation shared by multiple teams is shown once, with those teams grouped underneath.
+   Group by actual conversation identity in its environment, never by display name alone.
+   Keep distinct conversations/environments separate. Preserve newest-created-first team ordering,
+   independent past-team folding, per-team work states and member navigation. Expanding past work
+   must not produce a second visible copy of the same lead. Counts must not count a shared lead twice.
 Look and feel per the accepted mockup: calm dev-tool style, dark-theme friendly, consistent with the app.
 No invented progress percentages: show only counted/measured values (e.g. step count, elapsed time).
 The right-panel Agents surface gets the same liveness/stalled signal from the same data.
@@ -62,7 +74,8 @@ The right-panel Agents surface gets the same liveness/stalled signal from the sa
 - Desktop app only (apps/web via Rubato's T3 overlay); the phone runs the App Store T3 app and will not get it — Rubato docs/dual-runtime/T3_PATCHING.md.
 - Follow Rubato's T3 integration rules: changes live in /Users/wy/Github-repos/Rubato/harness/t3-integration (overlay + edit scripts), not as hand edits in ~/.rubato/t3-source — docs/dual-runtime/T3_INTEGRATION.md, T3_PATCHING.md.
 - Restarting the user's running Rubato app needs the user's OK through the lead (it hosts the user's live conversation) — lead.
-- Commit locally in the Rubato repo, only your own files; no push — lead.
+- Commit locally in the Rubato repo, only your own files. The user authorized GitHub delivery via
+  a PR (window 01a1c444, item 04239fd2); the existing delivery is PR #40. No PR merge is authorized.
 
 ## Non-goals
 
@@ -85,3 +98,8 @@ copy, and click/keyboard navigation for both lead and member cards, including an
 Use replay fixtures representative of the observed 30–49-day-old teams and the idle unfinished imgbox board.
 Keep the live data read-only. Recheck existing activity updates, process-loss display and the right-panel
 Agents surface; record timing/renderer observations without claiming they rule out every cause of app lag.
+
+For shared-lead grouping, tests and actual isolated UI evidence must cover two teams sharing one lead
+(one lead card and one lead navigation destination), distinct leads with identical labels, identical session
+identifiers in distinct environments, a shared lead across current/past teams with folding and expansion,
+stable newest-first order, counts without duplicate leads, and unchanged individual team state/navigation.
