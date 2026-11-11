@@ -50,6 +50,21 @@ export interface GroupView {
   readonly work: TeamWork;
   /** Its own members and work items have been quiet past PAST_AFTER_MS. */
   readonly past: boolean;
+  /**
+   * Which lead conversation it belongs to: its environment and the lead's session id. Groups with
+   * the same key show that lead once (leadBlocks). A lead without a session id is its own.
+   */
+  readonly leadKey: string;
+}
+
+/** One lead conversation and the groups (teams, subagents) it started, newest first. */
+export interface LeadBlock {
+  readonly key: string;
+  /** The lead, from its newest group: every group of one block has the same conversation. */
+  readonly lead: NodeView;
+  readonly groups: ReadonlyArray<GroupView>;
+  /** Shown in an earlier section already: this block lists its groups without a second lead card. */
+  readonly leadShownAbove: boolean;
 }
 
 export interface BoardSections {
@@ -105,7 +120,17 @@ export function byNewest(a: BoardGroup, b: BoardGroup): number {
 
 const matches = (view: NodeView, filter: BoardFilter) => filter === "all" || view.liveness === filter;
 
-function viewOf(group: BoardGroup, now: number, filter: BoardFilter): GroupView | null {
+/**
+ * A lead's identity: the same Pi session in the same environment. Never its name: every lead is
+ * called "Lead". A session id from another environment is another conversation.
+ */
+export function leadKeyOf(group: BoardGroup, environmentId: string | null | undefined): string {
+  const sessionId = group.lead.sessionId;
+  const environment = group.environmentId ?? environmentId ?? "";
+  return sessionId ? `lead\u0000${environment}\u0000${sessionId}` : `group\u0000${group.id}`;
+}
+
+function viewOf(group: BoardGroup, now: number, filter: BoardFilter, environmentId: string | null | undefined): GroupView | null {
   const all = group.members.map((node) => nodeView(node, now));
   const counts = countLiveness(all.map((view) => view.liveness));
   const shown = all.filter((view) => isOnBoard(view.liveness) || view.liveness === "lost");
@@ -118,12 +143,28 @@ function viewOf(group: BoardGroup, now: number, filter: BoardFilter): GroupView 
   const workStalled = filter === "stalled" && work.state === "stalled" && work.reason === "work-left";
   const members = filter === "all" || workStalled ? shown : shown.filter((view) => matches(view, filter));
   if (filter !== "all" && members.length === 0) return null;
-  return { group, lead: nodeView(group.lead, now), members, ended: filter === "all" ? ended : [], counts, work, past };
+  return { group, lead: nodeView(group.lead, now), members, ended: filter === "all" ? ended : [], counts, work, past,
+    leadKey: leadKeyOf(group, environmentId) };
+}
+
+/**
+ * Groups under their lead, once per lead conversation. Blocks come in the order of their newest
+ * group and groups keep their newest-first order inside, so the newest team still leads the page.
+ * `shownAbove` names leads an earlier section already shows: their block here has no lead card.
+ */
+export function leadBlocks(views: ReadonlyArray<GroupView>, shownAbove: ReadonlySet<string> = new Set()): LeadBlock[] {
+  const blocks = new Map<string, { lead: NodeView; groups: GroupView[] }>();
+  for (const view of views) {
+    const held = blocks.get(view.leadKey);
+    if (held) held.groups.push(view);
+    else blocks.set(view.leadKey, { lead: view.lead, groups: [view] });
+  }
+  return [...blocks].map(([key, block]) => ({ key, ...block, leadShownAbove: shownAbove.has(key) }));
 }
 
 export function boardSections(board: StatusBoard | null, now: number, filter: BoardFilter = "all"): BoardSections {
   const views = [...(board?.groups ?? [])].sort(byNewest).flatMap((group) => {
-    const view = viewOf(group, now, filter);
+    const view = viewOf(group, now, filter, board?.environmentId);
     return view ? [view] : [];
   });
   return { current: views.filter((view) => !view.past), past: views.filter((view) => view.past) };
@@ -174,11 +215,28 @@ export interface CombinedLogLine extends BoardLogLine {
   readonly group: string | null;
 }
 
-/** All groups' lines in time order, the newest last; a group name joins the speaker when there are several. */
+/**
+ * All groups' lines in time order, the newest last; a group name joins the speaker when there are
+ * several. A lead several groups share says each line once, under no team's name.
+ */
 export function combinedLog(views: ReadonlyArray<GroupView>, limit = 60): CombinedLogLine[] {
   const several = views.length > 1;
+  const sharedLeads = new Set(
+    leadBlocks(views).filter((block) => block.groups.length > 1).map((block) => block.key),
+  );
+  const seen = new Set<string>();
   return views
-    .flatMap((view) => view.group.log.map((line) => ({ ...line, group: several ? view.group.name : null })))
+    .flatMap((view) =>
+      view.group.log.flatMap((line) => {
+        const shared = line.role === "lead" && sharedLeads.has(view.leadKey);
+        if (shared) {
+          const key = `${view.leadKey}\u0000${line.at}\u0000${line.text}`;
+          if (seen.has(key)) return [];
+          seen.add(key);
+        }
+        return [{ ...line, group: several && !shared ? view.group.name : null }];
+      }),
+    )
     .sort((a, b) => a.at - b.at)
     .slice(-limit);
 }

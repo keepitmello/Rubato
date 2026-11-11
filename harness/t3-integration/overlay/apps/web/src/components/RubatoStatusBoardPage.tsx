@@ -57,6 +57,8 @@ import {
   boardCounts,
   boardSections,
   clockTime,
+  leadBlocks,
+  type LeadBlock,
   combinedLog,
   shortModelName,
   sinceLabel,
@@ -92,6 +94,12 @@ export function RubatoStatusBoardPanel() {
   const opener = useOpener(environmentId, threadOf);
   const counts = useMemo(() => boardCounts(board, now), [board, now]);
   const sections = useMemo(() => boardSections(board, now, filter), [board, now, filter]);
+  // One lead conversation shows once per page: past teams whose lead is above list under no second copy.
+  const currentBlocks = useMemo(() => leadBlocks(sections.current), [sections]);
+  const pastBlocks = useMemo(
+    () => leadBlocks(sections.past, new Set(currentBlocks.map((block) => block.key))),
+    [sections, currentBlocks],
+  );
   // The log follows current work; a past team's lines are in its own card.
   const log = useMemo(() => combinedLog(boardSections(board, now).current), [board, now]);
   return (
@@ -130,7 +138,7 @@ export function RubatoStatusBoardPanel() {
             {filter === "all" ? "No teams or subagents are at work right now." : "Nothing in this state."}
           </p>
         ) : (
-          sections.current.map((view) => <GroupCard key={view.group.id} view={view} now={now} models={models} />)
+          currentBlocks.map((block) => <LeadBlockView key={block.key} block={block} now={now} models={models} />)
         )}
         {sections.past.length > 0 ? (
           <section className="flex flex-col gap-3" data-rubato-board-past="">
@@ -146,7 +154,7 @@ export function RubatoStatusBoardPanel() {
               <span className="text-xs text-muted-foreground/70">{`Quiet for over ${PAST_HOURS} hours`}</span>
             </button>
             {showPast
-              ? sections.past.map((view) => <GroupCard key={view.group.id} view={view} now={now} models={models} />)
+              ? pastBlocks.map((block) => <LeadBlockView key={block.key} block={block} now={now} models={models} />)
               : null}
           </section>
         ) : null}
@@ -280,7 +288,56 @@ function StateBadge({ view }: { view: NodeView }) {
   );
 }
 
-function GroupCard({ view, now, models }: { view: GroupView; now: number; models: ReadonlyMap<string, string> }) {
+/**
+ * A lead and the groups it started. One group with its own lead is the card as it always was; a
+ * lead shared by several groups shows once on the left with its teams stacked on the right; a lead
+ * already shown above shows no second card, only where to find it.
+ */
+function LeadBlockView({ block, now, models }: { block: LeadBlock; now: number; models: ReadonlyMap<string, string> }) {
+  if (block.groups.length === 1 && !block.leadShownAbove)
+    return <GroupCard view={block.groups[0]!} now={now} models={models} lead="own" />;
+  if (block.leadShownAbove)
+    return (
+      <>
+        {block.groups.map((view) => (
+          <GroupCard key={view.group.id} view={view} now={now} models={models} lead="above" />
+        ))}
+      </>
+    );
+  return (
+    <section
+      data-rubato-board-lead-block={block.key}
+      className="grid grid-cols-1 gap-y-3 lg:grid-cols-[minmax(13rem,17rem)_1.5rem_minmax(0,1fr)]"
+    >
+      <div className="flex flex-col gap-1.5 self-start lg:sticky lg:top-3">
+        <LeadBox view={block.lead} models={models} />
+        <p className="px-1 text-xs text-muted-foreground">{`${block.groups.length} groups under this lead`}</p>
+      </div>
+      <div aria-hidden className="relative hidden lg:block">
+        <span className="absolute top-10 right-0 left-0 h-px bg-border" />
+        <span className="absolute top-10 right-0 bottom-10 w-px bg-border" />
+      </div>
+      <div className="flex min-w-0 flex-col gap-4">
+        {block.groups.map((view) => (
+          <GroupCard key={view.group.id} view={view} now={now} models={models} lead="block" />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GroupCard({
+  view,
+  now,
+  models,
+  lead,
+}: {
+  view: GroupView;
+  now: number;
+  models: ReadonlyMap<string, string>;
+  /** own: its lead on its left; block: the lead is the block's; above: an earlier section shows it. */
+  lead: "own" | "block" | "above";
+}) {
   const { group } = view;
   const title = group.kind === "team" ? group.name : (group.name ?? "Subagents");
   const folder = group.cwd.split("/").filter(Boolean).at(-1) ?? group.cwd;
@@ -292,6 +349,7 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
       data-rubato-board-group={group.kind}
       data-rubato-board-id={group.id}
       data-rubato-board-past={view.past ? "" : undefined}
+      data-rubato-board-lead-mode={lead}
     >
       <header className="flex items-center gap-2.5 border-b border-border/60 px-4 py-3">
         {group.kind === "team" ? (
@@ -339,11 +397,25 @@ function GroupCard({ view, now, models }: { view: GroupView; now: number; models
           {`No member or work item has moved since ${sinceLabel(view.work.lastMovedAt, now)}`}
         </p>
       ) : null}
-      <div className="grid grid-cols-1 gap-y-3 p-4 lg:grid-cols-[minmax(13rem,17rem)_2.5rem_minmax(0,1fr)]">
-        <LeadBox view={view.lead} models={models} />
-        <div aria-hidden className="hidden self-center lg:block">
-          <div className="h-px w-full bg-border" />
-        </div>
+      {lead === "above" ? (
+        <p className="border-b border-border/60 px-4 py-2 text-xs text-muted-foreground" data-rubato-board-lead-above="">
+          Its lead conversation is shown above
+        </p>
+      ) : null}
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-y-3 p-4",
+          lead === "own" && "lg:grid-cols-[minmax(13rem,17rem)_2.5rem_minmax(0,1fr)]",
+        )}
+      >
+        {lead === "own" ? (
+          <>
+            <LeadBox view={view.lead} models={models} />
+            <div aria-hidden className="hidden self-center lg:block">
+              <div className="h-px w-full bg-border" />
+            </div>
+          </>
+        ) : null}
         <div className="flex min-w-0 flex-col gap-3">
           {view.members.length === 0 ? (
             <p className="py-4 text-sm text-muted-foreground">No member is running.</p>

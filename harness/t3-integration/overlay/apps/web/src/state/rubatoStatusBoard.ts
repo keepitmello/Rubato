@@ -91,6 +91,8 @@ export interface BoardGroup {
   /** Counted over every item, shown or not. */
   readonly boardSummary?: { readonly total: number; readonly open: number; readonly updatedAt: number | null } | null;
   readonly log: ReadonlyArray<BoardLogLine>;
+  /** Its environment when it differs from the board's; a lead is grouped only within one. */
+  readonly environmentId?: string | null;
 }
 
 export interface StatusBoard {
@@ -98,6 +100,8 @@ export interface StatusBoard {
   readonly groups: ReadonlyArray<BoardGroup>;
   /** This page's clock minus the server's when it answered: the page counts in server time. */
   readonly clockOffset: number;
+  /** The environment that answered. A lead is one conversation only within its environment. */
+  readonly environmentId?: EnvironmentId | null;
 }
 
 interface Answer {
@@ -159,7 +163,8 @@ async function poll() {
     schedule(next);
     return;
   }
-  const key = cwds.join("\n");
+  // The answer held is one environment's: another environment asks afresh, never "unchanged".
+  const key = `${environmentId}\n${cwds.join("\n")}`;
   inFlight = true;
   try {
     const answer = await postRubato<Answer>(
@@ -173,7 +178,7 @@ async function poll() {
     if (answer.unchanged && board && askedKey === key) {
       if (Math.abs(board.clockOffset - clockOffset) > 1_000) board = { ...board, clockOffset };
     } else if (Array.isArray(answer.groups)) {
-      board = { version: answer.version, groups: answer.groups, clockOffset };
+      board = { version: answer.version, groups: answer.groups, clockOffset, environmentId };
       askedKey = key;
     }
     notify();
@@ -258,9 +263,13 @@ export function useBoardNow(boardValue: StatusBoard | null, stepMs = 1_000): num
 /** How often the board's states (working → stalled, team states, past teams) are worked out again. */
 export const BOARD_STATE_STEP_MS = 5_000;
 
-// Which app thread shows each Pi session (/rubato/board-threads), asked once per new session.
+// Which app thread shows each Pi session (/rubato/board-threads), asked once per new session in
+// each environment.
 const THREADS_ROUTE = "/rubato/board-threads";
+// Keyed by environment and session: the same session id in another environment is another
+// conversation, and must never borrow this one's thread.
 const threadsBySession = new Map<string, { readonly thread: string | null; readonly at: number }>();
+const threadKey = (environmentId: EnvironmentId, sessionId: string) => `${environmentId}\u0000${sessionId}`;
 /** A session no thread showed is asked again after this: the inventory may import it since. */
 const NO_THREAD_RETRY_MS = 30_000;
 const threadListeners = new Set<() => void>();
@@ -270,11 +279,11 @@ const asking = new Set<string>();
 async function askThreads(environmentId: EnvironmentId, sessionIds: ReadonlyArray<string>) {
   const now = Date.now();
   const missing = sessionIds.filter((id) => {
-    const held = threadsBySession.get(id);
-    return !asking.has(id) && (held === undefined || (held.thread === null && now - held.at > NO_THREAD_RETRY_MS));
+    const held = threadsBySession.get(threadKey(environmentId, id));
+    return !asking.has(threadKey(environmentId, id)) && (held === undefined || (held.thread === null && now - held.at > NO_THREAD_RETRY_MS));
   });
   if (missing.length === 0) return;
-  for (const id of missing) asking.add(id);
+  for (const id of missing) asking.add(threadKey(environmentId, id));
   try {
     const prepared = readPreparedConnection(environmentId);
     const access = prepared ? await rubatoHttpAccess(prepared) : null;
@@ -287,13 +296,13 @@ async function askThreads(environmentId: EnvironmentId, sessionIds: ReadonlyArra
     });
     if (!response.ok) return;
     const answer = (await response.json().catch(() => null)) as { threads?: Record<string, string | null> } | null;
-    for (const id of missing) threadsBySession.set(id, { thread: answer?.threads?.[id] ?? null, at: Date.now() });
+    for (const id of missing) threadsBySession.set(threadKey(environmentId, id), { thread: answer?.threads?.[id] ?? null, at: Date.now() });
     threadsVersion += 1;
     for (const listener of threadListeners) listener();
   } catch {
     // Asked again when the board next shows it.
   } finally {
-    for (const id of missing) asking.delete(id);
+    for (const id of missing) asking.delete(threadKey(environmentId, id));
   }
 }
 
@@ -325,5 +334,6 @@ export function useBoardThreads(
     () => threadsVersion,
     () => threadsVersion,
   );
-  return (sessionId) => (sessionId ? threadsBySession.get(sessionId)?.thread : null);
+  return (sessionId) =>
+    sessionId && environmentId !== null ? threadsBySession.get(threadKey(environmentId, sessionId))?.thread : null;
 }

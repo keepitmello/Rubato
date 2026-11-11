@@ -4703,7 +4703,8 @@
   "Opens inside its parent agent's conversation": "상위 에이전트의 대화 안에서 열립니다",
   "No saved conversation": "저장된 대화가 없습니다",
   "Its conversation isn't in the app": "앱에 이 대화가 없습니다",
-  "Finding its conversation…": "대화를 찾는 중…"
+  "Finding its conversation…": "대화를 찾는 중…",
+  "Its lead conversation is shown above": "리드 대화는 위에 있습니다"
  },
  "templates": [
   [
@@ -8501,6 +8502,10 @@
   [
    "{0} at work, {1} stalled, {2} teams stalled",
    "{0}개 작업 중, {1}개 멈춤, 팀 {2}개 멈춤"
+  ],
+  [
+   "{0} groups under this lead",
+   "이 리드 아래 묶음 {0}개"
   ]
  ]
 }

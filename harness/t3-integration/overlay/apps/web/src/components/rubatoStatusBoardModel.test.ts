@@ -9,6 +9,7 @@ import {
   combinedLog,
   formatSpan,
   groupViews,
+  leadBlocks,
   shortModelName,
   unavailableReason,
   workReason,
@@ -262,5 +263,82 @@ describe("names and log", () => {
       NOW,
     );
     expect(combinedLog(views).map((line) => `${line.group}/${line.text}`)).toEqual(["b/first", "a/third", "b/last"]);
+  });
+});
+
+describe("one lead, its teams beneath", () => {
+  const LEAD = "01a1b592-b752-708d-b41e-9347589cdfbb";
+  const leadNode = (sessionId: string | null) => node("lead", { role: "lead", sessionId, lastActivityAt: NOW - 1_000 });
+  const led = (id: string, sessionId: string | null, startedAgo: number, overrides: Partial<BoardGroup> = {}) =>
+    team(id, [node(`${id}-m`)], { lead: leadNode(sessionId), startedAt: NOW - startedAgo, ...overrides });
+  const keys = (blocks: ReturnType<typeof leadBlocks>) => blocks.map((block) => [block.key.split("\u0000").at(-1), ids(block.groups)]);
+
+  it("shows two teams sharing one lead conversation under one lead, newest team first", () => {
+    const { current } = boardSections(board([led("imgbox", LEAD, 3 * DAY), led("rubato-board", LEAD, HOUR)]), NOW);
+    const blocks = leadBlocks(current);
+    expect(keys(blocks)).toEqual([[LEAD, ["rubato-board", "imgbox"]]]);
+    // The one card's destination is that conversation.
+    expect(blocks[0]?.lead.node.sessionId).toBe(LEAD);
+  });
+
+  it("keeps distinct conversations apart even when both are called Lead", () => {
+    const blocks = leadBlocks(boardSections(board([led("a", "s-1", HOUR), led("b", "s-2", 2 * HOUR)]), NOW).current);
+    expect(blocks.map((block) => block.lead.node.name)).toEqual(["lead", "lead"]);
+    expect(keys(blocks)).toEqual([["s-1", ["a"]], ["s-2", ["b"]]]);
+  });
+
+  it("keeps the same session id in two environments apart", () => {
+    const blocks = leadBlocks(
+      boardSections(board([led("a", "same", HOUR, { environmentId: "env-1" }), led("b", "same", 2 * HOUR, { environmentId: "env-2" })]), NOW).current,
+    );
+    expect(blocks).toHaveLength(2);
+  });
+
+  it("never merges leads it cannot identify", () => {
+    expect(leadBlocks(boardSections(board([led("a", null, HOUR), led("b", null, 2 * HOUR)]), NOW).current)).toHaveLength(2);
+  });
+
+  it("orders blocks by their newest team, and teams newest first inside", () => {
+    const blocks = leadBlocks(
+      boardSections(board([led("c", "l1", 3 * HOUR), led("b", "l2", 2 * HOUR), led("a", "l1", HOUR)]), NOW).current,
+    );
+    expect(keys(blocks)).toEqual([["l1", ["a", "c"]], ["l2", ["b"]]]);
+  });
+
+  it("folds a shared lead's old team on its own, and expanding it shows no second lead", () => {
+    const old = led("old", LEAD, 40 * DAY, { members: [resting("old-m", 30 * DAY)], board: [item("1", "in_progress", 30 * DAY)] });
+    const elsewhere = led("elsewhere", "other-lead", 45 * DAY, { members: [resting("e-m", 30 * DAY)] });
+    const sections = boardSections(board([led("now", LEAD, HOUR), old, elsewhere]), NOW);
+    const current = leadBlocks(sections.current);
+    const past = leadBlocks(sections.past, new Set(current.map((block) => block.key)));
+    expect(keys(current)).toEqual([[LEAD, ["now"]]]);
+    expect(past.map((block) => [ids(block.groups), block.leadShownAbove])).toEqual([[["old"], true], [["elsewhere"], false]]);
+    // The old team keeps its own state.
+    expect(past[0]?.groups[0]?.work.state).toBe("stalled");
+  });
+
+  it("keeps each team's state and counts members once, the shared lead not at all", () => {
+    const done = led("done", LEAD, 2 * HOUR, { members: [resting("w", HOUR)], board: [item("1", "completed", HOUR)] });
+    const working = led("working", LEAD, HOUR);
+    const value = board([done, working]);
+    const [block] = leadBlocks(boardSections(value, NOW).current);
+    expect(block?.groups.map((view) => [view.group.id, view.work.state])).toEqual([["working", "working"], ["done", "completed"]]);
+    expect(boardCounts(value, NOW)).toMatchObject({ working: 1, resting: 1, teams: 2 });
+  });
+
+  it("says a shared lead's lines once in the log, its teams' members under their names", () => {
+    const say = (at: number, who: string, role: string, text: string) => ({ at: NOW - at, who, role, text });
+    const views = boardSections(
+      board([
+        led("a", LEAD, HOUR, { log: [say(5_000, "lead", "lead", "Both teams started."), say(3_000, "a-m", "owner", "a works")] }),
+        led("b", LEAD, 2 * HOUR, { log: [say(5_000, "lead", "lead", "Both teams started."), say(1_000, "b-m", "owner", "b works")] }),
+      ]),
+      NOW,
+    ).current;
+    expect(combinedLog(views).map((line) => `${line.group ?? "-"}/${line.who}: ${line.text}`)).toEqual([
+      "-/lead: Both teams started.",
+      "a/a-m: a works",
+      "b/b-m: b works",
+    ]);
   });
 });
