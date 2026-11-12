@@ -154,6 +154,9 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const inventory = yield* Effect.tryPromise(() => bridge.inventory());
     for (const entry of inventory) yield* importSession(instance, entry);
     for (const entry of inventory) if (engineRunning(entry)) yield* showEngineRun(instance, entry);
+    // After the imports, so a session made a moment ago already has the thread a request names.
+    yield* Effect.tryPromise(() => bridge.applyThreadRequests?.() ?? Promise.resolve()).pipe(
+      Effect.catch((cause) => Effect.logWarning("Rubato thread requests not applied", { instanceId: instance.instanceId, cause })));
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
 
   const sync = Effect.gen(function* () {

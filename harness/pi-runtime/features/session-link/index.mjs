@@ -13,6 +13,6 @@ export function createSessionLinkFactories({ sessionLink, companion = false } = 
 export { installSessionLink } from "./extension.mjs";
 export { DELIVERY_MODES, DELIVER_REQUEST, SESSION_MESSAGE_TYPE, buildEnvelope, buildSessionMessage, parseDelivery, parseDeliveryMode } from "./message.mjs";
 export { renderSessionMessage, sessionMessageHeader } from "./render.mjs";
-export { COMPANION_WITHHELD_TOOLS, EFFORT_LEVELS, SESSION_TOOL_NAMES, createSessionTools, resolveModel } from "./tools.mjs";
+export { COMPANION_ONLY_TOOLS, COMPANION_WITHHELD_TOOLS, EFFORT_LEVELS, SESSION_TOOL_NAMES, createSessionTools, resolveModel } from "./tools.mjs";
 export { CACHE_SESSION_KEYS, SIDE_CHAT_ENTRY, SIDE_CHAT_NOTICE, SIDE_CHAT_NOTICE_TEXT, setCacheSessionKey, sideChatEntries, sideChatParent, trackSideChatCache } from "./side-chat.mjs";
 export default createSessionLinkFactories;

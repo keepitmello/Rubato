@@ -43,6 +43,8 @@ export class SessionClient {
   detach() { return this.call(Management, 'detach', []); }
   unload(id) { return this.call(Management, 'unload', [id]); }
   discard(id) { return this.call(Management, 'discard', [id]); }
+  threadRequests() { return this.call(Management, 'threadRequests', []); }
+  settleThreadRequests(ids) { return this.call(Management, 'settleThreadRequests', [ids]); }
   command(command) { return this.call(Control, 'command', [command], true); }
   snapshot() { return this.call(Control, 'snapshot', [], true); }
   reply(response) { return this.call(Control, 'reply', [response], true); }

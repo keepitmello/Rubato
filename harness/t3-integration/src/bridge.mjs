@@ -245,6 +245,8 @@ export function companionEntry(branch, threadId, { messageId, text, createdAt } 
 }
 /** How often threads with no stream are compared with their sessions (backfill.mjs); T3's own inventory pass is five seconds too. */
 const BACKFILL_MS = 5000;
+/** Inventory passes a thread request waits for its session's thread to appear before it is dropped. */
+export const THREAD_REQUEST_PASSES = 3;
 /** When a session in the engine's list last moved (epoch ms), or NaN: see backfillDetached. */
 export const sessionMoved = (row) => {
   const times = ['touchedAt', 'modifiedAt'].map((field) => row?.[field]).filter((value) => typeof value === 'number' && Number.isFinite(value));
@@ -603,6 +605,32 @@ export class RubatoPiBridge {
   }
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
+  /**
+   * What another conversation asked the app to do with a session's thread (the companion's
+   * session_rename and session_delete; engine thread-requests.mjs): archive, delete or rename it
+   * through the app's own commands, `sessionThread(sessionId, request)`, which answers whether a
+   * thread showed that session (RubatoPiSessions.ts binds it). The inventory pass calls this after
+   * importing new sessions, so a session made a moment ago has its thread. A request no thread
+   * takes within THREAD_REQUEST_PASSES passes is settled anyway; an engine without these requests
+   * answers nothing.
+   */
+  async applyThreadRequests() {
+    if (typeof this.sessionThread !== 'function') return;
+    let requests;
+    try { requests = await this.viaInventory((client) => client.threadRequests()); }
+    catch { return; }
+    this.threadRequestPasses ??= new Map();
+    const settled = [];
+    for (const request of Array.isArray(requests) ? requests : []) {
+      let applied = false;
+      try { applied = await this.sessionThread(request.sessionId, request); }
+      catch (error) { this.onError(error); }
+      const passes = (this.threadRequestPasses.get(request.id) ?? 0) + 1;
+      if (applied === true || passes >= THREAD_REQUEST_PASSES) { settled.push(request.id); this.threadRequestPasses.delete(request.id); }
+      else this.threadRequestPasses.set(request.id, passes);
+    }
+    if (settled.length) await this.viaInventory((client) => client.settleThreadRequests(settled)).catch(this.onError);
+  }
   // The new-thread screen's prompt chip (session-prompts.mjs). The library is files on this Mac.
   sessionPromptLibrary() { return listSessionPrompts(); }
   openSessionPromptFolder() { return openSessionPromptFolder(); }

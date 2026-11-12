@@ -6,7 +6,7 @@ import { InteractiveMode, getMarkdownTheme, initTheme } from "@earendil-works/pi
 
 import { loadPiFeatures, PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
-import { COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
+import { COMPANION_ONLY_TOOLS, COMPANION_WITHHELD_TOOLS, DELIVERY_MODES, DELIVER_REQUEST, EFFORT_LEVELS, SESSION_MESSAGE_TYPE, SESSION_TOOL_NAMES, buildEnvelope, createSessionLinkFactories, createSessionTools, parseDelivery, sessionMessageHeader } from "./index.mjs";
 
 initTheme("dark");
 
@@ -52,7 +52,7 @@ function fakePi() {
 function fakeLink(answers = {}) {
   const calls = [];
   const link = {};
-  for (const method of ["list", "read", "search", "wait", "send", "create", "fork", "cacheWarming"]) {
+  for (const method of ["list", "read", "search", "wait", "send", "create", "fork", "cacheWarming", "stop", "rename", "remove"]) {
     link[method] = async (args) => {
       calls.push({ method, args });
       const answer = answers[method];
@@ -468,10 +468,12 @@ test("a side chat uses the prompt cache of the conversation it came from while i
   assert.equal(keys().has("side-1"), false, "ending the session clears it");
 });
 
-test("the companion gets every conversation tool except waiting, and none of its tools tells it to wait", () => {
+test("the companion gets every conversation tool except waiting, plus its hands on other conversations, and none of its tools tells it to wait", () => {
   const lead = createSessionTools(() => ({})).map((tool) => tool.name);
   const companion = createSessionTools(() => ({}), { companion: true });
-  assert.deepEqual(companion.map((tool) => tool.name), lead.filter((name) => !COMPANION_WITHHELD_TOOLS.includes(name)));
+  assert.deepEqual(companion.map((tool) => tool.name), [...lead.filter((name) => !COMPANION_WITHHELD_TOOLS.includes(name)), ...COMPANION_ONLY_TOOLS]);
+  assert.deepEqual([...COMPANION_ONLY_TOOLS], ["session_stop", "session_rename", "session_delete"]);
+  for (const name of COMPANION_ONLY_TOOLS) assert.ok(!lead.includes(name), `a lead has no ${name}`);
   assert.ok(lead.includes("session_wait"));
   for (const tool of companion) assert.doesNotMatch(tool.description, /session_wait/, tool.name);
   assert.match(companion.find((tool) => tool.name === "session_create").description, /start a lead/);
@@ -485,4 +487,40 @@ test("a session the engine runs as the companion registers the companion's tools
   await factory.factory(pi);
   assert.ok(!registered.includes("session_wait"));
   assert.ok(registered.includes("session_create"));
+});
+
+test("the companion's stop, rename and delete call the engine as this conversation and say what happened", async () => {
+  const { link, calls } = fakeLink({
+    stop: (args) => ({ sessionId: args.sessionId, title: "Lead", stopped: true, status: "idle", unread: ["second task"] }),
+    rename: (args) => ({ sessionId: args.sessionId, title: args.title }),
+    remove: (args) => ({ sessionId: args.sessionId, title: "Lead", action: args.permanent ? "delete" : "archive", stopped: args.permanent === true, unread: [] }),
+  });
+  const pi = fakePi();
+  createSessionLinkFactories({ sessionLink: link, companion: true })[0].factory(pi);
+  const stopped = await execute(pi, "session_stop", { sessionId: "01lead" });
+  assert.match(stopped.content[0].text, /^Stopped "Lead" \(01lead\); it is idle\. 1 queued message it never read came back in unread\./);
+  const renamed = await execute(pi, "session_rename", { sessionId: "01lead", title: "Parser fix" });
+  assert.match(renamed.content[0].text, /^Renamed 01lead to "Parser fix"\./);
+  const archived = await execute(pi, "session_delete", { sessionId: "01lead" });
+  assert.match(archived.content[0].text, /^Archiving the app thread of "Lead" \(01lead\); the user can restore it/);
+  const deleted = await execute(pi, "session_delete", { sessionId: "01lead", permanent: true });
+  assert.match(deleted.content[0].text, /^Deleting the app thread of "Lead" \(01lead\)\. Its running turn was stopped first\./);
+  assert.deepEqual(calls, [
+    { method: "stop", args: { from: SELF, sessionId: "01lead" } },
+    { method: "rename", args: { from: SELF, sessionId: "01lead", title: "Parser fix" } },
+    { method: "remove", args: { from: SELF, sessionId: "01lead" } },
+    { method: "remove", args: { from: SELF, sessionId: "01lead", permanent: true } },
+  ]);
+  const describe = (name) => pi.tools.get(name).description;
+  assert.match(describe("session_stop"), /as the user's Stop button in the app does/);
+  assert.match(describe("session_delete"), /By default its thread is archived/);
+  assert.match(describe("session_delete"), /use it only when the user asked for a deletion/);
+  for (const name of COMPANION_ONLY_TOOLS) assert.match(describe(name), /Your own conversation and companions' are refused/, name);
+});
+
+test("an engine refusal to stop the companion's own conversation reaches the model as its code", async () => {
+  const { link } = fakeLink({ stop: Object.assign(new Error("A conversation cannot stop itself"), { code: "self" }) });
+  const pi = fakePi();
+  createSessionLinkFactories({ sessionLink: link, companion: true })[0].factory(pi);
+  await assert.rejects(execute(pi, "session_stop", { sessionId: SELF }), /^Error: self: A conversation cannot stop itself$/);
 });

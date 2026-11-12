@@ -572,3 +572,19 @@ test("a failed title call leaves no unhandled rejection", async () => {
   }
   assert.deepEqual(unhandled, []);
 });
+
+test("a name given from outside (another conversation's session_rename) locks later auto titles; the auto title's own change does not", () => {
+  const start = (entries) => {
+    const handlers = {};
+    installSessionTitle({ on(event, handler) { handlers[event] = handler; }, getSessionName: () => undefined,
+      appendEntry(type, data) { entries.push({ type: "custom", customType: type, data }); } });
+    handlers.session_start({ reason: "startup" }, { cwd: "/tmp/repo", ui: { setTitle() {} }, sessionManager: { getEntries: () => entries } });
+    return handlers;
+  };
+  const renamed = [];
+  start(renamed).session_info_changed({ name: "Parser fix" }, { cwd: "/tmp/repo", ui: { setTitle() {} } });
+  assert.equal(isTitleLocked(renamed), true);
+  const auto = [{ type: "custom", customType: TITLE_ENTRY, data: { name: "Auto topic" } }];
+  start(auto).session_info_changed({ name: "Auto topic" }, { cwd: "/tmp/repo", ui: { setTitle() {} } });
+  assert.equal(isTitleLocked(auto), false);
+});

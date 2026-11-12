@@ -166,6 +166,9 @@ export function installSessionTitle(pi) {
 
   pi.on("session_info_changed", (event, ctx) => {
     if (!event?.name) state.locked = false;
+    // A name this extension did not just give is someone's choice: the app's /name, or another
+    // conversation renaming this one (session_rename). Later auto titles must not replace it.
+    else if (!state.applyingAuto && event.name !== state.lastAuto) lockExplicitTitle(pi, state);
     paintTabTitle(ctx, event?.name);
   });
 

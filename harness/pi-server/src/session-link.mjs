@@ -26,7 +26,7 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
   waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
-const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming', 'channel', 'telegramSend', 'companionSettings'];
+const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming', 'stop', 'rename', 'remove', 'channel', 'telegramSend', 'companionSettings'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
@@ -434,6 +434,40 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     const client = new SessionClient({ socketPath, serverId, onError });
     try { await client.connect(); return await work(client); }
     finally { await client.close().catch(() => {}); }
+  }
+  /**
+   * A short attachment to one conversation, the way the app's controls reach it (the context ring,
+   * Stop, a rename): `work(client)` sends its commands, then the attachment goes. It loads a stored
+   * conversation; the runtime idles out again on its own.
+   */
+  async function control(id, work) {
+    return withClient(async (client) => {
+      try { await client.attach(id); }
+      catch (error) { throw fail(/not found/i.test(error?.message) ? 'unknown_session' : 'delivery_failed', `Could not open conversation ${id}: ${error?.message ?? error}`); }
+      try { return await work(client); }
+      finally { await client.detach().catch(() => {}); }
+    });
+  }
+  /**
+   * Who may stop, rename, archive or delete another conversation: a companion, never its own
+   * conversation or any companion's (a companion's room keeps its name and its thread).
+   */
+  function manageable(from, id, verb) {
+    requireId(from, 'from'); requireId(id, 'sessionId');
+    if (!fromCompanion(from)) throw fail('not_companion', `Only a companion conversation can ${verb} another conversation`);
+    if (from === id) throw fail('self', `A conversation cannot ${verb} itself`);
+    if (row(id)?.companion === true) throw fail('companion', `A companion's conversation cannot be managed from another conversation`);
+  }
+  /**
+   * The app's Stop (T3 bridge rpc-connection.mjs abort): Pi's abort, then the messages queued in
+   * that run that the model never read are taken out and handed back, oldest first.
+   */
+  async function abortRun(client) {
+    await client.command({ type: 'abort' });
+    const state = await client.command({ type: 'get_state' }).catch(() => undefined);
+    if (!state || state.isStreaming || state.isCompacting || !(Number(state.pendingMessageCount) > 0)) return [];
+    const cleared = await client.command({ type: 'clear_queue' }).catch(() => null);
+    return [...(cleared?.steering ?? []), ...(cleared?.followUp ?? [])].filter((text) => typeof text === 'string' && text.trim());
   }
   /**
    * Attach exactly like a GUI does, so the official router loads (or reuses) the one
@@ -864,6 +898,58 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         warming: { mode: value?.mode ?? null, enabled: value?.sessionEnabled === true,
           until: Number.isFinite(value?.sessionUntil) ? value.sessionUntil : null },
         cache: cacheView(value?.cache, at, warmingEnd(value)) };
+    },
+    /**
+     * Stops the turn a conversation is running, as the app's Stop button does: the same abort, so
+     * its runtime ends its subagents and team the way it does for that Stop. Messages queued in that
+     * run that its model never read come back in `unread` instead of starting the next turn. An idle
+     * or stored conversation is left as it is (`stopped` false).
+     */
+    async stop({ from, sessionId } = {}) {
+      manageable(from, sessionId, 'stop');
+      const described = await describe(sessionId);
+      if (!BUSY.has(described.status)) return { sessionId, title: described.title, stopped: false, status: described.status, unread: [] };
+      const unread = await control(sessionId, (client) => abortRun(client).catch((error) => {
+        throw fail('unavailable', `Could not stop ${sessionId}: ${error?.message ?? error}`);
+      }));
+      const after = await describe(sessionId);
+      return { sessionId, title: after.title, stopped: true, status: after.status, unread };
+    },
+    /**
+     * Renames a conversation as the app's rename does: its session name, which the conversation's
+     * auto title then keeps (session-title), and the title of the app thread showing it.
+     */
+    async rename({ from, sessionId, title } = {}) {
+      manageable(from, sessionId, 'rename');
+      if (typeof title !== 'string' || !title.trim() || title.trim().length > 512) throw fail('invalid', 'title must be a non-empty string of at most 512 characters');
+      const name = title.trim();
+      await describe(sessionId);
+      await control(sessionId, async (client) => {
+        try { await client.command({ type: 'set_session_name', name }); }
+        catch (error) { throw fail('unavailable', `Could not rename ${sessionId}: ${error?.message ?? error}`); }
+      });
+      await need().host.threadRequests.add({ sessionId, action: 'rename', title: name });
+      return { sessionId, title: name };
+    },
+    /**
+     * Takes a conversation out of the app the way the app does. By default its thread is archived
+     * (the app's Archive, undone from the app's archived threads), which the app refuses while it
+     * runs, so a running one is refused here too. `permanent` deletes the thread like the app's
+     * Delete, which first stops a running turn. Either way the app applies it at its next pass
+     * (thread-requests.mjs); the conversation's own transcript stays on disk, as with the app.
+     */
+    async remove({ from, sessionId, permanent = false } = {}) {
+      manageable(from, sessionId, permanent === true ? 'delete' : 'archive');
+      if (typeof permanent !== 'boolean') throw fail('invalid', 'permanent must be a boolean');
+      const described = await describe(sessionId);
+      const running = BUSY.has(described.status);
+      if (running && !permanent) throw fail('busy', `"${described.title}" is running; stop it before archiving it`);
+      const unread = running ? await control(sessionId, (client) => abortRun(client).catch((error) => {
+        throw fail('unavailable', `Could not stop ${sessionId} before deleting it: ${error?.message ?? error}`);
+      })) : [];
+      const action = permanent ? 'delete' : 'archive';
+      await need().host.threadRequests.add({ sessionId, action });
+      return { sessionId, title: described.title, action, stopped: running, unread };
     },
     /**
      * The companion's settings, read or changed by talking to it (harness/companion/settings.mjs):

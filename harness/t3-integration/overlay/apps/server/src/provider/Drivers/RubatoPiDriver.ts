@@ -74,6 +74,13 @@ export interface PiSessionMessage {
   /** Segno's words (bridge said-echo.mjs reply or say): written in a run of their own, or the person's turn. */
   readonly ownRun?: boolean;
 }
+/** What another conversation asked the app to do with a session's thread (engine thread-requests.mjs). */
+export interface PiThreadRequest {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly action: "archive" | "delete" | "rename";
+  readonly title?: string;
+}
 /** A rewind that lands after a finished tool step: its row's call id, its turn, and when it finished. */
 export interface RubatoRevertStep {
   readonly turnId: string;
@@ -108,6 +115,10 @@ export interface PiBridge {
   /** The session a thread already runs in (RubatoPiSessions.ts binds it at startup). */
   /** Puts a session's own name on its thread (RubatoPiSessions.ts binds it at startup). */
   sessionTitle?: (threadId: string, title: string) => Promise<void>;
+  /** Archives, deletes or renames the thread showing a session; false when none does (RubatoPiSessions.ts binds it). */
+  sessionThread?: (sessionId: string, request: PiThreadRequest) => Promise<boolean>;
+  /** Applies what other conversations asked the app to do with threads, through `sessionThread` (bridge.mjs). */
+  applyThreadRequests?(): Promise<void>;
   /** Sessions a V2 thread reattached to from before V2; their history is native. */
   readonly resumedSessions?: Set<string>;
   /** Sessions a thread of this server shows; the inventory leaves them to that thread. */

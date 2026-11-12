@@ -4,12 +4,15 @@ import { DELIVERY_MODES } from "./message.mjs";
 
 // The conversation tools. Each one is a thin call into the engine's `sessionLink`; the engine
 // owns every rule about targets, rate limits and sizes and refuses by throwing an error with a
-// `code` (unavailable, invalid, too_long, unknown_session, self_send, duplicate, rate_limited,
-// delivery_failed, unreadable), which the tool surfaces as a tool error. Nothing here declares `exposure`: the tool-search surface
+// `code` (unavailable, invalid, too_long, unknown_session, self_send, self, companion, not_companion,
+// busy, duplicate, rate_limited, delivery_failed, unreadable), which the tool surfaces as a tool error. Nothing here declares `exposure`: the tool-search surface
 // policy catalogues undeclared extension tools for tool_search instead of sending them in every
 // request prefix (features/tool-search/patches.mjs, rubatoToolExposure).
 
+/** A lead's conversation tools. */
 export const SESSION_TOOL_NAMES = Object.freeze(["session_list", "session_read", "session_search", "session_wait", "session_send", "session_create", "session_fork", "session_cache_warming"]);
+/** What only the companion gets: its hands on the conversations it runs (the engine refuses anyone else). */
+export const COMPANION_ONLY_TOOLS = Object.freeze(["session_stop", "session_rename", "session_delete"]);
 /** Effort (Pi's thinking level) a created conversation can start at; the engine checks against the same list. */
 export const EFFORT_LEVELS = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -106,7 +109,7 @@ export function createSessionTools(getLink, { companion = false } = {}) {
   // instead of waiting behind tool_search.
   return companion
     ? tools.filter((tool) => !COMPANION_WITHHELD_TOOLS.includes(tool.name)).map((tool) => ({ ...tool, exposure: "direct" }))
-    : tools;
+    : tools.filter((tool) => !COMPANION_ONLY_TOOLS.includes(tool.name));
 }
 
 /** What the recipient did with a sent message, as the result says it. */
@@ -420,6 +423,80 @@ function sessionTools(getLink, { companion }) {
           : !enabled ? `Warming is off for "${result.title}".`
           : `Warming is on for "${result.title}"${Number.isFinite(until) ? ` until ${new Date(until).toISOString()}` : ""}.`;
         return { content: [text(`${lead}\n${json(result)}`)], details: result };
+      },
+    }),
+    define({
+      name: "session_stop",
+      label: "Stop conversation",
+      description: "Stop the turn another conversation is running now, as the user's Stop button in the app does: " +
+        "its subagents and team end the way they do for that Stop. Use it when a lead must stop at once, for example before a " +
+        "correction or a model change; a steer through session_send reaches it only at its next step. " +
+        "Messages queued there that it never read come back in unread instead of starting its next turn. " +
+        "An idle conversation is left as it is. Your own conversation and companions' are refused.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sessionId"],
+        properties: {
+          sessionId: { type: "string", minLength: 1, description: "Session id from session_list." },
+        },
+      },
+      async execute(_id, params, signal, _onUpdate, ctx) {
+        const from = ownSessionId(ctx);
+        const result = await untilAborted(() => link().stop({ from, sessionId: params.sessionId }), signal);
+        const unread = result.unread?.length ? ` ${result.unread.length} queued message${result.unread.length === 1 ? "" : "s"} it never read came back in unread.` : "";
+        const lead = result.stopped
+          ? `Stopped "${result.title}" (${result.sessionId}); it is ${result.status}.${unread}`
+          : `"${result.title}" (${result.sessionId}) was not running (${result.status}); nothing was stopped.`;
+        return { content: [text(`${lead}\n${UNTRUSTED}\n${json(result)}`)], details: result };
+      },
+    }),
+    define({
+      name: "session_rename",
+      label: "Rename conversation",
+      description: "Rename another conversation: its title in the app and its session name, which its automatic titles then keep. " +
+        "Use it when a title no longer says what the conversation is for. Your own conversation and companions' are refused.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sessionId", "title"],
+        properties: {
+          sessionId: { type: "string", minLength: 1, description: "Session id from session_list." },
+          title: { type: "string", minLength: 1, maxLength: 512, description: "The new title, a short phrase." },
+        },
+      },
+      async execute(_id, params, signal, _onUpdate, ctx) {
+        const from = ownSessionId(ctx);
+        const result = await untilAborted(() => link().rename({ from, sessionId: params.sessionId, title: params.title }), signal);
+        return { content: [text(`Renamed ${result.sessionId} to "${result.title}".\n${json(result)}`)], details: result };
+      },
+    }),
+    define({
+      name: "session_delete",
+      label: "Archive or delete conversation",
+      description: "Take another conversation out of the app, as the user does there. By default its thread is archived: the user can " +
+        "bring it back from the app's archived threads, and a running conversation is refused, so stop it first with session_stop. " +
+        "permanent true deletes the thread like the app's Delete, stopping a running turn first; use it only when the user asked for a deletion. " +
+        "The app applies it within seconds while it is open, or when it next starts. The conversation's transcript stays on this Mac, " +
+        "so session_list and session_read still find it. Your own conversation and companions' are refused.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["sessionId"],
+        properties: {
+          sessionId: { type: "string", minLength: 1, description: "Session id from session_list." },
+          permanent: { type: "boolean", description: "Delete the thread instead of archiving it. Default false." },
+        },
+      },
+      async execute(_id, params, signal, _onUpdate, ctx) {
+        const from = ownSessionId(ctx);
+        const result = await untilAborted(() => link().remove({ from, sessionId: params.sessionId,
+          ...(params.permanent === undefined ? {} : { permanent: params.permanent }) }), signal);
+        const stopped = result.stopped ? " Its running turn was stopped first." : "";
+        const lead = result.action === "delete"
+          ? `Deleting the app thread of "${result.title}" (${result.sessionId}).${stopped}`
+          : `Archiving the app thread of "${result.title}" (${result.sessionId}); the user can restore it from the app's archived threads.`;
+        return { content: [text(`${lead}\n${UNTRUSTED}\n${json(result)}`)], details: result };
       },
     }),
   ];

@@ -76,9 +76,9 @@ async function writeSession(dir, cwd, entries) {
   return { id, file, entries: chained };
 }
 
-test('the extension-facing object has exactly its eleven methods and refuses until the engine binds it', async () => {
+test('the extension-facing object has exactly its fourteen methods and refuses until the engine binds it', async () => {
   const link = createSessionLink();
-  assert.deepEqual(keys(link.api), ['cacheWarming', 'channel', 'companionSettings', 'create', 'fork', 'list', 'read', 'search', 'send', 'telegramSend', 'wait']);
+  assert.deepEqual(keys(link.api), ['cacheWarming', 'channel', 'companionSettings', 'create', 'fork', 'list', 'read', 'remove', 'rename', 'search', 'send', 'stop', 'telegramSend', 'wait']);
   assert.ok(Object.isFrozen(link.api));
   for (const name of Object.keys(link.api)) {
     await assert.rejects(link.api[name]({}), /session link is not available in this process/);
@@ -1098,4 +1098,85 @@ test('cacheWarming sets one conversation\'s warmer the way the context ring does
   await assert.rejects(env.api.cacheWarming({ sessionId: session.id, hours: 1.5 }), { code: 'invalid' });
   await assert.rejects(env.api.cacheWarming({ sessionId: session.id, enabled: 'yes' }), { code: 'invalid' });
   await assert.rejects(env.api.cacheWarming({ sessionId: randomUUID(), hours: 3 }), { code: 'unknown_session' });
+});
+
+test("stop ends a running turn with the app's Stop abort; an idle conversation is left as it is", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const lead = await env.make('Lead');
+  const client = await env.client();
+  await client.attach(lead.id);
+  await client.command({ type: 'prompt', message: 'background' });
+  await until(() => env.row(lead.id).status === 'running');
+  const stopped = await env.api.stop({ from: segno.id, sessionId: lead.id });
+  assert.equal(stopped.stopped, true);
+  assert.deepEqual(stopped.unread, []);
+  assert.equal(stopped.title, 'Lead');
+  assert.equal((await client.snapshot()).state.isStreaming, false, 'the run itself ended, not just the call');
+  await until(() => env.row(lead.id).status === 'idle');
+  const again = await env.api.stop({ from: segno.id, sessionId: lead.id });
+  assert.deepEqual(again, { sessionId: lead.id, title: 'Lead', stopped: false, status: 'idle', unread: [] });
+});
+
+test("only a companion stops, renames, archives or deletes another conversation, never its own or another companion's", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const roo = await env.make('Roo', { companion: true, companionId: 'roo', titleLocked: true });
+  const lead = await env.make('Lead');
+  const other = await env.make('Other lead');
+  const calls = {
+    stop: (from, sessionId) => env.api.stop({ from, sessionId }),
+    rename: (from, sessionId) => env.api.rename({ from, sessionId, title: 'New name' }),
+    archive: (from, sessionId) => env.api.remove({ from, sessionId }),
+    delete: (from, sessionId) => env.api.remove({ from, sessionId, permanent: true }),
+  };
+  for (const [name, call] of Object.entries(calls)) {
+    await assert.rejects(call(segno.id, segno.id), { code: 'self' }, name);
+    await assert.rejects(call(segno.id, roo.id), { code: 'companion' }, name);
+    await assert.rejects(call(lead.id, other.id), { code: 'not_companion' }, name);
+    await assert.rejects(call(segno.id, randomUUID()), { code: 'unknown_session' }, name);
+  }
+  assert.equal(env.row(segno.id).title, 'Segno');
+  assert.deepEqual(await env.host.threadRequests.pending(), [], 'a refused call asks the app for nothing');
+});
+
+test("rename names the session, which the app's thread then shows, and refuses an empty title", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const lead = await env.make('Lead');
+  assert.deepEqual(await env.api.rename({ from: segno.id, sessionId: lead.id, title: '  Parser fix  ' }), { sessionId: lead.id, title: 'Parser fix' });
+  await until(() => env.row(lead.id)?.title === 'Parser fix', 'the session name');
+  const client = await env.client();
+  assert.deepEqual((await client.threadRequests()).map(({ sessionId, action, title }) => ({ sessionId, action, title })),
+    [{ sessionId: lead.id, action: 'rename', title: 'Parser fix' }]);
+  await assert.rejects(env.api.rename({ from: segno.id, sessionId: lead.id, title: '  ' }), { code: 'invalid' });
+  await assert.rejects(env.api.rename({ from: segno.id, sessionId: lead.id, title: 'x'.repeat(513) }), { code: 'invalid' });
+});
+
+test('remove archives an idle thread, refuses to archive a running one, and deletes a running one after stopping it', async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true, titleLocked: true });
+  const idle = await env.make('Idle lead');
+  const busy = await env.make('Busy lead');
+  assert.deepEqual(await env.api.remove({ from: segno.id, sessionId: idle.id }),
+    { sessionId: idle.id, title: 'Idle lead', action: 'archive', stopped: false, unread: [] });
+  const client = await env.client();
+  await client.attach(busy.id);
+  await client.command({ type: 'prompt', message: 'background' });
+  await until(() => env.row(busy.id).status === 'running');
+  await assert.rejects(env.api.remove({ from: segno.id, sessionId: busy.id }), { code: 'busy' });
+  await assert.rejects(env.api.remove({ from: segno.id, sessionId: busy.id, permanent: 'yes' }), { code: 'invalid' });
+  const deleted = await env.api.remove({ from: segno.id, sessionId: busy.id, permanent: true });
+  assert.equal(deleted.action, 'delete');
+  assert.equal(deleted.stopped, true);
+  assert.equal((await client.snapshot()).state.isStreaming, false, 'the app stops a running thread before deleting it');
+  // The app takes the requests over the engine's own connection and settles what it applied.
+  const app = await env.client();
+  const requests = await app.threadRequests();
+  assert.deepEqual(requests.map(({ sessionId, action }) => ({ sessionId, action })),
+    [{ sessionId: idle.id, action: 'archive' }, { sessionId: busy.id, action: 'delete' }]);
+  assert.equal(await app.settleThreadRequests([requests[0].id]), 1);
+  assert.deepEqual((await app.threadRequests()).map(({ action }) => action), ['delete']);
+  // The conversation's transcript stays, as when the app archives or deletes its thread.
+  assert.ok(env.row(idle.id) && env.row(busy.id));
 });

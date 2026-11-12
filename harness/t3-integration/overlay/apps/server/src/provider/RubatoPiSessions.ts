@@ -23,7 +23,7 @@ import { AgentAwarenessRelay } from "../relay/AgentAwarenessRelay.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isRubatoRun, nextTurnItemOrdinal, saidRunId,
   type SessionMessage } from "./RubatoThreadImporter.ts";
-import { rubatoBridgeFor, type PiBridge, type PiSessionMessage } from "./Drivers/RubatoPiDriver.ts";
+import { rubatoBridgeFor, type PiBridge, type PiSessionMessage, type PiThreadRequest } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
   readonly sessionId: string;
@@ -205,6 +205,22 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     yield* orchestrator.value.dispatch({ type: "thread.metadata.update",
       commandId: CommandId.make(`rubato-title:${threadId}:${yield* Clock.currentTimeMillis}`), threadId: ThreadId.make(threadId), title });
   });
+  // The companion's session_rename and session_delete (bridge.mjs applyThreadRequests): the app's own
+  // rename, Archive or Delete of the thread showing `sessionId`. False when no thread shows it yet.
+  const sessionThread = (sessionId: string, request: PiThreadRequest) => Effect.gen(function* () {
+    if (Option.isNone(orchestrator)) return false;
+    const threadId = yield* threadOfPiSession(sessionId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value));
+    if (threadId === null) return false;
+    const shell = yield* orchestrator.value.getThreadShell(threadId);
+    if (shell === null || shell.deletedAt !== null) return false;
+    const commandId = CommandId.make(`rubato-${request.action}:${threadId}:${yield* Clock.currentTimeMillis}`);
+    if (request.action === "rename" && typeof request.title === "string" && request.title !== shell.title)
+      yield* orchestrator.value.dispatch({ type: "thread.metadata.update", commandId, threadId, title: request.title });
+    if (request.action === "archive" && shell.archivedAt === null)
+      yield* orchestrator.value.dispatch({ type: "thread.archive", commandId, threadId });
+    if (request.action === "delete") yield* orchestrator.value.dispatch({ type: "thread.delete", commandId, threadId });
+    return true;
+  });
   // A typed `/rewind N` (bridge rpc-connection.mjs control): T3 reverts the /rewind turn and the
   // N before it the way the timeline's revert does, which rewinds the engine through the
   // adapter's rollback. Files stay, as the command says.
@@ -321,6 +337,7 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
       bridge.boundSession = (threadId: string) =>
         Effect.runPromise(piSessionOfThread(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
       bridge.sessionTitle = (threadId: string, title: string) => Effect.runPromise(retitle(threadId, title));
+      bridge.sessionThread = (sessionId: string, request: PiThreadRequest) => Effect.runPromise(sessionThread(sessionId, request));
       bridge.checkRewind = (threadId: string, turns: number) => Effect.runPromise(checkRewind(threadId, turns));
       bridge.appendSessionMessage = (threadId: string, item: PiSessionMessage) => Effect.runPromise(appendSessionMessage(threadId, item));
       // What a thread shows and when it had no stream: the bridge's backfill compares these with the session.

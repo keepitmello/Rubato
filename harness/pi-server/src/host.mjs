@@ -15,6 +15,7 @@ import { forkSessionFile } from './session-link.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
 import { SLOW_OPEN_MS } from './perf-log.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET, FRAME_BUDGET } from './wire.mjs';
+import { createThreadRequests } from './thread-requests.mjs';
 
 const sameFields = (left, right) => {
   const keys = Object.keys(left);
@@ -281,10 +282,13 @@ class RuntimeHandle {
 
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
-  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, log = () => {} } = {}) {
+  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, threadRequestsPath, log = () => {} } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   // `sessionIndexPath` keeps parsed session metadata across engine restarts (session-files.mjs).
   const files = new SessionFiles(sessionsDir, { indexPath: sessionIndexPath, onError });
+  // What the app should do with a conversation's thread (thread-requests.mjs); kept across restarts
+  // in `threadRequestsPath` so a closed app still applies them when it next runs.
+  const threadRequests = createThreadRequests({ file: threadRequestsPath, onError });
   const handles = new Map();
   // Prepared SDK inputs are in-process handoffs, never another catalogue or
   // router. The official SessionRouter still owns acquisition and deduplication.
@@ -343,7 +347,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     return operation;
   };
   const host = {
-    metrics, directory,
+    metrics, directory, threadRequests,
     async resolveImport(file) {
       const source = await realpath(file);
       const metadata = await readSessionMetadata(source, await stat(source, { bigint: true }));
@@ -482,6 +486,13 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
               if (!handle) { await files.resolve(id); return null; }
               if (handle.running || handle.calls || handle.attachments || handle.pendingUi.size) throw invalid('Only idle, unattached sessions may be unloaded');
               await handle.close(); return null;
+            },
+            // The app takes what it should do with conversations' threads and settles each request it
+            // applied (T3 bridge.mjs applyThreadRequests).
+            threadRequests: async () => wire(await threadRequests.pending()),
+            settleThreadRequests: async (ids) => {
+              try { return await threadRequests.settle(ids); }
+              catch (error) { throw invalid(error?.message ?? String(error)); }
             },
           }],
         ]);

@@ -6,6 +6,7 @@
 |---|---|
 | 대화 보기 | `session_list`, `session_read`, `session_search` |
 | 리드 띄우기·말 걸기·가지 치기 | `session_create`, `session_send`, `session_fork` |
+| 리드 멈추기·이름 바꾸기·치우기 | `session_stop`, `session_rename`, `session_delete` |
 | 대화 캐시 데우기 | `session_cache_warming` |
 | 사용자한테 말하기 | `reply` |
 | 다음에 들여다볼 때 | `wake_wish` |
@@ -29,6 +30,10 @@
 - `session_send`는 이미 있는 대화에 후속·답·정정을 건네. `session_fork`는 일이 갈라져야 할 때 한 대화의 끝난 이력을 새 대화로 복사해.
 - `session_list`와 `session_read`의 각 대화에는 `cache`랑 `contextTokens`가 붙어. `cache.state`가 warm이면 다음 메시지가 캐시에서 읽혀 싸고, cold면 컨텍스트 전체(`contextTokens`쯤)를 제값에 다시 읽어. 무거운 리드가 cold면 이어 보낼지, 새 리드를 띄울지 그걸 보고 정해.
 - `session_cache_warming`은 앱의 컨텍스트 링 스위치랑 같아. 대화마다 캐시 워머를 끄고 켜거나(`enabled`) 지금부터 몇 시간 데울지(`hours`, 1~24) 정해. 기본은 사용자의 마지막 메시지 뒤 두 시간이야.
+- `session_stop`은 앱의 정지 버튼이랑 같아. 도는 턴을 바로 끊고, 그 리드가 띄운 서브에이전트·팀도 그 정지 때처럼 정리돼. 모델을 바꾸거나 방향을 틀기 전에 지금 당장 멈춰야 하면 이걸 써. `session_send`의 steer는 다음 단계에서야 읽혀. 못 읽은 채 쌓여 있던 메시지는 `unread`로 돌아와.
+- `session_rename`은 대화 제목을 바꿔. 앱 사이드바 제목이 같이 바뀌고, 자동 제목이 그 이름을 다시 덮지 않아.
+- `session_delete`는 기본이 앱의 보관이야. 사용자가 앱의 보관함에서 되살릴 수 있고, 도는 대화는 거절되니까 먼저 `session_stop`으로 멈춰. `permanent`를 켜면 앱의 삭제처럼 스레드를 지우고, 돌고 있으면 먼저 멈춰. 사용자가 지우라고 했을 때만 켜. 어느 쪽이든 대화 기록 파일은 남아서 `session_list`엔 계속 보여.
+- 내 대화와 다른 컴패니언 대화는 멈추거나 이름을 바꾸거나 치울 수 없어.
 - 다른 대화를 기다리거나 지켜보는 도구는 없고 `monitor`도 없어. 답과 끝은 메시지로 나한테 와. 그래서 일을 넘기면 셸로 엿보지 않고 턴을 끝내.
 
 ## 사용자한테 말하기

@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { serveProfile } from '../../pi-server/src/profile-server.mjs';
 import { RpcWorker } from '../../pi-server/src/rpc-worker.mjs';
 import { SessionClient } from '../../pi-server/src/client.mjs';
-import { RubatoPiBridge } from '../src/bridge.mjs';
+import { RubatoPiBridge, THREAD_REQUEST_PASSES } from '../src/bridge.mjs';
 import { CATALOGUE_REUSE_MS, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
@@ -1772,4 +1772,22 @@ test('the companion room\'s rewind stops the companion\'s own work first, and to
   const compacting = await run({ streaming: true, compacting: true });
   assert.match(compacting.outcome.message, /compacting/);
   assert.equal(compacting.sent.includes('abort'), false);
+});
+
+test("what a companion asked the app to do with a thread goes to the app's own command once, and a request no thread takes is dropped after a few passes", async (t) => {
+  const { service, bridge } = await setup(t);
+  await service.host.threadRequests.add({ sessionId: 'shown', action: 'archive' });
+  await service.host.threadRequests.add({ sessionId: 'shown', action: 'rename', title: 'Parser fix' });
+  await service.host.threadRequests.add({ sessionId: 'nowhere', action: 'delete' });
+  await bridge.applyThreadRequests();
+  assert.equal((await service.host.threadRequests.pending()).length, 3, 'nothing is applied before the app binds its commands');
+  const applied = [];
+  bridge.sessionThread = async (sessionId, request) => { applied.push([sessionId, request.action, request.title]); return sessionId === 'shown'; };
+  await bridge.applyThreadRequests();
+  assert.deepEqual(applied, [['shown', 'archive', undefined], ['shown', 'rename', 'Parser fix'], ['nowhere', 'delete', undefined]]);
+  assert.deepEqual((await service.host.threadRequests.pending()).map(({ sessionId }) => sessionId), ['nowhere'],
+    'a session with no thread yet may get one at the next import');
+  for (let pass = 1; pass < THREAD_REQUEST_PASSES; pass++) await bridge.applyThreadRequests();
+  assert.deepEqual(await service.host.threadRequests.pending(), []);
+  assert.equal(applied.filter(([sessionId]) => sessionId === 'shown').length, 2, 'an applied request is not sent again');
 });
