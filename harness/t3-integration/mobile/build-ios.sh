@@ -58,7 +58,10 @@ mkdir -p "$out"
 if [ "$MODE" = --simulator ]; then
   xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
     -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-    -derivedDataPath "$out/sim" CODE_SIGNING_ALLOWED=NO build | tail -5
+    -derivedDataPath "$out/sim" ARCHS=arm64 CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- \
+    DEVELOPMENT_TEAM="$TEAM_ID" build | grep -E 'error:|BUILD' | tail -20
+  # T3's vendored GhosttyKit carries no x86_64 simulator slice, hence ARCHS=arm64. The ad-hoc
+  # signature keeps the entitlements: without its keychain group, saved Macs cannot be read.
   app="$out/sim/Build/Products/Release-iphonesimulator/Rubato.app"
   if xcrun simctl list devices booted | grep -q Booted; then
     xcrun simctl install booted "$app"
@@ -74,7 +77,7 @@ auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME
 archive="$out/Rubato-$build_number.xcarchive"
 xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" \
-  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive | tail -5
+  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive | grep -E 'error:|ARCHIVE' | tail -20
 cat > "$work/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -88,5 +91,5 @@ cat > "$work/export.plist" <<PLIST
 </dict></plist>
 PLIST
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/export.plist" \
-  -exportPath "$out/export-$build_number" "${auth[@]}" | tail -5
+  -exportPath "$out/export-$build_number" "${auth[@]}" | grep -E 'error|EXPORT|Upload|upload' | tail -20
 printf 'uploaded build %s\n' "$build_number"

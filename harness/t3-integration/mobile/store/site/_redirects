@@ -1,0 +1,9 @@
+# The app opens these paths (legal-document-url.ts); one document answers all of them.
+/legal / 200
+/legal/ / 200
+/privacy-policy / 200
+/privacy-policy/ / 200
+/terms-of-service / 200
+/terms-of-service/ / 200
+/security-policy / 200
+/security-policy/ / 200

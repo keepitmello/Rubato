@@ -46,6 +46,9 @@ export const shellEdits = {
       '    appleTeamId: "5WGZKZGPQS",\n', 'replace'],
     ['        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",',
       '        "Allow Rubato to reach the Rubato app on your Mac over your local network or tailnet.",', 'replace'],
+    // Calls: a VoIP push wakes the app for CallKit (companion-ui's modules/rubato-call), the
+    // call keeps its audio in the background, and thread alerts can arrive silently.
+    ['      UIBackgroundModes: ["audio"],', '      UIBackgroundModes: ["audio", "voip", "remote-notification"],', 'replace'],
     ['      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",',
       '      NSPhotoLibraryAddUsageDescription: "Allow Rubato to save images to your photo library.",', 'replace'],
     // The share extension and widgets each need an app id and an app group of their own.
@@ -59,13 +62,16 @@ export const shellEdits = {
       '        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",', 'replace'],
     ['        image: variant.assets.splashIcon,\n        resizeMode: "contain",', '        image: RUBATO_ICON,\n        resizeMode: "contain",', 'replace'],
     ['          image: variant.assets.splashIcon,\n          backgroundColor: "#0a0a0a",', '          image: RUBATO_ICON,\n          backgroundColor: "#0a0a0a",', 'replace'],
+    // LiveKit's native setup for companion calls (deps-edits.mjs).
+    ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
+      '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
     ['    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),\n    "./plugins/withAndroidCleartextTraffic.cjs",',
       '    // Rubato: no widget extension.\n    "./plugins/withAndroidCleartextTraffic.cjs",', 'replace'],
     // Without the share extension and T3's relay, the JavaScript must not reach for either:
     // both check this flag (IncomingShareProvider, agent-awareness/capabilities).
     ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,', '    iosPersonalTeamBuild: true,', 'replace'],
     ['    relay: {\n      url: repoEnv.T3CODE_RELAY_URL ?? null,\n    },\n    clerk: {\n      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,\n      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,\n    },',
-      '    // Rubato: no T3 account and no T3 relay; the phone pairs with the Mac directly.\n    relay: { url: null },\n    clerk: { publishableKey: null, jwtTemplate: null },', 'replace'],
+      '    // Rubato: no T3 account and no T3 relay; the phone pairs with the Mac directly. Empty, not\n    // null: the public manifest would turn null into {}.\n    relay: {},\n    clerk: {},', 'replace'],
     ['    eas: {\n      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    },\n  },\n  owner: "pingdotgg",\n};',
       '  },\n};', 'replace'],
   ],
@@ -106,6 +112,9 @@ export const shellEdits = {
     ['const TAB_TITLES = {\n  threads: "Threads",', 'const TAB_TITLES = {\n  companions: "Companions",\n  threads: "Threads",', 'replace'],
     ['accessibilityLabel={`T3 Code, ${TAB_TITLES[state.selectedTab]}`}', 'accessibilityLabel={`Rubato, ${TAB_TITLES[state.selectedTab]}`}', 'replace'],
     ['            title="T3 Code"\n', '            title="Rubato"\n', 'replace'],
+    // The companion list draws its own title, like Pickle; the threads tab keeps T3's bar.
+    ['              headerShown: true,\n              unstable_headerLeftItems: () => [],',
+      '              headerShown: state.selectedTab !== "companions",\n              unstable_headerLeftItems: () => [],', 'replace'],
     ['{state.selectedTab === "threads" ? <HomeRouteScreen /> : <PullRequestsScreen />}',
       '{state.selectedTab === "companions" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === "threads" ? (\n            <HomeRouteScreen />\n          ) : (\n            <PullRequestsScreen />\n          )}', 'replace'],
   ],
@@ -119,14 +128,26 @@ export const shellEdits = {
       'import { CompanionRoomRouteScreen } from "./features/rubato-shell/companionSurface";\n'],
     ['    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,',
       '    // Rubato: a companion\'s room, pushed over the tabs like a thread.\n'
-      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'],
+      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The room draws its own header: avatar, name and back.\n      options: { headerShown: false },\n    }),\n'],
     ['      options: { title: "About T3 Code" },', '      options: { title: "About Rubato" },', 'replace'],
   ],
   'apps/mobile/src/App.tsx': [
+    ['import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\n',
+      'import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\nimport { RubatoCallHost } from "./features/rubato-shell/companionSurface";\nimport { RubatoPushHost } from "./features/rubato-push";\n', 'replace'],
+    // The call on screen and the ring of an open app, over every route; push tokens kept in line
+    // with the relay and every paired Mac (features/rubato-push).
+    ['                  <ThreadArrangementHost />\n', '                  <ThreadArrangementHost />\n                  <RubatoCallHost />\n                  <RubatoPushHost />\n', 'replace'],
     ['  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],',
       '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://"],', 'replace'],
   ],
 
+  // A scheme-only wake-up link (dictation keyboards) is Rubato's scheme now.
+  'apps/mobile/src/lib/appLinking.ts': [
+    ['!/^t3code(-dev|-preview)?:\\/*$/.test(url)', '!/^rubato(-dev|-preview)?:\\/*$/.test(url)', 'replace'],
+  ],
+  'apps/mobile/src/lib/appLinking.test.ts': [
+    ['it.each(["t3code://", "t3code:///", "t3code-dev://", "t3code-preview://"])(', 'it.each(["rubato://", "rubato:///", "rubato-dev://", "rubato-preview://"])(', 'replace'],
+  ],
   // Brand: Rubato's name where T3 drew its wordmark.
   'apps/mobile/src/components/CompactBrandTitle.tsx': [
     ['      accessibilityLabel={props.accessibilityLabel ?? "T3 Code, Threads"}', '      accessibilityLabel={props.accessibilityLabel ?? "Rubato"}', 'replace'],
@@ -141,6 +162,15 @@ export const shellEdits = {
   'apps/mobile/src/components/BrandMark.tsx': [
     ['text-foreground">T3 Code</Text>', 'text-foreground">Rubato</Text>', 'replace'],
     ['            Mobile control surface for your live coding environments', '            Your companions and coding threads, from your Mac', 'replace'],
+  ],
+  // Legal links open Rubato's own page (store/site, published at rubato-app.pages.dev).
+  'apps/mobile/src/features/settings/lib/legal-document-url.ts': [
+    ['const DEFAULT_MARKETING_SITE_URL = "https://t3.codes";', 'const DEFAULT_MARKETING_SITE_URL = "https://rubato-app.pages.dev";', 'replace'],
+  ],
+  'apps/mobile/src/features/settings/lib/legal-document-url.test.ts': [
+    ['    "https://t3.codes/legal",\n    "https://t3.codes/legal/",\n    "https://t3.codes/privacy-policy?source=app",\n    "https://t3.codes/terms-of-service#updates",\n    "https://t3.codes/security-policy",',
+      '    "https://rubato-app.pages.dev/legal",\n    "https://rubato-app.pages.dev/legal/",\n    "https://rubato-app.pages.dev/privacy-policy?source=app",\n    "https://rubato-app.pages.dev/terms-of-service#updates",\n    "https://rubato-app.pages.dev/security-policy",', 'replace'],
+    ['    "https://t3.codes/download",', '    "https://rubato-app.pages.dev/download",\n    "https://t3.codes/legal",', 'replace'],
   ],
   'apps/mobile/src/features/settings/SettingsRouteScreen.tsx': [
     ['label="About T3 Code"', 'label="About Rubato"', 'replace'],

@@ -16,7 +16,7 @@ test('every Rubato model draws its vendor, never T3\'s OpenAI fallback', () => {
 
 test('the iPhone app cuts T3\'s cloud and carries Rubato\'s name', async () => {
   const config = mobileEdits['apps/mobile/app.config.ts'].map(([, addition]) => addition).join('\n');
-  for (const wanted of ['"com.keepitmello.rubato"', 'appleTeamId: "5WGZKZGPQS"', 'enabled: false', 'relay: { url: null }'])
+  for (const wanted of ['"com.keepitmello.rubato"', 'appleTeamId: "5WGZKZGPQS"', 'enabled: false', 'relay: {},'])
     assert.ok(config.includes(wanted), wanted);
   const replaced = mobileEdits['apps/mobile/app.config.ts'].map(([anchor]) => anchor).join('\n');
   for (const removed of ['u.expo.dev', '@clerk/expo', 'pingdotgg', 'ARK85ZXQ4Z']) assert.ok(replaced.includes(removed), removed);

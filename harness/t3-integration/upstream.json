@@ -166,6 +166,12 @@
     "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx": "e1133f2829b0674c5e31b4b018da661caafe5912f07d7fc2a6a16b43c4af9cae",
     "apps/mobile/src/features/threads/thread-list-v2-items.tsx": "916a7640a17a144811da770f8654fb9e0e3aa707fb5a79693c3e3cb207e3e43c",
     "apps/mobile/src/features/workspace/workspace-tabs-state.test.ts": "6591861e36bbd75ab73648a839563b8b5b32464b4621e0843dde3b125fb62672",
-    "apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx": "3d87ff2e47d02d02983113b8f58fc47db748ce8efd1227db5d5102323ad054e8"
+    "apps/mobile/package.json": "de776155786c3a20ac0352a39df80f8874b2d7976b8a4df834ebb3efa1a9d32c",
+    "apps/mobile/src/features/settings/lib/legal-document-url.ts": "417a587fe8207ebb3997c306b50460c1bf023520d46bf635daeb64962f6f5676",
+    "apps/mobile/src/features/settings/lib/legal-document-url.test.ts": "84e883b9ddd80687c8f89c6978fb7da5bd5a7a4cad0e665da08521d111976a7e",
+    "apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx": "3d87ff2e47d02d02983113b8f58fc47db748ce8efd1227db5d5102323ad054e8",
+    "third-party-licenses.config.json": "43a384b95dcfdd1165f314049a8fe354c8c4370702827ad690aae3294ad94235",
+    "apps/mobile/src/lib/appLinking.ts": "533f4afa616ac978bb2ecb1c9c2f4cb4a346622a6018b8ec6b960ca0560bafe1",
+    "apps/mobile/src/lib/appLinking.test.ts": "5921009a6aece7357d29de617c86db7b12c7c88e4575df2de3a722ab119a5459"
   }
 }
