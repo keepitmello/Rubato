@@ -5,6 +5,8 @@
 // gets a time line instead of a time on every bubble. Each call is one card, placed where it
 // started (user 0d108939: a card like a messenger's call, opened to read what was said). The desktop
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
+import type { ChatAttachment } from "@t3tools/contracts";
+
 import type { CallRecord } from "./callTypes";
 
 /** Messages from one side within this gap of each other belong to one group. */
@@ -21,6 +23,7 @@ export interface RoomMessageInput {
   readonly text: string;
   readonly createdAt: string;
   readonly streaming: boolean;
+  readonly attachments?: ReadonlyArray<ChatAttachment>;
 }
 
 export type RoomSide = "me" | "companion";
@@ -32,6 +35,12 @@ export type RoomItem =
       readonly id: string;
       readonly side: RoomSide;
       readonly text: string;
+      /**
+       * The person's file lines (a file sent from the messenger arrives as `![name](</abs>)` or
+       * `[name](</abs>)`), drawn as media the way the companion's own files are.
+       */
+      readonly files: string;
+      readonly attachments: ReadonlyArray<ChatAttachment>;
       readonly at: number;
       readonly streaming: boolean;
       readonly groupStart: boolean;
@@ -49,6 +58,18 @@ export function personText(text: string): string {
     .replace(/\[([^\]\n]*)\]\(t3-context:[^)\n]*\)/g, "$1")
     .replace(/^\[voice\]\s*/, "")
     .trim();
+}
+
+/** A file line as the engine writes it (companion home.mjs filesMarkdown): `![name](</abs>)` or `[name](</abs>)`. */
+const FILE_LINE = /^!?\[([^\]\n]*)\]\(<(\/[^>\n]+)>\)$/;
+
+/** The person's words and their file lines, apart. */
+export function splitFileLines(text: string): { words: string; files: string } {
+  const blocks = text.split(/\n{2,}/);
+  const files = blocks.map((block) => block.trim()).filter((block) => FILE_LINE.test(block));
+  if (files.length === 0) return { words: text, files: "" };
+  const words = blocks.filter((block) => !FILE_LINE.test(block.trim())).join("\n\n").trim();
+  return { words, files: files.join("\n\n") };
 }
 
 function callWindow(call: CallRecord, now: number): [number, number] | null {
@@ -84,17 +105,19 @@ export function roomItems(
   now = Date.now(),
 ): RoomItem[] {
   type Entry =
-    | { kind: "message"; at: number; side: RoomSide; message: RoomMessageInput; text: string }
+    | { kind: "message"; at: number; side: RoomSide; message: RoomMessageInput; text: string; files: string }
     | { kind: "call"; at: number; call: CallRecord };
   const entries: Entry[] = [
     ...withoutCallSpeech(messages, calls, now)
       .filter((message) => message.role === "user" || message.role === "assistant")
       .map((message) => {
         const side: RoomSide = message.role === "user" ? "me" : "companion";
+        const person = side === "me" ? splitFileLines(personText(message.text)) : null;
         return { kind: "message" as const, at: Date.parse(message.createdAt), side, message,
-          text: side === "me" ? personText(message.text) : message.text.trim() };
+          text: person ? person.words : message.text.trim(), files: person ? person.files : "" };
       })
-      .filter((entry) => Number.isFinite(entry.at) && (entry.text !== "" || entry.message.streaming)),
+      .filter((entry) => Number.isFinite(entry.at)
+        && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0 || entry.message.streaming)),
     ...calls.map((call) => ({ kind: "call" as const, at: call.createdAt, call })),
   ].sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === "call" ? 1 : -1));
 
@@ -121,6 +144,8 @@ export function roomItems(
       id: entry.message.id,
       side: entry.side,
       text: entry.text,
+      files: entry.files,
+      attachments: entry.message.attachments ?? [],
       at: entry.at,
       streaming: entry.message.streaming,
       groupStart: separated || previous === null || previous.side !== entry.side || entry.at - previous.at >= GROUP_GAP_MS,
@@ -179,9 +204,23 @@ export function roomPreview(
 ): { text: string; at: number; side: RoomSide | null; callKey: CallHeadlineKey | null } | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index]!;
-    if (item.kind === "bubble" && item.text)
-      return { text: item.text.replace(/\s+/g, " ").trim(), at: item.at, side: item.side, callKey: null };
+    if (item.kind === "bubble" && (item.text || item.files || item.attachments.length > 0))
+      return {
+        text: item.text ? item.text.replace(/\s+/g, " ").trim() : attachmentPreview(item),
+        at: item.at,
+        side: item.side,
+        callKey: null,
+      };
     if (item.kind === "call") return { text: "", at: item.at, side: null, callKey: callHeadline(item.call).key };
   }
   return null;
+}
+
+/** A bubble without words in the list: its file names. */
+function attachmentPreview(item: Extract<RoomItem, { kind: "bubble" }>): string {
+  const names = [
+    ...item.attachments.map((attachment) => attachment.name ?? ""),
+    ...item.files.split(/\n{2,}/).map((line) => line.match(FILE_LINE)?.[1] ?? ""),
+  ].filter(Boolean);
+  return `📎 ${names.join(", ")}`;
 }

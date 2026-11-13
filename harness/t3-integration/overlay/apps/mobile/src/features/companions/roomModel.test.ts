@@ -56,6 +56,15 @@ describe("a companion room", () => {
     expect(spokenText("말하는 중 [sig")).toBe("말하는 중");
   });
 
+  it("keeps a message that carries only pictures or files, and splits the person's file lines from their words", () => {
+    const picture = { ...message("p", "user", "", 0), attachments: [{ type: "image", id: "a1", name: "cat.png", mimeType: "image/png", sizeBytes: 3 }] } as RoomMessageInput;
+    const sent = message("f", "user", "봐봐\n\n![shot.png](</Users/me/shot.png>)", 1);
+    const [first, second] = roomItems([picture, sent], []).filter((item) => item.kind === "bubble");
+    expect(first).toMatchObject({ text: "", attachments: [{ name: "cat.png" }] });
+    expect(second).toMatchObject({ text: "봐봐", files: "![shot.png](</Users/me/shot.png>)" });
+    expect(roomPreview(roomItems([picture], []))).toMatchObject({ text: "📎 cat.png" });
+  });
+
   it("previews the latest bubble or call for the list", () => {
     expect(roomPreview(roomItems([message("a", "assistant", "잘 자\n내일 봐", 0)], []))).toMatchObject({ text: "잘 자 내일 봐", side: "companion" });
     expect(roomPreview(roomItems([message("a", "user", "hi", 0)], [call({ minutes: 5, direction: "incoming", status: "missed" })])))

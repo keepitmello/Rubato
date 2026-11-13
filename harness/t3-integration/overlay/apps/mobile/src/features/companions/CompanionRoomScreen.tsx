@@ -6,25 +6,33 @@
 // message queued while the companion works behaves as in any thread.
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
-import type { EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { BlurView } from "expo-blur";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, FlatList, TextInput, View } from "react-native";
+import { Alert, Animated, FlatList, Pressable, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
+import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
+import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
+import type { FilePreviewSource } from "../../components/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import { useThreadSelection } from "../../state/use-thread-selection";
+import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { ComposerSurface } from "../threads/ThreadComposer";
 import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
+import { BubbleAttachments } from "./BubbleAttachments";
 import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
@@ -32,6 +40,7 @@ import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
+import { useRoomMedia, type RoomMedia } from "./roomMedia";
 import { companionIsWriting, roomItems, type RoomItem, type RoomMessageInput } from "./roomModel";
 
 export type CompanionRoomParams = {
@@ -134,6 +143,7 @@ function RoomRow(props: {
   readonly title: string;
   readonly environmentId: string;
   readonly body: { readonly fontSize: number; readonly lineHeight: number };
+  readonly media: RoomMedia;
 }) {
   const { item } = props;
   if (item.kind === "separator")
@@ -147,20 +157,22 @@ function RoomRow(props: {
   const mine = item.side === "me";
   return (
     <View
-      className={mine ? "self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5" : "self-start rounded-[20px] bg-grouped-card px-3.5 py-2.5"}
+      className={mine ? "gap-2 self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5" : "gap-2 self-start rounded-[20px] bg-grouped-card px-3.5 py-2.5"}
       style={{
         maxWidth: "80%",
         marginTop: item.groupStart ? 10 : 2,
         ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
       }}
     >
-      {mine || !item.text ? (
+      <BubbleAttachments attachments={item.attachments} media={props.media} />
+      {item.text && !mine ? (
+        <BubbleMarkdown markdown={item.text} body={props.body} media={props.media} />
+      ) : item.text || (item.streaming && item.attachments.length === 0) ? (
         <Text selectable className={mine ? "text-user-bubble-foreground" : "text-foreground"} style={props.body}>
-          {item.text || (item.streaming ? "…" : "")}
+          {item.text || "…"}
         </Text>
-      ) : (
-        <BubbleMarkdown markdown={item.text} body={props.body} />
-      )}
+      ) : null}
+      {item.files ? <BubbleMarkdown markdown={item.files} body={props.body} mine={mine} media={props.media} /> : null}
     </View>
   );
 }
@@ -170,6 +182,13 @@ function RoomRow(props: {
  * the room's one difference: an empty field offers the call where a thread offers send.
  */
 function RoomComposer(props: {
+  readonly environmentId: EnvironmentId;
+  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
+  readonly supportsFiles: boolean;
+  readonly onPickMedia: () => Promise<void>;
+  readonly onPickFiles: () => Promise<void>;
+  readonly onRemoveAttachment: (id: string) => void;
+  readonly onPressPreview: (source: FilePreviewSource) => void;
   readonly draft: string;
   readonly onChange: (text: string) => void;
   readonly onSend: () => void;
@@ -202,7 +221,8 @@ function RoomComposer(props: {
     onChangeSelection: setSelection,
   });
   const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
-  const hasText = props.draft.trim().length > 0;
+  const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
+  const strip = composerStripAttachments(props.attachments);
   return (
     <View
       pointerEvents="box-none"
@@ -214,8 +234,37 @@ function RoomComposer(props: {
     >
       <EdgeFade edge="bottom" height={height + 16} solid={0.3} />
       <View className="px-4" style={{ paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6 }}>
+        {strip.length > 0 ? (
+          <View className="mb-2 flex-row gap-2 px-1">
+            {strip.map((attachment) => (
+              <View key={attachment.id}>
+                <ComposerAttachmentThumbnail
+                  environmentId={props.environmentId}
+                  attachment={attachment}
+                  size={56}
+                  borderRadius={12}
+                  onPressPreview={props.onPressPreview}
+                />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`${copy.remove} ${attachment.name}`}
+                  onPress={() => props.onRemoveAttachment(attachment.id)}
+                  hitSlop={8}
+                  className="absolute -right-1.5 -top-1.5 h-[22px] w-[22px] items-center justify-center rounded-full bg-foreground active:opacity-70"
+                >
+                  <SymbolView name="xmark" size={10} weight="bold" tintColorClassName="accent-screen" />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        ) : null}
         <ComposerSurface style={{ borderRadius: 27, overflow: "hidden", paddingVertical: 2 }}>
-          <View className="flex-row items-center pl-4">
+          <View className="flex-row items-center">
+            <ComposerAttachmentButton
+              supportsFiles={props.supportsFiles}
+              onPickMedia={props.onPickMedia}
+              onPickFiles={props.onPickFiles}
+            />
             <TextInput
               value={props.draft}
               onChangeText={props.onChange}
@@ -264,10 +313,19 @@ function RoomBody(props: {
   readonly companion: CompanionEntry | null;
   readonly companionId: string;
   readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly headerHeight: number;
 }) {
   const composer = useThreadComposerState();
+  const { selectedEnvironmentRuntime } = useThreadSelection();
+  const { selectedThreadCwd } = useSelectedThreadWorktree();
   const body = useScaledTextRole("body");
+  const { media, modals } = useRoomMedia({
+    environmentId: props.environmentId,
+    threadId: props.threadId,
+    workspaceRoot: selectedThreadCwd ?? null,
+  });
+  const supportsFiles = Boolean(selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.fileAttachments);
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
@@ -275,7 +333,8 @@ function RoomBody(props: {
     () =>
       composer.selectedThreadFeed.flatMap((entry) =>
         entry.type === "message"
-          ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt, streaming: entry.message.streaming }]
+          ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt,
+              streaming: entry.message.streaming, attachments: entry.message.attachments }]
           : [],
       ),
     [composer.selectedThreadFeed],
@@ -299,7 +358,7 @@ function RoomBody(props: {
         data={reversed}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <RoomRow item={item} companion={props.companion} title={title} environmentId={props.environmentId} body={body} />
+          <RoomRow item={item} companion={props.companion} title={title} environmentId={props.environmentId} body={body} media={media} />
         )}
         ListHeaderComponent={
           <View style={{ paddingBottom: composerHeight + 6 }}>{writing ? <WritingDots /> : null}</View>
@@ -313,6 +372,13 @@ function RoomBody(props: {
         keyboardShouldPersistTaps="handled"
       />
       <RoomComposer
+        environmentId={props.environmentId}
+        attachments={composer.draftAttachments}
+        supportsFiles={supportsFiles}
+        onPickMedia={composer.onPickDraftMedia}
+        onPickFiles={composer.onPickDraftFiles}
+        onRemoveAttachment={composer.onRemoveDraftImage}
+        onPressPreview={media.onPressPreview}
         draft={composer.draftMessage}
         onChange={composer.onChangeDraftMessage}
         onSend={() => void composer.onSendMessage()}
@@ -323,6 +389,7 @@ function RoomBody(props: {
         body={body}
         onHeight={setComposerHeight}
       />
+      {modals}
     </>
   );
 }
@@ -357,6 +424,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           companion={companion}
           companionId={companionId}
           environmentId={environmentId as EnvironmentId}
+          threadId={threadId as ThreadId}
           headerHeight={headerHeight}
         />
       ) : loaded && companion && !companion.threadId ? (
