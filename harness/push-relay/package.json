@@ -1,0 +1,13 @@
+{
+  "name": "rubato-push-relay",
+  "private": true,
+  "type": "module",
+  "description": "The Rubato push relay: a Cloudflare Worker that alone holds the APNs key and pushes to the Rubato iPhone app for the Macs a phone paired with.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "deploy": "wrangler deploy"
+  }
+}

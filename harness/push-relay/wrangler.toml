@@ -1,0 +1,29 @@
+name = "rubato-push-relay"
+main = "src/worker.mjs"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+APNS_TEAM_ID = "5WGZKZGPQS"
+BUNDLE_IDS = "com.keepitmello.rubato"
+# APNS_KEY_ID and APNS_PRIVATE_KEY are secrets: `wrangler secret put` (README).
+
+[[d1_databases]]
+binding = "DB"
+database_name = "rubato-push"
+database_id = "3e4277ab-8e52-4aa0-a80a-bf9a5d7b02fc"
+migrations_dir = "migrations"
+
+# A paired Mac pushes a few times a minute at most; a phone registers a handful of times a day.
+[[ratelimits]]
+name = "PUSH_LIMIT"
+namespace_id = "7301"
+simple = { limit = 60, period = 60 }
+
+[[ratelimits]]
+name = "REGISTER_LIMIT"
+namespace_id = "7302"
+simple = { limit = 20, period = 60 }
+
+[observability]
+enabled = false
