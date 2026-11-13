@@ -51,7 +51,11 @@ export const shellEdits = {
     // Personal-team builds keep their own bundle id; every other build is Rubato's.
     ['const dmSansFonts = {',
       '// Rubato: the icon and splash build-ios.sh writes from harness/t3-integration/assets/Rubato.png.\n'
-      + `const RUBATO_ICON = "${RUBATO_ICON}";\n\n`],
+      + `const RUBATO_ICON = "${RUBATO_ICON}";\n`
+      + '// Rubato: the notification service extension and the entitlements it needs (Communication\n'
+      + '// Notifications, App Group). Off until the Apple account enables both capabilities on the\n'
+      + '// app ids; build-ios.sh sets RUBATO_IOS_NOTIFICATION_EXTENSION=1 once they exist.\n'
+      + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION === "1";\n\n'],
     ['  slug: "t3-code",', '  slug: "rubato",', 'replace'],
     // Rubato's own version line; build-ios.sh stamps the build number.
     ['  version: "2.0.0",', '  version: "1.0.0",', 'replace'],
@@ -63,7 +67,7 @@ export const shellEdits = {
     // Companion messages as Communication Notifications, and the App Group the app shares with
     // its notification service extension (targets/notification-service) and CallKit.
     ['      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n',
-      '      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n      "com.apple.developer.usernotifications.communication": true,\n      "com.apple.security.application-groups": ["group.com.keepitmello.rubato"],\n', 'replace'],
+      '      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n      ...(RUBATO_NOTIFICATION_EXTENSION\n        ? {\n            "com.apple.developer.usernotifications.communication": true,\n            "com.apple.security.application-groups": ["group.com.keepitmello.rubato"],\n          }\n        : {}),\n', 'replace'],
     ['      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n',
       '      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n      NSUserActivityTypes: ["INSendMessageIntent"],\n', 'replace'],
     // Rubato's team; Clerk's applinks/webcredentials domain belongs to T3's login.
@@ -89,7 +93,7 @@ export const shellEdits = {
     ['          image: variant.assets.splashIcon,\n          backgroundColor: "#0a0a0a",', '          image: RUBATO_ICON,\n          backgroundColor: "#0a0a0a",', 'replace'],
     // Builds the targets/ folder's extensions (the notification service).
     ['    "./plugins/withAndroidGradleHeap.cjs",',
-      '    "@bacons/apple-targets",\n    "./plugins/withAndroidGradleHeap.cjs",', 'replace'],
+      '    ...(RUBATO_NOTIFICATION_EXTENSION ? ["@bacons/apple-targets"] : []),\n    "./plugins/withAndroidGradleHeap.cjs",', 'replace'],
     // LiveKit's native setup for companion calls (deps-edits.mjs).
     ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
       '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
