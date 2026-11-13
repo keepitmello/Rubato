@@ -36,6 +36,7 @@ import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
+import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from './route-tree-edits.mjs';
@@ -1771,6 +1772,11 @@ for (const [relative, changes] of Object.entries(sessionPromptEdits)) {
 // The state DB stays bounded (state-retention-edits.mjs).
 overlays.push(...stateRetentionOverlays);
 for (const [relative, changes] of Object.entries(stateRetentionEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The state DB's hot reads use indexes that answer them (state-query-edits.mjs).
+overlays.push(...stateQueryOverlays);
+for (const [relative, changes] of Object.entries(stateQueryEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Rewinding to a finished tool step (step-rewind-edits.mjs).

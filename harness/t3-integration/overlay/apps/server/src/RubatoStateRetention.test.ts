@@ -16,6 +16,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
+import * as Statement from "effect/sql/Statement";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -27,7 +28,7 @@ import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import {
-  RETENTION, UNREAD_V1_TABLES, autoVacuumMode, compactOnce, pruneReceipts, pruneSupersededTurnItems,
+  RETENTION, THREAD_STATE_EVENTS, UNREAD_V1_TABLES, autoVacuumMode, compactEvents, compactOnce, pruneReceipts,
   pruneUnreadV1Tables, releaseFreePages, rubatoStateRetentionLayer, runRetention,
 } from "./RubatoStateRetention.ts";
 
@@ -104,7 +105,7 @@ it.live("an item's older updates go once they are old; the thread rebuilds to th
       yield* sink.write({ events: [itemUpdate(threadId, "tool-long", index === RETENTION.chunk + 19 ? "done" : `line ${index}`, old)] });
     const before = yield* itemRows(threadId);
 
-    const deleted = yield* pruneSupersededTurnItems(nowMs);
+    const { supersededTurnItems: deleted } = yield* compactEvents(nowMs);
     // tool-a and tool-b lose two each, tool-c its old update (a newer one exists), the subagent its
     // middle tick (the first holds the prompt the newest points at), tool-long all but its last.
     assert.strictEqual(deleted, 2 + 2 + 1 + 1 + (RETENTION.chunk + 19));
@@ -119,7 +120,7 @@ it.live("an item's older updates go once they are old; the thread rebuilds to th
     assert.deepStrictEqual(before.map((row) => row.id), ["tool-a", "tool-b", "tool-c", "tool-once", "reply", "subagent-row", "tool-long"]);
     const subagent = (yield* itemRows(threadId)).find((row) => row.id === "subagent-row");
     assert.strictEqual(JSON.parse(subagent!.payload).prompt, prompt);
-    assert.strictEqual(yield* pruneSupersededTurnItems(nowMs), 0);
+    assert.deepStrictEqual(yield* compactEvents(nowMs), { compactedEvents: 0, supersededTurnItems: 0 });
   }).pipe(Effect.provide(layer)));
 
 it.live("a recent row that points at an old prompt keeps it, even when a newer row has another prompt", () =>
@@ -141,7 +142,7 @@ it.live("a recent row that points at an old prompt keeps it, even when a newer r
       WHERE stream_id = ${threadId} AND event_type = 'turn-item.updated' ORDER BY sequence`;
     assert.deepStrictEqual(stored.map((row) => row.points !== null), [false, true, false]);
 
-    assert.strictEqual(yield* pruneSupersededTurnItems(nowMs), 0);
+    assert.strictEqual((yield* compactEvents(nowMs)).supersededTurnItems, 0);
     // Replaying every kept row, the middle one included, still finds its prompt.
     const replayed = yield* sql<{ readonly prompt: string | null }>`
       SELECT json_extract(payload_json, '$.prompt') AS prompt FROM orchestration_events AS event
@@ -242,8 +243,100 @@ it.effect("retention waits for server activation and initial UI loading, then re
     for (let turn = 0; turn < 50 && (yield* left()).length > 0; turn += 1) yield* TestClock.adjust(Duration.millis(10));
     assert.deepStrictEqual(yield* left(), []);
     // A pass reports what it did, and a second pass right after finds nothing more.
-    const report = yield* runRetention.pipe(Effect.provide(Layer.fresh(ProjectionMaintenance.layer.pipe(
-      Layer.provide(Layer.mergeAll(EventStore.layer, ProjectionStore.layer))))));
-    assert.deepStrictEqual({ ...report, freedPages: 0 }, { compactedEvents: 0, compactedReceipts: 0, supersededTurnItems: 0,
-      receipts: 0, v1Rows: 0, freedPages: 0 });
+    const report = yield* runRetention;
+    assert.deepStrictEqual({ ...report, freedPages: 0 }, { compactedEvents: 0, supersededTurnItems: 0, legacyEvents: 0,
+      legacyReceipts: 0, receipts: 0, v1Rows: 0, freedPages: 0 });
   }).pipe(Effect.scoped, Effect.provide(layer)));
+
+it.live("passes that each read only what is new leave what one pass over the whole history leaves", () =>
+  Effect.gen(function* () {
+    // Upstream's rules on raw rows: thread-state events, message and node versions, and types
+    // nothing supersedes. One database takes upstream's whole-history compaction; the other
+    // takes the same events in three batches with a pass after each.
+    const types = ["thread.visited", "thread.settled", "thread.metadata-updated", "message.updated", "node.updated",
+      "run.updated", "thread.created"] as const;
+    assert.includeMembers([...THREAD_STATE_EVENTS], ["thread.visited", "thread.settled", "thread.metadata-updated"]);
+    let seed = 11;
+    const random = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+    const fixture = Array.from({ length: 900 }, (_, index) => {
+      const type = types[random(types.length)]!;
+      return { id: `raw:${index}`, stream: `thread:raw-${random(4)}`, type,
+        entity: type === "message.updated" || type === "node.updated" ? `${type}:${random(6)}` : undefined };
+    });
+    const insert = (rows: typeof fixture) => Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      for (const row of rows) yield* sql`INSERT INTO orchestration_events (event_id, aggregate_kind, stream_id, stream_version,
+          event_type, occurred_at, actor_kind, payload_json, metadata_json, application_event_version)
+        VALUES (${row.id}, 'thread', ${row.stream},
+          COALESCE((SELECT MAX(stream_version) + 1 FROM orchestration_events WHERE aggregate_kind = 'thread' AND stream_id = ${row.stream}), 0),
+          ${row.type}, ${new Date().toISOString()}, 'server', ${JSON.stringify(row.entity === undefined ? {} : { id: row.entity })}, '{}', 2)`;
+    });
+    const left = Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      return (yield* sql<{ readonly id: string }>`SELECT event_id AS id FROM orchestration_events ORDER BY sequence`).map((row) => row.id);
+    });
+    const whole = yield* Effect.gen(function* () {
+      yield* insert(fixture);
+      yield* (yield* ProjectionMaintenance.ProjectionMaintenanceV2).compactEventStore;
+      return yield* left;
+    }).pipe(Effect.provide(Layer.fresh(layer)));
+    const passes = yield* Effect.gen(function* () {
+      const nowMs = Date.now();
+      let compacted = 0;
+      for (const batch of [fixture.slice(0, 300), fixture.slice(300, 301), fixture.slice(301)]) {
+        yield* insert(batch);
+        compacted += (yield* compactEvents(nowMs)).compactedEvents;
+      }
+      assert.deepStrictEqual(yield* compactEvents(nowMs), { compactedEvents: 0, supersededTurnItems: 0 });
+      return { compacted, rows: yield* left };
+    }).pipe(Effect.provide(Layer.fresh(layer)));
+    assert.isBelow(whole.length, fixture.length / 2, "the fixture supersedes most of its events");
+    assert.deepStrictEqual(passes.rows, whole);
+    assert.strictEqual(passes.compacted, fixture.length - whole.length);
+  }));
+
+it.live("an item update too young to go waits until a later pass finds it old, and that pass reads only what is new", () =>
+  Effect.gen(function* () {
+    const sink = yield* EventSink.EventSinkV2;
+    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
+    const sql = yield* SqlClient.SqlClient;
+    const nowMs = Date.now();
+    const old = DateTime.makeUnsafe(nowMs - (RETENTION.eventDays + 2) * DAY);
+    const recent = DateTime.makeUnsafe(nowMs - 60 * 60_000);
+    const threadId = ThreadId.make("thread:retention-aging");
+    yield* sink.write({ events: [{ id: EventId.make("event:retention:aging-create"), type: "thread.created", threadId,
+      providerInstanceId: instanceId, occurredAt: old, payload: threadOf(threadId, old) }] });
+    yield* sink.write({ events: [itemUpdate(threadId, "tool-old", "running", old)] });
+    yield* sink.write({ events: [itemUpdate(threadId, "tool-young", "running", recent)] });
+    yield* sink.write({ events: [itemUpdate(threadId, "tool-young", "done", recent)] });
+    const count = (item: string) => sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM orchestration_events
+      WHERE stream_id = ${threadId} AND event_type = 'turn-item.updated' AND json_extract(payload_json, '$.id') = ${item}`
+      .pipe(Effect.map((rows) => Number(rows[0]?.n ?? 0)));
+
+    // Both young updates stay today; the old item's only update is its newest.
+    assert.deepStrictEqual(yield* compactEvents(nowMs), { compactedEvents: 0, supersededTurnItems: 0 });
+    assert.deepStrictEqual([yield* count("tool-old"), yield* count("tool-young")], [1, 2]);
+    const before = yield* itemRows(threadId);
+
+    // A newer update of the old item removes its old one at once; the young item's first update
+    // goes once a pass four days later finds it old.
+    yield* sink.write({ events: [itemUpdate(threadId, "tool-old", "done", recent)] });
+    const last = yield* sql<{ readonly last: number }>`SELECT MAX(sequence) AS last FROM orchestration_events`;
+    const lowerBounds: Array<number> = [];
+    const record: Statement.Transformer = (statement) => {
+      const [query, params] = statement.compile();
+      if (/FROM orchestration_events/.test(query) && /sequence > \?/.test(query)) lowerBounds.push(Number(params[0]));
+      return Effect.succeed(statement);
+    };
+    assert.deepStrictEqual(yield* compactEvents(nowMs).pipe(Effect.provideService(Statement.CurrentTransformer, record)),
+      { compactedEvents: 0, supersededTurnItems: 1 });
+    assert.isAbove(lowerBounds.length, 0);
+    assert.isTrue(lowerBounds.every((bound) => bound >= Number(last[0]!.last) - 1), "only the new event is read");
+    assert.deepStrictEqual(yield* compactEvents(nowMs + (RETENTION.eventDays + 1) * DAY),
+      { compactedEvents: 0, supersededTurnItems: 1 });
+    assert.deepStrictEqual([yield* count("tool-old"), yield* count("tool-young")], [1, 1]);
+    assert.isTrue((yield* maintenance.rebuild).valid);
+    const after = yield* itemRows(threadId);
+    assert.deepStrictEqual(after.map((row) => row.id), before.map((row) => row.id));
+    assert.strictEqual(JSON.parse(after.find((row) => row.id === "tool-old")!.payload).output, "done");
+  }).pipe(Effect.provide(layer)));
