@@ -68,7 +68,7 @@ for (const item of companions) {
 
 const lines = new Map();
 // Directions such as [laughing] or <whisper>…</whisper> shape the voice; they are not words to read.
-const shown = text => text.replace(/\[[^\]]{1,80}\]\s*/g, '').replace(/<\/?[a-z]{2,12}>/g, '').trim();
+const shown = text => text.replace(/\[[^\]]{1,80}\]\s*/g, '').replace(/\[[^\]]{0,80}$/, '').replace(/<\/?[a-z]{2,12}>?/g, '').trim();
 function say(id, who, text) {
   let line = lines.get(id);
   if (!line) { line = document.createElement('div'); line.className = `bubble ${who}`; $('log').append(line); lines.set(id, line); }

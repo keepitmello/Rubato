@@ -67,5 +67,6 @@ export function callHeadline(call: CallRecord, now = Date.now()): { title: strin
 
 /** What a line of the transcript reads as: directions for the voice ([laughing], <whisper>) go. */
 export function spokenText(text: string): string {
-  return text.replace(/\[[^\]]{1,80}\]\s*/g, "").replace(/<\/?[a-z]{2,12}>/g, "").replace(/^\[voice\]\s*/, "").trim();
+  // A direction still streaming in (no closing bracket yet) goes too.
+  return text.replace(/\[[^\]]{1,80}\]\s*/g, "").replace(/\[[^\]]{0,80}$/, "").replace(/<\/?[a-z]{2,12}>?/g, "").replace(/^\[voice\]\s*/, "").trim();
 }

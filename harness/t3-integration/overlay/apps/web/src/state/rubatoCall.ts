@@ -171,49 +171,64 @@ let room: LiveKitRoom | null = null;
 let player: HTMLAudioElement[] = [];
 let callEnv: EnvironmentId | null = null;
 
+/** How long a call may stay connecting before it is given up with an error. */
+const CONNECT_MS = 20_000;
+
 async function join(env: EnvironmentId, joined: Joined) {
   callEnv = env;
   publish({ ringing: null, error: null, current: { call: joined.call, state: "connecting", muted: false, lines: [] } });
   ringtone(false); notify(null, null);
-  const { Room, RoomEvent, Track } = await loadLiveKit();
-  const next = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
-  room = next;
-  const update = (patch: Partial<NonNullable<CallView["current"]>>) => {
-    if (room === next && view.current) publish({ current: { ...view.current, ...patch } });
-  };
-  const stateOf = (participant: LiveKitParticipant) => {
-    const state = participant.attributes["lk.agent.state"];
-    if (state === "listening" || state === "thinking" || state === "speaking") update({ state });
-  };
-  next.on(RoomEvent.TrackSubscribed!, ((track: { kind: string; attach(): HTMLAudioElement }) => {
-    if (track.kind !== Track.Kind.Audio) return;
-    const element = track.attach();
-    element.hidden = true;
-    document.body.append(element);
-    player.push(element);
-  }) as never);
-  next.on(RoomEvent.ParticipantAttributesChanged!, ((_changed: unknown, participant: LiveKitParticipant) => stateOf(participant)) as never);
-  next.on(RoomEvent.ParticipantConnected!, ((participant: LiveKitParticipant) => stateOf(participant)) as never);
-  const segments = new Map<string, CallLine>();
-  next.registerTextStreamHandler("lk.transcription", async (reader, participant) => {
-    const who = participant.identity === next.localParticipant.identity ? "me" : "companion";
-    const segment = reader.info.attributes?.["lk.segment_id"] ?? reader.info.id;
-    let text = "";
-    for await (const chunk of reader) {
-      text += chunk;
-      segments.set(segment, { who, text, at: segments.get(segment)?.at ?? Date.now() });
-      update({ lines: [...segments.values()] });
-    }
-  });
-  next.on(RoomEvent.Disconnected!, (() => void finish()) as never);
+  // Any failure on the way in ends the call and says why, instead of leaving it connecting.
+  const giveUp = window.setTimeout(() => {
+    if (view.current?.call.id === joined.call.id && view.current.state === "connecting") void fail("The call did not connect.");
+  }, CONNECT_MS);
   try {
+    const { Room, RoomEvent, Track } = await loadLiveKit();
+    if (typeof Room !== "function") throw new Error("The call client did not load.");
+    const next = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+    room = next;
+    const update = (patch: Partial<NonNullable<CallView["current"]>>) => {
+      if (room === next && view.current) publish({ current: { ...view.current, ...patch } });
+    };
+    const stateOf = (participant: LiveKitParticipant) => {
+      const state = participant.attributes["lk.agent.state"];
+      if (state === "listening" || state === "thinking" || state === "speaking") update({ state });
+    };
+    next.on(RoomEvent.TrackSubscribed!, ((track: { kind: string; attach(): HTMLAudioElement }) => {
+      if (track.kind !== Track.Kind.Audio) return;
+      const element = track.attach();
+      element.hidden = true;
+      document.body.append(element);
+      player.push(element);
+    }) as never);
+    next.on(RoomEvent.ParticipantAttributesChanged!, ((_changed: unknown, participant: LiveKitParticipant) => stateOf(participant)) as never);
+    next.on(RoomEvent.ParticipantConnected!, ((participant: LiveKitParticipant) => stateOf(participant)) as never);
+    const segments = new Map<string, CallLine>();
+    next.registerTextStreamHandler("lk.transcription", async (reader, participant) => {
+      const who = participant.identity === next.localParticipant.identity ? "me" : "companion";
+      const segment = reader.info.attributes?.["lk.segment_id"] ?? reader.info.id;
+      let text = "";
+      for await (const chunk of reader) {
+        text += chunk;
+        segments.set(segment, { who, text, at: segments.get(segment)?.at ?? Date.now() });
+        update({ lines: [...segments.values()] });
+      }
+    });
+    next.on(RoomEvent.Disconnected!, (() => void finish()) as never);
     await next.connect(joined.url, joined.token);
     for (const participant of next.remoteParticipants.values()) stateOf(participant);
     await next.localParticipant.setMicrophoneEnabled(true);
   } catch (error) {
-    publish({ error: error instanceof Error ? error.message : String(error) });
-    await finish();
+    await fail(error instanceof Error ? error.message : String(error));
+  } finally {
+    window.clearTimeout(giveUp);
   }
+}
+
+/** Ends the call this device is on and shows why it ended. */
+async function fail(message: string) {
+  await finish();
+  publish({ error: message });
 }
 
 async function finish() {
@@ -270,6 +285,21 @@ export interface CallableCompanion {
   readonly reason?: string;
 }
 
+/** Whether a companion can be called now, checked every so often while something shows it. */
+export function useCallableCompanion(env: EnvironmentId | null, companion: string | undefined) {
+  const [callable, setCallable] = useState<CallableCompanion | null>(null);
+  useEffect(() => {
+    if (env === null || !companion) { setCallable(null); return; }
+    let live = true;
+    const load = () => act<CallableCompanion[]>(env, "companions").then(
+      (list) => { if (live) setCallable(list.find((item) => item.id === companion) ?? null); }, () => undefined);
+    void load();
+    const timer = window.setInterval(load, 30_000);
+    return () => { live = false; window.clearInterval(timer); };
+  }, [env, companion]);
+  return callable;
+}
+
 /**
  * A companion's calls for its room, fetched again whenever a call this device saw ends and every
  * so often, so a call taken on another device or a missed ring shows up too.
@@ -277,18 +307,13 @@ export interface CallableCompanion {
 export function useRoomCalls(env: EnvironmentId | null, companion: string | undefined) {
   const { version, current } = useRubatoCall();
   const [calls, setCalls] = useState<readonly CallRecord[]>([]);
-  const [callable, setCallable] = useState<CallableCompanion | null>(null);
   useEffect(() => {
     if (env === null || !companion) return;
     let live = true;
-    const load = () => {
-      rubatoCall.calls(env, companion).then((list) => { if (live) setCalls(list); }, () => undefined);
-      act<CallableCompanion[]>(env, "companions").then(
-        (list) => { if (live) setCallable(list.find((item) => item.id === companion) ?? null); }, () => undefined);
-    };
-    load();
+    const load = () => rubatoCall.calls(env, companion).then((list) => { if (live) setCalls(list); }, () => undefined);
+    void load();
     const timer = window.setInterval(load, current ? 5_000 : 15_000);
     return () => { live = false; window.clearInterval(timer); };
   }, [env, companion, version, current !== null]);
-  return { calls, callable };
+  return calls;
 }

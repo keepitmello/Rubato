@@ -42,7 +42,7 @@ import {
 
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ChevronDownIcon, PhoneIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -85,7 +85,7 @@ import {
 import "./RubatoSegnoChat.css";
 import { RubatoCallCard } from "./RubatoCallCard";
 import { callPlacement, withoutCallSpeech } from "./rubatoCallRoom";
-import { rubatoCallActions, useRoomCalls, useRubatoCall } from "../../state/rubatoCall";
+import { useRoomCalls } from "../../state/rubatoCall";
 
 /** Closer to the end than this, the room follows new bubbles down. */
 const FOLLOW_PX = 64;
@@ -402,8 +402,7 @@ export function RubatoSegnoChat(props: {
   const companionChoice = useRubatoCompanion().companions.find((item) => item.threadId === props.threadId);
   const companionId = companionChoice?.id;
   // A call's card replaces the person's call speech the thread kept (rubatoCallRoom.ts).
-  const { calls, callable } = useRoomCalls(props.environmentId ?? null, companionId);
-  const onCall = useRubatoCall().current !== null;
+  const calls = useRoomCalls(props.environmentId ?? null, companionId);
   const items = useMemo(() => segnoChatItems(withoutCallSpeech(messagesOf(props.entries), calls)), [props.entries, calls]);
   const placement = useMemo(() => callPlacement(items, calls), [items, calls]);
   const messageById = useMemo(() => {
@@ -749,19 +748,6 @@ export function RubatoSegnoChat(props: {
 
   return (
     <div data-rubato-segno-room="" className="relative flex min-h-0 flex-1 flex-col">
-    {companionId && callable && !onCall ? (
-      <button
-        type="button"
-        data-rubato-call-dial=""
-        className="surface-glass"
-        disabled={!callable.ready}
-        title={callable.ready ? undefined : callable.reason}
-        onClick={() => void rubatoCallActions.dial(props.environmentId ?? null, companionId)}
-      >
-        <PhoneIcon className="size-3.5" />
-        <span>Start a call</span>
-      </button>
-    ) : null}
     <div
       ref={scroller}
       onScroll={onScroll}

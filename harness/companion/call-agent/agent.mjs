@@ -124,12 +124,14 @@ class CompanionVoice extends voice.Agent {
 
 /**
  * Opens the call with the companion's own first words. The bridge refuses while the companion is
- * still finishing the turn that placed the call, so this asks again until it is free.
+ * still busy (finishing the turn that placed the call, or anything else), so this asks again until
+ * it is free, unless the person spoke first.
  */
-async function speakFirst({ session, bridge, report, reason, logger, tries = 40 }) {
+async function speakFirst({ session, bridge, report, why, logger, stillFirst = () => true, tries = 40 }) {
   if (process.env.RUBATO_CALL_ECHO === '1') { session.say('여보세요?'); return; }
-  const why = ['네가 건 전화를 받았어. 먼저 말해.', reason ? `건 이유: ${reason}` : ''].filter(Boolean).join(' ');
   for (let attempt = 0; attempt < tries; attempt++) {
+    // Once the person has spoken, a late hello would answer nothing.
+    if (!stillFirst()) return;
     const answer = await bridge.opportunity(why).catch(error => ({ error }));
     if (answer.events) {
       session.say(sentences(answer.events, { onSentence: text => void report('said', text) }));
@@ -139,6 +141,13 @@ async function speakFirst({ session, bridge, report, reason, logger, tries = 40 
     await new Promise(resolve => setTimeout(resolve, 500));
   }
 }
+
+// Fish's socket can deliver a last frame after a call ended and its queue closed; the plugin throws
+// that from a socket callback, which would end the worker and every call on it. Only that one is let go.
+process.on('uncaughtException', error => {
+  if (error?.message === 'Queue is closed') { log().warn({ error: error.message }, 'late voice frame after the call ended'); return; }
+  throw error;
+});
 
 export default defineAgent({
   entry: async ctx => {
@@ -207,8 +216,11 @@ export default defineAgent({
 
     await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings, report }), room: ctx.room });
     logger.info({ companion: companion.id, callId, session: opened.health.sessionId }, 'call open');
-    // The companion placed this call, so it speaks first once the person picks up.
-    if (job.calledBy === 'companion') void speakFirst({ session, bridge, report, reason: job.reason, logger });
+    // Whoever placed the call, the companion speaks first: it picks up the person's call with its
+    // own hello, or opens the one it placed. Its own words each time, read by its own voice.
+    void speakFirst({ session, bridge, report, logger, stillFirst: () => timings.current === null, why: job.calledBy === 'companion'
+      ? ['네가 건 전화를 받았어. 먼저 말해.', job.reason ? `건 이유: ${job.reason}` : ''].filter(Boolean).join(' ')
+      : '사용자가 너한테 전화를 걸었고 방금 연결됐어. 전화 받는 사람으로서 먼저 한마디 해.' });
   },
 });
 

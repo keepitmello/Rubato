@@ -45,5 +45,6 @@ describe("a companion room's calls", () => {
 
   it("reads a transcript line without the voice's directions", () => {
     expect(spokenText("[반가워서 웃음이 터지며] 응, 들려! <whisper>비밀</whisper>")).toBe("응, 들려! 비밀");
+    expect(spokenText("응, 들려! [반가워서 목소리가")).toBe("응, 들려!");
   });
 });
