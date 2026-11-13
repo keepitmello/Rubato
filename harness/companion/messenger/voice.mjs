@@ -79,7 +79,7 @@ export async function synthesizeVoice(text, { env = process.env, fetch: call = g
     response = await call(baseUrl, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', model: voice.model },
-      body: JSON.stringify({ text: pronunciationText(spoken, env), reference_id: voice.voiceId, format: 'opus', opus_bitrate: 48,
+      body: JSON.stringify({ text: pronunciationText(spoken, env), reference_id: voice.voiceId, format: 'opus', opus_bitrate: 48000,
         latency: FISH_LATENCY, temperature: voice.temperature ?? FISH_TEMPERATURE }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

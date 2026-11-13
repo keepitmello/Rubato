@@ -97,6 +97,8 @@ test('Fish Audio is asked for Opus in the chosen voice, and the key never leaves
   const voice = await synthesizeVoice('안녕', { env, fetch: async (url, init) => { asked.push({ url, init }); return new Response(oggBytes()); } });
   const body = JSON.parse(asked[0].init.body);
   assert.deepEqual([body.reference_id, body.format, body.latency, body.temperature], ['fixturevoice0001', 'opus', FISH_LATENCY, FISH_TEMPERATURE]);
+  // Fish takes bits per second from this set; drama-3 refuses anything else with HTTP 400.
+  assert.ok([-1000, 24000, 32000, 48000, 64000].includes(body.opus_bitrate));
   assert.equal(asked[0].init.headers.authorization, 'Bearer fish-secret');
   assert.equal(asked[0].init.headers.model, DEFAULT_VOICE_MODEL);
   assert.equal(voice.durationSec, 3);
