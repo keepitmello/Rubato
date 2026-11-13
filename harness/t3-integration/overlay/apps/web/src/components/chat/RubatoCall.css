@@ -91,6 +91,11 @@
   justify-content: center;
   pointer-events: none;
 }
+/* Both sit over the window's title bar, which drags the window; they take their own clicks. */
+[data-rubato-call-sheet],
+[data-rubato-call-dial] {
+  -webkit-app-region: no-drag;
+}
 [data-rubato-call-sheet] {
   pointer-events: auto;
   display: flex;
@@ -120,8 +125,11 @@
   background: var(--muted);
 }
 [data-rubato-call-who] {
+  display: flex;
   flex: 1;
   min-width: 0;
+  flex-direction: column;
+  gap: 0.1rem;
 }
 [data-rubato-call-name] {
   font-weight: 600;
