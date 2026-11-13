@@ -28,8 +28,8 @@ export type CompanionRoomParams = {
   readonly threadId?: string;
 };
 
-const ME_BUBBLE = "bg-[#7BE383] dark:bg-[#2F8A40]";
-const COMPANION_BUBBLE = "bg-[#F2F3F5] dark:bg-[#232326]";
+const ME_BUBBLE = "bg-[#7BE383]";
+const COMPANION_BUBBLE = "bg-grouped-card";
 
 const separatorFormat = new Intl.DateTimeFormat(phoneLocale(), { month: "long", day: "numeric", weekday: "short" });
 const timeFormat = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
@@ -66,19 +66,19 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
 function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly title: string; readonly onBack: () => void }) {
   const insets = useSafeAreaInsets();
   return (
-    <View className="items-center bg-background" style={{ paddingTop: insets.top + 6, paddingBottom: 6 }}>
+    <View className="items-center bg-screen" style={{ paddingTop: insets.top + 6, paddingBottom: 6 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={copy.back}
         onPress={props.onBack}
-        className="absolute left-4 h-11 w-11 items-center justify-center rounded-full border border-border bg-background active:opacity-70"
+        className="absolute left-4 h-11 w-11 items-center justify-center rounded-full border border-border bg-screen active:opacity-70"
         style={{ top: insets.top + 16, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
       >
         <SymbolView name="chevron.left" size={18} className="text-foreground" />
       </Pressable>
       <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={64} ring />
       <View
-        className="-mt-2 rounded-full border border-border bg-background px-3 py-1"
+        className="-mt-2 rounded-full border border-border bg-screen px-3 py-1"
         style={{ shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}
       >
         <Text className="font-t3-bold text-[15px] text-foreground">{props.title}</Text>
@@ -130,7 +130,7 @@ function RoomRow(props: { readonly item: RoomItem; readonly companion: Companion
     >
       <Text
         selectable
-        className={mine ? "text-[16px] leading-[22px] text-[#0E2A14] dark:text-white" : "text-[16px] leading-[22px] text-foreground"}
+        className={mine ? "text-[16px] leading-[22px] text-[#0E2A14]" : "text-[16px] leading-[22px] text-foreground"}
       >
         {item.text || (item.streaming ? "…" : "")}
       </Text>
@@ -172,7 +172,7 @@ function RoomComposer(props: {
   return (
     <View className="px-3" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
       <View
-        className="flex-row items-end gap-1 rounded-[30px] border border-border bg-background py-1.5 pl-4 pr-1.5"
+        className="flex-row items-end gap-1 rounded-[30px] border border-border bg-screen py-1.5 pl-4 pr-1.5"
         style={{ shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }}
       >
         <TextInput
@@ -193,9 +193,9 @@ function RoomComposer(props: {
             accessibilityLabel={copy.send}
             onPress={props.onSend}
             disabled={dictation.blocksSubmission}
-            className="h-11 w-11 items-center justify-center rounded-full bg-[#7BE383] active:opacity-70 dark:bg-[#2F8A40]"
+            className="h-11 w-11 items-center justify-center rounded-full bg-[#7BE383] active:opacity-70"
           >
-            <SymbolView name="arrow.up" size={18} className="text-[#0E2A14] dark:text-white" />
+            <SymbolView name="arrow.up" size={18} className="text-[#0E2A14]" />
           </Pressable>
         ) : dictation.isAvailable ? (
           <Pressable
@@ -218,7 +218,7 @@ function RoomComposer(props: {
           onPress={props.onCall}
           className={props.canCall ? "h-11 w-11 items-center justify-center rounded-full bg-foreground active:opacity-70" : "h-11 w-11 items-center justify-center rounded-full bg-foreground opacity-30"}
         >
-          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={18} className="text-background" />
+          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={18} className="text-screen" />
         </Pressable>
       </View>
     </View>
@@ -289,7 +289,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   const title = companion?.title ?? companionId;
   const back = () => (navigation.canGoBack() ? navigation.goBack() : undefined);
   return (
-    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-background">
+    <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
       <RoomHeader companion={companion} title={title} onBack={back} />
       {environmentId && threadId ? (
         <RoomBody companion={companion} companionId={companionId} environmentId={environmentId as EnvironmentId} />

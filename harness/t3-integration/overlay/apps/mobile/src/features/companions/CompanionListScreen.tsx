@@ -46,7 +46,7 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOp
     <Pressable
       accessibilityRole="button"
       onPress={props.onOpen}
-      className="flex-row items-center gap-3.5 px-5 py-3 active:bg-[#F2F3F5] dark:active:bg-[#1C1C1F]"
+      className="flex-row items-center gap-3.5 px-5 py-3 active:bg-grouped-card"
     >
       <CompanionAvatar art={companion.art} title={companion.title} size={56} />
       <View className="min-w-0 flex-1">
@@ -77,7 +77,7 @@ export function CompanionListScreen() {
       }),
     );
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1 bg-screen">
       <FlatList
         data={companions}
         keyExtractor={(item) => `${item.environmentId}:${item.id}`}

@@ -19,7 +19,7 @@ function RoundButton(props: {
   readonly danger?: boolean;
   readonly onPress: () => void;
 }) {
-  const fill = props.danger ? "bg-[#E5484D]" : props.on ? "bg-foreground" : "bg-[#F2F3F5] dark:bg-[#2A2A2E]";
+  const fill = props.danger ? "bg-[#E5484D]" : props.on ? "bg-foreground" : "bg-grouped-card";
   return (
     <View className="items-center gap-2">
       <Pressable
@@ -32,7 +32,7 @@ function RoundButton(props: {
         <SymbolView
           name={{ ios: props.icon as never, android: "smartphone" }}
           size={28}
-          className={props.danger ? "text-white" : props.on ? "text-background" : "text-foreground"}
+          className={props.danger ? "text-white" : props.on ? "text-screen" : "text-foreground"}
         />
       </Pressable>
       <Text className="text-[13px] text-foreground-muted">{props.label}</Text>
@@ -57,7 +57,7 @@ export function CallScreen(props: { readonly current: CurrentCall; readonly comp
   const mine = [...current.lines].reverse().find((line) => line.who === "me");
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={callActions.hangUp}>
-      <View className="flex-1 items-center bg-background px-8" style={{ paddingTop: insets.top + 48, paddingBottom: insets.bottom + 28 }}>
+      <View className="flex-1 items-center bg-screen px-8" style={{ paddingTop: insets.top + 48, paddingBottom: insets.bottom + 28 }}>
         <CompanionAvatar art={props.companion?.art ?? null} title={title} size={132} ring />
         <Text className="mt-5 font-t3-bold text-[28px] text-foreground">{title}</Text>
         <Text className="mt-1 text-[16px] text-foreground-muted">{status}</Text>
@@ -99,7 +99,7 @@ export function RingScreen(props: { readonly call: CallRecord; readonly companio
   const title = props.companion?.title ?? props.call.title ?? props.call.companion;
   return (
     <Modal visible animationType="slide" presentationStyle="fullScreen" onRequestClose={() => void callActions.decline()}>
-      <View className="flex-1 items-center bg-background px-8" style={{ paddingTop: insets.top + 64, paddingBottom: insets.bottom + 40 }}>
+      <View className="flex-1 items-center bg-screen px-8" style={{ paddingTop: insets.top + 64, paddingBottom: insets.bottom + 40 }}>
         <CompanionAvatar art={props.companion?.art ?? null} title={title} size={132} ring />
         <Text className="mt-5 font-t3-bold text-[28px] text-foreground">{title}</Text>
         <Text className="mt-1 text-[16px] text-foreground-muted">{copy.isCalling}</Text>

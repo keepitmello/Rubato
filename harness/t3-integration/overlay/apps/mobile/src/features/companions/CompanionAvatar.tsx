@@ -13,7 +13,7 @@ export function CompanionAvatar(props: {
   const { size } = props;
   return (
     <View
-      className={props.ring ? "items-center justify-center rounded-full bg-background" : "items-center justify-center rounded-full"}
+      className={props.ring ? "items-center justify-center rounded-full bg-screen" : "items-center justify-center rounded-full"}
       style={{
         width: size,
         height: size,
@@ -31,10 +31,10 @@ export function CompanionAvatar(props: {
         />
       ) : (
         <View
-          className="items-center justify-center rounded-full bg-[#E9F8EC] dark:bg-[#1F3A25]"
+          className="items-center justify-center rounded-full bg-grouped-card"
           style={{ width: props.ring ? size - 6 : size, height: props.ring ? size - 6 : size }}
         >
-          <Text className="font-t3-bold text-[#2E9E46] dark:text-[#8FE3A0]" style={{ fontSize: size * 0.4 }}>
+          <Text className="font-t3-bold text-foreground" style={{ fontSize: size * 0.4 }}>
             {[...props.title][0]?.toUpperCase() ?? "·"}
           </Text>
         </View>
