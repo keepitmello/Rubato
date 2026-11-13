@@ -145,6 +145,26 @@
     "apps/server/src/cloud/CloudLink.lifecycle.test.ts": "13929b58ad7ee0c1f6a29719a8affc0d0d304ff290d102012aa63bc9a9a81335",
     "packages/provider-core/src/server/ProviderAdapter.ts": "06281daa7520a384eab4b2c58952796298e6b144fb65ea0236591c1bbd5730bf",
     "apps/server/src/orchestration-v2/ProviderSessionManager.ts": "1be48f716eccb4e6f897dad7db76930fc54d24ac809d6eedb0de7e6acb1a1184",
-    "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts": "f9e6e56e5b2dfa06c912e85e485979d94894957739d6ff962f9e2154b3f39b72"
+    "apps/server/src/orchestration-v2/ProviderSessionManager.test.ts": "f9e6e56e5b2dfa06c912e85e485979d94894957739d6ff962f9e2154b3f39b72",
+    "apps/mobile/app.config.ts": "d066ecd8fb875213d1c48935052da2c99c81331471c48cff3c4fb3be7573aadf",
+    "apps/mobile/src/features/workspace/workspace-tabs-state.ts": "00fa8a6da7e46dc6c3041ae3f0fbb112d81550c07d1cc1accba44a26295a439d",
+    "apps/mobile/src/features/workspace/WorkspaceTabsContext.tsx": "91195fbeccd1ecd5998aa576cde051570909dfc6a437b2e9e97d57140c7fa79a",
+    "apps/mobile/src/features/workspace/WorkspaceNativeTabs.ios.tsx": "0ef254b6eff095128818426c3dfb184b095b97ca5ab04eaacc2ffcb13d988b38",
+    "apps/mobile/src/features/workspace/WorkspaceSidebarTabs.ios.tsx": "19395786049ad378cf794abb54d19952ed914abeb66a1e10905530c45b65b506",
+    "apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx": "19ff21bfbd1cde2c7a1655f196f3598866ca81523270face33ca3b771519a6aa",
+    "apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx": "ae54bb91bb70cf3ca1f36cb8da9aa18206f3d5c8b34e788c637d88dc18235538",
+    "apps/mobile/src/Stack.tsx": "cb57a5d29f893412477d4baf1ffc0a436377726e24e5315aa5faf4b28554a5f8",
+    "apps/mobile/src/App.tsx": "04602be850f8733c47fa9670bd18f256eb07223bcaa9dac479b30852a2a6f758",
+    "apps/mobile/src/components/CompactBrandTitle.tsx": "9aa71f6e6d6e651e88c617a3e84b7d163411bc603f15ea50505a016a8022d742",
+    "apps/mobile/src/components/brandAssets.ts": "cbca5aa4dc3d86596f27b41a67468852983187355bd9dd517936cf1b44a64a46",
+    "apps/mobile/src/components/BrandMark.tsx": "1b97a4d0534860b0239b4b7e1a17dcaa39d95f82258526d8c93d302f29a40b18",
+    "apps/mobile/src/features/settings/SettingsRouteScreen.tsx": "d8face5ec8c39ecf9cdae79188e9f754171669e887bff2f68233dd8d25d041ce",
+    "apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx": "35e1036e8312944516fa77888242a715096e74e71e6ad76d707eeab3db417135",
+    "apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx": "1029b5e2571604c810071e046f23db73dad4d7a657a0ac227115f1eb27e63a87",
+    "apps/mobile/src/components/ProviderIcon.tsx": "477a2c4b0989fb71fb32080a4f0e6c0b69c54afed80b3b1bba16bedf6cc56783",
+    "apps/mobile/src/features/threads/ThreadComposer.tsx": "650aa3d7c4936aa121248e01850448962d646abe203680e4cf69dcefa22a47db",
+    "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx": "e1133f2829b0674c5e31b4b018da661caafe5912f07d7fc2a6a16b43c4af9cae",
+    "apps/mobile/src/features/threads/thread-list-v2-items.tsx": "916a7640a17a144811da770f8654fb9e0e3aa707fb5a79693c3e3cb207e3e43c",
+    "apps/mobile/src/features/workspace/workspace-tabs-state.test.ts": "6591861e36bbd75ab73648a839563b8b5b32464b4621e0843dde3b125fb62672"
   }
 }

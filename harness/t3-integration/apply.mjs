@@ -60,6 +60,7 @@ import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
 import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
 import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
 import { timelineRailEdits, timelineRailOverlays } from './timeline-rail-edits.mjs';
+import { mobileEdits, mobileOverlays } from './mobile/index.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1885,6 +1886,12 @@ overlays.push(...timelineRailOverlays);
 for (const [relative, changes] of Object.entries(timelineRailEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// The Rubato iPhone app: T3's apps/mobile under Rubato's name, its shell and logos, and the
+// Mac server routes the phone needs (mobile/index.mjs).
+overlays.push(...mobileOverlays);
+for (const [relative, changes] of Object.entries(mobileEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 /** The full edit and overlay tables, for checks that apply part of them. */
 export { edits as integrationEdits, overlays as integrationOverlays };
 function transform(text, changes) {
@@ -1922,6 +1929,19 @@ function checkedOut(target, relative) {
   try { return execFileSync('git',['-C',target,'show',`HEAD:${relative}`],{encoding:'utf8',stdio:['ignore','pipe','ignore'],maxBuffer:64*1024*1024}); }
   catch { return null; }
 }
+// The real path of a file's folder, or of its nearest existing ancestor when an overlay
+// brings a folder T3 does not have (apps/mobile/src/features/companions). The missing
+// tail is plain names from our own tables, so the ancestor decides containment.
+async function realParent(destination) {
+  let folder = path.dirname(destination);
+  for (;;) {
+    try { return await realpath(folder); }
+    catch (error) {
+      if (error.code !== 'ENOENT' || path.dirname(folder) === folder) throw error;
+      folder = path.dirname(folder);
+    }
+  }
+}
 
 export async function applyIntegration({t3,check=false,remove=false}) {
   const target = await realpath(t3);
@@ -1943,7 +1963,8 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   if (unlisted.length) throw new Error(`Edited T3 files missing from upstream.json targets: ${unlisted.join(', ')}`);
   for (const relative of [...Object.keys(upstream.targets),...overlays]) {
     const destination = path.join(target,relative);
-    const parent = await realpath(path.dirname(destination));
+    if (relative.split('/').includes('..')) throw new Error(`Target escapes T3 root: ${relative}`);
+    const parent = await realParent(destination);
     // Root files (pnpm-lock.yaml) live in the root itself; anything else must stay below it.
     if (parent !== target && !parent.startsWith(target + path.sep)) throw new Error(`Target escapes T3 root: ${relative}`);
     const current = await existing(destination);
@@ -2003,7 +2024,10 @@ export async function applyIntegration({t3,check=false,remove=false}) {
   if (!check) {
     for (const item of planned) if (item.current!==item.next) {
       if (item.next===null) await unlink(item.destination);
-      else await atomic(item.destination,item.next);
+      else {
+        await mkdir(path.dirname(item.destination),{recursive:true});
+        await atomic(item.destination,item.next);
+      }
     }
     if (remove) await unlink(manifestPath);
     else await atomic(manifestPath,JSON.stringify(manifest,null,2)+'\n');
