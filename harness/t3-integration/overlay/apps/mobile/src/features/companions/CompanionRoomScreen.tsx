@@ -83,7 +83,7 @@ function RoomHeader(props: {
         props.onHeight(event.nativeEvent.layout.height);
       }}
     >
-      <EdgeFade edge="top" height={height + 28} solid={0.6} />
+      <EdgeFade edge="top" height={height + 24} solid={(height - 4) / (height + 24)} />
       <View pointerEvents="box-none" className="items-center" style={{ paddingTop: insets.top + 2, paddingBottom: 8 }}>
         <View style={{ position: "absolute", left: 16, top: insets.top + 12 }}>
           <GlassIconButton label={copy.back} icon="chevron.left" onPress={props.onBack} />

@@ -3,8 +3,6 @@
 // rooms with Segno and Roo, so they speak the person's language.
 
 const KO = {
-  chats: "대화",
-  settings: "설정",
   noCompanions: "컴패니언이 아직 없어",
   noCompanionsDetail: "Mac의 Rubato에서 컴패니언을 켜면 여기에 나타나.",
   notConnected: "Mac에 연결되지 않았어",
@@ -46,8 +44,6 @@ const KO = {
 };
 
 const EN: typeof KO = {
-  chats: "Chats",
-  settings: "Settings",
   noCompanions: "No companions yet",
   noCompanionsDetail: "Turn on a companion in Rubato on your Mac and it shows up here.",
   notConnected: "Not connected to your Mac",

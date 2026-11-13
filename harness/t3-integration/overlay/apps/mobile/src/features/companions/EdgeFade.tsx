@@ -19,7 +19,7 @@ export function EdgeFade(props: { readonly edge: "top" | "bottom"; readonly heig
         <Defs>
           <LinearGradient id={id} x1="0" y1={top ? "0" : "1"} x2="0" y2={top ? "1" : "0"}>
             <Stop offset="0" stopColor={color} stopOpacity={1} />
-            <Stop offset={String(solid)} stopColor={color} stopOpacity={0.94} />
+            <Stop offset={String(solid)} stopColor={color} stopOpacity={1} />
             <Stop offset="1" stopColor={color} stopOpacity={0} />
           </LinearGradient>
         </Defs>

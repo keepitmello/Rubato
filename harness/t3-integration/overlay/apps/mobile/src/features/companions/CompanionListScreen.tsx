@@ -11,7 +11,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { buildThreadFeed } from "../../lib/threadActivity";
 import { useThreadDetail, useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { CompanionAvatar } from "./CompanionAvatar";
-import { GlassIconButton } from "./GlassIconButton";
 import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
@@ -69,11 +68,6 @@ export function CompanionListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { companions, loaded, error, paired, refresh } = useCompanions();
-  // The companions tab has no navigation bar, so Settings opens from here.
-  const openSettings = () =>
-    navigation.dispatch(
-      CommonActions.navigate("SettingsSheet", { screen: "SettingsContent", params: { screen: "Settings" } }),
-    );
   const open = (companion: CompanionEntry) =>
     navigation.dispatch(
       CommonActions.navigate("CompanionRoom", {
@@ -90,12 +84,6 @@ export function CompanionListScreen() {
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
-        ListHeaderComponent={
-          <View className="flex-row items-center justify-between px-5 pb-3 pt-2">
-            <Text className="font-t3-bold text-[32px] text-foreground">{copy.chats}</Text>
-            <GlassIconButton label={copy.settings} icon="gearshape" onPress={openSettings} />
-          </View>
-        }
         renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
         ItemSeparatorComponent={() => <View className="h-[0.5px] bg-border" style={{ marginLeft: 90 }} />}
         ListEmptyComponent={
