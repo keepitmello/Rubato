@@ -509,7 +509,23 @@ export function seedResidentMemory({ env = process.env, defaultsDir = companionD
 /** The parts of the home the dream works on, copied for it: its memory, its notes and who it is. */
 const COPIED = Object.freeze(['memory', 'notes', 'prompt']);
 
-/** Bytes of every file under the copied parts of `root`, keyed by home-relative path. */
+/** The bytes git reads to tell a binary file from text: a NUL among them means binary. */
+const TEXT_SNIFF_BYTES = 8000;
+
+/**
+ * Whether `file` is text. The dream reads and writes words; screenshots, PDFs and other binaries
+ * under notes/ ran to hundreds of MB a night (2026-11-13: 534MB for Segno, 190MB for Roo), so they
+ * are neither copied nor brought home, and the live file stays as it is.
+ */
+function isText(file) {
+  const fd = openSync(file, 'r');
+  try {
+    const head = Buffer.alloc(TEXT_SNIFF_BYTES);
+    return !head.subarray(0, readSync(fd, head, 0, TEXT_SNIFF_BYTES, 0)).includes(0);
+  } finally { closeSync(fd); }
+}
+
+/** Bytes of every text file under the copied parts of `root`, keyed by home-relative path. */
 function snapshot(root, env = process.env) {
   const out = new Map();
   const walk = (current) => {
@@ -518,7 +534,7 @@ function snapshot(root, env = process.env) {
     for (const entry of entries) {
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) out.set(path.relative(root, full).split(path.sep).join('/'), readFileSync(full));
+      else if (entry.isFile() && isText(full)) out.set(path.relative(root, full).split(path.sep).join('/'), readFileSync(full));
     }
   };
   const resident = path.relative(segnoPaths(env).home, memoryPiecePath(env));
@@ -528,7 +544,7 @@ function snapshot(root, env = process.env) {
     const full = path.join(root, part);
     if (!landsInside(root, full)) continue;
     try {
-      if (statSync(full).isFile()) out.set(part, readFileSync(full));
+      if (statSync(full).isFile()) { if (isText(full)) out.set(part, readFileSync(full)); }
       else walk(full);
     } catch { /* a configured optional read path may not exist yet */ }
   }
@@ -793,6 +809,9 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     record = { ...record, finishedAt: localIso(finishedAt) };
     try {
       mkdirSync(runDir, { recursive: true });
+      // The copy of the home was the dream's workbench; what it wrote is home or reported by now, and
+      // nothing reads it after the run. Left behind, it grew by a whole home every night.
+      rmSync(path.join(runDir, 'home'), { recursive: true, force: true });
       writeJson(path.join(runDir, 'run.json'), record);
       writeJson(paths.state, { ...readDreamState(env), lastRunAt: base.startedAt, lastRunId: runId, lastStatus: record.status,
         lastAttemptDate: localDate(at) });

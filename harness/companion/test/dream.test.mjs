@@ -492,6 +492,30 @@ test('a child that breaks off after writing brings nothing home', async (t) => {
   assert.equal(readFileSync(path.join(home, 'prompt/user.md'), 'utf8'), '# 사용자\n원래\n');
   assert.ok(!existsSync(path.join(home, 'memory/user.md')));
   assert.equal(readDreamState(env).blocks, undefined);
+  assert.ok(!existsSync(path.join(dreamPaths(env).runs, record.runId, 'home')), 'a failed run leaves no copy of the home behind');
+});
+
+test('the dream copies only text and leaves no copy of the home behind; screenshots under notes/ stay where they are', async (t) => {
+  const env = sandbox(t);
+  const home = env.RUBATO_COMPANION_HOME;
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+  write(env, 'memory/2026-10-20.md', '## 10:05\n하루', at(20, 10, 5));
+  write(env, 'notes/work/plan.md', '할 일');
+  write(env, 'notes/work/screens/01.png', png);
+  let seen;
+  const dreamer = fakeDreamer({
+    edits: { 'memory/self.md': '## 지금\n' },
+    result: { status: 'done', blocks: { distill: 'done' }, changed: ['memory/self.md'], message: '나' },
+    onRun: ({ home: workHome }) => { seen = { text: existsSync(path.join(workHome, 'notes/work/plan.md')), png: existsSync(path.join(workHome, 'notes/work/screens/01.png')) }; },
+  });
+  const record = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.equal(record.status, 'done', JSON.stringify(record));
+  assert.deepEqual(seen, { text: true, png: false }, 'the dream reads the notes, not the screenshots');
+  assert.deepEqual(record.changed, ['memory/self.md'], 'a screenshot the dream never saw is not read as deleted');
+  assert.ok(readFileSync(path.join(home, 'notes/work/screens/01.png')).equals(png));
+  const runDir = path.join(dreamPaths(env).runs, record.runId);
+  assert.ok(existsSync(path.join(runDir, 'run.json')), 'the run record stays');
+  assert.ok(!existsSync(path.join(runDir, 'home')), 'the copy of the home is gone once the run is over');
 });
 
 test('a night with nothing new calls no model, and a second dream waits for the first', async (t) => {
