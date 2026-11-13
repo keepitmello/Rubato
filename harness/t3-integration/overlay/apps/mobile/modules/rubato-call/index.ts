@@ -43,6 +43,9 @@ export interface RubatoCallModule {
   requestEnd(uuid: string): void;
   setMuted(uuid: string, muted: boolean): void;
   setSpeaker(on: boolean): void;
+  getCompanionRenames(): Record<string, string>;
+  setCompanionRename(companionId: string, name: string | null): void;
+  setCompanionIdentity(companionId: string, name: string, avatarBase64: string | null): Promise<void>;
   addListener<E extends keyof RubatoCallEvents>(event: E, listener: RubatoCallEvents[E]): { remove(): void };
 }
 

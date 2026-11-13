@@ -7,7 +7,9 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { useEnvironments } from "../../state/environments";
+import { RubatoCall } from "../../../modules/rubato-call";
 import { callApi, type CallableCompanion } from "./callStore";
+import { companionDisplayName, dataUrlBase64, subscribeCompanionNames, useCompanionNames } from "./companionNames";
 import { postRubato } from "./rubatoHttp";
 
 const COMPANION_ROUTE = "/rubato/companion";
@@ -25,7 +27,10 @@ interface CompanionStatus {
 export interface CompanionEntry {
   readonly environmentId: EnvironmentId;
   readonly id: string;
+  /** The name this phone shows (companionNames.ts: a rename, or 루/세뇨). */
   readonly title: string;
+  /** The name the Mac knows it by. */
+  readonly macTitle: string;
   readonly sessionId: string | null;
   /** The T3 thread that is its room; null until the Mac's app picked its conversation up. */
   readonly threadId: string | null;
@@ -88,6 +93,7 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
         environmentId,
         id: item.id,
         title: item.title || item.id,
+        macTitle: item.title || item.id,
         sessionId: item.sessionId,
         threadId,
         art: arts.get(key) ?? null,
@@ -96,6 +102,22 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
     }),
   );
 }
+
+/** What the native store last got per companion, so a face is written only when it changes. */
+const written = new Map<string, string>();
+
+/** Hands each companion's shown name and face to the call screen and notifications (CompanionIdentity). */
+function writeIdentities(companions: readonly CompanionEntry[]) {
+  if (!RubatoCall) return;
+  for (const companion of companions) {
+    const name = companionDisplayName(companion.id, companion.macTitle);
+    const key = `${name}\u0000${companion.art?.length ?? 0}:${companion.art?.slice(-32) ?? ""}`;
+    if (written.get(companion.id) === key) continue;
+    written.set(companion.id, key);
+    void RubatoCall.setCompanionIdentity(companion.id, name, dataUrlBase64(companion.art)).catch(() => written.delete(companion.id));
+  }
+}
+subscribeCompanionNames(() => writeIdentities(view.companions));
 
 let loading: Promise<void> | null = null;
 
@@ -112,6 +134,7 @@ export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Pro
     });
     const kept = view.companions.filter((item) => !answered.has(item.environmentId) && environmentIds.includes(item.environmentId));
     const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    writeIdentities(fresh);
     publish({
       companions: [...fresh, ...kept],
       loaded: view.loaded || answered.size > 0,
@@ -127,7 +150,14 @@ export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Pro
 export function useCompanions() {
   const { environments } = useEnvironments();
   const environmentIds = useMemo(() => environments.map((item) => item.environmentId), [environments]);
-  const current = useSyncExternalStore(subscribe, () => view);
+  const stored = useSyncExternalStore(subscribe, () => view);
+  const names = useCompanionNames();
+  const current = useMemo(
+    () => ({ ...stored, companions: stored.companions.map((item) => ({ ...item, title: companionDisplayName(item.id, item.macTitle) })) }),
+    // `names` changes when a rename does; the display name reads it.
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies
+    [stored, names],
+  );
   const waiting = current.companions.some((item) => item.sessionId !== null && item.threadId === null);
   const key = environmentIds.join(",");
   useEffect(() => {

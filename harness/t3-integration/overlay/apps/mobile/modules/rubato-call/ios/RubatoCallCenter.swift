@@ -91,7 +91,9 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
   /// Shows a companion's call on the phone. `done(true)` once CallKit shows it, also when it already did.
   func reportIncoming(uuid: UUID, info: [String: Any], done: ((Bool) -> Void)? = nil) {
-    let title = (info["title"] as? String) ?? (info["companion"] as? String) ?? "Rubato"
+    // The name this phone shows for the companion (a rename, or 루/세뇨), not the Mac's.
+    let title = (info["companion"] as? String).flatMap(CompanionIdentity.name(for:))
+      ?? (info["title"] as? String) ?? (info["companion"] as? String) ?? "Rubato"
     let update = CXCallUpdate()
     update.remoteHandle = CXHandle(type: .generic, value: (info["companion"] as? String) ?? title)
     update.localizedCallerName = title
@@ -133,7 +135,8 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
 
   /// The person calls a companion: CallKit shows it as an outgoing call and takes the audio.
   func startOutgoing(uuid: UUID, info: [String: Any], done: @escaping (Error?) -> Void) {
-    let title = (info["title"] as? String) ?? (info["companion"] as? String) ?? "Rubato"
+    let title = (info["companion"] as? String).flatMap(CompanionIdentity.name(for:))
+      ?? (info["title"] as? String) ?? (info["companion"] as? String) ?? "Rubato"
     var call = info
     call["uuid"] = uuid.uuidString.lowercased()
     call["state"] = "connecting"

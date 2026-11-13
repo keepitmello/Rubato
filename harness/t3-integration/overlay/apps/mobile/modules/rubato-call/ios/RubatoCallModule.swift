@@ -70,6 +70,22 @@ public final class RubatoCallModule: Module {
       DispatchQueue.main.async { RubatoCallCenter.shared.requestMute(uuid: id, muted: muted) }
     }
 
+    /// The person's names for companions, by id (CompanionIdentity).
+    Function("getCompanionRenames") { () -> [String: String] in
+      CompanionIdentity.renames()
+    }
+
+    /// A rename; nil or blank goes back to the default name.
+    Function("setCompanionRename") { (companionId: String, name: String?) in
+      CompanionIdentity.setRename(companionId, name)
+    }
+
+    /// The name and face the app shows, for the call screen and notifications; `avatarBase64` is the
+    /// art's bytes, or nil to draw the initial.
+    AsyncFunction("setCompanionIdentity") { (companionId: String, name: String, avatarBase64: String?) in
+      CompanionIdentity.save(companionId, name: name, avatar: avatarBase64.flatMap { Data(base64Encoded: $0) })
+    }
+
     Function("setSpeaker") { (on: Bool) in
       DispatchQueue.main.async { RubatoCallCenter.shared.setSpeaker(on) }
     }

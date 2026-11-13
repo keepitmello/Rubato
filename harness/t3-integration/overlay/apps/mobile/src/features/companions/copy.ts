@@ -44,6 +44,11 @@ const KO = {
   dismiss: "닫기",
   answeredElsewhere: "다른 기기에서 받았어",
   isCalling: "전화가 왔어",
+  companionsSettings: "컴패니언",
+  names: "이름",
+  nameLabel: "이름",
+  namesFooter: "이 폰에서만 보이는 이름이야. 비우면 기본 이름으로 돌아가고, Mac과 데스크탑의 이름은 그대로야.",
+  onTheMac: "Mac에서는",
 };
 
 const EN: typeof KO = {
@@ -86,6 +91,11 @@ const EN: typeof KO = {
   dismiss: "Dismiss",
   answeredElsewhere: "Answered on another device",
   isCalling: "is calling",
+  companionsSettings: "Companions",
+  names: "Names",
+  nameLabel: "name",
+  namesFooter: "Names shown on this phone only. Clear one to go back to the default; the Mac and the desktop keep theirs.",
+  onTheMac: "On the Mac:",
 };
 
 export type CopyKey = keyof typeof KO;

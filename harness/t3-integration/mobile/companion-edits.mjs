@@ -14,6 +14,8 @@ export const mobileCompanionOverlays = [
   `${companions}/index.ts`,
   `${companions}/copy.ts`,
   `${companions}/rubatoHttp.ts`,
+  `${companions}/companionNames.ts`,
+  `${companions}/CompanionNamesSettingsScreen.tsx`,
   `${companions}/companionsStore.ts`,
   `${companions}/callStore.ts`,
   `${companions}/callTypes.ts`,
@@ -36,6 +38,7 @@ export const mobileCompanionOverlays = [
   `${callModule}/expo-module.config.json`,
   `${callModule}/ios/RubatoCall.podspec`,
   `${callModule}/ios/RubatoCallAppDelegateSubscriber.swift`,
+  `${callModule}/ios/CompanionIdentity.swift`,
   `${callModule}/ios/RubatoCallCenter.swift`,
   `${callModule}/ios/RubatoCallModule.swift`,
 ];
