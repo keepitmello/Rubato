@@ -11,17 +11,27 @@
 //
 // The app icon and splash are PNGs, which overlays (text only) cannot carry: build-ios.sh
 // writes apps/mobile/assets/rubato/ from assets/Rubato.png before prebuild.
+import { readFileSync } from 'node:fs';
+
+// T3's mobile theme tests name T3's palettes (grove, iris, t3-chat), which the Rubato library
+// replaced; theme-tests.json moves them onto Rubato's five. Generated with lock-diff.mjs from
+// the pin's files and their edited copies.
+const themeTests = JSON.parse(readFileSync(new URL('./theme-tests.json', import.meta.url), 'utf8'));
 
 export const shellOverlays = [
   'apps/mobile/src/components/rubatoModelGlyph.ts',
   'apps/mobile/src/components/rubatoModelGlyph.test.ts',
   'apps/mobile/src/components/RubatoVendorMark.tsx',
   'apps/mobile/src/features/rubato-shell/companionSurface.tsx',
+  'apps/mobile/src/features/rubato-shell/companionThreads.ts',
+  'apps/mobile/src/features/rubato-shell/companionThreadFilter.ts',
+  'apps/mobile/src/features/rubato-shell/companionThreadFilter.test.ts',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
 
 export const shellEdits = {
+  ...themeTests,
   'apps/mobile/app.config.ts': [
     ['    appName: "T3 Code Dev",\n    scheme: "t3code-dev",\n    iosBundleIdentifier: "com.t3tools.t3code.dev",',
       '    appName: "Rubato Dev",\n    scheme: "rubato-dev",\n    iosBundleIdentifier: "com.keepitmello.rubato.dev",', 'replace'],
@@ -112,11 +122,15 @@ export const shellEdits = {
     ['const TAB_TITLES = {\n  threads: "Threads",', 'const TAB_TITLES = {\n  companions: "Companions",\n  threads: "Threads",', 'replace'],
     ['accessibilityLabel={`T3 Code, ${TAB_TITLES[state.selectedTab]}`}', 'accessibilityLabel={`Rubato, ${TAB_TITLES[state.selectedTab]}`}', 'replace'],
     ['            title="T3 Code"\n', '            title="Rubato"\n', 'replace'],
-    // The companion list draws its own title, like Pickle; the threads tab keeps T3's bar.
-    ['              headerShown: true,\n              unstable_headerLeftItems: () => [],',
-      '              headerShown: state.selectedTab !== "companions",\n              unstable_headerLeftItems: () => [],', 'replace'],
     ['{state.selectedTab === "threads" ? <HomeRouteScreen /> : <PullRequestsScreen />}',
       '{state.selectedTab === "companions" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === "threads" ? (\n            <HomeRouteScreen />\n          ) : (\n            <PullRequestsScreen />\n          )}', 'replace'],
+  ],
+  // Companion conversations live in the Companions tab only (rubato-shell/companionThreads.ts).
+  'apps/mobile/src/features/home/HomeRouteScreen.tsx': [
+    ['import { buildHomeProjectScopes } from "./homeThreadList";\n',
+      'import { buildHomeProjectScopes } from "./homeThreadList";\nimport { useWithoutCompanionThreads } from "../rubato-shell/companionThreads";\n', 'replace'],
+    ['  const threads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );',
+      '  const allThreads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );\n  const threads = useWithoutCompanionThreads(allThreads);', 'replace'],
   ],
   // The companion list has nothing to search.
   'apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx': [
@@ -141,6 +155,16 @@ export const shellEdits = {
       '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://"],', 'replace'],
   ],
 
+  // Themes: the five Rubato library themes the desktop offers (packages/shared rubatoThemes.ts,
+  // reached through BUILT_IN_THEMES), Ocean first and by default; T3's standard palette is not offered.
+  'apps/mobile/src/lib/mobileTheme.ts': [
+    ['export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;\n',
+      'export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;\n/** Rubato: a fresh install, or a saved theme this build lacks, shows Ocean, as the desktop does. */\nexport const RUBATO_DEFAULT_MOBILE_THEME_ID = "ocean" as const;\n', 'replace'],
+    ['  { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },\n  { id: "material-you", label: "Material You" },',
+      '  // Rubato: no "T3 Code" card; the desktop offers only its library themes.\n  { id: "material-you", label: "Material You" },', 'replace'],
+    ['    ? (value as MobileThemeId)\n    : DEFAULT_MOBILE_THEME_ID;',
+      '    ? (value as MobileThemeId)\n    : RUBATO_DEFAULT_MOBILE_THEME_ID;', 'replace'],
+  ],
   // A scheme-only wake-up link (dictation keyboards) is Rubato's scheme now.
   'apps/mobile/src/lib/appLinking.ts': [
     ['!/^t3code(-dev|-preview)?:\\/*$/.test(url)', '!/^rubato(-dev|-preview)?:\\/*$/.test(url)', 'replace'],

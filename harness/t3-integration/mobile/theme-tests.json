@@ -1,0 +1,50 @@
+{
+ "apps/mobile/scripts/generate-uniwind-themes.test.ts": [
+  [
+   "    expect(customThemeNames).toEqual([\n      \"t3-chat-light\",\n      \"t3-chat-dark\",\n      \"grove-light\",\n      \"grove-dark\",\n      \"ocean-light\",\n      \"ocean-dark\",\n      \"ember-light\",\n      \"ember-dark\",\n      \"iris-light\",\n      \"iris-dark\",\n    ]);",
+   "    expect(customThemeNames).toEqual([\n      \"ocean-light\",\n      \"ocean-dark\",\n      \"ink-light\",\n      \"ink-dark\",\n      \"ocean-reverse-light\",\n      \"ocean-reverse-dark\",\n      \"nocturne-light\",\n      \"nocturne-dark\",\n      \"manuscript-light\",\n      \"manuscript-dark\",\n    ]);",
+   "replace"
+  ]
+ ],
+ "apps/mobile/src/lib/mobileTheme.test.ts": [
+  [
+   "\n  it.each([\"grove\", \"ocean\", \"ember\", \"iris\"] as const)(\n    \"keeps %s grouped cards and floating controls visibly tinted\",",
+   "\n  it.each(BUILT_IN_THEME_IDS)(\n    \"keeps %s grouped cards and floating controls visibly tinted\",",
+   "replace"
+  ],
+  [
+   "          );\n          if (appearance === \"dark\") {\n            expect(saturation(surface)).toBeGreaterThanOrEqual(saturation(sheet));\n          }\n        }\n        if (appearance === \"dark\") {\n          expect(saturation(group)).toBeGreaterThanOrEqual(saturation(sheet));",
+   "          );\n          // Saturation order is a rule of T3's palettes, which Ocean keeps; the other Rubato\n          // themes come from the desktop as designed, so for them separation and readability count.\n          if (appearance === \"dark\" && themeId === \"ocean\") {\n            expect(saturation(surface)).toBeGreaterThanOrEqual(saturation(sheet));\n          }\n        }\n        if (appearance === \"dark\" && themeId === \"ocean\") {\n          expect(saturation(group)).toBeGreaterThanOrEqual(saturation(sheet));",
+   "replace"
+  ],
+  [
+   "    expect(normalizeMobileThemeId(\"ocean\")).toBe(\"ocean\");\n    expect(normalizeMobileThemeId(\"missing-theme\")).toBe(DEFAULT_MOBILE_THEME_ID);\n    expect(normalizeMobileThemeMode(\"dark\")).toBe(\"dark\");\n    expect(normalizeMobileThemeMode(\"sepia\")).toBe(\"system\");\n  });\n\n  it(\"migrates one theme choice to both appearances and preserves independent choices\", () => {\n    expect(resolveMobileThemeIds({ themeId: \"grove\" })).toEqual({\n      light: \"grove\",\n      dark: \"grove\",\n    });\n    expect(\n      resolveMobileThemeIds({ themeId: \"grove\", lightThemeId: \"iris\", darkThemeId: \"ocean\" }),\n    ).toEqual({ light: \"iris\", dark: \"ocean\" });\n    expect(resolveMobileThemeIds({ themeId: \"grove\", lightThemeId: \"missing\" })).toEqual({\n      light: DEFAULT_MOBILE_THEME_ID,\n      dark: \"grove\",\n    });",
+   "    expect(normalizeMobileThemeId(\"ocean\")).toBe(\"ocean\");\n    expect(normalizeMobileThemeId(\"missing-theme\")).toBe(\"ocean\");\n    expect(normalizeMobileThemeMode(\"dark\")).toBe(\"dark\");\n    expect(normalizeMobileThemeMode(\"sepia\")).toBe(\"system\");\n  });\n\n  it(\"migrates one theme choice to both appearances and preserves independent choices\", () => {\n    expect(resolveMobileThemeIds({ themeId: \"ink\" })).toEqual({\n      light: \"ink\",\n      dark: \"ink\",\n    });\n    expect(\n      resolveMobileThemeIds({ themeId: \"ink\", lightThemeId: \"nocturne\", darkThemeId: \"ocean\" }),\n    ).toEqual({ light: \"nocturne\", dark: \"ocean\" });\n    expect(resolveMobileThemeIds({ themeId: \"ink\", lightThemeId: \"missing\" })).toEqual({\n      light: \"ocean\",\n      dark: \"ink\",\n    });",
+   "replace"
+  ],
+  [
+   "        ).toBeGreaterThanOrEqual(4.5);\n        expect(variables[\"--color-user-bubble-skill-foreground\"]).not.toBe(\n          variables[\"--color-user-bubble-foreground\"],\n        );\n        const fenceSurface = compositeOver(",
+   "        ).toBeGreaterThanOrEqual(4.5);\n        // Ink is monochrome on the desktop too: its skill mentions keep the text color.\n        if (themeId !== \"ink\") {\n          expect(variables[\"--color-user-bubble-skill-foreground\"]).not.toBe(\n            variables[\"--color-user-bubble-foreground\"],\n          );\n        }\n        const fenceSurface = compositeOver(",
+   "replace"
+  ]
+ ],
+ "apps/mobile/src/lib/mobileThemeRuntime.test.ts": [
+  [
+   "  it(\"maps custom palettes and appearances to registered themes\", () => {\n    expect(getMobileUniwindThemeName(\"t3-chat\", \"dark\")).toBe(\"t3-chat-dark\");\n  });\n\n  it(\"hydrates text variables and clears the native appearance override\", () => {\n    const operations = createMobileThemeRuntimeOperations(null, initialState);\n    const variableOperations = operations.filter(\n      (operation) => operation.kind === \"update-text-variables\",\n    );\n\n    expect(variableOperations).toHaveLength(12);\n    expect(variableOperations.at(-1)?.themeName).toBe(\"iris-dark\");\n    expect(operations.at(-1)).toEqual({",
+   "  it(\"maps custom palettes and appearances to registered themes\", () => {\n    expect(getMobileUniwindThemeName(\"nocturne\", \"dark\")).toBe(\"nocturne-dark\");\n  });\n\n  it(\"hydrates text variables and clears the native appearance override\", () => {\n    const operations = createMobileThemeRuntimeOperations(null, initialState);\n    const variableOperations = operations.filter(\n      (operation) => operation.kind === \"update-text-variables\",\n    );\n\n    expect(variableOperations).toHaveLength(12);\n    expect(variableOperations.at(-1)?.themeName).toBe(\"manuscript-dark\");\n    expect(operations.at(-1)).toEqual({",
+   "replace"
+  ],
+  [
+   "      kind: \"update-text-variables\",\n      themeName: \"iris-dark\",\n    });",
+   "      kind: \"update-text-variables\",\n      themeName: \"manuscript-dark\",\n    });",
+   "replace"
+  ]
+ ],
+ "apps/mobile/src/lib/storage.test.ts": [
+  [
+   "      JSON.stringify({\n        themeId: \"grove\",\n        lightThemeId: \"iris\",\n        darkThemeId: \"ocean\",\n        themeMode: \"system\",\n      }),\n      10,\n    );\n\n    await expect(loadPreferences()).resolves.toEqual({\n      themeId: \"grove\",\n      lightThemeId: \"iris\",\n      darkThemeId: \"ocean\",\n      themeMode: \"system\",\n    });\n  });\n\n  it(\"persists Material You independently for each appearance\", async () => {\n    const themes = { lightThemeId: \"material-you\", darkThemeId: \"ocean\" } as const;\n    await savePreferencesPatch(themes);\n    await expect(loadPreferences()).resolves.toEqual(themes);\n    await savePreferencesPatch({ lightThemeId: \"t3-chat\" });\n    await expect(loadPreferences()).resolves.toEqual({ ...themes, lightThemeId: \"t3-chat\" });\n  });\n\n  it.each([true, false])(\"drops the removed Android layout preference (%s)\", async (enabled) => {\n    mocks.setPreferencesJson(\n      JSON.stringify({\n        materialYouStyleLayoutEnabled: enabled,\n        lightThemeId: \"t3-chat\",\n      }),\n      10,\n    );\n    await expect(loadPreferences()).resolves.toEqual({ lightThemeId: \"t3-chat\" });\n  });",
+   "      JSON.stringify({\n        themeId: \"ink\",\n        lightThemeId: \"nocturne\",\n        darkThemeId: \"ocean\",\n        themeMode: \"system\",\n      }),\n      10,\n    );\n\n    await expect(loadPreferences()).resolves.toEqual({\n      themeId: \"ink\",\n      lightThemeId: \"nocturne\",\n      darkThemeId: \"ocean\",\n      themeMode: \"system\",\n    });\n  });\n\n  it(\"persists Material You independently for each appearance\", async () => {\n    const themes = { lightThemeId: \"material-you\", darkThemeId: \"ocean\" } as const;\n    await savePreferencesPatch(themes);\n    await expect(loadPreferences()).resolves.toEqual(themes);\n    await savePreferencesPatch({ lightThemeId: \"manuscript\" });\n    await expect(loadPreferences()).resolves.toEqual({ ...themes, lightThemeId: \"manuscript\" });\n  });\n\n  it.each([true, false])(\"drops the removed Android layout preference (%s)\", async (enabled) => {\n    mocks.setPreferencesJson(\n      JSON.stringify({\n        materialYouStyleLayoutEnabled: enabled,\n        lightThemeId: \"manuscript\",\n      }),\n      10,\n    );\n    await expect(loadPreferences()).resolves.toEqual({ lightThemeId: \"manuscript\" });\n  });",
+   "replace"
+  ]
+ ]
+}

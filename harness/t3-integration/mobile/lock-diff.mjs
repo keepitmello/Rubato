@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// Turns a lockfile change into apply.mjs edits, for packages the iPhone app adds.
+// Turns a change to a T3 text file into apply.mjs edits: the lockfile for packages the iPhone
+// app adds, and any file whose change is too scattered to anchor by hand (theme-tests.json).
 //
 //   node lock-diff.mjs BASE.yaml NEW.yaml PIN.yaml > deps-lock.json
 //
