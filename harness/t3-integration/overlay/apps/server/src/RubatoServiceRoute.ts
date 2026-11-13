@@ -179,3 +179,13 @@ export const rubatoStatsRouteLayer = serviceRouteLayer({
   handler: "handleStatsRequest",
   name: "stats",
 });
+
+// Voice calls with companions: the person dials, answers, declines and hangs up; the call service
+// in harness/companion/call-agent owns the calls (src/call/service.mjs, call-edits.mjs).
+export const rubatoCallRouteLayer = serviceRouteLayer({
+  route: "/rubato/call",
+  file: "call/service.mjs",
+  service: "callService",
+  handler: "handleCallRequest",
+  name: "call",
+});

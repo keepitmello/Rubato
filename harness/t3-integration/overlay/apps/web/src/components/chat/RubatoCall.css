@@ -1,0 +1,181 @@
+/* Voice calls with companions: the card in a room (RubatoCallCard.tsx) and the ringing sheet and
+   in-call bar over the app (RubatoCallLayer.tsx), in the room's own colors (RubatoSegnoChat.css). */
+
+[data-rubato-call-card] {
+  align-self: flex-start;
+  width: min(22rem, calc(100% - 2.5rem));
+  margin: 0.7rem 0 0 8px;
+  border-radius: 1.15rem;
+  background: var(--rubato-segno, color-mix(in oklab, var(--muted) 82%, transparent));
+  color: var(--foreground);
+  overflow: hidden;
+}
+[data-rubato-call-card] > button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.9rem;
+  text-align: start;
+  cursor: pointer;
+}
+[data-rubato-call-icon] {
+  display: grid;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: 0.8rem;
+  background: color-mix(in oklab, var(--background) 70%, transparent);
+}
+[data-rubato-call-card][data-status="missed"] [data-rubato-call-icon],
+[data-rubato-call-card][data-status="declined"] [data-rubato-call-icon] {
+  color: var(--destructive);
+}
+[data-rubato-call-title] {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+[data-rubato-call-sub] {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+[data-rubato-call-length] {
+  margin-inline-start: auto;
+  font-size: 0.9rem;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+/* The transcript, opened in place: the call's own small chat. */
+[data-rubato-call-transcript] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  margin: 0 0.45rem 0.45rem;
+  padding: 0.6rem;
+  border-radius: 0.9rem;
+  background: var(--background);
+}
+[data-rubato-call-line] {
+  max-width: 85%;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.8rem;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+[data-rubato-call-line][data-who="me"] {
+  align-self: flex-end;
+  background: color-mix(in oklab, var(--primary) 18%, transparent);
+}
+[data-rubato-call-line][data-who="companion"] {
+  align-self: flex-start;
+  background: color-mix(in oklab, var(--muted) 80%, transparent);
+}
+[data-rubato-call-empty] {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+}
+
+/* ---- Over the app ---- */
+[data-rubato-call-layer] {
+  position: fixed;
+  z-index: 60;
+  inset-inline: 0;
+  top: 0.9rem;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+[data-rubato-call-sheet] {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  min-width: min(26rem, calc(100vw - 2rem));
+  padding: 0.75rem 0.85rem;
+  border-radius: 1.4rem;
+  background: color-mix(in oklab, var(--popover) 92%, transparent);
+  color: var(--popover-foreground);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.22), 0 0 0 1px color-mix(in oklab, var(--border) 80%, transparent);
+  backdrop-filter: blur(18px);
+}
+[data-rubato-call-sheet][data-ringing] {
+  animation: rubato-call-arrive 0.28s ease-out;
+}
+@keyframes rubato-call-arrive {
+  from { transform: translateY(-1rem); opacity: 0; }
+}
+[data-rubato-call-avatar] {
+  flex: none;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 999px;
+  object-fit: cover;
+  object-position: top;
+  background: var(--muted);
+}
+[data-rubato-call-who] {
+  flex: 1;
+  min-width: 0;
+}
+[data-rubato-call-name] {
+  font-weight: 600;
+}
+[data-rubato-call-what] {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+[data-rubato-call-round] {
+  display: grid;
+  flex: none;
+  width: 2.6rem;
+  height: 2.6rem;
+  place-items: center;
+  border-radius: 999px;
+  color: white;
+  cursor: pointer;
+}
+[data-rubato-call-round][data-kind="answer"] { background: #1fb855; }
+[data-rubato-call-round][data-kind="hangup"] { background: #e5484d; }
+[data-rubato-call-round][data-kind="mute"] {
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--muted) 90%, transparent);
+}
+[data-rubato-call-round][data-kind="mute"][aria-pressed="true"] {
+  color: var(--background);
+  background: var(--foreground);
+}
+/* The last thing said, under the name while the call is on. */
+[data-rubato-call-caption] {
+  font-size: 0.8rem;
+  color: var(--muted-foreground);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+[data-rubato-call-dial] {
+  position: absolute;
+  z-index: 25;
+  top: 0.7rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+[data-rubato-call-dial]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}

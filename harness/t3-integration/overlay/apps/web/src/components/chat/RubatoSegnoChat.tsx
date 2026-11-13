@@ -42,7 +42,7 @@ import {
 
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, PhoneIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -83,6 +83,9 @@ import {
   type SegnoChatMessageInput,
 } from "./rubatoSegnoRoom";
 import "./RubatoSegnoChat.css";
+import { RubatoCallCard } from "./RubatoCallCard";
+import { callPlacement, withoutCallSpeech } from "./rubatoCallRoom";
+import { rubatoCallActions, useRoomCalls, useRubatoCall } from "../../state/rubatoCall";
 
 /** Closer to the end than this, the room follows new bubbles down. */
 const FOLLOW_PX = 64;
@@ -396,7 +399,13 @@ export function RubatoSegnoChat(props: {
    */
   onRewind?: ((messageId: MessageId) => void) | undefined;
 }) {
-  const items = useMemo(() => segnoChatItems(messagesOf(props.entries)), [props.entries]);
+  const companionChoice = useRubatoCompanion().companions.find((item) => item.threadId === props.threadId);
+  const companionId = companionChoice?.id;
+  // A call's card replaces the person's call speech the thread kept (rubatoCallRoom.ts).
+  const { calls, callable } = useRoomCalls(props.environmentId ?? null, companionId);
+  const onCall = useRubatoCall().current !== null;
+  const items = useMemo(() => segnoChatItems(withoutCallSpeech(messagesOf(props.entries), calls)), [props.entries, calls]);
+  const placement = useMemo(() => callPlacement(items, calls), [items, calls]);
   const messageById = useMemo(() => {
     const byId = new Map<string, ChatMessage>();
     for (const entry of props.entries) if (entry.kind === "message") byId.set(entry.message.id, entry.message);
@@ -404,7 +413,6 @@ export function RubatoSegnoChat(props: {
   }, [props.entries]);
   const writing = segnoIsWriting(items, props.working);
   const locale = useLocale();
-  const companionId = useRubatoCompanion().companions.find((item) => item.threadId === props.threadId)?.id;
   const partial = props.historyControls?.hasMoreHistory === true;
   const spans = useMemo(() => segnoSpans(items, { writing: props.working, partial }), [items, props.working, partial]);
   const summaries = useSegnoSpanSummaries({
@@ -741,6 +749,19 @@ export function RubatoSegnoChat(props: {
 
   return (
     <div data-rubato-segno-room="" className="relative flex min-h-0 flex-1 flex-col">
+    {companionId && callable && !onCall ? (
+      <button
+        type="button"
+        data-rubato-call-dial=""
+        className="surface-glass"
+        disabled={!callable.ready}
+        title={callable.ready ? undefined : callable.reason}
+        onClick={() => void rubatoCallActions.dial(props.environmentId ?? null, companionId)}
+      >
+        <PhoneIcon className="size-3.5" />
+        <span>Start a call</span>
+      </button>
+    ) : null}
     <div
       ref={scroller}
       onScroll={onScroll}
@@ -779,6 +800,9 @@ export function RubatoSegnoChat(props: {
           const separated = items[index - 1]?.kind === "separator";
           const place = spans.before.get(item.id);
           return [
+            ...(placement.before.get(item.id) ?? []).map((call) => (
+              <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
+            )),
             item.side === "segno" || !separated ? spanLine(place, `span:${item.id}`) : null,
             <Bubble
               key={item.id}
@@ -799,6 +823,9 @@ export function RubatoSegnoChat(props: {
         ))}
         {writing ? <Writing /> : null}
         {spanLine(spans.tail, "span:tail")}
+        {placement.tail.map((call) => (
+          <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
+        ))}
       </div>
     </div>
     <RubatoTimelineRail

@@ -40,6 +40,7 @@ import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
 import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from './route-tree-edits.mjs';
 import { statsEdits, statsOverlays } from './stats-edits.mjs';
+import { callEdits, callOverlays } from './call-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
 import { legacyImportEdits, legacyImportOverlays } from './legacy-import-edits.mjs';
 import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
@@ -1666,6 +1667,11 @@ for (const [relative, changes] of Object.entries(phoneEdits)) {
 // The Stats page (stats-edits.mjs) anchors on the phone edits above.
 overlays.push(...statsOverlays);
 for (const [relative, changes] of Object.entries(statsEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Voice calls with companions (call-edits.mjs): the server route and the root's call layer.
+overlays.push(...callOverlays);
+for (const [relative, changes] of Object.entries(callEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The settings pages above (memory, permissions, phone, scheduled, stats) and the Settings layout's
