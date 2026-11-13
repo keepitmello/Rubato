@@ -1,5 +1,7 @@
-// A companion's room (user 3ec923c9, in the style of Pickle): its face and name at the top, the
-// conversation as bubbles with each call as a card, and a composer with dictation and a call button.
+// A companion's room: its face and name at the top, the conversation as bubbles with each call as a
+// card, and a composer with dictation and a call button (user 3ec923c9; Pickle is the reference for
+// layout and finish, the look is iOS Liquid Glass in the user's theme, intent rubato-ios-app rev 2).
+// The header and composer float on glass over the conversation, which fades under them.
 // The room is the companion's T3 thread; sending goes through the thread's own composer state, so a
 // message queued while the companion works behaves as in any thread.
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
@@ -12,6 +14,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
+import { GlassSurface } from "../../components/GlassSurface";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
@@ -21,6 +24,8 @@ import { callActions, callApi, useCallView, type CallRecord } from "./callStore"
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
+import { EdgeFade } from "./EdgeFade";
+import { GlassIconButton } from "./GlassIconButton";
 import { companionIsWriting, roomItems, type RoomItem, type RoomMessageInput } from "./roomModel";
 
 export type CompanionRoomParams = {
@@ -28,9 +33,6 @@ export type CompanionRoomParams = {
   readonly environmentId?: string;
   readonly threadId?: string;
 };
-
-const ME_BUBBLE = "bg-[#7BE383]";
-const COMPANION_BUBBLE = "bg-grouped-card";
 
 const separatorFormat = new Intl.DateTimeFormat(phoneLocale(), { month: "long", day: "numeric", weekday: "short" });
 const timeFormat = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
@@ -64,25 +66,32 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
   return calls;
 }
 
-function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly title: string; readonly onBack: () => void }) {
+function RoomHeader(props: {
+  readonly companion: CompanionEntry | null;
+  readonly title: string;
+  readonly onBack: () => void;
+  readonly onHeight: (height: number) => void;
+}) {
   const insets = useSafeAreaInsets();
+  const [height, setHeight] = useState(insets.top + 104);
   return (
-    <View className="items-center bg-screen" style={{ paddingTop: insets.top + 6, paddingBottom: 6 }}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={copy.back}
-        onPress={props.onBack}
-        className="absolute left-4 h-11 w-11 items-center justify-center rounded-full border border-border bg-screen active:opacity-70"
-        style={{ top: insets.top + 16, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
-      >
-        <SymbolView name="chevron.left" size={18} tintColorClassName="accent-foreground" />
-      </Pressable>
-      <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={64} ring />
-      <View
-        className="-mt-2 rounded-full border border-border bg-screen px-3 py-1"
-        style={{ shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 6, shadowOffset: { width: 0, height: 2 } }}
-      >
-        <Text className="font-t3-bold text-[15px] text-foreground">{props.title}</Text>
+    <View
+      pointerEvents="box-none"
+      style={{ position: "absolute", top: 0, left: 0, right: 0 }}
+      onLayout={(event) => {
+        setHeight(event.nativeEvent.layout.height);
+        props.onHeight(event.nativeEvent.layout.height);
+      }}
+    >
+      <EdgeFade edge="top" height={height + 28} solid={0.6} />
+      <View pointerEvents="box-none" className="items-center" style={{ paddingTop: insets.top + 2, paddingBottom: 8 }}>
+        <View style={{ position: "absolute", left: 16, top: insets.top + 12 }}>
+          <GlassIconButton label={copy.back} icon="chevron.left" onPress={props.onBack} />
+        </View>
+        <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={60} ring />
+        <GlassSurface className="-mt-2.5" style={{ borderRadius: 16 }}>
+          <Text className="px-3 py-1 font-t3-bold text-[14px] text-foreground">{props.title}</Text>
+        </GlassSurface>
       </View>
     </View>
   );
@@ -101,7 +110,7 @@ function WritingDots() {
     return () => loop.stop();
   }, [pulse]);
   return (
-    <View accessibilityLabel={copy.writing} className={`mt-1 self-start rounded-[22px] px-4 py-3 ${COMPANION_BUBBLE}`}>
+    <View accessibilityLabel={copy.writing} className="mt-1.5 self-start rounded-[20px] bg-grouped-card px-4 py-2.5">
       <Animated.Text style={{ opacity: pulse, letterSpacing: 3 }} className="text-[18px] text-foreground-muted">
         •••
       </Animated.Text>
@@ -112,27 +121,27 @@ function WritingDots() {
 function RoomRow(props: { readonly item: RoomItem; readonly companion: CompanionEntry | null; readonly title: string }) {
   const { item } = props;
   if (item.kind === "separator")
-    return <Text className="my-3 text-center text-[12px] text-foreground-muted">{separatorText(item.at)}</Text>;
+    return <Text className="mb-1 mt-4 text-center text-[12px] font-t3-bold text-foreground-muted">{separatorText(item.at)}</Text>;
   if (item.kind === "call")
     return (
-      <View className={item.call.status === "ringing" ? "mt-2 opacity-70" : "mt-2"}>
+      <View className={item.call.status === "ringing" ? "mt-2.5 opacity-70" : "mt-2.5"}>
         <CallCard call={item.call} title={props.title} art={props.companion?.art ?? null} />
       </View>
     );
   const mine = item.side === "me";
   return (
     <View
-      className={`${mine ? "self-end" : "self-start"} rounded-[22px] px-4 py-3 ${mine ? ME_BUBBLE : COMPANION_BUBBLE}`}
+      className={mine ? "self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5" : "self-start rounded-[20px] bg-grouped-card px-3.5 py-2.5"}
       style={{
         maxWidth: "80%",
-        marginTop: item.groupStart ? 10 : 3,
+        marginTop: item.groupStart ? 10 : 2,
         ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
       }}
     >
       {mine || !item.text ? (
         <Text
           selectable
-          className={mine ? "text-[16px] leading-[22px] text-[#0E2A14]" : "text-[16px] leading-[22px] text-foreground"}
+          className={mine ? "text-[16px] leading-[22px] text-user-bubble-foreground" : "text-[16px] leading-[22px] text-foreground"}
         >
           {item.text || (item.streaming ? "…" : "")}
         </Text>
@@ -151,9 +160,11 @@ function RoomComposer(props: {
   readonly onCall: () => void;
   readonly ownerKey: string | null;
   readonly title: string;
+  readonly onHeight: (height: number) => void;
 }) {
   const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState({ start: props.draft.length, end: props.draft.length });
+  const [height, setHeight] = useState(insets.bottom + 64);
   const draftRef = useRef(props.draft);
   draftRef.current = props.draft;
   const watchers = useRef(new Set<() => void>());
@@ -175,54 +186,63 @@ function RoomComposer(props: {
   const listening = dictation.state.phase !== "idle" && dictation.state.phase !== "error";
   const hasText = props.draft.trim().length > 0;
   return (
-    <View className="px-3" style={{ paddingBottom: Math.max(insets.bottom, 10) }}>
-      <View
-        className="flex-row items-end gap-1 rounded-[30px] border border-border bg-screen py-1.5 pl-4 pr-1.5"
-        style={{ shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 14, shadowOffset: { width: 0, height: 4 } }}
-      >
-        <TextInput
-          value={props.draft}
-          onChangeText={props.onChange}
-          selection={selection}
-          onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-          editable={!dictation.freezesEditor}
-          placeholder={copy.placeholder}
-          multiline
-          className="min-h-[44px] flex-1 py-[11px] text-[16px] text-foreground"
-          placeholderTextColorClassName="accent-foreground-muted"
-          style={{ maxHeight: 140 }}
-        />
-        {hasText && !listening ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={copy.send}
-            onPress={props.onSend}
-            disabled={dictation.blocksSubmission}
-            className="h-11 w-11 items-center justify-center rounded-full bg-[#7BE383] active:opacity-70"
-          >
-            <SymbolView name="arrow.up" size={18} tintColor="#0E2A14" />
-          </Pressable>
-        ) : dictation.isAvailable ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={copy.dictate}
-            onPress={listening ? () => void dictation.stop() : dictation.start}
-            className="h-11 w-11 items-center justify-center rounded-full active:opacity-60"
-          >
-            <SymbolView
-              name={{ ios: listening ? "stop.circle.fill" : "mic", android: "smartphone" }}
-              size={22}
-              {...(listening ? { tintColor: "#E5484D" } : { tintColorClassName: "accent-foreground" })}
+    <View
+      pointerEvents="box-none"
+      style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+      onLayout={(event) => {
+        setHeight(event.nativeEvent.layout.height);
+        props.onHeight(event.nativeEvent.layout.height);
+      }}
+    >
+      <EdgeFade edge="bottom" height={height + 20} solid={0.35} />
+      <View className="flex-row items-end gap-2 px-3" style={{ paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6 }}>
+        <GlassSurface className="min-w-0 flex-1" style={{ borderRadius: 24, minHeight: 48 }}>
+          <View className="flex-row items-end pl-4 pr-1">
+            <TextInput
+              value={props.draft}
+              onChangeText={props.onChange}
+              selection={selection}
+              onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+              editable={!dictation.freezesEditor}
+              placeholder={copy.placeholder}
+              multiline
+              className="min-h-[48px] flex-1 py-[13px] text-[16px] leading-[21px] text-foreground"
+              placeholderTextColorClassName="accent-foreground-muted"
+              style={{ maxHeight: 140 }}
             />
-          </Pressable>
-        ) : null}
+            {hasText && !listening ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={copy.send}
+                onPress={props.onSend}
+                disabled={dictation.blocksSubmission}
+                className="mb-[7px] h-[34px] w-[34px] items-center justify-center rounded-full bg-primary active:opacity-70"
+              >
+                <SymbolView name="arrow.up" size={16} weight="bold" tintColorClassName="accent-primary-foreground" />
+              </Pressable>
+            ) : dictation.isAvailable ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={copy.dictate}
+                onPress={listening ? () => void dictation.stop() : dictation.start}
+                className="mb-[7px] h-[34px] w-[34px] items-center justify-center rounded-full active:opacity-60"
+              >
+                <SymbolView
+                  name={{ ios: listening ? "stop.circle.fill" : "mic", android: "smartphone" }}
+                  size={20}
+                  {...(listening ? { tintColor: "#FF3B30" } : { tintColorClassName: "accent-foreground-muted" })}
+                />
+              </Pressable>
+            ) : null}
+          </View>
+        </GlassSurface>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={props.canCall ? copy.call : copy.cannotCall}
           onPress={props.onCall}
-          className={props.canCall ? "h-11 w-11 items-center justify-center rounded-full bg-foreground active:opacity-70" : "h-11 w-11 items-center justify-center rounded-full bg-foreground opacity-30"}
+          className={props.canCall ? "h-12 w-12 items-center justify-center rounded-full bg-primary active:opacity-70" : "h-12 w-12 items-center justify-center rounded-full bg-primary opacity-35"}
         >
-          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={18} tintColorClassName="accent-screen" />
+          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={19} tintColorClassName="accent-primary-foreground" />
         </Pressable>
       </View>
     </View>
@@ -230,8 +250,14 @@ function RoomComposer(props: {
 }
 
 /** The room once its thread is known: route params carry environmentId and threadId. */
-function RoomBody(props: { readonly companion: CompanionEntry | null; readonly companionId: string; readonly environmentId: EnvironmentId }) {
+function RoomBody(props: {
+  readonly companion: CompanionEntry | null;
+  readonly companionId: string;
+  readonly environmentId: EnvironmentId;
+  readonly headerHeight: number;
+}) {
   const composer = useThreadComposerState();
+  const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
   const messages = useMemo<RoomMessageInput[]>(
@@ -256,13 +282,18 @@ function RoomBody(props: { readonly companion: CompanionEntry | null; readonly c
   }, [callable, props.environmentId, props.companionId, title]);
   return (
     <>
+      {/* Inverted: the header component sits at the bottom, the footer at the top. */}
       <FlatList
         inverted
         data={reversed}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => <RoomRow item={item} companion={props.companion} title={title} />}
-        ListHeaderComponent={writing ? <WritingDots /> : undefined}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 12 }}
+        ListHeaderComponent={
+          <View style={{ paddingBottom: composerHeight + 6 }}>{writing ? <WritingDots /> : null}</View>
+        }
+        ListFooterComponent={<View style={{ height: props.headerHeight + 8 }} />}
+        contentContainerStyle={{ paddingHorizontal: 14 }}
+        scrollIndicatorInsets={{ top: composerHeight, bottom: props.headerHeight }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
       />
@@ -274,6 +305,7 @@ function RoomBody(props: { readonly companion: CompanionEntry | null; readonly c
         onCall={call}
         ownerKey={composer.composerDraftKey ?? null}
         title={title}
+        onHeight={setComposerHeight}
       />
     </>
   );
@@ -282,6 +314,8 @@ function RoomBody(props: { readonly companion: CompanionEntry | null; readonly c
 export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParams>) {
   const route = useRoute<RouteProp<Record<string, CompanionRoomParams>>>();
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const [headerHeight, setHeaderHeight] = useState(insets.top + 104);
   const { companionId, environmentId, threadId } = route.params;
   const { companion, loaded } = useCompanion(companionId, environmentId);
   // A room opened by name (a call, a link) learns its Mac and thread once the list knows them.
@@ -294,9 +328,13 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   const back = () => (navigation.canGoBack() ? navigation.goBack() : undefined);
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
-      <RoomHeader companion={companion} title={title} onBack={back} />
       {environmentId && threadId ? (
-        <RoomBody companion={companion} companionId={companionId} environmentId={environmentId as EnvironmentId} />
+        <RoomBody
+          companion={companion}
+          companionId={companionId}
+          environmentId={environmentId as EnvironmentId}
+          headerHeight={headerHeight}
+        />
       ) : loaded && companion && !companion.threadId ? (
         <View className="flex-1 justify-center">
           <EmptyState variant="plain" title={copy.roomMissing} detail={copy.roomMissingDetail} />
@@ -304,6 +342,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       ) : (
         <LoadingScreen message={copy.roomLoading} />
       )}
+      <RoomHeader companion={companion} title={title} onBack={back} onHeight={setHeaderHeight} />
     </KeyboardAvoidingView>
   );
 }

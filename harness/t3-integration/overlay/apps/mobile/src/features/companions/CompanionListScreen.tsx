@@ -6,12 +6,12 @@ import { useMemo } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { buildThreadFeed } from "../../lib/threadActivity";
 import { useThreadDetail, useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { CompanionAvatar } from "./CompanionAvatar";
+import { GlassIconButton } from "./GlassIconButton";
 import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
@@ -93,18 +93,11 @@ export function CompanionListScreen() {
         ListHeaderComponent={
           <View className="flex-row items-center justify-between px-5 pb-3 pt-2">
             <Text className="font-t3-bold text-[32px] text-foreground">{copy.chats}</Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={copy.settings}
-              onPress={openSettings}
-              hitSlop={8}
-              className="h-10 w-10 items-center justify-center rounded-full active:opacity-60"
-            >
-              <SymbolView name={{ ios: "gearshape", android: "smartphone" }} size={22} tintColorClassName="accent-foreground" />
-            </Pressable>
+            <GlassIconButton label={copy.settings} icon="gearshape" onPress={openSettings} />
           </View>
         }
         renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
+        ItemSeparatorComponent={() => <View className="h-[0.5px] bg-border" style={{ marginLeft: 90 }} />}
         ListEmptyComponent={
           <View className="flex-1 justify-center pb-24">
             {!paired ? (

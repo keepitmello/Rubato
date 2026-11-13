@@ -73,10 +73,15 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
         : null;
       const key = `${environmentId}:${item.id}`;
       if (!arts.has(key)) {
-        const art = await companionCall<{ art: { url: string } | null }>(environmentId, "art", {
-          companionId: item.id,
-          state: "idle",
-        }).then((answer) => answer.art?.url ?? null, () => undefined);
+        // The face the Mac keeps for phones; a Mac without it answers its stage art instead.
+        const art = await companionCall<{ avatar: { url: string } | null }>(environmentId, "avatar", { companionId: item.id }).then(
+          (answer) => answer.avatar?.url ?? null,
+          () =>
+            companionCall<{ art: { url: string } | null }>(environmentId, "art", { companionId: item.id, state: "idle" }).then(
+              (answer) => answer.art?.url ?? null,
+              () => undefined,
+            ),
+        );
         if (art !== undefined) arts.set(key, art);
       }
       return {

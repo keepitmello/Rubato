@@ -23,6 +23,8 @@ export const mobileCompanionOverlays = [
   `${companions}/roomModel.test.ts`,
   `${companions}/BubbleMarkdown.tsx`,
   `${companions}/CompanionAvatar.tsx`,
+  `${companions}/EdgeFade.tsx`,
+  `${companions}/GlassIconButton.tsx`,
   `${companions}/CallCard.tsx`,
   `${companions}/CallScreen.tsx`,
   `${companions}/CompanionListScreen.tsx`,
