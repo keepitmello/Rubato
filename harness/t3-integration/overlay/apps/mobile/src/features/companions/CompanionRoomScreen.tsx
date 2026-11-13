@@ -4,20 +4,27 @@
 // The header and composer float on glass over the conversation, which fades under them.
 // The room is the companion's T3 thread; sending goes through the thread's own composer state, so a
 // message queued while the companion works behaves as in any thread.
+import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, FlatList, Pressable, TextInput, View } from "react-native";
+import { BlurView } from "expo-blur";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Alert, Animated, FlatList, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
-import { GlassSurface } from "../../components/GlassSurface";
+import { ComposerActionButton } from "../../components/ComposerToolbar";
 import { LoadingScreen } from "../../components/LoadingScreen";
+import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
+import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
+import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
+import { ComposerSurface } from "../threads/ThreadComposer";
+import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
@@ -25,7 +32,6 @@ import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
-import { GlassIconButton } from "./GlassIconButton";
 import { companionIsWriting, roomItems, type RoomItem, type RoomMessageInput } from "./roomModel";
 
 export type CompanionRoomParams = {
@@ -66,32 +72,36 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
   return calls;
 }
 
-function RoomHeader(props: {
-  readonly companion: CompanionEntry | null;
-  readonly title: string;
-  readonly onBack: () => void;
-  readonly onHeight: (height: number) => void;
-}) {
-  const insets = useSafeAreaInsets();
-  const [height, setHeight] = useState(insets.top + 104);
+/**
+ * The room's title in the native bar, the same bar a thread has: the companion's face over its
+ * name, sized to the bar (Pickle's centered layout at the thread title's scale).
+ */
+function RoomTitle(props: { readonly companion: CompanionEntry | null; readonly title: string }) {
   return (
-    <View
-      pointerEvents="box-none"
-      style={{ position: "absolute", top: 0, left: 0, right: 0 }}
-      onLayout={(event) => {
-        setHeight(event.nativeEvent.layout.height);
-        props.onHeight(event.nativeEvent.layout.height);
-      }}
-    >
-      <EdgeFade edge="top" height={height + 24} solid={(height - 4) / (height + 24)} />
-      <View pointerEvents="box-none" className="items-center" style={{ paddingTop: insets.top + 2, paddingBottom: 8 }}>
-        <View style={{ position: "absolute", left: 16, top: insets.top + 12 }}>
-          <GlassIconButton label={copy.back} icon="chevron.left" onPress={props.onBack} />
-        </View>
-        <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={60} ring />
-        <GlassSurface className="-mt-2.5" style={{ borderRadius: 16 }}>
-          <Text className="px-3 py-1 font-t3-bold text-[14px] text-foreground">{props.title}</Text>
-        </GlassSurface>
+    <View className="items-center" accessibilityRole="header" accessibilityLabel={props.title}>
+      <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={28} />
+      <Text numberOfLines={1} className="mt-0.5 font-t3-bold text-[12px] leading-[14px] text-foreground">
+        {props.title}
+      </Text>
+    </View>
+  );
+}
+
+/**
+ * The blurred band under the transparent bar, as threads get it from UIKit's scroll edge: the
+ * conversation blurs out under the bar, then a short fade meets the screen color.
+ */
+function HeaderBand(props: { readonly height: number }) {
+  const { themeAppearance } = useAppearancePreferences();
+  return (
+    <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: props.height + 14 }}>
+      <BlurView
+        intensity={70}
+        tint={themeAppearance === "dark" ? "systemChromeMaterialDark" : "systemChromeMaterialLight"}
+        style={{ position: "absolute", top: 0, left: 0, right: 0, height: props.height }}
+      />
+      <View style={{ position: "absolute", top: props.height, left: 0, right: 0 }}>
+        <EdgeFade edge="top" height={14} solid={0} />
       </View>
     </View>
   );
@@ -118,7 +128,12 @@ function WritingDots() {
   );
 }
 
-function RoomRow(props: { readonly item: RoomItem; readonly companion: CompanionEntry | null; readonly title: string }) {
+function RoomRow(props: {
+  readonly item: RoomItem;
+  readonly companion: CompanionEntry | null;
+  readonly title: string;
+  readonly body: { readonly fontSize: number; readonly lineHeight: number };
+}) {
   const { item } = props;
   if (item.kind === "separator")
     return <Text className="mb-1 mt-4 text-center text-[12px] font-t3-bold text-foreground-muted">{separatorText(item.at)}</Text>;
@@ -139,19 +154,20 @@ function RoomRow(props: { readonly item: RoomItem; readonly companion: Companion
       }}
     >
       {mine || !item.text ? (
-        <Text
-          selectable
-          className={mine ? "text-[16px] leading-[22px] text-user-bubble-foreground" : "text-[16px] leading-[22px] text-foreground"}
-        >
+        <Text selectable className={mine ? "text-user-bubble-foreground" : "text-foreground"} style={props.body}>
           {item.text || (item.streaming ? "…" : "")}
         </Text>
       ) : (
-        <BubbleMarkdown markdown={item.text} />
+        <BubbleMarkdown markdown={item.text} body={props.body} />
       )}
     </View>
   );
 }
 
+/**
+ * The thread composer's shell (ComposerSurface, its 44 pt action slots and dictation control) with
+ * the room's one difference: an empty field offers the call where a thread offers send.
+ */
 function RoomComposer(props: {
   readonly draft: string;
   readonly onChange: (text: string) => void;
@@ -160,6 +176,7 @@ function RoomComposer(props: {
   readonly onCall: () => void;
   readonly ownerKey: string | null;
   readonly title: string;
+  readonly body: { readonly fontSize: number; readonly lineHeight: number };
   readonly onHeight: (height: number) => void;
 }) {
   const insets = useSafeAreaInsets();
@@ -183,7 +200,7 @@ function RoomComposer(props: {
     onChangeDraftMessage: props.onChange,
     onChangeSelection: setSelection,
   });
-  const listening = dictation.state.phase !== "idle" && dictation.state.phase !== "error";
+  const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
   const hasText = props.draft.trim().length > 0;
   return (
     <View
@@ -194,10 +211,10 @@ function RoomComposer(props: {
         props.onHeight(event.nativeEvent.layout.height);
       }}
     >
-      <EdgeFade edge="bottom" height={height + 20} solid={0.35} />
-      <View className="flex-row items-end gap-2 px-3" style={{ paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6 }}>
-        <GlassSurface className="min-w-0 flex-1" style={{ borderRadius: 24, minHeight: 48 }}>
-          <View className="flex-row items-end pl-4 pr-1">
+      <EdgeFade edge="bottom" height={height + 16} solid={0.3} />
+      <View className="px-4" style={{ paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6 }}>
+        <ComposerSurface style={{ borderRadius: 27, overflow: "hidden", paddingVertical: 2 }}>
+          <View className="flex-row items-center pl-4">
             <TextInput
               value={props.draft}
               onChangeText={props.onChange}
@@ -206,44 +223,36 @@ function RoomComposer(props: {
               editable={!dictation.freezesEditor}
               placeholder={copy.placeholder}
               multiline
-              className="min-h-[48px] flex-1 py-[13px] text-[16px] leading-[21px] text-foreground"
+              className="min-w-0 flex-1 text-foreground"
               placeholderTextColorClassName="accent-foreground-muted"
-              style={{ maxHeight: 140 }}
+              style={{ ...props.body, minHeight: 36, maxHeight: 140, paddingTop: 8, paddingBottom: 8 }}
             />
-            {hasText && !listening ? (
-              <Pressable
-                accessibilityRole="button"
+            <ComposerDictationPrimaryAction
+              state={dictation.state}
+              presentation={presentation}
+              isAvailable={dictation.isAvailable}
+              onStart={dictation.start}
+              onConfirm={() => void dictation.stop()}
+              onCancel={dictation.cancel}
+            />
+            {hasText ? (
+              <ComposerActionButton
                 accessibilityLabel={copy.send}
-                onPress={props.onSend}
+                icon="arrow.up"
+                variant="primary"
                 disabled={dictation.blocksSubmission}
-                className="mb-[7px] h-[34px] w-[34px] items-center justify-center rounded-full bg-primary active:opacity-70"
-              >
-                <SymbolView name="arrow.up" size={16} weight="bold" tintColorClassName="accent-primary-foreground" />
-              </Pressable>
-            ) : dictation.isAvailable ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={copy.dictate}
-                onPress={listening ? () => void dictation.stop() : dictation.start}
-                className="mb-[7px] h-[34px] w-[34px] items-center justify-center rounded-full active:opacity-60"
-              >
-                <SymbolView
-                  name={{ ios: listening ? "stop.circle.fill" : "mic", android: "smartphone" }}
-                  size={20}
-                  {...(listening ? { tintColor: "#FF3B30" } : { tintColorClassName: "accent-foreground-muted" })}
-                />
-              </Pressable>
-            ) : null}
+                onPress={props.onSend}
+              />
+            ) : (
+              <ComposerActionButton
+                accessibilityLabel={props.canCall ? copy.call : copy.cannotCall}
+                icon={{ ios: "phone.fill", android: "smartphone" }}
+                variant="primary"
+                onPress={props.onCall}
+              />
+            )}
           </View>
-        </GlassSurface>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={props.canCall ? copy.call : copy.cannotCall}
-          onPress={props.onCall}
-          className={props.canCall ? "h-12 w-12 items-center justify-center rounded-full bg-primary active:opacity-70" : "h-12 w-12 items-center justify-center rounded-full bg-primary opacity-35"}
-        >
-          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={19} tintColorClassName="accent-primary-foreground" />
-        </Pressable>
+        </ComposerSurface>
       </View>
     </View>
   );
@@ -257,6 +266,7 @@ function RoomBody(props: {
   readonly headerHeight: number;
 }) {
   const composer = useThreadComposerState();
+  const body = useScaledTextRole("body");
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
@@ -287,12 +297,14 @@ function RoomBody(props: {
         inverted
         data={reversed}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <RoomRow item={item} companion={props.companion} title={title} />}
+        renderItem={({ item }) => <RoomRow item={item} companion={props.companion} title={title} body={body} />}
         ListHeaderComponent={
           <View style={{ paddingBottom: composerHeight + 6 }}>{writing ? <WritingDots /> : null}</View>
         }
         ListFooterComponent={<View style={{ height: props.headerHeight + 8 }} />}
-        contentContainerStyle={{ paddingHorizontal: 14 }}
+        contentContainerStyle={{ paddingHorizontal: 16 }}
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
         scrollIndicatorInsets={{ top: composerHeight, bottom: props.headerHeight }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
@@ -305,6 +317,7 @@ function RoomBody(props: {
         onCall={call}
         ownerKey={composer.composerDraftKey ?? null}
         title={title}
+        body={body}
         onHeight={setComposerHeight}
       />
     </>
@@ -315,7 +328,8 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   const route = useRoute<RouteProp<Record<string, CompanionRoomParams>>>();
   const navigation = useNavigation();
   const insets = useSafeAreaInsets();
-  const [headerHeight, setHeaderHeight] = useState(insets.top + 104);
+  // The native bar is transparent over the room; the room lays out below it.
+  const headerHeight = useContext(HeaderHeightContext) ?? insets.top + 44;
   const { companionId, environmentId, threadId } = route.params;
   const { companion, loaded } = useCompanion(companionId, environmentId);
   // A room opened by name (a call, a link) learns its Mac and thread once the list knows them.
@@ -325,9 +339,16 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     navigation.setParams({ environmentId: companion.environmentId, threadId: companion.threadId } as never);
   }, [companion?.threadId, companion?.environmentId, threadId, environmentId, navigation]);
   const title = companion?.title ?? companionId;
-  const back = () => (navigation.canGoBack() ? navigation.goBack() : undefined);
+  const options = useMemo(
+    () => ({
+      title,
+      headerTitle: () => <RoomTitle companion={companion} title={title} />,
+    }),
+    [companion, title],
+  );
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
+      <NativeStackScreenOptions options={options} optionsVersion={[title, companion?.art ?? null]} />
       {environmentId && threadId ? (
         <RoomBody
           companion={companion}
@@ -342,7 +363,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       ) : (
         <LoadingScreen message={copy.roomLoading} />
       )}
-      <RoomHeader companion={companion} title={title} onBack={back} onHeight={setHeaderHeight} />
+      <HeaderBand height={headerHeight} />
     </KeyboardAvoidingView>
   );
 }

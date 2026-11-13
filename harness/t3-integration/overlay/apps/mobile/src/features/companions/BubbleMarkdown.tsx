@@ -7,7 +7,7 @@ import { useFontFamily } from "../../lib/useFontFamily";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 
-export function BubbleMarkdown(props: { readonly markdown: string }) {
+export function BubbleMarkdown(props: { readonly markdown: string; readonly body: { readonly fontSize: number; readonly lineHeight: number } }) {
   const theme = useUniwindTheme();
   const regular = useFontFamily("regular");
   const bold = useFontFamily("bold");
@@ -25,14 +25,14 @@ export function BubbleMarkdown(props: { readonly markdown: string }) {
       skillTextColor: theme["--color-foreground"],
       quoteMarkerColor: theme["--color-md-blockquote-border"],
       dividerColor: theme["--color-md-hr"],
-      fontSize: 16,
-      lineHeight: 22,
-      headingFontSizes: [19, 18, 17, 16, 16, 16],
+      fontSize: props.body.fontSize,
+      lineHeight: props.body.lineHeight,
+      headingFontSizes: [props.body.fontSize + 3, props.body.fontSize + 2, props.body.fontSize + 1],
       fontFamily: regular,
       headingFontFamily: bold,
       boldFontFamily: bold,
     }),
-    [theme, regular, bold],
+    [theme, regular, bold, props.body.fontSize, props.body.lineHeight],
   );
   return (
     <SelectableMarkdownText

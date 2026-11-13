@@ -24,7 +24,6 @@ export const mobileCompanionOverlays = [
   `${companions}/BubbleMarkdown.tsx`,
   `${companions}/CompanionAvatar.tsx`,
   `${companions}/EdgeFade.tsx`,
-  `${companions}/GlassIconButton.tsx`,
   `${companions}/CallCard.tsx`,
   `${companions}/CallScreen.tsx`,
   `${companions}/CompanionListScreen.tsx`,
