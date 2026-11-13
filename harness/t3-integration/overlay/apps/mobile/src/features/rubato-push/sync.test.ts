@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
+import { setRubatoPushPreferences, syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
 
 const RELAY = "https://relay.test";
 const MAC = { environmentId: "env-mac", httpBaseUrl: "https://wy-mac.tail.ts.net/", bearerToken: "session-token" };
 
 function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; relayPut?: number } = {}) {
+  let macPreferences = 200;
   let stored: PushState | null = null;
   const requests: Array<{ method: string; url: string; auth: string | null; body: any }> = [];
   let grants = 0;
@@ -22,6 +23,7 @@ function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; rela
     }
     if (url.startsWith(`${RELAY}/v1/devices/dev-1/grants/`) && init.method === "DELETE") return respond(200, { ok: true });
     if (url === "https://wy-mac.tail.ts.net/rubato/push/register") return respond(macAnswers, { ok: true });
+    if (url === "https://wy-mac.tail.ts.net/rubato/push/preferences") return respond(macPreferences, { ok: true });
     return respond(404);
   }) as unknown as typeof globalThis.fetch;
   const deps: PushSyncDeps = {
@@ -35,7 +37,7 @@ function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; rela
       stored = state;
     },
   };
-  return { deps, requests, stored: () => stored };
+  return { deps, requests, stored: () => stored, macDown: (down: boolean) => { macPreferences = down ? 503 : 200; } };
 }
 
 describe("syncRubatoPush", () => {
@@ -51,9 +53,10 @@ describe("syncRubatoPush", () => {
     expect(requests[1]!.auth).toBe("Bearer rpd_secret");
     const toMac = requests[2]!;
     expect(toMac.auth).toBe("Bearer session-token");
-    expect(toMac.body).toEqual({ relay: RELAY, grant: "rpg_1", grantId: "grant-1", deviceId: "dev-1", label: "wy's iPhone" });
+    expect(toMac.body).toEqual({ relay: RELAY, grant: "rpg_1", grantId: "grant-1", deviceId: "dev-1", label: "wy's iPhone",
+      preferences: { threads: true, companionMessages: true, companionCalls: true } });
     expect(JSON.stringify(toMac.body)).not.toContain("aa");
-    expect(stored()?.grants).toEqual({ "env-mac": { grantId: "grant-1", httpBaseUrl: "https://wy-mac.tail.ts.net" } });
+    expect(stored()?.grants["env-mac"]).toMatchObject({ grantId: "grant-1", httpBaseUrl: "https://wy-mac.tail.ts.net" });
   });
 
   it("does nothing more when nothing changed, and sends only new tokens", async () => {
@@ -95,6 +98,26 @@ describe("syncRubatoPush", () => {
   it("waits for a token before registering anything", async () => {
     const { deps, requests } = world();
     await syncRubatoPush(deps, { apnsToken: null, voipToken: null, connections: [MAC] });
+    expect(requests).toEqual([]);
+  });
+
+  it("tells every paired Mac the phone's choices, and a Mac that missed them hears them on a later sync", async () => {
+    const { deps, requests, stored, macDown } = world();
+    await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });
+    requests.length = 0;
+    macDown(true);
+    const quiet = { threads: false, companionMessages: true, companionCalls: false };
+    await setRubatoPushPreferences(deps, [MAC], quiet);
+    expect(requests.map((item) => [item.url, item.auth, item.body])).toEqual([
+      ["https://wy-mac.tail.ts.net/rubato/push/preferences", "Bearer session-token", { deviceId: "dev-1", preferences: quiet }],
+    ]);
+    expect(stored()?.preferences).toEqual(quiet);
+    requests.length = 0;
+    macDown(false);
+    await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });
+    expect(requests.map((item) => item.url)).toEqual(["https://wy-mac.tail.ts.net/rubato/push/preferences"]);
+    requests.length = 0;
+    await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });
     expect(requests).toEqual([]);
   });
 });

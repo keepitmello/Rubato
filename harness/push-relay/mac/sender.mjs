@@ -1,6 +1,7 @@
 // The call service's half of push (harness/companion/call-agent/stack.mjs wires it to the call
 // log's onChange): when a companion starts ringing the person, every paired phone gets a VoIP push
-// so it rings through CallKit even when the app is closed. A ring is pushed once. Ending a ring is
+// so it rings through CallKit even when the app is closed; a phone that turned companion calls off
+// gets nothing, and the desktop still rings. A ring is pushed once. Ending a ring is
 // not pushed: the ringing phone watches the call itself (it polls /rubato/call/live) and stops it.
 import { createGrantStore } from './grants.mjs';
 
@@ -27,7 +28,7 @@ export function createPushSender({ grants = createGrantStore({ log: (message, de
       if (call?.direction !== 'incoming' || call.status !== 'ringing' || !call.uuid || rung.has(call.id)) return;
       rung.add(call.id);
       if (rung.size > 200) rung.delete(rung.values().next().value);
-      void grants.pushAll(ringMessage(call)).catch(() => {});
+      void grants.pushAll(ringMessage(call), { preference: 'companionCalls' }).catch(() => {});
     },
   };
 }

@@ -81,7 +81,7 @@ test('a grant the phone revoked is dropped from this Mac; the rest keep working'
   for (const phone of [kept, gone]) grants.add({ relay: relay.url, grant: phone.grant, grantId: phone.grantId, deviceId: phone.deviceId });
   assert.equal(statSync(path.join(dir, 'grants.json')).mode & 0o777, 0o600);
   await fetch(`${relay.url}/v1/devices/${gone.deviceId}/grants/${gone.grantId}`, { method: 'DELETE', headers: { authorization: `Bearer ${gone.deviceSecret}` } });
-  const results = await grants.pushAll({ kind: 'alert', title: 't', body: 'b' });
+  const results = await grants.pushAll({ kind: 'alert', title: 't', body: 'b' }, { preference: 'threads' });
   assert.deepEqual(results.map(item => [item.deviceId, item.ok, item.reason]).sort(),
     [[kept.deviceId, true, undefined], [gone.deviceId, false, 'grant-revoked']].sort());
   assert.deepEqual(grants.list().map(item => item.deviceId), [kept.deviceId]);
@@ -92,7 +92,7 @@ test('a grant the phone revoked is dropped from this Mac; the rest keep working'
 test('an unreachable relay never throws into the caller', async t => {
   const grants = createGrantStore({ home: home(t) });
   grants.add({ relay: 'http://127.0.0.1:9', grant: 'g', grantId: 'gid', deviceId: 'd' });
-  assert.deepEqual(await grants.pushAll({ kind: 'alert', title: 't', body: 'b' }), [{ deviceId: 'd', ok: false, reason: 'relay-unreachable' }]);
+  assert.deepEqual(await grants.pushAll({ kind: 'alert', title: 't', body: 'b' }, { preference: 'threads' }), [{ deviceId: 'd', ok: false, reason: 'relay-unreachable' }]);
 });
 
 test('only an https relay, or one on this machine, is accepted', () => {
@@ -100,4 +100,25 @@ test('only an https relay, or one on this machine, is accepted', () => {
   assert.equal(validRelay('http://127.0.0.1:8787'), 'http://127.0.0.1:8787');
   for (const bad of ['http://evil.example', 'ftp://x', 'https://user:pw@x.dev', 'https://x.dev/?q=1', 42, null])
     assert.equal(validRelay(bad), null, String(bad));
+});
+
+test("a phone's choices are kept per phone, and a kind it turned off never leaves this Mac", async t => {
+  const relay = await relayServer(t);
+  const grants = createGrantStore({ home: home(t) });
+  const quiet = await relay.phone('5'.repeat(64), 'c'.repeat(64));
+  const loud = await relay.phone('6'.repeat(64), 'd'.repeat(64));
+  assert.deepEqual(grants.add({ relay: relay.url, grant: quiet.grant, grantId: quiet.grantId, deviceId: quiet.deviceId,
+    preferences: { companionCalls: false } }).preferences, { threads: true, companionMessages: true, companionCalls: false });
+  grants.add({ relay: relay.url, grant: loud.grant, grantId: loud.grantId, deviceId: loud.deviceId });
+  createPushSender({ grants }).callChanged({ id: 'call-1', uuid: 'u-1', companion: 'roo', direction: 'incoming', status: 'ringing', createdAt: Date.now() });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.deepEqual(relay.apns.map(item => item.url.split('/').at(-1)), ['d'.repeat(64)]);
+  assert.deepEqual(grants.setPreferences(loud.deviceId, { threads: false }), { threads: false, companionMessages: true, companionCalls: true });
+  const results = await grants.pushAll({ kind: 'alert', title: 't', body: 'b' }, { preference: 'threads' });
+  assert.deepEqual(results.map(item => item.deviceId), [quiet.deviceId]);
+  // A phone pairing again keeps what it chose unless it says otherwise.
+  grants.add({ relay: relay.url, grant: loud.grant, grantId: loud.grantId, deviceId: loud.deviceId });
+  assert.equal(grants.list().find(item => item.deviceId === loud.deviceId).preferences.threads, false);
+  assert.equal(grants.setPreferences('nobody', { threads: true }), null);
+  await assert.rejects(grants.pushAll({ kind: 'alert', title: 't', body: 'b' }), /preference must be/);
 });

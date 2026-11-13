@@ -39,6 +39,12 @@ export const REPLY_REMINDER_TYPE = "rubato-companion.reply-reminder";
  * `settled()` answers whether to remind now — once per such turn, only when no reply or say got
  * through; the reminder's own turn belongs to the same wait, so a reply there ends it.
  */
+const callLine = (message) => {
+  const content = typeof message.content === "string" ? message.content
+    : (Array.isArray(message.content) ? message.content.find((part) => part?.type === "text")?.text : "") ?? "";
+  return content.startsWith("[voice] ");
+};
+
 export function createReplyWait() {
   let turn;
   return {
@@ -46,6 +52,8 @@ export function createReplyWait() {
     message(message) {
       const channelUser = message?.role === "custom" && message.customType === "rubato-session-message"
         && message.details?.kind === "channel" && message.details.from?.isUser === true;
+      // A line heard on a call is answered on the call (call_say), not with a reply.
+      if (message?.role === "user" && callLine(message)) { turn = undefined; return; }
       if (message?.role === "user" || channelUser) turn = { replied: false, reminded: false };
     },
     /** A reply or say that went through answers the turn. */
@@ -244,7 +252,8 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
             const result = await sessionLink.telegramSend({ text: params.text, files: params.files, voice: params.voice,
               voiceText: params.voice_text, sanitize: params.sanitize, to: "user", source: "reply", sessionId });
             telegram = { state: result.state, messageIds: result.messageIds ?? [], ...(result.note ? { note: result.note } : {}) };
-            if (!["sent", "queued"].includes(telegram.state)) throw new Error("Reply media was not delivered.");
+            // "off": Telegram delivery is turned off, or a call is up; the app has the reply.
+            if (!["sent", "queued", "off"].includes(telegram.state)) throw new Error("Reply media was not delivered.");
           }
           const told = recordTold(replyDisplayText(params), { via: REPLY_TOOL, env });
           return { content: [text(telegram ? `Reply recorded in the app; messenger: ${JSON.stringify(telegram)}` : "Sent to the user.")],

@@ -12,6 +12,16 @@ import path from 'node:path';
 export const PUSH_HOME = process.env.RUBATO_PUSH_HOME ?? path.join(os.homedir(), '.rubato', 'push');
 const SEND_TIMEOUT_MS = 10_000;
 
+/** What a phone can turn off, each on its own: a Mac sends nothing of a kind its phone turned off. */
+export const PUSH_KINDS = Object.freeze(['threads', 'companionMessages', 'companionCalls']);
+
+/** A phone's choices, every kind on unless it said otherwise. */
+export function normalizePreferences(value, base = {}) {
+  const input = value && typeof value === 'object' ? value : {};
+  return Object.fromEntries(PUSH_KINDS.map(kind => [kind,
+    typeof input[kind] === 'boolean' ? input[kind] : typeof base[kind] === 'boolean' ? base[kind] : true]));
+}
+
 /** A relay must be HTTPS; plain HTTP only on this machine, for tests and a local relay. */
 export function validRelay(value) {
   if (typeof value !== 'string') return null;
@@ -49,24 +59,37 @@ export function createGrantStore({ home = PUSH_HOME, fetch: send = globalThis.fe
 
   return {
     /** Paired phones, without their grants. */
-    list: () => read().map(({ grant: _grant, ...rest }) => rest),
+    list: () => read().map(({ grant: _grant, ...rest }) => ({ ...rest, preferences: normalizePreferences(rest.preferences) })),
     /** A phone hands this Mac a grant; a newer one from the same phone replaces the old. */
-    add({ relay, grant, grantId, deviceId, label }) {
+    add({ relay, grant, grantId, deviceId, label, preferences }) {
       const origin = validRelay(relay);
       if (!origin) throw new TypeError('relay must be an https URL');
       for (const [name, value] of Object.entries({ grant, grantId, deviceId }))
         if (typeof value !== 'string' || !value || value.length > 200) throw new TypeError(`${name} is required`);
-      const entry = { relay: origin, grant, grantId, deviceId, label: typeof label === 'string' ? label.slice(0, 80) : null, addedAt: Date.now() };
+      const previous = read().find(item => item.deviceId === deviceId);
+      const entry = { relay: origin, grant, grantId, deviceId, label: typeof label === 'string' ? label.slice(0, 80) : null,
+        preferences: normalizePreferences(preferences, previous?.preferences), addedAt: Date.now() };
       write([...read().filter(item => item.deviceId !== deviceId), entry]);
-      return { grantId, deviceId, label: entry.label };
+      return { grantId, deviceId, label: entry.label, preferences: entry.preferences };
+    },
+    /** A phone changes which kinds it wants from this Mac. */
+    setPreferences(deviceId, preferences) {
+      const grants = read();
+      const entry = grants.find(item => item.deviceId === deviceId);
+      if (!entry) return null;
+      entry.preferences = normalizePreferences(preferences, entry.preferences);
+      write(grants);
+      return entry.preferences;
     },
     remove,
     /**
-     * Send one message to every paired phone. Never throws: a phone that cannot be reached is
-     * reported, a grant the relay says is revoked is dropped.
+     * Send one message to every paired phone that wants its kind (`preference`, one of PUSH_KINDS). Never
+     * throws: a phone that cannot be reached is reported, a grant the relay says is revoked is dropped.
      */
-    async pushAll(message) {
-      const results = await Promise.all(read().map(async entry => {
+    async pushAll(message, { preference } = {}) {
+      if (!PUSH_KINDS.includes(preference)) throw new TypeError(`preference must be one of ${PUSH_KINDS.join(', ')}`);
+      const wanted = read().filter(entry => normalizePreferences(entry.preferences)[preference]);
+      const results = await Promise.all(wanted.map(async entry => {
         try {
           const response = await send(`${entry.relay}/v1/push`, {
             method: 'POST',

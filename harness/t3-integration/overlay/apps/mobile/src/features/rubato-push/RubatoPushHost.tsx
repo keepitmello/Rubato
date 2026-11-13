@@ -1,14 +1,10 @@
 import { useEffect, useRef } from "react";
 import { AppState, Platform } from "react-native";
 import { requireOptionalNativeModule } from "expo";
-import Constants from "expo-constants";
-import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { resolveApsEnvironment } from "../agent-awareness/registrationPayload";
-import { RUBATO_PUSH_RELAY } from "./config";
-import { loadPushState as load, savePushState as save } from "./storage";
+import { macConnections, rubatoPushDeps } from "./deps";
 import { syncRubatoPush, type MacConnection } from "./sync";
 
 // Mounted once in App.tsx. Keeps the relay and every paired Mac in line with this phone's push
@@ -51,19 +47,11 @@ export function RubatoPushHost(): null {
       do {
         again.current = false;
         try {
-          await syncRubatoPush(
-            {
-              relay: RUBATO_PUSH_RELAY,
-              bundleId: Constants.expoConfig?.ios?.bundleIdentifier ?? "com.keepitmello.rubato",
-              environment: resolveApsEnvironment(Constants.expoConfig?.extra?.appVariant),
-              deviceLabel: Device.deviceName ?? Device.modelName ?? "iPhone",
-              fetch: globalThis.fetch,
-              load,
-              save,
-              log: (message, detail) => console.warn(message, detail),
-            },
-            { apnsToken: tokens.current.apns, voipToken: tokens.current.voip, connections: connections.current },
-          );
+          await syncRubatoPush(rubatoPushDeps(), {
+            apnsToken: tokens.current.apns,
+            voipToken: tokens.current.voip,
+            connections: connections.current,
+          });
         } catch (error) {
           console.warn("rubato push: sync failed", error);
         }
@@ -73,11 +61,7 @@ export function RubatoPushHost(): null {
   }).current;
 
   useEffect(() => {
-    connections.current = Object.values(savedConnectionsById).flatMap((connection) =>
-      connection.bearerToken && connection.authenticationMethod !== "dpop"
-        ? [{ environmentId: connection.environmentId, httpBaseUrl: connection.httpBaseUrl, bearerToken: connection.bearerToken }]
-        : [],
-    );
+    connections.current = macConnections(Object.values(savedConnectionsById));
     sync();
   }, [savedConnectionsById, sync]);
 

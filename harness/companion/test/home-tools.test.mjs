@@ -218,3 +218,26 @@ test("Roo's reminder: a turn the user opened that settles without a reply is rem
   other.message({ role: 'custom', customType: 'rubato-session-message' });
   assert.equal(other.settled(), false, 'a lead\'s message is not the user\'s');
 });
+
+test('a line heard on a call is answered on the call, so it never asks for a reply or a reminder', () => {
+  const wait = createReplyWait();
+  wait.message({ role: 'user', content: '[voice] 어 통화 되네' });
+  assert.equal(wait.settled(), false);
+  // A typed message waits; a call line arriving after it ends that wait instead of reminding mid-call.
+  wait.message({ role: 'user', content: [{ type: 'text', text: '오늘 뭐 있어?' }] });
+  wait.message({ role: 'user', content: [{ type: 'text', text: '[voice] 양치나 하고 와야겠다.' }] });
+  assert.equal(wait.settled(), false);
+});
+
+test('a reply whose media Telegram holds back (delivery off, or a call is up) is still a reply in the app', async (t) => {
+  const env = { ...sandbox(t), RUBATO_COMPANION_TELEGRAM: '1' };
+  const sends = [];
+  const reply = toolsOf({ env, sessionLink: { telegramSend: async (request) => { sends.push(request); return { state: 'off', note: 'Not sent to Telegram.' }; } } }).get(REPLY_TOOL);
+  const file = path.join(env.HOME, 'shot.png');
+  writeFileSync(file, 'png');
+  const result = await reply.execute('r1', { text: '사진이야', files: [file] }, undefined, undefined, {});
+  assert.match(result.content[0].text, /Reply recorded in the app/);
+  assert.equal(result.details.telegram.state, 'off');
+  assert.equal(sends.length, 1);
+  assert.equal(sentMessages({ env }).length, 1, 'recorded as said: the app has it');
+});

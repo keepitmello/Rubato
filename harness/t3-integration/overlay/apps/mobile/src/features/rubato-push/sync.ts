@@ -10,9 +10,20 @@
 
 export type ApsEnvironment = "sandbox" | "production";
 
+/** What the phone wants to hear about; each paired Mac sends nothing of a kind turned off. */
+export interface PushPreferences {
+  readonly threads: boolean;
+  readonly companionMessages: boolean;
+  readonly companionCalls: boolean;
+}
+
+export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionMessages: true, companionCalls: true };
+
 export interface PushGrant {
   readonly grantId: string;
   readonly httpBaseUrl: string;
+  /** The choices this Mac last took. */
+  readonly preferences?: PushPreferences;
 }
 
 export interface PushState {
@@ -25,6 +36,7 @@ export interface PushState {
   readonly voipToken: string | null;
   /** By the Mac's environment id. */
   readonly grants: Readonly<Record<string, PushGrant>>;
+  readonly preferences?: PushPreferences;
 }
 
 export interface MacConnection {
@@ -165,9 +177,10 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
           grantId: minted.grantId,
           deviceId: state.deviceId,
           label: deps.deviceLabel,
+          preferences: state.preferences ?? DEFAULT_PREFERENCES,
         },
       });
-      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl } };
+      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl, preferences: state.preferences ?? DEFAULT_PREFERENCES } };
       state = { ...state, grants };
       await deps.save(state);
     } catch (error) {
@@ -178,5 +191,44 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
       log("rubato push: Mac not paired for push yet", { environmentId: connection.environmentId, error });
     }
   }
+  return tellPreferences(deps, state, input.connections);
+}
+
+const samePreferences = (a: PushPreferences | undefined, b: PushPreferences) =>
+  !!a && a.threads === b.threads && a.companionMessages === b.companionMessages && a.companionCalls === b.companionCalls;
+
+/** Every paired Mac that has not taken the phone's current choices hears them (POST /rubato/push/preferences). */
+async function tellPreferences(deps: PushSyncDeps, start: PushState, connections: ReadonlyArray<MacConnection>): Promise<PushState> {
+  let state = start;
+  const preferences = state.preferences ?? DEFAULT_PREFERENCES;
+  for (const connection of connections) {
+    const grant = state.grants[connection.environmentId];
+    if (!grant || samePreferences(grant.preferences, preferences)) continue;
+    try {
+      await call(deps, `${grant.httpBaseUrl}/rubato/push/preferences`, "POST", {
+        bearer: connection.bearerToken,
+        body: { deviceId: state.deviceId, preferences },
+      });
+      state = { ...state, grants: { ...state.grants, [connection.environmentId]: { ...grant, preferences } } };
+      await deps.save(state);
+    } catch (error) {
+      (deps.log ?? (() => {}))("rubato push: Mac has not taken the new choices yet", error);
+    }
+  }
   return state;
 }
+
+/** The phone's choices: kept here, and told to every paired Mac now or on a later sync. */
+export async function setRubatoPushPreferences(
+  deps: PushSyncDeps,
+  connections: ReadonlyArray<MacConnection>,
+  preferences: PushPreferences,
+): Promise<PushState | null> {
+  const state = await deps.load();
+  if (!state) return null;
+  const next = { ...state, preferences };
+  await deps.save(next);
+  return tellPreferences(deps, next, connections);
+}
+
+

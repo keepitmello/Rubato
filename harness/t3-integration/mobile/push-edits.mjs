@@ -15,6 +15,7 @@ export const mobilePushOverlays = [
   'apps/mobile/src/features/rubato-push/RubatoPushHost.tsx',
   'apps/mobile/src/features/rubato-push/index.ts',
   'apps/mobile/src/features/rubato-push/storage.ts',
+  'apps/mobile/src/features/rubato-push/deps.ts',
   'apps/mobile/src/features/rubato-push/RubatoNotificationsSettings.tsx',
 ];
 

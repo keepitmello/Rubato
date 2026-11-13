@@ -230,6 +230,7 @@ export class RubatoRpcConnection {
     await this.bridge.backfillThread?.(this.threadId, sessionId)?.catch?.((error) => this.log('backfill failed', error));
     // Segno's own conversation is a chat log (companion-thread.mjs).
     this.companion = await this.bridge.companionSession?.(sessionId) === true;
+    if (this.companion) this.notePushRoom(sessionId);
     await this.client.attach(sessionId);
     this.sessionId = sessionId;
     this.bridge.claimed.add(sessionId);
@@ -371,6 +372,7 @@ export class RubatoRpcConnection {
             // A no from before the restart may have come from an engine too busy to list.
             if (!this.companion && await this.bridge.companionSession?.(this.sessionId) === true) {
               this.companion = true;
+              this.notePushRoom(this.sessionId);
               this.companionStream.attached(false);
             }
             // From here on, a run the next engine continued shows itself by its agent_start.
@@ -492,6 +494,17 @@ export class RubatoRpcConnection {
     const item = this.saidEcho.accept(event);
     if (item && this.companionStream.inTurn) this.turnReplied = true;
     this.appendEcho(item);
+    // Live words only (a backfill is history): the phone hears them as a message (push/service.mjs).
+    if (item && this.companion && this.bridge.push) {
+      void Promise.resolve(this.bridge.push.companionSaid({ id: item.id, threadId: this.threadId,
+        companionId: this.bridge.companionIdOf?.(this.sessionId) ?? undefined, text: item.text, at: Date.parse(item.createdAt) }))
+        .catch((error) => this.log('companion message not pushed', error));
+    }
+  }
+  /** Tells push this thread is a companion's room, so its runs are not thread alerts. */
+  notePushRoom(sessionId) {
+    try { this.bridge.push?.companionRoom(this.threadId, this.bridge.companionIdOf?.(sessionId) ?? 'segno'); }
+    catch (error) { this.log('push room not noted', error); }
   }
   /** One echo into the thread, once per id on this connection. */
   appendEcho(item) {

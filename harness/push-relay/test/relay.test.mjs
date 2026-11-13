@@ -215,3 +215,18 @@ test('a phone that keeps minting grants is capped', async () => {
   for (let index = 0; index < 20; index += 1) await grantFor(device, `mac-${index}`);
   assert.equal((await call('POST', `/v1/devices/${device.deviceId}/grants`, { auth: device.deviceSecret, body: {} })).status, 409);
 });
+
+test('a companion message carries its category, its own fields and lets the service extension redraw it', async () => {
+  const { call, phone, grantFor, sent } = await setup();
+  const { grant } = await grantFor(await phone());
+  const message = { kind: 'alert', title: 'Roo', body: '첫 통화 끝 📞', threadId: 'companion:roo', category: 'rubato.companion.message',
+    mutableContent: true, rubato: { kind: 'companion-message', companionId: 'roo', threadId: 'thread-9' } };
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: message })).status, 200);
+  assert.deepEqual(sent[0].payload, {
+    rubato: { kind: 'companion-message', companionId: 'roo', threadId: 'thread-9' },
+    aps: { alert: { title: 'Roo', body: '첫 통화 끝 📞' }, sound: 'default', 'thread-id': 'companion:roo',
+      category: 'rubato.companion.message', 'mutable-content': 1 },
+  });
+  for (const bad of [{ category: 'com.other.app' }, { category: 'rubato.' }, { rubato: { nested: { a: 1 } } }, { rubato: 'x' }])
+    assert.equal((await call('POST', '/v1/push', { auth: grant, body: { ...message, ...bad } })).status, 400, JSON.stringify(bad));
+});

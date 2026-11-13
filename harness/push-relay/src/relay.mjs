@@ -14,7 +14,7 @@
 //   POST   /v1/devices/:id/grants   (phone)  { label? } → { grantId, grant }
 //   GET    /v1/devices/:id/grants   (phone)  → { grants: [{ grantId, label, createdAt, lastUsedAt }] }
 //   DELETE /v1/devices/:id/grants/:grantId   (phone)
-//   POST   /v1/push                 (Mac)    { kind: 'alert', title, body, threadId?, data? }
+//   POST   /v1/push                 (Mac)    { kind: 'alert', title, body, threadId?, data?, rubato?, category?, mutableContent? }
 //                                            { kind: 'call.ring', callId, uuid, companion, title, reason?, ringUntil }
 //   GET    /v1/health                        → { ok, configured }
 import { alertPayload, apnsRequest, base64url, PROVIDER_TOKEN_TTL_S, providerTokenIsStale, ringPayload, signProviderToken, tokenIsDead } from './apns.mjs';
@@ -69,17 +69,24 @@ function token(value, name) {
   return value.toLowerCase();
 }
 
-/** Flat string fields a thread alert carries to the app, e.g. environmentId, threadId, deepLink. */
-function alertData(value) {
+/** Flat string fields an alert carries to the app, e.g. environmentId, threadId, deepLink. */
+function alertData(value, name = 'data') {
   if (value === undefined || value === null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'invalid', 'data must be an object');
+  if (typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'invalid', `${name} must be an object`);
   const entries = Object.entries(value);
   if (entries.length > 8) throw new HttpError(400, 'invalid', 'data has too many fields');
   return Object.fromEntries(entries.map(([key, item]) => {
     if (key === 'aps' || key === 'rubato' || !/^[A-Za-z][A-Za-z0-9_]{0,31}$/.test(key) || typeof item !== 'string' || item.length > 512)
-      throw new HttpError(400, 'invalid', `data.${key} is not allowed`);
+      throw new HttpError(400, 'invalid', `${name}.${key} is not allowed`);
     return [key, item];
   }));
+}
+
+/** The app's own notification categories only. */
+function category(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || !/^rubato\.[a-z][a-z.-]{0,47}$/.test(value)) throw new HttpError(400, 'invalid', 'category is not one of the app\'s');
+  return value;
 }
 
 /**
@@ -162,7 +169,9 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     let result;
     if (body.kind === 'alert') {
       const payload = alertPayload({ title: text(body.title, 'title', 120), body: text(body.body, 'body', 300),
-        threadId: text(body.threadId, 'threadId', 128, { optional: true }), data: alertData(body.data) });
+        threadId: text(body.threadId, 'threadId', 128, { optional: true }), data: alertData(body.data),
+        rubato: body.rubato === undefined || body.rubato === null ? null : alertData(body.rubato, 'rubato'),
+        category: category(body.category), mutableContent: body.mutableContent === true });
       result = await deliver(row, 'alert', payload);
     } else if (body.kind === 'call.ring') {
       const ringUntil = Number(body.ringUntil);

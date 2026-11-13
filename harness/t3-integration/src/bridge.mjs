@@ -2,7 +2,8 @@ import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
-import { channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
+import { SAID_KIND, channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
+import { pushService } from './push/service.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
@@ -257,7 +258,7 @@ export class RubatoPiBridge {
   constructor({ descriptorPath, instanceId, emit = () => {}, onError = () => {}, projectedMessages = async () => [],
     appendSessionMessage = async () => {}, projectedThread = async () => null, shows = userStartedSession,
     rewindConversation = async () => { throw new Error("T3's revert is not bound yet"); }, sessionStateDir = null,
-    backfillMs = BACKFILL_MS, findEngine = ensureDescriptor, catalogueStaleMs = CATALOGUE_STALE_MS }) {
+    backfillMs = BACKFILL_MS, findEngine = ensureDescriptor, catalogueStaleMs = CATALOGUE_STALE_MS, push = null }) {
     // appendSessionMessage(threadId, item) writes a session message into the T3
     // thread; the T3 server binds it (RubatoPiInventory.ts), like projectedMessages.
     // rewindConversation(threadId, { afterTurn, turns }) asks T3 to revert `turns` turns
@@ -265,6 +266,9 @@ export class RubatoPiBridge {
     // back through rollbackThread like a rewind from a button.
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation, sessionStateDir, findEngine, catalogueStaleMs });
+    // Phone notifications (push/service.mjs): told which threads are companions' rooms and what a
+    // companion said in one. createBridge, the server's, sets it; a bridge built bare pushes nothing.
+    this.push = push;
     // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
     this.lastCatalogues = new Map();
     this.rpcConnections = new Set();
@@ -479,12 +483,19 @@ export class RubatoPiBridge {
     for (let attempt = 1; attempt <= attempts; attempt++) {
       const rows = await this.viaInventory((client) => client.list()).catch(() => null);
       if (Array.isArray(rows)) {
-        for (const row of rows) if (typeof row?.sessionId === 'string' && row.companion === true) this.companionSessions.set(row.sessionId, true);
+        for (const row of rows) if (typeof row?.sessionId === 'string' && row.companion === true) {
+          this.companionSessions.set(row.sessionId, true);
+          (this.companionIds ??= new Map()).set(row.sessionId, typeof row.companionId === 'string' ? row.companionId : 'segno');
+        }
         return this.companionSessions.get(sessionId) === true;
       }
       if (attempt < attempts && !this.closed) await new Promise((resolve) => setTimeout(resolve, retryMs));
     }
     return false;
+  }
+  /** Which companion a companion session belongs to, once companionSession has seen it. */
+  companionIdOf(sessionId) {
+    return this.companionIds?.get(sessionId) ?? (this.companionSessions?.get(sessionId) === true ? 'segno' : null);
   }
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
@@ -933,6 +944,7 @@ export class RubatoPiBridge {
     if (!thread) return false;
     const gaps = this.streamGaps && !everyHole ? await this.streamGaps(threadId) : undefined;
     const companion = await this.companionSession(sessionId);
+    if (companion) this.push?.companionRoom(threadId, this.companionIdOf(sessionId) ?? 'segno');
     if (!companion && Array.isArray(gaps) && !gaps.length) return true;
     const { messages } = await this.transcript(sessionId);
     const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), thread.messages,
@@ -942,6 +954,11 @@ export class RubatoPiBridge {
       // Restoring old chat history must not create fresh completion notifications.
       const historical = companion && Date.parse(item.createdAt) < Date.now() - 60_000;
       await this.appendSessionMessage(threadId, backfillItem(historical ? { ...item, ownRun: false } : item, threadId, runId));
+      // What a companion said while its room had no stream is news on the phone too, if it is fresh.
+      if (companion && !historical && this.push && item.context?.records?.some((record) => record.kind === SAID_KIND)) {
+        void Promise.resolve(this.push.companionSaid({ id: item.id, threadId, companionId: this.companionIdOf(sessionId) ?? undefined,
+          text: item.text, at: Date.parse(item.createdAt) })).catch(this.onError);
+      }
     }
     if (missing.length) t3BridgeLog('backfilled', `${threadId} ${missing.length}`);
     return true;
@@ -1530,7 +1547,10 @@ export class RubatoPiBridge {
     await this.inventoryClient?.close();
   }
 }
-export const createBridge = (options) => { t3BridgeLog('createBridge', options?.descriptorPath); return new RubatoPiBridge(options); };
+export const createBridge = (options) => {
+  t3BridgeLog('createBridge', options?.descriptorPath);
+  return new RubatoPiBridge({ push: pushService(), ...options });
+};
 /** The Rubato provider's running bridge in this server, if any (one per T3 server). */
 export const liveBridge = () => [...liveBridges].find((item) => !item.closed);
 /**

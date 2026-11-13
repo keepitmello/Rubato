@@ -109,6 +109,11 @@ export const DEFAULT_MESSENGER_SETTINGS = Object.freeze({
   /** Ask before sending to anyone but the user. Off only if the person turns it off. */
   approvalRequired: true,
   /**
+   * The companion's words go to the person's Telegram. Off when the person reads them in the Rubato
+   * app instead (its Settings › Notifications); Telegram still brings their messages in.
+   */
+  outbound: true,
+  /**
    * Segno's voice for voice replies: a Fish Audio voice id. None until the person picks one, and
    * until then a voice reply says so instead of speaking in a voice nobody chose.
    */
@@ -123,6 +128,7 @@ export function normalizeMessengerSettings(value) {
   return {
     enabled: typeof input.enabled === 'boolean' ? input.enabled : DEFAULT_MESSENGER_SETTINGS.enabled,
     approvalRequired: typeof input.approvalRequired === 'boolean' ? input.approvalRequired : DEFAULT_MESSENGER_SETTINGS.approvalRequired,
+    outbound: typeof input.outbound === 'boolean' ? input.outbound : DEFAULT_MESSENGER_SETTINGS.outbound,
     voice: {
       voiceId: typeof voice.voiceId === 'string' && VOICE_ID.test(voice.voiceId) ? voice.voiceId : null,
       model: typeof voice.model === 'string' && voice.model.trim() ? voice.model.trim() : DEFAULT_VOICE_MODEL,
@@ -138,7 +144,7 @@ export function readMessengerSettings(env = process.env) {
 
 export function writeMessengerSettings(patch, env = process.env) {
   if (!patch || typeof patch !== 'object') throw new TypeError('settings patch must be an object');
-  for (const field of ['enabled', 'approvalRequired'])
+  for (const field of ['enabled', 'approvalRequired', 'outbound'])
     if (patch[field] !== undefined && typeof patch[field] !== 'boolean') throw new TypeError(`${field} must be true or false`);
   if (patch.voice !== undefined) {
     if (!patch.voice || typeof patch.voice !== 'object') throw new TypeError('voice must be an object');

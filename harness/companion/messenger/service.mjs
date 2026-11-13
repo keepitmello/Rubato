@@ -40,6 +40,7 @@ import { companionOffText, contextText, heartbeatText, parseControlCommand, segn
 import { botUsernameCandidates } from './scripts/create-bot.mjs';
 import { readSettings as readCompanionSettings, readState as readCompanionState, writeSettings as writeCompanionSettings } from '../companion.mjs';
 import { openInbox } from '../inbox.mjs';
+import { createCallWindows } from '../call-window.mjs';
 
 const PHOTO_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp']);
 /** Videos that go out with Telegram's player; one Telegram refuses still goes, as a document. */
@@ -176,9 +177,15 @@ export function startCompanionMessenger({
   createApi = (token) => createBotApi({ token, baseUrl: env.RUBATO_TELEGRAM_API_BASE || undefined }),
   createBot = createBotOverMtproto, transcribe = defaultTranscriber(env), synthesize = (text) => synthesizeVoice(text, { env }),
   sessionStats, typingDelay: delayTyping = typingDelay, downloadRetryDelaysMs = DOWNLOAD_RETRY_DELAYS_MS,
-  signal, pollMs = 1000, longPollSeconds = 25, now = Date.now,
+  signal, pollMs = 1000, longPollSeconds = 25, now = Date.now, callWindows = createCallWindows({ now }),
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
+  const companionId = env.RUBATO_COMPANION_ID || 'segno';
+  /**
+   * The companion's words that stay off Telegram: all of them when the person turned outbound
+   * delivery off, and those said while it was on a call with them (the call card has them).
+   */
+  const heldFromTelegram = (at) => !readMessengerSettings(env).outbound || callWindows.inCall(companionId, at);
   const additional = env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno';
   const title = additional ? env.RUBATO_COMPANION_TITLE || env.RUBATO_COMPANION_ID : '세뇨';
   const commandName = additional ? 'companion' : 'segno';
@@ -698,6 +705,10 @@ export function startCompanionMessenger({
   async function sendRequest(request = {}) {
     const op = request.op ?? 'send';
     const target = targetOf(request.to, request.name);
+    if (op === 'send' && target === 'user' && heldFromTelegram(now()))
+      return { state: 'off', target, note: readMessengerSettings(env).outbound
+        ? 'Not sent to Telegram: you are on a call with the person, and the call card has it.'
+        : 'Not sent to Telegram: the person turned Telegram delivery off; the app has it.' };
     // Read the current journal, not the mirror cursor: a tool can run before the next sync pass.
     const file = op === 'send' && target === 'user' && sessionsDir
       ? await locateTranscript(sessionsDir, request.sessionId ?? readCompanionState(env).sessionId) : undefined;
@@ -762,10 +773,12 @@ export function startCompanionMessenger({
       const next = structuredClone(run);
       const said = stepRun(next, entry, { companionSessionId: sessionId });
       if (said.some((item) => item.final)) stopAllTyping();
+      // Judged by when it was said, so a pass that catches up after a call still holds it back.
+      const held = said.some((item) => item.text) && heldFromTelegram(Date.parse(entry?.timestamp ?? '') || now());
       // `sentParts` counts across everything this entry says, so a retry resumes where it stopped.
       let done = 0;
       for (const item of said) {
-        if (!item.text || item.quiet || item.duplicate) continue;
+        if (!item.text || item.quiet || item.duplicate || held) continue;
         const skip = Math.max(0, sentParts - done);
         let parts = 0;
         try {

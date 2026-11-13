@@ -31,11 +31,22 @@ export async function signProviderToken({ teamId, keyId, privateKey, issuedAt })
   return `${head}.${claims}.${base64url(new Uint8Array(signature))}`;
 }
 
-/** A thread alert: shown on the lock screen, tapping it opens the thread (the app reads the top-level keys). */
-export function alertPayload({ title, body, threadId, data = {} }) {
+/**
+ * An alert on the lock screen. `data` lands at the top level (upstream's thread navigation reads it
+ * there), `rubato` under its own key; `category` picks the app's notification category, and
+ * `mutableContent` lets the app's service extension redraw it (a companion message as a message).
+ */
+export function alertPayload({ title, body, threadId, data = {}, rubato = null, category = null, mutableContent = false }) {
   return {
     ...data,
-    aps: { alert: { title, body }, sound: 'default', ...(threadId ? { 'thread-id': threadId } : {}) },
+    ...(rubato ? { rubato } : {}),
+    aps: {
+      alert: { title, body },
+      sound: 'default',
+      ...(threadId ? { 'thread-id': threadId } : {}),
+      ...(category ? { category } : {}),
+      ...(mutableContent ? { 'mutable-content': 1 } : {}),
+    },
   };
 }
 
