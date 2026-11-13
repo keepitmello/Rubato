@@ -251,6 +251,9 @@ export const shellEdits = {
   ],
   'apps/mobile/src/features/settings/SettingsRouteScreen.tsx': [
     ['label="About T3 Code"', 'label="About Rubato"', 'replace'],
+    // Without T3's cloud this is the screen that shows; Rubato's notifications live there too.
+    ['            value={`${environmentCount}`}\n            valuePosition="trailing"\n            target="SettingsEnvironments"\n          />\n',
+      '            value={`${environmentCount}`}\n            valuePosition="trailing"\n            target="SettingsEnvironments"\n          />\n          <SettingsRow icon="bell.badge" label="Notifications" target="SettingsNotifications" />\n', 'replace'],
     ['        <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />\n',
       '        <SettingsRow icon="person.2" label="Companions" target="SettingsCompanions" />\n'],
   ],
