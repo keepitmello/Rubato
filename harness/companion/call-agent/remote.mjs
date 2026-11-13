@@ -4,8 +4,8 @@
 // from outside the tailnet (Serve, never Funnel). Media already goes straight to the Mac's
 // interface addresses, the Tailscale one included.
 //
-// The mapping is made once Tailscale runs, retried until then, and left in place when the service
-// stops: Serve keeps it, and the next start finds it already there. A port another tool holds is
+// The mapping is made once Tailscale runs, retried until then, checked again every minute after, and
+// left in place when the service stops: Serve keeps it, and the next start finds it already there. A port another tool holds is
 // never taken over; the reason says so instead.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -13,6 +13,8 @@ import path from 'node:path';
 
 export const REMOTE_PORT = Number(process.env.RUBATO_CALL_REMOTE_PORT ?? 7443);
 export const RETRY_MS = 15_000;
+/** Once reachable it is checked again this often, so a stopped Tailscale or a removed mapping stops handing out the URL. */
+export const RECHECK_MS = 60_000;
 
 /** The Tailscale CLI by absolute path: the engine runs under launchd, whose PATH has no Homebrew. */
 export function tailscalePath(env = process.env) {
@@ -48,10 +50,11 @@ export async function exposeOnTailnet({ run, localPort, httpsPort = REMOTE_PORT 
 }
 
 /**
- * Keeps trying until LiveKit is reachable on the tailnet. `state()` answers { url, reason } as of
- * the last attempt; `url` is null until one succeeds.
+ * Keeps LiveKit reachable on the tailnet: retried every `every` until it is, then checked every
+ * `recheck` (and mapped again when the mapping went). `state()` answers { url, reason } as of the
+ * last check; `url` is null while there is none.
  */
-export function startTailnetExposure({ localPort, httpsPort = REMOTE_PORT, env = process.env, run, every = RETRY_MS, log = () => {} }) {
+export function startTailnetExposure({ localPort, httpsPort = REMOTE_PORT, env = process.env, run, every = RETRY_MS, recheck = RECHECK_MS, log = () => {} }) {
   const cli = run ? null : tailscalePath(env);
   const exec = run ?? (cli ? args => runCli(cli, args) : null);
   let state = { url: null, reason: exec ? 'checking Tailscale' : 'Tailscale is not installed' };
@@ -63,7 +66,7 @@ export function startTailnetExposure({ localPort, httpsPort = REMOTE_PORT, env =
     if (closed) return;
     const line = state.url ?? state.reason;
     if (line !== said) { said = line; log(state.url ? 'call audio reachable on the tailnet' : 'call audio not on the tailnet yet', state); }
-    if (!state.url) timer = setTimeout(attempt, every);
+    timer = setTimeout(attempt, state.url ? recheck : every);
   }
   const ready = attempt();
   return {

@@ -52,6 +52,17 @@ test('the exposure retries until Tailscale runs', async t => {
   assert.equal(exposure.state().url, `wss://${HOST}:7443`);
 });
 
+test('a reachable URL is withdrawn when Tailscale stops later', async t => {
+  let backend = 'Running';
+  const exposure = startTailnetExposure({ localPort: 7880, httpsPort: 7443, run: args => cli({ backend }).run(args), every: 20, recheck: 20 });
+  t.after(() => exposure.close());
+  await exposure.ready;
+  assert.equal(exposure.state().url, `wss://${HOST}:7443`);
+  backend = 'Stopped';
+  for (const end = Date.now() + 2000; exposure.state().url && Date.now() < end;) await new Promise(resolve => setTimeout(resolve, 10));
+  assert.deepEqual(exposure.state(), { url: null, reason: 'Tailscale is Stopped' });
+});
+
 test('every call carries a CallKit uuid and the companion name; an incoming ring says when it stops', t => {
   const dir = mkdtempSync(path.join(tmpdir(), 'call-log-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
   let clock = 1_000_000;

@@ -47,7 +47,8 @@ LiveKit's signalling listens on loopback. For a phone or another Mac on the pers
 service maps one Tailscale Serve HTTPS port, `https://<mac>.<tailnet>.ts.net:7443` → `127.0.0.1:7880`
 (`remote.mjs`; `RUBATO_CALL_REMOTE_PORT` moves it). Serve answers only inside the tailnet, never
 through Funnel, and a port another tool already serves is left alone with the reason in the engine
-log. The mapping is retried every 15 s until Tailscale runs and stays when the service stops.
+log. The mapping is retried every 15 s until Tailscale runs, checked every minute after (a stopped
+Tailscale withdraws the URL, a removed mapping is made again) and stays when the service stops.
 
 A join (`/dial`, `/answer`) carries both addresses; the app's route (`t3-integration` `src/call/service.mjs`)
 hands this Mac's own app the loopback one and a device that came through Tailscale the tailnet one,
