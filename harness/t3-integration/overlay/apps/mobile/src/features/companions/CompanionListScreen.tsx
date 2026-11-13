@@ -2,12 +2,13 @@
 // a companion's room with its face, name, the latest message and when it came.
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useMemo } from "react";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { useMemo, type ComponentProps } from "react";
+import { FlatList, Platform, Pressable, RefreshControl, ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
+import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { buildThreadFeed } from "../../lib/threadActivity";
 import { useThreadDetail, useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { CompanionAvatar } from "./CompanionAvatar";
@@ -64,6 +65,14 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOp
   );
 }
 
+function renderCompanionScrollView(props: ComponentProps<typeof ScrollView>) {
+  return (
+    <NativeScrollViewMarker style={{ flex: 1 }}>
+      <ScrollView {...props} className="bg-screen" />
+    </NativeScrollViewMarker>
+  );
+}
+
 export function CompanionListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
@@ -81,8 +90,15 @@ export function CompanionListScreen() {
       <FlatList
         data={companions}
         keyExtractor={(item) => `${item.environmentId}:${item.id}`}
+        // Under the shared glass bar like the threads list: the inset clears the bar and the
+        // native scroll edge (NativeScrollViewMarker) draws the bar's material as content passes under it.
+        renderScrollComponent={Platform.OS === "ios" ? renderCompanionScrollView : undefined}
         contentInsetAdjustmentBehavior="never"
-        contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
+        automaticallyAdjustContentInsets={false}
+        contentInset={Platform.OS === "ios" ? { top: insets.top } : undefined}
+        contentOffset={Platform.OS === "ios" ? { x: 0, y: -insets.top } : undefined}
+        scrollIndicatorInsets={Platform.OS === "ios" ? { top: insets.top } : undefined}
+        contentContainerStyle={{ paddingTop: Platform.OS === "ios" ? 8 : insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
         renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
         ItemSeparatorComponent={() => <View className="h-[0.5px] bg-border" style={{ marginLeft: 90 }} />}
