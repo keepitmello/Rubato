@@ -71,6 +71,9 @@ test('the engine job starts the profile engine at load, keeps it alive and waits
   assert.ok(EXIT_TIMEOUT_S >= 120 + 20);
   // Processes a conversation started (a dev server) outlive an engine restart, as before.
   assert.match(plist, /<key>AbandonProcessGroup<\/key><true\/>/);
+  // Every conversation waits on this one process. Without a type launchd throttles its CPU and
+  // disk, and a heavy build froze the engine for seconds at a time.
+  assert.match(plist, /<key>ProcessType<\/key><string>Interactive<\/string>/);
   assert.match(plist, /<key>NODE_OPTIONS<\/key><string>--experimental-strip-types<\/string>/);
   assert.match(plist, /<key>RUBATO_SCHEDULE_HOME<\/key><string>\/s&amp;t<\/string>/);
   assert.equal(plistAgentDir(plist), '/h/.rubato-pi/agent');

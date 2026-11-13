@@ -144,6 +144,7 @@ export function renderEngineLaunchAgent({ label = ENGINE_LAUNCHD_LABEL, nodePath
 <key>ThrottleInterval</key><integer>${THROTTLE_S}</integer>
 <key>ExitTimeOut</key><integer>${EXIT_TIMEOUT_S}</integer>
 <key>AbandonProcessGroup</key><true/>
+<key>ProcessType</key><string>Interactive</string>
 <key>EnvironmentVariables</key><dict>${dict}</dict>
 <key>StandardOutPath</key><string>${escapeXml(logPath)}</string>
 <key>StandardErrorPath</key><string>${escapeXml(logPath)}</string>
