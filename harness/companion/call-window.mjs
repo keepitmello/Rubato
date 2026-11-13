@@ -14,8 +14,14 @@ import path from 'node:path';
 export const CALL_HOME = process.env.RUBATO_CALL_HOME ?? path.join(os.homedir(), '.rubato', 'call');
 /** How long after a call ends its last words may still arrive. */
 export const TAIL_MS = 15_000;
+/**
+ * A call with nothing new on it for this long is over, whatever the log says: the engine that carried
+ * it stopped before it could write the end, and the log closes such a call only when it next loads,
+ * at that moment. Its end is taken as its last sign of life, so what was said after that is not held.
+ */
+export const STALE_MS = 5 * 60_000;
 
-export function createCallWindows({ dir = path.join(CALL_HOME, 'calls'), tailMs = TAIL_MS, now = Date.now } = {}) {
+export function createCallWindows({ dir = path.join(CALL_HOME, 'calls'), tailMs = TAIL_MS, staleMs = STALE_MS, now = Date.now } = {}) {
   let cached = { mtime: -1, calls: [] };
   function calls() {
     let mtime;
@@ -26,8 +32,12 @@ export function createCallWindows({ dir = path.join(CALL_HOME, 'calls'), tailMs 
     for (const name of readdirSync(dir)) {
       if (!name.endsWith('.json')) continue;
       try {
-        const call = JSON.parse(readFileSync(path.join(dir, name), 'utf8'));
-        if (typeof call?.companion === 'string' && Number.isFinite(call.answeredAt)) found.push(call);
+        const file = path.join(dir, name);
+        const call = JSON.parse(readFileSync(file, 'utf8'));
+        if (typeof call?.companion !== 'string' || !Number.isFinite(call.answeredAt)) continue;
+        // The last time the call showed life: its pickup, or the last line either side said.
+        const said = Array.isArray(call.transcript) ? call.transcript.map(line => line?.at).filter(Number.isFinite) : [];
+        found.push({ ...call, lastSeen: Math.max(call.answeredAt, ...said) });
       } catch {}
     }
     cached = { mtime, calls: found };
@@ -37,8 +47,12 @@ export function createCallWindows({ dir = path.join(CALL_HOME, 'calls'), tailMs 
     /** Whether `companion` was on an answered call at `at` (ms). */
     inCall(companion, at = now()) {
       if (typeof companion !== 'string' || !Number.isFinite(at)) return false;
-      return calls().some(call => call.companion === companion && call.answeredAt <= at
-        && (Number.isFinite(call.endedAt) ? at <= call.endedAt + tailMs : call.status === 'active'));
+      return calls().some(call => {
+        if (call.companion !== companion || at < call.answeredAt) return false;
+        const alive = call.lastSeen + staleMs;
+        if (Number.isFinite(call.endedAt)) return at <= Math.min(call.endedAt + tailMs, alive);
+        return call.status === 'active' && at <= alive;
+      });
     },
   };
 }

@@ -2,10 +2,11 @@
 // them), judged by when each was said, and all of them when the person turned outbound delivery off.
 // Telegram still brings the person's messages in.
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createCallWindows, TAIL_MS } from '../../call-window.mjs';
+import { createCallWindows, STALE_MS, TAIL_MS } from '../../call-window.mjs';
 import { REPLY_TOOL } from '../../home.mjs';
 import { writeMessengerSettings } from '../store.mjs';
 import { USER_CHAT, answerEntry, appEntry, paired, settle, toolEntry, transcript } from './helpers.mjs';
@@ -35,7 +36,8 @@ async function boxWithCalls(t, calls) {
 }
 
 test("what is said during the companion's call stays off Telegram, even when the mirror catches up afterwards", async (t) => {
-  const box = await boxWithCalls(t, [{ id: 'call-segno-1', companion: 'segno', status: 'ended', answeredAt: T0, endedAt: T1 }]);
+  const box = await boxWithCalls(t, [{ id: 'call-segno-1', companion: 'segno', status: 'ended', answeredAt: T0, endedAt: T1,
+    transcript: [{ who: 'me', text: '어 통화 되네', at: T0 + 20_000 }, { who: 'companion', text: '응', at: T1 - 2_000 }] }]);
   transcript(box, [
     ...reply('before', 'BEFORE_CALL', T0 - 60_000),
     stamp(appEntry('heard', '[voice] 어 통화 되네'), T0 + 20_000),
@@ -79,4 +81,21 @@ test('with outbound delivery off nothing of the companion goes to Telegram, and 
   transcript(box, [...reply('r2', 'BACK_ON', Date.now())], { append: true });
   await settle(box.service); await settle(box.service);
   assert.deepEqual(sentTexts(box), ['BACK_ON']);
+});
+
+test('a call the log still calls active but that went quiet long ago (its engine stopped) holds nothing after its last line', (t) => {
+  const dir = path.join(mkdtempSync(path.join(tmpdir(), 'rubato-callwin-')), 'calls');
+  t.after(() => rmSync(path.dirname(dir), { recursive: true, force: true }));
+  mkdirSync(dir, { recursive: true });
+  const start = Date.now() - 3 * 3600_000;
+  writeFileSync(path.join(dir, 'call-roo-x.json'), JSON.stringify({ id: 'call-roo-x', companion: 'roo', status: 'active', answeredAt: start,
+    endedAt: null, transcript: [{ who: 'me', text: '여보세요', at: start + 60_000 }] }));
+  const windows = createCallWindows({ dir });
+  assert.equal(windows.inCall('roo', start + 90_000), true, 'still held while the call was alive');
+  assert.equal(windows.inCall('roo', start + 60_000 + STALE_MS + 1), false);
+  assert.equal(windows.inCall('roo', Date.now()), false, 'not hours later');
+  // A live call with a fresh line keeps holding.
+  writeFileSync(path.join(dir, 'call-segno-y.json'), JSON.stringify({ id: 'call-segno-y', companion: 'segno', status: 'active', answeredAt: Date.now() - 600_000,
+    endedAt: null, transcript: [{ who: 'companion', text: '응', at: Date.now() - 10_000 }] }));
+  assert.equal(createCallWindows({ dir }).inCall('segno', Date.now()), true);
 });
