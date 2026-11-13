@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rubato call</title>
+<style>
+  :root { color-scheme: light dark; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; }
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: Canvas; }
+  main { width: min(420px, 92vw); display: grid; gap: 16px; }
+  .who { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .who button { border: 1px solid #8884; background: transparent; border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  .who button[aria-pressed="true"] { background: #2b2b2b; color: white; }
+  .who button:disabled { opacity: .4; cursor: not-allowed; }
+  .state { text-align: center; font-size: 15px; opacity: .7; min-height: 1.4em; }
+  .call { justify-self: center; width: 72px; height: 72px; border-radius: 50%; border: 0; font-size: 28px; cursor: pointer; background: #1fb855; color: white; }
+  .call.live { background: #e5484d; }
+  .log { display: grid; gap: 8px; max-height: 50vh; overflow: auto; }
+  .bubble { padding: 9px 13px; border-radius: 18px; max-width: 82%; line-height: 1.4; font-size: 15px; }
+  .me { justify-self: end; background: #1fb855; color: white; }
+  .them { justify-self: start; background: #8882; }
+  .why { text-align: center; font-size: 13px; color: #e5484d; }
+</style>
+</head>
+<body>
+<main>
+  <div class="who" id="who"></div>
+  <div class="state" id="state">누구랑 통화할지 골라줘</div>
+  <button class="call" id="call" aria-label="통화">📞</button>
+  <div class="why" id="why"></div>
+  <div class="log" id="log"></div>
+</main>
+<script type="module">
+import { Room, RoomEvent, Track } from '/livekit-client.mjs';
+const $ = id => document.getElementById(id);
+let chosen = null, room = null;
+const states = { listening: '듣는 중', thinking: '생각하는 중', speaking: '말하는 중', initializing: '연결하는 중', idle: '대기' };
+
+const companions = await (await fetch('/companions')).json();
+for (const item of companions) {
+  const button = document.createElement('button');
+  button.textContent = item.title; button.disabled = !item.ready; button.title = item.reason ?? '';
+  button.onclick = () => { chosen = item; for (const other of $('who').children) other.setAttribute('aria-pressed', String(other === button)); $('state').textContent = `${item.title}에게 걸기`; $('why').textContent = ''; };
+  $('who').append(button);
+  if (!item.ready) $('why').textContent += `${item.title}: ${item.reason}\n`;
+}
+
+const lines = new Map();
+function say(id, who, text) {
+  let line = lines.get(id);
+  if (!line) { line = document.createElement('div'); line.className = `bubble ${who}`; $('log').append(line); lines.set(id, line); }
+  line.textContent = text; $('log').scrollTop = $('log').scrollHeight;
+}
+
+$('call').onclick = async () => {
+  if (room) { await room.disconnect(); return; }
+  if (!chosen) return;
+  const answer = await fetch(`/token?companion=${chosen.id}`);
+  if (!answer.ok) { $('why').textContent = await answer.text(); return; }
+  const { url, token } = await answer.json();
+  room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  room.on(RoomEvent.TrackSubscribed, track => { if (track.kind === Track.Kind.Audio) document.body.append(track.attach()); });
+  room.on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => {
+    const state = participant.attributes['lk.agent.state']; if (state) $('state').textContent = states[state] ?? state;
+  });
+  room.registerTextStreamHandler('lk.transcription', async (reader, participant) => {
+    const who = participant.identity === room.localParticipant.identity ? 'me' : 'them';
+    let text = '';
+    for await (const chunk of reader) { text += chunk; say(reader.info.id, who, text); }
+  });
+  room.on(RoomEvent.Disconnected, () => { room = null; $('call').classList.remove('live'); $('state').textContent = '통화 끝'; });
+  $('state').textContent = '연결하는 중';
+  await room.connect(url, token);
+  await room.localParticipant.setMicrophoneEnabled(true);
+  $('call').classList.add('live');
+};
+</script>
+</body>
+</html>

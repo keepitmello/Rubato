@@ -1,0 +1,20 @@
+{
+  "name": "rubato-companion-call-agent",
+  "private": true,
+  "type": "module",
+  "description": "Live voice calls with a companion: LiveKit carries the audio, the companion's own session answers.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node run.mjs",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@livekit/agents": "1.9.5",
+    "@livekit/agents-plugin-fishaudio": "1.9.5",
+    "@livekit/agents-plugin-openai": "1.9.5",
+    "livekit-client": "2.24.0",
+    "livekit-server-sdk": "2.19.3"
+  }
+}
