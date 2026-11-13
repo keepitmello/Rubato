@@ -32,6 +32,9 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/companionNotifications.ts',
   'apps/mobile/src/features/rubato-shell/companionNotifications.test.ts',
   'apps/mobile/targets/notification-service/expo-target.config.js',
+  'apps/mobile/src/features/rubato-shell/macRestart.ts',
+  'apps/mobile/src/features/rubato-shell/macRestart.test.ts',
+  'apps/mobile/src/features/rubato-shell/MacRestartSection.tsx',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
@@ -256,6 +259,10 @@ export const shellEdits = {
   ],
   'apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx': [
     ['<SettingsScreen title="About T3 Code">', '<SettingsScreen title="About Rubato">', 'replace'],
+    // Restart the Mac's Rubato from here, as the Mac's own About does (rubato-shell/MacRestartSection.tsx).
+    ['import { SettingsScreen } from "./components/SettingsScreen";\n',
+      'import { SettingsScreen } from "./components/SettingsScreen";\nimport { MacRestartSection } from "../rubato-shell/MacRestartSection";\n', 'replace'],
+    ['        <AppSettingsSection />\n', '        <AppSettingsSection />\n        <MacRestartSection />\n', 'replace'],
   ],
   'apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx': [
     ['"Microphone access is off for T3 Code.', '"Microphone access is off for Rubato.', 'replace'],

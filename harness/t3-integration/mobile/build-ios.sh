@@ -65,6 +65,8 @@ sips -s format png "$work/tile.jpg" --out assets/rubato/icon.png >/dev/null
 corepack pnpm run generate >/dev/null
 corepack pnpm exec expo prebuild --clean --platform ios --no-install >/dev/null
 (cd ios && pod install)
+# This Mac has little disk: CocoaPods' download cache regrows to several GB per install.
+rm -rf "$HOME/Library/Caches/CocoaPods"
 
 build_number="$(date -u +%Y%m%d%H%M)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" ios/Rubato/Info.plist
@@ -88,6 +90,12 @@ if [ "$MODE" = --simulator ]; then
   exit 0
 fi
 
+# An archive needs about 8 GB on top of the tree; stop before it fails halfway.
+free_kb="$(df -k "$out" | awk 'NR==2 {print $4}')"
+if [ "$free_kb" -lt $((8 * 1024 * 1024)) ]; then
+  printf 'only %s GB free; an archive needs about 8 GB. Free space first.\n' "$((free_kb / 1024 / 1024))" >&2
+  exit 1
+fi
 : "${ASC_KEY_ID:?set ASC_KEY_ID}" "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}" "${ASC_KEY_PATH:?set ASC_KEY_PATH}"
 auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME}"
   -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
