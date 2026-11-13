@@ -27,7 +27,15 @@ if [ ! -d "$T3_MOBILE/.git" ] && [ ! -f "$T3_MOBILE/.git" ]; then
   git -C "$T3_SOURCE" worktree add --detach "$T3_MOBILE" "$pin"
 fi
 [ "$(git -C "$T3_MOBILE" rev-parse HEAD)" = "$pin" ] || git -C "$T3_MOBILE" checkout --detach "$pin"
-node "$INTEGRATION/apply.mjs" --t3 "$T3_MOBILE" >/dev/null
+# The integration as committed, not the shared working tree: other sessions' unfinished
+# edits there can stop apply.mjs. RUBATO_MOBILE_WORKTREE=1 builds the working tree instead.
+work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+source_dir="$INTEGRATION"
+if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
+  source_dir="$work/integration"; mkdir -p "$source_dir"
+  git -C "$INTEGRATION" archive 'HEAD:./' | tar -x -C "$source_dir"
+fi
+node "$source_dir/apply.mjs" --t3 "$T3_MOBILE" >/dev/null
 
 cd "$T3_MOBILE"
 stamp=node_modules/.rubato-mobile-lock
@@ -41,8 +49,7 @@ fi
 cd apps/mobile
 # The app icon must be square and opaque: the inner tile of the desktop icon, flattened.
 mkdir -p assets/rubato
-work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
-sips -c 720 720 "$INTEGRATION/assets/Rubato.png" --out "$work/tile.png" >/dev/null
+sips -c 720 720 "$source_dir/assets/Rubato.png" --out "$work/tile.png" >/dev/null
 sips -z 1024 1024 -s format jpeg "$work/tile.png" --out "$work/tile.jpg" >/dev/null
 sips -s format png "$work/tile.jpg" --out assets/rubato/icon.png >/dev/null
 # The desktop overlay replaces T3's theme palettes; the phone's style sheets follow them.
@@ -76,7 +83,7 @@ auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME
   -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 archive="$out/Rubato-$build_number.xcarchive"
 xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
-  -destination 'generic/platform=iOS' -archivePath "$archive" \
+  -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath "$out/device" \
   DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive | grep -E 'error:|ARCHIVE' | tail -20
 cat > "$work/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -92,4 +99,8 @@ cat > "$work/export.plist" <<PLIST
 PLIST
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/export.plist" \
   -exportPath "$out/export-$build_number" "${auth[@]}" | grep -E 'error|EXPORT|Upload|upload' | tail -20
+# This Mac has little disk: keep the archive (symbols for crash reports) of the last two
+# builds only, and none of the intermediates.
+rm -rf "$out/device" "$out/export-$build_number"
+ls -1dt "$out"/Rubato-*.xcarchive | tail -n +3 | while read -r old; do rm -rf "$old"; done
 printf 'uploaded build %s\n' "$build_number"
