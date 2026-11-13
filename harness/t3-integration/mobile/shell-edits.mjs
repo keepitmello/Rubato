@@ -142,7 +142,7 @@ export const shellEdits = {
       'import { CompanionRoomRouteScreen } from "./features/rubato-shell/companionSurface";\n'],
     ['    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,',
       '    // Rubato: a companion\'s room, pushed over the tabs like a thread.\n'
-      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The room draws its own header: avatar, name and back.\n      options: { headerShown: false },\n    }),\n'],
+      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The thread screen\'s bar; the room sets its own title (avatar over name).\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'],
     ['      options: { title: "About T3 Code" },', '      options: { title: "About Rubato" },', 'replace'],
   ],
   'apps/mobile/src/App.tsx': [
