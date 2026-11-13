@@ -46,10 +46,12 @@ for (const item of companions) {
 }
 
 const lines = new Map();
+// Voice tags such as [laughing] shape the voice; they are not words to read.
+const shown = text => text.replace(/\[[^\]]{1,30}\]\s*/g, '').trim();
 function say(id, who, text) {
   let line = lines.get(id);
   if (!line) { line = document.createElement('div'); line.className = `bubble ${who}`; $('log').append(line); lines.set(id, line); }
-  line.textContent = text; $('log').scrollTop = $('log').scrollHeight;
+  line.textContent = shown(text); $('log').scrollTop = $('log').scrollHeight;
 }
 
 $('call').onclick = async () => {
@@ -60,17 +62,23 @@ $('call').onclick = async () => {
   const { url, token } = await answer.json();
   room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   room.on(RoomEvent.TrackSubscribed, track => { if (track.kind === Track.Kind.Audio) document.body.append(track.attach()); });
-  room.on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => {
+  const showState = participant => {
     const state = participant.attributes['lk.agent.state']; if (state) $('state').textContent = states[state] ?? state;
-  });
+  };
+  room.on(RoomEvent.ParticipantAttributesChanged, (_changed, participant) => showState(participant));
+  room.on(RoomEvent.ParticipantConnected, showState);
+  // Each stream carries one segment's text so far; a later stream for the same segment replaces it.
   room.registerTextStreamHandler('lk.transcription', async (reader, participant) => {
     const who = participant.identity === room.localParticipant.identity ? 'me' : 'them';
+    const segment = reader.info.attributes?.['lk.segment_id'] ?? reader.info.id;
     let text = '';
-    for await (const chunk of reader) { text += chunk; say(reader.info.id, who, text); }
+    for await (const chunk of reader) { text += chunk; say(segment, who, text); }
   });
   room.on(RoomEvent.Disconnected, () => { room = null; $('call').classList.remove('live'); $('state').textContent = '통화 끝'; });
   $('state').textContent = '연결하는 중';
   await room.connect(url, token);
+  $('state').textContent = `${chosen.title} 기다리는 중`;
+  for (const participant of room.remoteParticipants.values()) showState(participant);
   await room.localParticipant.setMicrophoneEnabled(true);
   $('call').classList.add('live');
 };

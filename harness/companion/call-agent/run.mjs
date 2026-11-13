@@ -3,7 +3,8 @@
 //
 //   node run.mjs            start all three; Ctrl-C stops them
 //
-// The LiveKit key pair is made once and kept in ~/.rubato/call/livekit.yaml (0600).
+// The LiveKit key pair is made once and kept in ~/.rubato/call/livekit.yaml (0600); the rest of
+// that file is rewritten on every start.
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -22,26 +23,27 @@ const PAGE_PORT = Number(process.env.RUBATO_CALL_PAGE_PORT ?? 18790);
 const HOST = '127.0.0.1';
 
 export function livekitConfig(file = path.join(home, 'livekit.yaml')) {
-  if (!existsSync(file)) {
-    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    const key = `rubato${randomBytes(6).toString('hex')}`, secret = randomBytes(32).toString('base64url');
-    writeFileSync(file, [
-      `port: ${LIVEKIT_PORT}`,
-      `bind_addresses: ["${HOST}"]`,
-      'rtc:',
-      `  tcp_port: ${LIVEKIT_PORT + 1}`,
-      '  port_range_start: 50000',
-      '  port_range_end: 50100',
-      '  use_external_ip: false',
-      `  node_ip: ${HOST}`,
-      'keys:',
-      `  ${key}: ${secret}`,
-      'logging:',
-      '  level: info',
-      '',
-    ].join('\n'), { mode: 0o600 });
-  }
-  const [, key, secret] = readFileSync(file, 'utf8').match(/^keys:\n\s+(\S+):\s*(\S+)/m);
+  const kept = existsSync(file) ? readFileSync(file, 'utf8').match(/^keys:\n\s+(\S+):\s*(\S+)/m) : null;
+  const key = kept?.[1] ?? `rubato${randomBytes(6).toString('hex')}`;
+  const secret = kept?.[2] ?? randomBytes(32).toString('base64url');
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  // Signalling stays on loopback. Media advertises this Mac's own interface addresses (Wi-Fi,
+  // Tailscale): browsers never pair a loopback ICE candidate, so 127.0.0.1 leaves a page stuck
+  // connecting, and a phone reaches the Mac only through a real address.
+  writeFileSync(file, [
+    `port: ${LIVEKIT_PORT}`,
+    `bind_addresses: ["${HOST}"]`,
+    'rtc:',
+    `  tcp_port: ${LIVEKIT_PORT + 1}`,
+    '  port_range_start: 50000',
+    '  port_range_end: 50100',
+    '  use_external_ip: false',
+    'keys:',
+    `  ${key}: ${secret}`,
+    'logging:',
+    '  level: info',
+    '',
+  ].join('\n'), { mode: 0o600 });
   return { file, key, secret, url: `ws://${HOST}:${LIVEKIT_PORT}` };
 }
 
