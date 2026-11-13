@@ -108,3 +108,44 @@ test('one event is one published revision: its sequence, its ring slot and the s
   assert.equal(events[0].sequence, 301 - 255);
   assert.equal(events.at(-1).sequence, 301);
 });
+
+test('the directory changes by the entries that changed, not by resending every conversation', async () => {
+  const { replicatedState } = await import('@earendil-works/chord');
+  const { BACKGROUND_CONTEXT } = await import('@earendil-works/chord/context');
+  const { editSessionList } = await import('../src/host.mjs');
+  const item = (id, status = 'stored') => ({ sessionId: `s${id}`, cwd: '/w', status, attachments: 0 });
+  let seed = 7;
+  const random = (n) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  let previous = Array.from({ length: 40 }, (_, i) => item(i));
+  const state = replicatedState({ sessions: previous });
+  let nextId = 40;
+  for (let round = 0; round < 300; round++) {
+    const next = previous.map((entry) => ({ ...entry }));
+    const kind = random(4);
+    if (kind === 0) next[random(next.length)].status = 'running';
+    else if (kind === 1) next.unshift(...next.splice(random(next.length), 1));
+    else if (kind === 2 && next.length > 1) next.splice(random(next.length), 1 + random(3));
+    else next.splice(random(next.length + 1), 0, item(nextId++));
+    state.change(BACKGROUND_CONTEXT, (draft) => { editSessionList(draft.sessions, previous, next); });
+    assert.deepEqual(state.value.sessions, next, `round ${round}`);
+    previous = next;
+  }
+  // One conversation's status: one entry written. One moved to the top: one entry inserted.
+  const written = [];
+  const recording = (list) => new Proxy(list, {
+    set(target, key, value) { if (key !== 'length') written.push(value); return Reflect.set(target, key, value); },
+    get(target, key) {
+      if (key !== 'splice') return Reflect.get(target, key);
+      return (...args) => { written.push(...args.slice(2)); return target.splice(...args); };
+    },
+  });
+  const many = Array.from({ length: 2000 }, (_, i) => item(i));
+  const status = many.map((entry, i) => (i === 1500 ? { ...entry, status: 'running' } : entry));
+  assert.equal(editSessionList(recording(many.slice()), many, status), true);
+  assert.deepEqual(written, [status[1500]]);
+  written.length = 0;
+  const moved = [many[900], ...many.slice(0, 900), ...many.slice(901)];
+  editSessionList(recording(many.slice()), many, moved);
+  assert.deepEqual(written, [many[900]]);
+  assert.equal(editSessionList(recording(many.slice()), many, many.map((entry) => ({ ...entry }))), false);
+});

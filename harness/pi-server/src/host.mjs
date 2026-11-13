@@ -280,6 +280,34 @@ class RuntimeHandle {
   }
 }
 
+const sameItem = (a, b) => Object.keys(a).length === Object.keys(b).length &&
+  Object.keys(a).every((key) => Object.is(a[key], b[key]));
+
+/**
+ * Turns the replicated list `draft`, which holds `previous`, into `next` with the few edits between
+ * them, keyed by sessionId. Assigning the new array sent every stored conversation (about 300KB for
+ * 2000) to each presentation whenever one of them changed status; an edit sends that one entry.
+ * @returns {boolean} whether anything changed
+ */
+export function editSessionList(draft, previous, next) {
+  const current = previous.slice();
+  const wanted = new Set(next.map((item) => item.sessionId));
+  let changed = false;
+  for (let i = 0; i < next.length; i += 1) {
+    while (i < current.length && !wanted.has(current[i].sessionId)) { draft.splice(i, 1); current.splice(i, 1); changed = true; }
+    const item = next[i];
+    if (current[i]?.sessionId === item.sessionId) {
+      if (!sameItem(current[i], item)) { draft[i] = item; current[i] = item; changed = true; }
+      continue;
+    }
+    const from = current.findIndex((entry, at) => at > i && entry.sessionId === item.sessionId);
+    if (from >= 0) { draft.splice(from, 1); current.splice(from, 1); }
+    draft.splice(i, 0, item); current.splice(i, 0, item); changed = true;
+  }
+  if (current.length > next.length) { draft.length = next.length; changed = true; }
+  return changed;
+}
+
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
   workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, threadRequestsPath, log = () => {} } = {}) {
@@ -310,11 +338,10 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
         status: !handle ? 'stored' : handle.closed ? 'unloading' : handle.state.value.status ?? 'stored',
         attachments: handle?.attachments ?? 0 };
     });
-    if (sessions.length === published.length && sessions.every((item, i) =>
-      Object.keys(item).length === Object.keys(published[i]).length &&
-      Object.keys(item).every((key) => Object.is(item[key], published[i][key])))) return;
+    if (sessions.length === published.length && sessions.every((item, i) => sameItem(item, published[i]))) return;
+    const previous = published;
     published = sessions;
-    directory.change(BACKGROUND_CONTEXT, (draft) => { draft.sessions = sessions; draft.revision += 1; });
+    directory.change(BACKGROUND_CONTEXT, (draft) => { editSessionList(draft.sessions, previous, sessions); draft.revision += 1; });
   };
   // `touchedAt` tells a presentation how long a stored session's prompt cache can still live.
   const refresh = () => refreshing ??= (async () => { metrics.lists++;
