@@ -302,12 +302,17 @@ function RoomComposer(props: {
  * blurred the whole room under the transparent bar. The room draws its own band (HeaderBand).
  */
 const NO_EDGE_EFFECTS = { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const;
-function renderRoomScrollView(props: ComponentProps<typeof ScrollView>) {
+function RoomScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <NativeScrollViewMarker style={{ flex: 1 }} scrollEdgeEffects={NO_EDGE_EFFECTS}>
       <ScrollView {...props} />
     </NativeScrollViewMarker>
   );
+}
+// FlatList clones the element this returns with its scroll props (inversion, padding, ref), so the
+// element must be the component that hands them to the ScrollView, not the marker around it.
+function renderRoomScrollView(props: ComponentProps<typeof ScrollView>) {
+  return <RoomScrollView {...props} />;
 }
 
 /** The room once its thread is known: route params carry environmentId and threadId. */
