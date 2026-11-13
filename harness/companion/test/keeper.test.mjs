@@ -664,6 +664,38 @@ test('heartbeat: a wake wish keeps the ticks quiet while the user is here too, a
   assert.notEqual(readWakeWish(env), undefined, 'the wish still waits');
 });
 
+test('heartbeat: a companion set to keep its ticks during a wish gets them, a reflect going as a plain tick, and the reflect note on its reflects', async (t) => {
+  const { env, poke, lines } = await heartbeatDay(t);
+  const note = 'heartbeat 스킬 열고 내 것 하나 집은 다음에 일정 봐.';
+  writeSettings({ heartbeat: { quietDuringWish: false, reflectNote: note } }, env);
+  await poke(at(20, 12, 30));
+  await poke(at(20, 13));
+  await poke(at(20, 13, 30));
+  assert.equal(lines().at(-1), `${lines().at(-1).split('\n')[0]}\n\n${note}`, 'tick 3 reflects with the note after a blank line');
+  assert.match(lines().at(-1), /^HEARTBEAT tick=3 now="[^"]*" action=reflect\n/);
+  assert.equal(lines()[0].includes(note), false, 'a plain tick carries no note');
+  setWakeWish({ target: '16:10', reason: '점괘 채점' }, { now: at(20, 13, 35), env });
+  for (const time of [at(20, 14), at(20, 14, 30), at(20, 15), at(20, 15, 30), at(20, 16)]) await poke(time);
+  assert.deepEqual(lines().slice(3).map((line) => line.replace(/ now="[^"]*"/, '')),
+    ['HEARTBEAT tick=4', 'HEARTBEAT tick=5', 'HEARTBEAT tick=6', 'HEARTBEAT tick=7', 'HEARTBEAT tick=8'],
+    'the wish does not silence the ticks; tick 6 goes plain, without the note');
+  await poke(at(20, 16, 30));
+  const due = lines().at(-1).split('\n');
+  assert.match(due[0], /^HEARTBEAT tick=9 now="[^"]*" action=reflect reason=wake_wish$/);
+  assert.match(due[1], /^WAKE_WISH .* reason=점괘 채점$/);
+  assert.equal(due.at(-1), note, 'the wish come due is a reflect, and carries the note');
+});
+
+test('heartbeat: Segno, with the defaults, rests through a wish even when it has a reflect note', async (t) => {
+  const { env, poke, lines } = await heartbeatDay(t);
+  writeSettings({ heartbeat: { reflectNote: '내 것부터.' } }, env);
+  setWakeWish({ target: '14:10', reason: '다시 본다' }, { now: at(20, 12, 5), env });
+  for (const time of [at(20, 12, 30), at(20, 13), at(20, 13, 30), at(20, 14)]) await poke(time);
+  assert.equal(lines().length, 0);
+  await poke(at(20, 14, 30));
+  assert.match(lines().at(-1), /^HEARTBEAT tick=5 now="[^"]*" action=reflect reason=wake_wish\nWAKE_WISH .*\n\n내 것부터\.$/);
+});
+
 test('heartbeat: a wish further than six hours from when it was set comes due at six, marked clamped', async (t) => {
   const { env, poke, lines } = await heartbeatDay(t);
   setWakeWish({ target: String(10 * 60), reason: '저녁에' }, { now: at(20, 12), env });

@@ -59,11 +59,16 @@ export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
  * `greetings` are Roo's night (00:07) and morning (09:07) greetings; the morning one carries the
  * daily report (user item 4c0b0f00). `schedule.sources` are the calendars (ICS address or .ics file)
  * and schedule files the heartbeat reads for its nudges (schedule.mjs, which documents the format);
- * Segno sets them when the user tells it. None by default.
+ * Segno sets them when the user tells it. None by default. `heartbeat.quietDuringWish` is whether a
+ * pending wake wish silences plain and reflect ticks (Segno's rest, user 2026-10-20); off, they keep
+ * coming and a reflect goes as a plain tick until the wish, as Roo's old tick did. `heartbeat.reflectNote`
+ * is the companion's own text under each reflect tick, after a blank line as a greeting's body goes.
  */
+/** `heartbeat.reflectNote` rides on every reflect tick; longer than this is refused. */
+export const REFLECT_NOTE_LIMIT = 2000;
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
-  heartbeat: Object.freeze({ enabled: true, everyMinutes: 30 }),
+  heartbeat: Object.freeze({ enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }),
   greetings: Object.freeze({ enabled: true }),
   schedule: Object.freeze({ sources: Object.freeze([]) }),
 });
@@ -110,6 +115,8 @@ export function normalizeSettings(value) {
     heartbeat: {
       enabled: typeof heartbeat.enabled === 'boolean' ? heartbeat.enabled : DEFAULT_SETTINGS.heartbeat.enabled,
       everyMinutes: HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes) ? heartbeat.everyMinutes : DEFAULT_SETTINGS.heartbeat.everyMinutes,
+      quietDuringWish: typeof heartbeat.quietDuringWish === 'boolean' ? heartbeat.quietDuringWish : DEFAULT_SETTINGS.heartbeat.quietDuringWish,
+      reflectNote: typeof heartbeat.reflectNote === 'string' ? heartbeat.reflectNote.trim().slice(0, REFLECT_NOTE_LIMIT) : DEFAULT_SETTINGS.heartbeat.reflectNote,
     },
     greetings: { enabled: typeof greetings.enabled === 'boolean' ? greetings.enabled : DEFAULT_SETTINGS.greetings.enabled },
     schedule: { sources },
@@ -131,6 +138,10 @@ export function writeSettings(patch, env = process.env) {
     if (heartbeat.enabled !== undefined && typeof heartbeat.enabled !== 'boolean') throw new TypeError('heartbeat.enabled must be true or false');
     if (heartbeat.everyMinutes !== undefined && !HEARTBEAT_MINUTES.includes(heartbeat.everyMinutes))
       throw new TypeError(`heartbeat.everyMinutes must be one of ${HEARTBEAT_MINUTES.join(', ')}`);
+    if (heartbeat.quietDuringWish !== undefined && typeof heartbeat.quietDuringWish !== 'boolean') throw new TypeError('heartbeat.quietDuringWish must be true or false');
+    if (heartbeat.reflectNote !== undefined && typeof heartbeat.reflectNote !== 'string') throw new TypeError('heartbeat.reflectNote must be text');
+    if (typeof heartbeat.reflectNote === 'string' && heartbeat.reflectNote.trim().length > REFLECT_NOTE_LIMIT)
+      throw new TypeError(`heartbeat.reflectNote holds at most ${REFLECT_NOTE_LIMIT} characters`);
   }
   const greetings = patch.greetings;
   if (greetings !== undefined) {

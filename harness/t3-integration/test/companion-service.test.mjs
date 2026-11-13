@@ -32,7 +32,7 @@ test('status starts off with no conversation, and turning it on is a saved setti
   assert.equal(first.body.sessionId, null);
   assert.equal(first.body.home, env.RUBATO_COMPANION_HOME);
   const saved = await post('save-settings', { patch: { enabled: true, heartbeat: { everyMinutes: 30 } } });
-  assert.deepEqual(saved.body.settings.heartbeat, { enabled: true, everyMinutes: 30 });
+  assert.deepEqual(saved.body.settings.heartbeat, { enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' });
   assert.equal(saved.body.settings.enabled, true);
   writeState({ sessionId: 'segno' }, env);
   assert.equal((await post('status')).body.sessionId, 'segno', 'the conversation the keeper recorded');

@@ -316,7 +316,8 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         searchKeywords: ["wake", "wish", "heartbeat", "reflect", "later", "깨워", "하트비트", "다음에"],
         description:
           "When you next want to look in, and why: minutes from now, HH:MM (the next one; a time already past " +
-          "today is tomorrow) or an ISO 8601 time. Until then no heartbeat tick comes; you rest. " +
+          "today is tomorrow) or an ISO 8601 time. Until then no heartbeat tick comes; you rest (unless your " +
+          "heartbeat.quietDuringWish setting is off: then the ticks keep coming, a reflect as a plain tick). " +
           "The first tick at or after that time comes with action=reflect and your reason. The user, a lead's " +
           "ending, a greeting, a tick with a greeting catch-up or a schedule nudge, and sleep still wake you. At " +
           "most six hours from now; a later time is cut to six. Setting it again replaces the earlier one.",

@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import {
-  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
+  DEFAULT_SETTINGS, HEARTBEAT_MINUTES, PIECES, REFLECT_NOTE_LIMIT, SEEDED_PIECES, basePiecePath, clearPersonaReviewRequest, composeCompanionPrompt,
   companionPaths, moveBaseToDefault, pendingDefaultChanges, personalPiecePath, readPersonaReviewRequest, readPieces,
   readSettings, requestPersonaReview, seedPromptPieces, writePiece, writeSettings,
 } from '../companion.mjs';
@@ -123,7 +123,7 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   writeSettings({ heartbeat: { everyMinutes: 45 } }, env);
   writeSettings({ greetings: { enabled: false } }, env);
   writeSettings({ schedule: { sources: [{ location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } }, env);
-  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45 }, greetings: { enabled: false },
+  assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45, quietDuringWish: true, reflectNote: '' }, greetings: { enabled: false },
     schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } });
   assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
   assert.throws(() => writeSettings({ schedule: { sources: 'x' } }, env), /schedule\.sources/);
@@ -151,9 +151,24 @@ test('the heartbeat is every 15, 30 or 45 minutes; an older stored interval read
   writeSettings({ enabled: true }, env);
   for (const older of [60, 120, 240]) {
     writeFileSync(companionPaths(env).settings, JSON.stringify({ enabled: true, heartbeat: { enabled: true, everyMinutes: older } }));
-    assert.deepEqual(readSettings(env).heartbeat, { enabled: true, everyMinutes: 30 }, `${older}`);
+    assert.deepEqual(readSettings(env).heartbeat, { enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }, `${older}`);
     assert.throws(() => writeSettings({ heartbeat: { everyMinutes: older } }, env), /everyMinutes/);
   }
+});
+
+test('a pending wish quiets the heartbeat and no reflect note is set until the companion sets them otherwise', (t) => {
+  const env = sandbox(t);
+  assert.equal(readSettings(env).heartbeat.quietDuringWish, true);
+  assert.equal(readSettings(env).heartbeat.reflectNote, '');
+  writeSettings({ heartbeat: { quietDuringWish: false, reflectNote: '  heartbeat 스킬을 열어.\n' } }, env);
+  assert.deepEqual(readSettings(env).heartbeat, { enabled: true, everyMinutes: 30, quietDuringWish: false, reflectNote: 'heartbeat 스킬을 열어.' });
+  writeSettings({ heartbeat: { everyMinutes: 15 } }, env);
+  assert.equal(readSettings(env).heartbeat.reflectNote, 'heartbeat 스킬을 열어.', 'another heartbeat field leaves the note');
+  assert.throws(() => writeSettings({ heartbeat: { quietDuringWish: 'no' } }, env), /quietDuringWish/);
+  assert.throws(() => writeSettings({ heartbeat: { reflectNote: 3 } }, env), /reflectNote/);
+  assert.throws(() => writeSettings({ heartbeat: { reflectNote: 'x'.repeat(REFLECT_NOTE_LIMIT + 1) } }, env), /at most/);
+  writeSettings({ heartbeat: { reflectNote: '' } }, env);
+  assert.equal(readSettings(env).heartbeat.reflectNote, '');
 });
 
 test('a personal piece replaces only that piece, and saving the default or nothing removes it', (t) => {

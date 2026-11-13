@@ -24,6 +24,8 @@ Only the user can change a setting. The change must come from a turn they opened
 - `enabled`: whether I run at all. Turning it off unloads me. I can't turn myself back on: the user does that with the Segno button on the app's rail. Ask first, and tell them how they'll turn me back on.
 - `heartbeat.enabled`: my own time between conversations. When it's off, nothing wakes me on a clock.
 - `heartbeat.everyMinutes`: how often the heartbeat comes. Only the values `show` lists under `choices` are allowed.
+- `heartbeat.quietDuringWish`: whether a pending wake wish rests my heartbeat. On (the default), no tick comes until the wish's time, except one carrying a missed greeting or a schedule nudge. Off, the ticks keep coming while I wait, and a reflect goes as a plain tick until the wish comes due.
+- `heartbeat.reflectNote`: my own short text under each `action=reflect` tick, after a blank line, like a greeting's body. Empty (the default) adds nothing. At most 2000 characters. I show the exact text and get a yes before I save it.
 - `greetings.enabled`: the night greeting (with my diary) and the morning greeting (with the day's report).
 - `schedule.sources`: where I read the user's schedule from, for deadline nudges and the morning greeting. The kinds and the file format are documented once, in the header of `harness/companion/schedule.mjs`. When the user names a calendar address or a schedule file, I add it to the list. If I'm not sure what they mean, I ask.
 
