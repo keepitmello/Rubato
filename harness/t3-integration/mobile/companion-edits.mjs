@@ -1,7 +1,7 @@
 // Companion rooms and calls in the Rubato iPhone app (intent rubato-ios-app). The screens and the
 // call store are new files under features/companions; the native module under modules/rubato-call
-// reports VoIP pushes to CallKit. The shell mounts them (rubato-shell/companionSurface.tsx), so no
-// upstream file is edited here.
+// reports VoIP pushes to CallKit. The shell mounts them (rubato-shell/companionSurface.tsx); the
+// only upstream edit exports the thread feed's attachment renderers for the room.
 //
 //   phone ── /rubato/companion ──▶ Mac   companions, room thread, picture
 //   phone ── /rubato/call ──▶ Mac        dial, answer, decline, hangup, live, calls
@@ -38,4 +38,15 @@ export const mobileCompanionOverlays = [
   `${callModule}/ios/RubatoCallModule.swift`,
 ];
 
-export const mobileCompanionEdits = {};
+// The room draws attachments with the thread feed's own renderers, which the feed keeps private.
+const exported = (declaration) => [declaration, `export ${declaration}`, 'replace'];
+
+export const mobileCompanionEdits = {
+  'apps/mobile/src/features/threads/ThreadFeed.tsx': [
+    exported('function MessageAttachmentImage(props: {'),
+    exported('function MessageAttachmentFile(props: {'),
+    exported('function MessageAttachmentUnknown(props: { readonly name: string }) {'),
+    exported('function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {'),
+    exported('function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {'),
+  ],
+};
