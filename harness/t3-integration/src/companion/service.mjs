@@ -202,6 +202,15 @@ export function createCompanionService(options = {}) {
         const mime = file.endsWith('.png') ? 'image/png' : 'image/webp';
         return { art: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };
       }
+      // The companion's face for the phone's list and room (companion.mjs avatarFile); null when
+      // it has none.
+      case 'avatar': {
+        const file = companion.avatarFile(env);
+        if (!file) return { avatar: null };
+        const data = await readFile(file);
+        const mime = file.endsWith('.png') ? 'image/png' : /\.jpe?g$/.test(file) ? 'image/jpeg' : 'image/webp';
+        return { avatar: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };
+      }
       // Segno's inbox: its own issue list, which the daily report reads.
       case 'inbox': {
         const box = inbox.openInbox({ env });

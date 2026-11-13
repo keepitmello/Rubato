@@ -309,6 +309,19 @@ export function stageArtFile(env = process.env, state = 'idle') {
   return path.join(import.meta.dirname, 'art', `stage-${state}.webp`);
 }
 
+/**
+ * The companion's face for a phone's chat list and room header: `art/avatar.{webp,png,jpg}` in its
+ * own home, else its idle stage art, else null. The desktop's space keeps reading stage art only.
+ */
+export function avatarFile(env = process.env) {
+  const own = companionPaths(env).art;
+  for (const name of ['avatar.webp', 'avatar.png', 'avatar.jpg', 'avatar.jpeg']) {
+    if (existsSync(path.join(own, name))) return path.join(own, name);
+  }
+  try { return stageArtFile(env, 'idle'); }
+  catch (error) { if (error?.code === 'ENOENT') return null; throw error; }
+}
+
 export function readPanel(env = process.env) {
   const value = readJson(companionPaths(env).panel);
   return value && Array.isArray(value.leads) && Array.isArray(value.finished) ? value : { leads: [], finished: [] };

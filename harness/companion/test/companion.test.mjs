@@ -276,6 +276,19 @@ test("Segno's art is one swappable file per expression: the person's own, else t
   assert.equal(stageArtFile(env, 'idle'), path.join(dir, 'art', 'stage.png'));
 });
 
+test("a companion's face for the phone: its own avatar, else its idle stage, else none", async (t) => {
+  const { avatarFile, companionPaths } = await import('../companion.mjs');
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-avatar-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const roo = { RUBATO_COMPANION_HOME: dir, RUBATO_COMPANION_ID: 'roo' };
+  assert.equal(avatarFile(roo), null, 'no art of its own and no shipped default');
+  mkdirSync(companionPaths(roo).art, { recursive: true });
+  writeFileSync(path.join(companionPaths(roo).art, 'stage.png'), 'png');
+  assert.equal(avatarFile(roo), path.join(dir, 'art', 'stage.png'));
+  writeFileSync(path.join(companionPaths(roo).art, 'avatar.jpg'), 'jpg');
+  assert.equal(avatarFile(roo), path.join(dir, 'art', 'avatar.jpg'));
+});
+
 test('a default that moved away from the base is a review; moving the base settles it', (t) => {
   const env = sandbox(t);
   const before = defaultsSandbox(t);

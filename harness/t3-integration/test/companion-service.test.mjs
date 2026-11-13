@@ -164,6 +164,12 @@ test("the task panel beside Segno's chat: followed leads, recent endings and hel
   const working = await post('art', { state: 'working' });
   assert.notEqual(working.body.art.url, art.body.art.url, 'each expression is its own picture');
   assert.equal((await post('art', { state: 'dancing' })).status, 400);
+  // The phone's face for Segno is its idle stage until it has an avatar of its own.
+  assert.equal((await post('avatar')).body.avatar.url, art.body.art.url);
+  mkdirSync(path.join(env.RUBATO_COMPANION_HOME, 'art'), { recursive: true });
+  writeFileSync(path.join(env.RUBATO_COMPANION_HOME, 'art', 'avatar.jpg'), Buffer.from([0xff, 0xd8, 0xff]));
+  assert.equal((await post('avatar')).body.avatar.url, 'data:image/jpeg;base64,/9j/');
+  assert.equal((await post('art')).body.art.url, art.body.art.url, 'the desktop space keeps its stage');
   // Segno's inbox is its own worklist: the panel shows the work handed to leads, not the inbox.
   const { openInbox } = await import('../../companion/inbox.mjs');
   const box = openInbox({ env });
