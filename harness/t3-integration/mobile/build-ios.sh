@@ -69,7 +69,8 @@ if [ "$MODE" = --simulator ]; then
   xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
     -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
     -derivedDataPath "$out/sim" ARCHS=arm64 CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY=- \
-    DEVELOPMENT_TEAM="$TEAM_ID" build | grep -E 'error:|BUILD' | tail -20
+    DEVELOPMENT_TEAM="$TEAM_ID" build > "$out/sim.log" 2>&1 \
+    || { grep -E ' error: |^error:|BUILD FAILED' "$out/sim.log" | tail -20; exit 1; }
   # T3's vendored GhosttyKit carries no x86_64 simulator slice, hence ARCHS=arm64. The ad-hoc
   # signature keeps the entitlements: without its keychain group, saved Macs cannot be read.
   app="$out/sim/Build/Products/Release-iphonesimulator/Rubato.app"
@@ -87,7 +88,8 @@ auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME
 archive="$out/Rubato-$build_number.xcarchive"
 xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath "$out/device" \
-  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive | grep -E 'error:|ARCHIVE' | tail -20
+  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive > "$out/archive.log" 2>&1 \
+  || { grep -E ' error: |^error:|ARCHIVE FAILED' "$out/archive.log" | tail -20; exit 1; }
 cat > "$work/export.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -101,7 +103,8 @@ cat > "$work/export.plist" <<PLIST
 </dict></plist>
 PLIST
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/export.plist" \
-  -exportPath "$out/export-$build_number" "${auth[@]}" | grep -E 'error|EXPORT|Upload|upload' | tail -20
+  -exportPath "$out/export-$build_number" "${auth[@]}" > "$out/export.log" 2>&1 \
+  || { grep -iE 'error|EXPORT FAILED' "$out/export.log" | tail -20; exit 1; }
 # This Mac has little disk: keep the archive (symbols for crash reports) of the last two
 # builds only, and none of the intermediates.
 rm -rf "$out/device" "$out/export-$build_number"
