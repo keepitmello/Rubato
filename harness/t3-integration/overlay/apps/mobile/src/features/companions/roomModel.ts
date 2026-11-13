@@ -5,7 +5,7 @@
 // gets a time line instead of a time on every bubble. Each call is one card, placed where it
 // started (user 0d108939: a card like a messenger's call, opened to read what was said). The desktop
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
-import type { CallRecord } from "./callStore";
+import type { CallRecord } from "./callTypes";
 
 /** Messages from one side within this gap of each other belong to one group. */
 export const GROUP_GAP_MS = 3 * 60_000;

@@ -11,9 +11,12 @@ import { Room, RoomEvent, type Participant } from "livekit-client";
 import { useSyncExternalStore } from "react";
 
 import { RubatoCall, type RubatoCallEndReason, type RubatoCallInfo } from "../../../modules/rubato-call";
+import type { CallLine, CallRecord } from "./callTypes";
 import { copy } from "./copy";
 import { ringCheck, type LiveAnswer } from "./ringCheck";
 import { pairedEnvironmentIds, postRubato, RubatoRequestError } from "./rubatoHttp";
+
+export type { CallLine, CallRecord, CallStatus } from "./callTypes";
 
 registerGlobals();
 
@@ -24,30 +27,6 @@ export const RING_POLL_MS = 2_000;
 export const CONNECT_MS = 20_000;
 /** How long an answer from the lock screen waits for the app to reach a Mac. */
 const ANSWER_WAIT_MS = 12_000;
-
-export type CallStatus = "ringing" | "active" | "ended" | "missed" | "declined";
-
-export interface CallLine {
-  readonly who: "me" | "companion";
-  readonly text: string;
-  readonly at: number;
-}
-
-/** One call as the Mac's call log keeps it (call-agent calls.mjs). */
-export interface CallRecord {
-  readonly id: string;
-  readonly uuid?: string;
-  readonly companion: string;
-  readonly title?: string | null;
-  readonly direction: "outgoing" | "incoming";
-  readonly status: CallStatus;
-  readonly reason: string | null;
-  readonly createdAt: number;
-  readonly ringUntil?: number | null;
-  readonly answeredAt: number | null;
-  readonly endedAt: number | null;
-  readonly transcript: readonly CallLine[];
-}
 
 interface Joined {
   readonly call: CallRecord;

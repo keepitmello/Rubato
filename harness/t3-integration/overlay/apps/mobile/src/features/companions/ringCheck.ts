@@ -2,7 +2,7 @@
 // paired Macs answered to /rubato/call/live. A Mac that did not answer says nothing: a phone woken
 // by a VoIP push may not have its VPN back yet, and its ring must not stop because of that. It stops
 // only on a Mac's word (taken, or no longer live), or at ringUntil (the native side does that).
-import type { CallRecord } from "./callStore";
+import type { CallRecord } from "./callTypes";
 
 export type LiveAnswer =
   | { readonly environmentId: string; readonly live: ReadonlyArray<Pick<CallRecord, "id" | "status">> }

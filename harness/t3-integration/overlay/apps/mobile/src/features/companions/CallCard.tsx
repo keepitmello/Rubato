@@ -6,7 +6,7 @@ import { Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
-import type { CallRecord } from "./callStore";
+import type { CallRecord } from "./callTypes";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { copy, phoneLocale } from "./copy";
 import { callHeadline, spokenText } from "./roomModel";

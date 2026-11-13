@@ -16,6 +16,7 @@ export const mobileCompanionOverlays = [
   `${companions}/rubatoHttp.ts`,
   `${companions}/companionsStore.ts`,
   `${companions}/callStore.ts`,
+  `${companions}/callTypes.ts`,
   `${companions}/ringCheck.ts`,
   `${companions}/ringCheck.test.ts`,
   `${companions}/roomModel.ts`,

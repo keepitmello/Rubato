@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import type { CallRecord } from "./callStore";
+import type { CallRecord } from "./callTypes";
 import { callHeadline, companionIsWriting, roomItems, roomPreview, spokenText, type RoomMessageInput } from "./roomModel";
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 13, 3, 0) + minutes * 60_000).toISOString();
