@@ -808,3 +808,11 @@ test("kill_bash all counts only the sessions it stopped", async (t) => {
 	const killed = await tools.get("kill_bash").execute("call-4", { all: true });
 	assert.equal(killed.content[0].text, "Killed 1 session(s).");
 });
+
+test("commands the agent runs yield the CPU to the engine under load", { skip: process.platform === "win32" }, async (t) => {
+	const { AGENT_COMMAND_NICE } = await import("./src/tools/spawn.ts");
+	const { tools } = await startTerminal(t, { notify: "wake" });
+	const result = await tools.get("bash").execute("call-1", { command: "ps -o nice= -p $$", description: "niceness", timeout: 20 });
+	const base = (await import("node:os")).getPriority();
+	assert.match(textOf(result), new RegExp(`(^|\\s)${base + AGENT_COMMAND_NICE}(\\s|$)`), "the command runs below the engine");
+});

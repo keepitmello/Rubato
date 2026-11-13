@@ -1,7 +1,21 @@
+import { existsSync } from "node:fs";
 import { getShellConfig } from "../host/shell.ts";
 import type { CreatedTerminalSession } from "../manager.ts";
 import type { TerminalRuntimeSession } from "../runtime-session.ts";
 import type { TerminalToolContext } from "./context.ts";
+
+/**
+ * Agent commands run one step below normal CPU priority. Every conversation shares the engine's
+ * one thread, so a heavy build at the same priority starved it and froze all of them; on an idle
+ * machine niceness changes nothing, and under load the person's apps and the engine go first.
+ */
+export const AGENT_COMMAND_NICE = 10;
+const NICE_BIN = "/usr/bin/nice";
+
+function yielding(shell: string, args: string[]): { command: string; args: string[] } {
+	if (process.platform === "win32" || !existsSync(NICE_BIN)) return { command: shell, args };
+	return { command: NICE_BIN, args: ["-n", String(AGENT_COMMAND_NICE), shell, ...args] };
+}
 
 export interface SpawnRequest {
 	readonly command: string;
@@ -26,12 +40,12 @@ export async function spawnCommandSession(
 ): Promise<CreatedTerminalSession> {
 	const shell = getShellConfig(ctx.shellPath);
 	const useStdin = shell.commandTransport === "stdin";
-	const args = useStdin ? [...shell.args] : [...shell.args, request.command];
+	const launch = yielding(shell.shell, useStdin ? [...shell.args] : [...shell.args, request.command]);
 	const cwd = request.cwd ?? ctx.cwd;
 
 	const created = await ctx.manager.create(shell.shell, {
-		command: shell.shell,
-		args,
+		command: launch.command,
+		args: launch.args,
 		cwd,
 		env: { ...ctx.getEnv(), ...request.envOverrides } as Record<string, string | undefined>,
 		cols: request.cols,
