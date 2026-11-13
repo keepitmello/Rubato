@@ -33,7 +33,10 @@ work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 source_dir="$INTEGRATION"
 if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   source_dir="$work/integration"; mkdir -p "$source_dir"
-  git -C "$INTEGRATION" archive "HEAD:$(git -C "$INTEGRATION" rev-parse --show-prefix | sed 's#/$##')" | tar -x -C "$source_dir"
+  # From the repository root: run inside a subfolder, git archive keeps only that subfolder's
+  # paths of the tree it is given, and here that is nothing.
+  prefix="$(git -C "$INTEGRATION" rev-parse --show-prefix | sed 's#/$##')"
+  git -C "$(git -C "$INTEGRATION" rev-parse --show-toplevel)" archive "HEAD:$prefix" | tar -x -C "$source_dir"
 fi
 node "$source_dir/apply.mjs" --t3 "$T3_MOBILE" >/dev/null
 
