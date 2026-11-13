@@ -139,10 +139,12 @@ export const shellEdits = {
   ],
   'apps/mobile/src/Stack.tsx': [
     ['import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";\n',
-      'import { CompanionRoomRouteScreen } from "./features/rubato-shell/companionSurface";\n'],
+      'import {\n  CompanionCallRouteScreen,\n  CompanionRoomRouteScreen,\n} from "./features/rubato-shell/companionSurface";\n'],
     ['    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,',
       '    // Rubato: a companion\'s room, pushed over the tabs like a thread.\n'
-      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The thread screen\'s bar; the room sets its own title (avatar over name).\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'],
+      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The thread screen\'s bar; the room sets its own title (avatar over name).\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'
+      + '    // One call\'s full transcript, over the room.\n'
+      + '    CompanionCall: createNativeStackScreen({\n      screen: CompanionCallRouteScreen,\n      linking: "companions/:companionId/calls/:callId",\n      options: {\n        ...FORM_SHEET_PRESENTATION_OPTIONS,\n        sheetAllowedDetents: [0.5, 0.92],\n        sheetGrabberVisible: true,\n        headerShown: false,\n      },\n    }),\n'],
     ['      options: { title: "About T3 Code" },', '      options: { title: "About Rubato" },', 'replace'],
   ],
   'apps/mobile/src/App.tsx': [
