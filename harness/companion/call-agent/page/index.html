@@ -16,6 +16,10 @@
   .voices button { border: 1px solid #8884; background: transparent; border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
   .voices button[aria-pressed="true"] { background: #1fb855; color: white; border-color: #1fb855; }
   .voices button:disabled { opacity: .4; cursor: not-allowed; }
+  .ring { display: flex; gap: 10px; align-items: center; justify-content: center; padding: 12px; border-radius: 14px; background: #1fb85522; }
+  .ring[hidden] { display: none; }
+  .ring button { border: 0; border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer; color: white; }
+  .ring #accept { background: #1fb855; } .ring #decline { background: #e5484d; }
   .state { text-align: center; font-size: 15px; opacity: .7; min-height: 1.4em; }
   .call { justify-self: center; width: 72px; height: 72px; border-radius: 50%; border: 0; font-size: 28px; cursor: pointer; background: #1fb855; color: white; }
   .call.live { background: #e5484d; }
@@ -29,6 +33,7 @@
 <body>
 <main>
   <div class="who" id="who"></div>
+  <div class="ring" id="ring" hidden><b id="ringWho"></b><button id="accept">받기</button><button id="decline">거절</button></div>
   <div class="voices" id="voices"></div>
   <div class="state" id="state">누구랑 통화할지 골라줘</div>
   <button class="call" id="call" aria-label="통화">📞</button>
@@ -70,12 +75,12 @@ function say(id, who, text) {
   line.textContent = shown(text); $('log').scrollTop = $('log').scrollHeight;
 }
 
-$('call').onclick = async () => {
-  if (room) { await room.disconnect(); return; }
-  if (!chosen) return;
-  const answer = await fetch(`/token?companion=${chosen.id}${voice ? `&voice=${encodeURIComponent(voice)}` : ''}`);
-  if (!answer.ok) { $('why').textContent = await answer.text(); return; }
-  const { url, token } = await answer.json();
+const post = (route, body) => fetch(route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+let callId = null, ringing = null, ringer = null;
+
+/** Joins a call's room with the token the service handed out. */
+async function connect({ url, token, call }, title) {
+  callId = call.id;
   room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   room.on(RoomEvent.TrackSubscribed, track => { if (track.kind === Track.Kind.Audio) document.body.append(track.attach()); });
   const showState = participant => {
@@ -90,14 +95,60 @@ $('call').onclick = async () => {
     let text = '';
     for await (const chunk of reader) { text += chunk; say(segment, who, text); }
   });
-  room.on(RoomEvent.Disconnected, () => { room = null; $('call').classList.remove('live'); $('state').textContent = '통화 끝'; });
+  room.on(RoomEvent.Disconnected, () => {
+    if (callId) void post('/hangup', { callId });
+    room = null; callId = null; $('call').classList.remove('live'); $('state').textContent = '통화 끝';
+  });
   $('state').textContent = '연결하는 중';
   await room.connect(url, token);
-  $('state').textContent = `${chosen.title} 기다리는 중`;
+  $('state').textContent = `${title} 기다리는 중`;
   for (const participant of room.remoteParticipants.values()) showState(participant);
   await room.localParticipant.setMicrophoneEnabled(true);
   $('call').classList.add('live');
+}
+
+$('call').onclick = async () => {
+  if (room) { await room.disconnect(); return; }
+  if (!chosen) return;
+  const answer = await post('/dial', { companion: chosen.id, voice });
+  if (!answer.ok) { $('why').textContent = (await answer.json()).error; return; }
+  await connect(await answer.json(), chosen.title);
 };
+
+// A companion calling: ring until it is answered here, answered elsewhere, declined or missed.
+function ring(on) {
+  if (on && !ringer) {
+    const audio = new AudioContext(); const gain = audio.createGain(); gain.connect(audio.destination); gain.gain.value = 0;
+    const tone = audio.createOscillator(); tone.frequency.value = 480; tone.connect(gain); tone.start();
+    let at = 0; const beat = setInterval(() => { gain.gain.value = (at++ % 6) < 2 ? 0.15 : 0; }, 333);
+    ringer = { stop() { clearInterval(beat); tone.stop(); audio.close(); } };
+  }
+  if (!on && ringer) { ringer.stop(); ringer = null; }
+}
+async function watchRings() {
+  try {
+    const live = await (await fetch('/live')).json();
+    const call = live.find(item => item.status === 'ringing');
+    if (call && !room) {
+      const who = companions.find(item => item.id === call.companion)?.title ?? call.companion;
+      ringing = call; $('ring').hidden = false; $('ringWho').textContent = `${who}가 전화해요`; ring(true);
+    } else if (!call || room) { ringing = null; $('ring').hidden = true; ring(false); }
+  } catch {}
+  setTimeout(watchRings, 1500);
+}
+$('accept').onclick = async () => {
+  if (!ringing) return;
+  const call = ringing; ringing = null; $('ring').hidden = true; ring(false);
+  const answer = await post('/answer', { callId: call.id });
+  if (!answer.ok) { $('why').textContent = (await answer.json()).error; return; }
+  await connect(await answer.json(), companions.find(item => item.id === call.companion)?.title ?? call.companion);
+};
+$('decline').onclick = async () => {
+  if (!ringing) return;
+  const call = ringing; ringing = null; $('ring').hidden = true; ring(false);
+  await post('/decline', { callId: call.id });
+};
+watchRings();
 </script>
 </body>
 </html>

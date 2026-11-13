@@ -18,14 +18,25 @@ caller ─ audio ─▶ LiveKit server (this Mac)
 
 ## Run
 
-```sh
-npm install
-node run.mjs          # LiveKit server, call worker and the page; Ctrl-C stops all three
-```
+The engine runs it as the resident service `call` whenever a companion has `call.enabled`
+(`service.mjs`, listed in `pi-server/src/resident-services.mjs`); the engine's main thread owns
+LiveKit and the worker. Without LiveKit or `npm install` here the service stays idle and says why
+in the engine log. `node run.mjs` runs the same stack in a terminal.
 
-Open <http://127.0.0.1:18790/> and pick a companion. Everything listens on loopback. The LiveKit
-key pair is made once in `~/.rubato/call/livekit.yaml`; each spoken turn's timing is appended to
-`~/.rubato/call/latency.jsonl`.
+The control surface (`control.mjs`) listens on <http://127.0.0.1:18790/> with a test page. The app
+reaches it through its own authenticated route. The LiveKit key pair is made once in
+`~/.rubato/call/livekit.yaml`; each call is a file under `~/.rubato/call/calls/`; process logs are in
+`~/.rubato/call/logs/`; each spoken turn's timing is appended to `~/.rubato/call/latency.jsonl`.
+
+## Calls both ways
+
+- The person dials (`POST /dial`): the call is live at once.
+- A companion calls with its `call_user` tool (`POST /ring`): every device of the person rings
+  (`GET /live`), the first to answer (`POST /answer`) takes the call and any later answer is refused
+  as answered elsewhere. Unanswered after 40 s it is missed; `POST /decline` declines. The tool
+  returns which, and on a pickup the companion speaks first.
+- The worker reports what each side said and the end (`POST /event`), so every call keeps its
+  transcript for the room's call card (`GET /calls`).
 
 `RUBATO_CALL_ECHO=1` repeats what was heard instead of reaching the companion, to test the audio
 path without touching its conversation.

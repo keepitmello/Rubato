@@ -53,6 +53,16 @@ export function createBridge({ url, token = null, fetch: call = globalThis.fetch
     yield* ndjson(response.body);
   }
 
+  /**
+   * A machine-opened chance for the companion to speak first. Resolves to `{ events }` when it
+   * took it, or `{ status }` when the bridge refused (409 while the companion is still busy).
+   */
+  async function opportunity(reason, { turnId = randomUUID() } = {}) {
+    const response = await post('/call/opportunity', { reason, turnId });
+    if (!response.ok) { await response.body?.cancel(); return { status: response.status }; }
+    return { events: ndjson(response.body) };
+  }
+
   const cancel = turnId => post('/call/cancel', { turnId }).then(response => response.json()).catch(() => null);
-  return { open, turn, cancel };
+  return { open, turn, opportunity, cancel };
 }

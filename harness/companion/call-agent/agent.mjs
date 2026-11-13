@@ -13,8 +13,40 @@ import * as fishaudio from '@livekit/agents-plugin-fishaudio';
 import * as openai from '@livekit/agents-plugin-openai';
 import { createBridge } from './bridge.mjs';
 import { readElevenLabsKey, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
+import { AGENT_NAME } from './livekit.mjs';
 
-export const AGENT_NAME = 'rubato-companion-call';
+/** Tells the call service (control.mjs) what was said and when the call ended; best effort. */
+function reporter(callId) {
+  const base = process.env.RUBATO_CALL_CONTROL;
+  return (type, text) => {
+    if (!base || !callId) return Promise.resolve();
+    return fetch(`${base}/event`, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ callId, type, text }) }).then(() => {}, () => {});
+  };
+}
+
+/** Sentences of a bridge reply as a text stream; `onSentence` hears each one as it goes out. */
+function sentences(events, { onSentence = () => {}, onFirst = () => {}, onEnd = () => {}, onCancel = () => {}, signal } = {}) {
+  return new ReadableStream({
+    async pull(stream) {
+      try {
+        for (;;) {
+          const { value, done } = await events.next();
+          if (done) { stream.close(); return; }
+          if (value.t === 'delta' && value.text.trim()) {
+            onFirst(); onSentence(value.text); stream.enqueue(value.text); return;
+          }
+          if (value.t === 'timing') continue;
+          if (value.t === 'done' || value.t === 'error') { onEnd(value); stream.close(); return; }
+        }
+      } catch (error) {
+        if (!signal?.aborted) log().error({ error: String(error) }, 'call bridge reply failed');
+        stream.close();
+      }
+    },
+    cancel: () => onCancel(),
+  });
+}
 const LATENCY_LOG = path.join(process.env.RUBATO_CALL_HOME ?? path.join(os.homedir(), '.rubato', 'call'), 'latency.jsonl');
 
 function lastUserText(chatCtx) {
@@ -54,9 +86,9 @@ export function voiceEngine(companion, picked) {
 }
 
 class CompanionVoice extends voice.Agent {
-  constructor({ companion, bridge, callId, timings }) {
+  constructor({ companion, bridge, callId, timings, report }) {
     super({ instructions: '' });
-    this.companion = companion; this.bridge = bridge; this.callId = callId; this.timings = timings;
+    this.companion = companion; this.bridge = bridge; this.callId = callId; this.timings = timings; this.report = report;
   }
 
   async llmNode(chatCtx) {
@@ -70,31 +102,12 @@ class CompanionVoice extends voice.Agent {
     const timing = { callId: this.callId, companion: this.companion.id, turnId, heard, turnAt: Date.now() };
     this.timings.current = timing;
     const events = this.bridge.turn(heard, { turnId, signal: controller.signal });
-    return new ReadableStream({
-      async pull(stream) {
-        try {
-          for (;;) {
-            const { value, done } = await events.next();
-            if (done) { stream.close(); return; }
-            if (value.t === 'delta' && value.text.trim()) {
-              timing.firstSentenceAt ??= Date.now();
-              logger.debug({ sentence: value.text }, 'companion said');
-              stream.enqueue(value.text);
-              return;
-            }
-            if (value.t === 'timing') { (timing.marks ??= []).push({ kind: value.kind, at: value.at, tool: value.toolName }); continue; }
-            if (value.t === 'done' || value.t === 'error') {
-              timing.endedAt = Date.now(); timing.result = value.t === 'done' ? value.source : value.message;
-              stream.close(); return;
-            }
-          }
-        } catch (error) {
-          if (!controller.signal.aborted) logger.error({ error: String(error) }, 'call bridge turn failed');
-          stream.close();
-        }
-      },
-      cancel: () => { timing.cancelled = true; controller.abort(); },
-    });
+    const stream = sentences(events, { signal: controller.signal,
+      onFirst: () => { timing.firstSentenceAt ??= Date.now(); },
+      onSentence: text => void this.report('said', text),
+      onEnd: value => { timing.endedAt = Date.now(); timing.result = value.t === 'done' ? value.source : value.message; },
+      onCancel: () => { timing.cancelled = true; controller.abort(); } });
+    return stream;
   }
 
   async ttsNode(text, modelSettings) {
@@ -109,20 +122,40 @@ class CompanionVoice extends voice.Agent {
   }
 }
 
+/**
+ * Opens the call with the companion's own first words. The bridge refuses while the companion is
+ * still finishing the turn that placed the call, so this asks again until it is free.
+ */
+async function speakFirst({ session, bridge, report, reason, logger, tries = 40 }) {
+  if (process.env.RUBATO_CALL_ECHO === '1') { session.say('여보세요?'); return; }
+  const why = ['네가 건 전화를 받았어. 먼저 말해.', reason ? `건 이유: ${reason}` : ''].filter(Boolean).join(' ');
+  for (let attempt = 0; attempt < tries; attempt++) {
+    const answer = await bridge.opportunity(why).catch(error => ({ error }));
+    if (answer.events) {
+      session.say(sentences(answer.events, { onSentence: text => void report('said', text) }));
+      return;
+    }
+    if (answer.status !== 409) { logger.warn({ error: String(answer.error ?? answer.status) }, 'could not open the call'); return; }
+    await new Promise(resolve => setTimeout(resolve, 500));
+  }
+}
+
 export default defineAgent({
   entry: async ctx => {
     const logger = log();
-    const { companion: id, voice: picked } = JSON.parse(ctx.job.metadata || '{}');
+    const job = JSON.parse(ctx.job.metadata || '{}');
+    const { companion: id, voice: picked } = job;
     const companion = resolveCompanion(id);
     const engine = voiceEngine(companion, picked);
     const openAiKey = readOpenAiKey();
     if (!openAiKey) throw new Error('no OpenAI key for transcription (~/.rubato/voice.json)');
     const bridge = createBridge(companion.bridge);
-    const callId = ctx.room.name ?? randomUUID();
+    const callId = job.callId ?? ctx.room.name ?? randomUUID();
+    const report = reporter(job.callId);
     // Echo mode tests the audio path without reaching the companion's conversation at all.
     const opened = process.env.RUBATO_CALL_ECHO === '1' ? { health: {}, end: async () => {} }
       : await bridge.open(callId, { onEvent: event => logger.debug({ event }, 'bridge') });
-    ctx.addShutdownCallback(() => opened.end());
+    ctx.addShutdownCallback(async () => { await opened.end(); await report('ended'); });
     const timings = { current: null };
     logger.info({ voice: engine.choice.id }, 'call voice');
 
@@ -167,11 +200,15 @@ export default defineAgent({
       record({ ...timing, voice: engine.choice.id, ...summary });
     });
     session.on(AgentSessionEventTypes.UserInputTranscribed, ev => {
-      if (ev.isFinal) logger.info({ transcript: ev.transcript }, 'heard');
+      if (!ev.isFinal) return;
+      logger.info({ transcript: ev.transcript }, 'heard');
+      void report('heard', ev.transcript);
     });
 
-    await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings }), room: ctx.room });
+    await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings, report }), room: ctx.room });
     logger.info({ companion: companion.id, callId, session: opened.health.sessionId }, 'call open');
+    // The companion placed this call, so it speaks first once the person picks up.
+    if (job.calledBy === 'companion') void speakFirst({ session, bridge, report, reason: job.reason, logger });
   },
 });
 

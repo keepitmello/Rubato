@@ -41,10 +41,15 @@ export const RESIDENT_SERVICES = [
   { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },
 ];
 
+/** Voice calls with companions (harness/companion/call-agent); one service for every companion. */
+export const CALL_SERVICE = Object.freeze({ name: 'call', module: path.resolve(here, '../../companion/call-agent/service.mjs') });
+
 /** Each companion capability has its own supervised failure boundary and private environment. */
 export function residentServices(env = process.env) {
-  const shared = RESIDENT_SERVICES.filter((item) => !['companion', 'companion-dream', 'messenger'].includes(item.name));
-  return [...listCompanions(env).flatMap((profile) => {
+  const companions = listCompanions(env);
+  const shared = [...RESIDENT_SERVICES.filter((item) => !['companion', 'companion-dream', 'messenger'].includes(item.name)),
+    ...(companions.some((profile) => profile.call?.enabled) ? [CALL_SERVICE] : [])];
+  return [...companions.flatMap((profile) => {
     const scoped = companionEnv(profile.id, env);
     const kinds = ['companion', 'companion-dream', ...(profile.telegram || TELEGRAM_ENABLED ? ['messenger'] : [])];
     return kinds.map((kind) => {

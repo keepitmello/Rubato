@@ -12,6 +12,10 @@ export const CALL_SAY_TOOL = "call_say";
 export const CALL_WAIT_TOOL = "call_wait";
 export const CALL_PASS_TOOL = "call_pass";
 export const CALL_TOOLS = Object.freeze([CALL_SAY_TOOL, CALL_WAIT_TOOL, CALL_PASS_TOOL]);
+/** Rings the person; it is not a move inside a call turn, so it is not one of CALL_TOOLS. */
+export const CALL_USER_TOOL = "call_user";
+/** The call service (harness/companion/call-agent/control.mjs) that rings the person's devices. */
+const CALL_CONTROL = "http://127.0.0.1:18790";
 export const CALL_BODY_BYTES = 256 * 1024;
 export const CALL_WAIT_SECONDS = Object.freeze({ min: 5, max: 300 });
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
@@ -304,6 +308,30 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     reason: { type: "string", minLength: 1 } }, ["after_seconds", "reason"],
     "During a machine-opened call opportunity only, ask for another opportunity after 5–300 seconds for a concrete reason. It emits no speech.");
   register(CALL_PASS_TOOL, {}, [], "During a machine-opened call opportunity only, yield silently. It emits no speech.");
+  const RING_RESULTS = {
+    active: "They picked up. The call is open, and you get the first turn to speak in a moment.",
+    declined: "They declined the call.",
+    missed: "No answer. The call was missed.",
+  };
+  pi.registerTool({ name: CALL_USER_TOOL, label: "Call the person", exposure: "direct",
+    description: "Ring the person for a live voice call, on their phone and desktop at once. Call whenever a voice call is what you want; the timing is yours. Waits while it rings and returns whether they picked up, declined or missed it. When they pick up you speak first.",
+    parameters: { type: "object", additionalProperties: false, required: ["reason"],
+      properties: { reason: { type: "string", minLength: 1, description: "Why you are calling, for your own opening line." } } },
+    async execute(_id, args, signal) {
+      const companion = env.RUBATO_COMPANION_ID || "segno";
+      let answer;
+      try {
+        const response = await fetch(`${env.RUBATO_CALL_CONTROL || CALL_CONTROL}/ring`, { method: "POST", signal,
+          headers: { "content-type": "application/json" }, body: JSON.stringify({ companion, reason: String(args?.reason ?? "") }) });
+        answer = await response.json();
+        if (!response.ok) return { isError: true, content: [text(`Could not ring: ${answer.error ?? response.status}`)] };
+      } catch (error) {
+        return { isError: true, content: [text(`Could not ring: the call service is not running (${error.message})`)] };
+      }
+      const result = RING_RESULTS[answer.status] ?? `The call ended as ${answer.status}.`;
+      // Ending the turn on a pickup frees the conversation for the opening the call worker asks for.
+      return { ...(answer.status === "active" ? { terminate: true } : {}), content: [text(result)] };
+    } });
   async function start(context) {
     ctx = context; briefed = false; briefTransport = null;
     if (server?.listening || starting || closed) return starting;
