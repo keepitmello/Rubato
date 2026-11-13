@@ -1,5 +1,6 @@
 // Packages the Rubato iPhone app adds to T3's apps/mobile: LiveKit for companion calls
-// (features/companions) and the config plugins that wire its native side.
+// (features/companions) and the config plugins that wire its native side, and
+// @bacons/apple-targets for the notification service extension (targets/).
 //
 // package.json and pnpm-lock.yaml change together: install-gui.sh reinstalls only when
 // the lockfile hash changes, and CI installs with --frozen-lockfile. deps-lock.json is
@@ -18,7 +19,7 @@ export const depsOverlays = [];
 export const depsEdits = {
   'apps/mobile/package.json': [
     ['    "@clerk/expo": "catalog:",\n    "@effect/atom-react": "catalog:",',
-      '    "@clerk/expo": "catalog:",\n    "@config-plugins/react-native-webrtc": "15.0.2",\n    "@effect/atom-react": "catalog:",', 'replace'],
+      '    "@bacons/apple-targets": "5.0.0",\n    "@clerk/expo": "catalog:",\n    "@config-plugins/react-native-webrtc": "15.0.2",\n    "@effect/atom-react": "catalog:",', 'replace'],
     ['    "@legendapp/list": "catalog:",\n    "@material/material-color-utilities": "0.3.0",',
       '    "@legendapp/list": "catalog:",\n    "@livekit/react-native": "3.1.0",\n    "@livekit/react-native-expo-plugin": "1.1.0",\n    "@livekit/react-native-webrtc": "150.1.1",\n    "@material/material-color-utilities": "0.3.0",', 'replace'],
     ['    "expo-widgets": "58.0.11",\n    "react": "19.3.0",',

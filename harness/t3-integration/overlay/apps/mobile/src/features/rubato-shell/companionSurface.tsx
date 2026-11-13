@@ -3,6 +3,7 @@
 export {
   CompanionCallRouteScreen,
   CompanionListRouteScreen,
+  CompanionNamesSettingsRouteScreen,
   CompanionRoomRouteScreen,
   RubatoCallHost,
   type CompanionRoomParams,

@@ -26,6 +26,12 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/companionThreads.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.test.ts',
+  'apps/mobile/src/features/rubato-voice/macVoiceTranscriber.ts',
+  'apps/mobile/src/features/rubato-voice/macVoiceFailures.ts',
+  'apps/mobile/src/features/rubato-voice/macVoiceFailures.test.ts',
+  'apps/mobile/src/features/rubato-shell/companionNotifications.ts',
+  'apps/mobile/src/features/rubato-shell/companionNotifications.test.ts',
+  'apps/mobile/targets/notification-service/expo-target.config.js',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
@@ -51,6 +57,12 @@ export const shellEdits = {
     ['  updates: {\n    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",\n    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    checkAutomatically: "ON_LOAD",\n    fallbackToCacheTimeout: 0,\n  },',
       '  updates: {\n    // Rubato: no over-the-air updates; T3\'s Expo project serves T3\'s JavaScript.\n    enabled: false,\n  },', 'replace'],
     ['    icon: variant.assets.iosIcon,', '    icon: RUBATO_ICON,', 'replace'],
+    // Companion messages as Communication Notifications, and the App Group the app shares with
+    // its notification service extension (targets/notification-service) and CallKit.
+    ['      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n',
+      '      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n      "com.apple.developer.usernotifications.communication": true,\n      "com.apple.security.application-groups": ["group.com.keepitmello.rubato"],\n', 'replace'],
+    ['      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n',
+      '      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n      NSUserActivityTypes: ["INSendMessageIntent"],\n', 'replace'],
     // Rubato's team; Clerk's applinks/webcredentials domain belongs to T3's login.
     ['    appleTeamId: "ARK85ZXQ4Z",\n    associatedDomains: [\n      `applinks:${variant.relyingParty}`,\n      `webcredentials:${variant.relyingParty}`,\n    ],\n',
       '    appleTeamId: "5WGZKZGPQS",\n', 'replace'],
@@ -72,6 +84,9 @@ export const shellEdits = {
       '        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",', 'replace'],
     ['        image: variant.assets.splashIcon,\n        resizeMode: "contain",', '        image: RUBATO_ICON,\n        resizeMode: "contain",', 'replace'],
     ['          image: variant.assets.splashIcon,\n          backgroundColor: "#0a0a0a",', '          image: RUBATO_ICON,\n          backgroundColor: "#0a0a0a",', 'replace'],
+    // Builds the targets/ folder's extensions (the notification service).
+    ['    "./plugins/withAndroidGradleHeap.cjs",',
+      '    "@bacons/apple-targets",\n    "./plugins/withAndroidGradleHeap.cjs",', 'replace'],
     // LiveKit's native setup for companion calls (deps-edits.mjs).
     ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
       '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
@@ -132,6 +147,36 @@ export const shellEdits = {
     ['  const threads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );',
       '  const allThreads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );\n  const threads = useWithoutCompanionThreads(allThreads);', 'replace'],
   ],
+  // Dictation goes through the Mac's voice service, as on the desktop (rubato-voice/).
+  'apps/mobile/src/features/voice-input/VoiceInputProvider.tsx': [
+    ['import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";\n',
+      'import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";\nimport { createMacVoiceTranscriber, withMacVoiceFailure } from "../rubato-voice/macVoiceTranscriber";\n', 'replace'],
+    ['    recorderRef.current = recorder;\n    sessionRef.current = new VoiceInputSession({',
+      '    recorderRef.current = recorder;\n    const macTranscriber = createMacVoiceTranscriber(() =>\n      Object.values(registry.get(savedConnectionsByIdAtom)),\n    );\n    sessionRef.current = new VoiceInputSession({', 'replace'],
+    ['      getTranscriber: getLocalVoiceTranscriber,', '      getTranscriber: () => macTranscriber,', 'replace'],
+    ['          state: nextState,\n', '          state: withMacVoiceFailure(nextState),\n', 'replace'],
+    ['    // Store screenshots show the dictation button even on simulators, whose\n    // on-device transcription is unavailable.\n    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,',
+      '    // Rubato: the Mac transcribes, so the button is always there; with no Mac paired,\n    // starting says so.\n    isAvailable: true,', 'replace'],
+    ['import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";\n',
+      '// Rubato: the showcase scene no longer decides whether dictation shows.\n', 'replace'],
+  ],
+  'apps/mobile/src/state/use-remote-environment-registry.ts': [
+    ['const savedConnectionsByIdAtom = Atom.make((get) => {', 'export const savedConnectionsByIdAtom = Atom.make((get) => {', 'replace'],
+  ],
+  // A companion's message opens its room, and stays quiet while that room is open
+  // (rubato-shell/companionNotifications.ts); thread alerts keep T3's routing.
+  'apps/mobile/src/features/agent-awareness/notificationNavigation.ts': [
+    ['import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";\n',
+      'import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";\nimport {\n  COMPANION_ROOM_ON_SCREEN,\n  companionNotificationLink,\n  companionNotificationOnScreen,\n} from "../rubato-shell/companionNotifications";\n', 'replace'],
+    ['  const deepLinkOnScreen = useRef<string | null>(null);\n',
+      '  const deepLinkOnScreen = useRef<string | null>(null);\n  const pathnameOnScreen = useRef<string | null>(null);\n', 'replace'],
+    ['    const thread = threadDeepLinkOnScreen(pathname);\n',
+      '    pathnameOnScreen.current = pathname;\n    const thread = threadDeepLinkOnScreen(pathname);\n', 'replace'],
+    ['        Promise.resolve(foregroundNotificationBehavior(notification, deepLinkOnScreen.current)),',
+      '        Promise.resolve(\n          companionNotificationOnScreen(notification.request.content.data, pathnameOnScreen.current)\n            ? COMPANION_ROOM_ON_SCREEN\n            : foregroundNotificationBehavior(notification, deepLinkOnScreen.current),\n        ),', 'replace'],
+    ['    const handleResponse = (response: Notifications.NotificationResponse): void => {\n      routeAgentNotificationResponseOnce({',
+      '    const handleResponse = (response: Notifications.NotificationResponse): void => {\n      const companionLink = companionNotificationLink(response.notification.request.content.data);\n      if (companionLink !== null) {\n        const id = response.notification.request.identifier;\n        if (handledResponseIds.current.has(id)) return;\n        handledResponseIds.current.add(id);\n        linkTo(companionLink);\n        return;\n      }\n      routeAgentNotificationResponseOnce({', 'replace'],
+  ],
   // The companion list has nothing to search.
   'apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx': [
     ['          headerSearchBarOptions:\n            NATIVE_LIQUID_GLASS_SUPPORTED || tab.searchMode !== "resting"',
@@ -139,7 +184,10 @@ export const shellEdits = {
   ],
   'apps/mobile/src/Stack.tsx': [
     ['import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";\n',
-      'import {\n  CompanionCallRouteScreen,\n  CompanionRoomRouteScreen,\n} from "./features/rubato-shell/companionSurface";\n'],
+      'import {\n  CompanionCallRouteScreen,\n  CompanionNamesSettingsRouteScreen,\n  CompanionRoomRouteScreen,\n} from "./features/rubato-shell/companionSurface";\n'],
+    // The companions' names (Korean by default, renamable), among the other settings.
+    ['    SettingsMicrophone: createNativeStackScreen({\n',
+      '    SettingsCompanions: createNativeStackScreen({\n      screen: CompanionNamesSettingsRouteScreen,\n      linking: "companions",\n    }),\n'],
     ['    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,',
       '    // Rubato: a companion\'s room, pushed over the tabs like a thread.\n'
       + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The thread screen\'s bar; the room sets its own title (avatar over name).\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'
@@ -200,6 +248,11 @@ export const shellEdits = {
   ],
   'apps/mobile/src/features/settings/SettingsRouteScreen.tsx': [
     ['label="About T3 Code"', 'label="About Rubato"', 'replace'],
+    ['        <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />\n',
+      '        <SettingsRow icon="person.2" label="Companions" target="SettingsCompanions" />\n'],
+  ],
+  'apps/mobile/src/features/settings/components/settings-sheet-targets.ts': [
+    ['  | "SettingsKeyboard"\n', '  | "SettingsCompanions"\n'],
   ],
   'apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx': [
     ['<SettingsScreen title="About T3 Code">', '<SettingsScreen title="About Rubato">', 'replace'],

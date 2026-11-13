@@ -33,5 +33,14 @@ test('mobile edits anchor once and add only new text at the pin', {skip: !proces
       assert.equal(original.split(anchor).length, 2, `${relative}: ${anchor.slice(0, 60)}`);
       assert.ok(!original.includes(mode === 'replace' ? addition : addition + anchor), `${relative}: ${addition.slice(0, 60)}`);
     }
+    // In order, as apply.mjs runs them: an earlier edit must not eat a later one's anchor.
+    let text = original;
+    for (const [anchor, addition, mode] of changes) {
+      assert.equal(text.split(anchor).length, 2, `${relative} (in order): ${anchor.slice(0, 60)}`);
+      text = mode === 'replace' ? text.replace(anchor, addition) : text.replace(anchor, addition + anchor);
+    }
+    for (const [anchor, addition, mode] of changes)
+      text = mode === 'replace' ? text.replace(addition, anchor) : text.replace(addition + anchor, anchor);
+    assert.equal(text, original, `${relative} undoes to the pin`);
   }
 });
