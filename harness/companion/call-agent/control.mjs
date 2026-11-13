@@ -26,8 +26,10 @@ async function body(request) {
 /**
  * `livekit`: { key, secret, url } of the running server. `log`: a call log (calls.mjs).
  * `companions`: lists who can be called (companion.mjs callableCompanions), injectable for tests.
+ * `remote()`: { url, reason } for devices on the tailnet (remote.mjs); a join hands out both URLs
+ * and the app's route picks the one the asking device can reach (t3-integration src/call/service.mjs).
  */
-export function createControl({ livekit, log, companions = () => callableCompanions() }) {
+export function createControl({ livekit, log, companions = () => callableCompanions(), remote = () => ({ url: null, reason: 'not set up' }) }) {
   const callable = (id, voice) => {
     const target = companions().find(item => item.id === id);
     if (!target) throw new CallError(`unknown companion: ${id}`, 404);
@@ -35,20 +37,25 @@ export function createControl({ livekit, log, companions = () => callableCompani
     if (voice && !target.voices?.some(item => item.id === voice && item.ready)) throw new CallError('voice not ready', 422);
     return target;
   };
-  const join = async (call, extra = {}) => ({ call, url: livekit.url, room: call.id,
+  const join = async (call, extra = {}) => ({ call, url: livekit.url, remoteUrl: remote().url ?? null, remoteReason: remote().reason ?? null, room: call.id,
     token: await roomToken(livekit, call.id, { companion: call.companion, voice: call.voice, callId: call.id, ...extra }) });
 
   const routes = {
     'GET /companions': () => companions(),
     'GET /live': () => log.live(),
+    // Where a device on the tailnet reaches LiveKit, or why it cannot yet.
+    'GET /reach': () => ({ url: livekit.url, remoteUrl: remote().url ?? null, remoteReason: remote().reason ?? null }),
     'GET /calls': (_input, url) => log.history({ companion: url.searchParams.get('companion') ?? undefined,
       since: Number(url.searchParams.get('since') ?? 0) }),
     // The person calls a companion.
-    'POST /dial': async ({ companion, voice }) => { callable(companion, voice); return join(log.dial({ companion, voice: voice ?? null })); },
+    'POST /dial': async ({ companion, voice }) => {
+      const target = callable(companion, voice);
+      return join(log.dial({ companion, voice: voice ?? null, title: target.title ?? null }));
+    },
     // A companion calls the person; answers once the ring ends with how it ended.
     'POST /ring': async ({ companion, reason }) => {
-      callable(companion);
-      const call = log.ring({ companion, reason: typeof reason === 'string' ? reason.slice(0, 500) : null });
+      const target = callable(companion);
+      const call = log.ring({ companion, title: target.title ?? null, reason: typeof reason === 'string' ? reason.slice(0, 500) : null });
       return log.outcome(call.id);
     },
     'POST /answer': async ({ callId }) => {

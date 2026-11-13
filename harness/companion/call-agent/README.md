@@ -41,6 +41,24 @@ reaches it through its own authenticated route. The LiveKit key pair is made onc
 `RUBATO_CALL_ECHO=1` repeats what was heard instead of reaching the companion, to test the audio
 path without touching its conversation.
 
+## Calls from the phone
+
+LiveKit's signalling listens on loopback. For a phone or another Mac on the person's tailnet the
+service maps one Tailscale Serve HTTPS port, `https://<mac>.<tailnet>.ts.net:7443` → `127.0.0.1:7880`
+(`remote.mjs`; `RUBATO_CALL_REMOTE_PORT` moves it). Serve answers only inside the tailnet, never
+through Funnel, and a port another tool already serves is left alone with the reason in the engine
+log. The mapping is retried every 15 s until Tailscale runs and stays when the service stops.
+
+A join (`/dial`, `/answer`) carries both addresses; the app's route (`t3-integration` `src/call/service.mjs`)
+hands this Mac's own app the loopback one and a device that came through Tailscale the tailnet one,
+and refuses a remote dial or answer with the reason (`GET /reach`) before the call starts when there
+is none. Media goes to the Mac's interface addresses, the Tailscale one included.
+
+Each call record carries `uuid` (the phone's CallKit id), `title` (the companion's name) and, for a
+companion's ring, `ringUntil`. Every change goes to the push relay's Mac sender
+(`harness/push-relay/mac/sender.mjs`), which sends the phone's VoIP push for a ring; without it calls
+still ring every open app.
+
 ## Voice engines
 
 The page offers each companion's voice-reply setting first, then other engines to compare by ear,

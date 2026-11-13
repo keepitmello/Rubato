@@ -15,6 +15,9 @@ export class CallError extends Error {
 /**
  * `direction`: 'outgoing' when the person called the companion, 'incoming' when the companion
  * called the person. `status`: ringing → active → ended, or ringing → missed / declined.
+ * `uuid` names the call to a phone's CallKit; `title` is the companion's name as the person sees
+ * it; `ringUntil` is when an incoming ring counts as missed, so a phone woken by a push can stop
+ * ringing on its own.
  */
 export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange = () => {} }) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
@@ -54,10 +57,12 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
   function busy(companion) {
     return [...calls.values()].some(call => call.companion === companion && ['ringing', 'active'].includes(call.status));
   }
-  function open({ companion, direction, voice = null, reason = null }) {
+  function open({ companion, direction, voice = null, reason = null, title = null }) {
     if (busy(companion)) throw new CallError(`${companion} is already on a call`);
-    const call = { id: `call-${companion}-${now().toString(36)}-${randomUUID().slice(0, 6)}`, companion, direction, voice, reason,
-      status: direction === 'incoming' ? 'ringing' : 'active', createdAt: now(), answeredAt: null, endedAt: null, transcript: [] };
+    const createdAt = now();
+    const call = { id: `call-${companion}-${createdAt.toString(36)}-${randomUUID().slice(0, 6)}`, uuid: randomUUID(), companion,
+      title: title ?? companion, direction, voice, reason, status: direction === 'incoming' ? 'ringing' : 'active', createdAt,
+      ringUntil: direction === 'incoming' ? createdAt + ringMs : null, answeredAt: null, endedAt: null, transcript: [] };
     if (call.status === 'active') call.answeredAt = call.createdAt;
     calls.set(call.id, call);
     if (call.status === 'ringing') timers.set(call.id, setTimeout(() => {
@@ -68,9 +73,9 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
   }
   return {
     /** The person calls a companion: the call is live from the start. */
-    dial: ({ companion, voice }) => open({ companion, direction: 'outgoing', voice }),
+    dial: ({ companion, voice, title }) => open({ companion, direction: 'outgoing', voice, title }),
     /** A companion calls the person: it rings until answered, declined or `ringMs` passes. */
-    ring: ({ companion, reason }) => open({ companion, direction: 'incoming', reason }),
+    ring: ({ companion, reason, title }) => open({ companion, direction: 'incoming', reason, title }),
     /** Resolves when a ring stops ringing, with how it ended. */
     outcome(id) {
       const call = get(id);

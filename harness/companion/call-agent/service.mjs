@@ -13,6 +13,7 @@ export async function start(ctx) {
   if (!livekitServerPath()) { ctx.log?.('call service idle', { reason: 'livekit-server is not installed (brew install livekit)' }); return {}; }
   const stack = await startCallStack({
     spawn: (command, args, options) => ctx.spawn(command, args, options),
+    say: (text, fields) => ctx.log?.(text, fields),
     onExit: (name, code) => setImmediate(() => { throw new Error(`call ${name} exited (${code})`); }),
   });
   ctx.log?.('call service ready', { port: stack.port, livekit: stack.livekit.url });
