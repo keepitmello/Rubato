@@ -40,13 +40,15 @@ export function useCallHeadline(call: CallRecord) {
 }
 
 /** The call's icon, headline, direction and time, and its length: the card's and the sheet's top. */
-export function CallSummary(props: { readonly call: CallRecord }) {
+export function CallSummary(props: { readonly call: CallRecord; readonly iconSurface?: "screen" | "card" }) {
   const { call } = props;
   const headline = useCallHeadline(call);
   const missed = call.status === "missed" || call.status === "declined";
   return (
     <View className="flex-row items-center gap-3">
-      <View className="h-11 w-11 items-center justify-center rounded-[14px] bg-screen">
+      <View
+        className={props.iconSurface === "card" ? "h-11 w-11 items-center justify-center rounded-[14px] bg-grouped-card" : "h-11 w-11 items-center justify-center rounded-[14px] bg-screen"}
+      >
         <SymbolView
           name={{ ios: callIcon(call) as never, android: "smartphone" }}
           size={18}

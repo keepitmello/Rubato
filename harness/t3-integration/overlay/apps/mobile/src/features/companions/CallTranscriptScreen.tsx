@@ -59,7 +59,7 @@ export function CallTranscriptScreen(_props: StaticScreenProps<CompanionCallPara
   return (
     <View className="flex-1 bg-screen">
       <View className="border-b border-border px-4 pb-3 pt-5">
-        {call ? <CallSummary call={call} /> : null}
+        {call ? <CallSummary call={call} iconSurface="card" /> : null}
       </View>
       {call === null ? (
         <View className="flex-1 items-center justify-center px-8">
