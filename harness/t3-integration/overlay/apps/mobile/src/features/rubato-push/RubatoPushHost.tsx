@@ -4,19 +4,16 @@ import { requireOptionalNativeModule } from "expo";
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
-import * as SecureStore from "expo-secure-store";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { resolveApsEnvironment } from "../agent-awareness/registrationPayload";
 import { RUBATO_PUSH_RELAY } from "./config";
-import { syncRubatoPush, type MacConnection, type PushState } from "./sync";
+import { loadPushState as load, savePushState as save } from "./storage";
+import { syncRubatoPush, type MacConnection } from "./sync";
 
 // Mounted once in App.tsx. Keeps the relay and every paired Mac in line with this phone's push
 // tokens (sync.ts): at start, when a Mac is paired or removed, when iOS hands out a new token,
 // and each time the app comes to the front.
-
-const STATE_KEY = "rubato-push-state";
-const storeOptions = { keychainAccessible: SecureStore.AFTER_FIRST_UNLOCK };
 
 /** companion-ui's CallKit module (modules/rubato-call): the PushKit VoIP token and its changes. */
 interface RubatoCallModule {
@@ -24,21 +21,6 @@ interface RubatoCallModule {
   addListener(event: "voipToken", listener: (event: { token?: string | null }) => void): { remove(): void };
 }
 const rubatoCall = requireOptionalNativeModule<RubatoCallModule>("RubatoCall");
-
-async function load(): Promise<PushState | null> {
-  const text = await SecureStore.getItemAsync(STATE_KEY, storeOptions);
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as PushState;
-  } catch {
-    return null;
-  }
-}
-
-async function save(state: PushState | null): Promise<void> {
-  if (state === null) await SecureStore.deleteItemAsync(STATE_KEY, storeOptions);
-  else await SecureStore.setItemAsync(STATE_KEY, JSON.stringify(state), storeOptions);
-}
 
 async function alertToken(): Promise<string | null> {
   const permission = await Notifications.getPermissionsAsync();

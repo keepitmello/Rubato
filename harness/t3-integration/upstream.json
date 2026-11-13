@@ -165,6 +165,7 @@
     "apps/mobile/src/features/threads/ThreadComposer.tsx": "650aa3d7c4936aa121248e01850448962d646abe203680e4cf69dcefa22a47db",
     "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx": "e1133f2829b0674c5e31b4b018da661caafe5912f07d7fc2a6a16b43c4af9cae",
     "apps/mobile/src/features/threads/thread-list-v2-items.tsx": "916a7640a17a144811da770f8654fb9e0e3aa707fb5a79693c3e3cb207e3e43c",
-    "apps/mobile/src/features/workspace/workspace-tabs-state.test.ts": "6591861e36bbd75ab73648a839563b8b5b32464b4621e0843dde3b125fb62672"
+    "apps/mobile/src/features/workspace/workspace-tabs-state.test.ts": "6591861e36bbd75ab73648a839563b8b5b32464b4621e0843dde3b125fb62672",
+    "apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx": "3d87ff2e47d02d02983113b8f58fc47db748ce8efd1227db5d5102323ad054e8"
   }
 }
