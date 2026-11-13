@@ -6,6 +6,7 @@ import { useMemo } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { SymbolView } from "../../components/AppSymbol";
 import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { buildThreadFeed } from "../../lib/threadActivity";
@@ -68,6 +69,11 @@ export function CompanionListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { companions, loaded, error, paired, refresh } = useCompanions();
+  // The companions tab has no navigation bar, so Settings opens from here.
+  const openSettings = () =>
+    navigation.dispatch(
+      CommonActions.navigate("SettingsSheet", { screen: "SettingsContent", params: { screen: "Settings" } }),
+    );
   const open = (companion: CompanionEntry) =>
     navigation.dispatch(
       CommonActions.navigate("CompanionRoom", {
@@ -85,7 +91,18 @@ export function CompanionListScreen() {
         contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
         ListHeaderComponent={
-          <Text className="px-5 pb-3 pt-2 font-t3-bold text-[32px] text-foreground">{copy.chats}</Text>
+          <View className="flex-row items-center justify-between px-5 pb-3 pt-2">
+            <Text className="font-t3-bold text-[32px] text-foreground">{copy.chats}</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={copy.settings}
+              onPress={openSettings}
+              hitSlop={8}
+              className="h-10 w-10 items-center justify-center rounded-full active:opacity-60"
+            >
+              <SymbolView name={{ ios: "gearshape", android: "smartphone" }} size={22} className="text-foreground" />
+            </Pressable>
+          </View>
         }
         renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
         ListEmptyComponent={
