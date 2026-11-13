@@ -35,7 +35,7 @@ export function CallCard(props: { readonly call: CallRecord; readonly title: str
   const headline = callHeadline(call, now);
   const missed = call.status === "missed" || call.status === "declined";
   const lines = call.transcript.map((line) => ({ ...line, text: spokenText(line.text) })).filter((line) => line.text);
-  const who = call.direction === "incoming" ? `${props.title}${copy.calledYou}` : copy.youCalled;
+  const who = call.direction === "incoming" ? copy.incoming : copy.outgoing;
   return (
     <View className="mr-10 self-start rounded-[22px] bg-grouped-card p-2" style={{ maxWidth: "88%", minWidth: "72%" }}>
       <Pressable
@@ -45,7 +45,7 @@ export function CallCard(props: { readonly call: CallRecord; readonly title: str
         className="flex-row items-center gap-3 rounded-[16px] px-2 py-1.5 active:opacity-70"
       >
         <View className="h-11 w-11 items-center justify-center rounded-[13px] bg-screen">
-          <SymbolView name={iconOf(call)} size={19} tintColor={missed ? "#E5484D" : undefined} className="text-foreground" />
+          <SymbolView name={iconOf(call)} size={19} {...(missed ? { tintColor: "#E5484D" } : { tintColorClassName: "accent-foreground" })} />
         </View>
         <View className="min-w-0 flex-1">
           <Text numberOfLines={1} className={missed ? "font-t3-bold text-[16px] text-[#E5484D]" : "font-t3-bold text-[16px] text-foreground"}>
@@ -72,7 +72,7 @@ export function CallCard(props: { readonly call: CallRecord; readonly title: str
                 <View key={`${line.at}:${index}`} className="flex-row items-end gap-1.5 self-start" style={{ maxWidth: "86%" }}>
                   <CompanionAvatar art={props.art} title={props.title} size={22} />
                   <View className="flex-row gap-1.5 rounded-[14px] bg-grouped-card px-3 py-2">
-                    <SymbolView name={{ ios: "waveform", android: "smartphone" }} size={11} className="mt-1 text-foreground-muted" />
+                    <SymbolView name={{ ios: "waveform", android: "smartphone" }} size={11} className="mt-1" tintColorClassName="accent-foreground-muted" />
                     <Text className="flex-shrink text-[14px] leading-[19px] text-foreground">{line.text}</Text>
                   </View>
                 </View>
@@ -82,7 +82,7 @@ export function CallCard(props: { readonly call: CallRecord; readonly title: str
                   className="flex-row gap-1.5 self-end rounded-[14px] bg-[#7BE383]/35 px-3 py-2"
                   style={{ maxWidth: "80%" }}
                 >
-                  <SymbolView name={{ ios: "waveform", android: "smartphone" }} size={11} className="mt-1 text-foreground-muted" />
+                  <SymbolView name={{ ios: "waveform", android: "smartphone" }} size={11} className="mt-1" tintColorClassName="accent-foreground-muted" />
                   <Text className="flex-shrink text-[14px] leading-[19px] text-foreground">{line.text}</Text>
                 </View>
               ),

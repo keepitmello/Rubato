@@ -87,7 +87,7 @@ export function CompanionListScreen() {
       <FlatList
         data={companions}
         keyExtractor={(item) => `${item.environmentId}:${item.id}`}
-        contentInsetAdjustmentBehavior="automatic"
+        contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
         ListHeaderComponent={
@@ -100,7 +100,7 @@ export function CompanionListScreen() {
               hitSlop={8}
               className="h-10 w-10 items-center justify-center rounded-full active:opacity-60"
             >
-              <SymbolView name={{ ios: "gearshape", android: "smartphone" }} size={22} className="text-foreground" />
+              <SymbolView name={{ ios: "gearshape", android: "smartphone" }} size={22} tintColorClassName="accent-foreground" />
             </Pressable>
           </View>
         }

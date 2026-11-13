@@ -15,6 +15,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
 import { CompanionAvatar } from "./CompanionAvatar";
@@ -74,7 +75,7 @@ function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly
         className="absolute left-4 h-11 w-11 items-center justify-center rounded-full border border-border bg-screen active:opacity-70"
         style={{ top: insets.top + 16, shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 8, shadowOffset: { width: 0, height: 2 } }}
       >
-        <SymbolView name="chevron.left" size={18} className="text-foreground" />
+        <SymbolView name="chevron.left" size={18} tintColorClassName="accent-foreground" />
       </Pressable>
       <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={64} ring />
       <View
@@ -128,12 +129,16 @@ function RoomRow(props: { readonly item: RoomItem; readonly companion: Companion
         ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
       }}
     >
-      <Text
-        selectable
-        className={mine ? "text-[16px] leading-[22px] text-[#0E2A14]" : "text-[16px] leading-[22px] text-foreground"}
-      >
-        {item.text || (item.streaming ? "…" : "")}
-      </Text>
+      {mine || !item.text ? (
+        <Text
+          selectable
+          className={mine ? "text-[16px] leading-[22px] text-[#0E2A14]" : "text-[16px] leading-[22px] text-foreground"}
+        >
+          {item.text || (item.streaming ? "…" : "")}
+        </Text>
+      ) : (
+        <BubbleMarkdown markdown={item.text} />
+      )}
     </View>
   );
 }
@@ -195,7 +200,7 @@ function RoomComposer(props: {
             disabled={dictation.blocksSubmission}
             className="h-11 w-11 items-center justify-center rounded-full bg-[#7BE383] active:opacity-70"
           >
-            <SymbolView name="arrow.up" size={18} className="text-[#0E2A14]" />
+            <SymbolView name="arrow.up" size={18} tintColor="#0E2A14" />
           </Pressable>
         ) : dictation.isAvailable ? (
           <Pressable
@@ -207,8 +212,7 @@ function RoomComposer(props: {
             <SymbolView
               name={{ ios: listening ? "stop.circle.fill" : "mic", android: "smartphone" }}
               size={22}
-              tintColor={listening ? "#E5484D" : undefined}
-              className="text-foreground"
+              {...(listening ? { tintColor: "#E5484D" } : { tintColorClassName: "accent-foreground" })}
             />
           </Pressable>
         ) : null}
@@ -218,7 +222,7 @@ function RoomComposer(props: {
           onPress={props.onCall}
           className={props.canCall ? "h-11 w-11 items-center justify-center rounded-full bg-foreground active:opacity-70" : "h-11 w-11 items-center justify-center rounded-full bg-foreground opacity-30"}
         >
-          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={18} className="text-screen" />
+          <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={18} tintColorClassName="accent-screen" />
         </Pressable>
       </View>
     </View>

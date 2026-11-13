@@ -32,7 +32,7 @@ function RoundButton(props: {
         <SymbolView
           name={{ ios: props.icon as never, android: "smartphone" }}
           size={28}
-          className={props.danger ? "text-white" : props.on ? "text-screen" : "text-foreground"}
+          {...(props.danger ? { tintColor: "#FFFFFF" } : { tintColorClassName: props.on ? "accent-screen" : "accent-foreground" })}
         />
       </Pressable>
       <Text className="text-[13px] text-foreground-muted">{props.label}</Text>
@@ -115,7 +115,7 @@ export function RingScreen(props: { readonly call: CallRecord; readonly companio
             onPress={() => void callActions.answer()}
             className="h-[72px] w-[72px] items-center justify-center rounded-full bg-[#30C452] active:opacity-70"
           >
-            <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={28} className="text-white" />
+            <SymbolView name={{ ios: "phone.fill", android: "smartphone" }} size={28} tintColor="#FFFFFF" />
           </Pressable>
         </View>
       </View>

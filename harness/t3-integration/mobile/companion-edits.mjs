@@ -21,6 +21,7 @@ export const mobileCompanionOverlays = [
   `${companions}/ringCheck.test.ts`,
   `${companions}/roomModel.ts`,
   `${companions}/roomModel.test.ts`,
+  `${companions}/BubbleMarkdown.tsx`,
   `${companions}/CompanionAvatar.tsx`,
   `${companions}/CallCard.tsx`,
   `${companions}/CallScreen.tsx`,
