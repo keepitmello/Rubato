@@ -21,7 +21,8 @@ pushed. The HTTP surface is documented at the top of `src/relay.mjs`.
 - `src/` is the Worker. `relay.mjs` holds the routes and the grant checks, `apns.mjs` signs and shapes APNs requests.
 - `migrations/` is the D1 schema.
 - `mac/grants.mjs` is the Mac's grant store, `~/.rubato/push/grants.json`. `mac/sender.mjs` is the call
-  service's ring push, wired in `companion/call-agent/stack.mjs`.
+  service's ring push, wired in `companion/call-agent/stack.mjs`. `node mac/cli.mjs phones | test` lists
+  the paired phones and sends a test alert.
 - Thread alerts are sent by the GUI server: `t3-integration/src/push/service.mjs`, fed by the overlay `RubatoPush.ts`.
 - The phone side is `t3-integration/overlay/apps/mobile/src/features/rubato-push/`.
 

@@ -143,7 +143,7 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     if (tokenIsDead(result.status, result.reason)) {
       const column = kind === 'voip' ? 'voip_token' : 'apns_token';
       await db.prepare(`UPDATE devices SET ${column} = NULL, updated_at = ? WHERE id = ? AND ${column} = ?`).bind(now(), row.id, deviceToken).run();
-      return { ok: false, reason: 'token-unregistered' };
+      return { ok: false, reason: 'token-unregistered', apnsStatus: result.status, apnsReason: result.reason };
     }
     if (result.status === 429 || result.status >= 500) throw new HttpError(502, 'apns-unavailable', result.reason ?? `APNs ${result.status}`);
     return { ok: false, reason: result.reason ?? `apns-${result.status}` };

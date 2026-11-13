@@ -184,7 +184,7 @@ test('a token APNs no longer knows is forgotten; a reinstall moves the token to 
   const { call, phone, grantFor, sent } = await setup({ apns: count => (count === 1 ? { status: 410, reason: 'Unregistered' } : { status: 200 }) });
   const old = await phone();
   const { grant } = await grantFor(old);
-  assert.deepEqual((await call('POST', '/v1/push', { auth: grant, body: alert })).body, { ok: false, reason: 'token-unregistered' });
+  assert.deepEqual((await call('POST', '/v1/push', { auth: grant, body: alert })).body, { ok: false, reason: 'token-unregistered', apnsStatus: 410, apnsReason: 'Unregistered' });
   assert.deepEqual((await call('POST', '/v1/push', { auth: grant, body: alert })).body, { ok: false, reason: 'no-apns-token' });
   // The phone registers the token again (it got it back from iOS): the old record lets go of it.
   assert.equal((await call('PUT', `/v1/devices/${old.deviceId}`, { auth: old.deviceSecret, body: { apnsToken: tokenA } })).status, 200);
