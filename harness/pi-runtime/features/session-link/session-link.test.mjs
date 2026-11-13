@@ -480,6 +480,33 @@ test("the companion gets every conversation tool except waiting, plus its hands 
   assert.ok(companion.every((tool) => tool.exposure === "direct"), "the companion's tools are always in its requests");
 });
 
+test("only the companion's session_send describes and passes allowCold, for a cold conversation with a large context", async () => {
+  const { link, calls } = fakeLink({ send: (args) => ({ messageId: "m-1", cursor: "c", to: { sessionId: args.to, title: "B", status: "idle" } }) });
+  const pi = fakePi();
+  createSessionLinkFactories({ sessionLink: link, companion: true })[0].factory(pi);
+  const send = pi.tools.get("session_send");
+  assert.match(send.description, /cache is cold and whose context is above 100000 tokens is refused \(cold_context\)/);
+  assert.match(send.description, /start a new lead with session_create/);
+  assert.match(send.description, /Pass allowCold: true only when the context in that conversation is really needed/);
+  assert.equal(send.parameters.properties.allowCold.type, "boolean");
+  assert.ok(!send.parameters.required.includes("allowCold"));
+
+  await execute(pi, "session_send", { sessionId: "01b", text: "check" });
+  assert.deepEqual(calls.at(-1), { method: "send", args: { from: SELF, to: "01b", text: "check" } }, "no flag unless asked");
+  await execute(pi, "session_send", { sessionId: "01b", text: "check", allowCold: false });
+  assert.deepEqual(calls.at(-1).args, { from: SELF, to: "01b", text: "check" });
+  await execute(pi, "session_send", { sessionId: "01b", text: "check", mode: "steer", allowCold: true });
+  assert.deepEqual(calls.at(-1).args, { from: SELF, to: "01b", text: "check", mode: "steer", allowCold: true });
+
+  const refusing = fakePi();
+  createSessionLinkFactories({ sessionLink: fakeLink({ send: Object.assign(new Error("That conversation's prompt cache is cold."), { code: "cold_context" }) }).link, companion: true })[0].factory(refusing);
+  await assert.rejects(execute(refusing, "session_send", { sessionId: "01b", text: "check" }), /^Error: cold_context: That conversation's prompt cache is cold\./);
+
+  const lead = createSessionTools(() => ({})).find((tool) => tool.name === "session_send");
+  assert.doesNotMatch(lead.description, /allowCold/);
+  assert.equal(lead.parameters.properties.allowCold, undefined);
+});
+
 test("a session the engine runs as the companion registers the companion's tools", async () => {
   const registered = [];
   const pi = { on() {}, registerMessageRenderer() {}, registerTool(tool) { registered.push(tool.name); }, rpc: { handle() {} } };

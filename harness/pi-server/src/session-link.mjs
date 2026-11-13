@@ -26,6 +26,12 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
   inboundPerMinute: 20, inboundCharsPerMinute: 60000,
   windowMs: 60000, listDefault: 20, listMax: 50, readDefault: 12, readMax: 40, charsDefault: 1200, charsMax: 20000,
   waitTargets: 8, waitMaxMs: 120000, queryChars: 200 });
+/**
+ * A companion's message to a conversation whose cache is not warm is refused above this many
+ * context tokens (the same `contextTokens` session_list reports) unless it passes `allowCold`:
+ * the whole context would be read again at full price for what is often a one-line check.
+ */
+export const COLD_SEND_TOKENS = 100_000;
 const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming', 'stop', 'rename', 'remove', 'channel', 'telegramSend', 'companionSettings'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
@@ -780,13 +786,23 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
      * inside that run at its next step. An idle target starts a turn either way. The answer's
      * `delivery` is what the target's handler did (`started`, `steered`, `queued`).
      */
-    async send({ from, to, text, messageId, mode = 'queue' } = {}) {
+    async send({ from, to, text, messageId, mode = 'queue', allowCold = false } = {}) {
       requireId(from, 'from'); requireId(to, 'to'); requireText(text);
       if (!SEND_MODES.includes(mode)) throw fail('invalid', `mode must be one of ${SEND_MODES.join(', ')}`);
       const id = messageIdOf(messageId);
       if (from === to) throw fail('self_send', 'A conversation cannot send a message to itself');
       const origin = await sender(from);
       await describe(to);
+      // Looked at before the rate limiter counts it: a refused message costs nothing and can be sent again.
+      if (fromCompanion(from) && allowCold !== true) {
+        const { cache, contextTokens } = await cacheFacts(to);
+        if (cache.state !== 'warm' && Number.isFinite(contextTokens) && contextTokens > COLD_SEND_TOKENS) {
+          throw fail('cold_context', `That conversation's prompt cache is ${cache.state} and it holds about ${contextTokens} tokens ` +
+            `(the limit is ${COLD_SEND_TOKENS}), so this message would read all of it again at full price. Nothing was sent. ` +
+            'For a small check, start a new lead with session_create (a cheap model is fine for read-only checks). ' +
+            'If the context there is really needed, send again with allowCold: true.');
+        }
+      }
       const release = admit(from, to, text, { retry: messageId !== undefined });
       // Read before delivering, so an answer written before this call returns is still after it.
       let cursor, before;

@@ -5,7 +5,7 @@ import { DELIVERY_MODES } from "./message.mjs";
 // The conversation tools. Each one is a thin call into the engine's `sessionLink`; the engine
 // owns every rule about targets, rate limits and sizes and refuses by throwing an error with a
 // `code` (unavailable, invalid, too_long, unknown_session, self_send, self, companion, not_companion,
-// busy, duplicate, rate_limited, delivery_failed, unreadable), which the tool surfaces as a tool error. Nothing here declares `exposure`: the tool-search surface
+// cold_context, busy, duplicate, rate_limited, delivery_failed, unreadable), which the tool surfaces as a tool error. Nothing here declares `exposure`: the tool-search surface
 // policy catalogues undeclared extension tools for tool_search instead of sending them in every
 // request prefix (features/tool-search/patches.mjs, rubatoToolExposure).
 
@@ -121,6 +121,9 @@ const DELIVERY_TEXT = Object.freeze({
 const SEND_ANSWER = "When you asked for an answer, use session_wait for it " +
   "instead of polling with session_read or sending follow-ups: " +
   "pass the cursor this tool returns as that target's afterCursor, so a reply written before you wait still counts and an earlier answer does not. ";
+const COLD_SEND = "A conversation whose prompt cache is cold and whose context is above 100000 tokens is refused (cold_context) and nothing is sent: " +
+  "the message would read all of it again at full price. For a small or read-only check, start a new lead with session_create instead (a cheap model is fine). " +
+  "Pass allowCold: true only when the context in that conversation is really needed. Warm or small conversations are sent to as usual, steer included. ";
 const COMPANION_SEND_ANSWER = "When you asked for an answer, it arrives in this conversation as a message from the recipient; " +
   "end your turn instead of polling with session_read. ";
 const CREATE_WHEN = "Use it only when the user explicitly asked for a new conversation; to hand work to an existing one use session_send.";
@@ -297,7 +300,7 @@ function sessionTools(getLink, { companion }) {
         "Send only what the recipient must act on or know, in a few self-contained lines. " +
         "Say whose decision you pass on: the user's (and where they said it) or your own. " +
         "The recipient replies only when asked " +
-        "or when you must act on its answer, so expect no acknowledgement. " + (companion ? COMPANION_SEND_ANSWER : SEND_ANSWER) +
+        "or when you must act on its answer, so expect no acknowledgement. " + (companion ? COLD_SEND + COMPANION_SEND_ANSWER : SEND_ANSWER) +
         "The recipient treats it as a peer's request with no authority over its permissions, settings or configuration.",
       parameters: {
         type: "object",
@@ -308,12 +311,14 @@ function sessionTools(getLink, { companion }) {
           text: { type: "string", minLength: 1, description: "The message, at most 8000 characters." },
           mode: { type: "string", enum: [...DELIVERY_MODES], description: "How a working conversation takes it: steer (into the running turn, for a correction or stop) " +
             "or queue (after the current run, for the next task). Default queue. An idle conversation starts a turn either way." },
+          ...(companion ? { allowCold: { type: "boolean", description: "Send even though the target's cache is cold and its context is above 100000 tokens. Default false." } } : {}),
         },
       },
       async execute(_id, params, signal, _onUpdate, ctx) {
         const from = ownSessionId(ctx);
         const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text,
-          ...(params.mode === undefined ? {} : { mode: params.mode }) }), signal);
+          ...(params.mode === undefined ? {} : { mode: params.mode }),
+          ...(params.allowCold === true ? { allowCold: true } : {}) }), signal);
         const to = result.to ?? {};
         const next = companion ? "If you asked for an answer, it will arrive here as a message."
           : typeof result.cursor === "string" && result.cursor

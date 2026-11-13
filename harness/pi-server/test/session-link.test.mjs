@@ -10,7 +10,7 @@ import { SessionFiles } from '../src/session-files.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 import { startSessionServer } from '../src/host.mjs';
 import { SessionClient } from '../src/client.mjs';
-import { createSessionLink, LIMITS, TAIL_BYTES } from '../src/session-link.mjs';
+import { createSessionLink, COLD_SEND_TOKENS, LIMITS, TAIL_BYTES } from '../src/session-link.mjs';
 
 const fixture = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate, message = 'Condition did not settle') => {
@@ -1070,6 +1070,42 @@ test('list and read tell a warm cache from a cold one, and how big the context i
   assert.deepEqual(read.session.cache, warmRow.cache);
   assert.equal(read.session.contextTokens, 91_000);
   assert.equal(env.row(warm.id).runtimeId, null, 'looking at the cache loads no runtime');
+});
+
+test('a companion is refused a send to a cold, large conversation unless it says allowCold; warm, small and other senders go through', async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const lead = await env.make('Lead');
+  const big = { input: 200, output: 300, cacheRead: 290_000, cacheWrite: 500, totalTokens: 291_000 };
+  const small = { input: 200, output: 300, cacheRead: 40_000, cacheWrite: 500, totalTokens: 41_000 };
+  const longAgo = Date.now() - 5 * 60 * MINUTE;
+  const cold = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', big, { at: longAgo })]);
+  const warm = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', big, { at: Date.now() - 10 * MINUTE })]);
+  const coldSmall = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', small, { at: longAgo })]);
+  const unknownBig = await writeSession(env.sessionsDir, env.root, [user('go'), answered('xai', big, { at: longAgo })]);
+  const unknownEmpty = await writeSession(env.sessionsDir, env.root, [user('nothing answered yet')]);
+  const edge = await writeSession(env.sessionsDir, env.root, [user('go'), answered('anthropic', { ...big, totalTokens: COLD_SEND_TOKENS }, { at: longAgo })]);
+  for (const session of [cold, warm, coldSmall, unknownBig, unknownEmpty, edge]) await env.listed(session.id);
+
+  assert.equal(COLD_SEND_TOKENS, 100_000);
+  for (const mode of [undefined, 'steer']) {
+    await assert.rejects(env.api.send({ from: segno.id, to: cold.id, text: 'quick check', ...(mode ? { mode } : {}) }),
+      (error) => error.code === 'cold_context' && /cold/.test(error.message) && /291000 tokens/.test(error.message)
+        && /session_create/.test(error.message) && /allowCold: true/.test(error.message));
+  }
+  await assert.rejects(env.api.send({ from: segno.id, to: unknownBig.id, text: 'quick check' }), { code: 'cold_context' }, 'an unknown cache is as costly as a cold one');
+  assert.equal(env.row(cold.id).runtimeId, null, 'a refusal delivers nothing and loads no runtime');
+
+  for (const target of [warm, coldSmall, unknownEmpty, edge]) {
+    const result = await env.api.send({ from: segno.id, to: target.id, text: 'still goes through' });
+    assert.equal(result.to.sessionId, target.id);
+  }
+  const forced = await env.api.send({ from: segno.id, to: cold.id, text: 'needs that context', allowCold: true });
+  assert.equal(forced.to.sessionId, cold.id);
+  const steered = await env.api.send({ from: segno.id, to: unknownBig.id, text: 'stop', mode: 'steer', allowCold: true });
+  assert.equal(steered.to.sessionId, unknownBig.id);
+  const other = await env.api.send({ from: lead.id, to: cold.id, text: 'a lead is not guarded' });
+  assert.ok(other.messageId);
 });
 
 test("a loaded conversation's cache comes from its warmer, with the end of the refreshes it will still send", async (t) => {
