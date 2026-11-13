@@ -13,6 +13,9 @@ enum CompanionIdentity {
   static let defaultNames = ["roo": "루", "segno": "세뇨"]
 
   private static var store: UserDefaults { UserDefaults(suiteName: appGroup) ?? .standard }
+  /// Builds may ship before the App Group capability is granted; renames made then live in the
+  /// app's own defaults too, so they survive the switch to the shared store.
+  private static let local = UserDefaults.standard
 
   /// The name to show for `companionId`: the person's rename, else what the app last saw, else the default.
   static func name(for companionId: String) -> String? {
@@ -22,7 +25,9 @@ enum CompanionIdentity {
   }
 
   static func renames() -> [String: String] {
-    store.dictionary(forKey: renamesKey) as? [String: String] ?? [:]
+    let mine = local.dictionary(forKey: renamesKey) as? [String: String] ?? [:]
+    let shared = store.dictionary(forKey: renamesKey) as? [String: String] ?? [:]
+    return mine.merging(shared) { _, sharedName in sharedName }
   }
 
   /// `name` nil or blank goes back to the default.
@@ -31,6 +36,7 @@ enum CompanionIdentity {
     let trimmed = name?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     if trimmed.isEmpty { renames[companionId] = nil } else { renames[companionId] = trimmed }
     store.set(renames, forKey: renamesKey)
+    local.set(renames, forKey: renamesKey)
   }
 
   /// Records the name the app shows and the face: `avatar` is the art's image data, or nil to draw the initial.
