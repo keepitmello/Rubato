@@ -43,7 +43,6 @@ export interface RubatoCallModule {
   requestEnd(uuid: string): void;
   setMuted(uuid: string, muted: boolean): void;
   setSpeaker(on: boolean): void;
-  setAudioWithoutCallKit(on: boolean): void;
   addListener<E extends keyof RubatoCallEvents>(event: E, listener: RubatoCallEvents[E]): { remove(): void };
 }
 

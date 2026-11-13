@@ -73,9 +73,5 @@ public final class RubatoCallModule: Module {
     Function("setSpeaker") { (on: Bool) in
       DispatchQueue.main.async { RubatoCallCenter.shared.setSpeaker(on) }
     }
-
-    Function("setAudioWithoutCallKit") { (on: Bool) in
-      DispatchQueue.main.async { RubatoCallCenter.shared.setAudioWithoutCallKit(on) }
-    }
   }
 }

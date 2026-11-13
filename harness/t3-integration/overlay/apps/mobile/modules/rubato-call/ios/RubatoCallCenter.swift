@@ -40,9 +40,6 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
     provider = CXProvider(configuration: configuration)
     super.init()
     provider.setDelegate(self, queue: nil)
-    // WebRTC must not start the microphone and speaker on its own: CallKit owns when audio runs
-    // and hands it over in provider(_:didActivate:).
-    webRTCAudioSession()?.setValue(true, forKey: "useManualAudio")
   }
 
   func start() {
@@ -193,19 +190,6 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
     try? AVAudioSession.sharedInstance().overrideOutputAudioPort(on ? .speaker : .none)
   }
 
-  /// Audio for a call CallKit could not take (the system refused the outgoing call).
-  func setAudioWithoutCallKit(_ on: Bool) {
-    let session = AVAudioSession.sharedInstance()
-    if on {
-      configure(session)
-      try? session.setActive(true)
-      webRTCAudioSession()?.perform(NSSelectorFromString("audioSessionDidActivate:"), with: session)
-    } else {
-      webRTCAudioSession()?.perform(NSSelectorFromString("audioSessionDidDeactivate:"), with: session)
-    }
-    webRTCAudioSession()?.setValue(on, forKey: "isAudioEnabled")
-  }
-
   // MARK: CallKit
 
   func providerDidReset(_ provider: CXProvider) {
@@ -245,16 +229,14 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
     action.fail()
   }
 
+  // LiveKit's audio engine configures and activates the session itself; CallKit's own activation
+  // only has to reach WebRTC (LiveKit react-native README, "Background Processing").
   func provider(_ provider: CXProvider, didActivate audioSession: AVAudioSession) {
-    let rtc = webRTCAudioSession()
-    rtc?.perform(NSSelectorFromString("audioSessionDidActivate:"), with: audioSession)
-    rtc?.setValue(true, forKey: "isAudioEnabled")
+    webRTCAudioSession()?.perform(NSSelectorFromString("audioSessionDidActivate:"), with: audioSession)
   }
 
   func provider(_ provider: CXProvider, didDeactivate audioSession: AVAudioSession) {
-    let rtc = webRTCAudioSession()
-    rtc?.setValue(false, forKey: "isAudioEnabled")
-    rtc?.perform(NSSelectorFromString("audioSessionDidDeactivate:"), with: audioSession)
+    webRTCAudioSession()?.perform(NSSelectorFromString("audioSessionDidDeactivate:"), with: audioSession)
   }
 
   // MARK: Audio
@@ -264,9 +246,9 @@ final class RubatoCallCenter: NSObject, PKPushRegistryDelegate, CXProviderDelega
   }
 
   /// WebRTC's shared audio session, found by name so this module does not link WebRTC itself.
-  /// LiveKit's WebRTC build may carry its own class prefix.
+  /// LiveKit's WebRTC build names it LKRTCAudioSession; a plain WebRTC build, RTCAudioSession.
   private func webRTCAudioSession() -> NSObject? {
-    for name in ["RTCAudioSession", "LKRTCAudioSession"] {
+    for name in ["LKRTCAudioSession", "RTCAudioSession"] {
       guard let type = NSClassFromString(name) as? NSObject.Type else { continue }
       let selector = NSSelectorFromString("sharedInstance")
       guard type.responds(to: selector) else { continue }

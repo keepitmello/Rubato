@@ -85,7 +85,7 @@ export interface CurrentCall {
   /** When the audio connected; null while connecting. */
   readonly connectedAt: number | null;
   readonly lines: readonly CallLine[];
-  /** CallKit shows this call; false when the system refused it and the app runs the audio itself. */
+  /** CallKit shows this call; false when the system refused it (LiveKit runs the audio either way). */
   readonly callKit: boolean;
 }
 
@@ -196,7 +196,6 @@ async function finish(reason: RubatoCallEndReason) {
   await ending?.disconnect().catch(() => undefined);
   if (!current) return;
   if (current.call.uuid) RubatoCall?.endCall(current.call.uuid, reason);
-  if (!current.callKit) RubatoCall?.setAudioWithoutCallKit(false);
   await callApi.hangup(current.environmentId, current.call.id).catch(() => undefined);
 }
 
@@ -422,10 +421,9 @@ export const callActions = {
         });
         callKit = true;
       } catch {
-        // The system refused (another call is on): the app runs the audio itself.
+        // The system refused (another call is on): the call goes on without the system call screen.
       }
     }
-    if (!callKit) RubatoCall?.setAudioWithoutCallKit(true);
     await join(environmentId, joined, callKit);
   },
   /** Answers the app's own ring (only shown where CallKit is not built in). */
@@ -435,7 +433,6 @@ export const callActions = {
     publish({ ringing: null });
     try {
       const joined = await callApi.answer(ringing.environmentId, ringing.id);
-      RubatoCall?.setAudioWithoutCallKit(true);
       await join(ringing.environmentId, joined, false);
     } catch (error) {
       publish({ error: message(error) });
