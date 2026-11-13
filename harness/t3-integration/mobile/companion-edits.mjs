@@ -15,6 +15,8 @@ export const mobileCompanionOverlays = [
   `${companions}/copy.ts`,
   `${companions}/rubatoHttp.ts`,
   `${companions}/companionNames.ts`,
+  `${companions}/companionNotification.ts`,
+  `${companions}/companionNotification.test.ts`,
   `${companions}/CompanionNamesSettingsScreen.tsx`,
   `${companions}/companionsStore.ts`,
   `${companions}/callStore.ts`,
@@ -41,6 +43,7 @@ export const mobileCompanionOverlays = [
   `${callModule}/ios/CompanionIdentity.swift`,
   `${callModule}/ios/RubatoCallCenter.swift`,
   `${callModule}/ios/RubatoCallModule.swift`,
+  'apps/mobile/targets/notification-service/NotificationService.swift',
 ];
 
 // The room draws attachments with the thread feed's own renderers, which the feed keeps private.
