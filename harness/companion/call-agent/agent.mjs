@@ -8,10 +8,11 @@ import path from 'node:path';
 import { ReadableStream } from 'node:stream/web';
 import { fileURLToPath } from 'node:url';
 import { AgentSessionEventTypes, ServerOptions, cli, defineAgent, inference, llm, log, voice } from '@livekit/agents';
+import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as fishaudio from '@livekit/agents-plugin-fishaudio';
 import * as openai from '@livekit/agents-plugin-openai';
 import { createBridge } from './bridge.mjs';
-import { readOpenAiKey, resolveCompanion } from './companion.mjs';
+import { readElevenLabsKey, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
 
 export const AGENT_NAME = 'rubato-companion-call';
 const LATENCY_LOG = path.join(process.env.RUBATO_CALL_HOME ?? path.join(os.homedir(), '.rubato', 'call'), 'latency.jsonl');
@@ -39,6 +40,17 @@ class CompanionSlot extends llm.LLM {
   label() { return 'rubato.companion'; }
   get model() { return 'companion-session'; }
   chat() { throw new Error('a companion answers through its call bridge, not chat()'); }
+}
+
+/** The engine this call speaks with: the one the caller picked, else the voice-reply setting. */
+export function voiceEngine(companion, picked) {
+  const choices = voiceChoices(companion);
+  const choice = choices.find(item => item.id === picked) ?? choices[0];
+  if (!choice.ready) throw new Error(choice.reason);
+  if (choice.provider === 'elevenlabs')
+    return { choice, tts: new elevenlabs.TTS({ apiKey: readElevenLabsKey(), model: choice.model, voiceId: choice.voiceId, language: 'ko' }) };
+  return { choice, tts: new fishaudio.TTS({ apiKey: companion.fishKey, model: choice.model, voiceId: choice.voiceId,
+    temperature: companion.voice.temperature, latencyMode: 'balanced' }) };
 }
 
 class CompanionVoice extends voice.Agent {
@@ -100,8 +112,9 @@ class CompanionVoice extends voice.Agent {
 export default defineAgent({
   entry: async ctx => {
     const logger = log();
-    const { companion: id } = JSON.parse(ctx.job.metadata || '{}');
+    const { companion: id, voice: picked } = JSON.parse(ctx.job.metadata || '{}');
     const companion = resolveCompanion(id);
+    const engine = voiceEngine(companion, picked);
     const openAiKey = readOpenAiKey();
     if (!openAiKey) throw new Error('no OpenAI key for transcription (~/.rubato/voice.json)');
     const bridge = createBridge(companion.bridge);
@@ -111,6 +124,7 @@ export default defineAgent({
       : await bridge.open(callId, { onEvent: event => logger.debug({ event }, 'bridge') });
     ctx.addShutdownCallback(() => opened.end());
     const timings = { current: null };
+    logger.info({ voice: engine.choice.id }, 'call voice');
 
     const session = new voice.AgentSession({
       vad: new inference.VAD(),
@@ -120,8 +134,7 @@ export default defineAgent({
       ttsTextTransforms: null,
       stt: new openai.STT({ apiKey: openAiKey, model: 'gpt-live-transcribe', useRealtime: true, language: 'ko',
         keywords: [companion.title, companion.userLabel].filter(Boolean) }),
-      tts: new fishaudio.TTS({ apiKey: companion.fishKey, model: companion.voice.model, voiceId: companion.voice.voiceId,
-        temperature: companion.voice.temperature, latencyMode: 'balanced' }),
+      tts: engine.tts,
       turnHandling: {
         turnDetection: new inference.TurnDetector({ version: 'v1-mini' }),
         // The transcript lands about half a second after speech stops; ending a turn sooner commits
@@ -151,7 +164,7 @@ export default defineAgent({
         sentenceToVoiceMs: span(timing.firstSentenceAt, timing.speakingAt),
       };
       logger.info(summary, 'call latency');
-      record({ ...timing, ...summary });
+      record({ ...timing, voice: engine.choice.id, ...summary });
     });
     session.on(AgentSessionEventTypes.UserInputTranscribed, ev => {
       if (ev.isFinal) logger.info({ transcript: ev.transcript }, 'heard');

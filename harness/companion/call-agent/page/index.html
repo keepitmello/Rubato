@@ -12,6 +12,10 @@
   .who button { border: 1px solid #8884; background: transparent; border-radius: 999px; padding: 6px 14px; font: inherit; cursor: pointer; }
   .who button[aria-pressed="true"] { background: #2b2b2b; color: white; }
   .who button:disabled { opacity: .4; cursor: not-allowed; }
+  .voices { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+  .voices button { border: 1px solid #8884; background: transparent; border-radius: 8px; padding: 4px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .voices button[aria-pressed="true"] { background: #1fb855; color: white; border-color: #1fb855; }
+  .voices button:disabled { opacity: .4; cursor: not-allowed; }
   .state { text-align: center; font-size: 15px; opacity: .7; min-height: 1.4em; }
   .call { justify-self: center; width: 72px; height: 72px; border-radius: 50%; border: 0; font-size: 28px; cursor: pointer; background: #1fb855; color: white; }
   .call.live { background: #e5484d; }
@@ -25,6 +29,7 @@
 <body>
 <main>
   <div class="who" id="who"></div>
+  <div class="voices" id="voices"></div>
   <div class="state" id="state">누구랑 통화할지 골라줘</div>
   <button class="call" id="call" aria-label="통화">📞</button>
   <div class="why" id="why"></div>
@@ -33,14 +38,25 @@
 <script type="module">
 import { Room, RoomEvent, Track } from '/livekit-client.mjs';
 const $ = id => document.getElementById(id);
-let chosen = null, room = null;
+let chosen = null, room = null, voice = null;
+function showVoices(item) {
+  $('voices').replaceChildren();
+  voice = item.voices.find(choice => choice.ready)?.id ?? null;
+  for (const choice of item.voices) {
+    const button = document.createElement('button');
+    button.textContent = choice.label; button.disabled = !choice.ready; button.title = choice.reason ?? '';
+    button.setAttribute('aria-pressed', String(choice.id === voice));
+    button.onclick = () => { voice = choice.id; for (const other of $('voices').children) other.setAttribute('aria-pressed', String(other === button)); };
+    $('voices').append(button);
+  }
+}
 const states = { listening: '듣는 중', thinking: '생각하는 중', speaking: '말하는 중', initializing: '연결하는 중', idle: '대기' };
 
 const companions = await (await fetch('/companions')).json();
 for (const item of companions) {
   const button = document.createElement('button');
   button.textContent = item.title; button.disabled = !item.ready; button.title = item.reason ?? '';
-  button.onclick = () => { chosen = item; for (const other of $('who').children) other.setAttribute('aria-pressed', String(other === button)); $('state').textContent = `${item.title}에게 걸기`; $('why').textContent = ''; };
+  button.onclick = () => { chosen = item; for (const other of $('who').children) other.setAttribute('aria-pressed', String(other === button)); $('state').textContent = `${item.title}에게 걸기`; $('why').textContent = ''; showVoices(item); };
   $('who').append(button);
   if (!item.ready) $('why').textContent += `${item.title}: ${item.reason}\n`;
 }
@@ -57,7 +73,7 @@ function say(id, who, text) {
 $('call').onclick = async () => {
   if (room) { await room.disconnect(); return; }
   if (!chosen) return;
-  const answer = await fetch(`/token?companion=${chosen.id}`);
+  const answer = await fetch(`/token?companion=${chosen.id}${voice ? `&voice=${encodeURIComponent(voice)}` : ''}`);
   if (!answer.ok) { $('why').textContent = await answer.text(); return; }
   const { url, token } = await answer.json();
   room = new Room({ audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });

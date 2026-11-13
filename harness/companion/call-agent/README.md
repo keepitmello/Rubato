@@ -30,6 +30,14 @@ key pair is made once in `~/.rubato/call/livekit.yaml`; each spoken turn's timin
 `RUBATO_CALL_ECHO=1` repeats what was heard instead of reaching the companion, to test the audio
 path without touching its conversation.
 
+## Voice engines
+
+The page offers each companion's voice-reply setting first, then other engines to compare by ear,
+all in the companion's own voice: Fish `s2.1-pro` and `drama-3`, and ElevenLabs `eleven_v4_turbo`
+and `eleven_v4`. ElevenLabs needs a key (`ELEVENLABS_API_KEY` or `~/.config/elevenlabs/api_key`)
+and a voice chosen there for that companion (`call.elevenlabsVoiceId` in its profile). Picking an
+engine changes that call only.
+
 ## Which companions can be called
 
 A companion needs both, and the page says which is missing:

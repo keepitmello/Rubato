@@ -23,6 +23,30 @@ export function readOpenAiKey(env = process.env) {
   return env.OPENAI_API_KEY?.trim() || null;
 }
 
+/** The ElevenLabs key: ELEVENLABS_API_KEY, else ~/.config/elevenlabs/api_key (as Fish keeps ~/.config/fish-audio). */
+export function readElevenLabsKey(env = process.env) {
+  if (env.ELEVENLABS_API_KEY?.trim()) return env.ELEVENLABS_API_KEY.trim();
+  try { return readFileSync(path.join(env.HOME ?? os.homedir(), '.config', 'elevenlabs', 'api_key'), 'utf8').trim() || null; }
+  catch { return null; }
+}
+
+/**
+ * Voice engines a call can use, all in the companion's own voice. The first is its voice-reply
+ * setting; the others are there to compare by ear. ElevenLabs needs a key and a voice the person
+ * chose there (`call.elevenlabsVoiceId` in the profile), since a Fish voice id means nothing to it.
+ */
+export function voiceChoices(companion, env = process.env) {
+  const fish = [...new Set([companion.voice.model, 's2.1-pro', 'drama-3'])].map((model, at) => ({
+    id: `fish:${model}`, provider: 'fish', model, voiceId: companion.voice.voiceId,
+    label: at === 0 ? `Fish ${model} (기본)` : `Fish ${model}`, ready: true }));
+  const key = readElevenLabsKey(env), voiceId = companion.elevenlabsVoiceId;
+  const reason = !key ? 'ElevenLabs 키가 없어' : !voiceId ? `${companion.title}의 ElevenLabs 목소리가 없어` : null;
+  const eleven = ['eleven_v4_turbo', 'eleven_v4'].map(model => ({
+    id: `elevenlabs:${model}`, provider: 'elevenlabs', model, voiceId, label: `ElevenLabs ${model.replace('eleven_', '')}`,
+    ready: !reason, ...(reason ? { reason } : {}) }));
+  return [...fish, ...eleven];
+}
+
 /** Companions that can take a call now, and why the rest cannot. Never throws for one bad profile. */
 export function callableCompanions(env = process.env) {
   return listCompanions(env).map(profile => {
@@ -31,7 +55,8 @@ export function callableCompanions(env = process.env) {
   });
 }
 
-const describe = companion => ({ voiceId: companion.voice.voiceId, model: companion.voice.model });
+const describe = companion => ({ voiceId: companion.voice.voiceId, model: companion.voice.model,
+  voices: voiceChoices(companion).map(({ id, label, ready, reason }) => ({ id, label, ready, reason })) });
 
 export function resolveCompanion(id, env = process.env) {
   const own = companionEnv(id, env);
@@ -47,6 +72,7 @@ export function resolveCompanion(id, env = process.env) {
     bridge: { url: `http://${call.host?.includes(':') ? `[${call.host}]` : call.host ?? '127.0.0.1'}:${call.port}`, token: call.token ?? null },
     voice, fishKey,
     userLabel: call.userLabel ?? null,
+    elevenlabsVoiceId: typeof call.elevenlabsVoiceId === 'string' ? call.elevenlabsVoiceId : null,
     speakable: text => pronunciationText(text, own),
   };
 }

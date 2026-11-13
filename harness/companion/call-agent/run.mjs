@@ -47,12 +47,12 @@ export function livekitConfig(file = path.join(home, 'livekit.yaml')) {
   return { file, key, secret, url: `ws://${HOST}:${LIVEKIT_PORT}` };
 }
 
-async function token({ key, secret }, companion) {
+async function token({ key, secret }, companion, voice) {
   const room = `call-${companion}-${Date.now().toString(36)}`;
   const grant = new AccessToken(key, secret, { identity: 'caller', ttl: '2h' });
   grant.addGrant({ room, roomJoin: true, canPublish: true, canSubscribe: true });
   grant.roomConfig = new RoomConfiguration({
-    agents: [new RoomAgentDispatch({ agentName: AGENT_NAME, metadata: JSON.stringify({ companion }) })],
+    agents: [new RoomAgentDispatch({ agentName: AGENT_NAME, metadata: JSON.stringify({ companion, voice }) })],
   });
   return { room, token: await grant.toJwt() };
 }
@@ -67,9 +67,11 @@ function page(livekit) {
       if (url.pathname === '/livekit-client.mjs') return send(200, 'text/javascript', readFileSync(client));
       if (url.pathname === '/companions') return send(200, 'application/json', JSON.stringify(callableCompanions()));
       if (url.pathname === '/token') {
-        const companion = url.searchParams.get('companion');
-        if (!callableCompanions().some(item => item.id === companion && item.ready)) return send(422, 'application/json', '{"error":"not callable"}');
-        return send(200, 'application/json', JSON.stringify({ url: livekit.url, ...await token(livekit, companion) }));
+        const companion = url.searchParams.get('companion'), voice = url.searchParams.get('voice');
+        const target = callableCompanions().find(item => item.id === companion && item.ready);
+        if (!target) return send(422, 'application/json', '{"error":"not callable"}');
+        if (voice && !target.voices.some(item => item.id === voice && item.ready)) return send(422, 'application/json', '{"error":"voice not ready"}');
+        return send(200, 'application/json', JSON.stringify({ url: livekit.url, ...await token(livekit, companion, voice) }));
       }
       send(404, 'text/plain', 'not found');
     } catch (error) { send(500, 'text/plain', String(error?.message ?? error)); }

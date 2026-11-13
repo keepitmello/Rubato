@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { CALL_SAY_TOOL, createCompanionCall } from '../../../pi-runtime/features/companion-home/call.mjs';
 import { createBridge } from '../bridge.mjs';
-import { callableCompanions, resolveCompanion } from '../companion.mjs';
+import { callableCompanions, resolveCompanion, voiceChoices } from '../companion.mjs';
 
 // The companion's real call bridge on a fake session: `say` streams call_say the way a model
 // writes it, `hang` leaves the turn unfinished.
@@ -76,7 +76,7 @@ test('a call reaches only companions with a bridge and a chosen voice, in that v
     mkdirSync(path.join(home, 'messenger'), { recursive: true });
     return { id, title: id, home, memoryAgent: id, call };
   };
-  const voiced = profile('voiced', { enabled: true, port: 18001 });
+  const voiced = profile('voiced', { enabled: true, port: 18001, elevenlabsVoiceId: 'eleven-voice' });
   const silent = profile('silent', { enabled: true, port: 18002 });
   const closed = profile('closed', { enabled: false });
   const voiceId = '3c7ee7e408104d76a777ebaadc201896';
@@ -93,4 +93,18 @@ test('a call reaches only companions with a bridge and a chosen voice, in that v
   assert.throws(() => resolveCompanion('closed', env), /closed has no call bridge/);
   assert.deepEqual(callableCompanions(env).map(item => [item.id, item.ready]),
     [['segno', false], ['voiced', true], ['silent', false], ['closed', false]]);
+});
+
+test('a call speaks in the companion voice by default; ElevenLabs needs its own key and voice', t => {
+  const companion = { title: 'Roo', voice: { voiceId: 'fish-voice', model: 's2.1-pro-free' }, elevenlabsVoiceId: null };
+  const home = mkdtempSync(path.join(tmpdir(), 'call-voices-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const choices = voiceChoices(companion, { HOME: home });
+  assert.deepEqual(choices.map(item => item.id), ['fish:s2.1-pro-free', 'fish:s2.1-pro', 'fish:drama-3', 'elevenlabs:eleven_v4_turbo', 'elevenlabs:eleven_v4']);
+  assert.ok(choices.filter(item => item.provider === 'fish').every(item => item.ready && item.voiceId === 'fish-voice'));
+  assert.equal(choices.at(-1).reason, 'ElevenLabs 키가 없어');
+  assert.equal(voiceChoices(companion, { HOME: home, ELEVENLABS_API_KEY: 'k' }).at(-1).reason, 'Roo의 ElevenLabs 목소리가 없어');
+  const ready = voiceChoices({ ...companion, elevenlabsVoiceId: 'eleven-voice' }, { HOME: home, ELEVENLABS_API_KEY: 'k' });
+  assert.deepEqual(ready.slice(3).map(item => [item.ready, item.voiceId]), [[true, 'eleven-voice'], [true, 'eleven-voice']]);
+  assert.equal(voiceChoices({ ...companion, voice: { ...companion.voice, model: 'drama-3' } }, { HOME: home }).filter(item => item.provider === 'fish').length, 2);
 });
