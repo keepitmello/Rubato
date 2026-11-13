@@ -27,6 +27,8 @@ const KO = {
   incoming: "받은 전화",
   outgoing: "건 전화",
   nothingSaid: "통화에서 오간 말이 없어.",
+  openTranscript: "통화 내용 보기",
+  callGone: "이 통화를 찾을 수 없어.",
   // The call screen.
   connecting: "연결하는 중…",
   listening: "듣고 있어",
@@ -67,6 +69,8 @@ const EN: typeof KO = {
   incoming: "Incoming",
   outgoing: "Outgoing",
   nothingSaid: "Nothing was said on this call.",
+  openTranscript: "Opens the call transcript",
+  callGone: "This call could not be found.",
   connecting: "Connecting…",
   listening: "Listening",
   thinking: "Thinking…",

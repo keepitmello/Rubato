@@ -26,6 +26,7 @@ export const mobileCompanionOverlays = [
   `${companions}/EdgeFade.tsx`,
   `${companions}/CallCard.tsx`,
   `${companions}/CallScreen.tsx`,
+  `${companions}/CallTranscriptScreen.tsx`,
   `${companions}/CompanionListScreen.tsx`,
   `${companions}/CompanionRoomScreen.tsx`,
   `${companions}/RubatoCallHost.tsx`,

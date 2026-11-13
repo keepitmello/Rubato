@@ -132,6 +132,7 @@ function RoomRow(props: {
   readonly item: RoomItem;
   readonly companion: CompanionEntry | null;
   readonly title: string;
+  readonly environmentId: string;
   readonly body: { readonly fontSize: number; readonly lineHeight: number };
 }) {
   const { item } = props;
@@ -140,7 +141,7 @@ function RoomRow(props: {
   if (item.kind === "call")
     return (
       <View className={item.call.status === "ringing" ? "mt-2.5 opacity-70" : "mt-2.5"}>
-        <CallCard call={item.call} title={props.title} art={props.companion?.art ?? null} />
+        <CallCard call={item.call} title={props.title} art={props.companion?.art ?? null} environmentId={props.environmentId} />
       </View>
     );
   const mine = item.side === "me";
@@ -297,7 +298,9 @@ function RoomBody(props: {
         inverted
         data={reversed}
         keyExtractor={(item) => item.id}
-        renderItem={({ item }) => <RoomRow item={item} companion={props.companion} title={title} body={body} />}
+        renderItem={({ item }) => (
+          <RoomRow item={item} companion={props.companion} title={title} environmentId={props.environmentId} body={body} />
+        )}
         ListHeaderComponent={
           <View style={{ paddingBottom: composerHeight + 6 }}>{writing ? <WritingDots /> : null}</View>
         }
