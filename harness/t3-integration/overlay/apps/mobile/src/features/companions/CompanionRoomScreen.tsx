@@ -8,7 +8,7 @@ import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, Animated, FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Alert, Animated, FlatList, Pressable, ScrollView, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -17,12 +17,15 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
+import { ComposerEditor } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { FilePreviewSource } from "../../components/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
+import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
@@ -176,6 +179,8 @@ function RoomComposer(props: {
   readonly onPickMedia: () => Promise<void>;
   readonly onPickFiles: () => Promise<void>;
   readonly onRemoveAttachment: (id: string) => void;
+  readonly onPasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
+  readonly onPasteText: (paste: ComposerTextPaste) => Promise<void>;
   readonly onPressPreview: (source: FilePreviewSource) => void;
   readonly draft: string;
   readonly onChange: (text: string) => void;
@@ -209,6 +214,8 @@ function RoomComposer(props: {
     onChangeSelection: setSelection,
   });
   const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
+  const foreground = useUniwindTheme()["--color-foreground"];
+  const [focused, setFocused] = useState(false);
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
   const strip = composerStripAttachments(props.attachments);
   return (
@@ -253,18 +260,27 @@ function RoomComposer(props: {
               onPickMedia={props.onPickMedia}
               onPickFiles={props.onPickFiles}
             />
-            <TextInput
-              value={props.draft}
-              onChangeText={props.onChange}
-              selection={selection}
-              onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-              editable={!dictation.freezesEditor}
-              placeholder={copy.placeholder}
-              multiline
-              className="min-w-0 flex-1 text-foreground"
-              placeholderTextColorClassName="accent-foreground-muted"
-              style={{ ...props.body, minHeight: 36, maxHeight: 140, paddingTop: 8, paddingBottom: 8 }}
-            />
+            <View className="min-w-0 flex-1 px-1">
+              <ComposerEditor
+                draftKey={props.ownerKey}
+                environmentId={props.environmentId}
+                multiline
+                value={props.draft}
+                readOnly={dictation.freezesEditor}
+                selection={selection}
+                onChangeText={props.onChange}
+                onSelectionChange={setSelection}
+                onPasteImages={(uris) => void props.onPasteImages(uris)}
+                onPasteText={(paste) => void props.onPasteText(paste)}
+                onFocus={() => setFocused(true)}
+                onBlur={() => setFocused(false)}
+                placeholder={copy.placeholder}
+                scrollEnabled={focused}
+                contentInsetVertical={focused ? 0 : 6}
+                style={focused ? { minHeight: 72, maxHeight: 160, paddingVertical: 4 } : { height: 36 }}
+                textStyle={{ ...props.body, color: foreground }}
+              />
+            </View>
             <ComposerDictationPrimaryAction
               state={dictation.state}
               presentation={presentation}
@@ -386,6 +402,8 @@ function RoomBody(props: {
         onPickMedia={composer.onPickDraftMedia}
         onPickFiles={composer.onPickDraftFiles}
         onRemoveAttachment={composer.onRemoveDraftImage}
+        onPasteImages={composer.onNativePasteImages}
+        onPasteText={composer.onNativePasteText}
         onPressPreview={media.onPressPreview}
         draft={composer.draftMessage}
         onChange={composer.onChangeDraftMessage}
