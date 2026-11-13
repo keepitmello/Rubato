@@ -7,8 +7,8 @@
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Animated, FlatList, Pressable, TextInput, View } from "react-native";
+import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
+import { Alert, Animated, FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -20,6 +20,7 @@ import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachment
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { FilePreviewSource } from "../../components/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
+import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -295,6 +296,20 @@ function RoomComposer(props: {
   );
 }
 
+/**
+ * The room's list, registered with the screen as threads register theirs, with every scroll edge
+ * effect off: left to find it on its own, UIKit read the inverted list from the wrong end and
+ * blurred the whole room under the transparent bar. The room draws its own band (HeaderBand).
+ */
+const NO_EDGE_EFFECTS = { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const;
+function renderRoomScrollView(props: ComponentProps<typeof ScrollView>) {
+  return (
+    <NativeScrollViewMarker style={{ flex: 1 }} scrollEdgeEffects={NO_EDGE_EFFECTS}>
+      <ScrollView {...props} />
+    </NativeScrollViewMarker>
+  );
+}
+
 /** The room once its thread is known: route params carry environmentId and threadId. */
 function RoomBody(props: {
   readonly companion: CompanionEntry | null;
@@ -354,6 +369,7 @@ function RoomBody(props: {
         contentContainerStyle={{ paddingHorizontal: 16 }}
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
+        renderScrollComponent={renderRoomScrollView}
         scrollIndicatorInsets={{ top: composerHeight, bottom: props.headerHeight }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
@@ -404,7 +420,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       unstable_navigationItemStyle: "navigator" as const,
       // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
       // the room draws its own band under the bar (HeaderBand).
-      scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const,
+      scrollEdgeEffects: NO_EDGE_EFFECTS,
     }),
     [companion, title],
   );
