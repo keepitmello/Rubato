@@ -7,7 +7,6 @@
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { BlurView } from "expo-blur";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Animated, FlatList, Pressable, TextInput, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -26,7 +25,6 @@ import { composerStripAttachments, type DraftComposerAttachment } from "../../li
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
-import { useAppearancePreferences } from "../settings/appearance/AppearancePreferencesProvider";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { ComposerSurface } from "../threads/ThreadComposer";
 import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictationControl";
@@ -97,23 +95,12 @@ function RoomTitle(props: { readonly companion: CompanionEntry | null; readonly 
 }
 
 /**
- * The blurred band under the transparent bar, as threads get it from UIKit's scroll edge: the
- * conversation blurs out under the bar, then a short fade meets the screen color.
+ * The band under the transparent bar: the screen color behind the bar, then a short fade, so the
+ * conversation goes out of sight under it. (A blur view here blurred the whole room.)
  */
 function HeaderBand(props: { readonly height: number }) {
-  const { themeAppearance } = useAppearancePreferences();
-  return (
-    <View pointerEvents="none" style={{ position: "absolute", top: 0, left: 0, right: 0, height: props.height + 14 }}>
-      <BlurView
-        intensity={70}
-        tint={themeAppearance === "dark" ? "systemChromeMaterialDark" : "systemChromeMaterialLight"}
-        style={{ position: "absolute", top: 0, left: 0, right: 0, height: props.height }}
-      />
-      <View style={{ position: "absolute", top: props.height, left: 0, right: 0 }}>
-        <EdgeFade edge="top" height={14} solid={0} />
-      </View>
-    </View>
-  );
+  const fade = 18;
+  return <EdgeFade edge="top" height={props.height + fade} solid={props.height / (props.height + fade)} />;
 }
 
 function WritingDots() {
