@@ -27,10 +27,18 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
   for (const name of readdirSync(dir)) {
     if (!name.endsWith('.json')) continue;
     try {
-      const call = JSON.parse(readFileSync(path.join(dir, name), 'utf8'));
+      const file = path.join(dir, name);
+      const call = JSON.parse(readFileSync(file, 'utf8'));
       // A call the engine was carrying when it stopped is over; a ring nobody answered was missed.
-      if (call.status === 'ringing') Object.assign(call, { status: 'missed', endedAt: call.endedAt ?? now() });
-      if (call.status === 'active') Object.assign(call, { status: 'ended', endedAt: call.endedAt ?? now() });
+      // It ended when it was last heard from (its last line, else when it was answered or rang),
+      // not now, and the file says so too: others read these files (the push relay's call window).
+      if (call.status === 'ringing' || call.status === 'active') {
+        const lastHeard = call.transcript?.at(-1)?.at ?? call.answeredAt ?? call.createdAt ?? now();
+        Object.assign(call, { status: call.status === 'ringing' ? 'missed' : 'ended', endedAt: call.endedAt ?? lastHeard });
+        const temporary = `${file}.${randomUUID()}.tmp`;
+        writeFileSync(temporary, JSON.stringify(call) + '\n', { mode: 0o600 });
+        renameSync(temporary, file);
+      }
       calls.set(call.id, call);
     } catch {}
   }

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -76,4 +76,21 @@ test('every call carries a CallKit uuid and the companion name; an incoming ring
   const dial = log.dial({ companion: 'roo', title: 'Roo' });
   assert.equal(dial.ringUntil, null);
   assert.notEqual(dial.uuid, ring.uuid);
+});
+
+test('a call the engine was carrying when it stopped is over on disk too, ended when it was last heard', t => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'call-log-')); t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let clock = 1_000_000;
+  const first = createCallLog({ dir, now: () => clock });
+  const call = first.dial({ companion: 'roo', title: 'Roo' });
+  clock += 4_000; first.say(call.id, 'companion', 'hi');
+  const ring = first.ring({ companion: 'segno', title: 'Segno' });
+  first.close();
+  clock += 3_600_000;
+  const second = createCallLog({ dir, now: () => clock }); t.after(() => second.close());
+  const onDisk = id => JSON.parse(readFileSync(path.join(dir, `${id}.json`), 'utf8'));
+  assert.equal(onDisk(call.id).status, 'ended');
+  assert.ok(onDisk(call.id).endedAt < clock - 3_000_000, 'not the restart time');
+  assert.equal(onDisk(ring.id).status, 'missed');
+  assert.deepEqual(second.live(), []);
 });
