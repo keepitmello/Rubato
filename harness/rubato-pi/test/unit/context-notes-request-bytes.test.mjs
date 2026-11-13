@@ -119,3 +119,26 @@ test("wire overflow is refused before send and repeated fresh-window overflow ca
   assert.equal(f.c.window.number, 1);
   assert.match(f.c.paused, /반복/);
 });
+
+test("request bytes equal the serialized request, and a part shared by later copies is serialized once", () => {
+  let serialized = 0;
+  const shared = { type: "image", data: "QUJD".repeat(1000), mimeType: "image/png", toJSON() { serialized += 1; const { toJSON, ...rest } = this; return rest; } };
+  const messages = [
+    { role: "user", content: "plain \u0000 \"quoted\" 한글", timestamp: 1 },
+    { role: "user", content: [{ type: "text", text: "a\nb" }, shared], timestamp: 2, __piSessionContextEntryId: "e1" },
+    { role: "assistant", content: [], usage: { input: 1 } },
+    { role: "toolResult", toolCallId: "t", content: [{ type: "text", text: "😀" }, undefined, null, "bare"], skipped: undefined },
+    null,
+  ];
+  const prompt = "sys\u0001";
+  const tools = [{ name: "x", description: "d", parameters: { type: "object" } }];
+  const exact = (list) => Buffer.byteLength(JSON.stringify({ messages: list, systemPrompt: prompt, tools }));
+  assert.equal(requestByteSize(messages, prompt, tools), exact(messages));
+  assert.equal(requestByteSize([], prompt, tools), exact([]));
+  const before = serialized;
+  // A request copies the envelope to annotate it and keeps the parts.
+  const annotated = messages.map((m) => m && Array.isArray(m.content) ? { ...m, content: [...m.content, { type: "text", text: "[history]" }] } : m);
+  assert.equal(requestByteSize(annotated, prompt, tools), exact(annotated));
+  requestByteSize(annotated, prompt, tools);
+  assert.equal(serialized - before, 1, "only the exact check serialized the shared part again");
+});

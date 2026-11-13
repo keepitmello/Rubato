@@ -8,7 +8,7 @@ import { flushSessionJournal } from "./journal.mjs";
 import { contextNotesConfig, contextStrategy, windowBudget } from "./config.mjs";
 import { assertEngineParts, registerSessionGate } from "./engine-gate.mjs";
 import { ContextNotesStore, databasePath } from "./store.mjs";
-import { requestByteSize, REQUEST_BYTE_WARNING, REQUEST_BYTE_CHECKPOINT, REQUEST_BYTE_LIMIT,
+import { messageListBytes, requestByteSize, REQUEST_BYTE_WARNING, REQUEST_BYTE_CHECKPOINT, REQUEST_BYTE_LIMIT,
   REQUEST_BYTE_REFUSAL } from "./request-budget.mjs";
 import { SOURCE, CHECKPOINT_NOTE, INIT_ENTRY, NOTE_ENTRY, NUDGE_ENTRY, PREPARE_ENTRY, REMINDER_ENTRY, initialWindow, nextWindow,
   branchWindow, decodeBootstrap, encodeBootstrap, isWindowCompaction, lastUserId, messageText, notePath } from "./protocol.mjs";
@@ -120,17 +120,19 @@ function entryIdentity(entry) {
   return key;
 }
 
-function estimateText(message) {
-  if (typeof message?.content === "string") return message.content;
-  if (!Array.isArray(message?.content)) return "";
-  // Count visible text only. Reasoning/tool payloads stringified as JSON would
-  // inflate the experiment budget far past the engine's actual token meter.
-  return message.content.map((part) => typeof part?.text === "string" ? part.text : "").join("\n");
+function estimateTextBytes(message) {
+  if (typeof message?.content === "string") return Buffer.byteLength(message.content);
+  if (!Array.isArray(message?.content)) return 0;
+  // Count visible text only, as if the parts were joined by newlines. Reasoning/tool payloads
+  // stringified as JSON would inflate the experiment budget far past the engine's token meter.
+  let bytes = Math.max(0, message.content.length - 1);
+  for (const part of message.content) if (typeof part?.text === "string") bytes += Buffer.byteLength(part.text);
+  return bytes;
 }
 
 function estimate(messages, systemPrompt = "") {
   let bytes = Buffer.byteLength(systemPrompt);
-  for (const message of messages ?? []) bytes += Buffer.byteLength(estimateText(message)) + 32;
+  for (const message of messages ?? []) bytes += estimateTextBytes(message) + 32;
   // Heuristic only, NOT a tokenizer or a proof of fitting the provider window.
   return Math.ceil(bytes / 3);
 }
@@ -287,9 +289,9 @@ export class ContextNotesController {
     }
     const toolDefinitions = JSON.stringify(tools);
     const systemPrompt = this.ctx.getSystemPrompt?.() ?? "";
-    const requestBytes = requestByteSize(messages, systemPrompt, tools);
     const fixedBytes = requestByteSize([], systemPrompt, tools);
-    const estimated = estimate(messages, (this.ctx.getSystemPrompt?.() ?? "") + toolDefinitions);
+    const requestBytes = fixedBytes + messageListBytes(messages);
+    const estimated = estimate(messages, systemPrompt + toolDefinitions);
     const live = Number(this.ctx.getContextUsage?.()?.tokens);
     const sampled = Number.isFinite(live) && live > 0 ? live : 0;
     // Both the experiment budget and the physical safety line follow the engine
