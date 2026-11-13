@@ -33,7 +33,7 @@ work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 source_dir="$INTEGRATION"
 if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   source_dir="$work/integration"; mkdir -p "$source_dir"
-  git -C "$INTEGRATION" archive "HEAD:$(git -C "$INTEGRATION" rev-parse --show-prefix)" | tar -x -C "$source_dir"
+  git -C "$INTEGRATION" archive "HEAD:$(git -C "$INTEGRATION" rev-parse --show-prefix | sed 's#/$##')" | tar -x -C "$source_dir"
 fi
 node "$source_dir/apply.mjs" --t3 "$T3_MOBILE" >/dev/null
 
