@@ -29,7 +29,9 @@ fi
 [ "$(git -C "$T3_MOBILE" rev-parse HEAD)" = "$pin" ] || git -C "$T3_MOBILE" checkout --detach "$pin"
 # The integration as committed, not the shared working tree: other sessions' unfinished
 # edits there can stop apply.mjs. RUBATO_MOBILE_WORKTREE=1 builds the working tree instead.
-work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
+# The real path: apply.mjs runs its command line only when argv[1] resolves to its own
+# file URL, and mktemp's /var/folders is /private/var/folders underneath.
+work="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$work"' EXIT
 source_dir="$INTEGRATION"
 if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   source_dir="$work/integration"; mkdir -p "$source_dir"
@@ -38,7 +40,11 @@ if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   prefix="$(git -C "$INTEGRATION" rev-parse --show-prefix | sed 's#/$##')"
   git -C "$(git -C "$INTEGRATION" rev-parse --show-toplevel)" archive "HEAD:$prefix" | tar -x -C "$source_dir"
 fi
-node "$source_dir/apply.mjs" --t3 "$T3_MOBILE" >/dev/null
+applied="$(node "$source_dir/apply.mjs" --t3 "$T3_MOBILE")"
+case "$applied" in
+  *'"compatible": true'*) ;;
+  *) printf 'apply.mjs did not apply the integration:\n%s\n' "$applied" >&2; exit 1 ;;
+esac
 
 cd "$T3_MOBILE"
 stamp=node_modules/.rubato-mobile-lock
