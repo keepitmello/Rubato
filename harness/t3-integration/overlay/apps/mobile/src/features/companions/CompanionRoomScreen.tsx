@@ -413,6 +413,11 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     () => ({
       title,
       headerTitle: () => <RoomTitle companion={companion} title={title} />,
+      // The face and name stand centered over the room (Pickle's layout), not leading as a thread's title.
+      unstable_navigationItemStyle: "navigator" as const,
+      // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
+      // the room draws its own band under the bar (HeaderBand).
+      scrollEdgeEffects: { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const,
     }),
     [companion, title],
   );
