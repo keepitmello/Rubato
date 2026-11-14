@@ -62,6 +62,7 @@ import { companionEdits, companionOverlays, companionSettingsPages } from './com
 import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
 import { timelineRailEdits, timelineRailOverlays } from './timeline-rail-edits.mjs';
 import { mobileEdits, mobileOverlays } from './mobile/index.mjs';
+import { threadFoldersEdits, threadFoldersOverlays } from './thread-folders-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1896,6 +1897,12 @@ for (const [relative, changes] of Object.entries(timelineRailEdits)) {
 // Mac server routes the phone needs (mobile/index.mjs).
 overlays.push(...mobileOverlays);
 for (const [relative, changes] of Object.entries(mobileEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Thread folders on the Mac and the phone; last, since it anchors on lines project-rail-edits and
+// sidebar-blocks-edits add to the sidebar (thread-folders-edits.mjs).
+overlays.push(...threadFoldersOverlays);
+for (const [relative, changes] of Object.entries(threadFoldersEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

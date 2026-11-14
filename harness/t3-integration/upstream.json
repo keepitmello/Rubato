@@ -185,6 +185,10 @@
     "apps/mobile/src/features/voice-input/VoiceInputProvider.tsx": "debdc3dd44d82ff4118bff40fd3003cdec538d40effdaa8bcefc519b6f67ccbe",
     "apps/mobile/src/state/use-remote-environment-registry.ts": "9871b34554e1f5045c053ac17746a95284b2938980367f8c7c26e56f9c7205ff",
     "apps/mobile/src/features/agent-awareness/notificationNavigation.ts": "cdf0f35e248f3c510bbabe7346f86b2d71cffc2070e1a0d0a7e0807dd576d475",
-    "apps/mobile/src/features/settings/components/settings-sheet-targets.ts": "2212b8741acb87108dfd6cda42af70aa33ee47530eec1a444595f0893c6a577f"
+    "apps/mobile/src/features/settings/components/settings-sheet-targets.ts": "2212b8741acb87108dfd6cda42af70aa33ee47530eec1a444595f0893c6a577f",
+    "packages/shared/src/serverSettings.ts": "b67ad573339f0af6134de3daf00b88daf5c04e6a32619148afe187a14f25de51",
+    "apps/mobile/src/persistence/mobile-preferences.ts": "6d144a423f57dc140c4793c97466c3b0d689b7168d8448c2ae5ac8b8e7e92414",
+    "apps/mobile/src/features/home/home-list-options.ts": "e21212763d041285ae8690795ea9bc9e2a25932cea7cb88e0c54b3b6ecfde0e2",
+    "apps/mobile/src/features/home/ThreadListFilters.tsx": "0e3c1be14205c66dc26564d7c675447f736a006f5d6b46e6fda133d464d1b847"
   }
 }

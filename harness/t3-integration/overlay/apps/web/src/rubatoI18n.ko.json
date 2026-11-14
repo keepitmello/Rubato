@@ -4705,7 +4705,17 @@
   "Listening to you": "듣는 중",
   "Thinking it over": "생각하는 중",
   "Talking": "말하는 중",
-  "Close this notice": "닫기"
+  "Close this notice": "닫기",
+  "Folders": "폴더",
+  "New folder": "새 폴더",
+  "New folder…": "새 폴더…",
+  "Folder name": "폴더 이름",
+  "Find a folder or project": "폴더나 프로젝트 찾기",
+  "Rename folder": "폴더 이름 바꾸기",
+  "Delete folder…": "폴더 삭제하기…",
+  "Move to folder": "폴더로 옮기기",
+  "Show all threads": "모든 스레드 보기",
+  "Group threads from any project. Right-click a thread to file it.": "프로젝트와 상관없이 스레드를 묶어 둡니다. 스레드를 우클릭해서 넣으세요."
  },
  "templates": [
   [
@@ -8443,6 +8453,18 @@
   [
    "Show all {0}",
    "{0}개 모두 보기"
+  ],
+  [
+   "Remove from {0}",
+   "{0}에서 빼기"
+  ],
+  [
+   "Folder: {0} (⌘G)",
+   "폴더: {0} (⌘G)"
+  ],
+  [
+   "Delete the folder \"{0}\"? Its threads stay where they are.",
+   "\"{0}\" 폴더를 삭제할까요? 안에 있던 스레드는 그대로 남습니다."
   ]
  ]
 }

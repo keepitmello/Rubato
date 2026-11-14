@@ -20,7 +20,8 @@ import { useLocation, useNavigate } from "@tanstack/react-router";
 
 import { openCommandPalette } from "../../commandPaletteBus";
 import { cn } from "../../lib/utils";
-import { usePullRequestsSupported } from "../../state/environments";
+import { usePrimaryEnvironmentId, usePullRequestsSupported } from "../../state/environments";
+import { readLocalApi } from "../../localApi";
 import { acceptCompanionStatus, rubatoCompanion, selectCompanion, useRubatoCompanion, useReadyEnvironmentId } from "../../state/rubatoCompanion";
 import { rubatoSchedule } from "../../state/rubatoSchedule";
 import { useStatsWarmup } from "../../state/rubatoStats";
@@ -31,6 +32,13 @@ import { Popover, PopoverPopup, PopoverTrigger } from "../ui/popover";
 import { useSidebar } from "../ui/sidebar";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { RubatoProjectPicker } from "./RubatoProjectPicker";
+import {
+  RubatoFolderNameDialogHost,
+  setRubatoFolderScope,
+  useRubatoFolderActions,
+  useRubatoFolderScope,
+  useRubatoThreadFolders,
+} from "./rubatoThreadFolders";
 import { useRubatoRemoveProject } from "./rubatoRemoveProject";
 import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";
 import { companionRailAction } from "./rubatoCompanionRailAction";
@@ -173,6 +181,11 @@ export function RubatoProjectRail() {
   const openProjectList = useOpenRubatoProjectList();
   const companion = useRubatoCompanion();
   const environmentId = useReadyEnvironmentId();
+  // Thread folders sit above the projects in the same window (rubatoThreadFolders.tsx).
+  const threadFolders = useRubatoThreadFolders();
+  const folderActions = useRubatoFolderActions(threadFolders);
+  const folderScopeId = useRubatoFolderScope();
+  const primaryEnvironmentId = usePrimaryEnvironmentId();
 
   useEffect(() => {
     if (isMobile) return;
@@ -190,9 +203,13 @@ export function RubatoProjectRail() {
       ? null
       : ([...list.listed, ...list.quiet].find((group) => group.projectKey === scopeKey) ?? null);
   const projectsSignal = strongestUrgentSignal(signals);
+  const scopedFolder =
+    scopeKey === null && folderScopeId !== null ? (threadFolders.byId.get(folderScopeId) ?? null) : null;
   const projectsLabel = scopedGroup
     ? `Projects: ${scopedGroup.displayName} (⌘G)`
-    : "Projects (⌘G)";
+    : scopedFolder
+      ? `Folder: ${scopedFolder.name} (⌘G)`
+      : "Projects (⌘G)";
   const onPage = (prefix: string) => pathname === prefix || pathname.startsWith(`${prefix}/`);
   // The router's pathname is percent-encoded, and Segno's thread id (an inventory import) has ':'.
   const onSegno = companion.companions.some(item => item.threadId !== null &&
@@ -201,6 +218,7 @@ export function RubatoProjectRail() {
   // leaves it for home (user 412eb407), as the rail's other buttons do.
   const openListAfterSegno = useOpenListAfterSegno(onSegno);
   const choose = (key: string | null) => {
+    setRubatoFolderScope(null);
     setScopeKey(key);
     setPickerOpen(false);
     if (onSegno) {
@@ -209,6 +227,29 @@ export function RubatoProjectRail() {
       return;
     }
     if (key !== null && !open) void setOpen(true);
+  };
+  // A folder narrows the list as a project does, and replaces it.
+  const chooseFolder = (folderId: string) => {
+    setScopeKey(null);
+    setRubatoFolderScope(folderId);
+    setPickerOpen(false);
+    if (onSegno) {
+      openListAfterSegno();
+      void navigate({ to: "/" });
+      return;
+    }
+    if (!open) void setOpen(true);
+  };
+  const deleteFolder = async (folder: NonNullable<typeof scopedFolder>) => {
+    const confirmed =
+      (await readLocalApi()?.dialogs.confirm(
+        `Delete the folder "${folder.name}"? Its threads stay where they are.`,
+        { variant: "destructive" },
+      )) ?? false;
+    if (!confirmed) return;
+    if (await folderActions.remove(folder)) {
+      if (folderScopeId === folder.id) setRubatoFolderScope(null);
+    }
   };
   const onRailPage =
     onSegno ||
@@ -232,8 +273,9 @@ export function RubatoProjectRail() {
       <div className="flex flex-1 flex-col items-center gap-1 px-2 pt-1">
         <RailButton
           label="All projects"
-          active={scopeKey === null && !onRailPage}
+          active={scopeKey === null && scopedFolder === null && !onRailPage}
           onClick={() => {
+            setRubatoFolderScope(null);
             setScopeKey(null);
             void navigate({ to: "/" });
           }}
@@ -251,7 +293,7 @@ export function RubatoProjectRail() {
                       aria-label={projectsLabel}
                       data-rubato-rail-item=""
                       data-rubato-projects-button=""
-                      className={cn(RAIL_BUTTON_CLASS, (pickerOpen || scopedGroup) && RAIL_ACTIVE_CLASS)}
+                      className={cn(RAIL_BUTTON_CLASS, (pickerOpen || scopedGroup || scopedFolder) && RAIL_ACTIVE_CLASS)}
                     >
                       {/* Always the folder: the list's title names the chosen project. */}
                       <FoldersIcon />
@@ -292,6 +334,15 @@ export function RubatoProjectRail() {
                 void navigate({ to: "/projects/$projectKey", params: { projectKey: group.projectKey } });
               }}
               onRemoveProject={(group) => void removeProject(group)}
+              folders={threadFolders.folders}
+              folderScopeId={scopedFolder?.id ?? null}
+              onChooseFolder={chooseFolder}
+              onCreateFolder={(name) => {
+                const target = primaryEnvironmentId ?? threadFolders.folders[0]?.environmentId ?? null;
+                if (target !== null) void folderActions.create(target, name);
+              }}
+              onRenameFolder={(folder, name) => void folderActions.rename(folder, name)}
+              onDeleteFolder={(folder) => void deleteFolder(folder)}
             />
           </PopoverPopup>
         </Popover>
@@ -358,6 +409,7 @@ export function RubatoProjectRail() {
           <SettingsIcon />
         </RailButton>
       </div>
+      <RubatoFolderNameDialogHost />
     </nav>
   );
 }

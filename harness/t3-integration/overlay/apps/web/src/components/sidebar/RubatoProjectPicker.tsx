@@ -4,7 +4,10 @@
 // edits the shared list (rubatoProjectList.ts): rows reorder by drag, − moves a
 // project to the others, + brings one back, and the context menu removes one
 // from Rubato (rubatoRemoveProject.ts). Edit projects opens Settings > Projects,
-// where every row shows its handle and its trash.
+// where every row shows its handle and its trash. Above the projects, the user's folders
+// (rubatoThreadFolders.tsx): choosing one narrows the list to the threads filed there, + New
+// folder names one in place, ⌘1-9 choose the first nine, and the context menu renames or
+// deletes one.
 import {
   DndContext,
   PointerSensor,
@@ -16,14 +19,16 @@ import {
 import { restrictToParentElement, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { LayersIcon, MinusIcon, PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
-import { useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { FolderIcon, FolderPlusIcon, LayersIcon, MinusIcon, PencilIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 
 import { readLocalApi } from "../../localApi";
 import { cn } from "../../lib/utils";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { formatRelativeTimeLabel } from "../../timestampFormat";
 import { ProjectFavicon } from "../ProjectFavicon";
+import { RUBATO_FOLDER_NAME_MAX, normalizeFolderName } from "@t3tools/shared/rubatoThreadFolders";
+import type { RubatoFolder } from "./rubatoThreadFolders";
 import {
   RUBATO_SIGNAL_DOT,
   RUBATO_SIGNAL_LABEL,
@@ -54,9 +59,93 @@ export interface RubatoProjectPickerProps {
   onEditProjects: () => void;
   onProjectSettings: (group: SidebarProjectSnapshot) => void;
   onRemoveProject: (group: SidebarProjectSnapshot) => void;
+  folders: ReadonlyArray<RubatoFolder>;
+  folderScopeId: string | null;
+  onChooseFolder: (folderId: string) => void;
+  onCreateFolder: (name: string) => void;
+  onRenameFolder: (folder: RubatoFolder, name: string) => void;
+  onDeleteFolder: (folder: RubatoFolder) => void;
 }
 
-type Row = { kind: "all" } | { kind: "project"; group: SidebarProjectSnapshot; listed: boolean };
+type Row =
+  | { kind: "all" }
+  | { kind: "folder"; folder: RubatoFolder }
+  | { kind: "project"; group: SidebarProjectSnapshot; listed: boolean };
+
+/** Naming a folder in place: a new one, or one being renamed. */
+function FolderNameField(props: {
+  initial: string;
+  onDone: (name: string | null) => void;
+}) {
+  const [name, setName] = useState(props.initial);
+  const done = useRef(false);
+  const finish = (value: string | null) => {
+    if (done.current) return;
+    done.current = true;
+    props.onDone(value === null ? null : normalizeFolderName(value));
+  };
+  return (
+    <div className="flex h-8 items-center gap-2.5 rounded-md bg-accent/60 px-2.5 text-sm ring-1 ring-ring/60">
+      <FolderIcon aria-hidden className="size-4 shrink-0 fill-current/15 text-muted-foreground" />
+      <input
+        autoFocus
+        value={name}
+        maxLength={RUBATO_FOLDER_NAME_MAX}
+        placeholder="Folder name"
+        aria-label="Folder name"
+        onChange={(event) => setName(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
+          if (event.key === "Enter") {
+            event.preventDefault();
+            finish(name);
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            finish(null);
+          }
+        }}
+        onBlur={() => finish(name)}
+        className="min-w-0 flex-1 bg-transparent outline-hidden placeholder:text-muted-foreground"
+      />
+    </div>
+  );
+}
+
+function FolderRow(props: {
+  folder: RubatoFolder;
+  shortcut: number | null;
+  selected: boolean;
+  highlighted: boolean;
+  onChoose: () => void;
+  onContextMenu: (event: MouseEvent<HTMLDivElement>) => void;
+}) {
+  return (
+    <div
+      role="option"
+      aria-selected={props.selected}
+      data-highlighted={props.highlighted ? "" : undefined}
+      data-rubato-folder-row=""
+      onClick={props.onChoose}
+      onContextMenu={props.onContextMenu}
+      className={cn(
+        "group/row flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-sm text-foreground/90",
+        props.selected && "bg-accent text-foreground",
+        props.highlighted && !props.selected && "bg-accent/60",
+        !props.selected && "hover:bg-accent/60",
+      )}
+    >
+      <FolderIcon aria-hidden className="size-4 shrink-0 fill-current/15 text-muted-foreground" />
+      <span className="min-w-0 flex-1 truncate">{props.folder.name}</span>
+      <span className="shrink-0 text-xs tabular-nums text-muted-foreground/80">
+        {props.folder.threadCount}
+      </span>
+      {props.shortcut !== null ? (
+        <kbd className="shrink-0 font-sans text-[10px] text-muted-foreground/60">⌘{props.shortcut}</kbd>
+      ) : null}
+    </div>
+  );
+}
 
 function ProjectRow(props: {
   group: SidebarProjectSnapshot;
@@ -134,24 +223,41 @@ function ProjectRow(props: {
 export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
+  const [naming, setNaming] = useState<{ folderId: string | null } | null>(null);
   const visible = useMemo(() => filterProjectList(props.list, query), [props.list, query]);
   const searching = query.trim().length > 0;
+  const visibleFolders = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return needle.length === 0
+      ? props.folders
+      : props.folders.filter((folder) => folder.name.toLocaleLowerCase().includes(needle));
+  }, [props.folders, query]);
   const rows = useMemo<Row[]>(
     () => [
       ...(searching ? [] : [{ kind: "all" } as const]),
+      ...visibleFolders.map((folder) => ({ kind: "folder", folder }) as const),
       ...visible.listed.map((group) => ({ kind: "project", group, listed: true }) as const),
       ...visible.quiet.map((group) => ({ kind: "project", group, listed: false }) as const),
     ],
-    [searching, visible],
+    [searching, visible, visibleFolders],
   );
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   const choose = (row: Row | undefined) => {
     if (!row) return;
-    props.onChoose(row.kind === "all" ? null : row.group.projectKey);
+    if (row.kind === "folder") props.onChooseFolder(row.folder.id);
+    else props.onChoose(row.kind === "all" ? null : row.group.projectKey);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.nativeEvent.isComposing) return;
+    if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+      const folder = props.folders[Number(event.key) - 1];
+      if (folder) {
+        event.preventDefault();
+        props.onChooseFolder(folder.id);
+      }
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setHighlight((index) => Math.min(rows.length - 1, index + 1));
@@ -192,8 +298,35 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
     else if (clicked === "remove") props.onRemoveProject(group);
   };
 
+  const showFolderMenu = async (event: MouseEvent<HTMLDivElement>, folder: RubatoFolder) => {
+    event.preventDefault();
+    const api = readLocalApi();
+    if (!api) return;
+    const clicked = await api.contextMenu.show(
+      [
+        { id: "rename", label: "Rename folder" },
+        { id: "delete", label: "Delete folder…", destructive: true },
+      ],
+      { x: event.clientX, y: event.clientY },
+    );
+    if (clicked === "rename") setNaming({ folderId: folder.id });
+    else if (clicked === "delete") props.onDeleteFolder(folder);
+  };
+  const finishNaming = (name: string | null) => {
+    const current = naming;
+    setNaming(null);
+    if (current === null || name === null) return;
+    if (current.folderId === null) {
+      props.onCreateFolder(name);
+      return;
+    }
+    const folder = props.folders.find((candidate) => candidate.id === current.folderId);
+    if (folder) props.onRenameFolder(folder, name);
+  };
   const rowIndex = (key: string) =>
     rows.findIndex((row) => row.kind === "project" && row.group.projectKey === key);
+  const folderRowIndex = (folderId: string) =>
+    rows.findIndex((row) => row.kind === "folder" && row.folder.id === folderId);
   const renderRow = (group: SidebarProjectSnapshot, listed: boolean) => (
     <ProjectRow
       key={group.projectKey}
@@ -224,8 +357,8 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
             setHighlight(0);
           }}
           onKeyDown={onKeyDown}
-          placeholder="Find a project"
-          aria-label="Find a project"
+          placeholder="Find a folder or project"
+          aria-label="Find a folder or project"
           className="min-w-0 flex-1 bg-transparent outline-hidden placeholder:text-muted-foreground"
         />
       </label>
@@ -233,18 +366,60 @@ export function RubatoProjectPicker(props: RubatoProjectPickerProps) {
         {searching ? null : (
           <div
             role="option"
-            aria-selected={props.scopeKey === null}
+            aria-selected={props.scopeKey === null && props.folderScopeId === null}
             onClick={() => props.onChoose(null)}
             className={cn(
               "flex h-8 cursor-default items-center gap-2.5 rounded-md px-2.5 text-sm text-foreground/90",
-              props.scopeKey === null ? "bg-accent text-foreground" : "hover:bg-accent/60",
-              highlight === 0 && props.scopeKey !== null && "bg-accent/60",
+              props.scopeKey === null && props.folderScopeId === null
+                ? "bg-accent text-foreground"
+                : "hover:bg-accent/60",
+              highlight === 0 && (props.scopeKey !== null || props.folderScopeId !== null) && "bg-accent/60",
             )}
           >
             <LayersIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="flex-1">All projects</span>
           </div>
         )}
+        {!searching || visibleFolders.length > 0 ? (
+          <>
+            <div className="flex items-center justify-between pt-2.5 pr-1 pb-1 pl-2.5 text-xs font-medium text-muted-foreground">
+              Folders
+              {searching ? null : (
+                <button
+                  type="button"
+                  aria-label="New folder"
+                  title="New folder"
+                  onClick={() => setNaming({ folderId: null })}
+                  className="flex h-5 items-center gap-1 rounded-md px-1.5 text-xs font-normal text-muted-foreground outline-hidden hover:bg-accent hover:text-foreground"
+                >
+                  <FolderPlusIcon className="size-3.5" />
+                  New
+                </button>
+              )}
+            </div>
+            {visibleFolders.map((folder, index) =>
+              naming?.folderId === folder.id ? (
+                <FolderNameField key={folder.id} initial={folder.name} onDone={finishNaming} />
+              ) : (
+                <FolderRow
+                  key={folder.id}
+                  folder={folder}
+                  shortcut={!searching && index < 9 ? index + 1 : null}
+                  selected={props.folderScopeId === folder.id}
+                  highlighted={highlight === folderRowIndex(folder.id)}
+                  onChoose={() => props.onChooseFolder(folder.id)}
+                  onContextMenu={(event) => void showFolderMenu(event, folder)}
+                />
+              ),
+            )}
+            {naming?.folderId === null ? <FolderNameField initial="" onDone={finishNaming} /> : null}
+            {!searching && props.folders.length === 0 && naming === null ? (
+              <p className="px-2.5 py-1 text-xs text-muted-foreground/70">
+                Group threads from any project. Right-click a thread to file it.
+              </p>
+            ) : null}
+          </>
+        ) : null}
         {visible.listed.length > 0 ? (
           <>
             <div className="px-2.5 pt-2.5 pb-1 text-xs font-medium text-muted-foreground">
