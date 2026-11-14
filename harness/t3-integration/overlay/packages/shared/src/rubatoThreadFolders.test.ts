@@ -86,6 +86,26 @@ describe("thread folders in server settings", () => {
   });
 });
 
+describe("on the phone's JavaScript engine", () => {
+  it("lists folders without ES2023 array methods, which Hermes lacks", () => {
+    const proto = Array.prototype as unknown as Record<string, unknown>;
+    const missing = ["toSorted", "toReversed", "toSpliced", "with", "findLast", "findLastIndex"];
+    const saved = missing.map((name) => [name, proto[name]] as const);
+    for (const name of missing) delete proto[name];
+    try {
+      const settings = settingsWith([
+        createThreadFolderPatch({ id: "b", name: "B", now: "2026-11-14T02:00:00.000Z", threadIds: ["t1"] })!,
+        createThreadFolderPatch({ id: "a", name: "A", now: NOW })!,
+      ]);
+      expect(listThreadFolders(settings).map((folder: { readonly id: string }) => folder.id)).toEqual(["a", "b"]);
+      expect(listThreadFolders(DEFAULT_SERVER_SETTINGS)).toEqual([]);
+      expect(threadsInFolder([{ id: "t1" }, { id: "t2" }], settings, "b")).toEqual([{ id: "t1" }]);
+    } finally {
+      for (const [name, value] of saved) proto[name] = value;
+    }
+  });
+});
+
 describe("folder names and ids", () => {
   it("names are one trimmed line within the limit", () => {
     expect(normalizeFolderName(" a \n b ")).toBe("a b");

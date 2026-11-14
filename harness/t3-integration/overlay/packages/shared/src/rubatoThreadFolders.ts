@@ -57,7 +57,9 @@ export function listThreadFolders(
       createdAt: entry.createdAt,
       threadCount: counts.get(id) ?? 0,
     }))
-    .toSorted(
+    // `.sort()` on the fresh array, not `.toSorted()`: the phone runs this on Hermes, which has
+    // no ES2023 array methods.
+    .sort(
       (left, right) =>
         left.createdAt.localeCompare(right.createdAt) ||
         left.name.localeCompare(right.name) ||
