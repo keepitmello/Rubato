@@ -296,6 +296,11 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       async execute(id, args) {
         if (completed.get(id) === name) { completed.delete(id); return { terminate: true, content: [text("Delivered on the call.")] }; }
         const turn = active;
+        // The person spoke again while another step was running: their newer line is queued behind
+        // this step and its turn listens once that line enters. Words written before it answer only
+        // the older line, which the call client already cancelled, so they stay unspoken.
+        if (turn?.kind === "reply" && !turn.armed)
+          return { isError: true, content: [text("Not spoken: the person kept talking, and their newer line comes in right after this. Answer that line with call_say; it can carry what you meant to say here.")] };
         if (!turn || !turn.armed || !completeTool(turn, name, args, id))
           return { isError: true, content: [text("No matching call turn is listening for this action.")] };
         completed.delete(id);

@@ -151,6 +151,54 @@ test('another real user message cancels the voice turn, so its later tools canno
   assert.equal((await box.tools.get(CALL_SAY_TOOL).execute('late', { text: 'no listener' })).isError, true);
 });
 
+test('a line spoken while another step runs is answered on the call once it enters, not lost to that step', async t => {
+  // The 2026-11-14 call: the client cancels the answer to the first line when the person keeps
+  // talking, another run starts in the gap, and the newer line is steered in behind that run's step.
+  const home = mkdtempSync(path.join(tmpdir(), 'call-'));
+  const handlers = new Map(), tools = new Map(), steered = [];
+  let busy = false;
+  const ctx = { sessionManager: { getSessionId: () => 'gap' }, isIdle: () => !busy, abort: async () => { busy = false; } };
+  const emit = (name, data = {}) => { for (const handler of handlers.get(name) ?? []) handler(data, ctx); };
+  const pi = { on(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
+    registerTool(tool) { tools.set(tool.name, tool); }, sendMessage() {},
+    sendUserMessage(content) {
+      if (busy) { steered.push(content); return; }
+      busy = true; emit('message_start', { message: { role: 'user', content } });
+    } };
+  const bridge = createCompanionCall(pi, { env: { HOME: home, RUBATO_COMPANION_HOME: home },
+    config: { enabled: true, host: '127.0.0.1', port: 0, turnTimeoutMs: 5000 } });
+  await bridge.start(ctx);
+  t.after(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
+  const base = `http://127.0.0.1:${bridge.address().port}`;
+  const turn = (text, turnId, signal) => fetch(`${base}/call/turn`, { method: 'POST', signal,
+    headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text, turnId }) });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 20));
+
+  const client = new AbortController();
+  const first = await turn('어 통화 되네, 신기하다. 아니 이제 앱도 만들었거든.', 'first', client.signal);
+  client.abort(); await first.body?.cancel().catch(() => {}); await settle();
+  assert.equal(bridge.active, undefined, 'the cancelled answer no longer holds the call');
+  busy = true; // a run that something else started in the gap
+  const second = turn('모바일 앱.', 'second');
+  while (!steered.length) await settle();
+  assert.equal(steered[0], '[voice] 모바일 앱.');
+
+  const early = await tools.get(CALL_SAY_TOOL).execute('gap-say', { text: '앱을 만들었다고? 폰이야, 맥이야?' });
+  assert.equal(early.isError, true);
+  assert.notEqual(early.terminate, true, 'the step goes on, so the steered line enters right after it');
+  assert.match(early.content[0].text, /newer line comes in right after this/);
+
+  emit('message_start', { message: { role: 'user', content: steered.shift() } });
+  const answer = '모바일 앱! 이제 폰만 있으면 어디서든 나 부를 수 있네.';
+  emit('message_update', { assistantMessageEvent: { type: 'toolcall_end', contentIndex: 0,
+    toolCall: { type: 'toolCall', id: 'answer', name: CALL_SAY_TOOL, arguments: { text: answer } } } });
+  assert.equal((await tools.get(CALL_SAY_TOOL).execute('answer', { text: answer })).content[0].text, 'Delivered on the call.');
+  const rows = await eventsOf(await second);
+  assert.equal(rows.filter(row => row.t === 'delta').map(row => row.text).join(''), answer);
+  assert.equal(rows.at(-1).source, CALL_SAY_TOOL);
+  assert.doesNotMatch(JSON.stringify(rows), /폰이야, 맥이야/);
+});
+
 test('unauthorized and malformed inputs never open a model turn; a port collision stays a capability failure', async t => {
   const box = await fixture(t, { config: { token: 'isolated-token' } });
   assert.equal((await box.post('/call/turn', { text: 'refuse me' })).status, 401);
