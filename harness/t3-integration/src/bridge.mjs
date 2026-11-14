@@ -1,7 +1,7 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { readDescriptor } from '../../pi-server/src/descriptor.mjs';
 import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
-import { EventProjection, cacheFrom, importedId, messageKey, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
+import { EventProjection, cacheFrom, importedId, messageKey, runOpener, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { SAID_KIND, channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { pushService } from './push/service.mjs';
 import { backfillItem, missingItems } from './backfill.mjs';
@@ -267,8 +267,10 @@ export class RubatoPiBridge {
     Object.assign(this, { descriptorPath, instanceId, emit, onError, projectedMessages, appendSessionMessage, projectedThread, shows,
       rewindConversation, sessionStateDir, findEngine, catalogueStaleMs });
     // Phone notifications (push/service.mjs): told which threads are companions' rooms and what a
-    // companion said in one. createBridge, the server's, sets it; a bridge built bare pushes nothing.
+    // companion said in one, and asked whether a thread's run is one a companion opened.
+    // createBridge, the server's, sets it; a bridge built bare pushes nothing.
     this.push = push;
+    this.forgetCompanionRuns = push?.companionRuns?.((threadId) => this.companionOpened(threadId)) ?? (() => {});
     // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
     this.lastCatalogues = new Map();
     this.rpcConnections = new Set();
@@ -500,6 +502,18 @@ export class RubatoPiBridge {
   /** The open V2 connection a thread runs in, if any. */
   rpcFor(threadId) {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
+  }
+  /**
+   * Whether the newest run in `threadId` is one a companion opened: the last thing its session got
+   * before that run is a message from a companion's conversation, not the person's own. In a lead a
+   * companion started, a run that follows the person's own message is the person's.
+   */
+  async companionOpened(threadId) {
+    const sessionId = this.rpcFor(threadId)?.sessionId ?? (await this.boundSession?.(threadId))?.sessionId;
+    if (typeof sessionId !== 'string' || !sessionId) return false;
+    const opener = runOpener((await this.transcript(sessionId))?.messages);
+    if (opener?.kind !== 'session') return false;
+    return opener.companion || (typeof opener.sessionId === 'string' && await this.companionSession(opener.sessionId));
   }
   /**
    * Whether T3 keeps the thread's stream however long it idles (RubatoPiDriver keepsLoadedWhileIdle):
@@ -1539,6 +1553,7 @@ export class RubatoPiBridge {
   async close() {
     if (this.closed) return;
     this.closed = true; clearInterval(this.retryTimer); clearInterval(this.backfillTimer); liveBridges.delete(this);
+    this.forgetCompanionRuns();
     await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));

@@ -13,7 +13,8 @@
 //   thread             RubatoPush.ts feeds every thread's awareness state (upstream's
 //                      projectThreadAwarenessV2) into threadChanged; a thread that starts needing the
 //                      person, or finishes, becomes one alert. 'full' shows the thread and project
-//                      titles as T3's relay did; 'generic' a fixed line.
+//                      titles as T3's relay did; 'generic' a fixed line. A finish of a run a companion
+//                      opened (its session_send) is not one: the companion tells the person itself.
 //   companion message  every reply or say of a companion (the items its room gets, rpc-connection.mjs),
 //                      shown like a message; none while that companion is on a call with the person.
 //   companion call     the call service's VoIP ring (push-relay/mac/sender.mjs).
@@ -111,6 +112,14 @@ export function createPushService({ home = PUSH_HOME, grants = createGrantStore(
   const phases = new Map();
   /** Rooms of companions: threadId -> companion id. */
   const rooms = new Map();
+  /** Who answers whether a thread's newest run is one a companion opened (the bridge, companionRuns). */
+  const openers = new Set();
+  const companionOpened = async (threadId) => {
+    for (const answer of openers) {
+      try { if (await answer(threadId) === true) return true; } catch { /* unknown counts as the person's */ }
+    }
+    return false;
+  };
   const told = new Set();
   const settingsFile = path.join(home, 'settings.json');
   const readPreview = () => {
@@ -167,7 +176,20 @@ export function createPushService({ home = PUSH_HOME, grants = createGrantStore(
       const previous = phases.get(threadId);
       phases.set(threadId, state?.phase ?? null);
       const alert = alertFor(state, previous, { now: now(), preview: readPreview() });
-      return alert ? grants.pushAll(alert, { preference: 'threads' }) : null;
+      if (!alert) return null;
+      // A run a companion opened ends in the companion's own words (companionSaid). An ask for
+      // approval or an answer still comes: only the person can give it.
+      if (TERMINAL.has(state.phase) && await companionOpened(threadId)) return null;
+      return grants.pushAll(alert, { preference: 'threads' });
+    },
+    /**
+     * `answer(threadId)` resolves true when the thread's newest run is one a companion opened, not
+     * the person. Returns the call that takes the answer back.
+     */
+    companionRuns(answer) {
+      if (typeof answer !== 'function') return () => {};
+      openers.add(answer);
+      return () => openers.delete(answer);
     },
     /** A thread is a companion's room: its runs are not thread alerts, its words are messages. */
     companionRoom(threadId, companionId) {

@@ -23,6 +23,25 @@ export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
 const CONTEXT_LABEL_MAX = 200;
 export const isSessionMessage = (message) => message?.role === 'custom'
   && message.customType === SESSION_MESSAGE_TYPE && message.display !== false;
+/**
+ * Who opened the newest run of a session, from its messages: the person's own message, or a
+ * message another conversation sent (`from` is its sender, `companion` when that sender is a
+ * companion's conversation, as session-link marks it). Rubato's clock (a `wake`) and the engine's
+ * other custom messages open nothing of their own and are passed over; null when nothing is found.
+ */
+export function runOpener(messages) {
+  for (let index = (messages?.length ?? 0) - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message?.role === 'user') return { kind: 'person' };
+    if (message?.role !== 'custom' || message.customType !== SESSION_MESSAGE_TYPE) continue;
+    const details = message.details && typeof message.details === 'object' ? message.details : {};
+    if (details.kind === 'wake') continue;
+    const from = details.from && typeof details.from === 'object' ? details.from : {};
+    return { kind: 'session', ...(typeof from.sessionId === 'string' ? { sessionId: from.sessionId } : {}),
+      companion: from.companion === true };
+  }
+  return null;
+}
 const isoFrom = (timestamp) => {
   const date = new Date(typeof timestamp === 'number' || typeof timestamp === 'string' ? timestamp : Number.NaN);
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();

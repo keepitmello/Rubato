@@ -92,6 +92,26 @@ test('a bad grant is refused with the reason', async t => {
   assert.match((await response.json()).error.message, /https/);
 });
 
+test('a run a companion opened finishes quietly; its asks, and runs the person opened, still alert', async t => {
+  const { push, sent } = service(t);
+  const opened = { 'thread-1': true };
+  const forget = push.companionRuns(async threadId => opened[threadId] === true);
+  for (const phase of ['running', 'completed', 'running', 'waiting_for_approval', 'running', 'failed']) await push.threadChanged('thread-1', state(phase));
+  assert.deepEqual(sent.map(item => item.body), ['Approval needed: rubato']);
+  opened['thread-1'] = false;
+  for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
+  assert.deepEqual(sent.map(item => item.body), ['Approval needed: rubato', 'Agent finished: rubato']);
+  // An answer that cannot be had counts as the person's run, and a forgotten answer is not asked.
+  const failing = push.companionRuns(async () => { throw new Error('engine away'); });
+  for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
+  assert.equal(sent.length, 3);
+  failing();
+  opened['thread-1'] = true;
+  forget();
+  for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
+  assert.equal(sent.length, 4);
+});
+
 test("a companion's words arrive as a message from it; its room's runs are never thread alerts", async t => {
   const { push, sent } = service(t);
   push.companionRoom('room-roo', 'roo');

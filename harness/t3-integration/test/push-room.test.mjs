@@ -75,3 +75,37 @@ test('the bridge remembers which companion a session is, and only the server bri
   assert.equal(bridge.companionIdOf('S3'), null);
   assert.equal(bridge.push, null, 'a bridge built bare pushes nothing');
 });
+
+test("the bridge tells push whether a thread's newest run is one a companion opened", async (t) => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-push-room-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let answer = null;
+  const push = { companionRuns: (fn) => { answer = fn; return () => { answer = null; }; } };
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(dir, 'none.json'), instanceId: 'rubato-test', sessionStateDir: null, push });
+  const session = (from, extra = {}) => ({ role: 'custom', customType: 'rubato-session-message', display: true,
+    details: { v: 1, messageId: 'm', kind: 'message', text: 'brief', from, ...extra } });
+  const segno = { sessionId: 'SEGNO', title: 'Segno', companion: true, companionId: 'segno' };
+  const transcripts = {
+    'T-companion': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }],
+    'T-person-after': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }, { role: 'user', content: '이거 이어서 해줘' }],
+    'T-companion-again': [{ role: 'user', content: '이거 이어서 해줘' }, session(segno)],
+    'T-clock': [session(segno, { kind: 'create' }), session({ title: 'Rubato' }, { kind: 'wake' })],
+    'T-lead': [session({ sessionId: 'LEAD', title: 'Other lead' })],
+    'T-unmarked': [session({ sessionId: 'ROO', title: 'Roo' })],
+    'T-person': [{ role: 'user', content: 'hi' }],
+  };
+  bridge.boundSession = async (threadId) => (transcripts[threadId] ? { sessionId: threadId, serverId: null } : null);
+  bridge.transcript = async (sessionId) => ({ messages: transcripts[sessionId] });
+  bridge.viaInventory = async (call) => call({ list: async () => [{ sessionId: 'ROO', companion: true, companionId: 'roo' }] });
+  const asked = async (threadId) => answer(threadId);
+  assert.equal(await asked('T-companion'), true);
+  assert.equal(await asked('T-person-after'), false, "a turn the person sent in a lead the companion started is the person's to hear about");
+  assert.equal(await asked('T-companion-again'), true);
+  assert.equal(await asked('T-clock'), true, "Rubato's clock opens nothing of its own");
+  assert.equal(await asked('T-lead'), false, "another lead's message is not a companion's");
+  assert.equal(await asked('T-unmarked'), true, 'a sender from before the mark is known by its session');
+  assert.equal(await asked('T-person'), false);
+  assert.equal(await asked('T-missing'), false);
+  await bridge.close();
+  assert.equal(answer, null, 'a closed bridge answers nothing');
+});
