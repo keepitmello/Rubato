@@ -15,6 +15,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 INTEGRATION="$(dirname "$HERE")"
 T3_SOURCE="${RUBATO_T3_SOURCE:-$HOME/.rubato/t3-source}"
 T3_MOBILE="${RUBATO_T3_MOBILE:-$HOME/.rubato/t3-mobile}"
+out="$HOME/.rubato/t3-mobile-build"
 TEAM_ID=5WGZKZGPQS
 MODE="${1:-}"
 case "$MODE" in --simulator|--testflight) ;; *)
@@ -31,7 +32,15 @@ fi
 # edits there can stop apply.mjs. RUBATO_MOBILE_WORKTREE=1 builds the working tree instead.
 # The real path: apply.mjs runs its command line only when argv[1] resolves to its own
 # file URL, and mktemp's /var/folders is /private/var/folders underneath.
-work="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$work"' EXIT
+work="$(cd "$(mktemp -d)" && pwd -P)"
+# This Mac has little disk, so every run, finished or failed, leaves only the logs, the
+# simulator app and the last two archives. expo prebuild --clean rewrites ios/ and pod install
+# downloads Pods again (its cache is cleared below) on every run, so the native tree (Pods
+# alone are about 3 GB) and Xcode's intermediates are never reused.
+cleanup() {
+  rm -rf "$work" "$T3_MOBILE/apps/mobile/ios" "$out/sim" "$out/device" "$out"/export-*
+}
+trap cleanup EXIT
 source_dir="$INTEGRATION"
 if [ "${RUBATO_MOBILE_WORKTREE:-}" != 1 ]; then
   source_dir="$work/integration"; mkdir -p "$source_dir"
@@ -70,7 +79,6 @@ rm -rf "$HOME/Library/Caches/CocoaPods"
 
 build_number="$(date -u +%Y%m%d%H%M)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" ios/Rubato/Info.plist
-out="$HOME/.rubato/t3-mobile-build"
 mkdir -p "$out"
 
 if [ "$MODE" = --simulator ]; then
@@ -81,7 +89,10 @@ if [ "$MODE" = --simulator ]; then
     || { grep -E ' error: |^error:|BUILD FAILED' "$out/sim.log" | tail -20; exit 1; }
   # T3's vendored GhosttyKit carries no x86_64 simulator slice, hence ARCHS=arm64. The ad-hoc
   # signature keeps the entitlements: without its keychain group, saved Macs cannot be read.
-  app="$out/sim/Build/Products/Release-iphonesimulator/Rubato.app"
+  # The app moves out of the derived data, which cleanup removes.
+  app="$out/Rubato-simulator.app"
+  rm -rf "$app"
+  ditto "$out/sim/Build/Products/Release-iphonesimulator/Rubato.app" "$app"
   if xcrun simctl list devices booted | grep -q Booted; then
     xcrun simctl install booted "$app"
     xcrun simctl launch booted com.keepitmello.rubato
@@ -119,8 +130,7 @@ PLIST
 xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/export.plist" \
   -exportPath "$out/export-$build_number" "${auth[@]}" > "$out/export.log" 2>&1 \
   || { grep -iE 'error|EXPORT FAILED' "$out/export.log" | tail -20; exit 1; }
-# This Mac has little disk: keep the archive (symbols for crash reports) of the last two
-# builds only, and none of the intermediates.
-rm -rf "$out/device" "$out/export-$build_number"
+# Keep the archive (symbols for crash reports) of the last two builds only; cleanup removes
+# the intermediates.
 ls -1dt "$out"/Rubato-*.xcarchive | tail -n +3 | while read -r old; do rm -rf "$old"; done
 printf 'uploaded build %s\n' "$build_number"
