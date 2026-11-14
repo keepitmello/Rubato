@@ -83,7 +83,15 @@ export function createCompanionService(options = {}) {
     sessionId: companion.readState(env).sessionId ?? null,
     home: companion.companionPaths(env).home,
     heartbeatMinutes: companion.HEARTBEAT_MINUTES,
+    // Whether this companion takes voice calls (its registry `call.enabled`); the call settings
+    // only mean something then.
+    calls: callsOn(),
+    callEfforts: companion.CALL_EFFORTS,
   });
+  const callsOn = () => {
+    try { return JSON.parse(env.RUBATO_COMPANION_CALL || '{}').enabled === true; }
+    catch { return false; }
+  };
   const invalid = (work) => {
     try { return work(); }
     catch (error) {

@@ -23,7 +23,12 @@ export interface CompanionSettings {
   readonly schedule: {
     readonly sources: readonly { readonly kind: "ics" | "markdown"; readonly location: string; readonly name?: string }[];
   };
+  /** The companion conversation's effort while a voice call is open; `conversation` keeps its own level. */
+  readonly call: { readonly effort: CallEffort };
 }
+
+/** harness/companion/companion.mjs CALL_EFFORTS. */
+export type CallEffort = "conversation" | "low" | "medium" | "high";
 
 export interface CompanionStatus {
   readonly id?: string;
@@ -35,6 +40,10 @@ export interface CompanionStatus {
   readonly home: string;
   /** The heartbeat intervals the engine accepts, in minutes. */
   readonly heartbeatMinutes: readonly number[];
+  /** Whether this companion takes voice calls. */
+  readonly calls?: boolean;
+  /** The call efforts the engine accepts. */
+  readonly callEfforts?: readonly CallEffort[];
 }
 
 export interface CompanionChoice extends CompanionStatus {
@@ -121,6 +130,7 @@ export interface CompanionSettingsPatch {
   readonly heartbeat?: Partial<CompanionSettings["heartbeat"]>;
   readonly greetings?: Partial<CompanionSettings["greetings"]>;
   readonly schedule?: Partial<CompanionSettings["schedule"]>;
+  readonly call?: Partial<CompanionSettings["call"]>;
 }
 
 /** A conversation Segno handed work to and follows until that work ends (engine panel.json). */

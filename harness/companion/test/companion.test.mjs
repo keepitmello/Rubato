@@ -123,8 +123,9 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   writeSettings({ heartbeat: { everyMinutes: 45 } }, env);
   writeSettings({ greetings: { enabled: false } }, env);
   writeSettings({ schedule: { sources: [{ location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } }, env);
+  writeSettings({ call: { effort: 'low' } }, env);
   assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45, quietDuringWish: true, reflectNote: '' }, greetings: { enabled: false },
-    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } });
+    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] }, call: { effort: 'low' } });
   assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
   assert.throws(() => writeSettings({ schedule: { sources: 'x' } }, env), /schedule\.sources/);
   assert.throws(() => writeSettings({ schedule: { sources: [{ location: '' }] } }, env), /location/);
@@ -132,6 +133,7 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   assert.throws(() => writeSettings({ schedule: { sources: Array.from({ length: 11 }, (_, i) => ({ location: `/s${i}.md` })) } }, env), /at most 10/);
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
+  assert.throws(() => writeSettings({ call: { effort: 'max' } }, env), /call\.effort/);
   writeFileSync(companionPaths(env).settings, '{ broken');
   assert.deepEqual(readSettings(env), DEFAULT_SETTINGS, 'an unreadable file reads as the defaults');
 });

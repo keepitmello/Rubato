@@ -22,6 +22,7 @@ import {
   type CompanionPiece,
   type CompanionPieceId,
   type CompanionSettingsPatch,
+  type CallEffort,
   type TelegramHeldMessage,
   type TelegramStatus,
 } from "../../state/rubatoCompanion";
@@ -49,6 +50,13 @@ function minutesLabel(minutes: number): string {
   const hours = minutes / 60;
   return hours === 1 ? "Every hour" : `Every ${hours} hours`;
 }
+
+const CALL_EFFORT_LABELS: Record<CallEffort, string> = {
+  conversation: "Same as chat",
+  low: "Low",
+  medium: "Medium",
+  high: "High",
+};
 
 interface DiffRow {
   readonly kind: "same" | "removed" | "added";
@@ -651,6 +659,32 @@ function CompanionSettingsBody() {
                 />
               }
             />
+            {status?.calls ? (
+              <SettingsRow
+                id="rubato-companion-call-effort"
+                title="Thinking on calls"
+                description={`How much ${title} thinks before each answer while you are on a call. Less thinking answers sooner, and the usual level comes back when the call ends.`}
+                control={
+                  <Select
+                    value={settings.call.effort}
+                    onValueChange={(next) => {
+                      if (typeof next === "string") void save({ call: { effort: next as CallEffort } });
+                    }}
+                  >
+                    <SelectTrigger size="sm" className="w-40" aria-label="Thinking on calls" disabled={busy}>
+                      <SelectValue>{CALL_EFFORT_LABELS[settings.call.effort]}</SelectValue>
+                    </SelectTrigger>
+                    <SelectPopup align="end" alignItemWithTrigger={false}>
+                      {(status.callEfforts ?? (Object.keys(CALL_EFFORT_LABELS) as CallEffort[])).map((effort) => (
+                        <SelectItem key={effort} value={effort}>
+                          {CALL_EFFORT_LABELS[effort]}
+                        </SelectItem>
+                      ))}
+                    </SelectPopup>
+                  </Select>
+                }
+              />
+            ) : null}
             <SettingsRow
               id="rubato-companion-schedule"
               title="Schedule"

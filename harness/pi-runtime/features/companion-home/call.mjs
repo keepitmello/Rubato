@@ -2,7 +2,7 @@
 // Audio capture, STT, synthesis and playback remain the caller's capability. This bridge runs
 // on the companion's own Pi conversation and emits ONLY explicit call tools, never monologue.
 import { createHash, randomUUID } from "node:crypto";
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import path from "node:path";
 import { companionHomeFor, landsInside, localDate, localTime, renewCapability, clearCapability, noteCompanionActivity } from "./home.mjs";
@@ -18,6 +18,14 @@ export const CALL_USER_TOOL = "call_user";
 const CALL_CONTROL = "http://127.0.0.1:18790";
 export const CALL_BODY_BYTES = 256 * 1024;
 export const CALL_WAIT_SECONDS = Object.freeze({ min: 5, max: 300 });
+/**
+ * The conversation's effort while a call is open, from `call.effort` in the companion's
+ * settings.json. The same list and default as CALL_EFFORTS / DEFAULT_SETTINGS in
+ * harness/companion/companion.mjs, its canonical home; repeated because this file also runs where
+ * companion.mjs is not staged (as companionHomeFor is). `conversation` leaves the level alone.
+ */
+export const CALL_EFFORTS = Object.freeze(["conversation", "low", "medium", "high"]);
+export const DEFAULT_CALL_EFFORT = "medium";
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const text = value => ({ type: "text", text: value });
 const voice = value => `[voice] ${value}`;
@@ -76,6 +84,36 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     renameSync(temporary, file);
   }
   const ledgerFile = id => path.join(stateDir, "turns", `${createHash("sha256").update(id).digest("hex")}.json`);
+  // The level the conversation had before a call lowered it. It is on disk so an engine that stops
+  // mid-call puts the level back when this conversation starts again.
+  const effortFile = path.join(stateDir, "effort.json");
+  function callEffort() {
+    try {
+      const effort = JSON.parse(readFileSync(path.join(home, "settings.json"), "utf8"))?.call?.effort;
+      return CALL_EFFORTS.includes(effort) ? effort : DEFAULT_CALL_EFFORT;
+    } catch { return DEFAULT_CALL_EFFORT; }
+  }
+  function restoreEffort() {
+    let saved;
+    try { saved = JSON.parse(readFileSync(safe(effortFile), "utf8")); } catch { return; }
+    try {
+      // A level the person picked during the call stays; only the call's own level is undone.
+      if (typeof saved?.restoreTo === "string" && (!saved.during || pi.getThinkingLevel() === saved.during))
+        pi.setThinkingLevel(saved.restoreTo);
+    } catch (error) { onError(error); }
+    rmSync(effortFile, { force: true });
+  }
+  function enterCallEffort() {
+    const level = callEffort();
+    if (level === "conversation") return;
+    try {
+      const before = pi.getThinkingLevel();
+      if (!before || before === level) return;
+      writeJson(effortFile, { restoreTo: before });
+      pi.setThinkingLevel(level);
+      writeJson(effortFile, { restoreTo: before, during: pi.getThinkingLevel() });
+    } catch (error) { onError(error); }
+  }
   function transcript(role, value) {
     if (config.recordTranscripts === false || !value.trim()) return;
     try {
@@ -123,6 +161,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     try { clearCapability("call", current.owner, env); } catch (error) { onError(error); }
     const turn = active;
     if (turn) { finish(turn, "call ended", "interrupted"); void abort(turn); }
+    restoreEffort();
     try {
       system(`[voice] 통화 종료 (약 ${Math.max(1, Math.round((Date.now() - current.startedAt) / 1000))}초)`,
         ctx?.isIdle?.() === false ? { deliverAs: "nextTurn" } : {});
@@ -211,6 +250,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
         endCall(); stream(response);
         call = { id, owner: randomUUID(), response, startedAt: Date.now() };
         renewCapability("call", call.owner, { env });
+        enterCallEffort();
         response.write(JSON.stringify({ ...health, callId: id }) + "\n");
         const current = call;
         current.timer = setInterval(() => {
@@ -339,6 +379,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     } });
   async function start(context) {
     ctx = context; briefed = false; briefTransport = null;
+    // A call that was open when the engine stopped left its lowered level behind.
+    if (!call) restoreEffort();
     if (server?.listening || starting || closed) return starting;
     starting = new Promise(resolve => {
       server = createServer((request, response) => {

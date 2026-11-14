@@ -4715,7 +4715,9 @@
   "Delete folder…": "폴더 삭제하기…",
   "Move to folder": "폴더로 옮기기",
   "Show all threads": "모든 스레드 보기",
-  "Group threads from any project. Right-click a thread to file it.": "프로젝트와 상관없이 스레드를 묶어 둡니다. 스레드를 우클릭해서 넣으세요."
+  "Group threads from any project. Right-click a thread to file it.": "프로젝트와 상관없이 스레드를 묶어 둡니다. 스레드를 우클릭해서 넣으세요.",
+  "Thinking on calls": "통화 중 생각",
+  "Same as chat": "대화와 같게"
  },
  "templates": [
   [
@@ -8465,6 +8467,10 @@
   [
    "Delete the folder \"{0}\"? Its threads stay where they are.",
    "\"{0}\" 폴더를 삭제할까요? 안에 있던 스레드는 그대로 남습니다."
+  ],
+  [
+   "How much {0} thinks before each answer while you are on a call. Less thinking answers sooner, and the usual level comes back when the call ends.",
+   "{0}가 통화 중에 답하기 전 얼마나 생각할지 정합니다. 덜 생각할수록 빨리 답하고, 통화가 끝나면 평소 수준으로 돌아갑니다."
   ]
  ]
 }

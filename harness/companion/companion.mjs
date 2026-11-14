@@ -66,11 +66,18 @@ export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
  */
 /** `heartbeat.reflectNote` rides on every reflect tick; longer than this is refused. */
 export const REFLECT_NOTE_LIMIT = 2000;
+/**
+ * `call.effort` is the companion conversation's effort while a voice call is open (call bridge
+ * pi-runtime companion-home/call.mjs); `conversation` leaves the conversation's own level alone.
+ * Medium by default: a call waits on each turn, and high made thinking turns 1.5–2 s slower (user 2026-11-14).
+ */
+export const CALL_EFFORTS = Object.freeze(['conversation', 'low', 'medium', 'high']);
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }),
   greetings: Object.freeze({ enabled: true }),
   schedule: Object.freeze({ sources: Object.freeze([]) }),
+  call: Object.freeze({ effort: 'medium' }),
 });
 
 export function companionHome(env = process.env) {
@@ -104,6 +111,7 @@ export function normalizeSettings(value) {
   // A home from before the greetings kept `dailyReport`; its switch is the greetings' switch now.
   const greetings = input.greetings && typeof input.greetings === 'object' ? input.greetings
     : input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
+  const call = input.call && typeof input.call === 'object' ? input.call : {};
   // An older home kept one schedule path as `career.schedule`; it reads as one markdown source.
   const listed = Array.isArray(input.schedule?.sources) ? input.schedule.sources
     : typeof input.career?.schedule === 'string' && input.career.schedule.trim() ? [{ kind: 'markdown', location: input.career.schedule }] : [];
@@ -120,6 +128,7 @@ export function normalizeSettings(value) {
     },
     greetings: { enabled: typeof greetings.enabled === 'boolean' ? greetings.enabled : DEFAULT_SETTINGS.greetings.enabled },
     schedule: { sources },
+    call: { effort: CALL_EFFORTS.includes(call.effort) ? call.effort : DEFAULT_SETTINGS.call.effort },
   };
 }
 
@@ -148,6 +157,12 @@ export function writeSettings(patch, env = process.env) {
     if (!greetings || typeof greetings !== 'object') throw new TypeError('greetings must be an object');
     if (greetings.enabled !== undefined && typeof greetings.enabled !== 'boolean') throw new TypeError('greetings.enabled must be true or false');
   }
+  const call = patch.call;
+  if (call !== undefined) {
+    if (!call || typeof call !== 'object') throw new TypeError('call must be an object');
+    if (call.effort !== undefined && !CALL_EFFORTS.includes(call.effort))
+      throw new TypeError(`call.effort must be one of ${CALL_EFFORTS.join(', ')}`);
+  }
   const schedule = patch.schedule;
   if (schedule !== undefined) {
     if (!schedule || typeof schedule !== 'object') throw new TypeError('schedule must be an object');
@@ -162,7 +177,8 @@ export function writeSettings(patch, env = process.env) {
   }
   const { dailyReport: _old, career: _career, ...rest } = patch;
   const next = normalizeSettings({ ...current, ...rest, heartbeat: { ...current.heartbeat, ...heartbeat },
-    greetings: { ...current.greetings, ...greetings }, schedule: { ...current.schedule, ...schedule } });
+    greetings: { ...current.greetings, ...greetings }, schedule: { ...current.schedule, ...schedule },
+    call: { ...current.call, ...call } });
   writeJson(companionPaths(env).settings, next);
   return next;
 }

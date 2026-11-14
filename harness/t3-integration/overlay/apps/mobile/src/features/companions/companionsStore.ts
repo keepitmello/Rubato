@@ -17,11 +17,17 @@ const COMPANION_ROUTE = "/rubato/companion";
 const QUICK_POLL_MS = 5_000;
 const SLOW_POLL_MS = 30_000;
 
+/** The companion conversation's effort while a call is open (harness/companion/companion.mjs CALL_EFFORTS). */
+export type CallEffort = "conversation" | "low" | "medium" | "high";
+export const CALL_EFFORTS: readonly CallEffort[] = ["conversation", "low", "medium", "high"];
+
 interface CompanionStatus {
   readonly id: string;
   readonly title: string;
   readonly sessionId: string | null;
-  readonly settings?: { readonly enabled?: boolean };
+  readonly settings?: { readonly enabled?: boolean; readonly call?: { readonly effort?: CallEffort } };
+  /** Whether it takes voice calls at all; its call settings only mean something then. */
+  readonly calls?: boolean;
 }
 
 export interface CompanionEntry {
@@ -37,6 +43,9 @@ export interface CompanionEntry {
   /** Its picture as a data URL, or null. */
   readonly art: string | null;
   readonly callable: CallableCompanion | null;
+  /** Whether it takes voice calls, and how much it thinks on one. */
+  readonly calls: boolean;
+  readonly callEffort: CallEffort;
 }
 
 interface CompanionsView {
@@ -98,9 +107,29 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
         threadId,
         art: arts.get(key) ?? null,
         callable: callable.find((entry) => entry.id === item.id) ?? null,
+        calls: item.calls === true,
+        callEffort: item.settings?.call?.effort ?? "medium",
       };
     }),
   );
+}
+
+/** Saves how much a companion thinks on calls; the Mac's companion settings keep it. */
+export async function saveCallEffort(companion: CompanionEntry, effort: CallEffort): Promise<void> {
+  const same = (item: CompanionEntry) => item.environmentId === companion.environmentId && item.id === companion.id;
+  const put = (value: CallEffort) =>
+    publish({ companions: view.companions.map((item) => (same(item) ? { ...item, callEffort: value } : item)) });
+  put(effort);
+  try {
+    const status = await companionCall<CompanionStatus>(companion.environmentId, "save-settings", {
+      companionId: companion.id,
+      patch: { call: { effort } },
+    });
+    put(status.settings?.call?.effort ?? effort);
+  } catch (error) {
+    put(companion.callEffort);
+    throw error;
+  }
 }
 
 /** What the native store last got per companion, so a face is written only when it changes. */

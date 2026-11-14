@@ -1,17 +1,54 @@
 // Settings › Companions: what this phone calls each companion (user 3efe742c). A blank field goes
-// back to the Korean default; the Mac and the desktop keep their own names.
+// back to the Korean default; the Mac and the desktop keep their own names. Below, for each
+// companion that takes calls, how much it thinks on a call; that one is the Mac's setting, the
+// same as the desktop's Settings › Companion.
 import { useEffect, useState } from "react";
-import { TextInput, View } from "react-native";
+import { Alert, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/AppText";
 import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
+import { SettingsChoiceRow } from "../settings/components/SettingsChoiceRow";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { companionRename, DEFAULT_COMPANION_NAMES, renameCompanion, useCompanionNames } from "./companionNames";
-import { useCompanions, type CompanionEntry } from "./companionsStore";
+import { CALL_EFFORTS, saveCallEffort, useCompanions, type CallEffort, type CompanionEntry } from "./companionsStore";
 import { copy } from "./copy";
+
+const EFFORT_COPY: Record<CallEffort, { readonly label: string; readonly detail: string }> = {
+  conversation: { label: copy.callEffortConversation, detail: copy.callEffortConversationDetail },
+  low: { label: copy.callEffortLow, detail: copy.callEffortLowDetail },
+  medium: { label: copy.callEffortMedium, detail: copy.callEffortMediumDetail },
+  high: { label: copy.callEffortHigh, detail: copy.callEffortHighDetail },
+};
+
+function CallThinkingSection(props: { readonly companion: CompanionEntry; readonly titled: boolean }) {
+  const { companion } = props;
+  const choose = (effort: CallEffort) => {
+    if (effort === companion.callEffort) return;
+    saveCallEffort(companion, effort).catch((error: unknown) =>
+      Alert.alert(copy.saveFailed, error instanceof Error ? error.message : String(error)),
+    );
+  };
+  return (
+    <SettingsSection
+      title={props.titled ? `${companion.title} · ${copy.callThinking}` : copy.callThinking}
+      footer={copy.callThinkingFooter}
+    >
+      {CALL_EFFORTS.map((effort, index) => (
+        <SettingsChoiceRow
+          key={effort}
+          label={EFFORT_COPY[effort].label}
+          description={EFFORT_COPY[effort].detail}
+          selected={companion.callEffort === effort}
+          separated={index > 0}
+          onPress={() => choose(effort)}
+        />
+      ))}
+    </SettingsSection>
+  );
+}
 
 function NameRow(props: { readonly companion: CompanionEntry; readonly separated: boolean }) {
   const { companion } = props;
@@ -47,6 +84,7 @@ function NameRow(props: { readonly companion: CompanionEntry; readonly separated
 export function CompanionNamesSettingsScreen() {
   const insets = useSafeAreaInsets();
   const { companions } = useCompanions();
+  const callers = companions.filter((companion) => companion.calls);
   return (
     <View collapsable={false} className="flex-1 bg-sheet">
       <NativeStackScreenOptions options={{ title: copy.companionsSettings }} />
@@ -64,6 +102,13 @@ export function CompanionNamesSettingsScreen() {
             ))}
           </View>
         </SettingsSection>
+        {callers.map((companion) => (
+          <CallThinkingSection
+            key={`call:${companion.environmentId}:${companion.id}`}
+            companion={companion}
+            titled={callers.length > 1 || companions.length > 1}
+          />
+        ))}
       </ScrollView>
     </View>
   );

@@ -1,19 +1,21 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CALL_SAY_TOOL, CALL_WAIT_TOOL, CALL_PASS_TOOL, createCompanionCall, createCompanionCallFactories,
-  stableSentenceCut } from '../../pi-runtime/features/companion-home/call.mjs';
+import { CALL_EFFORTS, CALL_SAY_TOOL, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
+  createCompanionCallFactories, stableSentenceCut } from '../../pi-runtime/features/companion-home/call.mjs';
 import { createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
+import { CALL_EFFORTS as SETTINGS_CALL_EFFORTS, DEFAULT_SETTINGS, readSettings, writeSettings } from '../companion.mjs';
 import { capabilityActive } from '../home.mjs';
 
-async function fixture(t, { home, config = {}, script } = {}) {
+async function fixture(t, { home, config = {}, script, level = 'high' } = {}) {
   home ??= mkdtempSync(path.join(tmpdir(), 'call-'));
   const env = { HOME: home, RUBATO_COMPANION_HOME: home, RUBATO_PI_ROLE: 'companion',
     RUBATO_COMPANION_ID: 'other', RUBATO_COMPANION_TITLE: 'Other' };
   const handlers = new Map(), tools = new Map(), messages = [], errors = [];
+  const thinking = { level, changes: [] };
   let busy = false, aborts = 0;
   const ctx = { sessionManager: { getSessionId: () => 'same-native-conversation' }, model: { id: 'fake-model' },
     isIdle: () => !busy, abort: async () => { aborts++; busy = false; }, ui: { notify() {} } };
@@ -24,6 +26,8 @@ async function fixture(t, { home, config = {}, script } = {}) {
   const pi = {
     on(name, handler) { handlers.set(name, [...(handlers.get(name) ?? []), handler]); },
     registerTool(tool) { tools.set(tool.name, tool); },
+    getThinkingLevel: () => thinking.level,
+    setThinkingLevel(next) { thinking.level = next; thinking.changes.push(next); },
     sendMessage(message, options) {
       messages.push({ message, options });
       emit('message_start', { message: { role: 'custom', ...message } });
@@ -41,7 +45,7 @@ async function fixture(t, { home, config = {}, script } = {}) {
   t.after(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${bridge.address().port}`;
   const post = (url, value) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
-  return { pi, bridge, ctx, base, post, home, errors, tools, emit, messages, aborts: () => aborts };
+  return { pi, bridge, ctx, base, post, home, env, errors, tools, emit, messages, thinking, aborts: () => aborts };
 }
 const eventsOf = async response => (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 const toolEnd = (emit, name, args, id = 'call-tool') => {
@@ -212,4 +216,52 @@ test('unauthorized and malformed inputs never open a model turn; a port collisio
   assert.equal(errors[0]?.code, 'EADDRINUSE');
   assert.equal((await fetch(`${box.base}/call/health`, { headers: { authorization: 'Bearer isolated-token' } })).status, 200);
   await other.close();
+});
+
+const openCall = async (box, callId) => fetch(`${box.base}/call/health?watch=1&callId=${callId}`);
+const endCall = async (box, callId, watch) => { await box.post('/call/end', { callId }); await watch.body.cancel(); };
+
+test('a call lowers the conversation to the call effort and puts the level back when it ends', async t => {
+  assert.deepEqual(CALL_EFFORTS, SETTINGS_CALL_EFFORTS, 'the bridge reads the same choices the settings write');
+  assert.equal(DEFAULT_CALL_EFFORT, DEFAULT_SETTINGS.call.effort);
+  const box = await fixture(t);
+  const watch = await openCall(box, 'c1');
+  assert.equal(box.thinking.level, 'medium');
+  await endCall(box, 'c1', watch);
+  assert.equal(box.thinking.level, 'high');
+  assert.equal(existsSync(path.join(box.home, 'call/effort.json')), false);
+  assert.deepEqual(box.errors, []);
+});
+
+test('the call effort follows the settings, and conversation leaves the level alone', async t => {
+  const box = await fixture(t);
+  assert.equal(readSettings(box.env).call.effort, 'medium');
+  writeSettings({ call: { effort: 'low' } }, box.env);
+  let watch = await openCall(box, 'c1');
+  assert.equal(box.thinking.level, 'low');
+  await endCall(box, 'c1', watch);
+  assert.equal(box.thinking.level, 'high');
+  writeSettings({ call: { effort: 'conversation' } }, box.env);
+  const changes = box.thinking.changes.length;
+  watch = await openCall(box, 'c2');
+  await endCall(box, 'c2', watch);
+  assert.equal(box.thinking.changes.length, changes);
+  assert.equal(box.thinking.level, 'high');
+});
+
+test('a level the person picks during a call stays after it ends', async t => {
+  const box = await fixture(t);
+  const watch = await openCall(box, 'c1');
+  box.pi.setThinkingLevel('xhigh');
+  await endCall(box, 'c1', watch);
+  assert.equal(box.thinking.level, 'xhigh');
+});
+
+test('an engine that stopped mid-call puts the level back when the conversation starts again', async t => {
+  const home = mkdtempSync(path.join(tmpdir(), 'call-'));
+  mkdirSync(path.join(home, 'call'), { recursive: true });
+  writeFileSync(path.join(home, 'call/effort.json'), JSON.stringify({ restoreTo: 'high', during: 'medium' }));
+  const box = await fixture(t, { home, level: 'medium' });
+  assert.equal(box.thinking.level, 'high');
+  assert.equal(existsSync(path.join(home, 'call/effort.json')), false);
 });

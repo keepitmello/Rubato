@@ -320,3 +320,26 @@ test('the companion list names every conversation with each companion\'s mark, s
     .handle('companions', {});
   assert.deepEqual(unanswered.companions.map(item => item.conversations), [null, null], 'no engine answer is not an empty list');
 });
+
+test('a companion that takes calls says so, and its thinking on calls is a saved setting', async t => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-companion-call-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = { HOME: root, RUBATO_COMPANIONS_FILE: path.join(root, 'companions.json') };
+  const other = path.join(root, 'original-repo');
+  mkdirSync(other);
+  writeFileSync(env.RUBATO_COMPANIONS_FILE, JSON.stringify({ companions: [
+    { id: 'other', title: 'Other', home: other, memoryAgent: 'other', call: { enabled: true, port: 18799 } },
+  ] }));
+  const service = createCompanionService({ env, defaultsDir });
+  const { companions } = await service.handle('companions', {});
+  const byId = Object.fromEntries(companions.map(item => [item.id, item]));
+  assert.equal(byId.other.calls, true);
+  assert.equal(byId.segno.calls, false, 'Segno takes no calls unless its registry turns them on');
+  assert.equal(byId.other.settings.call.effort, 'medium');
+  assert.deepEqual(byId.other.callEfforts, ['conversation', 'low', 'medium', 'high']);
+  const saved = await service.handle('save-settings', { companionId: 'other', patch: { call: { effort: 'high' } } });
+  assert.equal(saved.settings.call.effort, 'high');
+  assert.equal(JSON.parse(readFileSync(path.join(other, 'settings.json'), 'utf8')).call.effort, 'high',
+    'the file the call bridge reads in the companion home');
+  await assert.rejects(service.handle('save-settings', { companionId: 'other', patch: { call: { effort: 'max' } } }), /call\.effort/);
+});

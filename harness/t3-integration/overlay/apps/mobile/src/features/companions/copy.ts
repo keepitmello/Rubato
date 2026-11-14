@@ -49,6 +49,17 @@ const KO = {
   nameLabel: "이름",
   namesFooter: "이 폰에서만 보이는 이름이야. 비우면 기본 이름으로 돌아가고, Mac과 데스크탑의 이름은 그대로야.",
   onTheMac: "Mac에서는",
+  callThinking: "통화 중 생각",
+  callThinkingFooter: "통화하는 동안만 바뀌고, 끊으면 평소 수준으로 돌아가. 덜 생각할수록 빨리 답해.",
+  callEffortConversation: "대화와 같게",
+  callEffortConversationDetail: "평소 대화 수준 그대로",
+  callEffortLow: "낮게",
+  callEffortLowDetail: "가장 빨리 답해",
+  callEffortMedium: "보통",
+  callEffortMediumDetail: "기본값",
+  callEffortHigh: "높게",
+  callEffortHighDetail: "따져 봐야 할 때 더 깊게 생각해",
+  saveFailed: "저장하지 못했어",
 };
 
 const EN: typeof KO = {
@@ -96,6 +107,17 @@ const EN: typeof KO = {
   nameLabel: "name",
   namesFooter: "Names shown on this phone only. Clear one to go back to the default; the Mac and the desktop keep theirs.",
   onTheMac: "On the Mac:",
+  callThinking: "Thinking on calls",
+  callThinkingFooter: "Only while you are on a call; the usual level comes back when it ends. Less thinking answers sooner.",
+  callEffortConversation: "Same as chat",
+  callEffortConversationDetail: "The usual level of its conversation",
+  callEffortLow: "Low",
+  callEffortLowDetail: "Answers fastest",
+  callEffortMedium: "Medium",
+  callEffortMediumDetail: "Default",
+  callEffortHigh: "High",
+  callEffortHighDetail: "Thinks harder when something needs working out",
+  saveFailed: "Could not save",
 };
 
 export type CopyKey = keyof typeof KO;
