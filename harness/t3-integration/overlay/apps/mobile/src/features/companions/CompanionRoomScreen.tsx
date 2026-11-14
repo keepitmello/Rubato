@@ -9,7 +9,7 @@ import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from 
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Alert, Animated, FlatList, Pressable, ScrollView, View } from "react-native";
-import { KeyboardAvoidingView } from "react-native-keyboard-controller";
+import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
@@ -218,17 +218,22 @@ function RoomComposer(props: {
   const [focused, setFocused] = useState(false);
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
   const strip = composerStripAttachments(props.attachments);
+  const bottomPadding = Math.max(insets.bottom, 10);
   return (
-    <View
+    // The screen's keyboard padding moves the list only: an absolute child is placed from the
+    // padding box, under the keyboard. The composer rides the keyboard as the thread's does, and
+    // above it gives up the home indicator's room, which the keyboard covers.
+    <KeyboardStickyView
       pointerEvents="box-none"
       style={{ position: "absolute", left: 0, right: 0, bottom: 0 }}
+      offset={{ closed: 0, opened: bottomPadding - 10 }}
       onLayout={(event) => {
         setHeight(event.nativeEvent.layout.height);
         props.onHeight(event.nativeEvent.layout.height);
       }}
     >
       <EdgeFade edge="bottom" height={height + 16} solid={0.3} />
-      <View className="px-4" style={{ paddingBottom: Math.max(insets.bottom, 10), paddingTop: 6 }}>
+      <View className="px-4" style={{ paddingBottom: bottomPadding, paddingTop: 6 }}>
         {strip.length > 0 ? (
           <View className="mb-2 flex-row gap-2 px-1">
             {strip.map((attachment) => (
@@ -308,7 +313,7 @@ function RoomComposer(props: {
           </View>
         </ComposerSurface>
       </View>
-    </View>
+    </KeyboardStickyView>
   );
 }
 
