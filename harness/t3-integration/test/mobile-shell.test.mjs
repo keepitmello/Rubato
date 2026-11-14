@@ -44,3 +44,15 @@ test('mobile edits anchor once and add only new text at the pin', {skip: !proces
     assert.equal(text, original, `${relative} undoes to the pin`);
   }
 });
+
+test('the phone shows two tabs, companions and threads', {skip: !process.env.T3_SOURCE}, async () => {
+  const pin = JSON.parse(await readFile(new URL('../upstream.json', import.meta.url), 'utf8'));
+  const edited = (relative) => mobileEdits[relative].reduce(
+    (text, [anchor, addition, mode]) => mode === 'replace' ? text.replace(anchor, addition) : text.replace(anchor, addition + anchor),
+    execFileSync('git', ['-C', process.env.T3_SOURCE, 'show', `${pin.upstreamCommit}:${relative}`], {encoding: 'utf8'}));
+  const tabBar = edited('apps/mobile/src/features/workspace/WorkspaceNativeTabs.ios.tsx');
+  assert.ok(tabBar.includes('{(["companions", "threads"] as const).map('));
+  assert.ok(!/\["companions", "threads", "pullRequests"\]/.test(tabBar));
+  const sidebar = edited('apps/mobile/src/features/workspace/WorkspaceSidebarTabs.ios.tsx');
+  assert.deepEqual([...sidebar.matchAll(/tag\("(\w+)"\)/g)].map((match) => match[1]), ['companions', 'threads']);
+});

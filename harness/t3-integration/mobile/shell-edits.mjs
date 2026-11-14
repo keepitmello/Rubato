@@ -5,7 +5,8 @@
 //   app.config.ts              name, bundle id com.keepitmello.rubato, team 5WGZKZGPQS,
 //                              no Clerk plugin/associated domains, no OTA updates, no widget
 //                              or share extensions (each needs its own app id and app group)
-//   workspace tabs             companions | threads | pull requests; companions opens first
+//   workspace tabs             companions | threads; companions opens first. T3's pull
+//                              request tab is not shown: the phone is not where PRs are read
 //   Stack.tsx                  CompanionRoom route (companions/:companionId)
 //   ProviderIcon.tsx           rubato-pi models: vendor glyph (rubatoModelGlyph.ts)
 //
@@ -128,8 +129,8 @@ export const shellEdits = {
     ['const COMPOSE_TAB = "compose";\n', 'const COMPOSE_TAB = "compose";\n'
       + 'const RUBATO_TAB_TITLES = { companions: "Companions", threads: "Threads", pullRequests: "Pulls" } as const;\n'
       + 'const RUBATO_TAB_LABELS = {\n  companions: "Companions",\n  threads: "Threads",\n  pullRequests: "Pull requests",\n} as const;\n', 'replace'],
-    ['if (tab !== "threads" && tab !== "pullRequests") return;', 'if (tab !== "companions" && tab !== "threads" && tab !== "pullRequests") return;', 'replace'],
-    ['{(["threads", "pullRequests"] as const).map((tab: WorkspaceTab) => (', '{(["companions", "threads", "pullRequests"] as const).map((tab: WorkspaceTab) => (', 'replace'],
+    ['if (tab !== "threads" && tab !== "pullRequests") return;', 'if (tab !== "companions" && tab !== "threads") return;', 'replace'],
+    ['{(["threads", "pullRequests"] as const).map((tab: WorkspaceTab) => (', '{(["companions", "threads"] as const).map((tab: WorkspaceTab) => (', 'replace'],
     ['title={tab === "threads" ? "Threads" : "Pulls"}', 'title={RUBATO_TAB_TITLES[tab]}', 'replace'],
     ['tabBarItemAccessibilityLabel={tab === "threads" ? "Threads" : "Pull requests"}', 'tabBarItemAccessibilityLabel={RUBATO_TAB_LABELS[tab]}', 'replace'],
     ['              icon:\n                tab === "threads"\n                  ? { type: "sfSymbol", name: "text.bubble" }\n                  : { type: "templateSource", templateSource: PULL_REQUEST_ICON },\n              selectedIcon:\n                tab === "threads" ? { type: "sfSymbol", name: "text.bubble.fill" } : undefined,',
@@ -137,6 +138,8 @@ export const shellEdits = {
   ],
   'apps/mobile/src/features/workspace/WorkspaceSidebarTabs.ios.tsx': [
     ['          <Text modifiers={[tag("threads")]}>Threads</Text>', '          <Text modifiers={[tag("companions")]}>Companions</Text>\n'],
+    ['          <Text modifiers={[tag("pullRequests")]}>Pull requests</Text>\n',
+      '          {/* Rubato: no pull request tab on the phone (shell-edits.mjs). */}\n', 'replace'],
   ],
   'apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx': [
     ['import { PullRequestsScreen } from "../pull-requests/PullRequestsScreen";\n',
