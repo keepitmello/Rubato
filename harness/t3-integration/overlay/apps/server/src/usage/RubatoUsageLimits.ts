@@ -34,6 +34,8 @@ const PROVIDERS: Readonly<Record<string, { readonly driver: string; readonly lab
   cursor: { driver: "cursor", label: "Cursor" },
   xai: { driver: "grok", label: "Grok" },
   "google-antigravity": { driver: "antigravity", label: "Antigravity" },
+  // Gemini API keys have no T3 driver; "gemini" picks up the Gemini glyph and name (apply.mjs, usage-limits-edits.mjs).
+  google: { driver: "gemini", label: "Gemini API" },
 };
 
 interface RubatoUsageRow {
@@ -72,7 +74,8 @@ async function readUsage(bridgeModule: string): Promise<unknown> {
 /** One stable row id per account: the provider's name, and the account's when it is not the only one. */
 export function rubatoAccountId(provider: string, account: string): string {
   const label = PROVIDERS[provider]?.label ?? provider;
-  return account === "default" ? label : `${label} · ${account}`;
+  // A Keychain-held key is the provider's only account of that kind, like "default".
+  return account === "default" || account === "keychain" ? label : `${label} · ${account}`;
 }
 
 /** `rubato auth usage --json` → the source's accounts. Rows this build cannot draw are dropped. */

@@ -528,3 +528,25 @@ test("storing a Vertex secret replaces old Keychain items and rejects unusable v
   assert.deepEqual(calls.at(-1).slice(0, 5), ["add-generic-password", "-s", VERTEX_KEYCHAIN_SERVICE, "-a", "rubato"]);
   assert.equal(calls.at(-1).at(-1), VERTEX_ACCOUNT_JSON);
 });
+
+// ── Gemini API: 키가 Keychain 서비스 gemini 에 있으면 계정 하나로 보인다 ─────────
+
+test("gemini resolves from aliases and is a key provider", () => {
+  assert.deepEqual(resolveLoginProvider("gemini"), { id: "google" });
+  assert.deepEqual(resolveLoginMethod("google", "key"), { id: "api_key" });
+});
+
+test("status reports Gemini API connected from the Keychain; remove clears that item only", async () => {
+  const dir = tempHome();
+  const keychain = fakeVertexKeychain("AIza-test-key");
+  const ctx = { ...capture(), env: isolatedEnv(dir), home: dir, geminiKeychain: keychain };
+  const row = async () => (await statusJson(ctx)).providers.find((provider) => provider.id === "google");
+  const connected = await row();
+  assert.equal(connected.label, "Gemini API");
+  assert.equal(connected.state, "connected");
+  assert.deepEqual(connected.accounts.map((account) => [account.name, account.type, account.removable]), [["keychain", "api_key", true]]);
+  assert.equal(await handleAuthArgs(["remove", "gemini", "keychain"], ctx), "ok");
+  assert.equal(keychain.state.removed, 1);
+  assert.equal((await row()).state, "absent");
+  assert.equal(await handleAuthArgs(["remove", "gemini", "keychain"], ctx), "error");
+});

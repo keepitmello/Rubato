@@ -1,7 +1,8 @@
 // Gemini API(AI Studio) 키는 사용자가 Keychain 서비스 `gemini` 에 넣어 둔다. `/login` 없이
 // `auth.apiKey.resolve` 가 그걸 읽게 한다. native `GEMINI_API_KEY` 와 저장된 credential 이
 // 먼저다 — 사용자가 명시한 값을 Keychain 이 덮지 않는다.
-import { isAbortError, readKeychainSecret, readKeychainSecretShared } from "./keychain-secret.mjs";
+import { execFile } from "node:child_process";
+import { forgetKeychainSecrets, isAbortError, readKeychainSecret, readKeychainSecretShared } from "./keychain-secret.mjs";
 
 export const GEMINI_PROVIDER_ID = "google";
 export const GEMINI_KEYCHAIN_SERVICE = "gemini";
@@ -11,6 +12,20 @@ export const GEMINI_KEYCHAIN_SOURCE = "gemini Keychain";
 export function readGeminiKeychainSecret({ spawnImpl, signal } = {}) {
   const request = { service: GEMINI_KEYCHAIN_SERVICE, signal };
   return spawnImpl ? readKeychainSecret({ ...request, spawnImpl }) : readKeychainSecretShared(request);
+}
+
+function runSecurity(args, execFileImpl = execFile) {
+  return new Promise((resolve) => {
+    execFileImpl("security", args, { stdio: "ignore" }, (error) => resolve(!error));
+  });
+}
+
+/** 서비스 `gemini` 의 항목을 모두 지운다. 지운 개수를 돌려준다. */
+export async function deleteGeminiKeychainSecret({ execFileImpl } = {}) {
+  let deleted = 0;
+  while (deleted < 8 && (await runSecurity(["delete-generic-password", "-s", GEMINI_KEYCHAIN_SERVICE], execFileImpl))) deleted += 1;
+  forgetKeychainSecrets();
+  return deleted;
 }
 
 /**

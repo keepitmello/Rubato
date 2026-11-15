@@ -74,7 +74,7 @@ Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 | `google-antigravity/gemini-3.8-flash` | owned Antigravity API/route uses stock Google converter and event stream -> Google internal endpoint | owned Google OAuth; parent-only Keychain import; project id retained in OAuth credential env | Provider is absent; stock provider/auth primitives are used | OAuth/login/refresh, project discovery, request/response hooks, lineage reset on tree/successful compaction |
 | `opencode/muse-spark-1.3-contributor-free` | stock OpenCode provider -> decorator | native env/stored API key, then macOS Keychain fallback; no Rubato OAuth | Native factory/catalog is used | picker restriction and Keychain fallback only |
 | `google-vertex/gemini-4-argon` | stock `googleVertexProvider()` -> stock `@google/genai` Vertex client -> decorator | native stored key, `GOOGLE_CLOUD_API_KEY` or gcloud ADC, then Keychain service `vertex` (service-account JSON or express-mode API key); not the Antigravity subscription | Native factory is used; Argon derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, service-account JSON via request env, Gemini 4 thinking levels (`features/providers/google-vertex.mjs`) |
-| `google/gemini-4-hydrogen` | stock `googleProvider()` -> stock `@google/genai` Gemini API client -> decorator | native stored key or `GEMINI_API_KEY`, then Keychain service `gemini`; Hydrogen is open on the Gemini API free tier, unlike Antigravity | Native factory is used; Hydrogen derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, Gemini 4 thinking levels (same google-shared patch) |
+| `google/gemini-4-hydrogen` | stock `googleProvider()` -> stock `@google/genai` Gemini API client -> decorator | native stored key or `GEMINI_API_KEY`, then Keychain service `gemini`; Hydrogen is open on the Gemini API free tier, unlike Antigravity | Native factory is used; Hydrogen derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, Gemini 4 thinking levels (same google-shared patch), per-request daily count for the free-tier Usage bar (`gemini-request-count.mjs`) |
 
 Evidence anchors:
 
@@ -300,11 +300,11 @@ reconstruct it from a hand list. The provider boundary directly requires stock
 `typebox@1.3.7` (`stock pi-ai/package.json:66-89`). Pi, pi-ai, pi-agent-core, pi-tui, chord, and
 pi-telemetry are MIT; the lockfile is the authority for every transitive version/license.
 
-The provider descriptor is the executable source-of-truth for the selected closure. It stages 63
-files: eight feature glue/assets, 34 Rubato provider/decorator sources, and 21 Cursor targets. The
+The provider descriptor is the executable source-of-truth for the selected closure. It stages 64
+files: eight feature glue/assets, 35 Rubato provider/decorator sources, and 21 Cursor targets. The
 eight are `extension.mjs`, the stock-only `engine-paths.mjs`, `cursor-lazy.mjs`, a feature-local
 Cursor event stream, the Rubato read-image adapter, `THIRD_PARTY_NOTICES.md`, the speed-index
-baseline JSON, and `kiro-setup.sh`. The 34 Rubato paths are listed once in `patches.mjs` as
+baseline JSON, and `kiro-setup.sh`. The 35 Rubato paths are listed once in `patches.mjs` as
 `rubatoSources`; they include the provider composition, three owned routes, credential fallbacks,
 request decorators, and their recursively imported Rubato helpers.
 

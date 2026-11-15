@@ -12,6 +12,7 @@ const piRuntimeRoot = join(import.meta.dirname, "../../../pi-runtime");
 const { stagePiRuntime } = await import(pathToFileURL(join(piRuntimeRoot, "stage-runtime.mjs")).href);
 const { resolvePiRuntime } = await import(pathToFileURL(join(piRuntimeRoot, "resolve-runtime.mjs")).href);
 const { providersFeature } = await import(pathToFileURL(join(piRuntimeRoot, "features/providers/patches.mjs")).href);
+const { readGeminiRequests } = await import(pathToFileURL(join(import.meta.dirname, "../../src/gemini-request-count.mjs")).href);
 
 const scratch = mkdtempSync(join(tmpdir(), "rubato-gemini-smoke-"));
 let failed = false;
@@ -85,6 +86,9 @@ try {
     console.log(`text: ${JSON.stringify(text)}`);
     console.log(`usage: ${JSON.stringify({ input: message?.usage?.input, output: message?.usage?.output, reasoning: message?.usage?.reasoning, cost: message?.usage?.cost?.total })}`);
     if (message?.stopReason !== "stop" || !/pong/i.test(text)) fail(`unexpected reply: ${message?.errorMessage ?? text}`);
+    const counted = readGeminiRequests(join(agentDir, "gemini-requests.json")).models[HYDROGEN] ?? 0;
+    console.log(`counted today: ${counted}`);
+    if (counted < 1) fail("the request was not counted for the Usage page");
   }
   session.dispose();
 } finally {

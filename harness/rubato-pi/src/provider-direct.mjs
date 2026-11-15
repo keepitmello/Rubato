@@ -27,6 +27,7 @@ import {
   withSubAccountCopies,
 } from "./picker-catalog.mjs";
 import { withGeminiKeychain } from "./gemini-keychain.mjs";
+import { geminiRequestsPath, withGeminiRequestCount } from "./gemini-request-count.mjs";
 import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { withVertexKeychain } from "./vertex-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
@@ -673,10 +674,14 @@ export async function directProviders({
 
   // Gemini API(AI Studio 키)는 pinned google factory 에 Hydrogen 한 행을 더하고 피커를 그 행으로
   // 줄인다. Hydrogen 은 Gemini API 무료 등급에서도 열리고 Antigravity 는 Pro·Ultra 에만 연다.
-  // 키는 GEMINI_API_KEY 또는 Keychain `gemini` — `/login` 을 요구하지 않는다.
+  // 키는 GEMINI_API_KEY 또는 Keychain `gemini` — `/login` 을 요구하지 않는다. 무료 등급 하루 한도는
+  // 응답이 알려 주지 않아서 요청마다 직접 센다(gemini-request-count.mjs, 사용량 화면이 읽는다).
   const geminiApiNative = geminiApiProvider();
   const geminiApi = withGeminiKeychain(
-    withPickerIds(withExtraModels(geminiApiNative, gemini4HydrogenModels(geminiApiNative.getModels())), GEMINI_API_PICKER_IDS),
+    withGeminiRequestCount(
+      withPickerIds(withExtraModels(geminiApiNative, gemini4HydrogenModels(geminiApiNative.getModels())), GEMINI_API_PICKER_IDS),
+      { path: geminiOptions?.requestsPath ?? geminiRequestsPath(defaultTargetAuthPath(homedir(), env)) },
+    ),
     { env, ...(geminiOptions ?? {}) },
   );
 

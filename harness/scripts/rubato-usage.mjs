@@ -15,6 +15,7 @@
 // real call's response headers, which the credential pool records
 // (pi-runtime/features/providers/auth-pool/usage-observed.mjs).
 import { observedAccountUsage, anthropicEndpointWindows } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
+import { geminiDailyWindows, readGeminiRequests } from "../rubato-pi/src/gemini-request-count.mjs";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const SESSION_MINS = 5 * 60;
@@ -323,6 +324,15 @@ async function readAntigravity({ slot, credential, fetchImpl, now, renewAntigrav
   return { windows };
 }
 
+// ── Gemini API ──────────────────────────────────────────────────────────────
+
+// Gemini API 는 남은 한도를 알려 주지 않는다. 엔진이 요청마다 센 오늘(태평양 시간) 수를
+// 무료 등급 하루 한도에 대어 그린다(rubato-pi/src/gemini-request-count.mjs).
+async function readGeminiApi({ geminiRequestsPath, now }) {
+  const at = now();
+  return { plan: "Free tier", windows: geminiDailyWindows(readGeminiRequests(geminiRequestsPath, at), at) };
+}
+
 // ── Collecting ──────────────────────────────────────────────────────────────
 
 /** Providers that report subscription usage, in the order the page lists them. */
@@ -332,6 +342,7 @@ export const USAGE_READERS = Object.freeze({
   cursor: readCursor,
   xai: readGrok,
   "google-antigravity": readAntigravity,
+  google: readGeminiApi,
 });
 
 /**
@@ -341,6 +352,7 @@ export const USAGE_READERS = Object.freeze({
  * @param {(providerId: string) => Promise<object | undefined>} input.credentialOf
  * @param {(credential: object | undefined, name: string) => object | undefined} input.slotOf
  * @param {object} input.observed  `readObservedUsage(...)`
+ * @param {string} [input.geminiRequestsPath]  where the engine counts Gemini API requests
  */
 export async function collectUsage({
   providers,
@@ -348,6 +360,7 @@ export async function collectUsage({
   credentialOf,
   slotOf,
   observed,
+  geminiRequestsPath,
   fetchImpl = globalThis.fetch,
   now = Date.now,
   renewAntigravity = async () => { throw new Error("no renewal configured"); },
@@ -365,7 +378,7 @@ export async function collectUsage({
         const checkedAt = new Date(now()).toISOString();
         let result;
         try {
-          result = await reader({ slot, account, credential, observed, fetchImpl, now, renewAntigravity });
+          result = await reader({ slot, account, credential, observed, geminiRequestsPath, fetchImpl, now, renewAntigravity });
         } catch (error) {
           return {
             provider: provider.id,
