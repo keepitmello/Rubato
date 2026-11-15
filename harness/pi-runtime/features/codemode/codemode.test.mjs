@@ -230,6 +230,9 @@ test("persistent JS eval composes generic tools, detach control, notifications, 
 		async executeTool(name, params, options = {}) {
 			calls.push({ name, params, options });
 			options.onUpdate?.({ content: [{ type: "text", text: "host update" }], details: { status: "running" } });
+			// The host executor flags a failed call on the result itself, as tool-execution does
+			// for a non-zero bash exit.
+			if (params.value === -1) return { content: [{ type: "text", text: "Command exited with code 1" }], details: {}, isError: true };
 			return {
 				content: [{ type: "text", text: `${name}:${JSON.stringify(params)}` }],
 				details: { name, params },
@@ -342,6 +345,16 @@ test("persistent JS eval composes generic tools, detach control, notifications, 
 		assert.equal(evalUpdates.length > 0, true);
 		assert.match(textOf(nested), /echo/);
 		assert.equal(nested.details.toolCalls[0].ok, true);
+
+		const failed = await runEval(
+			definition,
+			"cell-tool-failed",
+			{ language: "js", code: "const r = await tool.echo({ value: -1 }); ({ flag: r.hasError, text: r.text })", summary: "실패한 도구 호출" },
+			context,
+		);
+		assert.match(textOf(failed), /"flag": ?true/);
+		assert.match(textOf(failed), /exited with code 1/);
+		assert.equal(failed.details.toolCalls[0].ok, false);
 
 		const detached = await runEval(
 			detachDefinition,

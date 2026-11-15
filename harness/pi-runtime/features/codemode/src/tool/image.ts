@@ -269,6 +269,9 @@ export function marshalToolResult(result: AgentToolResult<unknown>) {
 }
 
 export function toolResultIsError(result: AgentToolResult<unknown>): boolean {
+	// The host executor puts a failed call's flag on the result itself (a non-zero bash exit,
+	// a patch that did not apply); older tools report it in details.
+	if ((result as { isError?: unknown }).isError === true) return true;
 	const details = result.details;
 	return typeof details === "object" && details !== null && "isError" in details && details.isError === true;
 }

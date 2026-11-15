@@ -95,10 +95,17 @@ test("all selected hooks compose in one isolated stock SDK and standard binary",
   await session.extensionRunner.emit({ type: "before_agent_start" });
   const before = await api.executeTool("composition_echo", { value: "before reload" });
   assert.equal(before.content[0].text, "before reload");
+  // eval is on the default surface: callable from the first request, no tool_search turn.
+  assert.ok(api.getActiveTools().includes("eval"), "eval starts active");
+  assert.equal(toolSearch.getCatalog().some(({ name }) => name === "eval"), false, "eval is not filed for search");
   assert.deepEqual(await session.reload(), { cancelled: true, reason: "selected-features test" });
   veto = false;
   assert.deepEqual(await session.reload(), { cancelled: false });
   await session.extensionRunner.emit({ type: "before_agent_start" });
+  assert.ok(api.getActiveTools().includes("eval"), "eval stays active after a reload");
+  // codemode registers eval again when the model changes; it must stay on the surface.
+  await session.extensionRunner.emit({ type: "model_select", model: { id: "other-model", provider: "other" }, previousModel: undefined, source: "set" });
+  assert.ok(api.getActiveTools().includes("eval"), "eval stays active after a model switch");
   const after = await api.executeTool("composition_echo", { value: "after reload" });
   assert.equal(after.content[0].text, "after reload");
   assert.deepEqual(hooks, [["call", "composition_echo"], ["result", "composition_echo"], ["call", "composition_echo"], ["result", "composition_echo"]]);

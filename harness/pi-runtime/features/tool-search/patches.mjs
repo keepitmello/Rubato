@@ -15,8 +15,11 @@ import { PI_VERSION as VERSION } from "../../pi-version.mjs";
  * edit/write stay registered-but-inactive and uncatalogued), MCP tools (their server's
  * exposure owns them), `allowLazyActivation: false` tools, and tools an owner activates
  * itself (the terminal extension keeps bash's companions on for background sessions).
+ *
+ * `eval` is here so a step that needs several calls can run them in one cell, the way
+ * Claude Code's Code Mode does, without a tool_search turn first.
  */
-export const DIRECT_TOOL_NAMES = Object.freeze(["read", "bash", "apply_patch", "todo", "tool_search"]);
+export const DIRECT_TOOL_NAMES = Object.freeze(["read", "bash", "apply_patch", "todo", "tool_search", "eval"]);
 
 function replaceOnce(source, before, after, label) {
   const first = source.indexOf(before);

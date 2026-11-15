@@ -1,6 +1,8 @@
 // rubato patched copy of senpi-codemode/src/prompt/eval-prompt.ts.
-// Diff from vendor: one short common rule (direct tools vs eval), no per-model
-// batching dialects in the rendered prompt. Wired by control-codemode-redirect.mjs.
+// Diff from vendor: the guidance follows Claude Code's Code Mode (REPL tool, 2.1.325, the
+// variant that keeps the other tools in the list): a call is a model round-trip, work inside
+// a cell is cheap, return only what to read now. No per-model dialects in the rendered prompt.
+// Wired by control-codemode-redirect.mjs.
 import type { EvalRuntimeInfo } from "../tool/types.ts";
 
 export interface EnabledLanguages {
@@ -69,9 +71,13 @@ type Context = Readonly<Record<string, ContextValue>>;
 const EVAL_PROMPT_TEMPLATE = `Run one step of code in a persistent kernel.
 
 <instruction>
-**One eval call = one cell = one logical step.** Top-level names persist per language across eval calls{{#if spawns}}, tool calls and \`task\` subagents{{else}} and tool calls{{/if}}. Reuse helpers; rebuild only after \`reset\`, a kernel restart, or a \`NameError\`/\`ReferenceError\`. Check a sentinel before re-running to avoid duplicate side effects.
+**One eval call = one cell = everything up to your next decision.** Top-level names persist per language across eval calls{{#if spawns}}, tool calls and \`task\` subagents{{else}} and tool calls{{/if}}. Reuse helpers; rebuild only after \`reset\`, a kernel restart, or a \`NameError\`/\`ReferenceError\`. Check a sentinel before re-running to avoid duplicate side effects.
 
-Ordinary calls are direct tools. Use eval for programmatic intermediates or persistent calculations; \`parallel(thunks)\` is available inside a cell.
+Shell commands, file reads, edits and code search can all happen inside a cell: \`tool.<name>(args)\` calls any tool in your list by name, and \`parallel(thunks)\` runs calls at the same time. A failed call returns with \`hasError: true\` rather than throwing.
+
+What an eval call costs: each call is a full model round-trip — the whole conversation is re-read before your cell runs, and you wait for the reply — while the work inside a cell (shell commands, file reads, searches, tool calls) is comparatively free. So the expensive thing is coming back to decide, not doing more in one go: gather what a decision could plausibly need in the cell you are already writing, and come back for another call when the next step depends on what this one shows you.
+
+What a cell returns or prints is added to your context and stays there; a value kept in a variable stays in the kernel whether you return it or not. So return what you want to read now, and keep the rest in variables to slice or search later instead of re-reading a file or re-running a command whose output you already hold.
 {{#if hostLine}}
 Host: {{hostLine}} — cells execute here; \`tool.<name>()\` shell commands must fit this platform, even when the code you are writing targets another machine.
 {{/if}}
@@ -85,7 +91,22 @@ A cell that outlives the foreground window detaches (kernel stays busy; other la
 {{#if rb}}Ruby: sync, keyword args{{#if spawns}} (e.g. \`output("id", limit: 2)\`){{/if}}; last expression auto-displays unless \`nil\`, assignment, or definition.{{/if}}
 {{#if jl}}Julia: sync, keyword args{{#if spawns}} (e.g. \`output("id", limit=2)\`){{/if}}; last expression auto-displays unless assignment or definition.{{/if}}
 On error, fix and re-run only the failing step; a normal error keeps state; timeout/stop says if the kernel restarted.
-</instruction>
+{{#if js}}
+
+One cell can look in several places at once and then act on what it found, for example:
+\`\`\`js
+const lines = (r) => (r.hasError ? [] : r.text.trim().split("\\n")); // rg finding nothing exits 1
+const [defs, uses] = await parallel([
+  () => tool.bash({ command: 'rg -l "function retryPolicy" src' }),
+  () => tool.bash({ command: 'rg -lF "retryPolicy(" src test' }),
+]);
+const target = lines(defs)[0]; // the file that defines it
+if (!target) throw new Error("nothing defines retryPolicy: not editing");
+await tool.apply_patch({ input: \`*** Begin Patch\\n*** Update File: \${target}\\n@@\\n-  maxAttempts: 3,\\n+  maxAttempts: 5,\\n*** End Patch\` });
+const test = await tool.bash({ command: "npm test -- retryPolicy" });
+return { edited: target, callers: lines(uses).filter((f) => f !== target), test: test.text.slice(-2000) };
+\`\`\`
+{{/if}}</instruction>
 
 <prelude>
 {{#ifAll py js}}Same helpers + arg order. Python: sync, trailing kwargs. JS: async, ONE trailing object literal (extras throw).{{else}}{{#if py}}Sync; options = trailing kwargs.{{/if}}{{#if js}}Async/\`await\`able; options = ONE trailing object literal, never positional (extras throw).{{/if}}{{/ifAll}}{{#if rb}} Ruby: sync, trailing keyword args.{{/if}}{{#if jl}} Julia: sync, trailing keyword args.{{/if}}
@@ -126,7 +147,6 @@ export function buildEvalPrompt(
 		throw new Error("no kernels enabled for eval prompt");
 	}
 	const spawnDefaultAgent = options.spawnDefaultAgent ?? "task";
-	const style = evalEmphasisStyle(options.modelId);
 	const context: Context = {
 		py: enabled.py,
 		js: enabled.js,
@@ -146,23 +166,10 @@ export function buildEvalPrompt(
 		description,
 		promptSnippet: "Run one incremental code cell in a persistent language kernel.",
 		promptGuidelines: [
-			BATCHING_GUIDELINES[style],
 			"Use eval reset only when a language kernel must be wiped; reset is scoped to the selected language.",
 		],
 	};
 }
-
-const COMMON_GUIDELINE =
-	"Ordinary calls are direct tools. Use eval for programmatic intermediates or persistent calculations; parallel(thunks) is available inside a cell.";
-
-/** Same guideline for every dialect so callers of evalEmphasisStyle stay compatible. */
-const BATCHING_GUIDELINES: Record<EvalEmphasisStyle, string> = {
-	default: COMMON_GUIDELINE,
-	claude: COMMON_GUIDELINE,
-	codex: COMMON_GUIDELINE,
-	gpt: COMMON_GUIDELINE,
-	kimi: COMMON_GUIDELINE,
-};
 
 function renderTemplate(template: string, context: Context): string {
 	let index = 0;
