@@ -641,6 +641,20 @@ export class RubatoPiBridge {
   // Deletes a side chat's session; the engine refuses any other conversation.
   async discardSession(sessionId) { await this.viaInventory((client) => client.discard(sessionId)); }
   /**
+   * The companion room's model picker (RubatoCompanionModel.ts): the companion's session takes the
+   * model at once, so its own runs (the clock, a wake, a retry after a rate limit) run on it too,
+   * not only the next turn the person starts (user item bceb5547). Any other conversation changes
+   * its model with its next turn, as T3 does.
+   */
+  async setCompanionModel({ threadId, sessionId, model }) {
+    const split = typeof model === 'string' ? model.indexOf('/') : -1;
+    if (split < 1) throw new Error('Pi model must be provider/modelId');
+    if (!await this.companionSession(sessionId)) throw new Error("Only a companion's conversation changes its model outside a turn");
+    await this.withSession(threadId, sessionId, (client) =>
+      client.command({ type: 'set_model', provider: model.slice(0, split), modelId: model.slice(split + 1) }));
+    return { model };
+  }
+  /**
    * What another conversation asked the app to do with a session's thread (the companion's
    * session_rename and session_delete; engine thread-requests.mjs): archive, delete or rename it
    * through the app's own commands, `sessionThread(sessionId, request)`, which answers whether a

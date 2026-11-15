@@ -432,6 +432,25 @@ export function isCompanionThread(threadId: string): boolean {
 const steeringSettings = new WeakMap<object, object>();
 
 /**
+ * A model picked in a companion's room applies at once (RubatoCompanionModel.ts): the companion's
+ * session switches now, so its own runs use it too, and the thread keeps the pick for the phone
+ * and the next turn (user item bceb5547). Elsewhere a pick waits for the next send.
+ */
+export async function applyCompanionModel(
+  environmentId: EnvironmentId,
+  threadId: string,
+  modelSelection: unknown,
+): Promise<void> {
+  await postRubato<Record<string, never>>(
+    environmentId,
+    "/rubato/companion-room",
+    "model",
+    { threadId, modelSelection },
+    "companion models",
+  );
+}
+
+/**
  * The composer's settings in a companion's room: what the person sends while the companion works
  * steers into that work instead of waiting in the queue (user item 6b6a88c5). The room never shows
  * what the companion is doing, so a queue would hold their words behind work they cannot see.

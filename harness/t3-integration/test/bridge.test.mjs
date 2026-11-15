@@ -1774,6 +1774,26 @@ test('the companion room\'s rewind stops the companion\'s own work first, and to
   assert.equal(compacting.sent.includes('abort'), false);
 });
 
+test("the companion room's model picker sets the companion's session model at once; any other conversation waits for its next turn", async () => {
+  const run = async ({ companion = true, model = 'anthropic/claude-opus-5-5-sub' } = {}) => {
+    const sent = [];
+    const bridge = new RubatoPiBridge({ descriptorPath: '/missing', instanceId: 'rubato' });
+    bridge.companionSession = async () => companion;
+    bridge.withSession = async (_threadId, _sessionId, use) => use({ command: async (command) => { sent.push(command); return {}; } });
+    const outcome = await bridge.setCompanionModel({ threadId: 'room', sessionId: 's', model }).then((value) => value, (error) => error);
+    return { sent, outcome };
+  };
+  const room = await run();
+  assert.deepEqual(room.outcome, { model: 'anthropic/claude-opus-5-5-sub' });
+  assert.deepEqual(room.sent, [{ type: 'set_model', provider: 'anthropic', modelId: 'claude-opus-5-5-sub' }]);
+  const lead = await run({ companion: false });
+  assert.match(lead.outcome.message, /Only a companion/);
+  assert.deepEqual(lead.sent, []);
+  const bare = await run({ model: 'claude-opus-5-5' });
+  assert.match(bare.outcome.message, /provider\/modelId/);
+  assert.deepEqual(bare.sent, []);
+});
+
 test("what a companion asked the app to do with a thread goes to the app's own command once, and a request no thread takes is dropped after a few passes", async (t) => {
   const { service, bridge } = await setup(t);
   await service.host.threadRequests.add({ sessionId: 'shown', action: 'archive' });

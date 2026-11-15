@@ -13,6 +13,7 @@ export const companionOverlays = [
   'apps/server/src/RubatoCompanion.test.ts',
   'apps/server/src/RubatoCompanionRewind.ts',
   'apps/server/src/RubatoCompanionRewind.test.ts',
+  'apps/server/src/RubatoCompanionModel.ts',
   'apps/web/src/state/rubatoCompanion.ts',
   'apps/web/src/state/rubatoCompanion.test.tsx',
   'apps/web/src/hooks/rubatoCompanionProjectBoundary.test.ts',
@@ -43,8 +44,8 @@ export const companionSettingsPages = ['companion'];
 
 export const companionEdits = {
   'apps/server/src/server.ts': [
-    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
-    ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n    rubatoCompanionRewindRouteLayer,\n'],
+    ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionModelRouteLayer } from "./RubatoCompanionModel.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
+    ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n    rubatoCompanionModelRouteLayer,\n    rubatoCompanionRewindRouteLayer,\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/chat"\n', '  | "/settings/companion"\n'],
@@ -75,7 +76,22 @@ export const companionEdits = {
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       'replace'],
-    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { companionComposerSettings, isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
+    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { applyCompanionModel, companionComposerSettings, isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
+    // A model picked in a companion's room applies at once, not at the next send: the companion
+    // works on its own between messages (applyCompanionModel, user item bceb5547).
+    ['    setStickyComposerModelSelection(nextModelSelection);\n',
+      [
+        '    if (isServerThread && isCompanionThread(activeThread.id)) {',
+        '      void applyCompanionModel(activeThread.environmentId, activeThread.id, nextModelSelection).catch((error: unknown) => {',
+        '        toastManager.add({',
+        '          type: "error",',
+        '          title: "The companion did not switch models",',
+        '          description: error instanceof Error ? error.message : String(error),',
+        '        });',
+        '      });',
+        '    }',
+        '',
+      ].join('\n')],
     // A companion's room sends during its work as a steer, whatever Settings › Chat says
     // (companionComposerSettings, user item 6b6a88c5).
     ['                              settings={settings}\n',
