@@ -128,7 +128,7 @@ client owns capture, STT, synthesis and playback, using the retained protocol:
 |---|---|
 | `GET /call/health` | Native session/model identity and busy state |
 | `GET /call/health?watch=1&callId=…` | Hold call presence, streamed NDJSON heartbeats |
-| `POST /call/turn` | Heard words: `text`, stable `turnId` |
+| `POST /call/turn` | Heard words: `text`, stable `turnId`; `cut` when they cut the companion off, what was heard of its reply |
 | `POST /call/qwen-turn` | Same turn protocol for the alternate audio transport |
 | `POST /call/opportunity` | Machine-opened quiet opportunity: `turnId`, optional `reason` |
 | `POST /call/cancel` | Interrupt only the matching `turnId` |

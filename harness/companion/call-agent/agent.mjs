@@ -11,7 +11,7 @@ import { AgentSessionEventTypes, ServerOptions, cli, defineAgent, inference, llm
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as fishaudio from '@livekit/agents-plugin-fishaudio';
 import * as openai from '@livekit/agents-plugin-openai';
-import { createBridge } from './bridge.mjs';
+import { createBridge, heardBeforeCut } from './bridge.mjs';
 import { readElevenLabsKey, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
 import { AGENT_NAME } from './livekit.mjs';
 
@@ -101,7 +101,10 @@ class CompanionVoice extends voice.Agent {
     const controller = new AbortController();
     const timing = { callId: this.callId, companion: this.companion.id, turnId, heard, turnAt: Date.now() };
     this.timings.current = timing;
-    const events = this.bridge.turn(heard, { turnId, signal: controller.signal });
+    // The companion wrote its whole reply before it played; when the person cut in, it hears where.
+    const cut = heardBeforeCut(chatCtx.items);
+    if (cut) logger.info({ cut }, 'cut in');
+    const events = this.bridge.turn(heard, { turnId, signal: controller.signal, cut });
     const stream = sentences(events, { signal: controller.signal,
       onFirst: () => { timing.firstSentenceAt ??= Date.now(); },
       onSentence: text => void this.report('said', text),

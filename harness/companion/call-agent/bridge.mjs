@@ -19,6 +19,21 @@ export async function* ndjson(body) {
   if (buffered.trim()) yield JSON.parse(buffered);
 }
 
+/**
+ * What the person heard of the companion's last reply when they cut in, or null when it played to
+ * the end. LiveKit keeps an interrupted reply in the call's chat context as only the part that
+ * played out, marked `interrupted`; it sits right before the person's words that cut in.
+ */
+export function heardBeforeCut(items) {
+  for (let at = items.length - 1; at >= 0; at--) {
+    const item = items[at];
+    if (item.type !== 'message' || item.role === 'user') continue;
+    if (item.role !== 'assistant' || !item.interrupted) return null;
+    return item.textContent?.trim() || null;
+  }
+  return null;
+}
+
 export function createBridge({ url, token = null, fetch: call = globalThis.fetch }) {
   const headers = { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) };
   const post = (route, body, signal) => call(`${url}${route}`, { method: 'POST', headers, body: JSON.stringify(body), signal });
@@ -46,9 +61,10 @@ export function createBridge({ url, token = null, fetch: call = globalThis.fetch
   /**
    * One heard turn. Yields `{ t: 'delta', text }` sentences as the companion writes them, timing
    * events, and a final `done` or `error`. Aborting the signal cancels the turn on the bridge too.
+   * `cut` is what the person heard of the companion's previous reply before cutting in.
    */
-  async function* turn(text, { turnId = randomUUID(), signal } = {}) {
-    const response = await post('/call/turn', { text, turnId }, signal);
+  async function* turn(text, { turnId = randomUUID(), signal, cut = null } = {}) {
+    const response = await post('/call/turn', { text, turnId, ...(cut ? { cut } : {}) }, signal);
     if (!response.ok) throw new Error(`call bridge answered HTTP ${response.status}: ${await response.text()}`);
     yield* ndjson(response.body);
   }

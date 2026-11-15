@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CALL_EFFORTS, CALL_SAY_TOOL, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
+import { CALL_EFFORTS, CALL_SAY_TOOL, CUT_QUOTE_CHARS, cutNote, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
   createCompanionCallFactories, stableSentenceCut } from '../../pi-runtime/features/companion-home/call.mjs';
 import { createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
@@ -264,4 +264,26 @@ test('an engine that stopped mid-call puts the level back when the conversation 
   const box = await fixture(t, { home, level: 'medium' });
   assert.equal(box.thinking.level, 'high');
   assert.equal(existsSync(path.join(home, 'call/effort.json')), false);
+});
+
+test('words that cut the companion off carry how far it was heard, only the end of a long reply', async t => {
+  const box = await fixture(t, { script: ({ emit }) => toolEnd(emit, CALL_SAY_TOOL, { text: 'Sorry, go on.' }) });
+  const long = `${'앞부분 '.repeat(30)}여기까지 들렸어`;
+  await eventsOf(await box.post('/call/turn', { text: '잠깐만', turnId: 'cut-1', cut: long }));
+  const human = box.messages.filter(item => item.message.role === 'user').map(item => item.message.content);
+  assert.equal(human.length, 1);
+  assert.equal(human[0], `[voice] 잠깐만\n${cutNote(long)}`);
+  assert.match(cutNote(long), /^\(네 직전 말은 "….*여기까지 들렸어"까지 들리고 끊겼어/);
+  assert.ok(cutNote(long).length < CUT_QUOTE_CHARS + 60);
+  assert.equal((await box.post('/call/turn', { text: '잠깐만', turnId: 'cut-1', cut: 'something else' })).status, 409,
+    'the same turn id with a different cut is different input');
+});
+
+test('the call brief keeps the talk going and no longer sets machine chances apart', async t => {
+  const box = await fixture(t, { script: ({ emit }) => toolEnd(emit, CALL_SAY_TOOL, { text: 'Hi.' }) });
+  await eventsOf(await box.post('/call/turn', { text: 'hello', turnId: 'brief-1' }));
+  const brief = box.messages[0].message.details.text;
+  assert.match(brief, /공백은 네가 이어 가는 자리야/);
+  assert.match(brief, /어디까지 들렸는지가 그 말 아래 적혀 와/);
+  assert.doesNotMatch(brief, /기계가 연 기회/);
 });

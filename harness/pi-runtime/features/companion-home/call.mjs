@@ -17,6 +17,8 @@ export const CALL_USER_TOOL = "call_user";
 /** The call service (harness/companion/call-agent/control.mjs) that rings the person's devices. */
 const CALL_CONTROL = "http://127.0.0.1:18790";
 export const CALL_BODY_BYTES = 256 * 1024;
+/** How much of a cut-off reply the companion is told it got through: the end of what was heard. */
+export const CUT_QUOTE_CHARS = 80;
 export const CALL_WAIT_SECONDS = Object.freeze({ min: 5, max: 300 });
 /**
  * The conversation's effort while a call is open, from `call.effort` in the companion's
@@ -29,6 +31,11 @@ export const DEFAULT_CALL_EFFORT = "medium";
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const text = value => ({ type: "text", text: value });
 const voice = value => `[voice] ${value}`;
+/** The line under heard words that cut the companion off: how far its last reply got. */
+export const cutNote = heardPart => {
+  const quoted = heardPart.length > CUT_QUOTE_CHARS ? `…${heardPart.slice(-CUT_QUOTE_CHARS).trimStart()}` : heardPart;
+  return `(네 직전 말은 "${quoted}"까지 들리고 끊겼어. 그 뒤는 안 들렸어.)`;
+};
 const optionalText = file => { try { return readFileSync(file, "utf8").trim(); } catch { return ""; } };
 const messageText = message => typeof message?.content === "string" ? message.content.trim()
   : (message?.content ?? []).filter(part => part.type === "text").map(part => part.text).join("").trim();
@@ -214,7 +221,14 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       "`call_say`에 넣은 말만 통화로 나가. 평문은 혼잣말이고 앱·텔레그램 답장과 통화는 별개야.",
       transport === "qwen" ? "음성 계층이 말차례와 끼어들기를 맡아. 네 말은 안전한 차례에 재생돼."
         : "완성한 문장부터 사용자의 스피커로 나가. 소리로 자연스럽게 들릴 문장으로 말해.",
-      "기억과 도구는 이 대화의 것을 그대로 써. 사용자가 한 말과 기계가 연 기회를 구별해.",
+      "기억과 도구는 이 대화의 것을 그대로 써.",
+      "사용자가 네 말 중간에 끼어들면, 어디까지 들렸는지가 그 말 아래 적혀 와. 그 뒤는 안 들린 말이야.",
+      // An empty companion conversation passed every quiet moment while this said to tell the
+      // person's words from machine-opened chances; with these lines it went on talking when the
+      // talk was open and stayed quiet when the person had stepped away (user 2026-11-16).
+      "통화는 둘이 같이 끌고 가는 거야. 네가 더 많이 떠드는 쪽이어도 돼.",
+      "전화에서 아무도 말이 없으면 어색한 게 맞아. 사용자가 자리를 비웠거나 생각할 시간을 달라고 한 게 아니면, 공백은 네가 이어 가는 자리야.",
+      "공백을 채울 때 꼭 묻지 않아도 돼. 떠오른 거, 네 얘기, 하던 생각을 그냥 말해. 묻는 건 진짜 궁금할 때만.",
     ].join("\n"), tone].filter(Boolean).join("\n\n");
   }
   async function body(request) {
@@ -277,6 +291,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const opportunity = url.pathname === "/call/opportunity";
       if (!opportunity && !["/call/turn", "/call/qwen-turn"].includes(url.pathname)) return json(response, 404, { error: "not found" });
       const heard = typeof input.text === "string" ? input.text.trim() : "";
+      const cut = !opportunity && typeof input.cut === "string" ? input.cut.replace(/\s+/g, " ").trim() : "";
       if (!opportunity && !heard) return json(response, 422, { error: "text is required" });
       if (opportunity && (!call || active || ctx?.isIdle?.() === false))
         return json(response, 409, { error: "no idle active call for an opportunity" });
@@ -284,7 +299,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const file = safe(ledgerFile(clientId));
       let receipt;
       try { receipt = JSON.parse(readFileSync(file, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; }
-      const digest = createHash("sha256").update(`${opportunity}:${heard}`).digest("hex");
+      const digest = createHash("sha256").update(`${opportunity}:${heard}:${cut}`).digest("hex");
       if (receipt) {
         if (receipt.digest !== digest) return json(response, 409, { error: "turnId was already used for different input" });
         // Speech already emitted cannot be unspoken. Reconnection never repeats that human turn
@@ -299,10 +314,9 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const messageId = randomUUID();
       const prompt = opportunity ? [
         "[voice] 통화는 열려 있고 사용자는 조용해.",
-        typeof input.reason === "string" && input.reason.trim() ? `다시 볼 이유: ${input.reason.slice(0, 500)}` : "",
-        "지금 꺼낼 실질적인 말은 call_say, 구체적인 다음 기회는 call_wait, 아니면 call_pass로 조용히 양보해.",
-        "기계가 연 기회이고 사용자 발화는 아니야. 평문은 소리로 나가지 않아.",
-      ].filter(Boolean).join("\n") : voice(heard);
+        typeof input.reason === "string" && input.reason.trim() ? `상황: ${input.reason.slice(0, 500)}` : "",
+        "할 말이 있으면 call_say, 지금은 조용히 두는 게 맞으면 call_pass. 평문은 소리로 나가지 않아.",
+      ].filter(Boolean).join("\n") : [voice(heard), cut ? cutNote(cut) : ""].filter(Boolean).join("\n");
       receipt = { clientId, digest, bootId, status: "running", sessionId: ctx?.sessionManager?.getSessionId?.(), startedAt: Date.now() };
       writeJson(file, receipt, true);
       stream(response);
