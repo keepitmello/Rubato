@@ -13,6 +13,8 @@ export const OPENCODE_PICKER_IDS = Object.freeze(["muse-spark-1.3-contributor-fr
 
 export const VERTEX_PICKER_IDS = Object.freeze(["gemini-4-argon"]);
 
+export const GEMINI_API_PICKER_IDS = Object.freeze(["gemini-4-hydrogen"]);
+
 export const ANTHROPIC_PICKER_IDS = Object.freeze([
   "claude-fable-5-2",
   "claude-opus-5-5",

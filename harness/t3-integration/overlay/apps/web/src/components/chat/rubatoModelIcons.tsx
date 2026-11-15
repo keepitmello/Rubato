@@ -33,6 +33,7 @@ const VENDOR_ICONS: Record<string, Icon> = {
   opengateway: OpenGatewayIcon,
   nanogpt: ZhipuIcon,
   "google-vertex": GeminiIcon,
+  google: GeminiIcon,
 };
 const VENDOR_LABELS: Record<string, string> = {
   "openai-codex": "OpenAI",
@@ -46,6 +47,7 @@ const VENDOR_LABELS: Record<string, string> = {
   opengateway: "OpenGateway",
   nanogpt: "NanoGPT",
   "google-vertex": "Vertex AI",
+  google: "Gemini API",
 };
 
 export function vendorForModel(model: Pick<ModelEsque, "slug" | "subProvider">): string | undefined {

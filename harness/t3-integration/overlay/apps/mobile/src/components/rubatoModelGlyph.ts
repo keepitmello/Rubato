@@ -26,6 +26,7 @@ const MARK_BY_VENDOR: Readonly<Record<string, RubatoMark>> = {
   opengateway: "opengateway",
   nanogpt: "zhipu",
   "google-vertex": "gemini",
+  google: "gemini",
 };
 
 /** The glyph for a Rubato model, or null when T3's own choice stands (any other driver). */

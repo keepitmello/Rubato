@@ -78,7 +78,7 @@ test("picker admits only the product providers, current model excepted", () => {
   );
   assert.deepEqual(keptOutside.map((item) => `${item.provider}/${item.id}`), ["openai-codex/gpt-5.4"]);
   assert.deepEqual([...PROVIDER_ORDER], [
-    "openai-codex", "anthropic", "xai", "google-antigravity", "google-vertex", "kiro", "cursor", "opencode", "b-ai", "opengateway", "nanogpt",
+    "openai-codex", "anthropic", "xai", "google-antigravity", "google-vertex", "google", "kiro", "cursor", "opencode", "b-ai", "opengateway", "nanogpt",
   ]);
 });
 

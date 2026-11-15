@@ -40,6 +40,12 @@ function isVertexArgon(model: string): boolean {
   return provider === "google-vertex" && id === "gemini-4-argon"
 }
 
+/** Antigravity serves gemini-4-hydrogen at thinkingLevel 2 (MEDIUM) by default. */
+function isGeminiApiHydrogen(model: string): boolean {
+  const { provider, id } = providerAndId(model)
+  return provider === "google" && id === "gemini-4-hydrogen"
+}
+
 /**
  * Seeded model-owned effort. Callers omit effort unless they need a manual override.
  *
@@ -48,7 +54,7 @@ function isVertexArgon(model: string): boolean {
  */
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
   if (typeof model !== "string" || model.trim().length === 0) return undefined
-  if (isSolModel(model) || isAntigravityFlash(model) || isVertexArgon(model)) return "medium"
+  if (isSolModel(model) || isAntigravityFlash(model) || isVertexArgon(model) || isGeminiApiHydrogen(model)) return "medium"
   if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model)) return "high"
   return undefined
 }

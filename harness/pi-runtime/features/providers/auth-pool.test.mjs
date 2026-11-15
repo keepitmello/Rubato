@@ -514,7 +514,9 @@ test("legacy credential import copies Codex without overwriting the target", asy
   assert.equal(target["openai-codex"].access, "codex-access-test");
   assert.equal(target.xai.key, "keep-me");
   assert.ok(registered.includes("xai"));
-  assert.ok(unregistered.includes("google"));
+  assert.ok(registered.includes("google"));
+  assert.ok(!unregistered.includes("google"));
+  assert.ok(unregistered.includes("openai"));
   assert.ok(commands.includes("account"));
 });
 

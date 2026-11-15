@@ -18,6 +18,7 @@ import { antigravityDirectProvider } from "./antigravity-route.mjs";
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
+  GEMINI_API_PICKER_IDS,
   OPENCODE_PICKER_IDS,
   VERTEX_PICKER_IDS,
   XAI_PICKER_IDS,
@@ -25,6 +26,7 @@ import {
   withPickerIds,
   withSubAccountCopies,
 } from "./picker-catalog.mjs";
+import { withGeminiKeychain } from "./gemini-keychain.mjs";
 import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { withVertexKeychain } from "./vertex-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
@@ -307,6 +309,35 @@ export function gemini4ArgonModels(nativeModels) {
   }];
 }
 
+const GEMINI_4_HYDROGEN_ID = "gemini-4-hydrogen";
+const GEMINI_4_HYDROGEN_TEMPLATE_ID = "gemini-3.8-flash";
+
+/**
+ * Hydrogen 의 Gemini API 유료 등급 정가(백만 토큰당 USD). 무료 등급 키는 청구가 없지만 사용량
+ * 화면은 이 값으로 환산한다. 출처: ai.google.dev/gemini-api/docs/pricing (2026-11-15).
+ */
+const GEMINI_4_HYDROGEN_COST = Object.freeze({ input: 1.5, output: 7.5, cacheRead: 0.075, cacheWrite: 0 });
+
+/**
+ * Gemini 4 Hydrogen 은 pinned google catalog(pi-ai 1.0.1)에 없어 pin 의 Gemini 3.8 Flash 에서
+ * 파생한다. `models/gemini-4-hydrogen` 메타데이터(2026-11-15)는 입력 1,048,576·출력 65,536 에
+ * thinking 을 켠 모델이고, 실측에서 MINIMAL 은 400 이었다. 단계를 thinking_level 로 보내게 하는
+ * 자리는 Argon 과 같은 pi-runtime providers 기능의 google-shared 패치다.
+ */
+export function gemini4HydrogenModels(nativeModels) {
+  if (nativeModels.some((model) => model.id === GEMINI_4_HYDROGEN_ID)) return [];
+  const template = nativeModels.find((model) => model.id === GEMINI_4_HYDROGEN_TEMPLATE_ID);
+  if (!template) throw new Error("pinned google catalog has no gemini-3.8-flash to derive Gemini 4 Hydrogen from");
+  return [{
+    ...template,
+    id: GEMINI_4_HYDROGEN_ID,
+    name: "Gemini 4 Hydrogen",
+    cost: GEMINI_4_HYDROGEN_COST,
+    contextWindow: 1_048_576,
+    maxTokens: 65_536,
+  }];
+}
+
 /**
  * Daybreak 모델 정의를 native 모델 하나에서 파생시킨다.
  *
@@ -552,6 +583,7 @@ export async function directProviders({
   antigravity,
   opencode: opencodeOptions,
   vertex: vertexOptions,
+  gemini: geminiOptions,
   env = process.env,
   speedIndexStore: speedStore = speedIndexStore(env),
   nativeFactoryLoader = loadPinnedFactory,
@@ -563,7 +595,7 @@ export async function directProviders({
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
   const antigravityFactory = routeFactories.antigravity ?? antigravityDirectProvider;
-  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider, vertexProvider] = await Promise.all([
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider, vertexProvider, geminiApiProvider] = await Promise.all([
     nativeFactoryLoader("openai-codex.js", "openaiCodexProvider"),
     nativeFactoryLoader("xai.js", "xaiProvider"),
     nativeFactoryLoader("anthropic.js", "anthropicProvider"),
@@ -572,6 +604,7 @@ export async function directProviders({
     cursorFactory({ env, ...(cursor ?? {}) }),
     nativeFactoryLoader("opencode.js", "opencodeProvider"),
     nativeFactoryLoader("google-vertex.js", "googleVertexProvider"),
+    nativeFactoryLoader("google.js", "googleProvider"),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), CODEX_DEFAULT_CONTEXT_WINDOW, CODEX_CONTEXT_WINDOWS);
@@ -638,6 +671,15 @@ export async function directProviders({
     { env, ...(vertexOptions ?? {}) },
   );
 
+  // Gemini API(AI Studio 키)는 pinned google factory 에 Hydrogen 한 행을 더하고 피커를 그 행으로
+  // 줄인다. Hydrogen 은 Gemini API 무료 등급에서도 열리고 Antigravity 는 Pro·Ultra 에만 연다.
+  // 키는 GEMINI_API_KEY 또는 Keychain `gemini` — `/login` 을 요구하지 않는다.
+  const geminiApiNative = geminiApiProvider();
+  const geminiApi = withGeminiKeychain(
+    withPickerIds(withExtraModels(geminiApiNative, gemini4HydrogenModels(geminiApiNative.getModels())), GEMINI_API_PICKER_IDS),
+    { env, ...(geminiOptions ?? {}) },
+  );
+
   const store = speedStore;
   const setupOptions = { env, ...(anthropic ?? {}) };
   const foundSetupToken = await readSetupToken(setupOptions);
@@ -660,5 +702,6 @@ export async function directProviders({
     wrap(antigravityDirect.provider),
     wrap(opencode),
     wrap(vertex),
+    wrap(geminiApi),
   ];
 }

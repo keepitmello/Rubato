@@ -34,6 +34,7 @@ const EXACT_LABELS = Object.freeze({
   "gpt-daybreak-blue-latest-fast": "Daybreak Blue",
   "kimi-k3": "Kimi K3",
   "gemini-4-argon": "Gemini 4 Argon",
+  "gemini-4-hydrogen": "Gemini 4 Hydrogen",
   "deepseek-v4.1-flash": "v4.1 Flash",
   "deepseek-v4.1-flash-ultrafast": "v4.1 Flash Ultrafast",
   "deepseek-v4.1-flash-eco": "v4.1 Flash Eco",
