@@ -38,7 +38,7 @@ vi.mock("./rubatoHttp", () => ({
 }));
 
 import { RubatoCompanionSettingsPanel } from "../components/settings/RubatoCompanionSettings";
-import { companionForThread, isCompanionThread, rubatoCompanion, useRubatoCompanion } from "./rubatoCompanion";
+import { companionComposerSettings, companionForThread, isCompanionThread, rubatoCompanion, useRubatoCompanion } from "./rubatoCompanion";
 
 let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); vi.unstubAllGlobals(); });
@@ -57,6 +57,13 @@ it("the rendered picker switches homes and subsequent settings requests without 
   await vi.waitFor(() => expect(host.querySelectorAll("select[aria-label=Companion] option")).toHaveLength(2));
   expect(isCompanionThread("thread-1")).toBe(true);
   expect(isCompanionThread("thread-2")).toBe(true);
+  // A companion's room steers while it works, whatever Settings › Chat says; any other thread keeps it.
+  const chat = { followUpBehavior: "queue" as const, timestampFormat: "locale" };
+  const room = companionComposerSettings(chat, "thread-1");
+  expect(room).toEqual({ ...chat, followUpBehavior: "steer" });
+  expect(companionComposerSettings(chat, "thread-2")).toBe(room);
+  expect(companionComposerSettings(chat, "thread-9")).toBe(chat);
+  expect(companionComposerSettings(chat, undefined)).toBe(chat);
   // Each companion's current conversation is asked as its room, which the server keeps out of the archive.
   expect(fake.calls.filter(item => item.action === "thread").map(item => [item.body.sessionId, item.body.current]))
     .toEqual(expect.arrayContaining([["s1", true], ["s2", true]]));

@@ -7,8 +7,9 @@ import { UI_METHODS } from '../../pi-server/src/contracts.mjs';
 // A turn the person started (T3's prompt) still has its run, so the thread shows Segno busy until
 // the turn ends: of that turn only its start, its end and a question that waits for the person's
 // answer pass on. A turn T3 did not start (Rubato's clock, a lead's ending, a message from another
-// conversation, a finished background job) passes nothing; the person's next message waits until
-// it settles, so it opens a turn of its own.
+// conversation, a finished background job) passes nothing. The person cannot see that work, so
+// their message never waits behind it (user item 6b6a88c5): it steers into it, and from there that
+// run is the person's turn.
 
 /** The events of a turn T3 started that Segno's thread gets: its start, its end, and a question (below). */
 export const COMPANION_EVENTS = new Set(['agent_start', 'agent_settled']);
@@ -47,6 +48,15 @@ export function createCompanionStream({ owned = () => false } = {}) {
     attached(running) { inTurn = false; foreign = running === true; if (!foreign) release(); },
     /** T3 took over the run going on (its continuation after an app restart). */
     adopt() { inTurn = true; foreign = false; release(); },
+    /**
+     * The person's message steers into the turn T3 did not start, which becomes theirs. True when
+     * there was such a turn; with none, the message opens its own turn as usual.
+     */
+    join() {
+      if (!foreign) return false;
+      inTurn = true; foreign = false; release();
+      return true;
+    },
     /** Resolves once no turn T3 did not start is going. */
     idle() { return foreign ? new Promise((resolve) => waiters.push(resolve)) : Promise.resolve(); },
     accept(event) {

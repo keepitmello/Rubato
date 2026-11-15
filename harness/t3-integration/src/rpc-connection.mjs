@@ -431,9 +431,21 @@ export class RubatoRpcConnection {
   async engineReady(type) {
     if (this.reconnecting) await this.reconnecting;
     if (this.restart && RUN_INPUTS.has(type)) await this.restart.ready;
-    // A turn of Segno's the person never sees is not interrupted: their message goes in after it.
-    if (RUN_INPUTS.has(type)) { if (this.companion) await this.companionStream.idle(); this.asked = true; }
+    if (RUN_INPUTS.has(type)) {
+      // A turn of Segno's the person never sees takes their message as a steer (T3 sends every
+      // prompt with streamingBehavior steer) and goes on as their turn (companion-thread.mjs).
+      // Anything else (a compact, a rewind's continue) waits for that turn to end.
+      if (this.companion && !((type === 'prompt' || type === 'steer') && this.joinCompanionTurn())) await this.companionStream.idle();
+      this.asked = true;
+    }
     if (this.closed) throw new Error('Rubato connection is closed');
+  }
+  /** The person's message joins Segno's own turn: it opens in the thread the way their own turn does. */
+  joinCompanionTurn() {
+    if (!this.companionStream.join()) return false;
+    this.turnReplied = false; this.turnReminded = false;
+    this.enqueue(() => this.process({ type: 'agent_start' }));
+    return true;
   }
   /** The run going on now, from its start: what a turn that adopts it shows first. */
   noteRun(event) {

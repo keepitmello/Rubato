@@ -57,4 +57,14 @@ export const mobileCompanionEdits = {
     exported('function isImageAttachment(attachment: ChatAttachment): attachment is ChatImageAttachment {'),
     exported('function isFileAttachment(attachment: ChatAttachment): attachment is ChatFileAttachment {'),
   ],
+  // A companion's room sends during its work as a steer, whatever the phone's follow-up setting
+  // says (CompanionRoomScreen.tsx, user item 6b6a88c5): the room never shows that work.
+  'apps/mobile/src/state/use-thread-composer-state.ts': [
+    ['import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";',
+      'import { DEFAULT_FOLLOW_UP_BEHAVIOR, type FollowUpBehavior } from "../lib/followUpBehavior";', 'replace'],
+    ['export function useThreadComposerState() {',
+      'export function useThreadComposerState(options?: { readonly followUpBehavior?: FollowUpBehavior }) {', 'replace'],
+    ['  const followUpBehavior = AsyncResult.isSuccess(preferencesResult)\n    ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)\n    : DEFAULT_FOLLOW_UP_BEHAVIOR;\n',
+      '  const followUpBehavior =\n    options?.followUpBehavior ??\n    (AsyncResult.isSuccess(preferencesResult)\n      ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)\n      : DEFAULT_FOLLOW_UP_BEHAVIOR);\n', 'replace'],
+  ],
 };

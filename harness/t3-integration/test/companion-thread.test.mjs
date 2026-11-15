@@ -69,20 +69,39 @@ test("a turn the person opened shows only its start, its end and a question for 
   assert.deepEqual(s.appended.map((item) => [item.text, item.ownRun]), [['3시에 회의 있어.', true]]);
 });
 
-test('a turn T3 did not start (the clock, a lead ending) passes nothing; the person\'s message waits for it and opens its own turn', async () => {
+test('a turn T3 did not start (the clock, a lead ending) passes nothing; the person\'s message steers into it at once and that run becomes their turn', async () => {
   const s = await stream();
   await s.publish(run(notice, final));
+  assert.deepEqual(s.shown(), [], 'nothing of a turn T3 did not start reaches the thread');
+  assert.deepEqual(s.appended, [], 'not even the lead\'s message');
   const clockRun = run(wake, thinking, bashResult, final);
   await s.publish(clockRun.slice(0, 5), 'running');
-  const sending = s.conn.request({ type: 'prompt', message: '있어?' });
+  await s.conn.request({ type: 'prompt', message: '있어?', streamingBehavior: 'steer' });
+  assert.equal(s.commands.filter((command) => command.type === 'prompt').length, 1, 'the message went to Pi without waiting');
+  await s.conn.inbound;
+  assert.deepEqual(s.shown().map((record) => record.type), ['agent_start'], 'the thread shows Segno busy with the person\'s turn');
+  await s.publish([...clockRun.slice(5, -3), ...msg(user), ...msg(replyCall('r2', '응, 여기 있어.')), ...msg(replyResult('r2')), ...clockRun.slice(-3)]);
+  assert.deepEqual(s.shown().map((record) => [record.type, record.aborted]), [['agent_start', undefined], ['agent_settled', undefined]],
+    'the clock\'s run ends as the person\'s turn, finished, since it replied');
+  assert.doesNotMatch(JSON.stringify(s.shown()), /혼잣말|뭐라고 하지|bash/);
+  assert.deepEqual(s.appended.map((item) => item.text), ['응, 여기 있어.']);
+
+  const quiet = await stream();
+  const before = run(wake, final);
+  await quiet.publish(before.slice(0, 3), 'running');
+  await quiet.conn.request({ type: 'prompt', message: '?', streamingBehavior: 'steer' });
+  await quiet.publish(before.slice(3));
+  await pause(10);
+  assert.deepEqual(quiet.shown().map((record) => record.type), ['agent_start'], 'a joined turn with no reply waits for Segno\'s reminder too');
+
+  const compacting = await stream();
+  await compacting.publish(clockRun.slice(0, 5), 'running');
+  const compact = compacting.conn.request({ type: 'compact' });
   await pause(20);
-  assert.equal(s.commands.some((command) => command.type === 'prompt'), false, 'the message waits for Segno\'s own turn');
-  await s.publish(clockRun.slice(5));
-  await sending;
-  assert.deepEqual(s.shown(), [], 'nothing of either turn reached the thread');
-  assert.deepEqual(s.appended, [], 'not even the lead\'s message');
-  await s.publish(run(user, replyCall('r2', '응, 여기 있어.'), replyResult('r2')));
-  assert.deepEqual(s.shown().map((record) => record.type), ['agent_start', 'agent_settled']);
+  assert.equal(compacting.commands.some((command) => command.type === 'compact'), false, 'a compact still waits for Segno\'s own turn');
+  await compacting.publish(clockRun.slice(5));
+  await compact;
+  assert.deepEqual(compacting.shown(), []);
 });
 
 test("a turn the person opened that ends with no reply stays open for Segno's reminder, and ends with the reminder's turn", async () => {

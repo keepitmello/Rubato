@@ -2,8 +2,9 @@
 // card, and a composer with dictation and a call button (user 3ec923c9; Pickle is the reference for
 // layout and finish, the look is iOS Liquid Glass in the user's theme, intent rubato-ios-app rev 2).
 // The header and composer float on glass over the conversation, which fades under them.
-// The room is the companion's T3 thread; sending goes through the thread's own composer state, so a
-// message queued while the companion works behaves as in any thread.
+// The room is the companion's T3 thread; sending goes through the thread's own composer state. What
+// the person sends while the companion works steers into that work, since the room never shows it
+// (user item 6b6a88c5).
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
@@ -344,7 +345,7 @@ function RoomBody(props: {
   readonly threadId: ThreadId;
   readonly headerHeight: number;
 }) {
-  const composer = useThreadComposerState();
+  const composer = useThreadComposerState({ followUpBehavior: "steer" });
   const { selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const body = useScaledTextRole("body");

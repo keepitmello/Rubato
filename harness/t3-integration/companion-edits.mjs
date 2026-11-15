@@ -75,7 +75,12 @@ export const companionEdits = {
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
       'replace'],
-    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
+    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { companionComposerSettings, isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
+    // A companion's room sends during its work as a steer, whatever Settings › Chat says
+    // (companionComposerSettings, user item 6b6a88c5).
+    ['                              settings={settings}\n',
+      '                              settings={companionComposerSettings(settings, activeThread?.id)}\n',
+      'replace'],
     // The room's "Rewind from here" and its edit: a companion's thread holds no checkpoints, so the
     // message names where the rewind lands (RubatoCompanionRewind.ts, user 4c412ab9). The message
     // still returns to the composer the way T3's revert puts it there.

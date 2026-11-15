@@ -429,6 +429,27 @@ export function isCompanionThread(threadId: string): boolean {
   return companionForThread(threadId) !== undefined || (view.threadId !== null && view.threadId === threadId);
 }
 
+const steeringSettings = new WeakMap<object, object>();
+
+/**
+ * The composer's settings in a companion's room: what the person sends while the companion works
+ * steers into that work instead of waiting in the queue (user item 6b6a88c5). The room never shows
+ * what the companion is doing, so a queue would hold their words behind work they cannot see.
+ * Elsewhere their own choice stands. One object per settings object keeps the composer's memos.
+ */
+export function companionComposerSettings<T extends { readonly followUpBehavior: "queue" | "steer" }>(
+  settings: T,
+  threadId: string | null | undefined,
+): T {
+  if (!threadId || settings.followUpBehavior === "steer" || !isCompanionThread(threadId)) return settings;
+  let steering = steeringSettings.get(settings) as T | undefined;
+  if (steering === undefined) {
+    steering = { ...settings, followUpBehavior: "steer" };
+    steeringSettings.set(settings, steering);
+  }
+  return steering;
+}
+
 /** At most this many characters of what Segno said show in a notification. */
 export const SEGNO_NOTICE_CHARS = 120;
 
