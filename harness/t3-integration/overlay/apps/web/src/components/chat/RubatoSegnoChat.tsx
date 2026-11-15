@@ -378,7 +378,16 @@ function Writing() {
   );
 }
 
-export function RubatoSegnoChat(props: {
+/**
+ * One room per conversation: Segno's and Roo's rooms share this seat in ChatView, so the room is
+ * keyed by its thread and every room opens fresh, at its end, instead of carrying the last room's
+ * place, drawn days and arrivals along.
+ */
+export function RubatoSegnoChat(props: Parameters<typeof RubatoSegnoRoom>[0]) {
+  return <RubatoSegnoRoom key={props.threadId} {...props} />;
+}
+
+function RubatoSegnoRoom(props: {
   entries: ReadonlyArray<TimelineEntry>;
   working: boolean;
   cwd: string | undefined;
@@ -600,6 +609,21 @@ export function RubatoSegnoChat(props: {
     return () => observer.disconnect();
   }, [schedulePlaceMarks]);
 
+  // Work lines, pictures and work cards fill in after the room first draws; while the room is at its
+  // end it stays at its end as the lane grows, so opening never stops part of the way up.
+  useEffect(() => {
+    const element = scroller.current;
+    const content = lane.current;
+    if (!element || !content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (!opened.current || !atEnd.current) return;
+      if (element.scrollHeight - element.scrollTop - element.clientHeight < 1) return;
+      element.scrollTo({ top: element.scrollHeight, behavior: performance.now() < glideUntil.current ? "smooth" : "instant" });
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
   const settlePill = useCallback(() => {
     if (atEnd.current) {
       window.clearTimeout(pillTimer.current);
@@ -732,6 +756,7 @@ export function RubatoSegnoChat(props: {
       anchorBeforeDraw.current = null;
       if (anchor.row.isConnected) {
         element.scrollTop += anchor.row.getBoundingClientRect().top - element.getBoundingClientRect().top - anchor.top;
+        atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < FOLLOW_PX;
       }
       // Earlier history may land on days not drawn yet; still at the top, the room draws on.
       if (element.scrollTop < EARLIER_PX && element.scrollHeight > element.clientHeight)
@@ -743,7 +768,8 @@ export function RubatoSegnoChat(props: {
       else element.scrollTo({ top: element.scrollHeight, behavior: "instant" });
       atEnd.current = true;
     }
-    opened.current = true;
+    // A room whose history has not arrived is not open yet: its first bubbles open it at the end.
+    if (items.length > 0) opened.current = true;
   }, [items, writing, props.bottomInset, glideToEnd, drawStart]);
 
   return (

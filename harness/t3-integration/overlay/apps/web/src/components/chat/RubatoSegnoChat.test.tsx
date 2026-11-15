@@ -266,3 +266,50 @@ it("draws the latest three days under their names, one more near the top, and ba
   expect(drawn()).toEqual(["q5", "q6", "q7", "q8", "q9"]);
   expect(strip(0).hasAttribute("data-pending")).toBe(false);
 });
+
+it("stays at the end when the room's content grows after it opened, and lets go once the reader leaves", () => {
+  // Only the lane's own watcher is fired: the room's other observers read entries.
+  const watchers: Array<() => void> = [];
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(private readonly callback: () => void) {}
+      observe(target: Element) {
+        if (target.classList.contains("chat-content-lane")) watchers.push(this.callback);
+      }
+      disconnect() {}
+      unobserve() {}
+    },
+  );
+  try {
+    render(entries);
+    const scroller = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+    // The room opened at its end; then a work card and a picture made the lane taller.
+    Object.defineProperty(scroller, "scrollHeight", { configurable: true, value: 3000 });
+    Object.defineProperty(scroller, "clientHeight", { configurable: true, value: 500 });
+    scroller.scrollTop = 1500;
+    scroller.scrollTo = vi.fn();
+    act(() => watchers.forEach((watch) => watch()));
+    expect(scroller.scrollTo).toHaveBeenCalledWith({ top: 3000, behavior: "instant" });
+
+    scrollTo(scroller, 200);
+    scroller.scrollTo = vi.fn();
+    act(() => watchers.forEach((watch) => watch()));
+    expect(scroller.scrollTo).not.toHaveBeenCalled();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
+it("opens each room fresh at its end, so a room left scrolled up does not hold the next one", () => {
+  const luna = [entry("l1", "user", 0, "루나야"), entry("l2", "assistant", 1, "응")];
+  render(entries);
+  const first = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+  scrollTo(first, 200);
+  act(() =>
+    root.render(<RubatoSegnoChat entries={luna} working={false} cwd={undefined} bottomInset={80} threadId="luna-thread" />),
+  );
+  const second = host.querySelector<HTMLElement>("[data-rubato-segno-scroller]")!;
+  expect(second).not.toBe(first);
+  expect(host.querySelector("button[aria-label='Scroll to end']")).toBeNull();
+});
