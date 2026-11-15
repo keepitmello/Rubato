@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest, replySummary, runLength, threadCollapseId } from '../src/push/service.mjs';
+import { alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest, replySummary, runLength, THREAD_STACK, threadCollapseId } from '../src/push/service.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { readMessengerSettings, writeMessengerSettings } from '../../companion/messenger/store.mjs';
 
@@ -40,7 +40,7 @@ test('a thread that starts needing the person, or finishes, is one alert', async
     await push.threadChanged('thread-1', state(phase));
   assert.deepEqual(sent.map(item => item.body), ['Approval needed', 'Agent finished']);
   assert.deepEqual(sent[1], {
-    kind: 'alert', title: 'Fix the login bug', subtitle: 'rubato', body: 'Agent finished', threadId: 'env-1/thread-1',
+    kind: 'alert', title: 'Fix the login bug', subtitle: 'rubato', body: 'Agent finished', threadId: THREAD_STACK,
     collapseId: threadCollapseId('env-1', 'thread-1'),
     category: 'rubato.thread', rubato: { kind: 'thread' }, preference: 'threads',
     data: { environmentId: 'env-1', threadId: 'thread-1', deepLink: '/threads/env-1/thread-1' },
@@ -61,6 +61,8 @@ test("a finish shows the agent's last answer and how long the run took, and repl
   await push.threadChanged('thread-2', state('completed', { threadId: 'thread-2' }), run);
   assert.equal(sent[1].collapseId, sent[0].collapseId);
   assert.notEqual(sent[2].collapseId, sent[0].collapseId);
+  // Both threads' cards sit in the one stack of thread alerts, apart from each companion's stack.
+  assert.deepEqual(new Set(sent.map(item => item.threadId)), new Set([THREAD_STACK]));
   assert.ok(sent[0].collapseId.length <= 64);
   // With no answer to show, the headline stands in; the run's start may be unknown.
   assert.equal(sent[2].body, 'Agent finished');

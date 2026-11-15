@@ -14,9 +14,10 @@
 //                      projectThreadAwarenessV2) into threadChanged; a thread that starts needing the
 //                      person, or finishes, becomes one alert, and it replaces that thread's earlier
 //                      alert on the phone (collapseId), so a thread is one card showing where it is
-//                      now. 'full' shows the thread title, the project and how long the run took, and
-//                      the start of the agent's last answer (a failure: its error); 'generic' a fixed
-//                      line. A finish of a run a companion opened (its session_send) is not one: the
+//                      now, and every thread's card sits in one stack (THREAD_STACK). 'full' shows
+//                      the thread title, the project and how long the run took, and the start of
+//                      the agent's last answer (a failure: its error); 'generic' a fixed line. A
+//                      finish of a run a companion opened (its session_send) is not one: the
 //                      companion tells the person itself.
 //   companion message  every reply or say of a companion (the items its room gets, rpc-connection.mjs),
 //                      shown like a message; none while that companion is on a call with the person.
@@ -101,6 +102,12 @@ export function runLength(startedAt, endedAt) {
   return minutes % 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes / 60}h`;
 }
 
+/**
+ * Every thread alert sits in one stack on the phone (APNs thread-id), the way a messenger stacks one
+ * chat; inside it each thread is one card (threadCollapseId). Companions stack one per companion.
+ */
+export const THREAD_STACK = 'rubato.threads';
+
 /** One tag per thread, within APNs's 64 bytes: the phone keeps only the newest alert carrying it. */
 export function threadCollapseId(environmentId, threadId) {
   return `thread:${createHash('sha256').update(`${environmentId}/${threadId}`).digest('base64url').slice(0, 40)}`;
@@ -118,7 +125,7 @@ export function alertFor(state, previousPhase, { now = Date.now(), preview = 'fu
   return {
     kind: 'alert',
     ...text,
-    threadId: `${state.environmentId}/${state.threadId}`,
+    threadId: THREAD_STACK,
     collapseId: threadCollapseId(state.environmentId, state.threadId),
     category: 'rubato.thread',
     rubato: { kind: 'thread' },
