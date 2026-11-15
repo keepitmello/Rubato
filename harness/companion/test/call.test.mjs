@@ -279,11 +279,11 @@ test('words that cut the companion off carry how far it was heard, only the end 
     'the same turn id with a different cut is different input');
 });
 
-test('the call brief keeps the talk going and no longer sets machine chances apart', async t => {
+test('the call brief explains a cut-in and leaves how to carry the talk to the companion', async t => {
   const box = await fixture(t, { script: ({ emit }) => toolEnd(emit, CALL_SAY_TOOL, { text: 'Hi.' }) });
   await eventsOf(await box.post('/call/turn', { text: 'hello', turnId: 'brief-1' }));
   const brief = box.messages[0].message.details.text;
-  assert.match(brief, /공백은 네가 이어 가는 자리야/);
+  assert.doesNotMatch(brief, /공백/, "a quiet line is the companion's own to read (its voice tone file)");
   assert.match(brief, /어디까지 들렸는지가 그 말 아래 적혀 와/);
   assert.doesNotMatch(brief, /기계가 연 기회/);
 });

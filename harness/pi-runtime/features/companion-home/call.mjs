@@ -223,12 +223,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
         : "완성한 문장부터 사용자의 스피커로 나가. 소리로 자연스럽게 들릴 문장으로 말해.",
       "기억과 도구는 이 대화의 것을 그대로 써.",
       "사용자가 네 말 중간에 끼어들면, 어디까지 들렸는지가 그 말 아래 적혀 와. 그 뒤는 안 들린 말이야.",
-      // An empty companion conversation passed every quiet moment while this said to tell the
-      // person's words from machine-opened chances; with these lines it went on talking when the
-      // talk was open and stayed quiet when the person had stepped away (user 2026-11-16).
-      "통화는 둘이 같이 끌고 가는 거야. 네가 더 많이 떠드는 쪽이어도 돼.",
-      "전화에서 아무도 말이 없으면 어색한 게 맞아. 사용자가 자리를 비웠거나 생각할 시간을 달라고 한 게 아니면, 공백은 네가 이어 가는 자리야.",
-      "공백을 채울 때 꼭 묻지 않아도 돼. 떠오른 거, 네 얘기, 하던 생각을 그냥 말해. 묻는 건 진짜 궁금할 때만.",
+      // How a companion keeps a call going and what it does with a quiet line is its own, in its
+      // voice tone file (config.voiceToneFile) or its prompt; said here too, it pushed twice.
     ].join("\n"), tone].filter(Boolean).join("\n\n");
   }
   async function body(request) {
