@@ -48,6 +48,7 @@ it.effect("each Rubato account is its own row under its provider's driver", () =
           row("cursor", "default", [window("totalPercentUsed", 0.1)]),
           row("xai", "default", [window("subscription", 5)]),
           row("google-antigravity", "default", [window("3p-weekly", 0)]),
+          row("google", "keychain", [window("daily_gemini-4-hydrogen", 15)]),
           row("opengateway", "default", [window("x", 1)]),
           { provider: "anthropic", account: "broken", usageLimits: { windows: [] } },
         ],
@@ -67,6 +68,7 @@ it.effect("each Rubato account is its own row under its provider's driver", () =
         ["Cursor", "cursor"],
         ["Grok", "grok"],
         ["Antigravity", "antigravity"],
+        ["Gemini API", "gemini"],
       ],
       "a provider without a T3 driver and a row the page cannot draw are dropped",
     );

@@ -523,8 +523,8 @@ const edits = {
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다. 모델마다 그 레인의 로고와 이름을
   // 쓰는 매핑은 overlay rubatoModelIcons.tsx 에 있다.
   'apps/web/src/components/chat/ProviderInstanceIcon.tsx': [
-    ['import { cn } from "~/lib/utils";', 'import { RubatoIcon } from "../RubatoIcon";\n'],
-    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n};', '  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n};', 'replace'],
+    ['import { cn } from "~/lib/utils";', 'import { GeminiIcon } from "../GeminiIcon";\nimport { RubatoIcon } from "../RubatoIcon";\n'],
+    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n};', '  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n};', 'replace'],
   ],
   'apps/web/src/components/chat/ModelListRow.tsx': [
     ['import { ProviderInstanceIcon } from "./ProviderInstanceIcon";', 'import { iconForProviderModel, subProviderLabel } from "./rubatoModelIcons";\n'],

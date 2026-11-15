@@ -16,6 +16,7 @@ import {
   grokUsageWindows,
 } from "./rubato-usage.mjs";
 import { usageJson } from "./rubato-auth.mjs";
+import { recordGeminiRequest } from "../rubato-pi/src/gemini-request-count.mjs";
 
 const scratch = mkdtempSync(join(tmpdir(), "rubato-usage-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -250,4 +251,25 @@ test("usageJson reads accounts and observations from the agent directory", async
     fetchImpl,
   });
   assert.deepEqual(result.accounts.map((row) => [row.account, row.usageLimits.windows.length]), [["setup-token", 2]]);
+});
+
+test("the Gemini API row is today's counted requests against the free-tier daily limit", async () => {
+  const home = join(scratch, "gemini-home");
+  const agentDir = join(home, ".rubato-pi", "agent");
+  for (let index = 0; index < 3; index += 1) recordGeminiRequest(join(agentDir, "gemini-requests.json"), "gemini-4-hydrogen", NOW);
+  const result = await usageJson({
+    env: { HOME: home, RUBATO_PI_CODING_AGENT_DIR: agentDir, PI_CODING_AGENT_DIR: agentDir },
+    home,
+    credentials: { read: async () => undefined },
+  }, {
+    providers: [{ id: "google", label: "Gemini API" }],
+    accountsOf: async () => [{ name: "keychain", source: "gemini Keychain" }],
+    now: () => NOW,
+  });
+  assert.equal(result.accounts.length, 1);
+  const [row] = result.accounts;
+  assert.equal(row.plan, "Free tier");
+  assert.deepEqual(row.usageLimits.windows.map((window) => [window.label, window.usedPercent, window.resetsAt]), [
+    ["Hydrogen · Daily 3/20", 15, "2026-10-18T07:00:00.000Z"],
+  ]);
 });

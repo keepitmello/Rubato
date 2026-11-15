@@ -398,6 +398,7 @@ const rubatoSources = Object.freeze([
   "cursor-picker.mjs",
   "cursor-route.mjs",
   "gemini-keychain.mjs",
+  "gemini-request-count.mjs",
   "keychain-secret.mjs",
   "kiro-route.mjs",
   "measurement-recorder.mjs",

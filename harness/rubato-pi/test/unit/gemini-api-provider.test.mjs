@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { DIRECT_PROVIDER_IDS, directProviders, gemini4HydrogenModels } from "../../src/provider-direct.mjs";
 import { SUPPORTED_PROVIDER_IDS, foreignProviderIds } from "../../src/provider-ids.mjs";
@@ -13,13 +16,17 @@ import {
   readGeminiKeychainSecret,
   withGeminiKeychain,
 } from "../../src/gemini-keychain.mjs";
+import { readGeminiRequests } from "../../src/gemini-request-count.mjs";
 import { PRODUCT_MODEL_ORDER, productCatalogLabel } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 
 const HYDROGEN_ID = "gemini-4-hydrogen";
 const noEnvCtx = { env: async () => undefined, fileExists: async () => false };
 
+// 요청 수는 실제 agent 폴더가 아니라 시험마다 새 폴더에 센다.
+const requestsPath = join(mkdtempSync(join(tmpdir(), "rubato-gemini-lane-")), "gemini-requests.json");
+
 async function geminiLane(options = {}) {
-  const providers = await directProviders({ gemini: options });
+  const providers = await directProviders({ gemini: { requestsPath, ...options } });
   const gemini = providers.find((provider) => provider.id === GEMINI_PROVIDER_ID);
   assert.ok(gemini, "google 레인이 없다");
   return { providers, gemini };
@@ -169,4 +176,10 @@ test("Hydrogen 은 thinking_budget 이 아니라 thinking_level 로 나간다", 
   // 끔은 고를 수 있는 가장 낮은 단계로 내려간다. MINIMAL 은 400 이다.
   const off = await hydrogenPayload(undefined);
   assert.deepEqual(off.config.thinkingConfig, { thinkingLevel: "LOW" });
+});
+
+test("레인은 Hydrogen 요청이 나갈 때마다 오늘 수를 센다", async () => {
+  const before = Number(readGeminiRequests(requestsPath).models[HYDROGEN_ID]) || 0;
+  await hydrogenPayload("low");
+  assert.equal(readGeminiRequests(requestsPath).models[HYDROGEN_ID], before + 1);
 });
