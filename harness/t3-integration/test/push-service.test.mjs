@@ -3,7 +3,8 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest } from '../src/push/service.mjs';
+import { alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest, replySummary, runLength, threadCollapseId } from '../src/push/service.mjs';
+import { RubatoPiBridge } from '../src/bridge.mjs';
 import { readMessengerSettings, writeMessengerSettings } from '../../companion/messenger/store.mjs';
 
 const NOW = Date.UTC(2026, 10, 13, 12);
@@ -14,7 +15,7 @@ const state = (phase, extra = {}) => ({
   modelTitle: 'claude-opus-5-5', updatedAt: new Date(NOW - 1000).toISOString(), deepLink: '/threads/env-1/thread-1', ...extra,
 });
 
-function service(t, { now = () => NOW, calls = [], telegram } = {}) {
+function service(t, { now = () => NOW, calls = [], telegram, log = () => {} } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'rubato-push-service-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const sent = [];
@@ -27,7 +28,7 @@ function service(t, { now = () => NOW, calls = [], telegram } = {}) {
     pushAll: async (message, { preference }) => { sent.push({ ...message, preference }); return [{ ok: true }]; },
   };
   const onCall = (companion, at) => calls.some(call => call.companion === companion && call.from <= at && at <= call.to);
-  return { push: createPushService({ home, grants, now, onCall, companionTitle: id => ({ roo: 'Roo' })[id] ?? id,
+  return { push: createPushService({ home, grants, now, onCall, log, companionTitle: id => ({ roo: 'Roo' })[id] ?? id,
     telegram: telegram ?? { read: () => null, write: () => null } }), sent, phones };
 }
 const ask = (push, action, body = {}) => handlePushRequest(push,
@@ -37,12 +38,79 @@ test('a thread that starts needing the person, or finishes, is one alert', async
   const { push, sent } = service(t);
   for (const phase of ['starting', 'running', 'waiting_for_approval', 'waiting_for_approval', 'running', 'completed', 'completed'])
     await push.threadChanged('thread-1', state(phase));
-  assert.deepEqual(sent.map(item => item.body), ['Approval needed: rubato', 'Agent finished: rubato']);
+  assert.deepEqual(sent.map(item => item.body), ['Approval needed', 'Agent finished']);
   assert.deepEqual(sent[1], {
-    kind: 'alert', title: 'Fix the login bug', body: 'Agent finished: rubato', threadId: 'env-1/thread-1',
+    kind: 'alert', title: 'Fix the login bug', subtitle: 'rubato', body: 'Agent finished', threadId: 'env-1/thread-1',
+    collapseId: threadCollapseId('env-1', 'thread-1'),
     category: 'rubato.thread', rubato: { kind: 'thread' }, preference: 'threads',
     data: { environmentId: 'env-1', threadId: 'thread-1', deepLink: '/threads/env-1/thread-1' },
   });
+});
+
+test("a finish shows the agent's last answer and how long the run took, and replaces the thread's earlier alert", async t => {
+  const { push, sent } = service(t);
+  const answers = { 'thread-1': '## 결과\n\n원인은 **중계 서버**의 `APNs` 키 누락이야.\n\n| a | b |\n|---|---|\n\n- 키만 넣으면 돼' };
+  push.threadReplies(async threadId => answers[threadId] ?? null);
+  const run = { startedAt: new Date(NOW - 1000 - 14 * 60_000).toISOString(), lastError: null };
+  await push.threadChanged('thread-1', state('running'), run);
+  await push.threadChanged('thread-1', state('completed'), run);
+  assert.equal(sent[0].subtitle, 'rubato · 14m');
+  assert.equal(sent[0].body, '결과 원인은 중계 서버의 APNs 키 누락이야. 키만 넣으면 돼');
+  // The next alert from this thread carries the same tag, so the phone keeps one card; another thread its own.
+  await push.threadChanged('thread-1', state('waiting_for_approval'), run);
+  await push.threadChanged('thread-2', state('completed', { threadId: 'thread-2' }), run);
+  assert.equal(sent[1].collapseId, sent[0].collapseId);
+  assert.notEqual(sent[2].collapseId, sent[0].collapseId);
+  assert.ok(sent[0].collapseId.length <= 64);
+  // With no answer to show, the headline stands in; the run's start may be unknown.
+  assert.equal(sent[2].body, 'Agent finished');
+  assert.equal((await push.threadChanged('thread-3', state('completed', { threadId: 'thread-3' }))) !== null, true);
+  assert.equal(sent[3].subtitle, 'rubato');
+});
+
+test('a failure leads with a warning and the first line of its error, else the last answer', async t => {
+  const { push, sent } = service(t);
+  push.threadReplies(async () => '여기까지 하다가 멈췄어');
+  await push.threadChanged('thread-1', state('failed'), { startedAt: null, lastError: '429 rate_limit_error: slow down\nstack...' });
+  await push.threadChanged('thread-2', state('failed', { threadId: 'thread-2' }), { startedAt: null, lastError: null });
+  assert.deepEqual(sent.map(item => item.body), ['⚠︎ 429 rate_limit_error: slow down', '⚠︎ 여기까지 하다가 멈췄어']);
+});
+
+test("a reader that fails is logged and the alert still goes; 'generic' never reads the answer", async t => {
+  const logged = [];
+  const { push, sent } = service(t, { log: (message) => logged.push(message) });
+  let asked = 0;
+  push.threadReplies(async () => { asked += 1; throw new Error('T3 reader not bound'); });
+  await push.threadChanged('thread-1', state('completed'));
+  assert.equal(sent[0].body, 'Agent finished');
+  assert.deepEqual(logged, ['last answer not read']);
+  await ask(push, 'settings', { preview: 'generic' });
+  await push.threadChanged('thread-2', state('completed', { threadId: 'thread-2' }));
+  assert.equal(asked, 1);
+  assert.equal(sent[1].body, 'A thread finished');
+  assert.equal('subtitle' in sent[1], false);
+});
+
+test('an answer becomes plain words for the lock screen, cut to fit', () => {
+  assert.equal(replySummary('# 제목\n> 인용\n1. 첫째 [링크](https://x.dev)\n```js\ncode()\n```\n---\n*기울임* 끝'), '제목 인용 첫째 링크 기울임 끝');
+  assert.equal(replySummary('file_name 과 push_service 는 그대로'), 'file_name 과 push_service 는 그대로');
+  assert.equal(replySummary('가'.repeat(400)).length, 180);
+  assert.equal(replySummary('```\nonly code\n```'), '');
+  assert.deepEqual([runLength('2026-11-15T00:00:00Z', '2026-11-15T00:00:40Z'), runLength('2026-11-15T00:00:00Z', '2026-11-15T01:05:00Z'),
+    runLength('2026-11-15T00:00:00Z', '2026-11-15T02:00:00Z'), runLength('bad', '2026-11-15T00:00:00Z')], ['40s', '1h 5m', '2h', null]);
+});
+
+test("the bridge answers with the thread's last agent answer as T3 shows it", async () => {
+  let reader;
+  const push = { companionRuns: () => () => {}, threadReplies: (read) => { reader = read; return () => { reader = null; }; } };
+  const bridge = new RubatoPiBridge({ descriptorPath: '/nonexistent/connection.json', instanceId: 'rubato-push', push,
+    projectedThread: async threadId => threadId === 'thread-1' ? { messages: [
+      { id: 'm1', role: 'user', text: '고쳐줘' }, { id: 'm2', role: 'assistant', text: '고쳤어' },
+      { id: 'm3', role: 'assistant', text: '  ' }, { id: 'm4', role: 'user', text: 'wake' }] } : null });
+  assert.equal(await reader('thread-1'), '고쳤어');
+  assert.equal(await reader('thread-9'), null);
+  await bridge.close();
+  assert.equal(reader, null);
 });
 
 test('old news stays quiet: a replayed finish, an idle thread, a phase seen before', () => {
@@ -51,9 +119,9 @@ test('old news stays quiet: a replayed finish, an idle thread, a phase seen befo
   assert.equal(alertFor(state('running'), 'starting', { now: NOW }), null);
   assert.equal(alertFor(state('failed'), 'completed', { now: NOW }), null);
   // A fresh finish from a thread this server had not seen yet (it started while the turn ran) still counts.
-  assert.equal(alertFor(state('failed'), undefined, { now: NOW }).body, 'Agent failed: rubato');
+  assert.equal(alertFor(state('failed'), undefined, { now: NOW }).body, '⚠︎ Agent failed');
   // Input after approval is a new ask.
-  assert.equal(alertFor(state('waiting_for_input'), 'waiting_for_approval', { now: NOW }).body, 'Waiting for input: rubato');
+  assert.equal(alertFor(state('waiting_for_input'), 'waiting_for_approval', { now: NOW }).body, 'Waiting for input');
 });
 
 test("'generic' keeps thread and project names off the lock screen", async t => {
@@ -97,10 +165,10 @@ test('a run a companion opened finishes quietly; its asks, and runs the person o
   const opened = { 'thread-1': true };
   const forget = push.companionRuns(async threadId => opened[threadId] === true);
   for (const phase of ['running', 'completed', 'running', 'waiting_for_approval', 'running', 'failed']) await push.threadChanged('thread-1', state(phase));
-  assert.deepEqual(sent.map(item => item.body), ['Approval needed: rubato']);
+  assert.deepEqual(sent.map(item => item.body), ['Approval needed']);
   opened['thread-1'] = false;
   for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
-  assert.deepEqual(sent.map(item => item.body), ['Approval needed: rubato', 'Agent finished: rubato']);
+  assert.deepEqual(sent.map(item => item.body), ['Approval needed', 'Agent finished']);
   // An answer that cannot be had counts as the person's run, and a forgotten answer is not asked.
   const failing = push.companionRuns(async () => { throw new Error('engine away'); });
   for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));

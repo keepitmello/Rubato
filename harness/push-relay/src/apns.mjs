@@ -36,12 +36,12 @@ export async function signProviderToken({ teamId, keyId, privateKey, issuedAt })
  * there), `rubato` under its own key; `category` picks the app's notification category, and
  * `mutableContent` lets the app's service extension redraw it (a companion message as a message).
  */
-export function alertPayload({ title, body, threadId, data = {}, rubato = null, category = null, mutableContent = false }) {
+export function alertPayload({ title, subtitle = null, body, threadId, data = {}, rubato = null, category = null, mutableContent = false }) {
   return {
     ...data,
     ...(rubato ? { rubato } : {}),
     aps: {
-      alert: { title, body },
+      alert: { title, ...(subtitle ? { subtitle } : {}), body },
       sound: 'default',
       ...(threadId ? { 'thread-id': threadId } : {}),
       ...(category ? { category } : {}),
@@ -58,8 +58,9 @@ export function ringPayload({ callId, uuid, companion, title, reason, ringUntil 
 /**
  * The HTTP/2 request APNs expects. `kind` is 'alert' or 'voip'; a VoIP push goes to `<bundle>.voip` and
  * expires when the ring would end, so a phone that comes online late does not ring for a finished call.
+ * `collapseId`: a later alert with the same one replaces this one on the phone instead of piling up.
  */
-export function apnsRequest({ environment, bundleId, token, kind, payload, jwt, expiration = 0 }) {
+export function apnsRequest({ environment, bundleId, token, kind, payload, jwt, expiration = 0, collapseId = null }) {
   const host = HOSTS[environment];
   if (!host) throw new Error(`unknown APNs environment: ${environment}`);
   const voip = kind === 'voip';
@@ -73,6 +74,7 @@ export function apnsRequest({ environment, bundleId, token, kind, payload, jwt, 
         'apns-push-type': voip ? 'voip' : 'alert',
         'apns-priority': '10',
         'apns-expiration': String(expiration),
+        ...(collapseId ? { 'apns-collapse-id': collapseId } : {}),
         'content-type': 'application/json',
       },
       body: JSON.stringify(payload),

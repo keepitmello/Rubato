@@ -216,6 +216,21 @@ test('a phone that keeps minting grants is capped', async () => {
   assert.equal((await call('POST', `/v1/devices/${device.deviceId}/grants`, { auth: device.deviceSecret, body: {} })).status, 409);
 });
 
+test("a thread's alert can carry a subtitle and replace that thread's earlier alert on the phone", async () => {
+  const { call, phone, grantFor, sent } = await setup();
+  const { grant } = await grantFor(await phone());
+  const message = { ...alert, subtitle: 'rubato · 14m', collapseId: 'thread:abc_DEF-123' };
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: message })).status, 200);
+  assert.equal(sent[0].init.headers['apns-collapse-id'], 'thread:abc_DEF-123');
+  assert.deepEqual(sent[0].payload.aps.alert, { title: 'Fix the login bug', subtitle: 'rubato · 14m', body: 'Completed: rubato' });
+  // Without one, nothing replaces anything.
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: alert })).status, 200);
+  assert.equal('apns-collapse-id' in sent[1].init.headers, false);
+  assert.deepEqual(sent[1].payload.aps.alert, { title: 'Fix the login bug', body: 'Completed: rubato' });
+  for (const bad of ['x'.repeat(65), 'has space', '', 7])
+    assert.equal((await call('POST', '/v1/push', { auth: grant, body: { ...alert, collapseId: bad } })).status, 400, JSON.stringify(bad));
+});
+
 test('a companion message carries its category, its own fields and lets the service extension redraw it', async () => {
   const { call, phone, grantFor, sent } = await setup();
   const { grant } = await grantFor(await phone());

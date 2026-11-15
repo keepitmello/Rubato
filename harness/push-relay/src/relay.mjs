@@ -14,7 +14,7 @@
 //   POST   /v1/devices/:id/grants   (phone)  { label? } → { grantId, grant }
 //   GET    /v1/devices/:id/grants   (phone)  → { grants: [{ grantId, label, createdAt, lastUsedAt }] }
 //   DELETE /v1/devices/:id/grants/:grantId   (phone)
-//   POST   /v1/push                 (Mac)    { kind: 'alert', title, body, threadId?, data?, rubato?, category?, mutableContent? }
+//   POST   /v1/push                 (Mac)    { kind: 'alert', title, subtitle?, body, threadId?, collapseId?, data?, rubato?, category?, mutableContent? }
 //                                            { kind: 'call.ring', callId, uuid, companion, title, reason?, ringUntil }
 //   GET    /v1/health                        → { ok, configured }
 import { alertPayload, apnsRequest, base64url, PROVIDER_TOKEN_TTL_S, providerTokenIsStale, ringPayload, signProviderToken, tokenIsDead } from './apns.mjs';
@@ -89,6 +89,13 @@ function category(value) {
   return value;
 }
 
+/** APNs takes a collapse id of at most 64 bytes. */
+function collapseId(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || !/^[A-Za-z0-9:_-]{1,64}$/.test(value)) throw new HttpError(400, 'invalid', 'collapseId must be 1-64 of A-Z a-z 0-9 : _ -');
+  return value;
+}
+
 /**
  * `env`: DB (D1), APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY (secret), BUNDLE_IDS (comma list),
  * optional PUSH_LIMIT and REGISTER_LIMIT rate limiters. `fetch` reaches APNs; `now` is injectable for tests.
@@ -134,12 +141,12 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     return jwt;
   }
 
-  async function deliver(row, kind, payload, expiration) {
+  async function deliver(row, kind, payload, expiration, collapse = null) {
     const deviceToken = kind === 'voip' ? row.voip_token : row.apns_token;
     if (!deviceToken) return { ok: false, reason: kind === 'voip' ? 'no-voip-token' : 'no-apns-token' };
     if (JSON.stringify(payload).length > MAX_PAYLOAD[kind]) throw new HttpError(413, 'payload-too-large');
     const attempt = async jwt => {
-      const { url, init } = apnsRequest({ environment: row.environment, bundleId: row.bundle_id, token: deviceToken, kind, payload, jwt, expiration });
+      const { url, init } = apnsRequest({ environment: row.environment, bundleId: row.bundle_id, token: deviceToken, kind, payload, jwt, expiration, collapseId: collapse });
       const response = await send(url, init);
       const reason = response.ok ? null : (await response.json().catch(() => null))?.reason ?? null;
       return { status: response.status, reason, apnsId: response.headers.get('apns-id') };
@@ -168,11 +175,12 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     const body = await readJson(request);
     let result;
     if (body.kind === 'alert') {
-      const payload = alertPayload({ title: text(body.title, 'title', 120), body: text(body.body, 'body', 300),
+      const payload = alertPayload({ title: text(body.title, 'title', 120), subtitle: text(body.subtitle, 'subtitle', 120, { optional: true }),
+        body: text(body.body, 'body', 300),
         threadId: text(body.threadId, 'threadId', 128, { optional: true }), data: alertData(body.data),
         rubato: body.rubato === undefined || body.rubato === null ? null : alertData(body.rubato, 'rubato'),
         category: category(body.category), mutableContent: body.mutableContent === true });
-      result = await deliver(row, 'alert', payload);
+      result = await deliver(row, 'alert', payload, 0, collapseId(body.collapseId));
     } else if (body.kind === 'call.ring') {
       const ringUntil = Number(body.ringUntil);
       if (!Number.isFinite(ringUntil)) throw new HttpError(400, 'invalid', 'ringUntil is required');

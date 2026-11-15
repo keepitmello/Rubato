@@ -271,6 +271,7 @@ export class RubatoPiBridge {
     // createBridge, the server's, sets it; a bridge built bare pushes nothing.
     this.push = push;
     this.forgetCompanionRuns = push?.companionRuns?.((threadId) => this.companionOpened(threadId)) ?? (() => {});
+    this.forgetThreadReplies = push?.threadReplies?.((threadId) => this.lastAnswer(threadId)) ?? (() => {});
     // cwd -> the last catalogue the engine answered, kept for while it cannot answer (catalogue).
     this.lastCatalogues = new Map();
     this.rpcConnections = new Set();
@@ -514,6 +515,15 @@ export class RubatoPiBridge {
     const opener = runOpener((await this.transcript(sessionId))?.messages);
     if (opener?.kind !== 'session') return false;
     return opener.companion || (typeof opener.sessionId === 'string' && await this.companionSession(opener.sessionId));
+  }
+  /** The text of the thread's last agent answer as T3 shows it, or null (push/service.mjs, a finish alert). */
+  async lastAnswer(threadId) {
+    const messages = (await this.projectedThread(threadId))?.messages ?? [];
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const { role, text } = messages[index];
+      if (role === 'assistant' && typeof text === 'string' && text.trim()) return text;
+    }
+    return null;
   }
   /**
    * Whether T3 keeps the thread's stream however long it idles (RubatoPiDriver keepsLoadedWhileIdle):
@@ -1554,6 +1564,7 @@ export class RubatoPiBridge {
     if (this.closed) return;
     this.closed = true; clearInterval(this.retryTimer); clearInterval(this.backfillTimer); liveBridges.delete(this);
     this.forgetCompanionRuns();
+    this.forgetThreadReplies();
     await this.recovering?.catch(() => {});
     await Promise.allSettled([...this.openings.values()]);
     await Promise.all([...this.sessions.keys()].map((threadId) => this.stopSession(threadId)));

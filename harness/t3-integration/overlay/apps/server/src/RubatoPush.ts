@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import type { EnvironmentId, OrchestrationV2ThreadShell, Project, ThreadId } from "@t3tools/contracts";
 import { projectThreadAwarenessV2, type AgentAwarenessState } from "@t3tools/shared/agentAwareness";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -31,8 +32,14 @@ const spec: ServiceSpec = {
 
 interface PushModule {
   readonly pushService: () => {
-    readonly threadChanged: (threadId: string, state: AgentAwarenessState | null) => Promise<unknown>;
+    readonly threadChanged: (threadId: string, state: AgentAwarenessState | null, run: RunFacts | null) => Promise<unknown>;
   };
+}
+
+/** What a finish alert says of the run beyond the awareness state: how long it took, why it failed. */
+interface RunFacts {
+  readonly startedAt: string | null;
+  readonly lastError: string | null;
 }
 
 export const rubatoPushLayer = Layer.unwrap(
@@ -61,10 +68,14 @@ export const rubatoPushLayer = Layer.unwrap(
     const stateOf = (environmentId: EnvironmentId, threadId: ThreadId) =>
       Effect.gen(function* () {
         const thread: OrchestrationV2ThreadShell | null = yield* threads.getThreadShell(threadId);
-        if (thread === null || thread.archivedAt !== null) return null;
+        if (thread === null || thread.archivedAt !== null) return { state: null, run: null };
         const project: Option.Option<Project> = yield* projects.getById(thread.projectId);
-        if (Option.isNone(project)) return null;
-        return projectThreadAwarenessV2({ environmentId, project: project.value, thread });
+        if (Option.isNone(project)) return { state: null, run: null };
+        const startedAt = thread.activityRunStartedAt ?? thread.latestRunStartedAt ?? null;
+        return {
+          state: projectThreadAwarenessV2({ environmentId, project: project.value, thread }),
+          run: { startedAt: startedAt === null ? null : DateTime.formatIso(startedAt), lastError: thread.lastError ?? null },
+        };
       });
 
     const publish = (threadId: ThreadId) =>
@@ -72,8 +83,8 @@ export const rubatoPushLayer = Layer.unwrap(
         const module = yield* pushModule;
         if (module === null) return;
         const environmentId = yield* environment.getEnvironmentId;
-        const state = yield* stateOf(environmentId, threadId);
-        yield* Effect.tryPromise(() => module.pushService().threadChanged(threadId, state));
+        const { state, run } = yield* stateOf(environmentId, threadId);
+        yield* Effect.tryPromise(() => module.pushService().threadChanged(threadId, state, run));
       }).pipe(Effect.catchCause((cause) => Effect.logWarning("Rubato push: thread alert not sent", { threadId, cause })));
 
     yield* Effect.forkScoped(
