@@ -224,3 +224,23 @@ test('a no from the engine is not kept: a session that shows its companion mark 
   bridge.companionSessions.delete('S1');
   assert.equal(await bridge.companionSession('S1', { retryMs: 1 }), true, 'two timeouts do not turn Segno into a no');
 });
+
+test("a turn the person opened passes each step's context size, and only that, so the ring follows the turn across a compaction", async () => {
+  const s = await stream();
+  await s.conn.request({ type: 'prompt', message: '컴팩션 하자' });
+  const step = (totalTokens, text) => ({ ...final, content: [{ type: 'text', text }], usage: { totalTokens, input: 2, output: 10, cacheRead: 5, cacheWrite: 1 } });
+  const before = { ...step(538807, '압축 전 혼잣말'), stopReason: 'toolUse' };
+  const after = step(67629, '압축 후 혼잣말');
+  const failed = { ...step(999999, '실패'), stopReason: 'error' };
+  await s.publish(run(user, before, bashResult, after, failed));
+  const usage = s.shown().filter((record) => record.type === 'message_update');
+  assert.deepEqual(usage.map((record) => record.usage.totalTokens), [538807, 67629]);
+  assert.deepEqual(usage.map((record) => Object.keys(record).sort()), [['type', 'usage'], ['type', 'usage']]);
+  assert.doesNotMatch(JSON.stringify(s.shown()), /혼잣말|실패/);
+});
+
+test('a run T3 did not start passes no context size either', async () => {
+  const s = await stream();
+  await s.publish(run(wake, { ...final, usage: { totalTokens: 1234 } }));
+  assert.deepEqual(s.shown(), []);
+});

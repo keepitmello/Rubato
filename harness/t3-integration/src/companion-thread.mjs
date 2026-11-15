@@ -13,6 +13,19 @@ import { UI_METHODS } from '../../pi-server/src/contracts.mjs';
 /** The events of a turn T3 started that Segno's thread gets: its start, its end, and a question (below). */
 export const COMPANION_EVENTS = new Set(['agent_start', 'agent_settled']);
 /**
+ * The context size an assistant step reports, as the one thing of that step the thread gets. T3
+ * reads it from a `message_update`'s top-level `usage` (the meter moves live) and ignores the rest
+ * of such an event when it has no `assistantMessageEvent`, so no text or thought rides along. Without
+ * it the ring moves only when the turn ends, and a turn that runs across a compaction shows the
+ * size from before it all the way.
+ */
+export const usageOnly = (event) => {
+  const message = event?.type === 'message_end' ? event.message : undefined;
+  if (message?.role !== 'assistant' || message.stopReason === 'error' || message.stopReason === 'aborted') return;
+  const usage = message.usage;
+  return usage && Number(usage.totalTokens) > 0 ? { type: 'message_update', usage } : undefined;
+};
+/**
  * A question that waits for the person (select, confirm, input, editor): Segno's turn stops until
  * they answer, so it passes. Any other UI request (notify, a status line) carries Segno's own text and
  * waits for nothing, so it does not.
@@ -51,7 +64,10 @@ export function createCompanionStream({ owned = () => false } = {}) {
         inTurn = false;
         return [event];
       }
-      return inTurn && (COMPANION_EVENTS.has(type) || isQuestion(event)) ? [event] : [];
+      if (!inTurn) return [];
+      if (COMPANION_EVENTS.has(type) || isQuestion(event)) return [event];
+      const usage = usageOnly(event);
+      return usage ? [usage] : [];
     },
   };
 }
