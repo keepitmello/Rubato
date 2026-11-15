@@ -78,7 +78,7 @@ export function hourLabel(hour: number): string {
   return hour < 12 ? `${hour} AM` : `${hour - 12} PM`;
 }
 
-const PROVIDER_PREFIX = /^(anthropic|openai-codex|xai|b-ai|opengateway|cursor|google-vertex|google-antigravity|nanogpt|kiro|opencode)\//;
+const PROVIDER_PREFIX = /^(anthropic|openai-codex|xai|b-ai|opengateway|cursor|google-vertex|google-antigravity|google|nanogpt|kiro|opencode)\//;
 
 /**
  * A log or Agent model id ("claude-opus-5-5", "anthropic/claude-opus-5-5-sub",

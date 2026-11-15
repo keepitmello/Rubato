@@ -18,10 +18,10 @@ a token, or making an external provider request:
 
 ## Resulting executable boundary
 
-The admitted product lanes are one ordered value, not eight unrelated conditionals:
+The admitted product lanes are one ordered value, not nine unrelated conditionals:
 
 ```text
-openai-codex -> xai -> cursor -> anthropic -> kiro -> google-antigravity -> opencode -> google-vertex
+openai-codex -> xai -> cursor -> anthropic -> kiro -> google-antigravity -> opencode -> google-vertex -> google
 ```
 
 `provider-capabilities.mjs:8-16` owns that value. `provider-ids.mjs` re-exports it, and
@@ -43,7 +43,7 @@ Rubato adapters and the selected Cursor implementation *inside the selected stoc
 Its staged `engine-paths.mjs` resolves only that package; it rejects any nested request except
 `@earendil-works/pi-ai`. `createRubatoProviders()` therefore defaults to the four stock 0.85.1
 factories plus the owned Cursor, Kiro, and Antigravity routes, while
-`createProvidersExtension()` validates and registers the ordered all-eight vector through the
+`createProvidersExtension()` validates and registers the ordered all-nine vector through the
 actual stock ExtensionAPI. The local response tests exercise those defaults, not no-op route
 fixtures. Root-owned feature catalog/bootstrap wiring and the default launcher cutover are still
 pending, so this is an executable staged closure rather than a claim that the shipped default has
@@ -62,7 +62,7 @@ The minimum maintained module boundary is therefore:
 
 Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 
-## Current eight-lane map
+## Current nine-lane map
 
 | Product identity | Staged request/stream path | Auth and catalog | Stock 0.85.1 status | Retained Rubato/Senpi behavior |
 |---|---|---|---|---|
@@ -74,6 +74,7 @@ Do not copy Senpi's complete `pi-ai` tree. The selected closure is listed below.
 | `google-antigravity/gemini-3.8-flash` | owned Antigravity API/route uses stock Google converter and event stream -> Google internal endpoint | owned Google OAuth; parent-only Keychain import; project id retained in OAuth credential env | Provider is absent; stock provider/auth primitives are used | OAuth/login/refresh, project discovery, request/response hooks, lineage reset on tree/successful compaction |
 | `opencode/muse-spark-1.3-contributor-free` | stock OpenCode provider -> decorator | native env/stored API key, then macOS Keychain fallback; no Rubato OAuth | Native factory/catalog is used | picker restriction and Keychain fallback only |
 | `google-vertex/gemini-4-argon` | stock `googleVertexProvider()` -> stock `@google/genai` Vertex client -> decorator | native stored key, `GOOGLE_CLOUD_API_KEY` or gcloud ADC, then Keychain service `vertex` (service-account JSON or express-mode API key); not the Antigravity subscription | Native factory is used; Argon derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, service-account JSON via request env, Gemini 4 thinking levels (`features/providers/google-vertex.mjs`) |
+| `google/gemini-4-hydrogen` | stock `googleProvider()` -> stock `@google/genai` Gemini API client -> decorator | native stored key or `GEMINI_API_KEY`, then Keychain service `gemini`; Hydrogen is open on the Gemini API free tier, unlike Antigravity | Native factory is used; Hydrogen derived from pin's `gemini-3.8-flash` | picker restriction, Keychain fallback, Gemini 4 thinking levels (same google-shared patch) |
 
 Evidence anchors:
 
@@ -176,7 +177,7 @@ build all providers
   -> import eligible legacy Codex/xAI entries (never overwrite)
   -> reject only damaged-store blockers; unauthenticated `absent` is allowed
   -> parent-only Antigravity Keychain import/project resolution
-  -> register all eight
+  -> register all nine
   -> register Antigravity lifecycle and Cursor notice
   -> unregister foreign builtins
 ```
@@ -192,7 +193,8 @@ not own login or refresh (`anthropic-setup-token.mjs:209-292`). OpenCode follows
 shape, with Keychain service `opencode.ai` (`opencode-keychain.mjs`). Vertex does too, with Keychain
 service `vertex` (account from `RUBATO_VERTEX_KEYCHAIN_ACCOUNT` when set): a service-account JSON
 becomes project/location/credentials in the request env and never touches disk; any other value is an
-express-mode API key (`vertex-keychain.mjs`). Kiro uses stored key,
+express-mode API key (`vertex-keychain.mjs`). The Gemini API lane (`google`) follows the same
+shape after `GEMINI_API_KEY`, with Keychain service `gemini` (`gemini-keychain.mjs`). Kiro uses stored key,
 then `KIRO_API_KEY`, then its config file and accepts only a loopback endpoint
 (`kiro-route.mjs:133-203,243-291`). Antigravity imports from Keychain only in the parent, resolves a
 project id before write where possible, validates before a locked merge, and thereafter its provider
@@ -279,7 +281,7 @@ needs a combined response-mock test.
 
 Current settings disable `claude-sdk-oauth`, `cursor-cli-oauth`, `anthropic-web-search`, and
 `websearch` while preserving unrelated user keys (`session-defaults.mjs:14-46,112-150`). The overlay
-registers the eight product providers first and then unregisters foreign builtin ids; same-id
+registers the nine product providers first and then unregisters foreign builtin ids; same-id
 last-registration behavior is why the order matters. Stock ModelRuntime provides native and config
 registration/unregistration and an offline refresh (`stock model-runtime.js:549-599`). Current Senpi
 additionally wires registered OAuth handlers into runtime credentials and supports a no-refresh
@@ -298,11 +300,11 @@ reconstruct it from a hand list. The provider boundary directly requires stock
 `typebox@1.3.7` (`stock pi-ai/package.json:66-89`). Pi, pi-ai, pi-agent-core, pi-tui, chord, and
 pi-telemetry are MIT; the lockfile is the authority for every transitive version/license.
 
-The provider descriptor is the executable source-of-truth for the selected closure. It stages 62
-files: eight feature glue/assets, 33 Rubato provider/decorator sources, and 21 Cursor targets. The
+The provider descriptor is the executable source-of-truth for the selected closure. It stages 63
+files: eight feature glue/assets, 34 Rubato provider/decorator sources, and 21 Cursor targets. The
 eight are `extension.mjs`, the stock-only `engine-paths.mjs`, `cursor-lazy.mjs`, a feature-local
 Cursor event stream, the Rubato read-image adapter, `THIRD_PARTY_NOTICES.md`, the speed-index
-baseline JSON, and `kiro-setup.sh`. The 33 Rubato paths are listed once in `patches.mjs` as
+baseline JSON, and `kiro-setup.sh`. The 34 Rubato paths are listed once in `patches.mjs` as
 `rubatoSources`; they include the provider composition, three owned routes, credential fallbacks,
 request decorators, and their recursively imported Rubato helpers.
 

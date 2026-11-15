@@ -22,6 +22,7 @@ const PROVIDER_IDS = Object.freeze([
   "google-antigravity",
   "opencode",
   "google-vertex",
+  "google",
 ]);
 const ZERO_COST = Object.freeze({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 });
 
@@ -232,7 +233,7 @@ async function drain(stream) {
   return { events, result: await stream.result() };
 }
 
-test("feature stages one stock-bound closure and its default factory builds the admitted eight", async () => {
+test("feature stages one stock-bound closure and its default factory builds the admitted nine", async () => {
   assert.equal(providersFeature.id, "providers");
   assert.ok(providersFeature.files.every((entry) =>
     entry.packageName === "@earendil-works/pi-ai"
@@ -387,7 +388,7 @@ test("b.ai guard lets DeepSeek through and leaves other hosts alone", async () =
   assert.equal(loads, allowed.length);
 });
 
-test("actual stock SDK registers all eight and completes a Kiro Anthropic request", async (t) => {
+test("actual stock SDK registers all nine and completes a Kiro Anthropic request", async (t) => {
   const captured = {};
   const server = http.createServer(async (request, response) => {
     let raw = "";

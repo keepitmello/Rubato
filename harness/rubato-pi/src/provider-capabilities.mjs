@@ -14,6 +14,7 @@ export const SUPPORTED_PROVIDER_IDS = Object.freeze([
   "google-antigravity",
   "opencode",
   "google-vertex",
+  "google",
 ]);
 
 function providerId(provider, index) {
@@ -28,7 +29,7 @@ function providerId(provider, index) {
  * Validate the complete provider set before registration or credential import.
  *
  * Ordering is part of the product contract: callers and the picker expect the
- * same eight lanes in this order. Returning a copy prevents a factory from
+ * same nine lanes in this order. Returning a copy prevents a factory from
  * changing the admitted set after the check but before registration.
  */
 export function validateProviderAdmission(providers, expectedIds = SUPPORTED_PROVIDER_IDS) {
