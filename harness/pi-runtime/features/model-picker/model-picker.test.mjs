@@ -56,17 +56,18 @@ test("picker admits only the product providers, current model excepted", () => {
   const equal = (a, b) => a === b;
   const openaiAstra = { provider: "openai", id: "gpt-6-astra", model: "api-astra" };
   const opus = MODEL_ORDER.anthropic[1];
+  const codexAstra = MODEL_ORDER["openai-codex"][2];
   const admitted = admitPickerItems(
     [
       openaiAstra,
-      { provider: "openai-codex", id: "gpt-6-astra", model: "codex-astra" },
+      { provider: "openai-codex", id: codexAstra, model: "codex-astra" },
       { provider: "anthropic", id: opus, model: "opus" },
     ],
     undefined,
     equal,
   );
   assert.deepEqual(admitted.map((item) => `${item.provider}/${item.id}`), [
-    "openai-codex/gpt-6-astra",
+    `openai-codex/${codexAstra}`,
     `anthropic/${opus}`,
   ]);
   const keptCurrent = admitPickerItems([openaiAstra], "api-astra", equal);
@@ -93,7 +94,9 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "opengateway", id: MODEL_ORDER.opengateway[1], model: {} }), "v4.1 Flash Eco");
   assert.equal(modelPickerLabel({ provider: "nanogpt", id: MODEL_ORDER.nanogpt[0], model: {} }), "GLM 5.3 Uncensored");
   assert.equal(modelPickerLabel({ provider: "nanogpt", id: MODEL_ORDER.nanogpt[1], model: {} }), "GLM 5.3 Flash Uncensored");
-  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6.1");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][0], model: {} }), "Sol 6.2");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: MODEL_ORDER["openai-codex"][2], model: {} }), "Astra 6.2");
+  assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6.1-sol", model: {} }), "Sol 6.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
   assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], model: {} }), "Gemini 3.8 Flash");

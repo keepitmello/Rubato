@@ -14,7 +14,8 @@ export const ASTRA_CODEX_PRELUDE = `// Rubato: Astra mid-conversation effort wit
 // replayed at those indices so later appends stay a prefix.
 const astraConfigurationUpdateState = new Map();
 function isAstraConfigurationUpdateModel(model) {
-    return !!model && (model.id === "gpt-6-astra" || model.upstreamModelId === "gpt-6-astra");
+    if (!model) return false;
+    return ["gpt-6-astra", "gpt-6.2-astra"].some((id) => model.id === id || model.upstreamModelId === id);
 }
 function astraMarksOutOfRange(marks, length) {
     return marks.some((mark) => !Number.isInteger(mark.index) || mark.index < 0 || mark.index >= length);

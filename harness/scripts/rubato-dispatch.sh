@@ -31,7 +31,7 @@ Models (no alias = ultrafast):
   grok      xai/grok-4.7
   grokfast  cursor/grok-4.7
   fable     anthropic/claude-fable-5-2
-  astra     openai-codex/gpt-6-astra:xhigh
+  astra     openai-codex/gpt-6.2-astra:xhigh
   opus      anthropic/claude-opus-5-5:high
   opussub   anthropic/claude-opus-5-5-sub:high
 USAGE
@@ -56,7 +56,7 @@ alias_to_model() {
     grok) echo "xai/grok-4.7" ;;
     grokfast) echo "cursor/grok-4.7" ;;
     fable) echo "anthropic/claude-fable-5-2" ;;
-    astra) echo "openai-codex/gpt-6-astra:xhigh" ;;
+    astra) echo "openai-codex/gpt-6.2-astra:xhigh" ;;
     opus) echo "anthropic/claude-opus-5-5:high" ;;
     opussub) echo "anthropic/claude-opus-5-5-sub:high" ;;
     *) return 1 ;;

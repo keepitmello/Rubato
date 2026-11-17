@@ -8,6 +8,8 @@ const { applyAstraConfigurationUpdate, isAstraConfigurationUpdateModel } = new F
 
 const ASTRA = { id: "gpt-6-astra" };
 const ASTRA_FAST = { id: "gpt-6-astra-fast", upstreamModelId: "gpt-6-astra" };
+const ASTRA_62 = { id: "gpt-6.2-astra" };
+const ASTRA_62_SUB = { id: "gpt-6.2-astra-sub", upstreamModelId: "gpt-6.2-astra" };
 const TERRA = { id: "gpt-5.6-terra" };
 
 function body(input = [{ role: "user", content: "hi" }], effort = "low") {
@@ -30,6 +32,10 @@ function withoutInput(b) {
 test("모델 게이트: non-Astra 는 손대지 않는다", () => {
   assert.equal(isAstraConfigurationUpdateModel(ASTRA), true);
   assert.equal(isAstraConfigurationUpdateModel(ASTRA_FAST), true);
+  // 6.2 Astra 도 Codex 카탈로그가 supports_reasoning_effort_updates 를 켠 모델이다.
+  assert.equal(isAstraConfigurationUpdateModel(ASTRA_62), true);
+  assert.equal(isAstraConfigurationUpdateModel(ASTRA_62_SUB), true);
+  assert.equal(isAstraConfigurationUpdateModel({ id: "gpt-6.2-sol" }), false);
   assert.equal(isAstraConfigurationUpdateModel(TERRA), false);
   assert.equal(isAstraConfigurationUpdateModel(undefined), false);
   const b = body();

@@ -213,6 +213,10 @@ test("Codex: native metadata 를 보존하되 Rubato context 상한은 272K 고,
   // pin 카탈로그는 6.1 Sol 을 272K 로 적지만 Codex 백엔드는 그보다 넓게 연다.
   assert.equal(models.get("gpt-6.1-sol").contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
   assert.ok(CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"] > 272_000);
+  // 6.2 Sol 도 넓게 열고, 6.2 Astra 는 기본 창이다. 피커에서 내린 6.1 Sol·6 Astra 도 정의는 남는다.
+  assert.equal(models.get("gpt-6.2-sol").contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.2-sol"]);
+  assert.equal(models.get("gpt-6.2-astra").contextWindow, 272_000);
+  assert.ok(models.has("gpt-6.1-sol") && models.has("gpt-6-astra"));
   // Stock pi 의 catalog 에는 `-fast` 행이 없다. /fast 는 service-tier 가 payload 로 싣고,
   // Fast 행은 아래 Daybreak 파생뿐이다.
   assert.equal(models.get("gpt-5.6-sol").serviceTier, undefined, "base 에는 tier 가 없다");
@@ -264,8 +268,54 @@ test("Daybreak 파생은 틀이 없으면 조용히 넘어가지 않는다", () 
   assert.throws(() => daybreakModels([{ id: "gpt-5.4" }]), /gpt-5\.6-terra/);
 });
 
-test("GPT-6.1 Sol 은 6 Sol 과 같은 형태로 주입되고 피커의 6 Sol 자리를 잇는다", () => {
-  const [sol61] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
+const injectedById = (natives) => new Map(gpt6CodexModels(natives).map((model) => [model.id, model]));
+const ALL_GPT6_INJECTED = ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"];
+
+test("GPT-6.2 Sol·Astra 는 Codex 백엔드 창과 OpenAI 가격표 값으로 주입된다", () => {
+  const rows = injectedById([{ id: "gpt-6.1-sol" }, { id: "gpt-6-astra" }]);
+  const sol = rows.get("gpt-6.2-sol");
+  const astra = rows.get("gpt-6.2-astra");
+  assert.equal(sol.name, "GPT-6.2 Sol");
+  assert.equal(astra.name, "GPT-6.2 Astra");
+  assert.equal(sol.api, "openai-codex-responses");
+  assert.equal(astra.api, "openai-codex-responses");
+  // 백엔드는 6.2 Sol 을 500K, 6.2 Astra 를 272K 로 연다.
+  assert.equal(sol.contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.2-sol"]);
+  assert.ok(CODEX_CONTEXT_WINDOWS["gpt-6.2-sol"] > 272_000);
+  assert.equal(astra.contextWindow, 272_000);
+  assert.equal(sol.maxTokens, 128_000);
+  assert.equal(astra.maxTokens, 128_000);
+  // 6.2 Sol 가격은 6.1 Sol 과 같다.
+  assert.deepEqual(sol.cost, {
+    input: 2,
+    output: 10,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    tiers: [{ inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
+  });
+  // 6.2 Astra 는 8/40, 272K 초과는 입력·캐시 두 배·출력 1.5배.
+  assert.deepEqual(astra.cost, {
+    input: 8,
+    output: 40,
+    cacheRead: 0.4,
+    cacheWrite: 10,
+    tiers: [{ inputTokensAbove: 272_000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 }],
+  });
+  // 6.2 는 effort none 을 거절한다 — off 는 막고 나머지 단계는 그대로다.
+  for (const model of [sol, astra]) {
+    assert.equal(model.thinkingLevelMap.off, null);
+    assert.equal(model.thinkingLevelMap.low, "low");
+    assert.equal(model.thinkingLevelMap.max, "max");
+  }
+  // pin 이 6.2 를 실으면 그 행은 스스로 빠진다.
+  assert.deepEqual(
+    gpt6CodexModels(ALL_GPT6_INJECTED.filter((id) => id !== "gpt-6.2-astra").map((id) => ({ id }))).map((m) => m.id),
+    ["gpt-6.2-astra"],
+  );
+});
+
+test("GPT-6.1 Sol 은 6 Sol 과 같은 형태로 주입된다", () => {
+  const sol61 = injectedById([{ id: "gpt-5.6-terra" }]).get("gpt-6.1-sol");
   assert.equal(sol61.id, "gpt-6.1-sol");
   assert.equal(sol61.name, "GPT-6.1 Sol");
   assert.equal(sol61.contextWindow, CODEX_CONTEXT_WINDOWS["gpt-6.1-sol"]);
@@ -277,11 +327,13 @@ test("GPT-6.1 Sol 은 6 Sol 과 같은 형태로 주입되고 피커의 6 Sol �
     cacheWrite: 2.5,
     tiers: [{ inputTokensAbove: 272_000, input: 4, output: 15, cacheRead: 0.2, cacheWrite: 5 }],
   });
-  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
+  assert.deepEqual(gpt6CodexModels(ALL_GPT6_INJECTED.map((id) => ({ id }))), []);
 });
 
 test("GPT-6 Sol·Luna 는 상류 0.87.1 정의 그대로 주입된다", () => {
-  const [, sol, luna] = gpt6CodexModels([{ id: "gpt-5.6-terra" }]);
+  const rows = injectedById([{ id: "gpt-5.6-terra" }]);
+  const sol = rows.get("gpt-6-sol");
+  const luna = rows.get("gpt-6-luna");
   assert.equal(sol.id, "gpt-6-sol");
   assert.equal(sol.name, "GPT-6 Sol");
   assert.equal(sol.api, "openai-codex-responses");
@@ -301,9 +353,9 @@ test("GPT-6 Sol·Luna 는 상류 0.87.1 정의 그대로 주입된다", () => {
   assert.equal(luna.id, "gpt-6-luna");
   assert.equal(luna.cost.input, 0.1);
   // pin 이 앞서면 주입은 스스로 빈다.
-  assert.deepEqual(gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }, { id: "gpt-6-luna" }]), []);
+  assert.deepEqual(gpt6CodexModels(ALL_GPT6_INJECTED.map((id) => ({ id }))), []);
   assert.deepEqual(
-    gpt6CodexModels([{ id: "gpt-6.1-sol" }, { id: "gpt-6-sol" }]).map((model) => model.id),
+    gpt6CodexModels(ALL_GPT6_INJECTED.filter((id) => id !== "gpt-6-luna").map((id) => ({ id }))).map((model) => model.id),
     ["gpt-6-luna"],
   );
 });

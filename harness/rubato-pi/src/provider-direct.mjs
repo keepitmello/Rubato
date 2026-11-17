@@ -372,19 +372,20 @@ export function daybreakModels(nativeModels) {
   return [base, fast];
 }
 
-const GPT6_CODEX_IDS = Object.freeze(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]);
+const GPT6_CODEX_IDS = Object.freeze(["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"]);
 
 /**
  * Codex 레인의 기본 창은 272K 이고, 그보다 넓게 여는 모델만 여기에 적는다. 값은 Codex 백엔드
  * `/codex/models` 응답의 `context_window` 다 — pin 카탈로그(pi-ai 1.0.1)는 6.1 Sol 도 272K 로
  * 적어 둔다. 6.1 Sol 은 2026-10-24 응답에서 500,000 이었고(client_version 0.164.0), 같은 날
- * 326,290 토큰 입력 요청이 정상 완료됐다. 272K 를 넘는 입력은 `cost.tiers` 의 장문 단가로 계상된다.
+ * 326,290 토큰 입력 요청이 정상 완료됐다. 6.2 Sol 도 2026-11-18 응답(client_version 0.200.0)에서
+ * 500,000 이고, 6.2 Astra 는 272,000 이라 기본 창을 쓴다. 272K 를 넘는 입력은 `cost.tiers` 의 장문 단가로 계상된다.
  */
 const CODEX_DEFAULT_CONTEXT_WINDOW = 272_000;
-export const CODEX_CONTEXT_WINDOWS = Object.freeze({ "gpt-6.1-sol": 500_000 });
+export const CODEX_CONTEXT_WINDOWS = Object.freeze({ "gpt-6.2-sol": 500_000, "gpt-6.1-sol": 500_000 });
 
 /**
- * 핀 카탈로그(pi-ai 0.86.1)에 아직 없는 GPT-6 세 행.
+ * 핀 카탈로그에 아직 없는 GPT-6 행들. 핀에 있는 id 는 스스로 빠진다.
  *
  * 정의는 상류 0.87.1 의 `dist/providers/data/openai-codex.json` 에서 그대로 옮겼다.
  * `cost`·`thinkingLevelMap` 을 손으로 다시 적으면 조용히 달라지고, 5.6 에서 파생하지도
@@ -397,6 +398,13 @@ export const CODEX_CONTEXT_WINDOWS = Object.freeze({ "gpt-6.1-sol": 500_000 });
  * 다르다(0.20 → 0.10, 272K 초과 0.40 → 0.20). 상류가 6.1 을 싣는 날 이 행은 스스로 빈다.
  * 6-sol 행은 기존 세션·설정이
  * 그 id 를 가리켜도 풀리도록 남긴다 — 피커에서만 내렸다.
+ *
+ * `gpt-6.2-sol`·`gpt-6.2-astra` 는 pi-ai 1.5.2 에도 없어서 Codex 백엔드 `/codex/models`
+ * (2026-11-18)로 확인했다: 6.1 Sol·6 Astra 와 effort 단계·입력 형식이 같고, 둘 다 effort
+ * `none` 을 거절해서 `off` 는 핀의 6.1 Sol·6 Astra 처럼 null 이다. 가격은 OpenAI 모델 페이지
+ * (developers.openai.com/api/docs/models/gpt-6.2-sol, gpt-6.2-astra)에서 옮겼다 — 6.2 Sol 은
+ * 6.1 Sol 과 같고, 6.2 Astra 는 8/40(캐시 읽기 0.4, 쓰기 10)이며 272K 초과는 입력·캐시 두 배,
+ * 출력 1.5배다. 6.1 Sol·6 Astra 는 핀에 남아 기존 세션·설정이 그대로 열린다 — 피커에서만 내렸다.
  *
  * `inputLimits`(0.87.0 신설)만 뺐다 — 0.86.1 은 그 필드를 읽지 않는다. 핀을 0.87 이상으로
  * 올리면 네이티브가 이 id 를 갖게 되어 이 주입은 스스로 빈다.
@@ -427,6 +435,9 @@ const GPT6_CODEX_THINKING_LEVEL_MAP = Object.freeze({
   max: "max",
 });
 
+/** 6.2 는 effort `none` 을 거절한다. 핀의 6.1 Sol·6 Astra 처럼 `off` 를 막는다. */
+const GPT62_CODEX_THINKING_LEVEL_MAP = Object.freeze({ ...GPT6_CODEX_THINKING_LEVEL_MAP, off: null });
+
 /** 0.87.1 의 cost 그대로. 5.6 의 값을 물려받으면 두 배로 계상된다. */
 const GPT6_SOL_COST = Object.freeze({
   input: 2,
@@ -445,6 +456,16 @@ const GPT61_SOL_COST = Object.freeze({
   tiers: Object.freeze([Object.freeze({ ...GPT6_SOL_COST.tiers[0], cacheRead: 0.2 })]),
 });
 
+const GPT62_ASTRA_COST = Object.freeze({
+  input: 8,
+  output: 40,
+  cacheRead: 0.4,
+  cacheWrite: 10,
+  tiers: Object.freeze([
+    Object.freeze({ inputTokensAbove: 272_000, input: 16, output: 60, cacheRead: 0.8, cacheWrite: 20 }),
+  ]),
+});
+
 const GPT6_LUNA_COST = Object.freeze({
   input: 0.1,
   output: 0.5,
@@ -457,6 +478,34 @@ const GPT6_LUNA_COST = Object.freeze({
 
 // 행 자체는 얼리지 않는다 — Daybreak 처럼 파생 단계가 `delete`·덮어쓰기로 손대는 자리다.
 const GPT6_CODEX_ROWS = Object.freeze([
+  {
+    id: "gpt-6.2-sol",
+    name: "GPT-6.2 Sol",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: GPT61_SOL_COST,
+    contextWindow: CODEX_CONTEXT_WINDOWS["gpt-6.2-sol"],
+    maxTokens: 128_000,
+    thinkingLevelMap: GPT62_CODEX_THINKING_LEVEL_MAP,
+    compat: GPT6_CODEX_COMPAT,
+  },
+  {
+    id: "gpt-6.2-astra",
+    name: "GPT-6.2 Astra",
+    api: "openai-codex-responses",
+    provider: "openai-codex",
+    baseUrl: "https://chatgpt.com/backend-api",
+    reasoning: true,
+    input: ["text", "image"],
+    cost: GPT62_ASTRA_COST,
+    contextWindow: CODEX_DEFAULT_CONTEXT_WINDOW,
+    maxTokens: 128_000,
+    thinkingLevelMap: GPT62_CODEX_THINKING_LEVEL_MAP,
+    compat: GPT6_CODEX_COMPAT,
+  },
   {
     id: "gpt-6.1-sol",
     name: "GPT-6.1 Sol",

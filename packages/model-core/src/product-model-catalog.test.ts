@@ -95,6 +95,8 @@ describe("product model catalog", () => {
     expect(productCatalogLabel({ provider: "cursor", id: CURSOR_GROK_BASE_ID })).toBe("Grok 4.7 fast")
     expect(productCatalogLabel({ provider: "cursor", id: "composer-2.5" })).toBe("Composer 2.5")
     expect(productCatalogLabel({ provider: "openai-codex", id: "gpt-6-astra" })).toBe("Astra 6")
+    expect(productCatalogLabel({ provider: "openai-codex", id: PRODUCT_MODEL_ORDER["openai-codex"][2] })).toBe("Astra 6.2")
+    expect(productCatalogLabel({ provider: "openai-codex", id: SOL })).toBe("Sol 6.2")
     expect(productCatalogLabel({ provider: "xai", id: XAI_GROK })).toBe("Grok 4.7")
     expect(catalogSlugs()[0]).toBe(`openai-codex/${SOL}`)
     expect(catalogSlugs()).toContain(`b-ai/${BAI_FLASH}`)
