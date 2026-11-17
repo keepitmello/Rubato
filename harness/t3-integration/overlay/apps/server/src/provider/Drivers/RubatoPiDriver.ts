@@ -49,6 +49,8 @@ export interface PiSummary {
   readonly sideChatOf?: string;
   /** Segno's own conversation (the engine's session list marks it). */
   readonly companion?: boolean;
+  /** Messages the session holds; absent from an engine that does not count them. */
+  readonly messageCount?: number;
 }
 /** A prompt file a new conversation can open with (bridge session-prompts.mjs). */
 export interface PiSessionPromptEntry {

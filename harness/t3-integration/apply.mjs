@@ -36,6 +36,7 @@ import { soundEdits, soundOverlays } from './sound-edits.mjs';
 import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edits.mjs';
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
+import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto-archive-edits.mjs';
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
@@ -1903,6 +1904,11 @@ for (const [relative, changes] of Object.entries(mobileEdits)) {
 // sidebar-blocks-edits add to the sidebar (thread-folders-edits.mjs).
 overlays.push(...threadFoldersOverlays);
 for (const [relative, changes] of Object.entries(threadFoldersEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Idle threads go to the archive on their own (thread-auto-archive-edits.mjs).
+overlays.push(...threadAutoArchiveOverlays);
+for (const [relative, changes] of Object.entries(threadAutoArchiveEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

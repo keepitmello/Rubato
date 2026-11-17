@@ -7,12 +7,14 @@
  * (bridge.mjs inventory: live ones, and ones in an existing folder outside temp dirs).
  *
  * It never starts a model turn and never owns Pi workers or conversation files. A thread the
- * person deleted or archived is not brought back.
+ * person deleted or archived is not brought back. A session with no messages yet gets no thread
+ * until it has one: an empty session is nothing to read, and 96 of them sat in the list.
  *
  * A session the engine is running (a lead Segno opened, a scheduled run) is imported as active,
  * not settled, and its run shows as a turn of its thread like any other: thinking, tools and
  * steering included (user items 4c2a0df1, a8508a74). The same goes for a thread T3 let go idle
- * whose session the engine runs again. The inventory sends the thread the bridge's
+ * whose session the engine runs again, and for a thread the server archived only for being idle
+ * (RubatoThreadAutoArchive.ts reopenAutoArchived). The inventory sends the thread the bridge's
  * `engineRunText`; T3 opens the thread's stream for it as for any turn, and the stream adopts the
  * engine's run instead of prompting (bridge rpc-connection.mjs ENGINE_RUN_TEXT). Segno's own
  * conversation is a chat log and is left out (companion-thread.mjs).
@@ -32,6 +34,7 @@ import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { BUSY_RUN, importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
 import { RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
+import { reopenAutoArchived } from "../RubatoThreadAutoArchive.ts";
 
 // The loop passes every five seconds. A fork wants its new session shown now: it cuts the
 // wait short, or, asked during a pass that may have listed sessions before the fork existed,
@@ -58,6 +61,10 @@ export const engineRunning = (entry: Pick<PiSummary, "status">) =>
 
 /** A folder name for a session's project: the last path part, Unix or Windows. */
 export const projectTitleOf = (cwd: string) => cwd.split(/[\\/]/).filter(Boolean).at(-1) ?? cwd;
+
+/** A stored session with no messages yet: the engine's list counts them (pi-server session-metadata.mjs). */
+export const emptySession = (entry: Pick<PiSummary, "status" | "messageCount">) =>
+  entry.messageCount === 0 && !engineRunning(entry);
 
 export const makeRubatoPiInventory = Effect.gen(function* () {
   // Optional services: the startup layer's requirements stay what upstream declares.
@@ -91,6 +98,8 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     if (settledSessions.has(entry.sessionId)) return;
     // Old sessions without a cwd cannot be assigned an invented project.
     if (!entry.cwd || !isAbsoluteLocalPath(entry.cwd)) { settledSessions.add(entry.sessionId); return; }
+    // Not settled: the session is imported once it has a message.
+    if (emptySession(entry)) return;
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || bridge.ownsSession(entry.sessionId)) return;
     if ((yield* threadOfPiSession(entry.sessionId)) !== null) { settledSessions.add(entry.sessionId); return; }
@@ -137,7 +146,14 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || entry.companion === true || Option.isNone(orchestrator)) return;
     const threadId = (yield* threadOfPiSession(entry.sessionId)) ?? importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
-    if (bridge.rpcFor(threadId) || !(yield* openThread(threadId))) return;
+    if (bridge.rpcFor(threadId)) return;
+    if (!(yield* openThread(threadId))) {
+      const orchestration = orchestrator.value;
+      const unarchive = (id: ThreadId) => Effect.gen(function* () {
+        yield* orchestration.dispatch({ type: "thread.unarchive", commandId: CommandId.make(`rubato-reopen:${yield* uuid}`), threadId: id });
+      });
+      if (!(yield* reopenAutoArchived(threadId, unarchive))) return;
+    }
     const { runs } = yield* orchestrator.value.getThreadRecords(ThreadId.make(threadId), ["runs"]);
     if (runs.some((run) => BUSY_RUN.has(run.status))) return;
     const id = yield* uuid;
