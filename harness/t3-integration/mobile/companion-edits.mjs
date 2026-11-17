@@ -18,6 +18,8 @@ export const mobileCompanionOverlays = [
   `${companions}/companionNotification.ts`,
   `${companions}/companionNotification.test.ts`,
   `${companions}/CompanionNamesSettingsScreen.tsx`,
+  `${companions}/companionModel.ts`,
+  `${companions}/companionModel.test.ts`,
   `${companions}/companionsStore.ts`,
   `${companions}/callStore.ts`,
   `${companions}/callTypes.ts`,

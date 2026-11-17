@@ -44,14 +44,57 @@ export function pairedEnvironmentIds(): EnvironmentId[] {
   return [...appAtomRegistry.get(environmentPresentations.presentationsAtom).keys()];
 }
 
+/**
+ * The paired Mac's connection, waiting up to `waitMs` while it is still being made: right after
+ * launch or a return to the app every Mac reconnects, and a request asked then failed outright.
+ */
+export function awaitPrepared(
+  environmentId: EnvironmentId,
+  waitMs: number,
+  signal?: AbortSignal,
+): Promise<PreparedConnection | null> {
+  const ready = readPrepared(environmentId);
+  if (ready || waitMs <= 0) return Promise.resolve(ready);
+  return new Promise((resolve) => {
+    let settled = false;
+    let unsubscribe: (() => void) | undefined;
+    const finish = (prepared: PreparedConnection | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      unsubscribe?.();
+      signal?.removeEventListener("abort", abort);
+      resolve(prepared);
+    };
+    const abort = () => finish(null);
+    const timer = setTimeout(abort, waitMs);
+    signal?.addEventListener("abort", abort);
+    unsubscribe = appAtomRegistry.subscribe(
+      environmentSession.preparedConnectionValueAtom(environmentId),
+      (value) => {
+        const prepared = Option.getOrNull(value);
+        if (prepared) finish(prepared);
+      },
+    );
+    // It may have come between the first read and the subscription.
+    const now = readPrepared(environmentId);
+    if (now) finish(now);
+  });
+}
+
 export async function postRubato<T>(
   environmentId: EnvironmentId,
   route: string,
   action: string,
   body: Record<string, unknown> = {},
-  options: { readonly signal?: AbortSignal; readonly timeoutMs?: number } = {},
+  options: {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    /** How long to wait for a connection still being made; by default a request fails at once. */
+    readonly waitForConnectionMs?: number;
+  } = {},
 ): Promise<T> {
-  const access = rubatoAccess(readPrepared(environmentId));
+  const access = rubatoAccess(await awaitPrepared(environmentId, options.waitForConnectionMs ?? 0, options.signal));
   if (!access) throw new RubatoRequestError("unavailable", "This Mac is not connected.");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);

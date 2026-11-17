@@ -8,7 +8,10 @@ import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { useEnvironments } from "../../state/environments";
 import { RubatoCall } from "../../../modules/rubato-call";
+import Storage from "expo-sqlite/kv-store";
+
 import { callApi, type CallableCompanion } from "./callStore";
+import { COMPANIONS_CACHE_KEY, decodeCompanions, encodeCompanions, type CallEffort, type CompanionEntry } from "./companionModel";
 import { companionDisplayName, dataUrlBase64, subscribeCompanionNames, useCompanionNames } from "./companionNames";
 import { postRubato } from "./rubatoHttp";
 
@@ -16,10 +19,8 @@ const COMPANION_ROUTE = "/rubato/companion";
 /** How often the list refreshes while a companion's conversation has no thread yet, and otherwise. */
 const QUICK_POLL_MS = 5_000;
 const SLOW_POLL_MS = 30_000;
-
-/** The companion conversation's effort while a call is open (harness/companion/companion.mjs CALL_EFFORTS). */
-export type CallEffort = "conversation" | "low" | "medium" | "high";
-export const CALL_EFFORTS: readonly CallEffort[] = ["conversation", "low", "medium", "high"];
+/** How long a list request waits for a Mac's connection still being made, before it counts as no answer. */
+const CONNECTION_WAIT_MS = 20_000;
 
 interface CompanionStatus {
   readonly id: string;
@@ -30,32 +31,35 @@ interface CompanionStatus {
   readonly calls?: boolean;
 }
 
-export interface CompanionEntry {
-  readonly environmentId: EnvironmentId;
-  readonly id: string;
-  /** The name this phone shows (companionNames.ts: a rename, or 루/세뇨). */
-  readonly title: string;
-  /** The name the Mac knows it by. */
-  readonly macTitle: string;
-  readonly sessionId: string | null;
-  /** The T3 thread that is its room; null until the Mac's app picked its conversation up. */
-  readonly threadId: string | null;
-  /** Its picture as a data URL, or null. */
-  readonly art: string | null;
-  readonly callable: CallableCompanion | null;
-  /** Whether it takes voice calls, and how much it thinks on one. */
-  readonly calls: boolean;
-  readonly callEffort: CallEffort;
-}
+export { CALL_EFFORTS, type CallEffort, type CompanionEntry } from "./companionModel";
 
 interface CompanionsView {
   readonly companions: readonly CompanionEntry[];
-  /** Some paired Mac answered; false while none has yet. */
+  /** Some paired Mac answered, now or on an earlier launch (the kept list); false while none has. */
   readonly loaded: boolean;
   readonly error: string | null;
 }
 
-let view: CompanionsView = { companions: [], loaded: false, error: null };
+/** The list this phone kept from its last answer: the tab and the rooms open on it at once. */
+function readKept(): CompanionEntry[] {
+  try {
+    return decodeCompanions(Storage.getItemSync(COMPANIONS_CACHE_KEY));
+  } catch {
+    return [];
+  }
+}
+const keptCompanions = readKept();
+let keptText = encodeCompanions(keptCompanions);
+function keep(companions: readonly CompanionEntry[]) {
+  const next = encodeCompanions(companions);
+  if (next === keptText) return;
+  keptText = next;
+  void Storage.setItemAsync(COMPANIONS_CACHE_KEY, next).catch(() => {
+    keptText = "";
+  });
+}
+
+let view: CompanionsView = { companions: keptCompanions, loaded: keptCompanions.length > 0, error: null };
 const listeners = new Set<() => void>();
 const subscribe = (listener: () => void) => {
   listeners.add(listener);
@@ -63,41 +67,51 @@ const subscribe = (listener: () => void) => {
 };
 function publish(next: Partial<CompanionsView>) {
   view = { ...view, ...next };
+  if (next.companions) keep(next.companions);
   for (const listener of listeners) listener();
 }
 
-/** Pictures by `<environment>:<companion>`, fetched once per launch. */
+/** Pictures by `<environment>:<companion>`, fetched once per launch; the kept list shows them until then. */
 const arts = new Map<string, string | null>();
+const keptArt = (environmentId: EnvironmentId, companionId: string) =>
+  view.companions.find((item) => item.environmentId === environmentId && item.id === companionId)?.art ?? null;
 
 const companionCall = <T>(environmentId: EnvironmentId, action: string, body: Record<string, unknown> = {}) =>
-  postRubato<T>(environmentId, COMPANION_ROUTE, action, body);
+  postRubato<T>(environmentId, COMPANION_ROUTE, action, body, { waitForConnectionMs: CONNECTION_WAIT_MS });
 
+/** The companion's face: the one the Mac keeps for phones, or its stage art from a Mac without one. */
+const fetchArt = (environmentId: EnvironmentId, companionId: string) =>
+  companionCall<{ avatar: { url: string } | null }>(environmentId, "avatar", { companionId }).then(
+    (answer) => answer.avatar?.url ?? null,
+    () =>
+      companionCall<{ art: { url: string } | null }>(environmentId, "art", { companionId, state: "idle" }).then(
+        (answer) => answer.art?.url ?? null,
+        () => undefined,
+      ),
+  );
+
+// The list and whether calls can go through are asked together, then each companion's room and face
+// together: two round trips to the Mac, where one after another took four.
 async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionEntry[]> {
-  const { companions } = await companionCall<{ companions: CompanionStatus[] }>(environmentId, "companions");
-  const callable = await callApi.companions(environmentId).catch(() => [] as CallableCompanion[]);
+  const [{ companions }, callable] = await Promise.all([
+    companionCall<{ companions: CompanionStatus[] }>(environmentId, "companions"),
+    callApi.companions(environmentId, { waitForConnectionMs: CONNECTION_WAIT_MS }).catch(() => [] as CallableCompanion[]),
+  ]);
   const enabled = companions.filter((item) => item.settings?.enabled !== false);
   return Promise.all(
     enabled.map(async (item) => {
-      const threadId = item.sessionId
-        ? await companionCall<{ threadId: string | null }>(environmentId, "thread", {
-            companionId: item.id,
-            sessionId: item.sessionId,
-            current: true,
-          }).then((answer) => answer.threadId, () => null)
-        : null;
       const key = `${environmentId}:${item.id}`;
-      if (!arts.has(key)) {
-        // The face the Mac keeps for phones; a Mac without it answers its stage art instead.
-        const art = await companionCall<{ avatar: { url: string } | null }>(environmentId, "avatar", { companionId: item.id }).then(
-          (answer) => answer.avatar?.url ?? null,
-          () =>
-            companionCall<{ art: { url: string } | null }>(environmentId, "art", { companionId: item.id, state: "idle" }).then(
-              (answer) => answer.art?.url ?? null,
-              () => undefined,
-            ),
-        );
-        if (art !== undefined) arts.set(key, art);
-      }
+      const [threadId, art] = await Promise.all([
+        item.sessionId
+          ? companionCall<{ threadId: string | null }>(environmentId, "thread", {
+              companionId: item.id,
+              sessionId: item.sessionId,
+              current: true,
+            }).then((answer) => answer.threadId, () => null)
+          : null,
+        arts.has(key) ? arts.get(key) : fetchArt(environmentId, item.id),
+      ]);
+      if (art !== undefined) arts.set(key, art);
       return {
         environmentId,
         id: item.id,
@@ -105,7 +119,7 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
         macTitle: item.title || item.id,
         sessionId: item.sessionId,
         threadId,
-        art: arts.get(key) ?? null,
+        art: arts.has(key) ? (arts.get(key) ?? null) : keptArt(environmentId, item.id),
         callable: callable.find((entry) => entry.id === item.id) ?? null,
         calls: item.calls === true,
         callEffort: item.settings?.call?.effort ?? "medium",
