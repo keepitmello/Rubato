@@ -1,11 +1,18 @@
 ---
 name: humanize-korean
-version: "2.3.2"
+version: "2.4.6"
 description: "Rewrite AI-sounding Korean into natural prose; keep the content."
 ---
 
-# Humanize Korean — AI 한글 티 제거 오케스트레이터 (v2.3)
+# Humanize Korean — AI 한글 티 제거 오케스트레이터 (v2.4)
 
+> **v2.4.6** — 어휘 사전 1.3: 「짚다」(짚고 간다·짚어 보자) 바꿈 우선으로 올리고 일반 글 생략 해제, 「본질적으로」 조건부(논문 제외), 「~하는 편이 좋다」 조건부 추가.
+> **v2.4.5** — 어휘 사전 1.2: 「기둥」(세 기둥·핵심 기둥) 추가, 「버팀목·디딤돌」 조건부 추가, 「층위」 논문 장르 생략 해제(사람 논문에서도 0건).
+> **v2.4.4** — 어휘 복원도 문장 분할이 의심되면 보류(되돌리면 명제 중복 — 서법 복원과 같은 판정).
+> **v2.4.3** — 어휘 사전 1.1: 넓은 정규식이 사람 글의 실물 용법(실제 배의 항해·"세계에서 가장"·동물 무늬 등)을 짚던 10항목 정밀화. 사람 글 오탐 171→113건.
+> **v2.4.2** — 어휘 복원도 넓은 정규식으로 매칭(원문 부재 조건이 안전장치 — 활용형 주입을 놓치던 문제). 스크립트 사슬 통합 테스트 신설.
+> **v2.4.1** — 어휘 점검이 따옴표 안 직접 인용은 힌트에서 뺀다(Do-NOT list와 정합).
+> **v2.4.0** — 어휘 레이어. 한국어 독자가 읽다가 걸리는 낱말 111개(블라인드 평가)를 원문에서 찾아 `[어휘 점검]` 블록으로 실행자에게 넘긴다(문맥 판단, 일괄 치환 금지). 윤문이 새로 만든 '바꿈 우선' 낱말은 Phase 2.4에서 문장 단위로 되돌린다. `scripts/lexical_layer.py`·`references/lexicon.json`.
 > **v2.3.2** — 플러그인 스킬을 관례 위치(루트 `skills/`)로 이동. 마켓플레이스 설치에서 shim·진단이 조용히 누락되던 경로 문제 해소.
 > **v2.3.1** — 경로 해석·런타임 경계·계약 정합 수정 회차(외부 제보 반영). 기능 변경 없음.
 > **v2.3.0** — 구조 수렴 게이트(`verify_gates.py` 4축: 목표달성·대구 전멸·수치·golden) + 진단 슬림 인덱스(`diagnosis-rules.md`, taxonomy 83%↓). (v2.2: route_hint 3경로 + 단일 콜 우선)
@@ -16,7 +23,7 @@ description: "Rewrite AI-sounding Korean into natural prose; keep the content."
 작업 시작 시 가장 먼저 다음 한 줄을 사용자에게 출력한다.
 
 ```
-humanize-korean v2.3 — 경로: {light|standard|heavy} ({route_hint|사용자 지정}) / run_id: {YYYY-MM-DD-NNN-TAG}
+humanize-korean v2.4 — 경로: {light|standard|heavy} ({route_hint|사용자 지정}) / run_id: {YYYY-MM-DD-NNN-TAG}
 ```
 
 (경로는 Phase 1의 shim 실행 후에 확정되므로, 이 상태 줄은 shim 직후 출력한다.)
@@ -70,10 +77,11 @@ Phase 1 시작 전에 한 번 정한다.
 
 ```bash
 SKILL_ROOT="$(d="$(cd -P "${CLAUDE_SKILL_DIR}" && pwd)"; \
-  while [ "$d" != / ] && [ ! -d "$d/.claude-plugin" ]; do d="$(dirname "$d")"; done; echo "$d")"
+  while [ "$d" != / ] && [ ! -d "$d/.claude-plugin" ] && [ ! -f "$d/scripts/prepare_monolith_input.py" ]; do d="$(dirname "$d")"; done; \
+  [ "$d" = / ] && s="$(dirname "$(cd -P "${CLAUDE_SKILL_DIR}" && pwd)")/humanize-korean" && [ -f "$s/scripts/prepare_monolith_input.py" ] && d="$s"; echo "$d")"
 ```
 
-`.claude-plugin/` 디렉터리를 만날 때까지 거슬러 올라간다. **고정된 횟수로 올라가지 않는 이유**는 스킬 위치가 배포 방식마다 다를 수 있어서다 — 고정 깊이는 레이아웃이 바뀌면 조용히 엉뚱한 곳을 가리킨다.
+`.claude-plugin/` 디렉터리, 또는 `scripts/prepare_monolith_input.py` 를 품은 디렉터리를 만날 때까지 거슬러 올라간다. 뒤 조건은 `install.sh --copy` 설치용이다 — 복사 설치는 스킬 디렉터리만 떼어 오므로 조상에 마커가 없고, 대신 런타임 스크립트를 스킬 디렉터리 안 `scripts/` 에 함께 복사한다(#144). 둘째 줄은 `/humanize`·`/humanize-scan`·`/humanize-redo` 로 들어온 복사 설치용 폴백이다 — 이 래퍼 스킬에는 `scripts/` 가 없으므로, `/` 까지 올라가도 못 찾으면 형제 `humanize-korean/` 을 본다. **고정된 횟수로 올라가지 않는 이유**는 스킬 위치가 배포 방식마다 다를 수 있어서다 — 고정 깊이는 레이아웃이 바뀌면 조용히 엉뚱한 곳을 가리킨다.
 
 **`cd -P` 가 핵심이다.** 심링크 설치(`install.sh` 기본)에서는 스킬 디렉터리가 저장소를 가리키는 심링크라, 그냥 `cd` 하면 셸이 논리 경로를 유지해 엉뚱한 곳(홈 디렉터리)으로 올라간다. `-P` 로 물리 경로를 먼저 푼 뒤 올라가야 심링크·플러그인 양쪽에서 같은 답이 나온다. 이후 모든 스크립트 호출에 `${SKILL_ROOT}/scripts/...` 를 쓴다.
 
@@ -192,7 +200,22 @@ python3 ${SKILL_ROOT}/scripts/strip_injected_commas.py \
     --before _workspace/{run_id}/01_input.txt \
     --after  _workspace/{run_id}/final.md \
     --out    _workspace/{run_id}/final.md
+python3 ${SKILL_ROOT}/scripts/lexical_layer.py restore \
+    --before _workspace/{run_id}/01_input.txt \
+    --after  _workspace/{run_id}/final.md \
+    --out    _workspace/{run_id}/final.md
 ```
+
+세 번째 명령은 **어휘 주입 복원** — 윤문이 원문 문서에 없던 '바꿈 우선' 낱말
+(`references/lexicon.json`의 `restore: true`, 블라인드 평가 2점 — 얹다·겹·붙들다·렌즈·
+"성공을 달성하다" 등)을 새로 만든 문장만 원문 문장으로 되돌린다. 프롬프트로 금지해도
+확률적으로 샌다(실측: 같은 설정 두 번 실행에 주입 문서 6편↔17편). 정렬·보류 원칙은
+서법 복원과 같다. LLM 콜 0회.
+
+> **입력 쪽 어휘 점검(자동)**: Phase 1 shim이 원문에서 사전 항목을 찾으면 결합 파일의
+> `[원문 시작]` 앞에 `[어휘 점검]` 블록을 싣는다. 발견된 항목만, 최대 15개, 항목마다
+> 바꿀 때/둘 때/방식. 실행자는 **일괄 치환하지 않고** 문맥으로 판단한다 — '둘 때'면 둔다.
+> 진단을 거치지 않는 light 경로에도 같은 블록이 실린다.
 
 두 번째 명령은 **C-11 역주입 제거** — 윤문이 새로 쓴 문장에서만 연결어미 뒤
 쉼표를 걷어낸다(원문에 있던 문장은 불가침 — 필자 쉼표 보호). light 실측에서
