@@ -130,6 +130,11 @@ native catalog lacks them; 5.2 overrides the price (`fable51Models`, `fable52Mod
   `grok-4.7-{low|medium|high|xhigh}-fast`
   (`cursor-grok-fast.mjs:13-23,109-178`).
 
+`/ultrafast` is a separate Codex switch with the same per-model memory: it sends
+`service_tier: "ultrafast"` only for models in `ULTRAFAST_MODEL_IDS` (`gpt-6.2-sol`), and it and
+`/fast` replace each other. The service-tier state reports it as `ultrafast`, apart from `active`,
+which stays the Fast answer that T3's Fast toggle is compared against.
+
 Senpi's builtin service-tier module owns `/fast`, per-base-model SettingsManager memory, model-switch
 restore, the session fast flag, and `before_provider_request`
 (`senpi/dist/core/extensions/builtin/service-tier.js:51-135,135-266`). Rubato's current transform

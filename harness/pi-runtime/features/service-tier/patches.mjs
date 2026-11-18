@@ -27,7 +27,7 @@ function patchSettingsRuntime(source) {
   let next = replaceOnce(
     source,
     `function isMergeableObject(value) {`,
-    `const MODEL_SERVICE_TIER_VALUES = new Set(["auto", "flex", "priority"]);
+    `const MODEL_SERVICE_TIER_VALUES = new Set(["auto", "flex", "priority", "ultrafast"]);
 function modelMemoryKey(provider, modelId) {
     return \`${'${provider}'}/${'${modelId}'}\`;
 }
@@ -91,7 +91,7 @@ function patchSettingsTypes(source) {
  * Package source for npm/git packages.`,
     `export type TransportSetting = Transport;
 /** Service tier remembered per model; "auto" explicitly disables inherited priority. */
-export type ModelServiceTier = "auto" | "flex" | "priority";
+export type ModelServiceTier = "auto" | "flex" | "priority" | "ultrafast";
 /**
  * Package source for npm/git packages.`,
     "settings-types-tier",

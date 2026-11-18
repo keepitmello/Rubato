@@ -142,7 +142,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
       pi.on("session_start", (_event, ctx) => {
         unsubscribe?.();
         const update = (state) => {
-          ctx.ui.setStatus("rubato-fast", state.active ? "⚡ Fast" : undefined);
+          ctx.ui.setStatus("rubato-fast", state.ultrafast ? "⚡ Ultrafast" : state.active ? "⚡ Fast" : undefined);
           pi.rpc.emit("rubato.service-tier.updated", state);
         };
         unsubscribe = serviceTier.onChange(update);

@@ -24,6 +24,8 @@ import {
   createServiceTierFeature,
   fastWireMode,
   supportsFastMode,
+  supportsUltrafastMode,
+  ULTRAFAST_MODEL_IDS,
 } from "./extension.mjs";
 import { files, patches, serviceTierRuntimeFeature } from "./patches.mjs";
 
@@ -82,6 +84,13 @@ const MODELS = Object.freeze({
     provider: "openai-codex",
     id: "gpt-5.6-sol",
     name: "Codex fixture",
+    api: "openai-codex-responses",
+    baseUrl: "http://127.0.0.1:9/codex",
+  }),
+  codexUltrafast: Object.freeze({
+    provider: "openai-codex",
+    id: ULTRAFAST_MODEL_IDS[0],
+    name: "Ultrafast Codex fixture",
     api: "openai-codex-responses",
     baseUrl: "http://127.0.0.1:9/codex",
   }),
@@ -341,6 +350,8 @@ test("stock AgentSession runs /fast through real settings and all three request 
     modelId: "gpt-5.6-sol",
     wireMode: "service-tier",
     rememberedTier: undefined,
+    ultrafast: false,
+    ultrafastSupported: false,
   });
 
   await session.prompt("/fast on");
@@ -612,4 +623,72 @@ test("caller-owned wire fields are not overwritten or duplicated", () => {
   assert.deepEqual(applyAnthropicFastMode({ betas: [ANTHROPIC_FAST_BETA] }, true).betas, [
     ANTHROPIC_FAST_BETA,
   ]);
+});
+
+test("Ultrafast is its own per-model switch, only on models that serve it", async (t) => {
+  assert.equal(supportsUltrafastMode(MODELS.codexUltrafast), true);
+  assert.equal(supportsUltrafastMode({ ...MODELS.codexUltrafast, id: `${ULTRAFAST_MODEL_IDS[0]}-sub` }), true);
+  assert.equal(supportsUltrafastMode(MODELS.codex), false);
+  assert.equal(supportsUltrafastMode({ ...MODELS.xai, id: ULTRAFAST_MODEL_IDS[0] }), false);
+
+  const cwd = join(scratchRoot, "ultrafast-project");
+  const agentDir = join(scratchRoot, "ultrafast-agent");
+  mkdirSync(cwd, { recursive: true });
+  mkdirSync(agentDir, { recursive: true });
+  const captures = [];
+  const feature = createServiceTierFeature({ SettingsManager: sdk.SettingsManager, agentDir });
+  const { session, extensionErrors } = await startSession({
+    agentDir, cwd, model: MODELS.codexUltrafast, captures, feature,
+  });
+  t.after(() => session.dispose());
+
+  // Off by default: nothing on the wire until the user asks.
+  assert.equal(feature.getState().ultrafast, false);
+  assert.equal(feature.getState().ultrafastSupported, true);
+  assert.equal((await request(session, captures, "default")).payload.service_tier, undefined);
+
+  await session.prompt("/ultrafast on");
+  assert.equal(feature.getState().ultrafast, true);
+  // T3 compares its Fast toggle with `active`; Ultrafast must not read as Fast.
+  assert.equal(feature.getState().active, false);
+  assert.equal((await request(session, captures, "ultrafast")).payload.service_tier, "ultrafast");
+
+  // Fast and Ultrafast replace each other.
+  await session.prompt("/fast on");
+  assert.deepEqual([feature.getState().active, feature.getState().ultrafast], [true, false]);
+  assert.equal((await request(session, captures, "fast")).payload.service_tier, "priority");
+  await session.prompt("/ultrafast");
+  assert.deepEqual([feature.getState().active, feature.getState().ultrafast], [false, true]);
+  assert.equal((await request(session, captures, "toggled")).payload.service_tier, "ultrafast");
+
+  // Another Codex model does not inherit it, and refuses the command.
+  await session.setModel(registryModel(session, "codex"));
+  assert.deepEqual([feature.getState().ultrafast, feature.getState().ultrafastSupported], [false, false]);
+  assert.equal((await request(session, captures, "other codex")).payload.service_tier, undefined);
+  await session.prompt("/ultrafast on");
+  assert.equal(feature.getState().ultrafast, false);
+  assert.equal((await request(session, captures, "refused")).payload.service_tier, undefined);
+
+  // Back on the model, its own memory turns it on again.
+  await session.setModel(registryModel(session, "codexUltrafast"));
+  assert.equal(feature.getState().ultrafast, true);
+  assert.equal((await request(session, captures, "restored")).payload.service_tier, "ultrafast");
+  session.dispose();
+
+  const restartedCaptures = [];
+  const restartedFeature = createServiceTierFeature({ SettingsManager: sdk.SettingsManager, agentDir });
+  const restarted = await startSession({
+    agentDir, cwd, model: MODELS.codexUltrafast, captures: restartedCaptures, feature: restartedFeature,
+  });
+  t.after(() => restarted.session.dispose());
+  assert.equal(restartedFeature.getState().ultrafast, true);
+  assert.equal((await request(restarted.session, restartedCaptures, "after restart")).payload.service_tier, "ultrafast");
+  await restarted.session.prompt("/ultrafast off");
+  assert.equal(restartedFeature.getState().ultrafast, false);
+  assert.equal((await request(restarted.session, restartedCaptures, "off")).payload.service_tier, undefined);
+
+  const persisted = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf8"));
+  assert.equal(persisted.modelServiceTiers[`openai-codex/${ULTRAFAST_MODEL_IDS[0]}`], "auto");
+  assert.equal(`openai-codex/${MODELS.codex.id}` in persisted.modelServiceTiers, false);
+  assert.deepEqual(extensionErrors, []);
 });

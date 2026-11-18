@@ -160,3 +160,10 @@ test("analysis never pools normal requests, fast requests, or uncaptured history
   }).comparison;
   assert.ok(oldReference.results.every((result) => result.index === null), "a legacy reference cannot silently choose a new tier");
 });
+
+test("Ultrafast requests get their own tier, never a standard or unknown sample", () => {
+  const tier = createSpeedTierCapture(model, {});
+  observeSpeedRequestTier(tier, { service_tier: "ultrafast" }, model);
+  assert.equal(tier.requestedServiceTier, "ultrafast");
+  assert.equal(speedTierKey(tier), "payload:ultrafast:unknown");
+});

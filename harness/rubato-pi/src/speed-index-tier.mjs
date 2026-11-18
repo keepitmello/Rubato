@@ -2,7 +2,7 @@
 // "unspecified" means we SAW a payload without an override, never inferred a
 // normal tier from an old sample that did not capture this metadata.
 export const SPEED_TIER_CAPTURE_VERSION = 1;
-const TIERS = ["auto", "default", "standard", "priority", "flex", "fast"];
+const TIERS = ["auto", "default", "standard", "priority", "flex", "fast", "ultrafast"];
 const REQUEST_TIERS = [...TIERS, "unspecified", "unknown", "mixed"];
 const SOURCES = ["payload", "options", "model", "unknown"];
 export const SPEED_TIER_FIELDS = Object.freeze([

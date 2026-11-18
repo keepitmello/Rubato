@@ -4,6 +4,13 @@ import { SettingsManager as StockSettingsManager } from "@earendil-works/pi-codi
 
 export const PRIORITY_TIER = "priority";
 export const AUTO_TIER = "auto";
+export const ULTRAFAST_TIER = "ultrafast";
+/**
+ * Codex models whose `/codex/models` row lists the `ultrafast` service tier. Only these
+ * speed up: 6.2 Astra accepts `service_tier: "ultrafast"` but serves it at the standard
+ * rate (2026-11-18: 6.2 Sol ~500 tok/s vs 49 standard and 70 priority; 6.2 Astra 50 both).
+ */
+export const ULTRAFAST_MODEL_IDS = Object.freeze(["gpt-6.2-sol"]);
 export const ANTHROPIC_FAST_BETA = "fast-mode-2026-02-01";
 
 const FAST_MODEL_SUFFIX = "-fast";
@@ -15,6 +22,7 @@ const FAST_MODEL_SUFFIX = "-fast";
 const ACCOUNT_MODEL_SUFFIX = /-sub2?$/;
 const FAST_ARGUMENTS = Object.freeze(["on", "off"]);
 const FAST_USAGE = "Usage: /fast [on|off]";
+const ULTRAFAST_USAGE = "Usage: /ultrafast [on|off]";
 const SERVICE_TIER_ENV = "RUBATO_SERVICE_TIER";
 const OPENAI_CODEX_RESPONSES_API = "openai-codex-responses";
 const SERVICE_TIER_APIS = new Set([
@@ -34,6 +42,8 @@ const EMPTY_STATE = Object.freeze({
   modelId: undefined,
   wireMode: undefined,
   rememberedTier: undefined,
+  ultrafast: false,
+  ultrafastSupported: false,
 });
 
 function isRecord(value) {
@@ -108,6 +118,12 @@ export function supportsFastMode(model, modelRegistry) {
   return fastWireMode(model, modelRegistry) !== undefined;
 }
 
+export function supportsUltrafastMode(model, modelRegistry) {
+  if (model?.api !== OPENAI_CODEX_RESPONSES_API) return false;
+  const wireId = String(requestModelId(modelRegistry, model) ?? "").replace(ACCOUNT_MODEL_SUFFIX, "");
+  return ULTRAFAST_MODEL_IDS.includes(wireId);
+}
+
 export function addServiceTierToPayload(payload, serviceTier) {
   if (!serviceTier || !isRecord(payload) || payload.service_tier !== undefined) return payload;
   return { ...payload, service_tier: serviceTier };
@@ -126,7 +142,7 @@ export function applyAnthropicFastMode(payload, enabled) {
 }
 
 function explicitServiceTier(value) {
-  return value === PRIORITY_TIER || value === AUTO_TIER ? value : undefined;
+  return value === PRIORITY_TIER || value === AUTO_TIER || value === ULTRAFAST_TIER ? value : undefined;
 }
 
 function toCompletions(values, prefix) {
@@ -145,7 +161,9 @@ function requireSettingsContract(settingsManager) {
   return settingsManager;
 }
 
-function stateFor(model, modelRegistry, active, rememberedTier) {
+// `active` stays the Fast (priority) answer: T3 compares its Fast toggle against it every
+// turn, so Ultrafast is its own field and an untouched Fast toggle never turns it off.
+function stateFor(model, modelRegistry, active, rememberedTier, ultrafast = false) {
   return {
     active,
     supported: supportsFastMode(model, modelRegistry),
@@ -153,6 +171,8 @@ function stateFor(model, modelRegistry, active, rememberedTier) {
     modelId: model?.id,
     wireMode: fastWireMode(model, modelRegistry),
     rememberedTier,
+    ultrafast,
+    ultrafastSupported: supportsUltrafastMode(model, modelRegistry),
   };
 }
 
@@ -200,6 +220,7 @@ export function createServiceTierFeature({
 
   const extension = (pi) => {
     let sessionFastMode = false;
+    let sessionUltrafast = false;
     publicState = EMPTY_STATE;
 
     const readOverride = () => explicitServiceTier(initialTier) ?? (
@@ -214,17 +235,19 @@ export function createServiceTierFeature({
 
     const updateForModel = (ctx, model, rememberedTier) => {
       const supported = supportsFastMode(model, ctx.modelRegistry);
-      sessionFastMode = supported && (
+      sessionUltrafast = rememberedTier === ULTRAFAST_TIER && supportsUltrafastMode(model, ctx.modelRegistry);
+      sessionFastMode = supported && !sessionUltrafast && (
         rememberedTier === PRIORITY_TIER ||
         (rememberedTier === undefined && modelServiceTier(ctx.modelRegistry, model) === PRIORITY_TIER)
       );
-      publish(stateFor(model, ctx.modelRegistry, sessionFastMode, rememberedTier));
+      publish(stateFor(model, ctx.modelRegistry, sessionFastMode, rememberedTier, sessionUltrafast));
     };
 
     pi.on("session_start", async (_event, ctx) => {
       const model = ctx.model;
       if (!model || !supportsFastMode(model, ctx.modelRegistry)) {
         sessionFastMode = false;
+        sessionUltrafast = false;
         publish(stateFor(model, ctx.modelRegistry, false, undefined));
         return;
       }
@@ -243,6 +266,7 @@ export function createServiceTierFeature({
       const model = event.model;
       if (!supportsFastMode(model, ctx.modelRegistry)) {
         sessionFastMode = false;
+        sessionUltrafast = false;
         publish(stateFor(model, ctx.modelRegistry, false, undefined));
         return;
       }
@@ -263,7 +287,10 @@ export function createServiceTierFeature({
       // user moves between fast-capable models (notably Codex -> Codex), while
       // leaving persistence scoped to each model for reload/restart. A switch
       // to an unsupported model above still disables the live intent.
-      if (sessionFastMode) {
+      // Ultrafast is remembered per model and only some models serve it, so it is never
+      // carried across a switch; this model's own memory decides it.
+      if (sessionFastMode && rememberedTier !== ULTRAFAST_TIER) {
+        sessionUltrafast = false;
         publish(stateFor(model, ctx.modelRegistry, true, rememberedTier));
       } else {
         updateForModel(ctx, model, rememberedTier);
@@ -303,11 +330,48 @@ export function createServiceTierFeature({
         if (targetModel) await pi.setModel(targetModel);
 
         sessionFastMode = enabled;
+        sessionUltrafast = false;
         publish(stateFor(ctx.model ?? targetModel ?? model, ctx.modelRegistry, enabled, tier));
         ctx.ui.notify(
           `Fast mode ${enabled ? "enabled" : "disabled"}: ${(ctx.model ?? targetModel ?? model).id}`,
           "info",
         );
+      },
+    });
+
+    pi.registerCommand("ultrafast", {
+      description: "Turn Codex Ultrafast on or off (GPT-6.2 Sol only)",
+      argumentHint: "[on|off]",
+      getArgumentCompletions: (prefix) => toCompletions(FAST_ARGUMENTS, prefix),
+      handler: async (args, ctx) => {
+        const argument = args.trim().toLowerCase();
+        if (argument !== "" && !FAST_ARGUMENTS.includes(argument)) {
+          ctx.ui.notify(ULTRAFAST_USAGE, "error");
+          return;
+        }
+
+        const model = ctx.model;
+        if (!model || !supportsUltrafastMode(model, ctx.modelRegistry)) {
+          ctx.ui.notify("Ultrafast is only available for GPT-6.2 Sol.", "warning");
+          return;
+        }
+
+        const enabled = argument === "" ? !sessionUltrafast : argument === "on";
+        const memoryModel = resolveServiceTierMemoryModel(ctx.modelRegistry, model);
+        const settingsManager = openSettings(ctx);
+        const tier = enabled ? ULTRAFAST_TIER : AUTO_TIER;
+        settingsManager.setModelServiceTier(memoryModel.provider, memoryModel.id, tier);
+        await settingsManager.flush();
+
+        // A `-fast` catalog row carries priority on its own; Ultrafast rides the base row.
+        const baseModel = findBaseModel(ctx.modelRegistry, model);
+        if (baseModel) await pi.setModel(baseModel);
+
+        sessionUltrafast = enabled;
+        sessionFastMode = false;
+        const current = ctx.model ?? baseModel ?? model;
+        publish(stateFor(current, ctx.modelRegistry, false, tier, enabled));
+        ctx.ui.notify(`Ultrafast ${enabled ? "enabled" : "disabled"}: ${current.id}`, "info");
       },
     });
 
@@ -317,7 +381,10 @@ export function createServiceTierFeature({
         return applyAnthropicFastMode(event.payload, sessionFastMode);
       }
       if (wireMode === "service-tier") {
-        return addServiceTierToPayload(event.payload, sessionFastMode ? PRIORITY_TIER : undefined);
+        const tier = sessionUltrafast && supportsUltrafastMode(ctx.model, ctx.modelRegistry)
+          ? ULTRAFAST_TIER
+          : sessionFastMode ? PRIORITY_TIER : undefined;
+        return addServiceTierToPayload(event.payload, tier);
       }
       return event.payload;
     });
