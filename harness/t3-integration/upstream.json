@@ -190,6 +190,9 @@
     "apps/mobile/src/persistence/mobile-preferences.ts": "6d144a423f57dc140c4793c97466c3b0d689b7168d8448c2ae5ac8b8e7e92414",
     "apps/mobile/src/features/home/home-list-options.ts": "e21212763d041285ae8690795ea9bc9e2a25932cea7cb88e0c54b3b6ecfde0e2",
     "apps/mobile/src/features/home/ThreadListFilters.tsx": "0e3c1be14205c66dc26564d7c675447f736a006f5d6b46e6fda133d464d1b847",
-    "apps/mobile/src/state/use-thread-composer-state.ts": "36c1643fbc633dd384c7e8d5886419b8747238178355a9803f0e47dfe265c276"
+    "apps/mobile/src/state/use-thread-composer-state.ts": "36c1643fbc633dd384c7e8d5886419b8747238178355a9803f0e47dfe265c276",
+    "apps/web/src/components/chat/TraitsPicker.tsx": "b452076ca4d97b4a698da4b487895e39fddcf69621e1171456557c60f7ec7d45",
+    "apps/web/src/components/chat/composerProviderState.tsx": "6ff1f2a4c2dd06a58b082815bd95af290831d32e541e52b401f21d719d226fb9",
+    "apps/web/src/components/chat/composerProviderState.test.tsx": "f708bbd551a0fd9c0f83f6fb69d91715007b45d7e0873f71cb13154b841679ca"
   }
 }

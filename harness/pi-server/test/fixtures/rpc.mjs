@@ -13,8 +13,9 @@ let pendingWork = 0;
 let terminalWork = 0;
 // The cache warmer's live state as `get_cache_warming` reports it.
 let warming = { enabled: true, hours: 2, state: 'inactive' };
-// The service-tier extension's live state; `/fast on|off` flips it like the real command.
-let fast = { active: false, supported: true };
+// The service-tier extension's live state; `/fast on|off` and `/ultrafast on|off` flip it like
+// the real commands, which replace each other. `__ultrafast_supported` stands for a model that serves it.
+let fast = { active: false, supported: true, ultrafast: false, ultrafastSupported: false };
 let blockMessages = false;
 // What `set_model` can pick and the efforts each allows; an unsupported effort drops to the nearest lower one.
 const MODELS = { 'fixture/local': ['off'], 'fixture/deep': ['off', 'minimal', 'low', 'medium', 'high'] };
@@ -73,10 +74,16 @@ lines.on('line', (line) => {
     }
     case 'prompt':
       if (/^\/fast (?:on|off)$/.test(command.message)) {
-        fast = { ...fast, active: fast.supported && command.message === '/fast on' };
+        fast = { ...fast, active: fast.supported && command.message === '/fast on', ultrafast: false };
         break;
       }
-      if (command.message === '__fast_unsupported') { fast = { active: false, supported: false }; break; }
+      if (/^\/ultrafast (?:on|off)$/.test(command.message)) {
+        const on = fast.ultrafastSupported && command.message === '/ultrafast on';
+        fast = { ...fast, ultrafast: on, active: on ? false : fast.active };
+        break;
+      }
+      if (command.message === '__fast_unsupported') { fast = { active: false, supported: false, ultrafast: false, ultrafastSupported: false }; break; }
+      if (command.message === '__ultrafast_supported') { fast = { ...fast, ultrafastSupported: true }; break; }
       if (command.message === '__block_messages') blockMessages = true;
       running = true;
       manager.appendMessage({ role: 'user', content: command.message, timestamp: Date.now() });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CURSOR_GROK_BASE_ID } from '../../../packages/model-core/src/product-model-catalog.mjs';
+import { CODEX_ULTRAFAST_MODEL_IDS, CURSOR_GROK_BASE_ID } from '../../../packages/model-core/src/product-model-catalog.mjs';
 import {
   MODEL_ORDER,
   applySelectionOptions,
@@ -8,7 +8,9 @@ import {
   catalogSlugs,
   modelPickerLabel,
   modelSupportsFast,
+  modelSupportsUltrafast,
   optionDescriptorsFor,
+  serviceTierPrompts,
 } from '../src/model-catalog-order.mjs';
 
 // 현재 세대 xai/cursor 행은 카탈로그가 소유한다. 여기서 손으로 적으면 세대가 바뀔 때마다
@@ -17,6 +19,9 @@ const XAI_GROK = MODEL_ORDER.xai[0];
 const CURSOR_GROK_FAST = `${CURSOR_GROK_BASE_ID}-high-fast`;
 const CODEX_ORDER = MODEL_ORDER['openai-codex'];
 const [CODEX_SOL, CODEX_DAYBREAK] = CODEX_ORDER;
+// A picker Codex row without Ultrafast, which keeps the plain Fast toggle.
+const CODEX_FAST_ONLY = CODEX_ORDER.find((id) => !CODEX_ULTRAFAST_MODEL_IDS.includes(id));
+const CODEX_ASTRA = CODEX_ORDER.find((id) => id.includes('astra'));
 
 test('T3 catalogue keeps the curated /model set and drops provider extras', () => {
   // 현재 세대 anthropic 행은 카탈로그가 소유한다.
@@ -67,7 +72,7 @@ test('T3 catalogue keeps the current model even when it is outside the curated s
 test('reasoning models expose effort, and fast-capable models expose Fast', () => {
   const sol = optionDescriptorsFor({
     provider: 'openai-codex',
-    id: CODEX_SOL,
+    id: CODEX_FAST_ONLY,
     reasoning: true,
     thinkingLevelMap: { xhigh: 'xhigh', max: 'max' },
     api: 'openai-codex-responses',
@@ -88,6 +93,43 @@ test('reasoning models expose effort, and fast-capable models expose Fast', () =
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-1', api: 'anthropic-messages' }), false);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-2', api: 'anthropic-messages' }), true);
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-2-sub', api: 'anthropic-messages' }), true);
+});
+
+test('an Ultrafast model gets one Speed select instead of the Fast toggle, off by default', () => {
+  const [sol] = CODEX_ULTRAFAST_MODEL_IDS;
+  const item = { provider: 'openai-codex', id: sol, reasoning: true, api: 'openai-codex-responses' };
+  assert.equal(modelSupportsUltrafast(item), true);
+  assert.equal(modelSupportsUltrafast({ ...item, id: `${sol}-sub` }), true);
+  assert.equal(modelSupportsUltrafast({ ...item, id: 'gpt-6.2-astra' }), false);
+  assert.equal(modelSupportsUltrafast({ ...item, api: 'openai-responses' }), false);
+  const descriptors = optionDescriptorsFor(item).optionDescriptors;
+  assert.deepEqual(descriptors.map((descriptor) => descriptor.id), ['reasoningEffort', 'serviceTier']);
+  const speed = descriptors[1];
+  assert.equal(speed.type, 'select');
+  assert.equal(speed.currentValue, 'default');
+  // T3 reads Codex speed tiers by these labels for its trigger text.
+  assert.deepEqual(speed.options.map(({ id, label }) => [id, label]), [['default', 'Normal'], ['priority', 'Fast'], ['ultrafast', 'Ultrafast']]);
+  assert.equal(speed.options.find((option) => option.isDefault).id, 'default');
+});
+
+test('the service tier picked in T3 becomes only the Pi commands that move it there', () => {
+  const engine = (state) => ({ supported: true, active: false, ultrafast: false, ultrafastSupported: true, ...state });
+  assert.deepEqual(serviceTierPrompts(engine({}), 'ultrafast'), ['/ultrafast on']);
+  assert.deepEqual(serviceTierPrompts(engine({ ultrafast: true }), 'ultrafast'), []);
+  assert.deepEqual(serviceTierPrompts(engine({ ultrafast: true }), 'priority'), ['/fast on']);
+  assert.deepEqual(serviceTierPrompts(engine({ ultrafast: true }), 'default'), ['/ultrafast off']);
+  assert.deepEqual(serviceTierPrompts(engine({ active: true }), 'default'), ['/fast off']);
+  assert.deepEqual(serviceTierPrompts(engine({}), 'default'), []);
+  assert.deepEqual(serviceTierPrompts(engine({}), undefined), []);
+  // A model Pi cannot serve fast is already off.
+  assert.deepEqual(serviceTierPrompts({ supported: false }, 'ultrafast'), []);
+  // A model without Ultrafast is never sent `/ultrafast`; the pick falls back to Normal.
+  assert.deepEqual(serviceTierPrompts(engine({ ultrafastSupported: false, active: true }), 'ultrafast'), ['/fast off']);
+  // An engine that predates the report never gets `/ultrafast`, which it would pass to the model as text.
+  assert.deepEqual(serviceTierPrompts(undefined, 'ultrafast', undefined), ['/fast off']);
+  assert.deepEqual(serviceTierPrompts(undefined, 'ultrafast', false), []);
+  assert.deepEqual(serviceTierPrompts(undefined, 'priority', undefined), ['/fast on']);
+  assert.deepEqual(serviceTierPrompts(undefined, 'priority', true), []);
 });
 
 test('T3 catalogue shows manual Anthropic account copies after all base models', () => {
@@ -111,25 +153,28 @@ test('T3 catalogue shows manual Anthropic account copies after all base models',
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: `${opus}-sub2`, api: 'anthropic-messages' }), true);
 });
 
-test('selection options map T3 TraitsPicker ids onto Pi thinking and /fast', () => {
+test('selection options map T3 TraitsPicker ids onto Pi thinking and the service tier', () => {
   assert.deepEqual(applySelectionOptions([
     { id: 'reasoningEffort', value: 'xhigh' },
     { id: 'fastMode', value: true },
-  ]), { thinking: 'xhigh', fast: true });
-  assert.deepEqual(applySelectionOptions([{ id: 'thinking', value: 'high' }]), { thinking: 'high', fast: undefined });
-  assert.deepEqual(applySelectionOptions([{ id: 'serviceTier', value: 'priority' }]), { thinking: undefined, fast: true });
+  ]), { thinking: 'xhigh', tier: 'priority', fast: true });
+  assert.deepEqual(applySelectionOptions([{ id: 'fastMode', value: false }]), { thinking: undefined, tier: 'default', fast: false });
+  assert.deepEqual(applySelectionOptions([{ id: 'thinking', value: 'high' }]), { thinking: 'high', tier: undefined, fast: undefined });
+  assert.deepEqual(applySelectionOptions([{ id: 'serviceTier', value: 'priority' }]), { thinking: undefined, tier: 'priority', fast: true });
+  assert.deepEqual(applySelectionOptions([{ id: 'serviceTier', value: 'ultrafast' }]), { thinking: undefined, tier: 'ultrafast', fast: false });
+  assert.deepEqual(applySelectionOptions([{ id: 'serviceTier', value: 'default' }]), { thinking: undefined, tier: 'default', fast: false });
   assert.throws(() => applySelectionOptions([{ id: 'unknown', value: 'x' }]), /Unsupported Pi option/);
 });
 
 test('T3 catalogue never lists the OpenAI API provider, even as the current model', () => {
   const models = [
-    { provider: 'openai', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-responses' },
-    { provider: 'openai-codex', id: 'gpt-6-astra', name: 'GPT-6 Astra', api: 'openai-codex-responses' },
+    { provider: 'openai', id: CODEX_ASTRA, name: 'Astra', api: 'openai-responses' },
+    { provider: 'openai-codex', id: CODEX_ASTRA, name: 'Astra', api: 'openai-codex-responses' },
     { provider: 'xai', id: XAI_GROK, name: 'Grok' },
   ];
-  const catalog = catalogForPicker(models, { provider: 'openai', id: 'gpt-6-astra' });
+  const catalog = catalogForPicker(models, { provider: 'openai', id: CODEX_ASTRA });
   assert.deepEqual(catalog.map((item) => `${item.provider}/${item.id}`), [
-    'openai-codex/gpt-6-astra',
+    `openai-codex/${CODEX_ASTRA}`,
     `xai/${XAI_GROK}`,
   ]);
 });

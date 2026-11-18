@@ -1,6 +1,6 @@
 import { SessionClient } from '../../pi-server/src/client.mjs';
 import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
-import { applySelectionOptions } from './model-catalog-order.mjs';
+import { applySelectionOptions, serviceTierPrompts } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
 import { sessionMessageFrom, textOf } from './events.mjs';
@@ -793,20 +793,21 @@ export class RubatoRpcConnection {
   /**
    * The picker's options upstream Pi has no field for (model-catalog-order.mjs optionDescriptorsFor).
    * T3 sends the Fast toggle on every turn, so the toggle is the answer; Pi remembers fast per
-   * model, so compare against what Pi will send rather than the last value (V1 applyFast).
+   * model, so compare against what Pi will send rather than the last value (serviceTierPrompts).
    */
   async applySelection(options) {
-    const { thinking, fast } = applySelectionOptions(Array.isArray(options) ? options : []);
+    const { thinking, tier } = applySelectionOptions(Array.isArray(options) ? options : []);
     if (thinking !== undefined && thinking !== this.thinkingLevel) {
       await this.client.command({ type: 'set_thinking_level', level: thinking });
       this.thinkingLevel = thinking;
     }
-    if (fast === undefined) return {};
-    let tier;
-    try { tier = await this.client.command({ type: 'get_service_tier' }); } catch { /* an engine without it */ }
-    const active = tier ? (tier.supported === true ? tier.active === true : fast) : this.fastMode;
-    if (active !== fast) await this.client.command({ type: 'prompt', message: fast ? '/fast on' : '/fast off' });
-    this.fastMode = fast;
+    if (tier === undefined) return {};
+    let engine;
+    try { engine = await this.client.command({ type: 'get_service_tier' }); } catch { /* an engine without it */ }
+    for (const message of serviceTierPrompts(engine, tier, this.fastMode)) {
+      await this.client.command({ type: 'prompt', message });
+    }
+    this.fastMode = tier === 'priority';
     return {};
   }
   async request(record) {

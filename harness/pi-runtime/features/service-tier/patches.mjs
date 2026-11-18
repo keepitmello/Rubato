@@ -143,6 +143,19 @@ export const files = Object.freeze([
     path: "rubato-features/service-tier/extension.mjs",
     sourcePath: fileURLToPath(new URL("./extension.mjs", import.meta.url)),
   }),
+  // The real catalog sits beside the extension in the stage; the source tree has re-export shims.
+  Object.freeze({
+    target: "runtime",
+    version: PACKAGE_VERSION,
+    path: "rubato-features/service-tier/product-model-catalog.mjs",
+    sourcePath: fileURLToPath(new URL("../../../../packages/model-core/src/product-model-catalog.mjs", import.meta.url)),
+  }),
+  Object.freeze({
+    target: "runtime",
+    version: PACKAGE_VERSION,
+    path: "rubato-features/service-tier/model-label.mjs",
+    sourcePath: fileURLToPath(new URL("../../../../packages/model-core/src/model-label.mjs", import.meta.url)),
+  }),
   Object.freeze({
     target: "runtime",
     version: PACKAGE_VERSION,

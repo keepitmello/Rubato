@@ -527,6 +527,23 @@ const edits = {
     ['import { cn } from "~/lib/utils";', 'import { GeminiIcon } from "../GeminiIcon";\nimport { RubatoIcon } from "../RubatoIcon";\n'],
     ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n};', '  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n};', 'replace'],
   ],
+  // An untouched speed select with Ultrafast is sent as Normal, like the Fast toggle's implicit false.
+  'apps/web/src/components/chat/composerProviderState.tsx': [
+    ["export function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n", "/**\n * Rubato: a speed select that offers Ultrafast is the same switch as Fast, so an untouched one is\n * Normal and is sent as such. Otherwise a tier the engine remembered from `/ultrafast` kept\n * running while the picker read Normal (harness/t3-integration/src/model-catalog-order.mjs).\n */\nfunction withImplicitServiceTierDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | null | undefined {\n  if (modelOptions?.some((selection) => selection.id === \"serviceTier\")) return modelOptions;\n  for (const descriptor of caps.optionDescriptors ?? []) {\n    if (descriptor.type !== \"select\" || descriptor.id !== \"serviceTier\") continue;\n    if (!descriptor.options.some((option) => option.id === \"ultrafast\")) continue;\n    const normal = descriptor.options.find((option) => option.isDefault)?.id ?? \"default\";\n    return [...(modelOptions ?? []), { id: \"serviceTier\", value: normal }];\n  }\n  return modelOptions;\n}\n\nexport function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n", 'replace'],
+    ['  const hasExplicitFastMode = modelOptions?.some((selection) => selection.id === "fastMode");',
+      '  modelOptions = withImplicitServiceTierDefault(caps, modelOptions);\n  const hasExplicitFastMode = modelOptions?.some((selection) => selection.id === "fastMode");', 'replace'],
+  ],
+  // A test for the untouched speed select above.
+  'apps/web/src/components/chat/composerProviderState.test.tsx': [
+    ["describe(\"trait controls fastMode display\", () => {", "describe(\"Rubato: an untouched speed select with Ultrafast\", () => {\n  const speed = selectDescriptor(\"serviceTier\", [\n    { id: \"default\", label: \"Normal\", isDefault: true },\n    { id: \"priority\", label: \"Fast\" },\n    { id: \"ultrafast\", label: \"Ultrafast\" },\n  ]);\n\n  it(\"is sent as Normal so a tier the engine remembered cannot run under a Normal picker\", () => {\n    expect(withImplicitFastModeDefault({ optionDescriptors: [speed] }, undefined)).toEqual(\n      selections([\"serviceTier\", \"default\"]),\n    );\n    const state = getComposerProviderState({\n      provider: PROVIDER,\n      model: MODEL,\n      models: modelWith([speed]),\n      modelOptions: undefined,\n      planModeEnabled: true,\n    });\n    expect(state.modelOptionsForDispatch).toEqual(selections([\"serviceTier\", \"default\"]));\n  });\n\n  it(\"keeps the user's pick, and leaves a speed select without Ultrafast alone\", () => {\n    expect(\n      withImplicitFastModeDefault({ optionDescriptors: [speed] }, selections([\"serviceTier\", \"ultrafast\"])),\n    ).toEqual(selections([\"serviceTier\", \"ultrafast\"]));\n    const fastOnly = selectDescriptor(\"serviceTier\", [\n      { id: \"default\", label: \"Normal\", isDefault: true },\n      { id: \"priority\", label: \"Fast\" },\n    ]);\n    expect(withImplicitFastModeDefault({ optionDescriptors: [fastOnly] }, undefined)).toBeUndefined();\n  });\n});\n\n"],
+  ],
+  // The composer's trait button reads a Codex speed select as "High Ultrafast", and as plain
+  // "High" on Normal. Rubato's Ultrafast models send the same select (model-catalog-order.mjs),
+  // which without this read as "High · Normal".
+  'apps/web/src/components/chat/TraitsPicker.tsx': [
+    ['      input.provider === "codex" &&\n      descriptor.id === "serviceTier" &&',
+      '      (input.provider === "codex" || input.provider === "rubato-pi") &&\n      descriptor.id === "serviceTier" &&', 'replace'],
+  ],
   'apps/web/src/components/chat/ModelListRow.tsx': [
     ['import { ProviderInstanceIcon } from "./ProviderInstanceIcon";', 'import { iconForProviderModel, subProviderLabel } from "./rubatoModelIcons";\n'],
     [

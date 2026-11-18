@@ -277,6 +277,16 @@ test("patch manifest is version-locked, drift-strict, and keeps SettingsManager 
       {
         target: "runtime",
         version: PI_VERSION,
+        path: "rubato-features/service-tier/product-model-catalog.mjs",
+      },
+      {
+        target: "runtime",
+        version: PI_VERSION,
+        path: "rubato-features/service-tier/model-label.mjs",
+      },
+      {
+        target: "runtime",
+        version: PI_VERSION,
         path: "rubato-features/service-tier/THIRD_PARTY_NOTICES.md",
       },
     ],

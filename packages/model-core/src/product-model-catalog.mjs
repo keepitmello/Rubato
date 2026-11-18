@@ -47,6 +47,13 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
   nanogpt: Object.freeze(["z-ai/glm-5.3-uncensored", "z-ai/glm-5.3-flash-uncensored"]),
 });
 
+/**
+ * Codex models whose `/codex/models` row lists the `ultrafast` service tier and actually speeds
+ * up on it. 6.2 Astra accepts `service_tier: "ultrafast"` but serves it at the standard rate
+ * (2026-11-18: 6.2 Sol ~500 tok/s vs 49 standard and 70 priority; 6.2 Astra 50 both).
+ */
+export const CODEX_ULTRAFAST_MODEL_IDS = Object.freeze(["gpt-6.2-sol"]);
+
 export const CURSOR_GROK_PRESENTED_ID = `cursor/${CURSOR_GROK_BASE_ID}`;
 export const CURSOR_GROK_DEFAULT_FAST_ID = `cursor/${CURSOR_GROK_BASE_ID}-high-fast`;
 export const CURSOR_GROK_LIVE_IDS = Object.freeze([

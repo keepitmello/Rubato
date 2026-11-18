@@ -1,16 +1,12 @@
 // Derived from @code-yeongyu/senpi 2026.9.4-3's service-tier extension and
 // Rubato's core-service-tier transform. See THIRD_PARTY_NOTICES.md.
 import { SettingsManager as StockSettingsManager } from "@earendil-works/pi-coding-agent";
+import { CODEX_ULTRAFAST_MODEL_IDS } from "./product-model-catalog.mjs";
 
 export const PRIORITY_TIER = "priority";
 export const AUTO_TIER = "auto";
 export const ULTRAFAST_TIER = "ultrafast";
-/**
- * Codex models whose `/codex/models` row lists the `ultrafast` service tier. Only these
- * speed up: 6.2 Astra accepts `service_tier: "ultrafast"` but serves it at the standard
- * rate (2026-11-18: 6.2 Sol ~500 tok/s vs 49 standard and 70 priority; 6.2 Astra 50 both).
- */
-export const ULTRAFAST_MODEL_IDS = Object.freeze(["gpt-6.2-sol"]);
+export const ULTRAFAST_MODEL_IDS = CODEX_ULTRAFAST_MODEL_IDS;
 export const ANTHROPIC_FAST_BETA = "fast-mode-2026-02-01";
 
 const FAST_MODEL_SUFFIX = "-fast";

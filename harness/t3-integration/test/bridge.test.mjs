@@ -12,6 +12,7 @@ import { RubatoPiBridge, THREAD_REQUEST_PASSES } from '../src/bridge.mjs';
 import { CATALOGUE_REUSE_MS, companionEntry, handleCacheWarmingRequest, rewindPlan, stepRewindPlan, userStartedSession } from '../src/bridge.mjs';
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
+import { CODEX_ULTRAFAST_MODEL_IDS } from '../../../packages/model-core/src/product-model-catalog.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<500;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
 // On T3's V2 orchestrator these records feed only the session-state fold (session-state.mjs);
@@ -1020,6 +1021,36 @@ test('the Fast toggle overrides what Pi remembered and stays quiet when they agr
 
   await bridge.selectModel(context, selection(true));
   assert.deepEqual(sent(), ['/fast on']);
+});
+
+// The speed picker on an Ultrafast model is one select: Normal, Fast or Ultrafast. Each pick sends
+// only what moves Pi there, and the two switches replace each other on the Pi side.
+test('the speed picker moves Pi between Normal, Fast and Ultrafast with the fewest commands', async (t) => {
+  const { root, bridge } = await setup(t);
+  await bridge.startSession({ threadId:'ultra-thread', runtimeMode:'full-access', cwd:root });
+  const context = bridge.sessions.get('ultra-thread');
+  const model = `openai-codex/${CODEX_ULTRAFAST_MODEL_IDS[0]}`;
+  context.session.model = model;
+  await context.client.command({ type:'prompt', message:'__ultrafast_supported' });
+  const calls = [];
+  const original = context.client.command.bind(context.client);
+  context.client.command = async (command) => { calls.push(command); return original(command); };
+  const pick = async (value) => {
+    calls.length = 0;
+    await bridge.selectModel(context, { model, options:[{ id:'serviceTier', value }] });
+    return calls.filter((command) => command.type === 'prompt').map((command) => command.message);
+  };
+  const state = () => original({ type:'get_service_tier' });
+
+  assert.deepEqual(await pick('default'), []);
+  assert.deepEqual(await pick('ultrafast'), ['/ultrafast on']);
+  assert.deepEqual([(await state()).ultrafast, (await state()).active], [true, false]);
+  assert.deepEqual(await pick('ultrafast'), []);
+  assert.deepEqual(await pick('priority'), ['/fast on']);
+  assert.deepEqual([(await state()).ultrafast, (await state()).active], [false, true]);
+  assert.deepEqual(await pick('ultrafast'), ['/ultrafast on']);
+  assert.deepEqual(await pick('default'), ['/ultrafast off']);
+  assert.deepEqual([(await state()).ultrafast, (await state()).active], [false, false]);
 });
 
 // `/fast` on a model Pi cannot serve fast only warns; the toggle there has nothing to do.

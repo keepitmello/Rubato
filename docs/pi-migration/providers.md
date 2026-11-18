@@ -133,7 +133,10 @@ native catalog lacks them; 5.2 overrides the price (`fable51Models`, `fable52Mod
 `/ultrafast` is a separate Codex switch with the same per-model memory: it sends
 `service_tier: "ultrafast"` only for models in `ULTRAFAST_MODEL_IDS` (`gpt-6.2-sol`), and it and
 `/fast` replace each other. The service-tier state reports it as `ultrafast`, apart from `active`,
-which stays the Fast answer that T3's Fast toggle is compared against.
+which stays the Fast answer that T3's Fast toggle is compared against. In T3 such a model gets one
+Speed select (Normal, Fast, Ultrafast) in place of the Fast toggle; the bridge turns a pick into
+`/fast` or `/ultrafast` (`model-catalog-order.mjs` `serviceTierPrompts`), and an untouched select
+is sent as Normal, like the toggle's implicit false.
 
 Senpi's builtin service-tier module owns `/fast`, per-base-model SettingsManager memory, model-switch
 restore, the session fast flag, and `before_provider_request`
