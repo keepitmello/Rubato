@@ -550,3 +550,41 @@ test("status reports Gemini API connected from the Keychain; remove clears that 
   assert.equal((await row()).state, "absent");
   assert.equal(await handleAuthArgs(["remove", "gemini", "keychain"], ctx), "error");
 });
+
+test("check hands the provider refresh a real signal, renews the slot and lifts its block", async () => {
+  const dir = tempHome();
+  const env = isolatedEnv(dir);
+  writeFileSync(env.RUBATO_AUTH_PATH, JSON.stringify({
+    anthropic: {
+      type: "api_key",
+      key: "main-key",
+      accounts: [
+        { name: "default", source: "login", key: "main-key" },
+        { name: "sub", source: "login", access: "a1", refresh: "r1", expires: Date.now() + 60_000 },
+      ],
+    },
+  }));
+  writeFileSync(env.RUBATO_AUTH_POOL_STATE, JSON.stringify({
+    schemaVersion: 1,
+    installationKey: "k",
+    providers: { anthropic: { lanes: { stored: { slots: { sub: { failureCount: 2, blockReason: "auth_error" } } } } } },
+  }));
+  // Anthropic's refresh passes the signal straight to AbortSignal.any, which throws on undefined.
+  const refresh = async (credential, signal) => {
+    AbortSignal.any([signal]);
+    assert.equal(credential.refresh, "r1");
+    return { type: "oauth", access: "a2", refresh: "r2", expires: Date.now() + 120_000 };
+  };
+  const ctx = {
+    ...capture(),
+    env,
+    home: dir,
+    engineRuntime: async () => ({ runtime: { models: { providers: new Map([["anthropic", { auth: { oauth: { refresh } } }]]) } } }),
+  };
+  assert.equal(await handleAuthArgs(["check", "anthropic", "sub"], ctx), "ok", ctx.text());
+  const sub = JSON.parse(readFileSync(env.RUBATO_AUTH_PATH, "utf8")).anthropic.accounts.find((slot) => slot.name === "sub");
+  assert.equal(sub.refresh, "r2");
+  const state = JSON.parse(readFileSync(env.RUBATO_AUTH_POOL_STATE, "utf8")).providers.anthropic.lanes.stored.slots.sub;
+  assert.equal(state.blockReason, undefined);
+  assert.equal(state.failureCount, 0);
+});

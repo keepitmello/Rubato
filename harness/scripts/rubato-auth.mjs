@@ -615,13 +615,16 @@ export async function verifyAccount(providerId, accountName, ctx) {
   if (!slot || typeof slot.refresh !== "string" || slot.refresh === "") {
     return { kind: "unsupported" };
   }
-  const { runtime } = await engineRuntime(providerId, ctx);
+  const { runtime } = await (ctx.engineRuntime ?? engineRuntime)(providerId, ctx);
   const refresh = runtime.models?.providers?.get(providerId)?.auth?.oauth?.refresh;
   if (typeof refresh !== "function") return { kind: "unsupported" };
   const view = projectSlot(current, accountName) ?? current;
   let refreshed;
   try {
-    refreshed = await refresh(view, undefined);
+    // Providers take the signal as given: Anthropic passes it to AbortSignal.any, which threw on
+    // `undefined` before any request, so every check reported a healthy sub as "not renewing"
+    // (2026-11-18). The runtime's own refresh always passes one.
+    refreshed = await refresh(view, AbortSignal.timeout(60_000));
   } catch (error) {
     // 갱신 실패가 곧 사용 불가는 아니다. Cursor 의 액세스 토큰은 한 달 넘게 살아
     // 있는데 갱신 엔드포인트는 따로 죽을 수 있다 — 지금은 되고 만료되면 끝나는
