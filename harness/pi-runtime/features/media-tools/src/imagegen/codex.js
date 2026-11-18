@@ -12,8 +12,12 @@ const CODEX_HOST = "chatgpt.com";
 const JWT_CLAIM_PATH = "https://api.openai.com/auth";
 const REQUEST_TIMEOUT_MS = 300_000;
 
-/** The ChatGPT login is read through the picker's Codex flagship row; that model is never called. */
-export const AUTH_MODEL_ID = PRODUCT_MODEL_ORDER[CODEX_PROVIDER][0];
+/**
+ * The ChatGPT login is read through the picker's Codex rows, flagship first; that model is never
+ * called. Every row shares one login, so a flagship the registry does not carry yet (a new
+ * generation injected by the Rubato provider layer) falls through to the next row.
+ */
+export const AUTH_MODEL_IDS = PRODUCT_MODEL_ORDER[CODEX_PROVIDER];
 
 /** ChatGPT Images 2.5 tiers: Flare is the fast everyday tier, Sunburst the precise-editing tier. */
 export const IMAGE_MODELS = Object.freeze({
@@ -34,9 +38,9 @@ function hostOf(baseUrl) {
 
 /** Resolves the Codex model whose login the image request borrows, or the reason it cannot run. */
 export function resolveCodexImageModel(registry) {
-    const model = registry?.find?.(CODEX_PROVIDER, AUTH_MODEL_ID);
+    const model = AUTH_MODEL_IDS.map((id) => registry?.find?.(CODEX_PROVIDER, id)).find((found) => found !== undefined);
     if (model === undefined) {
-        return { ok: false, reason: `Image generation needs the ${CODEX_PROVIDER}/${AUTH_MODEL_ID} login, which is not in the model registry.` };
+        return { ok: false, reason: `Image generation needs the ${CODEX_PROVIDER} login, which is not in the model registry.` };
     }
     if (hostOf(model.baseUrl) !== CODEX_HOST) {
         return { ok: false, reason: `${CODEX_PROVIDER} points at ${model.baseUrl}; image generation only calls https://${CODEX_HOST}.` };

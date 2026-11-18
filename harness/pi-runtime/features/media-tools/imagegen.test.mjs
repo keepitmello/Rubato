@@ -6,7 +6,7 @@ import test from "node:test";
 
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
 import { CHAIN_LIMIT, nextChain } from "./src/imagegen/chain.js";
-import { AUTH_MODEL_ID, CODEX_PROVIDER, IMAGE_MODELS, imageEndpoint } from "./src/imagegen/codex.js";
+import { AUTH_MODEL_IDS, CODEX_PROVIDER, IMAGE_MODELS, imageEndpoint } from "./src/imagegen/codex.js";
 import { displayPath, resolveTarget, sanitizeImageStem } from "./src/imagegen/paths.js";
 import { imageCreateTool, imageEditTool } from "./src/imagegen/tool.js";
 
@@ -25,10 +25,10 @@ function jsonReply(status, body) {
 
 const imageReply = () => jsonReply(200, { data: [{ b64_json: PNG_DATA, generation_id: "gen_1" }], usage: { input_tokens: 5, output_tokens: 9 } });
 
-function fakeRegistry({ oauth = true, baseUrl = "https://chatgpt.com/backend-api", registered = true } = {}) {
-	const model = { provider: CODEX_PROVIDER, id: AUTH_MODEL_ID, api: "openai-codex-responses", baseUrl };
+function fakeRegistry({ oauth = true, baseUrl = "https://chatgpt.com/backend-api", registered = true, authModelId = AUTH_MODEL_IDS[0] } = {}) {
+	const model = { provider: CODEX_PROVIDER, id: authModelId, api: "openai-codex-responses", baseUrl };
 	return {
-		find: (provider, id) => (registered && provider === CODEX_PROVIDER && id === AUTH_MODEL_ID ? model : undefined),
+		find: (provider, id) => (registered && provider === CODEX_PROVIDER && id === authModelId ? model : undefined),
 		isUsingOAuth: (candidate) => candidate === model && oauth,
 		getApiKeyAndHeaders: async (candidate) => (candidate === model ? { ok: true, apiKey: TOKEN, headers: { "x-provider": "codex" } } : { ok: false, error: "unknown model" }),
 		complete: async () => {
@@ -62,7 +62,7 @@ function fixture(t, { reply = imageReply, ...registryOptions } = {}) {
 }
 
 test("image tools read the login through the picker's Codex flagship and name the two Images 2.5 tiers", () => {
-	assert.equal(AUTH_MODEL_ID, PRODUCT_MODEL_ORDER["openai-codex"][0]);
+	assert.deepEqual(AUTH_MODEL_IDS, PRODUCT_MODEL_ORDER["openai-codex"]);
 	assert.deepEqual(IMAGE_MODELS, { create: "gpt-image-2.5-flare", edit: "gpt-image-2.5-sunburst" });
 });
 
@@ -89,6 +89,14 @@ test("image tools refuse every credential except the ChatGPT login, before any r
 	}
 	const { run } = fixture(t, { oauth: false });
 	assert.match(textOf(await run(imageCreateTool, { prompt: "x" })), /OpenAI ChatGPT login/);
+});
+
+test("a registry without the flagship borrows the login from the next Codex picker row", async (t) => {
+	const { calls, run } = fixture(t, { authModelId: AUTH_MODEL_IDS[1] });
+	const created = await run(imageCreateTool, { prompt: "x", output_path: "next-row.png" });
+	assert.equal(created.details.isError, undefined);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].headers.Authorization ?? calls[0].headers.authorization, `Bearer ${TOKEN}`);
 });
 
 test("image_create sends the prompt unchanged straight to the image endpoint and saves the PNG", async (t) => {
