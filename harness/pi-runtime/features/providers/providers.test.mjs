@@ -840,3 +840,122 @@ test("a burst of provider registrations ends in one refresh, not one each", asyn
   await settle();
   assert.equal(refreshes, 2, "a change after the refresh ran gets its own");
 });
+
+const laneAuth = () => ({
+  ...authData(),
+  anthropic: {
+    type: "api_key",
+    key: "anthropic-default-test-not-real",
+    accounts: ["default", "sub", "sub2"].map((name) => ({ name, key: `anthropic-${name}-test-not-real` })),
+  },
+});
+
+function answeredBy(modelId) {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text: "ok" }],
+    api: "anthropic-messages",
+    provider: "anthropic",
+    model: modelId,
+    usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { ...ZERO_COST, total: 0 } },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
+}
+
+// Opens a conversation from its transcript the way the engine does (services first, so extension
+// providers are registered before the session picks its model).
+async function openTranscript(t, sessionManager) {
+  const root = mkdtempSync(join(scratchRoot, "resume-"));
+  const cwd = join(root, "cwd");
+  const agentDir = join(root, "agent");
+  mkdirSync(cwd);
+  mkdirSync(agentDir);
+  writeFileSync(join(agentDir, "auth.json"), `${JSON.stringify(laneAuth(), null, 2)}\n`, { mode: 0o600 });
+  const services = await sdk.createAgentSessionServices({
+    cwd,
+    agentDir,
+    settingsManager: sdk.SettingsManager.inMemory(),
+    resourceLoaderOptions: {
+      noExtensions: true,
+      noSkills: true,
+      noPromptTemplates: true,
+      noThemes: true,
+      noContextFiles: true,
+      extensionFactories: [{
+        name: "rubato-providers",
+        factory: feature.createProvidersExtension({
+          env: { ...environment(), RUBATO_PI_CODING_AGENT_DIR: agentDir },
+          kiro: { ensureKiro: async () => {} },
+        }),
+      }],
+    },
+  });
+  const result = await sdk.createAgentSessionFromServices({ services, sessionManager, noTools: "all" });
+  t.after(() => result.session.dispose());
+  return result.session;
+}
+
+function transcript(entries) {
+  const sessionManager = sdk.SessionManager.inMemory(process.cwd());
+  for (const entry of entries) {
+    if (typeof entry === "string") sessionManager.appendModelChange("anthropic", entry);
+    else sessionManager.appendMessage(entry);
+  }
+  return sessionManager;
+}
+
+async function resumedModel(t, entries) {
+  return (await openTranscript(t, transcript(entries))).model?.id;
+}
+
+async function anthropicRows(t) {
+  const models = (await openTranscript(t, transcript([]))).modelRuntime.getModels("anthropic");
+  const ids = new Set(models.map((item) => item.id));
+  const lane = models.find((item) => item.id.endsWith("-sub2") && ids.has(item.id.slice(0, -"-sub2".length)));
+  assert.ok(lane, "the third Anthropic account adds -sub2 rows");
+  const base = models.find((item) => item.id === lane.id.slice(0, -"-sub2".length));
+  const sub = models.find((item) => item.id === `${base.id}-sub`);
+  assert.ok(sub, "the second Anthropic account adds -sub rows");
+  const other = models.find((item) => !/-sub2?$/.test(item.id) && item.id !== base.id);
+  assert.ok(other, "another Anthropic model to answer through");
+  return { lane, sub, base, other };
+}
+
+const asked = () => ({ role: "user", content: [{ type: "text", text: "hi" }], timestamp: Date.now() });
+
+// An account row (`…-sub2`) sends its base id, so its answers name the base model. Reopening the
+// conversation from its transcript (an engine wake, not the app's next turn) must keep the account.
+test("a resumed conversation keeps the account row its answers came through", async (t) => {
+  const { lane, base, other } = await anthropicRows(t);
+  assert.equal(await resumedModel(t, [lane.id, asked(), answeredBy(base.id)]), lane.id);
+  // Only the base model's answers keep the row; any other model that answered still wins.
+  assert.equal(await resumedModel(t, [lane.id, asked(), answeredBy(other.id)]), other.id);
+  assert.equal(await resumedModel(t, [base.id, asked(), answeredBy(base.id)]), base.id);
+  assert.equal(await resumedModel(t, [lane.id, asked(), answeredBy(base.id), base.id, asked(), answeredBy(base.id)]), base.id);
+});
+
+// A tree move changes the branch but not the active model. Before the next prompt the session records
+// the active selection when the branch implies another; answers cannot show a row, so rows count.
+test("a prompt after a tree move records the active account row, or the move off one", async (t) => {
+  const { lane, sub, base } = await anthropicRows(t);
+  const promptOn = async (entries, active, { fromRoot = false } = {}) => {
+    const sessionManager = transcript(entries);
+    const session = await openTranscript(t, sessionManager);
+    if (fromRoot) {
+      // Opening records an initial selection; a move to the root leaves a branch with none.
+      sessionManager.resetLeaf();
+      assert.equal(sessionManager.getBranch().length, 0);
+    }
+    session.agent.state.model = active; // what navigateTree leaves: the branch says otherwise
+    session._recordSelection(); // runs before every prompt (_runAgentPrompt)
+    sessionManager.appendMessage(asked());
+    sessionManager.appendMessage(answeredBy(base.id));
+    return (await openTranscript(t, sessionManager)).model?.id;
+  };
+  assert.equal(await promptOn([sub.id, asked(), answeredBy(base.id)], base), base.id);
+  assert.equal(await promptOn([sub.id, asked(), answeredBy(base.id)], lane), lane.id);
+  assert.equal(await promptOn([asked(), answeredBy(base.id)], lane), lane.id);
+  assert.equal(await promptOn([], lane, { fromRoot: true }), lane.id);
+  assert.equal(await promptOn([lane.id, asked(), answeredBy(base.id)], lane), lane.id);
+});

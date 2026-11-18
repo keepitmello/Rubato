@@ -450,6 +450,75 @@ const cursorOwnedTargets = Object.freeze([
   "utils/block-symbols.js",
 ]);
 
+// An account row (`claude-opus-5-5-sub2`) sends its base id (runtime-pool wireAccountModel), so
+// its answers name the base model. Stock resume lets the newest answer's model win over the last
+// `model_change` unless that change is virtual, so a conversation reopened from its transcript
+// (an engine wake with no app turn to reselect it) fell back to the primary account: its first
+// request missed the account's prompt cache and dropped the thinking signed there. The row now
+// holds while the answers after it came from its own base model.
+function patchVirtualModelsAccountLane(sourceText) {
+  let next = replaceOnce(
+    sourceText,
+    'import { isModelType, lazyStream, } from "@earendil-works/pi-ai";\n',
+    'import { isModelType, lazyStream, } from "@earendil-works/pi-ai";\nimport { wireAccountModel } from "../rubato-features/providers/auth-pool/runtime-pool.mjs";\n',
+    "account-lane-import",
+  );
+  next = replaceOnce(
+    next,
+    "            return change && model && isVirtualModel(model) ? change : response;",
+    "            return change && model && (isVirtualModel(model) || answersAsAccountRow(model, response)) ? change : response;",
+    "account-lane-selection",
+  );
+  return replaceOnce(
+    next,
+    "//# sourceMappingURL=virtual-models.js.map",
+    `/** Rubato: whether a model names an account row (\`…-sub\`, \`…-sub2\`), which sends its base id. */
+export function isAccountRow(model) {
+    return wireAccountModel(model) !== model;
+}
+/** Rubato: whether \`response\` is an answer the account row \`model\` sent under its base id. */
+function answersAsAccountRow(model, response) {
+    const wire = wireAccountModel(model);
+    return wire !== model && wire.provider === response.provider && wire.id === response.modelId;
+}
+//# sourceMappingURL=virtual-models.js.map`,
+    "account-lane-helper",
+  );
+}
+
+// Answers cannot show an account row (they name its base id), so the row has to be on the branch
+// as a `model_change`. Stock records a differing selection before a prompt only for virtual models;
+// after a tree move the active row (or a move off a row) went unrecorded and the next reopen
+// restored whatever the branch said. Rows are recorded the way virtual selections are.
+function patchAgentSessionAccountLane(sourceText) {
+  let next = replaceOnce(
+    sourceText,
+    "import { findLatestResponse, getBranchSelection, getVirtualModelState, isVirtualModel, VIRTUAL_MODEL_STATE_ENTRY, } from \"./virtual-models.js\";",
+    "import { findLatestResponse, getBranchSelection, getVirtualModelState, isAccountRow, isVirtualModel, VIRTUAL_MODEL_STATE_ENTRY, } from \"./virtual-models.js\";",
+    "account-lane-record-import",
+  );
+  return replaceOnce(
+    next,
+    `        if (!recorded || (recorded.provider === model.provider && recorded.modelId === model.id))
+            return;
+        const recordedModel = getModel(recorded.provider, recorded.modelId);
+        if (!isVirtualModel(model) && !(recordedModel && isVirtualModel(recordedModel)))
+            return;`,
+    `        if (!recorded) {
+            if (isAccountRow(model))
+                this.sessionManager.appendModelChange(model.provider, model.id);
+            return;
+        }
+        if (recorded.provider === model.provider && recorded.modelId === model.id)
+            return;
+        const recordedModel = getModel(recorded.provider, recorded.modelId);
+        if (!isVirtualModel(model) && !(recordedModel && isVirtualModel(recordedModel)) &&
+            !isAccountRow(model) && !isAccountRow(recordedModel ?? { provider: recorded.provider, id: recorded.modelId }))
+            return;`,
+    "account-lane-record",
+  );
+}
+
 export const patches = Object.freeze([
   Object.freeze({
     id: "providers:auth-resolve-pool",
@@ -482,6 +551,22 @@ export const patches = Object.freeze([
     path: "dist/core/extensions/loader.js",
     preimageSha256: "44a356da552c9cf2ea619c61944cfb28f81b45f09b325f152c91a914bfce1bc0",
     apply: patchLoaderPendingUnregister,
+  }),
+  Object.freeze({
+    id: "providers:virtual-models-account-lane",
+    packageName: "@earendil-works/pi-coding-agent",
+    version: PACKAGE_VERSION,
+    path: "dist/core/virtual-models.js",
+    preimageSha256: "83f1a9caa7bcd4cbf1ac84c157b0eeb2d5009f85a7f6f4265383b5e2edc323a5",
+    apply: patchVirtualModelsAccountLane,
+  }),
+  Object.freeze({
+    id: "providers:agent-session-account-lane",
+    packageName: "@earendil-works/pi-coding-agent",
+    version: PACKAGE_VERSION,
+    path: "dist/core/agent-session.js",
+    preimageSha256: "35ca1dabd54d98c236c9601b569c2856b726ade392d06b2eaaf50158f48913ab",
+    apply: patchAgentSessionAccountLane,
   }),
   Object.freeze({
     id: "providers:runner-flush-unregister",
