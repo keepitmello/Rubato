@@ -49,7 +49,7 @@ const FETCH_TIMEOUT_MS = 10_000;
 
 const pad = (n) => String(n).padStart(2, '0');
 const dayKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-const expandHome = (raw, env) => (raw === '~' || raw.startsWith('~/') ? path.join(env.HOME || homedir(), raw.slice(1)) : raw);
+export const expandHome = (raw, env) => (raw === '~' || raw.startsWith('~/') ? path.join(env.HOME || homedir(), raw.slice(1)) : raw);
 
 /** One source as stored, or undefined when it cannot be one: `{ kind, location, name? }`. */
 export function normalizeSource(value) {

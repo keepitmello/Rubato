@@ -124,8 +124,9 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   writeSettings({ greetings: { enabled: false } }, env);
   writeSettings({ schedule: { sources: [{ location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] } }, env);
   writeSettings({ call: { effort: 'low' } }, env);
+  writeSettings({ location: { source: ' ~/.claude/roo-channel/state/user.json ' } }, env);
   assert.deepEqual(readSettings(env), { enabled: true, heartbeat: { enabled: true, everyMinutes: 45, quietDuringWish: true, reflectNote: '' }, greetings: { enabled: false },
-    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] }, call: { effort: 'low' } });
+    schedule: { sources: [{ kind: 'ics', location: 'https://cal.example/me.ics' }, { kind: 'markdown', location: '~/plan.md' }] }, location: { source: '~/.claude/roo-channel/state/user.json' }, call: { effort: 'low' } });
   assert.throws(() => writeSettings({ greetings: { enabled: 'no' } }, env), /greetings\.enabled/);
   assert.throws(() => writeSettings({ schedule: { sources: 'x' } }, env), /schedule\.sources/);
   assert.throws(() => writeSettings({ schedule: { sources: [{ location: '' }] } }, env), /location/);
@@ -134,6 +135,7 @@ test('saved settings merge over what is stored and refuse what the page cannot o
   assert.throws(() => writeSettings({ heartbeat: { everyMinutes: 7 } }, env), /everyMinutes/);
   assert.throws(() => writeSettings({ enabled: 'yes' }, env), /enabled/);
   assert.throws(() => writeSettings({ call: { effort: 'max' } }, env), /call\.effort/);
+  assert.throws(() => writeSettings({ location: 'here' }, env), /location must be an object/);
   writeFileSync(companionPaths(env).settings, '{ broken');
   assert.deepEqual(readSettings(env), DEFAULT_SETTINGS, 'an unreadable file reads as the defaults');
 });

@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
 import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -709,4 +709,45 @@ test('nextBoundary: the interval on the local clock', () => {
   assert.equal(nextBoundary(at(20, 12, 10), 30 * 60_000), at(20, 12, 30));
   assert.equal(nextBoundary(at(20, 12, 30), 30 * 60_000), at(20, 13));
   assert.equal(nextBoundary(at(20, 12, 50), 15 * 60_000), at(20, 13));
+});
+
+test("heartbeat: the user's place from the location file in settings rides under the tick, with its age, stale past six hours", async (t) => {
+  const env = sandbox(t);
+  const file = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'user.json');
+  const now = new Date(2026, 10, 18, 23, 0).getTime();
+  const place = (updatedAt, extra = {}) => writeFileSync(file, JSON.stringify({ name: 'u', location: { current: '세븐일레븐, "남현1길", 남현동', updatedAt, source: 'owntracks', ...extra } }));
+
+  assert.equal(readUserLocation('', env), undefined, 'no source, no place');
+  assert.equal(readUserLocation(file, env), undefined, 'no file, no place');
+  place(new Date(2026, 10, 18, 22, 57).toISOString());
+  assert.equal(locationLine(readUserLocation(file, env), now), `LOCATION now="세븐일레븐, '남현1길', 남현동" updated="22:57" (3분 전)`);
+  place(new Date(2026, 10, 18, 16, 30).toISOString());
+  assert.equal(locationLine(readUserLocation(file, env), now), `LOCATION now="세븐일레븐, '남현1길', 남현동" updated="16:30" (6시간 전) stale`);
+  place(new Date(2026, 10, 15, 9, 5).toISOString());
+  assert.equal(locationLine(readUserLocation(file, env), now), `LOCATION now="세븐일레븐, '남현1길', 남현동" updated="11월 15일 09:05" (3일 전) stale`);
+  writeFileSync(file, JSON.stringify({ current: '남현동', updatedAt: new Date(now).toISOString() }));
+  assert.equal(locationLine(readUserLocation(file, env), now), 'LOCATION now="남현동" updated="23:00" (방금)', 'a file that is only the place reads too');
+  place('not a time');
+  assert.equal(readUserLocation(file, env), undefined, 'a place without a readable time is no place');
+  assert.equal(locationLine(undefined, now), '');
+
+  assert.equal(heartbeatText({ tick: 1, at: now, location: 'LOCATION now="x" updated="22:57" (3분 전)', schedule: ['SCHEDULE_DUE y'] }),
+    'HEARTBEAT tick=1 now="11월 18일(수) 오후 11:00"\nLOCATION now="x" updated="22:57" (3분 전)\nSCHEDULE_DUE y');
+
+  // A real beat: the keeper reads the file named in settings on each tick.
+  place(new Date(2026, 10, 18, 22, 57).toISOString());
+  assert.throws(() => writeSettings({ location: { source: 5 } }, env), /location\.source/);
+  writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: false }, location: { source: file } }, env);
+  const engine = fakeEngine();
+  engine.existing(env);
+  const notices = [];
+  let at = new Date(2026, 10, 18, 22, 31).getTime();
+  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+    notify: async (sessionId, text, what) => { notices.push({ text, what }); } });
+  t.after(() => keeper.close());
+  await keeper.ready;
+  at = now;
+  await keeper.poke();
+  assert.deepEqual(notices.filter((notice) => notice.what === 'heartbeat').map((notice) => notice.text.split('\n')[1]),
+    [`LOCATION now="세븐일레븐, '남현1길', 남현동" updated="22:57" (3분 전)`]);
 });

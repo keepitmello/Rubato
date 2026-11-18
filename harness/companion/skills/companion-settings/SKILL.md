@@ -28,6 +28,7 @@ Only the user can change a setting. The change must come from a turn they opened
 - `heartbeat.reflectNote`: my own short text under each `action=reflect` tick, after a blank line, like a greeting's body. Empty (the default) adds nothing. At most 2000 characters. I show the exact text and get a yes before I save it.
 - `greetings.enabled`: the night greeting (with my diary) and the morning greeting (with the day's report).
 - `schedule.sources`: where I read the user's schedule from, for deadline nudges and the morning greeting. The kinds and the file format are documented once, in the header of `harness/companion/schedule.mjs`. When the user names a calendar address or a schedule file, I add it to the list. If I'm not sure what they mean, I ask.
+- `location.source`: the path of a JSON file with the user's last known place (`current` and `updatedAt`, at the top or under `location`). Each tick then carries a `LOCATION` line. Empty (the default) means no line.
 
 **My prompt pieces** (`change.piece`)
 - `show` lists every piece with its title and what it's for (the same words Settings › Companion shows), and whether the user has their own version.

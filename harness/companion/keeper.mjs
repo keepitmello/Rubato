@@ -30,6 +30,9 @@
 //   depend on the tick.
 // - Schedule nudges (scripts/career-schedule.py tick, made general): SCHEDULE_ lines under the
 //   tick, from the calendars and schedule files set in Segno's settings (schedule.mjs).
+// - The user's place (heartbeat-tick.sh loc=, which the control tower put in the main heartbeat): a
+//   LOCATION line under the tick, from the location file set in Segno's settings (location.source),
+//   with when it was updated and how long ago, marked stale past six hours. No file, no line.
 // - The greetings (cron-prompts/night.md and morning.md, launchd at 00:07 and 09:07, dispatch
 //   windows 00–04 and 09–14). The night greeting writes the day's diary first and talks in that
 //   temperature; the morning greeting carries what the daily report used to (user item 4c0b0f00).
@@ -56,7 +59,7 @@ import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePane
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { capabilityActive, companionActivityAt, clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, segnoPaths, wakeWishState } from './home.mjs';
-import { scheduleNudges } from './schedule.mjs';
+import { expandHome, scheduleNudges } from './schedule.mjs';
 import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
 
@@ -117,20 +120,53 @@ export function localIso(at) {
 
 /**
  * The tick as Roo receives it: `HEARTBEAT tick=N now="…"`, then `action=` when there is one and
- * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. SCHEDULE_ lines follow
- * (Roo's career_nudge_lines after the heartbeat line), and a greeting catch-up carries the greeting's
+ * `reason=wake_wish` when a wish came due, with a WAKE_WISH line under it. The LOCATION line
+ * (`location`) comes next when there is one, then the SCHEDULE_ lines (Roo's career_nudge_lines
+ * after the heartbeat line), and a greeting catch-up carries the greeting's
  * text after a blank line, where Roo's heartbeat skill sends Roo to open cron-prompts/<slot>.md. A
  * reflect tick carries the companion's reflect note the same way (`note`).
  */
-export function heartbeatText({ tick, at, action = 'none', wish, schedule = [], greeting = '', note = '' }) {
+export function heartbeatText({ tick, at, action = 'none', wish, location = '', schedule = [], greeting = '', note = '' }) {
   const parts = ['HEARTBEAT', `tick=${tick}`, `now="${timeLabel(at)}"`];
   if (action !== 'none') parts.push(`action=${action}`);
   if (wish) parts.push('reason=wake_wish');
   const lines = [parts.join(' ')];
   if (wish) lines.push(`WAKE_WISH at=${localIso(wish.effectiveAt)} clamped=${wish.clamped ? 1 : 0} reason=${wish.reason}`);
+  if (location) lines.push(location);
   lines.push(...schedule);
   const body = [greeting, note].filter(Boolean).join('\n\n');
   return body ? `${lines.join('\n')}\n\n${body}` : lines.join('\n');
+}
+
+/** A place updated longer ago than this is marked stale on the LOCATION line. */
+export const LOCATION_STALE_MS = 6 * 60 * 60_000;
+
+/**
+ * The user's last known place from the location file (settings location.source): `{ current,
+ * updatedAt }` at the top or under `location`. Undefined when there is no source, no file, or no
+ * place with a readable time in it.
+ */
+export function readUserLocation(source, env = process.env) {
+  if (!source) return undefined;
+  let data;
+  try { data = JSON.parse(readFileSync(path.resolve(expandHome(source, env)), 'utf8')); } catch { return undefined; }
+  const place = data?.location && typeof data.location === 'object' ? data.location : data;
+  const current = typeof place?.current === 'string' ? place.current.replace(/\s+/g, ' ').trim() : '';
+  const updatedAt = Date.parse(place?.updatedAt);
+  if (!current || !Number.isFinite(updatedAt)) return undefined;
+  return { current, updatedAt };
+}
+
+/** `LOCATION now="…" updated="22:57" (3분 전)`; another day's update carries its date, and past six hours `stale`. */
+export function locationLine(place, at) {
+  if (!place) return '';
+  const age = Math.max(0, at - place.updatedAt);
+  const part = localParts(place.updatedAt);
+  const clock = `${part.hour}:${part.minute}`;
+  const updated = localDate(place.updatedAt) === localDate(at) ? clock : `${Number(part.month)}월 ${Number(part.day)}일 ${clock}`;
+  const ago = age < 60_000 ? '방금' : age < 3_600_000 ? `${Math.floor(age / 60_000)}분 전`
+    : age < 48 * 3_600_000 ? `${Math.floor(age / 3_600_000)}시간 전` : `${Math.floor(age / 86_400_000)}일 전`;
+  return `LOCATION now="${place.current.replaceAll('"', "'")}" updated="${updated}" (${ago})${age >= LOCATION_STALE_MS ? ' stale' : ''}`;
 }
 
 /** The interval's next boundary on the local clock after `at`: :00 and :30 at thirty minutes. */
@@ -670,7 +706,8 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
       wish = { ...wishState, reason: storedWish.reason };
       clearWakeWish(env);
     }
-    await notify(sessionId, heartbeatText({ tick, at, action, wish, schedule, greeting: missed ? greetingText(missed, defaultsDir, env) : '',
+    const location = locationLine(readUserLocation(settings.location.source, env), at);
+    await notify(sessionId, heartbeatText({ tick, at, action, wish, location, schedule, greeting: missed ? greetingText(missed, defaultsDir, env) : '',
       note: action === 'reflect' ? settings.heartbeat.reflectNote : '' }), 'heartbeat');
     // Marked once it went, as Roo marks cron-last-run after the greeting: a failed send is caught up later.
     if (missed) writeState({ greeted: { ...readState(env).greeted, [missed]: localDate(at) } }, env);

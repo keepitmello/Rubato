@@ -63,6 +63,9 @@ export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
  * pending wake wish silences plain and reflect ticks (Segno's rest, user 2026-10-20); off, they keep
  * coming and a reflect goes as a plain tick until the wish, as Roo's old tick did. `heartbeat.reflectNote`
  * is the companion's own text under each reflect tick, after a blank line as a greeting's body goes.
+ * `location.source` is a JSON file with the user's last known place (`{ current, updatedAt }`, at the
+ * top or under `location`, as Roo's OwnTracks state/user.json keeps it); each tick carries it as a
+ * LOCATION line (keeper.mjs). Empty by default: no line.
  */
 /** `heartbeat.reflectNote` rides on every reflect tick; longer than this is refused. */
 export const REFLECT_NOTE_LIMIT = 2000;
@@ -77,8 +80,11 @@ export const DEFAULT_SETTINGS = Object.freeze({
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }),
   greetings: Object.freeze({ enabled: true }),
   schedule: Object.freeze({ sources: Object.freeze([]) }),
+  location: Object.freeze({ source: '' }),
   call: Object.freeze({ effort: 'medium' }),
 });
+/** A location source longer than this is not a path. */
+const LOCATION_SOURCE_LIMIT = 2048;
 
 export function companionHome(env = process.env) {
   if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
@@ -112,6 +118,7 @@ export function normalizeSettings(value) {
   const greetings = input.greetings && typeof input.greetings === 'object' ? input.greetings
     : input.dailyReport && typeof input.dailyReport === 'object' ? input.dailyReport : {};
   const call = input.call && typeof input.call === 'object' ? input.call : {};
+  const location = input.location && typeof input.location === 'object' ? input.location : {};
   // An older home kept one schedule path as `career.schedule`; it reads as one markdown source.
   const listed = Array.isArray(input.schedule?.sources) ? input.schedule.sources
     : typeof input.career?.schedule === 'string' && input.career.schedule.trim() ? [{ kind: 'markdown', location: input.career.schedule }] : [];
@@ -128,6 +135,8 @@ export function normalizeSettings(value) {
     },
     greetings: { enabled: typeof greetings.enabled === 'boolean' ? greetings.enabled : DEFAULT_SETTINGS.greetings.enabled },
     schedule: { sources },
+    location: { source: typeof location.source === 'string' && location.source.trim().length <= LOCATION_SOURCE_LIMIT
+      ? location.source.trim() : DEFAULT_SETTINGS.location.source },
     call: { effort: CALL_EFFORTS.includes(call.effort) ? call.effort : DEFAULT_SETTINGS.call.effort },
   };
 }
@@ -163,6 +172,12 @@ export function writeSettings(patch, env = process.env) {
     if (call.effort !== undefined && !CALL_EFFORTS.includes(call.effort))
       throw new TypeError(`call.effort must be one of ${CALL_EFFORTS.join(', ')}`);
   }
+  const location = patch.location;
+  if (location !== undefined) {
+    if (!location || typeof location !== 'object') throw new TypeError('location must be an object');
+    if (location.source !== undefined && (typeof location.source !== 'string' || location.source.trim().length > LOCATION_SOURCE_LIMIT))
+      throw new TypeError('location.source is the path of a location file, or empty for none');
+  }
   const schedule = patch.schedule;
   if (schedule !== undefined) {
     if (!schedule || typeof schedule !== 'object') throw new TypeError('schedule must be an object');
@@ -178,7 +193,7 @@ export function writeSettings(patch, env = process.env) {
   const { dailyReport: _old, career: _career, ...rest } = patch;
   const next = normalizeSettings({ ...current, ...rest, heartbeat: { ...current.heartbeat, ...heartbeat },
     greetings: { ...current.greetings, ...greetings }, schedule: { ...current.schedule, ...schedule },
-    call: { ...current.call, ...call } });
+    location: { ...current.location, ...location }, call: { ...current.call, ...call } });
   writeJson(companionPaths(env).settings, next);
   return next;
 }
