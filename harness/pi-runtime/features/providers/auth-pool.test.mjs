@@ -13,6 +13,7 @@ import { classifyCredentialFailure, rateLimitCooldown, serverRetryAfterMs } from
 import { requiredSlotUnavailableMessage } from "./auth-pool/rotation-stream.mjs";
 import { selectSlot, sha256SlotHasher } from "./auth-pool/select.mjs";
 import { discoverEnvSlots } from "./auth-pool/env-slots.mjs";
+import { loginIdentityResolver } from "./auth-pool/login-identity.mjs";
 
 const sourceRuntimeRoot = join(import.meta.dirname, "../..");
 const scratchRoot = mkdtempSync(join(tmpdir(), "rubato-auth-pool-"));
@@ -68,6 +69,68 @@ test("an opaque access token is unknown, not the same account", () => {
   const current = { type: "oauth", access: "opaque-1", refresh: "r1", expires: 1 };
   const appended = appendLoginSlot(current, { type: "oauth", access: "opaque-2", refresh: "r2", expires: 2 });
   assert.deepEqual(listSlots(appended).map((slot) => slot.name), ["default", "sub"]);
+});
+
+// 2026-11-18: the `[sub]` row's setup-token slot was blocked, the same human logged in through the
+// browser, and the login landed in `login-3`, which no picker row reaches.
+const anthropicPool = () => ({
+  type: "api_key",
+  key: "sk-ant-oat01-main",
+  accounts: [
+    { name: "default", source: "login", key: "sk-ant-oat01-main" },
+    { name: "sub", source: "login", key: "sk-ant-oat01-setup-sub" },
+    { name: "login-2", source: "login", access: "sk-ant-oat01-other", refresh: "sk-ant-ort01-other", expires: Date.now() + 60_000 },
+  ],
+});
+const reLogin = { type: "oauth", access: "sk-ant-oat01-fresh-sub", refresh: "sk-ant-ort01-fresh-sub", expires: Date.now() + 60_000 };
+
+function anthropicFetch({ plan = "claude_max", orgs = {} } = {}) {
+  const calls = [];
+  const fetchImpl = async (url, init) => {
+    const token = init.headers.authorization?.replace("Bearer ", "") ?? init.headers["x-api-key"];
+    calls.push({ path: new URL(url).pathname, token });
+    if (new URL(url).pathname === "/api/oauth/profile") {
+      return new Response(JSON.stringify({ organization: { uuid: orgs[token], organization_type: plan } }));
+    }
+    return orgs[token]
+      ? new Response("{}", { headers: { "anthropic-organization-id": orgs[token] } })
+      : new Response("{}", { status: 401 });
+  };
+  return { fetchImpl, calls };
+}
+
+const sameHumanOrgs = {
+  "sk-ant-oat01-main": "org-main",
+  "sk-ant-oat01-setup-sub": "org-sub",
+  "sk-ant-oat01-other": "org-other",
+  "sk-ant-oat01-fresh-sub": "org-sub",
+};
+
+test("an Anthropic re-login on a personal plan replaces the slot of the same organization", async () => {
+  const { fetchImpl } = anthropicFetch({ orgs: sameHumanOrgs });
+  const identityOf = await loginIdentityResolver("anthropic", anthropicPool(), reLogin, { fetchImpl });
+  const next = appendLoginSlot(anthropicPool(), reLogin, identityOf);
+  assert.deepEqual(listSlots(next).map((slot) => slot.name), ["default", "sub", "login-2"]);
+  const sub = listSlots(next).find((slot) => slot.name === "sub");
+  assert.equal(sub.key, undefined, "the old setup-token must not outlive the browser login");
+  assert.equal(projectSlot(next, "sub").type, "oauth");
+  assert.equal(projectSlot(next, "sub").refresh, "sk-ant-ort01-fresh-sub");
+  assert.equal(next.key, "sk-ant-oat01-main");
+});
+
+test("an Anthropic login on a shared plan or an unreadable slot stays a new slot", async () => {
+  const team = anthropicFetch({ plan: "claude_team", orgs: sameHumanOrgs });
+  const teamIdentity = await loginIdentityResolver("anthropic", anthropicPool(), reLogin, { fetchImpl: team.fetchImpl });
+  assert.equal(team.calls.length, 1, "one organization holds many humans; stored slots are not probed");
+  assert.deepEqual(listSlots(appendLoginSlot(anthropicPool(), reLogin, teamIdentity)).map((slot) => slot.name),
+    ["default", "sub", "login-2", "login-3"]);
+
+  const expired = anthropicPool();
+  expired.accounts[2] = { ...expired.accounts[2], expires: Date.now() - 1 };
+  const { fetchImpl, calls } = anthropicFetch({ orgs: { ...sameHumanOrgs, "sk-ant-oat01-other": "org-sub" } });
+  const identityOf = await loginIdentityResolver("anthropic", expired, reLogin, { fetchImpl });
+  assert.ok(!calls.some((call) => call.token === "sk-ant-oat01-other"), "an expired access token is not sent");
+  assert.equal(identityOf(expired.accounts[2]), undefined);
 });
 
 test("oauth refresh merges into the matching slot and leaves siblings", () => {
@@ -484,6 +547,33 @@ test("login appends a slot on the stock Models path", async () => {
   const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8")).xai;
   assert.equal(listSlots(stored).length, 2);
   assert.equal(stored.key, "xai-key-a");
+});
+
+test("an Anthropic re-login on the stock Models path refills its slot and lifts its block", async (t) => {
+  const { modelRuntime, agentDir } = await createPooledRuntime({ anthropic: anthropicPool() });
+  const poolState = new CredentialSlotRepository(join(agentDir, "credential-pool-state.json"));
+  await poolState.mutateSlotState("anthropic", "stored", "sub", () => ({ failureCount: 2, blockReason: "auth_error" }));
+  await poolState.mutateSlotState("anthropic", "stored", "login-2", () => ({ failureCount: 0, lastSuccessAt: 1 }));
+  t.mock.method(globalThis, "fetch", anthropicFetch({ orgs: sameHumanOrgs }).fetchImpl);
+  const anthropic = mockXaiProvider([]);
+  modelRuntime.registerNativeProvider({
+    ...anthropic,
+    id: "anthropic",
+    name: "Anthropic",
+    models: anthropic.models.map((model) => ({ ...model, provider: "anthropic", id: "claude-test" })),
+    auth: { ...anthropic.auth, oauth: { login: async () => reLogin, toAuth: async (credential) => ({ apiKey: credential.access }) } },
+  });
+  try {
+    await modelRuntime.login("anthropic", "oauth", { prompt: async () => "unused" });
+  } catch (error) {
+    assert.equal(error.name, "CredentialSynchronizationError");
+  }
+  const stored = JSON.parse(readFileSync(join(agentDir, "auth.json"), "utf-8")).anthropic;
+  assert.deepEqual(listSlots(stored).map((slot) => slot.name), ["default", "sub", "login-2"]);
+  assert.equal(projectSlot(stored, "sub").access, "sk-ant-oat01-fresh-sub");
+  const lanes = await poolState.listSlots("anthropic", "stored");
+  assert.equal(lanes.sub, undefined, "the block belonged to the replaced credential");
+  assert.equal(lanes["login-2"].lastSuccessAt, 1);
 });
 
 test("legacy credential import copies Codex without overwriting the target", async () => {

@@ -150,19 +150,34 @@ export function loginAccountIdentity(source) {
   return `oauth:${typeof claims.iss === "string" ? claims.iss : ""}:${subject}`;
 }
 
-export function appendLoginSlot(current, flat) {
+/**
+ * The stored slot a login belongs to: the same human already logged in. `identityOf` defaults to
+ * what the credential says about itself; login-identity.mjs supplies what the provider says
+ * (Anthropic tokens are opaque).
+ */
+export function matchingLoginSlot(current, flat, identityOf = loginAccountIdentity) {
+  if (!current) return undefined;
+  const incoming = identityOf(flat);
+  if (incoming === undefined) return undefined;
+  return listSlots(current).find((slot) => identityOf(slot) === incoming);
+}
+
+export function appendLoginSlot(current, flat, identityOf = loginAccountIdentity) {
   if ("accounts" in flat && Array.isArray(flat.accounts) && flat.accounts.length > 0) return flat;
   if (!current) return flat;
-  const incoming = loginAccountIdentity(flat);
-  const existing = incoming === undefined
-    ? undefined
-    : listSlots(current).find((slot) => loginAccountIdentity(slot) === incoming);
+  const existing = matchingLoginSlot(current, flat, identityOf);
   if (!existing) return upsertSlot(current, slotFromFlatCredentialNamed(flat, nextLoginSlotName(current)));
   // The same human logging in again — an expired token, a second browser round. Refresh the slot
   // in place: appending here minted a phantom account that the picker then offered as a `[sub]` row.
+  // The new secret replaces the old one whole: an Anthropic setup-token slot re-logged through the
+  // browser kept its `key`, and projectSlot reads a slot with a key as that key.
   const refreshed = slotFromFlatCredentialNamed(flat, existing.name);
   const rebased = slotMirrorsFlat(current, existing) ? projectFlatFields(current, refreshed) : current;
-  return upsertSlot(rebased, { ...existing, ...refreshed });
+  const { key: _key, access: _access, refresh: _refresh, expires: _expires, ...kept } = existing;
+  return {
+    ...rebased,
+    accounts: listSlots(rebased).map((slot) => (slot.name === existing.name ? { ...kept, ...refreshed } : slot)),
+  };
 }
 
 export function mergeRefreshedSlot(current, name, refreshed) {

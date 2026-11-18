@@ -159,22 +159,31 @@ function patchModelsLogin(sourceText) {
   let next = replaceOnce(
     sourceText,
     'import { ModelsError, resolveProviderAuth } from "./auth/resolve.js";\n',
-    'import { ModelsError, resolveProviderAuth } from "./auth/resolve.js";\nimport { appendLoginSlot } from "./rubato-features/providers/auth-pool/slots.mjs";\n',
+    'import { ModelsError, resolveProviderAuth } from "./auth/resolve.js";\nimport { appendLoginSlot, matchingLoginSlot } from "./rubato-features/providers/auth-pool/slots.mjs";\nimport { clearReplacedSlotState, loginIdentityResolver } from "./rubato-features/providers/auth-pool/login-identity.mjs";\n',
     "models-login-import",
   );
-  return replaceOnce(
+  next = replaceOnce(
     next,
     `        const mutation = this.credentials.modify(providerId, async () => {
             mutationStarted = true;
             markMutationStarted?.();
             return credential;
         }, { signal });`,
-    `        const mutation = this.credentials.modify(providerId, async (current) => {
+    `        const identityOf = await loginIdentityResolver(providerId, await this.credentials.read(providerId, { signal }).catch(() => undefined), credential);
+        let replacedSlot;
+        const mutation = this.credentials.modify(providerId, async (current) => {
             mutationStarted = true;
             markMutationStarted?.();
-            return appendLoginSlot(current, credential);
+            replacedSlot = matchingLoginSlot(current, credential, identityOf)?.name;
+            return appendLoginSlot(current, credential, identityOf);
         }, { signal });`,
     "models-login-append",
+  );
+  return replaceOnce(
+    next,
+    "            await mutation;\n",
+    "            await mutation;\n            await clearReplacedSlotState(this.credentials, providerId, replacedSlot).catch(() => { });\n",
+    "models-login-clear-replaced",
   );
 }
 
@@ -648,6 +657,7 @@ export const files = Object.freeze([
   ownedFile("dist/rubato-features/providers/src/engine-paths.mjs", source("./engine-paths.mjs")),
   ownedFile("dist/rubato-features/providers/cursor-lazy.mjs", source("./cursor-lazy.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/slots.mjs", source("./auth-pool/slots.mjs")),
+  ownedFile("dist/rubato-features/providers/auth-pool/login-identity.mjs", source("./auth-pool/login-identity.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/select.mjs", source("./auth-pool/select.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/env-slots.mjs", source("./auth-pool/env-slots.mjs")),
   ownedFile("dist/rubato-features/providers/auth-pool/classify.mjs", source("./auth-pool/classify.mjs")),
