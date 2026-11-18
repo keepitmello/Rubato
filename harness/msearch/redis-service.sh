@@ -32,7 +32,8 @@ fail() { printf '  ! %s\n' "$1" >&2; exit 1; }
 [ "$(uname -s)" = Darwin ] || fail "macOS 만 자동으로 세운다. 다른 OS 는 harness/msearch/README.md 의 Redis 절을 따른다"
 # brew --prefix 는 느려서(수백 ms) 자주 묻는 --check 에 맞지 않는다. 두 표준 자리를 본다.
 BREW_PREFIX=""
-for prefix in /opt/homebrew /usr/local; do [ -x "$prefix/bin/brew" ] && { BREW_PREFIX="$prefix"; break; }; done
+# 시험만 MSEARCH_BREW_PREFIX 로 가짜 Homebrew 를 가리킨다.
+for prefix in ${MSEARCH_BREW_PREFIX:-/opt/homebrew /usr/local}; do [ -x "$prefix/bin/brew" ] && { BREW_PREFIX="$prefix"; break; }; done
 CASK_DIR="${BREW_PREFIX:-/opt/homebrew}/Caskroom/redis/$REDIS_VERSION"
 SERVER="$CASK_DIR/bin/redis-server"
 CLI="$CASK_DIR/bin/redis-cli"
@@ -65,9 +66,25 @@ existing_plist() {
 }
 PLIST="$(existing_plist || true)"
 
+# 깔린 서버와 모듈이 실제로 링크하는 Homebrew 라이브러리 중 없는 것의 formula 이름.
+# tap 의 지금 cask 는 의존성 목록이 바뀌어 깔린 판과 어긋난다 — 8.4.0 Search 모듈은
+# llvm@18 의 libunwind 를 링크하는데 tap 은 더 이상 llvm@18 을 적지 않았고, brew 정리로
+# 그것이 빠지자 Redis 가 모듈을 싣다 죽고 launchd 는 이틀 동안 재시작만 했다(2026-11-16).
+missing_linked() {
+  local file path
+  for file in "$SERVER" "$MODULES/redisearch.so" "$MODULES/rejson.so"; do
+    [ -e "$file" ] || continue
+    otool -L "$file" 2>/dev/null | awk 'NR > 1 { print $1 }' | while read -r path; do
+      case "$path" in "$BREW_PREFIX"/opt/*) [ -e "$path" ] || printf '%s\n' "$path" ;; esac
+    done
+  done | sed "s|^$BREW_PREFIX/opt/\([^/]*\)/.*|\1|" | sort -u
+}
+MISSING="$(missing_linked | tr '\n' ' ')"
+MISSING="${MISSING% }"
+
 if [ "$APPLY" -eq 0 ]; then
   [ -x "$SERVER" ] || say "[계획] redis/redis tap 의 $REDIS_VERSION cask 를 고정 커밋 ${CASK_COMMIT:0:12} 에서 깐다"
-  say "[계획] cask 가 선언한 의존성 중 빠진 것을 깐다 (Search 모듈이 llvm@18 등을 링크한다)"
+  [ -n "$MISSING" ] && say "[계획] 빠진 라이브러리의 formula 를 깐다: $MISSING"
   if [ -n "$PLIST" ]; then say "[계획] 기존 launchd 작업 $(basename "$PLIST" .plist) 을 다시 띄운다"
   else say "[계획] launchd 작업 $LABEL 을 만들어 로그인 때 $PORT 에 뜨게 한다 (데이터 $DATA)"; fi
   exit 0
@@ -87,11 +104,10 @@ if [ ! -x "$SERVER" ]; then
   [ "$installed" -eq 0 ] && [ -x "$SERVER" ] || fail "redis $REDIS_VERSION cask 설치 실패"
 fi
 
-# cask 는 의존성을 깔 때만 챙긴다. 나중에 brew 정리로 하나가 빠지면(이 기계에서
-# llvm@18 이 그랬다) Search 모듈이 dlopen 에서 죽고 launchd 는 조용히 재시작만 한다.
-for dep in $(brew deps --cask redis/redis/redis 2>/dev/null); do
-  brew list --versions "$dep" >/dev/null 2>&1 && continue
-  say "빠진 의존성 $dep 을 깐다"
+# 방금 cask 를 깔았으면 링크 대상도 그 뒤에 다시 본다.
+MISSING="$(missing_linked | tr '\n' ' ')"
+for dep in $MISSING; do
+  say "빠진 라이브러리의 formula $dep 을 깐다"
   HOMEBREW_NO_AUTO_UPDATE=1 brew install "$dep" >/dev/null || fail "$dep 설치 실패"
 done
 

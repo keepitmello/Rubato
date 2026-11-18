@@ -122,8 +122,10 @@ macOS 는 `redis-service.sh` 가 맡는다 (`install.sh --apply` 가 부른다. 
 - 6380 에 맞는 서버가 이미 떠 있으면 손대지 않는다.
 - 없으면 redis/redis tap 의 cask 를 `runtime.lock` 의 `REDIS_CASK_COMMIT` 에서 깐다. 그 cask 는
   arm64·x86_64 바이너리와 Search 모듈을 함께 담는다. 자동 업그레이드는 검증 전까지 하지 않는다.
-- cask 가 선언한 의존성 중 빠진 것을 깐다. Search 모듈은 `llvm@18` 의 libunwind 를 링크해서,
-  brew 정리로 그것이 지워지면 모듈 로드에서 죽고 launchd 는 재시작만 되풀이한다.
+- 깔린 서버와 모듈이 `otool -L` 로 링크한 Homebrew 라이브러리 중 없는 것의 formula 를 깐다.
+  tap 의 지금 cask 가 아니라 바이너리를 본다 — Search 모듈은 `llvm@18` 의 libunwind 를
+  링크하는데 tap 은 더 이상 그것을 적지 않아서, brew 정리로 지워지자 모듈 로드에서 죽고
+  launchd 는 재시작만 되풀이했다.
 - 같은 포트로 redis 를 띄우는 launchd 작업이 이미 있으면 그것을 되살리고, 없으면
   `com.keepitmello.rubato.msearch-redis` 를 만든다(데이터 `~/.rubato/msearch/redis`,
   127.0.0.1 만, 로그인 때 뜨고 죽으면 다시 뜬다).

@@ -19,6 +19,9 @@ python3 -m py_compile "$here/msearch_env.py" "$here/msearch_doctor.py" "$here/ms
 # 한글 질의는 영어로 옮긴 질의도 같이 찾는다 — 기록이 영어라서.
 (cd "$here" && python3 -m unittest -q test_msearch_translate)
 (cd "$here" && python3 -m unittest -q test_msearch_symlinks)
+# 검색 백엔드는 깔린 서버·모듈이 실제로 링크한 라이브러리로 빠진 것을 찾는다.
+bash -n "$here/redis-service.sh"
+(cd "$here" && python3 -m unittest -q test_redis_service)
 
 # --only-shell은 Python 환경을 읽거나 쓰지 않는다. 전체 apply 대신 실행 흐름을
 # 추적해 4.3 헤더와 venv 명령이 도달 불가능한지 고정한다.
