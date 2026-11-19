@@ -30,6 +30,8 @@ export const mobileCompanionOverlays = [
   `${companions}/roomModel.test.ts`,
   `${companions}/BubbleAttachments.tsx`,
   `${companions}/BubbleMarkdown.tsx`,
+  `${companions}/BubbleFiles.tsx`,
+  `${companions}/RoomMotion.tsx`,
   `${companions}/CompanionAvatar.tsx`,
   `${companions}/EdgeFade.tsx`,
   `${companions}/CallCard.tsx`,
