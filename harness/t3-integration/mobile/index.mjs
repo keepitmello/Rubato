@@ -6,6 +6,7 @@
 //   deps-edits.mjs       packages the app adds (package.json + generated lockfile edits)
 //   push-edits.mjs       phone push registration and the Mac's /rubato/push route
 //   companion-edits.mjs  companion rooms and calls
+//   message-edit-edits.mjs  editing a sent message from a long press, rewinding to it
 //
 // Two files must never edit one file at the same anchor: apply.mjs undoes an edit by
 // finding addition+anchor, and a second addition in between hides the first.
@@ -13,12 +14,14 @@ import { shellEdits, shellOverlays } from './shell-edits.mjs';
 import { depsEdits, depsOverlays } from './deps-edits.mjs';
 import { mobilePushEdits, mobilePushOverlays } from './push-edits.mjs';
 import { mobileCompanionEdits, mobileCompanionOverlays } from './companion-edits.mjs';
+import { mobileMessageEditEdits, mobileMessageEditOverlays } from './message-edit-edits.mjs';
 
 const tables = [
   [shellEdits, shellOverlays],
   [depsEdits, depsOverlays],
   [mobilePushEdits, mobilePushOverlays],
   [mobileCompanionEdits, mobileCompanionOverlays],
+  [mobileMessageEditEdits, mobileMessageEditOverlays],
 ];
 
 export const mobileOverlays = tables.flatMap(([, overlays]) => overlays);

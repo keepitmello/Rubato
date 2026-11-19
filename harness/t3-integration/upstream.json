@@ -195,6 +195,7 @@
     "apps/web/src/components/chat/TraitsPicker.tsx": "b452076ca4d97b4a698da4b487895e39fddcf69621e1171456557c60f7ec7d45",
     "apps/web/src/components/chat/composerProviderState.tsx": "6ff1f2a4c2dd06a58b082815bd95af290831d32e541e52b401f21d719d226fb9",
     "apps/web/src/components/chat/composerProviderState.test.tsx": "f708bbd551a0fd9c0f83f6fb69d91715007b45d7e0873f71cb13154b841679ca",
-    "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift": "ca800fea420c5478cb29bdaf250e259763a313988f9a1135acd5dbd37498a68e"
+    "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift": "ca800fea420c5478cb29bdaf250e259763a313988f9a1135acd5dbd37498a68e",
+    "apps/mobile/src/features/threads/ThreadDetailScreen.tsx": "4ed66e4f9b03b5325cb47e348801b558983e786f010c09b464fc6d1e6ae6dbb7"
   }
 }

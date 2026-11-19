@@ -7,10 +7,10 @@
 // (user item 6b6a88c5).
 import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, Pressable, ScrollView, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
-import Animated, { LinearTransition, ZoomIn, ZoomOut } from "react-native-reanimated";
+import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import Animated, { FadeInDown, FadeOut, LinearTransition, ZoomIn, ZoomOut } from "react-native-reanimated";
 import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -28,7 +28,7 @@ import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
-import type { ComposerTextPaste } from "../../native/T3ComposerEditor.types";
+import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
@@ -44,6 +44,10 @@ import {
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
+import { scopedThreadKey } from "../../lib/scopedEntities";
+import { useAtomValue } from "@effect/atom-react";
+import { clearThreadComposerError, threadComposerErrorsAtom } from "../../state/thread-composer-error";
+import { SentMessageEditBanner, SentMessageMenu, useEditedMessageId, type SentMessageLabels } from "../rubato-message-edit/SentMessageMenu";
 import { BubbleAttachments } from "./BubbleAttachments";
 import { BubbleFiles } from "./BubbleFiles";
 import { BubbleMarkdown } from "./BubbleMarkdown";
@@ -136,6 +140,9 @@ function RoomRow(props: {
   readonly media: RoomMedia;
   /** Arrived while the room is open: it moves in instead of just being there. */
   readonly fresh: boolean;
+  readonly threadKey: string;
+  /** Sending the edit under way drops this row: the edited message or one after it. */
+  readonly dropped: boolean;
 }) {
   const { item } = props;
   if (item.kind === "separator")
@@ -146,7 +153,23 @@ function RoomRow(props: {
         <CallCard call={item.call} title={props.title} art={props.companion?.art ?? null} environmentId={props.environmentId} />
       </View>
     );
-  return <Bubble {...props} item={item} />;
+  const bubble = <Bubble {...props} item={item} />;
+  const dimmed = props.dropped ? <View style={{ opacity: 0.35 }}>{bubble}</View> : bubble;
+  // The person's own sent words: a long press offers to edit (rewinding to here) or copy them.
+  if (item.side !== "me" || item.pending !== null) return dimmed;
+  return (
+    // The menu hugs the bubble, so iOS lifts just the bubble (the bubble's width is in points).
+    <SentMessageMenu
+      threadKey={props.threadKey}
+      message={{ id: item.id as MessageId, text: item.text }}
+      companion
+      editable={item.attachments.length === 0 && item.files === "" && item.text !== ""}
+      labels={ROOM_EDIT_LABELS}
+      style={{ alignSelf: "flex-end" }}
+    >
+      {dimmed}
+    </SentMessageMenu>
+  );
 }
 
 function Bubble(props: {
@@ -158,6 +181,9 @@ function Bubble(props: {
 }) {
   const { item } = props;
   const mine = item.side === "me";
+  // 80% of the room's width inside its 16 pt sides, in points: a percentage would be of the
+  // long-press menu around the person's bubble, which takes its size from the bubble.
+  const { width } = useWindowDimensions();
   const fade = usePendingFade(item.pending !== null);
   return (
     <Animated.View
@@ -165,7 +191,7 @@ function Bubble(props: {
       className={mine ? "gap-2 self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5" : "gap-2 self-start rounded-[20px] bg-grouped-card px-3.5 py-2.5"}
       style={[
         {
-          maxWidth: "80%",
+          maxWidth: Math.floor((width - 32) * 0.8),
           marginTop: item.groupStart ? 10 : 2,
           // A bubble grows from its tail, as in Messages.
           transformOrigin: mine ? "right bottom" : "left bottom",
@@ -192,11 +218,27 @@ function Bubble(props: {
       {item.text && !mine ? (
         <BubbleMarkdown markdown={item.text} body={props.body} media={props.media} />
       ) : item.text || (item.streaming && item.attachments.length === 0) ? (
-        <Text selectable className={mine ? "text-user-bubble-foreground" : "text-foreground"} style={props.body}>
+        <Text selectable={!mine} className={mine ? "text-user-bubble-foreground" : "text-foreground"} style={props.body}>
           {item.text || "…"}
         </Text>
       ) : null}
       {item.files ? <BubbleFiles files={item.files} body={props.body} mine={mine} media={props.media} /> : null}
+    </Animated.View>
+  );
+}
+
+/** Why the last send did not go out (an edit that could not rewind, a send the Mac refused). */
+function RoomComposerError(props: { readonly threadKey: string }) {
+  const error = useAtomValue(threadComposerErrorsAtom)[props.threadKey]?.message ?? null;
+  if (error === null) return null;
+  return (
+    <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(120)} className="mb-2 flex-row items-center gap-2 px-3">
+      <Text className="min-w-0 flex-1 text-xs text-danger-foreground" numberOfLines={3}>
+        {error}
+      </Text>
+      <Pressable accessibilityRole="button" accessibilityLabel={copy.dismiss} hitSlop={8} onPress={() => clearThreadComposerError(props.threadKey)}>
+        <SymbolView name="xmark" size={11} tintColorClassName="accent-icon-muted" />
+      </Pressable>
     </Animated.View>
   );
 }
@@ -224,6 +266,7 @@ function RoomComposer(props: {
   readonly title: string;
   readonly body: { readonly fontSize: number; readonly lineHeight: number };
   readonly onHeight: (height: number) => void;
+  readonly threadKey: string;
 }) {
   const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState({ start: props.draft.length, end: props.draft.length });
@@ -248,6 +291,15 @@ function RoomComposer(props: {
   });
   const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
   const dictating = presentation.statusLabel !== null;
+  // Editing a sent message brings its words here: the field opens on them, the cursor at the end.
+  const editorRef = useRef<ComposerEditorHandle>(null);
+  const editing = useEditedMessageId(props.threadKey);
+  useEffect(() => {
+    if (editing === null) return;
+    const end = draftRef.current.length;
+    setSelection({ start: end, end });
+    editorRef.current?.focus();
+  }, [editing]);
   const foreground = useUniwindTheme()["--color-foreground"];
   const [focused, setFocused] = useState(false);
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
@@ -268,6 +320,8 @@ function RoomComposer(props: {
     >
       <EdgeFade edge="bottom" height={height + 16} solid={0.3} />
       <View className="px-4" style={{ paddingBottom: bottomPadding, paddingTop: 6 }}>
+        <RoomComposerError threadKey={props.threadKey} />
+        <SentMessageEditBanner threadKey={props.threadKey} labels={ROOM_EDIT_LABELS} />
         {strip.length > 0 ? (
           <View className="mb-2 flex-row gap-2 px-1">
             {strip.map((attachment) => (
@@ -303,6 +357,7 @@ function RoomComposer(props: {
             />
             <View className="min-w-0 flex-1 px-1">
               <ComposerEditor
+                ref={editorRef}
                 draftKey={props.ownerKey}
                 environmentId={props.environmentId}
                 multiline
@@ -381,6 +436,7 @@ function RoomComposer(props: {
  * blurred the whole room under the transparent bar. The room draws its own band (HeaderBand).
  */
 const NO_EDGE_EFFECTS = { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const;
+const ROOM_EDIT_LABELS: SentMessageLabels = { edit: copy.edit, copy: copy.copyMessage, editing: copy.editing, cancel: copy.cancel };
 const ROW_LAYOUT = LinearTransition.springify().damping(ROOM_SPRING.damping).stiffness(ROOM_SPRING.stiffness);
 function RoomScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
@@ -470,6 +526,13 @@ function RoomBody(props: {
     }
     if (received) hapticReceive();
   }, [items]);
+  const threadKey = scopedThreadKey(props.environmentId, props.threadId);
+  const editedId = useEditedMessageId(threadKey);
+  // While a sent message is edited, it and everything after it go when the edit is sent.
+  const dropped = useMemo(() => {
+    const at = editedId === null ? -1 : items.findIndex((item) => item.id === editedId);
+    return new Set(at < 0 ? [] : items.slice(at).map((item) => item.id));
+  }, [items, editedId]);
   const theme = useUniwindTheme();
   const listRef = useRef<FlatList<RoomItem>>(null);
   const [awayFromEnd, setAwayFromEnd] = useState(false);
@@ -504,6 +567,7 @@ function RoomBody(props: {
         onScroll={onScroll}
         scrollEventThrottle={32}
         data={reversed}
+        extraData={dropped}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <RoomRow
@@ -514,6 +578,8 @@ function RoomBody(props: {
             body={body}
             media={media}
             fresh={seen.current !== null && !seen.current.has(item.id)}
+            threadKey={threadKey}
+            dropped={dropped.has(item.id)}
           />
         )}
         ListHeaderComponent={
@@ -567,6 +633,7 @@ function RoomBody(props: {
         title={title}
         body={body}
         onHeight={setComposerHeight}
+        threadKey={threadKey}
       />
       {modals}
     </>
