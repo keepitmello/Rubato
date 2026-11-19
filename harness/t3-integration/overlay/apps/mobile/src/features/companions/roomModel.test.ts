@@ -78,6 +78,16 @@ describe("a companion room", () => {
     expect(roomPreview(onlyFiles)).toMatchObject({ text: "📎 fb-1.jpg", side: "companion" });
   });
 
+  it("draws what the person just sent before the conversation holds it, a picture alone too", () => {
+    const photo = { id: "d1", type: "image", name: "cat.jpg", mimeType: "image/jpeg", sizeBytes: 3, uri: "file:///cat.jpg" };
+    const sending = { ...message("s", "user", "", 1), pending: { attachments: [photo] } } as unknown as RoomMessageInput;
+    const items = roomItems([message("a", "assistant", "hi", 0), sending], []);
+    expect(items.filter((item) => item.kind === "bubble").map((item) => item.kind === "bubble" && [item.id, item.side, item.pending !== null]))
+      .toEqual([["a", "companion", false], ["s", "me", true]]);
+    expect(companionIsWriting(items, true)).toBe(true);
+    expect(roomPreview(items)).toMatchObject({ text: "📎 cat.jpg", side: "me" });
+  });
+
   it("previews the latest bubble or call for the list", () => {
     expect(roomPreview(roomItems([message("a", "assistant", "잘 자\n내일 봐", 0)], []))).toMatchObject({ text: "잘 자 내일 봐", side: "companion" });
     expect(roomPreview(roomItems([message("a", "user", "hi", 0)], [call({ minutes: 5, direction: "incoming", status: "missed" })])))

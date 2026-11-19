@@ -7,6 +7,7 @@
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
 import type { ChatAttachment } from "@t3tools/contracts";
 
+import type { DraftComposerAttachment } from "../../lib/composerImages";
 import type { CallRecord } from "./callTypes";
 
 /** Messages from one side within this gap of each other belong to one group. */
@@ -24,6 +25,11 @@ export interface RoomMessageInput {
   readonly createdAt: string;
   readonly streaming: boolean;
   readonly attachments?: ReadonlyArray<ChatAttachment>;
+  /**
+   * A message this phone sent that the Mac has not written into the conversation yet (the outbox,
+   * or a steer waiting for its turn): drawn at once, with the phone's own copies of its files.
+   */
+  readonly pending?: { readonly attachments: ReadonlyArray<DraftComposerAttachment> };
 }
 
 export type RoomSide = "me" | "companion";
@@ -41,6 +47,8 @@ export type RoomItem =
        */
       readonly files: string;
       readonly attachments: ReadonlyArray<ChatAttachment>;
+      /** Not in the conversation yet: the phone's own copies of the files it carries. */
+      readonly pending: { readonly attachments: ReadonlyArray<DraftComposerAttachment> } | null;
       readonly at: number;
       readonly streaming: boolean;
       readonly groupStart: boolean;
@@ -124,7 +132,8 @@ export function roomItems(
         return { kind: "message" as const, at: Date.parse(message.createdAt), side, message, text: words, files };
       })
       .filter((entry) => Number.isFinite(entry.at)
-        && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0 || entry.message.streaming)),
+        && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0
+          || (entry.message.pending?.attachments.length ?? 0) > 0 || entry.message.streaming)),
     ...calls.map((call) => ({ kind: "call" as const, at: call.createdAt, call })),
   ].sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === "call" ? 1 : -1));
 
@@ -153,6 +162,7 @@ export function roomItems(
       text: entry.text,
       files: entry.files,
       attachments: entry.message.attachments ?? [],
+      pending: entry.message.pending ?? null,
       at: entry.at,
       streaming: entry.message.streaming,
       groupStart: separated || previous === null || previous.side !== entry.side || entry.at - previous.at >= GROUP_GAP_MS,
@@ -211,7 +221,7 @@ export function roomPreview(
 ): { text: string; at: number; side: RoomSide | null; callKey: CallHeadlineKey | null } | null {
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index]!;
-    if (item.kind === "bubble" && (item.text || item.files || item.attachments.length > 0))
+    if (item.kind === "bubble" && (item.text || item.files || item.attachments.length > 0 || (item.pending?.attachments.length ?? 0) > 0))
       return {
         text: item.text ? item.text.replace(/\s+/g, " ").trim() : attachmentPreview(item),
         at: item.at,
@@ -227,6 +237,7 @@ export function roomPreview(
 function attachmentPreview(item: Extract<RoomItem, { kind: "bubble" }>): string {
   const names = [
     ...item.attachments.map((attachment) => attachment.name ?? ""),
+    ...(item.pending?.attachments ?? []).map((attachment) => attachment.name ?? ""),
     ...fileLines(item.files).map((file) => file.name),
   ].filter(Boolean);
   return `📎 ${names.join(", ")}`;

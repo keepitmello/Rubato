@@ -32,6 +32,7 @@ import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { ComposerSurface } from "../threads/ThreadComposer";
+import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
 import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
@@ -154,10 +155,26 @@ function RoomRow(props: {
       style={{
         maxWidth: "80%",
         marginTop: item.groupStart ? 10 : 2,
+        // Sent from this phone, not in the conversation yet.
+        opacity: item.pending ? 0.7 : 1,
         ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
       }}
     >
       <BubbleAttachments attachments={item.attachments} media={props.media} />
+      {item.pending && item.pending.attachments.length > 0 ? (
+        <View className="flex-row flex-wrap gap-2">
+          {item.pending.attachments.map((attachment) => (
+            <ComposerAttachmentThumbnail
+              key={attachment.id}
+              environmentId={props.environmentId as EnvironmentId}
+              attachment={attachment}
+              size={item.pending!.attachments.length === 1 ? 180 : 96}
+              borderRadius={14}
+              onPressPreview={props.media.onPressPreview}
+            />
+          ))}
+        </View>
+      ) : null}
       {item.text && !mine ? (
         <BubbleMarkdown markdown={item.text} body={props.body} media={props.media} />
       ) : item.text || (item.streaming && item.attachments.length === 0) ? (
@@ -359,15 +376,20 @@ function RoomBody(props: {
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
+  // What the person sent shows the moment they send it, as a thread shows its outbox: a message
+  // waits there until the Mac takes it, and a steer into the companion's work until that work
+  // reaches it, and only then does the conversation hold it.
   const messages = useMemo<RoomMessageInput[]>(
     () =>
-      composer.selectedThreadFeed.flatMap((entry) =>
-        entry.type === "message"
-          ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt,
-              streaming: entry.message.streaming, attachments: entry.message.attachments }]
-          : [],
-      ),
-    [composer.selectedThreadFeed],
+      appendPendingThreadMessages(composer.selectedThreadFeed, composer.selectedThreadFeed, composer.selectedThreadQueuedMessages)
+        .flatMap((entry) =>
+          entry.type === "message"
+            ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt,
+                streaming: entry.message.streaming, attachments: entry.message.attachments,
+                ...(entry.pendingMessage ? { pending: { attachments: entry.pendingMessage.attachments } } : {}) }]
+            : [],
+        ),
+    [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
   const items = useMemo(() => roomItems(messages, calls), [messages, calls]);
   const writing = companionIsWriting(items, composer.activeThreadBusy);
