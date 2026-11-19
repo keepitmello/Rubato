@@ -42,6 +42,14 @@ const RUBATO_ICON = './assets/rubato/icon.png';
 
 export const shellEdits = {
   ...themeTests,
+  // Upstream 0bc753478b (#30135), until the pin moves past it: the composer reads
+  // `layoutManager` (a tap looks for a chip under the finger), and on a TextKit 2 view that swaps
+  // it to TextKit 1 mid-edit. After dictation filled the companion room's field, the tap that swap
+  // started never finished laying out and iOS killed the app (crash log 2026-11-20 03:37).
+  'apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift': [
+    ['  private let textView = ComposerTextView()\n',
+      '  private let textView = ComposerTextView(usingTextLayoutManager: false)\n', 'replace'],
+  ],
   'apps/mobile/app.config.ts': [
     ['    appName: "T3 Code Dev",\n    scheme: "t3code-dev",\n    iosBundleIdentifier: "com.t3tools.t3code.dev",',
       '    appName: "Rubato Dev",\n    scheme: "rubato-dev",\n    iosBundleIdentifier: "com.keepitmello.rubato.dev",', 'replace'],
