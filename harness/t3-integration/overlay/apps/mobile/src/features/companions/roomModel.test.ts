@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { CallRecord } from "./callTypes";
-import { callHeadline, companionIsWriting, roomItems, roomPreview, spokenText, type RoomMessageInput } from "./roomModel";
+import { callHeadline, companionIsWriting, fileLines, roomItems, roomPreview, spokenText, type RoomMessageInput } from "./roomModel";
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 13, 3, 0) + minutes * 60_000).toISOString();
 const message = (id: string, role: RoomMessageInput["role"], text: string, minutes: number): RoomMessageInput => ({
@@ -63,6 +63,19 @@ describe("a companion room", () => {
     expect(first).toMatchObject({ text: "", attachments: [{ name: "cat.png" }] });
     expect(second).toMatchObject({ text: "봐봐", files: "![shot.png](</Users/me/shot.png>)" });
     expect(roomPreview(roomItems([picture], []))).toMatchObject({ text: "📎 cat.png" });
+  });
+
+  it("takes the companion's reply files out of its words, so the bubble draws them in its own layout", () => {
+    const reply = message("r", "assistant", "캡처 두 장이야\n\n![fb-1.jpg](</tmp/fb-1.jpg>)\n\n![fb-2.jpg](</tmp/fb-2.jpg>)\n\n[notes.pdf](</tmp/notes.pdf>)", 0);
+    const [bubble] = roomItems([reply], []).filter((item) => item.kind === "bubble");
+    expect(bubble).toMatchObject({ text: "캡처 두 장이야" });
+    expect(fileLines(bubble!.kind === "bubble" ? bubble!.files : "")).toEqual([
+      { embed: true, name: "fb-1.jpg", path: "/tmp/fb-1.jpg" },
+      { embed: true, name: "fb-2.jpg", path: "/tmp/fb-2.jpg" },
+      { embed: false, name: "notes.pdf", path: "/tmp/notes.pdf" },
+    ]);
+    const onlyFiles = roomItems([message("o", "assistant", "![fb-1.jpg](</tmp/fb-1.jpg>)", 0)], []);
+    expect(roomPreview(onlyFiles)).toMatchObject({ text: "📎 fb-1.jpg", side: "companion" });
   });
 
   it("previews the latest bubble or call for the list", () => {

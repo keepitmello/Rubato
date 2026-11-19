@@ -10,9 +10,9 @@ import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
 import type { RoomMedia } from "./roomMedia";
 
-/** How wide a bubble's content can be: 80% of the screen less the room's and the bubble's padding. */
+/** How wide a bubble's content can be: 80% of the room's width inside its 16 pt sides, less the bubble's 14 pt sides. */
 export function bubbleContentWidth(screenWidth: number) {
-  return Math.round(screenWidth * 0.8 - 28);
+  return Math.floor((screenWidth - 32) * 0.8 - 28);
 }
 
 export function BubbleMarkdown(props: {

@@ -36,6 +36,7 @@ import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictation
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import { BubbleAttachments } from "./BubbleAttachments";
+import { BubbleFiles } from "./BubbleFiles";
 import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
@@ -164,7 +165,7 @@ function RoomRow(props: {
           {item.text || "…"}
         </Text>
       ) : null}
-      {item.files ? <BubbleMarkdown markdown={item.files} body={props.body} mine={mine} media={props.media} /> : null}
+      {item.files ? <BubbleFiles files={item.files} body={props.body} mine={mine} media={props.media} /> : null}
     </View>
   );
 }

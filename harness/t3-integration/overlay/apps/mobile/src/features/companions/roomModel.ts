@@ -36,8 +36,8 @@ export type RoomItem =
       readonly side: RoomSide;
       readonly text: string;
       /**
-       * The person's file lines (a file sent from the messenger arrives as `![name](</abs>)` or
-       * `[name](</abs>)`), drawn as media the way the companion's own files are.
+       * The message's file lines (the companion's reply files and a file the person sent from the
+       * messenger both arrive as `![name](</abs>)` or `[name](</abs>)`), drawn under the words.
        */
       readonly files: string;
       readonly attachments: ReadonlyArray<ChatAttachment>;
@@ -61,15 +61,23 @@ export function personText(text: string): string {
 }
 
 /** A file line as the engine writes it (companion home.mjs filesMarkdown): `![name](</abs>)` or `[name](</abs>)`. */
-const FILE_LINE = /^!?\[([^\]\n]*)\]\(<(\/[^>\n]+)>\)$/;
+const FILE_LINE = /^(!?)\[([^\]\n]*)\]\(<(\/[^>\n]+)>\)$/;
 
-/** The person's words and their file lines, apart. */
+/** A message's words and its file lines, apart. */
 export function splitFileLines(text: string): { words: string; files: string } {
   const blocks = text.split(/\n{2,}/);
   const files = blocks.map((block) => block.trim()).filter((block) => FILE_LINE.test(block));
   if (files.length === 0) return { words: text, files: "" };
   const words = blocks.filter((block) => !FILE_LINE.test(block.trim())).join("\n\n").trim();
   return { words, files: files.join("\n\n") };
+}
+
+/** A bubble's file lines one by one: a picture or video (`![…]`) to draw, or a file to open. */
+export function fileLines(files: string): Array<{ readonly embed: boolean; readonly name: string; readonly path: string }> {
+  return files.split(/\n{2,}/).flatMap((line) => {
+    const match = line.trim().match(FILE_LINE);
+    return match ? [{ embed: match[1] === "!", name: match[2]!, path: match[3]! }] : [];
+  });
 }
 
 function callWindow(call: CallRecord, now: number): [number, number] | null {
@@ -112,9 +120,8 @@ export function roomItems(
       .filter((message) => message.role === "user" || message.role === "assistant")
       .map((message) => {
         const side: RoomSide = message.role === "user" ? "me" : "companion";
-        const person = side === "me" ? splitFileLines(personText(message.text)) : null;
-        return { kind: "message" as const, at: Date.parse(message.createdAt), side, message,
-          text: person ? person.words : message.text.trim(), files: person ? person.files : "" };
+        const { words, files } = splitFileLines(side === "me" ? personText(message.text) : message.text.trim());
+        return { kind: "message" as const, at: Date.parse(message.createdAt), side, message, text: words, files };
       })
       .filter((entry) => Number.isFinite(entry.at)
         && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0 || entry.message.streaming)),
@@ -220,7 +227,7 @@ export function roomPreview(
 function attachmentPreview(item: Extract<RoomItem, { kind: "bubble" }>): string {
   const names = [
     ...item.attachments.map((attachment) => attachment.name ?? ""),
-    ...item.files.split(/\n{2,}/).map((line) => line.match(FILE_LINE)?.[1] ?? ""),
+    ...fileLines(item.files).map((file) => file.name),
   ].filter(Boolean);
   return `📎 ${names.join(", ")}`;
 }
