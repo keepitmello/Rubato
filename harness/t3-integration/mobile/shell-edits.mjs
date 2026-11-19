@@ -36,6 +36,8 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/macRestart.ts',
   'apps/mobile/src/features/rubato-shell/macRestart.test.ts',
   'apps/mobile/src/features/rubato-shell/MacRestartSection.tsx',
+  'apps/mobile/src/features/rubato-shell/companionTabStatus.ts',
+  'apps/mobile/src/features/rubato-shell/companionTabStatus.test.ts',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
@@ -155,8 +157,20 @@ export const shellEdits = {
     ['const TAB_TITLES = {\n  threads: "Threads",', 'const TAB_TITLES = {\n  companions: "Companions",\n  threads: "Threads",', 'replace'],
     ['accessibilityLabel={`T3 Code, ${TAB_TITLES[state.selectedTab]}`}', 'accessibilityLabel={`Rubato, ${TAB_TITLES[state.selectedTab]}`}', 'replace'],
     ['            title="T3 Code"\n', '            title="Rubato"\n', 'replace'],
+    // The Companions tab's title leaves out the thread sync (rubato-shell/companionTabStatus.ts).
+    ['        maxWidth={props.maxWidth}\n        onPress={props.onOpenEnvironments}\n',
+      '        threadSync={state.selectedTab !== "companions"}\n'],
     ['{state.selectedTab === "threads" ? <HomeRouteScreen /> : <PullRequestsScreen />}',
       '{state.selectedTab === "companions" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === "threads" ? (\n            <HomeRouteScreen />\n          ) : (\n            <PullRequestsScreen />\n          )}', 'replace'],
+  ],
+  // A title that leaves out the thread sync, for the Companions tab (rubato-shell/companionTabStatus.ts).
+  'apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx': [
+    ['import { useWorkspaceState } from "../../state/workspace";\n',
+      'import { useWorkspaceState } from "../../state/workspace";\nimport { withoutThreadSync } from "../rubato-shell/companionTabStatus";\n', 'replace'],
+    ['function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | null {\n  const { state } = useWorkspaceState();\n  const presentation = workspaceConnectionStatusPresentation(state);',
+      'function useDelayedConnectionStatus(threadSync = true): WorkspaceConnectionStatusPresentation | null {\n  const { state } = useWorkspaceState();\n  const presentation = workspaceConnectionStatusPresentation(\n    threadSync ? state : withoutThreadSync(state),\n  );', 'replace'],
+    ['  /** Space available beside the native header actions. */\n  readonly maxWidth?: number;\n}) {\n  const status = useDelayedConnectionStatus();',
+      '  /** Space available beside the native header actions. */\n  readonly maxWidth?: number;\n  /** Rubato: false leaves "Syncing threads..." out, for a surface the thread list does not feed. */\n  readonly threadSync?: boolean;\n}) {\n  const status = useDelayedConnectionStatus(props.threadSync);', 'replace'],
   ],
   // Companion conversations live in the Companions tab only (rubato-shell/companionThreads.ts).
   'apps/mobile/src/features/home/HomeRouteScreen.tsx': [
