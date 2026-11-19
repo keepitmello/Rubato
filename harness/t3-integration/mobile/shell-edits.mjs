@@ -38,6 +38,9 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/MacRestartSection.tsx',
   'apps/mobile/src/features/rubato-shell/companionTabStatus.ts',
   'apps/mobile/src/features/rubato-shell/companionTabStatus.test.ts',
+  'apps/mobile/src/features/rubato-shell/tabSwipe.ts',
+  'apps/mobile/src/features/rubato-shell/tabSwipe.test.ts',
+  'apps/mobile/src/features/rubato-shell/WorkspaceTabSwipe.tsx',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
@@ -160,6 +163,13 @@ export const shellEdits = {
     // The Companions tab's title leaves out the thread sync (rubato-shell/companionTabStatus.ts).
     ['        maxWidth={props.maxWidth}\n        onPress={props.onOpenEnvironments}\n',
       '        threadSync={state.selectedTab !== "companions"}\n'],
+    // A horizontal swipe on the tab root moves between Companions and Threads, as the tab bar
+    // does (rubato-shell/tabSwipe.ts). Only on the phone's tab bar, and not while a list searches.
+    ['import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";\n',
+      'import { WorkspaceTabSwipe } from "../rubato-shell/WorkspaceTabSwipe";\n'],
+    ['        {/* The pinned picker already clears the navigation bar; lists must not inset it again. */}\n',
+      '        <WorkspaceTabSwipe\n          tab={state.selectedTab}\n          enabled={systemTabBar && !sidebarNavigation && tab.searchMode === "resting"}\n          onSelect={(next) => workspace.dispatch({ type: "select", tab: next })}\n        >\n'],
+    ['        <WorkspaceToolbar\n          sidebar={sidebarNavigation}', '        </WorkspaceTabSwipe>\n'],
     ['{state.selectedTab === "threads" ? <HomeRouteScreen /> : <PullRequestsScreen />}',
       '{state.selectedTab === "companions" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === "threads" ? (\n            <HomeRouteScreen />\n          ) : (\n            <PullRequestsScreen />\n          )}', 'replace'],
   ],
