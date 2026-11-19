@@ -18,6 +18,7 @@ const KO = {
   cannotCall: "지금은 전화할 수 없어",
   back: "뒤로",
   writing: "입력 중",
+  toLatest: "맨 아래로",
   // Call cards.
   missedCall: "부재중 전화",
   noAnswer: "받지 않음",
@@ -78,6 +79,7 @@ const EN: typeof KO = {
   cannotCall: "Can't call right now",
   back: "Back",
   writing: "typing",
+  toLatest: "Scroll to latest",
   missedCall: "Missed call",
   noAnswer: "No answer",
   declinedCall: "Declined call",

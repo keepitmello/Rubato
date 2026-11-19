@@ -184,6 +184,45 @@ export function companionIsWriting(items: ReadonlyArray<RoomItem>, working: bool
   return false;
 }
 
+/** What a tool the companion runs is doing, as the room hints at it with a small mark. */
+export type RoomTool = "search" | "file" | "terminal" | "other";
+
+/** A step of the companion's turn as the room reads it: a message, or a tool call and its state. */
+export type RoomStep =
+  | { readonly kind: "message"; readonly role: "user" | "assistant" | "system" }
+  | { readonly kind: "tool"; readonly running: boolean; readonly icon: string; readonly name?: string | null };
+
+const TOOL_BY_ICON: Readonly<Record<string, RoomTool | null>> = {
+  search: "search", globe: "search", browser: "search",
+  edit: "file", eye: "file", code: "file",
+  command: "terminal", computer: "terminal", wrench: "terminal",
+  // Reasoning is thinking, and a message is the answer itself, not work done before it.
+  agent: null,
+  message: null,
+  hammer: "other",
+};
+
+/** The companion's own mouth (companion home.mjs REPLY_TOOL, SAY_TOOL): the answer, not work before it. */
+const ANSWER_TOOLS = new Set(["reply", "say"]);
+
+/**
+ * While the companion owes an answer: the tool it runs since the person's last message, or null
+ * when none runs and it is thinking. The steps come oldest first.
+ */
+export function companionTool(steps: ReadonlyArray<RoomStep>): RoomTool | null {
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const step = steps[index]!;
+    if (step.kind === "message") {
+      if (step.role === "user") return null;
+      continue;
+    }
+    if (!step.running) continue;
+    if (step.name && ANSWER_TOOLS.has(step.name)) return null;
+    return step.icon in TOOL_BY_ICON ? TOOL_BY_ICON[step.icon]! : "other";
+  }
+  return null;
+}
+
 /** A call's length as m:ss (h:mm:ss past an hour). */
 export function callLength(ms: number): string {
   const seconds = Math.max(0, Math.round(ms / 1000));

@@ -9,7 +9,8 @@ import { HeaderHeightContext } from "@react-navigation/elements";
 import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, Animated, FlatList, Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import Animated, { LinearTransition, ZoomIn, ZoomOut } from "react-native-reanimated";
 import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -18,6 +19,7 @@ import { AppText as Text } from "../../components/AppText";
 import { EmptyState } from "../../components/EmptyState";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
+import { ControlPill } from "../../components/ControlPill";
 import { ComposerEditor } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { FilePreviewSource } from "../../components/FilePreviewModal";
@@ -33,7 +35,13 @@ import { useSelectedThreadWorktree } from "../../state/use-selected-thread-workt
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { ComposerSurface } from "../threads/ThreadComposer";
 import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
-import { ComposerDictationPrimaryAction } from "../voice-input/ComposerDictationControl";
+import {
+  ComposerDictationCancelAction,
+  ComposerDictationDraftContent,
+  ComposerDictationPrimaryAction,
+  ComposerDictationStatus,
+  ComposerDictationToolbar,
+} from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import { BubbleAttachments } from "./BubbleAttachments";
@@ -46,7 +54,16 @@ import { useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
-import { companionIsWriting, roomItems, type RoomItem, type RoomMessageInput } from "./roomModel";
+import { companionIsWriting, companionTool, roomItems, type RoomItem, type RoomMessageInput, type RoomStep } from "./roomModel";
+import {
+  CompanionWorkIndicator,
+  hapticReceive,
+  hapticSend,
+  receivedEntering,
+  ROOM_SPRING,
+  sentEntering,
+  usePendingFade,
+} from "./RoomMotion";
 
 export type CompanionRoomParams = {
   readonly companionId: string;
@@ -110,27 +127,6 @@ function HeaderBand(props: { readonly height: number }) {
   return <EdgeFade edge="top" height={props.height + fade} solid={props.height / (props.height + fade)} />;
 }
 
-function WritingDots() {
-  const pulse = useRef(new Animated.Value(0.3)).current;
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulse, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 0.3, duration: 500, useNativeDriver: true }),
-      ]),
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [pulse]);
-  return (
-    <View accessibilityLabel={copy.writing} className="mt-1.5 self-start rounded-[20px] bg-grouped-card px-4 py-2.5">
-      <Animated.Text style={{ opacity: pulse, letterSpacing: 3 }} className="text-[18px] text-foreground-muted">
-        •••
-      </Animated.Text>
-    </View>
-  );
-}
-
 function RoomRow(props: {
   readonly item: RoomItem;
   readonly companion: CompanionEntry | null;
@@ -138,6 +134,8 @@ function RoomRow(props: {
   readonly environmentId: string;
   readonly body: { readonly fontSize: number; readonly lineHeight: number };
   readonly media: RoomMedia;
+  /** Arrived while the room is open: it moves in instead of just being there. */
+  readonly fresh: boolean;
 }) {
   const { item } = props;
   if (item.kind === "separator")
@@ -148,17 +146,33 @@ function RoomRow(props: {
         <CallCard call={item.call} title={props.title} art={props.companion?.art ?? null} environmentId={props.environmentId} />
       </View>
     );
+  return <Bubble {...props} item={item} />;
+}
+
+function Bubble(props: {
+  readonly item: Extract<RoomItem, { kind: "bubble" }>;
+  readonly environmentId: string;
+  readonly body: { readonly fontSize: number; readonly lineHeight: number };
+  readonly media: RoomMedia;
+  readonly fresh: boolean;
+}) {
+  const { item } = props;
   const mine = item.side === "me";
+  const fade = usePendingFade(item.pending !== null);
   return (
-    <View
+    <Animated.View
+      entering={props.fresh ? (mine ? sentEntering : receivedEntering) : undefined}
       className={mine ? "gap-2 self-end rounded-[20px] bg-user-bubble px-3.5 py-2.5" : "gap-2 self-start rounded-[20px] bg-grouped-card px-3.5 py-2.5"}
-      style={{
-        maxWidth: "80%",
-        marginTop: item.groupStart ? 10 : 2,
-        // Sent from this phone, not in the conversation yet.
-        opacity: item.pending ? 0.7 : 1,
-        ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
-      }}
+      style={[
+        {
+          maxWidth: "80%",
+          marginTop: item.groupStart ? 10 : 2,
+          // A bubble grows from its tail, as in Messages.
+          transformOrigin: mine ? "right bottom" : "left bottom",
+          ...(item.groupEnd ? (mine ? { borderBottomRightRadius: 6 } : { borderBottomLeftRadius: 6 }) : {}),
+        },
+        fade,
+      ]}
     >
       <BubbleAttachments attachments={item.attachments} media={props.media} />
       {item.pending && item.pending.attachments.length > 0 ? (
@@ -183,7 +197,7 @@ function RoomRow(props: {
         </Text>
       ) : null}
       {item.files ? <BubbleFiles files={item.files} body={props.body} mine={mine} media={props.media} /> : null}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -233,6 +247,7 @@ function RoomComposer(props: {
     onChangeSelection: setSelection,
   });
   const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
+  const dictating = presentation.statusLabel !== null;
   const foreground = useUniwindTheme()["--color-foreground"];
   const [focused, setFocused] = useState(false);
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
@@ -278,7 +293,9 @@ function RoomComposer(props: {
           </View>
         ) : null}
         <ComposerSurface style={{ borderRadius: 27, overflow: "hidden", paddingVertical: 2 }}>
-          <View className="flex-row items-center">
+          {/* While dictation runs the row turns away and the thread's voice strip turns in: cancel,
+              the live waveform with its time, and confirm (ThreadComposer's compact dictation). */}
+          <ComposerDictationDraftContent className="flex-row items-center" compact hidden={dictating}>
             <ComposerAttachmentButton
               supportsFiles={props.supportsFiles}
               onPickMedia={props.onPickMedia}
@@ -329,6 +346,28 @@ function RoomComposer(props: {
                 onPress={props.onCall}
               />
             )}
+          </ComposerDictationDraftContent>
+          <View pointerEvents={dictating ? "box-none" : "none"} style={{ position: "absolute", left: 0, right: 0, bottom: 2 }}>
+            <ComposerDictationToolbar showsDictation={dictating} visible={dictating}>
+              <View className="flex-row items-center">
+                <ComposerDictationCancelAction presentation={presentation} onCancel={dictation.cancel} />
+                <ComposerDictationStatus
+                  audioLevels={dictation.audioLevels}
+                  elapsedSeconds={dictation.elapsedSeconds}
+                  phase={dictation.state.phase}
+                  presentation={presentation}
+                  onDismissError={dictation.cancel}
+                />
+                <ComposerDictationPrimaryAction
+                  state={dictation.state}
+                  presentation={presentation}
+                  isAvailable={dictation.isAvailable}
+                  onStart={dictation.start}
+                  onConfirm={() => void dictation.stop()}
+                  onCancel={dictation.cancel}
+                />
+              </View>
+            </ComposerDictationToolbar>
           </View>
         </ComposerSurface>
       </View>
@@ -342,6 +381,7 @@ function RoomComposer(props: {
  * blurred the whole room under the transparent bar. The room draws its own band (HeaderBand).
  */
 const NO_EDGE_EFFECTS = { top: "hidden", bottom: "hidden", left: "hidden", right: "hidden" } as const;
+const ROW_LAYOUT = LinearTransition.springify().damping(ROOM_SPRING.damping).stiffness(ROOM_SPRING.stiffness);
 function RoomScrollView(props: ComponentProps<typeof ScrollView>) {
   return (
     <NativeScrollViewMarker style={{ flex: 1 }} scrollEdgeEffects={NO_EDGE_EFFECTS}>
@@ -393,6 +433,57 @@ function RoomBody(props: {
   );
   const items = useMemo(() => roomItems(messages, calls), [messages, calls]);
   const writing = companionIsWriting(items, composer.activeThreadBusy);
+  // Thinking or working: the tool the companion runs since the person's last message.
+  const tool = useMemo(
+    () =>
+      companionTool(
+        composer.selectedThreadFeed.flatMap((entry): RoomStep[] =>
+          entry.type === "message"
+            ? [{ kind: "message", role: entry.message.role }]
+            : entry.type === "activity-group"
+              ? entry.activities.map((activity) => {
+                  const item = activity.projectedItem.item;
+                  return {
+                    kind: "tool" as const,
+                    running: activity.lifecycleStatus === "inProgress",
+                    icon: activity.icon,
+                    name: item.type === "dynamic_tool" ? item.toolName : null,
+                  };
+                })
+              : [],
+        ),
+      ),
+    [composer.selectedThreadFeed],
+  );
+  // What the room showed when it opened stays put; what arrives after moves in. A bubble the list
+  // recycles back into view later does not move in again.
+  const seen = useRef<Set<string> | null>(null);
+  if (seen.current === null && items.length > 0) seen.current = new Set(items.map((item) => item.id));
+  useEffect(() => {
+    const known = seen.current;
+    if (!known) return;
+    let received = false;
+    for (const item of items) {
+      if (known.has(item.id)) continue;
+      known.add(item.id);
+      if (item.kind === "bubble" && item.side === "companion") received = true;
+    }
+    if (received) hapticReceive();
+  }, [items]);
+  const theme = useUniwindTheme();
+  const listRef = useRef<FlatList<RoomItem>>(null);
+  const [awayFromEnd, setAwayFromEnd] = useState(false);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    // The list is inverted: its end, the newest message, is offset 0.
+    const away = event.nativeEvent.contentOffset.y > 320;
+    setAwayFromEnd((current) => (current === away ? current : away));
+  }, []);
+  const toEnd = useCallback(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }), []);
+  const send = useCallback(() => {
+    hapticSend();
+    toEnd();
+    void composer.onSendMessage();
+  }, [composer, toEnd]);
   const reversed = useMemo(() => [...items].reverse(), [items]);
   const callable = props.companion?.callable ?? null;
   const call = useCallback(() => {
@@ -405,15 +496,32 @@ function RoomBody(props: {
   return (
     <>
       {/* Inverted: the header component sits at the bottom, the footer at the top. */}
-      <FlatList
+      <Animated.FlatList
+        ref={listRef}
         inverted
+        // The rows around a bubble that moves in slide to their new places instead of jumping.
+        itemLayoutAnimation={ROW_LAYOUT}
+        onScroll={onScroll}
+        scrollEventThrottle={32}
         data={reversed}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <RoomRow item={item} companion={props.companion} title={title} environmentId={props.environmentId} body={body} media={media} />
+          <RoomRow
+            item={item}
+            companion={props.companion}
+            title={title}
+            environmentId={props.environmentId}
+            body={body}
+            media={media}
+            fresh={seen.current !== null && !seen.current.has(item.id)}
+          />
         )}
         ListHeaderComponent={
-          <View style={{ paddingBottom: composerHeight + 6 }}>{writing ? <WritingDots /> : null}</View>
+          <View style={{ paddingBottom: composerHeight + 6 }}>
+            {writing ? (
+              <CompanionWorkIndicator tool={tool} bubbleColor={theme["--color-grouped-card"]} dotColor={theme["--color-foreground-muted"]} />
+            ) : null}
+          </View>
         }
         ListFooterComponent={<View style={{ height: props.headerHeight + 8 }} />}
         contentContainerStyle={{ paddingHorizontal: 16 }}
@@ -424,6 +532,22 @@ function RoomBody(props: {
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
       />
+      {awayFromEnd ? (
+        <Animated.View
+          entering={ZoomIn.springify().damping(ROOM_SPRING.damping).stiffness(ROOM_SPRING.stiffness)}
+          exiting={ZoomOut.duration(160)}
+          pointerEvents="box-none"
+          style={{ position: "absolute", alignSelf: "center", bottom: composerHeight + 10 }}
+        >
+          <ControlPill
+            accessibilityLabel={copy.toLatest}
+            activateOnPressIn
+            className="h-11 w-11 border border-border bg-glass-fallback shadow-md shadow-black/10"
+            icon={{ ios: "chevron.down", android: "keyboard_arrow_down" }}
+            onPress={toEnd}
+          />
+        </Animated.View>
+      ) : null}
       <RoomComposer
         environmentId={props.environmentId}
         attachments={composer.draftAttachments}
@@ -436,7 +560,7 @@ function RoomBody(props: {
         onPressPreview={media.onPressPreview}
         draft={composer.draftMessage}
         onChange={composer.onChangeDraftMessage}
-        onSend={() => void composer.onSendMessage()}
+        onSend={send}
         canCall={callable?.ready === true}
         onCall={call}
         ownerKey={composer.composerDraftKey ?? null}

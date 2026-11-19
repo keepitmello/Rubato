@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { CallRecord } from "./callTypes";
-import { callHeadline, companionIsWriting, fileLines, roomItems, roomPreview, spokenText, type RoomMessageInput } from "./roomModel";
+import {
+  callHeadline, companionIsWriting, companionTool, fileLines, roomItems, roomPreview, spokenText,
+  type RoomMessageInput, type RoomStep,
+} from "./roomModel";
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 13, 3, 0) + minutes * 60_000).toISOString();
 const message = (id: string, role: RoomMessageInput["role"], text: string, minutes: number): RoomMessageInput => ({
@@ -42,6 +45,23 @@ describe("a companion room", () => {
     expect(companionIsWriting(asked, true)).toBe(true);
     expect(companionIsWriting(asked, false)).toBe(false);
     expect(companionIsWriting(roomItems([message("a", "user", "hey", 0), message("b", "assistant", "hi", 1)], []), true)).toBe(false);
+  });
+
+  it("tells thinking from working by the tool that runs since the person's last message", () => {
+    const me: RoomStep = { kind: "message", role: "user" };
+    const tool = (icon: string, running: boolean): RoomStep => ({ kind: "tool", icon, running });
+    expect(companionTool([me])).toBe(null);
+    expect(companionTool([me, tool("search", false)])).toBe(null);
+    expect(companionTool([me, tool("search", false), tool("command", true)])).toBe("terminal");
+    expect(companionTool([me, tool("globe", true)])).toBe("search");
+    expect(companionTool([me, tool("edit", true)])).toBe("file");
+    expect(companionTool([me, tool("zap", true)])).toBe("other");
+    // The reply tool is the answer itself; a tool before the person's message is old work.
+    expect(companionTool([me, tool("message", true)])).toBe(null);
+    expect(companionTool([me, tool("agent", true)])).toBe(null);
+    expect(companionTool([me, { kind: "tool", icon: "wrench", running: true, name: "reply" }])).toBe(null);
+    expect(companionTool([me, { kind: "tool", icon: "wrench", running: true, name: "memory" }])).toBe("terminal");
+    expect(companionTool([tool("command", true), me])).toBe(null);
   });
 
   it("names how a call went and how long it ran", () => {
