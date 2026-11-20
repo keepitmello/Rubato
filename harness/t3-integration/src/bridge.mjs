@@ -248,6 +248,12 @@ export function companionEntry(branch, threadId, { messageId, text, createdAt } 
 const BACKFILL_MS = 5000;
 /** Inventory passes a thread request waits for its session's thread to appear before it is dropped. */
 export const THREAD_REQUEST_PASSES = 3;
+/**
+ * How long a session must have been at rest before a run T3 still shows as going on it counts as
+ * lost (settleLost): longer than the stream takes to bring a turn's end, short enough that the phone
+ * stops showing a finished thread as working within about a minute.
+ */
+export const LOST_RUN_QUIET_MS = 60_000;
 /** When a session in the engine's list last moved (epoch ms), or NaN: see backfillDetached. */
 export const sessionMoved = (row) => {
   const times = ['touchedAt', 'modifiedAt'].map((field) => row?.[field]).filter((value) => typeof value === 'number' && Number.isFinite(value));
@@ -303,6 +309,8 @@ export class RubatoPiBridge {
     // threadId -> the session's updatedAt the thread was last brought up to. `streamGaps(threadId)`,
     // bound by the T3 server, answers when the thread had no stream ([{ from, to }] in ms).
     this.backfilled = new Map();
+    // The session state (sessionMoved) each thread was last checked for a lost run at (settleLost).
+    this.lostChecked = new Map();
     this.backfillTimer = setInterval(() => { void this.backfillDetached().catch(onError); }, backfillMs);
     this.backfillTimer.unref?.();
     // The first pass right away: a GUI that was closed while the engine worked catches up before
@@ -968,7 +976,37 @@ export class RubatoPiBridge {
         try { if (await this.backfillThread(threadId, sessionId)) this.backfilled.set(threadId, moved); }
         catch (error) { t3BridgeLog('backfill failed', `${threadId} ${String(error?.message ?? error)}`); }
       }
+      await this.settleLost(rows, threads);
     })().finally(() => { this.backfilling = undefined; }));
+  }
+  /**
+   * A thread whose session the engine has at rest (idle or stored) for LOST_RUN_QUIET_MS while T3 still
+   * shows a run of it going, begun before the session last moved: T3 lost that turn's end. On
+   * 2026-11-20 the disk fell to 117 MB, the engine's disk guard cut two leads' model requests, and three
+   * hash-game leads stopped reaching their threads while the engine finished them; the phone showed
+   * them working for hours. The thread first gets every message it lacks, wherever T3 thinks it had a
+   * stream, then the run closes (RubatoPiSessions settleLostRuns). A companion's conversation, or one
+   * holding its stream for agents under way, keeps a run open on purpose and is left alone. Each
+   * session state is looked at once.
+   */
+  async settleLost(rows, threads) {
+    if (!this.settleLostRuns) return;
+    for (const [threadId, sessionId] of threads) {
+      if (this.closed) return;
+      const row = typeof sessionId === 'string' ? rows.get(sessionId) : undefined;
+      if (!row || row.companion === true || this.keepsStream(threadId)) continue;
+      if (row.status !== 'idle' && row.status !== 'stored') continue;
+      const moved = sessionMoved(row);
+      if (!Number.isFinite(moved) || Date.now() - moved < LOST_RUN_QUIET_MS || this.lostChecked.get(threadId) === moved) continue;
+      try {
+        if (await this.settleLostRuns(threadId, moved, { write: false }) > 0) {
+          await this.backfillThread(threadId, sessionId, { everyHole: true });
+          const closed = await this.settleLostRuns(threadId, moved, { write: true });
+          if (closed) t3BridgeLog('settled lost runs', `${threadId} ${closed}`);
+        }
+        this.lostChecked.set(threadId, moved);
+      } catch (error) { t3BridgeLog('settle lost runs failed', `${threadId} ${String(error?.message ?? error)}`); }
+    }
   }
   /**
    * Writes into `threadId` what its session holds from the times the thread had no stream. True once

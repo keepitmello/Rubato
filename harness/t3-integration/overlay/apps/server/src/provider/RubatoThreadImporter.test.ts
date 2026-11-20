@@ -7,6 +7,7 @@ import {
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -140,6 +141,45 @@ describe("Segno's own run (reply or say)", () => {
     await run(writes, { ...opened, ordinal: 7 });
     expect(writes.map((write) => write.events.map((event) => event.type))).toEqual([["message.updated", "turn-item.updated", "run.updated"]]);
     expect(writes[0]!.events[2]!.payload).toMatchObject({ id: saidRunId("rubato-session:said"), status: "completed", ordinal: 7 });
+  });
+});
+
+describe("runs T3 lost the end of (bridge settleLost)", () => {
+  const threadId = ThreadId.make("lead-thread");
+  const instance = ProviderInstanceId.make("rubato");
+  const at = (minute: number) => DateTime.makeUnsafe(`2026-11-20T02:${String(minute).padStart(2, "0")}:00.000Z`);
+  const base = { threadId, providerInstanceId: instance, modelSelection: { instanceId: instance, model: "claude" },
+    providerThreadId: null, rootNodeId: null, checkpointId: null, contextHandoffId: null, completedAt: null } as const;
+  const lost = { ...base, id: RunId.make("run-1"), ordinal: 1, userMessageId: "engine-run", activeAttemptId: "attempt-1",
+    status: "running", queuePosition: null, requestedAt: at(18), startedAt: at(18) } as unknown as OrchestrationV2Run;
+  const wake = { ...base, id: RunId.make("run-2"), ordinal: 2, userMessageId: "wake", activeAttemptId: null,
+    status: "queued", queuePosition: 1, requestedAt: at(24), startedAt: null } as unknown as OrchestrationV2Run;
+
+  it("complete with their attempt, node, turn and streaming message, and a stale wake is cancelled", async () => {
+    const writes: Array<ReadonlyArray<OrchestrationV2DomainEvent>> = [];
+    let next = 0;
+    const sink = Layer.succeed(EventSink.EventSinkV2, { write: ({ events }: { events: ReadonlyArray<OrchestrationV2DomainEvent> }) =>
+      Effect.sync(() => { writes.push(events); return []; }) } as never);
+    const ids = Layer.succeed(IdAllocator.IdAllocatorV2, { allocate: { event: () => Effect.succeed(EventId.make(`e${next++}`)) } } as never);
+    await Effect.runPromise(Effect.gen(function* () {
+      const importer = yield* RubatoThreadImporter;
+      yield* importer.settleLostRuns({ threadId, finished: [lost], staleWakes: [wake],
+        attempts: [{ id: "attempt-1", runId: lost.id, rootNodeId: "node-1", status: "running" },
+          { id: "attempt-0", runId: RunId.make("run-0"), rootNodeId: "node-0", status: "running" }] as never,
+        nodes: [{ id: "node-1", runId: lost.id, status: "running" }, { id: "node-x", runId: lost.id, status: "completed" }] as never,
+        providerTurns: [{ id: "turn-1", runAttemptId: "attempt-1", nodeId: "node-1", status: "running" }] as never,
+        messages: [{ id: "m1", runId: lost.id, streaming: true }, { id: "m2", runId: lost.id, streaming: false }] as never });
+    }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));
+    expect(writes).toHaveLength(1);
+    expect(writes[0]!.map((event) => [event.type, (event.payload as { id: string }).id,
+      (event.payload as { status?: string; streaming?: boolean }).status ?? (event.payload as { streaming?: boolean }).streaming]))
+      .toEqual([["run.updated", "run-1", "completed"], ["run-attempt.updated", "attempt-1", "completed"],
+        ["node.updated", "node-1", "completed"], ["provider-turn.updated", "turn-1", "completed"],
+        ["message.updated", "m1", false], ["run.updated", "run-2", "cancelled"]]);
+    const closed = writes[0]![0]!.payload as OrchestrationV2Run;
+    expect(Schema.decodeUnknownSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(closed)))
+      .toMatchObject({ id: "run-1", status: "completed", queuePosition: null });
+    expect(closed.completedAt).not.toBeNull();
   });
 });
 

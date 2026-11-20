@@ -6,7 +6,8 @@
 import {
   EventId, MessageId, ProviderDriverKind, RunId, TurnItemId,
   type ModelSelection, type ProviderInstanceId, type OrchestrationV2AppThread, type OrchestrationV2ConversationMessage,
-  type OrchestrationMessageContext, type OrchestrationV2Run,
+  type OrchestrationMessageContext, type OrchestrationV2Run, type OrchestrationV2RunAttempt,
+  type OrchestrationV2ExecutionNode, type OrchestrationV2ProviderTurn,
   type OrchestrationV2DomainEvent, type OrchestrationV2ProviderThread, type OrchestrationV2TurnItem,
   type ProjectId, type ProviderInteractionMode, type RuntimeMode, type ThreadId,
 } from "@t3tools/contracts";
@@ -348,8 +349,66 @@ const make = Effect.gen(function* () {
     ] }).pipe(Effect.mapError(importFailure("Could not write Segno's message")));
     return runId;
   });
-  return { importPiSessionThread, cutRun, rollBackFrom, appendNotice, appendSessionMessage, appendOwnRun };
+  /**
+   * Runs T3 still shows as going after the engine finished them (RubatoPiSessions settleLostRuns):
+   * each completes with its attempt, nodes, provider turns and streaming messages, the way T3's own
+   * restart recovery closes a run, but as finished rather than cancelled. `staleWakes` are queued
+   * runs that only carried the provider's own wake for that finished work; they are cancelled, since
+   * the engine already took the wake itself.
+   */
+  const settleLostRuns = (input: SettleLostRunsInput) => Effect.gen(function* () {
+    const now = yield* DateTime.now;
+    const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the settled runs' events")));
+    const going = (status: string) => status === "pending" || status === "running" || status === "waiting";
+    const events: Array<OrchestrationV2DomainEvent> = [];
+    for (const run of input.finished) {
+      events.push({ id: yield* event(), type: "run.updated", threadId: input.threadId, runId: run.id,
+        providerInstanceId: run.providerInstanceId, occurredAt: now,
+        payload: { ...run, status: "completed", queuePosition: null, completedAt: now } });
+      for (const attempt of input.attempts.filter((candidate) => candidate.runId === run.id && going(candidate.status))) {
+        events.push({ id: yield* event(), type: "run-attempt.updated", threadId: input.threadId, runId: run.id,
+          nodeId: attempt.rootNodeId, providerInstanceId: run.providerInstanceId, occurredAt: now,
+          payload: { ...attempt, status: "completed", completedAt: now } });
+      }
+      for (const node of input.nodes.filter((candidate) => candidate.runId === run.id && going(candidate.status))) {
+        events.push({ id: yield* event(), type: "node.updated", threadId: input.threadId, runId: run.id, nodeId: node.id,
+          providerInstanceId: run.providerInstanceId, occurredAt: now, payload: { ...node, status: "completed", completedAt: now } });
+      }
+      const attempts = new Set(input.attempts.filter((attempt) => attempt.runId === run.id).map((attempt) => attempt.id));
+      for (const turn of input.providerTurns.filter((candidate) =>
+        candidate.runAttemptId !== null && attempts.has(candidate.runAttemptId) && going(candidate.status))) {
+        events.push({ id: yield* event(), type: "provider-turn.updated", threadId: input.threadId, runId: run.id,
+          nodeId: turn.nodeId, providerInstanceId: run.providerInstanceId, occurredAt: now,
+          payload: { ...turn, status: "completed", completedAt: now } });
+      }
+      for (const message of input.messages.filter((candidate) => candidate.runId === run.id && candidate.streaming)) {
+        events.push({ id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: now,
+          payload: { ...message, streaming: false, updatedAt: now } });
+      }
+    }
+    for (const run of input.staleWakes) {
+      events.push({ id: yield* event(), type: "run.updated", threadId: input.threadId, runId: run.id,
+        providerInstanceId: run.providerInstanceId, occurredAt: now,
+        payload: { ...run, status: "cancelled", queuePosition: null, completedAt: now } });
+    }
+    if (events.length === 0) return;
+    yield* eventSink.write({ events }).pipe(Effect.mapError(importFailure("Could not settle the finished runs")));
+  });
+  return { importPiSessionThread, cutRun, rollBackFrom, appendNotice, appendSessionMessage, appendOwnRun, settleLostRuns };
 });
+
+export interface SettleLostRunsInput {
+  readonly threadId: ThreadId;
+  /** Runs still shown as going that the engine finished: they complete. */
+  readonly finished: ReadonlyArray<OrchestrationV2Run>;
+  /** Queued runs holding only the provider's own wake for that work: they are cancelled. */
+  readonly staleWakes: ReadonlyArray<OrchestrationV2Run>;
+  readonly attempts: ReadonlyArray<OrchestrationV2RunAttempt>;
+  readonly nodes: ReadonlyArray<OrchestrationV2ExecutionNode>;
+  readonly providerTurns: ReadonlyArray<OrchestrationV2ProviderTurn>;
+  readonly messages: ReadonlyArray<OrchestrationV2ConversationMessage>;
+}
 
 export interface OwnRunInput {
   readonly threadId: ThreadId;
@@ -409,6 +468,7 @@ export class RubatoThreadImporter extends Context.Service<RubatoThreadImporter, 
   readonly appendSessionMessage: (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
     Effect.Effect<void, RubatoThreadImportError>;
   readonly appendOwnRun: (input: OwnRunInput) => Effect.Effect<RunId, RubatoThreadImportError>;
+  readonly settleLostRuns: (input: SettleLostRunsInput) => Effect.Effect<void, RubatoThreadImportError>;
 }>()("t3/provider/RubatoThreadImporter") {}
 
 export const layer = Layer.effect(RubatoThreadImporter, make);

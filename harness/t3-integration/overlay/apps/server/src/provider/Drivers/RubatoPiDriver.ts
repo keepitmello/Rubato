@@ -148,6 +148,11 @@ export interface PiBridge {
   checkRewind?: (threadId: string, turns: number) => Promise<void>;
   /** A typed `/rewind N`: once its turn settled, T3 reverts it and the N turns before it (RubatoPiSessions.ts). */
   rewindConversation?: (threadId: string, request: {readonly turns: number}) => Promise<void>;
+  /**
+   * Runs T3 shows as going that began before the session last moved (`quietSince`, epoch ms) while the
+   * engine has it at rest: T3 lost their end. Counts them; with `write`, closes them (RubatoPiSessions.ts).
+   */
+  settleLostRuns?: (threadId: string, quietSince: number, options: {readonly write: boolean}) => Promise<number>;
   /** When the thread had no stream, from T3's provider-session events ([{ from, to }] ms); bound by RubatoPiSessions.ts. */
   streamGaps?: (threadId: string) => Promise<ReadonlyArray<{ from: number; to: number }>>;
   projectedThread: (threadId: string) => Promise<{

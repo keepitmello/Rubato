@@ -9,7 +9,8 @@
  *   3. the thread id itself for a session the inventory imported:
  *      `import:<instance>:<serverId>:<sessionId>`.
  */
-import { CommandId, OrchestrationMessageContext, ProviderInstanceId, RunId, ThreadId, TurnItemId } from "@t3tools/contracts";
+import { CommandId, OrchestrationMessageContext, ProviderInstanceId, RunId, ThreadId, TurnItemId,
+  type OrchestrationV2Run } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 import * as Clock from "effect/Clock";
 import * as DateTime from "effect/DateTime";
@@ -39,6 +40,8 @@ const senderSessionOf = (context: unknown): string | null => {
   return typeof sessionId === "string" && sessionId !== "" ? sessionId : null;
 };
 export const BUSY_RUN: ReadonlySet<string> = new Set(["preparing", "queued", "starting", "running", "waiting"]);
+/** A run that has a turn going in the engine; `waiting` holds for the person or background work and is not one. */
+const LOST_RUN: ReadonlySet<string> = new Set(["preparing", "starting", "running"]);
 /**
  * When a run that carries Segno's words asks the relay again while its running state failed to
  * publish: the relay's own retry delays (AgentAwarenessRelay RELAY_AGENT_ACTIVITY_RETRY_DELAYS_MS).
@@ -330,6 +333,37 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     yield* importer.value.appendSessionMessage({ threadId: thread, ordinal: yield* ordinal(),
       message: placed === null ? message : { ...message, runId: placed } });
   });
+  /**
+   * The engine says the thread's session is at rest and last moved at `quietSince` (epoch ms), yet T3
+   * still shows a run of it going: T3 lost that turn's end, and the phone shows the thread working
+   * for good (bridge settleLost). Runs that began before the session last moved are those turns; a
+   * run asked for after that is a new turn on its way and stays. With `write`, they complete, a queued
+   * run holding only the provider's own wake for them is cancelled, and the person's queued runs
+   * start. Answers how many runs were (or would be) closed.
+   */
+  const settleLostRuns = (threadId: string, quietSince: number, write: boolean) => Effect.gen(function* () {
+    if (Option.isNone(orchestrator) || Option.isNone(importer)) return 0;
+    const thread = ThreadId.make(threadId);
+    const began = (run: { readonly startedAt: DateTime.Utc | null; readonly requestedAt: DateTime.Utc }) =>
+      DateTime.toEpochMillis(run.startedAt ?? run.requestedAt);
+    const lost = (runs: ReadonlyArray<OrchestrationV2Run>) =>
+      runs.filter((run) => LOST_RUN.has(run.status) && !isRubatoRun(run.id) && began(run) < quietSince);
+    const { runs } = yield* orchestrator.value.getThreadRecords(thread, ["runs"]).pipe(
+      Effect.mapError(importFailure("Could not read the thread's runs")));
+    if (lost(runs).length === 0 || !write) return lost(runs).length;
+    const records = yield* orchestrator.value.getThreadRecords(thread,
+      ["runs", "attempts", "nodes", "providerTurns", "messages"]).pipe(
+      Effect.mapError(importFailure("Could not read the thread's runs")));
+    const finished = lost(records.runs);
+    const wakes = new Set(records.messages
+      .filter((message) => message.role === "user" && message.creationSource === "provider").map((message) => message.id));
+    const staleWakes = records.runs.filter((run) =>
+      run.status === "queued" && wakes.has(run.userMessageId) && DateTime.toEpochMillis(run.requestedAt) < quietSince);
+    yield* importer.value.settleLostRuns({ threadId: thread, finished, staleWakes, attempts: records.attempts,
+      nodes: records.nodes, providerTurns: records.providerTurns, messages: records.messages });
+    yield* orchestrator.value.resumeQueuedRuns.pipe(Effect.ignore);
+    return finished.length;
+  });
   const bind = Effect.gen(function* () {
     for (const instance of yield* registry.value.listInstances) {
       const bridge: PiBridge | undefined = rubatoBridgeFor(instance);
@@ -348,6 +382,8 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
         Effect.runPromise(threadStreamGaps(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql.value)));
       bridge.rewindConversation = (threadId: string, request: {readonly turns: number}) =>
         Effect.runPromise(rewindConversation(threadId, request.turns));
+      bridge.settleLostRuns = (threadId: string, quietSince: number, options: {readonly write: boolean}) =>
+        Effect.runPromise(settleLostRuns(threadId, quietSince, options.write));
     }
   });
   yield* bind;
