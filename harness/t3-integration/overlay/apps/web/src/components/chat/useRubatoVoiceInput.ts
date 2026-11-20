@@ -6,11 +6,7 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  createRubatoVoiceTranscriber,
-  RubatoWebVoiceRecorder,
-  type RubatoVoiceFailure,
-} from "../../state/rubatoVoice";
+import { createRubatoLiveDictation, type RubatoVoiceFailure } from "../../state/rubatoVoice";
 
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 
@@ -35,9 +31,10 @@ export type RubatoVoiceDraft = {
 };
 
 /**
- * Dictation for one composer draft. The shared controller owns the phases; this
- * hook connects it to the Mac's voice service, to the microphone, and to the
- * draft the user is looking at.
+ * Live dictation for one composer draft. The shared controller owns the phases; this
+ * hook connects it to the Mac's one-time key, to the microphone streaming to OpenAI,
+ * and to the draft the user is looking at. The words heard so far are in
+ * `liveDictationStore` (RubatoLiveDictationText draws them).
  */
 export function useRubatoVoiceInput(input: {
   readonly ownerKey: string | null;
@@ -47,6 +44,8 @@ export function useRubatoVoiceInput(input: {
 }) {
   const [state, setState] = useState<VoiceInputState>(IDLE_STATE);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  // The draft and caret as dictation found them: the heard words are shown where they will land.
+  const [liveDraft, setLiveDraft] = useState<RubatoVoiceDraft | null>(null);
   const latest = useRef(input);
   latest.current = input;
   const revision = useRef(0);
@@ -54,25 +53,25 @@ export function useRubatoVoiceInput(input: {
     ownerKey: null,
     text: "",
   });
-  const recorderRef = useRef<RubatoWebVoiceRecorder | null>(null);
+  const liveRef = useRef<ReturnType<typeof createRubatoLiveDictation> | null>(null);
   const controllerRef = useRef<VoiceInputController | null>(null);
   const lastFailure = useRef<RubatoVoiceFailure | null>(null);
 
   if (!controllerRef.current) {
-    const recorder = new RubatoWebVoiceRecorder((status) =>
-      controllerRef.current?.handleRecorderStatus(status),
+    const live = createRubatoLiveDictation(
+      () => latest.current.environmentId,
+      (failure) => {
+        lastFailure.current = failure;
+      },
+      (status) => controllerRef.current?.handleRecorderStatus(status),
     );
-    recorderRef.current = recorder;
+    liveRef.current = live;
     controllerRef.current = new VoiceInputController({
-      recorder,
-      getTranscriber: () =>
-        createRubatoVoiceTranscriber(
-          () => latest.current.environmentId,
-          (failure) => {
-            lastFailure.current = failure;
-          },
-        ),
+      recorder: live.recorder,
+      getTranscriber: () => live.transcriber,
       requestPermission: async () => {
+        // The Mac's key is minted while the microphone permission is checked.
+        live.warm();
         const media = navigator.mediaDevices;
         if (media?.getUserMedia === undefined) return { granted: false, canAskAgain: false };
         try {
@@ -88,10 +87,8 @@ export function useRubatoVoiceInput(input: {
         }
       },
       configureRecording: async () => {},
-      releaseRecording: async () => {
-        recorderRef.current?.release();
-      },
-      deleteRecording: (uri) => URL.revokeObjectURL(uri),
+      releaseRecording: async () => {},
+      deleteRecording: (uri) => live.deleteRecording(uri),
       readDraft: (): VoiceDraftSnapshot | null => {
         const current = latest.current;
         const draft = current.readDraft();
@@ -128,7 +125,13 @@ export function useRubatoVoiceInput(input: {
     controllerRef.current?.ownerChanged();
   }, [ownerKey]);
 
-  useEffect(() => () => controllerRef.current?.dispose(), []);
+  useEffect(
+    () => () => {
+      controllerRef.current?.dispose();
+      liveRef.current?.recorder.release();
+    },
+    [],
+  );
 
   useEffect(() => {
     if (state.phase !== "recording") {
@@ -146,7 +149,15 @@ export function useRubatoVoiceInput(input: {
   return {
     state,
     elapsedSeconds,
-    start: useCallback(() => void controllerRef.current?.start(), []),
+    /** 0…1, the microphone right now; the waveform samples it. */
+    readLevel: useCallback(() => liveRef.current?.recorder.level() ?? 0, []),
+    liveDraft,
+    /** The composer shows the heard words in place of the editor while this is true. */
+    showsLive: state.phase === "preparing" || state.phase === "recording" || state.phase === "transcribing",
+    start: useCallback(() => {
+      setLiveDraft(latest.current.readDraft());
+      void controllerRef.current?.start();
+    }, []),
     stop: useCallback(() => void controllerRef.current?.stop(), []),
     cancel: useCallback(() => controllerRef.current?.cancel(), []),
   };

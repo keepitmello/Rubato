@@ -1,13 +1,12 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
   VoiceTranscriptionError,
-  throwIfVoiceTranscriptionAborted,
   type PreparedVoiceTranscription,
-  type VoiceRecorder,
   type VoiceRecorderStatus,
   type VoiceTranscriber,
   type VoiceTranscriptionOptions,
 } from "@t3tools/client-runtime/voice-input";
+import { createLiveDictation } from "@t3tools/shared/rubatoLiveDictation";
 
 import { rubatoHttpAccess, type RubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
@@ -24,99 +23,8 @@ declare global {
   }
 }
 
-/** The route the Rubato voice service adds to the T3 server on this Mac. */
-const VOICE_ROUTE = "/rubato/voice/session";
-
-/** Chromium records Opus in WebM; Safari records AAC in MP4. */
-const RECORDING_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"] as const;
-
-function recordingType(): string | null {
-  if (typeof MediaRecorder === "undefined") return null;
-  for (const type of RECORDING_TYPES) {
-    if (MediaRecorder.isTypeSupported(type)) return type;
-  }
-  return null;
-}
-
-/**
- * MediaRecorder in the shape the shared voice controller expects: prepare the
- * microphone, record for a bounded duration, stop, and hand back a URL the
- * transcriber can read.
- */
-export class RubatoWebVoiceRecorder implements VoiceRecorder {
-  uri: string | null = null;
-  private stream: MediaStream | null = null;
-  private recorder: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
-  private limitTimer: ReturnType<typeof setTimeout> | null = null;
-  private stopResolve: (() => void) | null = null;
-  private stopped: Promise<void> = Promise.resolve();
-  private reported = false;
-
-  constructor(private readonly onStatus: (status: VoiceRecorderStatus) => void) {}
-
-  async prepareToRecordAsync(): Promise<void> {
-    const type = recordingType();
-    const media = navigator.mediaDevices;
-    if (type === null || media?.getUserMedia === undefined) {
-      throw new Error("This window cannot record audio.");
-    }
-    this.stream = await media.getUserMedia({ audio: true });
-    this.chunks = [];
-    this.reported = false;
-    this.recorder = new MediaRecorder(this.stream, { mimeType: type });
-    this.recorder.ondataavailable = (event) => {
-      if (event.data.size > 0) this.chunks.push(event.data);
-    };
-    this.recorder.onstop = () => this.finishCapture();
-    this.stopped = new Promise((resolve) => {
-      this.stopResolve = resolve;
-    });
-  }
-
-  record({ forDuration }: { readonly forDuration: number }): void {
-    if (!this.recorder) throw new Error("The recorder was not prepared.");
-    this.recorder.start(1000);
-    // A forgotten recording still transcribes instead of running forever.
-    this.limitTimer = setTimeout(() => void this.stop(), forDuration * 1000);
-  }
-
-  async stop(): Promise<void> {
-    if (this.recorder?.state === "recording") this.recorder.stop();
-    await this.stopped;
-  }
-
-  /** Drops the microphone without transcribing: cancellation and unmount. */
-  release(): void {
-    this.clearLimit();
-    this.reported = true;
-    if (this.recorder) this.recorder.onstop = null;
-    if (this.recorder?.state === "recording") this.recorder.stop();
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.stream = null;
-    this.recorder = null;
-    this.chunks = [];
-    this.stopResolve?.();
-  }
-
-  private clearLimit(): void {
-    if (this.limitTimer !== null) clearTimeout(this.limitTimer);
-    this.limitTimer = null;
-  }
-
-  private finishCapture(): void {
-    this.clearLimit();
-    const type = this.recorder?.mimeType ?? "audio/webm";
-    this.stream?.getTracks().forEach((track) => track.stop());
-    this.stream = null;
-    this.uri = URL.createObjectURL(new Blob(this.chunks, { type }));
-    this.chunks = [];
-    this.stopResolve?.();
-    if (this.reported) return;
-    this.reported = true;
-    this.onStatus({ isFinished: true, hasError: false, error: null, url: this.uri });
-  }
-}
+/** The route on this Mac that mints the one-time key for live dictation (src/voice/live.mjs). */
+const LIVE_ROUTE = "/rubato/voice/live";
 
 async function resolveVoiceConnection(environmentId: EnvironmentId | null): Promise<RubatoHttpAccess> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
@@ -168,13 +76,10 @@ async function failureFrom(
   if (response.status === 503 || code === "voice-not-configured" || code === "missing-model") {
     return inSettings("Voice input is not set up yet.");
   }
-  if (code === "expired-session" || code === "session-closed") {
-    return new VoiceTranscriptionError(kind, "The recording took too long. Start again.");
-  }
   if (response.status === 401 || response.status === 403) {
     return new VoiceTranscriptionError(kind, "This window is not allowed to use voice input.");
   }
-  return new VoiceTranscriptionError(kind, "The Mac could not transcribe this recording.");
+  return new VoiceTranscriptionError(kind, "The Mac could not start dictation.");
 }
 
 /** Reports a failure the person should read, then lets it go on to the controller. */
@@ -192,119 +97,63 @@ function reporting<T>(
 }
 
 /**
- * The Mac's voice service as a transcriber for one composer draft. A draft
- * session is opened when recording starts and closed once the transcript lands,
- * so the audio never leaves the Mac except to the transcription provider.
+ * Live dictation for one composer: the Mac mints a one-time key, the microphone streams to
+ * OpenAI with it over WebRTC, and the words come back while the person talks
+ * (@t3tools/shared/rubatoLiveDictation). Returns the recorder and transcriber T3's controller
+ * takes, and the `deleteRecording` that closes the connection once the dictation is over.
  */
-export function createRubatoVoiceTranscriber(
+export function createRubatoLiveDictation(
   readEnvironmentId: () => EnvironmentId | null,
-  onFailure?: (failure: RubatoVoiceFailure) => void,
-): VoiceTranscriber {
-  let session: { readonly connection: RubatoHttpAccess; readonly sessionId: string } | null = null;
-  let spokenLanguage = "ko";
-
-  const endSession = (): void => {
-    const current = session;
-    session = null;
-    if (!current) return;
-    // POST …/cancel, not DELETE: T3's CORS answers GET, POST and OPTIONS only.
-    void fetch(`${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}/cancel`, {
-      method: "POST",
-      credentials: current.connection.credentials,
-      headers: current.connection.headers,
-    }).catch(() => {});
-  };
-
-  const transcribe = (uri: string, options: VoiceTranscriptionOptions): Promise<string> =>
-    reporting(onFailure, options.signal, () => transcribeOnce(uri, options));
-
-  const transcribeOnce = async (
-    uri: string,
-    options: VoiceTranscriptionOptions,
-  ): Promise<string> => {
-    const current = session;
-    if (!current) {
-      throw new VoiceTranscriptionError("transcription-failed", "The recording was already closed.");
-    }
-    throwIfVoiceTranscriptionAborted(options.signal);
-    const audio = await fetch(uri).then((response) => response.blob());
-    throwIfVoiceTranscriptionAborted(options.signal);
-    const contentType = audio.type || "audio/webm";
-    const response = await fetch(
-      `${current.connection.baseUrl}${VOICE_ROUTE}/${current.sessionId}/transcribe`,
-      {
-        method: "POST",
-        credentials: current.connection.credentials,
-        // Only headers T3's CORS allows: the server names the file from the content type.
-        headers: { ...current.connection.headers, "content-type": contentType },
-        body: audio,
-        signal: options.signal,
+  onFailure: (failure: RubatoVoiceFailure) => void,
+  onRecorderStatus: (status: VoiceRecorderStatus) => void,
+) {
+  const live = createLiveDictation(
+    {
+      mint: async (signal) => {
+        const connection = await resolveVoiceConnection(readEnvironmentId());
+        const response = await fetch(`${connection.baseUrl}${LIVE_ROUTE}`, {
+          method: "POST",
+          credentials: connection.credentials,
+          // Only headers T3's CORS allows.
+          headers: connection.headers,
+          signal,
+        }).catch((cause: unknown) => {
+          throw new VoiceTranscriptionError("preparation-failed", "This Mac could not be reached.", {
+            cause,
+          });
+        });
+        if (!response.ok) throw await failureFrom(response, "preparation-failed");
+        const payload = (await response.json().catch(() => null)) as {
+          readonly clientSecret?: unknown;
+          readonly callsUrl?: unknown;
+        } | null;
+        if (typeof payload?.clientSecret !== "string" || typeof payload.callsUrl !== "string") {
+          throw new VoiceTranscriptionError("preparation-failed", "This Mac did not open a dictation.");
+        }
+        return { clientSecret: payload.clientSecret, callsUrl: payload.callsUrl };
       },
-    ).catch((cause: unknown) => {
-      throw new VoiceTranscriptionError(
-        "transcription-failed",
-        "This Mac could not be reached.",
-        { cause },
-      );
-    });
-    if (!response.ok) {
-      throw await failureFrom(response, "transcription-failed");
-    }
-    const payload = (await response.json().catch(() => null)) as {
-      readonly text?: unknown;
-    } | null;
-    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-    if (text.length === 0) {
-      throw new VoiceTranscriptionError("transcription-failed", "No speech was detected.");
-    }
-    spokenLanguage = /[가-힣]/.test(text) ? "ko" : "en";
-    endSession();
-    return text;
+      openMicrophone: () =>
+        navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        }),
+      createPeer: () => new RTCPeerConnection() as never,
+      fetch: (url, init) => fetch(url, init),
+      connectionFailed: (message) => new VoiceTranscriptionError("preparation-failed", message),
+    },
+    onRecorderStatus,
+  );
+  const transcriber: VoiceTranscriber = {
+    prepare: ({ signal }) =>
+      reporting(onFailure, signal, async (): Promise<PreparedVoiceTranscription> => {
+        const prepared = await live.transcriber.prepare({ signal });
+        return {
+          get locale(): string {
+            return prepared.locale;
+          },
+          transcribe: (uri: string, options: VoiceTranscriptionOptions) =>
+            reporting(onFailure, options.signal, () => prepared.transcribe(uri, options)),
+        };
+      }),
   };
-
-  return {
-    prepare: ({ signal }) => reporting(onFailure, signal, () => prepareOnce(signal)),
-  };
-
-  async function prepareOnce(signal: AbortSignal): Promise<PreparedVoiceTranscription> {
-    const connection = await resolveVoiceConnection(readEnvironmentId());
-    endSession();
-    const response = await fetch(`${connection.baseUrl}${VOICE_ROUTE}`, {
-      method: "POST",
-      credentials: connection.credentials,
-      headers: { ...connection.headers, "content-type": "application/json" },
-      body: JSON.stringify({ mode: "draft" }),
-      signal,
-    }).catch((cause: unknown) => {
-      throw new VoiceTranscriptionError(
-        "preparation-failed",
-        "This Mac could not be reached.",
-        { cause },
-      );
-    });
-    if (!response.ok) {
-      throw await failureFrom(response, "preparation-failed");
-    }
-    const payload = (await response.json().catch(() => null)) as {
-      readonly voiceSessionId?: unknown;
-    } | null;
-    const sessionId =
-      typeof payload?.voiceSessionId === "string" ? payload.voiceSessionId : null;
-    if (sessionId === null) {
-      throw new VoiceTranscriptionError(
-        "preparation-failed",
-        "This Mac did not open a recording.",
-      );
-    }
-    session = { connection, sessionId };
-    return {
-      // The controller reads the locale after the transcript exists, and the
-      // spoken language is only known then: an English dictation needs a word
-      // boundary, a Korean one does not.
-      get locale(): string {
-        return spokenLanguage;
-      },
-      transcribe,
-    };
-  }
+  return { recorder: live.recorder, transcriber, deleteRecording: live.deleteRecording, warm: live.warm };
 }

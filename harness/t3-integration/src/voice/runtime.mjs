@@ -3,6 +3,7 @@ import { createSessionStore } from './sessions.mjs';
 import { createSubmitter } from './submit.mjs';
 import { createVoiceService } from './service.mjs';
 import { transcribeAudio } from './transcribe.mjs';
+import { mintLiveTranscription } from './live.mjs';
 import { handleVoiceRequest, bearerMatches } from './http.mjs';
 import {
   createVoiceConfigReader, handleVoiceSettingsRequest, voiceApiKey, voiceConfigUsable,
@@ -50,7 +51,8 @@ export function createVoiceRuntime({ config, configPath, statePath, env = proces
     handle(request, desktopAuthenticated = false) {
       const settings = current();
       if (!settings) return Promise.resolve(notConfigured());
-      return handleVoiceRequest(request, { service, token: settings.token, desktopAuthenticated });
+      const live = () => mintLiveTranscription({ apiKey: voiceApiKey(settings, env) });
+      return handleVoiceRequest(request, { service, token: settings.token, live, desktopAuthenticated });
     },
     /** Settings › Chat › Voice input. The caller has checked the desktop session. */
     handleSettings(request) {

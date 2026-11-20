@@ -7,10 +7,15 @@ export const voiceOverlays = [
   'apps/web/src/components/chat/RubatoVoiceControl.tsx',
   'apps/web/src/state/rubatoVoiceSettings.ts',
   'apps/web/src/components/settings/RubatoVoiceSettings.tsx',
+  'apps/web/src/components/chat/RubatoLiveDictationText.tsx',
+  'packages/shared/src/rubatoLiveDictation.ts',
+  'packages/shared/src/rubatoLiveDictation.test.ts',
 ];
 
 // Dictation in the Mac composer: a microphone beside the attach control, and
-// the shared voice controller wired to this composer's draft.
+// the shared voice controller wired to this composer's draft. It is live: the
+// words heard so far stand in the editor's place while the microphone is open
+// (RubatoLiveDictationText), and the final text goes into the draft at stop.
 const composerVoiceWiring = [
   '  const voiceInput = useRubatoVoiceInput({',
   '    ownerKey: composerDraftTargetKey,',
@@ -41,7 +46,7 @@ const composerVoiceControl = [
   '                  {isElectron ? (',
   '                    <RubatoVoiceControl',
   '                      state={voiceInput.state}',
-  '                      elapsedSeconds={voiceInput.elapsedSeconds}',
+  '                      readLevel={voiceInput.readLevel}',
   '                      onStart={voiceInput.start}',
   '                      onStop={voiceInput.stop}',
   '                      onCancel={voiceInput.cancel}',
@@ -55,9 +60,26 @@ const composerVoiceControl = [
 export const voiceEdits = {
   'apps/web/src/components/chat/ChatComposer.tsx': [
     ['import { Button } from "../ui/button";',
-      'import { RubatoVoiceControl } from "./RubatoVoiceControl";\nimport { useRubatoVoiceInput } from "./useRubatoVoiceInput";\nimport { isElectron } from "../../env";\n'],
+      'import { RubatoVoiceControl } from "./RubatoVoiceControl";\nimport { RubatoLiveDictationText } from "./RubatoLiveDictationText";\nimport { useRubatoVoiceInput } from "./useRubatoVoiceInput";\nimport { isElectron } from "../../env";\n'],
     ['  const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {', composerVoiceWiring],
     ['                  {showComposerAttachAction ? (', composerVoiceControl, 'replace'],
+    ['                <ComposerContextActionsContext value={composerContextActions}>\n                  <ComposerPromptEditor\n',
+      [
+        '                {voiceInput.showsLive ? (',
+        '                  <RubatoLiveDictationText',
+        '                    draft={voiceInput.liveDraft ?? { text: prompt, start: prompt.length, end: prompt.length }}',
+        '                    connecting={voiceInput.state.phase === "preparing"}',
+        '                  />',
+        '                ) : null}',
+        '',
+      ].join('\n')],
+    ['                    containerClassName={cn(isComposerResting && "min-w-0 flex-1")}',
+      '                    containerClassName={cn(isComposerResting && "min-w-0 flex-1", voiceInput.showsLive && "hidden")}', 'replace'],
+  ],
+  // The live dictation module is shared with the phone (@t3tools/shared/rubatoLiveDictation).
+  'packages/shared/package.json': [
+    ['    "./composerTrigger": {\n',
+      '    "./rubatoLiveDictation": {\n      "types": "./src/rubatoLiveDictation.ts",\n      "import": "./src/rubatoLiveDictation.ts"\n    },\n'],
   ],
   // Settings › Chat › Voice input (settings/RubatoVoiceSettings.tsx), found by search.
   'apps/web/src/components/settings/settingsSearch.ts': [

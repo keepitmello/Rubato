@@ -18,6 +18,6 @@ describe("macVoiceFailureMessage", () => {
   it("tells an unreachable Mac apart from a refused phone", () => {
     expect(macVoiceFailureMessage(null, "")).toMatch(/could not be reached/);
     expect(macVoiceFailureMessage(401, "")).toMatch(/Pair the phone/);
-    expect(macVoiceFailureMessage(500, "voice-failed")).toBe("Your Mac could not transcribe this recording.");
+    expect(macVoiceFailureMessage(500, "voice-failed")).toBe("Your Mac could not start dictation.");
   });
 });

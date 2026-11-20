@@ -20,7 +20,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
 import { ControlPill } from "../../components/ControlPill";
-import { ComposerEditor } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { FilePreviewSource } from "../../components/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
@@ -37,12 +36,11 @@ import { ComposerSurface } from "../threads/ThreadComposer";
 import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
 import {
   ComposerDictationCancelAction,
-  ComposerDictationDraftContent,
   ComposerDictationPrimaryAction,
   ComposerDictationStatus,
-  ComposerDictationToolbar,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
+import { RubatoComposerField } from "../rubato-voice/RubatoComposerField";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useAtomValue } from "@effect/atom-react";
@@ -290,7 +288,7 @@ function RoomComposer(props: {
     onChangeSelection: setSelection,
   });
   const presentation = resolveVoiceComposerPresentation(dictation.state, dictation.elapsedSeconds);
-  const dictating = presentation.statusLabel !== null;
+  const dictating = presentation.statusLabel !== null || dictation.isBusy;
   // Editing a sent message brings its words here: the field opens on them, the cursor at the end.
   const editorRef = useRef<ComposerEditorHandle>(null);
   const editing = useEditedMessageId(props.threadKey);
@@ -301,8 +299,19 @@ function RoomComposer(props: {
     editorRef.current?.focus();
   }, [editing]);
   const foreground = useUniwindTheme()["--color-foreground"];
-  const [focused, setFocused] = useState(false);
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
+  // Send while dictating, as ChatGPT's: stop, and send once the final text is in the draft.
+  const sendAfterDictation = useRef(false);
+  const sendWhenDictated = () => {
+    sendAfterDictation.current = true;
+    void dictation.stop();
+  };
+  const phase = dictation.state.phase;
+  useEffect(() => {
+    if (!sendAfterDictation.current || phase === "recording" || phase === "transcribing") return;
+    sendAfterDictation.current = false;
+    if (phase === "idle") props.onSend();
+  }, [phase, props.draft, props.onSend]);
   const strip = composerStripAttachments(props.attachments);
   const bottomPadding = Math.max(insets.bottom, 10);
   return (
@@ -346,65 +355,34 @@ function RoomComposer(props: {
             ))}
           </View>
         ) : null}
-        <ComposerSurface style={{ borderRadius: 27, overflow: "hidden", paddingVertical: 2 }}>
-          {/* While dictation runs the row turns away and the thread's voice strip turns in: cancel,
-              the live waveform with its time, and confirm (ThreadComposer's compact dictation). */}
-          <ComposerDictationDraftContent className="flex-row items-center" compact hidden={dictating}>
-            <ComposerAttachmentButton
-              supportsFiles={props.supportsFiles}
-              onPickMedia={props.onPickMedia}
-              onPickFiles={props.onPickFiles}
+        {/* ChatGPT's composer (user 2026-11-20): the field across the top, growing with its text up
+            to six lines and opening full screen past that (RubatoComposerField); the buttons on a row
+            below. While dictation runs the row becomes cancel, the live waveform, stop and send, and
+            the heard words are written into the field as they come. */}
+        <ComposerSurface style={{ borderRadius: 24, overflow: "hidden", paddingTop: 8, paddingBottom: 4 }}>
+          <View className="px-4">
+            <RubatoComposerField
+              ref={editorRef}
+              dictating={dictation.isBusy}
+              lineHeight={props.body.lineHeight}
+              expand={{ sendLabel: copy.send, canSend: hasText && !dictation.blocksSubmission, onSend: props.onSend }}
+              draftKey={props.ownerKey}
+              environmentId={props.environmentId}
+              multiline
+              value={props.draft}
+              selection={selection}
+              onChangeText={props.onChange}
+              onSelectionChange={setSelection}
+              onPasteImages={(uris) => void props.onPasteImages(uris)}
+              onPasteText={(paste) => void props.onPasteText(paste)}
+              placeholder={copy.placeholder}
+              contentInsetVertical={6}
+              textStyle={{ ...props.body, color: foreground }}
             />
-            <View className="min-w-0 flex-1 px-1">
-              <ComposerEditor
-                ref={editorRef}
-                draftKey={props.ownerKey}
-                environmentId={props.environmentId}
-                multiline
-                value={props.draft}
-                readOnly={dictation.freezesEditor}
-                selection={selection}
-                onChangeText={props.onChange}
-                onSelectionChange={setSelection}
-                onPasteImages={(uris) => void props.onPasteImages(uris)}
-                onPasteText={(paste) => void props.onPasteText(paste)}
-                onFocus={() => setFocused(true)}
-                onBlur={() => setFocused(false)}
-                placeholder={copy.placeholder}
-                scrollEnabled={focused}
-                contentInsetVertical={focused ? 0 : 6}
-                style={focused ? { minHeight: 72, maxHeight: 160, paddingVertical: 4 } : { height: 36 }}
-                textStyle={{ ...props.body, color: foreground }}
-              />
-            </View>
-            <ComposerDictationPrimaryAction
-              state={dictation.state}
-              presentation={presentation}
-              isAvailable={dictation.isAvailable}
-              onStart={dictation.start}
-              onConfirm={() => void dictation.stop()}
-              onCancel={dictation.cancel}
-            />
-            {hasText ? (
-              <ComposerActionButton
-                accessibilityLabel={copy.send}
-                icon="arrow.up"
-                variant="primary"
-                disabled={dictation.blocksSubmission}
-                onPress={props.onSend}
-              />
-            ) : (
-              <ComposerActionButton
-                accessibilityLabel={props.canCall ? copy.call : copy.cannotCall}
-                icon={{ ios: "phone.fill", android: "smartphone" }}
-                variant="primary"
-                onPress={props.onCall}
-              />
-            )}
-          </ComposerDictationDraftContent>
-          <View pointerEvents={dictating ? "box-none" : "none"} style={{ position: "absolute", left: 0, right: 0, bottom: 2 }}>
-            <ComposerDictationToolbar showsDictation={dictating} visible={dictating}>
-              <View className="flex-row items-center">
+          </View>
+          <View className="min-h-[44px] flex-row items-center">
+            {dictating ? (
+              <>
                 <ComposerDictationCancelAction presentation={presentation} onCancel={dictation.cancel} />
                 <ComposerDictationStatus
                   audioLevels={dictation.audioLevels}
@@ -421,8 +399,50 @@ function RoomComposer(props: {
                   onConfirm={() => void dictation.stop()}
                   onCancel={dictation.cancel}
                 />
-              </View>
-            </ComposerDictationToolbar>
+                {dictation.state.phase === "error" ? null : (
+                  <ComposerActionButton
+                    accessibilityLabel={copy.send}
+                    icon="arrow.up"
+                    variant="primary"
+                    disabled={dictation.state.phase !== "recording"}
+                    onPress={sendWhenDictated}
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                <ComposerAttachmentButton
+                  supportsFiles={props.supportsFiles}
+                  onPickMedia={props.onPickMedia}
+                  onPickFiles={props.onPickFiles}
+                />
+                <View className="flex-1" />
+                <ComposerDictationPrimaryAction
+                  state={dictation.state}
+                  presentation={presentation}
+                  isAvailable={dictation.isAvailable}
+                  onStart={dictation.start}
+                  onConfirm={() => void dictation.stop()}
+                  onCancel={dictation.cancel}
+                />
+                {hasText ? (
+                  <ComposerActionButton
+                    accessibilityLabel={copy.send}
+                    icon="arrow.up"
+                    variant="primary"
+                    disabled={dictation.blocksSubmission}
+                    onPress={props.onSend}
+                  />
+                ) : (
+                  <ComposerActionButton
+                    accessibilityLabel={props.canCall ? copy.call : copy.cannotCall}
+                    icon={{ ios: "phone.fill", android: "smartphone" }}
+                    variant="primary"
+                    onPress={props.onCall}
+                  />
+                )}
+              </>
+            )}
           </View>
         </ComposerSurface>
       </View>

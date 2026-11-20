@@ -196,6 +196,11 @@
     "apps/web/src/components/chat/composerProviderState.tsx": "6ff1f2a4c2dd06a58b082815bd95af290831d32e541e52b401f21d719d226fb9",
     "apps/web/src/components/chat/composerProviderState.test.tsx": "f708bbd551a0fd9c0f83f6fb69d91715007b45d7e0873f71cb13154b841679ca",
     "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift": "ca800fea420c5478cb29bdaf250e259763a313988f9a1135acd5dbd37498a68e",
-    "apps/mobile/src/features/threads/ThreadDetailScreen.tsx": "4ed66e4f9b03b5325cb47e348801b558983e786f010c09b464fc6d1e6ae6dbb7"
+    "apps/mobile/src/features/threads/ThreadDetailScreen.tsx": "4ed66e4f9b03b5325cb47e348801b558983e786f010c09b464fc6d1e6ae6dbb7",
+    "apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorModule.swift": "07df2e09deb74324c5b01c2f39c1d0622e4ae109ac2cec90c1a488627ded2a73",
+    "apps/mobile/src/native/T3ComposerEditor.ios.tsx": "9fa9a6c759a10158b2ccfa2a8d05728da71e584c607092b07289733950d59d17",
+    "apps/mobile/src/native/T3ComposerEditor.types.ts": "e14357cad4868225ecad25a99e3ee4a9a59e95c583ccf9bf83f73c9be44136fd",
+    "packages/client-runtime/src/voice-input/controller.ts": "faa532b44fb4a24006e941ad0ad3248795c703d90eaf70357f66ae1152ddf447",
+    "packages/client-runtime/src/voice-input/index.ts": "3cc55f63473e5435c128bc1448b67ff0f7042f4b97901949477c7199e040b046"
   }
 }

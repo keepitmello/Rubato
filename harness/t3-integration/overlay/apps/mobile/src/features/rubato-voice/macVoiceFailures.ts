@@ -11,7 +11,6 @@ export function macVoiceFailureMessage(status: number | null, code: string): str
   if (status === 503 || code === "voice-not-configured" || code === "missing-model" || code === "voice-unavailable") {
     return `Voice input is not set up on your Mac yet. ${MAC_VOICE_SETUP_HINT}`;
   }
-  if (code === "expired-session" || code === "session-closed") return "The recording took too long. Start again.";
   if (status === 401 || status === 403) return "Your Mac did not allow voice input from this phone. Pair the phone with the Mac again.";
-  return "Your Mac could not transcribe this recording.";
+  return "Your Mac could not start dictation.";
 }

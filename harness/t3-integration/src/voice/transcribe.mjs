@@ -12,7 +12,7 @@ export const TRANSCRIPTION_INSTRUCTIONS = [
 
 /** 자주 나오는 이름들. 오타로 굳는 것을 줄이는 용도다. */
 export const DEFAULT_HINTS = [
-  'Rubato', 'T3', 'Codex', 'Claude', 'Fable', 'Astra', 'DeepSeek', 'Grok',
+  'Rubato', '루바토', 'T3', 'Codex', 'Claude', 'Fable', 'Astra', 'DeepSeek', 'Grok',
   'Supabase', 'Redis', 'TypeScript', 'Node.js', 'GitHub', 'Playwright',
 ];
 

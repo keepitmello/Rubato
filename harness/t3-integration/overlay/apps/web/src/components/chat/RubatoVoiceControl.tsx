@@ -1,34 +1,71 @@
 import type { VoiceInputState } from "@t3tools/client-runtime/voice-input";
 import { useNavigate } from "@tanstack/react-router";
 import { MicIcon, SettingsIcon, SquareIcon, XIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 import { Button } from "../ui/button";
 import { Spinner } from "../ui/spinner";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
-function statusLabel(state: VoiceInputState, elapsedSeconds: number): string {
-  switch (state.phase) {
-    case "preparing":
-      return "Preparing";
-    case "recording": {
-      const seconds = Math.max(0, Math.floor(elapsedSeconds));
-      return `Recording ${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-    }
-    case "transcribing":
-      return "Transcribing";
-    default:
-      return "";
-  }
+const WAVE_BAR_GAP = 3;
+const WAVE_SAMPLE_MS = 80;
+
+/**
+ * The microphone as bars that enter on the right and drift left, over a dotted line where it was
+ * quiet: ChatGPT's dictation strip. Frozen while the final text arrives; a plain dotted line
+ * while connecting.
+ */
+function DictationWave(props: { readonly readLevel: () => number; readonly live: boolean }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const levels = useRef<number[]>([]);
+  const { readLevel, live } = props;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const draw = () => {
+      const ratio = window.devicePixelRatio || 1;
+      const width = canvas.clientWidth;
+      const height = canvas.clientHeight;
+      if (canvas.width !== Math.round(width * ratio)) canvas.width = Math.round(width * ratio);
+      if (canvas.height !== Math.round(height * ratio)) canvas.height = Math.round(height * ratio);
+      const context = canvas.getContext("2d");
+      if (!context) return;
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = getComputedStyle(canvas).color;
+      const count = Math.floor(width / WAVE_BAR_GAP);
+      const history = levels.current;
+      for (let index = 0; index < count; index += 1) {
+        const level = history[history.length - count + index] ?? 0;
+        // Speech sits around 0.05–0.3 on WebRTC's scale; the square root lifts quiet words.
+        const bar = Math.min(height, Math.max(1.5, Math.sqrt(level) * height * 1.6));
+        context.globalAlpha = level > 0.01 ? 0.9 : 0.35;
+        context.fillRect(index * WAVE_BAR_GAP, (height - bar) / 2, 1.5, bar);
+      }
+    };
+    draw();
+    if (!live) return;
+    const timer = window.setInterval(() => {
+      levels.current = [...levels.current.slice(-400), readLevel()];
+      draw();
+    }, WAVE_SAMPLE_MS);
+    return () => window.clearInterval(timer);
+  }, [live, readLevel]);
+  useEffect(() => () => {
+    levels.current = [];
+  }, []);
+  return <canvas ref={canvasRef} aria-hidden className="h-6 w-28 shrink text-foreground sm:w-36" />;
 }
 
 /**
  * Dictation in the composer toolbar. One control changes face with the phase:
- * a microphone while resting, a live status with stop and cancel while the
- * microphone is open, and the reason it stopped when something went wrong.
+ * a microphone while resting; cancel, the live waveform and stop while the
+ * microphone is open (a spinner in stop's place while connecting and while the
+ * final text arrives); and the reason it stopped when something went wrong.
  */
 export function RubatoVoiceControl(props: {
   readonly state: VoiceInputState;
-  readonly elapsedSeconds: number;
+  readonly readLevel: () => number;
   readonly onStart: () => void;
   readonly onStop: () => void;
   readonly onCancel: () => void;
@@ -96,9 +133,7 @@ export function RubatoVoiceControl(props: {
         </TooltipTrigger>
         <TooltipPopup>Cancel dictation</TooltipPopup>
       </Tooltip>
-      <span className="shrink-0 text-secondary-label text-xs tabular-nums">
-        {statusLabel(state, props.elapsedSeconds)}
-      </span>
+      <DictationWave readLevel={props.readLevel} live={state.phase === "recording"} />
       {state.phase === "recording" ? (
         <Tooltip>
           <TooltipTrigger

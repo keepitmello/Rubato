@@ -27,7 +27,7 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/companionThreads.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.test.ts',
-  'apps/mobile/src/features/rubato-voice/macVoiceTranscriber.ts',
+  'apps/mobile/src/features/rubato-voice/macLiveDictation.ts',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.ts',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.test.ts',
   'apps/mobile/src/features/rubato-shell/companionNotifications.ts',
@@ -189,13 +189,20 @@ export const shellEdits = {
     ['  const threads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );',
       '  const allThreads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );\n  const threads = useWithoutCompanionThreads(allThreads);', 'replace'],
   ],
-  // Dictation goes through the Mac's voice service, as on the desktop (rubato-voice/).
+  // Dictation is live, as on the desktop: the Mac mints a one-time key and the microphone streams
+  // to OpenAI over WebRTC (rubato-voice/macLiveDictation.ts). expo-audio's recorder is never started;
+  // the live recorder's level and time feed the waveform as expo's did.
   'apps/mobile/src/features/voice-input/VoiceInputProvider.tsx': [
     ['import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";\n',
-      'import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";\nimport { createMacVoiceTranscriber, withMacVoiceFailure } from "../rubato-voice/macVoiceTranscriber";\n', 'replace'],
-    ['    recorderRef.current = recorder;\n    sessionRef.current = new VoiceInputSession({',
-      '    recorderRef.current = recorder;\n    const macTranscriber = createMacVoiceTranscriber(() =>\n      Object.values(registry.get(savedConnectionsByIdAtom)),\n    );\n    sessionRef.current = new VoiceInputSession({', 'replace'],
-    ['      getTranscriber: getLocalVoiceTranscriber,', '      getTranscriber: () => macTranscriber,', 'replace'],
+      'import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";\nimport { createMacLiveDictation, withMacVoiceFailure } from "../rubato-voice/macLiveDictation";\n', 'replace'],
+    ['    recorderRef.current = recorder;\n    sessionRef.current = new VoiceInputSession({\n      recorder,\n',
+      '    const live = createMacLiveDictation(\n      () => Object.values(registry.get(savedConnectionsByIdAtom)),\n      (status) => sessionRef.current?.controller.handleRecorderStatus(status),\n    );\n    recorderRef.current = live.recorder as unknown as typeof recorder;\n    sessionRef.current = new VoiceInputSession({\n      recorder: live.recorder,\n', 'replace'],
+    ['      getTranscriber: getLocalVoiceTranscriber,', '      getTranscriber: () => live.transcriber,', 'replace'],
+    // The Mac's key is minted while the microphone permission is checked.
+    ['      requestPermission: async () => {\n        const permission = await requestRecordingPermissionsAsync();',
+      '      requestPermission: async () => {\n        live.warm();\n        const permission = await requestRecordingPermissionsAsync();', 'replace'],
+    ['      configureRecording: configureVoiceRecordingAudio,\n      releaseRecording: releaseVoiceRecordingAudio,\n      deleteRecording: (uri) => new File(uri).delete(),',
+      '      // WebRTC sets up and releases the audio session itself; expo-audio\'s setup would take it over.\n      configureRecording: async () => {},\n      releaseRecording: async () => {},\n      deleteRecording: (uri) => live.deleteRecording(uri),', 'replace'],
     ['          state: nextState,\n', '          state: withMacVoiceFailure(nextState),\n', 'replace'],
     ['    // Store screenshots show the dictation button even on simulators, whose\n    // on-device transcription is unavailable.\n    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,',
       '    // Rubato: the Mac transcribes, so the button is always there; with no Mac paired,\n    // starting says so.\n    isAvailable: true,', 'replace'],
