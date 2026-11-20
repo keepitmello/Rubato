@@ -376,6 +376,6 @@ export const piAdapterEdits = {
     ['import * as AgentSessionImporter from "../project/AgentSessionImporter.ts";\n',
       'import * as RubatoThreadImporter from "../provider/RubatoThreadImporter.ts";\n'],
     ['  layerAgentSessionImporterProvided,\n  EffectOutbox.layerPruneWorker',
-      '  RubatoThreadImporter.layer.pipe(Layer.provide(Layer.mergeAll(layerEventSinkProvided, IdAllocator.layer))),\n'],
+      '  RubatoThreadImporter.layer.pipe(Layer.provide(Layer.mergeAll(layerEventSink, IdAllocator.layer))),\n'],
   ],
 };

@@ -1,155 +1,417 @@
-// Settings pages Rubato adds (memory, permissions, phone, scheduled) in the route
-// tree the TanStack router plugin generates from routes/ at dev and build time.
-// The edits reproduce the generator's output byte for byte, so a rebuild leaves
-// the file as applied (test/route-tree.test.mjs checks this against the generator).
+// The routes Rubato adds, in the route tree the TanStack router plugin generates
+// from routes/ at dev and build time (apps/web/src/routeTree.gen.ts). The edits
+// must leave the file exactly as the generator writes it, or a build rewrites it
+// under the app; test/route-tree.test.mjs checks that against the generator.
 //
-// All pages are registered here in one pass. Six lists (three interfaces, three
-// unions) repeat the same settings lines, so each list is anchored on its whole
-// settings tail plus the first line after it, which differs between the lists.
-// Per-page anchors broke whenever another page had been inserted into that tail.
-// The other sections have a unique neighbour line per page.
+// The edits are not written by hand. The generator's sort order and line
+// wrapping decide where each line goes, and a pin bump that renames a parent
+// route moves all of them, so ROUTE_TREE_EDITS is the generator's output
+// diffed against the pin's file (diffRouteTreeEdits). After a pin bump or a
+// change to RUBATO_ROUTES, regenerate it:
 //
-// UPSTREAM_SETTINGS is the pin's own settings routes, in the generator's order;
-// update it when a pin bump adds or removes one.
-export const UPSTREAM_SETTINGS = [
-  'appearance', 'archived', 'connections', 'diagnostics', 'general', 'integrations',
-  'keybindings', 'open-source-licenses', 'projects', 'providers', 'scheduled-tasks',
-  'snap-shot', 'source-control', 'storage',
+//   T3_SOURCE=<pinned T3 checkout with node_modules> UPDATE_ROUTE_TREE=1 \
+//     node --test test/route-tree.test.mjs
+
+/** Route files Rubato adds under apps/web/src/routes/, each listed by the module that owns it. */
+export const RUBATO_ROUTES = [
+  // Their own pages, opened from the rail (project-rail-edits.mjs, stats-edits.mjs).
+  'memory.tsx',
+  'scheduled.tsx',
+  'stats.tsx',
+  // Settings pages (companion-, permission-, phone-edits.mjs) and the old settings
+  // addresses of the rail's pages (memory-, schedule-, stats-edits.mjs).
+  '_chat.settings.companion.tsx',
+  '_chat.settings.memory.tsx',
+  '_chat.settings.permissions.tsx',
+  '_chat.settings.phone.tsx',
+  '_chat.settings.scheduled.tsx',
+  '_chat.settings.stats.tsx',
 ];
 
-const pascal = (slug) => `Settings${slug.split('-').map((part) => part[0].toUpperCase() + part.slice(1)).join('')}`;
-const byName = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+const lines = (text) => text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+const count = (text, part) => text.split(part).length - 1;
 
-const importLine = (slug) => `import { Route as ${pascal(slug)}RouteImport } from './routes/settings.${slug}'\n`;
-const constBlock = (slug) =>
-  `const ${pascal(slug)}Route = ${pascal(slug)}RouteImport.update({\n  id: '/${slug}',\n  path: '/${slug}',\n  getParentRoute: () => SettingsRoute,\n} as any)\n`;
-const byPathBlock = (slug) =>
-  `    '/settings/${slug}': {\n      id: '/settings/${slug}'\n      path: '/${slug}'\n      fullPath: '/settings/${slug}'\n      preLoaderRoute: typeof ${pascal(slug)}RouteImport\n      parentRoute: typeof SettingsRoute\n    }\n`;
-const childType = (slug) => `  ${pascal(slug)}Route: typeof ${pascal(slug)}Route\n`;
-const childValue = (slug) => `  ${pascal(slug)}Route: ${pascal(slug)}Route,\n`;
-const typedLine = (slug) => `  '/settings/${slug}': typeof ${pascal(slug)}Route\n`;
-const unionLine = (slug) => `    | '/settings/${slug}'\n`;
-
-// The first line after the settings routes in each repeated list.
-const LIST_TAILS = [
-  [typedLine, "  '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute\n"],
-  [typedLine, "  '/': typeof ChatIndexRoute\n"],
-  [typedLine, "  '/_chat/': typeof ChatIndexRoute\n"],
-  [unionLine, "    | '/$environmentId/$threadId'\n"],
-  [unionLine, "    | '/'\n"],
-  [unionLine, "    | '/_chat/'\n"],
-];
-
-// Unique neighbour lines, keyed by the upstream route a page sits next to.
-// Forward-ordered sections take the page before its successor; the reverse-ordered
-// ones (imports, route constants, the path map) before its predecessor.
-const NEIGHBOURS = [
-  [importLine, 'reverse'],
-  // Long names wrap after `=`, so the neighbour stops there.
-  [(slug) => `const ${pascal(slug)}Route =`, 'reverse'],
-  [(slug) => `    '/settings/${slug}': {\n`, 'reverse'],
-  [childType, 'forward'],
-  [childValue, 'forward'],
-];
-
-// What follows the settings children in the two forward lists.
-const FORWARD_ENDS = [
-  '}\n\nconst SettingsRouteChildren: SettingsRouteChildren = {\n',
-  '}\n\nconst SettingsRouteWithChildren = SettingsRoute._addFileChildren(',
-];
-
-export function settingsRouteTreeEdits(pages) {
-  const all = [...UPSTREAM_SETTINGS, ...pages].toSorted(byName);
+/**
+ * Anchored edits that turn `before` into `after`, where `after` only adds lines.
+ * Each added run is anchored on the fewest neighbouring lines that occur once in
+ * the file as it stands when the edit applies (edits apply in order).
+ */
+export function diffRouteTreeEdits(before, after) {
+  const old = lines(before);
+  const next = lines(after);
+  const runs = [];
+  let i = 0;
+  for (let j = 0; j < next.length; ) {
+    if (i < old.length && next[j] === old[i]) {
+      i += 1;
+      j += 1;
+      continue;
+    }
+    const start = j;
+    while (j < next.length && !(i < old.length && next[j] === old[i])) j += 1;
+    runs.push({ at: i, added: next.slice(start, j) });
+  }
+  if (i !== old.length) throw new Error('the generated route tree removes or changes upstream lines');
+  const current = [...old];
+  let shift = 0;
   const edits = [];
-  // Reverse sections: page goes right after the upstream route that precedes it
-  // in reverse order, i.e. before the upstream route that is next smaller.
-  const rendered = [importLine, constBlock, byPathBlock, childType, childValue];
-  for (const [index, [neighbour, order]] of NEIGHBOURS.entries()) {
-    const sequence = order === 'forward' ? all : all.toReversed();
-    // The entry each page past the upstream range follows, so the next one can follow it.
-    let previous = sequence.findLast((slug) => UPSTREAM_SETTINGS.includes(slug));
-    for (const page of order === 'forward' ? pages.toSorted(byName) : pages.toSorted(byName).toReversed()) {
-      const after = sequence.slice(sequence.indexOf(page) + 1).find((slug) => UPSTREAM_SETTINGS.includes(slug));
-      if (after !== undefined) edits.push([neighbour(after), rendered[index](page)]);
-      // Past the last upstream route of a forward list: before the list's closing line.
-      else if (order === 'forward') edits.push([FORWARD_ENDS[index - 3], rendered[index](page)]);
-      // Past the last upstream route of a reverse list: right after the entry before it.
-      else {
-        edits.push([rendered[index](previous), rendered[index](previous) + rendered[index](page), 'replace']);
-        previous = page;
+  for (const { at, added } of runs) {
+    const position = at + shift;
+    const text = current.join('');
+    const insertion = added.join('');
+    let edit = null;
+    for (let size = 1; edit === null && size <= current.length; size += 1) {
+      for (let before = 0; before <= size; before += 1) {
+        const after = size - before;
+        if (before > position || position + after > current.length) continue;
+        const head = current.slice(position - before, position).join('');
+        const tail = current.slice(position, position + after).join('');
+        if (count(text, head + tail) !== 1) continue;
+        edit = before === 0 ? [tail, insertion] : [head + tail, head + insertion + tail, 'replace'];
+        break;
       }
     }
-  }
-  const firstPage = pages.toSorted(byName)[0];
-  const tailStart = UPSTREAM_SETTINGS.findIndex((slug) => byName(slug, firstPage) > 0);
-  const upstreamTail = UPSTREAM_SETTINGS.slice(tailStart);
-  const mergedTail = all.filter((slug) => !UPSTREAM_SETTINGS.slice(0, tailStart).includes(slug));
-  for (const [line, next] of LIST_TAILS) {
-    edits.push([upstreamTail.map(line).join('') + next, mergedTail.map(line).join('') + next, 'replace']);
+    if (edit === null) throw new Error(`no unique anchor for ${insertion.slice(0, 80)}`);
+    edits.push(edit);
+    current.splice(position, 0, ...added);
+    shift += added.length;
   }
   return edits;
 }
 
-// Top-level pages Rubato adds beside Usage: Memory, Scheduled Tasks and Stats, which the
-// rail opens outside Settings (project-rail-edits.mjs, stats-edits.mjs). Upstream has only a few
-// top-level routes, so the generator's output is spelled out here; the same test
-// checks it. Each list is anchored on its own head, because the three interfaces
-// and the three unions otherwise repeat the same lines.
-const routeConst = (name, slug) =>
-  `const ${name}Route = ${name}RouteImport.update({\n  id: '/${slug}',\n  path: '/${slug}',\n  getParentRoute: () => rootRouteImport,\n} as any)\n`;
-const routeByPath = (name, slug) =>
-  `    '/${slug}': {\n      id: '/${slug}'\n      path: '/${slug}'\n      fullPath: '/${slug}'\n      preLoaderRoute: typeof ${name}RouteImport\n      parentRoute: typeof rootRouteImport\n    }\n`;
-
-export function topLevelRouteTreeEdits() {
-  return [
-    ["import { Route as PairRouteImport } from './routes/pair'\n", "import { Route as ScheduledRouteImport } from './routes/scheduled'\n"],
-    ["import { Route as ConnectAgentRouteImport } from './routes/connect-agent'\n", "import { Route as MemoryRouteImport } from './routes/memory'\n"],
-    ["import { Route as SettingsRouteImport } from './routes/settings'\n", "import { Route as StatsRouteImport } from './routes/stats'\n"],
-    ['const PairRoute = PairRouteImport.update({\n', routeConst('Scheduled', 'scheduled')],
-    ['const ConnectAgentRoute = ConnectAgentRouteImport.update({\n', routeConst('Memory', 'memory')],
-    ['const SettingsRoute = SettingsRouteImport.update({\n', routeConst('Stats', 'stats')],
-    [
-      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
-      "export interface FileRoutesByFullPath {\n  '/': typeof ChatIndexRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
-      'replace',
-    ],
-    [
-      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
-      "export interface FileRoutesByTo {\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
-      'replace',
-    ],
-    [
-      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/pair': typeof PairRoute\n  '/settings': typeof SettingsRouteWithChildren\n",
-      "  '/_chat': typeof ChatRouteWithChildren\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/settings': typeof SettingsRouteWithChildren\n  '/stats': typeof StatsRoute\n",
-      'replace',
-    ],
-    [
-      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
-      "  fullPaths:\n    | '/'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
-      'replace',
-    ],
-    [
-      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
-      "  to:\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
-      'replace',
-    ],
-    [
-      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/pair'\n    | '/settings'\n",
-      "  id:\n    | '__root__'\n    | '/_chat'\n    | '/connect'\n    | '/connect-agent'\n    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/settings'\n    | '/stats'\n",
-      'replace',
-    ],
-    [
-      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  PairRoute: typeof PairRoute\n  SettingsRoute: typeof SettingsRouteWithChildren\n',
-      '  ConnectAgentRoute: typeof ConnectAgentRoute\n  MemoryRoute: typeof MemoryRoute\n  PairRoute: typeof PairRoute\n  ScheduledRoute: typeof ScheduledRoute\n  SettingsRoute: typeof SettingsRouteWithChildren\n  StatsRoute: typeof StatsRoute\n',
-      'replace',
-    ],
-    ["    '/pair': {\n", routeByPath('Scheduled', 'scheduled')],
-    ["    '/connect-agent': {\n", routeByPath('Memory', 'memory')],
-    ["    '/settings': {\n", routeByPath('Stats', 'stats')],
-    [
-      '  ConnectAgentRoute: ConnectAgentRoute,\n  PairRoute: PairRoute,\n  SettingsRoute: SettingsRouteWithChildren,\n',
-      '  ConnectAgentRoute: ConnectAgentRoute,\n  MemoryRoute: MemoryRoute,\n  PairRoute: PairRoute,\n  ScheduledRoute: ScheduledRoute,\n  SettingsRoute: SettingsRouteWithChildren,\n  StatsRoute: StatsRoute,\n',
-      'replace',
-    ],
-  ];
-}
+// BEGIN ROUTE_TREE_EDITS (generated, see above)
+export const ROUTE_TREE_EDITS = [
+  [
+    "import { Route as PairRouteImport } from './routes/pair'\n",
+    "import { Route as StatsRouteImport } from './routes/stats'\nimport { Route as ScheduledRouteImport } from './routes/scheduled'\n"
+  ],
+  [
+    "import { Route as GuestRouteImport } from './routes/guest'\n",
+    "import { Route as MemoryRouteImport } from './routes/memory'\n"
+  ],
+  [
+    "import { Route as ChatSettingsSourceControlRouteImport } from './routes/_chat.settings.source-control'\n",
+    "import { Route as ChatSettingsStatsRouteImport } from './routes/_chat.settings.stats'\n"
+  ],
+  [
+    "import { Route as ChatSettingsProvidersRouteImport } from './routes/_chat.settings.providers'\n",
+    "import { Route as ChatSettingsScheduledRouteImport } from './routes/_chat.settings.scheduled'\n"
+  ],
+  [
+    "import { Route as ChatSettingsOpenSourceLicensesRouteImport } from './routes/_chat.settings.open-source-licenses'\n",
+    "import { Route as ChatSettingsPhoneRouteImport } from './routes/_chat.settings.phone'\nimport { Route as ChatSettingsPermissionsRouteImport } from './routes/_chat.settings.permissions'\n"
+  ],
+  [
+    "import { Route as ChatSettingsMaintenanceRouteImport } from './routes/_chat.settings.maintenance'\n",
+    "import { Route as ChatSettingsMemoryRouteImport } from './routes/_chat.settings.memory'\n"
+  ],
+  [
+    "import { Route as ChatSettingsChatRouteImport } from './routes/_chat.settings.chat'\n",
+    "import { Route as ChatSettingsCompanionRouteImport } from './routes/_chat.settings.companion'\n"
+  ],
+  [
+    "const PairRoute = PairRouteImport.update({\n",
+    "const StatsRoute = StatsRouteImport.update({\n  id: '/stats',\n  path: '/stats',\n  getParentRoute: () => rootRouteImport,\n} as any)\nconst ScheduledRoute = ScheduledRouteImport.update({\n  id: '/scheduled',\n  path: '/scheduled',\n  getParentRoute: () => rootRouteImport,\n} as any)\n"
+  ],
+  [
+    "const GuestRoute = GuestRouteImport.update({\n",
+    "const MemoryRoute = MemoryRouteImport.update({\n  id: '/memory',\n  path: '/memory',\n  getParentRoute: () => rootRouteImport,\n} as any)\n"
+  ],
+  [
+    "const ChatSettingsSourceControlRoute =\n",
+    "const ChatSettingsStatsRoute = ChatSettingsStatsRouteImport.update({\n  id: '/stats',\n  path: '/stats',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\n"
+  ],
+  [
+    "const ChatSettingsProvidersRoute = ChatSettingsProvidersRouteImport.update({\n",
+    "const ChatSettingsScheduledRoute = ChatSettingsScheduledRouteImport.update({\n  id: '/scheduled',\n  path: '/scheduled',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\n"
+  ],
+  [
+    "const ChatSettingsOpenSourceLicensesRoute =\n",
+    "const ChatSettingsPhoneRoute = ChatSettingsPhoneRouteImport.update({\n  id: '/phone',\n  path: '/phone',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\nconst ChatSettingsPermissionsRoute = ChatSettingsPermissionsRouteImport.update({\n  id: '/permissions',\n  path: '/permissions',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\n"
+  ],
+  [
+    "const ChatSettingsMaintenanceRoute = ChatSettingsMaintenanceRouteImport.update({\n",
+    "const ChatSettingsMemoryRoute = ChatSettingsMemoryRouteImport.update({\n  id: '/memory',\n  path: '/memory',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\n"
+  ],
+  [
+    "const ChatSettingsChatRoute = ChatSettingsChatRouteImport.update({\n",
+    "const ChatSettingsCompanionRoute = ChatSettingsCompanionRouteImport.update({\n  id: '/companion',\n  path: '/companion',\n  getParentRoute: () => ChatSettingsRoute,\n} as any)\n"
+  ],
+  [
+    "  '/': typeof ChatIndexRoute\n  '/approve-agent': typeof ApproveAgentRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/guest': typeof GuestRoute\n",
+    "  '/': typeof ChatIndexRoute\n  '/approve-agent': typeof ApproveAgentRoute\n  '/connect': typeof ConnectRoute\n  '/connect-agent': typeof ConnectAgentRoute\n  '/guest': typeof GuestRoute\n  '/memory': typeof MemoryRoute\n",
+    "replace"
+  ],
+  [
+    "  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n",
+    "  '/memory': typeof MemoryRoute\n  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/stats': typeof StatsRoute\n",
+    "replace"
+  ],
+  [
+    "  '/projects/$projectKey': typeof ProjectsProjectKeyRoute\n  '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute\n  '/draft/$draftId': typeof ChatDraftDraftIdRoute\n  '/settings/about': typeof ChatSettingsAboutRoute\n  '/settings/access': typeof ChatSettingsAccessRoute\n  '/settings/appearance': typeof ChatSettingsAppearanceRoute\n  '/settings/archived': typeof ChatSettingsArchivedRoute\n  '/settings/beta': typeof ChatSettingsBetaRoute\n  '/settings/browser': typeof ChatSettingsBrowserRoute\n  '/settings/chat': typeof ChatSettingsChatRoute\n",
+    "  '/projects/$projectKey': typeof ProjectsProjectKeyRoute\n  '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute\n  '/draft/$draftId': typeof ChatDraftDraftIdRoute\n  '/settings/about': typeof ChatSettingsAboutRoute\n  '/settings/access': typeof ChatSettingsAccessRoute\n  '/settings/appearance': typeof ChatSettingsAppearanceRoute\n  '/settings/archived': typeof ChatSettingsArchivedRoute\n  '/settings/beta': typeof ChatSettingsBetaRoute\n  '/settings/browser': typeof ChatSettingsBrowserRoute\n  '/settings/chat': typeof ChatSettingsChatRoute\n  '/settings/companion': typeof ChatSettingsCompanionRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/companion': typeof ChatSettingsCompanionRoute\n  '/settings/connections': typeof ChatSettingsConnectionsRoute\n  '/settings/devices': typeof ChatSettingsDevicesRoute\n  '/settings/diagnostics': typeof ChatSettingsDiagnosticsRoute\n  '/settings/diffs': typeof ChatSettingsDiffsRoute\n  '/settings/general': typeof ChatSettingsGeneralRoute\n  '/settings/integrations': typeof ChatSettingsIntegrationsRoute\n  '/settings/keybindings': typeof ChatSettingsKeybindingsRoute\n  '/settings/labs': typeof ChatSettingsLabsRoute\n  '/settings/maintenance': typeof ChatSettingsMaintenanceRoute\n",
+    "  '/settings/companion': typeof ChatSettingsCompanionRoute\n  '/settings/connections': typeof ChatSettingsConnectionsRoute\n  '/settings/devices': typeof ChatSettingsDevicesRoute\n  '/settings/diagnostics': typeof ChatSettingsDiagnosticsRoute\n  '/settings/diffs': typeof ChatSettingsDiffsRoute\n  '/settings/general': typeof ChatSettingsGeneralRoute\n  '/settings/integrations': typeof ChatSettingsIntegrationsRoute\n  '/settings/keybindings': typeof ChatSettingsKeybindingsRoute\n  '/settings/labs': typeof ChatSettingsLabsRoute\n  '/settings/maintenance': typeof ChatSettingsMaintenanceRoute\n  '/settings/memory': typeof ChatSettingsMemoryRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/memory': typeof ChatSettingsMemoryRoute\n  '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n",
+    "  '/settings/memory': typeof ChatSettingsMemoryRoute\n  '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n  '/settings/permissions': typeof ChatSettingsPermissionsRoute\n  '/settings/phone': typeof ChatSettingsPhoneRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/phone': typeof ChatSettingsPhoneRoute\n  '/settings/projects': typeof ChatSettingsProjectsRoute\n  '/settings/providers': typeof ChatSettingsProvidersRoute\n",
+    "  '/settings/phone': typeof ChatSettingsPhoneRoute\n  '/settings/projects': typeof ChatSettingsProjectsRoute\n  '/settings/providers': typeof ChatSettingsProvidersRoute\n  '/settings/scheduled': typeof ChatSettingsScheduledRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/scheduled': typeof ChatSettingsScheduledRoute\n  '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute\n  '/settings/secrets': typeof ChatSettingsSecretsRoute\n  '/settings/snap-shot': typeof ChatSettingsSnapShotRoute\n  '/settings/source-control': typeof ChatSettingsSourceControlRoute\n",
+    "  '/settings/scheduled': typeof ChatSettingsScheduledRoute\n  '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute\n  '/settings/secrets': typeof ChatSettingsSecretsRoute\n  '/settings/snap-shot': typeof ChatSettingsSnapShotRoute\n  '/settings/source-control': typeof ChatSettingsSourceControlRoute\n  '/settings/stats': typeof ChatSettingsStatsRoute\n",
+    "replace"
+  ],
+  [
+    "  '/pair': typeof PairRoute\n  '/welcome': typeof WelcomeRoute\n  '/issues': typeof ChatIssuesRoute\n",
+    "  '/memory': typeof MemoryRoute\n"
+  ],
+  [
+    "  '/pair': typeof PairRoute\n  '/welcome': typeof WelcomeRoute\n  '/issues': typeof ChatIssuesRoute\n",
+    "  '/pair': typeof PairRoute\n  '/scheduled': typeof ScheduledRoute\n  '/stats': typeof StatsRoute\n  '/welcome': typeof WelcomeRoute\n  '/issues': typeof ChatIssuesRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/chat': typeof ChatSettingsChatRoute\n  '/settings/connections': typeof ChatSettingsConnectionsRoute\n",
+    "  '/settings/chat': typeof ChatSettingsChatRoute\n  '/settings/companion': typeof ChatSettingsCompanionRoute\n  '/settings/connections': typeof ChatSettingsConnectionsRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n  '/settings/projects': typeof ChatSettingsProjectsRoute\n",
+    "  '/settings/memory': typeof ChatSettingsMemoryRoute\n"
+  ],
+  [
+    "  '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n  '/settings/projects': typeof ChatSettingsProjectsRoute\n",
+    "  '/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n  '/settings/permissions': typeof ChatSettingsPermissionsRoute\n  '/settings/phone': typeof ChatSettingsPhoneRoute\n  '/settings/projects': typeof ChatSettingsProjectsRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/providers': typeof ChatSettingsProvidersRoute\n  '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute\n",
+    "  '/settings/providers': typeof ChatSettingsProvidersRoute\n  '/settings/scheduled': typeof ChatSettingsScheduledRoute\n  '/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute\n",
+    "replace"
+  ],
+  [
+    "  '/settings/source-control': typeof ChatSettingsSourceControlRoute\n  '/settings/storage': typeof ChatSettingsStorageRoute\n",
+    "  '/settings/source-control': typeof ChatSettingsSourceControlRoute\n  '/settings/stats': typeof ChatSettingsStatsRoute\n  '/settings/storage': typeof ChatSettingsStorageRoute\n",
+    "replace"
+  ],
+  [
+    "  '/pair': typeof PairRoute\n  '/welcome': typeof WelcomeRoute\n",
+    "  '/memory': typeof MemoryRoute\n"
+  ],
+  [
+    "  '/welcome': typeof WelcomeRoute\n  '/_chat/issues': typeof ChatIssuesRoute\n",
+    "  '/scheduled': typeof ScheduledRoute\n  '/stats': typeof StatsRoute\n"
+  ],
+  [
+    "  '/_chat/settings/connections': typeof ChatSettingsConnectionsRoute\n",
+    "  '/_chat/settings/companion': typeof ChatSettingsCompanionRoute\n"
+  ],
+  [
+    "  '/_chat/settings/open-source-licenses': typeof ChatSettingsOpenSourceLicensesRoute\n",
+    "  '/_chat/settings/memory': typeof ChatSettingsMemoryRoute\n"
+  ],
+  [
+    "  '/_chat/settings/projects': typeof ChatSettingsProjectsRoute\n",
+    "  '/_chat/settings/permissions': typeof ChatSettingsPermissionsRoute\n  '/_chat/settings/phone': typeof ChatSettingsPhoneRoute\n"
+  ],
+  [
+    "  '/_chat/settings/scheduled-tasks': typeof ChatSettingsScheduledTasksRoute\n",
+    "  '/_chat/settings/scheduled': typeof ChatSettingsScheduledRoute\n"
+  ],
+  [
+    "  '/_chat/settings/storage': typeof ChatSettingsStorageRoute\n",
+    "  '/_chat/settings/stats': typeof ChatSettingsStatsRoute\n"
+  ],
+  [
+    "    | '/'\n    | '/approve-agent'\n    | '/connect'\n    | '/connect-agent'\n    | '/guest'\n",
+    "    | '/'\n    | '/approve-agent'\n    | '/connect'\n    | '/connect-agent'\n    | '/guest'\n    | '/memory'\n",
+    "replace"
+  ],
+  [
+    "    | '/memory'\n    | '/pair'\n",
+    "    | '/memory'\n    | '/pair'\n    | '/scheduled'\n    | '/stats'\n",
+    "replace"
+  ],
+  [
+    "    | '/projects/$projectKey'\n    | '/$environmentId/$threadId'\n    | '/draft/$draftId'\n    | '/settings/about'\n    | '/settings/access'\n    | '/settings/appearance'\n    | '/settings/archived'\n    | '/settings/beta'\n    | '/settings/browser'\n    | '/settings/chat'\n",
+    "    | '/projects/$projectKey'\n    | '/$environmentId/$threadId'\n    | '/draft/$draftId'\n    | '/settings/about'\n    | '/settings/access'\n    | '/settings/appearance'\n    | '/settings/archived'\n    | '/settings/beta'\n    | '/settings/browser'\n    | '/settings/chat'\n    | '/settings/companion'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/companion'\n    | '/settings/connections'\n    | '/settings/devices'\n    | '/settings/diagnostics'\n    | '/settings/diffs'\n    | '/settings/general'\n    | '/settings/integrations'\n    | '/settings/keybindings'\n    | '/settings/labs'\n    | '/settings/maintenance'\n",
+    "    | '/settings/companion'\n    | '/settings/connections'\n    | '/settings/devices'\n    | '/settings/diagnostics'\n    | '/settings/diffs'\n    | '/settings/general'\n    | '/settings/integrations'\n    | '/settings/keybindings'\n    | '/settings/labs'\n    | '/settings/maintenance'\n    | '/settings/memory'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/memory'\n    | '/settings/open-source-licenses'\n",
+    "    | '/settings/memory'\n    | '/settings/open-source-licenses'\n    | '/settings/permissions'\n    | '/settings/phone'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/phone'\n    | '/settings/projects'\n    | '/settings/providers'\n",
+    "    | '/settings/phone'\n    | '/settings/projects'\n    | '/settings/providers'\n    | '/settings/scheduled'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/scheduled'\n    | '/settings/scheduled-tasks'\n    | '/settings/secrets'\n    | '/settings/snap-shot'\n    | '/settings/source-control'\n",
+    "    | '/settings/scheduled'\n    | '/settings/scheduled-tasks'\n    | '/settings/secrets'\n    | '/settings/snap-shot'\n    | '/settings/source-control'\n    | '/settings/stats'\n",
+    "replace"
+  ],
+  [
+    "    | '/pair'\n    | '/welcome'\n    | '/issues'\n",
+    "    | '/memory'\n"
+  ],
+  [
+    "    | '/pair'\n    | '/welcome'\n    | '/issues'\n",
+    "    | '/pair'\n    | '/scheduled'\n    | '/stats'\n    | '/welcome'\n    | '/issues'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/chat'\n    | '/settings/connections'\n",
+    "    | '/settings/chat'\n    | '/settings/companion'\n    | '/settings/connections'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/open-source-licenses'\n    | '/settings/projects'\n",
+    "    | '/settings/memory'\n"
+  ],
+  [
+    "    | '/settings/open-source-licenses'\n    | '/settings/projects'\n",
+    "    | '/settings/open-source-licenses'\n    | '/settings/permissions'\n    | '/settings/phone'\n    | '/settings/projects'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/providers'\n    | '/settings/scheduled-tasks'\n",
+    "    | '/settings/providers'\n    | '/settings/scheduled'\n    | '/settings/scheduled-tasks'\n",
+    "replace"
+  ],
+  [
+    "    | '/settings/source-control'\n    | '/settings/storage'\n",
+    "    | '/settings/source-control'\n    | '/settings/stats'\n    | '/settings/storage'\n",
+    "replace"
+  ],
+  [
+    "    | '/pair'\n    | '/welcome'\n",
+    "    | '/memory'\n"
+  ],
+  [
+    "    | '/welcome'\n    | '/_chat/issues'\n",
+    "    | '/scheduled'\n    | '/stats'\n"
+  ],
+  [
+    "    | '/_chat/settings/connections'\n",
+    "    | '/_chat/settings/companion'\n"
+  ],
+  [
+    "    | '/_chat/settings/open-source-licenses'\n",
+    "    | '/_chat/settings/memory'\n"
+  ],
+  [
+    "    | '/_chat/settings/projects'\n",
+    "    | '/_chat/settings/permissions'\n    | '/_chat/settings/phone'\n"
+  ],
+  [
+    "    | '/_chat/settings/scheduled-tasks'\n",
+    "    | '/_chat/settings/scheduled'\n"
+  ],
+  [
+    "    | '/_chat/settings/storage'\n",
+    "    | '/_chat/settings/stats'\n"
+  ],
+  [
+    "  PairRoute: typeof PairRoute\n",
+    "  MemoryRoute: typeof MemoryRoute\n"
+  ],
+  [
+    "  WelcomeRoute: typeof WelcomeRoute\n",
+    "  ScheduledRoute: typeof ScheduledRoute\n  StatsRoute: typeof StatsRoute\n"
+  ],
+  [
+    "    '/pair': {\n",
+    "    '/stats': {\n      id: '/stats'\n      path: '/stats'\n      fullPath: '/stats'\n      preLoaderRoute: typeof StatsRouteImport\n      parentRoute: typeof rootRouteImport\n    }\n    '/scheduled': {\n      id: '/scheduled'\n      path: '/scheduled'\n      fullPath: '/scheduled'\n      preLoaderRoute: typeof ScheduledRouteImport\n      parentRoute: typeof rootRouteImport\n    }\n"
+  ],
+  [
+    "    '/guest': {\n",
+    "    '/memory': {\n      id: '/memory'\n      path: '/memory'\n      fullPath: '/memory'\n      preLoaderRoute: typeof MemoryRouteImport\n      parentRoute: typeof rootRouteImport\n    }\n"
+  ],
+  [
+    "    '/_chat/settings/source-control': {\n",
+    "    '/_chat/settings/stats': {\n      id: '/_chat/settings/stats'\n      path: '/stats'\n      fullPath: '/settings/stats'\n      preLoaderRoute: typeof ChatSettingsStatsRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n"
+  ],
+  [
+    "    '/_chat/settings/providers': {\n",
+    "    '/_chat/settings/scheduled': {\n      id: '/_chat/settings/scheduled'\n      path: '/scheduled'\n      fullPath: '/settings/scheduled'\n      preLoaderRoute: typeof ChatSettingsScheduledRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n"
+  ],
+  [
+    "    '/_chat/settings/open-source-licenses': {\n",
+    "    '/_chat/settings/phone': {\n      id: '/_chat/settings/phone'\n      path: '/phone'\n      fullPath: '/settings/phone'\n      preLoaderRoute: typeof ChatSettingsPhoneRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n    '/_chat/settings/permissions': {\n      id: '/_chat/settings/permissions'\n      path: '/permissions'\n      fullPath: '/settings/permissions'\n      preLoaderRoute: typeof ChatSettingsPermissionsRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n"
+  ],
+  [
+    "    '/_chat/settings/maintenance': {\n",
+    "    '/_chat/settings/memory': {\n      id: '/_chat/settings/memory'\n      path: '/memory'\n      fullPath: '/settings/memory'\n      preLoaderRoute: typeof ChatSettingsMemoryRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n"
+  ],
+  [
+    "    '/_chat/settings/chat': {\n",
+    "    '/_chat/settings/companion': {\n      id: '/_chat/settings/companion'\n      path: '/companion'\n      fullPath: '/settings/companion'\n      preLoaderRoute: typeof ChatSettingsCompanionRouteImport\n      parentRoute: typeof ChatSettingsRoute\n    }\n"
+  ],
+  [
+    "  ChatSettingsConnectionsRoute: typeof ChatSettingsConnectionsRoute\n",
+    "  ChatSettingsCompanionRoute: typeof ChatSettingsCompanionRoute\n"
+  ],
+  [
+    "  ChatSettingsOpenSourceLicensesRoute: typeof ChatSettingsOpenSourceLicensesRoute\n",
+    "  ChatSettingsMemoryRoute: typeof ChatSettingsMemoryRoute\n"
+  ],
+  [
+    "  ChatSettingsProjectsRoute: typeof ChatSettingsProjectsRoute\n",
+    "  ChatSettingsPermissionsRoute: typeof ChatSettingsPermissionsRoute\n  ChatSettingsPhoneRoute: typeof ChatSettingsPhoneRoute\n"
+  ],
+  [
+    "  ChatSettingsScheduledTasksRoute: typeof ChatSettingsScheduledTasksRoute\n",
+    "  ChatSettingsScheduledRoute: typeof ChatSettingsScheduledRoute\n"
+  ],
+  [
+    "  ChatSettingsStorageRoute: typeof ChatSettingsStorageRoute\n",
+    "  ChatSettingsStatsRoute: typeof ChatSettingsStatsRoute\n"
+  ],
+  [
+    "  ChatSettingsConnectionsRoute: ChatSettingsConnectionsRoute,\n",
+    "  ChatSettingsCompanionRoute: ChatSettingsCompanionRoute,\n"
+  ],
+  [
+    "  ChatSettingsOpenSourceLicensesRoute: ChatSettingsOpenSourceLicensesRoute,\n",
+    "  ChatSettingsMemoryRoute: ChatSettingsMemoryRoute,\n"
+  ],
+  [
+    "  ChatSettingsProjectsRoute: ChatSettingsProjectsRoute,\n",
+    "  ChatSettingsPermissionsRoute: ChatSettingsPermissionsRoute,\n  ChatSettingsPhoneRoute: ChatSettingsPhoneRoute,\n"
+  ],
+  [
+    "  ChatSettingsScheduledTasksRoute: ChatSettingsScheduledTasksRoute,\n",
+    "  ChatSettingsScheduledRoute: ChatSettingsScheduledRoute,\n"
+  ],
+  [
+    "  ChatSettingsStorageRoute: ChatSettingsStorageRoute,\n",
+    "  ChatSettingsStatsRoute: ChatSettingsStatsRoute,\n"
+  ],
+  [
+    "  PairRoute: PairRoute,\n",
+    "  MemoryRoute: MemoryRoute,\n"
+  ],
+  [
+    "  WelcomeRoute: WelcomeRoute,\n",
+    "  ScheduledRoute: ScheduledRoute,\n  StatsRoute: StatsRoute,\n"
+  ]
+];
+// END ROUTE_TREE_EDITS

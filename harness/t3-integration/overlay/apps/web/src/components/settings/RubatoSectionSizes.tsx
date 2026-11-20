@@ -192,7 +192,7 @@ export function RubatoSectionSizesSection() {
       headerAction={
         changed ? (
           <SettingResetButton
-            label="section sizes"
+            ariaLabel="Reset section sizes to default"
             onClick={() => setScales(DEFAULT_SECTION_SCALES)}
           />
         ) : null
@@ -247,7 +247,7 @@ export function RubatoSectionSizesSection() {
             resetAction={
               value !== SECTION_SCALE_DEFAULT ? (
                 <SettingResetButton
-                  label={part.label.toLowerCase()}
+                  ariaLabel={`Reset ${part.label.toLowerCase()} to default`}
                   onClick={() => setScales(setSectionScale(scales, part.id, SECTION_SCALE_DEFAULT))}
                 />
               ) : null

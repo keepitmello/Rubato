@@ -62,14 +62,6 @@ export const floatingMenuEdits = {
         '  );'),
       'replace'],
   ],
-  'apps/web/src/components/BranchToolbar.panel.test.tsx': [
-    ['    expect(trigger.textContent).toBe("local");\n',
-      lines(
-        '    // Rubato: the row names the workspace; the machine is its tag (floating-menu-edits.mjs).',
-        '    expect(trigger.querySelector("[data-composer-label]")?.textContent).toBe("Worktree");',
-        '    expect(trigger.querySelector("[data-run-host]")?.textContent).toBe("local");'),
-      'replace'],
-  ],
   'apps/web/src/components/chat/ThreadDetailsPanel.tsx': [
     ['import { ThreadRelationshipsPanel } from "./ThreadRelationshipsControl";\n',
       lines(

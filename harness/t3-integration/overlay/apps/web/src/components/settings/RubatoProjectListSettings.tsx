@@ -41,6 +41,8 @@ import { activityLabel } from "../sidebar/RubatoProjectPicker";
 import { useRubatoProjectList } from "../sidebar/rubatoProjectList";
 import { useRubatoRemoveProject } from "../sidebar/rubatoRemoveProject";
 import { Button } from "../ui/button";
+import { RubatoHomeProjectsSettingsRow } from "./RubatoHomeProjectsSetting";
+import { RUBATO_PROJECT_LIST_ANCHOR } from "./rubatoSettingsSurface";
 import { useSettingsScope } from "./SettingsScopeContext";
 import { SettingsPageContainer, SettingsSection } from "./settingsLayout";
 
@@ -172,7 +174,7 @@ export function RubatoProjectListSettings() {
         new-thread pickers. Drag to reorder, and use the trash to remove a project from Rubato.
       </p>
       <SettingsSection
-        id="rubato-project-list"
+        id={RUBATO_PROJECT_LIST_ANCHOR}
         title="My projects"
         headerAction={
           <div className="flex items-center gap-1">
@@ -218,6 +220,10 @@ export function RubatoProjectListSettings() {
           </div>
         </SettingsSection>
       ) : null}
+      {/* The new-thread screen's project row (project-rail-edits.mjs). */}
+      <SettingsSection title="Options">
+        <RubatoHomeProjectsSettingsRow />
+      </SettingsSection>
     </SettingsPageContainer>
   );
 }

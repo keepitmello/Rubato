@@ -21,7 +21,7 @@
  */
 import { CommandId, MessageId, OrchestrationMessageContext, ProjectId, ThreadId, type ModelSelection, type ProviderInstanceId } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -72,11 +72,11 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   const projects = yield* Effect.serviceOption(ProjectService);
   const importer = yield* Effect.serviceOption(RubatoThreadImporter);
   const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
-  const crypto = yield* Effect.serviceOption(Crypto.Crypto);
+  const crypto = yield* Effect.serviceOption(SecureRandom.SecureRandom);
   const orchestrator = yield* Effect.serviceOption(Orchestrator.OrchestratorV2);
   if (Option.isNone(registry) || Option.isNone(projects) || Option.isNone(importer) || Option.isNone(sql) || Option.isNone(crypto))
     return { sync: Effect.void, start: Effect.void };
-  const uuid = crypto.value.randomUUIDv4();
+  const uuid = crypto.value.uuidV4();
 
   // A thread row under the import id, kept or deleted: either way the session needs no new one.
   const knownThread = (threadId: string) => sql.value<{ readonly thread_id: string }>`

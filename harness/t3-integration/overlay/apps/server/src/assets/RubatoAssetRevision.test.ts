@@ -1,4 +1,5 @@
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeHttpPlatform from "@effect/platform-node/NodeHttpPlatform";
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
@@ -14,6 +15,7 @@ import * as ProjectFaviconResolver from "../project/ProjectFaviconResolver.ts";
 import * as T3ProjectFileLoader from "../project/T3ProjectFileLoader.ts";
 import * as WorkspacePaths from "../workspace/WorkspacePaths.ts";
 import { ASSET_ROUTE_PREFIX, issueAssetUrl, resolveAsset } from "./AssetAccess.ts";
+import * as AssetSigner from "./AssetSigner.ts";
 import * as NativeAppIconResolver from "./NativeAppIconResolver.ts";
 
 // A session rewrites a file and attaches it again under the same path
@@ -31,8 +33,8 @@ const testLayer = Layer.mergeAll(
     Layer.provide(T3ProjectFileLoader.layer),
   ),
   NativeAppIconResolver.layer.pipe(Layer.provide(configLayer)),
-  ServerSecretStore.layer.pipe(Layer.provide(configLayer)),
-).pipe(Layer.provideMerge(NodeServices.layer));
+  AssetSigner.layer.pipe(Layer.provideMerge(ServerSecretStore.layer.pipe(Layer.provide(configLayer)))),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const tokenOf = (relativeUrl: string) => {
   const suffix = relativeUrl.slice(`${ASSET_ROUTE_PREFIX}/`.length);

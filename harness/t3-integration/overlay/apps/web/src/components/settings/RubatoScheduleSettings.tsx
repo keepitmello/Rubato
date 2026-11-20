@@ -80,7 +80,17 @@ import {
   type TaskForm,
   destinationOf,
 } from "./RubatoScheduleSettings.logic";
-import { SettingsPageContainer, SettingsRow, SettingsSection, useRelativeTimeTick } from "./settingsLayout";
+import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
+
+/** The current time, refreshed every `intervalMs`, for "in 3 min" labels. */
+function useRelativeTimeTick(intervalMs = 1_000) {
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return nowMs;
+}
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
 

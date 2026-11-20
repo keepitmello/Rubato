@@ -276,10 +276,5 @@ export const themeEdits = {
       ].join('\n'),
     ],
   ],
-  // themePalette.test.ts: the legacy-id and stock-theme tests these edits rewrote were
-  // deleted upstream in v0.1.11 (theme-edits.mjs), so nothing attaches there.
-  'apps/web/src/hooks/useTheme.test.ts': [
-    [PERSISTED_PREFERENCE_TEST, renameExamples(PERSISTED_PREFERENCE_TEST).replace('T3 Chat theme preference', 'Nocturne theme preference'), 'replace'],
-  ],
   // vscodeThemeImport.test.ts: upstream's pairing test no longer names a stock theme.
 };

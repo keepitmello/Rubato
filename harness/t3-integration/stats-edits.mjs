@@ -9,7 +9,7 @@ export const statsOverlays = [
   'apps/web/src/components/rubatoStatsFormat.ts',
   'apps/web/src/components/rubatoStatsFormat.test.ts',
   'apps/web/src/routes/stats.tsx',
-  'apps/web/src/routes/settings.stats.tsx',
+  'apps/web/src/routes/_chat.settings.stats.tsx',
 ];
 
 export const statsEdits = {

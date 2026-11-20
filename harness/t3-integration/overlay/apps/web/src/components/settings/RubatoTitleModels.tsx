@@ -1,4 +1,4 @@
-// Settings > Providers > Titles and summaries: the short ladder session titles and the
+// Settings > Threads > Titles and summaries: the short ladder session titles and the
 // Stats page's longest-think card run on. The server half is the memory service's
 // `title-models` and `config { titleModels }` (it owns the rubato.jsonc writer).
 import { useCallback, useEffect, useState } from "react";

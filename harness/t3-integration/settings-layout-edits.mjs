@@ -1,264 +1,163 @@
-// Settings layout: Settings regrouped by what a person
-// comes to change, in four sidebar groups. General had 48 rows of every kind;
-// they now sit on Agents, Chat, Threads, Projects, Notifications & Sounds,
-// Git & Worktrees and Advanced, and Storage and Phone fold into their neighbours.
+// Settings: T3's pages in T3's groups, with Rubato's pages and sections placed
+// among them. T3 v0.1.11 split General into pages of its own (Chat, Threads,
+// Voice, Worktrees, Maintenance, About…), so Rubato no longer regroups T3's rows;
+// it adds to T3's pages instead.
 //
-// Projects is T3's page, always on the sidebar: without a chosen project it is
-// the project list (project-order-edits.mjs), so the sidebar's Projects and a
-// search result for one of its options leave the chosen project behind.
+// Rubato's pages sit in T3's sidebar groups: Companion under Agents and Phone
+// under Connections (Stats, which opens the rail's page, is stats-edits.mjs's).
+// macOS permissions has no sidebar entry; General links to it and the sidebar
+// marks General while it is open. Each page's route lives with its module
+// (companion-, phone-, permission-, stats-edits.mjs); the route tree is
+// route-tree-edits.mjs.
 //
-// T3's panels are not rewritten. Each row and section keeps its code; a Rubato
-// page draws T3's panels inside blocks, and a block shows only the rows or
-// sections the table places there (settings/rubatoSettingsLayout.ts). The
-// edits below are the gate in T3's three settings primitives, the sidebar,
-// search and the routes, so an upstream change to a row's wording or behaviour
-// arrives untouched. A row T3 adds to General shows under Advanced > Other
-// until the table places it; rubatoSettingsLayout.test.ts fails until then.
+// Rubato's sections on T3's pages:
+// - General > Sidebar: how many threads Recent shows, and the sidebar's section
+//   order (RubatoSidebarSectionsSetting.tsx, sidebar-blocks-edits.mjs).
+// - General, last: the link to macOS permissions (RubatoPermissionsLink.tsx).
+// - Threads, last: the models that write session titles and summaries
+//   (RubatoTitleModels.tsx), beside T3's own text generation.
+// - Voice, last: the composer microphone's key and model (RubatoVoiceSettings.tsx).
+// - Projects before a project is chosen: the project list and the new-thread
+//   screen's project row (project-order-edits.mjs).
+// - About: Rubato's section (about-edits.mjs) stands in for T3's version and
+//   updater rows, which report T3's releases rather than the Rubato checkout.
 //
-// Providers stays its own page: it edits one environment at a time, while the
-// defaults on Agents follow the project and environment scope.
-//
-// Rows for T3's text generation (writer, review guide and title models) show
-// nowhere: the Rubato driver declines those requests, the main session writes
-// commits and PRs, and Agents carries Rubato's own title models instead.
+// Rows for what Rubato does not run (T3's commit/PR/review-guide writer, its
+// project sort select, its CLI command row) show nowhere, and search sends a
+// result to where Rubato keeps that setting (settings/rubatoSettingsSurface.ts).
 export const settingsLayoutOverlays = [
-  'apps/web/src/components/settings/rubatoSettingsLayout.ts',
-  'apps/web/src/components/settings/rubatoSettingsLayout.test.ts',
-  'apps/web/src/components/settings/rubatoSettingsBlock.tsx',
-  'apps/web/src/components/settings/RubatoSettingsPage.tsx',
-  'apps/web/src/routes/settings.notifications.tsx',
-  'apps/web/src/routes/settings.agents.tsx',
-  'apps/web/src/routes/settings.chat.tsx',
-  'apps/web/src/routes/settings.threads.tsx',
-  'apps/web/src/routes/settings.advanced.tsx',
+  'apps/web/src/components/settings/rubatoSettingsSurface.ts',
+  'apps/web/src/components/settings/rubatoSettingsSurface.test.ts',
+  'apps/web/src/components/settings/RubatoPermissionsLink.tsx',
 ];
 
-/** Route slugs the generated route tree gains (route-tree-edits.mjs). */
-export const settingsLayoutPages = ['notifications', 'agents', 'chat', 'threads', 'advanced'];
-
-const rubatoRoute = (slug, name) => [
-  'import { RubatoSettingsPage } from "../components/settings/RubatoSettingsPage";\n',
-  '\n',
-  "// Rubato's Settings layout (settings-layout-edits.mjs).\n",
-  `function ${name}() {\n`,
-  `  return <RubatoSettingsPage path="/settings/${slug}" />;\n`,
-  '}\n',
-].join('');
+const HIDDEN_GATE = "  // Rubato: rows and sections for what Rubato does not run show nowhere (settings-layout-edits.mjs).\n";
 
 export const settingsLayoutEdits = {
   'apps/web/src/components/settings/settingsLayout.tsx': [
     ['import { SettingsGroup } from "./SettingsGroup";\n',
-      'import {\n'
-        + '  RubatoSettingsRowGate,\n'
-        + '  RubatoSettingsSectionGate,\n'
-        + '  useRubatoNestedSettingsPage,\n'
-        + '} from "./rubatoSettingsBlock";\n'],
-    ['/** Muted section headings have no descriptions; explanatory copy belongs to individual settings. */\n'
-      + 'export function SettingsSection({\n',
-      '/** Muted section headings have no descriptions; explanatory copy belongs to individual settings. */\n'
-        + 'export function SettingsSection(props: Parameters<typeof SettingsSectionBody>[0]) {\n'
-        + '  // Rubato: on a Rubato settings page the block decides whether it shows (settings-layout-edits.mjs).\n'
-        + '  return (\n'
-        + '    <RubatoSettingsSectionGate\n'
-        + '      id={props.id}\n'
-        + '      section={(title) => <SettingsSectionBody {...props} title={title ?? props.title} />}\n'
-        + '    >\n'
-        + '      {props.children}\n'
-        + '    </RubatoSettingsSectionGate>\n'
-        + '  );\n'
+      'import { RUBATO_HIDDEN_SETTINGS } from "./rubatoSettingsSurface";\n'],
+    ['export function SettingsSection({\n  title,\n  hideTitle = false,\n',
+      'export function SettingsSection(props: Parameters<typeof SettingsSectionBody>[0]) {\n'
+        + HIDDEN_GATE
+        + '  if (props.id !== undefined && RUBATO_HIDDEN_SETTINGS.has(props.id)) return null;\n'
+        + '  return <SettingsSectionBody {...props} />;\n'
         + '}\n'
         + '\n'
-        + 'function SettingsSectionBody({\n',
+        + 'function SettingsSectionBody({\n  title,\n  hideTitle = false,\n',
       'replace'],
     ['export function SettingsRow({\n  title,\n  description,\n',
       'export function SettingsRow(props: Parameters<typeof SettingsRowBody>[0]) {\n'
-        + '  // Rubato: on a Rubato settings page the block decides whether it shows (settings-layout-edits.mjs).\n'
-        + '  return (\n'
-        + '    <RubatoSettingsRowGate id={props.id} settingKeys={props.settingKeys}>\n'
-        + '      <SettingsRowBody {...props} />\n'
-        + '    </RubatoSettingsRowGate>\n'
-        + '  );\n'
+        + HIDDEN_GATE
+        + '  if (props.id !== undefined && RUBATO_HIDDEN_SETTINGS.has(props.id)) return null;\n'
+        + '  return <SettingsRowBody {...props} />;\n'
         + '}\n'
         + '\n'
         + 'function SettingsRowBody({\n  title,\n  description,\n',
       'replace'],
-    ['export function SettingsPageContainer({\n  children,\n  className,\n  width = "readable",\n}: {\n',
-      'export function SettingsPageContainer(props: Parameters<typeof SettingsPageContainerBody>[0]) {\n'
-        + '  // Rubato: a T3 page drawn inside a Rubato settings page keeps only its content.\n'
-        + '  const nested = useRubatoNestedSettingsPage();\n'
-        + '  return nested ? props.children : <SettingsPageContainerBody {...props} />;\n'
-        + '}\n'
-        + '\n'
-        + 'function SettingsPageContainerBody({\n  children,\n  className,\n  width = "readable",\n}: {\n',
-      'replace'],
   ],
-  // General's Legacy features fold is a <section> of its own, not a SettingsSection.
-  'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['import { SettingsGroup } from "./SettingsGroup";\n',
-      'import { useRubatoHidesSection } from "./rubatoSettingsBlock";\n'],
-    ['  }, [searchTargetId]);\n\n  return (\n    <section id="legacy-features"',
-      '  }, [searchTargetId]);\n'
-        + '  // Rubato: shown on a Rubato settings page only by the block that names it (settings-layout-edits.mjs).\n'
-        + '  const rubatoHidden = useRubatoHidesSection("legacy-features");\n'
-        + '  if (rubatoHidden) return null;\n'
-        + '\n  return (\n    <section id="legacy-features"',
+  // The sidebar and the command palette both search through this hook.
+  'apps/web/src/components/settings/useAvailableSettingsSearchItems.ts': [
+    ['} from "./settingsSearch";\n',
+      '} from "./settingsSearch";\nimport { rubatoSettingsSearchItems } from "./rubatoSettingsSurface";\n',
+      'replace'],
+    ['  return filterAvailableSettingsSearchItems({\n',
+      '  // Rubato: without the rows Rubato hides, and sent to where Rubato keeps a setting (settings-layout-edits.mjs).\n'
+        + '  return rubatoSettingsSearchItems(filterAvailableSettingsSearchItems({\n',
+      'replace'],
+    ['    hasPrimaryEnvironment: primaryEnvironmentId !== null,\n  });\n}\n',
+      '    hasPrimaryEnvironment: primaryEnvironmentId !== null,\n  }));\n}\n',
       'replace'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
-    ['  | "/settings/storage"\n',
-      '  | "/settings/notifications"\n  | "/settings/agents"\n  | "/settings/chat"\n  | "/settings/threads"\n  | "/settings/advanced"\n'],
-    ['  "/settings/projects": "Project",\n', '  "/settings/projects": "Projects",\n', 'replace'],
-    ['  "/settings/integrations": "Integrations",\n', '  "/settings/integrations": "Browser & Devices",\n', 'replace'],
-    ['  "/settings/source-control": "Source Control",\n', '  "/settings/source-control": "Git & Worktrees",\n', 'replace'],
-    ['  "/settings/storage": "Storage",\n',
-      '  "/settings/notifications": "Notifications & Sounds",\n'
-        + '  "/settings/agents": "Agents",\n'
-        + '  "/settings/chat": "Chat",\n'
-        + '  "/settings/threads": "Threads",\n'
-        + '  "/settings/advanced": "Advanced",\n'],
-    // Rubato's title models, now on Agents (settings/RubatoTitleModels.tsx).
+    // Rubato's own rows take their id and title from here too.
+    ['function searchableSetting(id: SettingsSearchItemId): {\n',
+      '// Rubato: Rubato\'s rows read their id and title here as well (settings-layout-edits.mjs).\n'
+        + 'export function searchableSetting(id: SettingsSearchItemId): {\n',
+      'replace'],
+    ['      "/settings/providers",\n      "/settings/threads",\n',
+      '      "/settings/companion",\n      "/settings/providers",\n      "/settings/threads",\n',
+      'replace'],
+    ['      "/settings/connections",\n      "/settings/access",\n',
+      '      "/settings/connections",\n      "/settings/phone",\n      "/settings/access",\n',
+      'replace'],
+    // Rubato's title models, at the end of Threads (settings/RubatoTitleModels.tsx).
     ['  {\n    id: "project-grouping",\n',
       [
         '  {',
         '    id: "rubato-title-models",',
         '    title: "Titles and summaries",',
-        '    to: "/settings/agents",',
+        '    to: "/settings/threads",',
         '    searchTerms: ["session title model fallback summary stats longest think text generation 제목 요약 모델"],',
         '  },',
         '',
       ].join('\n')],
-    ['  "/settings/storage": "project-defaults",\n',
-      '  "/settings/notifications": null,\n'
-        + '  "/settings/agents": null,\n'
-        + '  "/settings/chat": null,\n'
-        + '  "/settings/threads": null,\n'
-        + '  "/settings/advanced": null,\n'],
-  ],
-  // The sidebar and the command palette both search through this hook.
-  'apps/web/src/components/settings/useAvailableSettingsSearchItems.ts': [
-    ['import type { SettingsScopeSearch } from "./settingsScope";\n',
-      'import { rubatoSearchItems } from "./rubatoSettingsLayout";\n'],
-    ['    () =>\n      filterAvailableSettingsSearchItems({\n',
-      '    () =>\n'
-        + "      // Rubato: results open the page Rubato's layout puts the setting on (settings-layout-edits.mjs).\n"
-        + '      rubatoSearchItems(filterAvailableSettingsSearchItems({\n',
-      'replace'],
-    ['        managedTunnelActive,\n      }),\n    [\n',
-      '        managedTunnelActive,\n      })),\n    [\n',
-      'replace'],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['import {\n  lazy,\n', 'import { Fragment as RubatoFragment } from "react";\n'],
-    ['  SearchIcon,\n', '  BellIcon,\n  ListTreeIcon,\n  MessageSquareIcon,\n  SparklesIcon,\n  WrenchIcon,\n'],
-    ['  "/settings/archived": ArchiveIcon,\n',
-      '  "/settings/notifications": BellIcon,\n'
-        + '  "/settings/agents": SparklesIcon,\n'
-        + '  "/settings/chat": MessageSquareIcon,\n'
-        + '  "/settings/threads": ListTreeIcon,\n'
-        + '  "/settings/advanced": WrenchIcon,\n'],
-    ['function SettingsSectionIcon({ to }: { to: SettingsPath }) {\n',
-      [
-        "// Rubato: the sidebar follows Rubato's Settings layout, in groups (settings-layout-edits.mjs).",
-        'const RUBATO_SETTINGS_NAV_ITEMS: ReadonlyArray<{',
-        '  label: string;',
-        '  to: SettingsPath;',
-        '  icon: ComponentType<{ className?: string }>;',
-        '  group: string | null;',
-        '}> = [',
-        '  ...RUBATO_SETTINGS_PAGES.map((page, index) => ({',
-        '    to: page.path,',
-        '    label: page.label,',
-        '    icon: SETTINGS_SECTION_ICONS[page.path],',
-        '    group: RUBATO_SETTINGS_PAGES[index - 1]?.group === page.group ? null : page.group,',
-        '  })),',
-        '];',
-        '',
-        '',
-      ].join('\n')],
     ['import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";\n',
       'import { rubatoProjectListSearch } from "./RubatoProjectListSettings";\n'
-        + 'import { RUBATO_SETTINGS_DETAIL_PAGES, RUBATO_SETTINGS_PAGES } from "./rubatoSettingsLayout";\n'
-        + 'import { rubatoOpensProjectList } from "./rubatoSettingsLayout";\n'],
-    ['  isSettingsOverviewVisible,\n',
-      '  // Rubato: Projects is always on the sidebar (settings-layout-edits.mjs).\n', 'replace'],
-    [
-      '      void navigate({\n        to,\n        hash: "",\n        replace: true,\n        hashScrollIntoView: false,\n      });\n',
-      [
-        '      void navigate({',
-        '        to,',
-        '        hash: "",',
-        '        replace: true,',
-        '        hashScrollIntoView: false,',
-        '        // Rubato: Projects opens the project list (settings-layout-edits.mjs).',
-        '        ...(to === "/settings/projects" ? { search: rubatoProjectListSearch } : {}),',
-        '      });',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '        hashScrollIntoView: false,\n        state: { settingsTargetHighlight: true },\n      });\n',
-      [
-        '        hashScrollIntoView: false,',
-        '        state: { settingsTargetHighlight: true },',
-        '        // Rubato: an option of the project list lands on the list (settings-layout-edits.mjs).',
-        '        ...(rubatoOpensProjectList(item) ? { search: rubatoProjectListSearch } : {}),',
-        '      });',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-    ['  const navItems = SETTINGS_NAV_ITEMS.filter(\n', '  const navItems = RUBATO_SETTINGS_NAV_ITEMS.filter(\n', 'replace'],
-    ['                  const isGeneralDetailPage =\n'
-      + '                    item.to === "/settings/general" &&\n'
-      + '                    pathname === "/settings/open-source-licenses";\n',
-      '                  const isGeneralDetailPage = RUBATO_SETTINGS_DETAIL_PAGES[pathname] === item.to;\n',
+        + 'import { rubatoOpensProjectList } from "./rubatoSettingsSurface";\n'],
+    ['  "/settings/open-source-licenses": "/settings/about",\n',
+      '  "/settings/open-source-licenses": "/settings/about",\n'
+        + '  // Rubato: General links to macOS permissions (settings-layout-edits.mjs).\n'
+        + '  "/settings/permissions": "/settings/general",\n',
       'replace'],
-    ['                  return (\n                    <SidebarMenuItem key={item.to}>\n',
-      '                  return (\n'
-        + '                    <RubatoFragment key={item.to}>\n'
-        + '                    {item.group ? (\n'
-        + '                      <li className="px-2 pt-4 pb-1 text-2xs font-medium uppercase tracking-wide text-sidebar-muted-foreground/60 first:pt-1">\n'
-        + '                        {item.group}\n'
-        + '                      </li>\n'
-        + '                    ) : null}\n'
-        + '                    <SidebarMenuItem>\n',
+    ['    void navigate({\n      to,\n      hash: "",\n      replace: true,\n      hashScrollIntoView: false,\n    });\n',
+      '    void navigate({\n'
+        + '      to,\n'
+        + '      hash: "",\n'
+        + '      replace: true,\n'
+        + '      hashScrollIntoView: false,\n'
+        + '      // Rubato: Projects opens the project list (settings-layout-edits.mjs).\n'
+        + '      ...(to === "/settings/projects" ? { search: rubatoProjectListSearch } : {}),\n'
+        + '    });\n',
       'replace'],
-    ['                    </SidebarMenuItem>\n                  );\n                })}\n',
-      '                    </SidebarMenuItem>\n                    </RubatoFragment>\n                  );\n                })}\n',
+    ['      hashScrollIntoView: false,\n      state: { settingsTargetHighlight: true },\n    });\n',
+      '      hashScrollIntoView: false,\n'
+        + '      state: { settingsTargetHighlight: true },\n'
+        + '      // Rubato: a result on the project list lands on the list (settings-layout-edits.mjs).\n'
+        + '      ...(rubatoOpensProjectList(item) ? { search: rubatoProjectListSearch } : {}),\n'
+        + '    });\n',
       'replace'],
   ],
-  'apps/web/src/routes/settings.general.tsx': [
-    ['import { GeneralSettingsPanel } from "../components/settings/SettingsPanels";\n',
-      'import { RubatoSettingsPage } from "../components/settings/RubatoSettingsPage";\n', 'replace'],
-    ['  return <GeneralSettingsPanel />;\n', '  return <RubatoSettingsPage path="/settings/general" />;\n', 'replace'],
+  'apps/web/src/components/settings/SettingsPanels.tsx': [
+    ['import { CliCommandSettingsRow } from "./CliCommandSettingsRow";\n',
+      'import { RubatoPermissionsLinkSection } from "./RubatoPermissionsLink";\n'
+        + 'import { RubatoSidebarSectionsSettingsRows } from "./RubatoSidebarSectionsSetting";\n'
+        + 'import { RubatoTitleModelsSection } from "./RubatoTitleModels";\n'],
+    // General > Sidebar.
+    ['              aria-label={gt("Working section")}\n            />\n          }\n        />\n      </SettingsSection>\n',
+      '              aria-label={gt("Working section")}\n            />\n          }\n        />\n'
+        + '        {/* Rubato: Recent\'s length and the section order (settings-layout-edits.mjs). */}\n'
+        + '        <RubatoSidebarSectionsSettingsRows />\n'
+        + '      </SettingsSection>\n',
+      'replace'],
+    // General, last.
+    ['    </SettingsPageContainer>\n  );\n}\n\nexport function ChatSettingsPanel() {\n',
+      '      {/* Rubato: macOS permissions (settings-layout-edits.mjs). */}\n'
+        + '      <RubatoPermissionsLinkSection />\n'],
+    // Threads, last.
+    ['    </SettingsPageContainer>\n  );\n}\n\nexport function MaintenanceSettingsPanel() {\n',
+      '      {/* Rubato: the models that title sessions (settings-layout-edits.mjs). */}\n'
+        + '      <RubatoTitleModelsSection />\n'],
+    // About: T3's version and updater rows give way to Rubato's About section above them.
+    ['        {isElectron || HOSTED_APP_CHANNEL ? (\n          <AboutVersionSection />\n        ) : (\n',
+      '        {/* Rubato: the app\'s version and updates are Rubato\'s About section (settings-layout-edits.mjs). */}\n'
+        + '        {isElectron || HOSTED_APP_CHANNEL ? null : (\n',
+      'replace'],
+    // Kept, unused, so the next pin bump shows upstream's changes to it.
+    ['function AboutVersionSection() {\n',
+      '// Rubato: About shows Rubato\'s section instead (settings-layout-edits.mjs).\nexport function AboutVersionSection() {\n',
+      'replace'],
   ],
-  'apps/web/src/routes/settings.source-control.tsx': [
-    ['import { SourceControlSettingsPanel } from "../components/settings/SourceControlSettings";\n',
-      rubatoRoute('source-control', 'SettingsSourceControlRoute'), 'replace'],
-    ['  component: SourceControlSettingsPanel,\n', '  component: SettingsSourceControlRoute,\n', 'replace'],
-  ],
-  'apps/web/src/routes/settings.integrations.tsx': [
-    ['import { IntegrationsSettingsPanel } from "../components/settings/IntegrationsSettings";\n',
-      rubatoRoute('integrations', 'SettingsIntegrationsRoute'), 'replace'],
-    ['  component: IntegrationsSettingsPanel,\n', '  component: SettingsIntegrationsRoute,\n', 'replace'],
-  ],
-  'apps/web/src/routes/settings.connections.tsx': [
-    ['import { ConnectionsSettings } from "../components/settings/ConnectionsSettings";\n',
-      rubatoRoute('connections', 'SettingsConnectionsRoute'), 'replace'],
-    ['  component: ConnectionsSettings,\n', '  component: SettingsConnectionsRoute,\n', 'replace'],
-  ],
-  // Storage is split between Git & Worktrees and Advanced; its old address opens Advanced.
-  'apps/web/src/routes/settings.storage.tsx': [
-    ['import { createFileRoute } from "@tanstack/react-router";\nimport { StorageSettingsPanel } from "../components/settings/StorageSettings";\n',
-      'import { createFileRoute, redirect } from "@tanstack/react-router";\n', 'replace'],
-    ['({ component: StorageSettingsPanel });\n',
-      '({\n'
-        + "  // Rubato: Storage is split between Git & Worktrees and Advanced (settings-layout-edits.mjs).\n"
-        + '  beforeLoad: () => {\n'
-        + '    throw redirect({ to: "/settings/advanced", replace: true });\n'
-        + '  },\n'
-        + '});\n',
+  'apps/web/src/components/settings/VoiceSettingsPanel.tsx': [
+    ['import { useSearchableSetting } from "./settingsSearch";\n',
+      'import { RubatoVoiceSettingsSection } from "./RubatoVoiceSettings";\n'],
+    ['      </SettingsSection>\n    </SettingsPageContainer>\n  );\n}\n',
+      '      </SettingsSection>\n'
+        + '      {/* Rubato: the composer microphone (voice-edits.mjs). */}\n'
+        + '      <RubatoVoiceSettingsSection />\n'
+        + '    </SettingsPageContainer>\n  );\n}\n',
       'replace'],
   ],
 };

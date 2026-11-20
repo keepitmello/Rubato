@@ -1,95 +1,63 @@
-// Korean interface. The page swaps T3's English text for Korean from a
-// dictionary as React writes it (apps/web/src/rubatoI18n.ts), so no component
-// changes; only these few places know about it:
-// - the client setting uiLanguage, and its row at the top of
-//   Settings > Appearance > Interface (RubatoLanguageSetting.tsx);
-// - main.tsx, which loads the dictionary before the first render when the
-//   last run was Korean, then follows the saved setting once settings load;
-// - settings search, which also matches the Korean titles;
-// - the macOS menu bar, rebuilt in Korean by the desktop app when the client
-//   setting is read or written (apps/desktop/src/window/rubatoMenuLanguage.ts).
-// The dictionary is built by i18n/ in this folder (README.md there).
+// Korean interface, on T3's own i18n (apps/web/src/i18n/, gt-react).
+// - T3's Korean catalog loads with Rubato's wording put over it wherever
+//   Rubato's dictionary has the same English (i18n/rubatoWording.ts).
+// - Rubato's own text (overlay components, text its edits add) is written in
+//   English and swapped from the same dictionary while the interface is Korean
+//   (rubatoI18n.ts); T3's i18n runtime switches it with each language change.
+// - Settings search also matches Rubato's titles in Korean.
+// - A settings file from before, with Rubato's `uiLanguage: "ko"` and no
+//   `language`, opens in Korean (DesktopClientSettings, rubatoUiLanguage.ts).
+// T3's Language row (Settings, Display) and its translated macOS menu replace
+// Rubato's own row and menu. The dictionary is built by i18n/ (README.md there).
 export const i18nOverlays = [
   'apps/web/src/rubatoI18n.ts',
   'apps/web/src/rubatoI18n.test.tsx',
   'apps/web/src/rubatoI18n.ko.json',
-  'apps/web/src/components/settings/RubatoLanguageSetting.tsx',
-  'apps/desktop/src/window/rubatoMenuLanguage.ts',
-  'apps/desktop/src/window/rubatoMenuLanguage.test.ts',
+  'apps/web/src/i18n/rubatoWording.ts',
+  'apps/web/src/i18n/rubatoWording.test.ts',
+  'apps/web/src/rubatoKorean.browser.test.tsx',
+  'apps/desktop/src/settings/rubatoUiLanguage.ts',
+  'apps/desktop/src/settings/rubatoUiLanguage.test.ts',
 ];
 
-const SEARCH_ITEM = [
-  '  {',
-  '    id: "ui-language",',
-  '    title: "Language",',
-  '    to: "/settings/appearance",',
-  '    searchTerms: ["language interface korean english translation locale 언어 한국어 영어 번역"],',
-  '  },',
-  '',
-].join('\n');
-
 export const i18nEdits = {
-  'packages/contracts/src/settings.ts': [
-    ['  diffColorScheme: DiffColorScheme.pipe(\n    Schema.withDecodingDefault(Effect.succeed("red-green" as const)),\n  ),\n',
-      '  uiLanguage: Schema.Literals(["en", "ko"]).pipe(Schema.withDecodingDefault(Effect.succeed("en" as const))),\n'],
-    ['  diffColorScheme: Schema.optionalKey(DiffColorScheme),\n',
-      '  uiLanguage: Schema.optionalKey(Schema.Literals(["en", "ko"])),\n'],
+  'apps/web/src/i18n/initializeI18n.ts': [
+    ['import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locales";\n',
+      'import { loadRubatoKorean } from "./rubatoWording";\n'],
+    ['  return module.default;\n',
+      '  return locale === "ko" ? loadRubatoKorean(module.default) : module.default;\n', 'replace'],
   ],
-  'apps/web/src/main.tsx': [
-    ['import { AppRoot } from "./AppRoot";\n',
-      'import { ensureClientSettingsHydrated, getClientSettings } from "./hooks/useSettings";\nimport { setUiLanguage, startUiLanguage } from "./rubatoI18n";\n'],
-    ['  router.load(),\n', '  startUiLanguage(),\n'],
-    ['const app = <AppRoot router={router} />;\n',
+  'apps/web/src/i18n/runtime.ts': [
+    ['import { setActiveLocale } from "./messages";\n',
+      'import { followLocale } from "../rubatoI18n";\n'],
+    ['  return loadLocale(locale).then(() => activateLocale(locale));\n',
       [
-        '// The first render used the language of the last run; the saved setting decides from here.',
-        'void ensureClientSettingsHydrated()',
-        '  .then(() => setUiLanguage(getClientSettings().uiLanguage))',
-        '  .catch(() => undefined);',
+        '  return loadLocale(locale)',
+        '    .then(() => activateLocale(locale))',
+        "    // Rubato's own text follows, before main.tsx's first render on a Korean start.",
+        '    .then(() => followLocale(snapshot.locale));',
         '',
-        '',
-      ].join('\n')],
-  ],
-  'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['import { PRIVACY_POLICY_URL } from "../../legalLinks";\n',
-      'import { RubatoLanguageSetting } from "./RubatoLanguageSetting";\n'],
-    ['      <SettingsSection id="appearance-interface" title="Interface">\n',
-      '      <SettingsSection id="appearance-interface" title="Interface">\n        <RubatoLanguageSetting />\n',
+      ].join('\n'),
       'replace'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['import { isMacPlatform, isWindowsPlatform, normalizeSearchText } from "~/lib/utils";\n',
       'import { uiText } from "~/rubatoI18n";\n'],
-    ['  {\n    id: "color-scheme",\n', SEARCH_ITEM],
-    ['      const title = normalizeSearchText(item.title);\n      const fields = [\n        title,\n        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),\n',
+    ['        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),\n',
       [
-        '      // In Korean the title people read is the Korean one; the English still matches.',
-        '      const title = normalizeSearchText(uiText(item.title));',
-        '      const fields = [',
-        '        title,',
-        '        normalizeSearchText(item.title),',
-        '        normalizeSearchText(uiText(SETTINGS_SECTION_LABELS[item.to])),',
-        '        normalizeSearchText(SETTINGS_SECTION_LABELS[item.to]),',
+        '        normalizeSearchText(translate(SETTINGS_SECTION_LABELS[item.to])),',
+        "        // Rubato's titles are English literals; in Korean they read from Rubato's dictionary.",
+        '        normalizeSearchText(uiText(decodeMsg(item.title))),',
+        '        normalizeSearchText(uiText(decodeMsg(SETTINGS_SECTION_LABELS[item.to]))),',
         '',
       ].join('\n'),
       'replace'],
   ],
-  'apps/desktop/src/window/DesktopApplicationMenu.ts': [
-    ['import * as ElectronMenu from "../electron/ElectronMenu.ts";\n',
-      'import { rememberRubatoMenu } from "./rubatoMenuLanguage.ts";\n'],
-    ['    yield* electronMenu.setApplicationMenu(template);\n',
-      '    yield* electronMenu.setApplicationMenu(rememberRubatoMenu(template));\n', 'replace'],
-  ],
-  'apps/desktop/src/ipc/methods/clientSettings.ts': [
-    ['import * as DesktopIpc from "../DesktopIpc.ts";\n',
-      'import { setRubatoMenuLanguage } from "../../window/rubatoMenuLanguage.ts";\n'],
-    ['    return Option.getOrNull(yield* clientSettings.get);\n',
-      [
-        '    const saved = Option.getOrNull(yield* clientSettings.get);',
-        '    setRubatoMenuLanguage(saved?.uiLanguage);',
-        '    return saved;',
-        '',
-      ].join('\n'),
+  'apps/desktop/src/settings/DesktopClientSettings.ts': [
+    ['import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";\n',
+      'import { withRubatoUiLanguage } from "./rubatoUiLanguage.ts";\n'],
+    ['    Object.hasOwn(document, "settings") ? document.settings : document,\n',
+      '    withRubatoUiLanguage(Object.hasOwn(document, "settings") ? document.settings : document),\n',
       'replace'],
-    ['    yield* snapShot.configure(settings);\n', '    setRubatoMenuLanguage(settings.uiLanguage);\n'],
   ],
 };

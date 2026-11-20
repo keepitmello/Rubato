@@ -5,7 +5,7 @@ import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { requestConfirmDialog } from "../../confirmDialog";
-import { usePrimarySettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, usePrimarySettings } from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
 import {
@@ -701,7 +701,6 @@ function LoginFlow({
 function ProviderModels({ providerId, name }: { providerId: string; name: string }) {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const settings = usePrimarySettings();
-  const updateClientSettings = useUpdateClientSettings();
   const rubato = serverProviders.find((provider) => provider.driver === RUBATO_DRIVER);
   const models = (rubato?.models ?? []).filter((model: ServerProviderModel) => model.slug.startsWith(`${providerId}/`));
   if (!rubato) return null;
@@ -713,7 +712,7 @@ function ProviderModels({ providerId, name }: { providerId: string; name: string
     const next = new Set(hidden);
     if (shown) next.delete(slug);
     else next.add(slug);
-    updateClientSettings({
+    void updateClientSettings({
       providerModelPreferences: {
         ...settings.providerModelPreferences,
         [instanceId]: { hiddenModels: [...next], modelOrder: [...preferences.modelOrder] },

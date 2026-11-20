@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { RubatoPermissionsSettings } from "../components/settings/RubatoPermissionsSettings";
 
-export const Route = createFileRoute("/settings/permissions")({
+// Settings › General › macOS permissions (permission-edits.mjs).
+export const Route = createFileRoute("/_chat/settings/permissions")({
   component: RubatoPermissionsSettings,
 });

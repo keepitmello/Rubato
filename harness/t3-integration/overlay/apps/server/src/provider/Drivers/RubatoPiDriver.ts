@@ -379,7 +379,8 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
         streamChanges:Stream.fromPubSub(updates),applyUsageLimits:() => Effect.void},
       snapshotForCwd,
       refreshModels:() => refreshFor(config.catalogueCwd).pipe(Effect.asVoid),
-      textGeneration:{generateCommitMessage:() => unsupported("generateCommitMessage"),generatePrContent:() => unsupported("generatePrContent"),
+      textGeneration:{generateTranscriptionPostProcessing:() => unsupported("generateTranscriptionPostProcessing"),
+        generateCommitMessage:() => unsupported("generateCommitMessage"),generatePrContent:() => unsupported("generatePrContent"),
         generateBranchName:() => unsupported("generateBranchName"),generateThreadTitle:() => unsupported("generateThreadTitle"),
         generateReviewGuide:() => unsupported("generateReviewGuide")},
     };

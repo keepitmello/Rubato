@@ -11,7 +11,7 @@ export const permissionOverlays = [
   'apps/desktop/src/permissions/RubatoServices.ts',
   'apps/desktop/src/permissions/RubatoServices.test.ts',
   'apps/web/src/components/settings/RubatoPermissionsSettings.tsx',
-  'apps/web/src/routes/settings.permissions.tsx',
+  'apps/web/src/routes/_chat.settings.permissions.tsx',
 ];
 
 const permissionTypes = [
@@ -77,6 +77,9 @@ export const permissionEdits = {
   ],
   // T3 의 끌어다 놓기 도우미가 앱 이름을 박아 두었다.
   'apps/desktop/src/permissions/MacPermissionHelper.ts': [
+    // RubatoPermissions.ts finds the app bundle the same way.
+    ['\nfunction macAppBundlePath(executable: string): string | undefined {\n',
+      '\nexport function macAppBundlePath(executable: string): string | undefined {\n', 'replace'],
     ['<header>${escapeHtml(m(msg("↑ Drag T3 Code into the list above")))}</header>\n<button id="app" draggable="true" aria-label="${escapeHtml(m(msg("Drag T3 Code to System Settings, or click to reveal in Finder")))}"><img src="${escapeHtml(icon)}" alt="" draggable="false">T3 Code</button>',
       '<header>${escapeHtml(m(msg("↑ Drag Rubato into the list above")))}</header>\n<button id="app" draggable="true" aria-label="${escapeHtml(m(msg("Drag Rubato to System Settings, or click to reveal in Finder")))}"><img src="${escapeHtml(icon)}" alt="" draggable="false">Rubato</button>',
       'replace'],
@@ -104,8 +107,14 @@ export const permissionEdits = {
         '',
       ].join('\n')],
   ],
-  // SettingsSidebarNav: upstream now imports ShieldCheckIcon and hides a mac-only page through
-  // the search item's macOnly flag, so both nav edits are upstream's own behavior.
+  // The page has no sidebar entry (General links to it, settings-layout-edits.mjs), but the
+  // icon table covers every settings path. Upstream already imports ShieldCheckIcon, and the
+  // search item's macOnly flag hides the result off macOS.
+  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
+    ['  "/settings/snap-shot": SnapShotIcon,\n',
+      '  "/settings/snap-shot": SnapShotIcon,\n  "/settings/permissions": ShieldCheckIcon,\n',
+      'replace'],
+  ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/snap-shot",\n  "/settings/connections",\n',
       '  "/settings/snap-shot",\n  "/settings/permissions",\n  "/settings/connections",\n',

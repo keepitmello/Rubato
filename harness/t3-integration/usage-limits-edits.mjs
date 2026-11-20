@@ -152,14 +152,6 @@ export const usageLimitsEdits = {
       'replace',
     ],
   ],
-  // The page leaves five-hour windows out, so the countdown test reads a weekly one.
-  'apps/web/src/components/usage/UsagePage.refresh.test.tsx': [
-    [
-      '                    id: "five_hour",\n                    kind: "session",\n                    label: "Session",',
-      '                    id: "seven_day",\n                    kind: "weekly",\n                    label: "Weekly",',
-      'replace',
-    ],
-  ],
   'packages/contracts/src/providerUsageLimits.ts': [
     [
       'export const UsageLimitSourceSnapshot = Schema.Struct({\n  id: UsageLimitSourceId,\n  kind: Schema.Literal("cliproxy"),',

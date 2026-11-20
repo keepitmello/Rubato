@@ -5,7 +5,7 @@ import {
   sidebarMaterialNeedsRestart,
 } from "@t3tools/contracts";
 
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { windowMaterialState } from "../../rubatoWindowMaterial";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
 import { SettingsRow } from "./settingsLayout";
@@ -19,7 +19,6 @@ const SIDEBAR_MATERIAL_LABELS: Record<SidebarMaterial, string> = {
 
 export function SidebarMaterialSettingsRow() {
   const saved = useClientSettings((settings) => settings.sidebarMaterial);
-  const updateClientSettings = useUpdateClientSettings();
   const machine = windowMaterialState;
   if (machine === null || machine.available.length < 2) return null;
   const wanted = pickSidebarMaterial(saved, machine);

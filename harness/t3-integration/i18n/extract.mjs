@@ -3,13 +3,17 @@
 // form the page translation looks them up (overlay/apps/web/src/rubatoI18n.ts):
 // whitespace collapsed, {n} for a runtime value, <n/> for a child element
 // between words. Each key carries its file, line and surrounding source so a
-// translator can tell a button from a heading.
+// translator can tell a button from a heading. Text T3's own catalog already
+// translates (apps/web/src/i18n/translations/en.json) is left out: it reads in
+// T3's Korean, or in Rubato's where this dictionary already has the same English.
 //
 //   node extract.mjs --t3 ~/.rubato/t3-source > strings.json
 import { createRequire } from 'node:module';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
+
+import { catalogKey } from '../overlay/apps/web/src/i18n/rubatoWording.ts';
 
 /** TypeScript 7 ships no compiler API; T3's tree still carries a 6.x for tools. */
 export function loadTypeScript(t3) {
@@ -196,15 +200,25 @@ function sourceFiles(directory) {
   return files;
 }
 
+/** Keys of the text T3's own catalog translates. */
+export function t3CatalogKeys(t3) {
+  const file = path.join(t3, 'apps/web/src/i18n/translations/en.json');
+  if (!existsSync(file)) return new Set();
+  const sources = Object.values(JSON.parse(readFileSync(file, 'utf8')));
+  return new Set(sources.map(catalogKey).filter((key) => key !== null));
+}
+
 /** Every key once, with the places it appears (the first three keep their source). */
 export function extract(t3) {
   const ts = loadTypeScript(t3);
+  const t3Owned = t3CatalogKeys(t3);
   const roots = ['apps/web/src'];
   const byKey = new Map();
   for (const root of roots) {
     for (const file of sourceFiles(path.join(t3, root))) {
       const relative = path.relative(t3, file);
       for (const item of extractFile(ts, file, readFileSync(file, 'utf8'))) {
+        if (t3Owned.has(item.key)) continue;
         const entry = byKey.get(item.key) ?? { key: item.key, places: [] };
         if (entry.places.length < 3) entry.places.push({ file: relative, line: item.line, where: item.where, context: item.context });
         else entry.more = (entry.more ?? 0) + 1;

@@ -1,13 +1,12 @@
 // Rubato (project-rail-edits.mjs): Settings > Projects > the project
 // row on the new-thread screen (chat/RubatoHomeProjects.tsx). Off by default.
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import { Switch } from "../ui/switch";
 import { SettingsRow } from "./settingsLayout";
 import { searchableSetting } from "./settingsSearch";
 
 export function RubatoHomeProjectsSettingsRow() {
   const enabled = useClientSettings((settings) => settings.rubatoHomeProjects);
-  const updateClientSettings = useUpdateClientSettings();
   return (
     <SettingsRow
       {...searchableSetting("rubato-home-projects")}

@@ -1,13 +1,16 @@
-// Korean interface (Settings > Appearance > Interface > Language).
+// Korean for Rubato's own interface text.
 //
-// T3's components carry English literals and T3 does not take localization
-// upstream, so the components stay as they are and the text React writes into
-// the page is swapped from a dictionary (rubatoI18n.ko.json, built by
-// harness/t3-integration/i18n/ in the Rubato checkout). A MutationObserver sees
-// each text node and attribute React writes and replaces it before the browser
-// paints. React keeps what it last wrote in its own memory and never reads the
-// page back, so a swapped node stays swapped until React writes that node again;
-// the observer then sees the new English and swaps it too.
+// T3 translates its own components through its i18n (apps/web/src/i18n/), and
+// i18n/rubatoWording.ts puts Rubato's wording over its Korean catalog. What
+// Rubato adds (overlay components and the text its edits put into T3's) is
+// written in English, so while the interface is Korean the text React writes
+// into the page is swapped from the same dictionary (rubatoI18n.ko.json, built
+// by harness/t3-integration/i18n/ in the Rubato checkout). A MutationObserver
+// sees each text node and attribute React writes and replaces it before the
+// browser paints. React keeps what it last wrote in its own memory and never
+// reads the page back, so a swapped node stays swapped until React writes that
+// node again; the observer then sees the new English and swaps it too. Text T3
+// already wrote in Korean matches no English entry and is left alone.
 //
 // The unit is an element's own text: its text children joined, with each child
 // element written as <n/>, so "Choose which <code>gh</code> login" is one entry
@@ -23,8 +26,6 @@ export interface UiDictionary {
   /** [English pattern, Korean pattern]; {n} is a runtime value, <n/> a child element. */
   readonly templates: ReadonlyArray<readonly [string, string]>;
 }
-
-export const UI_LANGUAGE_STORAGE_KEY = "rubato:ui-language";
 
 /** Attributes that show text: tooltips, placeholders and what a screen reader says. */
 export const TRANSLATED_ATTRIBUTES = ["title", "placeholder", "aria-label", "aria-description", "alt"] as const;
@@ -456,14 +457,7 @@ function missingCollector(): ((text: string) => void) | undefined {
   };
 }
 
-function storedLanguage(): UiLanguage {
-  try {
-    return window.localStorage.getItem(UI_LANGUAGE_STORAGE_KEY) === "ko" ? "ko" : "en";
-  } catch {
-    return "en";
-  }
-}
-
+/** "ko" while T3's interface language is Korean; Rubato has Korean only. */
 export function uiLanguage(): UiLanguage {
   return current;
 }
@@ -478,16 +472,8 @@ export function uiText(value: string): string {
   return active ? active.text(value) : value;
 }
 
-/**
- * Switches the page now and remembers the choice for the next start, before
- * settings load. A failed dictionary load leaves the page in English.
- */
+/** Switches the page now. A failed dictionary load leaves Rubato's text in English. */
 export async function setUiLanguage(language: UiLanguage): Promise<void> {
-  try {
-    window.localStorage.setItem(UI_LANGUAGE_STORAGE_KEY, language);
-  } catch {
-    // Private windows refuse storage; the setting still holds for this run.
-  }
   if (language === current) return;
   current = language;
   if (language === "ko") {
@@ -496,17 +482,18 @@ export async function setUiLanguage(language: UiLanguage): Promise<void> {
     active?.stop();
     active = createPageTranslation(document.body, translator, missingCollector());
     active.start();
-    document.documentElement.lang = "ko";
   } else {
     active?.stop();
     active = null;
-    document.documentElement.lang = "en";
   }
   for (const listener of listeners) listener();
 }
 
-/** Runs before the first render, so a Korean start never shows English first. */
-export function startUiLanguage(): Promise<void> {
-  if (storedLanguage() !== "ko") return Promise.resolve();
-  return setUiLanguage("ko").catch(() => undefined);
+/**
+ * Follows T3's interface language (its saved `language` setting). T3's i18n runtime
+ * (apps/web/src/i18n/runtime.ts) calls this after each switch, and on a Korean start
+ * before main.tsx's first render, so Rubato's text is Korean from the first frame.
+ */
+export function followLocale(locale: string): Promise<void> {
+  return setUiLanguage(locale === "ko" ? "ko" : "en").catch(() => undefined);
 }

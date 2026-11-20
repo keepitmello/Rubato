@@ -21,7 +21,8 @@ export const scheduleEdits = {
     ['  | "/settings/memory"\n', '  | "/settings/memory"\n  | "/settings/scheduled"\n', 'replace'],
     ['  "/settings/memory": msg("Memory"),\n', '  "/settings/memory": msg("Memory"),\n  "/settings/scheduled": msg("Scheduled Tasks"),\n', 'replace'],
     ['  "/settings/memory": null,\n', '  "/settings/memory": null,\n  "/settings/scheduled": null,\n', 'replace'],
-    ['  {\n    id: "storage-worktrees",',
+    // After T3's own Scheduled tasks result, so T3's search tests still find theirs first.
+    ['  {\n    id: "agent-browser-access",',
       [
         '  {',
         '    id: "rubato-scheduled-tasks",',

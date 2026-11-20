@@ -126,7 +126,7 @@ export function RubatoVoiceControl(props: {
             variant="ghost"
             size="xs"
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => void navigate({ to: "/settings/chat", hash: "rubato-voice" })}
+            onClick={() => void navigate({ to: "/settings/voice", hash: "rubato-voice" })}
           >
             <SettingsIcon />
             Voice settings

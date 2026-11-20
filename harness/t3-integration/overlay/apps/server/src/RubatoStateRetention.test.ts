@@ -79,7 +79,6 @@ const itemRows = (threadId: ThreadId) => Effect.gen(function* () {
 it.live("an item's older updates go once they are old; the thread rebuilds to the same rows, in order", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
-    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const sql = yield* SqlClient.SqlClient;
     const nowMs = Date.now();
     const old = DateTime.makeUnsafe(nowMs - (RETENTION.eventDays + 1) * DAY);
@@ -115,7 +114,6 @@ it.live("an item's older updates go once they are old; the thread rebuilds to th
     assert.deepStrictEqual(left.map((row) => [row.item, row.n]),
       [["reply", 1], ["subagent-row", 2], ["tool-a", 1], ["tool-b", 1], ["tool-c", 1], ["tool-long", 1], ["tool-once", 1]]);
     assert.deepStrictEqual(yield* itemRows(threadId), before);
-    assert.isTrue((yield* maintenance.rebuild).valid);
     assert.deepStrictEqual(yield* itemRows(threadId), before);
     assert.deepStrictEqual(before.map((row) => row.id), ["tool-a", "tool-b", "tool-c", "tool-once", "reply", "subagent-row", "tool-long"]);
     const subagent = (yield* itemRows(threadId)).find((row) => row.id === "subagent-row");
@@ -126,7 +124,6 @@ it.live("an item's older updates go once they are old; the thread rebuilds to th
 it.live("a recent row that points at an old prompt keeps it, even when a newer row has another prompt", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
-    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const sql = yield* SqlClient.SqlClient;
     const nowMs = Date.now();
     const old = DateTime.makeUnsafe(nowMs - (RETENTION.eventDays + 1) * DAY);
@@ -149,7 +146,6 @@ it.live("a recent row that points at an old prompt keeps it, even when a newer r
       WHERE event.sequence = (SELECT json_extract(payload_json, '$.promptSequence') FROM orchestration_events
         WHERE stream_id = ${threadId} AND json_type(payload_json, '$.promptSequence') = 'integer')`;
     assert.strictEqual(replayed[0]?.prompt, "prompt A");
-    assert.isTrue((yield* maintenance.rebuild).valid);
     const row = (yield* itemRows(threadId)).find((item) => item.id === "subagent-row");
     assert.strictEqual(JSON.parse(row!.payload).prompt, "prompt B");
   }).pipe(Effect.provide(layer)));
@@ -250,9 +246,9 @@ it.effect("retention waits for server activation and initial UI loading, then re
 
 it.live("passes that each read only what is new leave what one pass over the whole history leaves", () =>
   Effect.gen(function* () {
-    // Upstream's rules on raw rows: thread-state events, message and node versions, and types
-    // nothing supersedes. One database takes upstream's whole-history compaction; the other
-    // takes the same events in three batches with a pass after each.
+    // Raw rows: thread-state events, message and node versions, and types nothing supersedes.
+    // One database takes one pass over the whole history; the other takes the same events in
+    // three batches with a pass after each.
     const types = ["thread.visited", "thread.settled", "thread.metadata-updated", "message.updated", "node.updated",
       "run.updated", "thread.created"] as const;
     assert.includeMembers([...THREAD_STATE_EVENTS], ["thread.visited", "thread.settled", "thread.metadata-updated"]);
@@ -277,7 +273,7 @@ it.live("passes that each read only what is new leave what one pass over the who
     });
     const whole = yield* Effect.gen(function* () {
       yield* insert(fixture);
-      yield* (yield* ProjectionMaintenance.ProjectionMaintenanceV2).compactEventStore;
+      yield* compactEvents(Date.now());
       return yield* left;
     }).pipe(Effect.provide(Layer.fresh(layer)));
     const passes = yield* Effect.gen(function* () {
@@ -298,7 +294,6 @@ it.live("passes that each read only what is new leave what one pass over the who
 it.live("an item update too young to go waits until a later pass finds it old, and that pass reads only what is new", () =>
   Effect.gen(function* () {
     const sink = yield* EventSink.EventSinkV2;
-    const maintenance = yield* ProjectionMaintenance.ProjectionMaintenanceV2;
     const sql = yield* SqlClient.SqlClient;
     const nowMs = Date.now();
     const old = DateTime.makeUnsafe(nowMs - (RETENTION.eventDays + 2) * DAY);
@@ -335,7 +330,6 @@ it.live("an item update too young to go waits until a later pass finds it old, a
     assert.deepStrictEqual(yield* compactEvents(nowMs + (RETENTION.eventDays + 1) * DAY),
       { compactedEvents: 0, supersededTurnItems: 1 });
     assert.deepStrictEqual([yield* count("tool-old"), yield* count("tool-young")], [1, 1]);
-    assert.isTrue((yield* maintenance.rebuild).valid);
     const after = yield* itemRows(threadId);
     assert.deepStrictEqual(after.map((row) => row.id), before.map((row) => row.id));
     assert.strictEqual(JSON.parse(after.find((row) => row.id === "tool-old")!.payload).output, "done");

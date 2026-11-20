@@ -305,6 +305,8 @@ const edits = {
   // of that running state went through; this lets the run ask, and stay running while a failed
   // publish waits on its retry.
   'apps/server/src/relay/AgentAwarenessRelay.ts': [
+    // The phone's push path publishes the same events the relay does (RubatoPush.ts).
+    ['\nfunction shouldPublishAgentAwarenessEvent(\n', '\nexport function shouldPublishAgentAwarenessEvent(\n', 'replace'],
     ['    readonly drain: Effect.Effect<void>;\n',
       '    /** Rubato: whether the thread\'s last publish failed and waits on a retry. */\n    readonly publishPending: (threadId: ThreadId) => Effect.Effect<boolean>;\n'],
     ['    drain: worker.drain,\n',
@@ -799,6 +801,7 @@ const edits = {
     [
       '                  <div\n                    ref={attachExpandedComposerControls}',
       '                  {sessionSpeedLabel ? (\n                    <span data-rubato-speed-label="" className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  <div\n                    ref={attachExpandedComposerControls}',
+      'replace',
     ],
   ],
 };

@@ -1,8 +1,8 @@
-// Rubato (sidebar-blocks-edits.mjs): Settings > Threads > Sidebar:
+// Rubato (sidebar-blocks-edits.mjs): Settings > General > Sidebar:
 // how many threads Recent shows, and putting the sidebar's sections back in
 // their first order. The order itself is set by dragging a section's header in
 // the sidebar (sidebar/RubatoSidebarBlockDrag.tsx). Both are device settings.
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import {
   RECENT_LIMIT_MAX,
   RECENT_LIMIT_MIN,
@@ -24,7 +24,6 @@ import { searchableSetting } from "./settingsSearch";
 export function RubatoSidebarSectionsSettingsRows() {
   const recentLimit = useClientSettings((settings) => settings.rubatoRecentLimit);
   const stored = useClientSettings((settings) => settings.rubatoSidebarBlocks);
-  const updateClientSettings = useUpdateClientSettings();
   const isDefaultOrder = isDefaultSidebarBlockOrder(resolveSidebarBlockOrder(stored));
   return (
     <>

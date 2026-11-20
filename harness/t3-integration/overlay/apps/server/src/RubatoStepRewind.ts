@@ -22,7 +22,7 @@ import {
   CommandId, MessageId, ThreadId, TurnItemId,
   type OrchestrationV2Run, type OrchestrationV2TurnItem,
 } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -55,9 +55,9 @@ const ContinueBody = Schema.Struct({ threadId: Schema.String });
 export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const auth = yield* EnvironmentAuth;
   const orchestrator = yield* Orchestrator.OrchestratorV2;
-  const crypto = yield* Crypto.Crypto;
+  const crypto = yield* SecureRandom.SecureRandom;
   const services = yield* Effect.context<RubatoThreadImporter | SqlClient.SqlClient | ProviderInstanceRegistry | CheckpointStore.CheckpointStore>();
-  const uuid = crypto.randomUUIDv4().pipe(Effect.mapError((cause) => refuse("internal", describe(cause))));
+  const uuid = crypto.uuidV4().pipe(Effect.mapError((cause) => refuse("internal", describe(cause))));
   const commandId = Effect.map(uuid, (id) => CommandId.make(`rubato-step-rewind:${id}`));
 
   const records = (threadId: ThreadId) =>

@@ -156,11 +156,14 @@ class LiveConnection {
   private failure: string | null = null;
   private wake: (() => void) | null = null;
 
-  constructor(
-    private readonly platform: LiveDictationPlatform,
-    /** Told about every change; it publishes only while this is the dictation running now. */
-    private readonly onChange: (connection: LiveConnection) => void,
-  ) {}
+  private readonly platform: LiveDictationPlatform;
+  /** Told about every change; it publishes only while this is the dictation running now. */
+  private readonly onChange: (connection: LiveConnection) => void;
+
+  constructor(platform: LiveDictationPlatform, onChange: (connection: LiveConnection) => void) {
+    this.platform = platform;
+    this.onChange = onChange;
+  }
 
   now(): number {
     return this.platform.now?.() ?? Date.now();

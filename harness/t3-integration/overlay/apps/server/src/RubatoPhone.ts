@@ -81,7 +81,7 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
       | ServerEnvironment.ServerEnvironment
       | HttpClient.HttpClient
       | EnvironmentAuth
-      | Effect.Services<ReturnType<typeof cloudLink.reconcileDesiredLink>>
+      | Effect.Services<ReturnType<typeof cloudLink.reconcileDesiredLinkIfStillDesired>>
     >();
     const runFork = Effect.runForkWith(context);
 
@@ -142,7 +142,7 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
         }
         yield* setCliDesiredCloudLink(true, "publish_only");
         yield* secrets.set(PUBLISH_AGENT_ACTIVITY_SECRET, new TextEncoder().encode("true"));
-        yield* cloudLink.reconcileDesiredLink(origin);
+        yield* cloudLink.reconcileDesiredLinkIfStillDesired(origin);
         login = { phase: "idle" };
       }).pipe(
         Effect.catchCause((cause) =>

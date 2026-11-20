@@ -88,7 +88,7 @@ function NotificationSoundRow({
           : "Plays when a thread needs input or approval, or fails. Add your own sounds to ~/Library/Sounds."
       }
       resetAction={
-        value !== fallback ? <SettingResetButton label={subject} onClick={() => choose(fallback)} /> : null
+        value !== fallback ? <SettingResetButton ariaLabel={`Reset ${subject} to default`} onClick={() => choose(fallback)} /> : null
       }
       control={
         <div className="flex w-full items-center gap-1.5 sm:w-auto">

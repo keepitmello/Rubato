@@ -1,5 +1,5 @@
 import { CommandId, ThreadId } from "@t3tools/contracts";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Path from "effect/Path";
@@ -33,14 +33,14 @@ export const rubatoCompanionRouteLayer = Layer.unwrap(
     const path = yield* Path.Path;
     const sql = yield* SqlClient.SqlClient;
     const orchestrator = yield* OrchestratorV2;
-    const crypto = yield* Crypto.Crypto;
+    const crypto = yield* SecureRandom.SecureRandom;
     const archived = (threadId: string) =>
       sql<{ readonly archived_at: string | null }>`
         SELECT archived_at FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
       `.pipe(Effect.map((rows) => rows[0]?.archived_at != null));
     const unarchive = (threadId: string) =>
       Effect.gen(function* () {
-        const commandId = CommandId.make(yield* crypto.randomUUIDv4());
+        const commandId = CommandId.make(yield* crypto.uuidV4());
         yield* orchestrator.dispatch({ type: "thread.unarchive", commandId, threadId: ThreadId.make(threadId) });
       });
     return HttpRouter.add(
