@@ -1,7 +1,7 @@
 import { Image } from "expo-image";
 import { View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 
 /** A companion's face in a circle: its art cropped to the middle, or its initial. */
 export function CompanionAvatar(props: {

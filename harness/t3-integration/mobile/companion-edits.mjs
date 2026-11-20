@@ -28,6 +28,7 @@ export const mobileCompanionOverlays = [
   `${companions}/roomMedia.tsx`,
   `${companions}/roomModel.ts`,
   `${companions}/roomModel.test.ts`,
+  `${companions}/roomThread.ts`,
   `${companions}/BubbleAttachments.tsx`,
   `${companions}/BubbleMarkdown.tsx`,
   `${companions}/BubbleFiles.tsx`,
@@ -66,9 +67,9 @@ export const mobileCompanionEdits = {
   'apps/mobile/src/state/use-thread-composer-state.ts': [
     ['import { DEFAULT_FOLLOW_UP_BEHAVIOR } from "../lib/followUpBehavior";',
       'import { DEFAULT_FOLLOW_UP_BEHAVIOR, type FollowUpBehavior } from "../lib/followUpBehavior";', 'replace'],
-    ['export function useThreadComposerState() {',
-      'export function useThreadComposerState(options?: { readonly followUpBehavior?: FollowUpBehavior }) {', 'replace'],
+    ['export function useThreadComposerState(input: {\n',
+      'export function useThreadComposerState(input: {\n  /** Rubato: a companion\'s room steers during its work, whatever the follow-up setting says. */\n  readonly followUpBehavior?: FollowUpBehavior;\n', 'replace'],
     ['  const followUpBehavior = AsyncResult.isSuccess(preferencesResult)\n    ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)\n    : DEFAULT_FOLLOW_UP_BEHAVIOR;\n',
-      '  const followUpBehavior =\n    options?.followUpBehavior ??\n    (AsyncResult.isSuccess(preferencesResult)\n      ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)\n      : DEFAULT_FOLLOW_UP_BEHAVIOR);\n', 'replace'],
+      '  const followUpBehavior =\n    input.followUpBehavior ??\n    (AsyncResult.isSuccess(preferencesResult)\n      ? (preferencesResult.value.followUpBehavior ?? DEFAULT_FOLLOW_UP_BEHAVIOR)\n      : DEFAULT_FOLLOW_UP_BEHAVIOR);\n', 'replace'],
   ],
 };

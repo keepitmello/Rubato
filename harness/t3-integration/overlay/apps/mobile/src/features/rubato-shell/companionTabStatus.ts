@@ -5,5 +5,7 @@
 import type { WorkspaceState } from "../../state/workspaceModel";
 
 export function withoutThreadSync(state: WorkspaceState): WorkspaceState {
-  return state.hasPendingShellSnapshot ? { ...state, hasPendingShellSnapshot: false } : state;
+  return state.hasPendingShellSnapshot || state.hasSyncingConnectedEnvironment
+    ? { ...state, hasPendingShellSnapshot: false, hasSyncingConnectedEnvironment: false }
+    : state;
 }

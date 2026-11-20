@@ -14,25 +14,26 @@ import Animated, { FadeInDown, FadeOut, LinearTransition, ZoomIn, ZoomOut } from
 import { KeyboardAvoidingView, KeyboardStickyView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
-import { ComposerAttachmentButton } from "../../components/ComposerAttachmentButton";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
+import { ComposerAttachmentButton } from "../threads/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
-import { ControlPill } from "../../components/ControlPill";
+import { ControlPill } from "../../components/ui/ControlPill";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
-import type { FilePreviewSource } from "../../components/FilePreviewModal";
+import type { FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3ComposerEditor.types";
+import { useComposerDraft } from "../../state/use-composer-drafts";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
-import { ComposerSurface } from "../threads/ThreadComposer";
+import { ComposerSurface } from "../../components/ComposerSurface";
 import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
 import {
   ComposerDictationPrimaryAction,
@@ -251,8 +252,8 @@ function RoomComposer(props: {
   readonly onPickMedia: () => Promise<void>;
   readonly onPickFiles: () => Promise<void>;
   readonly onRemoveAttachment: (id: string) => void;
-  readonly onPasteImages: (uris: ReadonlyArray<string>) => Promise<void>;
-  readonly onPasteText: (paste: ComposerTextPaste) => Promise<void>;
+  readonly onPasteImages: (uris: ReadonlyArray<string>) => Promise<unknown>;
+  readonly onPasteText: (paste: ComposerTextPaste) => Promise<unknown>;
   readonly onPressPreview: (source: FilePreviewSource) => void;
   readonly draft: string;
   readonly onChange: (text: string) => void;
@@ -270,18 +271,10 @@ function RoomComposer(props: {
   const [height, setHeight] = useState(insets.bottom + 64);
   const draftRef = useRef(props.draft);
   draftRef.current = props.draft;
-  const watchers = useRef(new Set<() => void>());
-  useEffect(() => {
-    for (const watcher of watchers.current) watcher();
-  }, [props.draft]);
   const dictation = useVoiceInputController({
     ownerKey: props.ownerKey,
     label: props.title,
     readDraftMessage: () => draftRef.current,
-    subscribeToDraftChanges: (onChange) => {
-      watchers.current.add(onChange);
-      return () => watchers.current.delete(onChange);
-    },
     selection,
     onChangeDraftMessage: props.onChange,
     onChangeSelection: setSelection,
@@ -311,7 +304,7 @@ function RoomComposer(props: {
     sendAfterDictation.current = false;
     if (phase === "idle") props.onSend();
   }, [phase, props.draft, props.onSend]);
-  const strip = composerStripAttachments(props.attachments);
+  const strip = composerStripAttachments(props.attachments, () => undefined);
   const bottomPadding = Math.max(insets.bottom, 10);
   return (
     // The screen's keyboard padding moves the list only: an absolute child is placed from the
@@ -468,7 +461,9 @@ function RoomBody(props: {
   readonly threadId: ThreadId;
   readonly headerHeight: number;
 }) {
-  const composer = useThreadComposerState({ followUpBehavior: "steer" });
+  // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
+  const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
+  const draft = useComposerDraft(composer.composerDraftKey ?? null);
   const { selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const body = useScaledTextRole("body");
@@ -625,7 +620,7 @@ function RoomBody(props: {
       ) : null}
       <RoomComposer
         environmentId={props.environmentId}
-        attachments={composer.draftAttachments}
+        attachments={draft.attachments}
         supportsFiles={supportsFiles}
         onPickMedia={composer.onPickDraftMedia}
         onPickFiles={composer.onPickDraftFiles}
@@ -633,7 +628,7 @@ function RoomBody(props: {
         onPasteImages={composer.onNativePasteImages}
         onPasteText={composer.onNativePasteText}
         onPressPreview={media.onPressPreview}
-        draft={composer.draftMessage}
+        draft={draft.text}
         onChange={composer.onChangeDraftMessage}
         onSend={send}
         canCall={callable?.ready === true}

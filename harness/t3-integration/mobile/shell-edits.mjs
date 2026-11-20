@@ -12,14 +12,9 @@
 //
 // The app icon and splash are PNGs, which overlays (text only) cannot carry: build-ios.sh
 // writes apps/mobile/assets/rubato/ from assets/Rubato.png before prebuild.
-import { readFileSync } from 'node:fs';
-
-// T3's mobile theme tests name T3's palettes (grove, iris, t3-chat), which the Rubato library
-// replaced; theme-tests.json moves them onto Rubato's five. Generated with lock-diff.mjs from
-// the pin's files and their edited copies.
-const themeTests = JSON.parse(readFileSync(new URL('./theme-tests.json', import.meta.url), 'utf8'));
 
 export const shellOverlays = [
+  'apps/mobile/src/i18n/rubatoKorean.test.ts',
   'apps/mobile/src/components/rubatoModelGlyph.ts',
   'apps/mobile/src/components/rubatoModelGlyph.test.ts',
   'apps/mobile/src/components/RubatoVendorMark.tsx',
@@ -28,7 +23,6 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.test.ts',
   'apps/mobile/src/features/rubato-voice/macLiveDictation.ts',
-  'apps/mobile/src/features/rubato-shell/RubatoUpdateHost.tsx',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.ts',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.test.ts',
   'apps/mobile/src/features/rubato-shell/companionNotifications.ts',
@@ -47,15 +41,6 @@ export const shellOverlays = [
 const RUBATO_ICON = './assets/rubato/icon.png';
 
 export const shellEdits = {
-  ...themeTests,
-  // Upstream 0bc753478b (#30135), until the pin moves past it: the composer reads
-  // `layoutManager` (a tap looks for a chip under the finger), and on a TextKit 2 view that swaps
-  // it to TextKit 1 mid-edit. After dictation filled the companion room's field, the tap that swap
-  // started never finished laying out and iOS killed the app (crash log 2026-11-20 03:37).
-  'apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorView.swift': [
-    ['  private let textView = ComposerTextView()\n',
-      '  private let textView = ComposerTextView(usingTextLayoutManager: false)\n', 'replace'],
-  ],
   'apps/mobile/app.config.ts': [
     ['    appName: "T3 Code Dev",\n    scheme: "t3code-dev",\n    iosBundleIdentifier: "com.t3tools.t3code.dev",',
       '    appName: "Rubato Dev",\n    scheme: "rubato-dev",\n    iosBundleIdentifier: "com.keepitmello.rubato.dev",', 'replace'],
@@ -73,7 +58,7 @@ export const shellEdits = {
       + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION === "1";\n\n'],
     ['  slug: "t3-code",', '  slug: "rubato",', 'replace'],
     // Rubato's own version line; build-ios.sh stamps the build number.
-    ['  version: "2.0.0",', '  version: "1.0.0",', 'replace'],
+    ['  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",', '  version: "1.0.0",', 'replace'],
     ['  icon: variant.assets.appIcon,\n  userInterfaceStyle', '  icon: RUBATO_ICON,\n  userInterfaceStyle', 'replace'],
     // T3's Expo project serves T3's JavaScript; a Rubato binary loads only Rubato's (EAS Update,
     // mobile/update-ios.sh), from the production channel.
@@ -86,8 +71,9 @@ export const shellEdits = {
       '      "keychain-access-groups": [`$(AppIdentifierPrefix)${variant.iosBundleIdentifier}`],\n      ...(RUBATO_NOTIFICATION_EXTENSION\n        ? {\n            "com.apple.developer.usernotifications.communication": true,\n            "com.apple.security.application-groups": ["group.com.keepitmello.rubato"],\n          }\n        : {}),\n', 'replace'],
     ['      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n',
       '      NSAppTransportSecurity: {\n        NSAllowsArbitraryLoads: true,\n      },\n      NSUserActivityTypes: ["INSendMessageIntent"],\n', 'replace'],
-    // Rubato's team; Clerk's applinks/webcredentials domain belongs to T3's login.
-    ['    appleTeamId: "ARK85ZXQ4Z",\n    associatedDomains: [\n      `applinks:${variant.relyingParty}`,\n      `webcredentials:${variant.relyingParty}`,\n    ],\n',
+    // Rubato's team; Clerk's applinks/webcredentials domain belongs to T3's login, the hosted app
+    // domain to T3's site.
+    ['    appleTeamId: "ARK85ZXQ4Z",\n    associatedDomains: [\n      `applinks:${variant.relyingParty}`,\n      `webcredentials:${variant.relyingParty}`,\n      `applinks:${HOSTED_APP_HOST}`,\n    ],\n',
       '    appleTeamId: "5WGZKZGPQS",\n', 'replace'],
     ['        "Allow T3 Code to connect to T3 Code servers on your local network or tailnet.",',
       '        "Allow Rubato to reach the Rubato app on your Mac over your local network or tailnet.",', 'replace'],
@@ -101,8 +87,10 @@ export const shellEdits = {
     ['      enabled: !isIosPersonalTeamBuild,\n      extensionBundleIdentifier', '      enabled: false,\n      extensionBundleIdentifier', 'replace'],
     ['    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],\n    "expo-web-browser",',
       '    // Rubato: no Clerk; the phone signs in to no T3 account.\n    "expo-web-browser",', 'replace'],
-    ['        microphonePermission: "Allow T3 Code to use your microphone for voice input.",',
-      '        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",', 'replace'],
+    ['        microphonePermission: "Allow T3 Code to use your microphone for voice input.",\n        recordAudioAndroid: true,',
+      '        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n        recordAudioAndroid: true,', 'replace'],
+    ['        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.\n        microphonePermission: "Allow T3 Code to use your microphone for voice input.",',
+      '        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",', 'replace'],
     ['        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",',
       '        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",', 'replace'],
     ['        image: variant.assets.splashIcon,\n        resizeMode: "contain",', '        image: RUBATO_ICON,\n        resizeMode: "contain",', 'replace'],
@@ -113,164 +101,213 @@ export const shellEdits = {
     // LiveKit's native setup for companion calls (deps-edits.mjs).
     ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
       '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
-    ['    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),\n    "./plugins/withAndroidCleartextTraffic.cjs",',
-      '    // Rubato: no widget extension.\n    "./plugins/withAndroidCleartextTraffic.cjs",', 'replace'],
+    ['    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),\n    "./plugins/withAndroidNetworkSecurityConfig.cjs",',
+      '    // Rubato: no widget extension.\n    "./plugins/withAndroidNetworkSecurityConfig.cjs",', 'replace'],
     // Without the share extension and T3's relay, the JavaScript must not reach for either:
     // both check this flag (IncomingShareProvider, agent-awareness/capabilities).
     ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,', '    iosPersonalTeamBuild: true,', 'replace'],
     ['    relay: {\n      url: repoEnv.T3CODE_RELAY_URL ?? null,\n    },\n    clerk: {\n      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,\n      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,\n    },',
       '    // Rubato: no T3 account and no T3 relay; the phone pairs with the Mac directly. Empty, not\n    // null: the public manifest would turn null into {}.\n    relay: {},\n    clerk: {},', 'replace'],
-    ['    eas: {\n      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    },\n  },\n  owner: "pingdotgg",\n};',
-      '    eas: {\n      projectId: "a877f54c-97e5-47f0-83a2-2fc36b7c0694",\n    },\n  },\n  owner: "keepitmello1",\n};', 'replace'],
+    ['    eas: {\n      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n      observe: { endpointUrl: observeEndpointUrl },\n    },\n  },\n  owner: "pingdotgg",',
+      '    eas: {\n      projectId: "a877f54c-97e5-47f0-83a2-2fc36b7c0694",\n      observe: { endpointUrl: observeEndpointUrl },\n    },\n  },\n  owner: "keepitmello1",', 'replace'],
   ],
 
-  // Companions first: the room list is the tab the app opens on.
-  'apps/mobile/src/features/workspace/workspace-tabs-state.ts': [
-    ['export type WorkspaceTab = "threads" | "pullRequests";', 'export type WorkspaceTab = "companions" | "threads" | "pullRequests";', 'replace'],
-    ['    selectedTab: "threads",\n    selectionRevision: 0,\n    tabs: { threads: emptyTab(), pullRequests: emptyTab() },',
-      '    selectedTab: "companions",\n    selectionRevision: 0,\n    tabs: { companions: emptyTab(), threads: emptyTab(), pullRequests: emptyTab() },', 'replace'],
+  // Companions first: the room list is the tab the app opens on, and a room belongs to it.
+  'apps/mobile/src/features/layout/workspace/workspace-tabs-state.ts': [
+    ["export function initialWorkspaceTabsState(\n  selectedTab: WorkspaceTab = \"threads\",\n)",
+      "export function initialWorkspaceTabsState(\n  selectedTab: WorkspaceTab = \"companions\",\n)", 'replace'],
+    ["    tabs: {\n      threads: emptyTab(),",
+      "    tabs: {\n      companions: emptyTab(),\n      threads: emptyTab(),", 'replace'],
+    ["  if (routeName === \"Issue\") return \"issues\";\n",
+      "  // Rubato: a companion's room and call belong to the Companions tab.\n  if (routeName?.startsWith(\"Companion\")) return \"companions\";\n"],
   ],
-  // T3's search tests start on the threads tab; Rubato opens on companions.
-  'apps/mobile/src/features/workspace/workspace-tabs-state.test.ts': [
-    ['import {\n  initialWorkspaceTabsState,\n  workspaceTabsReducer,\n  workspaceToolbarHeight,\n} from "./workspace-tabs-state";\n',
-      'import {\n  initialWorkspaceTabsState as initialRubatoWorkspaceTabsState,\n  workspaceTabsReducer,\n  workspaceToolbarHeight,\n} from "./workspace-tabs-state";\n\n'
-      + 'const initialWorkspaceTabsState = () => ({\n  ...initialRubatoWorkspaceTabsState(),\n  selectedTab: "threads" as const,\n});\n\n'
-      + 'it("opens on the companions tab", () => {\n  expect(initialRubatoWorkspaceTabsState().selectedTab).toBe("companions");\n});\n', 'replace'],
+  // The Companions tab has no page beside its list on a wide window.
+  'apps/mobile/src/features/layout/workspace/workspace-tab-navigation.ts': [
+    ["    options.columns && tab !== \"usage\"\n",
+      "    options.columns && tab !== \"usage\" && tab !== \"companions\"\n", 'replace'],
   ],
-  'apps/mobile/src/features/workspace/WorkspaceTabsContext.tsx': [
-    ['useRef({ threads: 0, pullRequests: 0 })', 'useRef({ companions: 0, threads: 0, pullRequests: 0 })', 'replace'],
+  // T3's tab tests start on Threads; Rubato opens on Companions and keeps a saved tab order.
+  'apps/mobile/src/features/layout/workspace/workspace-tabs-state.test.ts': [
+    ["import {\n  initialWorkspaceTabsState,\n  workspaceTabsReducer,\n",
+      "import {\n  initialWorkspaceTabsState as initialRubatoWorkspaceTabsState,\n  workspaceTabsReducer,\n", 'replace'],
+    ["} from \"./workspace-tabs-state\";\n",
+      "} from \"./workspace-tabs-state\";\n\nconst initialWorkspaceTabsState = (selectedTab: WorkspaceTab = \"threads\") =>\n  initialRubatoWorkspaceTabsState(selectedTab);\n", 'replace'],
+    ["  it(\"keeps the registered defaults while customization is unavailable\", () => {\n    expect(resolveWorkspaceTabOrder(undefined)).toEqual([\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n      \"usage\",\n    ]);\n    expect(resolveWorkspaceTabOrder([\"home\", \"usage\", \"issues\", \"threads\"])).toEqual(\n      resolveWorkspaceTabOrder(undefined),\n    );\n  });",
+      "  it(\"opens on Companions, which leads the default order, and keeps a saved order\", () => {\n    expect(initialRubatoWorkspaceTabsState().selectedTab).toBe(\"companions\");\n    expect(resolveWorkspaceTabOrder(undefined)).toEqual([\n      \"companions\",\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n      \"usage\",\n    ]);\n    expect(resolveWorkspaceTabOrder([\"home\", \"usage\", \"issues\", \"threads\"])).toEqual([\n      \"usage\",\n      \"issues\",\n      \"threads\",\n      \"companions\",\n      \"pullRequests\",\n    ]);\n  });", 'replace'],
   ],
-  'apps/mobile/src/features/workspace/WorkspaceNativeTabs.ios.tsx': [
-    ['const COMPOSE_TAB = "compose";\n', 'const COMPOSE_TAB = "compose";\n'
-      + 'const RUBATO_TAB_TITLES = { companions: "Companions", threads: "Threads", pullRequests: "Pulls" } as const;\n'
-      + 'const RUBATO_TAB_LABELS = {\n  companions: "Companions",\n  threads: "Threads",\n  pullRequests: "Pull requests",\n} as const;\n', 'replace'],
-    ['if (tab !== "threads" && tab !== "pullRequests") return;', 'if (tab !== "companions" && tab !== "threads") return;', 'replace'],
-    ['{(["threads", "pullRequests"] as const).map((tab: WorkspaceTab) => (', '{(["companions", "threads"] as const).map((tab: WorkspaceTab) => (', 'replace'],
-    ['title={tab === "threads" ? "Threads" : "Pulls"}', 'title={RUBATO_TAB_TITLES[tab]}', 'replace'],
-    ['tabBarItemAccessibilityLabel={tab === "threads" ? "Threads" : "Pull requests"}', 'tabBarItemAccessibilityLabel={RUBATO_TAB_LABELS[tab]}', 'replace'],
-    ['              icon:\n                tab === "threads"\n                  ? { type: "sfSymbol", name: "text.bubble" }\n                  : { type: "templateSource", templateSource: PULL_REQUEST_ICON },\n              selectedIcon:\n                tab === "threads" ? { type: "sfSymbol", name: "text.bubble.fill" } : undefined,',
-      '              icon:\n                tab === "companions"\n                  ? { type: "sfSymbol", name: "bubble.left.and.bubble.right" }\n                  : tab === "threads"\n                    ? { type: "sfSymbol", name: "chevron.left.forwardslash.chevron.right" }\n                    : { type: "templateSource", templateSource: PULL_REQUEST_ICON },\n              selectedIcon:\n                tab === "companions"\n                  ? { type: "sfSymbol", name: "bubble.left.and.bubble.right.fill" }\n                  : undefined,', 'replace'],
+  // T3's tab-order tests, with Companions first and pull requests, issues and usage hidden by default.
+  'apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts': [
+    ["    expect(navigationCustomizationAvailable()).toBe(false);\n",
+      "    // Rubato hides some tabs by default, so its Navigation page is always there.\n    expect(navigationCustomizationAvailable()).toBe(true);\n", 'replace'],
+    ["    ).toEqual([\"usage\", \"threads\", \"pullRequests\", \"issues\"]);",
+      "    ).toEqual([\"usage\", \"companions\", \"threads\", \"pullRequests\", \"issues\"]);", 'replace'],
+    ["    expect(visibleNavigationTabs()).toEqual(NAVIGATION_TAB_ORDER);\n",
+      "    expect(visibleNavigationTabs()).toEqual([\"companions\", \"threads\"]);\n    expect(visibleNavigationTabs(undefined, [])).toEqual(NAVIGATION_TAB_ORDER.slice(0, 4));\n    expect(overflowNavigationTabs(undefined, [])).toEqual([\"usage\"]);\n", 'replace'],
+    ["    expect(selectedNavigationTab(undefined, \"usage\", false)).toBe(\"usage\");\n",
+      "    expect(selectedNavigationTab(undefined, \"usage\", false)).toBe(\"settings\");\n    expect(selectedNavigationTab(undefined, \"issues\", false, [])).toBe(\"issues\");\n", 'replace'],
+    ["    expect(enabledNavigationTabs(order, hidden)).toEqual([\"threads\", \"pullRequests\", \"issues\"]);",
+      "    expect(enabledNavigationTabs(order, hidden)).toEqual([\n      \"companions\",\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n    ]);", 'replace'],
+    ["    expect(resolveSelectedNavigationTab(undefined, [\"threads\"], \"threads\")).toBe(\"pullRequests\");",
+      "    expect(resolveSelectedNavigationTab(undefined, [\"threads\"], \"threads\")).toBe(\"companions\");", 'replace'],
+    ["  it(\"falls back when the selected section is hidden, including when all are hidden\", () => {",
+      "  it(\"starts with pull requests, issues and usage hidden until the user shows them\", () => {\n    expect(enabledNavigationTabs()).toEqual([\"companions\", \"threads\"]);\n    expect(toggleNavigationTabVisibility(undefined, \"usage\")).toEqual([\"pullRequests\", \"issues\"]);\n  });\n\n  it(\"falls back when the selected section is hidden, including when all are hidden\", () => {", 'replace'],
   ],
-  'apps/mobile/src/features/workspace/WorkspaceSidebarTabs.ios.tsx': [
-    ['          <Text modifiers={[tag("threads")]}>Threads</Text>', '          <Text modifiers={[tag("companions")]}>Companions</Text>\n'],
-    ['          <Text modifiers={[tag("pullRequests")]}>Pull requests</Text>\n',
-      '          {/* Rubato: no pull request tab on the phone (shell-edits.mjs). */}\n', 'replace'],
+  'apps/mobile/src/features/layout/workspace/WorkspaceTabsContext.tsx': [
+    ["  const scrollOffsets: Record<WorkspaceSearchTab, number> = {\n    threads: 0,",
+      "  const scrollOffsets: Record<WorkspaceSearchTab, number> = {\n    companions: 0,\n    threads: 0,", 'replace'],
   ],
-  'apps/mobile/src/features/workspace/WorkspaceRootScreen.tsx': [
-    ['import { PullRequestsScreen } from "../pull-requests/PullRequestsScreen";\n',
-      'import { CompanionListRouteScreen } from "../rubato-shell/companionSurface";\n'],
-    ['const TAB_TITLES = {\n  threads: "Threads",', 'const TAB_TITLES = {\n  companions: "Companions",\n  threads: "Threads",', 'replace'],
-    ['accessibilityLabel={`T3 Code, ${TAB_TITLES[state.selectedTab]}`}', 'accessibilityLabel={`Rubato, ${TAB_TITLES[state.selectedTab]}`}', 'replace'],
-    ['            title="T3 Code"\n', '            title="Rubato"\n', 'replace'],
+  // The tab order: Companions, then Threads. Pull requests, issues and usage start hidden, as the
+  // phone did not show them, and the Navigation settings page turns each one on.
+  'apps/mobile/src/features/layout/workspace/navigation-tab-order.ts': [
+    ["export const NAVIGATION_TAB_ORDER = [\"threads\", \"pullRequests\", \"issues\", \"usage\"] as const;",
+      "export const NAVIGATION_TAB_ORDER = [\n  \"companions\",\n  \"threads\",\n  \"pullRequests\",\n  \"issues\",\n  \"usage\",\n] as const;", 'replace'],
+    ["  registeredSections: number = NAVIGATION_TAB_ORDER.length - 1,\n",
+      "  // Rubato: some tabs start hidden (RUBATO_HIDDEN_TABS), so the page that shows them is always there.\n  registeredSections: number = NAVIGATION_TAB_ORDER.length,\n", 'replace'],
+    ["  threads: msg(\"Threads\", { $context: \"navigation tab, list of chat threads\" }),\n",
+      "  companions: msg(\"Companions\", { $context: \"navigation tab, rooms of the companions\" }),\n"],
+    ["export function resolveHiddenNavigationTabs(saved?: readonly unknown[]): readonly NavigationTab[] {\n  return [...new Set(saved?.filter(isNavigationTab) ?? [])];",
+      "/** Rubato: the tabs a phone that never chose shows hidden. */\nconst RUBATO_HIDDEN_TABS: readonly NavigationTab[] = [\"pullRequests\", \"issues\", \"usage\"];\n\nexport function resolveHiddenNavigationTabs(saved?: readonly unknown[]): readonly NavigationTab[] {\n  return [...new Set(saved?.filter(isNavigationTab) ?? RUBATO_HIDDEN_TABS)];", 'replace'],
+  ],
+  // Threads keep their name (not "Chats", which reads as the companions) and a code glyph.
+  'apps/mobile/src/features/layout/workspace/navigation-tabs.ts': [
+    ["        threads: msg(\"Chats\", { $context: \"navigation tab, list of chat threads\" }),\n",
+      "        // Rubato: Threads keep their name; \"Chats\" would read as the companions.\n", 'replace'],
+    ["export const NAVIGATION_TAB_ICONS = {\n  threads: \"text.bubble\",",
+      "export const NAVIGATION_TAB_ICONS = {\n  companions: \"bubble.left.and.bubble.right\",\n  threads: \"chevron.left.forwardslash.chevron.right\",", 'replace'],
+  ],
+  // The phone's floating tab picker draws its tabs natively, by name.
+  'apps/mobile/modules/t3-native-controls/ios/T3SidebarTabBarView.swift': [
+    ["    let labels = [\"threads\": \"Chats\", \"pullRequests\": \"PRs\",",
+      "    let labels = [\"companions\": \"Companions\", \"threads\": \"Threads\", \"pullRequests\": \"PRs\",", 'replace'],
+    ["    let symbols = [\"threads\": \"text.bubble\",",
+      "    let symbols = [\"companions\": \"bubble.left.and.bubble.right\", \"threads\": \"chevron.left.forwardslash.chevron.right\",", 'replace'],
+    ["      if tab == \"threads\" { item.selectedImage = tabIcon(UIImage(systemName: \"text.bubble.fill\")) }",
+      "      if tab == \"companions\" { item.selectedImage = tabIcon(UIImage(systemName: \"bubble.left.and.bubble.right.fill\")) }", 'replace'],
+  ],
+  'apps/mobile/src/features/layout/workspace/WorkspaceNativeTabs.ios.tsx': [
+    ["                    !settings && tab === \"threads\"\n                      ? { type: \"sfSymbol\", name: \"text.bubble.fill\" }",
+      "                    !settings && tab === \"companions\"\n                      ? { type: \"sfSymbol\", name: \"bubble.left.and.bubble.right.fill\" }", 'replace'],
+  ],
+  'apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx': [
+    ["import { HomeRouteScreen } from \"../../home/HomeRouteScreen\";\n",
+      "import { CompanionListRouteScreen } from \"../../rubato-shell/companionSurface\";\nimport { WorkspaceTabSwipe } from \"../../rubato-shell/WorkspaceTabSwipe\";\n"],
+    ["gt(\"{product}, {title}\", { product: \"T3 Code\", title: tabTitle })",
+      "gt(\"{product}, {title}\", { product: \"Rubato\", title: tabTitle })", 'replace'],
     // The Companions tab's title leaves out the thread sync (rubato-shell/companionTabStatus.ts).
-    ['        maxWidth={props.maxWidth}\n        onPress={props.onOpenEnvironments}\n',
-      '        threadSync={state.selectedTab !== "companions"}\n'],
-    // A horizontal swipe on the tab root moves between Companions and Threads, as the tab bar
-    // does (rubato-shell/tabSwipe.ts). Only on the phone's tab bar, and not while a list searches.
-    ['import { WorkspaceSidebarTabs } from "./WorkspaceSidebarTabs";\n',
-      'import { WorkspaceTabSwipe } from "../rubato-shell/WorkspaceTabSwipe";\n'],
-    ['        {/* The pinned picker already clears the navigation bar; lists must not inset it again. */}\n',
-      '        <WorkspaceTabSwipe\n          tab={state.selectedTab}\n          enabled={systemTabBar && !sidebarNavigation && tab.searchMode === "resting"}\n          onSelect={(next) => workspace.dispatch({ type: "select", tab: next })}\n        >\n'],
-    ['        <WorkspaceToolbar\n          sidebar={sidebarNavigation}', '        </WorkspaceTabSwipe>\n'],
-    ['{state.selectedTab === "threads" ? <HomeRouteScreen /> : <PullRequestsScreen />}',
-      '{state.selectedTab === "companions" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === "threads" ? (\n            <HomeRouteScreen />\n          ) : (\n            <PullRequestsScreen />\n          )}', 'replace'],
+    ["        maxWidth={maxWidth}\n        onPress={props.onOpenEnvironments}\n",
+      "        threadSync={settingsOpen || state.selectedTab !== \"companions\"}\n"],
+    // A horizontal swipe on the tab root moves between Companions and Threads, as the tab bar does
+    // (rubato-shell/tabSwipe.ts). Only on the phone's tabs, and not while a list searches.
+    ["        <SafeAreaInsetsContext value={compactTabs ? { ...insets, bottom: 0 } : insets}>\n",
+      "        <WorkspaceTabSwipe\n          tab={state.selectedTab}\n          enabled={\n            (systemTabBar || compactTabs) &&\n            !sidebarNavigation &&\n            !settingsOpen &&\n            tab.searchMode === \"resting\"\n          }\n          onSelect={(next) => workspace.dispatch({ type: \"select\", tab: next })}\n        >\n"],
+    ["        </SafeAreaInsetsContext>\n        {deviceType !== \"pad\" && deviceType !== \"phone\" && sidebarPicker ? (",
+      "        </SafeAreaInsetsContext>\n        </WorkspaceTabSwipe>\n        {deviceType !== \"pad\" && deviceType !== \"phone\" && sidebarPicker ? (", 'replace'],
+    ["          ) : state.selectedTab === \"threads\" ? (\n            <HomeRouteScreen />",
+      "          ) : state.selectedTab === \"companions\" ? (\n            <CompanionListRouteScreen />\n          ) : state.selectedTab === \"threads\" ? (\n            <HomeRouteScreen />", 'replace'],
   ],
   // A title that leaves out the thread sync, for the Companions tab (rubato-shell/companionTabStatus.ts).
   'apps/mobile/src/features/home/WorkspaceConnectionTitle.tsx': [
-    ['import { useWorkspaceState } from "../../state/workspace";\n',
-      'import { useWorkspaceState } from "../../state/workspace";\nimport { withoutThreadSync } from "../rubato-shell/companionTabStatus";\n', 'replace'],
-    ['function useDelayedConnectionStatus(): WorkspaceConnectionStatusPresentation | null {\n  const { state } = useWorkspaceState();\n  const presentation = workspaceConnectionStatusPresentation(state);',
-      'function useDelayedConnectionStatus(threadSync = true): WorkspaceConnectionStatusPresentation | null {\n  const { state } = useWorkspaceState();\n  const presentation = workspaceConnectionStatusPresentation(\n    threadSync ? state : withoutThreadSync(state),\n  );', 'replace'],
-    ['  /** Space available beside the native header actions. */\n  readonly maxWidth?: number;\n}) {\n  const status = useDelayedConnectionStatus();',
-      '  /** Space available beside the native header actions. */\n  readonly maxWidth?: number;\n  /** Rubato: false leaves "Syncing threads..." out, for a surface the thread list does not feed. */\n  readonly threadSync?: boolean;\n}) {\n  const status = useDelayedConnectionStatus(props.threadSync);', 'replace'],
+    ["import { useWorkspaceState } from \"../../state/workspace\";\n",
+      "import { useWorkspaceState } from \"../../state/workspace\";\nimport { withoutThreadSync } from \"../rubato-shell/companionTabStatus\";\n", 'replace'],
+    ["export function WorkspaceConnectionTitle(props: {\n",
+      "/**\n * Rubato: the shared status, or for a title that leaves out the thread sync, its own label once\n * the shared one shows (so it keeps the shared delay and fade).\n */\nfunction useRubatoConnectionStatus(\n  shown: ConnectionStatus | null,\n  threadSync = true,\n): ConnectionStatus | null {\n  const { state } = useWorkspaceState();\n  const m = useMessages();\n  if (threadSync || shown === null) return shown;\n  const own = workspaceConnectionStatusPresentation(withoutThreadSync(state), m);\n  return own === null ? null : { ...shown, ...own };\n}\n\n"],
+    ["  readonly statusOffset?: number;\n  readonly maxWidth?: number;\n}) {\n  const status = use(ConnectionStatusContext);",
+      "  readonly statusOffset?: number;\n  readonly maxWidth?: number;\n  /** Rubato: false leaves \"Syncing threads...\" out, for a surface the thread list does not feed. */\n  readonly threadSync?: boolean;\n}) {\n  const status = useRubatoConnectionStatus(use(ConnectionStatusContext), props.threadSync);", 'replace'],
   ],
   // Companion conversations live in the Companions tab only (rubato-shell/companionThreads.ts).
   'apps/mobile/src/features/home/HomeRouteScreen.tsx': [
-    ['import { buildHomeProjectScopes } from "./homeThreadList";\n',
-      'import { buildHomeProjectScopes } from "./homeThreadList";\nimport { useWithoutCompanionThreads } from "../rubato-shell/companionThreads";\n', 'replace'],
-    ['  const threads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );',
-      '  const allThreads = useAtomValueWhileVisible(\n    environmentThreadShells.navigationThreadShellsAtom,\n    visible,\n  );\n  const threads = useWithoutCompanionThreads(allThreads);', 'replace'],
+    ["import { useHomeListOptions } from \"./home-list-options\";\n",
+      "import { useWithoutCompanionThreads } from \"../rubato-shell/companionThreads\";\n"],
+    ["  const threads = useLaunchingThreads(\n    useAtomValueWhileVisible(steadyNavigationThreadShellsAtom, visible),\n  );",
+      "  const threads = useWithoutCompanionThreads(\n    useLaunchingThreads(useAtomValueWhileVisible(steadyNavigationThreadShellsAtom, visible)),\n  );", 'replace'],
   ],
-  // Dictation is live, as on the desktop: the Mac mints a one-time key and the microphone streams
-  // to OpenAI over WebRTC (rubato-voice/macLiveDictation.ts). expo-audio's recorder is never started;
-  // the live recorder's level and time feed the waveform as expo's did.
+  // Dictation is live, as on the desktop, unless a voice route is chosen in Settings: the Mac mints
+  // a one-time key and the microphone streams to OpenAI over WebRTC (rubato-voice/macLiveDictation.ts).
+  // A chosen route (an environment or a cloud key) keeps T3's recorder and transcriber.
   'apps/mobile/src/features/voice-input/VoiceInputProvider.tsx': [
-    ['import { getLocalVoiceTranscriber } from "../../native/voiceTranscription";\n',
-      'import { savedConnectionsByIdAtom } from "../../state/use-remote-environment-registry";\nimport { createMacLiveDictation, withMacVoiceFailure } from "../rubato-voice/macLiveDictation";\n', 'replace'],
-    ['    recorderRef.current = recorder;\n    sessionRef.current = new VoiceInputSession({\n      recorder,\n',
-      '    const live = createMacLiveDictation(\n      () => Object.values(registry.get(savedConnectionsByIdAtom)),\n      (status) => sessionRef.current?.controller.handleRecorderStatus(status),\n    );\n    recorderRef.current = live.recorder as unknown as typeof recorder;\n    sessionRef.current = new VoiceInputSession({\n      recorder: live.recorder,\n', 'replace'],
-    ['      getTranscriber: getLocalVoiceTranscriber,', '      getTranscriber: () => live.transcriber,', 'replace'],
-    // The Mac's key is minted while the microphone permission is checked.
-    ['      requestPermission: async () => {\n        const permission = await requestRecordingPermissionsAsync();',
-      '      requestPermission: async () => {\n        live.warm();\n        const permission = await requestRecordingPermissionsAsync();', 'replace'],
-    ['      configureRecording: configureVoiceRecordingAudio,\n      releaseRecording: releaseVoiceRecordingAudio,\n      deleteRecording: (uri) => new File(uri).delete(),',
-      '      // WebRTC sets up and releases the audio session itself; expo-audio\'s setup would take it over.\n      configureRecording: async () => {},\n      releaseRecording: async () => {},\n      deleteRecording: (uri) => live.deleteRecording(uri),', 'replace'],
-    ['          state: nextState,\n', '          state: withMacVoiceFailure(nextState),\n', 'replace'],
-    ['    // Store screenshots show the dictation button even on simulators, whose\n    // on-device transcription is unavailable.\n    isAvailable: getLocalVoiceTranscriber() !== null || getNativeShowcaseScene() !== null,',
-      '    // Rubato: the Mac transcribes, so the button is always there; with no Mac paired,\n    // starting says so.\n    isAvailable: true,', 'replace'],
-    ['import { getNativeShowcaseScene } from "../showcase/nativeShowcaseScene";\n',
-      '// Rubato: the showcase scene no longer decides whether dictation shows.\n', 'replace'],
-  ],
-  'apps/mobile/src/state/use-remote-environment-registry.ts': [
-    ['const savedConnectionsByIdAtom = Atom.make((get) => {', 'export const savedConnectionsByIdAtom = Atom.make((get) => {', 'replace'],
+    ["import { getLocalVoiceTranscriber } from \"../../native/voiceTranscription\";\n",
+      "import { getLocalVoiceTranscriber } from \"../../native/voiceTranscription\";\nimport { savedConnectionsByIdAtom } from \"../../state/use-remote-environment-registry\";\nimport { createMacLiveDictation } from \"../rubato-voice/macLiveDictation\";\n", 'replace'],
+    ["  if (route) return route.transcriber !== null;\n  const transcriber = get(localVoiceTranscriberAtom);\n  return transcriber !== null && transcriber !== \"checking\";",
+      "  if (route) return route.transcriber !== null;\n  // Rubato: the Mac transcribes, so the button is always there; with no Mac paired, starting says so.\n  return true;", 'replace'],
+    ["  const recorder = createLazyVoiceRecorder({\n",
+      "  const upstreamRecorder = createLazyVoiceRecorder({\n", 'replace'],
+    ["  const session: VoiceInputSession = new VoiceInputSession({\n    recorder,\n    getTranscriber: () => {\n      const route = registry.get(voiceRouteAtom);\n      if (route) return route.transcriber;\n      const transcriber = registry.get(localVoiceTranscriberAtom);\n      return transcriber === \"checking\" ? null : transcriber;\n    },\n    requestPermission: permission.requestPermission,\n    configureRecording: async () => {\n",
+      "  const live = createMacLiveDictation(\n    () => Object.values(registry.get(savedConnectionsByIdAtom)),\n    (status) => session.controller.handleRecorderStatus(status),\n  );\n  const routed = () => registry.get(voiceRouteAtom) !== null;\n  const recorder = {\n    get uri() {\n      return routed() ? upstreamRecorder.uri : live.recorder.uri;\n    },\n    prepareToRecordAsync: (signal?: AbortSignal) =>\n      routed() ? upstreamRecorder.prepareToRecordAsync(signal) : live.recorder.prepareToRecordAsync(),\n    record: (options: { readonly forDuration: number }) =>\n      routed() ? upstreamRecorder.record(options) : live.recorder.record(options),\n    stop: () => (routed() ? upstreamRecorder.stop() : live.recorder.stop()),\n    getStatus: () => (routed() ? upstreamRecorder.getStatus() : live.recorder.getStatus()),\n    release: () => upstreamRecorder.release(),\n  };\n  const session: VoiceInputSession = new VoiceInputSession({\n    recorder,\n    getTranscriber: () => {\n      const route = registry.get(voiceRouteAtom);\n      return route ? route.transcriber : live.transcriber;\n    },\n    // The Mac's key is minted while the microphone permission is checked.\n    requestPermission: () => {\n      if (!routed()) live.warm();\n      return permission.requestPermission();\n    },\n    configureRecording: async () => {\n      // WebRTC sets up and releases the audio session itself; T3's setup would take it over.\n      if (!routed()) return;\n", 'replace'],
+    ["    deleteRecording: (uri) => new File(uri).delete(),",
+      "    deleteRecording: (uri) =>\n      uri.startsWith(\"live:\") ? live.deleteRecording(uri) : new File(uri).delete(),", 'replace'],
   ],
   // A companion's message opens its room, and stays quiet while that room is open
   // (rubato-shell/companionNotifications.ts); thread alerts keep T3's routing.
   'apps/mobile/src/features/agent-awareness/notificationNavigation.ts': [
-    ['import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";\n',
-      'import { consumeLastAgentNotificationResponse } from "./notificationResponseConsumer";\nimport {\n  COMPANION_ROOM_ON_SCREEN,\n  companionNotificationLink,\n  companionNotificationOnScreen,\n} from "../rubato-shell/companionNotifications";\n', 'replace'],
-    ['  const deepLinkOnScreen = useRef<string | null>(null);\n',
-      '  const deepLinkOnScreen = useRef<string | null>(null);\n  const pathnameOnScreen = useRef<string | null>(null);\n', 'replace'],
-    ['    const thread = threadDeepLinkOnScreen(pathname);\n',
-      '    pathnameOnScreen.current = pathname;\n    const thread = threadDeepLinkOnScreen(pathname);\n', 'replace'],
-    ['        Promise.resolve(foregroundNotificationBehavior(notification, deepLinkOnScreen.current)),',
-      '        Promise.resolve(\n          companionNotificationOnScreen(notification.request.content.data, pathnameOnScreen.current)\n            ? COMPANION_ROOM_ON_SCREEN\n            : foregroundNotificationBehavior(notification, deepLinkOnScreen.current),\n        ),', 'replace'],
-    ['    const handleResponse = (response: Notifications.NotificationResponse): void => {\n      routeAgentNotificationResponseOnce({',
-      '    const handleResponse = (response: Notifications.NotificationResponse): void => {\n      const companionLink = companionNotificationLink(response.notification.request.content.data);\n      if (companionLink !== null) {\n        const id = response.notification.request.identifier;\n        if (handledResponseIds.current.has(id)) return;\n        handledResponseIds.current.add(id);\n        linkTo(companionLink);\n        return;\n      }\n      routeAgentNotificationResponseOnce({', 'replace'],
+    ["import { consumeLastAgentNotificationResponse } from \"./notificationResponseConsumer\";\n",
+      "import { consumeLastAgentNotificationResponse } from \"./notificationResponseConsumer\";\nimport {\n  COMPANION_ROOM_ON_SCREEN,\n  companionNotificationLink,\n  companionNotificationOnScreen,\n} from \"../rubato-shell/companionNotifications\";\n", 'replace'],
+    ["let deepLinkOnScreen: string | null = null;\n",
+      "let deepLinkOnScreen: string | null = null;\nlet pathnameOnScreen: string | null = null;\n", 'replace'],
+    ["  deepLinkOnScreen = threadDeepLinkOnScreen(pathname);\n",
+      "  pathnameOnScreen = pathname;\n  deepLinkOnScreen = threadDeepLinkOnScreen(pathname);\n", 'replace'],
+    ["      Promise.resolve(foregroundNotificationBehavior(notification, deepLinkOnScreen)),",
+      "      Promise.resolve(\n        companionNotificationOnScreen(notification.request.content.data, pathnameOnScreen)\n          ? COMPANION_ROOM_ON_SCREEN\n          : foregroundNotificationBehavior(notification, deepLinkOnScreen),\n      ),", 'replace'],
+    ["  const handleResponse = (response: Notifications.NotificationResponse): void => {\n    routeAgentNotificationResponseOnce({ handledResponseIds, response, navigate });",
+      "  const handleResponse = (response: Notifications.NotificationResponse): void => {\n    const companionLink = companionNotificationLink(response.notification.request.content.data);\n    if (companionLink !== null) {\n      const id = response.notification.request.identifier;\n      if (handledResponseIds.has(id)) return;\n      handledResponseIds.add(id);\n      navigate(companionLink);\n      return;\n    }\n    routeAgentNotificationResponseOnce({ handledResponseIds, response, navigate });", 'replace'],
   ],
   // The companion list has nothing to search.
-  'apps/mobile/src/features/workspace/WorkspaceToolbar.ios.tsx': [
-    ['          headerSearchBarOptions:\n            NATIVE_LIQUID_GLASS_SUPPORTED || tab.searchMode !== "resting"',
-      '          headerSearchBarOptions:\n            selectedTab !== "companions" &&\n            (NATIVE_LIQUID_GLASS_SUPPORTED || tab.searchMode !== "resting")', 'replace'],
+  'apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx': [
+    ["  const searchLabel = m(SEARCH_LABELS[selectedTab === \"usage\" ? \"threads\" : selectedTab]);",
+      "  const searchLabel = m(\n    SEARCH_LABELS[selectedTab === \"usage\" || selectedTab === \"companions\" ? \"threads\" : selectedTab],\n  );", 'replace'],
+    ["  const searchVisible = foldedSearch\n    ? tab.searchMode !== \"resting\"\n    : deviceType !== \"duo-unfolded\" || primaryColumn?.presented !== false;",
+      "  const searchVisible =\n    selectedTab !== \"companions\" &&\n    (foldedSearch\n      ? tab.searchMode !== \"resting\"\n      : deviceType !== \"duo-unfolded\" || primaryColumn?.presented !== false);", 'replace'],
   ],
   'apps/mobile/src/Stack.tsx': [
-    ['import { ThreadRouteScreen } from "./features/threads/ThreadRouteScreen";\n',
-      'import {\n  CompanionCallRouteScreen,\n  CompanionNamesSettingsRouteScreen,\n  CompanionRoomRouteScreen,\n} from "./features/rubato-shell/companionSurface";\n'],
+    ["import { McpAppFullscreenScreen } from \"./features/threads/McpAppFullscreenScreen\";\n",
+      "import {\n  CompanionCallRouteScreen,\n  CompanionNamesSettingsRouteScreen,\n  CompanionRoomRouteScreen,\n} from \"./features/rubato-shell/companionSurface\";\n"],
     // The companions' names (Korean by default, renamable), among the other settings.
-    ['    SettingsMicrophone: createNativeStackScreen({\n',
-      '    SettingsCompanions: createNativeStackScreen({\n      screen: CompanionNamesSettingsRouteScreen,\n      linking: "companions",\n    }),\n'],
-    ['    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,',
-      '    // Rubato: a companion\'s room, pushed over the tabs like a thread.\n'
-      + '    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: "companions/:companionId",\n      // The thread screen\'s bar; the room sets its own title (avatar over name).\n      options: GLASS_HEADER_OPTIONS,\n    }),\n'
-      + '    // One call\'s full transcript, over the room.\n'
-      + '    CompanionCall: createNativeStackScreen({\n      screen: CompanionCallRouteScreen,\n      linking: "companions/:companionId/calls/:callId",\n      options: {\n        ...FORM_SHEET_PRESENTATION_OPTIONS,\n        sheetAllowedDetents: [0.5, 0.92],\n        sheetGrabberVisible: true,\n        headerShown: false,\n      },\n    }),\n'],
-    ['      options: { title: "About T3 Code" },', '      options: { title: "About Rubato" },', 'replace'],
+    ["  SettingsNotifications: msg(\"Notifications\"),\n",
+      "  SettingsCompanions: msg(\"Companions\"),\n"],
+    ["  SettingsNotifications: createNativeStackScreen({\n",
+      "  SettingsCompanions: createNativeStackScreen({\n    screen: CompanionNamesSettingsRouteScreen,\n    linking: \"settings/companions\",\n    options: settingsPage(),\n  }),\n"],
+    ["    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,",
+      "    // Rubato: a companion's room, pushed over the tabs like a thread; it sets its own title\n    // (avatar over name).\n    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: \"companions/:companionId\",\n      options: pageRoute(),\n    }),\n    // One call's full transcript, over the room.\n    CompanionCall: createNativeStackScreen({\n      screen: CompanionCallRouteScreen,\n      linking: \"companions/:companionId/calls/:callId\",\n      options: sheetRoute({ detent: 0.5, maxDetent: 0.92, header: \"none\" }),\n    }),\n"],
+  ],
+  // Rubato's screens that keep a latest-value ref read during render, as T3's own listed ones do.
+  'apps/mobile/src/reactCompilerCoverage.test.ts': [
+    ["  \"src/features/diffs/nativeReviewDiffSurface.ts\": \"ref read during render\",\n",
+      "  \"src/features/companions/CompanionRoomScreen.tsx\": \"ref read during render\",\n"],
+    ["  \"src/features/threads/ThreadArrangementSheet.tsx\": \"ref read during render\",\n",
+      "  \"src/features/rubato-push/RubatoPushHost.tsx\": \"ref read during render\",\n  \"src/features/rubato-voice/RubatoComposerField.tsx\": \"ref read during render\",\n"],
+  ],
+  // T3's identifier test, on Rubato's identifiers: no T3 link domains (shell edits to app.config.ts).
+  'apps/mobile/app.config.test.ts': [
+    ["import { DEFAULT_HOSTED_APP_URL } from \"@t3tools/shared/connectAuth\";\nimport { afterEach, expect, it, vi } from \"vite-plus/test\";\n\nimport appleAppSiteAssociation from \"../web/public/.well-known/apple-app-site-association.json\";\nimport assetLinks from \"../web/public/.well-known/assetlinks.json\";\n",
+      "// Rubato: the app claims no T3 link domain, so T3's hosted-app files are not read here.\nimport { afterEach, expect, it, vi } from \"vite-plus/test\";\n", 'replace'],
+    ["it.each([\n  [undefined, \"com.t3tools.t3code\"],\n  [\"development\", \"com.t3tools.t3code.dev\"],\n  [\"preview\", \"com.t3tools.t3code.preview\"],\n  [\"production\", \"com.t3tools.t3code\"],\n])(\"keeps the iOS and Android identifiers for APP_VARIANT=%j\", async (value, identifier) => {\n  const config = await loadConfig(value);\n  expect(config.ios?.bundleIdentifier).toBe(identifier);\n  expect(config.android?.package).toBe(identifier);\n  // Copied thread links open this app only while app.t3.codes lists it.\n  const host = new URL(DEFAULT_HOSTED_APP_URL).host;\n  expect(config.ios?.associatedDomains).toContain(`applinks:${host}`);\n  expect(appleAppSiteAssociation.applinks.details[0]?.appIDs).toContain(\n    `${config.ios?.appleTeamId}.${identifier}`,\n  );\n  expect(config.android?.intentFilters?.[0]?.data).toEqual([\n    { scheme: \"https\", host, pathPrefix: \"/threads/\" },\n  ]);\n  expect(assetLinks.map((link) => link.target.package_name)).toContain(identifier);\n});",
+      "it.each([\n  [undefined, \"com.keepitmello.rubato\"],\n  [\"development\", \"com.keepitmello.rubato.dev\"],\n  [\"preview\", \"com.keepitmello.rubato.preview\"],\n  [\"production\", \"com.keepitmello.rubato\"],\n])(\"builds Rubato's app for APP_VARIANT=%j\", async (value, identifier) => {\n  const config = await loadConfig(value);\n  expect(config.ios?.bundleIdentifier).toBe(identifier);\n  expect(config.ios?.appleTeamId).toBe(\"5WGZKZGPQS\");\n  // T3's hosted app and Clerk domains are T3's team's; Rubato's app claims none of them.\n  expect(config.ios?.associatedDomains ?? []).toEqual([]);\n});", 'replace'],
+  ],
+  // Korean: T3's catalog with Rubato's wording wherever Rubato's dictionary has the same English, the
+  // same overlay the desktop loads (packages/shared rubatoWording.ts, i18n-edits.mjs), so the phone
+  // and the desktop use one set of terms.
+  'apps/mobile/src/i18n/I18nProvider.tsx': [
+    ["import { setActiveLocale } from \"./messages\";\n",
+      "import { setActiveLocale } from \"./messages\";\nimport { withRubatoWording } from \"@t3tools/shared/rubatoWording\";\n", 'replace'],
+    ["  ko: () => require(\"./translations/ko.json\"),\n",
+      "  ko: () =>\n    withRubatoWording(\n      require(\"./translations/ko.json\"),\n      require(\"./translations/en.json\"),\n      require(\"@t3tools/shared/rubatoI18n.ko.json\"),\n    ),\n", 'replace'],
   ],
   'apps/mobile/src/App.tsx': [
-    ['import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\n',
-      'import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\nimport { RubatoCallHost } from "./features/rubato-shell/companionSurface";\nimport { RubatoPushHost } from "./features/rubato-push";\nimport { RubatoUpdateHost } from "./features/rubato-shell/RubatoUpdateHost";\n', 'replace'],
+    ["import { ThreadArrangementHost } from \"./features/threads/ThreadArrangementSheet\";\n",
+      "import { ThreadArrangementHost } from \"./features/threads/ThreadArrangementSheet\";\nimport { RubatoCallHost } from \"./features/rubato-shell/companionSurface\";\nimport { RubatoPushHost } from \"./features/rubato-push\";\n", 'replace'],
     // The call on screen and the ring of an open app, over every route; push tokens kept in line
     // with the relay and every paired Mac (features/rubato-push).
-    ['                  <ThreadArrangementHost />\n', '                  <ThreadArrangementHost />\n                  <RubatoCallHost />\n                  <RubatoPushHost />\n                  <RubatoUpdateHost />\n', 'replace'],
-    ['  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],',
-      '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://"],', 'replace'],
+    ["                <ThreadArrangementHost />\n",
+      "                <ThreadArrangementHost />\n                <RubatoCallHost />\n                <RubatoPushHost />\n", 'replace'],
+    ["    \"t3code://\",\n    \"t3code-dev://\",\n    \"t3code-preview://\",\n",
+      "    \"rubato://\",\n    \"rubato-dev://\",\n    \"rubato-preview://\",\n", 'replace'],
   ],
   // An update published with mobile/update-ios.sh is looked for again when the app comes back after
   // two minutes, not fifteen: the check is one small request, and it only asks when there is one.
   'apps/mobile/src/features/updates/app-updates.ts': [
-    ['export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;', 'export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 2 * 60 * 1000;', 'replace'],
+    ["const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;",
+      "const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 2 * 60 * 1000;", 'replace'],
   ],
 
-  // Themes: the five Rubato library themes the desktop offers (packages/shared rubatoThemes.ts,
-  // reached through BUILT_IN_THEMES), Ocean first and by default; T3's standard palette is not offered.
-  'apps/mobile/src/lib/mobileTheme.ts': [
-    ['export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;\n',
-      'export const DEFAULT_MOBILE_THEME_ID = MOBILE_DEFAULT_THEME_ID;\n/** Rubato: a fresh install, or a saved theme this build lacks, shows Ocean, as the desktop does. */\nexport const RUBATO_DEFAULT_MOBILE_THEME_ID = "ocean" as const;\n', 'replace'],
-    ['  { id: DEFAULT_MOBILE_THEME_ID, label: "T3 Code" },\n  { id: "material-you", label: "Material You" },',
-      '  // Rubato: no "T3 Code" card; the desktop offers only its library themes.\n  { id: "material-you", label: "Material You" },', 'replace'],
-    ['    ? (value as MobileThemeId)\n    : DEFAULT_MOBILE_THEME_ID;',
-      '    ? (value as MobileThemeId)\n    : RUBATO_DEFAULT_MOBILE_THEME_ID;', 'replace'],
-  ],
   // A scheme-only wake-up link (dictation keyboards) is Rubato's scheme now.
   'apps/mobile/src/lib/appLinking.ts': [
     ['!/^t3code(-dev|-preview)?:\\/*$/.test(url)', '!/^rubato(-dev|-preview)?:\\/*$/.test(url)', 'replace'],
@@ -280,10 +317,14 @@ export const shellEdits = {
   ],
   // Brand: Rubato's name where T3 drew its wordmark.
   'apps/mobile/src/components/CompactBrandTitle.tsx': [
-    ['      accessibilityLabel={props.accessibilityLabel ?? "T3 Code, Threads"}', '      accessibilityLabel={props.accessibilityLabel ?? "Rubato"}', 'replace'],
-    ['      <T3Wordmark colorClassName="accent-icon" height={Math.round(15 * scale)} />\n      <Text\n        allowFontScaling={props.allowFontScaling}\n        className="font-t3-medium text-foreground-muted"\n        style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}\n      >\n        Code\n      </Text>',
-      '      <Text\n        allowFontScaling={props.allowFontScaling}\n        className="font-t3-bold text-foreground"\n        style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}\n      >\n        Rubato\n      </Text>', 'replace'],
-    ['import { T3Wordmark } from "./T3Wordmark";\nimport { IPAD_HOME_TITLE_OFFSET }', '// Rubato: the name, not T3\'s wordmark.\nimport { IPAD_HOME_TITLE_OFFSET }', 'replace'],
+    ["      accessibilityLabel={props.accessibilityLabel ?? gt(\"T3 Code, Threads\")}",
+      "      accessibilityLabel={props.accessibilityLabel ?? \"Rubato\"}", 'replace'],
+    ["      <T3Wordmark colorClassName=\"accent-icon\" height={Math.round(15 * scale)} />\n      {/* A logo beside a fixed-size wordmark: it may grow with Dynamic Type, not crowd the bar. */}\n      <Text\n        allowFontScaling={props.allowFontScaling}\n        maxFontSizeMultiplier={BRAND_MAX_FONT_SCALE}\n        className=\"font-t3-medium text-foreground-muted\"\n        style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}\n      >\n        {WORDMARK_SUFFIX}\n      </Text>",
+      "      <Text\n        allowFontScaling={props.allowFontScaling}\n        maxFontSizeMultiplier={BRAND_MAX_FONT_SCALE}\n        className=\"font-t3-bold text-foreground\"\n        style={{ fontSize: 21 * scale, letterSpacing: -0.5 * scale }}\n      >\n        Rubato\n      </Text>", 'replace'],
+    ["import { T3Wordmark } from \"./T3Wordmark\";\n",
+      "// Rubato: the name, not T3's wordmark.\n", 'replace'],
+    ["const WORDMARK_SUFFIX = \"Code\";\n",
+      "// Rubato: no wordmark suffix; the title is the name.\n", 'replace'],
   ],
   'apps/mobile/src/components/brandAssets.ts': [
     ['export const T3_CODE_BRAND_MARK_SOURCE =\n  appVariant === "development"\n    ? require("../../../../assets/dev/blueprint-ios-1024.png")\n    : appVariant === "preview"\n      ? require("../../../../assets/nightly/nightly-ios-1024.png")\n      : require("../../../../assets/prod/black-ios-1024.png");',
@@ -291,43 +332,34 @@ export const shellEdits = {
   ],
   'apps/mobile/src/components/BrandMark.tsx': [
     ['text-foreground">T3 Code</Text>', 'text-foreground">Rubato</Text>', 'replace'],
-    ['            Mobile control surface for your live coding environments', '            Your companions and coding threads, from your Mac', 'replace'],
+    ['<T>Mobile control surface for your live coding environments</T>', '<T>Your companions and coding threads, from your Mac</T>', 'replace'],
   ],
   // Legal links open Rubato's own page (store/site, published at rubato-app.pages.dev).
   'apps/mobile/src/features/settings/lib/legal-document-url.ts': [
     ['const DEFAULT_MARKETING_SITE_URL = "https://t3.codes";', 'const DEFAULT_MARKETING_SITE_URL = "https://rubato-app.pages.dev";', 'replace'],
   ],
-  'apps/mobile/src/features/settings/lib/legal-document-url.test.ts': [
-    ['    "https://t3.codes/legal",\n    "https://t3.codes/legal/",\n    "https://t3.codes/privacy-policy?source=app",\n    "https://t3.codes/terms-of-service#updates",\n    "https://t3.codes/security-policy",',
-      '    "https://rubato-app.pages.dev/legal",\n    "https://rubato-app.pages.dev/legal/",\n    "https://rubato-app.pages.dev/privacy-policy?source=app",\n    "https://rubato-app.pages.dev/terms-of-service#updates",\n    "https://rubato-app.pages.dev/security-policy",', 'replace'],
-    ['    "https://t3.codes/download",', '    "https://rubato-app.pages.dev/download",\n    "https://t3.codes/legal",', 'replace'],
-  ],
   'apps/mobile/src/features/settings/SettingsRouteScreen.tsx': [
-    ['label="About T3 Code"', 'label="About Rubato"', 'replace'],
-    // Without T3's cloud this is the screen that shows; Rubato's notifications live there too.
-    ['            value={`${environmentCount}`}\n            valuePosition="trailing"\n            target="SettingsEnvironments"\n          />\n',
-      '            value={`${environmentCount}`}\n            valuePosition="trailing"\n            target="SettingsEnvironments"\n          />\n          <SettingsRow icon="bell.badge" label="Notifications" target="SettingsNotifications" />\n', 'replace'],
-    ['        <SettingsRow icon="paintbrush" label="Appearance" target="SettingsAppearance" />\n',
-      '        <SettingsRow icon="person.2" label="Companions" target="SettingsCompanions" />\n'],
+    // Without T3's cloud this is the list that shows; Rubato's notifications live there too.
+    ["      connections={[environmentsRow(gt(\"Environments\"), Object.keys(savedConnectionsById).length)]}",
+      "      connections={[\n        environmentsRow(gt(\"Environments\"), Object.keys(savedConnectionsById).length),\n        {\n          id: \"SettingsNotifications\",\n          icon: \"bell.badge\",\n          label: gt(\"Notifications\"),\n          target: \"SettingsNotifications\",\n        },\n      ]}", 'replace'],
+    ["        page(\"SettingsAppearance\", \"paintbrush\", gt(\"Appearance\")),\n",
+      "        page(\"SettingsCompanions\", \"person.2\", gt(\"Companions\")),\n"],
   ],
-  'apps/mobile/src/features/settings/components/settings-sheet-targets.ts': [
-    ['  | "SettingsKeyboard"\n', '  | "SettingsCompanions"\n'],
+  'apps/mobile/src/features/settings/components/settings-page-targets.ts': [
+    ["  \"SettingsLanguage\",\n",
+      "  \"SettingsCompanions\",\n"],
   ],
   'apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx': [
-    ['<SettingsScreen title="About T3 Code">', '<SettingsScreen title="About Rubato">', 'replace'],
     // Restart the Mac's Rubato from here, as the Mac's own About does (rubato-shell/MacRestartSection.tsx).
     ['import { SettingsScreen } from "./components/SettingsScreen";\n',
       'import { SettingsScreen } from "./components/SettingsScreen";\nimport { MacRestartSection } from "../rubato-shell/MacRestartSection";\n', 'replace'],
     ['        <AppSettingsSection />\n', '        <AppSettingsSection />\n        <MacRestartSection />\n', 'replace'],
   ],
-  'apps/mobile/src/features/settings/SettingsMicrophoneRouteScreen.tsx': [
-    ['"Microphone access is off for T3 Code.', '"Microphone access is off for Rubato.', 'replace'],
-  ],
 
   // Model logos: a Rubato model shows its vendor, not T3's OpenAI fallback.
   'apps/mobile/src/components/ProviderIcon.tsx': [
-    ['import { getProviderClient } from "../lib/providerClients";\n',
-      'import { getProviderClient } from "../lib/providerClients";\nimport { resolveRubatoGlyph } from "./rubatoModelGlyph";\nimport { RubatoVendorMark } from "./RubatoVendorMark";\n', 'replace'],
+    ['import { getProviderClient, openRouterIcon } from "@t3tools/client-runtime/provider-clients";\n',
+      'import { getProviderClient, openRouterIcon } from "@t3tools/client-runtime/provider-clients";\nimport { resolveRubatoGlyph } from "./rubatoModelGlyph";\nimport { RubatoVendorMark } from "./RubatoVendorMark";\n', 'replace'],
     ['  readonly iconUrl?: string | null | undefined;\n  readonly size?: number;\n};',
       '  readonly iconUrl?: string | null | undefined;\n  /** Rubato: the model slug, when the icon stands for one model of a multi-vendor provider. */\n  readonly model?: string | null | undefined;\n  readonly size?: number;\n};', 'replace'],
     ['export function ProviderIcon(props: ProviderIconProps) {',
@@ -346,11 +378,12 @@ export const shellEdits = {
     ['<ProviderIcon iconUrl={props.iconUrl} provider={props.provider} size={props.size} />',
       '<ProviderIcon\n          iconUrl={props.iconUrl}\n          model={props.model}\n          provider={props.provider}\n          size={props.size}\n        />', 'replace'],
   ],
-  'apps/mobile/src/features/threads/ThreadComposer.tsx': [
-    ['iconUrl={currentModelOption?.providerIconUrl}\n', 'model={currentModelSelection.model}\n                            '],
-  ],
-  'apps/mobile/src/features/threads/NewTaskDraftScreen.tsx': [
-    ['iconUrl={flow.selectedModelOption?.providerIconUrl}\n', 'model={flow.selectedModelOption?.selection.model}\n                            '],
+  // The composer's model chip (thread and new task).
+  'apps/mobile/src/components/ComposerModelControl.tsx': [
+    ["            iconUrl={props.modelOption?.providerIconUrl}\n            provider={props.modelOption?.providerDriver}\n            displayName={badge.displayName}",
+      "            iconUrl={props.modelOption?.providerIconUrl}\n            model={props.selection?.model}\n            provider={props.modelOption?.providerDriver}\n            displayName={badge.displayName}", 'replace'],
+    ["            iconUrl={props.modelOption?.providerIconUrl}\n            provider={props.modelOption?.providerDriver}\n            size={size}",
+      "            iconUrl={props.modelOption?.providerIconUrl}\n            model={props.selection?.model}\n            provider={props.modelOption?.providerDriver}\n            size={size}", 'replace'],
   ],
   'apps/mobile/src/features/threads/thread-list-v2-items.tsx': [
     ['provider={providerInstance.driverKind}\n', 'model={thread.modelSelection.model}\n              '],

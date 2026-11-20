@@ -6,14 +6,14 @@ import { useMemo } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { EmptyState } from "../../components/EmptyState";
+import { AppText as Text } from "../../components/ui/AppText";
+import { EmptyState } from "../../components/ui/EmptyState";
 import { buildThreadFeed } from "../../lib/threadActivity";
-import { useThreadDetail, useThreadVisibleTurnItems } from "../../state/use-thread-detail";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
+import { useRoomThread, useRoomTurnItems } from "./roomThread";
 
 const timeFormat = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
 const dayFormat = new Intl.DateTimeFormat(phoneLocale(), { month: "short", day: "numeric" });
@@ -39,8 +39,8 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOp
     threadId: (companion.threadId ?? null) as ThreadId | null,
   };
   // Subscribes to the room's thread so the preview stays current.
-  useThreadDetail(target);
-  const visible = useThreadVisibleTurnItems(target);
+  useRoomThread(target);
+  const visible = useRoomTurnItems(target);
   const preview = useMemo(() => roomPreview(roomItems(feedMessages(visible), [])), [visible]);
   return (
     <Pressable

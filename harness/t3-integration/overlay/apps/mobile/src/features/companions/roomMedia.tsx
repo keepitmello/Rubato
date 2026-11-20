@@ -13,8 +13,8 @@ import * as Haptics from "expo-haptics";
 import { useCallback, useMemo, useState } from "react";
 import { Linking } from "react-native";
 
-import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
-import { VideoPreviewModal, type VideoPreviewSource } from "../../components/VideoPreviewModal";
+import { FilePreviewModal, type FilePreviewSource } from "../../components/ui/FilePreviewModal";
+import { VideoPreviewModal, type VideoPreviewSource } from "../../components/ui/VideoPreviewModal";
 import { normalizeNativeMarkdownUrl, resolveMarkdownLinkPresentation } from "../../lib/markdownLinks";
 import { resolveMarkdownMediaPreview } from "../../lib/markdownMedia";
 import { attachmentVideoPreviewSource } from "../../lib/videoPreviewSource";

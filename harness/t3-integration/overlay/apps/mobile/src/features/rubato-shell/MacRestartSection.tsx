@@ -4,10 +4,10 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 
-import { AppText as Text } from "../../components/AppText";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { postRubato, RubatoRequestError } from "../companions/rubatoHttp";
-import { SettingsActionRow } from "../settings/components/SettingsActionRow";
+import { postRubato, isRubatoRequestError } from "../companions/rubatoHttp";
+import { ListActionRow } from "../../components/ui/ListActionRow";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { describeMacRestart, macRestartLine, type MacRestartStatus } from "./macRestart";
 
@@ -77,7 +77,7 @@ function MacRestartRow(props: {
               .catch((error: unknown) =>
                 Alert.alert(
                   "Could not restart",
-                  error instanceof RubatoRequestError ? error.message : "The Mac did not take the restart.",
+                  isRubatoRequestError(error) ? error.message : "The Mac did not take the restart.",
                 ),
               )
               .finally(() => mounted.current && setStarting(false));
@@ -104,7 +104,7 @@ function MacRestartRow(props: {
   const line = macRestartLine(view);
   return (
     <View>
-      <SettingsActionRow
+      <ListActionRow
         icon="arrow.clockwise"
         label={props.many ? `Restart Rubato on ${props.label}` : "Restart Rubato"}
         loading={starting || !settled}
@@ -112,7 +112,7 @@ function MacRestartRow(props: {
         onPress={start}
       />
       {view.phase === "draining" && !view.now ? (
-        <SettingsActionRow icon="bolt.circle" label="Restart now" tone="danger" onPress={restartNow} />
+        <ListActionRow icon="bolt.circle" label="Restart now" tone="danger" onPress={restartNow} />
       ) : null}
       {line ? (
         <Text className="px-4 pb-3 text-sm text-foreground-muted" selectable={view.phase === "failed"}>

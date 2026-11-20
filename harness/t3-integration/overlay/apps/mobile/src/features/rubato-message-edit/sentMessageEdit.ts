@@ -13,8 +13,10 @@ import { replaceComposerContextReferences } from "@t3tools/shared/composerContex
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { runAtomCommand } from "@t3tools/client-runtime/state/runtime";
 import { Atom } from "effect/reactivity";
+import * as Schema from "effect/Schema";
 
 import { postRubato } from "../companions/rubatoHttp";
+import { answerRewindBeforeSend, type RewindBeforeSendInput } from "./beforeSend";
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentThreadDetails, threadEnvironment } from "../../state/threads";
 import { getComposerDraftSnapshot, setComposerDraftText } from "../../state/use-composer-drafts";
@@ -62,7 +64,10 @@ export function cancelSentMessageEdit(threadKey: string) {
   setComposerDraftText(threadKey, edit.previousDraft);
 }
 
-export class SentMessageEditError extends Error {}
+export class SentMessageEditError extends Schema.TaggedError<SentMessageEditError>()(
+  "SentMessageEditError",
+  { message: Schema.String },
+) {}
 
 const messageStillThere = (environmentId: EnvironmentId, threadId: ThreadId, messageId: MessageId) =>
   appAtomRegistry
@@ -80,7 +85,7 @@ function untilGone(environmentId: EnvironmentId, threadId: ThreadId, messageId: 
     };
     const timer = setTimeout(() => {
       stop();
-      reject(new SentMessageEditError("The Mac did not finish rewinding."));
+      reject(new SentMessageEditError({ message: "The Mac did not finish rewinding." }));
     }, timeoutMs);
     const unsubscribe = appAtomRegistry.subscribe(atom, () => {
       if (messageStillThere(environmentId, threadId, messageId)) return;
@@ -95,15 +100,12 @@ function untilGone(environmentId: EnvironmentId, threadId: ThreadId, messageId: 
  * Resolves when there is nothing to rewind or the rewind is done (the edit then ends and the
  * composer sends as usual); throws, with the edit kept, when it cannot rewind now.
  */
-export async function rewindBeforeSend(input: {
-  readonly threadKey: string;
-  readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
-  readonly busy: boolean;
-}): Promise<void> {
+export async function rewindBeforeSend(input: RewindBeforeSendInput): Promise<void> {
   const edit = getSentMessageEdit(input.threadKey);
   if (!edit) return;
-  if (input.busy) throw new SentMessageEditError("It is still working. Send the edit again once it has finished, or stop it first.");
+  if (input.busy) throw new SentMessageEditError({
+      message: "It is still working. Send the edit again once it has finished, or stop it first.",
+    });
   if (messageStillThere(input.environmentId, input.threadId, edit.messageId)) {
     if (edit.companion) {
       await postRubato(input.environmentId, "/rubato/companion-room", "rewind", { threadId: input.threadId, messageId: edit.messageId }, { timeoutMs: 30_000 });
@@ -129,9 +131,11 @@ export async function rewindBeforeSend(input: {
         },
         { label: "edit sent message", reportFailure: false, reportDefect: true },
       );
-      if (result._tag === "Failure") throw new SentMessageEditError("The Mac did not rewind the conversation.");
+      if (result._tag === "Failure") throw new SentMessageEditError({ message: "The Mac did not rewind the conversation." });
     }
     await untilGone(input.environmentId, input.threadId, edit.messageId);
   }
   setEdit(input.threadKey, null);
 }
+
+answerRewindBeforeSend(rewindBeforeSend);

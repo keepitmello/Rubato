@@ -14,7 +14,7 @@ import { RubatoCall, type RubatoCallEndReason, type RubatoCallInfo } from "../..
 import type { CallLine, CallRecord } from "./callTypes";
 import { copy } from "./copy";
 import { ringCheck, type LiveAnswer } from "./ringCheck";
-import { pairedEnvironmentIds, postRubato, RubatoRequestError } from "./rubatoHttp";
+import { pairedEnvironmentIds, postRubato, isRubatoRequestError } from "./rubatoHttp";
 
 export type { CallLine, CallRecord, CallStatus } from "./callTypes";
 
@@ -278,7 +278,7 @@ async function onAnswer(info: RubatoCallInfo) {
         return;
       } catch (error) {
         lastError = error;
-        if (error instanceof RubatoRequestError && error.status === 409) {
+        if (isRubatoRequestError(error) && error.status === 409) {
           // Taken on another device, or over: the ring here ends with that reason.
           rings.delete(info.uuid);
           RubatoCall?.endCall(info.uuid, /elsewhere/.test(error.message) ? "answeredElsewhere" : "unanswered");

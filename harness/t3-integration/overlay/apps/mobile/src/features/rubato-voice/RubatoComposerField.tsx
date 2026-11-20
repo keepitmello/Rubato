@@ -17,7 +17,7 @@ import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { SymbolView } from "../../components/AppSymbol";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { ComposerEditor, type ComposerEditorProps } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { ComposerEditorProps as NativeEditorProps, ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
@@ -178,7 +178,7 @@ export function RubatoComposerField({
         // The display is not the draft: nothing it does may reach the draft's selection.
         onSelectionChange={dictating ? undefined : props.onSelectionChange}
         scrollEnabled
-        onTextHeightChange={(size) => setContentHeight(size.height)}
+        onContentSizeChange={(size) => setContentHeight(size.height)}
         style={[style, { height, minHeight: undefined, maxHeight: undefined }]}
       />
       {expand && overflows && !dictating ? (

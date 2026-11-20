@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
@@ -67,8 +67,7 @@ export function RubatoNotificationsSettings() {
     void macRequest(first, "status")
       .then((value) => setStatus((value as MacStatus | null) ?? null))
       .catch(() => setStatus(null));
-    // One status read per Mac shown; the connection object changes identity on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- one status read per Mac shown; the connection object changes identity on every render.
   }, [firstId]);
 
   const preferences = state?.preferences ?? DEFAULT_PREFERENCES;

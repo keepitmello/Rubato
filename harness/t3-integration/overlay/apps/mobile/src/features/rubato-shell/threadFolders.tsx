@@ -21,7 +21,7 @@ import { environmentServerConfigsAtom, serverEnvironment } from "../../state/ser
 import { useEnvironmentScope } from "../../state/session";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { useHomeListFolder } from "../home/home-list-options";
-import { ListFilterMenu } from "../workspace/ListFilterMenu";
+import { ListFilterMenu } from "../layout/workspace/ListFilterMenu";
 
 export interface RubatoMobileFolder extends RubatoThreadFolder {
   readonly environmentId: EnvironmentId;

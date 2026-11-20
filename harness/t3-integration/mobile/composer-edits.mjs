@@ -1,16 +1,16 @@
-// The phone composers' field and live dictation (rubato-voice/RubatoComposerField.tsx): the field
-// grows with its text up to six lines and opens full screen past that, and dictation writes its
-// words into the field while the person talks, grey with the newest words blue (user 2026-11-20,
-// after ChatGPT's iOS app). The words come from the Mac's one-time key and OpenAI's live
-// transcription (rubato-voice/macLiveDictation.ts, @t3tools/shared/rubatoLiveDictation).
+// The companion room's composer field and live dictation (rubato-voice/RubatoComposerField.tsx):
+// the field grows with its text up to six lines and opens full screen past that, and dictation
+// writes its words into the field while the person talks, grey with the newest words blue (user
+// 2026-11-20, after ChatGPT's iOS app). The words come from the Mac's one-time key and OpenAI's
+// live transcription (rubato-voice/macLiveDictation.ts, @t3tools/shared/rubatoLiveDictation).
+// Thread composers keep T3's own composer and dictation controls; they transcribe through the same
+// Mac (shell-edits.mjs, VoiceInputProvider).
 //
 // T3 pieces this touches:
-// - T3ComposerEditorView/Module (iOS): `dictationJson` colours the text word by word; the editor
-//   already emitted its content height, now the JS view passes it on (onTextHeightChange).
-// - the shared voice controller: Korean gets a space where dictation meets a word, as English does
-//   (T3 joined "테스트" and "실시간" into "테스트실시간"); rubatoLiveDictationDisplay beside it
-//   places the heard words where the final text will land, for this field and the desktop's.
-// - ThreadComposer: the field in place of the bare editor, and dictation opens the card.
+// - T3ComposerEditorView/Module (iOS): `dictationJson` colours the text word by word. The field's
+//   height comes from T3's own onContentSizeChange.
+// - rubatoLiveDictationDisplay beside the shared voice controller places the heard words where the
+//   final text will land, for this field and the desktop's.
 export const mobileComposerOverlays = [
   'apps/mobile/src/features/rubato-voice/RubatoComposerField.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoDictationStrip.tsx',
@@ -23,7 +23,7 @@ const SWIFT_VIEW = 'apps/mobile/modules/t3-composer-editor/ios/T3ComposerEditorV
 
 export const mobileComposerEdits = {
   [SWIFT_VIEW]: [
-    ['private struct ComposerChipStyle {\n', [
+    ['private enum ComposerEnterBehavior: String {\n', [
       '/// Rubato: how live dictation colours the text. `base` is every character\'s colour (the theme\'s',
       '/// placeholder grey when absent); each run then paints its range (source offsets) its own colour.',
       '/// Colours are RGBA, 0...1. The words fade in blue and fade to grey on their own clocks, as',
@@ -120,20 +120,11 @@ export const mobileComposerEdits = {
     ].join('\n')],
   ],
   'apps/mobile/src/native/T3ComposerEditor.ios.tsx': [
-    ['  readonly onComposerBlur?: () => void;\n', [
-      '  readonly dictationJson: string;',
-      '  readonly onComposerContentSizeChange?: (',
-      '    event: NativeSyntheticEvent<{ readonly width: number; readonly height: number }>,',
-      '  ) => void;',
-      '',
-    ].join('\n')],
-    ['  contentInsetVertical = 0,\n  ...props\n}: ComposerEditorProps) {\n  const nativeRef',
-      '  contentInsetVertical = 0,\n  dictation,\n  onTextHeightChange,\n  ...props\n}: ComposerEditorProps) {\n  const nativeRef', 'replace'],
-    ['      clipboardFragment={props.clipboardFragment ?? ""}\n', [
-      '      dictationJson={dictation ? JSON.stringify(dictation) : ""}',
-      '      onComposerContentSizeChange={(event) => onTextHeightChange?.(event.nativeEvent)}',
-      '',
-    ].join('\n')],
+    ['  readonly onComposerBlur?: () => void;\n', '  readonly dictationJson: string;\n'],
+    ['  contentInsetVertical = 0,\n  readResetGeneration = NO_RESET,\n  ...props\n}: ComposerEditorProps) {',
+      '  contentInsetVertical = 0,\n  readResetGeneration = NO_RESET,\n  dictation,\n  ...props\n}: ComposerEditorProps) {', 'replace'],
+    ['      clipboardFragment={props.clipboardFragment ?? ""}\n',
+      '      dictationJson={dictation ? JSON.stringify(dictation) : ""}\n'],
   ],
   'apps/mobile/src/native/T3ComposerEditor.types.ts': [
     ['  readonly onSubmit?: (alternate: boolean) => void;\n}', [
@@ -146,109 +137,11 @@ export const mobileComposerEdits = {
       '    readonly base?: readonly [number, number, number, number];',
       '    readonly runs: ReadonlyArray<{ readonly start: number; readonly end: number; readonly color: readonly [number, number, number, number] }>;',
       '  } | null;',
-      '  /** Rubato (iOS): the text\'s full height, for a field that grows with it. */',
-      '  readonly onTextHeightChange?: (size: { readonly width: number; readonly height: number }) => void;',
       '}',
     ].join('\n'), 'replace'],
-  ],
-  'packages/client-runtime/src/voice-input/controller.ts': [
-    ['  const usesEnglishSpacing = normalizedLocale === "en" || normalizedLocale.startsWith("en-");', [
-      '  // Rubato: Korean separates words with spaces too; T3 joined dictation onto the word before it.',
-      '  const usesEnglishSpacing =',
-      '    normalizedLocale === "en" ||',
-      '    normalizedLocale.startsWith("en-") ||',
-      '    normalizedLocale === "ko" ||',
-      '    normalizedLocale.startsWith("ko-");',
-    ].join('\n'), 'replace'],
-    ['      /[A-Za-z0-9.!?,:;)\\]}\'"]/.test(left) &&', '      /[A-Za-z0-9.!?,:;)\\]}\'"가-힣]/.test(left) &&', 'replace'],
-    ['      /[A-Za-z0-9([{\'"]/.test(right) &&', '      /[A-Za-z0-9([{\'"가-힣]/.test(right) &&', 'replace'],
   ],
   'packages/client-runtime/src/voice-input/index.ts': [
     ['export {\n  VoiceTranscriptionError,\n',
       'export {\n  liveDictationDisplay,\n  type LiveDictationDisplay,\n  type LiveDictationRun,\n} from "./rubatoLiveDictationDisplay.ts";\n'],
-  ],
-  'apps/mobile/src/features/threads/ThreadComposer.tsx': [
-    ['import { useVoiceInputController } from "../voice-input/useVoiceInputController";\n',
-      'import { RubatoComposerField } from "../rubato-voice/RubatoComposerField";\nimport { RubatoDictationStrip, RubatoDictationToolbar } from "../rubato-voice/RubatoDictationStrip";\n'],
-    // ChatGPT's dictation row (RubatoDictationStrip) in place of T3's flipping toolbar and its
-    // cancel, waveform, time and confirm.
-    ['            <ComposerDictationToolbar\n              showsDictation={isVoiceInputPresented}',
-      '            <RubatoDictationToolbar\n              showsDictation={isVoiceInputPresented}', 'replace'],
-    ['                </View>\n              </ComposerToolbarRow>\n            </ComposerDictationToolbar>',
-      '                </View>\n                )}\n              </ComposerToolbarRow>\n            </RubatoDictationToolbar>', 'replace'],
-    ['                <View className="shrink-0 flex-row items-center">\n                  <ComposerDictationPrimaryAction',
-      '                {isVoiceInputPresented ? null : (\n                <View className="shrink-0 flex-row items-center">\n                  <ComposerDictationPrimaryAction', 'replace'],
-    [[
-      '                <ComposerDictationCancelAction',
-      '                  presentation={voicePresentation}',
-      '                  onCancel={voiceInput.cancel}',
-      '                />',
-      '                {isVoiceInputPresented ? (',
-      '                  <ComposerDictationStatus',
-      '                    audioLevels={voiceInput.audioLevels}',
-      '                    elapsedSeconds={voiceInput.elapsedSeconds}',
-      '                    phase={voiceInput.state.phase}',
-      '                    presentation={voicePresentation}',
-      '                    onDismissError={voiceInput.cancel}',
-      '                  />',
-      '                ) : (',
-    ].join('\n'), [
-      '                {isVoiceInputPresented ? (',
-      '                  <RubatoDictationStrip',
-      '                    state={voiceInput.state}',
-      '                    presentation={voicePresentation}',
-      '                    audioLevels={voiceInput.audioLevels}',
-      '                    elapsedSeconds={voiceInput.elapsedSeconds}',
-      '                    onCancel={voiceInput.cancel}',
-      '                    onStop={() => void voiceInput.stop()}',
-      '                    trailing={',
-      '                      showStopAction ? (',
-      '                        <ComposerActionButton',
-      '                          accessibilityLabel="Stop agent"',
-      '                          icon="stop.fill"',
-      '                          variant="danger"',
-      '                          disabled={!props.canOperateThread}',
-      '                          onPress={props.onStopThread}',
-      '                        />',
-      '                      ) : voicePresentation.showsSend ? (',
-      '                        <SendActionButton',
-      '                          accessibilityLabel={sendBlockedReason ?? sendLabel}',
-      '                          presentation={sendPresentation}',
-      '                          disabled={!canSend}',
-      '                          onSend={handleSend}',
-      '                        />',
-      '                      ) : null',
-      '                    }',
-      '                  />',
-      '                ) : (',
-    ].join('\n'), 'replace'],
-    ['  const isExpanded = isFocused || settingsSheetPresentation.keepsComposerExpanded;', [
-      '  // Rubato: dictation opens the card, so the words it hears are written in the field.',
-      '  const isExpanded =',
-      '    isFocused || settingsSheetPresentation.keepsComposerExpanded || voiceInput.isBusy;',
-    ].join('\n'), 'replace'],
-    ['              <ComposerEditor\n                draftKey={composerDraftKey}\n', [
-      '              <RubatoComposerField',
-      '                dictating={voiceInput.isBusy}',
-      '                lineHeight={bodyText.lineHeight}',
-      '                maxLines={isExpanded ? 6 : 1}',
-      '                expand={{ sendLabel, canSend, onSend: () => void handleSend() }}',
-      '                draftKey={composerDraftKey}',
-      '',
-    ].join('\n'), 'replace'],
-    [[
-      '                style={',
-      '                  isExpanded',
-      '                    ? {',
-      '                        minHeight: 72,',
-      '                        maxHeight: 160,',
-      '                        paddingVertical: 4,',
-      '                      }',
-      '                    : {',
-      '                        height: 36,',
-      '                      }',
-      '                }',
-      '',
-    ].join('\n'), '                // Rubato: the field sizes itself to its text (RubatoComposerField).\n', 'replace'],
   ],
 };

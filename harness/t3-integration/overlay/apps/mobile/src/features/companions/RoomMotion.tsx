@@ -23,7 +23,7 @@ import Animated, {
 } from "react-native-reanimated";
 import Svg, { Circle, Defs, LinearGradient, Path, Rect, Stop } from "react-native-svg";
 
-import { SymbolView, type AppSymbolName } from "../../components/AppSymbol";
+import { SymbolView, type AppSymbolName } from "../../components/ui/AppSymbol";
 import { copy } from "./copy";
 import type { RoomTool } from "./roomModel";
 
@@ -61,7 +61,7 @@ const TOOL_SYMBOL: Record<RoomTool, AppSymbolName> = {
   search: { ios: "magnifyingglass", android: "public" },
   file: "doc.text",
   terminal: { ios: "apple.terminal", android: "terminal" },
-  other: { ios: "sparkles", android: "auto_awesome" },
+  other: { ios: "sparkles", android: "bolt" },
 };
 
 const THINKING_WIDTH = 66;

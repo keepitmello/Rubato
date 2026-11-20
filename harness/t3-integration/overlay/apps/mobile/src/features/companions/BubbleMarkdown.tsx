@@ -4,7 +4,7 @@
 import { useMemo } from "react";
 import { useWindowDimensions } from "react-native";
 
-import { useFontFamily } from "../../lib/useFontFamily";
+import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
@@ -22,8 +22,8 @@ export function BubbleMarkdown(props: {
   readonly media?: RoomMedia;
 }) {
   const theme = useUniwindTheme();
-  const regular = useFontFamily("regular");
-  const bold = useFontFamily("bold");
+  const regular = FONT_FAMILIES.regular;
+  const bold = FONT_FAMILIES.bold;
   const { width } = useWindowDimensions();
   const mine = props.mine === true;
   const textStyle = useMemo(() => {

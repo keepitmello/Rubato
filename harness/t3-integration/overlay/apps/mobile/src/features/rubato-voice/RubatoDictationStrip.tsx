@@ -20,8 +20,8 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 
-import { AppActivityIndicator } from "../../components/AppActivityIndicator";
-import { SymbolView } from "../../components/AppSymbol";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { SymbolView } from "../../components/ui/AppSymbol";
 import { ComposerDictationStatus } from "../voice-input/ComposerDictationControl";
 import type { VoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 
@@ -55,7 +55,7 @@ const crossOut: EntryExitAnimationFunction = () => {
   };
 };
 
-function WaveBar(props: { readonly history: SharedValue<number[]>; readonly index: number; readonly count: number }) {
+function WaveBar(props: { readonly history: SharedValue<ReadonlyArray<number>>; readonly index: number; readonly count: number }) {
   const { history, index, count } = props;
   const style = useAnimatedStyle(() => {
     const level = history.value[HISTORY - count + index] ?? 0;
@@ -71,10 +71,10 @@ function WaveBar(props: { readonly history: SharedValue<number[]>; readonly inde
 }
 
 /** The microphone gliding left: bars for sound, dots for quiet. `sampling` is whether it is read at all. */
-function GlidingWaveform(props: { readonly audioLevels: SharedValue<number[]>; readonly sampling: boolean }) {
+function GlidingWaveform(props: { readonly audioLevels: SharedValue<ReadonlyArray<number>>; readonly sampling: boolean }) {
   const { audioLevels } = props;
   const [count, setCount] = useState(0);
-  const history = useSharedValue<number[]>(Array<number>(HISTORY).fill(0));
+  const history = useSharedValue<ReadonlyArray<number>>(Array<number>(HISTORY).fill(0));
   const elapsed = useSharedValue(0);
   const sampling = useSharedValue(props.sampling);
   useEffect(() => {
@@ -142,7 +142,7 @@ function StopAction(props: { readonly busy: boolean; readonly disabled: boolean;
 export function RubatoDictationStrip(props: {
   readonly state: VoiceInputState;
   readonly presentation: VoiceComposerPresentation;
-  readonly audioLevels: SharedValue<number[]>;
+  readonly audioLevels: SharedValue<ReadonlyArray<number>>;
   readonly elapsedSeconds: number;
   readonly onCancel: () => void;
   readonly onStop: () => void;
@@ -170,7 +170,6 @@ export function RubatoDictationStrip(props: {
           elapsedSeconds={props.elapsedSeconds}
           phase={phase}
           presentation={props.presentation}
-          onDismissError={props.onCancel}
         />
       ) : (
         <Animated.View className="min-w-0 flex-1 flex-row items-center pl-1" entering={FadeIn.duration(200)} exiting={FadeOut.duration(160)}>

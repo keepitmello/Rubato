@@ -35,7 +35,15 @@ function run(t, { fail = false } = {}) {
   };
   stub('git', `[ "$3" = rev-parse ] && [ "$4" = HEAD ] && { echo ${pin}; exit 0; }; exit 0`);
   stub('node', `case "$1" in *apply.mjs) echo '{ "compatible": true }';; *) exec "${process.execPath}" "$@";; esac`);
-  stub('corepack', '[ "$2" = install ] && mkdir -p node_modules; exit 0');
+  // The fingerprint build-ios.sh pins for over-the-air updates comes from expo-updates as JSON, and
+  // prebuild writes ios/ again after the script clears it.
+  stub('corepack', `[ "$2" = install ] && mkdir -p node_modules
+[ "$3" = expo-updates ] && echo '{"hash":"stub"}'
+if [ "$3" = expo ] && [ "$4" = prebuild ]; then
+  mkdir -p ios/Rubato
+  printf '%s\\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict><key>CFBundleVersion</key><string>1</string></dict></plist>' > ios/Rubato/Info.plist
+fi
+exit 0`);
   stub('sips', 'exit 0');
   stub('pod', 'mkdir -p Pods && echo pod > Pods/LiveKitWebRTC');
   stub('xcrun', 'exit 0');

@@ -7,7 +7,6 @@
 import { mediaDevices, RTCPeerConnection } from "@livekit/react-native-webrtc";
 import {
   VoiceTranscriptionError,
-  type VoiceInputState,
   type VoiceRecorderStatus,
   type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
@@ -45,23 +44,6 @@ export function reportDictationEdits(edits: { readonly heard: ReadonlyArray<stri
   }).catch(() => {});
 }
 
-/** T3's controller shows one generic line per failure; the provider puts this one back. */
-let lastFailure: string | null = null;
-
-// The controller's own lines for a failed prepare or transcribe; other errors (microphone
-// permission, a recording that ended badly) keep their text.
-const GENERIC_LINES = new Set([
-  "Could not prepare voice transcription.",
-  "Could not transcribe this recording.",
-]);
-
-/** The voice state with the Mac's reason in place of the controller's generic line. */
-export function withMacVoiceFailure(state: VoiceInputState): VoiceInputState {
-  return state.error !== null && GENERIC_LINES.has(state.error) && lastFailure !== null
-    ? { ...state, error: lastFailure }
-    : state;
-}
-
 type MacConnection = { readonly baseUrl: string; readonly headers: Record<string, string> };
 
 /** The Mac to dictate through: the first paired one that has a bearer session. */
@@ -76,9 +58,9 @@ function pickMac(connections: ReadonlyArray<SavedRemoteConnection>): MacConnecti
   return null;
 }
 
+/** T3's controller shows a transcription error's own message, so the Mac's reason reaches the composer. */
 function failed(message: string): VoiceTranscriptionError {
-  lastFailure = message;
-  return new VoiceTranscriptionError("preparation-failed", message);
+  return new VoiceTranscriptionError({ code: "preparation-failed", message });
 }
 
 /**
@@ -127,11 +109,6 @@ export function createMacLiveDictation(
       for (const listener of dictatedListeners) listener(text);
     },
   );
-  const transcriber: VoiceTranscriber = {
-    prepare: async (options) => {
-      lastFailure = null;
-      return live.transcriber.prepare(options);
-    },
-  };
+  const transcriber: VoiceTranscriber = live.transcriber;
   return { recorder: live.recorder, transcriber, deleteRecording: live.deleteRecording, warm: live.warm };
 }

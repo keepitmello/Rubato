@@ -4,7 +4,7 @@
 // harness/companion). A room's thread is the companion's current conversation; asking for it with
 // `current` also takes it out of the archive on the Mac.
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { useEnvironments } from "../../state/environments";
 import { RubatoCall } from "../../../modules/rubato-call";
@@ -210,7 +210,7 @@ export function useCompanions() {
     return () => clearInterval(timer);
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `key` stands for the id list.
   }, [key, waiting]);
-  const refresh = useCallback(() => refreshCompanions(environmentIds), [key]);
+  const refresh = () => refreshCompanions(environmentIds);
   return { ...current, paired: environmentIds.length > 0, refresh };
 }
 

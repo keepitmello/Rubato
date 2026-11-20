@@ -8,6 +8,8 @@
 //   phone ── grant ──────────▶ Mac     POST /rubato/push/register (the paired bearer session)
 //   phone ── revoke ─────────▶ relay   DELETE /v1/devices/:id/grants/:grantId
 
+import * as Schema from "effect/Schema";
+
 export type ApsEnvironment = "sandbox" | "production";
 
 /** What the phone wants to hear about; each paired Mac sends nothing of a kind turned off. */
@@ -63,11 +65,12 @@ export interface PushSyncInput {
   readonly connections: ReadonlyArray<MacConnection>;
 }
 
-class RelayRefused extends Error {
-  constructor(readonly status: number) {
-    super(`relay answered ${status}`);
-  }
-}
+class RelayRefused extends Schema.TaggedError<RelayRefused>()("RelayRefused", {
+  status: Schema.Number,
+  message: Schema.String,
+}) {}
+
+const isRelayRefused = Schema.is(RelayRefused);
 
 const trimSlash = (url: string) => url.replace(/\/+$/, "");
 
@@ -85,7 +88,7 @@ async function call<T>(
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
-  if (!response.ok) throw new RelayRefused(response.status);
+  if (!response.ok) throw new RelayRefused({ status: response.status, message: `relay answered ${response.status}` });
   return (await response.json().catch(() => ({}))) as T;
 }
 
@@ -133,7 +136,7 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
       await deps.save(state);
     } catch (error) {
       // The relay no longer knows this phone: start over, and every Mac gets a fresh grant.
-      if (!(error instanceof RelayRefused && error.status === 401)) throw error;
+      if (!(isRelayRefused(error) && error.status === 401)) throw error;
       state = null;
     }
   }

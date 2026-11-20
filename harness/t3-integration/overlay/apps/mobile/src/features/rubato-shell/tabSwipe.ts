@@ -2,7 +2,7 @@
 // does (shell-edits.mjs wraps WorkspaceRootScreen's content in WorkspaceTabSwipe). The pan only
 // wakes toward a tab that exists: on Threads, a leftward drag stays the thread row's (its swipe
 // actions open from the right), and only a rightward drag goes back to Companions.
-import type { WorkspaceTab } from "../workspace/workspace-tabs-state";
+import type { WorkspaceTab } from "../layout/workspace/workspace-tabs-state";
 
 /** The tab bar's order (WorkspaceNativeTabs.ios.tsx): a leftward swipe goes to the next one. */
 export const SWIPE_TABS: readonly WorkspaceTab[] = ["companions", "threads"];

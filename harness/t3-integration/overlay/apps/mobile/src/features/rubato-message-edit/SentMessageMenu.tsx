@@ -7,9 +7,9 @@ import type { ReactElement } from "react";
 import { Pressable, View, type StyleProp, type ViewStyle } from "react-native";
 import Animated, { FadeInDown, FadeOut } from "react-native-reanimated";
 
-import { SymbolView } from "../../components/AppSymbol";
-import { AppText as Text } from "../../components/AppText";
-import { ControlPillMenu } from "../../components/ControlPill";
+import { SymbolView } from "../../components/ui/AppSymbol";
+import { AppText as Text } from "../../components/ui/AppText";
+import { Menu } from "../../components/ui/Menu";
 import { copyTextWithHaptic } from "../../lib/copyTextWithHaptic";
 import { beginSentMessageEdit, cancelSentMessageEdit, editableText, sentMessageEditsAtom } from "./sentMessageEdit";
 import type { MessageId } from "@t3tools/contracts";
@@ -45,7 +45,7 @@ export function SentMessageMenu(props: {
     { id: "copy", title: props.labels.copy, image: "doc.on.doc" },
   ];
   return (
-    <ControlPillMenu
+    <Menu
       style={props.style}
       actions={actions}
       shouldOpenOnLongPress
@@ -55,9 +55,9 @@ export function SentMessageMenu(props: {
         else if (nativeEvent.event === "copy") copyTextWithHaptic(editableText(props.message.text));
       }}
     >
-      {/* The menu reads its child's touches; a bubble that is a plain view gets a pressable shell. */}
-      <Pressable style={props.contentStyle}>{props.children}</Pressable>
-    </ControlPillMenu>
+      {/* The long press is the native menu's own; the bubble keeps its links and text selection. */}
+      <View style={props.contentStyle}>{props.children}</View>
+    </Menu>
   );
 }
 

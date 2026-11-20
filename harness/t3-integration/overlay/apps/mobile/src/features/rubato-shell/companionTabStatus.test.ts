@@ -15,12 +15,13 @@ const connected: WorkspaceState = {
   networkStatus: "online",
   hasLoadedShellSnapshot: true,
   hasPendingShellSnapshot: false,
+  hasSyncingConnectedEnvironment: false,
   shellSnapshotError: null,
 };
 
 describe("withoutThreadSync", () => {
   it("drops the thread sync that the threads tab shows", () => {
-    const syncing = { ...connected, hasPendingShellSnapshot: true };
+    const syncing = { ...connected, hasPendingShellSnapshot: true, hasSyncingConnectedEnvironment: true };
     expect(workspaceConnectionStatusPresentation(syncing)?.label).toBe("Syncing threads...");
     expect(workspaceConnectionStatusPresentation(withoutThreadSync(syncing))).toBeNull();
   });
@@ -33,7 +34,12 @@ describe("withoutThreadSync", () => {
   it("keeps what is wrong with the connection", () => {
     const offline = { ...connected, networkStatus: "offline" as const, hasPendingShellSnapshot: true };
     expect(workspaceConnectionStatusPresentation(withoutThreadSync(offline))?.label).toBe("You are offline");
-    const failed = { ...connected, connectionError: "Mac unreachable", hasPendingShellSnapshot: true };
+    const failed = {
+      ...connected,
+      hasReadyEnvironment: false,
+      connectionError: "Mac unreachable",
+      hasPendingShellSnapshot: true,
+    };
     expect(workspaceConnectionStatusPresentation(withoutThreadSync(failed))?.label).toBe("Mac unreachable");
   });
 

@@ -7,8 +7,8 @@ import { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppActivityIndicator } from "../../components/AppActivityIndicator";
-import { AppText as Text } from "../../components/AppText";
+import { AppActivityIndicator } from "../../components/ui/AppActivityIndicator";
+import { AppText as Text } from "../../components/ui/AppText";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { CallSummary, callLines, MeDot } from "./CallCard";
 import { callApi } from "./callStore";

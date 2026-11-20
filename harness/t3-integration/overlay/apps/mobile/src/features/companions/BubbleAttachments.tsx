@@ -35,7 +35,7 @@ export function BubbleAttachments(props: { readonly attachments: ReadonlyArray<C
             environmentId={media.environmentId}
             attachment={attachment}
             onPressPreview={media.onPressPreview}
-            onPressVideo={media.onPressVideo}
+            onPlaybackStart={() => undefined}
           />
         ) : (
           <MessageAttachmentUnknown key={attachment.id} name={String((attachment as { name?: unknown }).name ?? "")} />

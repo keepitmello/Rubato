@@ -5,20 +5,19 @@
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
 import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { appAtomRegistry } from "../../state/atom-registry";
 import { environmentPresentations } from "../../state/presentation";
 import { environmentSession } from "../../state/session";
 
-export class RubatoRequestError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-    readonly status = 0,
-  ) {
-    super(message);
-  }
-}
+/** A Rubato route that did not answer as asked: `status` is the HTTP status, 0 when none came. */
+export class RubatoRequestError extends Schema.TaggedError<RubatoRequestError>()(
+  "RubatoRequestError",
+  { code: Schema.String, message: Schema.String, status: Schema.Number },
+) {}
+
+export const isRubatoRequestError = Schema.is(RubatoRequestError);
 
 /** Base URL and headers for a Rubato route, or null when this connection cannot reach one. */
 export function rubatoAccess(
@@ -95,7 +94,7 @@ export async function postRubato<T>(
   } = {},
 ): Promise<T> {
   const access = rubatoAccess(await awaitPrepared(environmentId, options.waitForConnectionMs ?? 0, options.signal));
-  if (!access) throw new RubatoRequestError("unavailable", "This Mac is not connected.");
+  if (!access) throw new RubatoRequestError({ code: "unavailable", message: "This Mac is not connected.", status: 0 });
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
   options.signal?.addEventListener("abort", () => controller.abort());
@@ -108,10 +107,12 @@ export async function postRubato<T>(
       signal: controller.signal,
     });
   } catch (cause) {
-    throw new RubatoRequestError(
-      "network",
-      cause instanceof Error && cause.name === "AbortError" ? "The Mac did not answer." : "Could not reach the Mac.",
-    );
+    throw new RubatoRequestError({
+      code: "network",
+      message:
+        cause instanceof Error && cause.name === "AbortError" ? "The Mac did not answer." : "Could not reach the Mac.",
+      status: 0,
+    });
   } finally {
     clearTimeout(timer);
   }
@@ -127,7 +128,7 @@ export async function postRubato<T>(
         : typeof error === "string"
           ? error
           : `The Mac answered HTTP ${response.status}.`;
-    throw new RubatoRequestError(code, message, response.status);
+    throw new RubatoRequestError({ code, message, status: response.status });
   }
   return value as T;
 }

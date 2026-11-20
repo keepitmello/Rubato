@@ -6,10 +6,10 @@ import { useEffect, useState } from "react";
 import { Alert, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { AppText as Text } from "../../components/AppText";
-import { ScreenScrollView as ScrollView } from "../../components/ScreenScrollView";
+import { AppText as Text } from "../../components/ui/AppText";
+import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { SettingsChoiceRow } from "../settings/components/SettingsChoiceRow";
+import { ListChoiceRow } from "../../components/ui/ListChoiceRow";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { companionRename, DEFAULT_COMPANION_NAMES, renameCompanion, useCompanionNames } from "./companionNames";
@@ -37,7 +37,7 @@ function CallThinkingSection(props: { readonly companion: CompanionEntry; readon
       footer={copy.callThinkingFooter}
     >
       {CALL_EFFORTS.map((effort, index) => (
-        <SettingsChoiceRow
+        <ListChoiceRow
           key={effort}
           label={EFFORT_COPY[effort].label}
           description={EFFORT_COPY[effort].detail}
