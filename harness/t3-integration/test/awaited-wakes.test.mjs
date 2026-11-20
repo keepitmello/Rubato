@@ -3,14 +3,10 @@ import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { AWAIT_TITLE, EventProjection } from '../src/events.mjs';
-import { t3Modules } from './t3-source.mjs';
 
-let decodeEvent = (value) => value;
-if (process.env.T3_SOURCE) {
-  const { ProviderRuntimeEvent } = await import(`${process.env.T3_SOURCE}/packages/contracts/src/providerRuntime.ts`);
-  const Schema = await t3Modules(process.env.T3_SOURCE).effect('Schema');
-  decodeEvent = Schema.decodeUnknownSync(ProviderRuntimeEvent);
-}
+// On T3's V2 orchestrator these records feed only the session-state fold (session-state.mjs);
+// T3 itself reads the Pi stream through upstream's adapter, so no T3 schema decodes them.
+const decodeEvent = (value) => value;
 const until = async (predicate) => { for (let i = 0; i < 300; i++) { if (predicate()) return; await delay(5); } throw new Error('Condition did not settle'); };
 const timings = { pollMs: 10, graceMs: 40 };
 

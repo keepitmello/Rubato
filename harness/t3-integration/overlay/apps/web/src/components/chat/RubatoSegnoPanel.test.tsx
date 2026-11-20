@@ -61,7 +61,6 @@ const { RubatoSegnoPanel, openQuestionCount } = await import("./RubatoSegnoPanel
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(() => {
-  // @ts-expect-error React's act environment flag
   globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   sent.calls = [];
   sent.prompts = [];

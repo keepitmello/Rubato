@@ -7,6 +7,7 @@ import {
   type VoiceTranscriptionOptions,
 } from "@t3tools/client-runtime/voice-input";
 import { createLiveDictation } from "@t3tools/shared/rubatoLiveDictation";
+import * as Schema from "effect/Schema";
 
 import { rubatoHttpAccess, type RubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
@@ -31,17 +32,17 @@ const CORRECTIONS_ROUTE = "/rubato/voice/corrections";
 async function resolveVoiceConnection(environmentId: EnvironmentId | null): Promise<RubatoHttpAccess> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
   if (!prepared) {
-    throw new VoiceTranscriptionError("unavailable", "This Mac is not connected.");
+    throw new VoiceTranscriptionError({ code: "unavailable", message: "This Mac is not connected." });
   }
   const access = await rubatoHttpAccess(prepared);
   if (!access) {
     // A relay connection signs every request with a DPoP proof. The voice route
     // is not part of that signed surface, so refuse rather than post the
     // recording somewhere it cannot be accepted.
-    throw new VoiceTranscriptionError(
-      "unavailable",
-      "Voice input is not available on this connection yet.",
-    );
+    throw new VoiceTranscriptionError({
+      code: "unavailable",
+      message: "Voice input is not available on this connection yet.",
+    });
   }
   return access;
 }
@@ -57,6 +58,7 @@ export interface RubatoVoiceFailure {
 }
 
 const SETTINGS_FAILURES = new WeakSet<object>();
+const isVoiceTranscriptionError = Schema.is(VoiceTranscriptionError);
 
 /** Server codes mapped to something a person can act on. Never the raw body. */
 async function failureFrom(
@@ -68,7 +70,7 @@ async function failureFrom(
   } | null;
   const code = typeof payload?.error?.code === "string" ? payload.error.code : "";
   const inSettings = (message: string) => {
-    const error = new VoiceTranscriptionError(kind, message);
+    const error = new VoiceTranscriptionError({ code: kind, message });
     SETTINGS_FAILURES.add(error);
     return error;
   };
@@ -79,9 +81,9 @@ async function failureFrom(
     return inSettings("Voice input is not set up yet.");
   }
   if (response.status === 401 || response.status === 403) {
-    return new VoiceTranscriptionError(kind, "This window is not allowed to use voice input.");
+    return new VoiceTranscriptionError({ code: kind, message: "This window is not allowed to use voice input." });
   }
-  return new VoiceTranscriptionError(kind, "The Mac could not start dictation.");
+  return new VoiceTranscriptionError({ code: kind, message: "The Mac could not start dictation." });
 }
 
 /** Reports a failure the person should read, then lets it go on to the controller. */
@@ -91,7 +93,7 @@ function reporting<T>(
   run: () => Promise<T>,
 ): Promise<T> {
   return run().catch((error: unknown) => {
-    if (error instanceof VoiceTranscriptionError && signal?.aborted !== true) {
+    if (isVoiceTranscriptionError(error) && signal?.aborted !== true) {
       onFailure?.({ message: error.message, fixInSettings: SETTINGS_FAILURES.has(error) });
     }
     throw error;
@@ -121,7 +123,9 @@ export function createRubatoLiveDictation(
           headers: connection.headers,
           signal,
         }).catch((cause: unknown) => {
-          throw new VoiceTranscriptionError("preparation-failed", "This Mac could not be reached.", {
+          throw new VoiceTranscriptionError({
+            code: "preparation-failed",
+            message: "This Mac could not be reached.",
             cause,
           });
         });
@@ -131,7 +135,7 @@ export function createRubatoLiveDictation(
           readonly callsUrl?: unknown;
         } | null;
         if (typeof payload?.clientSecret !== "string" || typeof payload.callsUrl !== "string") {
-          throw new VoiceTranscriptionError("preparation-failed", "This Mac did not open a dictation.");
+          throw new VoiceTranscriptionError({ code: "preparation-failed", message: "This Mac did not open a dictation." });
         }
         return { clientSecret: payload.clientSecret, callsUrl: payload.callsUrl };
       },
@@ -141,7 +145,7 @@ export function createRubatoLiveDictation(
         }),
       createPeer: () => new RTCPeerConnection() as never,
       fetch: (url, init) => fetch(url, init),
-      connectionFailed: (message) => new VoiceTranscriptionError("preparation-failed", message),
+      connectionFailed: (message) => new VoiceTranscriptionError({ code: "preparation-failed", message }),
     },
     onRecorderStatus,
     onDictated,

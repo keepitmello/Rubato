@@ -97,17 +97,13 @@ export function RubatoPanelComposer({
                     pendingAction={null}
                     isRunning={running && onStop !== undefined}
                     canInterrupt={running && onStop !== undefined}
-                    showPlanFollowUpPrompt={false}
-                    promptHasText={value.trim().length > 0}
                     isSendBusy={sending}
                     sendDisabledReason={null}
-                    isConnecting={false}
                     isEnvironmentUnavailable={disabled}
                     isPreparingWorktree={false}
                     hasSendableContent={sendable}
                     onPreviousPendingQuestion={ignore}
                     onInterrupt={onStop ?? ignore}
-                    onImplementPlanInNewThread={ignore}
                   />
                 </div>
               </div>

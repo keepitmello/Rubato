@@ -9,7 +9,7 @@ import { isScratchProject } from "@t3tools/client-runtime/state/projects";
 
 import { useScratchProject } from "../../hooks/useScratchProject";
 import { useSidebarProjectGroups } from "../../hooks/useSidebarProjectGroups";
-import { useThreadShells } from "../../state/entities";
+import { useDelegatedUnderParent, useThreadShells } from "../../state/entities";
 import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";
 import { useUiStateStore } from "../../uiStateStore";
 import { useRubatoProjectOrder } from "./rubatoProjectOrder";
@@ -40,11 +40,12 @@ export function useRubatoProjectList() {
     [allGroups, scratchWorkspaceRootFor, companionHomes],
   );
   const threads = useThreadShells();
+  const delegatedUnderParent = useDelegatedUnderParent();
   const localLastVisitedAt = useUiStateStore((store) => store.threadLastVisitedAtById);
   const { list, lastActivity, state, setState } = useRubatoProjectOrder(groups);
   const signals = useMemo(
-    () => signalByGroup(groups, threads, localLastVisitedAt),
-    [groups, localLastVisitedAt, threads],
+    () => signalByGroup(groups, threads, localLastVisitedAt, delegatedUnderParent),
+    [delegatedUnderParent, groups, localLastVisitedAt, threads],
   );
   const remove = useCallback((key: string) => setState(removeFromProjectList(list, key)), [list, setState]);
   const add = useCallback((key: string) => setState(addToProjectList(list, key)), [list, setState]);

@@ -25,9 +25,9 @@ test('a chat table fits the chat width and wraps its cells between words', { ski
 });
 
 test('the table footer keeps only the copy menu', { skip: !process.env.T3_SOURCE }, async () => {
-  const source = await applied('apps/web/src/components/ChatMarkdown.tsx');
-  const table = source.slice(source.indexOf('function MarkdownTable('), source.indexOf('function MarkdownDetails('));
+  // T3's own table component, which needs no Rubato edit for this.
+  const table = await applied('apps/web/src/components/chat/MarkdownTable.tsx');
   assert.doesNotMatch(table, /expanded|toggleExpanded|data-expanded/);
-  assert.match(table, /className="mt-0\.5 flex items-center justify-end select-none"/);
+  assert.match(table, /className="mt-0\.5 -mx-1 flex items-center justify-end select-none"/);
   assert.match(table, /aria-label=\{copyLabel\}/);
 });

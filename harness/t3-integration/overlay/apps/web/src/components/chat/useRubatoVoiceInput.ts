@@ -58,11 +58,6 @@ export function useRubatoVoiceInput(input: {
   const [liveDraft, setLiveDraft] = useState<RubatoVoiceDraft | null>(null);
   const latest = useRef(input);
   latest.current = input;
-  const revision = useRef(0);
-  const previousDraft = useRef<{ ownerKey: string | null; text: string }>({
-    ownerKey: null,
-    text: "",
-  });
   const liveRef = useRef<ReturnType<typeof createRubatoLiveDictation> | null>(null);
   const controllerRef = useRef<VoiceInputController | null>(null);
   const lastFailure = useRef<RubatoVoiceFailure | null>(null);
@@ -105,18 +100,10 @@ export function useRubatoVoiceInput(input: {
         const current = latest.current;
         const draft = current.readDraft();
         if (!draft || current.ownerKey === null) return null;
-        if (
-          previousDraft.current.ownerKey !== current.ownerKey ||
-          previousDraft.current.text !== draft.text
-        ) {
-          previousDraft.current = { ownerKey: current.ownerKey, text: draft.text };
-          revision.current += 1;
-        }
         return {
           ownerKey: current.ownerKey,
           text: draft.text,
           selection: { start: draft.start, end: draft.end },
-          revision: revision.current,
         };
       },
       commitDraft: (text, selection) => latest.current.commitDraft(text, selection.start),

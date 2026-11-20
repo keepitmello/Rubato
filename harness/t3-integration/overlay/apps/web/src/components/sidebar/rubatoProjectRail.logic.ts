@@ -28,6 +28,9 @@ export const RUBATO_QUIET_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
 export const RUBATO_RECENT_LIMIT = 5;
 export const RUBATO_HOME_THREAD_LIMIT = 6;
 
+/** Threads T3 folds under a listed parent (useDelegatedUnderParent); none by default. */
+const NO_DELEGATED: ReadonlySet<string> = new Set();
+
 export interface RubatoProjectListState {
   /** The listed projects in the user's order; null until the first edit. */
   readonly order: readonly string[] | null;
@@ -305,10 +308,11 @@ export function signalByGroup(
   groups: readonly RubatoGroupLike[],
   threads: readonly ThreadShell[],
   localLastVisitedAtByKey: Readonly<Record<string, string>>,
+  delegatedUnderParent: ReadonlySet<string> = NO_DELEGATED,
 ): Map<string, RubatoSignal> {
   const byMember = groupKeyByMember(groups);
   const signals = new Map<string, RubatoSignal>();
-  for (const thread of filterSidebarV2VisibleThreads(threads, null)) {
+  for (const thread of filterSidebarV2VisibleThreads(threads, null, delegatedUnderParent)) {
     const key = byMember.get(`${thread.environmentId}:${thread.projectId}`);
     if (key === undefined) continue;
     const signal = resolveThreadSignal(thread, localLastVisitedAtByKey[threadKeyOf(thread)]);
@@ -332,9 +336,14 @@ export function selectRecentThreads(input: {
   readonly returnedAt: ((thread: ThreadShell) => number | undefined) | undefined;
   readonly now: string;
   readonly limit?: number;
+  readonly delegatedUnderParent?: ReadonlySet<string>;
 }): ThreadShell[] {
   const inbox: ThreadShell[] = [];
-  for (const thread of filterSidebarV2VisibleThreads(input.threads, null)) {
+  for (const thread of filterSidebarV2VisibleThreads(
+    input.threads,
+    null,
+    input.delegatedUnderParent ?? NO_DELEGATED,
+  )) {
     const section = resolveSidebarThreadSection({
       snoozed: input.supportsSnooze(thread) && effectiveSnoozed(thread, { now: input.now }),
       settled: input.supportsSettlement(thread) && thread.settledOverride === "settled",
@@ -359,10 +368,15 @@ export function selectHomeThreads(input: {
   readonly threads: readonly ThreadShell[];
   readonly group: RubatoGroupLike | null;
   readonly limit?: number;
+  readonly delegatedUnderParent?: ReadonlySet<string>;
 }): ThreadShell[] {
   const members =
     input.group === null ? null : new Set(input.group.memberProjectRefs.map(memberKey));
-  return filterSidebarV2VisibleThreads(input.threads, members)
+  return filterSidebarV2VisibleThreads(
+    input.threads,
+    members,
+    input.delegatedUnderParent ?? NO_DELEGATED,
+  )
     .toSorted((a, b) => threadActivityMs(b) - threadActivityMs(a))
     .slice(0, input.limit ?? RUBATO_HOME_THREAD_LIMIT);
 }
@@ -395,8 +409,12 @@ export function withoutHiddenProjects<T extends ThreadShell>(
 export function homeFilterProjects<G extends RubatoGroupLike>(
   groups: readonly G[],
   threads: readonly ThreadShell[],
+  delegatedUnderParent: ReadonlySet<string> = NO_DELEGATED,
 ): G[] {
-  const latest = lastActivityByGroup(groups, filterSidebarV2VisibleThreads(threads, null));
+  const latest = lastActivityByGroup(
+    groups,
+    filterSidebarV2VisibleThreads(threads, null, delegatedUnderParent),
+  );
   return groups
     .filter((group) => latest.has(group.projectKey))
     .toSorted((a, b) => (latest.get(b.projectKey) ?? 0) - (latest.get(a.projectKey) ?? 0));

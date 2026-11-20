@@ -1,9 +1,8 @@
 // Rubato: one picker instance (Rubato) carries models from many vendors, so a model
 // row and the closed trigger show that model's vendor glyph and name instead of the
 // instance's. Grok and OpenCode glyphs ship as plain data in their provider packages.
-import type { ProviderDriverKind } from "@t3tools/contracts";
-import { grokClient } from "@t3tools/provider-grok/client";
-import { openCodeClient } from "@t3tools/provider-opencode/client";
+import { providerClients } from "@t3tools/client-runtime/provider-clients";
+import { ProviderDriverKind } from "@t3tools/contracts";
 import type { SVGProps } from "react";
 import { AntigravityIcon, ClaudeAI, CursorIcon, type Icon, KiroIcon, OpenAI } from "../Icons";
 import { DeepSeekIcon } from "../DeepSeekIcon";
@@ -14,12 +13,13 @@ import { ZhipuIcon } from "../ZhipuIcon";
 import type { ModelEsque } from "./providerIconUtils";
 import { ProviderPackageIcon } from "./ProviderPackageIcon";
 
-const GrokIcon: Icon = (props: SVGProps<SVGSVGElement>) => (
-  <ProviderPackageIcon icon={grokClient.icon} {...props} />
-);
-const OpenCodeIcon: Icon = (props: SVGProps<SVGSVGElement>) => (
-  <ProviderPackageIcon icon={openCodeClient.icon} {...props} />
-);
+function packageIcon(driverKind: string): Icon {
+  const icon = providerClients.get(ProviderDriverKind.make(driverKind))?.icon;
+  return (props: SVGProps<SVGSVGElement>) =>
+    icon ? <ProviderPackageIcon icon={icon} {...props} /> : <RubatoIcon {...props} />;
+}
+const GrokIcon = packageIcon("grok");
+const OpenCodeIcon = packageIcon("opencode");
 
 const VENDOR_ICONS: Record<string, Icon> = {
   "openai-codex": OpenAI,

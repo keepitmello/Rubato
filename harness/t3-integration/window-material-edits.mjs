@@ -221,7 +221,6 @@ export const windowMaterialEdits = {
         'function RootRouteView() {',
         '  // Rubato: the window material follows the saved setting (window-material-edits.mjs).',
         '  useRubatoWindowMaterialSync();',
-        '  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);',
         '',
       ].join('\n'),
       'replace',

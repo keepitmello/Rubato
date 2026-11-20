@@ -69,8 +69,7 @@ export const floatingMenuEdits = {
         'import type { AgentPanelModel } from "../rubatoAgentPanelModel";')],
     ['  onDeleteProjectScript: (scriptId: string) => Promise<ProjectScriptActionResult>;\n  usage: ThreadDetailsUsageInput;\n}\n',
       lines(
-        '  /** Rubato: what runs for this thread, for the Team and Agents sections (floating-menu-edits.mjs). */',
-        '  usage: ThreadDetailsUsageInput;',
+        '  /** Rubato: what runs for this thread, for the Agents section (floating-menu-edits.mjs). */',
         '  rubatoAgents?: AgentPanelModel | undefined;')],
     ['                    {show.scripts && props.activeProjectScripts ? (\n',
       lines(

@@ -33,13 +33,16 @@ test('the polish stays off :has(), which re-ran style on every streamed message'
 
 test('the polish loads with the app styles', { skip: !process.env.T3_SOURCE }, async () => {
   const index = await applied('apps/web/src/index.css');
-  assert.match(index, /^@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n/);
+  // T3 declares its layer order (a comment, then @layer) ahead of the first import.
+  assert.match(index, /^(?:\/\*[^\n]*\*\/\n)?(?:@layer [^;\n]+;\n)?@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n/);
 });
 
 test('thread details stay hidden instead of covering the chat, and the button says why', { skip: !process.env.T3_SOURCE }, async () => {
   // With no room beside the chat T3 floated the card over it as a popover.
   const card = await applied('apps/web/src/components/chat/ThreadDetailsCard.tsx');
-  assert.doesNotMatch(card, /<PopoverPopup\b/);
+  // T3 keeps the popup in the tree in both modes (base-ui needs it to close cleanly); it never opens.
+  assert.match(card, /<Popover\n\s+handle=\{handle\}\n[^]*?\n\s+open=\{false\}\n/);
+  assert.doesNotMatch(card, /open=\{(?!false\})/);
   assert.match(card, /data-rubato-popover-caret/);
 
   const controls = await applied('apps/web/src/components/chat/PanelLayoutControls.tsx');
@@ -51,7 +54,7 @@ test('thread details stay hidden instead of covering the chat, and the button sa
 
 test('"Open a surface" fills the right panel with larger rows', { skip: !process.env.T3_SOURCE }, async () => {
   const tabs = await applied('apps/web/src/components/RightPanelTabs.tsx');
-  const launcher = tabs.slice(tabs.indexOf('aria-label="Open a surface"'), tabs.indexOf('function surfaceTitle('));
+  const launcher = tabs.slice(tabs.indexOf('aria-label={gt("Open a surface")}'), tabs.indexOf('function surfaceTitle('));
   assert.match(launcher, /max-w-md/);
   assert.doesNotMatch(launcher, /max-w-xs/);
   // Available and unavailable rows share one size.
@@ -60,9 +63,10 @@ test('"Open a surface" fills the right panel with larger rows', { skip: !process
 });
 
 test('an unsent draft keeps the normal sidebar row instead of a warning-yellow box', { skip: !process.env.T3_SOURCE }, async () => {
-  const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
-  const surface = /const draftSurfaceClassName = "([^"]*)";/.exec(sidebar)?.[1];
-  const pen = /const draftPenClassName = "([^"]*)";/.exec(sidebar)?.[1];
+  // T3 dropped its warning-yellow draft box itself; the row classes live beside the thread row.
+  const row = await applied('apps/web/src/components/sidebar/SidebarThreadRow.tsx');
+  const surface = /export const draftSurfaceClassName = "([^"]*)";/.exec(row)?.[1];
+  const pen = /export const draftPenClassName = "([^"]*)";/.exec(row)?.[1];
   assert.ok(surface !== undefined && pen !== undefined, 'draft row classes not found');
   assert.doesNotMatch(`${surface} ${pen}`, /warning/);
   assert.match(surface, /hover:bg-sidebar-row-hover/);
@@ -70,15 +74,16 @@ test('an unsent draft keeps the normal sidebar row instead of a warning-yellow b
 
 test('sidebar cards stay readable over the see-through material', { skip: !process.env.T3_SOURCE }, async () => {
   const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
-  // A read or background thread's card title sits one step below an unread one.
-  const card = sidebar.slice(sidebar.indexOf('variant === "card"'), sidebar.indexOf('isRegeneratingTitle && "opacity-55"'));
-  assert.match(card, /shouldRecede\n\s+\? "text-foreground\/80"\n\s+: isUnread \|\| isWoke \|\| status === "input"\n\s+\? "text-foreground"/);
-  assert.doesNotMatch(card, /\? "text-secondary-label"\n/);
+  const row = await applied('apps/web/src/components/sidebar/SidebarThreadRow.tsx');
+  // A read or background thread's title sits one step below an unread one, never at the
+  // secondary label's gray (T3's own /75, back to full on hover and focus).
+  const title = row.slice(row.indexOf('variant !== "slim"'), row.indexOf('dir={textDirection(thread.title)}'));
+  assert.match(title, /variant !== "slim"\n\s+\? cn\(\n\s+"truncate",\n\s+shouldRecede\n\s+\? "text-foreground\/75 group-hover\/sidebar-row:text-foreground/);
   // A working row no longer fades as a whole.
-  assert.doesNotMatch(sidebar, /status === "working" &&\n\s+"opacity-70/);
+  assert.doesNotMatch(row, /status === "working" &&\n\s+"opacity-70/);
   // The default branch goes unnamed; the third line and its model logo stay.
-  assert.match(sidebar, /\{thread\.branch && !isDefaultBranchName\(thread\.branch\) \? \(\n\s+<>\n\s+<ThreadWorktreeIndicator/);
-  assert.match(sidebar, /<SidebarProviderStack\n/);
+  assert.match(row, /\{checkoutThread\.branch && !isDefaultBranchName\(checkoutThread\.branch\) \? \(\n\s+<>\n\s+<ThreadWorktreeIndicator/);
+  assert.match(row, /<SidebarProviderStack\n/);
   // The header carries the marker the New thread rule in rubatoPolish.css selects on.
   assert.match(sidebar, /<SidebarGroup className="z-\[1\]" data-rubato-thread-header>\n\s+<SidebarThreadHeader\n/);
 });

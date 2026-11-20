@@ -56,7 +56,7 @@ export const sessionPromptEdits = {
       'import { rubatoSessionPromptAvailable } from "./RubatoSessionPrompt";\n'],
     ['  readonly modelMentions: {\n',
       '  readonly draftId: DraftId | null;\n  readonly selectedProviderInstanceId: ProviderInstanceId | null;\n'],
-    ['}) {\n  const gt = useGT();\n',
+    ['  modelMentions,\n}: {\n',
       '  draftId,\n  selectedProviderInstanceId,\n'],
     ['      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;\n', [
       '        ...(rubatoSessionPromptAvailable(environmentId, draftId, selectedProviderInstanceId)',

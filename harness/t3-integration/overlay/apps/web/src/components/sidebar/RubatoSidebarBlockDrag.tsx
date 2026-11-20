@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent, type RefObject } from "react";
 import { createPortal } from "react-dom";
 
-import { useClientSettings, useUpdateClientSettings } from "../../hooks/useSettings";
+import { updateClientSettings, useClientSettings } from "../../hooks/useSettings";
 import {
   SIDEBAR_BLOCK_HEAD_TEST_IDS,
   moveSidebarBlock,
@@ -49,7 +49,6 @@ function measureBlocks(list: HTMLElement) {
 
 export function useRubatoSidebarBlocks(listRef: RefObject<HTMLElement | null>) {
   const stored = useClientSettings((settings) => settings.rubatoSidebarBlocks);
-  const updateClientSettings = useUpdateClientSettings();
   const order = resolveSidebarBlockOrder(stored);
   const orderRef = useRef(order);
   orderRef.current = order;
@@ -131,7 +130,7 @@ export function useRubatoSidebarBlocks(listRef: RefObject<HTMLElement | null>) {
       window.addEventListener("pointercancel", cancel, true);
       window.addEventListener("keydown", key, true);
     },
-    [listRef, updateClientSettings],
+    [listRef],
   );
 
   const overlay =

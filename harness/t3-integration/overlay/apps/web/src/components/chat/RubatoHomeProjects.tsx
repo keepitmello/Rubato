@@ -45,7 +45,7 @@ import { useClientSettings } from "~/hooks/useSettings";
 import { readLocalApi } from "~/localApi";
 import { cn } from "~/lib/utils";
 import { buildSidebarProjectPickerEntries, type SidebarProjectSnapshot } from "~/sidebarProjectGrouping";
-import { useProjects } from "~/state/entities";
+import { useDelegatedUnderParent, useProjects } from "~/state/entities";
 import { useEnvironments } from "~/state/environments";
 import { useUiStateStore } from "~/uiStateStore";
 import { RubatoThreadLine } from "../sidebar/RubatoThreadLine";
@@ -251,9 +251,10 @@ function RubatoHomeProjectsRow(props: {
     () => new Map(projects.map((project) => [`${project.environmentId}:${project.id}`, project] as const)),
     [projects],
   );
+  const delegatedUnderParent = useDelegatedUnderParent();
   const homeThreads = useMemo(
-    () => selectHomeThreads({ threads, group: activeGroup }),
-    [activeGroup, threads],
+    () => selectHomeThreads({ threads, group: activeGroup, delegatedUnderParent }),
+    [activeGroup, delegatedUnderParent, threads],
   );
 
   // Paging: the row scrolls sideways, the arrows move it by most of a view.

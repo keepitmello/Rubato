@@ -195,11 +195,14 @@ test('Liquid Glass ships as a macOS-only optional dependency, locked', { skip: !
 
 test('the web app marks the live material and imports its CSS after the polish', { skip: !process.env.T3_SOURCE }, async () => {
   const index = await applied('apps/web/src/index.css');
-  assert.match(index, /^@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n@import "\.\/rubatoWindowMaterial\.css";\n/);
-  assert.match(await applied('apps/web/src/routes/__root.tsx'), /function GlassAppearanceSync\(\) \{\n  useRubatoWindowMaterialSync\(\);/);
-  assert.match(await applied('apps/web/src/components/settings/SettingsPanels.tsx'), /<SidebarMaterialSettingsRow \/>/);
+  // T3 declares its layer order (a comment, then @layer) ahead of the first import.
+  assert.match(index, /^(?:\/\*[^\n]*\*\/\n)?(?:@layer [^;\n]+;\n)?@import "tailwindcss";\n@import "\.\/rubatoPolish\.css";\n@import "\.\/rubatoWindowMaterial\.css";\n/);
+  // The root route view wraps every branch, the welcome flow included.
+  assert.match(await applied('apps/web/src/routes/__root.tsx'), /function RootRouteView\(\) \{\n  \/\/ Rubato:[^\n]*\n  useRubatoWindowMaterialSync\(\);\n/);
+  assert.match(await applied('apps/web/src/components/settings/AppearanceSettingsPanel.tsx'), /<SidebarMaterialSettingsRow \/>/);
   const shell = await applied('apps/web/src/components/preview/PreviewPanelShell.tsx');
-  assert.match(shell, /const hostRef = props\.hostRef \?\? localHostRef;\n  useRubatoInlinePanelMarkers\(hostRef, isInline\);/);
+  // T3's panel host ref, filled by the host element's ref callback.
+  assert.match(shell, /const hostRef = useRef<HTMLDivElement \| null>\(null\);\n  useRubatoInlinePanelMarkers\(hostRef, isInline\);/);
   const search = await applied('apps/web/src/components/settings/settingsSearch.ts');
   assert.match(search, /id: "sidebar-material",\n    title: "Sidebar material",[\s\S]*?desktopOnly: true,\n    macOnly: true,/);
 });

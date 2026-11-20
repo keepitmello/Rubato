@@ -27,7 +27,7 @@ export const timelineRailEdits = {
     ['  const minimapItems = deriveTimelineMinimapItems(rows);\n',
       '  const minimapItems = deriveTimelineMinimapItems(rows);\n'
         + '  // Rubato: each mark\'s time, so the rail names the days (timeline-rail-edits.mjs).\n'
-        + '  const rubatoMinimapTimes = useMemo(() => rubatoTimelineItemTimes(rows, minimapItems), [rows, minimapItems]);\n',
+        + '  const rubatoMinimapTimes = rubatoTimelineItemTimes(rows, minimapItems);\n',
       'replace'],
     ['            <TimelineMinimap\n              items={minimapItems}\n',
       '            <RubatoTimelineRail\n              items={minimapItems}\n              times={rubatoMinimapTimes}\n',

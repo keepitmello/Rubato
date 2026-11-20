@@ -218,5 +218,11 @@ export const polishEdits = {
       '"flex h-10 w-full cursor-pointer items-center gap-3 rounded-(--control-radius) px-3 text-left text-[0.9375rem] transition-colors group-hover:bg-accent/60",\n                    isHighlighted(action) && "bg-accent/60",\n                  )}\n                >\n                  {actionIcon(action, "size-[1.125rem]")}\n',
       'replace',
     ],
+    // Unavailable rows match the available ones (the group divider class comes from surface-menu-edits.mjs).
+    [
+      '"flex h-8 w-full cursor-default items-center gap-2.5 rounded-(--control-radius) px-2.5 text-left text-sm opacity-50",\n                      surfaceGroupStartClass(actions, index),\n                    )}\n                  >\n                    {actionIcon(action, "size-4")}\n',
+      '"flex h-10 w-full cursor-default items-center gap-3 rounded-(--control-radius) px-3 text-left text-[0.9375rem] opacity-50",\n                      surfaceGroupStartClass(actions, index),\n                    )}\n                  >\n                    {actionIcon(action, "size-[1.125rem]")}\n',
+      'replace',
+    ],
   ],
 };

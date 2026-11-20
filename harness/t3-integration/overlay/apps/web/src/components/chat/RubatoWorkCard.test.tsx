@@ -65,7 +65,6 @@ describe("the work card", () => {
 
 describe("finding the launched thread", () => {
   it("drops the thread it found once the card shows another conversation or environment", async () => {
-    // @ts-expect-error React's act environment flag
     globalThis.IS_REACT_ACT_ENVIRONMENT = true;
     threads.set("E:A", "thread-A");
     const seen: Array<string | null> = [];

@@ -96,7 +96,8 @@ export const threadFoldersEdits = {
         '} from "./sidebar/rubatoThreadFolders";',
         '',
       ].join('\n')],
-    ['  // Rubato: the all-projects list without the projects the user unchecked\n',
+    // After the project scope it gives way to.
+    ['  const toggleProjectScopeKey = (key: string) =>\n',
       [
         '  // Rubato: the folder the list is narrowed to, in place of a project, and where a',
         '  // thread started meanwhile goes (thread-folders-edits.mjs).',

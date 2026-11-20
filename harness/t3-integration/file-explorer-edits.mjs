@@ -200,6 +200,9 @@ export const fileExplorerEdits = {
   ],
   'apps/web/src/components/RightPanelTabs.tsx': [
     ['  onRenameDevice?: (surfaceId: string, title: string) => void;', '  onPinFile?: (relativePath: string) => void;\n'],
+    // Each tab is its own component; double-clicking a preview tab pins it.
+    ['    canRename: boolean;\n    ownsDesktopTitleBar: boolean;\n', '    onPinFile?: ((relativePath: string) => void) | undefined;\n'],
+    ['                    onFinishRename={onFinishRenameTab}\n', '                    onPinFile={props.onPinFile}\n'],
     ['                onDoubleClick={() => {\n                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);\n                }}\n',
       '                onDoubleClick={() => {\n                  if (surface.kind === "file" && surface.preview)\n                    props.onPinFile?.(surface.relativePath);\n                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);\n                }}\n',
       'replace'],
@@ -216,13 +219,12 @@ export const fileExplorerEdits = {
       'replace'],
     ['  onRefreshSelectedFile,', '  onRefreshSelectedFile,\n  onPinFile,\n  onEntryRenamed,\n  onEntryRemoved,', 'replace'],
     ['  const entries = [...result.values()];', '  const entries = [...result.values()].filter((entry) => !isHiddenExplorerEntry(entry.path));', 'replace'],
-    ['  const searchInputRef = useRef<HTMLInputElement>(null);\n',
+    // The tree takes the explorer's rename config and the context menu its actions, so the
+    // explorer comes first and reaches the tree through a ref an effect fills, as T3 syncs its
+    // own refs (a ref written during render makes the React Compiler skip the panel).
+    ['  const showEntryContextMenu = useStableCallback(\n',
       [
-        '  const modelRef = useRef(model);',
-        '  modelRef.current = model;',
-        '  const attachExplorerPanel = useStableCallback((panel: HTMLDivElement | null) =>',
-        '    panel === null ? undefined : explorerActions.attach(panel),',
-        '  );',
+        '  const modelRef = useRef<ReturnType<typeof useFileTree>["model"] | null>(null);',
         '  const explorerActions = useFileExplorerActions({',
         '    environmentId,',
         '    cwd,',
@@ -235,6 +237,17 @@ export const fileExplorerEdits = {
         '    onEntryRenamed,',
         '    onEntryRemoved,',
         '  });',
+        '',
+      ].join('\n')],
+    ['  const searchInputRef = useRef<HTMLInputElement>(null);\n',
+      [
+        '  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- hands the tree model to the explorer actions, which only read it from event handlers',
+        '  useEffect(() => {',
+        '    modelRef.current = model;',
+        '  }, [model]);',
+        '  const attachExplorerPanel = useStableCallback((panel: HTMLDivElement | null) =>',
+        '    panel === null ? undefined : explorerActions.attach(panel),',
+        '  );',
         '',
       ].join('\n')],
     ['    paths: [],', '    renaming: explorerActions.renaming,\n'],

@@ -253,19 +253,16 @@ export const companionEdits = {
         + '  useRubatoCompanion: () => ({ status: null, threadId: null, companions: [] }),\n'
         + '}));\n'],
   ],
-  // The headline's groups come from useSortedProjectGroups (in the shared order,
-  // project-order-edits.mjs); Segno's folder leaves them here.
-  'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
-    ['  const projectGroups = useSortedProjectGroups(environmentLabelById);\n',
-      '  const rubatoSortedGroups = useSortedProjectGroups(environmentLabelById);\n'
-        + '  // Rubato: Segno\'s own folder is not offered as a project (companion-edits.mjs).\n'
-        + '  const rubatoCompanionHomes = useRubatoCompanion().companions.map((item) => item.home);\n'
-        + '  const projectGroups = rubatoSortedGroups.filter(\n'
-        + '    (group) => !rubatoCompanionHomes.some((home) => isCompanionProject(group, home)),\n'
-        + '  );\n',
+  // The palette's and the headline's project groups both come from the shared order
+  // (useRubatoSortedProjectOrder, project-order-edits.mjs); Segno's folder leaves them there.
+  'apps/web/src/components/CommandPaletteLookups.ts': [
+    ['  const projects = useProjects();\n  const projectOrder = useUiStateStore((store) => store.projectOrder);\n',
+      '  // Rubato: Segno\'s own folder is not offered as a project (companion-edits.mjs).\n'
+        + '  const projects = useWithoutCompanionProjects(useProjects());\n'
+        + '  const projectOrder = useUiStateStore((store) => store.projectOrder);\n',
       'replace'],
-    ['import { ProjectFavicon } from "../ProjectFavicon";\n',
-      'import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";\n'],
+    ['import { useRubatoProjectOrder } from "./sidebar/rubatoProjectOrder";\n',
+      'import { useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
   ],
   // Nor do the palette's project list, the first screen's draft, or a new thread started from
   // Segno's conversation ("new thread in this project" takes the default project instead).

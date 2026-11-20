@@ -130,7 +130,6 @@ export function useAgentTranscript(target: AgentTarget | null, live: boolean, re
 
 const NO_TURN_DIFFS: never[] = [];
 const NO_RUNS: never[] = [];
-const NO_PROVIDERS: never[] = [];
 const ignore = () => undefined;
 const ignoreAsync = async () => undefined;
 
@@ -240,7 +239,6 @@ export function RubatoAgentSession({
             latestRun={timeline.latestRun}
             runningRunId={timeline.runningRunId}
             isWorking={live}
-            activeTurnInProgress={live}
             activeTurnStartedAt={timeline.activeTurnStartedAt}
             turnDiffSummaries={NO_TURN_DIFFS}
             routeThreadKey={threadKey}
@@ -250,23 +248,21 @@ export function RubatoAgentSession({
             workspaceRoot={target.cwd}
             resolvedTheme={resolvedTheme}
             timestampFormat={timestampFormat}
-            providerStatuses={NO_PROVIDERS}
             runs={NO_RUNS}
             supportsConversationRollback={false}
             isRevertingCheckpoint={false}
             onOpenTurnDiff={ignore}
             onOpenThread={ignore}
             onForkFromRun={ignoreAsync}
-            onRollbackCheckpoint={ignore}
             onRevertToTurnCount={ignore}
             onImageExpand={ignore}
             anchorMessageId={null}
             onAnchorReady={ignore}
             onAnchorSizeChanged={ignore}
             contentInsetEndAdjustment={0}
+            emptyPlaceholderInset={0}
             liveFollowEnabled
             onIsAtEndChange={ignore}
-            onManualNavigation={ignore}
           />
         )}
       </div>

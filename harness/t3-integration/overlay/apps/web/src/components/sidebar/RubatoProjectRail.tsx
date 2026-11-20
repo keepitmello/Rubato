@@ -171,8 +171,12 @@ export function RubatoProjectRail() {
   const navigate = useNavigate();
   const pathname = useLocation({ select: (location) => location.pathname });
   const { open, setOpen, isMobile } = useSidebar();
-  const scopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);
-  const setScopeKey = useUiStateStore((store) => store.setSidebarProjectScopeKey);
+  // T3 scopes the list to any set of projects; the rail picks one, or all.
+  const scopeKeys = useUiStateStore((store) => store.sidebarProjectScopeKeys);
+  const setScopeKeys = useUiStateStore((store) => store.setSidebarProjectScopeKeys);
+  const scopeKey = scopeKeys.length === 1 ? (scopeKeys[0] ?? null) : null;
+  const scopedToProjects = scopeKeys.length > 0;
+  const setScopeKey = (key: string | null) => setScopeKeys(key === null ? [] : [key]);
   const pullRequestsSupported = usePullRequestsSupported();
   const scheduleSignal = useScheduleSignal();
   const { list, signals, lastActivity, remove, add, move } = useRubatoProjectList();
@@ -204,7 +208,7 @@ export function RubatoProjectRail() {
       : ([...list.listed, ...list.quiet].find((group) => group.projectKey === scopeKey) ?? null);
   const projectsSignal = strongestUrgentSignal(signals);
   const scopedFolder =
-    scopeKey === null && folderScopeId !== null ? (threadFolders.byId.get(folderScopeId) ?? null) : null;
+    !scopedToProjects && folderScopeId !== null ? (threadFolders.byId.get(folderScopeId) ?? null) : null;
   const projectsLabel = scopedGroup
     ? `Projects: ${scopedGroup.displayName} (⌘G)`
     : scopedFolder
@@ -273,7 +277,7 @@ export function RubatoProjectRail() {
       <div className="flex flex-1 flex-col items-center gap-1 px-2 pt-1">
         <RailButton
           label="All projects"
-          active={scopeKey === null && scopedFolder === null && !onRailPage}
+          active={!scopedToProjects && scopedFolder === null && !onRailPage}
           onClick={() => {
             setRubatoFolderScope(null);
             setScopeKey(null);

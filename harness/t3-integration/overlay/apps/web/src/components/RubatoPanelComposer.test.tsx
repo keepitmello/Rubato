@@ -1,5 +1,24 @@
+import type { ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vite-plus/test";
+import { describe, expect, it, vi } from "vite-plus/test";
+
+// The send button reads its labels through GT, which the app sets up at startup.
+vi.mock("gt-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("gt-react")>()),
+  useGT:
+    () =>
+    (text: string, values: Record<string, unknown> = {}) =>
+      text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
+  useMessages: () => (text: string) => text,
+  T: ({ children }: { children: ReactNode }) => children,
+  Var: ({ children }: { children: ReactNode }) => children,
+}));
+
+// No keyboard on the server render: no modifier held.
+vi.mock("../shortcutModifierState", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../shortcutModifierState")>()),
+  useShortcutModifierState: () => ({ metaKey: false, ctrlKey: false, altKey: false, shiftKey: false }),
+}));
 
 import { RubatoPanelComposer } from "./RubatoPanelComposer";
 

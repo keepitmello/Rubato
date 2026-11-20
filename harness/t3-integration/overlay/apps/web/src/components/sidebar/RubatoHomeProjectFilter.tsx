@@ -9,6 +9,7 @@ import { ListFilterIcon } from "lucide-react";
 import { useCallback, useMemo } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
+import { useDelegatedUnderParent } from "../../state/entities";
 import type { SidebarProjectSnapshot } from "../../sidebarProjectGrouping";
 import { ProjectFavicon } from "../ProjectFavicon";
 import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";
@@ -42,9 +43,10 @@ export function RubatoHomeProjectFilter(props: {
 }) {
   const { hidden, setHidden } = useRubatoHomeHiddenProjects();
   const openProjectList = useOpenRubatoProjectList();
+  const delegatedUnderParent = useDelegatedUnderParent();
   const rows = useMemo(
-    () => homeFilterProjects(props.groups, props.threads),
-    [props.groups, props.threads],
+    () => homeFilterProjects(props.groups, props.threads, delegatedUnderParent),
+    [delegatedUnderParent, props.groups, props.threads],
   );
   const narrowed = rows.some((group) => hidden.has(group.projectKey));
   const setShown = useCallback(

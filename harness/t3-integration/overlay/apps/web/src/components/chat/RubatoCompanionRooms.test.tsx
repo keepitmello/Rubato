@@ -33,14 +33,17 @@ vi.mock("../../state/rubatoCompanion", () => {
     },
   };
 });
-vi.mock("../../state/environments", () => ({ usePullRequestsSupported: () => false }));
+vi.mock("../../state/environments", () => ({
+  usePullRequestsSupported: () => false,
+  usePrimaryEnvironmentId: () => "environment-local",
+}));
 vi.mock("../../state/rubatoSchedule", () => ({
   rubatoSchedule: { revision: async () => ({ revision: 0 }), list: async () => ({ tasks: [] }) },
 }));
 vi.mock("../../state/rubatoStats", () => ({ useStatsWarmup() {} }));
 vi.mock("../../uiStateStore", () => ({
   useUiStateStore: (select: (store: unknown) => unknown) => select({
-    sidebarProjectScopeKey: null, setSidebarProjectScopeKey() {},
+    sidebarProjectScopeKeys: [], setSidebarProjectScopeKeys() {},
   }),
 }));
 vi.mock("../sidebar/rubatoProjectList", () => ({
