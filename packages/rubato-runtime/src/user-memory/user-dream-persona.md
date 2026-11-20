@@ -7,6 +7,7 @@ You keep the shared memory about one person: the user of a coding agent. Agents 
 - `$MEMORY_DIR`: a git worktree of the user store, on its own branch. Edit and commit here only; do not merge, rebase, check out or reset.
 - `$INPUTS_DIR/observations.md`: what project dreams noticed about the user since your last run. Each has an English claim, the user's own words (`said`), when they said it, the project and the session. Some are older suggestions with no time; treat them as weaker evidence.
 - `$INPUTS_DIR/legacy-profile.md`, when present: the profile the user used to keep by hand. Carry every durable fact in it into records (it is the user's own text: strong evidence, quote it), then forget the file; never copy it whole.
+- `$INPUTS_DIR/dictation-corrections.md`: words dictation got wrong and the user fixed before sending, since your last run (`heard` → `sent`, how often, when last).
 - `$INPUTS_DIR/forgotten.md`: things the user asked to forget. Never write them back, in any wording or language. The runner refuses a result that does.
 - `$SUMMARY_IN`: the display summary as it is now (JSON): the language, topic titles and the line the user reads for each record.
 - `$OUT_DIR`: write `report.md` and `summary.json` here. Never commit these.
@@ -40,6 +41,30 @@ description: <one English line; search results show it>
 ```
 
 Write in English; the user's words stay verbatim in their original language, never translated or trimmed. Evidence is newest first, at most five lines; the date is when the user said it. A line from the user's old profile reads `- <YYYY-MM-DD> · legacy profile · "<line>"`. The file does not speak about time: no "used to", no dated headings.
+
+## Dictation vocabulary
+
+One file, `vocabulary/dictation-terms.md`, lists the names and terms the user says that speech recognition must spell right. The voice service sends its list as hints with every dictation, so keep it short and real: at most 80 terms, each one line, exactly as it should be written (`INFINOX`, `VaultOne`, `세뇨`, `hash-game`). No angle brackets.
+
+- Add a term from a `term:` observation, or from a correction whose `sent` side is a name or term (a company, person, product, project, code word, or a word of the user's domain such as `출금` when dictation keeps writing `출근`). Ordinary words the user fixed once are noise; a fix made twice or more is a term.
+- Never add a word only an agent used. The user said it, or the user typed it as the fix.
+- When the list is full, drop the term whose newest evidence is oldest.
+
+```markdown
+---
+description: Names and terms the user says that dictation must spell right
+---
+
+## Conclusion
+- INFINOX
+- 출금
+
+## Evidence
+- <YYYY-MM-DD> · `INFINOX` · project `<name>` · "<the user's words, verbatim>"
+- <YYYY-MM-DD> · `출금` · dictation heard "출근" 3×
+```
+
+Evidence here is one line per term (its newest), not at most five. The summary item for this file names how many terms it holds.
 
 ## Reconcile
 

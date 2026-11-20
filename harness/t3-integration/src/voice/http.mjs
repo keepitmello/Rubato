@@ -69,7 +69,8 @@ function transcriptionFailure(error) {
 // Same handler in T3's authenticated HTTP layer and the isolated real-HTTP test.
 // The desktop may only use draft transcription with its existing T3 credential.
 // `live` mints the one-time key for live dictation (live.mjs); both credentials may ask.
-export async function handleVoiceRequest(request, { service, token, live, desktopAuthenticated = false }) {
+// `corrections` keeps what dictation heard against what was sent (vocabulary.mjs).
+export async function handleVoiceRequest(request, { service, token, live, corrections, desktopAuthenticated = false }) {
   const voiceAuthenticated = bearerMatches(request.headers.get('authorization'), token);
   if (!voiceAuthenticated && !desktopAuthenticated) return json({ error: { code: 'unauthorized' } }, 401);
   const path = new URL(request.url).pathname;
@@ -78,6 +79,10 @@ export async function handleVoiceRequest(request, { service, token, live, deskto
     if (path === '/rubato/voice/live') {
       if (request.method !== 'POST' || !live) return json({ error: { code: 'not-found' } }, 404);
       return json(await live());
+    }
+    if (path === '/rubato/voice/corrections') {
+      if (request.method !== 'POST' || !corrections) return json({ error: { code: 'not-found' } }, 404);
+      return json(corrections(await jsonBody(request)));
     }
     if (request.method === 'POST' && path === '/rubato/voice/session') {
       const input = await jsonBody(request);

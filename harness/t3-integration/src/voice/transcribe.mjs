@@ -4,11 +4,22 @@
 // 박아 두면 첫 실행에서 404가 나고, 그 404는 "설정이 비었다"와 구별되지 않는다.
 // 설정이 없으면 여기서 분명한 이름으로 실패한다.
 
-export const TRANSCRIPTION_INSTRUCTIONS = [
-  'The speaker is dictating a work message in a chat with a coding agent.',
-  'Write what was said. Do not summarize, translate, reorder or polish it.',
-  'The primary language is Korean. Keep English technical terms, product names, model names and file names in their original English spelling.',
-].join(' ');
+/** 모델이 받는 지시문. 그 사람이 말하는 언어를 넣는다 — 한국어로 고정하면 다른 사람에게 틀린 지시다. */
+export function transcriptionInstructions(languages = ['en']) {
+  return [
+    'The speaker is dictating a work message in a chat with a coding agent.',
+    'Write what was said. Do not summarize, translate, reorder or polish it.',
+    `They speak ${languageNames(languages)}. Keep technical terms, product names, model names and file names in their original spelling.`,
+  ].join(' ');
+}
+
+/** ['ko', 'en'] → "Korean and English". */
+export function languageNames(languages) {
+  let names;
+  try { names = new Intl.DisplayNames(['en'], { type: 'language' }); } catch { names = null; }
+  const list = (languages.length ? languages : ['en']).map((code) => names?.of(code) ?? code);
+  return list.length === 1 ? list[0] : `${list.slice(0, -1).join(', ')} and ${list.at(-1)}`;
+}
 
 /** 자주 나오는 이름들. 오타로 굳는 것을 줄이는 용도다. */
 export const DEFAULT_HINTS = [
@@ -16,9 +27,9 @@ export const DEFAULT_HINTS = [
   'Supabase', 'Redis', 'TypeScript', 'Node.js', 'GitHub', 'Playwright',
 ];
 
-export function buildTranscriptionPrompt({ hints = DEFAULT_HINTS, extra = null } = {}) {
+export function buildTranscriptionPrompt({ hints = DEFAULT_HINTS, extra = null, languages = ['en'] } = {}) {
   const words = transcriptionKeywords(hints);
-  const lines = [TRANSCRIPTION_INSTRUCTIONS];
+  const lines = [transcriptionInstructions(languages)];
   if (words.length) lines.push(`Spellings to prefer: ${words.join(', ')}.`);
   if (extra) lines.push(String(extra));
   return lines.join('\n');
@@ -89,7 +100,7 @@ export async function transcribeAudio({
   contentType = 'audio/mp4',
   prompt = null,
   hints = DEFAULT_HINTS,
-  languages = ['ko', 'en'],
+  languages = ['en'],
   baseUrl = 'https://api.openai.com/v1',
   timeoutMs = 120000,
 } = {}) {
@@ -106,7 +117,7 @@ export async function transcribeAudio({
   const keywords = transcriptionKeywords(hints);
   const modern = model.startsWith(LANGUAGES_ARRAY_PREFIX);
   // 새 모델은 힌트를 `keywords` 로 받으므로 프롬프트에 같은 말을 겹쳐 넣지 않는다.
-  const instructions = prompt ?? buildTranscriptionPrompt({ hints: modern ? [] : hints });
+  const instructions = prompt ?? buildTranscriptionPrompt({ hints: modern ? [] : hints, languages });
   if (instructions) form.append('prompt', instructions);
   if (languages.length) {
     appendTranscriptionFields(form, { model, languages, keywords: modern ? keywords : [] });

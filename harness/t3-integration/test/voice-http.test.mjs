@@ -47,13 +47,14 @@ test('desktop authentication is limited to draft sessions, never mobile submissi
 });
 
 test('an older model gets the singular language, the glossary, the filename and the model', async () => {
-  const result = await transcribeAudio({ apiKey: 'secret-key', model: 'whisper-1',
+  const result = await transcribeAudio({ apiKey: 'secret-key', model: 'whisper-1', languages: ['ko', 'en'],
     audio: Buffer.from('audio'), filename: 'speech.m4a', fetchImpl: async (url, options) => {
       assert.equal(url, 'https://api.openai.com/v1/audio/transcriptions');
       assert.equal(options.body.get('model'), 'whisper-1');
       assert.equal(options.body.get('language'), 'ko');
       assert.equal(options.body.get('languages'), null);
       assert.match(options.body.get('prompt'), /Rubato/);
+      assert.match(options.body.get('prompt'), /They speak Korean and English\./);
       assert.equal(options.body.get('file').name, 'speech.m4a');
       return Response.json({ text: 'Rubato 확인해줘' });
     } });
@@ -61,7 +62,7 @@ test('an older model gets the singular language, the glossary, the filename and 
 });
 
 test('gpt-transcribe gets bracketed languages and keywords, and plain text is read as the transcript', async () => {
-  const result = await transcribeAudio({ apiKey: 'secret-key', model: 'gpt-transcribe',
+  const result = await transcribeAudio({ apiKey: 'secret-key', model: 'gpt-transcribe', languages: ['ko', 'en'],
     audio: Buffer.from('audio'), fetchImpl: async (url, options) => {
       assert.equal(options.body.get('language'), null);
       assert.deepEqual(options.body.getAll('languages[]'), ['ko', 'en']);

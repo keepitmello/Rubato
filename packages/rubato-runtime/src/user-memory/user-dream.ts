@@ -32,7 +32,7 @@ import {
 } from "../dream/runner"
 import { resurrections } from "./guard"
 import { blockingTombstone, readLedger, type Ledger } from "./ledger"
-import { collectPending, consumeInputs, hasPending, readInputsLedger, recordFailure, type Observation, type PendingInputs } from "./observations"
+import { collectPending, consumeInputs, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
 import { listRecords } from "./records"
 import { ensureUserStore, readJsonFile, userStore, writeJsonFile, type UserStore } from "./store"
 import { mergeSummary, readSummary, writeSummary, type SummaryOut } from "./summary"
@@ -118,7 +118,7 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
     return result
   }
 
-  if (kept.length === 0 && pending.legacyProfile === undefined && options.force !== true) {
+  if (kept.length === 0 && pending.legacyProfile === undefined && pending.corrections.length === 0 && options.force !== true) {
     return finish("noop", { reason: blocked > 0 ? "everything new was something the user forgot" : "nothing new about the user" })
   }
   if (options.ladder.length === 0) return finish("failed", { reason: "no model configured in memory.dream.models" })
@@ -126,6 +126,7 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   const summaryBefore = await readSummary(store)
   await writeFile(join(inputsDir, "observations.md"), renderObservations(kept), "utf8")
   await writeFile(join(inputsDir, "forgotten.md"), renderForgotten(ledger), "utf8")
+  await writeFile(join(inputsDir, "dictation-corrections.md"), renderCorrections(pending.corrections), "utf8")
   if (pending.legacyProfile !== undefined) await writeFile(join(inputsDir, "legacy-profile.md"), `${pending.legacyProfile.text}\n`, "utf8")
   const summaryIn = join(inputsDir, "summary-in.json")
   await writeJsonFile(summaryIn, summaryBefore)
@@ -267,6 +268,7 @@ function renderObservations(list: readonly Observation[]): string {
   const lines = ["# Observations", "", "What project dreams noticed about the user. `said` is the user's own words; `when` is when they said it, checked against the session (absent when the quote could not be found there).", ""]
   list.forEach((entry, index) => {
     lines.push(`## ${index + 1}`, `- claim: ${entry.claim}`)
+    if (entry.term !== undefined) lines.push(`- term: ${entry.term}`)
     if (entry.quote !== undefined) lines.push(`- said: "${entry.quote}"`)
     if (entry.at !== undefined) lines.push(`- when: ${entry.at}`)
     if (entry.project !== undefined) lines.push(`- project: ${entry.project}`)
@@ -275,6 +277,26 @@ function renderObservations(list: readonly Observation[]): string {
     lines.push("")
   })
   return `${lines.join("\n")}\n`
+}
+
+/** The same fix made more than once counts once, with how often and when last. */
+function renderCorrections(list: readonly Correction[]): string {
+  if (list.length === 0) return "# Dictation corrections\n\nNone this time.\n"
+  const merged = new Map<string, { from: string; to: string; times: number; last: string }>()
+  for (const entry of list) {
+    const key = `${entry.from}\u0000${entry.to}`
+    const seen = merged.get(key)
+    merged.set(key, { from: entry.from, to: entry.to, times: (seen?.times ?? 0) + 1, last: entry.at })
+  }
+  return [
+    "# Dictation corrections",
+    "",
+    "What dictation heard (`heard`) and what the user changed it to before sending (`sent`), since your last run.",
+    "",
+    ...[...merged.values()].map((entry) =>
+      `- heard "${entry.from}" → sent "${entry.to}" · ${entry.times}× · last ${entry.last.slice(0, 10)}`),
+    "",
+  ].join("\n")
 }
 
 function renderForgotten(ledger: Ledger): string {

@@ -4,6 +4,7 @@
 // 런타임은 요청마다 이 파일을 다시 본다(바뀐 경우에만 읽는다). 그래서 저장하면 앱을
 // 다시 켜지 않아도 다음 녹음부터 바뀐 키와 모델을 쓴다.
 import { randomBytes } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
@@ -62,6 +63,44 @@ export function createVoiceConfigReader(configPath) {
   };
 }
 
+/** 언어 목록을 모델이 받는 꼴로: 2~3자 기본 부분 태그, 소문자, 겹침 없이, 넷까지. */
+export function normalizeLanguages(value) {
+  const list = Array.isArray(value) ? value : typeof value === 'string' ? value.split(/[\s,]+/) : [];
+  const codes = [];
+  for (const entry of list) {
+    const code = typeof entry === 'string' ? entry.trim().toLowerCase().split(/[-_]/)[0] : '';
+    if (/^[a-z]{2,3}$/.test(code) && !codes.includes(code)) codes.push(code);
+  }
+  return codes.slice(0, 4);
+}
+
+let systemLanguagesCache = null;
+/**
+ * 이 맥의 언어: macOS 가 고른 선호 언어들(AppleLanguages), 아니면 이 프로세스의 언어. 개발 용어는
+ * 영어로 말하니 영어를 더한다. 받아쓰기 언어를 설정하지 않은 사람의 기본값이다.
+ */
+export function systemLanguages({ platform = process.platform, read = readAppleLanguages } = {}) {
+  if (systemLanguagesCache) return systemLanguagesCache;
+  let found = [];
+  if (platform === 'darwin') { try { found = normalizeLanguages(read()); } catch { found = []; } }
+  if (!found.length) {
+    try { found = normalizeLanguages([Intl.DateTimeFormat().resolvedOptions().locale]); } catch { found = []; }
+  }
+  systemLanguagesCache = normalizeLanguages([...found.slice(0, 2), 'en']);
+  return systemLanguagesCache;
+}
+
+function readAppleLanguages() {
+  const out = execFileSync('defaults', ['read', '-g', 'AppleLanguages'], { encoding: 'utf8', timeout: 2000 });
+  return [...out.matchAll(/"?([A-Za-z]{2,3}(?:[-_][A-Za-z0-9]+)*)"?/g)].map((match) => match[1]);
+}
+
+/** 받아쓰기가 듣는 언어: 설정에 저장한 것, 없으면 이 맥의 언어. */
+export function voiceLanguages(config) {
+  const saved = normalizeLanguages(config?.languages);
+  return saved.length ? saved : systemLanguages();
+}
+
 /** 세션을 열 수 있는 설정인가. 키는 환경변수로도 올 수 있어 여기서 보지 않는다. */
 export function voiceConfigUsable(config) {
   return typeof config?.token === 'string' && config.token.length >= 32
@@ -94,7 +133,7 @@ function writeAtomic(configPath, config) {
  * 바꿀 것만 받아 합쳐 쓴다. `openaiApiKey: null` 은 저장한 키를 지운다(환경변수로
  * 돌아간다). 토큰이 없으면 만들고, 모델이 없으면 기본 모델을 넣는다.
  */
-export function updateVoiceConfig(configPath, { model, openaiApiKey, defaultProjectId, rotateToken = false } = {}) {
+export function updateVoiceConfig(configPath, { model, openaiApiKey, defaultProjectId, languages, rotateToken = false } = {}) {
   const { config: existing, error } = readRaw(configPath);
   if (error) throw new VoiceSettingsError('config-unreadable', `${configPath} could not be read as JSON. Fix or remove it first.`, undefined, 409);
   const next = { ...(existing ?? {}) };
@@ -111,6 +150,12 @@ export function updateVoiceConfig(configPath, { model, openaiApiKey, defaultProj
       throw new VoiceSettingsError('invalid-api-key', 'Paste the whole OpenAI API key.', 'openaiApiKey');
     }
     next.openaiApiKey = key;
+  }
+  if (languages === null || (languages !== undefined && normalizeLanguages(languages).length === 0 && String(languages).trim() === '')) delete next.languages;
+  else if (languages !== undefined) {
+    const codes = normalizeLanguages(languages);
+    if (!codes.length) throw new VoiceSettingsError('invalid-languages', 'Enter language codes such as ko, en.', 'languages');
+    next.languages = codes;
   }
   if (defaultProjectId === null) delete next.defaultProjectId;
   else if (typeof defaultProjectId === 'string' && defaultProjectId.trim() !== '') next.defaultProjectId = defaultProjectId.trim();
@@ -137,6 +182,10 @@ export function voiceSettingsStatus(configPath, env = process.env) {
       preview: maskSecret(key),
     },
     shortcutToken: usable ? config.token : null,
+    /** What dictation listens for now, whether saved, and what it falls back to. */
+    languages: voiceLanguages(config),
+    languagesSaved: normalizeLanguages(config?.languages).length > 0,
+    defaultLanguages: systemLanguages(),
   };
 }
 
@@ -163,6 +212,7 @@ export async function handleVoiceSettingsRequest(request, { configPath, env = pr
       const patch = {};
       if ('model' in body) patch.model = body.model;
       if ('openaiApiKey' in body) patch.openaiApiKey = body.openaiApiKey;
+      if ('languages' in body) patch.languages = body.languages;
       updateVoiceConfig(configPath, patch);
       return json(voiceSettingsStatus(configPath, env));
     }

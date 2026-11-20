@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
 
 import {
+  createDictationEdits,
   createLiveDictation,
   LIVE_FINISH_TIMEOUT_MS,
   LIVE_HOLD_MS,
@@ -212,5 +213,25 @@ describe("live dictation", () => {
     await vi.advanceTimersByTimeAsync(80);
     expect(h.live.recorder.level()).toBe(0.5);
     expect(h.live.recorder.getStatus().metering).toBeCloseTo(-6.02, 1);
+  });
+});
+
+describe("dictation edits", () => {
+  it("reports a dictated text the person changed, once the draft goes out", () => {
+    const edits = createDictationEdits();
+    edits.dictated("출근 한도 올려 줘");
+    expect(edits.draft("출근 한도 올려 줘")).toBeNull();
+    expect(edits.draft("출금 한도 올려 줘")).toBeNull();
+    expect(edits.draft("")).toEqual({ heard: ["출근 한도 올려 줘"], sent: "출금 한도 올려 줘" });
+    expect(edits.draft("")).toBeNull();
+  });
+
+  it("stays quiet when nothing dictated was changed, or nothing was dictated", () => {
+    const edits = createDictationEdits();
+    edits.dictated("그대로 보낼 말");
+    edits.draft("앞에 더 쓴 말 그대로 보낼 말");
+    expect(edits.draft("")).toBeNull();
+    edits.draft("손으로만 쓴 말");
+    expect(edits.draft("")).toBeNull();
   });
 });

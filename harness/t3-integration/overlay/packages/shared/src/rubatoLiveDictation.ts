@@ -365,6 +365,8 @@ export type LiveRecorderStatus = {
 export function createLiveDictation(
   platform: LiveDictationPlatform,
   onRecorderStatus: (status: LiveRecorderStatus) => void,
+  /** Told the final text of each dictation, before the controller puts it in the draft. */
+  onDictated?: (text: string) => void,
 ) {
   let connection: LiveConnection | null = null;
   let serial = 0;
@@ -468,6 +470,7 @@ export function createLiveDictation(
         transcribe: async (_uri: string, options: { readonly signal: AbortSignal }): Promise<string> => {
           const text = await live.finish(options.signal);
           spokenLanguage = /[가-힣]/.test(text) ? "ko" : "en";
+          onDictated?.(text);
           return text;
         },
       };
@@ -490,6 +493,41 @@ export function createLiveDictation(
     /** For the controller's `deleteRecording`: the dictation is over, close everything. */
     deleteRecording(uri: string): void {
       if (uri === recorder.uri) end();
+    },
+  };
+}
+
+/**
+ * What one composer dictated, held until its draft goes out: then the dictated texts the person
+ * changed and what was sent, for the Mac to keep the words they fixed (harness/t3-integration
+ * src/voice/vocabulary.mjs). A draft that goes out with every dictated text as it was, or a draft
+ * emptied after nothing was dictated, reports nothing. Sending is seen as the draft becoming empty.
+ */
+export function createDictationEdits() {
+  let heard: string[] = [];
+  let last = "";
+  return {
+    dictated(text: string): void {
+      const trimmed = text.trim();
+      if (trimmed !== "") heard.push(trimmed);
+    },
+    /** The draft as it is now; when it empties, what to report, if anything. */
+    draft(text: string): { readonly heard: ReadonlyArray<string>; readonly sent: string } | null {
+      if (text.trim() !== "") {
+        last = text;
+        return null;
+      }
+      const sent = last;
+      const dictated = heard;
+      heard = [];
+      last = "";
+      if (dictated.length === 0 || sent.trim() === "") return null;
+      const changed = dictated.filter((entry) => !sent.includes(entry));
+      return changed.length > 0 ? { heard: changed, sent } : null;
+    },
+    reset(): void {
+      heard = [];
+      last = "";
     },
   };
 }

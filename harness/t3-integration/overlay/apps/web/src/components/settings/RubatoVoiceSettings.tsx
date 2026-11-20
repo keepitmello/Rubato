@@ -39,6 +39,7 @@ export function RubatoVoiceSettingsSection() {
   const [editingKey, setEditingKey] = useState(false);
   const [keyDraft, setKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState("");
+  const [languagesDraft, setLanguagesDraft] = useState("");
   const [copied, setCopied] = useState(false);
 
   const load = useCallback(async () => {
@@ -47,6 +48,7 @@ export function RubatoVoiceSettingsSection() {
       const next = await rubatoVoiceSettings.status(environmentId);
       setStatus(next);
       setModelDraft(next.model ?? next.defaultModel);
+      setLanguagesDraft(next.languagesSaved ? next.languages.join(", ") : "");
       setError(null);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -63,6 +65,7 @@ export function RubatoVoiceSettingsSection() {
       const next = await action();
       setStatus(next);
       setModelDraft(next.model ?? next.defaultModel);
+      setLanguagesDraft(next.languagesSaved ? next.languages.join(", ") : "");
       return true;
     } catch (cause) {
       reportError(title, cause);
@@ -80,6 +83,13 @@ export function RubatoVoiceSettingsSection() {
       setKeyDraft("");
       setEditingKey(false);
     }
+  };
+
+  const saveLanguages = () => {
+    if (!status) return;
+    const draft = languagesDraft.trim();
+    if (draft === (status.languagesSaved ? status.languages.join(", ") : "")) return;
+    void run("Could not save the languages", () => rubatoVoiceSettings.saveLanguages(environmentId, draft === "" ? null : draft));
   };
 
   const saveModel = () => {
@@ -202,6 +212,28 @@ export function RubatoVoiceSettingsSection() {
                 disabled={busy}
                 onChange={(event) => setModelDraft(event.currentTarget.value)}
                 onBlur={saveModel}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                className="w-48"
+              />
+            }
+          />
+          <SettingsRow
+            id="rubato-voice-languages"
+            title="Dictation languages"
+            description="Language codes you dictate in, such as ko, en. Leave it empty to use this Mac's languages."
+            control={
+              <Input
+                size="sm"
+                font="mono"
+                spellCheck={false}
+                aria-label="Dictation languages"
+                placeholder={status.defaultLanguages.join(", ")}
+                value={languagesDraft}
+                disabled={busy}
+                onChange={(event) => setLanguagesDraft(event.currentTarget.value)}
+                onBlur={saveLanguages}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") event.currentTarget.blur();
                 }}

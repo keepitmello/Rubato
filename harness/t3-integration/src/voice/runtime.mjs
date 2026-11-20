@@ -2,11 +2,12 @@ import { createPresenceTracker } from './targets.mjs';
 import { createSessionStore } from './sessions.mjs';
 import { createSubmitter } from './submit.mjs';
 import { createVoiceService } from './service.mjs';
-import { transcribeAudio } from './transcribe.mjs';
+import { DEFAULT_HINTS, transcribeAudio } from './transcribe.mjs';
+import { dictationTerms, recordCorrections } from './vocabulary.mjs';
 import { mintLiveTranscription } from './live.mjs';
 import { handleVoiceRequest, bearerMatches } from './http.mjs';
 import {
-  createVoiceConfigReader, handleVoiceSettingsRequest, voiceApiKey, voiceConfigUsable,
+  createVoiceConfigReader, handleVoiceSettingsRequest, voiceApiKey, voiceConfigUsable, voiceLanguages,
 } from './settings.mjs';
 
 /**
@@ -17,6 +18,9 @@ import {
  * Without a usable file the routes answer 503 and only `/settings/*` works.
  * A fixed `config` is the older call shape (an app built before `configPath`).
  */
+/** The hints every dictation gets: the built-in names, then this person's own (vocabulary.mjs). */
+const hintsFor = (env) => [...DEFAULT_HINTS, ...dictationTerms(env)];
+
 export function createVoiceRuntime({ config, configPath, statePath, env = process.env, ...t3 }) {
   const readConfig = configPath ? createVoiceConfigReader(configPath) : () => ({ config, error: null });
   if (!configPath && !voiceConfigUsable(config)) throw new Error('Voice token must contain at least 32 characters');
@@ -31,7 +35,8 @@ export function createVoiceRuntime({ config, configPath, statePath, env = proces
     submitter: createSubmitter(t3),
     transcriber: (audio) => {
       const settings = current();
-      return transcribeAudio({ ...audio, apiKey: voiceApiKey(settings, env), model: settings?.model });
+      return transcribeAudio({ ...audio, apiKey: voiceApiKey(settings, env), model: settings?.model,
+        languages: voiceLanguages(settings), hints: hintsFor(env) });
     },
   });
   const notConfigured = () => Response.json({ error: { code: 'voice-not-configured' } }, {
@@ -51,8 +56,10 @@ export function createVoiceRuntime({ config, configPath, statePath, env = proces
     handle(request, desktopAuthenticated = false) {
       const settings = current();
       if (!settings) return Promise.resolve(notConfigured());
-      const live = () => mintLiveTranscription({ apiKey: voiceApiKey(settings, env) });
-      return handleVoiceRequest(request, { service, token: settings.token, live, desktopAuthenticated });
+      const live = () => mintLiveTranscription({ apiKey: voiceApiKey(settings, env),
+        languages: voiceLanguages(settings), hints: hintsFor(env) });
+      const corrections = (input) => ({ recorded: recordCorrections(input, { env }) });
+      return handleVoiceRequest(request, { service, token: settings.token, live, corrections, desktopAuthenticated });
     },
     /** Settings › Chat › Voice input. The caller has checked the desktop session. */
     handleSettings(request) {

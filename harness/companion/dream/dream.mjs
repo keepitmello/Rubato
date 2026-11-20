@@ -471,6 +471,35 @@ function describe(entry, outcomes) {
  * then the dream's own instructions. Roo's dream likewise carries SOUL, IDENTITY, USER, MEMORY and
  * COMPANION above its instruction.
  */
+/**
+ * The terms the dream noticed in the user's own words (dream.md, after the dream) go to the shared
+ * user memory's inbox (`<memory root>/agents/user.shared/runtime/inbox/<companion>-<run>.json`), in
+ * the shape a project dream's observations take; the user dream keeps them in its dictation
+ * vocabulary (packages/rubato-runtime src/user-memory). Returns how many went, or 0.
+ */
+export function forwardDictationTerms(file, { env = process.env, runId, at = new Date() } = {}) {
+  const text = readText(file);
+  if (!text) return 0;
+  const companion = env.RUBATO_COMPANION_ID || 'segno';
+  const seenAt = new Date(at).toISOString();
+  const found = [];
+  for (const line of text.split('\n')) {
+    let value;
+    try { value = JSON.parse(line); } catch { continue; }
+    const term = typeof value?.term === 'string' ? value.term.replace(/\s+/g, ' ').trim() : '';
+    if (!term || term.length > 60 || /[<>]/.test(term) || found.some((entry) => entry.term === term)) continue;
+    const quote = typeof value.quote === 'string' && value.quote.trim() ? value.quote.trim() : undefined;
+    found.push({ claim: `The user says "${term}"`, term, ...(quote ? { quote } : {}), project: companion, runId, seenAt, kind: 'session' });
+    if (found.length >= 30) break;
+  }
+  if (!found.length) return 0;
+  const root = env.RUBATO_MEMORY_HOME?.trim() ? path.resolve(env.RUBATO_MEMORY_HOME) : path.join(env.HOME || homedir(), '.rubato', 'memory');
+  const inbox = path.join(root, 'agents', 'user.shared', 'runtime', 'inbox');
+  mkdirSync(inbox, { recursive: true, mode: 0o700 });
+  writeFileSync(path.join(inbox, `${companion}-${runId}.json`), JSON.stringify(found, null, 2) + '\n', { mode: 0o600 });
+  return found.length;
+}
+
 export function composeDreamPrompt({ env = process.env, defaultsDir = companionDefaultsDir(env) } = {}) {
   const pieces = readPieces({ defaultsDir, env }).filter((piece) => piece.id !== 'tools');
   const parts = pieces.map((piece) => piece.personalText ?? piece.defaultText).filter((text) => text?.length > 0);
@@ -793,11 +822,14 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     // Sunday: Roo's search check, recorded whether or not there was anything to check.
     const searchHealth = plan.sunday ? weeklySearchCheck(home, search && ((query, limit) => search(query, limit, env)), env) : undefined;
     if (searchHealth) writeJson(paths.state, { ...readDreamState(env), weeklySearch: { at: localIso(at), ...searchHealth } });
+    // The user's words for dictation go to the shared user memory's inbox, which the user dream takes.
+    const terms = forwardDictationTerms(path.join(outDir, 'dictation-terms.jsonl'), { env, runId, at });
     appendLog(paths.log, plan.runDate, [readText(path.join(outDir, 'log.md')), searchHealth && `- 검색 점검: ${describeSearchHealth(searchHealth)}`]
       .filter(Boolean).join('\n'), runId);
     record = { ...base, status: partial ? 'partial' : 'done', model: attempts.at(-1).model, attempts, blocks, changed: applied,
       ...(refused.length ? { refused } : {}), ...(conflicts.length ? { conflicts } : {}), ...(guarded.length ? { guarded } : {}),
       ...(held ? { watermarks: 'held' } : {}), ...(index === undefined ? {} : { index }), ...(searchHealth ? { searchHealth } : {}),
+      ...(terms ? { dictationTerms: terms } : {}),
       commit: commit ?? null,
       marker: lastLine(path.join(runDir, `child-${attempts.length}.log`), 0) };
     return record;

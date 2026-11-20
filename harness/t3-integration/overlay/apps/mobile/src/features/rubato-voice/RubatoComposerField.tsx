@@ -11,7 +11,7 @@
 //   from grey to ink (ChatGPT's dictation, measured from the user's recording). It stays the draft's editor, read-only, so the keyboard stays up; the final text goes
 //   into the draft through T3's controller at stop (client-runtime rubatoLiveDictationDisplay.ts).
 import { liveDictationDisplay } from "@t3tools/client-runtime/voice-input";
-import { liveDictationPieces, liveDictationStore } from "@t3tools/shared/rubatoLiveDictation";
+import { createDictationEdits, liveDictationPieces, liveDictationStore } from "@t3tools/shared/rubatoLiveDictation";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
@@ -21,6 +21,7 @@ import { SymbolView } from "../../components/AppSymbol";
 import { ComposerEditor, type ComposerEditorProps } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { ComposerEditorProps as NativeEditorProps, ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
+import { onDictated, reportDictationEdits } from "./macLiveDictation";
 
 export type RubatoComposerFieldProps = ComposerEditorProps & {
   /** Live dictation is running for this composer's draft. */
@@ -149,6 +150,19 @@ export function RubatoComposerField({
   const height = Math.min(maxHeight, Math.max(minHeight, Math.ceil(contentHeight)));
   const overflows = contentHeight > maxHeight + 1;
   const [fullScreen, setFullScreen] = useState(false);
+  // A dictation the person changed is reported once the draft goes out (the Mac keeps the fixed words
+  // for the user dream's dictation vocabulary); another draft starts afresh.
+  const edits = useRef(createDictationEdits());
+  const dictatingRef = useRef(dictating);
+  dictatingRef.current = dictating;
+  useEffect(() => onDictated((text) => {
+    if (dictatingRef.current) edits.current.dictated(text);
+  }), []);
+  useEffect(() => edits.current.reset(), [props.draftKey]);
+  useEffect(() => {
+    const report = edits.current.draft(props.value);
+    if (report) reportDictationEdits(report);
+  }, [props.value]);
   useEffect(() => {
     if (dictating) setFullScreen(false);
   }, [dictating]);

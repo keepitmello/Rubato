@@ -10,7 +10,7 @@
 // 근거(2026-11-20 실측): POST /v1/realtime/client_secrets 로 session.type 'transcription'
 // 을 만들면 `ek_…` 가 오고, 그 열쇠로 POST /v1/realtime/calls (SDP) 가 붙어 데이터 채널
 // `oai-events` 로 `conversation.item.input_audio_transcription.delta` 가 단어마다 온다.
-import { DEFAULT_HINTS, TRANSCRIPTION_INSTRUCTIONS, TranscriptionError, transcriptionKeywords } from './transcribe.mjs';
+import { DEFAULT_HINTS, TranscriptionError, transcriptionInstructions, transcriptionKeywords } from './transcribe.mjs';
 
 export const LIVE_TRANSCRIPTION_MODEL = 'gpt-live-transcribe';
 
@@ -29,14 +29,14 @@ export const LIVE_SECRET_TTL_SECONDS = 60;
 export const LIVE_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
 /** OpenAI 에 보낼 전사 세션 설정. 시험이 같은 값을 본다. */
-export function liveSessionConfig({ model = LIVE_TRANSCRIPTION_MODEL, hints = DEFAULT_HINTS, languages = ['ko', 'en'] } = {}) {
+export function liveSessionConfig({ model = LIVE_TRANSCRIPTION_MODEL, hints = DEFAULT_HINTS, languages = ['en'] } = {}) {
   return {
     type: 'transcription',
     audio: {
       input: {
         transcription: {
           model,
-          prompt: TRANSCRIPTION_INSTRUCTIONS,
+          prompt: transcriptionInstructions(languages),
           keywords: transcriptionKeywords(hints),
           languages,
           delay: LIVE_TRANSCRIPTION_DELAY,

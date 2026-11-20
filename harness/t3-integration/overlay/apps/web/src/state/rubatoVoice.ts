@@ -25,6 +25,8 @@ declare global {
 
 /** The route on this Mac that mints the one-time key for live dictation (src/voice/live.mjs). */
 const LIVE_ROUTE = "/rubato/voice/live";
+/** Where a composer reports a dictation the person changed before sending (src/voice/vocabulary.mjs). */
+const CORRECTIONS_ROUTE = "/rubato/voice/corrections";
 
 async function resolveVoiceConnection(environmentId: EnvironmentId | null): Promise<RubatoHttpAccess> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
@@ -106,6 +108,7 @@ export function createRubatoLiveDictation(
   readEnvironmentId: () => EnvironmentId | null,
   onFailure: (failure: RubatoVoiceFailure) => void,
   onRecorderStatus: (status: VoiceRecorderStatus) => void,
+  onDictated?: (text: string) => void,
 ) {
   const live = createLiveDictation(
     {
@@ -141,6 +144,7 @@ export function createRubatoLiveDictation(
       connectionFailed: (message) => new VoiceTranscriptionError("preparation-failed", message),
     },
     onRecorderStatus,
+    onDictated,
   );
   const transcriber: VoiceTranscriber = {
     prepare: ({ signal }) =>
@@ -156,4 +160,23 @@ export function createRubatoLiveDictation(
       }),
   };
   return { recorder: live.recorder, transcriber, deleteRecording: live.deleteRecording, warm: live.warm };
+}
+
+/**
+ * What the person dictated and what they sent instead, so the Mac keeps the words they fixed and the
+ * user dream can teach dictation those words. Nothing leaves the Mac; a failure here only loses the hint.
+ */
+export function reportDictationEdits(
+  environmentId: EnvironmentId | null,
+  edits: { readonly heard: ReadonlyArray<string>; readonly sent: string },
+): void {
+  void (async () => {
+    const connection = await resolveVoiceConnection(environmentId);
+    await fetch(`${connection.baseUrl}${CORRECTIONS_ROUTE}`, {
+      method: "POST",
+      credentials: connection.credentials,
+      headers: { ...connection.headers, "content-type": "application/json" },
+      body: JSON.stringify(edits),
+    });
+  })().catch(() => {});
 }

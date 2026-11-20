@@ -6,7 +6,13 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createRubatoLiveDictation, type RubatoVoiceFailure } from "../../state/rubatoVoice";
+import { createDictationEdits } from "@t3tools/shared/rubatoLiveDictation";
+
+import {
+  createRubatoLiveDictation,
+  reportDictationEdits,
+  type RubatoVoiceFailure,
+} from "../../state/rubatoVoice";
 
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
 /** How long the strip and the heard words take to fade out once the final text landed. */
@@ -43,6 +49,8 @@ export function useRubatoVoiceInput(input: {
   readonly environmentId: EnvironmentId | null;
   readonly readDraft: () => RubatoVoiceDraft | null;
   readonly commitDraft: (text: string, cursor: number) => void;
+  /** The draft as it is now: when it goes out, a dictation the person changed is reported. */
+  readonly draftText: string;
 }) {
   const [state, setState] = useState<VoiceInputState>(IDLE_STATE);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -58,6 +66,7 @@ export function useRubatoVoiceInput(input: {
   const liveRef = useRef<ReturnType<typeof createRubatoLiveDictation> | null>(null);
   const controllerRef = useRef<VoiceInputController | null>(null);
   const lastFailure = useRef<RubatoVoiceFailure | null>(null);
+  const edits = useRef(createDictationEdits());
 
   if (!controllerRef.current) {
     const live = createRubatoLiveDictation(
@@ -66,6 +75,7 @@ export function useRubatoVoiceInput(input: {
         lastFailure.current = failure;
       },
       (status) => controllerRef.current?.handleRecorderStatus(status),
+      (text) => edits.current.dictated(text),
     );
     liveRef.current = live;
     controllerRef.current = new VoiceInputController({
@@ -126,6 +136,18 @@ export function useRubatoVoiceInput(input: {
     // A recording belongs to the draft it started in; switching threads drops it.
     controllerRef.current?.ownerChanged();
   }, [ownerKey]);
+
+  // A dictation the person changed is reported when the draft goes out; another draft starts afresh.
+  const editsOwner = useRef(ownerKey);
+  const draftText = input.draftText;
+  useEffect(() => {
+    if (editsOwner.current !== ownerKey) {
+      editsOwner.current = ownerKey;
+      edits.current.reset();
+    }
+    const report = edits.current.draft(draftText);
+    if (report) reportDictationEdits(latest.current.environmentId, report);
+  }, [ownerKey, draftText]);
 
   useEffect(
     () => () => {

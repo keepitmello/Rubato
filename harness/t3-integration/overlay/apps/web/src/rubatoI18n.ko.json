@@ -4717,7 +4717,11 @@
   "Show all threads": "모든 스레드 보기",
   "Group threads from any project. Right-click a thread to file it.": "프로젝트와 상관없이 스레드를 묶어 둡니다. 스레드를 우클릭해서 넣으세요.",
   "Thinking on calls": "통화 중 생각",
-  "Same as chat": "대화와 같게"
+  "Same as chat": "대화와 같게",
+  "Dictation languages": "받아쓰기 언어",
+  "Language codes you dictate in, such as ko, en. Leave it empty to use this Mac's languages.": "받아쓸 때 쓰는 언어 코드입니다. 예: ko, en. 비워 두면 이 Mac의 언어를 씁니다.",
+  "Could not save the languages": "언어를 저장하지 못했습니다",
+  "Listening…": "듣는 중…"
  },
  "templates": [
   [

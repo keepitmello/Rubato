@@ -236,6 +236,11 @@ daily / 일기 (원본)          memory/YYYY-MM-DD.md · memory/diary/YYYY-MM-DD
    - 일요일: (돌아보기 / 구조 훑기 발견 N / 해당 없음)
    - 꿈 지시문에서 걸린 것: (있으면 한 줄씩)
    ```
-3. 마지막 답은 마커 한 줄만. 그 위에 정리나 요약은 안 붙여.
+3. 받아쓰기가 틀리기 쉬운 말을 `$DREAM_OUT_DIR/dictation-terms.jsonl`에 한 줄에 하나씩 남겨. 오늘 대화에서 **사용자가 직접 말하거나 쓴** 이름과 용어만이야 — 사람, 업체, 제품, 프로젝트, 코드명, 그 일의 낱말(예: 출금). 내가 한 말이나 흔한 낱말은 빼. 몇 개면 충분하고, 없으면 파일을 안 만들어.
+   ```json
+   {"term": "INFINOX", "quote": "INFINOX 입금 화면 0원 표시 봐 줘"}
+   ```
+   `term`은 써야 할 그대로의 철자, `quote`는 그 말이 들어간 사용자의 말 원문 그대로. 이건 모든 대화가 같이 쓰는 받아쓰기 용어 목록으로 가.
+4. 마지막 답은 마커 한 줄만. 그 위에 정리나 요약은 안 붙여.
    - 다 했으면 `MEMORY_DONE memory ok at=<runAt> (distill=N, conf=K, learned=M)`
    - 반만 했거나 실패했으면 `MEMORY_PARTIAL memory at=<runAt> <이유>`

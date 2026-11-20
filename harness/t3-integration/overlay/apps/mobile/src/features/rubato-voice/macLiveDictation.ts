@@ -18,6 +18,32 @@ import type { SavedRemoteConnection } from "../../lib/connection";
 import { macVoiceFailureMessage } from "./macVoiceFailures";
 
 const LIVE_ROUTE = "/rubato/voice/live";
+/** Where a composer reports a dictation the person changed before sending (src/voice/vocabulary.mjs). */
+const CORRECTIONS_ROUTE = "/rubato/voice/corrections";
+
+/** The paired Macs, as the voice provider last handed them over; reports go to the same Mac. */
+let connectionsReader: (() => ReadonlyArray<SavedRemoteConnection>) | null = null;
+const dictatedListeners = new Set<(text: string) => void>();
+
+/** Hears the final text of each dictation, before it goes into the draft. */
+export function onDictated(listener: (text: string) => void): () => void {
+  dictatedListeners.add(listener);
+  return () => dictatedListeners.delete(listener);
+}
+
+/**
+ * What the person dictated and what they sent instead, so the Mac keeps the words they fixed and the
+ * user dream can teach dictation those words. A failure here only loses the hint.
+ */
+export function reportDictationEdits(edits: { readonly heard: ReadonlyArray<string>; readonly sent: string }): void {
+  const mac = connectionsReader ? pickMac(connectionsReader()) : null;
+  if (!mac) return;
+  void fetch(`${mac.baseUrl}${CORRECTIONS_ROUTE}`, {
+    method: "POST",
+    headers: { ...mac.headers, "content-type": "application/json" },
+    body: JSON.stringify(edits),
+  }).catch(() => {});
+}
 
 /** T3's controller shows one generic line per failure; the provider puts this one back. */
 let lastFailure: string | null = null;
@@ -63,6 +89,7 @@ export function createMacLiveDictation(
   readConnections: () => ReadonlyArray<SavedRemoteConnection>,
   onRecorderStatus: (status: VoiceRecorderStatus) => void,
 ) {
+  connectionsReader = readConnections;
   const live = createLiveDictation(
     {
       mint: async (signal) => {
@@ -96,6 +123,9 @@ export function createMacLiveDictation(
       connectionFailed: (message) => failed(message),
     },
     onRecorderStatus,
+    (text) => {
+      for (const listener of dictatedListeners) listener(text);
+    },
   );
   const transcriber: VoiceTranscriber = {
     prepare: async (options) => {

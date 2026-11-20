@@ -887,3 +887,27 @@ test('a reply the tool answered with an error, or never answered, is not heard a
   assert.match(out, /\[reply 확인 안 됨\] 모르는 말/);
   assert.doesNotMatch(out, /\[reply\] 못 간 말|\[reply\] 모르는 말/);
 });
+
+test("the user's words for dictation go to the shared user memory's inbox, once each", async () => {
+  const { forwardDictationTerms } = await import('../dream/dream.mjs');
+  const root = mkdtempSync(path.join(tmpdir(), 'segno-dictation-'));
+  try {
+    const file = path.join(root, 'dictation-terms.jsonl');
+    writeFileSync(file, [
+      JSON.stringify({ term: 'INFINOX', quote: 'INFINOX 입금 화면 0원 표시 봐 줘' }),
+      JSON.stringify({ term: 'INFINOX' }),
+      JSON.stringify({ term: '<bad>' }),
+      'not json',
+      JSON.stringify({ term: '  벳위즈  ' }),
+    ].join('\n'));
+    const env = { RUBATO_MEMORY_HOME: path.join(root, 'memory'), RUBATO_COMPANION_ID: 'segno' };
+    assert.equal(forwardDictationTerms(file, { env, runId: 'r1', at: new Date('2026-11-20T04:00:00Z') }), 2);
+    const inbox = JSON.parse(readFileSync(path.join(root, 'memory', 'agents', 'user.shared', 'runtime', 'inbox', 'segno-r1.json'), 'utf8'));
+    assert.deepEqual(inbox.map((entry) => [entry.term, entry.quote ?? null, entry.project, entry.kind]),
+      [['INFINOX', 'INFINOX 입금 화면 0원 표시 봐 줘', 'segno', 'session'], ['벳위즈', null, 'segno', 'session']]);
+    assert.equal(inbox[0].claim, 'The user says "INFINOX"');
+    assert.equal(forwardDictationTerms(path.join(root, 'none.jsonl'), { env, runId: 'r2' }), 0);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

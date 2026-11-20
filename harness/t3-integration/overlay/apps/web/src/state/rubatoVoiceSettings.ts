@@ -20,6 +20,10 @@ export interface VoiceSettingsStatus {
     readonly preview: string | null;
   };
   readonly shortcutToken: string | null;
+  /** What dictation listens for now (language codes), whether they were saved here, and the Mac's own. */
+  readonly languages: ReadonlyArray<string>;
+  readonly languagesSaved: boolean;
+  readonly defaultLanguages: ReadonlyArray<string>;
 }
 
 function call(environmentId: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) {
@@ -30,5 +34,7 @@ export const rubatoVoiceSettings = {
   status: (env: EnvironmentId | null) => call(env, "status"),
   saveApiKey: (env: EnvironmentId | null, openaiApiKey: string | null) => call(env, "save", { openaiApiKey }),
   saveModel: (env: EnvironmentId | null, model: string) => call(env, "save", { model }),
+  /** `null` goes back to this Mac's languages. */
+  saveLanguages: (env: EnvironmentId | null, languages: string | null) => call(env, "save", { languages }),
   rotateToken: (env: EnvironmentId | null) => call(env, "rotate-token"),
 };

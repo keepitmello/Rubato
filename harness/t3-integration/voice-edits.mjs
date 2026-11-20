@@ -30,6 +30,7 @@ const composerVoiceWiring = [
   '        end: range?.end ?? snapshot.expandedCursor,',
   '      };',
   '    },',
+  '    draftText: prompt,',
   '    commitDraft: (text, cursor) => {',
   '      const nextCursor = collapseExpandedComposerCursor(text, cursor);',
   '      promptRef.current = text;',
