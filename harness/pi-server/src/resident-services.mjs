@@ -26,6 +26,7 @@ import { Worker } from 'node:worker_threads';
 import path from 'node:path';
 import { TELEGRAM_ENABLED } from '../../companion/messenger/store.mjs';
 import { companionEnv, companionServiceName, listCompanions } from '../../companion/registry.mjs';
+import { withOperation } from './perf-log.mjs';
 
 const here = import.meta.dirname;
 const THREAD = path.join(here, 'resident-thread.mjs');
@@ -140,7 +141,11 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
         return;
       }
       worker = current;
-      current.on('message', (message) => { if (worker === current) void receive(current, message); });
+      // What a service asks of the main thread is labelled with it, for the stall log (perf-log.mjs).
+      current.on('message', (message) => {
+        if (worker !== current) return;
+        void withOperation({ op: `resident ${spec.name}${message?.type === 'host' ? ` ${message.method}` : ''}` }, () => receive(current, message));
+      });
       current.on('error', (error) => {
         state.lastError = plainError(error);
         report(`failed: ${error?.stack ?? error?.message ?? error}`);

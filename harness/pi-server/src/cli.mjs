@@ -80,7 +80,9 @@ try {
     }
     if (service) {
       console.log(JSON.stringify({ ...service.descriptor, descriptorPath: service.descriptorPath }));
-      watchStalls({ log: options.log });
+      // A stall line names the conversation that held the engine by its title (perf-log.mjs).
+      const sessions = service.host.directory;
+      watchStalls({ log: options.log, title: (id) => sessions.value.sessions.find((item) => item.sessionId === id)?.title });
       if (stopRequested) await stop();
     }
   }

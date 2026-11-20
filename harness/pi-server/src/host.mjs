@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { RemoteServiceProvider, createRemoteServiceEndpoint, replicatedState, RemoteServiceError } from '@earendil-works/chord';
 import { BACKGROUND_CONTEXT } from '@earendil-works/chord/context';
 import { createUnixServer } from '@earendil-works/pi-server/unix';
+import { Server } from '@earendil-works/pi-server';
 import { Directory, Management, Control, COMMANDS, INPUT_COMMANDS, UI_METHODS, PiCommandRejected, json,
   AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, TERMINAL_PENDING_WORK_REQUEST } from './contracts.mjs';
 
@@ -13,7 +14,7 @@ import { SessionFiles } from './session-files.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { forkSessionFile } from './session-link.mjs';
 import { RpcWorker } from './rpc-worker.mjs';
-import { SLOW_OPEN_MS } from './perf-log.mjs';
+import { SLOW_OPEN_MS, labelRequests, withOperation } from './perf-log.mjs';
 import { wire, measure, EVENT_BUDGET, EVENTS_BUDGET, FRAME_BUDGET } from './wire.mjs';
 import { createThreadRequests } from './thread-requests.mjs';
 
@@ -527,7 +528,10 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     },
     async start() {
       await refresh();
-      if (pollMs > 0) { this.poller = setInterval(() => { if (!stopped) void refresh().catch(onError); }, pollMs); this.poller.unref?.(); }
+      if (pollMs > 0) {
+        this.poller = setInterval(() => { if (!stopped) void withOperation({ op: 'directory scan' }, () => refresh()).catch(onError); }, pollMs);
+        this.poller.unref?.();
+      }
     },
     /** The loaded runtimes: a restart tells from them which runs the next engine takes up (drain.mjs). */
     liveRuntimes() { return [...handles.values()].filter((handle) => !handle.closed); },
@@ -543,6 +547,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
 
 export async function startSessionServer(options) {
   const serverId = options.serverId ?? randomUUID();
+  // Each app request runs under its own label, for the stall log (perf-log.mjs).
+  labelRequests(Server);
   const host = createSessionHost({ ...options, serverId });
   const server = createUnixServer(host, { path: options.socketPath, serverId, mode: 0o600, onError: options.onError,
     maxFrameLength: 32 * 1024 * 1024 });

@@ -2,6 +2,7 @@ import { createServer } from 'node:net';
 import { chmod, lstat, unlink } from 'node:fs/promises';
 import { terminalWire } from './terminal-wire.mjs';
 import { startTerminalSession } from './terminal-session.mjs';
+import { withOperation } from './perf-log.mjs';
 
 /** A byte-I/O endpoint of the SAME profile engine. No runtime acquisition here. */
 export async function startTerminalServer({ socketPath, host, descriptor, api, onError = () => {} }) {
@@ -12,7 +13,8 @@ export async function startTerminalServer({ socketPath, host, descriptor, api, o
     await unlink(socketPath); // Caller already holds the exclusive profile lock.
   } catch (error) { if (error.code !== 'ENOENT') throw error; }
   const connections = new Set();
-  const server = createServer(socket => {
+  // A CLI terminal's work is labelled as such, for the stall log (perf-log.mjs).
+  const server = createServer(socket => withOperation({ op: 'terminal' }, () => {
     let session, opened = false;
     const entry = { socket, close: async () => { await session?.close(); await session?.done; } }; connections.add(entry);
     const stop = error => { if (error) onError(error); void session?.close(1).catch(onError); socket.destroy(); };
@@ -31,7 +33,7 @@ export async function startTerminalServer({ socketPath, host, descriptor, api, o
     socket.on('close', () => {
       void (async () => { await session?.close(); await session?.done; })().catch(onError).finally(() => connections.delete(entry));
     });
-  });
+  }));
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
   if (process.platform !== 'win32') await chmod(socketPath, 0o600);
   server.on('error', onError);

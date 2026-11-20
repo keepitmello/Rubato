@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { PiCommandRejected } from './contracts.mjs';
 import { trimHistoryImagePixels } from './history-images.mjs';
 import { FRAME_BUDGET } from './wire.mjs';
+import { withOperation } from './perf-log.mjs';
 
 // get_messages carries every image the session ever saw as inline base64, and the
 // frame limit below stops the whole session when a response crosses it. A session
@@ -143,7 +144,9 @@ export class SessionWorker extends EventEmitter {
   }
   start() {
     if (this.starting || this.closed) return Promise.reject(new Error('Worker already started or closed'));
-    this.starting = (async () => {
+    // What the conversation does from here on (its turns, its extensions' timers) carries its id
+    // in the stall log (perf-log.mjs).
+    this.starting = withOperation({ op: 'open', session: this.metadata.id }, async () => {
       this.runtime = await this.options.createRuntime(this.metadata);
       if (this.closed) throw new Error('Session stopped during startup');
       this.controller = await this.options.runRpcMode(this.runtime, {
@@ -156,7 +159,7 @@ export class SessionWorker extends EventEmitter {
       const state = await this.request({ type: 'get_state' });
       if (state.sessionId !== this.metadata.id) throw new Error('Pi resumed a different persisted session');
       return state;
-    })();
+    });
     return this.starting.catch(async error => { await this.stop(error); throw error; });
   }
   request(command, { withBoundary = false } = {}) {
@@ -168,14 +171,16 @@ export class SessionWorker extends EventEmitter {
         reject(new Error(`Pi RPC timed out: ${command.type}; outcome may be unknown`));
       }, this.options.timeoutMs);
       this.pending.set(id, { resolve, reject, timer, withBoundary, type: command.type });
-      Promise.resolve().then(() => this.controller.dispatch({ ...command, id })).catch(error => {
+      withOperation({ op: `pi ${command.type}`, session: this.metadata.id },
+        () => Promise.resolve().then(() => this.controller.dispatch({ ...command, id }))).catch(error => {
         if (this.pending.delete(id)) { clearTimeout(timer); reject(error); }
       });
     });
   }
   reply(response) {
     if (this.closed || !this.controller) throw new Error('Pi session is not running');
-    void this.controller.dispatch({ ...response, type: 'extension_ui_response' }).catch(error => this.stop(error));
+    void withOperation({ op: 'pi ui answer', session: this.metadata.id },
+      () => this.controller.dispatch({ ...response, type: 'extension_ui_response' })).catch(error => this.stop(error));
   }
   stop(error) {
     this.failure ??= error;
