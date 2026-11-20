@@ -57,7 +57,7 @@ export const projectOrderEdits = {
         + 'import { inProjectOrder } from "./sidebar/rubatoProjectOrder";\n'
         + 'import { useOpenRubatoProjectList } from "./settings/RubatoProjectListSettings";\n',
       'replace'],
-    ['  newThreadNoProjectIndex,\n', '', 'replace'],
+    ['  newThreadNoProjectIndex,\n', '  // Rubato: the no-project row follows the shared order (project-order-edits.mjs).\n', 'replace'],
     [
       '  const projectGroups = useSortedProjectGroups(environmentLabelById);\n',
       [
@@ -288,7 +288,7 @@ export const projectOrderEdits = {
     // T3's project used last still decides first; when none, the shared order replaces T3's
     // manual order (the scratch home is not a project to start in).
     ['export function useHandleNewThread() {\n  const projectOrder = useUiStateStore((store) => store.projectOrder);\n',
-      'export function useHandleNewThread() {\n', 'replace'],
+      'export function useHandleNewThread() {\n  // Rubato: the shared project order picks the default project (project-order-edits.mjs).\n', 'replace'],
     ['import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";\n',
       'import { legacyProjectCwdPreferenceKey } from "../uiStateStore";\n', 'replace'],
     [
@@ -320,7 +320,7 @@ export const projectOrderEdits = {
     ['import { T, useGT } from "gt-react";\n', 'import { T } from "gt-react";\n', 'replace'],
     ['import { SettingsScopeNotice } from "./SettingsScopeNotice";\n',
       'import { RubatoProjectListSettings } from "./RubatoProjectListSettings";\n', 'replace'],
-    ['  const gt = useGT();\n', '', 'replace'],
+    ['  const gt = useGT();\n', '  // Rubato: no translated strings left on this page (project-order-edits.mjs).\n', 'replace'],
     [
       '        <SettingsScopeNotice target="project">\n          {gt("Choose a project to manage its name, icon, checkouts and actions.")}\n        </SettingsScopeNotice>\n',
       '        // Rubato: the project list and its order (project-order-edits.mjs).\n        <RubatoProjectListSettings />\n',
