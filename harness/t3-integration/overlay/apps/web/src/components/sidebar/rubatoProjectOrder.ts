@@ -10,8 +10,10 @@
 import { useCallback, useMemo } from "react";
 import * as Schema from "effect/Schema";
 
+import { getProjectOrderKey } from "@t3tools/client-runtime/state/project-grouping";
+
 import { useLocalStorage } from "../../hooks/useLocalStorage";
-import { useThreadShells } from "../../state/entities";
+import { useQuietThreadShells } from "../../state/entities";
 import {
   EMPTY_PROJECT_LIST_STATE,
   lastActivityByGroup,
@@ -51,7 +53,9 @@ export interface RubatoProjectOrder<G> {
 export function useRubatoProjectOrder<G extends RubatoGroupLike>(
   groups: readonly G[],
 ): RubatoProjectOrder<G> {
-  const threads = useThreadShells();
+  // Activity lags a streaming thread's ticks until its next real change, so a reply that
+  // streams does not re-render every list in the shared order with each token.
+  const threads = useQuietThreadShells();
   const [state, setStoredState] = useRubatoProjectListState();
   const lastActivity = useMemo(() => lastActivityByGroup(groups, threads), [groups, threads]);
   const list = useMemo(
@@ -74,4 +78,20 @@ export function inProjectOrder<E extends { readonly group: { readonly projectKey
   const index = new Map(ordered.map((group, position) => [group.projectKey, position] as const));
   const at = (entry: E) => index.get(entry.group.projectKey) ?? Number.MAX_SAFE_INTEGER;
   return entries.toSorted((a, b) => at(a) - at(b));
+}
+
+/**
+ * The order T3 picks a new thread's project from when no project was used last: every
+ * checkout of the user's projects in the shared order. The no-project home is not a
+ * project to start in.
+ */
+export function defaultProjectOrderKeys(
+  groups: ReadonlyArray<{
+    readonly isScratch?: boolean | undefined;
+    readonly memberProjects: ReadonlyArray<Parameters<typeof getProjectOrderKey>[0]>;
+  }>,
+): string[] {
+  return groups
+    .filter((group) => group.isScratch !== true)
+    .flatMap((group) => group.memberProjects.map(getProjectOrderKey));
 }

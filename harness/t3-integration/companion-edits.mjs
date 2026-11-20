@@ -167,41 +167,73 @@ export const companionEdits = {
     ['      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}\n',
       '      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !isCompanionThread(activeThread.id)}\n',
       'replace'],
-    // FLAG (batches/B2.md): the room swap below is a port, not a re-anchor. v0.1.11 renders the
-    // timeline as <ThreadTimeline> in ChatView and resolves the entries inside
-    // chat/ThreadTimeline.tsx, so a companion's room needs the swap there (displayedEntries) rather
-    // than at this JSX. Left unchanged for the desktop owner.
-    //
     // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
     // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
-    // Its rewind is the timeline's own, with files left as they are (user f8828a9f), and its
-    // pencil edit answers to the thread's edit host (RubatoMessageEdit.tsx, user 97580a28).
-    ['              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',
-      '              {isCompanionThread(activeThread.id) ? (\n'
-        + '                <RubatoSegnoChat\n'
-        + '                  entries={displayedTimeline.entries}\n'
-        + '                  working={!paintOnlyDisplayedTimeline && isWorking}\n'
-        + '                  cwd={gitCwd ?? undefined}\n'
-        + '                  environmentId={displayedThreadRef?.environmentId ?? activeThread.environmentId}\n'
-        + '                  bottomInset={composerTimelineInset}\n'
-        + '                  scrollToEndClearance={scrollToEndClearance}\n'
-        + '                  threadId={activeThread.id}\n'
-        + '                  threadKey={routeThreadKey}\n'
-        + '                  onRewind={(messageId) => void onRevertToTurnCountRef.current(0, messageId, false)}\n'
-        + '                  {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n'
-        + '                    ? {}\n'
-        + '                    : { historyControls: threadHistoryControls })}\n'
-        + '                />\n'
-        + '              ) : (\n'
-        + '              <MessagesTimeline\n                citationRequest={paintOnlyDisplayedTimeline ? null : citationRequest}\n',
-      'replace'],
-    ['                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n',
-      '                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n              )}\n',
+    // Its rewind is the timeline's own, with files left as they are (user f8828a9f): straight to
+    // the confirmed revert, no dialog. Its pencil edit answers to the thread's edit host
+    // (RubatoMessageEdit.tsx, user 97580a28). v0.1.11 resolves the entries inside
+    // chat/ThreadTimeline.tsx, so ChatView names the room here and ThreadTimeline draws it.
+    ['                <ThreadTimeline\n                  pendingApprovals={pendingApprovals}\n',
+      '                <ThreadTimeline\n'
+        + '                  rubatoSegno={\n'
+        + '                    isCompanionThread(activeThread.id)\n'
+        + '                      ? {\n'
+        + '                          threadId: activeThread.id,\n'
+        + '                          threadKey: routeThreadKey,\n'
+        + '                          scrollToEndClearance,\n'
+        + '                          onRewind: (messageId) => onConfirmRevertStable(0, messageId, false),\n'
+        + '                        }\n'
+        + '                      : null\n'
+        + '                  }\n'
+        + '                  pendingApprovals={pendingApprovals}\n',
       'replace'],
     // The room floats its own "Scroll to end", from its own scroll (RubatoSegnoChat.tsx).
     ['              {showScrollToBottom && !isThreadFindActive && (\n',
       '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',
       'replace'],
+  ],
+  // The room in place of the timeline, from the same entries (see the ChatView block above).
+  'apps/web/src/components/chat/ThreadTimeline.tsx': [
+    ['import type { ScopedThreadRef } from "@t3tools/contracts";\n',
+      'import type { MessageId, ScopedThreadRef } from "@t3tools/contracts";\n', 'replace'],
+    ['import { MessagesTimeline } from "./MessagesTimeline";\n',
+      'import { RubatoSegnoChat } from "./RubatoSegnoChat";\n'],
+    ['  detailLoading,\n  ...timelineProps\n}: ',
+      '  detailLoading,\n  rubatoSegno,\n  ...timelineProps\n}: ', 'replace'],
+    ['  detailLoading: boolean;\n}) {\n',
+      '  detailLoading: boolean;\n'
+        + '  /** Rubato: a companion\'s thread, drawn as its room (companion-edits.mjs). */\n'
+        + '  rubatoSegno?: {\n'
+        + '    readonly threadId: string;\n'
+        + '    readonly threadKey: string;\n'
+        + '    readonly scrollToEndClearance: number;\n'
+        + '    readonly onRewind: (messageId: MessageId) => void;\n'
+        + '  } | null;\n'
+        + '}) {\n',
+      'replace'],
+    ['  return (\n    <MessagesTimeline {...timelineProps} syncing={syncing} timelineEntries={displayedEntries} />\n',
+      [
+        '  // Rubato: Segno\'s thread is a chat room (chat/RubatoSegnoChat.tsx, companion-edits.mjs).',
+        '  if (rubatoSegno) {',
+        '    return (',
+        '      <RubatoSegnoChat',
+        '        entries={displayedEntries}',
+        '        working={timelineProps.isWorking}',
+        '        cwd={timelineProps.markdownCwd}',
+        '        environmentId={threadDetailRef?.environmentId ?? timelineProps.activeThreadEnvironmentId}',
+        '        bottomInset={timelineProps.contentInsetEndAdjustment}',
+        '        scrollToEndClearance={rubatoSegno.scrollToEndClearance}',
+        '        threadId={rubatoSegno.threadId}',
+        '        threadKey={rubatoSegno.threadKey}',
+        '        onRewind={rubatoSegno.onRewind}',
+        '        {...(timelineProps.historyControls === undefined',
+        '          ? {}',
+        '          : { historyControls: timelineProps.historyControls })}',
+        '      />',
+        '    );',
+        '  }',
+        '',
+      ].join('\n')],
   ],
   // Segno's own folder is not a project to start work in: neither the new thread's default
   // project nor the headline's picker offers it. v0.1.11 chooses the default project from the
@@ -221,18 +253,16 @@ export const companionEdits = {
         + '  useRubatoCompanion: () => ({ status: null, threadId: null, companions: [] }),\n'
         + '}));\n'],
   ],
-  // FLAG (batches/B2.md): this anchor is the line project-order-edits.mjs inserts; v0.1.11 builds
-  // the headline's groups from useSortedProjectGroups. Left unchanged for the project-order owner to
-  // re-anchor, after which the filter below re-applies to its output.
+  // The headline's groups come from useSortedProjectGroups (in the shared order,
+  // project-order-edits.mjs); Segno's folder leaves them here.
   'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
-    ['  const projectGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;',
-      '  const rubatoOrderedGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;\n'
+    ['  const projectGroups = useSortedProjectGroups(environmentLabelById);\n',
+      '  const rubatoSortedGroups = useSortedProjectGroups(environmentLabelById);\n'
         + '  // Rubato: Segno\'s own folder is not offered as a project (companion-edits.mjs).\n'
-        + '  const rubatoCompanionHomes = useRubatoCompanion().companions.map(item => item.home);\n'
-        + '  const projectGroups = useMemo(\n'
-        + '    () => rubatoOrderedGroups.filter((group) => !rubatoCompanionHomes.some(home => isCompanionProject(group, home))),\n'
-        + '    [rubatoOrderedGroups, rubatoCompanionHomes],\n'
-        + '  );',
+        + '  const rubatoCompanionHomes = useRubatoCompanion().companions.map((item) => item.home);\n'
+        + '  const projectGroups = rubatoSortedGroups.filter(\n'
+        + '    (group) => !rubatoCompanionHomes.some((home) => isCompanionProject(group, home)),\n'
+        + '  );\n',
       'replace'],
     ['import { ProjectFavicon } from "../ProjectFavicon";\n',
       'import { isCompanionProject, useRubatoCompanion } from "../../state/rubatoCompanion";\n'],

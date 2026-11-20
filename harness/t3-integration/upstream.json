@@ -201,6 +201,9 @@
     "third-party-licenses.config.json": "b5902fb11e3891f72712ca0c54b663278b8e518c5a4fb4aad0408d41024e01cf",
     "tsconfig.base.json": "a3d3a43e170238b3923ef1e134c32f1ad7bc16dfe943b46041b33b9999445500",
     "apps/mobile/src/features/layout/workspace/workspace-tabs-state.test.ts": "ef0e39ebfecd22f359ce8fff0b26491b66f36679e9ebb5a2de092fcfef1187f9",
-    "apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts": "6cbeec5c653b520a088b26f18867a5686787c62a727b0e44b01633cb07a5470a"
+    "apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts": "6cbeec5c653b520a088b26f18867a5686787c62a727b0e44b01633cb07a5470a",
+    "apps/web/src/components/CommandPaletteLookups.ts": "2646367551240113785bf0c93c36a1109a3f7d39e04f3f95630801e56b627c08",
+    "apps/web/src/components/chat/ThreadTimeline.tsx": "b9c23f37c257d47715cddac3b0cd6adab7024182eb1ea0b9072bb5d172c522a2",
+    "apps/mobile/src/i18n/I18nProvider.tsx": "e761f9e79e787f6e3b855a098474ffcd104b6c9c1d946b745e9b841a32dfe007"
   }
 }

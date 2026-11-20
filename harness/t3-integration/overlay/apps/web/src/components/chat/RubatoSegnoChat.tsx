@@ -64,7 +64,6 @@ import type { SegnoSpanSummary } from "../../state/rubatoCompanion";
 import { RubatoTimelineRail } from "./RubatoTimelineRail";
 import { railDayTitle } from "./rubatoTimelineRail.logic";
 import {
-  resolveTimelineMinimapCurrentIndex,
   resolveTimelineMinimapHasPersistentGutter,
   resolveTimelineMinimapHitStripWidth,
 } from "./MessagesTimeline.logic";
@@ -561,15 +560,20 @@ function RubatoSegnoRoom(props: {
       const rect = rows.get(mark.id)?.getBoundingClientRect();
       return rect ? { top: rect.top - box.top + scrollTop, height: rect.height } : { top: null, height: null };
     });
+    // The reader is at the first turn in view, else the last one above the view.
+    let firstInView: number | null = null;
+    let lastAbove: number | null = null;
     for (const [index, mark] of marks.entries()) {
       const strip = stripMap.get(mark.id);
       const bounds = itemBounds[index]!;
       const inView =
         bounds.top !== null && bounds.top < scrollBottom && bounds.top + Math.max(1, bounds.height ?? 1) > scrollTop;
+      if (inView && firstInView === null) firstInView = index;
+      if (bounds.top !== null && bounds.top <= scrollTop) lastAbove = index;
       const next = inView ? "true" : "false";
       if (strip && strip.dataset.inView !== next) strip.dataset.inView = next;
     }
-    const next = resolveTimelineMinimapCurrentIndex({ scrollTop, scrollBottom, itemBounds });
+    const next = firstInView ?? lastAbove;
     setCurrentMark((current) => (current === next ? current : next));
   }, [marks, stripMap]);
   const markFrame = useRef<number | null>(null);

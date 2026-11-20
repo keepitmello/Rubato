@@ -131,10 +131,10 @@ export function useRubatoRemoveProject() {
         draftStore.clearProjectDraftThreadId(projectRef);
       }
 
-      // The sidebar was narrowed to the project that is now gone: back to all projects.
+      // A sidebar narrowed to projects that include the gone one drops it (none left reads as all).
       const ui = useUiStateStore.getState();
-      if (ui.sidebarProjectScopeKey === group.projectKey) {
-        ui.setSidebarProjectScopeKey(null);
+      if (ui.sidebarProjectScopeKeys.includes(group.projectKey)) {
+        ui.setSidebarProjectScopeKeys(ui.sidebarProjectScopeKeys.filter((key) => key !== group.projectKey));
         void navigate({ to: "/", replace: true });
       }
       return true;

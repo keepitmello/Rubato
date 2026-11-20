@@ -31,47 +31,38 @@ export const projectOrderOverlays = [
   'apps/web/src/components/sidebar/rubatoRemoveProject.test.ts',
 ];
 
-const ORDER_IMPORT = 'import { inProjectOrder, useRubatoProjectOrder } from "./sidebar/rubatoProjectOrder";\n';
-
 export const projectOrderEdits = {
   'apps/web/src/hooks/useSidebarProjectGroups.ts': [
-    ['import { useProjects, useThreadShells } from "../state/entities";\n',
+    ['import { useDelegatedUnderParent, useProjects, useQuietThreadShells } from "../state/entities";\n',
       'import { useProjects } from "../state/entities";\n', 'replace'],
     ['import { orderItemsByPreferredIds, sortSidebarV2ProjectGroups } from "../components/Sidebar.logic";\n',
       'import { orderItemsByPreferredIds } from "../components/Sidebar.logic";\n'
         + 'import { useRubatoProjectOrder } from "../components/sidebar/rubatoProjectOrder";\n',
       'replace'],
-    ['  const threads = useThreadShells();\n',
+    ['  // Activity order lags a running thread\'s streaming ticks until its next\n'
+        + '  // real change; reading every tick re-rendered the whole sidebar with it.\n'
+        + '  const threads = useQuietThreadShells();\n'
+        + '  const delegatedUnderParent = useDelegatedUnderParent();\n',
       '  // Rubato: the shared order reads the threads itself (project-order-edits.mjs).\n', 'replace'],
     [
-      '  return useMemo(\n    () => sortSidebarV2ProjectGroups(unsortedGroups, threads, sortOrder),\n    [sortOrder, threads, unsortedGroups],\n  );\n',
+      '  return sortSidebarV2ProjectGroups(unsortedGroups, threads, sortOrder, delegatedUnderParent);\n',
       '  // Rubato: the shared project order (project-order-edits.mjs).\n  return useRubatoProjectOrder(unsortedGroups).ordered;\n',
       'replace',
     ],
   ],
   'apps/web/src/components/CommandPalette.tsx': [
     ['} from "lucide-react";\n', '  ListOrderedIcon,\n'],
-    ['import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";\n',
-      'import { orderItemsByPreferredIds } from "./Sidebar.logic";\n'
-        + ORDER_IMPORT
+    ['  useSortedProjectGroups,\n} from "./CommandPaletteLookups";\n',
+      '  useRubatoSortedProjectOrder,\n} from "./CommandPaletteLookups";\n'
+        + 'import { inProjectOrder } from "./sidebar/rubatoProjectOrder";\n'
         + 'import { useOpenRubatoProjectList } from "./settings/RubatoProjectListSettings";\n',
       'replace'],
+    ['  newThreadNoProjectIndex,\n', '', 'replace'],
     [
-      [
-        '  const projectGroups = useMemo(',
-        '    () =>',
-        '      sortLogicalProjectsForSidebar(',
-        '        unsortedProjectGroups,',
-        '        threads,',
-        '        clientSettings.sidebarProjectSortOrder,',
-        '      ),',
-        '    [clientSettings.sidebarProjectSortOrder, threads, unsortedProjectGroups],',
-        '  );',
-        '',
-      ].join('\n'),
+      '  const projectGroups = useSortedProjectGroups(environmentLabelById);\n',
       [
         '  // Rubato: the shared project order (project-order-edits.mjs).',
-        '  const rubatoProjectOrder = useRubatoProjectOrder(unsortedProjectGroups);',
+        '  const rubatoProjectOrder = useRubatoSortedProjectOrder(environmentLabelById);',
         '  const projectGroups = rubatoProjectOrder.ordered;',
         '  const openRubatoProjectList = useOpenRubatoProjectList();',
         '',
@@ -79,130 +70,187 @@ export const projectOrderEdits = {
       'replace',
     ],
     [
-      '      buildSidebarProjectPickerEntries({\n        groups: projectGroups,\n        preferredProjectRef: contextualProjectRef,\n      }),\n',
-      '      // Rubato: the shared order holds; the current project is not lifted.\n'
-        + '      inProjectOrder(\n'
-        + '        buildSidebarProjectPickerEntries({\n          groups: projectGroups,\n          preferredProjectRef: contextualProjectRef,\n        }),\n'
-        + '        projectGroups,\n'
-        + '      ),\n',
+      '  const projectPickerEntries = buildSidebarProjectPickerEntries({\n    groups: pickableProjectGroups(projectGroups),\n    preferredProjectRef: contextualProjectRef,\n  });\n',
+      '  // Rubato: the shared order holds; neither a pin nor the current project lifts a row.\n'
+        + '  const projectPickerEntries = inProjectOrder(\n'
+        + '    buildSidebarProjectPickerEntries({\n      groups: pickableProjectGroups(projectGroups),\n      preferredProjectRef: contextualProjectRef,\n    }),\n'
+        + '    projectGroups,\n'
+        + '  );\n',
       'replace',
     ],
     [
-      '    const noProjectIndex = pickerProjects[0] !== undefined && isScratch(pickerProjects[0]) ? 0 : 1;\n',
-      '    // Rubato: after the projects, so it closes My projects (project-order-edits.mjs).\n'
-        + '    const noProjectIndex = projectItems.length;\n',
+      [
+        '      const noProjectIndex = newThreadNoProjectIndex(',
+        '        projectPickerEntries.map(({ group, targetProject, isPreferred }) => ({',
+        '          isScratch: isScratchProject(',
+        '            targetProject,',
+        '            scratchWorkspaceRootFor(targetProject.environmentId),',
+        '          ),',
+        '          pinned: group.pinned,',
+        '          isPreferred,',
+        '        })),',
+        '      );',
+        '',
+      ].join('\n'),
+      '      // Rubato: after the projects, so it closes My projects (project-order-edits.mjs).\n'
+        + '      const noProjectIndex = projectItems.length;\n',
       'replace',
     ],
-    ['  const allThreadItems = useMemo(\n',
+    ['  const {\n    threadItems: allThreadItems,\n',
       [
         '  // Rubato: My projects, Other projects, and the way to edit the list (project-order-edits.mjs).',
-        '  const rubatoProjectThreadGroups = useMemo(() => {',
-        '    const quietValues = new Set(',
-        '      rubatoProjectOrder.list.quiet.flatMap((group) =>',
-        '        group.memberProjectRefs.map(',
-        '          (projectRef) => `new-thread-in:${projectRef.environmentId}:${projectRef.projectId}`,',
-        '        ),',
-        '      ),',
-        '    );',
-        '    const quiet = projectThreadItems.filter((item) => quietValues.has(item.value));',
-        '    const editList: CommandPaletteActionItem = {',
-        '      kind: "action",',
-        '      value: "new-thread-in:edit-project-list",',
-        '      searchTerms: ["edit project list", "reorder", "order", "remove", "hide", "manage projects"],',
-        '      title: "Edit project list…",',
-        '      icon: <ListOrderedIcon className={ITEM_ICON_CLASS} />,',
-        '      run: async () => {',
-        '        await openRubatoProjectList();',
-        '      },',
-        '    };',
-        '    return [',
-        '      {',
-        '        value: "projects",',
-        '        label: "My projects",',
-        '        items: projectThreadItems.filter((item) => !quietValues.has(item.value)),',
-        '      },',
-        '      ...(quiet.length > 0 ? [{ value: "other-projects", label: "Other projects", items: quiet }] : []),',
-        '      { value: "project-list", label: "", items: [editList] },',
-        '    ];',
-        '  }, [openRubatoProjectList, projectThreadItems, rubatoProjectOrder.list.quiet]);',
-        '',
+        '  const rubatoQuietValues = new Set(',
+        '    rubatoProjectOrder.list.quiet.flatMap((group) =>',
+        '      group.memberProjectRefs.map(',
+        '        (projectRef) => `new-thread-in:${projectRef.environmentId}:${projectRef.projectId}`,',
+      '      ),',
+        '    ),',
+        '  );',
+        '  const rubatoQuietItems = projectThreadItems.filter((item) => rubatoQuietValues.has(item.value));',
+        '  const rubatoEditProjectList: CommandPaletteActionItem = {',
+        '    kind: "action",',
+        '    value: "new-thread-in:edit-project-list",',
+        '    searchTerms: ["edit project list", "reorder", "order", "remove", "hide", "manage projects"],',
+        '    title: "Edit project list…",',
+        '    icon: <ListOrderedIcon className={ITEM_ICON_CLASS} />,',
+        '    run: async () => {',
+        '      await openRubatoProjectList();',
+        '    },',
+        '  };',
+        '  const rubatoProjectThreadGroups = [',
+        '    {',
+        '      value: NEW_THREAD_IN_GROUP,',
+        '      label: "My projects",',
+        '      items: projectThreadItems.filter((item) => !rubatoQuietValues.has(item.value)),',
+        '    },',
+        '    ...(rubatoQuietItems.length > 0',
+        '      ? [{ value: RUBATO_OTHER_PROJECTS_GROUP, label: "Other projects", items: rubatoQuietItems }]',
+        '      : []),',
+        '    { value: "project-list", label: "", items: [rubatoEditProjectList] },',
+        '  ];',
         '',
       ].join('\n')],
+    ['const NEW_THREAD_IN_GROUP = "projects";\n',
+      'const NEW_THREAD_IN_GROUP = "projects";\n'
+        + '// Rubato: the shared order\'s other projects, after My projects (project-order-edits.mjs).\n'
+        + 'const RUBATO_OTHER_PROJECTS_GROUP = "other-projects";\n',
+      'replace'],
     [
-      '    pushPaletteView({\n      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,\n      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],\n',
-      '    pushPaletteView({\n      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,\n      groups: rubatoProjectThreadGroups,\n',
+      '      groups: [{ value: NEW_THREAD_IN_GROUP, label: gt("Projects"), items: projectThreadItems }],\n',
+      '      groups: rubatoProjectThreadGroups,\n',
       'replace',
     ],
     [
-      '  }, [clearOpenIntent, browseNavigation, openIntent, projectThreadItems, pushPaletteView]);\n',
-      '  }, [\n    clearOpenIntent,\n    browseNavigation,\n    openIntent,\n    projectThreadItems,\n    pushPaletteView,\n    rubatoProjectThreadGroups,\n  ]);\n',
+      [
+        '          ? [',
+        '              {',
+        '                value: NEW_THREAD_IN_GROUP,',
+        '                label: gt("Projects"),',
+        '                // Every project archived and no "No project" home leaves only adding one.',
+        '                items: projectThreadItems.length > 0 ? projectThreadItems : [addProjectAction],',
+        '              },',
+        '            ]',
+        '',
+      ].join('\n'),
+      [
+        '          ? // Rubato: My projects, Other projects, Edit project list… (project-order-edits.mjs).',
+        '            projectThreadItems.length > 0',
+        '            ? rubatoProjectThreadGroups',
+        '            : [',
+        '                {',
+        '                  value: NEW_THREAD_IN_GROUP,',
+        '                  label: gt("Projects"),',
+        '                  // Every project archived and no "No project" home leaves only adding one.',
+        '                  items: [addProjectAction],',
+        '                },',
+        '              ]',
+        '',
+      ].join('\n'),
       'replace',
     ],
+    // mod+1..9 number My projects and Other projects as one list, as shown.
     [
-      '      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,\n      groups: [{ value: "projects", label: "Projects", items: projectThreadItems }],\n',
-      '      addonIcon: <SquarePenIcon className={ADDON_ICON_CLASS} />,\n      groups: rubatoProjectThreadGroups,\n',
+      [
+        '  const filteredGroups = searchedGroups.map((group) => {',
+        '    if (group.value !== NEW_THREAD_IN_GROUP) return group;',
+        '    const jumpItems = new Map(',
+        '      enumerateCommandPaletteItems(',
+        '        group.items.filter(',
+        '          (item): item is CommandPaletteActionItem =>',
+        '            item.kind === "action" &&',
+        '            item.value !== NEW_THREAD_NO_PROJECT_VALUE &&',
+        '            item.value !== addProjectAction.value,',
+        '        ),',
+        '      ).map((item) => [item.value, item] as const),',
+        '    );',
+        '    return { ...group, items: group.items.map((item) => jumpItems.get(item.value) ?? item) };',
+        '  });',
+        '',
+      ].join('\n'),
+      [
+        '  // Rubato: My projects and Other projects number as one list (project-order-edits.mjs).',
+        '  const rubatoJumpGroups = new Set<string>([NEW_THREAD_IN_GROUP, RUBATO_OTHER_PROJECTS_GROUP]);',
+        '  const rubatoJumpItems = new Map(',
+        '    enumerateCommandPaletteItems(',
+        '      searchedGroups',
+        '        .filter((group) => rubatoJumpGroups.has(group.value))',
+        '        .flatMap((group) => group.items)',
+        '        .filter(',
+        '          (item): item is CommandPaletteActionItem =>',
+        '            item.kind === "action" &&',
+        '            item.value !== NEW_THREAD_NO_PROJECT_VALUE &&',
+        '            item.value !== addProjectAction.value,',
+        '        ),',
+        '    ).map((item) => [item.value, item] as const),',
+        '  );',
+        '  const filteredGroups = searchedGroups.map((group) => {',
+        '    if (!rubatoJumpGroups.has(group.value)) return group;',
+        '    return { ...group, items: group.items.map((item) => rubatoJumpItems.get(item.value) ?? item) };',
+        '  });',
+        '',
+      ].join('\n'),
       'replace',
     ],
   ],
-  'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
-    ['import { sortLogicalProjectsForSidebar } from "../Sidebar.logic";\n',
-      'import { inProjectOrder, useRubatoProjectOrder } from "../sidebar/rubatoProjectOrder";\n', 'replace'],
-    ['  const threads = useThreadShells();\n',
-      '  // Rubato: the shared order reads the threads itself (project-order-edits.mjs).\n', 'replace'],
-    ['import { useProjects, useThreadShells } from "~/state/entities";\n',
-      'import { useProjects } from "~/state/entities";\n', 'replace'],
-    ['  const projectSortOrder = useClientSettings((settings) => settings.sidebarProjectSortOrder);\n',
-      '  // Rubato: T3\'s project sort setting no longer orders projects (project-order-edits.mjs).\n', 'replace'],
+  // The palette's and the headline's projects come from here (useSortedProjectGroups), so the
+  // shared order replaces T3's project sort once for both.
+  'apps/web/src/components/CommandPaletteLookups.ts': [
+    ['import { useProjects, useVisibleThreadShells } from "../state/entities";\n',
+      'import { useProjects } from "../state/entities";\n', 'replace'],
+    ['import { orderItemsByPreferredIds, sortLogicalProjectsForSidebar } from "./Sidebar.logic";\n',
+      'import { orderItemsByPreferredIds } from "./Sidebar.logic";\n'
+        + 'import { useRubatoProjectOrder } from "./sidebar/rubatoProjectOrder";\n',
+      'replace'],
     [
-      [
-        '  const projectGroups = useMemo(',
-        '    () =>',
-        '      sortLogicalProjectsForSidebar(',
-        '        buildSidebarProjectSnapshots({',
-        '          projects,',
-        '          settings: projectGroupingSettings,',
-        '          primaryEnvironmentId,',
-        '          resolveEnvironmentLabel: (environmentId) =>',
-        '            environmentLabelById.get(environmentId) ?? null,',
-        '        }),',
-        '        threads,',
-        '        projectSortOrder,',
-        '      ),',
-        '    [',
-        '      environmentLabelById,',
-        '      primaryEnvironmentId,',
-        '      projectGroupingSettings,',
-        '      projectSortOrder,',
-        '      projects,',
-        '      threads,',
-        '    ],',
-        '  );',
-        '',
-      ].join('\n'),
-      [
-        '  const unsortedProjectGroups = useMemo(',
-        '    () =>',
-        '      buildSidebarProjectSnapshots({',
-        '        projects,',
-        '        settings: projectGroupingSettings,',
-        '        primaryEnvironmentId,',
-        '        resolveEnvironmentLabel: (environmentId) => environmentLabelById.get(environmentId) ?? null,',
-        '      }),',
-        '    [environmentLabelById, primaryEnvironmentId, projectGroupingSettings, projects],',
-        '  );',
-        '  // Rubato: the shared project order (project-order-edits.mjs).',
-        '  const projectGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;',
-        '',
-      ].join('\n'),
+      'export function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId, string>) {\n'
+        + '  const projects = useProjects();\n'
+        + '  const threads = useVisibleThreadShells();\n',
+      '// Rubato: the projects in the shared order (project-order-edits.mjs).\n'
+        + 'export function useSortedProjectGroups(environmentLabelById: ReadonlyMap<EnvironmentId, string>) {\n'
+        + '  return useRubatoSortedProjectOrder(environmentLabelById).ordered;\n'
+        + '}\n'
+        + '\n'
+        + '/** The shared order with its My/Other split, for lists that show both. */\n'
+        + 'export function useRubatoSortedProjectOrder(\n'
+        + '  environmentLabelById: ReadonlyMap<EnvironmentId, string>,\n'
+        + ') {\n'
+        + '  const projects = useProjects();\n',
       'replace',
     ],
+    ['  return sortLogicalProjectsForSidebar(\n    unsortedProjectGroups,\n    threads,\n    clientSettings.sidebarProjectSortOrder,\n  );\n',
+      '  return useRubatoProjectOrder(unsortedProjectGroups);\n', 'replace'],
+  ],
+  'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
+    // The groups arrive in the shared order (useSortedProjectGroups, CommandPaletteLookups.ts above).
+    ['import { useSortedProjectGroups } from "../CommandPaletteLookups";\n',
+      'import { inProjectOrder } from "../sidebar/rubatoProjectOrder";\n'],
     [
-      '      buildSidebarProjectPickerEntries({\n        groups: projectGroups,\n        preferredProjectRef: activeProjectRef,\n      }),\n',
-      '      // Rubato: the shared order holds; the current project is not lifted.\n'
-        + '      inProjectOrder(\n'
-        + '        buildSidebarProjectPickerEntries({\n          groups: projectGroups,\n          preferredProjectRef: activeProjectRef,\n        }),\n'
-        + '        projectGroups,\n'
-        + '      ),\n',
+      '  const projectPickerEntries = buildSidebarProjectPickerEntries({\n    groups: pickableProjectGroups(projectGroups),\n    preferredProjectRef: activeProjectRef,\n  });\n',
+      '  // Rubato: the shared order holds; neither a pin nor the current project lifts a row.\n'
+        + '  const projectPickerEntries = inProjectOrder(\n'
+        + '    buildSidebarProjectPickerEntries({\n      groups: pickableProjectGroups(projectGroups),\n      preferredProjectRef: activeProjectRef,\n    }),\n'
+        + '    projectGroups,\n'
+        + '  );\n',
       'replace',
     ],
     // Edit projects trails Add project and opens Settings > Projects, where a
@@ -217,8 +265,8 @@ export const projectOrderEdits = {
         + 'const EDIT_PROJECTS_VALUE = "rubato-edit-projects";\n', 'replace'],
     ['  const { environments } = useEnvironments();\n',
       '  const rubatoOpenProjectList = useOpenRubatoProjectList();\n'],
-    ['      { value: ADD_PROJECT_VALUE, label: "Add project" },\n',
-      '      { value: ADD_PROJECT_VALUE, label: "Add project" },\n'
+    ['      { value: ADD_PROJECT_VALUE, label: gt("Add project") },\n',
+      '      { value: ADD_PROJECT_VALUE, label: gt("Add project") },\n'
         + '      { value: EDIT_PROJECTS_VALUE, label: "Edit projects" },\n', 'replace'],
     ['        item.value !== ADD_PROJECT_VALUE &&\n',
       '        item.value !== ADD_PROJECT_VALUE &&\n        item.value !== EDIT_PROJECTS_VALUE &&\n', 'replace'],
@@ -234,24 +282,28 @@ export const projectOrderEdits = {
         + '                  <PencilIcon className="size-4 shrink-0" />\n', 'replace'],
   ],
   'apps/web/src/hooks/useHandleNewThread.ts': [
-    ['import { useClientSettings } from "./useSettings";\n',
-      'import { useSidebarProjectGroups } from "./useSidebarProjectGroups";\n'],
-    ['  const handleNewThread = useNewThreadHandler();\n\n  return {\n    activeDraftThread,\n',
-      '  // Rubato: the first project in the shared order (project-order-edits.mjs).\n'
-        + '  const rubatoFirstGroup = useSidebarProjectGroups().find((group) => group.isScratch !== true);\n'],
+    ['import { getClientSettings } from "./useSettings";\n',
+      'import { useSidebarProjectGroups } from "./useSidebarProjectGroups";\n'
+        + 'import { defaultProjectOrderKeys } from "../components/sidebar/rubatoProjectOrder";\n'],
+    // T3's project used last still decides first; when none, the shared order replaces T3's
+    // manual order (the scratch home is not a project to start in).
+    ['export function useHandleNewThread() {\n  const projectOrder = useUiStateStore((store) => store.projectOrder);\n',
+      'export function useHandleNewThread() {\n', 'replace'],
+    ['import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../uiStateStore";\n',
+      'import { legacyProjectCwdPreferenceKey } from "../uiStateStore";\n', 'replace'],
     [
-      '    defaultProjectRef: orderedProjects[0]\n      ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)\n      : null,\n',
-      '    defaultProjectRef: rubatoFirstGroup\n'
-        + '      ? scopeProjectRef(rubatoFirstGroup.environmentId, rubatoFirstGroup.id)\n'
-        + '      : orderedProjects[0]\n'
-        + '        ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)\n'
-        + '        : null,\n',
+      '  const defaultProjectRef = resolveDefaultProjectRef(\n    projects,\n    projectOrder,\n',
+      '  // Rubato: after the project used last, the shared order picks (project-order-edits.mjs).\n'
+        + '  const rubatoProjectGroups = useSidebarProjectGroups();\n'
+        + '  const defaultProjectRef = resolveDefaultProjectRef(\n'
+        + '    projects,\n'
+        + '    defaultProjectOrderKeys(rubatoProjectGroups),\n',
       'replace',
     ],
   ],
   // The shared order's hook stands in for the store this test does not set up.
   'apps/web/src/hooks/useHandleNewThread.test.ts': [
-    ['vi.mock("../components/Sidebar.logic", () => ({ orderItemsByPreferredIds: () => [] }));\n',
+    ['vi.mock("../components/Sidebar.logic", () => ({\n',
       'vi.mock("./useSidebarProjectGroups", () => ({ useSidebarProjectGroups: () => [] }));\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
