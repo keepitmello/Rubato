@@ -28,7 +28,7 @@ const pick = (item: { provider: string; id: string }) => `${item.provider}/${ite
 describe("product model catalog", () => {
   test("#given the Vertex Argon row #when sorted and labeled #then it follows Antigravity and keeps its full name", () => {
     const argon = { provider: "google-vertex", id: PRODUCT_MODEL_ORDER["google-vertex"][0] }
-    const flash = { provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0] }
+    const flash = { provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")) }
     const kiro = { provider: "kiro", id: PRODUCT_MODEL_ORDER.kiro[0] }
     expect(sortProductCatalogItems([kiro, argon, flash]).map(pick)).toEqual([pick(flash), pick(argon), pick(kiro)])
     expect(isProductCatalogSlug(pick(argon))).toBe(true)

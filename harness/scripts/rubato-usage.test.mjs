@@ -10,6 +10,7 @@ import {
 } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import {
   anthropicUsageWindows,
+  antigravitySummaryWindows,
   codexUsageWindows,
   collectUsage,
   cursorUsageWindows,
@@ -17,6 +18,7 @@ import {
 } from "./rubato-usage.mjs";
 import { usageJson } from "./rubato-auth.mjs";
 import { recordGeminiRequest } from "../rubato-pi/src/gemini-request-count.mjs";
+import { ANTIGRAVITY_USER_AGENT } from "../rubato-pi/src/antigravity-id.mjs";
 
 const scratch = mkdtempSync(join(tmpdir(), "rubato-usage-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
@@ -103,7 +105,7 @@ test("provider answers map to windows the Usage page draws", () => {
 function fakeFetch(routes) {
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url: String(url), authorization: init?.headers?.authorization });
+    calls.push({ url: String(url), authorization: init?.headers?.authorization, userAgent: init?.headers?.["user-agent"] });
     const route = routes[String(url)];
     if (!route) return new Response("", { status: 404 });
     const { status = 200, body } = typeof route === "function" ? route(init) : route;
@@ -229,9 +231,28 @@ test("an expired Antigravity token is renewed in memory only", async () => {
   });
   assert.deepEqual(renewed, ["keep"]);
   assert.equal(calls[0].authorization, "Bearer fresh");
+  assert.equal(calls[0].userAgent, ANTIGRAVITY_USER_AGENT, "usage asks as the same client the sessions do");
   assert.equal(credential.access, "stale", "the stored credential is untouched");
   assert.deepEqual(rows[0].usageLimits.windows.map((window) => [window.id, window.label, window.usedPercent]), [
     ["3p-weekly", "Claude & GPT (shared) · Weekly", 25],
+  ]);
+});
+
+test("a Pro account's separate Argon bucket keeps its own name beside the shared Gemini pair", () => {
+  // Shape of retrieveUserQuotaSummary for a Google AI Pro account, 2026-11-20.
+  const windows = antigravitySummaryWindows({ groups: [
+    { displayName: "Gemini Models", buckets: [
+      { bucketId: "gemini-weekly", window: "weekly", remainingFraction: 0.9 },
+      { bucketId: "gemini-5h", window: "5h", remainingFraction: 0.5 },
+    ] },
+    { displayName: "Claude and GPT models", buckets: [{ bucketId: "3p-weekly", window: "weekly", remainingFraction: 1 }] },
+    { displayName: "Gemini 4 Argon", buckets: [{ bucketId: "gemini-argon-wtu-weekly", window: "weekly", remainingFraction: 1 }] },
+  ] });
+  assert.deepEqual(windows.map((window) => [window.id, window.label]), [
+    ["gemini-weekly", "Gemini · Weekly"],
+    ["gemini-5h", "Gemini · 5-hour"],
+    ["3p-weekly", "Claude & GPT (shared) · Weekly"],
+    ["gemini-argon-wtu-weekly", "Gemini 4 Argon · Weekly"],
   ]);
 });
 

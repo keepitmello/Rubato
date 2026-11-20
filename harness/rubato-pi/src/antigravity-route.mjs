@@ -8,6 +8,7 @@ import {
   ANTIGRAVITY_API,
   ANTIGRAVITY_ENDPOINT,
   ANTIGRAVITY_PROJECT_ENV,
+  ANTIGRAVITY_USER_AGENT,
   createAntigravityApi,
 } from "./antigravity-api.mjs";
 export { ANTIGRAVITY_ENDPOINT } from "./antigravity-api.mjs";
@@ -30,6 +31,15 @@ const LEGACY_BRIDGE_PORTS = new Set(["8788", "18788"]);
 
 const MODELS = Object.freeze([
   Object.freeze({ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", contextWindow: 1_048_576, maxTokens: 65_536 }),
+  // Neon serves low, medium, high and xhigh only (agy 1.5.13 model list); the map keeps
+  // Shift+Tab to those four. Output cap is the 262,144 that fetchAvailableModels reports.
+  Object.freeze({
+    id: "gemini-4-neon",
+    name: "Gemini 4 Neon",
+    contextWindow: 1_048_576,
+    maxTokens: 262_144,
+    thinkingLevelMap: Object.freeze({ off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" }),
+  }),
 ]);
 
 function zeroCost() {
@@ -122,7 +132,7 @@ export async function loadAntigravityProjectId(access, endpoint, fetchImpl, sign
     headers: {
       authorization: `Bearer ${access}`,
       "content-type": "application/json",
-      "user-agent": "antigravity/hub/2.8.0 (aidev_client; os_type=darwin; arch=arm64)",
+      "user-agent": ANTIGRAVITY_USER_AGENT,
     },
     body: JSON.stringify({ metadata: { ideType: "ANTIGRAVITY" } }),
     signal,

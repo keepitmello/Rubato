@@ -15,10 +15,15 @@ const { createAssistantMessageEventStream } = await import(
 const {
   convertMessages: convertGoogleMessages,
 } = await import(pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/api/google-shared.js")).href);
+const { getCurrentSystemMessage, getCurrentTools } = await import(
+  pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/utils/transcript.js")).href
+);
+const { getSystemMessageText } = await import(pathToFileURL(senpiNested("@earendil-works/pi-ai/dist/utils/text.js")).href);
 import { cacheAudit, cacheAuditEnabled } from "./cache-audit.mjs";
 import { nextAntigravityEnvelope } from "./antigravity-state.mjs";
+import { ANTIGRAVITY_USER_AGENT } from "./antigravity-id.mjs";
 
-export { ANTIGRAVITY_API } from "./antigravity-id.mjs";
+export { ANTIGRAVITY_API, ANTIGRAVITY_USER_AGENT } from "./antigravity-id.mjs";
 export const ANTIGRAVITY_ENDPOINT = "https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_PROJECT_ENV = "RUBATO_ANTIGRAVITY_PROJECT";
 
@@ -30,6 +35,16 @@ const WIRE_MODELS = Object.freeze({
     low: "gemini-3.8-flash-low",
     medium: "gemini-3.8-flash-medium",
     high: "gemini-3.8-flash-high",
+  }),
+  // Wire names as agy 1.5.13 lists them (fetchAvailableModels, 2026-11-20). Neon has no
+  // minimal tier; the catalog hides it, and a stray `minimal` still lands on low.
+  "gemini-4-neon": Object.freeze({
+    default: "gemini-4-neon-high",
+    minimal: "gemini-4-neon-low",
+    low: "gemini-4-neon-low",
+    medium: "gemini-4-neon-medium",
+    high: "gemini-4-neon-high",
+    xhigh: "gemini-4-neon-xhigh",
   }),
 });
 
@@ -92,15 +107,32 @@ function resolveProject(options) {
   return project.trim();
 }
 
+// Pi 1.0.1 carries the system prompt and the tool registry in `system` messages (`sections`,
+// `toolsAdded`), not in `context.systemPrompt`/`context.tools`. Reading only the old fields sent
+// every Antigravity turn without Rubato's prompt or a single tool. Gemini takes no system message
+// mid-conversation and the shared encoder drops them all, so the instruction is the replay of
+// every system message, not the leading one alone: a section that changes later still arrives.
+function contextSystemPrompt(context) {
+  const current = getCurrentSystemMessage(context.messages ?? []);
+  const text = current ? getSystemMessageText(current) : context.systemPrompt;
+  return typeof text === "string" && text.length > 0 ? text : undefined;
+}
+
+function contextTools(context) {
+  const tools = getCurrentTools(context.messages ?? []);
+  return tools.length > 0 ? tools : Array.isArray(context.tools) ? context.tools : [];
+}
+
 function systemInstruction(context) {
-  if (typeof context.systemPrompt !== "string" || context.systemPrompt.length === 0) return undefined;
-  return { role: "user", parts: [{ text: context.systemPrompt }] };
+  const text = contextSystemPrompt(context);
+  return text ? { role: "user", parts: [{ text }] } : undefined;
 }
 
 function toolDeclarations(context) {
-  if (!Array.isArray(context.tools) || context.tools.length === 0) return undefined;
+  const tools = contextTools(context);
+  if (tools.length === 0) return undefined;
   return [{
-    functionDeclarations: context.tools.map((tool) => ({
+    functionDeclarations: tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
       parametersJsonSchema: tool.parameters,
@@ -341,7 +373,7 @@ export function createAntigravityApi({
             authorization: `Bearer ${apiKey}`,
             "content-type": "application/json",
             accept: "text/event-stream",
-            "user-agent": "antigravity/hub/2.8.0 (aidev_client; os_type=darwin; arch=arm64)",
+            "user-agent": ANTIGRAVITY_USER_AGENT,
           },
           body: JSON.stringify(body),
           signal: options.signal,

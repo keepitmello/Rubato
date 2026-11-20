@@ -16,6 +16,7 @@
 // (pi-runtime/features/providers/auth-pool/usage-observed.mjs).
 import { observedAccountUsage, anthropicEndpointWindows } from "../pi-runtime/features/providers/auth-pool/usage-observed.mjs";
 import { geminiDailyWindows, readGeminiRequests } from "../rubato-pi/src/gemini-request-count.mjs";
+import { ANTIGRAVITY_USER_AGENT } from "../rubato-pi/src/antigravity-id.mjs";
 
 const REQUEST_TIMEOUT_MS = 10_000;
 const SESSION_MINS = 5 * 60;
@@ -242,7 +243,9 @@ export function antigravitySummaryWindows(summary) {
   for (const group of groups ?? []) {
     for (const bucket of group?.buckets ?? []) {
       if (!bucket?.bucketId || bucket.disabled) continue;
-      const family = bucket.bucketId.startsWith("gemini-") ? "Gemini"
+      // Only the shared pair is plain "Gemini": Pro accounts also get `gemini-argon-wtu-weekly`
+      // in a group of its own, which would otherwise draw as a second "Gemini · Weekly".
+      const family = /^gemini-(weekly|5h)$/.test(bucket.bucketId) ? "Gemini"
         : bucket.bucketId.startsWith("3p-") ? "Claude & GPT (shared)"
           : group.displayName?.trim() || bucket.bucketId;
       const weekly = bucket.window === "weekly";
@@ -306,7 +309,7 @@ async function readAntigravity({ slot, credential, fetchImpl, now, renewAntigrav
           headers: {
             authorization: `Bearer ${access}`,
             "content-type": "application/json",
-            "user-agent": "antigravity/hub/1.0.0 (aidev_client; os_type=darwin; arch=arm64)",
+            "user-agent": ANTIGRAVITY_USER_AGENT,
           },
           body: JSON.stringify(project ? { project } : {}),
         }, "Antigravity"));

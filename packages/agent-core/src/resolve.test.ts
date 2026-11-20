@@ -5,7 +5,7 @@ import { resolveAgentRequest, resolveEffort } from "./resolve"
 import type { ModelCatalog, PresetCatalog } from "./types"
 
 // Antigravity Flash 는 정확한 id 로 effort 가 판정된다 — 현재 세대 id 는 카탈로그가 소유한다.
-const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0]
+const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"))
 
 const models: ModelCatalog = {
   has: (model) =>

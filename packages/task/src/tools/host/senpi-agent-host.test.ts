@@ -180,7 +180,7 @@ describe("startSpecFromResolved service tier", () => {
 describe("liveModelCatalog", () => {
   // 세대 id 는 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
   const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
-  const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0]
+  const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"))
   const ANTHROPIC_FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
 
   test("#given no registry #when asked whether a model exists #then it fails closed", () => {

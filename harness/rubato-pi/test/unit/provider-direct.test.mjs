@@ -44,7 +44,7 @@ const directProviders = (options = {}) => nativeDirectProviders({
 // 현재 세대 id 는 소스/카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
 const FABLE_ID = ANTHROPIC_PICKER_IDS[0];
 const XAI_GROK = XAI_PICKER_IDS[0];
-const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0];
+const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"));
 
 const CATALOG = [
   { id: "xai/grok-4.7", name: "Grok 4.7" },

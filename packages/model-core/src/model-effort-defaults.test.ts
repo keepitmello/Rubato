@@ -10,7 +10,8 @@ import { PRODUCT_MODEL_ORDER } from "./product-model-catalog"
 
 // Antigravity Flash 는 정확한 id 로 판정된다 — 현재 세대 id 는 카탈로그가 소유하므로
 // 여기서 손으로 적으면 세대가 바뀔 때마다 이 케이스가 먼저 깨진다.
-const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"][0]
+const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"))
+const ANTIGRAVITY_NEON = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("neon"))
 const VERTEX_ARGON = PRODUCT_MODEL_ORDER["google-vertex"][0]
 
 describe("configuredModelEffort", () => {
@@ -23,6 +24,7 @@ describe("configuredModelEffort", () => {
     ["xai/grok-4.7", "high"],
     ["cursor/grok-4.7-high-fast", "high"],
     [`google-antigravity/${ANTIGRAVITY_FLASH}`, "medium"],
+    [`google-antigravity/${ANTIGRAVITY_NEON}`, "high"],
     [`google-vertex/${VERTEX_ARGON}`, "medium"],
   ] as const)("#given %s #then the seeded default is %s", (model, effort) => {
     expect(configuredModelEffort(model)).toBe(effort)

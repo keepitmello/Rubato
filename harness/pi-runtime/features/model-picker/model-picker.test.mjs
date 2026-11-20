@@ -99,7 +99,7 @@ test("display labels and stock patch replace item.id", () => {
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6.1-sol", model: {} }), "Sol 6.1");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-6-sol", model: {} }), "Sol 6");
   assert.equal(modelPickerLabel({ provider: "openai-codex", id: "gpt-5.6-sol", model: {} }), "Sol 5.6");
-  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], model: {} }), "Gemini 3.8 Flash");
+  assert.equal(modelPickerLabel({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")), model: {} }), "Gemini 3.8 Flash");
   assert.equal(modelPickerLabel({ provider: "google-vertex", id: PRODUCT_MODEL_ORDER["google-vertex"][0], model: {} }), "Gemini 4 Argon");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-fable-5-1", model: {} }), "Fable 5.1");
   assert.equal(modelPickerLabel({ provider: "anthropic", id: "claude-opus-5-5", model: {} }), "Opus 5.5");

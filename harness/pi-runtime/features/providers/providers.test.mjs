@@ -454,7 +454,7 @@ test("actual stock SDK preserves Antigravity OAuth env and request/response hook
   };
   const selectedModel = model({
     provider: "google-antigravity",
-    id: PRODUCT_MODEL_ORDER["google-antigravity"][0],
+    id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")),
     api: "rubato-antigravity",
     baseUrl,
     input: ["text", "image"],
@@ -614,7 +614,7 @@ test("Kiro and Antigravity abort with one terminal; Cursor abort and clean EOF d
     ],
     [
       "google-antigravity",
-      model({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"][0], api: "rubato-antigravity", baseUrl: "http://127.0.0.1:9" }),
+      model({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")), api: "rubato-antigravity", baseUrl: "http://127.0.0.1:9" }),
       { env: { RUBATO_ANTIGRAVITY_PROJECT: "local-project" }, antigravityState: { sessionId: "abort", stepIndex: 0 } },
     ],
   ]) {

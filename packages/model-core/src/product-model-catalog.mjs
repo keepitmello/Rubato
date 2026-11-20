@@ -35,7 +35,7 @@ export const PRODUCT_MODEL_ORDER = Object.freeze({
     "claude-haiku-5-5",
   ]),
   xai: Object.freeze(["grok-4.7"]),
-  "google-antigravity": Object.freeze(["gemini-3.8-flash"]),
+  "google-antigravity": Object.freeze(["gemini-4-neon", "gemini-3.8-flash"]),
   "google-vertex": Object.freeze(["gemini-4-argon"]),
   google: Object.freeze(["gemini-4-hydrogen"]),
   kiro: Object.freeze(["gpt-5.6-sol", "claude-opus-5"]),

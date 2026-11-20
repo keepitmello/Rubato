@@ -12,6 +12,7 @@ import {
   loadAntigravityProjectId,
   registerAntigravityLifecycle,
 } from "../../src/antigravity-route.mjs";
+import { ANTIGRAVITY_USER_AGENT } from "../../src/antigravity-id.mjs";
 import { createAntigravityLineageTracker } from "../../src/antigravity-state.mjs";
 import { senpiNested } from "../../src/engine-paths.mjs";
 
@@ -44,6 +45,19 @@ test("catalog model baseUrl follows the endpoint override", () => {
   assert.equal(flash.baseUrl, "http://127.0.0.1:18888/custom");
 });
 
+test("catalog는 Neon 을 실제 네 단계와 262K 출력으로 공개한다", async () => {
+  const { getSupportedThinkingLevels } = await import(
+    pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), "dist/models.js")).href
+  );
+  const neon = antigravityModels().find((entry) => entry.id === "gemini-4-neon");
+  assert.ok(neon, "gemini-4-neon 이 Antigravity catalog 에 없다");
+  assert.equal(neon.provider, ANTIGRAVITY_PROVIDER_ID);
+  assert.deepEqual(neon.input, ["text", "image"]);
+  assert.equal(neon.contextWindow, 1_048_576);
+  assert.equal(neon.maxTokens, 262_144);
+  assert.deepEqual(getSupportedThinkingLevels(neon), ["low", "medium", "high", "xhigh"]);
+});
+
 test("well-formed catalog model survives pinned attribution .includes", async () => {
   const { mergeProviderAttributionHeaders } = await import(
     pathToFileURL(join(senpiNested("@earendil-works/pi-coding-agent"), "dist/core/provider-attribution.js")).href
@@ -73,6 +87,7 @@ test("loadCodeAssist는 endpoint origin에 project를 묻는다", async () => {
   assert.equal(project, "project-a");
   assert.equal(seen.url, "http://127.0.0.1:18789/v1internal:loadCodeAssist");
   assert.equal(seen.init.headers.authorization, "Bearer access");
+  assert.equal(seen.init.headers["user-agent"], ANTIGRAVITY_USER_AGENT);
 });
 
 function oauthClientsFile(clients = [{ id: "client", secret: "secret" }]) {

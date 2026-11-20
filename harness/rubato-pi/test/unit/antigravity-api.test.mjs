@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
+import { join } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 import { PRODUCT_MODEL_ORDER } from "../../../../packages/model-core/src/product-model-catalog.mjs";
+import { senpiNested } from "../../src/engine-paths.mjs";
 import {
   ANTIGRAVITY_API,
   ANTIGRAVITY_PROJECT_ENV,
+  ANTIGRAVITY_USER_AGENT,
   antigravityUsage,
   buildAntigravityRequest,
   createAntigravityApi,
@@ -12,8 +16,12 @@ import {
   withAntigravityCapabilities,
 } from "../../src/antigravity-api.mjs";
 
+const { normalizeContext } = await import(
+  pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), "dist/utils/transcript.js")).href
+);
+
 // Antigravity flash id 는 제품 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
-const FLASH_ID = PRODUCT_MODEL_ORDER["google-antigravity"][0];
+const FLASH_ID = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"));
 const wireId = (level) => `${FLASH_ID}-${level}`;
 
 const model = Object.freeze({
@@ -78,6 +86,45 @@ test("Flash는 생략된 reasoning을 medium으로 보낸다", () => {
   assert.equal(resolveAntigravityWireModel(FLASH_ID), wireId("medium"));
   assert.equal(resolveAntigravityWireModel(FLASH_ID, undefined), wireId("medium"));
   assert.equal(resolveAntigravityWireModel(FLASH_ID, "low"), wireId("low"));
+});
+
+test("Neon은 네 단계를 그대로, 없는 minimal은 low로, 생략은 high로 보낸다", () => {
+  const neon = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("neon"));
+  for (const level of ["low", "medium", "high", "xhigh"]) {
+    assert.equal(resolveAntigravityWireModel(neon, level), `${neon}-${level}`);
+  }
+  assert.equal(resolveAntigravityWireModel(neon, "minimal"), `${neon}-low`);
+  assert.equal(resolveAntigravityWireModel(neon), `${neon}-high`);
+});
+
+test("Pi 가 system 메시지에 실은 프롬프트와 도구가 systemInstruction 과 functionDeclarations 로 나간다", () => {
+  const read = { name: "read", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } };
+  const later = { name: "web", description: "Search", parameters: { type: "object", properties: {} } };
+  // What the engine hands a provider: the prompt and registry folded into system messages, a
+  // later one adding a tool and a section mid-conversation.
+  const { messages } = normalizeContext({ systemPrompt: "RUBATO PROMPT", tools: [read], messages: [
+    { role: "user", content: [{ type: "text", text: "hi" }], timestamp: 1 },
+  ] });
+  messages.push({ role: "system", content: "", sections: { notes: "NOTES SECTION" }, toolsAdded: [later], timestamp: 2 });
+  const wire = buildAntigravityRequest(model, { messages }, { env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" } }, state());
+  const instruction = wire.request.systemInstruction.parts.map((part) => part.text).join("");
+  assert.match(instruction, /RUBATO PROMPT/);
+  assert.match(instruction, /NOTES SECTION/);
+  assert.deepEqual(wire.request.tools[0].functionDeclarations.map((tool) => tool.name), ["read", "web"]);
+  assert.deepEqual(wire.request.contents.map((entry) => entry.role), ["user"], "system messages stay out of contents");
+});
+
+test("생성 요청은 agy CLI 와 같은 User-Agent 로 나간다", async () => {
+  let headers;
+  const api = createAntigravityApi({ fetchImpl: async (_url, init) => {
+    headers = init.headers;
+    return responseFor({ response: { candidates: [{ content: { parts: [{ text: "ok" }] }, finishReason: "STOP" }] } });
+  } });
+  await eventsOf(api.stream(model, { messages: [] }, {
+    apiKey: "token", env: { [ANTIGRAVITY_PROJECT_ENV]: "project-a" }, antigravityState: state(),
+  }));
+  assert.equal(headers["user-agent"], ANTIGRAVITY_USER_AGENT);
+  assert.match(ANTIGRAVITY_USER_AGENT, /^antigravity\/cli\//);
 });
 
 test("request가 project, lineage, image, tool identity와 서명을 보존한다", () => {

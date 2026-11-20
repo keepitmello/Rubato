@@ -34,6 +34,12 @@ function isAntigravityFlash(model: string): boolean {
   return provider === "google-antigravity" && id === "gemini-3.8-flash"
 }
 
+/** agy opens a new session on gemini-4-neon-high (session/new currentModelId, 1.5.13). */
+function isAntigravityNeon(model: string): boolean {
+  const { provider, id } = providerAndId(model)
+  return provider === "google-antigravity" && id === "gemini-4-neon"
+}
+
 /** Vertex's own default thinking level for gemini-4-argon is MEDIUM (model card). */
 function isVertexArgon(model: string): boolean {
   const { provider, id } = providerAndId(model)
@@ -55,7 +61,7 @@ function isGeminiApiHydrogen(model: string): boolean {
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
   if (typeof model !== "string" || model.trim().length === 0) return undefined
   if (isSolModel(model) || isAntigravityFlash(model) || isVertexArgon(model) || isGeminiApiHydrogen(model)) return "medium"
-  if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model)) return "high"
+  if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model) || isAntigravityNeon(model)) return "high"
   return undefined
 }
 
