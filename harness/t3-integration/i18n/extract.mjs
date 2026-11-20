@@ -13,7 +13,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 
-import { catalogKey } from '../overlay/apps/web/src/i18n/rubatoWording.ts';
+import { catalogKey } from '../overlay/packages/shared/src/rubatoWording.ts';
 
 /** TypeScript 7 ships no compiler API; T3's tree still carries a 6.x for tools. */
 export function loadTypeScript(t3) {

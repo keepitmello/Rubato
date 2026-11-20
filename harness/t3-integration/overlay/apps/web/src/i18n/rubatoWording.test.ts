@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import dictionary from "../rubatoI18n.ko.json";
-import type { UiDictionary } from "../rubatoI18n";
+import dictionary from "@t3tools/shared/rubatoI18n.ko.json";
+import type { UiDictionary } from "@t3tools/shared/rubatoWording";
 import { sourceText, withRubatoWording, type Catalog } from "./rubatoWording";
 import english from "./translations/en.json";
 import korean from "./translations/ko.json";

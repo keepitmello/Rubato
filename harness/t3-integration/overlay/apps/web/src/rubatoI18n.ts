@@ -4,7 +4,7 @@
 // i18n/rubatoWording.ts puts Rubato's wording over its Korean catalog. What
 // Rubato adds (overlay components and the text its edits put into T3's) is
 // written in English, so while the interface is Korean the text React writes
-// into the page is swapped from the same dictionary (rubatoI18n.ko.json, built
+// into the page is swapped from the same dictionary (@t3tools/shared rubatoI18n.ko.json, built
 // by harness/t3-integration/i18n/ in the Rubato checkout). A MutationObserver
 // sees each text node and attribute React writes and replaces it before the
 // browser paints. React keeps what it last wrote in its own memory and never
@@ -20,12 +20,8 @@
 
 export type UiLanguage = "en" | "ko";
 
-export interface UiDictionary {
-  /** English text (whitespace collapsed) → Korean. */
-  readonly exact: Readonly<Record<string, string>>;
-  /** [English pattern, Korean pattern]; {n} is a runtime value, <n/> a child element. */
-  readonly templates: ReadonlyArray<readonly [string, string]>;
-}
+import type { UiDictionary } from "@t3tools/shared/rubatoWording";
+export type { UiDictionary };
 
 /** Attributes that show text: tooltips, placeholders and what a screen reader says. */
 export const TRANSLATED_ATTRIBUTES = ["title", "placeholder", "aria-label", "aria-description", "alt"] as const;
@@ -435,7 +431,7 @@ let dictionary: Promise<UiDictionary> | null = null;
 const listeners = new Set<() => void>();
 
 function loadKorean(): Promise<UiDictionary> {
-  dictionary ??= import("./rubatoI18n.ko.json").then((module) => module.default as unknown as UiDictionary);
+  dictionary ??= import("@t3tools/shared/rubatoI18n.ko.json").then((module) => module.default as unknown as UiDictionary);
   return dictionary;
 }
 

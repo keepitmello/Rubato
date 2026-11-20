@@ -35,10 +35,11 @@ test("settings label and sort main, sub and sub2 without guessing unknown accoun
   });
 
 test("settings account roles use Korean interface text", { skip: !source }, (t) => {
-  const root = fixture(t, ["rubatoI18n.ts", "rubatoI18n.ko.json"]);
+  const root = fixture(t, ["rubatoI18n.ts"]);
+  const dictionaryPath = new URL("../overlay/packages/shared/src/rubatoI18n.ko.json", import.meta.url).pathname;
   const code = `
     import {createUiTranslator} from ${JSON.stringify(join(root, "rubatoI18n.ts"))};
-    import dictionary from ${JSON.stringify(join(root, "rubatoI18n.ko.json"))};
+    import dictionary from ${JSON.stringify(dictionaryPath)};
     const t = createUiTranslator(dictionary);
     console.log(JSON.stringify(["Main account","Sub account","Sub account 2"].map(x=>t.lookup(x))));
   `;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import { createUiTranslator, type UiDictionary } from "../../rubatoI18n";
-import korean from "../../rubatoI18n.ko.json";
+import korean from "@t3tools/shared/rubatoI18n.ko.json";
 import type { SegnoFinished, SegnoLead, SegnoPanel } from "../../state/rubatoCompanion";
 import {
   ART_MAX_PX,

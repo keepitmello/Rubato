@@ -12,8 +12,8 @@ Rubato 문구 영어 그대로 렌더 → 한국어일 때 사전에서 찾아 �
 
 | 자리 | 맡는 것 |
 |---|---|
-| `../overlay/apps/web/src/rubatoI18n.ko.json` | 한국어 사전. 영어(화면에 보이는 그대로) → 한국어 |
-| `../overlay/apps/web/src/i18n/rubatoWording.ts` | T3 카탈로그를 불러올 때 같은 영어의 해시에 Rubato 표현을 넣는다 |
+| `../overlay/packages/shared/src/rubatoI18n.ko.json` | 한국어 사전. 영어(화면에 보이는 그대로) → 한국어. 데스크톱과 폰이 같이 쓴다 |
+| `../overlay/packages/shared/src/rubatoWording.ts` | T3 카탈로그를 불러올 때 같은 영어의 해시에 Rubato 표현을 넣는다. 웹(`apps/web/src/i18n/rubatoWording.ts`)과 폰(`mobile/shell-edits.mjs` 의 I18nProvider 편집)이 부른다 |
 | `../overlay/apps/web/src/rubatoI18n.ts` | Rubato 문구를 페이지에서 바꿔 끼우는 장치. 사전 형식과 키 규칙의 정본 |
 | `../i18n-edits.mjs` | 카탈로그 로더·언어 런타임·설정 검색·예전 설정 이전에 넣는 수정 |
 | `glossary.md` | 사용자가 정한 용어와 말투 |

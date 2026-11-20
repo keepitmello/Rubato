@@ -83,7 +83,7 @@ describe("page translation", () => {
   });
 
   it("names a companion's wake in Korean and keeps its count beside it (RubatoSegnoInner)", async () => {
-    const korean = (await import("./rubatoI18n.ko.json")).default as unknown as UiDictionary;
+    const korean = (await import("@t3tools/shared/rubatoI18n.ko.json")).default as unknown as UiDictionary;
     const root = document.createElement("div");
     root.innerHTML =
       '<button><span data-part=""><span>Heartbeat</span> 2</span><span data-part=""><span>Work room</span> 1</span><span data-part="">3 thoughts</span></button>';

@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 vi.mock("./chat/MessagesTimeline", () => ({ MessagesTimeline: () => null }));
 
 import { createPageTranslation, createUiTranslator, type UiDictionary } from "../rubatoI18n";
-import korean from "../rubatoI18n.ko.json";
+import korean from "@t3tools/shared/rubatoI18n.ko.json";
 import type { RubatoSessionState } from "../state/rubatoSessionState";
 import { RubatoThreadDetailsAgents } from "./chat/RubatoThreadDetailsAgents";
 import { RubatoAgentsPanel, agentStateLine, assignmentLabel } from "./RubatoAgentsPanel";

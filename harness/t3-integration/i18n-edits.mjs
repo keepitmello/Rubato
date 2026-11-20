@@ -1,6 +1,7 @@
 // Korean interface, on T3's own i18n (apps/web/src/i18n/, gt-react).
 // - T3's Korean catalog loads with Rubato's wording put over it wherever
-//   Rubato's dictionary has the same English (i18n/rubatoWording.ts).
+//   Rubato's dictionary has the same English (packages/shared rubatoWording.ts,
+//   which the phone's Korean catalog goes through too).
 // - Rubato's own text (overlay components, text its edits add) is written in
 //   English and swapped from the same dictionary while the interface is Korean
 //   (rubatoI18n.ts); T3's i18n runtime switches it with each language change.
@@ -12,7 +13,9 @@
 export const i18nOverlays = [
   'apps/web/src/rubatoI18n.ts',
   'apps/web/src/rubatoI18n.test.tsx',
-  'apps/web/src/rubatoI18n.ko.json',
+  // The dictionary and the catalog wording are shared with the phone.
+  'packages/shared/src/rubatoI18n.ko.json',
+  'packages/shared/src/rubatoWording.ts',
   'apps/web/src/i18n/rubatoWording.ts',
   'apps/web/src/i18n/rubatoWording.test.ts',
   'apps/web/src/rubatoKorean.browser.test.tsx',
@@ -21,6 +24,10 @@ export const i18nOverlays = [
 ];
 
 export const i18nEdits = {
+  'packages/shared/package.json': [
+    ['    "./png": {\n',
+      '    "./rubatoWording": {\n      "types": "./src/rubatoWording.ts",\n      "import": "./src/rubatoWording.ts"\n    },\n    "./rubatoI18n.ko.json": "./src/rubatoI18n.ko.json",\n'],
+  ],
   'apps/web/src/i18n/initializeI18n.ts': [
     ['import { DEFAULT_LOCALE, SUPPORTED_LOCALES } from "./locales";\n',
       'import { loadRubatoKorean } from "./rubatoWording";\n'],

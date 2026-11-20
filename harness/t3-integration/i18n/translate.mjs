@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Fills the Korean dictionary (overlay/apps/web/src/rubatoI18n.ko.json) with
+// Fills the Korean dictionary (overlay/packages/shared/src/rubatoI18n.ko.json) with
 // the interface text it lacks. Keys come from extract.mjs; each batch goes to
 // a model through `rubato -p` with prompt.md and glossary.md, and an answer
 // that breaks a value, an element marker or the glossary goes back once more
@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-export const DICTIONARY = path.join(here, '../overlay/apps/web/src/rubatoI18n.ko.json');
+export const DICTIONARY = path.join(here, '../overlay/packages/shared/src/rubatoI18n.ko.json');
 export const DEFAULT_MODEL = 'google-vertex/gemini-4-argon';
 
 // Glossary terms the user keeps in English or names one way (glossary.md),
