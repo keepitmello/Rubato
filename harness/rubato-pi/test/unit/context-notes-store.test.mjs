@@ -110,6 +110,33 @@ test("entries already archived are not copied and compared again on the next syn
   const changed = structuredClone(f.branch()); changed.at(-1).message.content = "changed";
   assert.throws(() => f.store.sync(changed), /변경/);
 });
+test("a branch that only grew is synced from where the last sync ended, to the same state a whole sync reaches", (t) => {
+  // 회귀: 새 항목마다 활성 목록을 지우고 가지 전체를 다시 넣고 노트를 전부 다시 검증해,
+  // 24,000 항목 대화에서 모델 요청마다 엔진 스레드를 55~70ms 잡았다.
+  const f = setup(t); f.addMessage("user", "first"); note(f, "work.md", "v1"); f.addMessage("assistant", "second");
+  const prepare = f.store.db.prepare.bind(f.store.db);
+  let activeRows = 0;
+  f.store.db.prepare = (sql) => {
+    const statement = prepare(sql);
+    if (!/INSERT INTO active_items/.test(sql)) return statement;
+    return { run: (...args) => { activeRows += 1; return statement.run(...args); } };
+  };
+  f.store.sync(f.branch());
+  assert.equal(activeRows, 2);
+  f.addMessage("user", "third"); note(f, "work.md", "v2"); note(f, "plan.md", "p1");
+  const w2 = nextWindow(f.w);
+  f.append({ type: "compaction", summary: encodeBootstrap(w2), details: { source: SOURCE, window: w2 }, firstKeptEntryId: "unused" });
+  f.addMessage("assistant", "fourth in the next window");
+  f.store.sync(f.branch());
+  assert.equal(activeRows, 4, "only the two new messages are made active");
+  const whole = new ContextNotesStore(join(f.dir, "whole.sqlite"));
+  t.after(() => whole.close());
+  whole.sync(f.branch());
+  const state = (store) => ({ items: store.listItems({ limit: 50 }).items.map((item) => [item.item_id, item.window_id]),
+    windows: store.listWindows().windows, work: store.noteText("work.md"), plan: store.noteText("plan.md"),
+    notes: [...store.noteVersions.values()], active: [...store.activeIds].sort(), current: store.current });
+  assert.deepEqual(state(f.store), state(whole));
+});
 test("a full disk surfaces as itself and leaves the archive usable", (t) => {
   const f=setup(t); f.store.sync(f.branch());
   const pages=f.store.db.prepare("PRAGMA page_count").get().page_count;

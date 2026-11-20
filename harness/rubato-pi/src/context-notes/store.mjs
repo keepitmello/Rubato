@@ -106,6 +106,10 @@ export class ContextNotesStore {
     this.activeIds = new Set();
     this.branch = [];
     this.current = undefined;
+    // Where the last sync ended: its context window and init entry. A branch that only grew past
+    // the last one is synced from there (sync).
+    this.syncedWindow = undefined;
+    this.syncedInit = undefined;
     this.closed = false;
     // Branch entries already compared with the archive and stored. A session entry does not
     // change once appended, so the same object needs neither another JSON copy nor another
@@ -181,19 +185,31 @@ export class ContextNotesStore {
     const current = branchWindow(branch);
     if (!current) throw new Error("세션에 문맥 창 시작 기록이 없어요.");
     const init = branch.find((e) => e.type === "custom" && e.customType === INIT_ENTRY);
-    let window = init ? validateWindow(init.data.window) : current;
-    const notes = new Map();
-    const activeIds = new Set();
+    // A branch that is the last one with entries appended (a turn going on) needs only those
+    // entries: the earlier ones are stored, verified and active already. Rewriting the whole
+    // active set and checking every note again on each entry took 55-70ms of the engine's
+    // thread per step in Segno's 24,000-entry conversation (2026-11-21).
+    const previous = this.branch;
+    const grown = this.syncedWindow !== undefined && branch !== previous && init === this.syncedInit && branch.length >= previous.length &&
+      previous.every((entry, index) => branch[index] === entry);
+    const from = grown ? previous.length : 0;
+    let window = grown ? this.syncedWindow : init ? validateWindow(init.data.window) : current;
+    const notes = grown ? new Map(this.noteVersions) : new Map();
+    const activeIds = grown ? this.activeIds : new Set();
+    const addedIds = [];
     const putWindow = this.db.prepare("INSERT OR IGNORE INTO windows VALUES (?, ?, ?, ?)");
     const putItem = this.db.prepare("INSERT OR IGNORE INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     const getItem = this.db.prepare("SELECT raw FROM items WHERE id=?");
     const putActive = this.db.prepare("INSERT INTO active_items VALUES (?, ?)");
     const putNote = this.db.prepare("INSERT OR IGNORE INTO notes VALUES (?, ?, ?, ?, ?, ?, ?)");
+    const getNote = this.db.prepare("SELECT * FROM notes WHERE id=?");
     const archivedNow = [];
     this.transaction(() => {
-      this.db.exec("DELETE FROM active_items");
-      putWindow.run(window.windowId, window.firstWindowId, window.previousWindowId, window.number);
-      for (let ordinal = 0; ordinal < branch.length; ordinal += 1) {
+      if (!grown) {
+        this.db.exec("DELETE FROM active_items");
+        putWindow.run(window.windowId, window.firstWindowId, window.previousWindowId, window.number);
+      }
+      for (let ordinal = from; ordinal < branch.length; ordinal += 1) {
         const entry = branch[ordinal];
         if (!entry || typeof entry.id !== "string") throw new Error("식별자가 없는 세션 항목이 있어요.");
         if (isWindowCompaction(entry)) {
@@ -206,7 +222,7 @@ export class ContextNotesStore {
           if (typeof data.text !== "string" || Buffer.byteLength(data.text) > this.maxNoteBytes) throw new Error("저장된 노트 크기가 올바르지 않아요.");
           if (data.windowId !== window.windowId) throw new Error("노트가 기록된 문맥 창과 노트의 식별자가 달라요.");
           putNote.run(entry.id, path, data.text, data.windowId, data.throughUserId ?? null, ordinal, data.operationId ?? null);
-          const saved = this.db.prepare("SELECT * FROM notes WHERE id=?").get(entry.id);
+          const saved = getNote.get(entry.id);
           if (saved.text !== data.text || saved.path !== path || saved.window_id !== data.windowId ||
               saved.through_user_id !== (data.throughUserId ?? null) || saved.operation_id !== (data.operationId ?? null)) {
             throw new Error("같은 식별자의 노트가 변경됐어요. 기존 기록은 덮어쓰지 않았어요.");
@@ -219,25 +235,31 @@ export class ContextNotesStore {
         if (!message) continue;
         if (this.archivedEntries.has(entry)) {
           putActive.run(entry.id, ordinal);
-          activeIds.add(entry.id);
+          addedIds.push(entry.id);
           continue;
         }
         const raw = JSON.stringify(entry);
         const existing = getItem.get(entry.id);
         if (existing && existing.raw !== raw) throw new Error(`기록 항목 ${entry.id}의 원문이 변경됐어요. 덮어쓰지 않고 멈췄어요.`);
-        const role = message.role === "toolResult" ? "tool" : message.role ?? "unknown";
-        putItem.run(entry.id, window.windowId, ordinal, role, entry.type,
-          message.toolName ?? null, messageText(message), raw, String(entry.timestamp ?? ""));
+        // An original the archive already holds, the same, is not written again (reopening a long conversation).
+        if (!existing) {
+          const role = message.role === "toolResult" ? "tool" : message.role ?? "unknown";
+          putItem.run(entry.id, window.windowId, ordinal, role, entry.type,
+            message.toolName ?? null, messageText(message), raw, String(entry.timestamp ?? ""));
+        }
         putActive.run(entry.id, ordinal);
-        activeIds.add(entry.id);
+        addedIds.push(entry.id);
         archivedNow.push(entry);
       }
     });
     for (const entry of archivedNow) this.archivedEntries.add(entry);
+    for (const id of addedIds) activeIds.add(id);
     this.branch = branch;
     this.current = current;
     this.noteVersions = notes;
     this.activeIds = activeIds;
+    this.syncedWindow = window;
+    this.syncedInit = init;
     return current;
   }
 

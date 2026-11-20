@@ -366,6 +366,10 @@ export function createSpeedIndexStore({
     for (const name of names) {
       if (!name.endsWith(".jsonl")) continue;
       const started = startedAtFromName(name);
+      // A file whose name says its process started inside the window is kept whatever its
+      // mtime: no stat. Every runtime start prunes, and stat-ing all 1,757 sample files took
+      // about 90ms of the engine's thread each time (2026-11-21).
+      if (Number.isFinite(started) && started >= cutoff) continue;
       const path = join(dir, name);
       let mtime = 0;
       try { mtime = statSync(path).mtimeMs; } catch { continue; }
