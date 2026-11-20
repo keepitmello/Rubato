@@ -37,9 +37,11 @@
     "apps/mobile/src/features/layout/workspace/WorkspaceRootScreen.tsx": "b8e2545a051681c87b96d4a9cbb05894f33bc2f2ebe03525377440b53720d8c4",
     "apps/mobile/src/features/layout/workspace/WorkspaceTabsContext.tsx": "b28c51ca4912ac31536742043841fb8585faf1081eae8ad13499df41ff1c701e",
     "apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx": "155d37df35d3ec68e7c608d1c94afd39058edfa62bb0c0616ca86f10abcbd690",
+    "apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts": "6cbeec5c653b520a088b26f18867a5686787c62a727b0e44b01633cb07a5470a",
     "apps/mobile/src/features/layout/workspace/navigation-tab-order.ts": "22b3310122b41e4211a17eed428faf0abb0292a7f72541ac3254aaaf521afcbe",
     "apps/mobile/src/features/layout/workspace/navigation-tabs.ts": "8994cdf561f2c6c0386bdd13af2a7a1b3acd84d2caeb7965e5cf3eeaef93a094",
     "apps/mobile/src/features/layout/workspace/workspace-tab-navigation.ts": "859d58c00facc073c9d67614a44cdce443fc3fee98ee73b8df181ceef4ce603f",
+    "apps/mobile/src/features/layout/workspace/workspace-tabs-state.test.ts": "ef0e39ebfecd22f359ce8fff0b26491b66f36679e9ebb5a2de092fcfef1187f9",
     "apps/mobile/src/features/layout/workspace/workspace-tabs-state.ts": "7450fe80f24fac3067fba21ebdf0a61430ffb955912f2e17afc9e638ca355bae",
     "apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx": "4fe15b3c4acaf842a2d9ff4a38619af94828ed29c7f45d988835a05002d04622",
     "apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx": "eec911b3dfc9c2c178cd2a1806531b469dfa899465c3eb27bc3d891488d44ad5",
@@ -51,6 +53,7 @@
     "apps/mobile/src/features/threads/thread-list-v2-items.tsx": "31165e1fa2cd5490f50072d2e9da7d073047cbf7e2a3c6d36b8a492892950dce",
     "apps/mobile/src/features/updates/app-updates.ts": "6aec278bdce19c2178a9a534dbe2d3db80ddd9bbb0b2d16312de588241d53f51",
     "apps/mobile/src/features/voice-input/VoiceInputProvider.tsx": "4d23ac6ccfde396d5195142f95f926aeaf7eaba88e1502c9d67b66d5428551a1",
+    "apps/mobile/src/i18n/I18nProvider.tsx": "e761f9e79e787f6e3b855a098474ffcd104b6c9c1d946b745e9b841a32dfe007",
     "apps/mobile/src/lib/appLinking.test.ts": "57a64dcebbd8d3f1978b2066230782f70d3fd0910f7f6a34df0be7edc1aa1dbd",
     "apps/mobile/src/lib/appLinking.ts": "6143c400895e3cfed581f6a97156ff164bf63e746af451d534727a8085673352",
     "apps/mobile/src/lib/mobileTheme.test.ts": "dc53d62f0b2c8464884f2bfb26bd8c88ebb2ee2247309f88d6278ad7ead3106c",
@@ -98,6 +101,7 @@
     "apps/web/src/components/BranchToolbar.tsx": "fef6767a620179b2fd7673042099cae263cf715874e162519f8c5e3ec81c4513",
     "apps/web/src/components/ChatView.tsx": "e8111c710559578eaefcc23e81d21cd86b55140aacb1261f0969779104b03f76",
     "apps/web/src/components/CommandPalette.tsx": "ca614f0fd5d26b3ff7f9d04edbdf76cc51c5ceb980b5e8d7a1d0dee8a7775975",
+    "apps/web/src/components/CommandPaletteLookups.ts": "2646367551240113785bf0c93c36a1109a3f7d39e04f3f95630801e56b627c08",
     "apps/web/src/components/CommandPaletteThemeItems.tsx": "c2be5e5370f1556d30f92fc21cb15c641bcdd45cc9f13d3e1a4e53ec62950615",
     "apps/web/src/components/CommandPaletteThreadItems.tsx": "be4efabb86596b9ebafe1f6f41b24e55602b708b32a5dc3077e421236d3afb5e",
     "apps/web/src/components/RightPanelTabs.tsx": "fdf27871144b609259f53d0f9def251b362c304a470e4d235160991dbcc08e18",
@@ -123,6 +127,7 @@
     "apps/web/src/components/chat/ThreadDetailsCard.tsx": "689abf485a4f461d847894dfd6ee8a7014212dd0c977af0db926800b4268efce",
     "apps/web/src/components/chat/ThreadDetailsPanel.tsx": "07a00f32a9825eaff08bd37f86d535c151f77c8ac9f27227bf58c657774321ac",
     "apps/web/src/components/chat/ThreadDetailsUsage.tsx": "2c59f07d79f19ad71c521e84b5bca239d170e78955f0beb84df38cb70956e78f",
+    "apps/web/src/components/chat/ThreadTimeline.tsx": "b9c23f37c257d47715cddac3b0cd6adab7024182eb1ea0b9072bb5d172c522a2",
     "apps/web/src/components/chat/TimelineAssistantRows.tsx": "5a6b140e5a2e1c252d89e157f7f7dd5dc078561160de3b7ad11b17812894c149",
     "apps/web/src/components/chat/TimelineUserMessageRow.tsx": "ab759af374baaffe05c1ed7e66fa17d598f13f86d0680f5a7a37f11e10402d76",
     "apps/web/src/components/chat/TimelineV2EventRow.tsx": "f173e71b62205c8b047b00111dcb505f16ddabd4ba055d2d5106317c284089c1",
@@ -199,11 +204,6 @@
     "packages/shared/src/usageLimits.ts": "40b0585b4f1a3f4f12cc08b044d423abf71ab5421d656583b0b98687d6f6a7fc",
     "pnpm-lock.yaml": "2561b3274056e4ac9d96c8ed88b9a8b9a32ed8cacdcf59c2edbb90a0188e335a",
     "third-party-licenses.config.json": "b5902fb11e3891f72712ca0c54b663278b8e518c5a4fb4aad0408d41024e01cf",
-    "tsconfig.base.json": "a3d3a43e170238b3923ef1e134c32f1ad7bc16dfe943b46041b33b9999445500",
-    "apps/mobile/src/features/layout/workspace/workspace-tabs-state.test.ts": "ef0e39ebfecd22f359ce8fff0b26491b66f36679e9ebb5a2de092fcfef1187f9",
-    "apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts": "6cbeec5c653b520a088b26f18867a5686787c62a727b0e44b01633cb07a5470a",
-    "apps/web/src/components/CommandPaletteLookups.ts": "2646367551240113785bf0c93c36a1109a3f7d39e04f3f95630801e56b627c08",
-    "apps/web/src/components/chat/ThreadTimeline.tsx": "b9c23f37c257d47715cddac3b0cd6adab7024182eb1ea0b9072bb5d172c522a2",
-    "apps/mobile/src/i18n/I18nProvider.tsx": "e761f9e79e787f6e3b855a098474ffcd104b6c9c1d946b745e9b841a32dfe007"
+    "tsconfig.base.json": "a3d3a43e170238b3923ef1e134c32f1ad7bc16dfe943b46041b33b9999445500"
   }
 }
