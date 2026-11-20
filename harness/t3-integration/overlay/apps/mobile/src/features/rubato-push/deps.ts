@@ -22,6 +22,11 @@ export function rubatoPushDeps(): PushSyncDeps {
   };
 }
 
+/** Whether this binary carries the card's widget extension (shell-edits.mjs, RUBATO_WIDGETS). */
+export function liveActivitySupported(): boolean {
+  return Constants.expoConfig?.extra?.rubatoLiveActivity === true;
+}
+
 /** The Live Activity cards of upstream's AgentActivity widget, on top of the relay registration. */
 export function liveActivityDeps(): LiveActivityDeps {
   return {

@@ -70,7 +70,12 @@ export const shellEdits = {
       + '// Rubato: the notification service extension and the entitlements it needs (Communication\n'
       + '// Notifications, App Group). Off until the Apple account enables both capabilities on the\n'
       + '// app ids; build-ios.sh sets RUBATO_IOS_NOTIFICATION_EXTENSION=1 once they exist.\n'
-      + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION === "1";\n\n'],
+      + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION === "1";\n'
+      + '// Rubato: the widget extension that draws the Live Activity card (expo-widgets). It and the app share\n'
+      + '// the App Group group.com.keepitmello.rubato, which only the Apple account can put on the app ids\n'
+      + '// com.keepitmello.rubato and com.keepitmello.rubato.widgets. Turning it on changes the native\n'
+      + '// fingerprint: a TestFlight build, and every update after it, carries it.\n'
+      + 'const RUBATO_WIDGETS = false;\n\n'],
     ['  slug: "t3-code",', '  slug: "rubato",', 'replace'],
     // Rubato's own version line; build-ios.sh stamps the build number.
     ['  version: "2.0.0",', '  version: "1.0.0",', 'replace'],
@@ -97,6 +102,8 @@ export const shellEdits = {
     ['      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",',
       '      NSPhotoLibraryAddUsageDescription: "Allow Rubato to save images to your photo library.",', 'replace'],
     // The share extension needs an app id and an app group of its own.
+    ['    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),',
+      '    ...(RUBATO_WIDGETS ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),', 'replace'],
     ['    ...(isIosPersonalTeamBuild\n      ? [sharingPlugin]\n      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),', '    sharingPlugin,', 'replace'],
     ['      enabled: !isIosPersonalTeamBuild,\n      extensionBundleIdentifier', '      enabled: false,\n      extensionBundleIdentifier', 'replace'],
     ['    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],\n    "expo-web-browser",',
@@ -115,7 +122,8 @@ export const shellEdits = {
       '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
     // Without the share extension and T3's relay, the JavaScript must not reach for either:
     // both check this flag (IncomingShareProvider, agent-awareness/capabilities).
-    ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,', '    iosPersonalTeamBuild: true,', 'replace'],
+    ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,',
+      '    iosPersonalTeamBuild: true,\n    // Whether this binary carries the Live Activity card (rubato-push/liveActivity.ts reads it).\n    ...(RUBATO_WIDGETS ? { rubatoLiveActivity: true } : {}),', 'replace'],
     ['    relay: {\n      url: repoEnv.T3CODE_RELAY_URL ?? null,\n    },\n    clerk: {\n      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,\n      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,\n    },',
       '    // Rubato: no T3 account and no T3 relay; the phone pairs with the Mac directly. Empty, not\n    // null: the public manifest would turn null into {}.\n    relay: {},\n    clerk: {},', 'replace'],
     ['    eas: {\n      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    },\n  },\n  owner: "pingdotgg",\n};',

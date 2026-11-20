@@ -9,7 +9,7 @@ import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
-import { liveActivityDeps, macConnections, rubatoPushDeps } from "./deps";
+import { liveActivityDeps, liveActivitySupported, macConnections, rubatoPushDeps } from "./deps";
 import { syncLiveActivities } from "./liveActivity";
 import { loadPushState } from "./storage";
 import { pushPreferences, setRubatoPushPreferences, type MacConnection, type PushPreferences, type PushState } from "./sync";
@@ -152,14 +152,16 @@ export function RubatoNotificationsSettings() {
             value={preferences.threads}
             onValueChange={(on) => changePreference("threads", on)}
           />
-          <SettingsSwitchRow
-            icon="timer"
-            label="Live Activity"
-            subtitle="Running threads on the lock screen and in the Dynamic Island while the Mac works."
-            disabled={!registered}
-            value={preferences.liveActivity}
-            onValueChange={(on) => changePreference("liveActivity", on)}
-          />
+          {liveActivitySupported() ? (
+            <SettingsSwitchRow
+              icon="timer"
+              label="Live Activity"
+              subtitle="Running threads on the lock screen and in the Dynamic Island while the Mac works."
+              disabled={!registered}
+              value={preferences.liveActivity}
+              onValueChange={(on) => changePreference("liveActivity", on)}
+            />
+          ) : null}
           <SettingsSwitchRow
             icon={{ ios: "lock", android: "lock" }}
             label="Show Thread Names"

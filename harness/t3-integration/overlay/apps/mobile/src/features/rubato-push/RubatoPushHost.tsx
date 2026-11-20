@@ -4,7 +4,7 @@ import { requireOptionalNativeModule } from "expo";
 import * as Notifications from "expo-notifications";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { liveActivityDeps, macConnections, rubatoPushDeps } from "./deps";
+import { liveActivityDeps, liveActivitySupported, macConnections, rubatoPushDeps } from "./deps";
 import { onLiveActivitySyncRequest, syncLiveActivities } from "./liveActivity";
 import { librarySounds } from "./soundFolder";
 import { syncNotificationSounds } from "./sounds";
@@ -61,7 +61,7 @@ export function RubatoPushHost(): null {
         }
         await syncNotificationSounds({ folder: librarySounds(), fetch: globalThis.fetch }, connections.current).catch(() => {});
         // iOS starts a card only for an app in front.
-        if (AppState.currentState === "active") {
+        if (AppState.currentState === "active" && liveActivitySupported()) {
           await syncLiveActivities(liveActivityDeps(), connections.current).catch((error: unknown) =>
             console.warn("rubato push: live activity sync failed", error),
           );
