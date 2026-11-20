@@ -1,6 +1,7 @@
 // The services the person's own engine keeps running beside its conversations: the companion
-// keeper, the companion's nightly dream, the scheduler, the remote hub's supervisor and, while the
-// product runs Telegram, the messenger. Each one runs in its own
+// keeper, the companion's nightly dream, the scheduler, the remote hub's supervisor, the watch that
+// shuts down a forgotten or runaway iOS simulator (simulator-watch.mjs) and, while the product runs
+// Telegram, the messenger. Each one runs in its own
 // thread (resident-thread.mjs), so nothing a service does can stop the engine or a conversation:
 //
 //   failure in a service              what happens
@@ -39,6 +40,7 @@ export const RESIDENT_SERVICES = [
   { name: 'scheduler', module: path.resolve(here, '../../scheduler/src/service.mjs') },
   ...(TELEGRAM_ENABLED ? [MESSENGER_SERVICE] : []),
   { name: 'hub', module: path.join(here, 'hub-supervisor.mjs') },
+  { name: 'simulator-watch', module: path.join(here, 'simulator-watch.mjs') },
 ];
 
 /** Voice calls with companions (harness/companion/call-agent); one service for every companion. */
