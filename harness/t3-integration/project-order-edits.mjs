@@ -21,9 +21,8 @@
 //   the sections, the trash removes a project from Rubato, Add project, a
 //   name opens that project's settings. The rail's Projects window, the
 //   sidebar's project filter and the headline's picker end in Edit projects,
-//   which opens this list. The page
-//   is laid out like Rubato's other settings pages (settings/rubatoSettingsLayout.ts),
-//   and T3's sort select has no row there: the list is the order.
+//   which opens this list. T3's sort select on General shows nowhere: the list
+//   is the order (settings/rubatoSettingsSurface.ts).
 export const projectOrderOverlays = [
   'apps/web/src/components/sidebar/rubatoProjectOrder.ts',
   'apps/web/src/components/sidebar/rubatoProjectOrder.test.ts',
@@ -255,146 +254,24 @@ export const projectOrderEdits = {
     ['vi.mock("../components/Sidebar.logic", () => ({ orderItemsByPreferredIds: () => [] }));\n',
       'vi.mock("./useSidebarProjectGroups", () => ({ useSidebarProjectGroups: () => [] }));\n'],
   ],
-  'apps/web/src/components/LegacySidebar.tsx': [
-    ['import { pinMenuItems, pinnedThreadsFirst } from "./sidebar/rubatoPinnedThreads";\n',
-      'import { useRubatoProjectOrder } from "./sidebar/rubatoProjectOrder";\n'
-        + 'import { moveInProjectList } from "./sidebar/rubatoProjectRail.logic";\n'
-        + 'import { useOpenRubatoProjectList } from "./settings/RubatoProjectListSettings";\n'],
-    ['import { Menu, MenuGroup, MenuPopup, MenuRadioGroup, MenuRadioItem, MenuTrigger } from "./ui/menu";\n',
-      'import {\n  Menu,\n  MenuGroup,\n  MenuItem,\n  MenuPopup,\n  MenuRadioGroup,\n  MenuRadioItem,\n  MenuTrigger,\n} from "./ui/menu";\n',
-      'replace'],
-    ['  onThreadPreviewCountChange: (count: SidebarThreadPreviewCount) => void;\n}) {\n',
-      '  onThreadPreviewCountChange: (count: SidebarThreadPreviewCount) => void;\n}) {\n'
-        + '  const openRubatoProjectList = useOpenRubatoProjectList();\n',
-      'replace'],
-    [
-      [
-        '        <MenuGroup>',
-        '          <div className="px-2 py-1 sm:text-xs font-medium text-muted-foreground">',
-        '            Sort projects',
-        '          </div>',
-        '          <MenuRadioGroup',
-        '            value={projectSortOrder}',
-        '            onValueChange={(value) => {',
-        '              onProjectSortOrderChange(value as SidebarProjectSortOrder);',
-        '            }}',
-        '          >',
-        '            {(Object.entries(SIDEBAR_SORT_LABELS) as Array<[SidebarProjectSortOrder, string]>).map(',
-        '              ([value, label]) => (',
-        '                <MenuRadioItem key={value} value={value}>',
-        '                  {label}',
-        '                </MenuRadioItem>',
-        '              ),',
-        '            )}',
-        '          </MenuRadioGroup>',
-        '        </MenuGroup>',
-        '',
-      ].join('\n'),
-      [
-        '        {/* Rubato: one project order everywhere; drag projects here or edit the list (project-order-edits.mjs). */}',
-        '        <MenuGroup>',
-        '          <MenuItem onClick={() => void openRubatoProjectList()}>Edit project list…</MenuItem>',
-        '        </MenuGroup>',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-    ['    () => new Map(sidebarProjects.map((project) => [project.projectKey, project] as const)),\n    [sidebarProjects],\n  );\n',
-      '    () => new Map(sidebarProjects.map((project) => [project.projectKey, project] as const)),\n    [sidebarProjects],\n  );\n'
-        + '  // Rubato: the shared project order, which the drag below edits (project-order-edits.mjs).\n'
-        + '  const rubatoProjectOrder = useRubatoProjectOrder(sidebarProjects);\n',
-      'replace'],
-    [
-      '      if (sidebarProjectSortOrder !== "manual") {\n        dragInProgressRef.current = false;\n        return;\n      }\n',
-      '      // Rubato: every project drags; the shared order has no sort modes (project-order-edits.mjs).\n',
-      'replace',
-    ],
-    [
-      [
-        '      const activeMemberKeys = activeProject.memberProjects.map(',
-        '        (member) => member.physicalProjectKey,',
-        '      );',
-        '      const overMemberKeys = overProject.memberProjects.map((member) => member.physicalProjectKey);',
-        '      reorderProjects(orderedProjects.map(getProjectOrderKey), activeMemberKeys, overMemberKeys);',
-        '    },',
-        '    [orderedProjects, sidebarProjectSortOrder, reorderProjects, sidebarProjects],',
-        '',
-      ].join('\n'),
-      [
-        '      rubatoProjectOrder.setState(',
-        '        moveInProjectList(rubatoProjectOrder.list, activeProject.projectKey, overProject.projectKey),',
-        '      );',
-        '    },',
-        '    [rubatoProjectOrder, sidebarProjects],',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '      if (sidebarProjectSortOrder !== "manual") {\n        return;\n      }\n',
-      '      // Rubato: every project drags (project-order-edits.mjs).\n',
-      'replace',
-    ],
-    ['    [sidebarProjectSortOrder],\n  );\n\n  const handleProjectDragCancel',
-      '    [],\n  );\n\n  const handleProjectDragCancel', 'replace'],
-    [
-      [
-        '  const sortedProjects = useMemo(() => {',
-        '    const sortableProjects = sidebarProjects.map((project) => ({',
-        '      ...project,',
-        '      id: project.projectKey,',
-        '    }));',
-        '    const sortableThreads = visibleThreads.map((thread) => {',
-        '      const physicalKey =',
-        '        projectPhysicalKeyByScopedRef.get(',
-        '          scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId)),',
-        '        ) ?? scopedProjectKey(scopeProjectRef(thread.environmentId, thread.projectId));',
-        '      return {',
-        '        ...thread,',
-        '        projectId: (physicalToLogicalKey.get(physicalKey) ?? physicalKey) as ProjectId,',
-        '      };',
-        '    });',
-        '    return sortProjectsForSidebar(',
-        '      sortableProjects,',
-        '      sortableThreads,',
-        '      sidebarProjectSortOrder,',
-        '    ).flatMap((project) => {',
-        '      const resolvedProject = sidebarProjectByKey.get(project.id);',
-        '      return resolvedProject ? [resolvedProject] : [];',
-        '    });',
-        '  }, [',
-        '    sidebarProjectSortOrder,',
-        '    physicalToLogicalKey,',
-        '    projectPhysicalKeyByScopedRef,',
-        '    sidebarProjectByKey,',
-        '    sidebarProjects,',
-        '    visibleThreads,',
-        '  ]);',
-        '  const isManualProjectSorting = sidebarProjectSortOrder === "manual";',
-        '',
-      ].join('\n'),
-      [
-        '  const sortedProjects = rubatoProjectOrder.ordered;',
-        '  const isManualProjectSorting = true;',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
-  ],
   'apps/web/src/components/settings/settingsSearch.ts': [
-    ['    searchTerms: ["sort projects sidebar manual created recent"],\n',
+    ['    searchTerms: [msg("sort projects sidebar manual created recent")],\n',
       '    searchTerms: [\n'
-        + '      "sort projects sidebar manual created recent reorder drag hide remove add new list my other projects 프로젝트 순서 목록 편집 숨기기 추가 삭제",\n'
+        + '      msg("sort projects sidebar manual created recent"),\n'
+        + '      "reorder drag hide remove add new list my other projects 프로젝트 순서 목록 편집 숨기기 추가 삭제",\n'
         + '    ],\n',
       'replace'],
   ],
-  // Before a project is chosen, Settings > Projects is the project list.
+  // Before a project is chosen, Settings > Projects is the project list
+  // (settings/RubatoProjectListSettings.tsx), with the new-thread screen's project row.
   'apps/web/src/components/settings/ProjectsSettings.tsx': [
+    ['import { T, useGT } from "gt-react";\n', 'import { T } from "gt-react";\n', 'replace'],
     ['import { SettingsScopeNotice } from "./SettingsScopeNotice";\n',
-      'import { RubatoSettingsPage } from "./RubatoSettingsPage";\n', 'replace'],
+      'import { RubatoProjectListSettings } from "./RubatoProjectListSettings";\n', 'replace'],
+    ['  const gt = useGT();\n', '', 'replace'],
     [
-      '        <SettingsScopeNotice target="project">\n          Choose a project to manage its name, icon, checkouts and actions.\n        </SettingsScopeNotice>\n',
-      '        // Rubato: the project list, its order and the options around it (project-order-edits.mjs).\n        <RubatoSettingsPage path="/settings/projects" />\n',
+      '        <SettingsScopeNotice target="project">\n          {gt("Choose a project to manage its name, icon, checkouts and actions.")}\n        </SettingsScopeNotice>\n',
+      '        // Rubato: the project list and its order (project-order-edits.mjs).\n        <RubatoProjectListSettings />\n',
       'replace',
     ],
   ],

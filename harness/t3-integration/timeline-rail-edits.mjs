@@ -16,13 +16,16 @@ export const timelineRailOverlays = [
 
 export const timelineRailEdits = {
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    // Nothing renders T3's TimelineMinimap now; exported, it stays a module export rather than an unused local.
-    ['function TimelineMinimap({\n', 'export function TimelineMinimap({\n', 'replace'],
-    ['import {\n  deriveTimelineMinimapItems,\n',
+    // Nothing renders T3's TimelineMinimap now; re-exported, the import stays a module export
+    // rather than an unused one.
+    ['import { TimelineMinimap } from "./TimelineMinimap";\n',
+      'export { TimelineMinimap } from "./TimelineMinimap";\n',
+      'replace'],
+    ['import { deriveTimelineMinimapItems } from "./timelineMinimapItems";\n',
       'import { RubatoTimelineRail } from "./RubatoTimelineRail";\n'
         + 'import { rubatoTimelineItemTimes } from "./rubatoTimelineRail.logic";\n'],
-    ['  const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);\n',
-      '  const minimapItems = useMemo(() => deriveTimelineMinimapItems(rows), [rows]);\n'
+    ['  const minimapItems = deriveTimelineMinimapItems(rows);\n',
+      '  const minimapItems = deriveTimelineMinimapItems(rows);\n'
         + '  // Rubato: each mark\'s time, so the rail names the days (timeline-rail-edits.mjs).\n'
         + '  const rubatoMinimapTimes = useMemo(() => rubatoTimelineItemTimes(rows, minimapItems), [rows, minimapItems]);\n',
       'replace'],

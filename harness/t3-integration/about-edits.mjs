@@ -17,39 +17,25 @@ export const aboutEdits = {
   'apps/web/src/components/settings/SettingsPanels.tsx': [
     ['import { useDesktopUpdateState } from "../../state/desktopUpdate";\n',
       'import { RubatoAboutSection } from "./RubatoAboutSection";\n'],
-    // T3's version rows go; its privacy policy row stays in a section of its own,
-    // since "about" is the id of the Rubato section at the top.
-    [[
-      '      <SettingsSection id="about" title="About">',
-      '        {isElectron || HOSTED_APP_CHANNEL ? (',
-      '          <AboutVersionSection />',
-      '        ) : (',
-      '          <>',
-      '            <SettingsRow',
-      '              id={searchableSetting("app-version").id}',
-      '              title={<AboutVersionTitle />}',
-      '              description="Current version of the application."',
-      '            />',
-      '            {IS_NIGHTLY_BUILD ? <NightlyMobileBetaRow /> : null}',
-      '          </>',
-      '        )}',
-    ].join('\n'), '      {/* Rubato: About is the first section of General. */}\n      <SettingsSection title="Privacy">', 'replace'],
-    ['    <SettingsPageContainer>\n      <ProjectDefaultsSettings category="general" />\n',
+    // About is its own settings page now (AboutSettingsPanel), so Rubato's section opens
+    // that page, above the App rows upstream keeps for organization policy and mobile.
+    ['    <SettingsPageContainer>\n      <SettingsSection id="about" title={gt("App")}>\n',
       [
         '    <SettingsPageContainer>',
-        '      <SettingsSection id="about" title="About">',
+        "      {/* Rubato: the checkout's release, `rubato update` and `rubato restart` (about-edits.mjs). */}",
+        '      <SettingsSection id="rubato-about" title={gt("About")}>',
         '        <RubatoAboutSection />',
         '      </SettingsSection>',
-        '      <ProjectDefaultsSettings category="general" />',
+        '      <SettingsSection id="about" title={gt("App")}>',
         '',
-      ].join('\n'), 'replace'],
-  ],
-  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['import { SidebarUtilityMenu } from "../sidebar/SidebarChrome";\n',
-      'import { RubatoUpdateDot } from "./RubatoAboutSection";\n'],
-    ['                      <span className="truncate">{item.label}</span>\n',
-      '                      <span className="truncate">{item.label}</span>\n' +
-      '                      {item.to === "/settings/general" ? <RubatoUpdateDot /> : null}\n',
+      ].join('\n'),
       'replace'],
+  ],
+  // The settings nav is built from SETTINGS_NAV_GROUPS now, and About is its own item.
+  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
+    ['import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";\n',
+      'import { RubatoUpdateDot } from "./RubatoAboutSection";\n'],
+    ['                                  </span>\n                                </SidebarMenuButton>\n',
+      '                                  {to === "/settings/about" ? <RubatoUpdateDot /> : null}\n'],
   ],
 };

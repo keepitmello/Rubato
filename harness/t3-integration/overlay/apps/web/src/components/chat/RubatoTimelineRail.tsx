@@ -58,6 +58,8 @@ export interface RubatoTimelineRailProps {
   readonly stripMap: Map<string, HTMLSpanElement>;
   readonly onWheel: (event: WheelEvent) => void;
   readonly onSelect: (item: TimelineMinimapItem) => void;
+  /** T3's rail marks the end of the conversation; this rail follows the reader instead. */
+  readonly atEnd?: boolean | undefined;
 }
 
 function useRailLocale(): string | undefined {

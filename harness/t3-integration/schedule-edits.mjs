@@ -9,7 +9,7 @@ export const scheduleOverlays = [
   'apps/web/src/components/settings/RubatoScheduleSettings.tsx',
   'apps/web/src/components/settings/RubatoScheduleSettings.logic.ts',
   'apps/web/src/components/settings/RubatoScheduleSettings.logic.test.ts',
-  'apps/web/src/routes/settings.scheduled.tsx',
+  'apps/web/src/routes/_chat.settings.scheduled.tsx',
 ];
 
 export const scheduleEdits = {
@@ -19,7 +19,7 @@ export const scheduleEdits = {
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/memory"\n', '  | "/settings/memory"\n  | "/settings/scheduled"\n', 'replace'],
-    ['  "/settings/memory": "Memory",\n', '  "/settings/memory": "Memory",\n  "/settings/scheduled": "Scheduled Tasks",\n', 'replace'],
+    ['  "/settings/memory": msg("Memory"),\n', '  "/settings/memory": msg("Memory"),\n  "/settings/scheduled": msg("Scheduled Tasks"),\n', 'replace'],
     ['  "/settings/memory": null,\n', '  "/settings/memory": null,\n  "/settings/scheduled": null,\n', 'replace'],
     ['  {\n    id: "storage-worktrees",',
       [
@@ -31,16 +31,17 @@ export const scheduleEdits = {
         '  },',
         '',
       ].join('\n')],
-  ],
-  // T3's own Scheduled Tasks page (its server scheduler) keeps its route, but the nav
-  // shows only one "Scheduled Tasks": Rubato's. Settings search has no entry for it.
-  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['  .filter((to) => to !== "/settings/diagnostics")\n',
-      '  .filter((to) => to !== "/settings/diagnostics" && to !== "/settings/scheduled-tasks")\n',
+    // T3's own Scheduled Tasks page (its server scheduler) keeps its route, but the nav
+    // shows only one "Scheduled Tasks": Rubato's, on the rail. Search leaves T3's out too
+    // (settings/rubatoSettingsSurface.ts).
+    ['      "/settings/devices",\n      "/settings/scheduled-tasks",\n    ],\n',
+      '      "/settings/devices",\n    ],\n',
       'replace'],
+  ],
+  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
     ['  "/settings/memory": BrainIcon,\n', '  "/settings/memory": BrainIcon,\n  "/settings/scheduled": CalendarClockIcon,\n', 'replace'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
-    ['  "/settings/memory",\n]);', '  "/settings/memory",\n  "/settings/scheduled",\n]);', 'replace'],
+    ['  "/settings/memory",\n', '  "/settings/memory",\n  "/settings/scheduled",\n', 'replace'],
   ],
 };

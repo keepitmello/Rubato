@@ -1,5 +1,9 @@
 // The file surface's explorer as an IDE file browser (VS Code, Zed).
 //
+// T3's own FileExplorerPane now draws a persisted, resizable tree column of
+// its own, so the two edits that moved T3's aside and added Rubato's resize
+// handle are held: whoever ports the layout decides which pane stays.
+//
 // - The tree sits left of the preview and its width is dragged by its right
 //   edge (fileExplorerLayout.tsx). Its toggle sits at the left end of the
 //   subheader, beside it.
@@ -28,7 +32,7 @@ export const fileExplorerOverlays = [
 const explorerToggle = [
   '          {!isHostFile && previewPath !== null ? (',
   '            <FileSurfaceAction',
-  '              label={explorerOpen ? "Hide file explorer" : "Show file explorer"}',
+  '              label={explorerOpen ? gt("Hide file explorer") : gt("Show file explorer")}',
   '              pressed={explorerOpen}',
   '              onPress={toggleExplorer}',
   '            >',
@@ -115,7 +119,7 @@ export const fileExplorerEdits = {
       '} from "./rubatoFileTabs";',
       '',
     ].join('\n')],
-    ['      /** Present when the file lives in the thread\'s attachment store rather',
+    ['      attachment?: ChatFileAttachment;\n',
       '      /** Rubato: the next file opened from the explorer replaces a preview tab. */\n      preview?: boolean;\n'],
     ['  openFile: (ref: ScopedThreadRef, relativePath: string, line?: number) => void;',
       [
@@ -184,18 +188,20 @@ export const fileExplorerEdits = {
       ].join('\n')],
   ],
   // The panel's opener is the explorer's: tree clicks, breadcrumbs, back and forward.
-  'apps/web/src/components/ChatView.tsx': [
+  // The panel's opener moved out of ChatView into its actions hook.
+  'apps/web/src/components/chat/useRightPanelActions.ts': [
     ['    useRightPanelStore.getState().openFile(activeThreadRef, relativePath);\n  };\n  const openFileSurfaceStable',
       '    useRightPanelStore.getState().openFile(activeThreadRef, relativePath, undefined, {\n      preview: true,\n    });\n  };\n  const openFileSurfaceStable',
       'replace'],
+  ],
+  'apps/web/src/components/ChatView.tsx': [
     // Both tab bars (inline and sheet); the leading newline pins the indentation.
     ['\n          onRenameDevice={(surfaceId, title) => {', pinFileProp('          ')],
-    ['\n            onRenameDevice={(surfaceId, title) => {', pinFileProp('            ')],
   ],
   'apps/web/src/components/RightPanelTabs.tsx': [
     ['  onRenameDevice?: (surfaceId: string, title: string) => void;', '  onPinFile?: (relativePath: string) => void;\n'],
-    ['                              onDoubleClick={() => {\n                                if (surface.kind === "device" && props.onRenameDevice)\n                                  setRenamingDevice(surface.id);',
-      '                              onDoubleClick={() => {\n                                if (surface.kind === "file" && surface.preview)\n                                  props.onPinFile?.(surface.relativePath);\n                                if (surface.kind === "device" && props.onRenameDevice)\n                                  setRenamingDevice(surface.id);',
+    ['                onDoubleClick={() => {\n                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);\n                }}\n',
+      '                onDoubleClick={() => {\n                  if (surface.kind === "file" && surface.preview)\n                    props.onPinFile?.(surface.relativePath);\n                  if (surface.kind === "device" && props.canRename) onStartRename(surface.id);\n                }}\n',
       'replace'],
     // A preview tab reads in italics, as in VS Code.
     ['<span className="truncate">{title}</span>',
@@ -209,13 +215,18 @@ export const fileExplorerEdits = {
       '  onRefreshSelectedFile?: () => void;\n  onPinFile?: (relativePath: string) => void;\n  onEntryRenamed?: (from: string, to: string) => void;\n  onEntryRemoved?: (relativePath: string) => void;',
       'replace'],
     ['  onRefreshSelectedFile,', '  onRefreshSelectedFile,\n  onPinFile,\n  onEntryRenamed,\n  onEntryRemoved,', 'replace'],
-    ['    return [...result.values()];', '    return [...result.values()].filter((entry) => !isHiddenExplorerEntry(entry.path));', 'replace'],
-    ['  const { model } = useFileTree({',
+    ['  const entries = [...result.values()];', '  const entries = [...result.values()].filter((entry) => !isHiddenExplorerEntry(entry.path));', 'replace'],
+    ['  const searchInputRef = useRef<HTMLInputElement>(null);\n',
       [
+        '  const modelRef = useRef(model);',
+        '  modelRef.current = model;',
+        '  const attachExplorerPanel = useStableCallback((panel: HTMLDivElement | null) =>',
+        '    panel === null ? undefined : explorerActions.attach(panel),',
+        '  );',
         '  const explorerActions = useFileExplorerActions({',
         '    environmentId,',
         '    cwd,',
-        '    modelRef: treeModelRef,',
+        '    modelRef,',
         '    entryKinds,',
         '    previousTreePathsRef,',
         '    refresh,',
@@ -227,7 +238,7 @@ export const fileExplorerEdits = {
         '',
       ].join('\n')],
     ['    paths: [],', '    renaming: explorerActions.renaming,\n'],
-    ['          { id: "add-to-chat", label: "Add to chat" },\n', '          { id: "add-to-chat", label: "Add to chat" },\n          ...EXPLORER_MENU_ITEMS,\n', 'replace'],
+    ['            { id: "add-to-chat", label: gt("Add to chat") },\n', '            { id: "add-to-chat", label: gt("Add to chat") },\n            ...EXPLORER_MENU_ITEMS,\n', 'replace'],
     ['    unsafeCSS: PIERRE_TREE_UNSAFE_CSS,', '    unsafeCSS: `${PIERRE_TREE_UNSAFE_CSS}${EXPLORER_TREE_CSS}`,', 'replace'],
     ['      if (clicked === "copy-mention") {',
       [
@@ -237,24 +248,24 @@ export const fileExplorerEdits = {
         '      }',
         '',
       ].join('\n')],
-    ['  }, [dragMention]);\n', '  }, [dragMention]);\n  useEffect(() => {\n    const panel = panelRef.current;\n    return panel === null ? undefined : explorerActions.attach(panel);\n  }, [explorerActions.attach]);\n', 'replace'],
-    ['        {directoryPaths.length > 0 ? (', '        <NewEntryButtons onCreate={(kind) => explorerActions.startCreate(kind, null)} />\n'],
+    ['  return (\n    <div\n      className="flex min-h-0 flex-1 flex-col bg-background"\n      data-file-browser-panel={`${environmentId}:${cwd}`}\n',
+      '  return (\n    <div\n      ref={attachExplorerPanel}\n      className="flex min-h-0 flex-1 flex-col bg-background"\n      data-file-browser-panel={`${environmentId}:${cwd}`}\n',
+      'replace'],
+    ['        {directoryPaths.length > 0 && !hostFolder ? (', '        <NewEntryButtons onCreate={(kind) => explorerActions.startCreate(kind, null)} />\n'],
   ],
   'apps/web/src/components/files/FilePreviewPanel.tsx': [
     ['import { FolderTree, Globe2, WrapTextIcon } from "lucide-react";',
       'import { ArrowLeft, ArrowRight, FolderTree, Globe2, WrapTextIcon } from "lucide-react";',
       'replace'],
-    ['import { useClientSettings, useUpdateClientSettings } from "~/hooks/useSettings";', 'import { useRightPanelStore } from "~/rightPanelStore";\n'],
+    ['import { useClientSettings } from "~/hooks/useSettings";', 'import { useRightPanelStore } from "~/rightPanelStore";\n'],
     ['import FileBrowserPanel from "./FileBrowserPanel";',
-      'import { ExplorerResizeHandle, useExplorerWidth } from "./fileExplorerLayout";\nimport { useFileNavigation } from "./fileNavigationHistory";\n'],
+      'import { useFileNavigation } from "./fileNavigationHistory";\n'],
     ['  onPendingChange,\n  selectedFilePending,\n  workspaceMutationId,\n}: FilePreviewPanelProps) {',
       '  onPendingChange: reportPendingChange,\n  selectedFilePending,\n  workspaceMutationId,\n}: FilePreviewPanelProps) {',
       'replace'],
     ['  const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);\n',
       [
         '  const [explorerOpen, setExplorerOpen] = useState(initialExplorerOpen);',
-        '  const explorerRef = useRef<HTMLElement>(null);',
-        '  const [explorerWidth, setExplorerWidth] = useExplorerWidth();',
         '  // Rubato: back and forward through what this panel showed in this thread.',
         '  const navigation = useFileNavigation(',
         '    `${threadRef.environmentId}:${threadRef.threadId}:${cwd}`,',
@@ -265,13 +276,10 @@ export const fileExplorerEdits = {
         '    if (target !== null) onOpenFile(target);',
         '  };',
         '  // Rubato: editing a preview tab keeps it, as in an IDE.',
-        '  const onPendingChange = useCallback(',
-        '    (path: string, pending: boolean) => {',
-        '      if (pending) useRightPanelStore.getState().pinFile(threadRef, path);',
-        '      reportPendingChange(path, pending);',
-        '    },',
-        '    [reportPendingChange, threadRef],',
-        '  );',
+        '  const onPendingChange = useStableCallback((path: string, pending: boolean) => {',
+        '    if (pending) useRightPanelStore.getState().pinFile(threadRef, path);',
+        '    reportPendingChange(path, pending);',
+        '  });',
         '',
       ].join('\n'),
       'replace'],
@@ -312,36 +320,16 @@ export const fileExplorerEdits = {
         '          </div>',
         '',
       ].join('\n')],
-    [
+    ['                workspaceMutationId={workspaceMutationId}\n                {...(previewPath && !isMedia && !isPdf',
       [
-        '          <aside',
-        '            className={cn(',
-        '              "flex min-h-0 shrink-0 bg-background",',
-        '              previewPath',
-        '                ? "w-[min(22rem,46%)] min-w-64 border-l border-border/60"',
-      ].join('\n'),
-      [
-        '          <aside',
-        '            ref={explorerRef}',
-        '            style={previewPath && explorerWidth !== null ? { width: explorerWidth } : undefined}',
-        '            className={cn(',
-        '              "flex min-h-0 shrink-0 bg-background",',
-        '              previewPath',
-        '                ? "relative order-first w-[min(22rem,46%)] min-w-40 max-w-[calc(100%-15rem)] border-r border-border/60"',
-      ].join('\n'),
-      'replace'],
-    ['              workspaceMutationId={workspaceMutationId}\n              {...(previewPath && !isMedia && !isPdf',
-      [
-        '              onPinFile={(path) => useRightPanelStore.getState().pinFile(threadRef, path)}',
-        '              onEntryRenamed={(from, to) =>',
-        '                useRightPanelStore.getState().renameFilePaths(threadRef, from, to)',
-        '              }',
-        '              onEntryRemoved={(path) =>',
-        '                useRightPanelStore.getState().closeFilePaths(threadRef, path)',
-        '              }',
+        '                onPinFile={(path) => useRightPanelStore.getState().pinFile(threadRef, path)}',
+        '                onEntryRenamed={(from, to) =>',
+        '                  useRightPanelStore.getState().renameFilePaths(threadRef, from, to)',
+        '                }',
+        '                onEntryRemoved={(path) =>',
+        '                  useRightPanelStore.getState().closeFilePaths(threadRef, path)',
+        '                }',
         '',
       ].join('\n')],
-    ['          </aside>',
-      '            {previewPath ? (\n              <ExplorerResizeHandle explorerRef={explorerRef} onResize={setExplorerWidth} />\n            ) : null}\n'],
   ],
 };

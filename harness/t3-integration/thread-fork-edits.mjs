@@ -4,8 +4,7 @@
 // orchestrator. This adds:
 //
 // - the thread's right-click menu offers Fork thread for a thread that runs on Rubato,
-//   in the thread action menu (threadActionMenu.logic.ts, the sidebar's) and in the
-//   legacy sidebar's own menu;
+//   in the thread action menu (threadActionMenu.logic.ts, the sidebar's);
 // - /rubato/thread-fork on the server (RubatoThreadFork.ts) hands the thread to
 //   forkWholeThread (RubatoPiSessions.ts): the engine copies the Pi session and the server
 //   writes "<title> (fork)" the way an imported native thread is written, so it carries the
@@ -46,25 +45,16 @@ export const threadForkEdits = {
     ['    readonly titleRegeneration: boolean;\n  };\n',
       '    readonly titleRegeneration: boolean;\n    /** The thread runs on Rubato, which can copy its conversation (rubatoThreadFork.ts). */\n    readonly fork?: boolean;\n  };\n',
       'replace'],
-    ['    { id: "mark-unread", label: "Mark unread", icon: "mail-open" },\n',
+    ['    { id: "mark-unread", label: resolve(msg("Mark unread")), icon: "mail-open" },\n',
       '    ...(state.supports.fork\n      ? [{ id: "fork" as const, label: "Fork thread", icon: "git-branch" }]\n      : []),\n'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
     ['import {\n  buildDraftActionMenuItems,\n  buildThreadActionMenuItems,\n',
       'import { forkThread, threadRunsOnRubato } from "./sidebar/rubatoThreadFork";\n'],
-    ['                titleRegeneration: supportsTitleRegeneration,\n',
-      '                titleRegeneration: supportsTitleRegeneration,\n                fork: threadRunsOnRubato(thread),\n',
+    ['                titleRegeneration: configLoaded,\n',
+      '                titleRegeneration: configLoaded,\n                fork: threadRunsOnRubato(thread),\n',
       'replace'],
     ['          case "rename":\n            startThreadRename(threadRef, thread.title);\n',
       ['          case "fork": {', ...forkHandler('            '), '          }', ''].join('\n')],
-  ],
-  'apps/web/src/components/LegacySidebar.tsx': [
-    ['import { pinMenuItems, pinnedThreadsFirst } from "./sidebar/rubatoPinnedThreads";\n',
-      'import { forkMenuItems, forkThread } from "./sidebar/rubatoThreadFork";\n'],
-    ['          { id: "rename", label: "Rename thread", disabled: !canOperateThread },\n',
-      '          ...forkMenuItems(thread),\n'],
-    ['      if (clicked === "rename") {\n',
-      ['      if (clicked === "fork") {', ...forkHandler('        '), '      }', '', ''].join('\n')],
-    ['      pinThread,\n      confirmAndUnpinThread,\n', '      navigateToThread,\n'],
   ],
 };

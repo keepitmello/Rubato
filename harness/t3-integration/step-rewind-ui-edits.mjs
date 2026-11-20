@@ -9,6 +9,11 @@
 // after the reply (T3's ordinary revert). A run a step rewind cut is not offered T3's
 // Resume, which would send a prompt; the card's continue resumes it instead.
 //
+// T3 v0.1.11 splits the code these hook into: a work entry is chat/TimelineWorkEntryRow.tsx,
+// a tool group chat/TimelineWorkGroupRows.tsx, a reply's meta chat/TimelineAssistantRows.tsx,
+// and the revert command a rewind borrows lives in chat/useTimelineRewind.ts while the send
+// moved to chat/useComposerSend.ts.
+//
 // A toast that is limited out of the stack or leaving is invisible, and it no longer
 // catches the pointer: it covered the top right, where a just-sent message sits.
 export const stepRewindUiOverlays = [
@@ -21,19 +26,18 @@ const lines = (...parts) => parts.join('\n');
 export const stepRewindUiEdits = {
   // A tool group's row names the steps under it, so its rewind lands after the last.
   'apps/web/src/components/chat/MessagesTimeline.logic.ts': [
-    ['      summaryToolIcon?: "browser" | "device" | "t3-code" | "pull-request";\n      hasFailure: boolean;\n',
-      '      summaryToolIcon?: "browser" | "device" | "t3-code" | "pull-request";\n      hasFailure: boolean;\n      /** Rubato: the items under this group, for its step rewind. */\n      stepItemIds?: ReadonlyArray<string | undefined>;\n',
+    ['      toolIcon?: WorkLogEntry["toolIcon"];\n      hasFailure: boolean;\n',
+      '      toolIcon?: WorkLogEntry["toolIcon"];\n      /** Rubato: the items under this group, for its step rewind. */\n      stepItemIds?: ReadonlyArray<string | undefined>;\n      hasFailure: boolean;\n',
       'replace'],
     ['            hiddenCount: visibleGroupedEntries.length,\n            expanded,\n',
       '            hiddenCount: visibleGroupedEntries.length,\n            stepItemIds: visibleGroupedEntries.map((entry) => entry.projectedItem?.item.id),\n            expanded,\n',
       'replace'],
   ],
   'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";\n', lines(
+    ['import { WorkLogBlock } from "./WorkLog";\n', lines(
       'import {',
       '  RUBATO_STEP_DROPPED_CLASS,',
       '  RubatoStepRewindButton,',
-      '  RubatoStepRewindMarker,',
       '  useRubatoStepRewindDropped,',
       '} from "./RubatoStepRewind";',
       '')],
@@ -57,37 +61,6 @@ export const stepRewindUiEdits = {
       '      )}',
       '      data-timeline-row-id={row.id}',
       ''), 'replace'],
-    // A tool row: its rewind button, its fade, and the marker of a rewind waiting after it.
-    ['  const { threadRef, onImageExpand, timestampFormat } = ctx;\n  const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;\n', lines(
-      '  const { threadRef, onImageExpand, timestampFormat } = ctx;',
-      '  const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;',
-      '  const rubatoItem = workEntry.projectedItem?.item;',
-      '  const rubatoActivity = use(TimelineRowActivityCtx);',
-      '  const rubatoDropped = useRubatoStepRewindDropped(ctx.routeThreadKey, { itemId: rubatoItem?.id });',
-      ''), 'replace'],
-    ['  return (\n    <WorkLogRow\n      data-v2-item-type={workEntry.projectedItem?.item.type}\n',
-      '  return (\n    <div className={rubatoDropped ? RUBATO_STEP_DROPPED_CLASS : undefined}>\n    <WorkLogRow\n      data-v2-item-type={workEntry.projectedItem?.item.type}\n',
-      'replace'],
-    [lines(
-      '            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />',
-      '          ) : null}',
-      '          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />',
-      ''), lines(
-      '            <XIcon aria-hidden className={cn("size-3 shrink-0", failedToolIconClassName)} />',
-      '          ) : null}',
-      '          <RubatoStepRewindButton',
-      '            threadKey={ctx.routeThreadKey}',
-      '            threadRef={threadRef}',
-      '            target={{ kind: "step", itemId: rubatoItem?.id, runId: rubatoItem?.runId }}',
-      '            item={rubatoItem}',
-      '            label={previewText}',
-      '            busy={rubatoActivity.isWorking || rubatoActivity.isRevertingCheckpoint}',
-      '          />',
-      '          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />',
-      ''), 'replace'],
-    ['        </WorkLogDetails>\n      ) : null}\n    </WorkLogRow>\n  );\n}\n\nfunction QuestionAnswerHistory(',
-      '        </WorkLogDetails>\n      ) : null}\n    </WorkLogRow>\n    <RubatoStepRewindMarker threadKey={ctx.routeThreadKey} anchorId={rubatoItem?.id} />\n    </div>\n  );\n}\n\nfunction QuestionAnswerHistory(',
-      'replace'],
     // "Worked for": after the run's last step, with nothing expanded.
     [lines(
       'function TurnFoldTimelineRow({ row }: { row: Extract<TimelineRow, { kind: "turn-fold" }> }) {',
@@ -98,35 +71,76 @@ export const stepRewindUiEdits = {
       '  const rubatoFoldActivity = use(TimelineRowActivityCtx);',
       ''), 'replace'],
     [lines(
-      '      <TimelineRowTimestamp',
-      '        createdAt={row.createdAt}',
-      '        timestampFormat={ctx.timestampFormat}',
-      '        className="ms-auto"',
-      '      />',
-      '    </div>',
-      '  );',
-      '}',
-      '',
-      'function AttemptFoldTimelineRow('), lines(
-      '      <TimelineRowTimestamp',
-      '        createdAt={row.createdAt}',
-      '        timestampFormat={ctx.timestampFormat}',
-      '        className="ms-auto"',
-      '      />',
-      '      <RubatoStepRewindButton',
-      '        threadKey={ctx.routeThreadKey}',
-      '        threadRef={ctx.threadRef}',
-      '        target={{ kind: "last-step", runId: row.runId }}',
-      '        label="this work"',
-      '        busy={rubatoFoldActivity.isWorking || rubatoFoldActivity.isRevertingCheckpoint}',
-      '      />',
-      '    </div>',
-      '  );',
-      '}',
-      '',
-      'function AttemptFoldTimelineRow('), 'replace'],
-    // A tool group's row: after its last step. The header is a button, so the rewind
-    // button sits beside it.
+      '        <TimelineRowTimestamp',
+      '          createdAt={row.createdAt}',
+      '          timestampFormat={ctx.timestampFormat}',
+      '          className="ms-auto"',
+      '        />',
+      '      </div>',
+      ''), lines(
+      '        <TimelineRowTimestamp',
+      '          createdAt={row.createdAt}',
+      '          timestampFormat={ctx.timestampFormat}',
+      '          className="ms-auto"',
+      '        />',
+      '        <RubatoStepRewindButton',
+      '          threadKey={ctx.routeThreadKey}',
+      '          threadRef={ctx.threadRef}',
+      '          target={{ kind: "last-step", runId: row.runId }}',
+      '          label="this work"',
+      '          busy={rubatoFoldActivity.isWorking || rubatoFoldActivity.isRevertingCheckpoint}',
+      '        />',
+      '      </div>',
+      ''), 'replace'],
+  ],
+  // A tool row: its rewind button, its fade, and the marker of a rewind waiting after it.
+  'apps/web/src/components/chat/TimelineWorkEntryRow.tsx': [
+    ['import { WorkLogDetails, WorkLogRow } from "./WorkLog";\n', lines(
+      'import {',
+      '  RUBATO_STEP_DROPPED_CLASS,',
+      '  RubatoStepRewindButton,',
+      '  RubatoStepRewindMarker,',
+      '  useRubatoStepRewindDropped,',
+      '} from "./RubatoStepRewind";',
+      '')],
+    ['  const { threadRef, onImageExpand, timestampFormat } = ctx;\n  const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;\n', lines(
+      '  const { threadRef, onImageExpand, timestampFormat } = ctx;',
+      '  const { retryableWorkspacePreparationRunIds, onRetryWorkspacePreparation } = ctx;',
+      '  const rubatoItem = workEntry.projectedItem?.item;',
+      '  const rubatoActivity = use(TimelineRowActivityCtx);',
+      '  const rubatoDropped = useRubatoStepRewindDropped(ctx.routeThreadKey, { itemId: rubatoItem?.id });',
+      ''), 'replace'],
+    [lines(
+      '  return (',
+      '    <WorkLogRow',
+      '      data-work-entry-id={workEntry.id}',
+      '      data-v2-item-type={workEntry.projectedItem?.item.type}',
+      ''), lines(
+      '  return (',
+      '    <div className={rubatoDropped ? RUBATO_STEP_DROPPED_CLASS : undefined}>',
+      '    <WorkLogRow',
+      '      data-work-entry-id={workEntry.id}',
+      '      data-v2-item-type={workEntry.projectedItem?.item.type}',
+      ''), 'replace'],
+    ['          <TimelineRowTimestamp createdAt={workEntry.createdAt} timestampFormat={timestampFormat} />\n', lines(
+      '          <RubatoStepRewindButton',
+      '            threadKey={ctx.routeThreadKey}',
+      '            threadRef={threadRef}',
+      '            target={{ kind: "step", itemId: rubatoItem?.id, runId: rubatoItem?.runId }}',
+      '            item={rubatoItem}',
+      '            label={previewText}',
+      '            busy={rubatoActivity.isWorking || rubatoActivity.isRevertingCheckpoint}',
+      '          />',
+      '')],
+    ['        </WorkLogDetails>\n      ) : null}\n    </WorkLogRow>\n  );\n}\n\nfunction QuestionAnswerHistory(',
+      '        </WorkLogDetails>\n      ) : null}\n    </WorkLogRow>\n    <RubatoStepRewindMarker threadKey={ctx.routeThreadKey} anchorId={rubatoItem?.id} />\n    </div>\n  );\n}\n\nfunction QuestionAnswerHistory(',
+      'replace'],
+  ],
+  // A tool group's row: after its last step. The header is a button, so the rewind
+  // button sits beside it.
+  'apps/web/src/components/chat/TimelineWorkGroupRows.tsx': [
+    ['import { WorkLogButton, WorkLogList, WorkLogRow } from "./WorkLog";\n',
+      'import { RubatoStepRewindButton } from "./RubatoStepRewind";\n'],
     [lines(
       '  const ctx = use(TimelineRowCtx);',
       '  return (',
@@ -163,7 +177,11 @@ export const stepRewindUiEdits = {
       '}',
       '',
       'function WorkGroupHeader('), 'replace'],
-    // A reply's action row: right after that reply, and the marker of a rewind waiting there.
+  ],
+  // A reply's action row: right after that reply, and the marker of a rewind waiting there.
+  'apps/web/src/components/chat/TimelineAssistantRows.tsx': [
+    ['import { canForkProjectedAssistantItem } from "@t3tools/client-runtime/state/thread-workflows";\n',
+      'import { RubatoStepRewindButton, RubatoStepRewindMarker } from "./RubatoStepRewind";\n'],
     [lines(
       '  alwaysVisible?: boolean;',
       '}) {',
@@ -221,23 +239,46 @@ export const stepRewindUiEdits = {
   ],
   'apps/web/src/components/ChatView.tsx': [
     ['import { appAtomRegistry } from "../rpc/atomRegistry";\n', lines(
-      'import {',
-      '  isStepCutRun,',
-      '  landRubatoStepRewind,',
-      '  RubatoStepRewindComposerTag,',
-      '  useRubatoStepRewindHost,',
-      '} from "./chat/RubatoStepRewind";',
+      'import { isStepCutRun, RubatoStepRewindComposerTag } from "./chat/RubatoStepRewind";',
       '')],
     // A run a step rewind cut continues from the card, not with T3's Resume prompt.
-    ['    if (run?.status === "interrupted") return run.id;\n',
-      '    if (run?.status === "interrupted" && !isStepCutRun(serverProjection.runs, run.id)) return run.id;\n',
-      'replace'],
-    ['  const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);\n', lines(
-      '  const onRevertToTurnCountStable = useStableCallback(onRevertToTurnCount);',
+    [lines(
+      '  const resumableRunId =',
+      '    !isServerThread || serverProjection === null',
+      '      ? null',
+      '      : deriveResumableRunId(serverProjection, serverRuntime);',
+      ''), lines(
+      '  const resumableRunId = (() => {',
+      '    if (!isServerThread || serverProjection === null) return null;',
+      '    const runId = deriveResumableRunId(serverProjection, serverRuntime);',
+      '    // Rubato: a step rewind cut this run; its card continues it (RubatoStepRewind.tsx).',
+      '    return runId !== null && isStepCutRun(serverProjection.runs, runId) ? null : runId;',
+      '  })();',
+      ''), 'replace'],
+    ['                      <ComposerSurface.Shell contextRow={showComposerContextStrip}>\n',
+      '                      <RubatoStepRewindComposerTag threadKey={routeThreadKey} />\n'],
+  ],
+  // A rewind to a tool step borrows the revert command this hook holds.
+  'apps/web/src/components/chat/useTimelineRewind.ts': [
+    ['  AuthOrchestrationOperateScope,\n  type EnvironmentId,\n',
+      '  AuthOrchestrationOperateScope,\n  CommandId,\n  type EnvironmentId,\n', 'replace'],
+    ['import { newThreadId } from "~/lib/utils";\n',
+      'import { newThreadId, randomUUID } from "~/lib/utils";\n', 'replace'],
+    ['import { openRevertConfirm } from "./ChatOverlayHosts";\n',
+      'import { openRevertConfirm } from "./ChatOverlayHosts";\nimport { useRubatoStepRewindHost } from "./RubatoStepRewind";\n', 'replace'],
+    [lines(
+      '  const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {',
+      '    reportFailure: false,',
+      '  });',
+      ''), lines(
+      '  const forkThreadFromRun = useAtomCommand(threadEnvironment.forkFromRun, {',
+      '    reportFailure: false,',
+      '  });',
+      '',
       '  // Rubato: a rewind to a tool step borrows the revert command and the composer.',
       '  useRubatoStepRewindHost(routeThreadKey, {',
       '    threadRef: routeThreadRef,',
-      '    canRestoreFiles: activeThreadWorktreePath !== null,',
+      '    canRestoreFiles: activeThread?.worktreePath != null,',
       '    focusComposer: () => composerRef.current?.focusAtEnd(),',
       '    revert: async ({ turnCount, restoreFiles }) => {',
       '      if (!activeThread) throw new Error("This thread is not loaded.");',
@@ -249,18 +290,21 @@ export const stepRewindUiEdits = {
       '    },',
       '  });',
       ''), 'replace'],
+  ],
+  // A rewind to a tool step waiting for this message lands before it is sent.
+  'apps/web/src/components/chat/useComposerSend.ts': [
+    ['import { msg } from "gt-react";\n',
+      'import { msg } from "gt-react";\nimport { landRubatoStepRewind } from "./RubatoStepRewind";\n', 'replace'],
     [lines(
       '      return;',
       '    }',
-      '    const sendCtx = composerRef.current?.getSendContext();',
+      '    // Where side chats are unavailable, `/side` text can still be a literal answer.',
       ''), lines(
       '      return;',
       '    }',
       '    // Rubato: a rewind to a tool step waiting for this message lands first.',
       '    if (!(await landRubatoStepRewind(routeThreadKey))) return;',
-      '    const sendCtx = composerRef.current?.getSendContext();',
+      '    // Where side chats are unavailable, `/side` text can still be a literal answer.',
       ''), 'replace'],
-    ['                    <ComposerSurface.Shell\n                      contextStrip={showComposerContextStrip || showComposerModelStrip}\n',
-      '                    <RubatoStepRewindComposerTag threadKey={routeThreadKey} />\n'],
   ],
 };

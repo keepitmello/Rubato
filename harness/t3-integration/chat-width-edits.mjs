@@ -25,26 +25,6 @@
 // `cqi` inside the shell, itself a container) resolves at each of them again.
 export const chatWidthOverlays = [];
 
-const SETTINGS_TEST_OLD = [
-  'describe("ClientSettings chat width", () => {',
-  '  it("keeps the comfortable width for existing settings without a saved width", () => {',
-  '    expect(decodeClientSettings({}).chatWidth).toBe("comfortable");',
-  '  });',
-  '',
-  '  it.each(["comfortable", "wide", "full"])("round-trips the %s width", (chatWidth) => {',
-  '    const settings = decodeClientSettings({ chatWidth });',
-  '    expect(encodeClientSettings(settings).chatWidth).toBe(chatWidth);',
-  '    expect(decodeClientSettingsPatch({ chatWidth }).chatWidth).toBe(chatWidth);',
-  '  });',
-  '',
-  '  it("rejects unsupported widths", () => {',
-  '    expect(() => decodeClientSettings({ chatWidth: "huge" })).toThrow();',
-  '    expect(() => decodeClientSettingsPatch({ chatWidth: "huge" })).toThrow();',
-  '  });',
-  '});',
-  '',
-].join('\n');
-
 const SETTINGS_TEST_NEW = [
   'describe("ClientSettings chat width", () => {',
   '  it("defaults to the shared default width when none is saved", () => {',
@@ -88,13 +68,13 @@ const ROW_OLD = [
   '                    updateSettings({ chatWidth: value });',
   '                }}',
   '              >',
-  '                <SelectTrigger size="sm" className="w-full min-w-0" aria-label="Chat width">',
-  '                  <SelectValue>{CHAT_WIDTH_LABELS[settings.chatWidth]}</SelectValue>',
+  '                <SelectTrigger size="sm" className="w-full min-w-0" aria-label={gt("Chat width")}>',
+  '                  <SelectValue>{m(CHAT_WIDTH_LABELS[settings.chatWidth])}</SelectValue>',
   '                </SelectTrigger>',
   '                <SelectPopup align="end" alignItemWithTrigger={false}>',
-  '                  <SelectItem value="comfortable">Comfortable (default)</SelectItem>',
-  '                  <SelectItem value="wide">Wide</SelectItem>',
-  '                  <SelectItem value="full">Full</SelectItem>',
+  '                  <SelectItem value="comfortable">{gt("Comfortable (default)")}</SelectItem>',
+  '                  <SelectItem value="wide">{m(CHAT_WIDTH_LABELS.wide)}</SelectItem>',
+  '                  <SelectItem value="full">{m(CHAT_WIDTH_LABELS.full)}</SelectItem>',
   '                </SelectPopup>',
   '              </Select>',
   '            </div>',
@@ -112,7 +92,7 @@ const ROW_NEW = [
   '                {settings.chatWidthPercent}%',
   '              </output>',
   '              <input',
-  '                aria-label="Chat width"',
+  '                aria-label={gt("Chat width")}',
   '                className="settings-slider min-w-0 flex-1"',
   '                id="chat-width"',
   '                max={MAX_CHAT_WIDTH_PERCENT}',
@@ -140,7 +120,7 @@ const ROW_NEW = [
 export const chatWidthEdits = {
   'packages/contracts/src/settings.ts': [
     [
-      '/** Maximum width of the chat timeline and composer on wide screens. */\nexport const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);\nexport type ChatWidth = typeof ChatWidth.Type;\n',
+      'export const ChatWidth = Schema.Literals(["comfortable", "wide", "full"]);\nexport type ChatWidth = typeof ChatWidth.Type;\n',
       [
         '/** Chat width in percent; it scales with the window (index.css --chat-content-max-width). */',
         'export const MIN_CHAT_WIDTH_PERCENT = 40;',
@@ -162,10 +142,14 @@ export const chatWidthEdits = {
     ['  chatWidth: Schema.optionalKey(ChatWidth),\n', '  chatWidthPercent: Schema.optionalKey(ChatWidthPercent),\n', 'replace'],
   ],
   'packages/contracts/src/settings.test.ts': [
-    ['  DEFAULT_SERVER_SETTINGS,\n  requiredScopesForProjectMutation,\n',
-      '  DEFAULT_CHAT_WIDTH_PERCENT,\n  DEFAULT_SERVER_SETTINGS,\n  MAX_CHAT_WIDTH_PERCENT,\n  MIN_CHAT_WIDTH_PERCENT,\n  requiredScopesForProjectMutation,\n',
-      'replace'],
-    [SETTINGS_TEST_OLD, SETTINGS_TEST_NEW, 'replace'],
+    [
+      '  ClaudeSettings,\n  DEFAULT_SERVER_SETTINGS,\n  globalIdleCompaction,\n  idleCompactionPatch,\n  PROJECT_SCOPED_SERVER_SETTING_KEYS,\n',
+      '  ClaudeSettings,\n  DEFAULT_CHAT_WIDTH_PERCENT,\n  DEFAULT_SERVER_SETTINGS,\n  globalIdleCompaction,\n  idleCompactionPatch,\n  MAX_CHAT_WIDTH_PERCENT,\n  MIN_CHAT_WIDTH_PERCENT,\n  PROJECT_SCOPED_SERVER_SETTING_KEYS,\n',
+      'replace',
+    ],
+    // v0.1.11 dropped the preset tests this block replaced, so ours goes before the
+    // next Client settings group.
+    ['describe("ClientSettings notifications", () => {\n', SETTINGS_TEST_NEW],
   ],
   'apps/web/src/index.css': [
     [
@@ -183,7 +167,7 @@ export const chatWidthEdits = {
       ].join('\n'),
       [
         '/* Chat timeline and composer column width. --chat-width-percent comes from the',
-        '   Chat width setting (__root.tsx). The width grows with the window, and the',
+        '   Chat width setting (appInit.tsx). The width grows with the window, and the',
         '   fixed part gives a small window a larger share: at 50% a 1472px window gets',
         '   954px and a 2560px one 1280px (chat-width-edits.mjs). Side panels and the',
         '   sidebar leave it alone until the chat column is narrower. No % here:',
@@ -198,35 +182,59 @@ export const chatWidthEdits = {
       'replace',
     ],
   ],
-  'apps/web/src/routes/__root.tsx': [
+  // v0.1.11 writes the appearance settings from appInit.tsx, not from a component
+  // in the root route.
+  'apps/web/src/appInit.tsx': [
     [
       [
-        '  const chatWidth = useClientSettings((settings) => settings.chatWidth);',
-        '  useEffect(() => {',
-        '    document.documentElement.dataset.chatWidth = chatWidth;',
-        '  }, [chatWidth]);',
+        '    if (previous?.chatWidth !== settings.chatWidth) {',
+        '      root.dataset.chatWidth = settings.chatWidth;',
+        '    }',
         '',
       ].join('\n'),
       [
-        '  const chatWidthPercent = useClientSettings((settings) => settings.chatWidthPercent);',
-        '  useEffect(() => {',
-        '    document.documentElement.style.setProperty("--chat-width-percent", String(chatWidthPercent));',
-        '  }, [chatWidthPercent]);',
+        '    if (previous?.chatWidthPercent !== settings.chatWidthPercent) {',
+        '      root.style.setProperty("--chat-width-percent", String(settings.chatWidthPercent));',
+        '    }',
         '',
       ].join('\n'),
       'replace',
     ],
   ],
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['  const chatWidth = useClientSettings((settings) => settings.chatWidth);\n',
-      '  const chatWidthPercent = useClientSettings((settings) => settings.chatWidthPercent);\n', 'replace'],
-    ['rows.length, reportContentOverflow, chatWidth]);', 'rows.length, reportContentOverflow, chatWidthPercent]);', 'replace'],
-  ],
+  // The dirty-setting list is computed on every render, so the value only needs an
+  // entry where the list is, and the default reset where the settings are reset.
   'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['  type ChatWidth,\n', '  MAX_CHAT_WIDTH_PERCENT,\n  MIN_CHAT_WIDTH_PERCENT,\n', 'replace'],
     [
-      'const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {\n  comfortable: "Comfortable",\n  wide: "Wide",\n  full: "Full",\n};\n\nconst DIFF_LAYOUT_LABELS',
-      '// Chat width is a percentage slider (chat-width-edits.mjs), so it has no labels.\n\nconst DIFF_LAYOUT_LABELS',
+      '    ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? [gt("Chat width")] : []),\n',
+      '    ...(settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent\n      ? [gt("Chat width")]\n      : []),\n',
+      'replace',
+    ],
+    [
+      '      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,\n',
+      '      chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent,\n',
+      'replace',
+    ],
+  ],
+  // v0.1.11 holds the Appearance page, including the chat width row, in its own panel.
+  'apps/web/src/components/settings/AppearanceSettingsPanel.tsx': [
+    [
+      '  DEFAULT_UNIFIED_SETTINGS,\n  type ChatWidth,\n  type EffortDisplay,\n',
+      '  DEFAULT_UNIFIED_SETTINGS,\n  type EffortDisplay,\n',
+      'replace',
+    ],
+    [
+      '  MAX_APPEARANCE_CONTRAST,\n  MAX_GLASS_OPACITY,\n',
+      '  MAX_APPEARANCE_CONTRAST,\n  MAX_CHAT_WIDTH_PERCENT,\n  MAX_GLASS_OPACITY,\n',
+      'replace',
+    ],
+    [
+      '  MIN_APPEARANCE_CONTRAST,\n  MIN_GLASS_OPACITY,\n',
+      '  MIN_APPEARANCE_CONTRAST,\n  MIN_CHAT_WIDTH_PERCENT,\n  MIN_GLASS_OPACITY,\n',
+      'replace',
+    ],
+    [
+      'const CHAT_WIDTH_LABELS: Record<ChatWidth, string> = {\n  comfortable: msg("Comfortable"),\n  wide: msg("Wide"),\n  full: msg("Full", { $context: "chat width" }),\n};\n\nconst EFFORT_DISPLAY_LABELS',
+      '// Chat width is a percentage slider (chat-width-edits.mjs), so it has no labels.\n\nconst EFFORT_DISPLAY_LABELS',
       'replace',
     ],
     [
@@ -242,17 +250,16 @@ export const chatWidthEdits = {
         '',
       ].join('\n'),
     ],
-    ['      ...(settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? ["Chat width"] : []),\n',
-      '      ...(settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent\n        ? ["Chat width"]\n        : []),\n', 'replace'],
-    ['      settings.chatWidth,\n', '      settings.chatWidthPercent,\n', 'replace'],
-    ['      chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth,\n', '      chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent,\n', 'replace'],
     [
-      '            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (\n              <SettingResetButton\n                label="chat width"\n                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}\n              />',
-      '            settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent ? (\n              <SettingResetButton\n                label="chat width"\n                onClick={() =>\n                  updateSettings({ chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent })\n                }\n              />',
+      '            settings.chatWidth !== DEFAULT_UNIFIED_SETTINGS.chatWidth ? (\n              <SettingResetButton\n                ariaLabel={gt("Reset chat width to default")}\n                onClick={() => updateSettings({ chatWidth: DEFAULT_UNIFIED_SETTINGS.chatWidth })}\n              />',
+      '            settings.chatWidthPercent !== DEFAULT_UNIFIED_SETTINGS.chatWidthPercent ? (\n              <SettingResetButton\n                ariaLabel={gt("Reset chat width to default")}\n                onClick={() =>\n                  updateSettings({ chatWidthPercent: DEFAULT_UNIFIED_SETTINGS.chatWidthPercent })\n                }\n              />',
       'replace',
     ],
     [ROW_OLD, ROW_NEW, 'replace'],
-    ['  description="Set how wide messages and the composer can grow on large screens."\n',
-      '  description="Set how wide messages and the composer grow. The width scales with the window; smaller windows get a larger share."\n', 'replace'],
+    [
+      '          description={gt("Set how wide messages and the composer can grow on large screens.")}\n',
+      '          description={gt("Set how wide messages and the composer grow. The width scales with the window; smaller windows get a larger share.")}\n',
+      'replace',
+    ],
   ],
 };

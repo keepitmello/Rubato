@@ -12,8 +12,6 @@ import { permissionEdits, permissionOverlays } from './permission-edits.mjs';
 import { providerEdits, providerOverlays } from './provider-edits.mjs';
 import { aboutEdits, aboutOverlays } from './about-edits.mjs';
 import { scheduleEdits, scheduleOverlays } from './schedule-edits.mjs';
-import { sidebarPinEdits, sidebarPinOverlays } from './sidebar-pin-edits.mjs';
-import { rewindEdits, rewindOverlays } from './rewind-edits.mjs';
 import { sessionMessageEdits, sessionMessageOverlays } from './session-message-edits.mjs';
 import { phoneEdits, phoneOverlays } from './phone-edits.mjs';
 import { officeEdits, officeOverlays } from './office-edits.mjs';
@@ -23,12 +21,10 @@ import { agentSessionEdits, agentSessionOverlays } from './agent-session-edits.m
 import { fileExplorerEdits, fileExplorerOverlays } from './file-explorer-edits.mjs';
 import { rightPanelEdits, rightPanelOverlays } from './right-panel-edits.mjs';
 import { chatWidthEdits, chatWidthOverlays } from './chat-width-edits.mjs';
-import { sidebarRailEdits, sidebarRailOverlays } from './sidebar-rail-edits.mjs';
 import { tsgoCheckersEdits, tsgoCheckersOverlays } from './tsgo-checkers-edits.mjs';
 import { agentsSurfaceEdits, agentsSurfaceOverlays } from './agents-surface-edits.mjs';
 import { threadForkEdits, threadForkOverlays } from './thread-fork-edits.mjs';
 import { sidebarModelIconEdits, sidebarModelIconOverlays } from './sidebar-model-icon-edits.mjs';
-import { sideChatEdits, sideChatOverlays } from './side-chat-edits.mjs';
 import { workCardEdits, workCardOverlays } from './work-card-edits.mjs';
 import { fileLinkEdits, fileLinkOverlays } from './file-link-edits.mjs';
 import { stagedBuildEdits, stagedBuildOverlays } from './staged-build-edits.mjs';
@@ -40,7 +36,7 @@ import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
-import { settingsRouteTreeEdits, topLevelRouteTreeEdits } from './route-tree-edits.mjs';
+import { ROUTE_TREE_EDITS } from './route-tree-edits.mjs';
 import { statsEdits, statsOverlays } from './stats-edits.mjs';
 import { callEdits, callOverlays } from './call-edits.mjs';
 import { piAdapterEdits, piAdapterOverlays } from './pi-adapter-edits.mjs';
@@ -57,13 +53,14 @@ import { usageLimitsEdits, usageLimitsOverlays } from './usage-limits-edits.mjs'
 import { sectionScaleEdits, sectionScaleOverlays } from './section-scale-edits.mjs';
 import { sidebarBlocksEdits, sidebarBlocksOverlays } from './sidebar-blocks-edits.mjs';
 import { floatingMenuEdits, floatingMenuOverlays } from './floating-menu-edits.mjs';
-import { settingsLayoutEdits, settingsLayoutOverlays, settingsLayoutPages } from './settings-layout-edits.mjs';
+import { settingsLayoutEdits, settingsLayoutOverlays } from './settings-layout-edits.mjs';
 import { i18nEdits, i18nOverlays } from './i18n-edits.mjs';
-import { companionEdits, companionOverlays, companionSettingsPages } from './companion-edits.mjs';
+import { companionEdits, companionOverlays } from './companion-edits.mjs';
 import { scrollToEndEdits } from './scroll-to-end-edits.mjs';
 import { timelineRailEdits, timelineRailOverlays } from './timeline-rail-edits.mjs';
 import { mobileEdits, mobileOverlays } from './mobile/index.mjs';
 import { threadFoldersEdits, threadFoldersOverlays } from './thread-folders-edits.mjs';
+import { tailscaleEdits, tailscaleOverlays } from './tailscale-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -82,8 +79,6 @@ const edits = {
   'apps/web/src/environments/primary/auth.ts': [
     ['  const startedAt = Date.now();\n  while (true) {', '  const startedAt = Date.now();\n  const timeoutMs = window.desktopBridge ? 60_000 : BOOTSTRAP_RETRY_TIMEOUT_MS;\n  while (true) {', 'replace'],
     ['Date.now() - startedAt >= BOOTSTRAP_RETRY_TIMEOUT_MS', 'Date.now() - startedAt >= timeoutMs', 'replace'],
-    ['    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status);', `    return TRANSIENT_BOOTSTRAP_STATUS_CODES.has(error.status) ||
-      (HttpClientError.isHttpClientError(error.cause) && error.cause.reason._tag === "TransportError");`, 'replace'],
   ],
   // SSH 원격 환경. 원본은 원격에 GitHub 의 T3 릴리스를 받아 띄우는데, 그 서버에는
   // Rubato 제공자가 없다. 원격에도 Rubato 를 깔아 두고(install-gui.sh 가
@@ -126,10 +121,13 @@ const edits = {
       ].join('\n'),
       'replace'],
   ],
-  'apps/desktop/src/main.ts': [
-    ['  return { archiveVersion: environment.appVersion };',
-      '  return { nodeScriptPath: ".rubato/t3-remote-server.mjs", nodeEngineRange: serverPackageJson.engines.node };',
-      'replace'],
+  // The desktop SSH runner resolution moved out of main.ts, so the script lands where it resolves.
+  'apps/desktop/src/ssh/DesktopSshEnvironment.ts': [
+    [
+      '  const releaseBaseUrl = env[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined;\n  return {\n    archiveVersion: environment.appVersion,\n    ...(releaseBaseUrl === undefined ? {} : { releaseBaseUrl }),\n  };',
+      '  const releaseBaseUrl = env[CLI_RELEASE_BASE_URL_ENV]?.trim() || undefined;\n  // Rubato: the desktop carries its own server script, so no release archive is fetched.\n  return {\n    nodeScriptPath: ".rubato/t3-remote-server.mjs",\n    nodeEngineRange: serverPackageJson.engines.node,\n    ...(releaseBaseUrl === undefined ? {} : { releaseBaseUrl }),\n  };',
+      'replace',
+    ],
   ],
   // macOS 에서도 단일 인스턴스 잠금을 잡는다. Clerk 는 macOS 에서 잠금을 건너뛴다 —
   // LaunchServices 가 번들당 앱 하나를 지켜 주기 때문이다. 그런데 start-gui.sh 는
@@ -140,19 +138,12 @@ const edits = {
   // 잠금 범위는 userData 라서 make 가 setPath 한 뒤인 여기서 잡는다.
   'apps/desktop/src/app/DesktopClerk.ts': [
     ['import * as Context from "effect/Context";', 'import * as ElectronMain from "electron";\n'],
-    ['function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {\n',
-      'function createDesktopClerkBridge(stateDir: string, isDevelopment: boolean) {\n' +
-      '  if (process.platform === "darwin" && process.versions.electron && !ElectronMain.app.requestSingleInstanceLock()) {\n' +
-      '    ElectronMain.app.quit();\n' +
-      '    return { cleanup() {}, isPrimaryInstance: false } as ReturnType<typeof createClerkBridge>;\n' +
-      '  }\n',
-      'replace'],
   ],
   // A native Dock launch has no terminal to show progress. Reuse the existing connecting
   // window on every platform while the backend becomes ready, not only on WSL.
   'apps/desktop/src/app/DesktopApp.ts': [
-    ['    if (settings.wslOnly === true && settings.wslBackendEnabled === true) {\n      yield* desktopWindow.showConnectingSplash;\n    }',
-      '    // Rubato: native launches show progress even before the server is ready.\n    yield* desktopWindow.showConnectingSplash;', 'replace'],
+    ['  if (settings.wslOnly === true && settings.wslBackendEnabled === true) {\n    yield* desktopWindow.showConnectingSplash;\n  }',
+      '  // Rubato: native launches show progress even before the server is ready.\n  yield* desktopWindow.showConnectingSplash;', 'replace'],
   ],
   'apps/desktop/src/window/DesktopWindow.ts': [
     ['<div class="label">Connecting to WSL…</div>', '<div class="label">Rubato를 여는 중…</div>', 'replace'],
@@ -225,7 +216,7 @@ const edits = {
   'apps/web/src/routes/__root.tsx': [
     ['import { SshPasswordPromptDialog } from "../components/desktop/SshPasswordPromptDialog";',
       'import { RubatoUpdateDialog } from "../components/desktop/RubatoUpdateDialog";\n'],
-    ['          <SshPasswordPromptDialog />', '          <RubatoUpdateDialog />\n'],
+    ['      <SshPasswordPromptDialog />', '      <RubatoUpdateDialog />\n'],
   ],
   // Creation is a separate RPC so an older server cannot silently ignore a
   // create-only flag and route the request to its overwriting writeFile method.
@@ -251,14 +242,14 @@ const edits = {
   'apps/server/src/workspace/WorkspaceFileSystem.ts': [
     ['import * as WorkspaceEntries from "./WorkspaceEntries.ts";', 'import { createWorkspaceFile } from "./createWorkspaceFile.ts";\n'],
     ['    readonly writeFile: (\n      input: ProjectWriteFileInput,', '    readonly writeFile: (\n      input: ProjectWriteFileInput & { readonly createOnly?: boolean },', 'replace'],
-    ['    yield* fileSystem.makeDirectory(path.dirname(target.absolutePath), { recursive: true }).pipe(',
+    ['    yield* fileSystem.makeDirectory(path.dirname(realTargetPath), { recursive: true }).pipe(',
       [
         '    if (input.createOnly) {',
         '      yield* Effect.tryPromise({',
         '        try: () => createWorkspaceFile(input.cwd, target.relativePath, input.contents),',
         '        catch: (cause) => new WorkspaceFileSystemOperationError({',
         '          workspaceRoot: input.cwd, relativePath: input.relativePath,',
-        '          resolvedPath: target.absolutePath, operationPath: target.absolutePath,',
+        '          resolvedPath: realTargetPath, operationPath: realTargetPath,',
         '          operation: "write-file", cause,',
         '        }),',
         '      });',
@@ -290,17 +281,17 @@ const edits = {
     ['interface RightPanelTabsProps {', 'interface RightPanelTabsProps {\n  noteTarget?: MarkdownNoteTarget | undefined;', 'replace'],
     ['function RightPanelEmptyState(props: {', 'function RightPanelEmptyState(props: {\n  onAddNote?: (() => void) | undefined;', 'replace'],
     ['  const [renamingDevice, setRenamingDevice] = useState<string | null>(null);', '  const [newNoteTarget, setNewNoteTarget] = useState<MarkdownNoteTarget | null>(null);\n'],
-    ['    {\n      label: "Diff",\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: SURFACE_UNAVAILABLE_HINTS.diff,',
-      '    {\n      label: "Markdown note",\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.onAddNote !== undefined,\n      disabledReason: SURFACE_UNAVAILABLE_HINTS.files,\n      onClick: () => props.onAddNote?.(),\n      badgeCount: 0,\n    },\n'],
-    ['    {\n      label: "Diff",\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: SURFACE_DISABLED_REASONS.diff,',
-      '    {\n      label: "Markdown note",\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.noteTarget !== undefined,\n      disabledReason: SURFACE_DISABLED_REASONS.files,\n      onClick: () => setNewNoteTarget(props.noteTarget ?? null),\n    },\n'],
+    ['    {\n      label: msg("Diff"),\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.diff),',
+      '    {\n      label: msg("Markdown note"),\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.onAddNote !== undefined,\n      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.files),\n      onClick: () => props.onAddNote?.(),\n    },\n'],
+    ['    {\n      label: msg("Diff"),\n      icon: FileDiff,\n      shortcut: "D",\n      available: props.diffAvailable,\n      disabledReason: messages(SURFACE_DISABLED_REASONS.diff),',
+      '    {\n      label: msg("Markdown note"),\n      icon: FilePenLine,\n      shortcut: "N",\n      available: props.noteTarget !== undefined,\n      disabledReason: messages(SURFACE_DISABLED_REASONS.files),\n      onClick: () => setNewNoteTarget(props.noteTarget ?? null),\n    },\n'],
     ['            onAddFiles={props.onAddFiles}', '            onAddNote={props.noteTarget ? () => setNewNoteTarget(props.noteTarget!) : undefined}\n'],
     ['    </PreviewPanelShell>', '      {newNoteTarget ? <NewMarkdownNoteDialog target={newNoteTarget} onClose={() => setNewNoteTarget(null)} /> : null}\n'],
   ],
   'apps/web/src/components/files/FilePreviewPanel.tsx': [
     ['const RENDER_MARKDOWN_STORAGE_KEY = "t3code.renderMarkdown";\n', '// Markdown reading mode is local to the opened file.\n', 'replace'],
     [
-      '  // Reading markdown rendered is a preference, not a property of one file. Keeping\n  // it on the panel meant a thread switch dropped it and forced source back.\n  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(\n    RENDER_MARKDOWN_STORAGE_KEY,\n    false,\n    Schema.Boolean,\n  );',
+      '  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useLocalStorage(\n    RENDER_MARKDOWN_STORAGE_KEY,\n    false,\n    Schema.Boolean,\n  );',
       '  // Files open for reading; an explicit line reveal still opens source.\n  const [renderMarkdownPreferred, setRenderMarkdownPreferred] = useState(true);\n  useEffect(() => setRenderMarkdownPreferred(true), [relativePath, revealRequestId]);',
       'replace',
     ],
@@ -326,19 +317,19 @@ const edits = {
   'apps/server/src/serverRuntimeStartup.ts': [
     ['import { forkParked, forkParkedFiber } from "./serverActivation.ts";\n', 'import { bindRubatoSessionLookup } from "./provider/RubatoPiSessions.ts";\nimport { makeRubatoPiInventory } from "./provider/RubatoPiInventory.ts";\nimport * as Schedule from "effect/Schedule";\n'],
     // Sessions started elsewhere show as threads once commands are accepted (RubatoPiInventory.ts).
-    ['      yield* Effect.logDebug("startup phase: complete");\n',
-      '      yield* runStartupPhase("rubato.inventory", Effect.flatMap(makeRubatoPiInventory, (inventory) => inventory.start));\n'],
+    ['    yield* Effect.logDebug("startup phase: complete");\n',
+      '    yield* runStartupPhase("rubato.inventory", Effect.flatMap(makeRubatoPiInventory, (inventory) => inventory.start));\n'],
     // Before recovery resumes anything, the Rubato bridges learn which session each thread
     // already runs in, so a conversation from before V2 continues there (RubatoPiSessions.ts).
-    ['      const { recovery, bootstrap: bootstrapTargets } = yield* runOrderedV2StartupPhases({\n',
-      '      yield* runStartupPhase("rubato.session-lookup", bindRubatoSessionLookup);\n'],
+    ['    const { recovery, bootstrap: bootstrapTargets } = yield* runOrderedV2StartupPhases({\n',
+      '    yield* runStartupPhase("rubato.session-lookup", bindRubatoSessionLookup);\n'],
     // 데스크톱 백엔드는 자기를 띄운 앱과 수명을 같이한다. 앱은 정상 종료 때만
     // SIGTERM 을 보내서, 앱이 크래시로 죽으면 서버가 launchd 밑에 고아로 남았다.
     // 다시 켠 앱이 새 서버를 띄우면 둘이 같은 state.sqlite 와 같은 Pi 세션에 붙어
     // 모든 이벤트를 제 턴 ID 로 한 번씩 더 썼다(답·생각 중복, 도구 묶음 끊김).
     // 부모가 바뀌면 자기에게 SIGTERM 을 보내 정상 종료 경로로 내려간다.
     [
-      '    const startup = Effect.gen(function* () {\n',
+      '  const startup = Effect.gen(function* () {\n',
       [
         '    // Rubato: a desktop backend lives only as long as the app that spawned it.',
         '    // The app sends SIGTERM on a normal quit; after a crash this process was',
@@ -365,8 +356,8 @@ const edits = {
   // 예전 캐시 extras 가 큐레이트 뒤에 붙어서 /model 순서와 갈라지지 않는다.
   'apps/server/src/provider/ProviderRegistry.ts': [
     [
-      '  if (!isAntigravity && !isCodex && provider.driver !== ProviderDriverKind.make("opencode")) {\n    return true;\n  }',
-      '  if (\n    !isAntigravity &&\n    !isCodex &&\n    provider.driver !== ProviderDriverKind.make("opencode") &&\n    provider.driver !== ProviderDriverKind.make("rubato-pi")\n  ) {\n    return true;\n  }',
+      '  if (!isAntigravity && !isCodex && !isOpenCode) {',
+      '  if (!isAntigravity && !isCodex && !isOpenCode && provider.driver !== ProviderDriverKind.make("rubato-pi")) {',
       'replace',
     ],
   ],
@@ -394,19 +385,11 @@ const edits = {
   // The importer's own test asks for the import the gate above leaves off.
   'apps/server/src/project/AgentSessionImporter.test.ts': [
     [
-      'it.effect("imports messages once and preserves the provider native resume binding", () => {\n',
+      'it.effect(\n  "ignores owned sessions, including archived and deleted threads, but imports other instances and unowned sessions",\n',
       '// Rubato leaves this import off unless asked (the AgentSessionImporter edit above); this test asks.\nprocess.env.RUBATO_IMPORT_AGENT_HISTORY = "1";\n\n',
     ],
   ],
   // Rubato's engine runs outside T3 with no harness version a policy could pin, like the ACP
-  // registry the test already leaves out.
-  'apps/server/src/provider/providerCompatibility.test.ts': [
-    [
-      '      if (builtIn.driverKind === "acpRegistry") continue;\n',
-      '      if (builtIn.driverKind === "acpRegistry") continue;\n      // Rubato: an external engine with no versioned harness (apply.mjs).\n      if (builtIn.driverKind === "rubato-pi") continue;\n',
-      'replace',
-    ],
-  ],
   'apps/web/src/components/chat/ModelPickerContent.tsx': [
     [
       '    return sortProviderModelItems(result, {\n      favoriteModelKeys: favoritesSet,\n      groupFavorites: selectedInstanceId !== "favorites",\n      instanceOrder: selectedInstanceId === "favorites" ? instanceOrder : [],\n    });',
@@ -483,7 +466,7 @@ const edits = {
   // React 가 뜨기 전의 첫 화면. 그림은 /apple-touch-icon.png 를 그대로 쓰고, 그 파일은
   // 설치기가 assets/web 의 Rubato 것으로 깐다. 여기서는 그 앞뒤 글자만 바꾼다.
   'apps/web/index.html': [
-    ['    <title>T3 Code (Beta)</title>', '    <title>Rubato</title>', 'replace'],
+    ['    <title>T3 Code</title>', '    <title>Rubato</title>', 'replace'],
     [
       '        <div id="boot-shell-card" aria-label="T3 Code splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="T3 Code" />',
       '        <div id="boot-shell-card" aria-label="Rubato splash screen">\n          <img id="boot-shell-logo" src="/apple-touch-icon.png" alt="Rubato" />',
@@ -525,43 +508,38 @@ const edits = {
   // 쓰는 매핑은 overlay rubatoModelIcons.tsx 에 있다.
   'apps/web/src/components/chat/ProviderInstanceIcon.tsx': [
     ['import { cn } from "~/lib/utils";', 'import { GeminiIcon } from "../GeminiIcon";\nimport { RubatoIcon } from "../RubatoIcon";\n'],
-    ['  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n};', '  [ProviderDriverKind.make("antigravity")]: AntigravityIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n};', 'replace'],
+    ['  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n};', '  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n};', 'replace'],
   ],
   // An untouched speed select with Ultrafast is sent as Normal, like the Fast toggle's implicit false.
-  'apps/web/src/components/chat/composerProviderState.tsx': [
-    ["export function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n", "/**\n * Rubato: a speed select that offers Ultrafast is the same switch as Fast, so an untouched one is\n * Normal and is sent as such. Otherwise a tier the engine remembered from `/ultrafast` kept\n * running while the picker read Normal (harness/t3-integration/src/model-catalog-order.mjs).\n */\nfunction withImplicitServiceTierDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | null | undefined {\n  if (modelOptions?.some((selection) => selection.id === \"serviceTier\")) return modelOptions;\n  for (const descriptor of caps.optionDescriptors ?? []) {\n    if (descriptor.type !== \"select\" || descriptor.id !== \"serviceTier\") continue;\n    if (!descriptor.options.some((option) => option.id === \"ultrafast\")) continue;\n    const normal = descriptor.options.find((option) => option.isDefault)?.id ?? \"default\";\n    return [...(modelOptions ?? []), { id: \"serviceTier\", value: normal }];\n  }\n  return modelOptions;\n}\n\nexport function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n", 'replace'],
+  'packages/shared/src/model.ts': [
+    [
+      '/** Cursor ACP can default Fast to true; T3 requires a user selection. */\nexport function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n',
+      '/**\n * Rubato: a speed select that offers Ultrafast is the same switch as Fast, so an untouched one is\n * Normal and is sent as such. Otherwise a tier the engine remembered from `/ultrafast` kept\n * running while the picker read Normal (harness/t3-integration/src/model-catalog-order.mjs).\n */\nfunction withImplicitServiceTierDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | null | undefined {\n  if (modelOptions?.some((selection) => selection.id === "serviceTier")) return modelOptions;\n  for (const descriptor of caps.optionDescriptors ?? []) {\n    if (descriptor.type !== "select" || descriptor.id !== "serviceTier") continue;\n    if (!descriptor.options.some((option) => option.id === "ultrafast")) continue;\n    const normal = descriptor.options.find((option) => option.isDefault)?.id ?? "default";\n    return [...(modelOptions ?? []), { id: "serviceTier", value: normal }];\n  }\n  return modelOptions;\n}\n\n/** Cursor ACP can default Fast to true; T3 requires a user selection. */\nexport function withImplicitFastModeDefault(\n  caps: ModelCapabilities,\n  modelOptions: ReadonlyArray<ProviderOptionSelection> | null | undefined,\n): ReadonlyArray<ProviderOptionSelection> | undefined {\n',
+      'replace',
+    ],
     ['  const hasExplicitFastMode = modelOptions?.some((selection) => selection.id === "fastMode");',
       '  modelOptions = withImplicitServiceTierDefault(caps, modelOptions);\n  const hasExplicitFastMode = modelOptions?.some((selection) => selection.id === "fastMode");', 'replace'],
   ],
-  // A test for the untouched speed select above.
-  'apps/web/src/components/chat/composerProviderState.test.tsx': [
-    ["describe(\"trait controls fastMode display\", () => {", "describe(\"Rubato: an untouched speed select with Ultrafast\", () => {\n  const speed = selectDescriptor(\"serviceTier\", [\n    { id: \"default\", label: \"Normal\", isDefault: true },\n    { id: \"priority\", label: \"Fast\" },\n    { id: \"ultrafast\", label: \"Ultrafast\" },\n  ]);\n\n  it(\"is sent as Normal so a tier the engine remembered cannot run under a Normal picker\", () => {\n    expect(withImplicitFastModeDefault({ optionDescriptors: [speed] }, undefined)).toEqual(\n      selections([\"serviceTier\", \"default\"]),\n    );\n    const state = getComposerProviderState({\n      provider: PROVIDER,\n      model: MODEL,\n      models: modelWith([speed]),\n      modelOptions: undefined,\n      planModeEnabled: true,\n    });\n    expect(state.modelOptionsForDispatch).toEqual(selections([\"serviceTier\", \"default\"]));\n  });\n\n  it(\"keeps the user's pick, and leaves a speed select without Ultrafast alone\", () => {\n    expect(\n      withImplicitFastModeDefault({ optionDescriptors: [speed] }, selections([\"serviceTier\", \"ultrafast\"])),\n    ).toEqual(selections([\"serviceTier\", \"ultrafast\"]));\n    const fastOnly = selectDescriptor(\"serviceTier\", [\n      { id: \"default\", label: \"Normal\", isDefault: true },\n      { id: \"priority\", label: \"Fast\" },\n    ]);\n    expect(withImplicitFastModeDefault({ optionDescriptors: [fastOnly] }, undefined)).toBeUndefined();\n  });\n});\n\n"],
-  ],
   // The composer's trait button reads a Codex speed select as "High Ultrafast", and as plain
   // "High" on Normal. Rubato's Ultrafast models send the same select (model-catalog-order.mjs),
-  // which without this read as "High · Normal".
-  'apps/web/src/components/chat/TraitsPicker.tsx': [
-    ['      input.provider === "codex" &&\n      descriptor.id === "serviceTier" &&',
-      '      (input.provider === "codex" || input.provider === "rubato-pi") &&\n      descriptor.id === "serviceTier" &&', 'replace'],
-  ],
   'apps/web/src/components/chat/ModelListRow.tsx': [
-    ['import { ProviderInstanceIcon } from "./ProviderInstanceIcon";', 'import { iconForProviderModel, subProviderLabel } from "./rubatoModelIcons";\n'],
+    ['import { ProviderInstanceIcon } from "./ProviderInstanceIcon";', 'import { iconForProviderModel } from "./rubatoModelIcons";\n'],
     [
-      '  const providerLabel = getProviderRowLabel(props.providerDisplayName, props.model.subProvider);',
-      '  const ModelVendorIcon = iconForProviderModel(props.driverKind, props.model);\n  const providerLabel = props.model.subProvider\n    ? subProviderLabel(props.model.subProvider, props.model)\n    : getProviderRowLabel(props.providerDisplayName, props.model.subProvider);',
+      '  const model = {\n    slug: props.slug,\n    name: props.name,\n    subProvider: props.subProvider,\n  };',
+      '  const model = {\n    slug: props.slug,\n    name: props.name,\n    subProvider: props.subProvider,\n  };\n  // Rubato: the model vendor logo, where upstream shows the provider icon.\n  const ModelVendorIcon = iconForProviderModel(props.driverKind, model);',
       'replace',
     ],
     [
-      '            <ProviderInstanceIcon\n              driverKind={props.driverKind}\n              displayName={props.providerDisplayName}\n              acpRegistryAgentId={props.acpRegistryAgentId}\n              acpRegistryIconUrl={props.acpRegistryIconUrl}\n              className="size-3"\n              iconClassName="size-3"\n            />',
-      '            {ModelVendorIcon ? (\n              <ModelVendorIcon className="size-3 shrink-0" aria-hidden />\n            ) : (\n              <ProviderInstanceIcon\n                driverKind={props.driverKind}\n                displayName={props.providerDisplayName}\n                acpRegistryAgentId={props.acpRegistryAgentId}\n                acpRegistryIconUrl={props.acpRegistryIconUrl}\n                className="size-3"\n                iconClassName="size-3"\n              />\n            )}',
+      '      <ProviderInstanceIcon\n        driverKind={props.driverKind}\n        displayName={props.providerDisplayName}\n        accentColor={props.providerAccentColor}\n        acpRegistryAgentId={props.acpRegistryAgentId}\n        acpRegistryIconUrl={props.acpRegistryIconUrl}\n        showBadge={props.showInstanceBadge}\n        className="size-4"\n        iconClassName="size-4"\n        indicatorBackground="var(--popover)"\n        badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"\n      />',
+      '      {ModelVendorIcon ? (\n        <ModelVendorIcon className="size-4 shrink-0" aria-hidden />\n      ) : (\n      <ProviderInstanceIcon\n        driverKind={props.driverKind}\n        displayName={props.providerDisplayName}\n        accentColor={props.providerAccentColor}\n        acpRegistryAgentId={props.acpRegistryAgentId}\n        acpRegistryIconUrl={props.acpRegistryIconUrl}\n        showBadge={props.showInstanceBadge}\n        className="size-4"\n        iconClassName="size-4"\n        indicatorBackground="var(--popover)"\n        badgeClassName="right-[-0.125rem] bottom-[-0.125rem] h-3 min-w-3 px-0.5 text-5xs"\n      />\n      )}',
       'replace',
     ],
   ],
   // 닫힌 트리거는 인스턴스(Rubato) 아이콘을 쓴다. 고른 모델의 레인 로고로 바꾼다.
   'apps/web/src/components/chat/ProviderModelPicker.tsx': [
     [
-      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n} from "./providerIconUtils";',
-      '  getTriggerDisplayModelLabel,\n  getTriggerDisplayModelName,\n} from "./providerIconUtils";\nimport { iconForProviderModel } from "./rubatoModelIcons";',
+      'import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";',
+      'import { ModelEsque, getDisplayModelName, getTriggerDisplayModelName } from "./providerIconUtils";\nimport { iconForProviderModel } from "./rubatoModelIcons";',
       'replace',
     ],
     [
@@ -570,13 +548,13 @@ const edits = {
       'replace',
     ],
     [
-      '          ) : activeEntry && props.triggerLabel === undefined ? (\n            <ProviderInstanceIcon',
-      '          ) : activeEntry && props.triggerLabel === undefined ? (\n            TriggerIcon ? (\n              <TriggerIcon\n                className={cn("size-4 shrink-0", props.activeProviderIconClassName)}\n                aria-hidden\n              />\n            ) : (\n            <ProviderInstanceIcon',
+      '            <span data-chat-provider-model-picker-icon className="contents">\n              <ProviderInstanceIcon',
+      '            <span data-chat-provider-model-picker-icon className="contents">\n              {TriggerIcon ? (\n                <TriggerIcon\n                  className={cn("size-4 shrink-0", props.activeProviderIconClassName)}\n                  aria-hidden\n                />\n              ) : (\n              <ProviderInstanceIcon',
       'replace',
     ],
     [
-      '            />\n          ) : null}',
-      '            />\n            )\n          ) : null}',
+      '              />\n            </span>\n          ) : null}',
+      '              />\n              )}\n            </span>\n          ) : null}',
       'replace',
     ],
   ],
@@ -616,12 +594,6 @@ const edits = {
     ],
   ],
   // T3 MCP 도구 행의 제품 로고도 같은 워드마크라 Rubato 로 보인다. upstream 테스트는 T3 글리프의
-  // viewBox 를 기대하므로 워드마크의 것으로 맞춘다.
-  'apps/web/src/components/chat/MessagesTimeline.test.tsx': [
-    [`    expect(markup).toContain('viewBox="15.5309 37 94.3941 56.96"');`,
-      `    expect(markup).toContain('viewBox="0 0 3210 760"');`,
-      'replace'],
-  ],
   // 워드마크 옆의 "Code" 글자. 워드마크가 이미 제품 이름을 다 쓴다.
   // 지우는 대신 빈 글자로 둔다 — 치환을 되돌릴 때 빈 문자열은 파일 맨 앞에
   // 원문을 다시 붙여 넣어서, overlay 제거가 원본을 복원하지 못한다.
@@ -635,7 +607,7 @@ const edits = {
       'replace',
     ],
     [
-      '      >\n        Code\n      </span>',
+      '      >\n        {/* oxlint-disable-next-line t3code/no-untranslated-copy -- product wordmark */}\n        {"Code"}\n      </span>',
       '      >\n        {null}\n      </span>',
       'replace',
     ],
@@ -645,7 +617,7 @@ const edits = {
   // "queue" 라 실행 중 보낸 말은 queue_after_active 로 그 턴이 끝난 뒤 제 턴으로 돌고, 대기
   // 행의 ↑ 는 queued-message.promote-to-steer 로 스티어가 된다. 그래서 웹 쪽 패치가 없다.
   'apps/web/src/components/ChatView.tsx': [
-    ...[10, 12].map((indent) => {
+    ...[10].map((indent) => {
       const spaces = ' '.repeat(indent);
       return [
         `\n${spaces}onAddFiles={addFilesSurfaceStable}`,
@@ -669,298 +641,65 @@ const edits = {
   // 턴이 도는 동안 입력창에 초안이 있어도 Stop 은 그 옆에 남는다(전과 같이). upstream 은
   // 초안이 생기면 Stop 을 숨기고 스티어 화살표만 보여 줬다. 화살표의 이름은 upstream 대로 Steer 다.
   'apps/web/src/components/chat/ComposerPrimaryActions.tsx': [
-    ['  if (compactTokens === null) return submit;\n',
+    [
+      '  // Keep the clicked target at the right edge even if typing changes the primary action.\n  const withStopButton = (action: ReactNode) => (\n    <>\n      {action}\n      {stopPhase === "pending" || stopPhase === "timedOut"\n        ? renderStopGenerationButton(false)\n        : null}\n    </>\n  );',
       [
         '  // Rubato: while a turn runs, Stop stays beside the steer arrow once a draft is written.',
         '  const keepStop = canInterrupt && hasSendableContent && !isEditingQueuedMessage;',
-        '  if (compactTokens === null)',
-        '    return keepStop ? (',
-        '      <>',
-        '        {renderStopGenerationButton(false)}',
-        '        {submit}',
-        '      </>',
-        '    ) : (',
-        '      submit',
-        '    );',
-        '',
+        '  // Keep the clicked target at the right edge even if typing changes the primary action.',
+        '  const withStopButton = (action: ReactNode) => (',
+        '    <>',
+        '      {action}',
+        '      {keepStop || stopPhase === "pending" || stopPhase === "timedOut"',
+        '        ? renderStopGenerationButton(false)',
+        '        : null}',
+        '    </>',
+        '  );',
       ].join('\n'),
-      'replace'],
-    ['    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">\n',
-      '    <div data-chat-composer-compact-send="true" className="flex items-center gap-2">\n      {keepStop ? renderStopGenerationButton(false) : null}\n',
-      'replace'],
+      'replace',
+    ],
   ],
-  'apps/web/src/components/chat/ComposerPrimaryActions.test.tsx': [
-    ['describe("ComposerPrimaryActions", () => {\n',
+  'apps/web/src/composer-logic.test.ts': [
+    [
+      '  it("does not keep a subcommand trigger active after /model arguments", () => {',
       [
-        'describe("ComposerPrimaryActions", () => {',
-        '  // Rubato: Stop stays reachable while a draft waits during a running turn.',
-        '  it("keeps Stop beside the steer arrow when a draft is written during a run", () => {',
-        '    const markup = renderToStaticMarkup(',
-        '      createElement(ComposerPrimaryActions, {',
-        '        compact: true,',
-        '        canOperateThread: true,',
-        '        pendingAction: null,',
-        '        isRunning: true,',
-        '        canInterrupt: true,',
-        '        showPlanFollowUpPrompt: false,',
-        '        promptHasText: true,',
-        '        isSendBusy: false,',
-        '        sendDisabledReason: null,',
-        '        isConnecting: false,',
-        '        isEnvironmentUnavailable: false,',
-        '        isPreparingWorktree: false,',
-        '        hasSendableContent: true,',
-        '        onPreviousPendingQuestion: () => {},',
-        '        onInterrupt: () => {},',
-        '        onImplementPlanInNewThread: () => {},',
-        '      }),',
-        '    );',
-        '    expect(markup).toContain(\'aria-label="Stop generation"\');',
-        '    expect(markup).toContain(\'aria-label="Steer message"\');',
+        '  it("opens the slash menu from a bare slash after other text", () => {',
+        '    const text = "then /";',
+        '    expect(detectComposerTrigger(text, text.length)).toEqual({',
+        '      kind: "slash-command",',
+        '      query: "",',
+        '      rangeStart: "then ".length,',
+        '      rangeEnd: text.length,',
+        '    });',
+        '  });',
+        '',
+        '  it("detects a slash command after leading prose", () => {',
+        '    const text = "please /rev";',
+        '    expect(detectComposerTrigger(text, text.length)).toEqual({',
+        '      kind: "slash-command",',
+        '      query: "rev",',
+        '      rangeStart: "please ".length,',
+        '      rangeEnd: text.length,',
+        '    });',
+        '  });',
+        '',
+        '  it("detects a second slash after a skill mention", () => {',
+        '    const text = "$review /sk";',
+        '    expect(detectComposerTrigger(text, text.length)).toEqual({',
+        '      kind: "slash-command",',
+        '      query: "sk",',
+        '      rangeStart: "$review ".length,',
+        '      rangeEnd: text.length,',
+        '    });',
+        '  });',
+        '',
+        '  it("does not treat path-like tokens as slash commands", () => {',
+        '    expect(detectComposerTrigger("see /usr/bin", "see /usr/bin".length)).toBeNull();',
+        '    expect(detectComposerTrigger("note //", "note //".length)).toBeNull();',
         '  });',
         '',
         '',
       ].join('\n'),
-      'replace'],
-  ],
-  'apps/web/src/composer-logic.test.ts': [
-    [
-      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });',
-      '  it("keeps slash command detection active for provider commands", () => {\n    const text = "/rev";\n    const trigger = detectComposerTrigger(text, text.length);\n\n    expect(trigger).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: 0,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("opens the slash menu from a bare slash after other text", () => {\n    const text = "then /";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "",\n      rangeStart: "then ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a slash command after leading prose", () => {\n    const text = "please /rev";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "rev",\n      rangeStart: "please ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("detects a second slash after a skill mention", () => {\n    const text = "$review /sk";\n    expect(detectComposerTrigger(text, text.length)).toEqual({\n      kind: "slash-command",\n      query: "sk",\n      rangeStart: "$review ".length,\n      rangeEnd: text.length,\n    });\n  });\n\n  it("does not treat path-like tokens as slash commands", () => {\n    expect(detectComposerTrigger("see /usr/bin", "see /usr/bin".length)).toBeNull();\n    expect(detectComposerTrigger("note //", "note //".length)).toBeNull();\n  });',
-      'replace',
-    ],
-  ],
-  // 레거시 사이드바의 프로젝트별 스레드 목록: Show more 가 꼬리를 통째로 펼치던 것을
-  // 한 번에 한 페이지씩 연다. 페이지 크기는 그 프로젝트가 이미 보여주는 "Visible
-  // threads" 수와 같다. 상태는 프로젝트별로 연 페이지 수(Map)이고, 목록을 자르는
-  // 자리가 둘(스레드 목록과 ⌘ 점프 목록)이라 둘이 같은 수를 봐야 한다.
-  // 페이지로 열면 중간 상태가 생긴다. 원래의 두 줄(펼치기/접기 중 하나)로는 그 중간에서
-  // 접을 길이 없어서, 한 줄에 "Show more (남은 수)" 와 "Show less" 를 같이 둔다.
-  // 접기는 한 페이지씩이 아니라 처음 미리보기로 돌아간다.
-  'apps/web/src/components/LegacySidebar.tsx': [
-    [
-      'interface SidebarProjectItemProps {\n  project: SidebarProjectSnapshot;\n  isThreadListExpanded: boolean;',
-      'interface SidebarProjectItemProps {\n  project: SidebarProjectSnapshot;\n  revealedThreadPages: number;',
-      'replace',
-    ],
-    [
-      '  const {\n    project,\n    isThreadListExpanded,\n    activeRouteThreadKey,',
-      '  const {\n    project,\n    revealedThreadPages,\n    activeRouteThreadKey,',
-      'replace',
-    ],
-    [
-      '    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;\n    const previewThreads =\n      isThreadListExpanded || !hasOverflowingThreads\n        ? visibleProjectThreads\n        : visibleProjectThreads.slice(0, sidebarThreadPreviewCount);',
-      [
-        '    const hasOverflowingThreads = visibleProjectThreads.length > sidebarThreadPreviewCount;',
-        '    // Rubato: one press reveals one page — the "Visible threads" count this',
-        '    // project already previews — instead of dumping the whole tail at once.',
-        '    const revealedThreadCount =',
-        '      sidebarThreadPreviewCount * (1 + Math.max(0, revealedThreadPages));',
-        '    const previewThreads =',
-        '      visibleProjectThreads.length <= revealedThreadCount',
-        '        ? visibleProjectThreads',
-        '        : visibleProjectThreads.slice(0, revealedThreadCount);',
-        '    const hiddenThreadCount = visibleProjectThreads.length - previewThreads.length;',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '    return {\n      hasOverflowingThreads,\n      hiddenThreadStatus: resolveProjectStatusIndicator(',
-      '    return {\n      hasOverflowingThreads,\n      hiddenThreadCount,\n      threadListExpanded: revealedThreadPages > 0,\n      hiddenThreadStatus: resolveProjectStatusIndicator(',
-      'replace',
-    ],
-    [
-      '  const {\n    hasOverflowingThreads,\n    hiddenThreadStatus,\n    renderedThreads,\n    showEmptyThreadState,\n    shouldShowThreadPanel,\n  } = useMemo(() => {',
-      '  const {\n    hasOverflowingThreads,\n    hiddenThreadCount,\n    threadListExpanded,\n    hiddenThreadStatus,\n    renderedThreads,\n    showEmptyThreadState,\n    shouldShowThreadPanel,\n  } = useMemo(() => {',
-      'replace',
-    ],
-    [
-      '    isThreadListExpanded,\n    pinnedCollapsedThread,',
-      '    revealedThreadPages,\n    pinnedCollapsedThread,',
-      'replace',
-    ],
-    [
-      '  shouldShowThreadPanel: boolean;\n  isThreadListExpanded: boolean;\n  activeRouteThreadKey: string | null;',
-      '  shouldShowThreadPanel: boolean;\n  hiddenThreadCount: number;\n  threadListExpanded: boolean;\n  activeRouteThreadKey: string | null;',
-      'replace',
-    ],
-    [
-      '    shouldShowThreadPanel,\n    isThreadListExpanded,',
-      '    shouldShowThreadPanel,\n    hiddenThreadCount,\n    threadListExpanded,',
-      'replace',
-    ],
-    [
-      [
-        '      {projectExpanded && hasOverflowingThreads && !isThreadListExpanded && (',
-        '        <SidebarMenuSubItem className="w-full">',
-        '          <SidebarMenuSubButton',
-        '            render={showMoreButtonRender}',
-        '            data-thread-selection-safe',
-        '            size="sm"',
-        '            onClick={() => {',
-        '              expandThreadListForProject(projectKey);',
-        '            }}',
-        '          >',
-        '            <span className="flex min-w-0 flex-1 items-center gap-2">',
-        '              {hiddenThreadStatus && <ThreadStatusLabel status={hiddenThreadStatus} compact />}',
-        '              <span>Show more</span>',
-        '            </span>',
-        '          </SidebarMenuSubButton>',
-        '        </SidebarMenuSubItem>',
-        '      )}',
-        '      {projectExpanded && hasOverflowingThreads && isThreadListExpanded && (',
-        '        <SidebarMenuSubItem className="w-full">',
-        '          <SidebarMenuSubButton',
-        '            render={showLessButtonRender}',
-        '            data-thread-selection-safe',
-        '            size="sm"',
-        '            onClick={() => {',
-        '              collapseThreadListForProject(projectKey);',
-        '            }}',
-        '          >',
-        '            <span>Show less</span>',
-        '          </SidebarMenuSubButton>',
-        '        </SidebarMenuSubItem>',
-        '      )}',
-      ].join('\n'),
-      [
-        '      {projectExpanded && hasOverflowingThreads && (hiddenThreadCount > 0 || threadListExpanded) && (',
-        '        <SidebarMenuSubItem className="flex w-full items-center gap-1">',
-        '          {hiddenThreadCount > 0 && (',
-        '            <SidebarMenuSubButton',
-        '              render={showMoreButtonRender}',
-        '              data-thread-selection-safe',
-        '              size="sm"',
-        '              className="min-w-0 flex-1 justify-start text-left"',
-        '              onClick={() => {',
-        '                expandThreadListForProject(projectKey);',
-        '              }}',
-        '            >',
-        '              <span className="flex min-w-0 flex-1 items-center gap-2">',
-        '                {hiddenThreadStatus && <ThreadStatusLabel status={hiddenThreadStatus} compact />}',
-        '                <span>',
-        '                  Show more <span className="tabular-nums">({hiddenThreadCount})</span>',
-        '                </span>',
-        '              </span>',
-        '            </SidebarMenuSubButton>',
-        '          )}',
-        '          {threadListExpanded && (',
-        '            <SidebarMenuSubButton',
-        '              render={showLessButtonRender}',
-        '              data-thread-selection-safe',
-        '              size="sm"',
-        '              className={hiddenThreadCount > 0 ? "shrink-0 justify-center" : "w-full justify-start text-left"}',
-        '              onClick={() => {',
-        '                collapseThreadListForProject(projectKey);',
-        '              }}',
-        '            >',
-        '              <span>Show less</span>',
-        '            </SidebarMenuSubButton>',
-        '          )}',
-        '        </SidebarMenuSubItem>',
-        '      )}',
-      ].join('\n'),
-      'replace',
-    ],
-    // 스레드 행의 제목 폭을 돌려받는다. 상태는 글자 알약 대신 색 점(이름은 툴팁)으로,
-    // 시간은 "15m ago" 대신 "15m" 로 줄인다. 시간 칸의 최소 폭은 마우스를 올리면 그
-    // 자리에 뜨는 보관 버튼(min-w-6)만큼만 잡는다.
-    [
-      '          {threadStatus && <ThreadStatusLabel status={threadStatus} />}',
-      '          {threadStatus && <ThreadStatusLabel status={threadStatus} compact />}',
-      'replace',
-    ],
-    [
-      'import { formatRelativeTimeLabel } from "../timestampFormat";',
-      'import { formatRelativeTime } from "../timestampFormat";',
-      'replace',
-    ],
-    [
-      'function SidebarThreadDetailPrewarmer(',
-      [
-        '// Rubato: the thread row shows "15m", not "15m ago", so the title keeps the width.',
-        'function formatSidebarThreadTime(isoDate: string): string {',
-        '  const relative = formatRelativeTime(isoDate);',
-        '  if (!relative) return "";',
-        '  return relative.suffix === null ? "now" : relative.value;',
-        '}',
-        '',
-        'function SidebarThreadDetailPrewarmer(',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '                    {formatRelativeTimeLabel(\n',
-      '                    {formatSidebarThreadTime(\n',
-      'replace',
-    ],
-    [
-      'className={`flex min-w-12 justify-end ${',
-      'className={`flex min-w-6 justify-end ${',
-      'replace',
-    ],
-    [
-      '        isThreadListExpanded={isThreadListExpanded}',
-      '        hiddenThreadCount={hiddenThreadCount}\n        threadListExpanded={threadListExpanded}',
-      'replace',
-    ],
-    [
-      '  expandedThreadListsByProject: ReadonlySet<string>;',
-      '  revealedThreadPagesByProject: ReadonlyMap<string, number>;',
-      'replace',
-    ],
-    [
-      '    expandedThreadListsByProject,\n    activeRouteProjectKey,',
-      '    revealedThreadPagesByProject,\n    activeRouteProjectKey,',
-      'replace',
-    ],
-    [
-      '                      <SidebarProjectItem\n                        project={project}\n                        isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}',
-      '                      <SidebarProjectItem\n                        project={project}\n                        revealedThreadPages={revealedThreadPagesByProject.get(project.projectKey) ?? 0}',
-      'replace',
-    ],
-    [
-      '              <SidebarProjectListRow\n                key={project.projectKey}\n                project={project}\n                isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}',
-      '              <SidebarProjectListRow\n                key={project.projectKey}\n                project={project}\n                revealedThreadPages={revealedThreadPagesByProject.get(project.projectKey) ?? 0}',
-      'replace',
-    ],
-    [
-      '        const isThreadListExpanded = expandedThreadListsByProject.has(project.projectKey);\n        const hasOverflowingThreads = projectThreads.length > sidebarThreadPreviewCount;\n        const previewThreads =\n          isThreadListExpanded || !hasOverflowingThreads\n            ? projectThreads\n            : projectThreads.slice(0, sidebarThreadPreviewCount);',
-      [
-        '        const revealedThreadCount =',
-        '          sidebarThreadPreviewCount *',
-        '          (1 + Math.max(0, revealedThreadPagesByProject.get(project.projectKey) ?? 0));',
-        '        const previewThreads =',
-        '          projectThreads.length <= revealedThreadCount',
-        '            ? projectThreads',
-        '            : projectThreads.slice(0, revealedThreadCount);',
-      ].join('\n'),
-      'replace',
-    ],
-    [
-      '      sidebarThreadPreviewCount,\n      expandedThreadListsByProject,',
-      '      sidebarThreadPreviewCount,\n      revealedThreadPagesByProject,',
-      'replace',
-    ],
-    [
-      '  const [expandedThreadListsByProject, setExpandedThreadListsByProject] = useState<\n    ReadonlySet<string>\n  >(() => new Set());',
-      '  const [revealedThreadPagesByProject, setRevealedThreadPagesByProject] = useState<\n    ReadonlyMap<string, number>\n  >(() => new Map());',
-      'replace',
-    ],
-    [
-      '  const expandThreadListForProject = useCallback((projectKey: string) => {\n    setExpandedThreadListsByProject((current) => {\n      if (current.has(projectKey)) return current;\n      const next = new Set(current);\n      next.add(projectKey);\n      return next;\n    });\n  }, []);',
-      '  const expandThreadListForProject = useCallback((projectKey: string) => {\n    setRevealedThreadPagesByProject((current) => {\n      const next = new Map(current);\n      next.set(projectKey, (current.get(projectKey) ?? 0) + 1);\n      return next;\n    });\n  }, []);',
-      'replace',
-    ],
-    [
-      '  const collapseThreadListForProject = useCallback((projectKey: string) => {\n    setExpandedThreadListsByProject((current) => {\n      if (!current.has(projectKey)) return current;\n      const next = new Set(current);\n      next.delete(projectKey);\n      return next;\n    });\n  }, []);',
-      '  const collapseThreadListForProject = useCallback((projectKey: string) => {\n    setRevealedThreadPagesByProject((current) => {\n      if (!current.has(projectKey)) return current;\n      const next = new Map(current);\n      next.delete(projectKey);\n      return next;\n    });\n  }, []);',
-      'replace',
-    ],
-    [
-      '        expandedThreadListsByProject={expandedThreadListsByProject}',
-      '        revealedThreadPagesByProject={revealedThreadPagesByProject}',
-      'replace',
     ],
   ],
   // 새 스레드에 쓰다 만 글. 업스트림은 글이 든 초안을 두고 새 스레드를 누르면 빈 초안을
@@ -970,43 +709,40 @@ const edits = {
   // 스레드 요청은 그 프로젝트의 쓰던 초안으로 돌아간다. 브랜치·워크트리를 지정한
   // 요청은 그 조건의 새 초안이 필요하니 업스트림대로 새로 만든다.
   'apps/web/src/hooks/useHandleNewThread.ts': [
-    ['      if (emptyStoredDraftThread) {\n        return (async () => {\n',
+    ['    if (emptyStoredDraftThread) {\n      return (async () => {\n',
       [
-        '      // Rubato: the legacy sidebar Rubato ships has no draft rows, so the',
-        '      // invested draft that mint-fresh leaves behind would be unreachable and',
-        '      // the half-written prompt would look lost. A plain new-thread request',
-        '      // goes back to the project\'s invested draft exactly as the user left',
-        '      // it. Explicit workspace options still mint a fresh draft below.',
-        '      if (',
-        '        reusableStoredDraftThread &&',
-        '        !emptyStoredDraftThread &&',
-        '        !hasBranchOption &&',
-        '        !hasWorktreePathOption &&',
-        '        !hasEnvModeOption &&',
-        '        !hasStartFromOriginOption',
-        '      ) {',
-        '        const opened = {',
-        '          draftId: reusableStoredDraftThread.draftId,',
-        '          threadId: reusableStoredDraftThread.threadId,',
-        '        };',
-        '        if (currentRouteTarget?.kind === "draft" && currentRouteTarget.draftId === opened.draftId) {',
-        '          return Promise.resolve(opened);',
-        '        }',
-        '        return router',
-        '          .navigate({',
-        '            to: "/draft/$draftId",',
-        '            params: { draftId: opened.draftId },',
-        '            replace: options?.replace ?? false,',
-        '          })',
-        '          .then(() => opened);',
+        '    // Rubato: the legacy sidebar Rubato ships has no draft rows, so the',
+        '    // invested draft that mint-fresh leaves behind would be unreachable and',
+        '    // the half-written prompt would look lost. A plain new-thread request',
+        '    // goes back to the project\'s invested draft exactly as the user left',
+        '    // it. Explicit workspace options still mint a fresh draft below.',
+        '    if (',
+        '      reusableStoredDraftThread &&',
+        '      !emptyStoredDraftThread &&',
+        '      !hasBranchOption &&',
+        '      !hasWorktreePathOption &&',
+        '      !hasEnvModeOption &&',
+        '      !hasStartFromOriginOption',
+        '    ) {',
+        '      const opened = {',
+        '        draftId: reusableStoredDraftThread.draftId,',
+        '        threadId: reusableStoredDraftThread.threadId,',
+        '      };',
+        '      if (currentRouteTarget?.kind === "draft" && currentRouteTarget.draftId === opened.draftId) {',
+        '        return Promise.resolve(opened);',
         '      }',
+        '      return router',
+        '        .navigate({',
+        '          to: "/draft/$draftId",',
+        '          params: { draftId: opened.draftId },',
+        '          replace: options?.replace ?? false,',
+        '        })',
+        '        .then(() => opened);',
+        '    }',
         '',
       ].join('\n')],
   ],
   'apps/web/src/hooks/useHandleNewThread.test.ts': [
-    ['    composerDraftHasUserContent: () => false,',
-      '    composerDraftHasUserContent: (draft: { readonly prompt?: string } | null) =>\n      Boolean(draft?.prompt),',
-      'replace'],
     ['      draftStore.setLogicalProjectDraftThreadId.mockClear();\n',
       '      draftStore.getComposerDraft.mockImplementation(() => ({}));\n'],
     ['describe.each([\n  ["new", null],\n',
@@ -1051,591 +787,26 @@ const edits = {
   ],
   'apps/web/src/components/chat/ChatComposer.tsx': [
     [
-      '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;',
-      '  // Context window\n  activeContextWindow: ContextWindowSnapshot | null;\n  sessionSpeedLabel?: string | null;',
-      'replace',
+      '  compactDisabled: boolean;\n',
+      '  compactDisabled: boolean;\n  sessionSpeedLabel?: string | null;\n',
     ],
     [
-      '    activeProjectId,\n    activeContextWindow,\n    compactThreadUnavailable,',
-      '    activeProjectId,\n    activeContextWindow,\n    sessionSpeedLabel,\n    compactThreadUnavailable,',
-      'replace',
+      '    activeProjectId,\n    projectName,\n',
+      '    activeProjectId,\n    projectName,\n    sessionSpeedLabel,\n',
     ],
     // 쉬는 입력창의 오른쪽 여백은 upstream 이 액션 묶음 폭을 재서 잡는다(restingActionsWidth).
     // 그래서 Speed 라벨이 그 묶음 안에 있으면 따로 비울 것이 없다.
     [
-      '                  {showComposerAttachAction ? (',
-      '                  {sessionSpeedLabel ? (\n                    <span data-rubato-speed-label="" className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  {showComposerAttachAction ? (',
-      'replace',
+      '                  <div\n                    ref={attachExpandedComposerControls}',
+      '                  {sessionSpeedLabel ? (\n                    <span data-rubato-speed-label="" className="shrink-0 px-1 font-mono text-sm tabular-nums text-secondary-label">\n                      {sessionSpeedLabel}\n                    </span>\n                  ) : null}\n                  <div\n                    ref={attachExpandedComposerControls}',
     ],
   ],
-  // Tailscale Serve holds one mapping per port, so the teardown of one backend
-  // clears whatever that port currently points at. A relaunch brings the
-  // incoming backend up before the outgoing one has torn down, and the late
-  // `serve off` then wiped the live mapping — the tailnet endpoint stayed dark
-  // until it was re-enabled by hand. The teardown now clears the mapping only
-  // while it still points at the backend that is shutting down.
-  // The start had the mirror problem: a second app instance overwrote the
-  // mapping of a backend that stayed up, then cleared it on exit. A backend
-  // now takes the `/` handler only when it is empty or points at a 127.0.0.1
-  // port nothing listens on, and re-checks every few seconds while it runs.
-  'packages/tailscale/src/tailscale.ts': [
-    ['const runTailscaleCommand = (\n  args: readonly string[],\n  timeoutInput: Duration.Input,\n): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>\n  Effect.gen(function* () {', [
-      'const TailscaleServeStatusJson = Schema.Struct({',
-      '  Web: Schema.optional(',
-      '    Schema.Record(',
-      '      Schema.String,',
-      '      Schema.Struct({',
-      '        Handlers: Schema.optional(',
-      '          Schema.Record(Schema.String, Schema.Struct({ Proxy: Schema.optional(Schema.String) })),',
-      '        ),',
-      '      }),',
-      '    ),',
-      '  ),',
-      '});',
-      '',
-      'const decodeServeStatusJson = Schema.decodeEffect(Schema.fromJsonString(TailscaleServeStatusJson));',
-      '',
-      '/**',
-      ' * Proxy targets the `servePort` mapping currently forwards to. `tailscale',
-      ' * serve` keeps one mapping per port, so every entry here is something a',
-      ' * teardown on that port would remove — not only what this process set.',
-      ' */',
-      'const serveProxyTargets = (',
-      '  rawStatusJson: string,',
-      '  servePort: number,',
-      '): Effect.Effect<ReadonlyArray<string>> =>',
-      '  decodeServeStatusJson(rawStatusJson).pipe(',
-      '    // A config we cannot read counts as "not ours": skipping a teardown leaves',
-      '    // a mapping the next backend overwrites, while clearing a live one is what',
-      '    // took the endpoint down. The fallback is annotated so recovering keeps the',
-      '    // decoded type instead of widening it into a union with an empty object.',
-      '    Effect.orElseSucceed((): typeof TailscaleServeStatusJson.Type => ({ Web: {} })),',
-      '    Effect.map((status) => {',
-      '      const web = status.Web;',
-      '      if (web === undefined) return [];',
-      '      // Spread into a fresh object: the decoded record is readonly, and',
-      '      // Object.entries only infers a value type from a mutable index signature.',
-      '      return Object.entries({ ...web })',
-      '        .filter(([host]) => host.endsWith(`:${String(servePort)}`))',
-      '        .flatMap(([, entry]) => Object.values({ ...(entry.Handlers ?? {}) }))',
-      '        .flatMap((handler) => (typeof handler.Proxy === "string" ? [handler.Proxy] : []));',
-      '    }),',
-      '  );',
-      '',
-      '/**',
-      ' * What the `/` handler on `servePort` forwards to, one entry per host serving',
-      ' * that port: a proxy target, or `null` for a handler that is not a proxy.',
-      ' * `undefined` when the config cannot be read.',
-      ' */',
-      'const serveRootTargets = (',
-      '  rawStatusJson: string,',
-      '  servePort: number,',
-      '): Effect.Effect<ReadonlyArray<string | null> | undefined> =>',
-      '  decodeServeStatusJson(rawStatusJson).pipe(',
-      '    Effect.map((status) =>',
-      '      Object.entries({ ...status.Web })',
-      '        .filter(([host]) => host.endsWith(`:${String(servePort)}`))',
-      '        .flatMap(([, entry]) => {',
-      '          const root = entry.Handlers?.["/"];',
-      '          if (root === undefined) return [];',
-      '          return [typeof root.Proxy === "string" ? root.Proxy : null];',
-      '        }),',
-      '    ),',
-      '    Effect.orElseSucceed(() => undefined),',
-      '  );',
-      '',
-      '/** The 127.0.0.1 port a Serve proxy target forwards to, or `null` for any other target. */',
-      'const localProxyPort = (target: string | null): number | null => {',
-      '  const port =',
-      '    target === null',
-      '      ? undefined',
-      '      : /^http:\\/\\/(?:127\\.0\\.0\\.1|localhost):(\\d+)\\/?$/u.exec(target)?.[1];',
-      '  return port === undefined ? null : Number(port);',
-      '};',
-      '',
-      'const runTailscaleCommand = (',
-      '  args: readonly string[],',
-      '  timeoutInput: Duration.Input,',
-      '): Effect.Effect<string, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>',
-      '  Effect.gen(function* () {',
-    ].join('\n'),
-      'replace'],
-    // From the spawn's error mapping: readTailscaleOutput already collects stdout the same way,
-    // so only this context tells the two functions apart.
-    ['        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),\n        Effect.catchDefect((cause) =>\n          Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),\n        ),\n      );\n      const [stderr, exitCode] = yield* Effect.all(\n        [collectStderr(child.stderr), child.exitCode.pipe(Effect.map(Number))],',
-      [
-        '        Effect.mapError((cause) => new TailscaleCommandSpawnError({ ...commandContext, cause })),',
-        '        Effect.catchDefect((cause) =>',
-        '          Effect.fail(new TailscaleCommandSpawnError({ ...commandContext, cause })),',
-        '        ),',
-        '      );',
-        '      const [stdout, stderr, exitCode] = yield* Effect.all(',
-        '        [',
-        '          collectStdout(child.stdout),',
-        '          collectStderr(child.stderr),',
-        '          child.exitCode.pipe(Effect.map(Number)),',
-        '        ],',
-      ].join('\n'),
-      'replace'],
-    ['    }).pipe(\n      Effect.scoped,\n      Effect.timeout(timeout),', '      return stdout;\n'],
-    ['  return runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT);\n};',
-      '  return runTailscaleCommand(args, TAILSCALE_SERVE_TIMEOUT).pipe(Effect.asVoid);\n};',
-      'replace'],
-    ['export const disableTailscaleServe = (\n  input: {\n    readonly servePort?: number;\n  } = {},\n): Effect.Effect<void, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>\n  Effect.gen(function* () {\n    const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;\n    return yield* runTailscaleCommand(\n      ["serve", `--https=${servePort}`, "off"],\n      TAILSCALE_SERVE_TIMEOUT,\n    );\n  });\n\n',
-      [
-        'export const disableTailscaleServe = (',
-        '  input: {',
-        '    readonly servePort?: number;',
-        '    /**',
-        '     * The local port this process is serving on. When given, the mapping is',
-        '     * cleared only while it still forwards there.',
-        '     */',
-        '    readonly localPort?: number;',
-        '  } = {},',
-        '): Effect.Effect<boolean, TailscaleCommandError, ChildProcessSpawner.ChildProcessSpawner> =>',
-        '  Effect.gen(function* () {',
-        '    const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;',
-        '    // Remove only the `/` handler this backend installs. `tailscale serve',
-        '    // --https=<port> off` clears every path on the port, including routes',
-        '    // other tools mount beside it (Rubato Remote serves /rubato there). A',
-        '    // relaunch also brings the incoming backend up before the outgoing one',
-        '    // has torn down, so clear it only while it still points here.',
-        '    if (input.localPort !== undefined) {',
-        '      const status = yield* runTailscaleCommand(',
-        '        ["serve", "status", "--json"],',
-        '        TAILSCALE_SERVE_TIMEOUT,',
-        '      ).pipe(Effect.orElseSucceed(() => ""));',
-        '      const targets = yield* serveProxyTargets(status, servePort);',
-        '      if (!targets.includes(`http://127.0.0.1:${input.localPort}`)) {',
-        '        return false;',
-        '      }',
-        '    }',
-        '    yield* runTailscaleCommand(',
-        '      ["serve", `--https=${servePort}`, "--set-path=/", "off"],',
-        '      TAILSCALE_SERVE_TIMEOUT,',
-        '    );',
-        '    return true;',
-        '  });',
-        '',
-        'export type TailscaleServeClaim = "claimed" | "held" | "yielded";',
-        '',
-        '/**',
-        ' * Points the `/` handler of `servePort` at this backend unless another live',
-        ' * backend already holds it. Every T3 backend on the machine shares that one',
-        ' * handler, so a backend that simply overwrote it took the endpoint from a',
-        ' * backend that stayed up, and its own teardown then left the port empty.',
-        ' */',
-        'export const claimTailscaleServe = (input: {',
-        '  readonly localPort: number;',
-        '  readonly servePort?: number;',
-        '  readonly localHost?: string;',
-        '  /** Whether something accepts connections on this 127.0.0.1 port. */',
-        '  readonly isListening: (port: number) => Effect.Effect<boolean>;',
-        '}): Effect.Effect<',
-        '  TailscaleServeClaim,',
-        '  TailscaleCommandError,',
-        '  ChildProcessSpawner.ChildProcessSpawner',
-        '> =>',
-        '  Effect.gen(function* () {',
-        '    const servePort = input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT;',
-        '    const status = yield* runTailscaleCommand(',
-        '      ["serve", "status", "--json"],',
-        '      TAILSCALE_SERVE_TIMEOUT,',
-        '    );',
-        '    // A config we cannot read is claimed: holding back on it would leave the',
-        '    // endpoint dark for as long as the format stays unreadable.',
-        '    const ports = ((yield* serveRootTargets(status, servePort)) ?? []).map(localProxyPort);',
-        '    if (ports.includes(input.localPort)) return "held" as const;',
-        '    for (const port of ports) {',
-        '      // Only a local port nothing listens on is stale. A live one is another',
-        '      // backend, and a handler that is not a local proxy was set by someone else.',
-        '      if (port === null || (yield* input.isListening(port))) return "yielded" as const;',
-        '    }',
-        '    yield* ensureTailscaleServe({',
-        '      localPort: input.localPort,',
-        '      servePort,',
-        '      localHost: input.localHost ?? "127.0.0.1",',
-        '    });',
-        '    return "claimed" as const;',
-        '  });',
-        '',
-        '/**',
-        ' * How often a live backend re-checks the mapping. A relaunch starts the new',
-        ' * backend while the old one still holds the port, so the new one yields and',
-        ' * takes the port at its first check after the old one tears down: this is how',
-        ' * long the endpoint can stay dark then. Each check is one `serve status` call.',
-        ' */',
-        'export const TAILSCALE_SERVE_RECHECK_INTERVAL = Duration.seconds(5);',
-        '',
-        '/**',
-        ' * Keeps the `/` handler of `servePort` pointed at a live backend for as long',
-        ' * as this one runs: claims it when it is absent or stale, leaves it to',
-        ' * another live backend, and retries while Tailscale itself is unavailable.',
-        ' */',
-        'export const holdTailscaleServe = (',
-        '  input: Parameters<typeof claimTailscaleServe>[0] & {',
-        '    readonly interval?: Duration.Input;',
-        '  },',
-        '): Effect.Effect<never, never, ChildProcessSpawner.ChildProcessSpawner> =>',
-        '  Effect.gen(function* () {',
-        '    const context = {',
-        '      localPort: input.localPort,',
-        '      servePort: input.servePort ?? DEFAULT_TAILSCALE_SERVE_PORT,',
-        '    };',
-        '    // Logged on change only; a check runs every few seconds.',
-        '    let previous: TailscaleServeClaim | "failed" | undefined;',
-        '    const check = claimTailscaleServe(input).pipe(',
-        '      Effect.matchEffect({',
-        '        onFailure: (cause) => {',
-        '          const changed = previous !== "failed";',
-        '          previous = "failed";',
-        '          return changed',
-        '            ? Effect.logWarning("Failed to configure Tailscale Serve; retrying", {',
-        '                cause,',
-        '                ...context,',
-        '              })',
-        '            : Effect.void;',
-        '        },',
-        '        onSuccess: (outcome) => {',
-        '          const changed = previous !== outcome;',
-        '          previous = outcome;',
-        '          if (outcome === "claimed") return Effect.logInfo("Tailscale Serve configured", context);',
-        '          return changed && outcome === "yielded"',
-        '            ? Effect.logInfo("Tailscale Serve is held by another live backend", context)',
-        '            : Effect.void;',
-        '        },',
-        '      }),',
-        '    );',
-        '    return yield* Effect.forever(',
-        '      check.pipe(Effect.andThen(Effect.sleep(input.interval ?? TAILSCALE_SERVE_RECHECK_INTERVAL))),',
-        '    );',
-        '  });',
-        '',
-        '',
-      ].join('\n'),
-      'replace'],
-  ],
-  // An unreadable status is treated as "not ours" rather than as an empty
-  // config, so the teardown stays off the path that took the endpoint down.
-  'packages/tailscale/src/tailscale.test.ts': [
-    ['import {\n  buildTailscaleHttpsBaseUrl,\n  disableTailscaleServe,\n  ensureTailscaleServe,\n',
-      'import {\n  buildTailscaleHttpsBaseUrl,\n  claimTailscaleServe,\n  disableTailscaleServe,\n  ensureTailscaleServe,\n  holdTailscaleServe,\n',
-      'replace'],
-    ['  TAILSCALE_STATUS_TIMEOUT,\n', '  TAILSCALE_SERVE_RECHECK_INTERVAL,\n  TAILSCALE_STATUS_TIMEOUT,\n', 'replace'],
-    ['      assert.deepEqual(args, ["serve", "--https=8443", "off"]);',
-      '      assert.deepEqual(args, ["serve", "--https=8443", "--set-path=/", "off"]);',
-      'replace'],
-    ['      yield* disableTailscaleServe({ servePort: 8443 }).pipe(Effect.provide(layer));\n      assert.deepEqual(commands, [\n        { command: "tailscale", args: ["serve", "--https=8443", "off"] },\n      ]);\n    });\n  });\n});',
-      [
-        '      yield* disableTailscaleServe({ servePort: 8443 }).pipe(Effect.provide(layer));',
-        '      assert.deepEqual(commands, [',
-        '        { command: "tailscale", args: ["serve", "--https=8443", "--set-path=/", "off"] },',
-        '      ]);',
-        '    });',
-        '  });',
-        '',
-        '  it.effect("leaves a live serve mapping for the backend that claimed it", () => {',
-        '    // A relaunch brings the incoming backend up before the outgoing one has',
-        '    // torn down. The late teardown must not clear a port the new backend',
-        '    // has already claimed.',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const layer = mockSpawnerLayer((command, args) => {',
-        '      assert.equal(command, "tailscale");',
-        '      commands.push(args);',
-        '      return args[1] === "status"',
-        '        ? {',
-        '            stdout: JSON.stringify({',
-        '              Web: {',
-        '                "desktop.tail.ts.net:8443": {',
-        '                  Handlers: { "/": { Proxy: "http://127.0.0.1:13774" } },',
-        '                },',
-        '              },',
-        '            }),',
-        '          }',
-        '        : {};',
-        '    });',
-        '',
-        '    return Effect.gen(function* () {',
-        '      const cleared = yield* disableTailscaleServe({',
-        '        servePort: 8443,',
-        '        localPort: 13773,',
-        '      }).pipe(Effect.provide(layer));',
-        '',
-        '      assert.equal(cleared, false);',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '    });',
-        '  });',
-        '',
-        '  it.effect("clears the serve mapping while it still points at this backend", () => {',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const layer = mockSpawnerLayer((_command, args) => {',
-        '      commands.push(args);',
-        '      return args[1] === "status"',
-        '        ? {',
-        '            stdout: JSON.stringify({',
-        '              Web: {',
-        '                "desktop.tail.ts.net:8443": {',
-        '                  Handlers: { "/": { Proxy: "http://127.0.0.1:13773" } },',
-        '                },',
-        '              },',
-        '            }),',
-        '          }',
-        '        : {};',
-        '    });',
-        '',
-        '    return Effect.gen(function* () {',
-        '      const cleared = yield* disableTailscaleServe({',
-        '        servePort: 8443,',
-        '        localPort: 13773,',
-        '      }).pipe(Effect.provide(layer));',
-        '',
-        '      assert.equal(cleared, true);',
-        '      assert.deepEqual(commands, [',
-        '        ["serve", "status", "--json"],',
-        '        ["serve", "--https=8443", "--set-path=/", "off"],',
-        '      ]);',
-        '    });',
-        '  });',
-        '',
-        '  it.effect("skips the teardown when the serve status is unreadable", () => {',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const layer = mockSpawnerLayer((_command, args) => {',
-        '      commands.push(args);',
-        '      return args[1] === "status" ? { stdout: "not json" } : {};',
-        '    });',
-        '',
-        '    return Effect.gen(function* () {',
-        '      const cleared = yield* disableTailscaleServe({',
-        '        servePort: 8443,',
-        '        localPort: 13773,',
-        '      }).pipe(Effect.provide(layer));',
-        '',
-        '      assert.equal(cleared, false);',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '    });',
-        '  });',
-        '',
-        '  const serveStatus = (root: Record<string, unknown> | undefined) =>',
-        '    JSON.stringify(',
-        '      root === undefined',
-        '        ? {}',
-        '        : { Web: { "desktop.tail.ts.net:8443": { Handlers: { "/": root } } } },',
-        '    );',
-        '',
-        '  const claimLayer = (status: () => string, commands: ReadonlyArray<string>[]) =>',
-        '    mockSpawnerLayer((command, args) => {',
-        '      assert.equal(command, "tailscale");',
-        '      commands.push(args);',
-        '      return args[1] === "status" ? { stdout: status() } : {};',
-        '    });',
-        '',
-        '  const claimOnce = (root: Record<string, unknown> | undefined, livePorts: readonly number[]) => {',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const probed: number[] = [];',
-        '    return claimTailscaleServe({',
-        '      localPort: 13775,',
-        '      servePort: 8443,',
-        '      isListening: (port) => {',
-        '        probed.push(port);',
-        '        return Effect.succeed(livePorts.includes(port));',
-        '      },',
-        '    }).pipe(',
-        '      Effect.map((outcome) => ({ outcome, commands, probed })),',
-        '      Effect.provide(claimLayer(() => serveStatus(root), commands)),',
-        '    );',
-        '  };',
-        '',
-        '  const claimCommand = ["serve", "--bg", "--https=8443", "http://127.0.0.1:13775"];',
-        '',
-        '  it.effect("claims the serve mapping when nothing holds it", () =>',
-        '    Effect.gen(function* () {',
-        '      const { outcome, commands } = yield* claimOnce(undefined, []);',
-        '      assert.equal(outcome, "claimed");',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"], claimCommand]);',
-        '    }),',
-        '  );',
-        '',
-        '  it.effect("leaves the serve mapping to another live backend", () =>',
-        '    Effect.gen(function* () {',
-        '      // A second app instance must not take the endpoint from the one that stays up.',
-        '      const { outcome, commands, probed } = yield* claimOnce(',
-        '        { Proxy: "http://127.0.0.1:13773" },',
-        '        [13773],',
-        '      );',
-        '      assert.equal(outcome, "yielded");',
-        '      assert.deepEqual(probed, [13773]);',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '    }),',
-        '  );',
-        '',
-        '  it.effect("claims a serve mapping left on a port nothing listens on", () =>',
-        '    Effect.gen(function* () {',
-        '      const { outcome, commands } = yield* claimOnce({ Proxy: "http://127.0.0.1:13773" }, []);',
-        '      assert.equal(outcome, "claimed");',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"], claimCommand]);',
-        '    }),',
-        '  );',
-        '',
-        '  it.effect("keeps its own serve mapping without rewriting it", () =>',
-        '    Effect.gen(function* () {',
-        '      const { outcome, commands, probed } = yield* claimOnce(',
-        '        { Proxy: "http://127.0.0.1:13775" },',
-        '        [],',
-        '      );',
-        '      assert.equal(outcome, "held");',
-        '      assert.deepEqual(probed, []);',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '    }),',
-        '  );',
-        '',
-        '  it.effect("leaves a root handler that is not a local proxy", () =>',
-        '    Effect.gen(function* () {',
-        '      for (const root of [{ Proxy: "http://192.168.1.20:3000" }, { Path: "/srv/www" }]) {',
-        '        const { outcome, commands, probed } = yield* claimOnce(root, []);',
-        '        assert.equal(outcome, "yielded");',
-        '        assert.deepEqual(probed, []);',
-        '        assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '      }',
-        '    }),',
-        '  );',
-        '',
-        '  it.effect("re-claims the serve mapping after another backend\'s teardown empties it", () => {',
-        '    // The incident: a short-lived instance overwrote the port, then cleared it',
-        '    // on exit. The backend that stayed up has to take it back on its own.',
-        '    let root: Record<string, unknown> | undefined = { Proxy: "http://127.0.0.1:13775" };',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const layer = Layer.merge(',
-        '      TestClock.layer(),',
-        '      claimLayer(() => serveStatus(root), commands),',
-        '    );',
-        '    const claims = () => commands.filter((args) => args[1] === "--bg").length;',
-        '',
-        '    return Effect.gen(function* () {',
-        '      yield* holdTailscaleServe({',
-        '        localPort: 13775,',
-        '        servePort: 8443,',
-        '        isListening: (port) => Effect.succeed(port === 13773),',
-        '      }).pipe(Effect.forkScoped);',
-        '      yield* Effect.yieldNow;',
-        '      assert.equal(commands.length, 1);',
-        '      assert.equal(claims(), 0);',
-        '',
-        '      root = { Proxy: "http://127.0.0.1:13773" };',
-        '      yield* TestClock.adjust(TAILSCALE_SERVE_RECHECK_INTERVAL);',
-        '      assert.equal(commands.length, 2);',
-        '      assert.equal(claims(), 0);',
-        '',
-        '      root = undefined;',
-        '      yield* TestClock.adjust(TAILSCALE_SERVE_RECHECK_INTERVAL);',
-        '      assert.equal(claims(), 1);',
-        '      assert.deepEqual(commands.at(-1), claimCommand);',
-        '    }).pipe(Effect.provide(layer));',
-        '  });',
-        '',
-        '  it.effect("keeps retrying the serve mapping while tailscale is unavailable", () => {',
-        '    let running = false;',
-        '    const commands: ReadonlyArray<string>[] = [];',
-        '    const layer = Layer.merge(',
-        '      TestClock.layer(),',
-        '      mockSpawnerLayer((_command, args) => {',
-        '        commands.push(args);',
-        '        if (!running) return { code: 1, stderr: "Tailscale is stopped." };',
-        '        return args[1] === "status" ? { stdout: serveStatus(undefined) } : {};',
-        '      }),',
-        '    );',
-        '',
-        '    return Effect.gen(function* () {',
-        '      yield* holdTailscaleServe({',
-        '        localPort: 13775,',
-        '        servePort: 8443,',
-        '        isListening: () => Effect.succeed(false),',
-        '      }).pipe(Effect.forkScoped);',
-        '      yield* Effect.yieldNow;',
-        '      assert.deepEqual(commands, [["serve", "status", "--json"]]);',
-        '',
-        '      running = true;',
-        '      yield* TestClock.adjust(TAILSCALE_SERVE_RECHECK_INTERVAL);',
-        '      assert.deepEqual(commands.slice(1), [["serve", "status", "--json"], claimCommand]);',
-        '    }).pipe(Effect.provide(layer));',
-        '  });',
-        '});',
-      ].join('\n'),
-      'replace'],
-  ],
-  'apps/server/src/server.ts': [
-    ['import * as NodeHttp from "node:http";\n', 'import * as NodeHttp from "node:http";\nimport * as NodeNet from "node:net";\n', 'replace'],
-    ['import { disableTailscaleServe, ensureTailscaleServe } from "@t3tools/tailscale";',
-      'import { disableTailscaleServe, holdTailscaleServe } from "@t3tools/tailscale";',
-      'replace'],
-    ['    const layerTailscaleServe = config.tailscaleServeEnabled\n      ? Layer.effectDiscard(\n          Effect.acquireRelease(\n            Effect.gen(function* () {\n              yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);\n              yield* awaitActivation;\n              const server = yield* HttpServer.HttpServer;\n              const address = server.address;\n              if (typeof address === \"string\" || !(\"port\" in address)) {\n                return null;\n              }\n\n              const localPort = address.port;\n              return yield* ensureTailscaleServe({\n                localPort,\n                servePort: config.tailscaleServePort,\n                localHost: \"127.0.0.1\",\n              }).pipe(\n                Effect.as({ localPort, servePort: config.tailscaleServePort }),\n                Effect.tap(() =>\n                  Effect.logInfo(\"Tailscale Serve configured\", {\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }),\n                ),\n                Effect.catch((cause) =>\n                  Effect.logWarning(\"Failed to configure Tailscale Serve\", {\n                    cause,\n                    localPort,\n                    servePort: config.tailscaleServePort,\n                  }).pipe(Effect.as(null)),\n                ),\n              );\n            }),\n            (configured) =>\n              configured\n                ? disableTailscaleServe({ servePort: configured.servePort }).pipe(\n                    Effect.tap(() =>\n                      Effect.logInfo(\"Tailscale Serve disabled\", {\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                    Effect.catch((cause) =>\n                      Effect.logWarning(\"Failed to disable Tailscale Serve\", {\n                        cause,\n                        servePort: configured.servePort,\n                      }),\n                    ),\n                  )\n                : Effect.void,\n          ),\n        )\n      : Layer.empty;\n',
-      [
-        '    // Every T3 backend on the machine shares one Serve `/` handler per port. A',
-        '    // backend used to take it at start and clear it at exit, so a second app',
-        '    // instance that ran for a few seconds left the phone\'s endpoint dark while',
-        '    // the main backend stayed up. Each backend now holds the handler for as',
-        '    // long as it runs: it takes it only when it is empty or points at a port',
-        '    // nothing listens on, and re-checks so it takes it back after another',
-        '    // backend\'s exit — or once Tailscale, often still stopped after a reboot,',
-        '    // comes up.',
-        '    const layerTailscaleServe = config.tailscaleServeEnabled',
-        '      ? Layer.effectDiscard(',
-        '          Effect.gen(function* () {',
-        '            yield* Deferred.succeed(tailscaleParked, undefined).pipe(Effect.orDie);',
-        '            yield* awaitActivation;',
-        '            const server = yield* HttpServer.HttpServer;',
-        '            const address = server.address;',
-        '            if (typeof address === "string" || !("port" in address)) {',
-        '              return;',
-        '            }',
-        '',
-        '            const localPort = address.port;',
-        '            const servePort = config.tailscaleServePort;',
-        '            // Added before the hold fiber, so it runs after that fiber is',
-        '            // interrupted and a late claim cannot reopen the mapping.',
-        '            yield* Effect.addFinalizer(() =>',
-        '              disableTailscaleServe({ servePort, localPort }).pipe(',
-        '                Effect.tap((cleared) =>',
-        '                  cleared',
-        '                    ? Effect.logInfo("Tailscale Serve disabled", { servePort })',
-        '                    : Effect.logInfo("Tailscale Serve left to the backend that holds it", {',
-        '                        localPort,',
-        '                        servePort,',
-        '                      }),',
-        '                ),',
-        '                Effect.catch((cause) =>',
-        '                  Effect.logWarning("Failed to disable Tailscale Serve", { cause, servePort }),',
-        '                ),',
-        '              ),',
-        '            );',
-        '            // Only a refused connection means the port is gone. A backend that',
-        '            // is slow to answer still owns what it holds.',
-        '            const isListening = (port: number) =>',
-        '              Effect.callback<boolean>((resume) => {',
-        '                const socket = NodeNet.createConnection({ host: "127.0.0.1", port });',
-        '                const settle = (listening: boolean) => {',
-        '                  socket.destroy();',
-        '                  resume(Effect.succeed(listening));',
-        '                };',
-        '                socket.setTimeout(1_000, () => settle(true));',
-        '                socket.once("connect", () => settle(true));',
-        '                socket.once("error", (error: NodeJS.ErrnoException) =>',
-        '                  settle(error.code !== "ECONNREFUSED"),',
-        '                );',
-        '                return Effect.sync(() => socket.destroy());',
-        '              });',
-        '            yield* holdTailscaleServe({',
-        '              localPort,',
-        '              servePort,',
-        '              localHost: "127.0.0.1",',
-        '              isListening,',
-        '            }).pipe(Effect.forkScoped);',
-        '          }),',
-        '        )',
-        '      : Layer.empty;',
-      ].join('\n'),
-      'replace'],
-  ],
 };
+// The phone's Tailscale Serve root route, held while the server runs (tailscale-edits.mjs).
+overlays.push(...tailscaleOverlays);
+for (const [relative, changes] of Object.entries(tailscaleEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 overlays.push(...voiceOverlays, ...permissionOverlays);
 for (const [relative, changes] of [...Object.entries(voiceEdits), ...Object.entries(permissionEdits)]) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
@@ -1665,16 +836,6 @@ overlays.push(...scheduleOverlays);
 for (const [relative, changes] of Object.entries(scheduleEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Pinning in the legacy sidebar (sidebar-pin-edits.mjs).
-overlays.push(...sidebarPinOverlays);
-for (const [relative, changes] of Object.entries(sidebarPinEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// Which user messages survive a rewind (rewind-edits.mjs).
-overlays.push(...rewindOverlays);
-for (const [relative, changes] of Object.entries(rewindEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
 // Messages from another conversation (session-message-edits.mjs).
 overlays.push(...sessionMessageOverlays);
 for (const [relative, changes] of Object.entries(sessionMessageEdits)) {
@@ -1695,13 +856,10 @@ overlays.push(...callOverlays);
 for (const [relative, changes] of Object.entries(callEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// The settings pages above (memory, permissions, phone, scheduled, stats) and the Settings layout's
-// own pages (settings-layout-edits.mjs) in the generated route tree (route-tree-edits.mjs).
+// Rubato's routes (the rail's pages and the settings pages above) in the generated route tree (route-tree-edits.mjs).
 edits['apps/web/src/routeTree.gen.ts'] = [
   ...(edits['apps/web/src/routeTree.gen.ts'] ?? []),
-  ...settingsRouteTreeEdits(['memory', 'permissions', 'phone', 'scheduled', 'stats', ...settingsLayoutPages, ...companionSettingsPages]),
-  // Memory, Scheduled Tasks and Stats as their own pages, opened from the rail (project-rail-edits.mjs).
-  ...topLevelRouteTreeEdits(),
+  ...ROUTE_TREE_EDITS,
 ];
 // Word, Excel, PowerPoint and Hangul documents in the file viewer (office-edits.mjs).
 overlays.push(...officeOverlays);
@@ -1738,11 +896,6 @@ overlays.push(...chatWidthOverlays);
 for (const [relative, changes] of Object.entries(chatWidthEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// 레거시 사이드바 스레드 목록의 세로선을 다시 지운다 (sidebar-rail-edits.mjs).
-overlays.push(...sidebarRailOverlays);
-for (const [relative, changes] of Object.entries(sidebarRailEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
 // tsgo checker count (tsgo-checkers-edits.mjs).
 overlays.push(...tsgoCheckersOverlays);
 for (const [relative, changes] of Object.entries(tsgoCheckersEdits)) {
@@ -1761,11 +914,6 @@ for (const [relative, changes] of Object.entries(sidebarModelIconEdits)) {
 // The right panel's Agents surface, which v0.1.0 dropped (agents-surface-edits.mjs).
 overlays.push(...agentsSurfaceOverlays);
 for (const [relative, changes] of Object.entries(agentsSurfaceEdits)) {
-  edits[relative] = [...(edits[relative] ?? []), ...changes];
-}
-// Side chat in the right panel; anchors on the agents-surface, surface-menu and right-panel edits (side-chat-edits.mjs).
-overlays.push(...sideChatOverlays);
-for (const [relative, changes] of Object.entries(sideChatEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Chat links to files with non-ASCII names (file-link-edits.mjs).

@@ -7,11 +7,12 @@
 //   Projects button whose window lists projects by name and edits the list
 //   (sidebar/RubatoProjectPicker.tsx), narrowing the thread list through the
 //   scope key T3's own project filter already persists
-//   (uiStateStore.sidebarProjectScopeKey); then the pages (scheduled tasks,
+//   (uiStateStore.sidebarProjectScopeKeys, one key from the rail); then the
+//   pages (scheduled tasks,
 //   memory, pull requests, usage, settings), which replace the sidebar's
 //   footer row. AppSidebarLayout places it before the sidebar and moves the
 //   fixed sidebar one rail to the right; collapsing the sidebar leaves the
-//   rail. Only with the new sidebar: the legacy tree keeps its layout.
+//   rail. The rail shows wherever the sidebar does.
 // - The Recent box (sidebar/RubatoRecentBox.tsx): while one project is
 //   selected, the head of the all-projects inbox stays in the sidebar, as many
 //   rows as the client setting rubatoRecentLimit. It and the project's title
@@ -33,8 +34,10 @@
 //   chat.newLocal keep T3's "current thread's project".
 // - Memory and Scheduled Tasks leave Settings for their own pages
 //   (routes/memory.tsx, routes/scheduled.tsx; the route tree in
-//   route-tree-edits.mjs). Their Settings addresses redirect there, so the
-//   Settings nav drops them.
+//   route-tree-edits.mjs). Their Settings addresses redirect there. The nav
+//   lists what settingsSearch lists, so these never appear in it; upstream's
+//   own Settings > Scheduled tasks page now shares that address and stays in
+//   the nav (a UX decision, not this module's).
 //
 // The project window and the home tabs share one project list (sidebar/rubatoProjectList.ts),
 // whose order every other project list follows too (project-order-edits.mjs).
@@ -74,58 +77,51 @@ export const projectRailEdits = {
   'apps/web/src/components/AppSidebarLayout.tsx': [
     ['import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";\n',
       'import { RubatoProjectRail, RUBATO_RAIL_TITLEBAR_STYLE } from "./sidebar/RubatoProjectRail";\n'],
-    [
-      '  const legacySidebarEnabled = useLegacySidebarEnabled();\n',
-      '  const legacySidebarEnabled = useLegacySidebarEnabled();\n  // The project rail sits beside the new sidebar only (project-rail-edits.mjs).\n  const rubatoRailShown = !legacySidebarEnabled;\n',
-      'replace',
-    ],
-    ['    ...windowControlsInsetStyle,\n', '    ...(rubatoRailShown ? RUBATO_RAIL_TITLEBAR_STYLE : {}),\n'],
+    // v0.1.11 keeps one sidebar (the legacy tree is gone), so the rail needs no
+    // switch; it follows the sidebar itself.
+    ['    ...windowControlsInsetStyle,\n', '    ...(showSidebar ? RUBATO_RAIL_TITLEBAR_STYLE : {}),\n'],
     [
       '        className="h-dvh! min-h-0!"\n',
-      '        className={cn("h-dvh! min-h-0!", rubatoRailShown && "md:[--sidebar-offset-left:52px]")}\n',
+      '        className={cn("h-dvh! min-h-0!", showSidebar && "md:[--sidebar-offset-left:52px]")}\n',
       'replace',
     ],
-    ['        <Sidebar\n          side="left"\n', '        {rubatoRailShown ? <RubatoProjectRail /> : null}\n'],
+    [
+      '            <Sidebar\n              side="left"\n',
+      '            <RubatoProjectRail />\n            <Sidebar\n              side="left"\n',
+      'replace',
+    ],
   ],
   // The rail carries Settings, Pull Requests and Usage; the footer row would
   // repeat them. Phones have no rail, so their sheet keeps the row.
   'apps/web/src/components/sidebar/SidebarChrome.tsx': [
     [
-      'import { useEnvironmentIdentificationMode } from "../../hooks/useSettings";\n',
-      'import { useEnvironmentIdentificationMode, useLegacySidebarEnabled } from "../../hooks/useSettings";\n',
-      'replace',
-    ],
-    [
       '  const { isMobile, setOpenMobile } = useSidebar();\n',
-      '  const { isMobile, setOpenMobile } = useSidebar();\n  const rubatoRailShown = !useLegacySidebarEnabled() && !isMobile;\n',
+      '  const { isMobile, setOpenMobile } = useSidebar();\n  const rubatoRailShown = !isMobile; // the rail replaces this row (project-rail-edits.mjs)\n',
       'replace',
     ],
     ['      {isOnUtilityPage ? (\n', '      {rubatoRailShown ? null : isOnUtilityPage ? (\n', 'replace'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
     [
-      '      if (shouldCreateNewThreadInCurrentProject(event?.shiftKey ?? false, projectGroups.length)) {\n',
+      '  const handleNewThreadClick = (event?: ReactMouseEvent) => {\n',
       [
-        '      // Rubato: inside the selected project, open the thread there instead',
-        '      // of asking which project (project-rail-edits.mjs).',
-        '      const rubatoScopedRef = event?.shiftKey',
-        '        ? null',
-        '        : scopedNewThreadProjectRef({',
-        '            group: scopedProjectGroup,',
-        '            contextProjectRef:',
-        '              newThreadContext.activeThread ?? newThreadContext.activeDraftThread ?? null,',
-        '          });',
-        '      if (rubatoScopedRef !== null) {',
-        '        if (isMobile) setOpenMobile(false);',
-        '        void newThreadContext.handleNewThread(rubatoScopedRef);',
-        '        return;',
-        '      }',
+        '  const handleNewThreadClick = (event?: ReactMouseEvent) => {',
+        '    // Rubato: inside the selected project, open the thread there instead',
+        '    // of asking which project (project-rail-edits.mjs).',
+        '    const rubatoScopedRef = event?.shiftKey',
+        '      ? null',
+        '      : scopedNewThreadProjectRef({',
+        '          group: scopedProjectGroup,',
+        '          contextProjectRef:',
+        '            newThreadContext.activeThread ?? newThreadContext.activeDraftThread ?? null,',
+        '        });',
+        '    if (rubatoScopedRef !== null) {',
+        '      if (isMobile) setOpenMobile(false);',
+        '      void newThreadContext.handleNewThread(rubatoScopedRef);',
+        '      return;',
+        '    }',
         '',
       ].join('\n'),
-    ],
-    [
-      '    [isMobile, newThreadContext, projectGroups.length, setOpenMobile],\n',
-      '    [isMobile, newThreadContext, projectGroups.length, scopedProjectGroup, setOpenMobile],\n',
       'replace',
     ],
     // The rail narrows the list on desktop, so the project filter beside the
@@ -142,8 +138,10 @@ export const projectRailEdits = {
     ],
     // Home's header filter: the projects the user unchecked leave the
     // all-projects list and the Recent box (RubatoHomeProjectFilter.tsx).
-    ['  // Configs identify scratch projects, so both they and live project snapshots\n',
+    [
+      '  const threads = useQuietThreadShells();\n',
       [
+        '  const threads = useQuietThreadShells();',
         '  // Rubato: the all-projects list without the projects the user unchecked',
         '  // (RubatoHomeProjectFilter, project-rail-edits.mjs).',
         '  const { hidden: rubatoHiddenProjects } = useRubatoHomeHiddenProjects();',
@@ -152,22 +150,27 @@ export const projectRailEdits = {
         '    [projectGroups, rubatoHiddenProjects, threads],',
         '  );',
         '',
-      ].join('\n')],
+      ].join('\n'),
+      'replace',
+    ],
+    // v0.1.11 partitions the list in a standalone function, so the narrowing goes
+    // in where the component hands it the threads.
     [
-      '    const visible = filterSidebarV2VisibleThreads(threads, scopedProjectKeys);\n',
+      '    threads: listedThreads,\n',
       [
-        '    const visible = filterSidebarV2VisibleThreads(',
-        '      scopedProjectKeys === null ? rubatoAllProjectsThreads : threads,',
-        '      scopedProjectKeys,',
-        '    );',
+        '    threads:',
+        '      scopedProjectKeys === null',
+        '        ? withoutHiddenProjects(listedThreads, projectGroups, rubatoHiddenProjects)',
+        '        : listedThreads,',
         '',
       ].join('\n'),
       'replace',
     ],
+    // v0.1.11 narrows to a set of projects; the rail selects one, and the rest of
+    // this module keeps speaking of that one project.
     [
-      '    optimisticDrop,\n    scopedProjectKeys,\n',
-      '    optimisticDrop,\n    rubatoAllProjectsThreads,\n    scopedProjectKeys,\n',
-      'replace',
+      '  const scopedProjectGroups = revealWidensScope ? [] : chosenProjectGroups;\n',
+      '  // Rubato: the project the sidebar is narrowed to (project-rail-edits.mjs).\n  const scopedProjectGroup =\n    scopedProjectGroups.length === 1 ? (scopedProjectGroups[0] ?? null) : null;\n',
     ],
     ['import { SidebarChromeFooter, SidebarChromeHeader } from "./sidebar/SidebarChrome";\n',
       [
@@ -239,7 +242,7 @@ export const projectRailEdits = {
       'import { RubatoHomeProjects } from "./chat/RubatoHomeProjects";\n'],
     // Absolutely placed along the bottom of the centered overlay, so the
     // composer's centering is untouched unless the window is too short.
-    ['              <div\n                ref={draftHeroTransition.transitionGroupRef}\n',
+    ['              <div ref={draftHeroTransitionGroupRef} className="chat-composer-lane w-full">\n',
       [
         '              {isDraftHeroState ? (',
         '                <RubatoHomeProjects draftId={draftId} activeProjectRef={activeProjectRef} />',
@@ -248,69 +251,60 @@ export const projectRailEdits = {
       ].join('\n')],
   ],
   // chat.new follows the sidebar's new-thread button: inside the selected
-  // project it opens the thread there. The legacy sidebar has no selection.
-  'apps/web/src/routes/_chat.tsx': [
+  // project it opens the thread there. v0.1.11 moved the command out of the
+  // route into the chat route's command installer.
+  'apps/web/src/shortcuts/chatRouteCommands.ts': [
     [
-      'import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";\n',
-      [
-        'import { buildSidebarProjectSnapshots, resolveSidebarProjectScopeKey } from "../sidebarProjectGrouping";',
-        'import { useUiStateStore } from "../uiStateStore";',
-        'import { scopedNewThreadProjectRef } from "../components/sidebar/rubatoProjectRail.logic";',
-        '',
-      ].join('\n'),
-      'replace',
+      'import { shouldCreateNewThreadInCurrentProject } from "../components/Sidebar.logic";\n',
+      'import { scopedNewThreadProjectRef } from "../components/sidebar/rubatoProjectRail.logic";\n',
     ],
-    ['  const projectGroupCount = useMemo(\n', '  const projectGroups = useMemo(\n', 'replace'],
     [
-      '      }).length,\n    [primaryEnvironmentId, projectGroupingSettings, projects],\n  );\n',
+      '  const claim = (event: KeyboardEvent) => {\n',
       [
-        '      }),',
-        '    [primaryEnvironmentId, projectGroupingSettings, projects],',
-        '  );',
-        '  const projectGroupCount = projectGroups.length;',
-        '  // Rubato: the project the sidebar is narrowed to (project-rail-edits.mjs).',
-        '  const persistedProjectScopeKey = useUiStateStore((store) => store.sidebarProjectScopeKey);',
-        '  const scopedProjectGroup = useMemo(() => {',
-        '    const key = resolveSidebarProjectScopeKey({',
-        '      groups: projectGroups,',
-        '      key: persistedProjectScopeKey,',
-        '      settings: projectGroupingSettings,',
-        '    });',
-        '    return key === null ? null : (projectGroups.find((group) => group.projectKey === key) ?? null);',
-        '  }, [persistedProjectScopeKey, projectGroupingSettings, projectGroups]);',
+        '  // Rubato: the one project the rail narrows the list to (project-rail-edits.mjs).',
+        '  const readRubatoScopedProjectGroup = () => {',
+        '    const keys = useUiStateStore.getState().sidebarProjectScopeKeys;',
+        '    if (keys.length === 0) return null;',
+        '    const scoped = readProjectGroups().filter(',
+        '      (group) => !group.archived && keys.includes(group.projectKey),',
+        '    );',
+        '    return scoped.length === 1 ? (scoped[0] ?? null) : null;',
+        '  };',
+        '  const claim = (event: KeyboardEvent) => {',
         '',
       ].join('\n'),
       'replace',
     ],
     [
-      '        if (!legacySidebarEnabled && projectGroupCount > 1) {\n',
+      '        const groups = readProjectGroups();\n',
       [
-        '        const rubatoScopedRef = legacySidebarEnabled',
-        '          ? null',
-        '          : scopedNewThreadProjectRef({',
-        '              group: scopedProjectGroup,',
-        '              contextProjectRef: activeThread ?? activeDraftThread ?? null,',
-        '            });',
+        '        // Rubato: inside the selected project, open the thread there instead',
+        '        // of asking which project (project-rail-edits.mjs).',
+        '        const rubatoContext = readThreadContext();',
+        '        const rubatoScopedRef = scopedNewThreadProjectRef({',
+        '          group: readRubatoScopedProjectGroup(),',
+        '          contextProjectRef: rubatoContext.activeThread ?? rubatoContext.activeDraftThread ?? null,',
+        '        });',
         '        if (rubatoScopedRef !== null) {',
+        '          claim(event);',
         '          void handleNewThread(rubatoScopedRef);',
         '          return;',
         '        }',
+        '        const groups = readProjectGroups();',
         '',
       ].join('\n'),
+      'replace',
     ],
-    ['    projectGroupCount,\n', '    projectGroupCount,\n    scopedProjectGroup,\n', 'replace'],
   ],
-  // Memory and Scheduled Tasks have their own pages now; their Settings
-  // addresses only redirect. Anchored on schedule-edits.mjs's version of the line.
   // The home row's switch, off until turned on, and how many rows Recent
   // shows (1-15, sidebar/rubatoSidebarBlocks.ts clamps it): device settings.
   'packages/contracts/src/settings.ts': [
-    ['  composerCollapseOnScroll: Schema.Boolean.pipe(',
+    ['  composerRichTextEnabled: Schema.Boolean.pipe(',
       '  // Rubato: the project row on the new-thread screen (project-rail-edits.mjs).\n'
         + '  rubatoHomeProjects: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'
         + '  // Rubato: how many threads the Recent box shows (project-rail-edits.mjs).\n'
         + '  rubatoRecentLimit: Schema.Number.pipe(Schema.withDecodingDefault(Effect.succeed(5))),\n'],
-    ['  composerCollapseOnScroll: Schema.optionalKey(Schema.Boolean),\n',
+    ['  composerRichTextEnabled: Schema.optionalKey(Schema.Boolean),\n',
       '  rubatoHomeProjects: Schema.optionalKey(Schema.Boolean),\n'
         + '  rubatoRecentLimit: Schema.optionalKey(Schema.Number),\n'],
   ],
@@ -326,22 +320,5 @@ export const projectRailEdits = {
         '  },',
         '',
       ].join('\n')],
-  ],
-  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    [
-      '  .filter((to) => to !== "/settings/diagnostics" && to !== "/settings/scheduled-tasks")\n',
-      [
-        '  .filter(',
-        '    (to) =>',
-        '      to !== "/settings/diagnostics" &&',
-        '      to !== "/settings/scheduled-tasks" &&',
-        '      // Rubato: on the rail as their own pages (project-rail-edits.mjs).',
-        '      to !== "/settings/memory" &&',
-        '      to !== "/settings/scheduled",',
-        '  )',
-        '',
-      ].join('\n'),
-      'replace',
-    ],
   ],
 };

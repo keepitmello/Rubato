@@ -55,6 +55,14 @@ describe("Rubato right panel launcher", () => {
     ).toBe("agents");
   });
 
+  it("leaves the panel on the launcher when every surface closes", () => {
+    useRightPanelStore.getState().openBrowser(ref, "tab-a");
+    useRightPanelStore.getState().openFile(ref, "src/index.ts");
+    useRightPanelStore.getState().closeAllSurfaces(ref);
+
+    expect(state()).toEqual({ isOpen: true, activeSurfaceId: null, surfaces: [] });
+  });
+
   it("opens a surface from the launcher it returned to", () => {
     useRightPanelStore.getState().open(ref, "agents");
     useRightPanelStore.getState().closeSurface(ref, "agents");

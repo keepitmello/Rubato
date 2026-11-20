@@ -28,15 +28,18 @@ export const sectionScaleOverlays = [
 
 export const sectionScaleEdits = {
   'apps/web/src/components/AppSidebarLayout.tsx': [
-    ['import { SidebarBrandWidthProbe, SidebarChromeHeader } from "./sidebar/SidebarChrome";\n',
+    ['import { SidebarBrandWidthProbe } from "./sidebar/SidebarChrome";\n',
       'import { RubatoSectionScaleHost } from "./sidebar/RubatoSectionScale";\n'],
-    ['        <SidebarBrandWidthProbe onWidthChange={setBrandWidth} />\n',
-      '        {/* Rubato: per-part sizes and their hover shortcut (section-scale-edits.mjs). */}\n        <RubatoSectionScaleHost />\n'],
+    // The host listens on the window and is not part of the sidebar, so it sits
+    // outside v0.1.11's `showSidebar` branch.
+    ['        <BackgroundThreadAnnouncer />\n',
+      '        {/* Rubato: per-part sizes and their hover shortcut (section-scale-edits.mjs). */}\n        <RubatoSectionScaleHost />\n        <BackgroundThreadAnnouncer />\n',
+      'replace'],
   ],
   // The thread list and the search results: each <li> is a row whose content
   // zooms, so dnd-kit's translate on the <li> stays in window pixels.
   'apps/web/src/components/Sidebar.tsx': [
-    ['import { Tooltip, TooltipPopup, TooltipProvider, TooltipTrigger } from "./ui/tooltip";\n',
+    ['import { TooltipProvider } from "./ui/tooltip";\n',
       'import { readSectionScales } from "./sidebar/rubatoSectionScale.logic";\n'],
     ['                  id="sidebar-thread-search-results"\n',
       '                  data-rubato-section="cards"\n'],
@@ -51,8 +54,10 @@ export const sectionScaleEdits = {
     ['            data-assistant-citation-viewport="true"\n',
       '            data-rubato-section="messages"\n'],
   ],
-  'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['import { SettingsGroup } from "./SettingsGroup";\n',
+  // v0.1.11 split the Settings pages into one file per page; the Appearance
+  // page (typography last) is the panel now.
+  'apps/web/src/components/settings/AppearanceSettingsPanel.tsx': [
+    ['import { TypographySection } from "./TypographySettings";\n',
       'import { RubatoSectionSizesSection } from "./RubatoSectionSizes";\n'],
     ['      <TypographySection />\n    </SettingsPageContainer>\n',
       '      <TypographySection />\n      <RubatoSectionSizesSection />\n    </SettingsPageContainer>\n',

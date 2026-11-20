@@ -5,6 +5,10 @@
 // The newest V2 thread event: upstream asks MAX(sequence) over V2 thread events, which no index
 // answers, so SQLite walked a whole index (0.7s on average, 8.7s cold, on 750k events). Reading
 // the (version, sequence) index backwards stops at the first V2 thread event, near the end.
+//
+// v0.1.11 asks this of a thread's events (stream_id = ?) in getThreadSnapshot, which the
+// (stream_id, sequence) index answers as it is; the shell snapshot still asks it of every thread
+// event, and that is the read this points at the index.
 export const stateQueryOverlays = [
   'apps/server/src/RubatoQueryPlans.test.ts',
 ];
@@ -17,13 +21,13 @@ const NEWEST_THREAD_EVENT = `FROM orchestration_events INDEXED BY idx_orchestrat
 
 export const stateQueryEdits = {
   'apps/server/src/orchestration-v2/ProjectionStore.ts': [
-    [`            sql<{ readonly snapshot_sequence: number | null }>\`
+    [`        sql<{ readonly snapshot_sequence: number | null }>\`
         SELECT MAX(sequence) AS snapshot_sequence
         FROM orchestration_events
         WHERE application_event_version = 2
           AND aggregate_kind = 'thread'
       \`,`,
-    `            sql<{ readonly snapshot_sequence: number | null }>\`
+    `        sql<{ readonly snapshot_sequence: number | null }>\`
         SELECT sequence AS snapshot_sequence
         ${NEWEST_THREAD_EVENT}
       \`,`,
@@ -34,7 +38,8 @@ export const stateQueryEdits = {
       FROM orchestration_events
       \${
         threadId === undefined
-          ? sql\`\`
+          ? // The planner can otherwise pick the covering stream index and scan every agent event.
+            sql\`INDEXED BY idx_orchestration_events_application_sequence\`
           : sql\`INDEXED BY idx_orchestration_events_agent_stream_sequence\`
       }
       WHERE application_event_version = 2

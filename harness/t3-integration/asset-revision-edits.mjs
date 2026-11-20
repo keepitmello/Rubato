@@ -60,12 +60,11 @@ export const assetRevisionEdits = {
   ],
   'apps/web/src/assets/assetUrls.ts': [
     [
-      'import { useCallback, useMemo } from "react";\n',
-      'import { useCallback, useEffect, useEffectEvent, useMemo } from "react";\n',
-      'replace',
+      'import { AsyncResult } from "effect/reactivity";\n',
+      'import { useEffect, useEffectEvent } from "react";\n',
     ],
     [
-      '  if (blocked !== null) return blocked;\n  return assetUrlStateFromResult(\n',
+      '  if (blocked !== null) return blocked;\n  return {\n',
       lines(
         '  useHostFileRevalidation(',
         '    environmentId,',

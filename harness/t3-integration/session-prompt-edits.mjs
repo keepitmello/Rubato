@@ -23,9 +23,10 @@ export const sessionPromptEdits = {
       'import { rubatoSessionPromptRouteLayer } from "./RubatoSessionPrompt.ts";\n'],
     ['    DeviceHubProxy.layer,\n', '    rubatoSessionPromptRouteLayer,\n'],
   ],
-  'apps/web/src/components/ChatView.tsx': [
-    ['import { DraftHeroHeadline } from "./chat/DraftHeroHeadline";\n',
-      'import { prepareRubatoSessionPrompt } from "./chat/RubatoSessionPrompt";\n'],
+  // The send path moved out of ChatView into useComposerSend.ts.
+  'apps/web/src/components/chat/useComposerSend.ts': [
+    ['import { armFreshSession, disarmFreshSession, readFreshSessionArm } from "./freshSessionArms";\n',
+      'import { prepareRubatoSessionPrompt } from "./RubatoSessionPrompt";\n'],
     ['    let turnStartSucceeded = false;\n', [
       '    // A Rubato draft opened on another system prompt hands it over before the session exists.',
       '    if (failure === null && isLocalDraftThread) {',
@@ -46,22 +47,19 @@ export const sessionPromptEdits = {
   ],
   // `/prompt` is a built-in like /model: chosen in the menu, it never reaches the agent.
   'apps/web/src/composer-logic.ts': [
-    ['export type ComposerSlashCommand = "model" | "plan" | "default";',
-      'export type ComposerSlashCommand = "model" | "plan" | "default" | "prompt";', 'replace'],
-    ['): Exclude<ComposerSlashCommand, "model"> | null {',
-      '): Exclude<ComposerSlashCommand, "model" | "prompt"> | null {', 'replace'],
+    ['export type ComposerSlashCommand = "model" | "side" | "btw" | "clear";',
+      'export type ComposerSlashCommand = "model" | "side" | "btw" | "clear" | "prompt";', 'replace'],
   ],
-  'apps/web/src/components/chat/ChatComposer.tsx': [
-    ['import { ComposerImageThumbnail } from "./ComposerImageThumbnail";\n', [
-      'import {',
-      '  openRubatoSessionPromptMenu,',
-      '  rubatoSessionPromptAvailable,',
-      '  RubatoSessionPromptPicker,',
-      '} from "./RubatoSessionPrompt";',
-      '',
-    ].join('\n')],
+  // The slash menu moved out of ChatComposer into this hook, which takes its inputs as params.
+  'apps/web/src/components/chat/useComposerMenuItems.ts': [
+    ['import {\n  searchSlashCommandItems,\n  slashCommandItemsForPromptPosition,\n} from "./composerSlashCommandSearch";\n',
+      'import { rubatoSessionPromptAvailable } from "./RubatoSessionPrompt";\n'],
+    ['  readonly modelMentions: {\n',
+      '  readonly draftId: DraftId | null;\n  readonly selectedProviderInstanceId: ProviderInstanceId | null;\n'],
+    ['}) {\n  const gt = useGT();\n',
+      '  draftId,\n  selectedProviderInstanceId,\n'],
     ['      ] satisfies ReadonlyArray<Extract<ComposerCommandItem, { type: "slash-command" }>>;\n', [
-      '        ...(rubatoSessionPromptAvailable(environmentId, draftId, selectedProviderEntry?.instanceId ?? null)',
+      '        ...(rubatoSessionPromptAvailable(environmentId, draftId, selectedProviderInstanceId)',
       '          ? ([',
       '              {',
       '                id: "slash:prompt",',
@@ -74,9 +72,18 @@ export const sessionPromptEdits = {
       '          : []),',
       '',
     ].join('\n')],
-    ['    compactSlashCommandAvailable,\n    composerTrigger,\n    environmentId,\n',
-      '    draftId,\n    selectedProviderEntry,\n'],
-    ['      if (!planModeUiEnabled) return;\n      void handleInteractionModeChange(', [
+  ],
+  'apps/web/src/components/chat/ChatComposer.tsx': [
+    ['import { copySnapshot } from "./copySnapshot";\n',
+      'import { openRubatoSessionPromptMenu, RubatoSessionPromptPicker } from "./RubatoSessionPrompt";\n'],
+    ['    modelMentions: { instanceEntries: providerInstanceEntries, modelOptionsByInstance },\n', [
+      '    modelMentions: { instanceEntries: providerInstanceEntries, modelOptionsByInstance },',
+      '    draftId,',
+      '    selectedProviderInstanceId: selectedProviderEntry?.instanceId ?? null,',
+      '',
+    ].join('\n'),
+      'replace'],
+    ['      if (item.command === "clear") {\n', [
       '      if (item.command === "prompt") {',
       '        const applied = applyPromptReplacement(trigger.rangeStart, trigger.rangeEnd, "", {',
       '          expectedText: snapshot.value.slice(trigger.rangeStart, trigger.rangeEnd),',
@@ -90,11 +97,7 @@ export const sessionPromptEdits = {
       '      }',
       '',
     ].join('\n')],
-    [[
-      '              {!isComposerCollapsedMobile &&',
-      '                !isComposerApprovalState &&',
-      '                (uncommittedSnapShotIds.length > 0 ||',
-    ].join('\n'), [
+    ['              {composerAttachmentMediaRow}\n', [
       '              {!isComposerCollapsedMobile && !isComposerApprovalState ? (',
       '                <RubatoSessionPromptPicker',
       '                  environmentId={environmentId}',

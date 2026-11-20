@@ -8,7 +8,7 @@
  *
  * A thread's last activity is the newest of its own update time, its newest message and its
  * newest run; the thread row's update time alone misses new messages. A pass leaves alone:
- * - a pinned thread, a child thread (it follows its parent), a side chat (RubatoSideChat.ts);
+ * - a pinned thread, a child thread or side chat (it follows its parent; older Rubato side chats by id);
  * - a thread with a run that is queued, starting, running or waiting;
  * - a companion's room (its sessions are marked in the engine's session list): the room cannot
  *   open an archived thread and would take it out again (RubatoCompanion.ts companionRoom).

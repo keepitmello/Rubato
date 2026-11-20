@@ -53,7 +53,7 @@ const permissionTypes = [
 export const permissionEdits = {
   'packages/contracts/src/ipc.ts': [
     ['export const SystemSettingsPaneSchema = Schema.Literals(["full-disk-access"]);', permissionTypes],
-    ['  getPathForFile?: (file: File) => string;',
+    ['  getPathForFile: (file: File) => string;',
       [
         '  rubatoPermissions?: {',
         '    getState: () => Promise<RubatoPermissionsState>;',
@@ -77,16 +77,16 @@ export const permissionEdits = {
   ],
   // T3 의 끌어다 놓기 도우미가 앱 이름을 박아 두었다.
   'apps/desktop/src/permissions/MacPermissionHelper.ts': [
-    ['<header>↑ Drag T3 Code into the list above</header>\n<button id="app" draggable="true" aria-label="Drag T3 Code to System Settings, or click to reveal in Finder"><img src="${escapeHtml(icon)}" alt="" draggable="false">T3 Code</button>',
-      '<header>↑ Drag Rubato into the list above</header>\n<button id="app" draggable="true" aria-label="Drag Rubato to System Settings, or click to reveal in Finder"><img src="${escapeHtml(icon)}" alt="" draggable="false">Rubato</button>',
+    ['<header>${escapeHtml(m(msg("↑ Drag T3 Code into the list above")))}</header>\n<button id="app" draggable="true" aria-label="${escapeHtml(m(msg("Drag T3 Code to System Settings, or click to reveal in Finder")))}"><img src="${escapeHtml(icon)}" alt="" draggable="false">T3 Code</button>',
+      '<header>${escapeHtml(m(msg("↑ Drag Rubato into the list above")))}</header>\n<button id="app" draggable="true" aria-label="${escapeHtml(m(msg("Drag Rubato to System Settings, or click to reveal in Finder")))}"><img src="${escapeHtml(icon)}" alt="" draggable="false">Rubato</button>',
       'replace'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/snap-shot"\n  | "/settings/providers"',
       '  | "/settings/snap-shot"\n  | "/settings/permissions"\n  | "/settings/providers"',
       'replace'],
-    ['  "/settings/snap-shot": "SnapShots",\n',
-      '  "/settings/snap-shot": "SnapShots",\n  "/settings/permissions": "macOS Permissions",\n',
+    ['  "/settings/snap-shot": msg("SnapShots"),\n',
+      '  "/settings/snap-shot": msg("SnapShots"),\n  "/settings/permissions": msg("macOS Permissions"),\n',
       'replace'],
     ['  "/settings/snap-shot": null,\n',
       '  "/settings/snap-shot": null,\n  "/settings/permissions": null,\n',
@@ -104,18 +104,8 @@ export const permissionEdits = {
         '',
       ].join('\n')],
   ],
-  'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['  SearchIcon,\n  Settings2Icon,\n', '  SearchIcon,\n  Settings2Icon,\n  ShieldCheckIcon,\n', 'replace'],
-    ['  "/settings/snap-shot": SnapShotIcon,\n',
-      '  "/settings/snap-shot": SnapShotIcon,\n  "/settings/permissions": ShieldCheckIcon,\n',
-      'replace'],
-    ['    (item) => item.to !== "/settings/projects" || isSettingsOverviewVisible(scopeSearch),\n',
-      [
-        '    (item) => item.to !== "/settings/permissions" || window.desktopBridge?.getClientPlatform?.() === "darwin",',
-        '',
-      ].join('\n'),
-      'replace'],
-  ],
+  // SettingsSidebarNav: upstream now imports ShieldCheckIcon and hides a mac-only page through
+  // the search item's macOnly flag, so both nav edits are upstream's own behavior.
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/snap-shot",\n  "/settings/connections",\n',
       '  "/settings/snap-shot",\n  "/settings/permissions",\n  "/settings/connections",\n',

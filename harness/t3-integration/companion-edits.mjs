@@ -19,7 +19,7 @@ export const companionOverlays = [
   'apps/web/src/hooks/rubatoCompanionProjectBoundary.test.ts',
   'apps/web/src/components/settings/RubatoCompanionSettings.tsx',
   'apps/web/src/components/sidebar/RubatoSegnoIcon.tsx',
-  'apps/web/src/routes/settings.companion.tsx',
+  'apps/web/src/routes/_chat.settings.companion.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.css',
   'apps/web/src/components/chat/RubatoSegnoSpace.test.ts',
@@ -39,9 +39,6 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoNoticeCoordinator.test.tsx',
 ];
 
-/** The settings route slug the generated route tree gains (route-tree-edits.mjs). */
-export const companionSettingsPages = ['companion'];
-
 export const companionEdits = {
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionModelRouteLayer } from "./RubatoCompanionModel.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
@@ -49,7 +46,7 @@ export const companionEdits = {
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  | "/settings/chat"\n', '  | "/settings/companion"\n'],
-    ['  "/settings/chat": "Chat",\n', '  "/settings/companion": "Companion",\n'],
+    ['  "/settings/chat": msg("Chat"),\n', '  "/settings/companion": msg("Companion"),\n'],
     ['  "/settings/chat": null,\n', '  "/settings/companion": null,\n'],
     ['  {\n    id: "rubato-title-models",\n',
       [
@@ -63,25 +60,30 @@ export const companionEdits = {
       ].join('\n')],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['import { RUBATO_SETTINGS_DETAIL_PAGES, RUBATO_SETTINGS_PAGES } from "./rubatoSettingsLayout";\n',
+    ['import { useAvailableSettingsSearchItems } from "./useAvailableSettingsSearchItems";\n',
       'import { RubatoSegnoIcon } from "../sidebar/RubatoSegnoIcon";\n'],
-    ['  "/settings/chat": MessageSquareIcon,\n', '  "/settings/companion": RubatoSegnoIcon,\n'],
+    ['  "/settings/chat": MessageSquareTextIcon,\n', '  "/settings/companion": RubatoSegnoIcon,\n'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
     ['  "/settings/phone",\n', '  "/settings/companion",\n'],
   ],
   // Segno keeps its name: its first message does not title its thread (T3 titles a thread with no
   // messages from the first one it sends, and the Pi adapter mirrors that title into the engine).
-  'apps/web/src/components/ChatView.tsx': [
-    ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
-      '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: sendInteractionMode,\n',
+  // v0.1.11 starts the turn in useComposerSend.ts, so the suppression sits there.
+  'apps/web/src/components/chat/useComposerSend.ts': [
+    ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
+      '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
       'replace'],
-    ['import { assistantCitationsToPlainText } from "@t3tools/shared/assistantCitations";\n', 'import { applyCompanionModel, companionComposerSettings, isCompanionThread } from "../state/rubatoCompanion";\nimport { RubatoSegnoChat } from "./chat/RubatoSegnoChat";\nimport { rewindCompanionMessage } from "./chat/RubatoMessageEdit";\n'],
-    // A model picked in a companion's room applies at once, not at the next send: the companion
-    // works on its own between messages (applyCompanionModel, user item bceb5547).
+    ['import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";\n',
+      'import { isCompanionThread } from "../../state/rubatoCompanion";\n'],
+  ],
+  // A model picked in a companion's room applies at once, not at the next send: the companion
+  // works on its own between messages (applyCompanionModel, user item bceb5547). v0.1.11 keeps the
+  // picker's handler in useComposerSelection.ts.
+  'apps/web/src/components/chat/useComposerSelection.ts': [
     ['    setStickyComposerModelSelection(nextModelSelection);\n',
       [
-        '    if (isServerThread && isCompanionThread(activeThread.id)) {',
+        '    if (activeThread && isCompanionThread(activeThread.id)) {',
         '      void applyCompanionModel(activeThread.environmentId, activeThread.id, nextModelSelection).catch((error: unknown) => {',
         '        toastManager.add({',
         '          type: "error",',
@@ -92,44 +94,84 @@ export const companionEdits = {
         '    }',
         '',
       ].join('\n')],
+    ['import { toastManager } from "../ui/toast";\n',
+      'import { applyCompanionModel, isCompanionThread } from "../../state/rubatoCompanion";\n'],
+  ],
+  // The room's "Rewind from here" and its edit: a companion's thread holds no checkpoints, so the
+  // message names where the rewind lands (RubatoCompanionRewind.ts, user 4c412ab9). The message
+  // still returns to the composer the way T3's revert puts it there. v0.1.11 runs the revert in
+  // chatViewSend.ts's rewindToMessage.
+  'apps/web/src/components/chat/chatViewSend.ts': [
+    ['    const commandId = CommandId.make(randomUUID());\n'
+        + '    await waitForRevertedMessage(input.routeThreadRef, input.turnCount, commandId, async () => {\n'
+        + '      const result = await input.revertThreadCheckpoint({\n'
+        + '        environmentId,\n'
+        + '        input: {\n'
+        + '          commandId,\n'
+        + '          threadId: input.threadId,\n'
+        + '          turnCount: input.turnCount,\n'
+        + '          restoreFiles: input.restoreFiles,\n'
+        + '          ...(input.checkpoint === undefined\n'
+        + '            ? {}\n'
+        + '            : { checkpointId: input.checkpoint.id, scopeId: input.checkpoint.scopeId }),\n'
+        + '        },\n'
+        + '      });\n'
+        + '      if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
+        + '    });\n',
+      '    if (isCompanionThread(input.threadId)) {\n'
+        + '      await rewindCompanionMessage(environmentId, input.threadId, input.message.id);\n'
+        + '    } else {\n'
+        + '      const commandId = CommandId.make(randomUUID());\n'
+        + '      await waitForRevertedMessage(input.routeThreadRef, input.turnCount, commandId, async () => {\n'
+        + '        const result = await input.revertThreadCheckpoint({\n'
+        + '          environmentId,\n'
+        + '          input: {\n'
+        + '            commandId,\n'
+        + '            threadId: input.threadId,\n'
+        + '            turnCount: input.turnCount,\n'
+        + '            restoreFiles: input.restoreFiles,\n'
+        + '            ...(input.checkpoint === undefined\n'
+        + '              ? {}\n'
+        + '              : { checkpointId: input.checkpoint.id, scopeId: input.checkpoint.scopeId }),\n'
+        + '          },\n'
+        + '        });\n'
+        + '        if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
+        + '      });\n'
+        + '    }\n',
+      'replace'],
+    ['import { recallComposerMessage } from "./composerPromptHistory";\n',
+      'import { rewindCompanionMessage } from "./RubatoMessageEdit";\nimport { isCompanionThread } from "../../state/rubatoCompanion";\n'],
+  ],
+  // PageUp and PageDown in the composer move the room, which has no list of its own (user f7c42421).
+  'apps/web/src/components/chat/useTimelineFollow.ts': [
+    ['      getContainer: () => viewport.scrollNode,\n',
+      '      getContainer: () =>\n'
+        + '        viewport.scrollNode ??\n'
+        + '        document.querySelector<HTMLElement>("[data-rubato-segno-scroller]"),\n',
+      'replace'],
+  ],
+  'apps/web/src/components/ChatView.tsx': [
+    ['import { useSideChat } from "./chat/useSideChat";\n', 'import { companionComposerSettings, isCompanionThread } from "../state/rubatoCompanion";\n'],
     // A companion's room sends during its work as a steer, whatever Settings › Chat says
     // (companionComposerSettings, user item 6b6a88c5).
     ['                              settings={settings}\n',
       '                              settings={companionComposerSettings(settings, activeThread?.id)}\n',
       'replace'],
-    // The room's "Rewind from here" and its edit: a companion's thread holds no checkpoints, so the
-    // message names where the rewind lands (RubatoCompanionRewind.ts, user 4c412ab9). The message
-    // still returns to the composer the way T3's revert puts it there.
-    ['      const commandId = CommandId.make(randomUUID());\n'
-        + '      await waitForRevertedMessage(routeThreadRef, messageId, turnCount, commandId, async () => {\n'
-        + '        const result = await revertThreadCheckpoint({\n'
-        + '          environmentId,\n'
-        + '          input: { commandId, threadId: activeThread.id, turnCount, restoreFiles },\n'
-        + '        });\n'
-        + '        if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
-        + '      });\n',
-      '      if (isCompanionThread(activeThread.id)) {\n'
-        + '        await rewindCompanionMessage(environmentId, activeThread.id, messageId);\n'
-        + '      } else {\n'
-        + '        const commandId = CommandId.make(randomUUID());\n'
-        + '        await waitForRevertedMessage(routeThreadRef, messageId, turnCount, commandId, async () => {\n'
-        + '          const result = await revertThreadCheckpoint({\n'
-        + '            environmentId,\n'
-        + '            input: { commandId, threadId: activeThread.id, turnCount, restoreFiles },\n'
-        + '          });\n'
-        + '          if (result._tag === "Failure") throw squashAtomCommandFailure(result);\n'
-        + '        });\n'
-        + '      }\n',
-      'replace'],
     // Segno's thread has no workspace or version control of its own: the floating thread details
-    // (workspace, open in editor, branch, publish, changes) and the button that toggles them stay
-    // out of Segno's space (user 2026-10-21). Every other thread keeps them.
-    ['            <ThreadDetailsPanel {...threadDetailsPanelProps} />\n',
-      '            {isCompanionThread(activeThread.id) ? null : <ThreadDetailsPanel {...threadDetailsPanelProps} />}\n',
+    // (workspace, open in editor, branch, publish, changes), the hosts beside it and the button
+    // that toggles them stay out of Segno's space (user 2026-10-21). Every other thread keeps
+    // them. v0.1.11 renders the panel outside the `embedded` guard.
+    ['            {embedded ? null : (\n',
+      '            {embedded || isCompanionThread(activeThread.id) ? null : (\n',
       'replace'],
     ['      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}\n',
       '      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && !isCompanionThread(activeThread.id)}\n',
       'replace'],
+    // FLAG (batches/B2.md): the room swap below is a port, not a re-anchor. v0.1.11 renders the
+    // timeline as <ThreadTimeline> in ChatView and resolves the entries inside
+    // chat/ThreadTimeline.tsx, so a companion's room needs the swap there (displayedEntries) rather
+    // than at this JSX. Left unchanged for the desktop owner.
+    //
     // Segno's thread is a chat room (chat/RubatoSegnoChat.tsx, user f38c36a6): it reads the same
     // timeline as the ordinary one and draws it as bubbles. Every other thread keeps the timeline.
     // Its rewind is the timeline's own, with files left as they are (user f8828a9f), and its
@@ -156,39 +198,32 @@ export const companionEdits = {
     ['                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n',
       '                {...(paintOnlyDisplayedTimeline || threadHistoryControls === undefined\n                  ? {}\n                  : { historyControls: threadHistoryControls })}\n              />\n              )}\n',
       'replace'],
-    // PageUp and PageDown in the composer move the room, which has no list of its own (user f7c42421).
-    ['      getContainer: () => legendListRef.current?.getScrollableNode() ?? null,\n',
-      '      getContainer: () =>\n'
-        + '        legendListRef.current?.getScrollableNode() ??\n'
-        + '        document.querySelector<HTMLElement>("[data-rubato-segno-scroller]"),\n',
-      'replace'],
     // The room floats its own "Scroll to end", from its own scroll (RubatoSegnoChat.tsx).
     ['              {showScrollToBottom && !isThreadFindActive && (\n',
       '              {showScrollToBottom && !isThreadFindActive && !isCompanionThread(activeThread.id) && (\n',
       'replace'],
   ],
   // Segno's own folder is not a project to start work in: neither the new thread's default
-  // project nor the headline's picker offers it.
+  // project nor the headline's picker offers it. v0.1.11 chooses the default project from the
+  // projects list in resolveDefaultProjectRef, so the folder leaves the list before the choice.
   'apps/web/src/hooks/useHandleNewThread.ts': [
-    ['  const rubatoFirstGroup = useSidebarProjectGroups().find((group) => group.isScratch !== true);\n',
-      '  const rubatoCompanionHomes = useRubatoCompanion().companions.map(item => item.home);\n'
-        + '  const rubatoFirstGroup = useSidebarProjectGroups().find(\n'
-        + '    (group) => group.isScratch !== true && !rubatoCompanionHomes.some(home => isCompanionProject(group, home)),\n'
-        + '  );\n'
-        + '  const rubatoFallbackProject = orderedProjects.find(project => !rubatoCompanionHomes.some(home => isCompanionProject(project, home)));\n',
+    ['  const projects = useProjects();\n',
+      '  // Rubato: Segno\'s own folder is not a project to start work in (companion-edits.mjs).\n'
+        + '  const projects = useWithoutCompanionProjects(useProjects());\n',
       'replace'],
-    ['      : orderedProjects[0]\n        ? scopeProjectRef(orderedProjects[0].environmentId, orderedProjects[0].id)\n        : null,\n',
-      '      : rubatoFallbackProject\n        ? scopeProjectRef(rubatoFallbackProject.environmentId, rubatoFallbackProject.id)\n        : null,\n', 'replace'],
-    ['import { useSidebarProjectGroups } from "./useSidebarProjectGroups";\n',
-      'import { isCompanionProject, useRubatoCompanion } from "../state/rubatoCompanion";\n'],
+    ['import { useThreadRouteTarget } from "./useThreadRouteTarget";\n',
+      'import { useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
   ],
   'apps/web/src/hooks/useHandleNewThread.test.ts': [
-    ['vi.mock("./useSidebarProjectGroups", () => ({ useSidebarProjectGroups: () => [] }));\n',
+    ['vi.mock("../components/Sidebar.logic", () => ({\n  orderItemsByPreferredIds: ({ items }: { items: unknown[] }) => items,\n}));\n',
       'vi.mock("../state/rubatoCompanion", () => ({\n'
         + '  isCompanionProject: () => false,\n'
         + '  useRubatoCompanion: () => ({ status: null, threadId: null, companions: [] }),\n'
         + '}));\n'],
   ],
+  // FLAG (batches/B2.md): this anchor is the line project-order-edits.mjs inserts; v0.1.11 builds
+  // the headline's groups from useSortedProjectGroups. Left unchanged for the project-order owner to
+  // re-anchor, after which the filter below re-applies to its output.
   'apps/web/src/components/chat/DraftHeroHeadline.tsx': [
     ['  const projectGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;',
       '  const rubatoOrderedGroups = useRubatoProjectOrder(unsortedProjectGroups).ordered;\n'
@@ -206,26 +241,24 @@ export const companionEdits = {
   // Segno's conversation ("new thread in this project" takes the default project instead).
   'apps/web/src/components/CommandPalette.tsx': [
     ['  const projects = useProjects();\n', '  const projects = useWithoutCompanionProjects(useProjects());\n', 'replace'],
-    ['      resolveThreadActionProjectRef({\n        activeDraftThread,\n        activeThread: activeThread ?? undefined,\n',
-      '      resolveThreadActionProjectRef({\n        activeDraftThread,\n        activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n', 'replace'],
+    ['  const contextualProjectRef = resolveThreadActionProjectRef({\n    activeDraftThread,\n    activeThread: activeThread ?? undefined,\n',
+      '  const contextualProjectRef = resolveThreadActionProjectRef({\n    activeDraftThread,\n    activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n', 'replace'],
     ['          await startNewThreadFromContext({\n            activeDraftThread,\n            activeThread: activeThread ?? undefined,\n',
       '          await startNewThreadFromContext({\n            activeDraftThread,\n            activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n', 'replace'],
-    ['import { resolveThreadActionProjectRef, startNewThreadFromContext } from "../lib/chatThreadActions";\n',
+    ['import {\n  resolveThreadActionProjectRef,\n  startNewThreadFromContext,\n  threadHasStarted,\n} from "../lib/chatThreadActions";\n',
       'import { isCompanionThread, useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
   ],
   'apps/web/src/routes/_chat.index.tsx': [
-    ['  const projects = useProjects();\n  const threads = useThreadShells();\n',
-      '  const projects = useWithoutCompanionProjects(useProjects());\n  const threads = useThreadShells();\n', 'replace'],
+    ['  const projects = useProjects();\n',
+      '  const projects = useWithoutCompanionProjects(useProjects());\n', 'replace'],
     ['import { useNewThreadHandler } from "../hooks/useHandleNewThread";\n',
       'import { useWithoutCompanionProjects } from "../state/rubatoCompanion";\n'],
   ],
-  // The new-thread shortcuts (chat.newLocal, chat.new) from Segno's conversation, likewise.
-  'apps/web/src/routes/_chat.tsx': [
-    ['      if (command === "chat.newLocal") {\n        event.preventDefault();\n        event.stopPropagation();\n        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread ?? undefined,\n',
-      '      if (command === "chat.newLocal") {\n        event.preventDefault();\n        event.stopPropagation();\n        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n',
-      'replace'],
-    ['        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread ?? undefined,\n',
-      '        void startNewThreadFromContext({\n          activeDraftThread,\n          activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n',
+  // The new-thread shortcuts (chat.newLocal, chat.new) from Segno's conversation, likewise. v0.1.11
+  // keeps both shortcuts' thread context in one place, shortcuts/chatRouteCommands.ts.
+  'apps/web/src/shortcuts/chatRouteCommands.ts': [
+    ['      activeThread: activeThread ?? undefined,\n',
+      '      activeThread: activeThread && !isCompanionThread(activeThread.id) ? activeThread : undefined,\n',
       'replace'],
     ['import { startNewThreadFromContext } from "../lib/chatThreadActions";\n',
       'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
@@ -238,49 +271,58 @@ export const companionEdits = {
         + '  const rubatoCompanionView = useRubatoCompanion();\n'
         + '  const rubatoCurrentCompanion = target.kind === "server" ? rubatoCompanionView.companions.find(item => item.threadId === target.threadRef.threadId) : undefined;\n'
         + '  const rubatoSegnoSpace = rubatoCurrentCompanion !== undefined;\n'],
-    ['    <SidebarInset className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh">\n      {view}\n    </SidebarInset>\n',
+    ['    <SidebarInset\n      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"\n      inert={background}\n    >\n',
       '    <SidebarInset\n'
         + '      className="h-svh min-h-0 overflow-hidden overscroll-y-none md:h-dvh"\n'
+        + '      inert={background}\n'
         + '      data-rubato-segno-space-host={rubatoSegnoSpace ? "" : undefined}\n'
-        + '    >\n'
-        + '      {rubatoSegnoSpace ? <RubatoSegnoSpace key={rubatoCurrentCompanion!.id} companionId={rubatoCurrentCompanion!.id}>{view}</RubatoSegnoSpace> : view}\n'
-        + '    </SidebarInset>\n',
+        + '    >\n',
+      'replace'],
+    // The room keeps T3's own hidden-thread wrapper: only what is inside it changes.
+    ['        <HiddenThreadContext value={background}>{view}</HiddenThreadContext>\n',
+      '        <HiddenThreadContext value={background}>\n'
+        + '          {rubatoSegnoSpace ? (\n'
+        + '            <RubatoSegnoSpace key={rubatoCurrentCompanion!.id} companionId={rubatoCurrentCompanion!.id}>\n'
+        + '              {view}\n'
+        + '            </RubatoSegnoSpace>\n'
+        + '          ) : (\n'
+        + '            view\n'
+        + '          )}\n'
+        + '        </HiddenThreadContext>\n',
       'replace'],
     ['import { SidebarInset } from "./ui/sidebar";\n',
       'import { RubatoSegnoSpace } from "./chat/RubatoSegnoSpace";\nimport { useRubatoCompanion } from "../state/rubatoCompanion";\n'],
   ],
   // A run that ends in Segno's thread notifies like a messenger — Segno's name, the start of what it
-  // said, "Open" (chat/RubatoSegnoNotice.tsx); every other thread's notification is unchanged but
-  // for its desktop title, which now follows the interface language like the toast's.
+  // said, "Open" (chat/RubatoSegnoNotice.tsx); every other thread's notification is unchanged.
+  // v0.1.11 reads the settings and the open thread inside present(), and its titles already go
+  // through m(msg(...)), so nothing wraps them here.
   'apps/web/src/components/ThreadNotificationCoordinator.tsx': [
-    ['import { resolveSidebarThreadStatus } from "./Sidebar.logic";\n',
+    ['import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";\n',
       'import { notifySegnoCompletion } from "./chat/RubatoSegnoNotice";\n'
-        + 'import { uiText } from "../rubatoI18n";\n'
         + 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
-    ['      if (!kind) continue;\n      const title =\n',
-      '      if (!kind) continue;\n'
-        + '      // Rubato: Segno\'s thread notifies like a messenger (companion-edits.mjs).\n'
-        + '      if (kind === "completion" && isCompanionThread(thread.id)) {\n'
-        + '        void notifySegnoCompletion({\n'
-        + '          environmentId,\n'
-        + '          threadId: thread.id,\n'
-        + '          runId: rawThread.latestRunId,\n'
-        + '          mode,\n'
-        + '          inAppNotificationsEnabled,\n'
-        + '          viewing: activeEnvironmentId === environmentId && activeThreadId === thread.id,\n'
-        + '          open: () =>\n'
-        + '            void navigate({\n'
-        + '              to: "/$environmentId/$threadId",\n'
-        + '              params: { environmentId, threadId: thread.id },\n'
-        + '            }),\n'
-        + '          onNotification,\n'
-        + '        });\n'
-        + '        continue;\n'
-        + '      }\n'
-        + '      const title =\n',
+    ['    const active = activeThread();\n',
+      '    const active = activeThread();\n'
+        + '    // Rubato: Segno\'s thread notifies like a messenger (companion-edits.mjs).\n'
+        + '    if (kind === "completion" && isCompanionThread(thread.id)) {\n'
+        + '      void notifySegnoCompletion({\n'
+        + '        environmentId,\n'
+        + '        threadId: thread.id,\n'
+        + '        runId: state.raw.latestRunId ?? null,\n'
+        + '        mode,\n'
+        + '        inAppNotificationsEnabled,\n'
+        + '        viewing: active.environmentId === environmentId && active.threadId === thread.id,\n'
+        + '        open: () =>\n'
+        + '          void router.navigate({\n'
+        + '            to: "/$environmentId/$threadId",\n'
+        + '            params: { environmentId, threadId: thread.id },\n'
+        + '          }),\n'
+        + '        onNotification: (notifiedEnvironmentId, notification) =>\n'
+        + '          trackNotification(notifiedEnvironmentId, thread.id, notification),\n'
+        + '      });\n'
+        + '      return;\n'
+        + '    }\n',
       'replace'],
-    ['        const notification = new Notification(title, {\n',
-      '        const notification = new Notification(uiText(title), {\n', 'replace'],
   ],
   // Segno's header is just its name: its folder is not a project.
   'apps/web/src/components/chat/ChatHeader.tsx': [
@@ -289,17 +331,17 @@ export const companionEdits = {
   ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [
-    ['  const threads = useThreadShells();\n',
+    ['  const threads = useQuietThreadShells();\n',
       '  // Rubato: Segno\'s conversation opens from the rail, not the list (companion-edits.mjs).\n'
-        + '  const threads = useWithoutCompanionThread(useThreadShells());\n',
+        + '  const threads = useWithoutCompanionThread(useQuietThreadShells());\n',
       'replace'],
-    ['import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";\n',
+    ['import { environmentPresentations } from "../state/presentation";\n',
       'import { isCompanionThread, useWithoutCompanionThread } from "../state/rubatoCompanion";\n'],
-    ['          activeThread: newThreadContext.activeThread ?? undefined,\n',
-      '          activeThread:\n'
-        + '            newThreadContext.activeThread && !isCompanionThread(newThreadContext.activeThread.id)\n'
-        + '              ? newThreadContext.activeThread\n'
-        + '              : undefined,\n',
+    ['        activeThread: newThreadContext.activeThread ?? undefined,\n',
+      '        activeThread:\n'
+        + '          newThreadContext.activeThread && !isCompanionThread(newThreadContext.activeThread.id)\n'
+        + '            ? newThreadContext.activeThread\n'
+        + '            : undefined,\n',
       'replace'],
   ],
 };

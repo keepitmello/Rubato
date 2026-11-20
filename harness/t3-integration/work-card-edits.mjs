@@ -5,7 +5,7 @@
 //
 // - In an ordinary thread the call arrives as a dynamic tool item. It becomes a standalone row, as
 //   T3 does for a subagent or a fork, so a finished turn's "Worked for" fold leaves it visible
-//   (session-logic.ts), and that row is drawn as the card (MessagesTimeline.tsx).
+//   (session-logic.ts), and that row is drawn as the card (TimelineV2EventRow.tsx).
 // - A companion's room reads the same calls from its session file (bridge companion/inner.mjs)
 //   and draws the card itself (RubatoSegnoChat.tsx, companion overlays).
 // Agent, task and team_create rows stay as agents-surface-edits.mjs draws them.
@@ -31,11 +31,11 @@ export const workCardEdits = {
         + '    if (STANDALONE_V2_ITEM_TYPES.has(item.type) || isRubatoLaunchItem(item)) {\n',
       'replace'],
   ],
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['import { formatDuration } from "@t3tools/shared/orchestrationTiming";\n',
+  'apps/web/src/components/chat/TimelineV2EventRow.tsx': [
+    ['import { TimelineRowCtx, type TimelineRow } from "./timelineRowContext";\n',
       'import { RubatoTimelineWorkCard } from "./RubatoWorkCard";\nimport { isRubatoLaunchItem } from "./rubatoWorkCardModel";\n'],
-    ['  const { item, visibility, sourceThreadId } = row.projectedItem;\n',
-      '  const { item, visibility, sourceThreadId } = row.projectedItem;\n'
+    ['  const { item, visibility } = row.projectedItem;\n',
+      '  const { item, visibility } = row.projectedItem;\n'
         + '  // Rubato: a launched conversation\'s card (work-card-edits.mjs).\n'
         + '  if (isRubatoLaunchItem(item))\n'
         + '    return <RubatoTimelineWorkCard projectedItem={row.projectedItem} environmentId={ctx.activeThreadEnvironmentId} />;\n',

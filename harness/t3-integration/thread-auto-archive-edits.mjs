@@ -12,7 +12,7 @@ export const threadAutoArchiveEdits = {
     ['import { resolveProjectSettings } from "@t3tools/shared/projectSettings";\n',
       'import { makeRubatoThreadAutoArchive } from "./RubatoThreadAutoArchive.ts";\n'],
     // After the inventory's first pass is under way, once commands are accepted.
-    ['      yield* flushCompileCache;\n',
-      '      yield* runStartupPhase("rubato.auto-archive", Effect.flatMap(makeRubatoThreadAutoArchive, (job) => job.start));\n'],
+    ['    yield* flushCompileCache;\n',
+      '    yield* runStartupPhase("rubato.auto-archive", Effect.flatMap(makeRubatoThreadAutoArchive, (job) => job.start));\n'],
   ],
 };

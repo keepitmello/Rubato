@@ -154,7 +154,7 @@ export const windowMaterialEdits = {
       ].join('\n'),
     ],
     [
-      '  electron-publish@26.15.3:\n    resolution:',
+      '  electron-publish@26.16.0:\n    resolution:',
       [
         '  electron-liquid-glass@1.1.1:',
         '    resolution: {integrity: sha512-AfPxcu6RJYxlsW2sjgjDEON0rVOjhh5QYM6ur5hsfILQmfY5ewHCWJZJZoDsQxhjeW1DAhbRbvB79IvgW4ansA==}',
@@ -174,7 +174,7 @@ export const windowMaterialEdits = {
       ].join('\n'),
     ],
     [
-      '  bippy@0.5.41(react@19.2.6):\n',
+      '  bippy@0.5.41(react@19.3.0):\n',
       [
         '  bindings@1.5.0:',
         '    dependencies:',
@@ -185,7 +185,7 @@ export const windowMaterialEdits = {
       ].join('\n'),
     ],
     [
-      '  electron-publish@26.15.3:\n    dependencies:\n',
+      '  electron-publish@26.16.0(supports-color@8.1.1):\n    dependencies:\n',
       [
         '  electron-liquid-glass@1.1.1:',
         '    dependencies:',
@@ -214,11 +214,12 @@ export const windowMaterialEdits = {
       'import { shouldResumeSnapShotSetupOnStartup } from "../lib/snapShotSetupResume";\n',
       'import { useRubatoWindowMaterialSync } from "../rubatoWindowMaterial";\n',
     ],
-    // Mounted on every app shell, the welcome flow included.
+    // Mounted on every app shell, the welcome flow included: the root route view wraps every\n    // branch, while the glass appearance itself is applied by appInit's subscription.
     [
-      'function GlassAppearanceSync() {\n  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);\n',
+      'function RootRouteView() {\n',
       [
-        'function GlassAppearanceSync() {',
+        'function RootRouteView() {',
+        '  // Rubato: the window material follows the saved setting (window-material-edits.mjs).',
         '  useRubatoWindowMaterialSync();',
         '  const glassOpacity = useClientSettings((settings) => settings.glassOpacity);',
         '',
@@ -231,14 +232,14 @@ export const windowMaterialEdits = {
   'apps/web/src/components/preview/PreviewPanelShell.tsx': [
     ['import { RightPanelResizeHandle } from "./RightPanelResizeHandle";\n', 'import { useRubatoInlinePanelMarkers } from "~/rubatoInlinePanelMarkers";\n'],
     [
-      '  const hostRef = props.hostRef ?? localHostRef;\n',
-      '  const hostRef = props.hostRef ?? localHostRef;\n  useRubatoInlinePanelMarkers(hostRef, isInline);\n',
+      '  const hostRef = useRef<HTMLDivElement | null>(null);\n',
+      '  const hostRef = useRef<HTMLDivElement | null>(null);\n  useRubatoInlinePanelMarkers(hostRef, isInline);\n',
       'replace',
     ],
   ],
-  'apps/web/src/components/settings/SettingsPanels.tsx': [
-    ['import { CliCommandSettingsRow } from "./CliCommandSettingsRow";\n', 'import { SidebarMaterialSettingsRow } from "./RubatoSidebarMaterialRow";\n'],
-    ['        {showEnvironmentIdentification ? (\n', '        <SidebarMaterialSettingsRow />\n\n'],
+  'apps/web/src/components/settings/AppearanceSettingsPanel.tsx': [
+    ['import { ThreadDetailsItemsRow } from "./ThreadDetailsItemsRow";\n', 'import { SidebarMaterialSettingsRow } from "./RubatoSidebarMaterialRow";\n'],
+    ['        <SettingsRow\n          {...searchableSetting("chat-width")}\n', '        <SidebarMaterialSettingsRow />\n\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
     [

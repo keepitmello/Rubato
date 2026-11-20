@@ -15,7 +15,9 @@
 //   taskforce it started, with the panel's row grammar (chat/RubatoSpawnRow.tsx), joined on
 //   the call id the roster records.
 //
-// side-chat-edits.mjs inserts its own surface beside these lines, so it registers after.
+// v0.1.11 draws a surface inside chat/RightPanelSurfaceContent.tsx and a work entry inside
+// chat/TimelineWorkEntryRow.tsx, so the panel and the spawn row hook in there, and ChatView
+// hands the surface content the model it already computes for the launcher badge.
 export const agentsSurfaceOverlays = [
   'apps/web/src/components/rubatoAgentPanelModel.ts',
   'apps/web/src/components/RubatoAgentsPanel.tsx',
@@ -27,17 +29,19 @@ export const agentsSurfaceOverlays = [
   'apps/web/src/state/rubatoSessionState.test.ts',
   'apps/web/src/components/chat/RubatoSpawnRow.tsx',
   'apps/web/src/components/chat/RubatoSpawnRow.test.tsx',
+  'apps/web/src/rubatoPanelViews.ts',
+  'apps/web/src/rubatoPanelViews.test.ts',
 ];
 
 const lines = (...parts) => parts.join('\n');
 
 const launcherItem = (reasons, badge) => lines(
   '    {',
-  '      label: "Agents",',
+  '      label: msg("Agents"),',
   '      icon: Bot,',
   '      shortcut: "A",',
   '      available: props.agentsAvailable === true,',
-  `      disabledReason: ${reasons}.agents,`,
+  `      disabledReason: messages(${reasons}.agents),`,
   '      onClick: () => props.onAddAgents?.(),',
   ...(badge ? ['      badgeCount: props.liveAgentCount ?? 0,'] : []),
   '    },',
@@ -55,15 +59,15 @@ const panelProps = (indent) => lines(
 
 export const agentsSurfaceEdits = {
   'apps/web/src/rightPanelStore.ts': [
-    ['  "pull-requests",\n] as const;', '  "pull-requests",\n  "agents",\n] as const;', 'replace'],
-    ['  | { id: "pull-requests"; kind: "pull-requests" };', lines(
+    ['  "side-chat",\n] as const;', '  "side-chat",\n  "agents",\n] as const;', 'replace'],
+    ['  | { id: "pull-requests"; kind: "pull-requests" }\n', lines(
       '  | { id: "pull-requests"; kind: "pull-requests" }',
       '  /** Rubato: the thread\'s agents and taskforces (RubatoAgentsPanel.tsx). */',
-      '  | { id: "agents"; kind: "agents" };'), 'replace'],
+      '  | { id: "agents"; kind: "agents" }',
+      ''), 'replace'],
     ['    case "device":\n      return { id: "device", kind };\n',
       '    case "agents":\n      return { id: "agents", kind };\n'],
     [lines(
-      '                    // Removed surfaces: plans render inline, agents in thread lineage.',
       '                    const kind = (surface as { kind?: string }).kind;',
       '                    if (kind === "plan" || kind === "agents") return [];'), lines(
       '                    // Removed surfaces: plans render inline. Rubato keeps agents.',
@@ -103,21 +107,64 @@ export const agentsSurfaceEdits = {
       '  liveAgentCount?: number | undefined;',
       '  children: ReactNode;',
       ''), 'replace'],
-    ['  deviceAvailable: boolean;\n}) {\n  // -1 means no highlight', lines(
-      '  deviceAvailable: boolean;',
+    [lines(
+      '  sideChatAvailable: boolean;',
+      '  sideChatDisabledReason: string | null;',
+      '}) {',
+      '  const gt = useGT();',
+      ''), lines(
+      '  /** Rubato: the Agents surface; panels other than a thread\'s leave these out. */',
       '  onAddAgents?: (() => void) | undefined;',
       '  agentsAvailable?: boolean | undefined;',
+      '  /** Running + waiting subagents; badges the Agents row in the launcher. */',
       '  liveAgentCount?: number | undefined;',
+      '  sideChatAvailable: boolean;',
+      '  sideChatDisabledReason: string | null;',
       '}) {',
-      '  // -1 means no highlight'), 'replace'],
-    ['  device: "Devices are only available from a thread.",\n} as const;',
-      '  device: "Devices are only available from a thread.",\n  agents: "Agents are only available from a thread.",\n} as const;', 'replace'],
-    ['  device: "Available from a thread.",\n} as const;',
-      '  device: "Available from a thread.",\n  agents: "Available from a thread.",\n} as const;', 'replace'],
-    ['      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,\n      onClick: props.onAddPullRequests,\n    },\n',
-      '      disabledReason: SURFACE_UNAVAILABLE_HINTS.pullRequests,\n      onClick: props.onAddPullRequests,\n    },\n' + launcherItem('SURFACE_UNAVAILABLE_HINTS', true), 'replace'],
-    ['      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,\n      onClick: props.onAddPullRequests,\n    },\n',
-      '      disabledReason: SURFACE_DISABLED_REASONS.pullRequests,\n      onClick: props.onAddPullRequests,\n    },\n' + launcherItem('SURFACE_DISABLED_REASONS', false), 'replace'],
+      '  const gt = useGT();',
+      ''), 'replace'],
+    ['  sideChat: msg("Side chats start after the first message."),\n} as const;',
+      '  sideChat: msg("Side chats start after the first message."),\n  agents: msg("Agents are only available from a thread."),\n} as const;', 'replace'],
+    ['  sideChat: msg("Available after the first message."),\n} as const;',
+      '  sideChat: msg("Available after the first message."),\n  agents: msg("Available from a thread."),\n} as const;', 'replace'],
+    [lines(
+      '    {',
+      '      label: msg("Linked items"),',
+      '      icon: PullRequestGlyph.link,',
+      '      shortcut: "L",',
+      '      available: props.pullRequestsAvailable,',
+      '      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequests),',
+      '      onClick: props.onAddPullRequests,',
+      '    },',
+      ''), lines(
+      '    {',
+      '      label: msg("Linked items"),',
+      '      icon: PullRequestGlyph.link,',
+      '      shortcut: "L",',
+      '      available: props.pullRequestsAvailable,',
+      '      disabledReason: messages(SURFACE_UNAVAILABLE_HINTS.pullRequests),',
+      '      onClick: props.onAddPullRequests,',
+      '    },',
+      '') + launcherItem('SURFACE_UNAVAILABLE_HINTS', true), 'replace'],
+    [lines(
+      '    {',
+      '      label: msg("Linked items"),',
+      '      icon: PullRequestGlyph.link,',
+      '      shortcut: "L",',
+      '      available: props.pullRequestsAvailable,',
+      '      disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequests),',
+      '      onClick: props.onAddPullRequests,',
+      '    },',
+      ''), lines(
+      '    {',
+      '      label: msg("Linked items"),',
+      '      icon: PullRequestGlyph.link,',
+      '      shortcut: "L",',
+      '      available: props.pullRequestsAvailable,',
+      '      disabledReason: messages(SURFACE_DISABLED_REASONS.pullRequests),',
+      '      onClick: props.onAddPullRequests,',
+      '    },',
+      '') + launcherItem('SURFACE_DISABLED_REASONS', false), 'replace'],
     ['        <Icon className={iconClassName} />\n      </span>', lines(
       '        <Icon className={iconClassName} />',
       '        {(("badgeCount" in action ? action.badgeCount : 0) ?? 0) > 0 ? (',
@@ -129,26 +176,28 @@ export const agentsSurfaceEdits = {
       '          </span>',
       '        ) : null}',
       '      </span>'), 'replace'],
-    ['    case "device":\n      return surface.title ?? surface.target?.name ?? "Device";\n',
-      '    case "agents":\n      return "Agents";\n'],
+    ['    case "device":\n      return surface.title ?? surface.target?.name ?? resolve(msg("Device"));\n',
+      '    case "agents":\n      return resolve(msg("Agents"));\n'],
     ['    case "device":\n      return surface.target?.platform === "ios" ? (\n',
       '    case "agents":\n      return <Bot className="size-3 shrink-0" />;\n'],
-    ['            deviceAvailable={props.deviceAvailable}\n          />', lines(
+    [lines(
+      '            deviceAvailable={props.deviceAvailable}',
+      '            sideChatAvailable={props.sideChatAvailable === true}',), lines(
       '            deviceAvailable={props.deviceAvailable}',
       '            onAddAgents={props.onAddAgents}',
       '            agentsAvailable={props.agentsAvailable}',
       '            liveAgentCount={props.liveAgentCount}',
-      '          />'), 'replace'],
+      '            sideChatAvailable={props.sideChatAvailable === true}',), 'replace'],
   ],
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['import { formatDuration } from "@t3tools/shared/orchestrationTiming";\n',
+  'apps/web/src/components/chat/TimelineWorkEntryRow.tsx': [
+    ['import { WorkLogDetails, WorkLogRow } from "./WorkLog";\n',
       'import { RubatoSpawnRow, useRubatoSpawn } from "./RubatoSpawnRow";\n'],
-    ['const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n',
-      'const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n  // Rubato: a spawn call is drawn as the agent it started (RubatoSpawnRow.tsx).\n  const rubatoSpawn = useRubatoSpawn(ctx.routeThreadKey, item);\n  if (rubatoSpawn) return <RubatoSpawnRow spawn={rubatoSpawn} />;\n',
+    ['export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n',
+      'export const SimpleWorkEntryRow = memo(function SimpleWorkEntryRow(props: WorkEntryRowProps) {\n  const ctx = use(TimelineRowCtx);\n  const item = props.workEntry.projectedItem?.item;\n  // Rubato: a spawn call is drawn as the agent it started (RubatoSpawnRow.tsx).\n  const rubatoSpawn = useRubatoSpawn(ctx.routeThreadKey, item);\n  if (rubatoSpawn) return <RubatoSpawnRow spawn={rubatoSpawn} />;\n',
       'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [
-    ['import { ThreadPullRequestsPanel } from "./pullRequest/ThreadPullRequestsPanel";\n', lines(
+    ['import { RightPanelSurfaceContent } from "./chat/RightPanelSurfaceContent";\n', lines(
       'import { RubatoAgentsPanel } from "./RubatoAgentsPanel";',
       'import {',
       '  deriveAgentPanelModel,',
@@ -156,8 +205,13 @@ export const agentsSurfaceEdits = {
       '  rubatoAgentsFromSessionState,',
       '} from "./rubatoAgentPanelModel";',
       'import { useRubatoSessionState } from "../state/rubatoSessionState";',
+      'import { watchPanelViews } from "../rubatoPanelViews";',
       '')],
-    ['  const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(\n', lines(
+    [lines(
+      '  const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(',
+      '    activeThreadRef?.environmentId ?? null,',
+      '  );',
+      ''), lines(
       '  // Rubato: the Agents surface and the Speed label (agents-surface-edits.mjs).',
       '  const rubatoSessionState = useRubatoSessionState(isServerThread ? activeThreadRef : null);',
       '  const agentPanelModel = useMemo(',
@@ -166,23 +220,58 @@ export const agentsSurfaceEdits = {
       '  );',
       '  const sessionSpeedLabel =',
       '    rubatoSessionState.speedIndex === null ? null : formatSpeedLabel(rubatoSessionState.speedIndex);',
+      '  // What the Agents tab has open survives a thread switch until the tab closes (rubatoPanelViews.ts).',
+      '  useEffect(() => watchPanelViews(), []);',
       '  const addAgentsSurface = useCallback(() => {',
       '    if (!activeThreadRef) return;',
       '    useRightPanelStore.getState().open(activeThreadRef, "agents");',
       '  }, [activeThreadRef]);',
+      '  const { state: deviceState, loaded: deviceStateLoaded } = useDeviceState(',
+      '    activeThreadRef?.environmentId ?? null,',
+      '  );',
+      ''), 'replace'],
+    ['      sideChatParentPanel={sideChatParentPanel}\n', lines(
+      '      agentPanelModel={agentPanelModel}',
+      '      cwd={gitCwd}',
       '')],
-    ['    ) : renderedRightPanelSurface?.kind === "device" ? (\n', lines(
-      '    ) : renderedRightPanelSurface?.kind === "agents" ? (',
-      '      <RubatoAgentsPanel',
-      '        model={agentPanelModel}',
-      '        environmentId={activeThreadRef?.environmentId ?? null}',
-      '        threadId={activeThreadRef?.threadId ?? null}',
-      '        cwd={gitCwd}',
-      '      />',
+    // The Speed label sits in the composer's footer (apply.mjs's ChatComposer edits); the
+    // prompt cache goes to Thread details with the context window (cache-edits.mjs).
+    ['                                canOperateThread={canOperateThread}\n                                reportedModelSelection={reportedModelSelection}\n',
+      '                                sessionSpeedLabel={sessionSpeedLabel}\n'],
+    ['          onAddDevice={addDeviceSurfaceStable}\n          onAddSideChat=',
+      panelProps('          ') + '          onAddSideChat=', 'replace'],
+  ],
+  'apps/web/src/components/chat/RightPanelSurfaceContent.tsx': [
+    ['import SideChatPane from "./SideChatPane";\n', lines(
+      'import { RubatoAgentsPanel } from "../RubatoAgentsPanel";',
+      'import type { AgentPanelModel } from "../rubatoAgentPanelModel";',
       '')],
-    ['                              activeContextWindow={activeContextWindow}\n',
-      '                              activeContextWindow={activeContextWindow}\n                              sessionSpeedLabel={sessionSpeedLabel}\n                              rubatoCache={rubatoSessionState.cache}\n', 'replace'],
-    ['          onAddDevice={addDeviceSurfaceStable}\n          browserAvailable=', panelProps('          ') + '          browserAvailable=', 'replace'],
-    ['            onAddDevice={addDeviceSurfaceStable}\n            browserAvailable=', panelProps('            ') + '            browserAvailable=', 'replace'],
+    ['  readonly sideChatParentPanel: SideChatParentPanel;\n', lines(
+      '  /** Rubato: the thread\'s agents and taskforces (RubatoAgentsPanel.tsx). */',
+      '  readonly agentPanelModel: AgentPanelModel;',
+      '  /** The thread\'s session directory; an agent\'s conversation is read under it. */',
+      '  readonly cwd: string | null;',
+      '  readonly sideChatParentPanel: SideChatParentPanel;',
+      ''), 'replace'],
+    [lines(
+      '    case "device":',
+      '      return (',
+      '        <Suspense fallback={null}>',
+      '          <DevicePanel',
+      ''), lines(
+      '    case "agents":',
+      '      return (',
+      '        <RubatoAgentsPanel',
+      '          model={props.agentPanelModel}',
+      '          environmentId={props.environmentId}',
+      '          threadId={threadRef.threadId}',
+      '          cwd={props.cwd}',
+      '        />',
+      '      );',
+      '    case "device":',
+      '      return (',
+      '        <Suspense fallback={null}>',
+      '          <DevicePanel',
+      ''), 'replace'],
   ],
 };

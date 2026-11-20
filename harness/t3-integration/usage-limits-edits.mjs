@@ -19,6 +19,7 @@ const POOL_SECTION_OLD = [
   '  const color = barColor(pool.driver);',
   '  const label = providerClients.get(pool.driver)?.label ?? String(pool.driver);',
   '  const windows = displayLimitWindows(pool);',
+  '  const m = useMessages();',
   '  return (',
   '    <section className="flex flex-col gap-3">',
   '      <h2 className="flex items-center gap-2 text-sm font-medium text-foreground">',
@@ -56,6 +57,7 @@ const POOL_SECTION_NEW = [
   '  // Rubato rows can name a driver T3 does not ship (a Gemini API key → "gemini").',
   '  const label = providerClients.get(pool.driver)?.label ?? (pool.driver === "gemini" ? "Gemini API" : String(pool.driver));',
   '  const windows = longLimitWindows(pool);',
+  '  const m = useMessages();',
   '  return (',
   '    <section className="group/pool flex flex-col gap-3">',
   '      <div className="flex items-center gap-2">',
@@ -168,11 +170,13 @@ export const usageLimitsEdits = {
   'apps/server/src/usage/UsageLimitSources.ts': [
     ['import { makeCliproxyApi } from "./cliproxyApi.ts";', 'import { readRubatoUsageSource } from "./RubatoUsageLimits.ts";\n'],
     [
-      '    yield* publish(snapshots);\n  }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));',
+      '    yield* publish(keepLastGoodReadings(yield* Ref.get(stateRef), snapshots));\n  }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));',
       [
         '    // Rubato\'s own accounts, beside any configured hub (RubatoUsageLimits.ts).',
         '    const rubato = yield* readRubatoUsageSource(settings, yield* Ref.get(stateRef));',
-        '    yield* publish(rubato ? [...snapshots, rubato] : snapshots);',
+        '    yield* publish(',
+        '      keepLastGoodReadings(yield* Ref.get(stateRef), rubato ? [...snapshots, rubato] : snapshots),',
+        '    );',
         '  }).pipe(refreshLock.withPermits(1), Effect.ignoreCause({ log: true }));',
       ].join('\n'),
       'replace',

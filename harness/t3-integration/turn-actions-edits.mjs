@@ -2,6 +2,11 @@
 // Codex does. The bubble becomes an editor, and sending the edit rewinds the conversation
 // to before that message (files stay) and sends the edited one (chat/RubatoMessageEdit.tsx).
 // Forking at a reply is T3's own "Fork from this response".
+//
+// T3 draws the user's message row in chat/TimelineUserMessageRow.tsx since v0.1.11, and it
+// grew an automation row for scheduled-task prompts there. That row keeps T3's own "Edit
+// from here" (a rewind, not an editor: sending an edited runbook as a message would detach
+// it from its task), so RevertUserMessageButton and the prompt link stay for it.
 export const turnActionsOverlays = [
   'apps/web/src/components/chat/RubatoMessageEdit.tsx',
   'apps/web/src/components/chat/RubatoMessageEdit.test.tsx',
@@ -11,40 +16,6 @@ export const turnActionsOverlays = [
 ];
 
 const lines = (...parts) => parts.join('\n');
-
-const T3_REVERT_BUTTON = lines(
-  'function RevertUserMessageButton({',
-  '  turnCount,',
-  '  messageId,',
-  '}: {',
-  '  turnCount: number;',
-  '  messageId: MessageId;',
-  '}) {',
-  '  const ctx = use(TimelineRowCtx);',
-  '  const activity = use(TimelineRowActivityCtx);',
-  '',
-  '  return (',
-  '    <Tooltip>',
-  '      <TooltipTrigger',
-  '        render={',
-  '          <Button',
-  '            type="button"',
-  '            size="xs"',
-  '            variant="ghost"',
-  '            disabled={activity.isRevertingCheckpoint || activity.isWorking}',
-  '            onClick={() => ctx.onRevertToTurnCount(turnCount, messageId)}',
-  '            aria-label="Edit from here"',
-  '          />',
-  '        }',
-  '      >',
-  '        <Undo2Icon className="size-3" />',
-  '      </TooltipTrigger>',
-  '      <TooltipPopup side="top">Edit from here</TooltipPopup>',
-  '    </Tooltip>',
-  '  );',
-  '}',
-  '',
-  '');
 
 // The edit's rewind and send. It sends the way /compact does (onCompactContext), with the
 // message's attachments uploaded again and its context records moved to the new uploads.
@@ -209,22 +180,30 @@ const EDIT_HOST = lines(
 const NO_PROMPT_LINK = '// Rubato: no "Copy prompt link"; it opens T3\'s hosted app (turn-actions-edits.mjs).\n';
 
 export const turnActionsEdits = {
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['import { ChevronDown, ChevronRight, Link as LinkIconNode } from "lucide";\n',
-      'import { ChevronDown, ChevronRight } from "lucide";\n', 'replace'],
-    ['import { promptLinkFor } from "../promptLinks/copyPromptLink";\n', NO_PROMPT_LINK, 'replace'],
-    ['  const promptLink = useMemo(() => promptLinkFor(plainText), [plainText]);\n',
-      '  ' + NO_PROMPT_LINK, 'replace'],
+  'apps/web/src/components/chat/TimelineUserMessageRow.tsx': [
+    // The user's own message row, not the folded automation prompt above it: the last line
+    // of the row's setup tells the two apart.
     [lines(
-      '            {promptLink !== null && (',
-      '              <MessageCopyButton',
-      '                text={promptLink}',
-      '                label="Copy prompt link"',
-      '                icon={LinkIconNode}',
-      '                variant="ghost"',
-      '              />',
-      '            )}',
-      ''), '            {/* Rubato: no "Copy prompt link" (turn-actions-edits.mjs). */}\n', 'replace'],
+      '  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));',
+      '  const revertTurnCount = row.revertTurnCount;',
+      ''), lines(
+      '  const previewImages = userImages.filter((image) => image.name.startsWith("preview-annotation-"));',
+      '  const revertTurnCount = row.revertTurnCount;',
+      '  // Rubato: the pencil in the actions opens an editor in place (RubatoMessageEdit.tsx).',
+      '  const rubatoEditActivity = use(TimelineRowActivityCtx);',
+      '  const rubatoEditing = useRubatoMessageEditing(ctx.routeThreadKey, row.message.id);',
+      ''), 'replace'],
+    ['  const promptLink = promptLinkFor(plainText);\n', '  ' + NO_PROMPT_LINK, 'replace'],
+    [lines(
+      '        {promptLink !== null && (',
+      '          <MessageCopyButton',
+      '            text={promptLink}',
+      '            label={gt("Copy prompt link")}',
+      '            icon={LinkIcon}',
+      '            variant="ghost"',
+      '          />',
+      '        )}',
+      ''), '        {/* Rubato: no "Copy prompt link" (turn-actions-edits.mjs). */}\n', 'replace'],
     ['import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";\n', lines(
       'import {',
       '  RubatoEditMessageButton,',
@@ -232,63 +211,47 @@ export const turnActionsEdits = {
       '  useRubatoMessageEditing,',
       '} from "./RubatoMessageEdit";',
       '')],
-    // A replacement is never empty: removing the overlay finds it by its text.
-    ['  Undo2Icon,\n', '  // Rubato: no Undo2Icon, the message edit is a pencil (RubatoMessageEdit.tsx).\n', 'replace'],
-    [T3_REVERT_BUTTON, '// Rubato: T3\'s "Edit from here" is the pencil of RubatoMessageEdit.tsx.\n\n', 'replace'],
-    ['  const revertTurnCount = row.revertTurnCount;\n', lines(
-      '  const revertTurnCount = row.revertTurnCount;',
-      '  const rubatoEditActivity = use(TimelineRowActivityCtx);',
-      '  const rubatoEditing = useRubatoMessageEditing(ctx.routeThreadKey, row.message.id);',
-      ''), 'replace'],
-    ['      <div className="relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground">\n', lines(
-      '      <div',
-      '        className={cn(',
-      '          // Rubato: the bubble being edited reads as an input, on the composer\'s raised surface.',
-      '          rubatoEditing',
-      '            ? "relative w-full max-w-[80%] rounded-2xl border border-input bg-card p-3 text-foreground shadow-composer transition-colors focus-within:border-ring dark:bg-surface-raised dark:shadow-composer-dark"',
-      '            : "relative max-w-[80%] rounded-2xl bg-message p-3 text-message-foreground",',
+    // Inside the bubble's class list: the message being edited reads as an input, on the
+    // composer's raised surface. Later classes win, so it overrides T3's bubble surface.
+    [lines(
+      '          folded && expanded && "w-full",',
       '        )}',
+      '        data-user-message-bubble=""',
+      '      >',
+      ''), lines(
+      '          folded && expanded && "w-full",',
+      '          // Rubato: the bubble being edited reads as an input (RubatoMessageEdit.tsx).',
+      '          rubatoEditing &&',
+      '            "w-full border border-input bg-card p-3 text-foreground shadow-composer transition-colors focus-within:border-ring dark:bg-surface-raised dark:shadow-composer-dark",',
+      '        )}',
+      '        data-user-message-bubble=""',
       '      >',
       ''), 'replace'],
     [lines(
-      '        <div onCopyCapture={onBodyCopyCapture}>',
-      '          <CollapsibleUserMessageBody',
-      '            text={resolvedContext.text}',
-      '            renderContextReference={renderContextReference}',
-      '            skills={ctx.skills}',
-      '            markdownCwd={ctx.markdownCwd}',
-      '          />',
-      '        </div>',
+      '            {fileCardsOnly || audioOnly ? null : (',
+      '              <div onCopyCapture={onBodyCopyCapture}>',
       ''), lines(
-      '        {rubatoEditing && typeof revertTurnCount === "number" ? (',
-      '          <RubatoMessageEditor',
-      '            threadKey={ctx.routeThreadKey}',
-      '            message={row.message}',
-      '            busy={rubatoEditActivity.isRevertingCheckpoint || rubatoEditActivity.isWorking}',
-      '          />',
-      '        ) : (',
-      '          <div onCopyCapture={onBodyCopyCapture}>',
-      '            <CollapsibleUserMessageBody',
-      '              text={resolvedContext.text}',
-      '              renderContextReference={renderContextReference}',
-      '              skills={ctx.skills}',
-      '              markdownCwd={ctx.markdownCwd}',
-      '            />',
-      '          </div>',
-      '        )}',
-      ''), 'replace'],
-    [lines(
-      '            {typeof revertTurnCount === "number" && (',
-      '              <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />',
-      '            )}',
-      ''), lines(
-      '            {typeof revertTurnCount === "number" && !rubatoEditing && (',
-      '              <RubatoEditMessageButton',
+      '            {rubatoEditing && typeof revertTurnCount === "number" ? (',
+      '              <RubatoMessageEditor',
       '                threadKey={ctx.routeThreadKey}',
-      '                messageId={row.message.id}',
+      '                message={row.message}',
       '                busy={rubatoEditActivity.isRevertingCheckpoint || rubatoEditActivity.isWorking}',
       '              />',
-      '            )}',
+      '            ) : fileCardsOnly || audioOnly ? null : (',
+      '              <div onCopyCapture={onBodyCopyCapture}>',
+      ''), 'replace'],
+    [lines(
+      '        {typeof revertTurnCount === "number" && (',
+      '          <RevertUserMessageButton turnCount={revertTurnCount} messageId={row.message.id} />',
+      '        )}',
+      ''), lines(
+      '        {typeof revertTurnCount === "number" && !rubatoEditing && (',
+      '          <RubatoEditMessageButton',
+      '            threadKey={ctx.routeThreadKey}',
+      '            messageId={row.message.id}',
+      '            busy={rubatoEditActivity.isRevertingCheckpoint || rubatoEditActivity.isWorking}',
+      '          />',
+      '        )}',
       ''), 'replace'],
   ],
   'apps/web/src/components/ChatView.tsx': [

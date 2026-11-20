@@ -12,21 +12,13 @@ export const phoneOverlays = [
   'apps/server/src/RubatoPhone.ts',
   'apps/web/src/state/rubatoPhone.ts',
   'apps/web/src/components/settings/RubatoPhoneSettings.tsx',
-  'apps/web/src/routes/settings.phone.tsx',
+  'apps/web/src/routes/_chat.settings.phone.tsx',
 ];
 
 export const phoneEdits = {
   'apps/server/src/auth/SessionStore.ts': [
     ['import * as ServerSecretStore from "./ServerSecretStore.ts";\n',
       'import { restoreLegacyFileRead } from "../RubatoLegacyGrants.ts";\n'],
-    // The stored session decides what a token may do, as the websocket ticket's check already
-    // does: a phone's grant can then be widened or narrowed in place, without pairing again.
-    ['        subject: claims.sub,\n        scopes: claims.scopes,\n        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),\n',
-      '        subject: claims.sub,\n'
-        + '        // Rubato: the stored grant, not the one signed into the token (phone-edits.mjs).\n'
-        + '        scopes: row.value.scopes,\n'
-        + '        ...(claims.jkt ? { proofKeyThumbprint: claims.jkt } : {}),\n',
-      'replace'],
     ['    verify,\n    issueWebSocketToken,\n    verifyWebSocketToken,\n',
       '    // Rubato: an old-only grant reads files again (RubatoLegacyGrants.ts, phone-edits.mjs).\n'
         + '    verify: (token) => Effect.map(verify(token), restoreLegacyFileRead),\n'
@@ -49,9 +41,9 @@ export const phoneEdits = {
       'replace'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
-    ['  | "/settings/scheduled"\n', '  | "/settings/scheduled"\n  | "/settings/phone"\n', 'replace'],
-    ['  "/settings/scheduled": "Scheduled Tasks",\n', '  "/settings/scheduled": "Scheduled Tasks",\n  "/settings/phone": "Phone",\n', 'replace'],
-    ['  "/settings/scheduled": null,\n', '  "/settings/scheduled": null,\n  "/settings/phone": null,\n', 'replace'],
+    ['  | "/settings/archived";\n', '  | "/settings/phone"\n'],
+    ['  "/settings/archived": msg("Archive"),\n', '  "/settings/phone": msg("Phone"),\n'],
+    ['  "/settings/archived": "project-defaults",\n', '  "/settings/phone": null,\n'],
     ['  {\n    id: "rubato-scheduled-tasks",',
       [
         '  {',
@@ -64,10 +56,10 @@ export const phoneEdits = {
       ].join('\n')],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['  CalendarClockIcon,\n', '  CalendarClockIcon,\n  SmartphoneIcon,\n', 'replace'],
-    ['  "/settings/scheduled": CalendarClockIcon,\n', '  "/settings/scheduled": CalendarClockIcon,\n  "/settings/phone": SmartphoneIcon,\n', 'replace'],
+    // No import edit for SmartphoneIcon: v0.1.11's nav imports it already.
+    ['  "/settings/scheduled-tasks": CalendarClockIcon,\n', '  "/settings/phone": SmartphoneIcon,\n'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
-    ['  "/settings/scheduled",\n]);', '  "/settings/scheduled",\n  "/settings/phone",\n]);', 'replace'],
+    ['  "/settings/about",\n]);', '  "/settings/phone",\n'],
   ],
 };

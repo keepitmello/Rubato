@@ -1,16 +1,14 @@
-import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
-import type { ScopedThreadRef } from "@t3tools/contracts";
 import { create } from "zustand";
 
 import { useRightPanelStore, type ThreadRightPanelState } from "./rightPanelStore";
 
-// What the Agents and Side chat surfaces have open inside them, per thread: an agent's
-// conversation, a side chat. Both panels used to keep it in component state, which a thread
-// switch unmounts, so coming back to the thread dropped you out to the list. It lives here for
+// What the Agents surface has open inside it, per thread: an agent's conversation. The panel
+// used to keep it in component state, which a thread switch unmounts, so coming back to the
+// thread dropped you out to the list. It lives here for
 // the app session instead, and is let go when the surface's tab closes: hiding the panel or
 // visiting another thread keeps it, closing the tab returns to the list.
 
-export type PanelViewKind = "agents" | "side-chat";
+export type PanelViewKind = "agents";
 
 interface PanelViewState {
   readonly opened: Readonly<Record<PanelViewKind, Readonly<Record<string, string>>>>;
@@ -18,7 +16,7 @@ interface PanelViewState {
 }
 
 export const usePanelViewStore = create<PanelViewState>()((set) => ({
-  opened: { agents: {}, "side-chat": {} },
+  opened: { agents: {} },
   setOpened: (kind, threadKey, id) =>
     set((state) => {
       const current = state.opened[kind];
@@ -48,24 +46,14 @@ export function surfacesClosed(
 }
 
 let watching = false;
-/**
- * Lets go of what a surface had open when its tab closes. `onSideChatLeft` hears which side chat
- * was open in a Side chat tab that closed. Idempotent; ChatView starts it.
- */
-export function watchPanelViews({
-  onSideChatLeft,
-}: { onSideChatLeft?: (owner: ScopedThreadRef, sideThreadId: string) => void } = {}): void {
+/** Lets go of what a surface had open when its tab closes. Idempotent; ChatView starts it. */
+export function watchPanelViews(): void {
   if (watching) return;
   watching = true;
   useRightPanelStore.subscribe((state, previous) => {
     if (state.byThreadKey === previous.byThreadKey) return;
-    for (const kind of ["agents", "side-chat"] as const) {
-      for (const threadKey of surfacesClosed(kind, previous.byThreadKey, state.byThreadKey)) {
-        const opened = usePanelViewStore.getState().opened[kind][threadKey];
-        setOpenedInPanel(kind, threadKey, null);
-        const owner = parseScopedThreadKey(threadKey);
-        if (kind === "side-chat" && opened && owner) onSideChatLeft?.(owner, opened);
-      }
+    for (const threadKey of surfacesClosed("agents", previous.byThreadKey, state.byThreadKey)) {
+      setOpenedInPanel("agents", threadKey, null);
     }
   });
 }

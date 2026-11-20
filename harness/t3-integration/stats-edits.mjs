@@ -18,9 +18,13 @@ export const statsEdits = {
     ['    DeviceHubProxy.layer,\n', '    rubatoStatsRouteLayer,\n'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [
-    ['  | "/settings/phone"\n', '  | "/settings/phone"\n  | "/settings/stats"\n', 'replace'],
-    ['  "/settings/phone": "Phone",\n', '  "/settings/phone": "Phone",\n  "/settings/stats": "Stats",\n', 'replace'],
-    ['  "/settings/phone": null,\n', '  "/settings/phone": null,\n  "/settings/stats": null,\n', 'replace'],
+    ['  | "/settings/archived";\n', '  | "/settings/stats"\n'],
+    ['  "/settings/about": msg("About"),\n',
+      '  "/settings/about": msg("About"),\n  "/settings/stats": msg("Stats"),\n', 'replace'],
+    ['  "/settings/about": null,\n',
+      '  "/settings/about": null,\n  "/settings/stats": null,\n', 'replace'],
+    ['    paths: ["/settings/maintenance", "/settings/labs", "/settings/about", "/settings/archived"],\n',
+      '    paths: ["/settings/maintenance", "/settings/labs", "/settings/stats", "/settings/about", "/settings/archived"],\n', 'replace'],
     ['  {\n    id: "storage-worktrees",',
       [
         '  {',
@@ -33,10 +37,10 @@ export const statsEdits = {
       ].join('\n')],
   ],
   'apps/web/src/components/settings/SettingsSidebarNav.tsx': [
-    ['  BrainIcon,\n', '  BrainIcon,\n  ActivityIcon,\n', 'replace'],
-    ['  "/settings/phone": SmartphoneIcon,\n', '  "/settings/phone": SmartphoneIcon,\n  "/settings/stats": ActivityIcon,\n', 'replace'],
+    ['  ArchiveIcon,\n', '  ArchiveIcon,\n  ActivityIcon,\n', 'replace'],
+    ['  "/settings/devices": SmartphoneIcon,\n', '  "/settings/devices": SmartphoneIcon,\n  "/settings/stats": ActivityIcon,\n', 'replace'],
   ],
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [
-    ['  "/settings/phone",\n', '  "/settings/phone",\n  "/settings/stats",\n', 'replace'],
+    ['  "/settings/about",\n', '  "/settings/about",\n  "/settings/stats",\n', 'replace'],
   ],
 };

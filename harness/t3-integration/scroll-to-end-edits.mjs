@@ -6,43 +6,29 @@
 // which is why the pill was missing only sometimes: after a text-only answer longer than the screen.
 // Now, once the hold has settled, an answer that runs past the end shows the pill; pressing it lets go
 // of the hold and follows the end, as it always did. Reaching the end hides it again.
-// The list reports where it is only on a scroll event, and an answer growing under a held turn moves
-// no scroll, so while a turn is held the timeline also looks again when a row changes size.
+// The timeline looks again whenever its content changes size (T3's handleContentSizeChanged), so an
+// answer growing under a held turn reaches this check without a scroll event.
 export const scrollToEndEdits = {
-  'apps/web/src/components/ChatView.tsx': [
-    ['  const onIsAtEndChange = (isAtEnd: boolean) => {\n    if (\n      !isAtEnd &&\n',
+  // The follow state moved out of ChatView into useTimelineFollow's store: a hold is the
+  // "following" mode with a settled anchor (scroll.settledAnchor), and a user scroll is the
+  // "navigated" event that leaves that mode, which replaces the scroll-generations check.
+  'apps/web/src/components/chat/useTimelineFollow.ts': [
+    ['  const onIsAtEndChange = (isAtEnd: boolean) => {\n    const scroll = visitScroll();\n    if (!isAtEnd && readFollow().mode === "following") {\n',
       '  const onIsAtEndChange = (isAtEnd: boolean) => {\n'
+        + '    const scroll = visitScroll();\n'
         + '    // Rubato: a held new turn does not follow its answer down (scroll-to-end-edits.mjs).\n'
+        + '    // The hold is a following mode with a settled anchor; the list leaving the end\n'
+        + '    // band there is the answer growing, not the reader scrolling.\n'
         + '    if (\n'
-        + '      timelineScrollModeRef.current === "anchoring-new-turn" &&\n'
-        + '      liveFollowUserScrollGenerationRef.current === anchorUserScrollGenerationRef.current\n'
+        + '      !isAtEnd &&\n'
+        + '      readFollow().mode === "following" &&\n'
+        + '      timelineAnchorMessageId !== null &&\n'
+        + '      scroll.settledAnchor !== null\n'
         + '    ) {\n'
-        + '      if (!isAtEnd && settledTimelineAnchorRef.current !== null) {\n'
-        + '        showScrollDebouncer.current.maybeExecute();\n'
-        + '      } else {\n'
-        + '        showScrollDebouncer.current.cancel();\n'
-        + '        setShowScrollToBottom(false);\n'
-        + '      }\n'
+        + '      scroll.showScrollDebouncer.maybeExecute();\n'
         + '      return;\n'
         + '    }\n'
-        + '    if (\n      !isAtEnd &&\n',
+        + '    if (!isAtEnd && readFollow().mode === "following") {\n',
       'replace'],
-  ],
-  'apps/web/src/components/chat/MessagesTimeline.tsx': [
-    ['  const handleItemSizeChanged = useCallback(() => {\n',
-      '  // Rubato: a held turn\'s answer grows past the end without a scroll event (scroll-to-end-edits.mjs).\n'
-        + '  const rubatoEndCheckRef = useRef<{ frame: number | null; check: () => void }>({ frame: null, check: () => {} });\n'],
-    ['    reportContentOverflow();\n  }, [pinDisclosureToEnd, reportContentOverflow, scheduleDisclosureSettle]);\n',
-      '    reportContentOverflow();\n'
-        + '    if (anchorMessageId !== null && rubatoEndCheckRef.current.frame === null) {\n'
-        + '      rubatoEndCheckRef.current.frame = requestAnimationFrame(() => {\n'
-        + '        rubatoEndCheckRef.current.frame = null;\n'
-        + '        rubatoEndCheckRef.current.check();\n'
-        + '      });\n'
-        + '    }\n'
-        + '  }, [anchorMessageId, pinDisclosureToEnd, reportContentOverflow, scheduleDisclosureSettle]);\n',
-      'replace'],
-    ['  useEffect(() => {\n    const frame = requestAnimationFrame(handleScroll);\n',
-      '  useLayoutEffect(() => {\n    rubatoEndCheckRef.current.check = handleScroll;\n  }, [handleScroll]);\n'],
   ],
 };

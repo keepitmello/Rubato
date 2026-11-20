@@ -45,27 +45,28 @@ const composerVoiceWiring = [
 ].join('\n');
 
 const composerVoiceControl = [
-  '                  {isElectron ? (',
-  '                    <RubatoVoiceControl',
-  '                      state={voiceInput.state}',
-  '                      stage={voiceInput.stage}',
-  '                      readLevel={voiceInput.readLevel}',
-  '                      onStart={voiceInput.start}',
-  '                      onStop={voiceInput.stop}',
-  '                      onCancel={voiceInput.cancel}',
-  '                    />',
-  '                  ) : null}',
-  '                  {showComposerAttachAction ? (',
+  '                {isElectron ? (',
+  '                  <RubatoVoiceControl',
+  '                    state={voiceInput.state}',
+  '                    stage={voiceInput.stage}',
+  '                    readLevel={voiceInput.readLevel}',
+  '                    onStart={voiceInput.start}',
+  '                    onStop={voiceInput.stop}',
+  '                    onCancel={voiceInput.cancel}',
+  '                  />',
+  '                ) : null}',
+  '                {composerAttachButton && !dictationTakesFooter ? (',
 ].join('\n');
 
-// The composer anchors sit apart from apply.mjs's Speed label (it re-emits
-// `{showComposerAttachAction ? (` after its label) and the other scripts' keys.
+// The mic sits left of the attach control, which v0.1.11 builds into a variable and
+// renders ahead of the action row. call-edits.mjs anchors on the same line, so a later
+// edit that re-emits it would duplicate the anchor.
 export const voiceEdits = {
   'apps/web/src/components/chat/ChatComposer.tsx': [
     ['import { Button } from "../ui/button";',
       'import { RubatoVoiceControl } from "./RubatoVoiceControl";\nimport { RubatoLiveDictationText } from "./RubatoLiveDictationText";\nimport { useRubatoVoiceInput } from "./useRubatoVoiceInput";\nimport { isElectron } from "../../env";\n'],
     ['  const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {', composerVoiceWiring],
-    ['                  {showComposerAttachAction ? (', composerVoiceControl, 'replace'],
+    ['                {composerAttachButton && !dictationTakesFooter ? (', composerVoiceControl, 'replace'],
     ['                <ComposerContextActionsContext value={composerContextActions}>\n                  <ComposerPromptEditor\n',
       [
         '                {voiceInput.showsLive ? (',
@@ -78,22 +79,22 @@ export const voiceEdits = {
         '                ) : null}',
         '',
       ].join('\n')],
-    ['                    containerClassName={cn(isComposerResting && "min-w-0 flex-1")}',
-      '                    containerClassName={cn(isComposerResting && "min-w-0 flex-1", voiceInput.showsLive && "hidden")}', 'replace'],
+    ['                    className={cn(showMobilePendingAnswerActions && "max-sm:pb-12")}\n',
+      '                    containerClassName={cn(voiceInput.showsLive && "hidden")}\n'],
   ],
   // The live dictation module is shared with the phone (@t3tools/shared/rubatoLiveDictation).
   'packages/shared/package.json': [
     ['    "./composerTrigger": {\n',
       '    "./rubatoLiveDictation": {\n      "types": "./src/rubatoLiveDictation.ts",\n      "import": "./src/rubatoLiveDictation.ts"\n    },\n'],
   ],
-  // Settings › Chat › Voice input (settings/RubatoVoiceSettings.tsx), found by search.
+  // Settings › Voice › Voice input (settings/RubatoVoiceSettings.tsx), found by search.
   'apps/web/src/components/settings/settingsSearch.ts': [
     ['  {\n    id: "project-grouping",\n',
       [
         '  {',
         '    id: "rubato-voice",',
         '    title: "Voice input",',
-        '    to: "/settings/chat",',
+        '    to: "/settings/voice",',
         '    searchTerms: ["voice dictation microphone speech to text stt transcription openai api key whisper shortcut 음성 입력 받아쓰기 마이크 전사 키"],',
         '  },',
         '',

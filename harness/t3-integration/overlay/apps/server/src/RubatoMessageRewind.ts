@@ -11,7 +11,7 @@
  * Turns the model never saw a reply from are skipped and dropped with the rest: a message
  * queued during a turn and then sent into it cancels its queued turn before it starts, Stop
  * before the model starts ends a turn with nothing sent, and a failed turn captures nothing.
- * A turn the model answered without a ready checkpoint refuses instead, so the rewind never
+ * A turn the model answered without a checkpoint (ready, or missing its files) refuses instead, so the rewind never
  * goes further back than the user asked. Messages held in the queue after Stop stay queued,
  * as with any message sent then. A turn still settling (saving its checkpoint) is waited for.
  */
@@ -102,8 +102,11 @@ export function messageRewindTarget(
   ) {
     return refuse("busy", "Stop the current turn before editing a message.");
   }
+  // The edit rolls back the conversation only (restoreFiles: false), so a checkpoint whose
+  // files were never captured ("missing": a folder that is not a git repository) is a place
+  // to go back to as well, as it is for T3's own rewind.
   const ready = (candidate: MessageRewindRecords["checkpoints"][number]) =>
-    candidate.status === "ready";
+    candidate.status === "ready" || candidate.status === "missing";
   const earlier = records.runs
     .filter((candidate) => candidate.ordinal < run.ordinal && candidate.status !== "rolled_back")
     .sort((left, right) => right.ordinal - left.ordinal);

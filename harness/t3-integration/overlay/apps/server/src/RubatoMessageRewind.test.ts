@@ -50,6 +50,19 @@ function records(
 }
 
 describe("where editing a message rewinds to", () => {
+  it("goes back to a checkpoint whose files were never captured (a folder outside git)", () => {
+    const thread = records(
+      [run(1), run(2)],
+      [{ ...baseline(0), status: "missing" }, checkpoint(1, "missing"), checkpoint(2, "missing")],
+    );
+    expect(messageRewindTarget(thread, promptId(2))).toEqual({
+      turnCount: 1,
+      checkpointId: "checkpoint-1",
+      scopeId: "scope",
+    });
+    expect(messageRewindTarget(thread, promptId(1))).toMatchObject({ turnCount: 0, checkpointId: "baseline-0" });
+  });
+
   it("goes back to the turn before the message", () => {
     const thread = records([run(1), run(2)], [baseline(0), checkpoint(1), checkpoint(2)]);
     expect(messageRewindTarget(thread, promptId(2))).toEqual({
