@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleVoiceRequest } from '../src/voice/http.mjs';
 import {
-  LIVE_CALLS_URL, LIVE_SECRET_TTL_SECONDS, LIVE_TRANSCRIPTION_MODEL, mintLiveTranscription,
+  LIVE_CALLS_URL, LIVE_SECRET_TTL_SECONDS, LIVE_TRANSCRIPTION_DELAY, LIVE_TRANSCRIPTION_MODEL, mintLiveTranscription,
 } from '../src/voice/live.mjs';
 import { TRANSCRIPTION_INSTRUCTIONS } from '../src/voice/transcribe.mjs';
 import { fixture } from './voice-fixture.mjs';
@@ -30,6 +30,9 @@ test('the Mac asks OpenAI for a short-lived transcription key and hands back onl
   assert.equal(transcription.model, LIVE_TRANSCRIPTION_MODEL);
   assert.equal(transcription.prompt, TRANSCRIPTION_INSTRUCTIONS);
   assert.deepEqual(transcription.languages, ['ko', 'en']);
+  // Words reach the screen about 0.4 s after they are said instead of about 1 s (live.mjs).
+  assert.equal(transcription.delay, LIVE_TRANSCRIPTION_DELAY);
+  assert.equal(LIVE_TRANSCRIPTION_DELAY, 'minimal');
   assert.ok(transcription.keywords.includes('Rubato') && transcription.keywords.includes('루바토'));
   // A live-only model takes no server turn detection; it streams words as they are heard.
   assert.equal(body.session.audio.input.turn_detection, undefined);

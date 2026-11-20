@@ -14,6 +14,14 @@ import { DEFAULT_HINTS, TRANSCRIPTION_INSTRUCTIONS, TranscriptionError, transcri
 
 export const LIVE_TRANSCRIPTION_MODEL = 'gpt-live-transcribe';
 
+/**
+ * 단어를 내보내기 전에 모델이 소리를 얼마나 더 듣는지. 같은 23초 한국어 음성으로 재면 단어를 다
+ * 말한 뒤 화면에 뜨기까지 가운데값이 minimal 0.44초, low 0.76초, 지정 안 함(medium) 1.03초, high
+ * 1.31초였고 받아쓴 글은 거의 같았다(2026-11-20). ChatGPT보다 늦다는 사용자 말에 minimal 로 둔다.
+ * 정지 때 들어가는 최종본은 모델이 다시 확정한 글이다.
+ */
+export const LIVE_TRANSCRIPTION_DELAY = 'minimal';
+
 /** 열쇠가 연결을 여는 데 쓰일 수 있는 시간. 연결이 열린 뒤에는 끝나도 세션은 이어진다. */
 export const LIVE_SECRET_TTL_SECONDS = 60;
 
@@ -31,6 +39,7 @@ export function liveSessionConfig({ model = LIVE_TRANSCRIPTION_MODEL, hints = DE
           prompt: TRANSCRIPTION_INSTRUCTIONS,
           keywords: transcriptionKeywords(hints),
           languages,
+          delay: LIVE_TRANSCRIPTION_DELAY,
         },
         // 폰을 입에 대고 말하는 거리. 통화처럼 스피커 소리가 섞이는 자리가 아니다.
         noise_reduction: { type: 'near_field' },
