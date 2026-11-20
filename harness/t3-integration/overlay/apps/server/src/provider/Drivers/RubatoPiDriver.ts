@@ -220,6 +220,8 @@ const decodeSnapshot = Schema.decodeUnknownSync(ServerProvider);
 export const RUBATO_CAPABILITIES_V2: OrchestrationV2ProviderCapabilities = {
   ...PI_CAPABILITIES_V2,
   sessions: { ...PI_CAPABILITIES_V2.sessions, supportsRuntimeModeSwitchInSession: true },
+  // A stopped run resumes on the engine's continue (resumeRecord below), so T3 offers Resume.
+  turns: { ...PI_CAPABILITIES_V2.turns, supportsNativeResume: true },
   tools: { ...PI_CAPABILITIES_V2.tools, supportsMcpTools: false },
   approvals: { ...PI_CAPABILITIES_V2.approvals, supportsCommandApproval: false, supportsFileChangeApproval: false },
 };
@@ -324,6 +326,12 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       transportClosedMessage: "Rubato restarted or disconnected while writing this reply, so it was cut off. Send your message again to continue.",
       // Segno's conversation keeps its stream however long it idles (bridge keepsStream).
       keepsLoadedWhileIdle: (threadId) => bridge.keepsStream?.(threadId) === true,
+      // T3's resume (a step rewind's continue, a stopped run resumed) is the engine's continue:
+      // the bridge turns this marked prompt into it, so Pi gets no new message (rpc-connection.mjs).
+      resumeRecord: (threadId) => {
+        bridge.markStepContinue(threadId);
+        return { type: "prompt", message: bridge.stepContinueText };
+      },
       forkSession: (input) => Effect.tryPromise({
         try: () => bridge.forkForThread({ source: input.sourceNativeId, beforeEntryId: input.beforeEntryId }),
         catch: (cause) => new PiRpcError({ operation: "fork", detail: detail(cause), cause }),
