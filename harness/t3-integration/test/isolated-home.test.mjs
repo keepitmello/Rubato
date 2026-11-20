@@ -56,7 +56,10 @@ test('run starts from an empty environment whose every Rubato path is inside the
   assert.equal(env.HOME, home);
   assert.equal(env.LEAKED_FROM_SHELL, undefined, 'nothing from the calling shell');
   assert.equal(env.RUBATO_COMPANIONS_FILE, path.join(home, '.rubato/companions.json'), 'not the inherited live companions file');
-  for (const [key, value] of Object.entries(env)) if (/^(RUBATO|PI)_/.test(key)) assert.ok(value.startsWith(home), `${key}=${value}`);
+  // The call service is a loopback port, not a path: it must not be the live one (src/call/service.mjs).
+  assert.equal(env.RUBATO_CALL_CONTROL, 'http://127.0.0.1:1', 'no call reaches the live call service');
+  for (const [key, value] of Object.entries(env))
+    if (/^(RUBATO|PI)_/.test(key) && key !== 'RUBATO_CALL_CONTROL') assert.ok(value.startsWith(home), `${key}=${value}`);
 });
 
 test('a live path in a copied configuration, or too little disk, refuses the launch', (t) => {
