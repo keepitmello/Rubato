@@ -7,6 +7,7 @@ import {
   type AuthSessionId,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -22,7 +23,7 @@ import { RubatoThreadImporter, nextTurnItemOrdinal } from "./provider/RubatoThre
 import { ProjectStoreV2 } from "./orchestration-v2/ProjectStore.ts";
 import { ServerRuntimeStartup } from "./serverRuntimeStartup.ts";
 import { ServerSettingsService } from "./serverSettings.ts";
-import { bridgeModuleOf } from "./RubatoMemory.ts";
+import { bridgeModuleOf, tryBridge } from "./RubatoMemory.ts";
 import { authorized } from "./RubatoServiceRoute.ts";
 
 // The Mac's voice service (`/rubato/voice/*`, harness/t3-integration/voice-input.md).
@@ -104,8 +105,11 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const startup = yield* ServerRuntimeStartup;
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
-  const configPath = process.env.RUBATO_VOICE_CONFIG ??
-    path.join(process.env.HOME ?? process.env.USERPROFILE ?? homedir(), ".rubato", "voice.json");
+  const fromEnv = (name: string) => Config.String(name).pipe(Config.option, Config.map(Option.getOrUndefined));
+  const configPath = (yield* fromEnv("RUBATO_VOICE_CONFIG")) ??
+    path.join((yield* fromEnv("HOME")) ?? (yield* fromEnv("USERPROFILE")) ?? homedir(), ".rubato", "voice.json");
+  // The voice runtime calls back with promises; they run with this layer's services.
+  const runPromise = Effect.runPromiseWith(yield* Effect.context<never>());
 
   const { dispatch, readThread, readRun, listThreads } = voiceOrchestrator(orchestrator);
   // The voice notices (queued, sent, cancelled, failed, expired) as rows in the thread.
@@ -113,14 +117,14 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   const importer = yield* RubatoThreadImporter;
   const sql = yield* SqlClient.SqlClient;
   const appendNotice = (notice: { readonly threadId: string; readonly id: string; readonly message: string }) =>
-    Effect.runPromise(Effect.gen(function* () {
+    runPromise(Effect.gen(function* () {
       const threadId = ThreadId.make(notice.threadId);
       const ordinal = yield* nextTurnItemOrdinal(threadId).pipe(Effect.provideService(SqlClient.SqlClient, sql));
       yield* importer.appendNotice({ threadId, id: notice.id, message: notice.message, ordinal });
     }));
   // The model and permission mode a new thread starts with, resolved the way the
   // apps resolve them: the project's override, else this environment's default.
-  const readProject = (id: string) => Effect.runPromise(Effect.gen(function* () {
+  const readProject = (id: string) => runPromise(Effect.gen(function* () {
     const projectId = ProjectId.make(id);
     const project = yield* projects.getShell(projectId);
     if (Option.isNone(project)) return null;
@@ -145,10 +149,10 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
   // The checkout's voice module: next to the Rubato provider's bridge module. A
   // voice.json written before that names the module itself.
   const locateModule = async (): Promise<string | undefined> => {
-    const settings = await Effect.runPromise(serverSettings.getSettings.pipe(Effect.option));
+    const settings = await runPromise(serverSettings.getSettings.pipe(Effect.option));
     const bridge = Option.isSome(settings) ? bridgeModuleOf(settings.value, path) : undefined;
     if (bridge) return path.join(path.dirname(bridge), "voice", "runtime.mjs");
-    const legacy = await Effect.runPromise(fs.readFileString(configPath).pipe(
+    const legacy = await runPromise(fs.readFileString(configPath).pipe(
       Effect.map((text) => (JSON.parse(text) as { module?: unknown }).module),
       Effect.orElseSucceed(() => undefined),
     ));
@@ -167,7 +171,7 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       const runtime = (module.createVoiceRuntime as (options: typeof runtimeOptions) => VoiceRuntime)(runtimeOptions);
       voice = runtime;
       // Sends claims a restart interrupted. T3 queues new sends itself, so nothing waits here.
-      void Effect.runPromise(startup.awaitCommandReady).then(() => runtime.wake()).catch(() => {});
+      void runPromise(startup.awaitCommandReady).then(() => runtime.wake()).catch(() => {});
       return runtime;
     })().then(
       (runtime) => {
@@ -176,7 +180,7 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       },
       (cause: unknown) => {
         loading = undefined;
-        void Effect.runPromise(Effect.logWarning("Rubato Voice could not load the checkout's voice module", cause));
+        void runPromise(Effect.logWarning("Rubato Voice could not load the checkout's voice module", cause));
         return undefined;
       },
     );
@@ -203,7 +207,7 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
       const handleSettings = runtime?.handleSettings;
       if (!runtime || !handleSettings) return unavailable("voice-unavailable");
-      const response = yield* Effect.tryPromise(() => handleSettings(webRequest)).pipe(
+      const response = yield* tryBridge("voice settings", () => handleSettings(webRequest)).pipe(
         Effect.orElseSucceed(() => Response.json({ error: { code: "voice-settings-failed" } }, { status: 500 })),
       );
       return HttpServerResponse.fromWeb(response);
@@ -214,7 +218,7 @@ export const rubatoVoiceRouteLayer = Layer.unwrap(Effect.gen(function* () {
       desktopAuthenticated = yield* authorized(auth, request);
       if (!desktopAuthenticated) return HttpServerResponse.empty({ status: 401 });
     }
-    const response = yield* Effect.tryPromise(() => runtime.handle(webRequest, desktopAuthenticated)).pipe(
+    const response = yield* tryBridge("voice", () => runtime.handle(webRequest, desktopAuthenticated)).pipe(
       Effect.orElseSucceed(() => Response.json({ error: { code: "voice-failed" } }, { status: 500 })),
     );
     return HttpServerResponse.fromWeb(response);

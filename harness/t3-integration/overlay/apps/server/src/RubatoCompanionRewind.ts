@@ -111,7 +111,7 @@ export const rubatoCompanionRewindRouteLayer = Layer.unwrap(Effect.gen(function*
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const services = yield* Effect.context<RubatoThreadImporter | SqlClient.SqlClient | ProviderInstanceRegistry>();
 
-  const rewind = (threadId: ThreadId, messageId: string) => Effect.gen(function* () {
+  const rewind = Effect.fn("RubatoCompanionRewind.rewind")(function* (threadId: ThreadId, messageId: string) {
     const read = orchestrator.getThreadRecords(threadId, ["runs", "turnItems", "messages"]).pipe(
       Effect.mapError((cause) => refused("unknown-thread", describe(cause))));
     let projection = yield* read;
@@ -139,7 +139,7 @@ export const rubatoCompanionRewindRouteLayer = Layer.unwrap(Effect.gen(function*
       ...(plan.cut === null ? {} : { cut: { ...plan.cut, nextOrdinal: projection.runs.length + 1 } }) })
       .pipe(Effect.mapError((cause) => refused("write-failed", cause.message)));
     return {};
-  }).pipe(Effect.provide(services));
+  }, Effect.provide(services));
 
   const handle = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;

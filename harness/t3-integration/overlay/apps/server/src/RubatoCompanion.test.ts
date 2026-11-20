@@ -1,11 +1,11 @@
 // The companion's room thread (RubatoCompanion.ts companionRoom): the room cannot open an archived
 // thread, so the lookup for the current conversation takes it out of the archive.
 import { describe, expect, it } from "@effect/vitest";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { companionRoom } from "./RubatoCompanion.ts";
 
-class Refused extends Data.TaggedError("Refused") {}
+class Refused extends Schema.TaggedError<Refused>()("Refused", {}) {}
 
 const recorder = (archived: boolean, fails = false) => {
   const unarchived: string[] = [];

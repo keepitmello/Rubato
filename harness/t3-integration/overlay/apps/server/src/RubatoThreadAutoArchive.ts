@@ -32,6 +32,7 @@ import * as Orchestrator from "./orchestration-v2/Orchestrator.ts";
 import { ProviderInstanceRegistry } from "./provider/ProviderInstanceRegistry.ts";
 import { rubatoBridgeFor } from "./provider/Drivers/RubatoPiDriver.ts";
 import { threadOfPiSession } from "./provider/RubatoPiSessions.ts";
+import { tryBridge } from "./RubatoMemory.ts";
 
 export const AUTO_ARCHIVE = {
   idleDays: 14,
@@ -55,11 +56,10 @@ const ensureTable = Effect.gen(function* () {
 });
 
 /** Active threads idle since before `nowMs - idleDays`, oldest activity first; only `only` when given. */
-export const autoArchiveCandidates = (nowMs: number, only?: ThreadId) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    const cutoff = DateTime.formatIso(DateTime.makeUnsafe(nowMs - AUTO_ARCHIVE.idleDays * DAY_MS));
-    const rows = yield* sql<{ readonly thread_id: string }>`
+export const autoArchiveCandidates = Effect.fn("RubatoThreadAutoArchive.autoArchiveCandidates")(function* (nowMs: number, only?: ThreadId) {
+  const sql = yield* SqlClient.SqlClient;
+  const cutoff = DateTime.formatIso(DateTime.makeUnsafe(nowMs - AUTO_ARCHIVE.idleDays * DAY_MS));
+  const rows = yield* sql<{ readonly thread_id: string }>`
       SELECT t.thread_id FROM orchestration_v2_projection_threads t
       WHERE t.deleted_at IS NULL AND t.archived_at IS NULL
         AND t.updated_at < ${cutoff}
@@ -74,8 +74,8 @@ export const autoArchiveCandidates = (nowMs: number, only?: ThreadId) =>
           SELECT 1 FROM orchestration_v2_projection_messages m
           WHERE m.thread_id = t.thread_id AND m.created_at >= ${cutoff})
       ORDER BY t.updated_at ASC, t.thread_id ASC`;
-    return rows.map((row) => ThreadId.make(row.thread_id));
-  });
+  return rows.map((row) => ThreadId.make(row.thread_id));
+});
 
 export interface AutoArchiveIo<E, A, R> {
   /** Threads a pass must leave alone this time; none means the pass archives nothing. */
@@ -84,60 +84,58 @@ export interface AutoArchiveIo<E, A, R> {
 }
 
 /** One pass: archives every candidate outside `keep`, one at a time, and records each. */
-export const runAutoArchivePass = <E, A, R>(io: AutoArchiveIo<E, A, R>) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* ensureTable;
-    const keep = yield* io.keep;
-    if (Option.isNone(keep)) {
-      yield* Effect.logInfo("thread auto-archive skipped: companion sessions unknown");
-      return 0;
-    }
-    const candidates = (yield* autoArchiveCandidates(yield* Clock.currentTimeMillis))
-      .filter((threadId) => !keep.value.has(threadId));
-    let archived = 0;
-    for (const threadId of candidates) {
-      // A pass takes minutes: a thread used since the list was read stays.
-      const stillIdle = (yield* autoArchiveCandidates(yield* Clock.currentTimeMillis, threadId)).length > 0;
-      if (!stillIdle) continue;
-      const [elapsed, done] = yield* Effect.timed(io.archive(threadId).pipe(
-        Effect.andThen(sql<{ readonly archived_at: string | null }>`
+export const runAutoArchivePass = Effect.fn("RubatoThreadAutoArchive.runAutoArchivePass")(function* <E, A, R>(io: AutoArchiveIo<E, A, R>) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* ensureTable;
+  const keep = yield* io.keep;
+  if (Option.isNone(keep)) {
+    yield* Effect.logInfo("thread auto-archive skipped: companion sessions unknown");
+    return 0;
+  }
+  const candidates = (yield* autoArchiveCandidates(yield* Clock.currentTimeMillis))
+    .filter((threadId) => !keep.value.has(threadId));
+  let archived = 0;
+  for (const threadId of candidates) {
+    // A pass takes minutes: a thread used since the list was read stays.
+    const stillIdle = (yield* autoArchiveCandidates(yield* Clock.currentTimeMillis, threadId)).length > 0;
+    if (!stillIdle) continue;
+    const [elapsed, done] = yield* Effect.timed(io.archive(threadId).pipe(
+      Effect.andThen(sql<{ readonly archived_at: string | null }>`
           SELECT archived_at FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}`),
-        Effect.flatMap((rows) => {
-          const at = rows[0]?.archived_at ?? null;
-          return at === null ? Effect.succeed(false) : sql`
+      Effect.flatMap((rows) => {
+        const at = rows[0]?.archived_at ?? null;
+        return at === null ? Effect.succeed(false) : sql`
             INSERT INTO rubato_auto_archived (thread_id, archived_at) VALUES (${threadId}, ${at})
             ON CONFLICT (thread_id) DO UPDATE SET archived_at = excluded.archived_at`.pipe(Effect.as(true));
-        }),
-        Effect.catchCause((cause) =>
-          Effect.logWarning("thread auto-archive failed", { threadId, cause }).pipe(Effect.as(false))),
-      ));
-      if (done) archived += 1;
-      yield* Effect.sleep(Duration.max(elapsed, AUTO_ARCHIVE.pause));
-    }
-    if (candidates.length > 0) yield* Effect.logInfo("thread auto-archive pass", { candidates: candidates.length, archived });
-    return archived;
-  });
+      }),
+      Effect.catchCause((cause) =>
+        Effect.logWarning("thread auto-archive failed", { threadId, cause }).pipe(Effect.as(false))),
+    ));
+    if (done) archived += 1;
+    yield* Effect.sleep(Duration.max(elapsed, AUTO_ARCHIVE.pause));
+  }
+  if (candidates.length > 0) yield* Effect.logInfo("thread auto-archive pass", { candidates: candidates.length, archived });
+  return archived;
+});
 
 /**
  * Takes a thread this file archived out of the archive, when that archive still stands. True
  * when the thread is active afterwards; false for an archive the person made.
  */
-export const reopenAutoArchived = <E, R>(threadId: string, unarchive: (threadId: ThreadId) => Effect.Effect<void, E, R>) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient;
-    yield* ensureTable;
-    const rows = yield* sql<{ readonly recorded: string; readonly current: string | null; readonly deleted: string | null }>`
+export const reopenAutoArchived = Effect.fn("RubatoThreadAutoArchive.reopenAutoArchived")(function* <E, R>(threadId: string, unarchive: (threadId: ThreadId) => Effect.Effect<void, E, R>) {
+  const sql = yield* SqlClient.SqlClient;
+  yield* ensureTable;
+  const rows = yield* sql<{ readonly recorded: string; readonly current: string | null; readonly deleted: string | null }>`
       SELECT a.archived_at AS recorded, t.archived_at AS current, t.deleted_at AS deleted
       FROM rubato_auto_archived a JOIN orchestration_v2_projection_threads t ON t.thread_id = a.thread_id
       WHERE a.thread_id = ${threadId}`;
-    const row = rows[0];
-    if (row === undefined) return false;
-    yield* sql`DELETE FROM rubato_auto_archived WHERE thread_id = ${threadId}`;
-    if (row.deleted !== null || row.current === null || row.current !== row.recorded) return false;
-    yield* unarchive(ThreadId.make(threadId));
-    return true;
-  });
+  const row = rows[0];
+  if (row === undefined) return false;
+  yield* sql`DELETE FROM rubato_auto_archived WHERE thread_id = ${threadId}`;
+  if (row.deleted !== null || row.current === null || row.current !== row.recorded) return false;
+  yield* unarchive(ThreadId.make(threadId));
+  return true;
+});
 
 /** Threads that are companions' rooms, from every enabled Rubato engine; none when one cannot answer. */
 const companionThreads = Effect.gen(function* () {
@@ -147,7 +145,7 @@ const companionThreads = Effect.gen(function* () {
   for (const instance of yield* registry.value.listInstances) {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) continue;
-    const sessions = yield* Effect.tryPromise(() => bridge.inventory()).pipe(Effect.option);
+    const sessions = yield* tryBridge("inventory", () => bridge.inventory()).pipe(Effect.option);
     if (Option.isNone(sessions)) return Option.none<ReadonlySet<string>>();
     for (const entry of sessions.value) {
       if (entry.companion !== true) continue;
@@ -162,7 +160,7 @@ export const makeRubatoThreadAutoArchive = Effect.gen(function* () {
   const sql = yield* Effect.serviceOption(SqlClient.SqlClient);
   const orchestrator = yield* Effect.serviceOption(Orchestrator.OrchestratorV2);
   if (Option.isNone(sql) || Option.isNone(orchestrator)) return { start: Effect.void };
-  const archive = (threadId: ThreadId) => Effect.gen(function* () {
+  const archive = Effect.fn("RubatoThreadAutoArchive.archive")(function* (threadId: ThreadId) {
     const commandId = CommandId.make(`rubato-auto-archive:${threadId}:${yield* Clock.currentTimeMillis}`);
     yield* orchestrator.value.dispatch({ type: "thread.archive", commandId, threadId });
   });

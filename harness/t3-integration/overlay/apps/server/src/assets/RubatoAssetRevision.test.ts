@@ -111,7 +111,8 @@ describe("Rubato host file revisions", () => {
         yield* fileSystem.writeFileString(filePath, "second version");
         const second = yield* mint();
         expect(second.relativeUrl).not.toBe(first.relativeUrl);
-        expect(yield* resolveAsset(tokenOf(second.relativeUrl), name)).toEqual({
+        // Upstream adds how the file is rendered (renderIntent); the new URL still serves this file.
+        expect(yield* resolveAsset(tokenOf(second.relativeUrl), name)).toMatchObject({
           kind: "file",
           path: yield* fileSystem.realPath(filePath),
         });

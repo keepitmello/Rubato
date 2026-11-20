@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Path from "effect/Path";
+import * as Schema from "effect/Schema";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
 import * as ServerSettings from "./serverSettings.ts";
@@ -33,6 +34,16 @@ export function bridgeModuleOf(
   }
   return undefined;
 }
+
+/** A call into the Rubato checkout's modules failed; `cause` is what it threw. */
+export class RubatoBridgeError extends Schema.TaggedError<RubatoBridgeError>()("RubatoBridgeError", {
+  operation: Schema.String,
+  cause: Schema.Defect(),
+}) {}
+
+/** Awaits a promise of the Rubato checkout's modules; a rejection fails with what it threw. */
+export const tryBridge = <A>(operation: string, run: () => PromiseLike<A>) =>
+  Effect.tryPromise({ try: run, catch: (cause) => new RubatoBridgeError({ operation, cause }) });
 
 function loadMemoryModule(file: string): Promise<MemoryModule> {
   let loaded = modules.get(file);
@@ -85,7 +96,7 @@ function handle(
         { status: 503 },
       );
     const webRequest = yield* HttpServerRequest.toWeb(request);
-    const response = yield* Effect.tryPromise(async () => {
+    const response = yield* tryBridge("memory", async () => {
       const module = await loadMemoryModule(
         path.join(path.dirname(bridgeModule), "memory", "service.mjs"),
       );

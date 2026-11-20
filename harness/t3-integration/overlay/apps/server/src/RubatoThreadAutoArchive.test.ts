@@ -4,7 +4,7 @@
 // that only its own archive is undone when a session runs again.
 import { assert, it } from "@effect/vitest";
 import { ThreadId } from "@t3tools/contracts";
-import * as Data from "effect/Data";
+import * as Schema from "effect/Schema";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 import type { SqlError } from "effect/sql/SqlError";
@@ -65,7 +65,7 @@ const unarchiveRow = (threadId: ThreadId) => Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   yield* sql`UPDATE orchestration_v2_projection_threads SET archived_at = NULL WHERE thread_id = ${threadId}`;
 });
-class ArchiveRefused extends Data.TaggedError("ArchiveRefused")<{}> {}
+class ArchiveRefused extends Schema.TaggedError<ArchiveRefused>()("ArchiveRefused", {}) {}
 const keepNone = Effect.succeedSome<ReadonlySet<string>>(new Set());
 
 it.live("a pass picks only threads idle for the whole period, by their messages and runs too", () =>

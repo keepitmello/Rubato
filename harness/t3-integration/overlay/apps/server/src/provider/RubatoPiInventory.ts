@@ -35,6 +35,7 @@ import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { BUSY_RUN, importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
 import { RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
 import { reopenAutoArchived } from "../RubatoThreadAutoArchive.ts";
+import { tryBridge } from "../RubatoMemory.ts";
 
 // The loop passes every five seconds. A fork wants its new session shown now: it cuts the
 // wait short, or, asked during a pass that may have listed sessions before the fork existed,
@@ -83,7 +84,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     SELECT thread_id FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId} LIMIT 1
   `.pipe(Effect.map((rows) => rows.length > 0));
 
-  const projectFor = (cwd: string) => Effect.gen(function* () {
+  const projectFor = Effect.fn("RubatoPiInventory.projectFor")(function* (cwd: string) {
     const existing = yield* projects.value.getByWorkspaceRoot(cwd, { includeDeleted: true });
     if (Option.isSome(existing)) return existing.value.deletedAt ? null : existing.value;
     return yield* projects.value.create({ commandId: CommandId.make(`rubato-inventory:${yield* uuid}`),
@@ -107,7 +108,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     if (yield* knownThread(threadId)) { settledSessions.add(entry.sessionId); return; }
     const project = yield* projectFor(entry.cwd);
     if (project === null) return;
-    const saved = yield* Effect.tryPromise(() => bridge.transcript(entry.sessionId));
+    const saved = yield* tryBridge("transcript", () => bridge.transcript(entry.sessionId));
     const snapshot = yield* instance.snapshot.getSnapshot;
     const lastModel = "model" in saved && typeof saved.model === "string" ? saved.model : null;
     const preferred = snapshot.models.find((model) => model.isDefault) ?? snapshot.models[0];
@@ -149,7 +150,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     if (bridge.rpcFor(threadId)) return;
     if (!(yield* openThread(threadId))) {
       const orchestration = orchestrator.value;
-      const unarchive = (id: ThreadId) => Effect.gen(function* () {
+      const unarchive = Effect.fn("RubatoPiInventory.unarchive")(function* (id: ThreadId) {
         yield* orchestration.dispatch({ type: "thread.unarchive", commandId: CommandId.make(`rubato-reopen:${yield* uuid}`), threadId: id });
       });
       if (!(yield* reopenAutoArchived(threadId, unarchive))) return;
@@ -167,11 +168,11 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
   const syncInstance = (instance: ProviderInstance) => Effect.gen(function* () {
     const bridge = rubatoBridgeFor(instance);
     if (!bridge || !instance.enabled) return;
-    const inventory = yield* Effect.tryPromise(() => bridge.inventory());
+    const inventory = yield* tryBridge("inventory", () => bridge.inventory());
     for (const entry of inventory) yield* importSession(instance, entry);
     for (const entry of inventory) if (engineRunning(entry)) yield* showEngineRun(instance, entry);
     // After the imports, so a session made a moment ago already has the thread a request names.
-    yield* Effect.tryPromise(() => bridge.applyThreadRequests?.() ?? Promise.resolve()).pipe(
+    yield* tryBridge("thread requests", () => bridge.applyThreadRequests?.() ?? Promise.resolve()).pipe(
       Effect.catch((cause) => Effect.logWarning("Rubato thread requests not applied", { instanceId: instance.instanceId, cause })));
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato inventory is unavailable", { instanceId: instance.instanceId, cause })));
 

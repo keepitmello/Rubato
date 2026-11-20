@@ -147,7 +147,7 @@ export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage,
 const make = Effect.gen(function* () {
   const eventSink = yield* EventSink.EventSinkV2;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
-  const importPiSessionThread = (input: PiSessionThreadInput) => Effect.gen(function* () {
+  const importPiSessionThread = Effect.fn("RubatoThreadImporter.importPiSessionThread")(function* (input: PiSessionThreadInput) {
     const driver = ProviderDriverKind.make(DRIVER);
     const instanceId = input.modelSelection.instanceId;
     const createdAt = DateTime.makeUnsafe(input.createdAt);
@@ -223,7 +223,7 @@ const make = Effect.gen(function* () {
    * as rolled back. V2 drops a rolled-back run's rows everywhere (its timeline queries, the
    * web and the phone), so they leave the thread the way a whole-turn rewind's rows do.
    */
-  const cutRun = (input: CutRunInput) => Effect.gen(function* () {
+  const cutRun = Effect.fn("RubatoThreadImporter.cutRun")(function* (input: CutRunInput) {
     const now = yield* DateTime.now;
     const event = () => idAllocator.allocate.event({ threadId: input.run.threadId }).pipe(
       Effect.mapError(importFailure("Could not number the step rewind's events")));
@@ -253,7 +253,7 @@ const make = Effect.gen(function* () {
    * message in the run it sits in move onto a rolled-back run of their own, as a step rewind's cut
    * does; that run keeps its earlier rows and its status.
    */
-  const rollBackFrom = (input: RollBackFromInput) => Effect.gen(function* () {
+  const rollBackFrom = Effect.fn("RubatoThreadImporter.rollBackFrom")(function* (input: RollBackFromInput) {
     const now = yield* DateTime.now;
     const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
       Effect.mapError(importFailure("Could not number the rewind's events")));
@@ -286,7 +286,7 @@ const make = Effect.gen(function* () {
    * A notice row in a thread outside any turn (the voice service's queued, sent and failed
    * notices). `ordinal` is the thread's next turn-item ordinal; the caller reads it.
    */
-  const appendNotice = (input: NoticeInput) => Effect.gen(function* () {
+  const appendNotice = Effect.fn("RubatoThreadImporter.appendNotice")(function* (input: NoticeInput) {
     const now = yield* DateTime.now;
     const item: OrchestrationV2TurnItem = {
       id: TurnItemId.make(input.id), threadId: input.threadId, runId: null, nodeId: null, providerThreadId: null,
@@ -299,16 +299,15 @@ const make = Effect.gen(function* () {
       .pipe(Effect.mapError(importFailure("Could not write the notice")));
   });
   /** A session message that arrived while the thread was open (bridge rpc-connection.mjs). */
-  const appendSessionMessage = (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) =>
-    Effect.gen(function* () {
-      const { message, turnItem, at } = sessionMessageRecords(input.threadId, input.message, input.ordinal);
-      const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
-        Effect.mapError(importFailure("Could not number the session message")));
-      yield* eventSink.write({ events: [
-        { id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: at, payload: message },
-        { id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: at, payload: turnItem },
-      ] }).pipe(Effect.mapError(importFailure("Could not write the session message")));
-    });
+  const appendSessionMessage = Effect.fn("RubatoThreadImporter.appendSessionMessage")(function* (input: { readonly threadId: ThreadId; readonly message: SessionMessage; readonly ordinal: number }) {
+    const { message, turnItem, at } = sessionMessageRecords(input.threadId, input.message, input.ordinal);
+    const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
+      Effect.mapError(importFailure("Could not number the session message")));
+    yield* eventSink.write({ events: [
+      { id: yield* event(), type: "message.updated", threadId: input.threadId, occurredAt: at, payload: message },
+      { id: yield* event(), type: "turn-item.updated", threadId: input.threadId, occurredAt: at, payload: turnItem },
+    ] }).pipe(Effect.mapError(importFailure("Could not write the session message")));
+  });
   /**
    * A message of Segno's in a run of its own (bridge said-echo.mjs, reply or say).
    * T3 tells the phone about a thread only when its run state changes (AgentAwarenessRelay reads
@@ -319,7 +318,7 @@ const make = Effect.gen(function* () {
    * `opened` is that run already written by an attempt that stopped before its message (the server
    * went down during the hold): the message lands in it and it completes now.
    */
-  const appendOwnRun = (input: OwnRunInput) => Effect.gen(function* () {
+  const appendOwnRun = Effect.fn("RubatoThreadImporter.appendOwnRun")(function* (input: OwnRunInput) {
     const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
       Effect.mapError(importFailure("Could not number Segno's message")));
     const runId = saidRunId(input.message.id);
@@ -356,7 +355,7 @@ const make = Effect.gen(function* () {
    * runs that only carried the provider's own wake for that finished work; they are cancelled, since
    * the engine already took the wake itself.
    */
-  const settleLostRuns = (input: SettleLostRunsInput) => Effect.gen(function* () {
+  const settleLostRuns = Effect.fn("RubatoThreadImporter.settleLostRuns")(function* (input: SettleLostRunsInput) {
     const now = yield* DateTime.now;
     const event = () => idAllocator.allocate.event({ threadId: input.threadId }).pipe(
       Effect.mapError(importFailure("Could not number the settled runs' events")));
@@ -429,12 +428,12 @@ export interface OwnRunInput {
  * The thread's next turn-item ordinal, as ProjectionStoreV2.getNextTurnItemOrdinal reads it.
  * Read here because the layers that write notices and session messages do not get that store.
  */
-export const nextTurnItemOrdinal = (threadId: ThreadId) => Effect.gen(function* () {
+export const nextTurnItemOrdinal = Effect.fn("RubatoThreadImporter.nextTurnItemOrdinal")(function* (threadId: ThreadId) {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql<{ readonly ordinal: number | null }>`SELECT MAX(ordinal) AS ordinal
     FROM orchestration_v2_projection_turn_items WHERE thread_id = ${threadId}`;
   return (rows[0]?.ordinal ?? 0) + 1;
-}).pipe(Effect.mapError(importFailure("Could not read the thread's next item")));
+}, Effect.mapError(importFailure("Could not read the thread's next item")));
 
 export interface NoticeInput {
   readonly threadId: ThreadId;

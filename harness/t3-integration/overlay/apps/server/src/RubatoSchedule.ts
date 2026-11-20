@@ -24,38 +24,30 @@ const spec: ServiceSpec = {
  * The `thread` action: which T3 thread shows a Pi session (`{ sessionId }` in the body), or null
  * while the app has not picked the session up yet.
  */
-export const sessionThread = (
-  request: HttpServerRequest.HttpServerRequest,
-  sql: SqlClient.SqlClient,
-) =>
-  Effect.gen(function* () {
-    const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-    const { sessionId } = (body ?? {}) as { sessionId?: unknown };
-    if (typeof sessionId !== "string" || sessionId.length === 0)
-      return HttpServerResponse.jsonUnsafe(
-        { error: { code: "invalid", message: "sessionId is missing." } },
-        { status: 400 },
-      );
-    // Engine session ids are unique across engines, so the run's serverId is not needed.
-    const threadId = yield* threadOfPiSession(sessionId).pipe(
-      Effect.provideService(SqlClient.SqlClient, sql),
+export const sessionThread = Effect.fn("RubatoSchedule.sessionThread")(function* (request: HttpServerRequest.HttpServerRequest, sql: SqlClient.SqlClient) {
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  const { sessionId } = (body ?? {}) as { sessionId?: unknown };
+  if (typeof sessionId !== "string" || sessionId.length === 0)
+    return HttpServerResponse.jsonUnsafe(
+      { error: { code: "invalid", message: "sessionId is missing." } },
+      { status: 400 },
     );
-    return HttpServerResponse.jsonUnsafe({ threadId });
-  }).pipe(
-    Effect.catch(() =>
-      Effect.succeed(
-        HttpServerResponse.jsonUnsafe(
-          {
-            error: {
-              code: "thread-lookup-failed",
-              message: "Could not look up the session's thread.",
-            },
-          },
-          { status: 500 },
-        ),
-      ),
-    ),
+  // Engine session ids are unique across engines, so the run's serverId is not needed.
+  const threadId = yield* threadOfPiSession(sessionId).pipe(
+    Effect.provideService(SqlClient.SqlClient, sql),
   );
+  return HttpServerResponse.jsonUnsafe({ threadId });
+}, Effect.orElseSucceed(() =>
+    HttpServerResponse.jsonUnsafe(
+      {
+        error: {
+          code: "thread-lookup-failed",
+          message: "Could not look up the session's thread.",
+        },
+      },
+      { status: 500 },
+    ),
+  ));
 
 export const rubatoScheduleRouteLayer = Layer.unwrap(
   Effect.gen(function* () {

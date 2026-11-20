@@ -196,31 +196,28 @@ export const rubatoPhoneRouteLayer = Layer.unwrap(
       return yield* status;
     });
 
-    const answer = (request: HttpServerRequest.HttpServerRequest) =>
-      Effect.gen(function* () {
-        const action = new URL(request.url, "http://local").pathname.replace(/\/+$/, "").split("/").at(-1);
-        const body = ((yield* request.json.pipe(Effect.orElseSucceed(() => null))) ?? {}) as Record<string, unknown>;
-        switch (action) {
-          case "status":
-            return json(yield* status);
-          case "connect":
-            return json(yield* connect);
-          case "cancel":
-            return json(yield* cancel);
-          case "notifications":
-            if (typeof body.enabled !== "boolean")
-              return json({ error: { code: "invalid", message: "enabled must be true or false.", field: "enabled" } }, 400);
-            return json(yield* setNotifications(body.enabled));
-          case "disconnect":
-            return json(yield* disconnect);
-          default:
-            return json({ error: { code: "unknown-action", message: `Unknown phone action: ${action}` } }, 404);
-        }
-      }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.succeed(json({ error: { code: "phone-failed", message: failureMessage(cause) } }, 500)),
-        ),
-      );
+    const answer = Effect.fn("RubatoPhone.answer")(function* (request: HttpServerRequest.HttpServerRequest) {
+      const action = new URL(request.url, "http://local").pathname.replace(/\/+$/, "").split("/").at(-1);
+      const body = ((yield* request.json.pipe(Effect.orElseSucceed(() => null))) ?? {}) as Record<string, unknown>;
+      switch (action) {
+        case "status":
+          return json(yield* status);
+        case "connect":
+          return json(yield* connect);
+        case "cancel":
+          return json(yield* cancel);
+        case "notifications":
+          if (typeof body.enabled !== "boolean")
+            return json({ error: { code: "invalid", message: "enabled must be true or false.", field: "enabled" } }, 400);
+          return json(yield* setNotifications(body.enabled));
+        case "disconnect":
+          return json(yield* disconnect);
+        default:
+          return json({ error: { code: "unknown-action", message: `Unknown phone action: ${action}` } }, 404);
+      }
+    }, Effect.catchCause((cause) =>
+        Effect.succeed(json({ error: { code: "phone-failed", message: failureMessage(cause) } }, 500)),
+      ));
 
     return HttpRouter.add(
       "*",

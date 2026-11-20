@@ -28,9 +28,9 @@ describe("session message records", () => {
     const { message, turnItem } = sessionMessageRecords(threadId, { role: "session", id: "rubato-session:abc",
       text: "Please check the plan.", createdAt: "2026-10-17T01:02:03.000Z",
       context: context as never, senderThreadId: ThreadId.make("sending-thread") }, 7);
-    const decodedMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(
+    const decodedMessage = Schema.decodeSync(OrchestrationV2ConversationMessage)(
       Schema.encodeSync(OrchestrationV2ConversationMessage)(message));
-    const decodedItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
+    const decodedItem = Schema.decodeSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
     expect(decodedMessage).toMatchObject({ id: "rubato-session:abc", role: "user", createdBy: "agent",
       creationSource: "provider", senderThreadId: "sending-thread", runId: null, text: "Please check the plan." });
     expect(decodedMessage.context?.records[0]?.label).toBe("Planner");
@@ -42,12 +42,12 @@ describe("session message records", () => {
     const echo = { version: 1 as const, records: [{ version: 1 as const, contextId: "rubato-said", kind: "rubato-said",
       label: "Segno", payload: { v: 1, toolCallId: "c1" } }] };
     // The live path decodes the context before it gets here (RubatoPiSessions.ts appendSessionMessage).
-    expect(Schema.decodeUnknownSync(OrchestrationMessageContext)(echo).records[0]?.kind).toBe("rubato-said");
+    expect(Schema.decodeSync(OrchestrationMessageContext)(echo).records[0]?.kind).toBe("rubato-said");
     const { message, turnItem } = sessionMessageRecords(threadId, { role: "session", id: "rubato-session:tg",
       text: "밥은 먹었어?", createdAt: "2026-10-20T03:00:00.000Z", context: echo as never }, 9);
-    const decodedMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(
+    const decodedMessage = Schema.decodeSync(OrchestrationV2ConversationMessage)(
       Schema.encodeSync(OrchestrationV2ConversationMessage)(message));
-    const decodedItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
+    const decodedItem = Schema.decodeSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
     expect(decodedMessage).toMatchObject({ id: "rubato-session:tg", role: "assistant", createdBy: "agent", text: "밥은 먹었어?" });
     expect(decodedMessage.context).toBeUndefined();
     expect(decodedItem).toMatchObject({ id: "rubato-session:tg", type: "assistant_message", messageId: "rubato-session:tg", ordinal: 9 });
@@ -59,9 +59,9 @@ describe("session message records", () => {
     for (const role of ["assistant", "user"] as const) {
       const { message, turnItem } = sessionMessageRecords(threadId, { role: "session", id: `rubato-session:bf-${role}`,
         text: "본 브랜치에 올라갔어.", createdAt: "2026-10-20T13:12:34.000Z", context: record(role) as never }, 12);
-      const decodedMessage = Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(
+      const decodedMessage = Schema.decodeSync(OrchestrationV2ConversationMessage)(
         Schema.encodeSync(OrchestrationV2ConversationMessage)(message));
-      const decodedItem = Schema.decodeUnknownSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
+      const decodedItem = Schema.decodeSync(OrchestrationV2TurnItem)(Schema.encodeSync(OrchestrationV2TurnItem)(turnItem));
       expect(decodedMessage).toMatchObject({ role, createdBy: role === "user" ? "user" : "agent", text: "본 브랜치에 올라갔어." });
       expect(decodedMessage.context).toBeUndefined();
       expect(decodedItem).toMatchObject({ type: role === "user" ? "user_message" : "assistant_message", ordinal: 12 });
@@ -122,14 +122,14 @@ describe("Segno's own run (reply or say)", () => {
       ["run.created"], ["message.updated", "turn-item.updated", "run.updated"]]);
     expect(writes[1]!.at - writes[0]!.at).toBeGreaterThanOrEqual(35);
     const opened = writes[0]!.events[0]!.payload as OrchestrationV2Run;
-    const decodedOpen = Schema.decodeUnknownSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(opened));
+    const decodedOpen = Schema.decodeSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(opened));
     expect(decodedOpen).toMatchObject({ id: runId, status: "running", ordinal: 4, userMessageId: "rubato-session:said",
       providerThreadId: null, checkpointId: null, completedAt: null });
     const [message, item, closed] = writes[1]!.events.map((event) => event.payload);
-    expect(Schema.decodeUnknownSync(OrchestrationV2ConversationMessage)(Schema.encodeSync(OrchestrationV2ConversationMessage)(message as never)))
+    expect(Schema.decodeSync(OrchestrationV2ConversationMessage)(Schema.encodeSync(OrchestrationV2ConversationMessage)(message as never)))
       .toMatchObject({ id: "rubato-session:said", role: "assistant", runId, text: "좋은 아침! 3시에 회의 있어." });
     expect(item).toMatchObject({ id: "rubato-session:said", type: "assistant_message", runId, ordinal: 11 });
-    expect(Schema.decodeUnknownSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(closed as never)))
+    expect(Schema.decodeSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(closed as never)))
       .toMatchObject({ id: runId, status: "completed", ordinal: 4 });
   });
 
@@ -177,7 +177,7 @@ describe("runs T3 lost the end of (bridge settleLost)", () => {
         ["node.updated", "node-1", "completed"], ["provider-turn.updated", "turn-1", "completed"],
         ["message.updated", "m1", false], ["run.updated", "run-2", "cancelled"]]);
     const closed = writes[0]![0]!.payload as OrchestrationV2Run;
-    expect(Schema.decodeUnknownSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(closed)))
+    expect(Schema.decodeSync(OrchestrationV2Run)(Schema.encodeSync(OrchestrationV2Run)(closed)))
       .toMatchObject({ id: "run-1", status: "completed", queuePosition: null });
     expect(closed.completedAt).not.toBeNull();
   });

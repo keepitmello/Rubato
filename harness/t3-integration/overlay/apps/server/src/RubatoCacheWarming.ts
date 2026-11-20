@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
-import { bridgeModuleOf } from "./RubatoMemory.ts";
+import { bridgeModuleOf, tryBridge } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 // The warmer switch in the context ring's popover. The bridge module the Rubato
@@ -51,7 +51,7 @@ function handle(
         { status: 503 },
       );
     const webRequest = yield* HttpServerRequest.toWeb(request);
-    const response = yield* Effect.tryPromise(async () =>
+    const response = yield* tryBridge("cache warming", async () =>
       (await loadBridge(bridgeModule)).handleCacheWarmingRequest(webRequest),
     ).pipe(
       Effect.orElseSucceed(() =>

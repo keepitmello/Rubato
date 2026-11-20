@@ -6,7 +6,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import { HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http";
 import { EnvironmentAuth } from "./auth/EnvironmentAuth.ts";
-import { bridgeModuleOf } from "./RubatoMemory.ts";
+import { bridgeModuleOf, tryBridge } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 // Settings pages that talk to the Rubato checkout: Providers (`rubato auth`),
@@ -103,7 +103,7 @@ export function answerFromService(
         { status: 503 },
       );
     const webRequest = yield* HttpServerRequest.toWeb(request);
-    const response = yield* Effect.tryPromise(async () => {
+    const response = yield* tryBridge(spec.file, async () => {
       const module = await loadModule(path.join(path.dirname(bridgeModule), spec.file), spec);
       const service = (module[spec.service] as () => unknown)();
       return (module[spec.handler] as (service: unknown, request: Request) => Promise<Response>)(

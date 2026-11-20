@@ -5,8 +5,8 @@
 import { assert, it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
-  EventId, MessageId, NodeId, ProjectId, ProviderDriverKind, ProviderInstanceId, ThreadId, TurnItemId,
-  type OrchestrationV2AppThread, type OrchestrationV2DomainEvent,
+  EventId, MessageId, NodeId, OrchestrationV2AppThread, OrchestrationV2DomainEvent, ProjectId, ProviderDriverKind,
+  ProviderInstanceId, ThreadId, TurnItemId,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as DateTime from "effect/DateTime";
@@ -18,6 +18,7 @@ import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Statement from "effect/sql/Statement";
 import { mkdtempSync, rmSync, statSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -28,8 +29,8 @@ import * as ProjectionMaintenance from "./orchestration-v2/ProjectionMaintenance
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
 import { ServerActivation } from "./serverActivation.ts";
 import {
-  RETENTION, THREAD_STATE_EVENTS, UNREAD_V1_TABLES, autoVacuumMode, compactEvents, compactOnce, pruneReceipts,
-  pruneUnreadV1Tables, releaseFreePages, rubatoStateRetentionLayer, runRetention,
+  RETENTION, THREAD_STATE_EVENTS, autoVacuumMode, compactEvents, compactOnce, pruneReceipts, releaseFreePages,
+  rubatoStateRetentionLayer, runRetention,
 } from "./RubatoStateRetention.ts";
 
 const storesOver = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) => {
@@ -150,7 +151,17 @@ it.live("a recent row that points at an old prompt keeps it, even when a newer r
     assert.strictEqual(JSON.parse(row!.payload).prompt, "prompt B");
   }).pipe(Effect.provide(layer)));
 
-it.live("only old V2 receipts and the V1 tables nothing reads go; V1 messages and pending V1 receipts stay", () =>
+it("every event the contracts give a whole thread as payload counts as thread state, except thread.created", () => {
+  // thread.created stays: the legacy importer treats a thread without it as not yet imported.
+  const wholeThread = OrchestrationV2DomainEvent.members.flatMap((member) => {
+    if (!("payload" in member.fields) || member.fields.payload !== OrchestrationV2AppThread) return [];
+    const type = member.fields.type;
+    return "literals" in type ? [...type.literals] : [type.literal];
+  });
+  assert.sameMembers([...THREAD_STATE_EVENTS, "thread.created"], wholeThread);
+});
+
+it.live("only V2 receipts older than the line go; V1 messages and pending V1 receipts stay", () =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const nowMs = Date.now();
@@ -161,36 +172,39 @@ it.live("only old V2 receipts and the V1 tables nothing reads go; V1 messages an
       ('old-v2', 'thread', 't', ${oldIso}, 1, 'accepted', 'message.dispatch'),
       ('recent-v2', 'thread', 't', ${recentIso}, 1, 'accepted', 'message.dispatch'),
       ('old-legacy', 'thread', 't', ${oldIso}, 1, 'accepted', 'legacy')`;
-    for (let index = 0; index < RETENTION.chunk + 5; index += 1)
-      yield* sql`INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at)
-        VALUES (${`activity-${index}`}, 't', NULL, 'info', 'tool.completed', 's', '{}', ${oldIso})`;
-    yield* sql`INSERT INTO checkpoint_diff_blobs (thread_id, from_turn_count, to_turn_count, diff, created_at) VALUES ('t', 0, 1, 'diff', ${oldIso})`;
     yield* sql`INSERT INTO projection_thread_messages (message_id, thread_id, turn_id, role, text, is_streaming, created_at, updated_at)
       VALUES ('v1-message', 't', NULL, 'user', 'kept for the lazy V1 import', 0, ${oldIso}, ${oldIso})`;
 
     assert.strictEqual(yield* pruneReceipts(nowMs), 1);
-    assert.strictEqual(yield* pruneUnreadV1Tables, RETENTION.chunk + 6);
     const receipts = yield* sql<{ readonly id: string }>`SELECT command_id AS id FROM orchestration_command_receipts ORDER BY id`;
     assert.deepStrictEqual(receipts.map((row) => row.id), ["old-legacy", "recent-v2"]);
-    for (const table of UNREAD_V1_TABLES) {
-      const rows = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM ${sql(table)}`;
-      assert.strictEqual(rows[0]?.n, 0);
-    }
     const messages = yield* sql<{ readonly n: number }>`SELECT COUNT(*) AS n FROM projection_thread_messages`;
     assert.strictEqual(messages[0]?.n, 1);
     assert.strictEqual(yield* pruneReceipts(nowMs), 0);
   }).pipe(Effect.provide(layer)));
 
-it.live("a file switched to incremental auto-vacuum once gives freed pages back to the disk", () => {
+it.live("a new file starts in incremental auto-vacuum, so the one-time switch has nothing to do", () => {
   const folder = mkdtempSync(join(tmpdir(), "rubato-retention-"));
   const file = join(folder, "statev2.sqlite");
+  return Effect.gen(function* () {
+    assert.strictEqual(yield* autoVacuumMode, 2);
+    assert.isFalse(yield* compactOnce);
+  }).pipe(Effect.provide(SqlitePersistence.layerFromPath(file).pipe(Layer.provide(NodeServices.layer))),
+    Effect.ensuring(Effect.sync(() => rmSync(folder, { recursive: true, force: true }))));
+});
+
+it.live("a file from before incremental auto-vacuum is switched once and gives freed pages back to the disk", () => {
+  const folder = mkdtempSync(join(tmpdir(), "rubato-retention-"));
+  const file = join(folder, "statev2.sqlite");
+  // A file that already has tables keeps the mode it was created with (persistence/Sqlite.ts).
+  const before = new DatabaseSync(file);
+  before.exec("CREATE TABLE rubato_retention_fill (body TEXT NOT NULL)");
+  before.close();
   return Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const body = "x".repeat(8_000);
     yield* sql.withTransaction(Effect.gen(function* () {
-      for (let index = 0; index < 3_000; index += 1)
-        yield* sql`INSERT INTO projection_thread_activities (activity_id, thread_id, turn_id, tone, kind, summary, payload_json, created_at)
-          VALUES (${`activity-${index}`}, 't', NULL, 'info', 'tool.completed', 's', ${body}, '2026-01-01T00:00:00.000Z')`;
+      for (let index = 0; index < 3_000; index += 1) yield* sql`INSERT INTO rubato_retention_fill (body) VALUES (${body})`;
     }));
     assert.notStrictEqual(yield* autoVacuumMode, 2);
     assert.isTrue(yield* compactOnce);
@@ -200,7 +214,7 @@ it.live("a file switched to incremental auto-vacuum once gives freed pages back 
     const pages = () => sql<{ readonly page_count: number }>`PRAGMA page_count`.pipe(
       Effect.map((rows) => Number(rows[0]?.page_count ?? 0)));
     const full = yield* pages();
-    yield* pruneUnreadV1Tables;
+    yield* sql`DELETE FROM rubato_retention_fill`;
     assert.isAbove(yield* releaseFreePages, 5_000);
     const free = yield* sql<{ readonly freelist_count: number }>`PRAGMA freelist_count`;
     assert.strictEqual(Number(free[0]?.freelist_count), 0);
@@ -241,7 +255,7 @@ it.effect("retention waits for server activation and initial UI loading, then re
     // A pass reports what it did, and a second pass right after finds nothing more.
     const report = yield* runRetention;
     assert.deepStrictEqual({ ...report, freedPages: 0 }, { compactedEvents: 0, supersededTurnItems: 0, legacyEvents: 0,
-      legacyReceipts: 0, receipts: 0, v1Rows: 0, freedPages: 0 });
+      legacyReceipts: 0, receipts: 0, freedPages: 0 });
   }).pipe(Effect.scoped, Effect.provide(layer)));
 
 it.live("passes that each read only what is new leave what one pass over the whole history leaves", () =>

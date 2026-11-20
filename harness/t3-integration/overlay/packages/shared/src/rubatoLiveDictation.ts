@@ -1,3 +1,4 @@
+// @effect-diagnostics globalTimers:off globalDate:off - Dictation runs in the web and phone voice controllers, outside an Effect runtime.
 // Live dictation: words appear in the composer while the person is still talking.
 //
 // The Mac mints a one-time key (POST /rubato/voice/live, harness/t3-integration/src/voice/

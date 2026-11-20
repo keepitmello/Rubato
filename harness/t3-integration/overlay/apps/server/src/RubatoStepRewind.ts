@@ -65,7 +65,7 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       Effect.mapError((cause) => refuse("unknown-thread", describe(cause))));
 
   // The step, its run, and its batch as the engine holds it.
-  const stepOf = (projection: Effect.Success<ReturnType<typeof records>>, threadId: ThreadId, itemId: string, rewinding: boolean) => Effect.gen(function* () {
+  const stepOf = Effect.fn("RubatoStepRewind.stepOf")(function* (projection: Effect.Success<ReturnType<typeof records>>, threadId: ThreadId, itemId: string, rewinding: boolean) {
     const item = projection.turnItems.find((candidate) => candidate.id === itemId);
     const toolCallId = item?.nativeItemRef?.driver === "rubato-pi" ? item.nativeItemRef.nativeId : null;
     if (!item || !toolCallId || TEXT_ITEMS.has(item.type) || !FINISHED.has(item.status) || item.runId === null)
@@ -97,13 +97,13 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
     return { runItems, cutAfter: batchItems.at(-1) ?? item };
   };
 
-  const preview = (threadId: ThreadId, itemId: string) => Effect.gen(function* () {
+  const preview = Effect.fn("RubatoStepRewind.preview")(function* (threadId: ThreadId, itemId: string) {
     const projection = yield* records(threadId);
     const { item, runId, batch } = yield* stepOf(projection, threadId, itemId, false);
     return { cutAfterItemId: cutAfterOf(projection.turnItems, runId, item, batch).cutAfter.id };
-  }).pipe(Effect.provide(services));
+  }, Effect.provide(services));
 
-  const rewind = (threadId: ThreadId, itemId: string, restoreFiles: boolean) => Effect.gen(function* () {
+  const rewind = Effect.fn("RubatoStepRewind.rewind")(function* (threadId: ThreadId, itemId: string, restoreFiles: boolean) {
     let projection = yield* records(threadId);
     const { item, run, runId, session, bridge, toolCallId, batch } = yield* stepOf(projection, threadId, itemId, true);
 
@@ -158,9 +158,9 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       .pipe(Effect.mapError((cause) => refuse("write-failed", cause.message)));
     return { runId, cutAfterItemId: cutAfter.id, hiddenItemIds: hiddenItems.map((candidate) => candidate.id),
       hiddenMessageIds: hiddenMessages.map((message) => message.id), filesRestored };
-  }).pipe(Effect.provide(services));
+  }, Effect.provide(services));
 
-  const resume = (threadId: ThreadId) => Effect.gen(function* () {
+  const resume = Effect.fn("RubatoStepRewind.resume")(function* (threadId: ThreadId) {
     const projection = yield* records(threadId);
     const latest = [...projection.runs].filter((run) => run.status !== "rolled_back").sort((left, right) => right.ordinal - left.ordinal)[0];
     if (!latest || latest.status !== "interrupted")
@@ -177,14 +177,14 @@ export const rubatoStepRewindRouteLayer = Layer.unwrap(Effect.gen(function* () {
       dispatchMode: { type: "start_immediately" } })
       .pipe(Effect.mapError((cause) => refuse("continue-failed", describe(cause))));
     return {};
-  }).pipe(Effect.provide(services));
+  }, Effect.provide(services));
 
   const answer = <A>(body: Effect.Effect<A, StepRewindRefused>) => body.pipe(
     Effect.map((value) => HttpServerResponse.jsonUnsafe(value)),
     Effect.catchTag("StepRewindRefused", (error) =>
       Effect.succeed(HttpServerResponse.jsonUnsafe({ error: { code: error.code, message: error.message } }, { status: 409 }))),
   );
-  const handle = (route: "rewind" | "continue" | "batch") => Effect.gen(function* () {
+  const handle = Effect.fn("RubatoStepRewind.handle")(function* (route: "rewind" | "continue" | "batch") {
     const request = yield* HttpServerRequest.HttpServerRequest;
     if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
     const json = yield* request.json.pipe(Effect.orElseSucceed(() => ({})));

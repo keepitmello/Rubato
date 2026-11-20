@@ -49,12 +49,11 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
         ),
       );
 
-    const withBridge = (body: Body, run: (bridge: PiBridge) => Effect.Effect<HttpServerResponse.HttpServerResponse>) =>
-      Effect.gen(function* () {
-        const bridge = yield* bridgeOf(text(body, "instanceId"));
-        if (!bridge) return failure(503, "unavailable", "The Rubato provider is not running.");
-        return yield* run(bridge);
-      });
+    const withBridge = Effect.fn("RubatoSessionPrompt.withBridge")(function* (body: Body, run: (bridge: PiBridge) => Effect.Effect<HttpServerResponse.HttpServerResponse>) {
+      const bridge = yield* bridgeOf(text(body, "instanceId"));
+      if (!bridge) return failure(503, "unavailable", "The Rubato provider is not running.");
+      return yield* run(bridge);
+    });
 
     const list = (body: Body) =>
       withBridge(body, (bridge) =>
@@ -78,20 +77,19 @@ export const rubatoSessionPromptRouteLayer = Layer.unwrap(
         return call(() => bridge.prepareSessionPrompt(threadId, choice), (prompt) => ({ prompt }));
       });
 
-    const thread = (body: Body) =>
-      Effect.gen(function* () {
-        const threadId = text(body, "threadId");
-        if (!threadId) return failure(400, "invalid", "threadId is missing.");
-        // `started: false` until the thread's first message opens a session; the badge asks again.
-        const session = yield* piSessionOfThread(threadId).pipe(
-          Effect.provide(context),
-          Effect.orElseSucceed(() => null),
-        );
-        if (session === null) return HttpServerResponse.jsonUnsafe({ prompt: null, started: false });
-        const bridge = yield* bridgeOf(text(body, "instanceId"));
-        if (!bridge) return HttpServerResponse.jsonUnsafe({ prompt: null, started: true });
-        return yield* call(() => bridge.sessionPrompt(session.sessionId), (prompt) => ({ prompt, started: true }));
-      });
+    const thread = Effect.fn("RubatoSessionPrompt.thread")(function* (body: Body) {
+      const threadId = text(body, "threadId");
+      if (!threadId) return failure(400, "invalid", "threadId is missing.");
+      // `started: false` until the thread's first message opens a session; the badge asks again.
+      const session = yield* piSessionOfThread(threadId).pipe(
+        Effect.provide(context),
+        Effect.orElseSucceed(() => null),
+      );
+      if (session === null) return HttpServerResponse.jsonUnsafe({ prompt: null, started: false });
+      const bridge = yield* bridgeOf(text(body, "instanceId"));
+      if (!bridge) return HttpServerResponse.jsonUnsafe({ prompt: null, started: true });
+      return yield* call(() => bridge.sessionPrompt(session.sessionId), (prompt) => ({ prompt, started: true }));
+    });
 
     const route = (action: string, handle: (body: Body) => Effect.Effect<HttpServerResponse.HttpServerResponse>) =>
       HttpRouter.add(

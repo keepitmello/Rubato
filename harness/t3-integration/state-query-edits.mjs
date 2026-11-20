@@ -1,6 +1,7 @@
-// The GUI server reads its state DB on one synchronous SQLite connection, so a slow statement
-// stops every request. These edits point upstream's hot reads at indexes that answer them, and
-// RubatoQueryPlans.test.ts runs those reads and fails on any plan that walks a large table.
+// The GUI server reads its state DB through one SQLite writer and a few readers, so a slow
+// statement holds one of them and every request behind it waits. These edits point upstream's
+// hot reads at indexes that answer them, and RubatoQueryPlans.test.ts runs those reads and fails
+// on any plan that walks a large table.
 //
 // The newest V2 thread event: upstream asks MAX(sequence) over V2 thread events, which no index
 // answers, so SQLite walked a whole index (0.7s on average, 8.7s cold, on 750k events). Reading

@@ -13,7 +13,7 @@ import * as ServerEnvironment from "./environment/ServerEnvironment.ts";
 import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
 import { shouldPublishAgentAwarenessEvent } from "./relay/AgentAwarenessRelay.ts";
-import { bridgeModuleOf } from "./RubatoMemory.ts";
+import { bridgeModuleOf, tryBridge } from "./RubatoMemory.ts";
 import { answerFromService, authorized, type ServiceSpec } from "./RubatoServiceRoute.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
@@ -62,21 +62,20 @@ export const rubatoPushLayer = Layer.unwrap(
         loaded = { file, module };
         module.catch(() => { if (loaded?.file === file) loaded = null; });
       }
-      return yield* Effect.tryPromise(() => loaded!.module).pipe(Effect.orElseSucceed(() => null));
+      return yield* tryBridge("push module", () => loaded!.module).pipe(Effect.orElseSucceed(() => null));
     });
 
-    const stateOf = (environmentId: EnvironmentId, threadId: ThreadId) =>
-      Effect.gen(function* () {
-        const thread: OrchestrationV2ThreadShell | null = yield* threads.getThreadShell(threadId);
-        if (thread === null || thread.archivedAt !== null) return { state: null, run: null };
-        const project: Option.Option<Project> = yield* projects.getById(thread.projectId);
-        if (Option.isNone(project)) return { state: null, run: null };
-        const startedAt = thread.activityRunStartedAt ?? thread.latestRunStartedAt ?? null;
-        return {
-          state: projectThreadAwarenessV2({ environmentId, project: project.value, thread }),
-          run: { startedAt: startedAt === null ? null : DateTime.formatIso(startedAt), lastError: thread.lastError ?? null },
-        };
-      });
+    const stateOf = Effect.fn("RubatoPush.stateOf")(function* (environmentId: EnvironmentId, threadId: ThreadId) {
+      const thread: OrchestrationV2ThreadShell | null = yield* threads.getThreadShell(threadId);
+      if (thread === null || thread.archivedAt !== null) return { state: null, run: null };
+      const project: Option.Option<Project> = yield* projects.getById(thread.projectId);
+      if (Option.isNone(project)) return { state: null, run: null };
+      const startedAt = thread.activityRunStartedAt ?? thread.latestRunStartedAt ?? null;
+      return {
+        state: projectThreadAwarenessV2({ environmentId, project: project.value, thread }),
+        run: { startedAt: startedAt === null ? null : DateTime.formatIso(startedAt), lastError: thread.lastError ?? null },
+      };
+    });
 
     const publish = (threadId: ThreadId) =>
       Effect.gen(function* () {
@@ -84,7 +83,7 @@ export const rubatoPushLayer = Layer.unwrap(
         if (module === null) return;
         const environmentId = yield* environment.getEnvironmentId;
         const { state, run } = yield* stateOf(environmentId, threadId);
-        yield* Effect.tryPromise(() => module.pushService().threadChanged(threadId, state, run));
+        yield* tryBridge("push thread alert", () => module.pushService().threadChanged(threadId, state, run));
       }).pipe(Effect.catchCause((cause) => Effect.logWarning("Rubato push: thread alert not sent", { threadId, cause })));
 
     yield* Effect.forkScoped(

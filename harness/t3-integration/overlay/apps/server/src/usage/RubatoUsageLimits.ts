@@ -25,6 +25,8 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { tryBridge } from "../RubatoMemory.ts";
+
 export const RUBATO_USAGE_SOURCE_ID = "rubato" as UsageLimitSourceId;
 
 /** Rubato provider id → the T3 driver whose icon and colour the row borrows, and its name. */
@@ -125,7 +127,7 @@ export const readRubatoUsageSource = Effect.fn("readRubatoUsageSource")(function
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
   const before = previous.find((source) => source.id === RUBATO_USAGE_SOURCE_ID)?.accounts ?? [];
   const base = { id: RUBATO_USAGE_SOURCE_ID, kind: "rubato", label: "Rubato", checkedAt } as const;
-  const answer = yield* Effect.tryPromise(() => readUsage(bridgeModule)).pipe(Effect.result);
+  const answer = yield* tryBridge("usage", () => readUsage(bridgeModule)).pipe(Effect.result);
   if (answer._tag === "Failure") {
     const cause = answer.failure.cause;
     return {

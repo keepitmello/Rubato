@@ -38,11 +38,10 @@ export const rubatoCompanionRouteLayer = Layer.unwrap(
       sql<{ readonly archived_at: string | null }>`
         SELECT archived_at FROM orchestration_v2_projection_threads WHERE thread_id = ${threadId}
       `.pipe(Effect.map((rows) => rows[0]?.archived_at != null));
-    const unarchive = (threadId: string) =>
-      Effect.gen(function* () {
-        const commandId = CommandId.make(yield* crypto.uuidV4());
-        yield* orchestrator.dispatch({ type: "thread.unarchive", commandId, threadId: ThreadId.make(threadId) });
-      });
+    const unarchive = Effect.fn("RubatoCompanion.unarchive")(function* (threadId: string) {
+      const commandId = CommandId.make(yield* crypto.uuidV4());
+      yield* orchestrator.dispatch({ type: "thread.unarchive", commandId, threadId: ThreadId.make(threadId) });
+    });
     return HttpRouter.add(
       "*",
       `${spec.route}/*`,
@@ -73,17 +72,16 @@ export interface CompanionRoomIo<E, U, R> {
   readonly unarchive: (threadId: string) => Effect.Effect<void, U, R>;
 }
 
-export const companionRoom = <E, U, R>(threadId: string | null, io: CompanionRoomIo<E, U, R>) =>
-  Effect.gen(function* () {
-    if (threadId === null) return null;
-    if (yield* io.archived(threadId)) {
-      // A failed unarchive still answers the thread; the next refresh tries again.
-      yield* io.unarchive(threadId).pipe(
-        Effect.catch((cause) => Effect.logWarning("companion room: unarchive failed", { threadId, cause })),
-      );
-    }
-    return threadId;
-  });
+export const companionRoom = Effect.fn("RubatoCompanion.companionRoom")(function* <E, U, R>(threadId: string | null, io: CompanionRoomIo<E, U, R>) {
+  if (threadId === null) return null;
+  if (yield* io.archived(threadId)) {
+    // A failed unarchive still answers the thread; the next refresh tries again.
+    yield* io.unarchive(threadId).pipe(
+      Effect.catch((cause) => Effect.logWarning("companion room: unarchive failed", { threadId, cause })),
+    );
+  }
+  return threadId;
+});
 
 /**
  * The `thread` action: which T3 thread shows a companion's Pi session (`{ sessionId }`), or null
@@ -91,30 +89,23 @@ export const companionRoom = <E, U, R>(threadId: string | null, io: CompanionRoo
  * companion runs in now, whose thread is its room (companionRoom); an earlier conversation's
  * thread is only looked up.
  */
-const companionThread = <E, U, R>(
-  request: HttpServerRequest.HttpServerRequest,
-  sql: SqlClient.SqlClient,
-  io: CompanionRoomIo<E, U, R>,
-) =>
-  Effect.gen(function* () {
-    const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-    const { sessionId, current } = (body ?? {}) as { sessionId?: unknown; current?: unknown };
-    if (typeof sessionId !== "string" || sessionId.length === 0)
-      return HttpServerResponse.jsonUnsafe(
-        { error: { code: "invalid", message: "sessionId is missing." } },
-        { status: 400 },
-      );
-    const found = yield* threadOfPiSession(sessionId).pipe(Effect.provideService(SqlClient.SqlClient, sql));
-    const threadId = current === true ? yield* companionRoom(found, io) : found;
-    return HttpServerResponse.jsonUnsafe({ threadId });
-  }).pipe(
-    Effect.orElseSucceed(() =>
-      HttpServerResponse.jsonUnsafe(
-        { error: { code: "thread-lookup-failed", message: "Could not look up the session's thread." } },
-        { status: 500 },
-      ),
+const companionThread = Effect.fn("RubatoCompanion.companionThread")(function* <E, U, R>(request: HttpServerRequest.HttpServerRequest, sql: SqlClient.SqlClient, io: CompanionRoomIo<E, U, R>) {
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  const { sessionId, current } = (body ?? {}) as { sessionId?: unknown; current?: unknown };
+  if (typeof sessionId !== "string" || sessionId.length === 0)
+    return HttpServerResponse.jsonUnsafe(
+      { error: { code: "invalid", message: "sessionId is missing." } },
+      { status: 400 },
+    );
+  const found = yield* threadOfPiSession(sessionId).pipe(Effect.provideService(SqlClient.SqlClient, sql));
+  const threadId = current === true ? yield* companionRoom(found, io) : found;
+  return HttpServerResponse.jsonUnsafe({ threadId });
+}, Effect.orElseSucceed(() =>
+    HttpServerResponse.jsonUnsafe(
+      { error: { code: "thread-lookup-failed", message: "Could not look up the session's thread." } },
+      { status: 500 },
     ),
-  );
+  ));
 
 /**
  * Segno's newest finished message in a run of its thread. The thread holds only the person's
@@ -122,28 +113,25 @@ const companionThread = <E, U, R>(
  * run the person's message opened. `text` is null when the run carried no reply, and no
  * notification is raised then.
  */
-const segnoSaid = (request: HttpServerRequest.HttpServerRequest, sql: SqlClient.SqlClient) =>
-  Effect.gen(function* () {
-    const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
-    const { threadId, runId } = (body ?? {}) as { threadId?: unknown; runId?: unknown };
-    if (typeof threadId !== "string" || threadId === "" || typeof runId !== "string" || runId === "")
-      return HttpServerResponse.jsonUnsafe(
-        { error: { code: "invalid", message: "threadId and runId are needed." } },
-        { status: 400 },
-      );
-    const rows = yield* sql<{ readonly text: string | null }>`
+const segnoSaid = Effect.fn("RubatoCompanion.segnoSaid")(function* (request: HttpServerRequest.HttpServerRequest, sql: SqlClient.SqlClient) {
+  const body = yield* request.json.pipe(Effect.orElseSucceed(() => null));
+  const { threadId, runId } = (body ?? {}) as { threadId?: unknown; runId?: unknown };
+  if (typeof threadId !== "string" || threadId === "" || typeof runId !== "string" || runId === "")
+    return HttpServerResponse.jsonUnsafe(
+      { error: { code: "invalid", message: "threadId and runId are needed." } },
+      { status: 400 },
+    );
+  const rows = yield* sql<{ readonly text: string | null }>`
       SELECT json_extract(m.payload_json, '$.text') AS text
       FROM orchestration_v2_projection_messages m
       WHERE m.thread_id = ${threadId} AND m.run_id = ${runId} AND m.role = 'assistant' AND m.streaming = 0
       ORDER BY m.created_at DESC, m.message_id DESC
       LIMIT 1
     `;
-    return HttpServerResponse.jsonUnsafe({ text: rows[0]?.text ?? null });
-  }).pipe(
-    Effect.orElseSucceed(() =>
-      HttpServerResponse.jsonUnsafe(
-        { error: { code: "said-lookup-failed", message: "Could not read what Segno said." } },
-        { status: 500 },
-      ),
+  return HttpServerResponse.jsonUnsafe({ text: rows[0]?.text ?? null });
+}, Effect.orElseSucceed(() =>
+    HttpServerResponse.jsonUnsafe(
+      { error: { code: "said-lookup-failed", message: "Could not read what Segno said." } },
+      { status: 500 },
     ),
-  );
+  ));

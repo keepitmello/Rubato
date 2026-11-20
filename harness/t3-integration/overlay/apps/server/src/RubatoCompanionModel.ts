@@ -36,7 +36,7 @@ export const rubatoCompanionModelRouteLayer = Layer.unwrap(Effect.gen(function* 
   const orchestrator = yield* Orchestrator.OrchestratorV2;
   const services = yield* Effect.context<SqlClient.SqlClient | ProviderInstanceRegistry>();
 
-  const apply = (threadId: ThreadId, modelSelection: ModelSelection) => Effect.gen(function* () {
+  const apply = Effect.fn("RubatoCompanionModel.apply")(function* (threadId: ThreadId, modelSelection: ModelSelection) {
     const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError((cause) => refused("no-session", describe(cause))));
     if (session === null) return yield* refused("no-session", "This conversation has no Rubato session.");
     const bridge = yield* rubatoBridge(modelSelection.instanceId);
@@ -53,7 +53,7 @@ export const rubatoCompanionModelRouteLayer = Layer.unwrap(Effect.gen(function* 
       modelSelection,
     }).pipe(Effect.mapError((cause) => refused("write-failed", describe(cause))));
     return {};
-  }).pipe(Effect.provide(services));
+  }, Effect.provide(services));
 
   const handle = Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
