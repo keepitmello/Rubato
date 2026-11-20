@@ -28,6 +28,7 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.ts',
   'apps/mobile/src/features/rubato-shell/companionThreadFilter.test.ts',
   'apps/mobile/src/features/rubato-voice/macLiveDictation.ts',
+  'apps/mobile/src/features/rubato-shell/RubatoUpdateHost.tsx',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.ts',
   'apps/mobile/src/features/rubato-voice/macVoiceFailures.test.ts',
   'apps/mobile/src/features/rubato-shell/companionNotifications.ts',
@@ -74,9 +75,10 @@ export const shellEdits = {
     // Rubato's own version line; build-ios.sh stamps the build number.
     ['  version: "2.0.0",', '  version: "1.0.0",', 'replace'],
     ['  icon: variant.assets.appIcon,\n  userInterfaceStyle', '  icon: RUBATO_ICON,\n  userInterfaceStyle', 'replace'],
-    // T3's Expo project serves T3's JavaScript; a Rubato binary must never load it.
+    // T3's Expo project serves T3's JavaScript; a Rubato binary loads only Rubato's (EAS Update,
+    // mobile/update-ios.sh), from the production channel.
     ['  updates: {\n    enabled: repoEnv.T3CODE_MOBILE_UPDATES_ENABLED !== "0",\n    url: "https://u.expo.dev/d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    checkAutomatically: "ON_LOAD",\n    fallbackToCacheTimeout: 0,\n  },',
-      '  updates: {\n    // Rubato: no over-the-air updates; T3\'s Expo project serves T3\'s JavaScript.\n    enabled: false,\n  },', 'replace'],
+      '  updates: {\n    // Rubato\'s own Expo project (keepitmello1/rubato): JavaScript sent with mobile/update-ios.sh.\n    url: "https://u.expo.dev/a877f54c-97e5-47f0-83a2-2fc36b7c0694",\n    checkAutomatically: "ON_LOAD",\n    fallbackToCacheTimeout: 0,\n    requestHeaders: { "expo-channel-name": "production" },\n  },', 'replace'],
     ['    icon: variant.assets.iosIcon,', '    icon: RUBATO_ICON,', 'replace'],
     // Companion messages as Communication Notifications, and the App Group the app shares with
     // its notification service extension (targets/notification-service) and CallKit.
@@ -119,7 +121,7 @@ export const shellEdits = {
     ['    relay: {\n      url: repoEnv.T3CODE_RELAY_URL ?? null,\n    },\n    clerk: {\n      publishableKey: repoEnv.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY ?? null,\n      jwtTemplate: repoEnv.EXPO_PUBLIC_CLERK_JWT_TEMPLATE ?? null,\n    },',
       '    // Rubato: no T3 account and no T3 relay; the phone pairs with the Mac directly. Empty, not\n    // null: the public manifest would turn null into {}.\n    relay: {},\n    clerk: {},', 'replace'],
     ['    eas: {\n      projectId: "d763fcb8-d37c-41ea-a773-b54a0ab4a454",\n    },\n  },\n  owner: "pingdotgg",\n};',
-      '  },\n};', 'replace'],
+      '    eas: {\n      projectId: "a877f54c-97e5-47f0-83a2-2fc36b7c0694",\n    },\n  },\n  owner: "keepitmello1",\n};', 'replace'],
   ],
 
   // Companions first: the room list is the tab the app opens on.
@@ -246,12 +248,17 @@ export const shellEdits = {
   ],
   'apps/mobile/src/App.tsx': [
     ['import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\n',
-      'import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\nimport { RubatoCallHost } from "./features/rubato-shell/companionSurface";\nimport { RubatoPushHost } from "./features/rubato-push";\n', 'replace'],
+      'import { ThreadArrangementHost } from "./features/threads/ThreadArrangementSheet";\nimport { RubatoCallHost } from "./features/rubato-shell/companionSurface";\nimport { RubatoPushHost } from "./features/rubato-push";\nimport { RubatoUpdateHost } from "./features/rubato-shell/RubatoUpdateHost";\n', 'replace'],
     // The call on screen and the ring of an open app, over every route; push tokens kept in line
     // with the relay and every paired Mac (features/rubato-push).
-    ['                  <ThreadArrangementHost />\n', '                  <ThreadArrangementHost />\n                  <RubatoCallHost />\n                  <RubatoPushHost />\n', 'replace'],
+    ['                  <ThreadArrangementHost />\n', '                  <ThreadArrangementHost />\n                  <RubatoCallHost />\n                  <RubatoPushHost />\n                  <RubatoUpdateHost />\n', 'replace'],
     ['  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],',
       '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://"],', 'replace'],
+  ],
+  // An update published with mobile/update-ios.sh is looked for again when the app comes back after
+  // two minutes, not fifteen: the check is one small request, and it only asks when there is one.
+  'apps/mobile/src/features/updates/app-updates.ts': [
+    ['export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 15 * 60 * 1000;', 'export const FOREGROUND_APP_UPDATE_RECHECK_AFTER_MS = 2 * 60 * 1000;', 'replace'],
   ],
 
   // Themes: the five Rubato library themes the desktop offers (packages/shared rubatoThemes.ts,

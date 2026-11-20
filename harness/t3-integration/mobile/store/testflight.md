@@ -2,7 +2,10 @@
 
 App Store Connect: app "Rubato" (Apple ID 6834353824, SKU rubato-ios, bundle com.keepitmello.rubato,
 team 5WGZKZGPQS). Internal group "Rubato Team" gets every processed build automatically.
-Builds come from `build-ios.sh --testflight`.
+Builds come from `build-ios.sh --testflight`. A change that touches only the app's JavaScript goes
+out with `update-ios.sh` instead (EAS Update, Expo project `@keepitmello1/rubato`, channel
+`production`, `EXPO_TOKEN` in `~/.zshrc`): phones on a build with the same native fingerprint take it
+on their next launch.
 
 ## Test information (external testing)
 
