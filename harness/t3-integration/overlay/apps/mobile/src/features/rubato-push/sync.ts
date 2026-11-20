@@ -15,9 +15,11 @@ export interface PushPreferences {
   readonly threads: boolean;
   readonly companionMessages: boolean;
   readonly companionCalls: boolean;
+  /** The lock-screen and Dynamic Island card of each Mac's running threads (liveActivity.ts). */
+  readonly liveActivity: boolean;
 }
 
-export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionMessages: true, companionCalls: true };
+export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionMessages: true, companionCalls: true, liveActivity: true };
 
 export interface PushGrant {
   readonly grantId: string;
@@ -37,6 +39,8 @@ export interface PushState {
   /** By the Mac's environment id. */
   readonly grants: Readonly<Record<string, PushGrant>>;
   readonly preferences?: PushPreferences;
+  /** The Live Activity card open for each Mac, by environment id: its ActivityKit id and the token the relay has. */
+  readonly activities?: Readonly<Record<string, { readonly id: string; readonly token: string | null }>>;
 }
 
 export interface MacConnection {
@@ -177,10 +181,10 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
           grantId: minted.grantId,
           deviceId: state.deviceId,
           label: deps.deviceLabel,
-          preferences: state.preferences ?? DEFAULT_PREFERENCES,
+          preferences: pushPreferences(state),
         },
       });
-      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl, preferences: state.preferences ?? DEFAULT_PREFERENCES } };
+      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl, preferences: pushPreferences(state) } };
       state = { ...state, grants };
       await deps.save(state);
     } catch (error) {
@@ -195,12 +199,21 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
 }
 
 const samePreferences = (a: PushPreferences | undefined, b: PushPreferences) =>
-  !!a && a.threads === b.threads && a.companionMessages === b.companionMessages && a.companionCalls === b.companionCalls;
+  !!a &&
+  a.threads === b.threads &&
+  a.companionMessages === b.companionMessages &&
+  a.companionCalls === b.companionCalls &&
+  a.liveActivity === b.liveActivity;
+
+/** A choice saved before a kind existed reads as on, as the Mac reads it (push-relay/mac/grants.mjs). */
+export function pushPreferences(state: PushState | null): PushPreferences {
+  return { ...DEFAULT_PREFERENCES, ...state?.preferences };
+}
 
 /** Every paired Mac that has not taken the phone's current choices hears them (POST /rubato/push/preferences). */
 async function tellPreferences(deps: PushSyncDeps, start: PushState, connections: ReadonlyArray<MacConnection>): Promise<PushState> {
   let state = start;
-  const preferences = state.preferences ?? DEFAULT_PREFERENCES;
+  const preferences = pushPreferences(state);
   for (const connection of connections) {
     const grant = state.grants[connection.environmentId];
     if (!grant || samePreferences(grant.preferences, preferences)) continue;

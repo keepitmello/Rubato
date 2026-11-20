@@ -5,8 +5,10 @@
 // over HTTP. Chromium does not decode AIFF or CAF; those go through afconvert to
 // WAV once and stay in a cache keyed by the file's path, mtime and size.
 //
-//   POST list          { sounds: [{ id, name, folder }] }
-//   POST file { id }   the audio bytes
+//   POST list                    { sounds: [{ id, name, folder }] }
+//   POST file { id }             the audio bytes
+//   POST file { id, for: 'phone' }   the same sound as an iPhone notification plays it: CAF, IMA4
+//                                (the Rubato app keeps it in Library/Sounds, rubato-push/sounds.ts)
 //
 // An id is "mac:<folder>/<file name>" and names only a file the listing of that
 // folder returns, so a request reaches nothing else on disk.
@@ -45,9 +47,15 @@ function contentTypeOf(file) {
   return `audio/${extension}`;
 }
 
+/** What afconvert makes of a sound, by who asked: the browser's WAV, or the phone's CAF. */
+const TARGETS = {
+  browser: { extension: 'wav', contentType: 'audio/wav', args: ['-f', 'WAVE', '-d', 'LEI16'] },
+  phone: { extension: 'caf', contentType: 'audio/x-caf', args: ['-f', 'caff', '-d', 'ima4'] },
+};
+
 /**
  * @param {{ folders?: { system: string, local: string, user: string }, cacheDirectory?: string,
- *   convert?: (input: string, output: string) => Promise<unknown> }} [options]
+ *   convert?: (input: string, output: string, args: string[]) => Promise<unknown> }} [options]
  */
 export function createSoundsService(options = {}) {
   const folders = options.folders ?? {
@@ -57,7 +65,7 @@ export function createSoundsService(options = {}) {
   };
   const cacheDirectory = options.cacheDirectory ?? path.join(tmpdir(), 'rubato-sounds');
   const convert = options.convert
-    ?? ((input, output) => run('afconvert', ['-f', 'WAVE', '-d', 'LEI16', input, output], { timeout: 10_000 }));
+    ?? ((input, output, args) => run('afconvert', [...args, input, output], { timeout: 10_000 }));
 
   /** Every alert sound, system ones first, each folder by name. */
   async function list() {
@@ -85,19 +93,20 @@ export function createSoundsService(options = {}) {
     return info?.isFile() ? file : null;
   }
 
-  /** The sound's bytes in a format the browser decodes. */
-  async function playable(file) {
+  /** The sound's bytes in a format the browser decodes, or the phone's notification sound. */
+  async function playable(file, target = 'browser') {
     const info = await stat(file);
     if (info.size > MAX_SOUND_BYTES) throw new SoundsRequestError(413, 'too-large', 'That sound file is too large.');
-    if (PLAYABLE_FILE.test(file)) return { bytes: await readFile(file), contentType: contentTypeOf(file) };
+    if (target === 'browser' && PLAYABLE_FILE.test(file)) return { bytes: await readFile(file), contentType: contentTypeOf(file) };
+    const { extension, contentType, args } = TARGETS[target];
     const key = createHash('sha256').update(`${file}\0${info.mtimeMs}\0${info.size}`).digest('hex');
-    const converted = path.join(cacheDirectory, `${key}.wav`);
+    const converted = path.join(cacheDirectory, `${key}.${extension}`);
     const cached = await readFile(converted).catch(() => null);
-    if (cached) return { bytes: cached, contentType: 'audio/wav' };
+    if (cached) return { bytes: cached, contentType };
     await mkdir(cacheDirectory, { recursive: true });
-    const temporary = path.join(cacheDirectory, `${key}.${randomUUID()}.tmp.wav`);
+    const temporary = path.join(cacheDirectory, `${key}.${randomUUID()}.tmp.${extension}`);
     try {
-      await convert(file, temporary);
+      await convert(file, temporary, args);
       await rename(temporary, converted);
     } catch (error) {
       throw new SoundsRequestError(500, 'convert-failed',
@@ -105,13 +114,13 @@ export function createSoundsService(options = {}) {
     } finally {
       await unlink(temporary).catch(() => undefined);
     }
-    return { bytes: await readFile(converted), contentType: 'audio/wav' };
+    return { bytes: await readFile(converted), contentType };
   }
 
-  async function file(id) {
+  async function file(id, target = 'browser') {
     const found = await resolve(id);
     if (found === null) throw new SoundsRequestError(404, 'unknown-sound', 'That sound is not on this Mac.');
-    return playable(found);
+    return playable(found, target === 'phone' ? 'phone' : 'browser');
   }
 
   return { list, resolve, file };
@@ -125,7 +134,7 @@ export async function handleSoundsRequest(service, request) {
     if (action === 'list') return Response.json({ sounds: await service.list() });
     if (action === 'file') {
       const body = await request.json().catch(() => null);
-      const { bytes, contentType } = await service.file(body?.id);
+      const { bytes, contentType } = await service.file(body?.id, body?.for);
       return new Response(bytes, { headers: { 'content-type': contentType, 'cache-control': 'no-store' } });
     }
     return Response.json({ error: { code: 'not-found', message: `Unknown sounds action: ${action}` } }, { status: 404 });

@@ -202,6 +202,8 @@
     "apps/mobile/src/native/T3ComposerEditor.types.ts": "e14357cad4868225ecad25a99e3ee4a9a59e95c583ccf9bf83f73c9be44136fd",
     "packages/client-runtime/src/voice-input/controller.ts": "faa532b44fb4a24006e941ad0ad3248795c703d90eaf70357f66ae1152ddf447",
     "packages/client-runtime/src/voice-input/index.ts": "3cc55f63473e5435c128bc1448b67ff0f7042f4b97901949477c7199e040b046",
-    "apps/mobile/src/features/updates/app-updates.ts": "3f1782dbbe01d49037960f782ac5f7a3608c60a8be33243f153c2acd6d3517ec"
+    "apps/mobile/src/features/updates/app-updates.ts": "3f1782dbbe01d49037960f782ac5f7a3608c60a8be33243f153c2acd6d3517ec",
+    "apps/mobile/src/features/agent-awareness/remoteRegistration.ts": "f35f10f78d564c15c8e6cd75eb22cd8207c619a16c4b54cfa4439400d590e2cf",
+    "apps/mobile/assets/widget/T3Mark.svg": "ae716f54013c25034e5d1bcac38e70e948e9653d3bfe493d4fbfc1080b3c7351"
   }
 }

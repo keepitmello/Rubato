@@ -96,7 +96,7 @@ export const shellEdits = {
     ['      UIBackgroundModes: ["audio"],', '      UIBackgroundModes: ["audio", "voip", "remote-notification"],', 'replace'],
     ['      NSPhotoLibraryAddUsageDescription: "Allow T3 Code to save images to your photo library.",',
       '      NSPhotoLibraryAddUsageDescription: "Allow Rubato to save images to your photo library.",', 'replace'],
-    // The share extension and widgets each need an app id and an app group of their own.
+    // The share extension needs an app id and an app group of its own.
     ['    ...(isIosPersonalTeamBuild\n      ? [sharingPlugin]\n      : ["./plugins/withShareExtensionDisplayName.cjs", sharingPlugin]),', '    sharingPlugin,', 'replace'],
     ['      enabled: !isIosPersonalTeamBuild,\n      extensionBundleIdentifier', '      enabled: false,\n      extensionBundleIdentifier', 'replace'],
     ['    ["@clerk/expo", { theme: "./clerk-theme.json", appleSignIn: !isIosPersonalTeamBuild }],\n    "expo-web-browser",',
@@ -113,8 +113,6 @@ export const shellEdits = {
     // LiveKit's native setup for companion calls (deps-edits.mjs).
     ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
       '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
-    ['    ...(!isIosPersonalTeamBuild ? ["./plugins/withWidgetLogoAsset.cjs", widgetsPlugin] : []),\n    "./plugins/withAndroidCleartextTraffic.cjs",',
-      '    // Rubato: no widget extension.\n    "./plugins/withAndroidCleartextTraffic.cjs",', 'replace'],
     // Without the share extension and T3's relay, the JavaScript must not reach for either:
     // both check this flag (IncomingShareProvider, agent-awareness/capabilities).
     ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,', '    iosPersonalTeamBuild: true,', 'replace'],
@@ -252,8 +250,16 @@ export const shellEdits = {
     // The call on screen and the ring of an open app, over every route; push tokens kept in line
     // with the relay and every paired Mac (features/rubato-push).
     ['                  <ThreadArrangementHost />\n', '                  <ThreadArrangementHost />\n                  <RubatoCallHost />\n                  <RubatoPushHost />\n                  <RubatoUpdateHost />\n', 'replace'],
+    // The Live Activity's rows link with upstream's scheme (widgets/AgentActivity.tsx); a tap reaches
+    // this app all the same, and opens that thread.
     ['  prefixes: [Linking.createURL("/"), "t3code://", "t3code-dev://", "t3code-preview://"],',
-      '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://"],', 'replace'],
+      '  prefixes: [Linking.createURL("/"), "rubato://", "rubato-dev://", "rubato-preview://", "t3code://"],', 'replace'],
+  ],
+  // The Live Activity's mark: the curl of the Rubato icon, drawn as one stroke the card tints.
+  'apps/mobile/assets/widget/T3Mark.svg': [
+    ['<svg width="111" height="74" viewBox="7 29 111 74" fill="none" xmlns="http://www.w3.org/2000/svg">', '<svg width="66" height="78" viewBox="23 15 66 78" fill="none" xmlns="http://www.w3.org/2000/svg">', 'replace'],
+    ["<path d=\"M33.4509 93V47.56H15.5309V37H64.3309V47.56H46.4109V93H33.4509ZM86.7253 93.96C82.832 93.96 78.9653 93.4533 75.1253 92.44C71.2853 91.3733 68.032 89.88 65.3653 87.96L70.4053 78.04C72.5386 79.5867 75.0186 80.8133 77.8453 81.72C80.672 82.6267 83.5253 83.08 86.4053 83.08C89.6586 83.08 92.2186 82.44 94.0853 81.16C95.952 79.88 96.8853 78.12 96.8853 75.88C96.8853 73.7467 96.0586 72.0667 94.4053 70.84C92.752 69.6133 90.0853 69 86.4053 69H80.4853V60.44L96.0853 42.76L97.5253 47.4H68.1653V37H107.365V45.4L91.8453 63.08L85.2853 59.32H89.0453C95.9253 59.32 101.125 60.8667 104.645 63.96C108.165 67.0533 109.925 71.0267 109.925 75.88C109.925 79.0267 109.099 81.9867 107.445 84.76C105.792 87.48 103.259 89.6933 99.8453 91.4C96.432 93.1067 92.0586 93.96 86.7253 93.96Z\" fill=\"black\"/>",
+      '<path d="M30 87C37 81 42 66 46 52C50 38 55 26 66 23C76 20.5 83 27 82 36C81 45 73 50 65 49C60 48.4 58.5 45 60.5 42.5" stroke="black" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>', 'replace'],
   ],
   // An update published with mobile/update-ios.sh is looked for again when the app comes back after
   // two minutes, not fifteen: the check is one small request, and it only asks when there is one.

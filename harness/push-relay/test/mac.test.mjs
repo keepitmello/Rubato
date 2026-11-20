@@ -108,12 +108,12 @@ test("a phone's choices are kept per phone, and a kind it turned off never leave
   const quiet = await relay.phone('5'.repeat(64), 'c'.repeat(64));
   const loud = await relay.phone('6'.repeat(64), 'd'.repeat(64));
   assert.deepEqual(grants.add({ relay: relay.url, grant: quiet.grant, grantId: quiet.grantId, deviceId: quiet.deviceId,
-    preferences: { companionCalls: false } }).preferences, { threads: true, companionMessages: true, companionCalls: false });
+    preferences: { companionCalls: false } }).preferences, { threads: true, companionMessages: true, companionCalls: false, liveActivity: true });
   grants.add({ relay: relay.url, grant: loud.grant, grantId: loud.grantId, deviceId: loud.deviceId });
   createPushSender({ grants }).callChanged({ id: 'call-1', uuid: 'u-1', companion: 'roo', direction: 'incoming', status: 'ringing', createdAt: Date.now() });
   await new Promise(resolve => setTimeout(resolve, 300));
   assert.deepEqual(relay.apns.map(item => item.url.split('/').at(-1)), ['d'.repeat(64)]);
-  assert.deepEqual(grants.setPreferences(loud.deviceId, { threads: false }), { threads: false, companionMessages: true, companionCalls: true });
+  assert.deepEqual(grants.setPreferences(loud.deviceId, { threads: false }), { threads: false, companionMessages: true, companionCalls: true, liveActivity: true });
   const results = await grants.pushAll({ kind: 'alert', title: 't', body: 'b' }, { preference: 'threads' });
   assert.deepEqual(results.map(item => item.deviceId), [quiet.deviceId]);
   // A phone pairing again keeps what it chose unless it says otherwise.

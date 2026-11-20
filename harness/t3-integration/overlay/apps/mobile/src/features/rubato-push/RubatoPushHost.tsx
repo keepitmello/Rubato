@@ -4,12 +4,16 @@ import { requireOptionalNativeModule } from "expo";
 import * as Notifications from "expo-notifications";
 
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { macConnections, rubatoPushDeps } from "./deps";
+import { liveActivityDeps, macConnections, rubatoPushDeps } from "./deps";
+import { onLiveActivitySyncRequest, syncLiveActivities } from "./liveActivity";
+import { librarySounds } from "./soundFolder";
+import { syncNotificationSounds } from "./sounds";
 import { syncRubatoPush, type MacConnection } from "./sync";
 
 // Mounted once in App.tsx. Keeps the relay and every paired Mac in line with this phone's push
 // tokens (sync.ts): at start, when a Mac is paired or removed, when iOS hands out a new token,
-// and each time the app comes to the front.
+// and each time the app comes to the front. Then the chimes the Macs ring with (sounds.ts), and,
+// while the app is in front, each Mac's Live Activity card (liveActivity.ts).
 
 /** companion-ui's CallKit module (modules/rubato-call): the PushKit VoIP token and its changes. */
 interface RubatoCallModule {
@@ -55,6 +59,13 @@ export function RubatoPushHost(): null {
         } catch (error) {
           console.warn("rubato push: sync failed", error);
         }
+        await syncNotificationSounds({ folder: librarySounds(), fetch: globalThis.fetch }, connections.current).catch(() => {});
+        // iOS starts a card only for an app in front.
+        if (AppState.currentState === "active") {
+          await syncLiveActivities(liveActivityDeps(), connections.current).catch((error: unknown) =>
+            console.warn("rubato push: live activity sync failed", error),
+          );
+        }
       } while (again.current);
       running.current = null;
     })();
@@ -84,8 +95,10 @@ export function RubatoPushHost(): null {
     const foreground = AppState.addEventListener("change", (next) => {
       if (next === "active") sync();
     });
+    const workStarted = onLiveActivitySyncRequest(sync);
     return () => {
       live = false;
+      workStarted();
       apnsChanged.remove();
       voipChanged?.remove();
       foreground.remove();

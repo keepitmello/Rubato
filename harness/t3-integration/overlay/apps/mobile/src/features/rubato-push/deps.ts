@@ -1,8 +1,10 @@
 import Constants from "expo-constants";
 import * as Device from "expo-device";
 
+import { getAgentLiveActivities, startAgentLiveActivity } from "../agent-awareness/agentLiveActivity";
 import { resolveApsEnvironment } from "../agent-awareness/registrationPayload";
 import { RUBATO_PUSH_RELAY } from "./config";
+import type { LiveActivityDeps } from "./liveActivity";
 import { loadPushState, savePushState } from "./storage";
 import type { MacConnection, PushSyncDeps } from "./sync";
 
@@ -17,6 +19,15 @@ export function rubatoPushDeps(): PushSyncDeps {
     load: loadPushState,
     save: savePushState,
     log: (message, detail) => console.warn(message, detail),
+  };
+}
+
+/** The Live Activity cards of upstream's AgentActivity widget, on top of the relay registration. */
+export function liveActivityDeps(): LiveActivityDeps {
+  return {
+    ...rubatoPushDeps(),
+    cards: () => getAgentLiveActivities(),
+    start: (props, staleDate) => startAgentLiveActivity(props, staleDate),
   };
 }
 

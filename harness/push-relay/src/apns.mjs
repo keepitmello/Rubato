@@ -35,14 +35,15 @@ export async function signProviderToken({ teamId, keyId, privateKey, issuedAt })
  * An alert on the lock screen. `data` lands at the top level (upstream's thread navigation reads it
  * there), `rubato` under its own key; `category` picks the app's notification category, and
  * `mutableContent` lets the app's service extension redraw it (a companion message as a message).
+ * `sound` is 'default' or a file the app keeps in Library/Sounds, the same chime the Mac plays.
  */
-export function alertPayload({ title, subtitle = null, body, threadId, data = {}, rubato = null, category = null, mutableContent = false }) {
+export function alertPayload({ title, subtitle = null, body, threadId, data = {}, rubato = null, category = null, mutableContent = false, sound = 'default' }) {
   return {
     ...data,
     ...(rubato ? { rubato } : {}),
     aps: {
       alert: { title, ...(subtitle ? { subtitle } : {}), body },
-      sound: 'default',
+      sound,
       ...(threadId ? { 'thread-id': threadId } : {}),
       ...(category ? { category } : {}),
       ...(mutableContent ? { 'mutable-content': 1 } : {}),
@@ -55,24 +56,48 @@ export function ringPayload({ callId, uuid, companion, title, reason, ringUntil 
   return { rubato: { kind: 'call.ring', callId, uuid, companion, title, reason: reason ?? null, ringUntil } };
 }
 
+/** The widget the app's Live Activity draws (upstream's `AgentActivity`, expo-widgets). */
+const LIVE_ACTIVITY_NAME = 'AgentActivity';
+/** A card the Mac has not refreshed for this long dims: its Mac may be asleep or gone. */
+export const ACTIVITY_STALE_S = 10 * 60;
+/** An ended card stays on the lock screen this long, showing how the work ended. */
+export const ACTIVITY_DISMISS_S = 5 * 60;
+
 /**
- * The HTTP/2 request APNs expects. `kind` is 'alert' or 'voip'; a VoIP push goes to `<bundle>.voip` and
- * expires when the ring would end, so a phone that comes online late does not ring for a finished call.
+ * An update to the Live Activity a phone started for one Mac: `state` is what the card shows (the
+ * widget's props, which expo-widgets carries as a JSON string), `end` closes it. iOS takes the newest
+ * `timestamp`, so a late update cannot repaint a newer one.
+ */
+export function activityPayload({ state, end = false, nowS }) {
+  const contentState = state ? { 'content-state': { name: LIVE_ACTIVITY_NAME, props: JSON.stringify(state) } } : {};
+  return end
+    ? { aps: { timestamp: nowS, event: 'end', ...contentState, 'dismissal-date': nowS + (state ? ACTIVITY_DISMISS_S : 0) } }
+    : { aps: { timestamp: nowS, event: 'update', ...contentState, 'stale-date': nowS + ACTIVITY_STALE_S } };
+}
+
+const PUSH_TYPE = { alert: 'alert', voip: 'voip', liveactivity: 'liveactivity' };
+
+/**
+ * The HTTP/2 request APNs expects. `kind` is 'alert', 'voip' or 'liveactivity'; a VoIP push goes to
+ * `<bundle>.voip` and expires when the ring would end, so a phone that comes online late does not ring
+ * for a finished call. A Live Activity update goes to `<bundle>.push-type.liveactivity`; `priority` 5
+ * spends less of the budget iOS gives each card.
  * `collapseId`: a later alert with the same one replaces this one on the phone instead of piling up.
  */
-export function apnsRequest({ environment, bundleId, token, kind, payload, jwt, expiration = 0, collapseId = null }) {
+export function apnsRequest({ environment, bundleId, token, kind, payload, jwt, expiration = 0, collapseId = null, priority = 10 }) {
   const host = HOSTS[environment];
   if (!host) throw new Error(`unknown APNs environment: ${environment}`);
-  const voip = kind === 'voip';
+  if (!PUSH_TYPE[kind]) throw new Error(`unknown push kind: ${kind}`);
+  const topic = kind === 'voip' ? `${bundleId}.voip` : kind === 'liveactivity' ? `${bundleId}.push-type.liveactivity` : bundleId;
   return {
     url: `${host}/3/device/${token}`,
     init: {
       method: 'POST',
       headers: {
         authorization: `bearer ${jwt}`,
-        'apns-topic': voip ? `${bundleId}.voip` : bundleId,
-        'apns-push-type': voip ? 'voip' : 'alert',
-        'apns-priority': '10',
+        'apns-topic': topic,
+        'apns-push-type': PUSH_TYPE[kind],
+        'apns-priority': String(priority),
         'apns-expiration': String(expiration),
         ...(collapseId ? { 'apns-collapse-id': collapseId } : {}),
         'content-type': 'application/json',
