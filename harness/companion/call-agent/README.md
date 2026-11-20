@@ -20,8 +20,10 @@ caller ─ audio ─▶ LiveKit server (this Mac)
 
 The engine runs it as the resident service `call` whenever a companion has `call.enabled`
 (`service.mjs`, listed in `pi-server/src/resident-services.mjs`); the engine's main thread owns
-LiveKit and the worker. Without LiveKit or `npm install` here the service stays idle and says why
-in the engine log. `node run.mjs` runs the same stack in a terminal.
+LiveKit and the worker. An engine that crashes cannot stop them, so each stack writes their pids to
+`~/.rubato/call/processes.json` and the next one stops what is still running there before it takes
+the ports (`leftovers.mjs`). Without LiveKit or `npm install` here the service stays idle and says
+why in the engine log. `node run.mjs` runs the same stack in a terminal.
 
 The control surface (`control.mjs`) listens on <http://127.0.0.1:18790/> with a test page. The app
 reaches it through its own authenticated route. The LiveKit key pair is made once in

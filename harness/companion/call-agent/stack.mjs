@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createControl, listen } from './control.mjs';
 import { createCallLog } from './calls.mjs';
+import { forgetProcesses, recordProcesses, stopLeftovers } from './leftovers.mjs';
 import { CALL_HOME, CONTROL_PORT, LIVEKIT_PORT, livekitConfig, livekitServerPath } from './livekit.mjs';
 import { startTailnetExposure } from './remote.mjs';
 
@@ -33,6 +34,11 @@ export async function startCallStack({ spawn, onExit = () => {}, say = () => {},
   if (!server) throw new Error('livekit-server is not installed (brew install livekit)');
   const livekit = livekitConfig(path.join(home, 'livekit.yaml'));
   mkdirSync(path.join(home, 'logs'), { recursive: true, mode: 0o700 });
+  // What a stack before this one left running (its engine crashed or was killed) holds LiveKit's
+  // ports; stop it before taking them.
+  const processesFile = path.join(home, 'processes.json');
+  const stopped = await stopLeftovers(processesFile);
+  if (stopped.length) say('call stopped leftovers', { processes: stopped });
   const push = await pushSender(say);
   const log = createCallLog({ dir: path.join(home, 'calls'), onChange: call => {
     try { push?.callChanged(call); } catch (error) { say('call push failed', { reason: error.message }); }
@@ -42,15 +48,18 @@ export async function startCallStack({ spawn, onExit = () => {}, say = () => {},
   const http = await listen(control, { port });
   let closing = false;
   const children = [];
-  async function start(name, command, args, extraEnv = {}) {
+  const recorded = [];
+  async function start(name, command, args, extraEnv = {}, match = args[0]) {
     const fd = openSync(path.join(home, 'logs', `${name}.log`), 'a', 0o600);
     try {
       const child = await spawn(command, args, { env: { ...env, ...extraEnv }, stdio: ['ignore', fd, fd] });
       child.on('exit', code => { if (!closing) onExit(name, code); });
       children.push(child);
+      recorded.push({ name, pid: child.pid, match });
+      recordProcesses(processesFile, recorded);
     } finally { closeSync(fd); }
   }
-  await start('livekit', server, ['--config', livekit.file]);
+  await start('livekit', server, ['--config', livekit.file], {}, server);
   await start('agent', process.execPath, [path.join(here, 'agent.mjs'), 'start'], {
     LIVEKIT_URL: livekit.url, LIVEKIT_API_KEY: livekit.key, LIVEKIT_API_SECRET: livekit.secret,
     RUBATO_CALL_CONTROL: `http://127.0.0.1:${port}`,
@@ -61,6 +70,7 @@ export async function startCallStack({ spawn, onExit = () => {}, say = () => {},
       closing = true;
       exposure?.close();
       for (const child of children) try { child.kill('SIGTERM'); } catch {}
+      forgetProcesses(processesFile);
       log.close();
       await new Promise(resolve => { http.close(resolve); http.closeAllConnections?.(); });
     },

@@ -18,6 +18,10 @@ function createFsSubscribe(directories) {
           if (!filename) return;
           onEvent({ path: join(directory, filename.toString()), eventType });
         });
+        // An FSWatcher with no 'error' listener throws its error out of the process: when macOS's
+        // file-event service restarts, every such watcher fails with EMFILE and the engine goes down
+        // with it (2026-11-20). Losing the reload is better than losing the engine.
+        watcher.on("error", () => watcher.close());
         watchers.push(watcher);
       } catch {
         // Directory may not exist yet.
