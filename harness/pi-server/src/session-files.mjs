@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { link, mkdir, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
+import { link, mkdir, open, readdir, realpath, rename, rm, stat, writeFile, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { SessionNotFoundError, SessionAmbiguousError } from '@earendil-works/pi-server';
 import { readSessionMetadataFrom, SESSION_METADATA_VERSION } from './session-metadata.mjs';
@@ -23,6 +23,73 @@ const receivedRow = (entry) => {
   return { entryId: entry.id, role: 'custom', customType: entry.customType, content: entry.content,
     display: session ? entry.display !== false : false, details: entry.details, timestamp: new Date(entry.timestamp).getTime() };
 };
+/** The live branch ending at the last of `entries`: each entry's parent, back to the first one `entries` lacks. */
+const activeBranch = (entries) => {
+  const byId = new Map(entries.map((entry) => [entry.id, entry]));
+  const branch = [];
+  const seen = new Set();
+  let entry = entries.at(-1);
+  while (entry && !seen.has(entry.id)) {
+    seen.add(entry.id); branch.unshift(entry); entry = byId.get(entry.parentId);
+  }
+  return branch;
+};
+const branchMessages = (branch) => branch.flatMap((entry) => {
+  if (entry.type === 'message') return [{ entryId: entry.id, ...entry.message }];
+  const received = receivedRow(entry);
+  return received ? [received] : [];
+});
+/** How much of a conversation file one read from its end takes. */
+const TAIL_CHUNK = 1024 * 1024;
+/**
+ * The entries of `file` written at or after `since` (epoch ms), in file order, read from the end
+ * back to the first older one: the file only grows, so they are its last lines. Null when the file
+ * is not in Pi's `version` format, whose entries need its migration, which works on the whole file.
+ */
+async function entriesSince(file, since, version) {
+  const handle = await open(file, 'r');
+  try {
+    const { size } = await handle.stat();
+    const entries = [];
+    let end = size;
+    let rest = Buffer.alloc(0);
+    let header;
+    // A line is whole once the newline before it is read; a newline byte never sits inside a UTF-8 character.
+    const take = (bytes) => {
+      const line = bytes.toString('utf8').trim();
+      if (!line) return true;
+      let entry;
+      try { entry = JSON.parse(line); } catch { return true; } // Pi's reader skips a malformed line too
+      if (entry.type === 'session') { header = entry; return false; }
+      if (Date.parse(entry.timestamp) < since) return false;
+      entries.push(entry);
+      return true;
+    };
+    let going = true;
+    while (going && end > 0) {
+      const start = Math.max(0, end - TAIL_CHUNK);
+      const chunk = Buffer.alloc(end - start);
+      await handle.read(chunk, 0, chunk.length, start);
+      let buffer = Buffer.concat([chunk, rest]);
+      end = start;
+      let cut;
+      while (going && (cut = buffer.lastIndexOf(0x0a)) >= 0) {
+        going = take(buffer.subarray(cut + 1));
+        buffer = buffer.subarray(0, cut);
+      }
+      rest = buffer;
+    }
+    if (going) take(rest);
+    if (!header) {
+      // The window reached back past the header's line only when the read stopped early; read the first line.
+      const first = Buffer.alloc(Math.min(size, 4096));
+      await handle.read(first, 0, first.length, 0);
+      try { header = JSON.parse(first.toString('utf8').split('\n')[0]); } catch { header = undefined; }
+    }
+    if (header?.type !== 'session' || header.version !== version) return null;
+    return entries.reverse();
+  } finally { await handle.close(); }
+}
 // One cap across all cwd folders, rather than Pi's per-folder cap multiplied
 // by the number of folders. Concurrent list/resolve calls share the same scan.
 async function mapFiles(items, read) {
@@ -253,27 +320,27 @@ export class SessionFiles {
     if (matches.length !== 1) throw new SessionAmbiguousError();
     return matches[0];
   }
-  async transcript(id) {
+  /**
+   * The live branch's messages. With `since` (epoch ms) only those written from then on, read from
+   * the file's end, and no `model`: a reader that keeps a thread up to date needs only the newest
+   * messages, and Segno's whole conversation (100 MB, 22,000 messages) took the engine's thread for
+   * over a second and was larger than one reply can carry (2026-11-20).
+   */
+  async transcript(id, { since } = {}) {
     const metadata = await this.resolve(id);
     // Read-only: opening a SessionManager can migrate old files. Never rewrite
     // a transcript simply because a presentation client wants to display it.
-    const { parseSessionEntries } = await import('@earendil-works/pi-coding-agent');
+    const { parseSessionEntries, CURRENT_SESSION_VERSION } = await import('@earendil-works/pi-coding-agent');
+    if (Number.isFinite(since)) {
+      const recent = await entriesSince(metadata.file, since, CURRENT_SESSION_VERSION);
+      if (recent) return { sessionId: id, since, messages: branchMessages(activeBranch(recent)) };
+    }
     const entries = parseSessionEntries(await readFile(metadata.file, 'utf8'))
       .filter((entry) => entry.type !== 'session');
-    const byId = new Map(entries.map((entry) => [entry.id, entry]));
-    const branch = [];
-    const seen = new Set();
-    let entry = entries.at(-1);
-    while (entry && !seen.has(entry.id)) {
-      seen.add(entry.id); branch.unshift(entry); entry = byId.get(entry.parentId);
-    }
+    const branch = activeBranch(entries);
     const selected = branch.findLast((entry) => entry.type === 'model_change');
     return { sessionId: id, model: selected ? `${selected.provider}/${selected.modelId}` : null,
-      messages: branch.flatMap((entry) => {
-        if (entry.type === 'message') return [{ entryId: entry.id, ...entry.message }];
-        const received = receivedRow(entry);
-        return received ? [received] : [];
-      }) };
+      messages: branchMessages(branch) };
   }
   /**
    * `titleLocked` marks the title as chosen, so the session-title feature never replaces it

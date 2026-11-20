@@ -33,7 +33,8 @@ export class SessionClient {
     return this.client.request(target, { serviceId: service.id, member, args: JSON.parse(JSON.stringify(args)) }, signal);
   }
   list() { return this.call(Directory, 'list', []); }
-  transcript(id) { return this.call(Directory, 'transcript', [id]); }
+  /** `{ since }` (epoch ms) asks for only the messages written from then on (session-files.mjs transcript). */
+  transcript(id, options) { return this.call(Directory, 'transcript', options ? [id, options] : [id]); }
   catalogue(cwd) { return this.call(Directory, 'catalogue', [cwd]); }
   create(options) { return this.call(Management, 'create', [options]); }
   fork(id, options = {}) { return this.call(Management, 'fork', [id, options]); }

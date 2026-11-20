@@ -257,3 +257,71 @@ test("a companion conversation no stream ever opened still gets Segno's replies,
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.deepEqual(appended.map(([id, item]) => [id, item.text]), [[threadId, '쇼룸 확인 끝났어.']], 'only the reply, once, never the monologue');
 });
+
+/** Segno's room after its first pass: the bridge's fakes, the transcripts asked for and what was written. */
+function companionRoom(t, { wholeFails = false } = {}) {
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-backfill-window-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const stateDir = path.join(dir, 'state');
+  mkdirSync(stateDir, { recursive: true });
+  const threadId = 'import:rubato-test:srv:S9';
+  const reply = (id, text, minute) => [
+    { role: 'assistant', stopReason: 'toolUse', content: [{ type: 'toolCall', id, name: 'reply', arguments: { text } }],
+      timestamp: at(minute), provider: 'anthropic', model: 'claude' },
+    { role: 'toolResult', toolCallId: id, toolName: 'reply', content: [{ type: 'text', text: 'Sent to the user.' }], isError: false, timestamp: at(minute) }];
+  // The person's words reach the conversation a minute after the app wrote them, across the window's start.
+  const session = [user('예전 얘기', 1), ...reply('r0', '예전 답', 2),
+    { ...user('오늘 뭐 해?', 0), timestamp: at(20) + 30_000 }, ...reply('r1', '산책 가자', 30)];
+  const room = [{ id: 'old', role: 'user', text: '예전 얘기', createdAt: new Date(at(1)).toISOString() },
+    { id: 's0', role: 'user', text: '예전 답', createdAt: new Date(at(2)).toISOString() },
+    { id: 'u', role: 'user', text: '오늘 뭐 해?', createdAt: new Date(at(19) + 30_000).toISOString() },
+    { id: 's1', role: 'user', text: '산책 가자', createdAt: new Date(at(30)).toISOString() }];
+  const appended = [];
+  const asked = [];
+  const bridge = new RubatoPiBridge({ descriptorPath: path.join(dir, 'none.json'), instanceId: 'rubato-test', sessionStateDir: stateDir,
+    backfillMs: 30,
+    projectedThread: async (id) => (id === threadId ? { messages: [...room, ...appended.map(([, item]) => ({ id: item.id, role: item.role,
+      text: item.text, createdAt: item.createdAt }))], checkpoints: [] } : null),
+    appendSessionMessage: async (id, item) => { appended.push([id, item]); } });
+  bridge.viaInventory = async (call) => call({
+    list: async () => [{ sessionId: 'S9', serverId: 'srv', companion: true, companionId: 'segno',
+      modifiedAt: session.at(-1).timestamp, touchedAt: session.at(-1).timestamp }],
+    // The engine reads from `since` on and says so (pi-server session-files.mjs transcript).
+    transcript: async (id, options) => {
+      asked.push(options);
+      if (!options && wholeFails) throw new Error('Byte transport closed');
+      const messages = (id === 'S9' ? session : []).filter((message) => !(message.timestamp < (options?.since ?? -Infinity)));
+      return options ? { sessionId: id, since: options.since, messages } : { sessionId: id, model: null, messages };
+    },
+  });
+  bridge.companionSession = async (id) => id === 'S9';
+  bridge.inventoryClient = { client: { connected: true }, close: async () => {}, abandon: async () => {} };
+  t.after(() => bridge.close());
+  return { session, appended, asked, reply };
+}
+
+test("after its first pass a companion's backfill reads its conversation only from just before what it already compared", async (t) => {
+  const { COMPANION_WINDOW_MS } = await import('../src/backfill.mjs');
+  const { session, appended, asked, reply } = companionRoom(t);
+  assert.ok(await until(() => asked.length >= 1));
+  assert.equal(asked[0], undefined, 'the first pass reads it whole, so an old hole is restored');
+  session.push(...reply('r2', '다녀왔어', 45));
+  assert.ok(await until(() => appended.length >= 1));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(asked.slice(1), [{ since: at(30) - COMPANION_WINDOW_MS }], 'once, from a margin before the newest bubble and the last pass');
+  assert.deepEqual(appended.map(([, item]) => item.text), ['다녀왔어'],
+    'the new reply once; the person\'s words whose copy came a minute later are not written again');
+});
+
+test('a companion conversation too large to come whole is read from its room\'s newest bubble on', async (t) => {
+  const { COMPANION_WINDOW_MS } = await import('../src/backfill.mjs');
+  const { session, appended, asked, reply } = companionRoom(t, { wholeFails: true });
+  session.push(...reply('r2', '다녀왔어', 45));
+  assert.ok(await until(() => appended.length >= 1));
+  session.push(...reply('r3', '잘 자', 50));
+  assert.ok(await until(() => appended.length >= 2));
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  assert.deepEqual(asked, [undefined, { since: at(30) - COMPANION_WINDOW_MS }, { since: at(45) - COMPANION_WINDOW_MS }],
+    'whole once; then from the newest bubble, never whole again');
+  assert.deepEqual(appended.map(([, item]) => item.text), ['다녀왔어', '잘 자']);
+});

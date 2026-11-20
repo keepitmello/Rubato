@@ -126,6 +126,50 @@ test('a transcript carries Pi\'s own custom messages hidden, so a client can tel
     'the terminal finish comes hidden; a hidden session notice still stays out');
 });
 
+test('a transcript since a moment reads only the newest messages of the live branch, the same rows the whole one has', async (t) => {
+  const { appendFile, writeFile } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  const created = await store.create({ cwd: tmpdir(), title: 'Long companion' });
+  let parentId = JSON.parse((await readFile(created.file, 'utf8')).trim().split('\n').at(-1)).id;
+  const minute = (n) => Date.parse('2026-11-20T00:00:00Z') + n * 60_000;
+  const lines = [];
+  const add = (id, n, message, parent = parentId) => {
+    lines.push({ type: 'message', id, parentId: parent, timestamp: new Date(minute(n)).toISOString(), message: { ...message, timestamp: minute(n) } });
+    parentId = id;
+  };
+  // Over two read chunks of old work, in Korean, so a chunk boundary falls inside a character.
+  for (let i = 0; i < 1200; i++) add(`old${i}`, 0, { role: 'toolResult', toolCallId: `t${i}`, toolName: 'bash', content: [{ type: 'text', text: '가'.repeat(700) }] });
+  lines.push({ type: 'model_change', id: 'mc', parentId, timestamp: new Date(minute(1)).toISOString(), provider: 'anthropic', modelId: 'claude' });
+  parentId = 'mc';
+  add('u1', 50, { role: 'user', content: '어디까지 했어?' });
+  add('a1', 51, { role: 'assistant', content: [{ type: 'text', text: '절반쯤.' }] });
+  const fork = parentId;
+  add('lost', 52, { role: 'assistant', content: [{ type: 'text', text: '되감긴 답' }] });
+  add('a2', 53, { role: 'assistant', content: [{ type: 'text', text: '다 했어.' }] }, fork);
+  await appendFile(created.file, lines.map((line) => JSON.stringify(line)).join('\n') + '\n');
+
+  const whole = await store.transcript(created.id);
+  assert.equal(whole.model, 'anthropic/claude');
+  const recent = await store.transcript(created.id, { since: minute(50) });
+  assert.deepEqual(recent.messages, whole.messages.filter((message) => message.timestamp >= minute(50)),
+    'the same rows as the whole branch from then on; the rewound answer stays out');
+  assert.deepEqual(recent.messages.map((message) => message.entryId), ['u1', 'a1', 'a2']);
+  assert.equal('model' in recent, false, 'the model is in the part not read');
+  assert.equal(recent.since, minute(50));
+
+  // A file in an older format needs Pi's migration, which reads the whole file: the whole branch comes.
+  const older = await store.create({ cwd: tmpdir(), title: 'Older' });
+  const [header, ...rest] = (await readFile(older.file, 'utf8')).trim().split('\n');
+  await writeFile(older.file, [JSON.stringify({ ...JSON.parse(header), version: 2 }), ...rest,
+    JSON.stringify({ type: 'message', id: 'o1', parentId: JSON.parse(rest.at(-1) ?? header).id ?? null, timestamp: new Date(minute(0)).toISOString(),
+      message: { role: 'user', content: 'old', timestamp: minute(0) } })].join('\n') + '\n');
+  const fallback = await store.transcript(older.id, { since: minute(50) });
+  assert.deepEqual(fallback.messages.map((message) => message.entryId), ['o1']);
+  assert.equal('since' in fallback, false);
+});
+
 test("a conversation's artifacts folder is not searched for conversations; an older per-cwd folder still is", async (t) => {
   const { mkdir, copyFile } = await import('node:fs/promises');
   const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));

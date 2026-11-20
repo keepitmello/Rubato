@@ -38,6 +38,34 @@ const inGap = (gaps, createdAt) => {
   return Number.isFinite(at) && gaps.some((gap) => at >= gap.from && at <= gap.to);
 };
 
+/** The margin a companion's backfill reads its conversation from before the moment it starts at. */
+export const COMPANION_WINDOW_MS = 10 * 60_000;
+
+/**
+ * From when (epoch ms) a companion's backfill reads its conversation, or undefined for all of it.
+ * Segno's conversation grew to 100 MB; read whole on every pass while it worked, it held the
+ * engine's thread over a second, then failed as larger than one reply can carry and came again
+ * five seconds later (2026-11-20). What the room lacks was written after its newest bubble, and
+ * after `compared`, the moment the last finished pass had read up to; the window starts a margin
+ * before the later of the two. With neither the conversation is read whole.
+ */
+export function companionSince(threadMessages, compared) {
+  const times = (threadMessages ?? []).map((message) => Date.parse(message.createdAt)).filter(Number.isFinite);
+  if (Number.isFinite(compared)) times.push(compared);
+  return times.length ? Math.max(...times) - COMPANION_WINDOW_MS : undefined;
+}
+
+/**
+ * The room's messages a conversation read from `since` is compared with: from a margin further
+ * back, so a bubble whose copy in the conversation sits just inside the window still finds it and
+ * is never written twice. All of them when the conversation came whole (`since` undefined, or an
+ * engine that reads only whole conversations).
+ */
+export function shownSince(threadMessages, since) {
+  if (!Number.isFinite(since)) return threadMessages ?? [];
+  return (threadMessages ?? []).filter((message) => !(Date.parse(message.createdAt) < since - COMPANION_WINDOW_MS));
+}
+
 /**
  * The projected session items the thread is missing, each with the run it goes into. Each thread
  * message is paired with the session message of the same words nearest to it in time; one left over is missing

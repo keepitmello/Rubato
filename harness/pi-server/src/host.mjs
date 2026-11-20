@@ -459,7 +459,7 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
       attachClient(presentation) {
         return endpoint([
           [Directory, { state: directory, list: async () => (await refresh()).sessions,
-            transcript: async (id) => wire(await files.transcript(id)), catalogue: async (cwd) => wire(await catalogue(cwd)) }],
+            transcript: async (id, options) => wire(await files.transcript(id, options ?? {})), catalogue: async (cwd) => wire(await catalogue(cwd)) }],
           [Management, {
             create: async (options) => {
               const created = await files.create(options);

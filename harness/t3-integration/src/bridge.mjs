@@ -4,7 +4,7 @@ import { ensureProfileEngine } from '../../pi-server/src/discovery.mjs';
 import { EventProjection, cacheFrom, importedId, messageKey, runOpener, sessionMessageFrom, textOf, usageModelIdentity, windowFromModels } from './events.mjs';
 import { SAID_KIND, channelItem, companionThreadItems, saidEchoes } from './said-echo.mjs';
 import { pushService } from './push/service.mjs';
-import { backfillItem, missingItems } from './backfill.mjs';
+import { backfillItem, companionSince, missingItems, shownSince } from './backfill.mjs';
 import { applySelectionOptions, catalogForPicker, serviceTierPrompts } from './model-catalog-order.mjs';
 import { controlCommandFor, rewriteSkillMentions, surfaceFromPiCommands } from './commands.mjs';
 import { recordLoadedCode } from './code-fingerprint.mjs';
@@ -551,7 +551,8 @@ export class RubatoPiBridge {
     // made by /rubato/side-chat, so the inventory must not import a second one.
     return sessions.filter((entry) => !entry.sideChatOf && (this.claimed.has(entry.sessionId) || this.shows(entry)));
   }
-  async transcript(id) { return this.viaInventory((client) => client.transcript(id)); }
+  /** `{ since }` (epoch ms): only the messages written from then on (pi-server session-files.mjs transcript). */
+  async transcript(id, options) { return this.viaInventory((client) => client.transcript(id, options)); }
   /**
    * The model a running session runs on now, as "provider/model-id", or null. A lead Segno opened
    * runs on the model Segno chose before it has replied once; its thread starts on that model, so
@@ -1022,8 +1023,8 @@ export class RubatoPiBridge {
     const companion = await this.companionSession(sessionId);
     if (companion) this.push?.companionRoom(threadId, this.companionIdOf(sessionId) ?? 'segno');
     if (!companion && Array.isArray(gaps) && !gaps.length) return true;
-    const { messages } = await this.transcript(sessionId);
-    const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), thread.messages,
+    const { messages, since } = companion ? await this.companionTranscript(threadId, sessionId, thread.messages) : await this.transcript(sessionId);
+    const missing = missingItems(this.importedMessages(sessionId, messages ?? [], threadId, { companion }), shownSince(thread.messages, since),
       companion ? { chatLog: true } : Array.isArray(gaps) ? { gaps } : {});
     for (const { item, runId } of missing) {
       if (this.closed) return false;
@@ -1038,6 +1039,26 @@ export class RubatoPiBridge {
     }
     if (missing.length) t3BridgeLog('backfilled', `${threadId} ${missing.length}`);
     return true;
+  }
+  /**
+   * A companion's conversation for its backfill (backfill.mjs companionSince). The first pass after
+   * this server starts reads it whole, so a hole from any time is restored; one too large to come
+   * whole is read from the room's newest bubble on, then and from then on.
+   */
+  async companionTranscript(threadId, sessionId, threadMessages) {
+    this.wholeTooLarge ??= new Set();
+    const compared = this.backfilled.get(threadId);
+    if (!Number.isFinite(compared) && !this.wholeTooLarge.has(sessionId)) {
+      try { return await this.transcript(sessionId); }
+      catch (error) {
+        const since = companionSince(threadMessages);
+        if (since === undefined) throw error;
+        this.wholeTooLarge.add(sessionId);
+        t3BridgeLog('companion conversation not read whole', `${sessionId} ${String(error?.message ?? error)}`);
+      }
+    }
+    const since = companionSince(threadMessages, compared);
+    return this.transcript(sessionId, since === undefined ? undefined : { since });
   }
   recover() {
     if (this.closed) return Promise.resolve();
