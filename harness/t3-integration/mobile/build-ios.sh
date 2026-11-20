@@ -72,6 +72,13 @@ sips -z 1024 1024 -s format jpeg "$work/tile.png" --out "$work/tile.jpg" >/dev/n
 sips -s format png "$work/tile.jpg" --out assets/rubato/icon.png >/dev/null
 # The desktop overlay replaces T3's theme palettes; the phone's style sheets follow them.
 corepack pnpm run generate >/dev/null
+# Over-the-air updates (update-ios.sh) reach a build only when both carry the same runtime version,
+# the fingerprint of this tree before prebuild. Left to Xcode, it is taken after prebuild and also
+# hashes ios/ with this build's number, so no update would ever match; pin it to the update's value.
+rm -rf ios
+EXPO_UPDATES_FINGERPRINT_OVERRIDE="$(corepack pnpm exec expo-updates fingerprint:generate --platform ios \
+  | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).hash))')"
+export EXPO_UPDATES_FINGERPRINT_OVERRIDE
 corepack pnpm exec expo prebuild --clean --platform ios --no-install >/dev/null
 (cd ios && pod install)
 # This Mac has little disk: CocoaPods' download cache regrows to several GB per install.
