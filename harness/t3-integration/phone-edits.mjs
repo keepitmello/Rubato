@@ -21,9 +21,10 @@ export const phoneEdits = {
       'import { restoreLegacyFileRead } from "../RubatoLegacyGrants.ts";\n'],
     ['    verify,\n    issueWebSocketToken,\n    verifyWebSocketToken,\n',
       '    // Rubato: an old-only grant reads files again (RubatoLegacyGrants.ts, phone-edits.mjs).\n'
-        + '    verify: (token) => Effect.map(verify(token), restoreLegacyFileRead),\n'
+        + '    verify: Effect.fn("RubatoLegacyGrants.verify")((token) => Effect.map(verify(token), restoreLegacyFileRead)),\n'
         + '    issueWebSocketToken,\n'
-        + '    verifyWebSocketToken: (token) => Effect.map(verifyWebSocketToken(token), restoreLegacyFileRead),\n',
+        + '    verifyWebSocketToken: Effect.fn("RubatoLegacyGrants.verifyWebSocketToken")((token) =>\n'
+        + '      Effect.map(verifyWebSocketToken(token), restoreLegacyFileRead)),\n',
       'replace'],
   ],
   'apps/server/src/server.ts': [
@@ -33,11 +34,13 @@ export const phoneEdits = {
   // T3 never widens a recorded grant; Rubato gives an old server's grant file reading back.
   'apps/server/src/auth/SessionStore.test.ts': [
     ['      expect((yield* sessions.verify(issued.token)).scopes).toEqual(legacyScopes);\n'
-      + '      expect((yield* sessions.verify(legacyToken)).scopes).toEqual(legacyScopes);\n',
+      + '      expect((yield* sessions.verify(legacyToken)).scopes).toEqual(legacyScopes);\n'
+      + '      expect((yield* sessions.verify(editedToken)).scopes).toEqual(legacyScopes);\n',
       '      // Rubato: an old server\'s grant reads files again, and nothing more (RubatoLegacyGrants.ts).\n'
         + '      const rubatoRestored = [...legacyScopes, "filesystem:read"];\n'
         + '      expect((yield* sessions.verify(issued.token)).scopes).toEqual(rubatoRestored);\n'
-        + '      expect((yield* sessions.verify(legacyToken)).scopes).toEqual(rubatoRestored);\n',
+        + '      expect((yield* sessions.verify(legacyToken)).scopes).toEqual(rubatoRestored);\n'
+        + '      expect((yield* sessions.verify(editedToken)).scopes).toEqual(rubatoRestored);\n',
       'replace'],
   ],
   'apps/web/src/components/settings/settingsSearch.ts': [

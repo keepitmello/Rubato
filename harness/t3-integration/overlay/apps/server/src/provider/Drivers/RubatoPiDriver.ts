@@ -248,35 +248,34 @@ const alreadyNative = (bridge: PiBridge, input: {readonly providerThread: {reado
 };
 
 /** A PiRpcConnection (provider-pi rpc.ts) over the bridge's engine attachment. */
-const openRubatoConnection = (bridge: PiBridge, input: {readonly threadId: string; readonly cwd: string}) =>
-  Effect.gen(function* () {
-    const events = yield* Queue.unbounded<PiRpcRecord, PiRpcError>();
-    const exited = yield* Deferred.make<number, PiRpcError>();
-    const ended = (error: unknown) => {
-      const failure = new PiRpcError({ operation: "transport",
-        detail: error === undefined ? "Rubato attachment closed" : detail(error), cause: error });
-      Queue.failCauseUnsafe(events, Cause.fail(failure));
-      Deferred.doneUnsafe(exited, error === undefined ? Effect.succeed(0) : Effect.fail(failure));
-    };
-    const connection = yield* Effect.tryPromise({
-      try: () => bridge.openRpc({ threadId: input.threadId, cwd: input.cwd,
-        onRecord: (record) => { Queue.offerUnsafe(events, record); }, onClosed: ended }),
-      catch: (cause) => new PiRpcError({ operation: "attach", detail: detail(cause), cause }),
-    });
-    yield* Effect.addFinalizer(() => Effect.promise(() => connection.close()));
-    const result: PiRpcConnection = {
-      send: (record) => Effect.sync(() => connection.send(record)),
-      request: (record) => Effect.tryPromise({
-        try: () => connection.request(record),
-        catch: (cause) => new PiRpcError({ operation: String(record["type"] ?? "request"), detail: detail(cause), cause }),
-      }),
-      events,
-      exited: Deferred.await(exited),
-      // Stop-with-restart: drop this attachment; the engine keeps the session.
-      terminate: Effect.promise(() => connection.close()),
-    };
-    return result;
+const openRubatoConnection = Effect.fn("RubatoPiDriver.openRubatoConnection")(function* (bridge: PiBridge, input: {readonly threadId: string; readonly cwd: string}) {
+  const events = yield* Queue.unbounded<PiRpcRecord, PiRpcError>();
+  const exited = yield* Deferred.make<number, PiRpcError>();
+  const ended = (error: unknown) => {
+    const failure = new PiRpcError({ operation: "transport",
+      detail: error === undefined ? "Rubato attachment closed" : detail(error), cause: error });
+    Queue.failCauseUnsafe(events, Cause.fail(failure));
+    Deferred.doneUnsafe(exited, error === undefined ? Effect.succeed(0) : Effect.fail(failure));
+  };
+  const connection = yield* Effect.tryPromise({
+    try: () => bridge.openRpc({ threadId: input.threadId, cwd: input.cwd,
+      onRecord: (record) => { Queue.offerUnsafe(events, record); }, onClosed: ended }),
+    catch: (cause) => new PiRpcError({ operation: "attach", detail: detail(cause), cause }),
   });
+  yield* Effect.addFinalizer(() => Effect.promise(() => connection.close()));
+  const result: PiRpcConnection = {
+    send: (record) => Effect.sync(() => connection.send(record)),
+    request: (record) => Effect.tryPromise({
+      try: () => connection.request(record),
+      catch: (cause) => new PiRpcError({ operation: String(record["type"] ?? "request"), detail: detail(cause), cause }),
+    }),
+    events,
+    exited: Deferred.await(exited),
+    // Stop-with-restart: drop this attachment; the engine keeps the session.
+    terminate: Effect.promise(() => connection.close()),
+  };
+  return result;
+});
 
 export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
   driverKind: kind,
@@ -285,7 +284,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
   metadata: { displayName: "Rubato", supportsMultipleInstances: true, hasDefaultInstance: false },
   configSchema: RubatoPiConfig,
   defaultConfig: () => ({ bridgeModule: "", descriptorPath: "", catalogueCwd: "" }),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) => Effect.gen(function* () {
+  create: Effect.fn("RubatoPiDriver.create")(function* ({ instanceId, displayName, accentColor, environment, enabled, config }) {
     const fail = (cause: unknown) => new ProviderDriverError({ driver: kind, instanceId, detail: detail(cause), cause });
     if (environment.length !== 0) return yield* fail(new Error("Configure credentials in the external Rubato profile, not T3's child-process environment"));
     if (!isAbsoluteLocalPath(config.bridgeModule) && !config.bridgeModule.startsWith("file:///"))
@@ -340,7 +339,7 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
       message:"Start the external Rubato server; T3 connects without owning its process.",
     });
     // 카탈로그 한 번 조회. 기계 스냅샷도 발행도 건드리지 않는다.
-    const probeCatalogue = (cwd: string, fresh = false) => Effect.gen(function* () {
+    const probeCatalogue = Effect.fn("RubatoPiDriver.probeCatalogue")(function* (cwd: string, fresh = false) {
       const checkedAt = DateTime.formatIso(yield* DateTime.now);
       const result = enabled ? yield* request("catalogue", () => bridge.catalogue(cwd, {fresh})).pipe(Effect.result) : null;
       return {checkedAt, catalogue: result?._tag === "Success" ? result.success : null,
@@ -360,14 +359,14 @@ export const RubatoPiDriver: ProviderDriver<RubatoPiConfig, any> = {
     // 기계 스냅샷을 새로 쓰고 알리는 자리는 여기 하나뿐이다. workspaceSnapshots 는
     // T3 registry 가 자기 목록으로 merge 하므로 드라이버가 싣지 않는다. 다시 받으라는
     // 요청이라 bridge 의 재사용 목록을 거치지 않는다.
-    const refreshFor = (cwd: string) => Effect.gen(function* () {
+    const refreshFor = Effect.fn("RubatoPiDriver.refreshFor")(function* (cwd: string) {
       current = snapshotFrom(yield* probeCatalogue(cwd, true));
       yield* PubSub.publish(updates, current);
       return current;
     });
     // 워크스페이스 조회는 스냅샷을 돌려주기만 한다. 여기서 발행하면 모든 클라이언트가
     // config 를 새로 받아 화면 전체를 다시 그린다.
-    const snapshotForCwd = (cwd: string) => Effect.gen(function* () {
+    const snapshotForCwd = Effect.fn("RubatoPiDriver.snapshotForCwd")(function* (cwd: string) {
       return snapshotFrom(yield* probeCatalogue(cwd));
     });
     const unsupported = (operation: string) =>

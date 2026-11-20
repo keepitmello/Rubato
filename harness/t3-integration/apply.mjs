@@ -77,6 +77,8 @@ const edits = {
   // The desktop supervisor allows 60s for a backend restart. A transport failure
   // is wrapped as HTTP 500 by auth.ts, but is not an actual server response.
   'apps/web/src/environments/primary/auth.ts': [
+    // auth.recovery.test.ts drives the retry loop directly.
+    ['\nasync function retryTransientBootstrap<T>(', '\nexport async function retryTransientBootstrap<T>(', 'replace'],
     ['  const startedAt = Date.now();\n  while (true) {', '  const startedAt = Date.now();\n  const timeoutMs = window.desktopBridge ? 60_000 : BOOTSTRAP_RETRY_TIMEOUT_MS;\n  while (true) {', 'replace'],
     ['Date.now() - startedAt >= BOOTSTRAP_RETRY_TIMEOUT_MS', 'Date.now() - startedAt >= timeoutMs', 'replace'],
   ],
@@ -310,7 +312,7 @@ const edits = {
     ['    readonly drain: Effect.Effect<void>;\n',
       '    /** Rubato: whether the thread\'s last publish failed and waits on a retry. */\n    readonly publishPending: (threadId: ThreadId) => Effect.Effect<boolean>;\n'],
     ['    drain: worker.drain,\n',
-      '    publishPending: (threadId) => Effect.sync(() => publishRetries.get(threadId)?.timer !== undefined),\n'],
+      '    publishPending: Effect.fn("AgentAwarenessRelay.publishPending")((threadId) =>\n      Effect.sync(() => publishRetries.get(threadId)?.timer !== undefined)),\n'],
   ],
   // Upstream's idle relay stand-in has to carry the method the relay gains above.
   'apps/server/src/cloud/CloudLink.lifecycle.test.ts': [
@@ -378,9 +380,10 @@ const edits = {
   // 서버에서 끊는다 — 모바일이든 웹이든 같은 RPC 하나로 들어오기 때문이다.
   // 원본 대화는 두 홈 디렉터리에 그대로 남는다.
   'apps/server/src/project/AgentSessionImporter.ts': [
+    ['import * as Context from "effect/Context";\n', 'import * as Config from "effect/Config";\n'],
     [
       '    input: AgentSessionImportInput,\n  ) {\n',
-      '    input: AgentSessionImportInput,\n  ) {\n    if (!process.env.RUBATO_IMPORT_AGENT_HISTORY) {\n      return { importedCount: 0, skippedCount: 0 } satisfies AgentSessionImportResult;\n    }\n',
+      '    input: AgentSessionImportInput,\n  ) {\n    if (!(yield* Config.String("RUBATO_IMPORT_AGENT_HISTORY").pipe(Effect.orElseSucceed(() => "")))) {\n      return { importedCount: 0, skippedCount: 0 } satisfies AgentSessionImportResult;\n    }\n',
       'replace',
     ],
   ],
@@ -745,8 +748,6 @@ const edits = {
       ].join('\n')],
   ],
   'apps/web/src/hooks/useHandleNewThread.test.ts': [
-    ['      draftStore.setLogicalProjectDraftThreadId.mockClear();\n',
-      '      draftStore.getComposerDraft.mockImplementation(() => ({}));\n'],
     ['describe.each([\n  ["new", null],\n',
       [
         '// Rubato: the legacy sidebar has no draft rows, so a plain new-thread request',
@@ -762,7 +763,7 @@ const edits = {
         '',
         '  it("returns to the half-written draft as the user left it", async () => {',
         '    testState.reset(investedDraft);',
-        '    testState.draftStore.getComposerDraft.mockReturnValue({ prompt: "half-written" });',
+        '    testState.giveUserText("draft-existing");',
         '',
         '    const opened = await useNewThreadHandler()(projectRef);',
         '',
@@ -776,7 +777,7 @@ const edits = {
         '',
         '  it("still opens a fresh draft when the caller asks for a specific workspace", async () => {',
         '    testState.reset(investedDraft);',
-        '    testState.draftStore.getComposerDraft.mockReturnValue({ prompt: "half-written" });',
+        '    testState.giveUserText("draft-existing");',
         '',
         '    const opened = await useNewThreadHandler()(projectRef, { envMode: "worktree" });',
         '',
@@ -791,10 +792,12 @@ const edits = {
     [
       '  compactDisabled: boolean;\n',
       '  compactDisabled: boolean;\n  sessionSpeedLabel?: string | null;\n',
+      'replace',
     ],
     [
       '    activeProjectId,\n    projectName,\n',
       '    activeProjectId,\n    projectName,\n    sessionSpeedLabel,\n',
+      'replace',
     ],
     // 쉬는 입력창의 오른쪽 여백은 upstream 이 액션 묶음 폭을 재서 잡는다(restingActionsWidth).
     // 그래서 Speed 라벨이 그 묶음 안에 있으면 따로 비울 것이 없다.
