@@ -75,6 +75,25 @@ type FieldDisplay = {
 };
 
 /**
+ * For a plain text field (a scheduled task's prompt): the draft with the words heard so far placed
+ * where the final text will land, while dictation runs; null otherwise.
+ */
+export function useLiveDictationValue(
+  active: boolean,
+  draft: string,
+  selection: ComposerEditorSelection | undefined,
+): string | null {
+  const snapshot = useSyncExternalStore(liveDictationStore.subscribe, liveDictationStore.snapshot);
+  if (!active) return null;
+  return liveDictationDisplay(
+    draft,
+    selection ?? { start: draft.length, end: draft.length },
+    liveDictationPieces(snapshot),
+    Date.now(),
+  ).value;
+}
+
+/**
  * What the field shows while dictation runs, and for a moment after: the draft with the heard
  * words placed where the final text lands, every word fading in blue and fading to grey on its own
  * clock, and once the final text is in the draft, all of it turning from grey to ink.

@@ -17,46 +17,81 @@ type Sent = { url: string; method: string; headers: Record<string, string> };
 let sent: Sent[] = [];
 let answer: (url: string) => Response;
 
-class FakeChannel {
-  readyState = "connecting";
+class FakeSocket {
+  static last: FakeSocket | null = null;
+  readyState = 0;
+  sent: Array<{ type: string; audio?: string }> = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
-  send() {}
-  close() {}
-}
-class FakePeer {
-  channel = new FakeChannel();
-  addTrack() {}
-  createDataChannel() {
-    return this.channel;
-  }
-  async createOffer() {
-    return { type: "offer", sdp: "offer" };
-  }
-  async setLocalDescription() {}
-  async setRemoteDescription() {
+  onerror: (() => void) | null = null;
+  constructor(
+    readonly url: string,
+    readonly protocols: string[],
+  ) {
+    FakeSocket.last = this;
     queueMicrotask(() => {
-      this.channel.readyState = "open";
-      this.channel.onopen?.();
+      this.readyState = 1;
+      this.onopen?.();
     });
   }
-  async getStats() {
-    return new Map();
+  send(data: string) {
+    this.sent.push(JSON.parse(data));
   }
-  close() {}
+  close() {
+    this.readyState = 3;
+  }
+}
+class FakeNode {
+  connect() {}
+  disconnect() {}
+}
+class FakeAudioContext {
+  static last: FakeAudioContext | null = null;
+  sampleRate = 48_000;
+  destination = new FakeNode();
+  processor = Object.assign(new FakeNode(), {
+    onaudioprocess: null as ((event: { inputBuffer: { getChannelData(): Float32Array } }) => void) | null,
+  });
+  closed = false;
+  constructor() {
+    FakeAudioContext.last = this;
+  }
+  createMediaStreamSource() {
+    return new FakeNode();
+  }
+  createScriptProcessor() {
+    return this.processor;
+  }
+  createGain() {
+    return Object.assign(new FakeNode(), { gain: { value: 1 } });
+  }
+  async resume() {}
+  async close() {
+    this.closed = true;
+  }
+  /** The microphone hears `samples` (−1…1). */
+  hear(samples: number[]) {
+    this.processor.onaudioprocess?.({ inputBuffer: { getChannelData: () => Float32Array.from(samples) } });
+  }
 }
 
+let microphoneStopped = false;
 beforeEach(() => {
   sent = [];
-  const track = { enabled: true, stop() {} };
+  microphoneStopped = false;
+  const track = {
+    stop() {
+      microphoneStopped = true;
+    },
+  };
   vi.stubGlobal("navigator", {
     mediaDevices: { getUserMedia: async () => ({ getAudioTracks: () => [track], getTracks: () => [track] }) },
   });
-  vi.stubGlobal("RTCPeerConnection", FakePeer);
+  vi.stubGlobal("AudioContext", FakeAudioContext);
+  vi.stubGlobal("WebSocket", FakeSocket);
   vi.stubGlobal("fetch", async (input: string, init: RequestInit = {}) => {
     const url = String(input);
-    if (url === "https://api.openai.com/v1/realtime/calls") return new Response("answer", { status: 201 });
     sent.push({
       url,
       method: init.method ?? "GET",
@@ -77,8 +112,7 @@ it("asks the Mac only with methods and headers T3's CORS allows, so the browser 
     browserApiCorsAllowedMethods: readonly string[];
     browserApiCorsAllowedHeaders: readonly string[];
   };
-  answer = () =>
-    Response.json({ clientSecret: "ek_1", callsUrl: "https://api.openai.com/v1/realtime/calls" });
+  answer = () => Response.json({ clientSecret: "ek_1" });
 
   const live = createRubatoLiveDictation(() => environmentId, () => {}, () => {});
   await live.transcriber.prepare({ signal });
@@ -93,6 +127,31 @@ it("asks the Mac only with methods and headers T3's CORS allows, so the browser 
       expect(cors.browserApiCorsAllowedHeaders).toContain(header);
     }
   }
+});
+
+it("hears the microphone from the moment it opens and sends that first, with the Mac's key", async () => {
+  let release: (response: Response) => void = () => {};
+  answer = () => new Promise<Response>((resolve) => (release = resolve)) as never;
+  const live = createRubatoLiveDictation(() => environmentId, () => {}, () => {});
+  const prepared = live.transcriber.prepare({ signal });
+  await vi.waitFor(() => expect(FakeAudioContext.last?.processor.onaudioprocess).toBeTypeOf("function"));
+  // Said while the Mac mints the key: 48 kHz, half scale.
+  FakeAudioContext.last!.hear(new Array(4_800).fill(0.5));
+  release(Response.json({ clientSecret: "ek_1" }));
+  await prepared;
+
+  const socket = FakeSocket.last!;
+  expect(socket.url).toBe("wss://api.openai.com/v1/realtime");
+  expect(socket.protocols).toEqual(["realtime", "openai-insecure-api-key.ek_1"]);
+  expect(socket.sent).toHaveLength(1);
+  const samples = new Int16Array(Uint8Array.from(Buffer.from(socket.sent[0]!.audio!, "base64")).buffer);
+  expect(samples).toHaveLength(2_400);
+  expect(samples.every((sample) => sample === 16_384)).toBe(true);
+
+  live.deleteRecording(live.recorder.uri!);
+  expect(microphoneStopped).toBe(true);
+  expect(FakeAudioContext.last!.closed).toBe(true);
+  expect(socket.readyState).toBe(3);
 });
 
 it("names the setting to fix when the Mac is not set up, in place of T3's generic line", async () => {

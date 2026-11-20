@@ -167,6 +167,7 @@
     "apps/mobile/src/components/ProviderIcon.tsx": "477a2c4b0989fb71fb32080a4f0e6c0b69c54afed80b3b1bba16bedf6cc56783",
     "apps/mobile/src/features/threads/ThreadComposer.tsx": "650aa3d7c4936aa121248e01850448962d646abe203680e4cf69dcefa22a47db",
     "apps/mobile/src/features/threads/NewTaskDraftScreen.tsx": "e1133f2829b0674c5e31b4b018da661caafe5912f07d7fc2a6a16b43c4af9cae",
+    "apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx": "28716e417fe206b8238a31c9c33bbd2a5e93ae1620cf3665bc4f325a629fadd7",
     "apps/mobile/src/features/threads/thread-list-v2-items.tsx": "916a7640a17a144811da770f8654fb9e0e3aa707fb5a79693c3e3cb207e3e43c",
     "apps/mobile/src/features/workspace/workspace-tabs-state.test.ts": "6591861e36bbd75ab73648a839563b8b5b32464b4621e0843dde3b125fb62672",
     "apps/mobile/package.json": "de776155786c3a20ac0352a39df80f8874b2d7976b8a4df834ebb3efa1a9d32c",

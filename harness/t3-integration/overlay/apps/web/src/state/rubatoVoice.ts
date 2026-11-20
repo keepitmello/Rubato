@@ -6,7 +6,7 @@ import {
   type VoiceTranscriber,
   type VoiceTranscriptionOptions,
 } from "@t3tools/client-runtime/voice-input";
-import { createLiveDictation } from "@t3tools/shared/rubatoLiveDictation";
+import { createLiveDictation, type LiveAudioSink, type LiveMicrophone } from "@t3tools/shared/rubatoLiveDictation";
 
 import { rubatoHttpAccess, type RubatoHttpAccess } from "./rubatoHttp";
 import { readPreparedConnection } from "./session";
@@ -99,8 +99,45 @@ function reporting<T>(
 }
 
 /**
+ * The microphone through Web Audio: every captured buffer goes to `sink` from the moment it opens,
+ * so what is said while the dictation connects is kept (@t3tools/shared/rubatoLiveDictation).
+ * A ScriptProcessor rather than an AudioWorklet: the worklet needs a module URL, the processor none.
+ */
+async function openWebMicrophone(sink: LiveAudioSink): Promise<LiveMicrophone> {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+  });
+  const context = new AudioContext();
+  const source = context.createMediaStreamSource(stream);
+  const processor = context.createScriptProcessor(2048, 1, 1);
+  const muted = context.createGain();
+  muted.gain.value = 0;
+  processor.onaudioprocess = (event) => {
+    const input = event.inputBuffer.getChannelData(0);
+    const samples = new Float32Array(input.length);
+    for (let index = 0; index < input.length; index += 1) samples[index] = input[index]! * 32767;
+    sink(samples, context.sampleRate);
+  };
+  // A processor runs only while connected to the output; the zero gain keeps it silent.
+  source.connect(processor);
+  processor.connect(muted);
+  muted.connect(context.destination);
+  await context.resume().catch(() => {});
+  return {
+    stop() {
+      processor.onaudioprocess = null;
+      source.disconnect();
+      processor.disconnect();
+      muted.disconnect();
+      for (const track of stream.getTracks()) track.stop();
+      void context.close().catch(() => {});
+    },
+  };
+}
+
+/**
  * Live dictation for one composer: the Mac mints a one-time key, the microphone streams to
- * OpenAI with it over WebRTC, and the words come back while the person talks
+ * OpenAI with it over a WebSocket, and the words come back while the person talks
  * (@t3tools/shared/rubatoLiveDictation). Returns the recorder and transcriber T3's controller
  * takes, and the `deleteRecording` that closes the connection once the dictation is over.
  */
@@ -128,19 +165,13 @@ export function createRubatoLiveDictation(
         if (!response.ok) throw await failureFrom(response, "preparation-failed");
         const payload = (await response.json().catch(() => null)) as {
           readonly clientSecret?: unknown;
-          readonly callsUrl?: unknown;
         } | null;
-        if (typeof payload?.clientSecret !== "string" || typeof payload.callsUrl !== "string") {
+        if (typeof payload?.clientSecret !== "string") {
           throw new VoiceTranscriptionError("preparation-failed", "This Mac did not open a dictation.");
         }
-        return { clientSecret: payload.clientSecret, callsUrl: payload.callsUrl };
+        return { clientSecret: payload.clientSecret };
       },
-      openMicrophone: () =>
-        navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        }),
-      createPeer: () => new RTCPeerConnection() as never,
-      fetch: (url, init) => fetch(url, init),
+      openMicrophone: openWebMicrophone,
       connectionFailed: (message) => new VoiceTranscriptionError("preparation-failed", message),
     },
     onRecorderStatus,

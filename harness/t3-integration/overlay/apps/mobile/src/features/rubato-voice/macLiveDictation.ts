@@ -1,17 +1,18 @@
 // Rubato: the phone dictates live, the way the desktop composer does (overlay apps/web/src/state/
 // rubatoVoice.ts). The paired Mac mints a one-time key (POST /rubato/voice/live); the microphone
-// then streams straight to OpenAI's live transcription over WebRTC with it, and words come back
-// while the person talks (@t3tools/shared/rubatoLiveDictation). The OpenAI key and its settings
-// stay on the Mac. It replaces Apple's on-device transcriber for every composer (threads and
-// companion rooms), since both run through VoiceInputProvider.
-import { mediaDevices, RTCPeerConnection } from "@livekit/react-native-webrtc";
+// then streams straight to OpenAI's live transcription over a WebSocket opened with it, and words
+// come back while the person talks (@t3tools/shared/rubatoLiveDictation). The OpenAI key and its
+// settings stay on the Mac. It replaces Apple's on-device transcriber for every composer (threads,
+// new tasks, companion rooms, scheduled tasks), since all run through VoiceInputProvider.
+import { AudioDeviceModule, mediaDevices } from "@livekit/react-native-webrtc";
+import { NativeEventEmitter, NativeModules } from "react-native";
 import {
   VoiceTranscriptionError,
   type VoiceInputState,
   type VoiceRecorderStatus,
   type VoiceTranscriber,
 } from "@t3tools/client-runtime/voice-input";
-import { createLiveDictation } from "@t3tools/shared/rubatoLiveDictation";
+import { createLiveDictation, type LiveAudioSink, type LiveMicrophone } from "@t3tools/shared/rubatoLiveDictation";
 import { fetch } from "expo/fetch";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
@@ -81,6 +82,56 @@ function failed(message: string): VoiceTranscriptionError {
   return new VoiceTranscriptionError("preparation-failed", message);
 }
 
+/** LiveKit's native module (@livekit/react-native, set up at launch by its Expo plugin). */
+type LiveKitAudioSinks = {
+  createAudioSinkListener(peerConnectionId: number, trackId: string): string;
+  deleteAudioSinkListener(tag: string, peerConnectionId: number, trackId: string): unknown;
+};
+let liveKitEvents: NativeEventEmitter | null = null;
+
+/**
+ * The microphone through iOS WebRTC with no call: local recording starts the audio engine (and its
+ * echo and noise processing), and LiveKit's audio sink hands every processed 10 ms of it to JS as
+ * 16-bit PCM. Nothing waits for a connection, so what is said while dictation connects is kept.
+ * Both are in the native build already (@livekit/react-native-webrtc 150, @livekit/react-native 3).
+ */
+async function openPhoneMicrophone(sink: LiveAudioSink): Promise<LiveMicrophone> {
+  const sinks = NativeModules.LivekitReactNativeModule as LiveKitAudioSinks | undefined;
+  if (!sinks) throw failed("Dictation needs the app's audio module. Update the app.");
+  const stream = await mediaDevices.getUserMedia({ audio: true });
+  const track = stream.getAudioTracks()[0];
+  if (!track) {
+    for (const each of stream.getTracks()) each.stop();
+    throw failed("No microphone is available.");
+  }
+  // -1: a track of no peer connection, so the sink listens to the microphone after processing.
+  const tag = sinks.createAudioSinkListener(-1, track.id);
+  liveKitEvents ??= new NativeEventEmitter(NativeModules.LivekitReactNativeModule);
+  const subscription = liveKitEvents.addListener("LK_AUDIO_DATA", (event: { readonly id?: string; readonly data?: string }) => {
+    if (event.id !== tag || typeof event.data !== "string") return;
+    const bytes = Uint8Array.from(atob(event.data), (character) => character.charCodeAt(0));
+    const samples = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
+    // Each piece is 10 ms, so its length gives the rate.
+    sink(samples, samples.length * 100);
+  });
+  let stopped = false;
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    subscription.remove();
+    sinks.deleteAudioSinkListener(tag, -1, track.id);
+    void AudioDeviceModule.stopLocalRecording().catch(() => {});
+    for (const each of stream.getTracks()) each.stop();
+  };
+  try {
+    await AudioDeviceModule.startLocalRecording();
+  } catch (error) {
+    stop();
+    throw failed(error instanceof Error ? error.message : "The microphone could not start.");
+  }
+  return { stop };
+}
+
 /**
  * The recorder and transcriber the phone's voice session takes, and the `deleteRecording` that
  * closes the connection once a dictation is over.
@@ -109,17 +160,13 @@ export function createMacLiveDictation(
         }
         const payload = (await response.json().catch(() => null)) as {
           readonly clientSecret?: unknown;
-          readonly callsUrl?: unknown;
         } | null;
-        if (typeof payload?.clientSecret !== "string" || typeof payload.callsUrl !== "string") {
+        if (typeof payload?.clientSecret !== "string") {
           throw failed("Your Mac did not open a dictation. Try again.");
         }
-        return { clientSecret: payload.clientSecret, callsUrl: payload.callsUrl };
+        return { clientSecret: payload.clientSecret };
       },
-      // iOS WebRTC runs its own voice processing (echo and noise) on the microphone.
-      openMicrophone: () => mediaDevices.getUserMedia({ audio: true }) as never,
-      createPeer: () => new RTCPeerConnection() as never,
-      fetch: (url, init) => fetch(url, init as never) as unknown as Promise<Response>,
+      openMicrophone: openPhoneMicrophone,
       connectionFailed: (message) => failed(message),
     },
     onRecorderStatus,

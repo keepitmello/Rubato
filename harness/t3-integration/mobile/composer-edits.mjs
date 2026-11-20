@@ -11,6 +11,8 @@
 //   (T3 joined "테스트" and "실시간" into "테스트실시간"); rubatoLiveDictationDisplay beside it
 //   places the heard words where the final text will land, for this field and the desktop's.
 // - ThreadComposer: the field in place of the bare editor, and dictation opens the card.
+// - NewTaskDraftScreen: the same field and dictation row, so a new task shows the words too.
+// - ScheduledTaskPromptField: its plain text field shows the heard words while dictating.
 export const mobileComposerOverlays = [
   'apps/mobile/src/features/rubato-voice/RubatoComposerField.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoDictationStrip.tsx',
@@ -250,5 +252,34 @@ export const mobileComposerEdits = {
       '                }',
       '',
     ].join('\n'), '                // Rubato: the field sizes itself to its text (RubatoComposerField).\n', 'replace'],
+  ],
+  // A new task (NewTaskDraftScreen) dictates as a thread does: the field writes the heard words,
+  // and ChatGPT's dictation row stands in T3's (start sits at its end when an error shows).
+  'apps/mobile/src/features/threads/NewTaskDraftScreen.tsx': [
+    ["import { useVoiceInputController } from \"../voice-input/useVoiceInputController\";\n",
+      "import { RubatoComposerField } from \"../rubato-voice/RubatoComposerField\";\nimport { RubatoDictationStrip, RubatoDictationToolbar } from \"../rubato-voice/RubatoDictationStrip\";\n"],
+    ["          <ComposerDictationToolbar showsDictation={isVoiceInputPresented}>",
+      "          <RubatoDictationToolbar showsDictation={isVoiceInputPresented}>", 'replace'],
+    ["              <ComposerDictationCancelAction\n                presentation={voicePresentation}\n                onCancel={voiceInput.cancel}\n              />\n              {isVoiceInputPresented ? (\n                <ComposerDictationStatus\n                  audioLevels={voiceInput.audioLevels}\n                  elapsedSeconds={voiceInput.elapsedSeconds}\n                  phase={voiceInput.state.phase}\n                  presentation={voicePresentation}\n                  onDismissError={voiceInput.cancel}\n                />\n              ) : (",
+      "              {isVoiceInputPresented ? (\n                <RubatoDictationStrip\n                  state={voiceInput.state}\n                  presentation={voicePresentation}\n                  audioLevels={voiceInput.audioLevels}\n                  elapsedSeconds={voiceInput.elapsedSeconds}\n                  onCancel={voiceInput.cancel}\n                  onStop={() => void voiceInput.stop()}\n                  trailing={\n                    voicePresentation.showsSend ? (\n                      <ComposerActionButton\n                        accessibilityLabel={environmentConnected ? \"Start task\" : \"Queue task\"}\n                        disabled={!canStart}\n                        icon={queuesInsteadOfStarting ? \"tray.and.arrow.up\" : \"arrow.up\"}\n                        onPress={() => void handleStart()}\n                        variant=\"primary\"\n                      />\n                    ) : null\n                  }\n                />\n              ) : (", 'replace'],
+    ["              )}\n              <ComposerDictationPrimaryAction\n                state={voiceInput.state}",
+      "              )}\n              {isVoiceInputPresented ? null : (\n              <>\n              <ComposerDictationPrimaryAction\n                state={voiceInput.state}", 'replace'],
+    ["                />\n              ) : null}\n            </ComposerToolbarRow>\n          </ComposerDictationToolbar>",
+      "                />\n              ) : null}\n              </>\n              )}\n            </ComposerToolbarRow>\n          </RubatoDictationToolbar>", 'replace'],
+    ["      <ComposerEditor\n        draftKey={flow.draftKey}\n",
+      "      <RubatoComposerField\n        dictating={voiceInput.isBusy}\n        lineHeight={bodyText.lineHeight}\n        minLines={3}\n        maxLines={6}\n        expand={{ sendLabel: \"Start task\", canSend: canStart, onSend: () => void handleStart() }}\n        draftKey={flow.draftKey}\n", 'replace'],
+    ["        style={{\n          minHeight: 72,\n          maxHeight: 160,\n          paddingVertical: 4,\n        }}\n        textStyle={{ ...bodyText, color: foregroundColor, fontFamily: regularFontFamily }}",
+      "        // Rubato: the field sizes itself to its text (RubatoComposerField).\n        textStyle={{ ...bodyText, color: foregroundColor, fontFamily: regularFontFamily }}", 'replace'],
+  ],
+  // A scheduled task's prompt is a plain text field: it shows the heard words grey while dictating.
+  'apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx': [
+    ["import type { useVoiceInputController } from \"../../voice-input/useVoiceInputController\";\n",
+      "import { useLiveDictationValue } from \"../../rubato-voice/RubatoComposerField\";\n"],
+    ["  const voice = props.voiceInput;\n",
+      "  const voice = props.voiceInput;\n  // Rubato: the words heard so far, in the field while dictation runs (live dictation).\n  const liveValue = useLiveDictationValue(voice.isBusy, props.value, props.selection);\n", 'replace'],
+    ["          value={props.value}\n          onChangeText={props.onChange}\n          selection={props.selection}\n          onSelectionChange={({ nativeEvent }) => props.onChangeSelection(nativeEvent.selection)}",
+      "          value={liveValue ?? props.value}\n          onChangeText={props.onChange}\n          selection={liveValue === null ? props.selection : undefined}\n          onSelectionChange={({ nativeEvent }) => {\n            if (liveValue === null) props.onChangeSelection(nativeEvent.selection);\n          }}", 'replace'],
+    ["          className=\"max-h-40 min-h-24 font-sans text-base text-foreground\"\n",
+      "          className={\n            liveValue === null\n              ? \"max-h-40 min-h-24 font-sans text-base text-foreground\"\n              : \"max-h-40 min-h-24 font-sans text-base text-foreground-muted\"\n          }\n", 'replace'],
   ],
 };

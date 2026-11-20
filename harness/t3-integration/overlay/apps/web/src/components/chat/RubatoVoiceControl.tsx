@@ -12,7 +12,7 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 
 const WAVE_GAP = 4;
 const WAVE_SAMPLE_MS = 80;
-/** WebRTC's level below which the microphone counts as quiet and draws a dot. */
+/** The microphone's level (loudest sample, 0…1) below which it counts as quiet and draws a dot. */
 const WAVE_QUIET = 0.02;
 
 /**
@@ -66,7 +66,7 @@ function DictationWave(props: { readonly readLevel: () => number; readonly sampl
             context.fill();
             continue;
           }
-          // Speech sits around 0.05–0.3 on WebRTC's scale; the square root lifts quiet words.
+          // Speech sits around 0.05–0.3 on this scale; the square root lifts quiet words.
           const bar = Math.min(height - 2, Math.max(4, Math.sqrt(level) * height * 1.5));
           context.globalAlpha = 0.85;
           context.beginPath();
