@@ -8,7 +8,7 @@ import { parse as parseJsonc } from "jsonc-parser";
 // Stats 페이지의 "가장 길게 생각한 순간" 카드가 같은 사슬을 쓴다.
 // 사용자가 ~/.rubato/rubato.jsonc 의 titles.models 로 바꾸면 그쪽이 이긴다 (loadTitleModels).
 export const TITLE_MODELS = Object.freeze([
-  Object.freeze({ provider: "opengateway", id: "deepseek/deepseek-v4.1-flash-ultrafast" }),
+  Object.freeze({ provider: "opengateway", id: "deepseek/deepseek-v4.1-flash-eco" }),
   Object.freeze({ provider: "anthropic", id: "claude-haiku-5-5", reasoning: "off" }),
 ]);
 
@@ -127,18 +127,50 @@ function titleEntries(entries) {
   return (entries ?? []).filter((entry) => entry?.type === "custom" && entry.customType === TITLE_ENTRY);
 }
 
-export function lastAutoTitle(entries) {
-  for (const entry of titleEntries(entries).reverse()) {
+/** Every name this extension gave, oldest first. */
+export function autoTitles(entries) {
+  const names = [];
+  for (const entry of titleEntries(entries)) {
     if (entry.data?.locked) continue;
     const name = typeof entry.data?.name === "string" ? entry.data.name.trim() : "";
-    if (name) return name;
+    if (name) names.push(name);
+  }
+  return names;
+}
+
+export function lastAutoTitle(entries) {
+  return autoTitles(entries).at(-1);
+}
+
+export function firstUserText(entries) {
+  for (const entry of entries ?? []) {
+    const message = entry?.type === "message" ? entry.message : entry;
+    if (message?.role === "user") return textOfContent(message.content);
   }
   return undefined;
 }
 
-export function isTitleLocked(entries) {
+const collapse = (text) => String(text ?? "").trim().replace(/\s+/gu, " ");
+
+// T3 가 새 스레드에 붙이는 제목: 첫 메시지를 공백 정리해 50자에서 자르고 "..." 를 붙이거나
+// (deriveThreadTitleSeed), 메시지가 없으면 "New thread". T3 의 Pi 어댑터는 턴마다 스레드 제목을
+// 세션 이름으로 밀어 넣으므로, 이 이름은 누가 고른 이름이 아니다.
+export function isSeedTitle(name, firstText) {
+  const title = collapse(name);
+  if (!title) return false;
+  if (title === "New thread") return true;
+  const first = collapse(firstText);
+  if (!first) return false;
+  if (title === first) return true;
+  const stem = title.endsWith("...") ? title.slice(0, -3).trimEnd() : "";
+  return stem.length > 0 && first.startsWith(stem);
+}
+
+/** 잠금은 사람이 고른 이름만 지킨다. `name` 을 주면 그게 T3 의 기본 제목일 때는 잠기지 않은 것으로 본다. */
+export function isTitleLocked(entries, name) {
   const last = titleEntries(entries).at(-1);
-  return Boolean(last?.data?.locked);
+  if (!last?.data?.locked) return false;
+  return name === undefined || !isSeedTitle(name, firstUserText(entries));
 }
 
 export function shouldRetitle({ current, proposed, locked } = {}) {

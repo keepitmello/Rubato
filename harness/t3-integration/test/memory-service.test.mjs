@@ -204,7 +204,7 @@ test('settings writes keep the user file and commit the self store', async (t) =
   // The title ladder shares the writer: built-in until set, the user's after, built-in again on null.
   const builtIn = await f.service.handle('title-models', {});
   assert.equal(builtIn.custom, false);
-  assert.deepEqual(builtIn.models[0], { model: 'opengateway/deepseek/deepseek-v4.1-flash-ultrafast', reasoning: null });
+  assert.deepEqual(builtIn.models[0], { model: 'opengateway/deepseek/deepseek-v4.1-flash-eco', reasoning: null });
   await f.service.handle('config', { titleModels: [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }, { model: 'xai/grok-4.7' }] });
   assert.deepEqual(await f.service.handle('title-models', {}), {
     models: [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }, { model: 'xai/grok-4.7', reasoning: null }],

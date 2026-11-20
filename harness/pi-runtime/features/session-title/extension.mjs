@@ -2,9 +2,11 @@ import { basename } from "node:path";
 import {
   TITLE_ENTRY,
   TITLE_SYSTEM_PROMPT,
+  autoTitles,
   buildTitlePrompt,
+  firstUserText,
+  isSeedTitle,
   isTitleLocked,
-  lastAutoTitle,
   loadTitleModels,
   parseTitle,
   shouldRetitle,
@@ -79,6 +81,7 @@ export async function refreshSessionTitle(pi, ctx, state, { loadModels = loadTit
   }
 
   state.lastAuto = proposed;
+  state.autoNames?.add(proposed);
   state.applyingAuto = true;
   try {
     pi.setSessionName?.(proposed);
@@ -144,13 +147,15 @@ function installRenameLock(pi, state) {
 }
 
 export function installSessionTitle(pi) {
-  const state = { lastAuto: undefined, locked: false, inFlight: false, applyingAuto: false, settled: 0, skipFirst: false };
+  const state = { lastAuto: undefined, autoNames: new Set(), locked: false, inFlight: false, applyingAuto: false, settled: 0, skipFirst: false };
   installRenameLock(pi, state);
 
   pi.on("session_start", (_event, ctx) => {
     const entries = ctx.sessionManager?.getEntries?.() ?? [];
-    state.lastAuto = lastAutoTitle(entries);
-    state.locked = isTitleLocked(entries);
+    const given = autoTitles(entries);
+    state.autoNames = new Set(given);
+    state.lastAuto = given.at(-1);
+    state.locked = isTitleLocked(entries, currentName(pi, ctx));
     state.settled = 0;
     // A resume already carrying an auto title counts that title as the
     // turn-1 generation, so the first settle skips the LLM call and the
@@ -166,13 +171,17 @@ export function installSessionTitle(pi) {
 
   pi.on("session_info_changed", (event, ctx) => {
     if (!event?.name) state.locked = false;
-    // A name this extension did not just give is someone's choice: the app's /name, or another
-    // conversation renaming this one (session_rename). Later auto titles must not replace it.
-    else if (!state.applyingAuto && event.name !== state.lastAuto) lockExplicitTitle(pi, state);
+    // A name this extension never gave is someone's choice: the app's /name or thread rename, or
+    // another conversation renaming this one (session_rename). Later auto titles must not replace it.
+    // The T3 Pi adapter also pushes the thread title back on each turn; when that is one of our own
+    // titles it is not a choice, and when it is the app's first-message seed agent_settled lets it go.
+    else if (!state.applyingAuto && !state.autoNames.has(event.name)) lockExplicitTitle(pi, state);
     paintTabTitle(ctx, event?.name);
   });
 
   pi.on("agent_settled", (_event, ctx) => {
+    // The adapter pushes the seed before the first message lands, so only now can it be told apart.
+    if (state.locked && isSeedTitle(currentName(pi, ctx), firstUserText(ctx.sessionManager?.getEntries?.()))) state.locked = false;
     if (state.locked) return;
     state.settled += 1;
     const due = (state.settled - 1) % TITLE_EVERY_N_SETTLED_TURNS === 0 && !(state.settled === 1 && state.skipFirst);

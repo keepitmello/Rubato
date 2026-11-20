@@ -4,6 +4,7 @@ import {
   TITLE_ENTRY,
   TITLE_MODELS,
   buildTitlePrompt,
+  isSeedTitle,
   isTitleLocked,
   lastAutoTitle,
   loadTitleModels,
@@ -26,7 +27,8 @@ import {
 import { PRODUCT_MODEL_ORDER } from "../model-picker/product-model-catalog.mjs";
 
 // 제목 체인의 opengateway 행은 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
-const TITLE_FLASH_ID = PRODUCT_MODEL_ORDER.opengateway[0];
+// 제목처럼 짧은 일은 같은 모델의 싼 줄(Eco)이 맡는다.
+const TITLE_FLASH_ID = PRODUCT_MODEL_ORDER.opengateway.find((id) => id.endsWith("-eco"));
 
 function userEntry(text) {
   return { type: "message", message: { role: "user", content: [{ type: "text", text }] } };
@@ -587,4 +589,106 @@ test("a name given from outside (another conversation's session_rename) locks la
   const auto = [{ type: "custom", customType: TITLE_ENTRY, data: { name: "Auto topic" } }];
   start(auto).session_info_changed({ name: "Auto topic" }, { cwd: "/tmp/repo", ui: { setTitle() {} } });
   assert.equal(isTitleLocked(auto), false);
+});
+
+// T3 의 Pi 어댑터는 첫 메시지보다 먼저 스레드 기본 제목(첫 메시지 50자 + "...")을 세션 이름으로 민다.
+// 11/12 부터 이것이 사람이 고른 이름으로 잠겨 새 세션의 자동 제목이 한 번도 돌지 않았다.
+const FIRST = "그 이상하네. 세션 제목 달아주는 모델 지금 또 고장났냐? 세션들 제목이 안 바뀌네. 그리고 수동으로 제목 수정한 경우에는";
+const SEED = `${FIRST.slice(0, 50)}...`;
+
+test("the app's first-message seed is not a chosen name; a real rename is", () => {
+  assert.equal(isSeedTitle(SEED, FIRST), true);
+  assert.equal(isSeedTitle("짧은 질문", "짧은 질문"), true);
+  assert.equal(isSeedTitle("New thread", undefined), true);
+  assert.equal(isSeedTitle("세션 제목 고치기", FIRST), false);
+  assert.equal(isSeedTitle("그 이상하네", FIRST), false);
+  const locked = [userEntry(FIRST), { type: "custom", customType: TITLE_ENTRY, data: { locked: true } }];
+  assert.equal(isTitleLocked(locked, SEED), false);
+  assert.equal(isTitleLocked(locked, "세션 제목 고치기"), true);
+  assert.equal(isTitleLocked(locked), true);
+});
+
+function adapterSession() {
+  const handlers = {};
+  const names = [];
+  const entries = [];
+  let completions = 0;
+  const pi = {
+    on(event, handler) { handlers[event] = handler; },
+    getSessionName: () => names.at(-1),
+    setSessionName: (name) => names.push(name),
+    appendEntry(type, data) { entries.push({ type: "custom", customType: type, data }); },
+  };
+  installSessionTitle(pi);
+  const ctx = {
+    cwd: "/tmp/repo",
+    ui: { setTitle() {} },
+    model: { provider: "anthropic", id: "claude-opus-5" },
+    modelRegistry: {
+      find: (provider, id) => ({ provider, id }),
+      async complete() {
+        completions += 1;
+        return { content: [{ type: "text", text: "<title>Title Model Fix</title>" }] };
+      },
+    },
+    sessionManager: { getEntries: () => entries },
+  };
+  // What pi does on set_session_name: record the name, then tell extensions.
+  const rename = (name) => { names.push(name); handlers.session_info_changed({ name }, ctx); };
+  const settle = async () => {
+    await handlers.agent_settled(null, ctx);
+    await new Promise((resolve) => setImmediate(resolve));
+  };
+  handlers.session_start({ reason: "new" }, ctx);
+  return { handlers, ctx, names, entries, rename, settle, completions: () => completions };
+}
+
+test("a new app thread gets an auto title even though the adapter pushed its seed first", async () => {
+  const s = adapterSession();
+  s.rename(SEED);
+  s.entries.push(userEntry(FIRST));
+  await s.settle();
+  assert.equal(s.completions(), 1);
+  assert.equal(s.names.at(-1), "Title Model Fix");
+  // The next turn the adapter pushes the auto title back: still ours, no lock.
+  s.rename("Title Model Fix");
+  assert.equal(isTitleLocked(s.entries, s.names.at(-1)), false);
+});
+
+test("a thread the person renamed stays locked against auto titles", async () => {
+  const s = adapterSession();
+  s.rename(SEED);
+  s.entries.push(userEntry(FIRST));
+  await s.settle();
+  s.rename("내가 고른 이름");
+  for (let i = 0; i < 20; i += 1) await s.settle();
+  assert.equal(s.completions(), 1);
+  assert.equal(s.names.at(-1), "내가 고른 이름");
+  assert.equal(isTitleLocked(s.entries, s.names.at(-1)), true);
+});
+
+test("a session locked by the seed before this fix titles itself on resume", async () => {
+  const entries = [
+    { type: "custom", customType: TITLE_ENTRY, data: { locked: true } },
+    userEntry(FIRST),
+  ];
+  let completions = 0;
+  const handlers = {};
+  const names = [SEED];
+  installSessionTitle({
+    on(event, handler) { handlers[event] = handler; },
+    getSessionName: () => names.at(-1),
+    setSessionName: (name) => names.push(name),
+    appendEntry(type, data) { entries.push({ type: "custom", customType: type, data }); },
+  });
+  const ctx = {
+    cwd: "/tmp/repo", ui: { setTitle() {} }, model: { provider: "anthropic", id: "claude-opus-5" },
+    modelRegistry: { find: (provider, id) => ({ provider, id }), async complete() { completions += 1; return { content: [{ type: "text", text: "<title>Resumed Fix</title>" }] }; } },
+    sessionManager: { getEntries: () => entries },
+  };
+  handlers.session_start({ reason: "resume" }, ctx);
+  await handlers.agent_settled(null, ctx);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(completions, 1);
+  assert.equal(names.at(-1), "Resumed Fix");
 });
