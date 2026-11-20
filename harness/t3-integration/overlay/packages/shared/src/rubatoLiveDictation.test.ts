@@ -3,9 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest"
 import {
   createLiveDictation,
   LIVE_FINISH_TIMEOUT_MS,
-  LIVE_FRESH_MS,
+  LIVE_HOLD_MS,
+  liveDictationPieces,
   liveDictationStore,
-  liveDictationView,
+  liveDictationTint,
   type LiveDictationPlatform,
 } from "./rubatoLiveDictation.ts";
 
@@ -75,7 +76,7 @@ function harness(options: { readonly mintFails?: boolean } = {}) {
     advance(ms: number) {
       clock += ms;
     },
-    view: () => liveDictationView(liveDictationStore.snapshot(), clock),
+    pieces: () => liveDictationPieces(liveDictationStore.snapshot()),
   };
 }
 
@@ -107,15 +108,23 @@ describe("live dictation", () => {
     expect(h.peer.remote).toEqual({ type: "answer", sdp: "answer-sdp" });
   });
 
-  it("shows words as they arrive, blue while new and grey a moment later", async () => {
+  it("keeps each word with when it arrived, and an item's final text once it comes", async () => {
     const h = harness();
     await startRecording(h);
     h.channel.event(delta("a", " 아,"));
+    h.advance(400);
     h.channel.event(delta("a", " 음성"));
-    expect(h.view()).toEqual({ settled: "", fresh: "아, 음성" });
-    h.advance(LIVE_FRESH_MS);
-    h.channel.event(delta("a", " 전사"));
-    expect(h.view()).toEqual({ settled: "아, 음성", fresh: " 전사" });
+    expect(h.pieces()).toEqual([{ text: " 아,", at: 1_000 }, { text: " 음성", at: 1_400 }]);
+    h.channel.event(completed("a", "아, 음성."));
+    h.channel.event(delta("b", " 전사"));
+    expect(h.pieces()).toEqual([{ text: "아, 음성.", at: null }, { text: " 전사", at: 1_400 }]);
+  });
+
+  it("a word fades in, stays blue, then fades to grey on its own clock", () => {
+    expect(liveDictationTint(0)).toEqual({ visible: 0.25, blue: 1 });
+    expect(liveDictationTint(LIVE_HOLD_MS)).toEqual({ visible: 1, blue: 1 });
+    expect(liveDictationTint(LIVE_HOLD_MS + 200).blue).toBeCloseTo(0.5);
+    expect(liveDictationTint(5_000)).toEqual({ visible: 1, blue: 0 });
   });
 
   it("stop asks for the final text and commits it, then lets the microphone go", async () => {

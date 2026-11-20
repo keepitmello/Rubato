@@ -67,8 +67,24 @@ export interface LiveDictationPlatform {
  * the rest is margin for the connection itself.
  */
 export const LIVE_KEY_REUSE_MS = 40_000;
-/** How long a word stays blue after it arrives. */
-export const LIVE_FRESH_MS = 1_000;
+/**
+ * How a heard word moves, as ChatGPT's iOS dictation draws it (measured frame by frame from the
+ * user's screen recording, 2026-11-20): it fades in, light blue to blue, over FADE_IN; stays blue
+ * for HOLD after it arrived; then fades to the grey of the rest over FADE_OUT. Each word on its own
+ * clock, so the older words go grey first and the last second or so stays blue.
+ */
+export const LIVE_FADE_IN_MS = 120;
+export const LIVE_HOLD_MS = 700;
+export const LIVE_FADE_OUT_MS = 400;
+/** After this long a word is plain grey and needs no more frames. */
+export const LIVE_SETTLE_MS = LIVE_HOLD_MS + LIVE_FADE_OUT_MS;
+
+/** How visible (0…1) and how blue rather than grey (0…1) a word is `age` ms after it arrived. */
+export function liveDictationTint(age: number): { readonly visible: number; readonly blue: number } {
+  const visible = Math.min(1, 0.25 + (0.75 * Math.max(0, age)) / LIVE_FADE_IN_MS);
+  const blue = age <= LIVE_HOLD_MS ? 1 : Math.max(0, 1 - (age - LIVE_HOLD_MS) / LIVE_FADE_OUT_MS);
+  return { visible, blue };
+}
 /** How long stop waits for the final text before keeping the words already shown. */
 export const LIVE_FINISH_TIMEOUT_MS = 4_000;
 const CONNECT_TIMEOUT_MS = 12_000;
@@ -84,30 +100,21 @@ export type LiveDictationSnapshot = {
 
 const EMPTY: LiveDictationSnapshot = { items: [], active: false };
 
-/** The heard text split where the blue begins: `settled` reads grey, `fresh` blue. */
-export function liveDictationView(
+/**
+ * The heard text as it arrived: each word piece with when it came, and an item's final text, once
+ * it came, with no time (it reads grey). Joined, the pieces are the text the composer shows.
+ */
+export function liveDictationPieces(
   snapshot: LiveDictationSnapshot,
-  now: number,
-): { readonly settled: string; readonly fresh: string } {
-  let settled = "";
-  let fresh = "";
+): ReadonlyArray<{ readonly text: string; readonly at: number | null }> {
+  const pieces: Array<{ readonly text: string; readonly at: number | null }> = [];
   for (const item of snapshot.items) {
     if (item.final !== null) {
-      settled += fresh + item.final;
-      fresh = "";
-      continue;
-    }
-    for (const piece of item.pieces) {
-      if (now - piece.at < LIVE_FRESH_MS) fresh += piece.text;
-      else {
-        settled += fresh + piece.text;
-        fresh = "";
-      }
-    }
+      const text = pieces.length > 0 && !/^\s/.test(item.final) ? ` ${item.final}` : item.final;
+      pieces.push({ text, at: null });
+    } else pieces.push(...item.pieces);
   }
-  const leading = settled.length - settled.trimStart().length;
-  if (leading > 0) return { settled: settled.slice(leading), fresh };
-  return settled.length === 0 ? { settled, fresh: fresh.trimStart() } : { settled, fresh };
+  return pieces;
 }
 
 /** The text a stop commits: each item's final text, or its words when no final came. */

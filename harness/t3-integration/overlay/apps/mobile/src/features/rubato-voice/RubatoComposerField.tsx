@@ -6,24 +6,21 @@
 // - Past `maxLines` an expand control appears at its top right and opens the draft full screen,
 //   with its own send.
 // - While live dictation runs for this composer, the editor shows the draft with the words heard
-//   so far where the final text will land, all grey with the newest words blue, the caret after
-//   them. It stays the draft's editor, read-only, so the keyboard stays up; the final text goes
+//   so far where the final text will land, grey, each new word fading in blue and fading to grey a
+//   moment later on its own clock, the caret after them; once the final text lands it all turns
+//   from grey to ink (ChatGPT's dictation, measured from the user's recording). It stays the draft's editor, read-only, so the keyboard stays up; the final text goes
 //   into the draft through T3's controller at stop (client-runtime rubatoLiveDictationDisplay.ts).
-import { liveDictationDisplay, type LiveDictationDisplay } from "@t3tools/client-runtime/voice-input";
-import {
-  LIVE_FRESH_MS,
-  liveDictationStore,
-  liveDictationView,
-} from "@t3tools/shared/rubatoLiveDictation";
-import { useEffect, useState, useSyncExternalStore } from "react";
-import { Modal, Pressable, View } from "react-native";
+import { liveDictationDisplay } from "@t3tools/client-runtime/voice-input";
+import { liveDictationPieces, liveDictationStore } from "@t3tools/shared/rubatoLiveDictation";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { SymbolView } from "../../components/AppSymbol";
 import { ComposerEditor, type ComposerEditorProps } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
-import type { ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
+import type { ComposerEditorProps as NativeEditorProps, ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
 
 export type RubatoComposerFieldProps = ComposerEditorProps & {
   /** Live dictation is running for this composer's draft. */
@@ -40,26 +37,98 @@ export type RubatoComposerFieldProps = ComposerEditorProps & {
 };
 
 const EXPAND_LABELS = { open: "Expand", close: "Collapse" } as const;
+type Rgba = readonly [number, number, number, number];
+/** iOS's grey and blue, as ChatGPT's dictation draws its words. */
+const DICTATION_GREY: Rgba = [142 / 255, 142 / 255, 147 / 255, 1];
+const DICTATION_BLUE: Rgba = [10 / 255, 132 / 255, 255 / 255, 1];
+/** How long the committed text takes to turn from grey to ink. */
+const SETTLE_MS = 160;
+/** At most this often the colours are sent while words move (about 30 frames a second). */
+const FRAME_MS = 33;
 
+const mix = (from: Rgba, to: Rgba, amount: number, alpha = 1): Rgba => [
+  from[0] + (to[0] - from[0]) * amount,
+  from[1] + (to[1] - from[1]) * amount,
+  from[2] + (to[2] - from[2]) * amount,
+  alpha,
+];
+
+/** A theme colour string (#rgb, #rrggbb, #rrggbbaa or rgb[a](…)) as RGBA 0…1, or null. */
+function rgbaOf(color: unknown): Rgba | null {
+  if (typeof color !== "string") return null;
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(color.trim())?.[1];
+  if (hex && (hex.length === 3 || hex.length === 6 || hex.length === 8)) {
+    const full = hex.length === 3 ? hex.split("").map((digit) => digit + digit).join("") : hex;
+    const channel = (index: number) => Number.parseInt(full.slice(index * 2, index * 2 + 2), 16) / 255;
+    return [channel(0), channel(1), channel(2), full.length === 8 ? channel(3) : 1];
+  }
+  const rgb = /^rgba?\(([^)]+)\)$/i.exec(color.trim())?.[1]?.split(/[\s,/]+/).filter(Boolean).map(Number);
+  if (rgb && rgb.length >= 3 && rgb.every(Number.isFinite)) return [rgb[0]! / 255, rgb[1]! / 255, rgb[2]! / 255, rgb[3] ?? 1];
+  return null;
+}
+
+type FieldDisplay = {
+  readonly value: string;
+  readonly selection: ComposerEditorSelection;
+  readonly dictation: NonNullable<NativeEditorProps["dictation"]>;
+};
+
+/**
+ * What the field shows while dictation runs, and for a moment after: the draft with the heard
+ * words placed where the final text lands, every word fading in blue and fading to grey on its own
+ * clock, and once the final text is in the draft, all of it turning from grey to ink.
+ */
 function useLiveDictationDisplay(
   active: boolean,
   draft: string,
   selection: ComposerEditorSelection | undefined,
-): LiveDictationDisplay | null {
+  ink: Rgba,
+): FieldDisplay | null {
   const snapshot = useSyncExternalStore(liveDictationStore.subscribe, liveDictationStore.snapshot);
   const [now, setNow] = useState(() => Date.now());
+  const [settledAt, setSettledAt] = useState<number | null>(null);
+  const wasActive = useRef(active);
+  useEffect(() => {
+    if (active) setSettledAt(null);
+    else if (wasActive.current) setSettledAt(Date.now());
+    wasActive.current = active;
+  }, [active]);
   useEffect(() => {
     if (active) setNow(Date.now());
   }, [active, snapshot]);
-  const view = liveDictationView(snapshot, now);
-  // Blue turns grey a moment after the newest word: tick only while something is blue.
+  const live = active
+    ? liveDictationDisplay(draft, selection ?? { start: draft.length, end: draft.length }, liveDictationPieces(snapshot), now)
+    : null;
+  const settling = !active && settledAt !== null && now - settledAt < SETTLE_MS;
+  // One frame after another while a word moves or the committed text turns to ink.
+  const moving = (live?.animating ?? false) || settling;
   useEffect(() => {
-    if (!active || view.fresh.length === 0) return;
-    const timer = setTimeout(() => setNow(Date.now()), LIVE_FRESH_MS / 4);
+    if (!moving) return;
+    const timer = setTimeout(() => setNow(Date.now()), FRAME_MS);
     return () => clearTimeout(timer);
-  }, [active, view.fresh, now]);
-  if (!active) return null;
-  return liveDictationDisplay(draft, selection ?? { start: draft.length, end: draft.length }, view);
+  }, [moving, now]);
+  if (live) {
+    return {
+      value: live.value,
+      selection: live.selection,
+      dictation: {
+        base: DICTATION_GREY,
+        runs: live.runs.map((run) => ({
+          start: run.start,
+          end: run.end,
+          color: mix(DICTATION_GREY, DICTATION_BLUE, run.blue, run.visible),
+        })),
+      },
+    };
+  }
+  if (settling && settledAt !== null) {
+    return {
+      value: draft,
+      selection: selection ?? { start: draft.length, end: draft.length },
+      dictation: { base: mix(DICTATION_GREY, ink, Math.min(1, Math.max(0, (now - settledAt) / SETTLE_MS))), runs: [] },
+    };
+  }
+  return null;
 }
 
 export function RubatoComposerField({
@@ -71,7 +140,8 @@ export function RubatoComposerField({
   style,
   ...props
 }: RubatoComposerFieldProps) {
-  const live = useLiveDictationDisplay(dictating, props.value, props.selection);
+  const ink = rgbaOf(StyleSheet.flatten(props.textStyle)?.color) ?? [0, 0, 0, 1];
+  const live = useLiveDictationDisplay(dictating, props.value, props.selection, ink);
   const inset = props.contentInsetVertical ?? 0;
   const minHeight = minLines * lineHeight + inset * 2;
   const maxHeight = maxLines * lineHeight + inset * 2;

@@ -35,12 +35,11 @@ import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { ComposerSurface } from "../threads/ThreadComposer";
 import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
 import {
-  ComposerDictationCancelAction,
   ComposerDictationPrimaryAction,
-  ComposerDictationStatus,
 } from "../voice-input/ComposerDictationControl";
 import { useVoiceInputController } from "../voice-input/useVoiceInputController";
 import { RubatoComposerField } from "../rubato-voice/RubatoComposerField";
+import { RubatoDictationStrip, RubatoDictationToolbar } from "../rubato-voice/RubatoDictationStrip";
 import { resolveVoiceComposerPresentation } from "../voice-input/voiceInputPresentation";
 import { scopedThreadKey } from "../../lib/scopedEntities";
 import { useAtomValue } from "@effect/atom-react";
@@ -380,26 +379,16 @@ function RoomComposer(props: {
               textStyle={{ ...props.body, color: foreground }}
             />
           </View>
-          <View className="min-h-[44px] flex-row items-center">
+          <RubatoDictationToolbar showsDictation={dictating}>
             {dictating ? (
-              <>
-                <ComposerDictationCancelAction presentation={presentation} onCancel={dictation.cancel} />
-                <ComposerDictationStatus
-                  audioLevels={dictation.audioLevels}
-                  elapsedSeconds={dictation.elapsedSeconds}
-                  phase={dictation.state.phase}
-                  presentation={presentation}
-                  onDismissError={dictation.cancel}
-                />
-                <ComposerDictationPrimaryAction
-                  state={dictation.state}
-                  presentation={presentation}
-                  isAvailable={dictation.isAvailable}
-                  onStart={dictation.start}
-                  onConfirm={() => void dictation.stop()}
-                  onCancel={dictation.cancel}
-                />
-                {dictation.state.phase === "error" ? null : (
+              <RubatoDictationStrip
+                state={dictation.state}
+                presentation={presentation}
+                audioLevels={dictation.audioLevels}
+                elapsedSeconds={dictation.elapsedSeconds}
+                onCancel={dictation.cancel}
+                onStop={() => void dictation.stop()}
+                trailing={dictation.state.phase === "error" ? null : (
                   <ComposerActionButton
                     accessibilityLabel={copy.send}
                     icon="arrow.up"
@@ -408,9 +397,9 @@ function RoomComposer(props: {
                     onPress={sendWhenDictated}
                   />
                 )}
-              </>
+              />
             ) : (
-              <>
+              <View className="h-[44px] flex-row items-center">
                 <ComposerAttachmentButton
                   supportsFiles={props.supportsFiles}
                   onPickMedia={props.onPickMedia}
@@ -441,9 +430,9 @@ function RoomComposer(props: {
                     onPress={props.onCall}
                   />
                 )}
-              </>
+              </View>
             )}
-          </View>
+          </RubatoDictationToolbar>
         </ComposerSurface>
       </View>
     </KeyboardStickyView>

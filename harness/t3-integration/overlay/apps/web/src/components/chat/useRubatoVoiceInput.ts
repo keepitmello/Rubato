@@ -9,6 +9,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createRubatoLiveDictation, type RubatoVoiceFailure } from "../../state/rubatoVoice";
 
 const IDLE_STATE: VoiceInputState = { phase: "idle", error: null, errorAction: null };
+/** How long the strip and the heard words take to fade out once the final text landed. */
+export const LIVE_SETTLING_MS = 200;
 
 /**
  * T3's controller replaces every preparation and transcription failure with one
@@ -133,6 +135,25 @@ export function useRubatoVoiceInput(input: {
     [],
   );
 
+  // A moment after the final text lands the strip and the heard words fade out and the draft
+  // turns black, as ChatGPT's do; the composer keeps them on screen that long (`stage`).
+  const busy = state.phase === "preparing" || state.phase === "recording" || state.phase === "transcribing";
+  const [settling, setSettling] = useState(false);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (busy) {
+      wasBusy.current = true;
+      setSettling(false);
+      return;
+    }
+    if (!wasBusy.current) return;
+    wasBusy.current = false;
+    if (state.phase === "error") return;
+    setSettling(true);
+    const timer = setTimeout(() => setSettling(false), LIVE_SETTLING_MS);
+    return () => clearTimeout(timer);
+  }, [busy, state.phase]);
+
   useEffect(() => {
     if (state.phase !== "recording") {
       setElapsedSeconds(0);
@@ -152,8 +173,10 @@ export function useRubatoVoiceInput(input: {
     /** 0…1, the microphone right now; the waveform samples it. */
     readLevel: useCallback(() => liveRef.current?.recorder.level() ?? 0, []),
     liveDraft,
+    /** `live` while dictation runs, `settling` for the moment its strip and words fade out after. */
+    stage: busy ? ("live" as const) : settling ? ("settling" as const) : ("off" as const),
     /** The composer shows the heard words in place of the editor while this is true. */
-    showsLive: state.phase === "preparing" || state.phase === "recording" || state.phase === "transcribing",
+    showsLive: busy || settling,
     start: useCallback(() => {
       setLiveDraft(latest.current.readDraft());
       void controllerRef.current?.start();

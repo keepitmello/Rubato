@@ -1,0 +1,70 @@
+/* Dictation's motion, after ChatGPT's iOS app (RubatoVoiceControl.tsx, RubatoLiveDictationText.tsx). */
+.rubato-live-dictation {
+  --rubato-dictation-blue: #2563eb;
+}
+.dark .rubato-live-dictation {
+  --rubato-dictation-blue: #5b9bff;
+}
+.rubato-live-dictation-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-inline-start: 1px;
+  transform: translateY(0.2em);
+  border-radius: 1px;
+  background: var(--rubato-dictation-blue);
+}
+
+@keyframes rubato-voice-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes rubato-voice-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+/* The cancel cross turns in from where a plus would stand, and turns back out. */
+@keyframes rubato-voice-x-in {
+  from { opacity: 0; transform: rotate(-45deg) scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes rubato-voice-x-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: rotate(-45deg) scale(0.85); }
+}
+@keyframes rubato-voice-pop-in {
+  from { opacity: 0; transform: scale(0.6); }
+  to { opacity: 1; transform: none; }
+}
+
+.rubato-voice-strip { animation: rubato-voice-fade-in 160ms ease-out both; }
+.rubato-voice-strip .rubato-voice-x { animation: rubato-voice-x-in 200ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.rubato-voice-strip.is-leaving { animation: rubato-voice-fade-out 180ms ease-in both; }
+.rubato-voice-strip.is-leaving .rubato-voice-x { animation: rubato-voice-x-out 180ms ease-in both; }
+.rubato-voice-wave {
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 18px);
+  mask-image: linear-gradient(to right, transparent, #000 18px);
+}
+.rubato-voice-mic.is-returning { animation: rubato-voice-pop-in 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Stop gives way to the spinner while the final text comes. */
+.rubato-voice-stop-slot { position: relative; }
+.rubato-voice-stop-slot > .rubato-voice-stop { transition: opacity 140ms ease-in, transform 140ms ease-in; }
+.rubato-voice-stop-slot.is-busy > .rubato-voice-stop { opacity: 0; transform: scale(0.6); pointer-events: none; }
+.rubato-voice-stop-slot > .rubato-voice-spinner {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 160ms ease-out 80ms;
+  pointer-events: none;
+}
+.rubato-voice-stop-slot.is-busy > .rubato-voice-spinner { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rubato-voice-strip,
+  .rubato-voice-strip .rubato-voice-x,
+  .rubato-voice-strip.is-leaving,
+  .rubato-voice-strip.is-leaving .rubato-voice-x,
+  .rubato-voice-mic.is-returning { animation: none; }
+}
