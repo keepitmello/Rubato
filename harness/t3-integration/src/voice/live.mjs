@@ -1,15 +1,16 @@
 // 실시간 받아쓰기의 1회용 열쇠. 맥이 OpenAI 키로 짧게 사는 client secret 을 받아
-// 폰과 데스크탑에 건네고, 둘은 그 열쇠로 OpenAI 실시간 전사에 직접 붙는다(WebRTC).
-// 진짜 키는 맥을 떠나지 않는다.
+// 폰과 데스크탑에 건네고, 둘은 그 열쇠로 OpenAI 실시간 전사에 직접 붙는다(웹소켓,
+// packages/shared rubatoLiveDictation). 진짜 키는 맥을 떠나지 않는다.
 //
 // 모델은 단어 단위로 글자를 흘려 주는 `gpt-live-transcribe` 다. 파일 전사 모델
 // (`gpt-transcribe`)도 같은 연결에 붙지만 말이 멈춘 뒤에야 문장째 온다. 둘을 같은
 // 음성으로 나란히 재 보고 사용자가 단어 단위를 골랐다(2026-11-20). 통화(call-agent)도
 // 같은 모델이다. 실시간 전용 모델이라 서버의 쉼 감지(turn_detection)는 받지 않는다.
 //
-// 근거(2026-11-20 실측): POST /v1/realtime/client_secrets 로 session.type 'transcription'
-// 을 만들면 `ek_…` 가 오고, 그 열쇠로 POST /v1/realtime/calls (SDP) 가 붙어 데이터 채널
-// `oai-events` 로 `conversation.item.input_audio_transcription.delta` 가 단어마다 온다.
+// 근거(실측): POST /v1/realtime/client_secrets 로 session.type 'transcription' 을 만들면
+// `ek_…` 가 오고, 그 열쇠로 wss://api.openai.com/v1/realtime 이 열려(헤더 또는 서브프로토콜
+// `openai-insecure-api-key.<ek>`, 2026-11-21) `conversation.item.input_audio_transcription.delta`
+// 가 단어마다 온다. 응답의 callsUrl(WebRTC 자리)은 웹소켓 이전 앱 빌드가 읽는다.
 import { DEFAULT_HINTS, TranscriptionError, transcriptionInstructions, transcriptionKeywords } from './transcribe.mjs';
 
 export const LIVE_TRANSCRIPTION_MODEL = 'gpt-live-transcribe';
@@ -25,7 +26,7 @@ export const LIVE_TRANSCRIPTION_DELAY = 'minimal';
 /** 열쇠가 연결을 여는 데 쓰일 수 있는 시간. 연결이 열린 뒤에는 끝나도 세션은 이어진다. */
 export const LIVE_SECRET_TTL_SECONDS = 60;
 
-/** 열쇠를 받은 쪽이 SDP 를 보낼 곳. */
+/** WebRTC 로 붙던 앱 빌드가 SDP 를 보낼 곳. 지금 앱은 웹소켓으로 붙는다. */
 export const LIVE_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 
 /** OpenAI 에 보낼 전사 세션 설정. 시험이 같은 값을 본다. */

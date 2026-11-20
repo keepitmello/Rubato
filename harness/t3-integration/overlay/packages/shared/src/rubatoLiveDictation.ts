@@ -2,10 +2,16 @@
 // Live dictation: words appear in the composer while the person is still talking.
 //
 // The Mac mints a one-time key (POST /rubato/voice/live, harness/t3-integration/src/voice/
-// live.mjs) and this module takes the microphone straight to OpenAI's live transcription over
-// WebRTC with it: the SDP offer goes to `callsUrl`, words come back on the `oai-events` data
-// channel as `conversation.item.input_audio_transcription.delta`, and a commit at the end
-// brings each item's `…completed` text. The real key never leaves the Mac.
+// live.mjs) and this module takes the microphone straight to OpenAI's live transcription over a
+// WebSocket opened with it: the audio goes up as `input_audio_buffer.append`, words come back as
+// `conversation.item.input_audio_transcription.delta`, and a commit at the end brings each item's
+// `…completed` text. The real key never leaves the Mac.
+//
+// The microphone is captured here, from the moment dictation is asked for, not handed to the
+// connection: what the person says while the key is minted and the socket opens (about 2 s,
+// measured 2026-11-21) is kept and goes up first, so the start of what they said is heard. Over
+// WebRTC that audio was lost, and the model wrote the cut-off start as other words ("받아쓰기
+// 테스트야" came out as "되기 TypeScript야" with the first second cut).
 //
 // It plugs into T3's shared voice controller (client-runtime voice-input) as its recorder and
 // its transcriber, so the controller's phases, the waveform, the keep-awake and the commit into
@@ -13,51 +19,55 @@
 // transcribing = waiting for the final text after stop. The words heard so far are published
 // separately (`subscribe` / `snapshot`) for the composer to draw while recording.
 //
-// The desktop passes the browser's WebRTC, the phone passes @livekit/react-native-webrtc; the
-// shapes below are the part of WebRTC both have.
+// The desktop captures through Web Audio, the phone through @livekit/react-native-webrtc's local
+// recording; both hand over PCM at the rate they have and this module brings it to 24 kHz.
 
 export interface LiveDictationKey {
   readonly clientSecret: string;
-  readonly callsUrl: string;
 }
 
-interface LiveTrack {
-  enabled: boolean;
+/** The microphone while it is captured. */
+export interface LiveMicrophone {
+  /** Stops capturing and lets the microphone go. */
   stop(): void;
 }
-interface LiveStream {
-  getAudioTracks(): ReadonlyArray<LiveTrack>;
-  getTracks(): ReadonlyArray<LiveTrack>;
-}
-interface LiveChannel {
-  readonly readyState: string;
+/**
+ * Captured audio, mono, as 16-bit sample values (−32768…32767, fractional is fine) at the rate the
+ * platform captures.
+ */
+export type LiveAudioSink = (samples: ArrayLike<number>, sampleRate: number) => void;
+
+/** The part of a WebSocket both the browser's and React Native's have. */
+export interface LiveSocket {
+  readonly readyState: number;
   send(data: string): void;
   close(): void;
   onopen: ((event: unknown) => void) | null;
   onmessage: ((event: { readonly data: unknown }) => void) | null;
   onclose: ((event: unknown) => void) | null;
+  onerror: ((event: unknown) => void) | null;
 }
-interface LiveStatsReport {
-  readonly type?: string;
-  readonly kind?: string;
-  readonly audioLevel?: number;
-}
-interface LivePeer {
-  addTrack(track: never, stream: never): unknown;
-  createDataChannel(label: string): LiveChannel;
-  createOffer(): Promise<{ readonly sdp?: string | null; readonly type?: string | null }>;
-  setLocalDescription(description: never): Promise<void>;
-  setRemoteDescription(description: never): Promise<void>;
-  getStats(): Promise<{ forEach(callback: (report: LiveStatsReport) => void): void }>;
-  close(): void;
+
+/** Where the socket goes. The key carries the session (model, language, words). */
+export const LIVE_SOCKET_URL = "wss://api.openai.com/v1/realtime";
+/** The rate OpenAI's realtime input takes (`audio/pcm`). */
+export const LIVE_SAMPLE_RATE = 24_000;
+
+/**
+ * Opens the socket with the one-time key. Browsers cannot set headers on a WebSocket, so the key
+ * goes as a subprotocol, which OpenAI accepts from both (checked against the live API 2026-11-21).
+ */
+export function openLiveSocket(clientSecret: string): LiveSocket {
+  return new WebSocket(LIVE_SOCKET_URL, ["realtime", `openai-insecure-api-key.${clientSecret}`]) as never;
 }
 
 export interface LiveDictationPlatform {
   /** Asks the Mac for a key. Rejects with the error the composer should show. */
   readonly mint: (signal: AbortSignal) => Promise<LiveDictationKey>;
-  readonly openMicrophone: () => Promise<LiveStream>;
-  readonly createPeer: () => LivePeer;
-  readonly fetch: (url: string, init: RequestInit) => Promise<Response>;
+  /** Starts capturing at once and hands every piece of audio to `sink` as it comes. */
+  readonly openMicrophone: (sink: LiveAudioSink) => Promise<LiveMicrophone>;
+  /** Defaults to `openLiveSocket`. */
+  readonly openSocket?: (clientSecret: string) => LiveSocket;
   /** The failure the composer shows when OpenAI cannot be reached or refuses the key. */
   readonly connectionFailed: (message: string) => Error;
   readonly now?: () => number;
@@ -89,6 +99,98 @@ export function liveDictationTint(age: number): { readonly visible: number; read
 /** How long stop waits for the final text before keeping the words already shown. */
 export const LIVE_FINISH_TIMEOUT_MS = 4_000;
 const CONNECT_TIMEOUT_MS = 12_000;
+/** Audio goes up in pieces of at least this many samples (50 ms), not every 10 ms the phone hands over. */
+const SEND_SAMPLES = LIVE_SAMPLE_RATE / 20;
+/** Audio kept while connecting, at most (a connection that slow fails at CONNECT_TIMEOUT_MS anyway). */
+const MAX_BACKLOG_SAMPLES = LIVE_SAMPLE_RATE * 15;
+
+/**
+ * Brings audio from the rate the platform captures to 24 kHz, piece after piece without seams:
+ * lower rates are interpolated, higher rates are averaged over each output sample's span. Rates
+ * are whole hertz.
+ */
+export function createLiveResampler(outRate = LIVE_SAMPLE_RATE) {
+  let rate = 0;
+  let previous = 0;
+  let position = 0;
+  let sum = 0;
+  let count = 0;
+  return (samples: ArrayLike<number>, sampleRate: number): Int16Array => {
+    if (sampleRate !== rate) {
+      rate = sampleRate;
+      previous = 0;
+      position = 0;
+      sum = 0;
+      count = 0;
+    }
+    const out: number[] = [];
+    // Positions count in 1/(sampleRate·outRate) of a second, whole numbers, so nothing drifts.
+    if (sampleRate === outRate) {
+      for (let index = 0; index < samples.length; index += 1) out.push(samples[index]!);
+    } else if (sampleRate < outRate) {
+      // Each output sample sits `position / outRate` of the way from the previous input sample to this one.
+      for (let index = 0; index < samples.length; index += 1) {
+        const sample = samples[index]!;
+        while (position < outRate) {
+          out.push(previous + ((sample - previous) * position) / outRate);
+          position += sampleRate;
+        }
+        position -= outRate;
+        previous = sample;
+      }
+    } else {
+      // Each input sample adds `outRate` to `position`; an output sample is due at every `sampleRate`.
+      for (let index = 0; index < samples.length; index += 1) {
+        sum += samples[index]!;
+        count += 1;
+        position += outRate;
+        if (position >= sampleRate) {
+          out.push(sum / count);
+          position -= sampleRate;
+          sum = 0;
+          count = 0;
+        }
+      }
+    }
+    const pcm = new Int16Array(out.length);
+    for (let index = 0; index < out.length; index += 1) {
+      pcm[index] = Math.max(-32768, Math.min(32767, Math.round(out[index]!)));
+    }
+    return pcm;
+  };
+}
+
+const BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+/** 16-bit little-endian PCM as base64, the way `input_audio_buffer.append` takes it. */
+export function pcmToBase64(pcm: Int16Array): string {
+  const bytes = new Uint8Array(pcm.length * 2);
+  for (let index = 0; index < pcm.length; index += 1) {
+    const value = pcm[index]! & 0xffff;
+    bytes[index * 2] = value & 0xff;
+    bytes[index * 2 + 1] = value >> 8;
+  }
+  const parts: string[] = [];
+  for (let index = 0; index < bytes.length; index += 3) {
+    const a = bytes[index]!;
+    const b = bytes[index + 1];
+    const c = bytes[index + 2];
+    const triple = (a << 16) | ((b ?? 0) << 8) | (c ?? 0);
+    parts.push(
+      BASE64[(triple >> 18) & 63]! +
+        BASE64[(triple >> 12) & 63]! +
+        (b === undefined ? "=" : BASE64[(triple >> 6) & 63]!) +
+        (c === undefined ? "=" : BASE64[triple & 63]!),
+    );
+  }
+  return parts.join("");
+}
+
+/** 0…1, the loudest sample of a piece, as WebRTC's audioLevel reads a microphone. */
+function peakLevel(pcm: Int16Array): number {
+  let peak = 0;
+  for (let index = 0; index < pcm.length; index += 1) peak = Math.max(peak, Math.abs(pcm[index]!));
+  return Math.min(1, peak / 32767);
+}
 
 type Piece = { readonly text: string; readonly at: number };
 type Item = { pieces: Piece[]; final: string | null };
@@ -148,9 +250,14 @@ export const liveDictationStore = {
 /** One connection: the microphone streaming to OpenAI, words collected as they come. */
 class LiveConnection {
   private readonly items = new Map<string, Item>();
-  private stream: LiveStream | null = null;
-  private peer: LivePeer | null = null;
-  private channel: LiveChannel | null = null;
+  private readonly resample = createLiveResampler();
+  private microphone: LiveMicrophone | null = null;
+  private socket: LiveSocket | null = null;
+  /** Audio not sent yet: everything heard while connecting, then less than a piece. */
+  private pending: Int16Array[] = [];
+  private pendingSamples = 0;
+  private listening = true;
+  private lastLevel = 0;
   private closed = false;
   private committed = false;
   private settledAfterCommit = false;
@@ -174,48 +281,44 @@ class LiveConnection {
     const abort = () => this.close();
     signal.addEventListener("abort", abort, { once: true });
     try {
-      // The key and the microphone at once: both take a moment and neither needs the other.
-      const [minted, stream] = await Promise.all([key, this.platform.openMicrophone()]);
-      this.stream = stream;
+      // The microphone first and on its own: it hears from now on, while the key is minted and the
+      // socket opens, and what it hears waits in `pending`.
+      const microphone = this.platform.openMicrophone((samples, sampleRate) => this.hear(samples, sampleRate));
+      // A key that fails must not leave the microphone open, nor go unhandled while it opens.
+      key.catch(() => {});
+      this.microphone = await microphone;
+      if (this.closed) {
+        this.microphone.stop();
+        throw this.platform.connectionFailed("Dictation was cancelled.");
+      }
+      const minted = await key;
       if (this.closed) throw this.platform.connectionFailed("Dictation was cancelled.");
-      const track = stream.getAudioTracks()[0];
-      if (!track) throw this.platform.connectionFailed("No microphone is available.");
-      const peer = this.platform.createPeer();
-      this.peer = peer;
-      peer.addTrack(track as never, stream as never);
-      const channel = peer.createDataChannel("oai-events");
-      this.channel = channel;
-      const opened = new Promise<void>((resolve, reject) => {
+      const socket = (this.platform.openSocket ?? openLiveSocket)(minted.clientSecret);
+      this.socket = socket;
+      await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(
           () => reject(this.platform.connectionFailed("OpenAI did not answer in time.")),
           CONNECT_TIMEOUT_MS,
         );
-        channel.onopen = () => {
+        socket.onopen = () => {
           clearTimeout(timer);
           resolve();
         };
-        channel.onclose = () => {
+        socket.onerror = () => {
+          clearTimeout(timer);
+          reject(this.platform.connectionFailed("OpenAI could not be reached."));
+        };
+        socket.onclose = () => {
           clearTimeout(timer);
           if (!this.closed) reject(this.platform.connectionFailed("The connection to OpenAI closed."));
           this.notify();
         };
       });
-      channel.onmessage = (event) => this.receive(event.data);
-      const offer = await peer.createOffer();
-      await peer.setLocalDescription(offer as never);
-      const response = await this.platform
-        .fetch(minted.callsUrl, {
-          method: "POST",
-          headers: { authorization: `Bearer ${minted.clientSecret}`, "content-type": "application/sdp" },
-          body: offer.sdp ?? "",
-          signal,
-        })
-        .catch(() => null);
-      if (!response?.ok) throw this.platform.connectionFailed("OpenAI could not be reached.");
-      const answer = await response.text();
-      await peer.setRemoteDescription({ type: "answer", sdp: answer } as never);
-      await opened;
+      socket.onerror = null;
+      socket.onmessage = (event) => this.receive(event.data);
       if (this.closed) throw this.platform.connectionFailed("Dictation was cancelled.");
+      // What was said while connecting goes up first, in one piece.
+      this.send(true);
     } catch (error) {
       this.close();
       throw error;
@@ -224,34 +327,55 @@ class LiveConnection {
     }
   }
 
-  /** 0…1, the microphone's level as WebRTC measures what it sends. */
-  async level(): Promise<number> {
-    const peer = this.peer;
-    if (!peer || this.closed) return 0;
-    let level = 0;
-    try {
-      const stats = await peer.getStats();
-      stats.forEach((report) => {
-        if (report.type === "media-source" && report.kind === "audio" && typeof report.audioLevel === "number") {
-          level = Math.max(level, report.audioLevel);
-        }
-      });
-    } catch {
-      return 0;
-    }
-    return level;
+  /** 0…1, the microphone's level, from the audio it captured last. */
+  level(): number {
+    return this.closed || !this.listening ? 0 : this.lastLevel;
   }
 
+  /** Stops taking audio; what was taken still goes up. */
   mute(): void {
-    for (const track of this.stream?.getAudioTracks() ?? []) track.enabled = false;
+    this.listening = false;
+  }
+
+  private hear(samples: ArrayLike<number>, sampleRate: number): void {
+    if (this.closed || !this.listening) return;
+    const pcm = this.resample(samples, sampleRate);
+    if (pcm.length === 0) return;
+    this.lastLevel = peakLevel(pcm);
+    this.pending.push(pcm);
+    this.pendingSamples += pcm.length;
+    // Connecting can take long; keep the latest audio, not all of it.
+    while (this.pendingSamples > MAX_BACKLOG_SAMPLES && this.pending.length > 1) {
+      this.pendingSamples -= this.pending.shift()!.length;
+    }
+    this.send(false);
+  }
+
+  /** Sends what waits, once there is a piece's worth (or everything, when `all`). */
+  private send(all: boolean): void {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== 1 || this.closed || this.committed) return;
+    if (this.pendingSamples === 0 || (!all && this.pendingSamples < SEND_SAMPLES)) return;
+    const pcm = new Int16Array(this.pendingSamples);
+    let offset = 0;
+    for (const piece of this.pending) {
+      pcm.set(piece, offset);
+      offset += piece.length;
+    }
+    this.pending = [];
+    this.pendingSamples = 0;
+    socket.send(JSON.stringify({ type: "input_audio_buffer.append", audio: pcmToBase64(pcm) }));
   }
 
   /** Stops listening and waits for the final text of everything heard. */
   async finish(signal: AbortSignal): Promise<string> {
     this.mute();
-    if (!this.committed && this.channel?.readyState === "open") {
+    this.microphone?.stop();
+    this.microphone = null;
+    if (!this.committed && this.socket?.readyState === 1) {
+      this.send(true);
       this.committed = true;
-      this.channel.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
+      this.socket.send(JSON.stringify({ type: "input_audio_buffer.commit" }));
     }
     const deadline = this.now() + LIVE_FINISH_TIMEOUT_MS;
     while (!this.closed && !signal.aborted && !this.settled() && this.now() < deadline) {
@@ -272,17 +396,15 @@ class LiveConnection {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.pending = [];
+    this.pendingSamples = 0;
     try {
-      this.channel?.close();
+      this.socket?.close();
     } catch {}
     try {
-      this.peer?.close();
+      this.microphone?.stop();
     } catch {}
-    for (const track of this.stream?.getTracks() ?? []) {
-      try {
-        track.stop();
-      } catch {}
-    }
+    this.microphone = null;
     this.wake?.();
   }
 
@@ -377,8 +499,6 @@ export function createLiveDictation(
   let limitTimer: ReturnType<typeof setTimeout> | null = null;
   let recordingStartedAt: number | null = null;
   let spokenLanguage = "ko";
-  let levelTimer: ReturnType<typeof setInterval> | null = null;
-  let lastLevel = 0;
   let warmKey: { readonly key: Promise<LiveDictationKey>; readonly at: number } | null = null;
   const now = () => platform.now?.() ?? Date.now();
   // A key minted ahead, if one is young enough; otherwise a new one. Each key opens one connection.
@@ -390,14 +510,12 @@ export function createLiveDictation(
 
   const clearTimers = () => {
     if (limitTimer !== null) clearTimeout(limitTimer);
-    if (levelTimer !== null) clearInterval(levelTimer);
     limitTimer = null;
-    levelTimer = null;
   };
+  const level = () => (recordingStartedAt === null ? 0 : (connection?.level() ?? 0));
   const end = () => {
     clearTimers();
     recordingStartedAt = null;
-    lastLevel = 0;
     connection?.close();
     connection = null;
     publish(EMPTY);
@@ -418,11 +536,6 @@ export function createLiveDictation(
         () => onRecorderStatus({ isFinished: true, hasError: false, error: null, url: uri }),
         forDuration * 1000,
       );
-      levelTimer = setInterval(() => {
-        void live.level().then((level) => {
-          lastLevel = level;
-        });
-      }, 80);
     },
     async stop(): Promise<void> {
       clearTimers();
@@ -432,16 +545,17 @@ export function createLiveDictation(
     getStatus(): { readonly isRecording: boolean; readonly metering: number; readonly durationMillis: number } {
       const live = connection;
       const recording = live !== null && recordingStartedAt !== null;
+      const heard = level();
       return {
         isRecording: recording,
-        // expo-audio reports decibels; WebRTC reports 0…1.
-        metering: lastLevel > 0 ? 20 * Math.log10(lastLevel) : -160,
+        // expo-audio reports decibels; the capture reports 0…1.
+        metering: heard > 0 ? 20 * Math.log10(heard) : -160,
         durationMillis: recording ? live.now() - recordingStartedAt! : 0,
       };
     },
     /** 0…1, for a waveform drawn from levels directly (the desktop). */
     level(): number {
-      return lastLevel;
+      return level();
     },
     release(): void {
       end();

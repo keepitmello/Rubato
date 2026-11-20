@@ -129,3 +129,29 @@ test('converts a real macOS alert sound to WAV', { skip: process.platform !== 'd
   assert.equal(Buffer.from(bytes).subarray(0, 4).toString(), 'RIFF');
   assert.equal(Buffer.from(bytes).subarray(8, 12).toString(), 'WAVE');
 });
+
+test('a phone gets the sound as an iPhone notification plays it, a CAF even when the browser could play the file', async (t) => {
+  const { folders, cacheDirectory } = await fixture(t);
+  const calls = [];
+  const convert = async (input, output, args) => {
+    calls.push({ input: path.basename(input), output: path.extname(output), args });
+    await writeFile(output, 'caff bytes');
+  };
+  const service = createSoundsService({ folders, cacheDirectory, convert });
+  const response = await handleSoundsRequest(service, post('file', { id: 'mac:system/Ping.wav', for: 'phone' }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'audio/x-caf');
+  assert.equal(Buffer.from(await response.arrayBuffer()).toString(), 'caff bytes');
+  assert.deepEqual(calls, [{ input: 'Ping.wav', output: '.caf', args: ['-f', 'caff', '-d', 'ima4'] }]);
+  // The browser still gets the WAV as it is.
+  assert.equal((await service.file('mac:system/Ping.wav')).contentType, 'audio/wav');
+  assert.equal(calls.length, 1);
+});
+
+test('converts a real macOS alert sound to the CAF a phone plays', { skip: process.platform !== 'darwin' }, async (t) => {
+  const { folders, cacheDirectory } = await fixture(t);
+  const service = createSoundsService({ folders: { ...folders, system: '/System/Library/Sounds' }, cacheDirectory });
+  const { bytes, contentType } = await service.file('mac:system/Glass.aiff', 'phone');
+  assert.equal(contentType, 'audio/x-caf');
+  assert.equal(Buffer.from(bytes).subarray(0, 4).toString(), 'caff');
+});

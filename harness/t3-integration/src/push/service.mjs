@@ -8,6 +8,9 @@
 //   POST settings { preview: 'full' | 'generic' }     what the lock screen may show of a thread
 //   POST preferences { deviceId, preferences }        { threads, companionMessages, companionCalls }, each on or off
 //   POST telegram { enabled }                         companions' words to Telegram, for every companion here
+//   POST sounds                                       { sounds: [{ kind, id, file }] } the chimes the desktop plays,
+//                                                     and the file names thread alerts ask the phone to play
+//   POST activity                                     { state } what this Mac's Live Activity card shows now, or null
 //
 // Three kinds reach a phone, each of which it can turn off here, before anything leaves this Mac:
 //   thread             RubatoPush.ts feeds every thread's awareness state (upstream's
@@ -23,6 +26,15 @@
 //                      shown like a message; none while that companion is on a call with the person.
 //   companion call     the call service's VoIP ring (push-relay/mac/sender.mjs).
 // A companion's room is not a thread here: its runs never become thread alerts.
+//
+// A thread alert rings with the chime the desktop plays for it (Settings > General > Behavior, in the
+// desktop's client-settings.json): the finish chime for a finish or failure, the input chime when it
+// needs the person. The phone keeps those chimes as files (rubato-push/sounds.ts) and the alert names one.
+//
+// Live Activity: the phone opens one card per Mac on its lock screen and Dynamic Island while it is in
+// front (rubato-push/liveActivity.ts) and hands the card's token to the relay. This Mac keeps the card
+// current with every thread's state (activityCard, the summary upstream's relay makes for the T3 app)
+// and ends it when nothing runs any more.
 import { createHash, randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -38,6 +50,20 @@ export const FRESH_MS = 2 * 60_000;
 export const MESSAGE_PREVIEW = 200;
 /** A thread alert shows this much of the agent's last answer; the lock screen fits about four lines. */
 export const REPLY_PREVIEW = 180;
+
+/** A run changes in bursts; the card waits this long for the burst to settle before it goes out. */
+export const ACTIVITY_SETTLE_MS = 1500;
+/** The relay dims a card after 10 minutes without news (ACTIVITY_STALE_S); while work runs it hears sooner. */
+export const ACTIVITY_REFRESH_MS = 8 * 60_000;
+/** The card's rows: the lock screen shows up to five, the expanded Dynamic Island three. */
+export const ACTIVITY_ROWS = 5;
+/** A finished thread keeps its Done or Failed row this long while others still run. */
+export const ACTIVITY_DONE_MS = 15 * 60_000;
+/** APNs carries 4 KB for a card, the props travel as a JSON string inside JSON: rows go before that. */
+const ACTIVITY_MAX_BYTES = 3000;
+// A thread whose Mac died mid-run never reports an end; running rows expire, waiting ones last longer.
+const ACTIVITY_RUNNING_TTL_MS = 2 * 60 * 60_000;
+const ACTIVITY_WAITING_TTL_MS = 24 * 60 * 60_000;
 
 const ATTENTION = new Set(['waiting_for_approval', 'waiting_for_input']);
 const TERMINAL = new Set(['completed', 'failed']);
@@ -113,6 +139,86 @@ export function threadCollapseId(environmentId, threadId) {
   return `thread:${createHash('sha256').update(`${environmentId}/${threadId}`).digest('base64url').slice(0, 40)}`;
 }
 
+/** Where the desktop app keeps its own settings, among them the chimes it plays (start-gui.sh's T3CODE_HOME). */
+export function desktopSettingsFile(env = process.env) {
+  return path.join(env.T3CODE_HOME || path.join(os.homedir(), '.rubato', 't3-home'), 'userdata', 'client-settings.json');
+}
+
+const SOUND_ID = /^(builtin:(completion|input)|mac:(system|local|user)\/[^/]+)$/;
+const DEFAULT_SOUNDS = { completion: 'builtin:completion', input: 'builtin:input' };
+
+/** The chimes the desktop plays: { completion, input }, each a sound id of rubatoNotificationSounds.ts. */
+export function readDesktopSounds(file = desktopSettingsFile()) {
+  let settings = {};
+  try { settings = JSON.parse(readFileSync(file, 'utf8')) ?? {}; } catch { /* the desktop's defaults */ }
+  const pick = (value, fallback) => (typeof value === 'string' && SOUND_ID.test(value) ? value : fallback);
+  return {
+    completion: pick(settings.notificationCompletionSound, DEFAULT_SOUNDS.completion),
+    input: pick(settings.notificationInputSound, DEFAULT_SOUNDS.input),
+  };
+}
+
+/** The file a sound id is on the phone, in its Library/Sounds (rubato-push/sounds.ts writes the same names). */
+export function phoneSoundFile(id) {
+  if (id === 'builtin:completion') return 'rubato-completion.caf';
+  if (id === 'builtin:input') return 'rubato-input.caf';
+  if (typeof id === 'string' && SOUND_ID.test(id)) return `rubato-mac-${createHash('sha256').update(id).digest('hex').slice(0, 12)}.caf`;
+  return null;
+}
+
+const ACTIVITY_STATUS = {
+  waiting_for_approval: 'Approval', waiting_for_input: 'Input', completed: 'Done', failed: 'Failed',
+  starting: 'Connecting', running: 'Working', stale: 'Waiting',
+};
+const clip = (value, max) => {
+  const text = String(value ?? '').trim();
+  return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+};
+const phaseOrder = phase => (ATTENTION.has(phase) ? 0 : phase === 'failed' ? 1 : phase === 'starting' || phase === 'running' ? 2 : 3);
+
+function expired(state, now) {
+  const at = Date.parse(state.updatedAt);
+  if (!Number.isFinite(at)) return true;
+  return now - at > (state.phase === 'running' || state.phase === 'starting' ? ACTIVITY_RUNNING_TTL_MS : ACTIVITY_WAITING_TTL_MS);
+}
+
+/**
+ * What this Mac's Live Activity card shows (upstream's AgentActivity widget props), from every
+ * thread's latest awareness state: threads that need the person first, then running ones, then those
+ * that finished in the last 15 minutes. null when nothing ran lately. `activeCount` 0 means all done.
+ */
+export function activityCard(states, { now = Date.now(), environmentId = null, preview = 'full' } = {}) {
+  const all = [...states].filter(Boolean);
+  const active = all.filter(state => !TERMINAL.has(state.phase) && !expired(state, now))
+    .sort((a, b) => phaseOrder(a.phase) - phaseOrder(b.phase) || b.updatedAt.localeCompare(a.updatedAt));
+  const done = all.filter(state => TERMINAL.has(state.phase) && now - Date.parse(state.updatedAt) <= ACTIVITY_DONE_MS)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const shown = [...active, ...done];
+  if (!shown.length) return null;
+  const newest = shown.reduce((latest, state) => (state.updatedAt > latest.updatedAt ? state : latest));
+  const subtitle = active.length ? 'Agent work in progress' : done[0].phase === 'failed' ? 'Agent work failed' : 'Agent work completed';
+  const row = state => ({
+    environmentId: state.environmentId, threadId: state.threadId,
+    // 'generic': the lock screen says only that threads run, as the alerts do.
+    projectTitle: preview === 'generic' ? '' : clip(state.projectTitle, 40),
+    threadTitle: preview === 'generic' ? 'A thread' : clip(state.threadTitle, 60),
+    modelTitle: clip(state.modelTitle, 32),
+    phase: state.phase, status: ACTIVITY_STATUS[state.phase] ?? 'Working', updatedAt: state.updatedAt,
+    deepLink: String(state.deepLink ?? '').startsWith('/') ? state.deepLink : '/',
+  });
+  const card = {
+    title: 'Rubato', subtitle, activeCount: active.length, updatedAt: newest.updatedAt,
+    environmentId: environmentId ?? newest.environmentId,
+    activities: shown.slice(0, ACTIVITY_ROWS).map(row),
+  };
+  while (card.activities.length > 1 && Buffer.byteLength(JSON.stringify(JSON.stringify(card))) > ACTIVITY_MAX_BYTES) card.activities.pop();
+  return card;
+}
+
+/** What a card says, without the times that change on every event: the same card is not sent twice. */
+const cardSignature = card => (card ? JSON.stringify([card.activeCount, card.subtitle,
+  card.activities.map(item => [item.threadId, item.phase, item.threadTitle, item.projectTitle, item.modelTitle])]) : 'none');
+
 /**
  * The alert one thread's new state deserves, given the phase this server last saw for it.
  * `run` is what the thread's shell knows of its latest run ({ startedAt, lastError }, RubatoPush.ts),
@@ -185,8 +291,12 @@ const registryTitle = (companionId) => {
 };
 
 export function createPushService({ home = PUSH_HOME, log = pushLog, grants = createGrantStore({ home, log }), now = Date.now,
-  onCall = inCall, telegram = createTelegramSwitch(), companionTitle = registryTitle } = {}) {
+  onCall = inCall, telegram = createTelegramSwitch(), companionTitle = registryTitle, desktopSounds = () => readDesktopSounds(),
+  setTimer = (run, ms) => { const timer = setTimeout(run, ms); timer.unref?.(); return timer; }, clearTimer = clearTimeout } = {}) {
   const phases = new Map();
+  /** Every thread's latest awareness state, for the Live Activity card. */
+  const states = new Map();
+  const activity = { timer: null, sent: 'none', sentAt: 0, active: false, attention: new Set(), sending: Promise.resolve() };
   /** Rooms of companions: threadId -> companion id. */
   const rooms = new Map();
   /** Who answers whether a thread's newest run is one a companion opened (the bridge, companionRuns). */
@@ -245,6 +355,53 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       writePreview(preview);
       return { preview };
     },
+    sounds() {
+      const chosen = desktopSounds();
+      return { sounds: ['completion', 'input'].map(kind => ({ kind, id: chosen[kind], file: phoneSoundFile(chosen[kind]) })) };
+    },
+    activity: () => ({ state: currentCard() }),
+  };
+
+  const currentCard = () => activityCard([...states].filter(([threadId]) => !rooms.has(threadId)).map(([, state]) => state),
+    { now: now(), preview: readPreview() });
+
+  /**
+   * Sends the card when it says something new, or when iOS would dim it otherwise; ends it when
+   * nothing runs any more. A phone with no card open for this Mac answers no-activity at the relay.
+   */
+  function sendActivity() {
+    activity.timer = null;
+    activity.sending = activity.sending.then(async () => {
+      const card = currentCard();
+      const active = Boolean(card && card.activeCount > 0);
+      const signature = cardSignature(card);
+      const attention = new Set((card?.activities ?? []).filter(item => ATTENTION.has(item.phase)).map(item => item.threadId));
+      const urgent = [...attention].some(threadId => !activity.attention.has(threadId));
+      activity.attention = attention;
+      if (active) {
+        if (signature !== activity.sent || now() - activity.sentAt >= ACTIVITY_REFRESH_MS) {
+          activity.sent = signature;
+          activity.sentAt = now();
+          await grants.pushAll({ kind: 'activity', state: card, ...(urgent ? { urgent: true } : {}) }, { preference: 'liveActivity' });
+        }
+        activity.active = true;
+        activity.timer = setTimer(sendActivity, ACTIVITY_REFRESH_MS);
+      } else if (activity.active) {
+        activity.active = false;
+        activity.sent = 'none';
+        await grants.pushAll({ kind: 'activity', state: card, end: true }, { preference: 'liveActivity' });
+      }
+    }).catch(error => log('live activity not sent', { error: String(error?.message ?? error) }));
+    return activity.sending;
+  }
+  const scheduleActivity = () => {
+    if (activity.timer) clearTimer(activity.timer);
+    activity.timer = setTimer(sendActivity, ACTIVITY_SETTLE_MS);
+  };
+  const remember = (threadId, state) => {
+    if (state) states.set(threadId, state);
+    else states.delete(threadId);
+    scheduleActivity();
   };
 
   return {
@@ -260,6 +417,7 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
      */
     async threadChanged(threadId, state, run = null) {
       if (rooms.has(threadId)) return null;
+      remember(threadId, state);
       const previous = phases.get(threadId);
       phases.set(threadId, state?.phase ?? null);
       const at = now();
@@ -269,7 +427,22 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       if (TERMINAL.has(state.phase) && await companionOpened(threadId)) return null;
       const preview = readPreview();
       const reply = preview === 'full' && TERMINAL.has(state.phase) ? await lastReply(threadId) : null;
-      return grants.pushAll(alertFor(state, previous, { now: at, preview, run, reply }), { preference: 'threads' });
+      const sound = phoneSoundFile(desktopSounds()[TERMINAL.has(state.phase) ? 'completion' : 'input']) ?? 'default';
+      return grants.pushAll({ ...alertFor(state, previous, { now: at, preview, run, reply }), sound }, { preference: 'threads' });
+    },
+    /**
+     * A thread's state as the server found it on start: the card shows it, and no alert follows for a
+     * state that is older than this server.
+     */
+    threadSeen(threadId, state) {
+      if (!state || rooms.has(threadId)) return;
+      phases.set(threadId, state.phase);
+      remember(threadId, state);
+    },
+    /** The card's next send, now (tests, and a server that is about to stop). */
+    flushActivity() {
+      if (activity.timer) clearTimer(activity.timer);
+      return sendActivity();
     },
     /**
      * `answer(threadId)` resolves true when the thread's newest run is one a companion opened, not
@@ -291,7 +464,9 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
     },
     /** A thread is a companion's room: its runs are not thread alerts, its words are messages. */
     companionRoom(threadId, companionId) {
-      if (typeof threadId === 'string' && typeof companionId === 'string') rooms.set(threadId, companionId);
+      if (typeof threadId !== 'string' || typeof companionId !== 'string') return;
+      rooms.set(threadId, companionId);
+      if (states.delete(threadId)) scheduleActivity();
     },
     /**
      * Something a companion said reached its room (`id` once per thing said, `at` when it was

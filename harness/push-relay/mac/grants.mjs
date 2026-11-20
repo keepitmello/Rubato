@@ -12,8 +12,14 @@ import path from 'node:path';
 export const PUSH_HOME = process.env.RUBATO_PUSH_HOME ?? path.join(os.homedir(), '.rubato', 'push');
 const SEND_TIMEOUT_MS = 10_000;
 
-/** What a phone can turn off, each on its own: a Mac sends nothing of a kind its phone turned off. */
-export const PUSH_KINDS = Object.freeze(['threads', 'companionMessages', 'companionCalls']);
+/**
+ * What a phone can turn off, each on its own: a Mac sends nothing of a kind its phone turned off.
+ * `liveActivity` is the lock-screen and Dynamic Island card of this Mac's running threads.
+ */
+export const PUSH_KINDS = Object.freeze(['threads', 'companionMessages', 'companionCalls', 'liveActivity']);
+
+/** Answers that are no failure: the phone has no card open for this Mac right now. */
+const QUIET = new Set(['no-activity']);
 
 /** A phone's choices, every kind on unless it said otherwise. */
 export function normalizePreferences(value, base = {}) {
@@ -109,7 +115,7 @@ export function createGrantStore({ home = PUSH_HOME, fetch: send = globalThis.fe
           return { deviceId: entry.deviceId, ok: false, reason: error?.name === 'TimeoutError' ? 'relay-timeout' : 'relay-unreachable' };
         }
       }));
-      const failed = results.filter(item => !item.ok);
+      const failed = results.filter(item => !item.ok && !QUIET.has(item.reason));
       if (failed.length) log('push not delivered', { kind: message.kind, failed: failed.map(item => item.reason) });
       return results;
     },

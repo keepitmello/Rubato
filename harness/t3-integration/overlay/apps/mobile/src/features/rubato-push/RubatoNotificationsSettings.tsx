@@ -9,12 +9,14 @@ import { SettingsRow } from "../settings/components/SettingsRow";
 import { SettingsScreen } from "../settings/components/SettingsScreen";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
-import { macConnections, rubatoPushDeps } from "./deps";
+import { liveActivityDeps, liveActivitySupported, macConnections, rubatoPushDeps } from "./deps";
+import { syncLiveActivities } from "./liveActivity";
 import { loadPushState } from "./storage";
-import { DEFAULT_PREFERENCES, setRubatoPushPreferences, type MacConnection, type PushPreferences, type PushState } from "./sync";
+import { pushPreferences, setRubatoPushPreferences, type MacConnection, type PushPreferences, type PushState } from "./sync";
 
 // Settings > Notifications in the Rubato app. Each kind (companion messages, companion calls,
-// threads) is turned off on the Macs themselves, so nothing of it leaves them (sync.ts tells them).
+// threads, the Live Activity card) is turned off on the Macs themselves, so nothing of it leaves
+// them (sync.ts tells them).
 // Whether the lock screen shows thread names, and whether companions' words also go to Telegram,
 // live on each Mac too (/rubato/push/settings, /rubato/push/telegram).
 
@@ -70,11 +72,15 @@ export function RubatoNotificationsSettings() {
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- one status read per Mac shown; the connection object changes identity on every render.
   }, [firstId]);
 
-  const preferences = state?.preferences ?? DEFAULT_PREFERENCES;
+  const preferences = pushPreferences(state);
   const changePreference = (kind: keyof PushPreferences, on: boolean) => {
     const next = { ...preferences, [kind]: on };
     setState((current) => (current ? { ...current, preferences: next } : current));
-    void setRubatoPushPreferences(rubatoPushDeps(), connections, next).then((saved) => saved && setState(saved));
+    void setRubatoPushPreferences(rubatoPushDeps(), connections, next)
+      .then((saved) => saved && setState(saved))
+      // The card opens or closes at once.
+      .then(() => (kind === "liveActivity" ? syncLiveActivities(liveActivityDeps(), connections) : undefined))
+      .catch(() => {});
   };
 
   const changePermission = (on: boolean) => {
@@ -145,6 +151,16 @@ export function RubatoNotificationsSettings() {
             value={preferences.threads}
             onValueChange={(on) => changePreference("threads", on)}
           />
+          {liveActivitySupported() ? (
+            <SettingsSwitchRow
+              icon="timer"
+              label="Live Activity"
+              subtitle="Running threads on the lock screen and in the Dynamic Island while the Mac works."
+              disabled={!registered}
+              value={preferences.liveActivity}
+              onValueChange={(on) => changePreference("liveActivity", on)}
+            />
+          ) : null}
           <SettingsSwitchRow
             icon={{ ios: "lock", android: "lock" }}
             label="Show Thread Names"

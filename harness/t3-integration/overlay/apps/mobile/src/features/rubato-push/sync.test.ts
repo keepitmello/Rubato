@@ -54,7 +54,7 @@ describe("syncRubatoPush", () => {
     const toMac = requests[2]!;
     expect(toMac.auth).toBe("Bearer session-token");
     expect(toMac.body).toEqual({ relay: RELAY, grant: "rpg_1", grantId: "grant-1", deviceId: "dev-1", label: "wy's iPhone",
-      preferences: { threads: true, companionMessages: true, companionCalls: true } });
+      preferences: { threads: true, companionMessages: true, companionCalls: true, liveActivity: true } });
     expect(JSON.stringify(toMac.body)).not.toContain("aa");
     expect(stored()?.grants["env-mac"]).toMatchObject({ grantId: "grant-1", httpBaseUrl: "https://wy-mac.tail.ts.net" });
   });
@@ -106,7 +106,7 @@ describe("syncRubatoPush", () => {
     await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });
     requests.length = 0;
     macDown(true);
-    const quiet = { threads: false, companionMessages: true, companionCalls: false };
+    const quiet = { threads: false, companionMessages: true, companionCalls: false, liveActivity: false };
     await setRubatoPushPreferences(deps, [MAC], quiet);
     expect(requests.map((item) => [item.url, item.auth, item.body])).toEqual([
       ["https://wy-mac.tail.ts.net/rubato/push/preferences", "Bearer session-token", { deviceId: "dev-1", preferences: quiet }],

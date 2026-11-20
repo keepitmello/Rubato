@@ -20,7 +20,9 @@ import * as ServerSettings from "./serverSettings.ts";
 // Phone notifications through the Rubato relay (push-edits.mjs). The route lets the Rubato app on a
 // phone hand this Mac its push grant; the feed hands every thread's awareness state, the one T3's
 // relay publisher computes, to src/push/service.mjs in the Rubato checkout, which decides what
-// becomes an alert and sends it. T3's own relay publisher is untouched and keeps serving the T3 app.
+// becomes an alert and sends it, and what the phone's Live Activity card shows. On start the server
+// hands it every thread already at work, so the card is whole before the next event. T3's own relay
+// publisher is untouched and keeps serving the T3 app.
 
 const spec: ServiceSpec = {
   route: "/rubato/push",
@@ -33,6 +35,7 @@ const spec: ServiceSpec = {
 interface PushModule {
   readonly pushService: () => {
     readonly threadChanged: (threadId: string, state: AgentAwarenessState | null, run: RunFacts | null) => Promise<unknown>;
+    readonly threadSeen: (threadId: string, state: AgentAwarenessState) => void;
   };
 }
 
@@ -85,6 +88,22 @@ export const rubatoPushLayer = Layer.unwrap(
         const { state, run } = yield* stateOf(environmentId, threadId);
         yield* tryBridge("push thread alert", () => module.pushService().threadChanged(threadId, state, run));
       }).pipe(Effect.catchCause((cause) => Effect.logWarning("Rubato push: thread alert not sent", { threadId, cause })));
+
+    // Threads already at work when the server starts: the card shows them, without an alert.
+    const seed = Effect.gen(function* () {
+      const module = yield* pushModule;
+      if (module === null) return;
+      const environmentId = yield* environment.getEnvironmentId;
+      const [projectSnapshot, shellSnapshot] = yield* Effect.all([projects.snapshot, threads.getShellSnapshot()]);
+      const projectById = new Map(projectSnapshot.projects.map((project) => [project.id, project]));
+      for (const thread of shellSnapshot.threads) {
+        const project = projectById.get(thread.projectId);
+        if (!project || thread.archivedAt !== null) continue;
+        const state = projectThreadAwarenessV2({ environmentId, project, thread });
+        if (state !== null && state.phase !== "completed" && state.phase !== "failed") module.pushService().threadSeen(thread.id, state);
+      }
+    }).pipe(Effect.catchCause((cause) => Effect.logWarning("Rubato push: running threads not read for the Live Activity", { cause })));
+    yield* Effect.forkScoped(seed);
 
     yield* Effect.forkScoped(
       Stream.runForEach(threads.streamDomainEvents, (event) =>

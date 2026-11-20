@@ -245,3 +245,70 @@ test('a companion message carries its category, its own fields and lets the serv
   for (const bad of [{ category: 'com.other.app' }, { category: 'rubato.' }, { rubato: { nested: { a: 1 } } }, { rubato: 'x' }])
     assert.equal((await call('POST', '/v1/push', { auth: grant, body: { ...message, ...bad } })).status, 400, JSON.stringify(bad));
 });
+
+test('a thread alert plays the sound file the Mac names, or the default', async () => {
+  const { call, phone, grantFor, sent } = await setup();
+  const { grant } = await grantFor(await phone());
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: { ...alert, sound: 'rubato-completion.caf' } })).status, 200);
+  assert.equal(sent[0].payload.aps.sound, 'rubato-completion.caf');
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: alert })).status, 200);
+  assert.equal(sent[1].payload.aps.sound, 'default');
+  for (const bad of ['../x.caf', 'chime.mp3', 'a b.caf', 7])
+    assert.equal((await call('POST', '/v1/push', { auth: grant, body: { ...alert, sound: bad } })).status, 400, JSON.stringify(bad));
+});
+
+const activityToken = 'd'.repeat(160);
+const card = { title: 'Rubato', subtitle: 'Agent work in progress', activeCount: 1, updatedAt: '2026-11-13T12:00:00.000Z', environmentId: 'env',
+  activities: [{ environmentId: 'env', threadId: 't1', projectTitle: 'rubato', threadTitle: 'Fix login', modelTitle: 'opus', phase: 'running',
+    status: 'Working', updatedAt: '2026-11-13T12:00:00.000Z', deepLink: '/threads/env/t1' }] };
+
+test("a Mac updates the Live Activity card its phone started, and ending it retires the card's token", async () => {
+  const { call, phone, grantFor, sent, now, db } = await setup();
+  const device = await phone();
+  const { grant, grantId } = await grantFor(device);
+  // No card yet: nothing goes to APNs.
+  assert.deepEqual((await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: card } })).body, { ok: false, reason: 'no-activity' });
+  assert.equal(sent.length, 0);
+
+  const setCard = (token, auth = device.deviceSecret, id = grantId) =>
+    call('PUT', `/v1/devices/${device.deviceId}/grants/${id}/activity`, { auth, body: { activityToken: token } });
+  assert.equal((await setCard(activityToken)).status, 200);
+
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: card } })).body.ok, true);
+  const nowS = Math.floor(now() / 1000);
+  assert.equal(sent[0].url, `https://api.sandbox.push.apple.com/3/device/${activityToken}`);
+  assert.equal(sent[0].init.headers['apns-topic'], `${BUNDLE}.push-type.liveactivity`);
+  assert.equal(sent[0].init.headers['apns-push-type'], 'liveactivity');
+  assert.equal(sent[0].init.headers['apns-priority'], '5');
+  assert.deepEqual(sent[0].payload, { aps: { timestamp: nowS, event: 'update',
+    'content-state': { name: 'AgentActivity', props: JSON.stringify(card) }, 'stale-date': nowS + 600 } });
+
+  // A thread that needs the person goes out at once.
+  await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: card, urgent: true } });
+  assert.equal(sent[1].init.headers['apns-priority'], '10');
+
+  const done = { ...card, activeCount: 0, subtitle: 'Agent work completed' };
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: done, end: true } })).body.ok, true);
+  assert.equal(sent[2].init.headers['apns-priority'], '10');
+  assert.equal(sent[2].payload.aps.event, 'end');
+  assert.equal(sent[2].payload.aps['dismissal-date'], nowS + 300);
+  assert.equal((await db.prepare('SELECT activity_token FROM grants WHERE id = ?').bind(grantId).first()).activity_token, null);
+  assert.deepEqual((await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: card } })).body, { ok: false, reason: 'no-activity' });
+
+  // Only the phone that minted the grant sets its card, and only a real token.
+  const other = await phone({ apnsToken: tokenB, voipToken: undefined });
+  assert.equal((await setCard(activityToken, other.deviceSecret)).status, 401);
+  assert.equal((await setCard('not-a-token')).status, 400);
+  assert.equal((await setCard(activityToken, device.deviceSecret, 'no-such-grant')).status, 404);
+});
+
+test('a card APNs no longer knows is forgotten', async () => {
+  const { call, phone, grantFor, db } = await setup({ apns: () => ({ status: 410, reason: 'Unregistered' }) });
+  const device = await phone();
+  const { grant, grantId } = await grantFor(device);
+  await call('PUT', `/v1/devices/${device.deviceId}/grants/${grantId}/activity`, { auth: device.deviceSecret, body: { activityToken } });
+  assert.equal((await call('POST', '/v1/push', { auth: grant, body: { kind: 'activity', state: card } })).body.reason, 'token-unregistered');
+  assert.equal((await db.prepare('SELECT activity_token FROM grants WHERE id = ?').bind(grantId).first()).activity_token, null);
+  // The phone's own alert token is untouched.
+  assert.equal((await db.prepare('SELECT apns_token FROM devices WHERE id = ?').bind(device.deviceId).first()).apns_token, tokenA);
+});

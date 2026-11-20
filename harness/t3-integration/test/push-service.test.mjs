@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest, replySummary, runLength, THREAD_STACK, threadCollapseId } from '../src/push/service.mjs';
+import { ACTIVITY_REFRESH_MS, activityCard, alertFor, createPushService, createTelegramSwitch, FRESH_MS, handlePushRequest, phoneSoundFile, readDesktopSounds, replySummary, runLength, THREAD_STACK, threadCollapseId } from '../src/push/service.mjs';
 import { RubatoPiBridge } from '../src/bridge.mjs';
 import { readMessengerSettings, writeMessengerSettings } from '../../companion/messenger/store.mjs';
 
@@ -15,7 +15,7 @@ const state = (phase, extra = {}) => ({
   modelTitle: 'claude-opus-5-5', updatedAt: new Date(NOW - 1000).toISOString(), deepLink: '/threads/env-1/thread-1', ...extra,
 });
 
-function service(t, { now = () => NOW, calls = [], telegram, log = () => {} } = {}) {
+function service(t, { now = () => NOW, calls = [], telegram, log = () => {}, sounds = { completion: 'builtin:completion', input: 'builtin:input' } } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'rubato-push-service-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const sent = [];
@@ -28,8 +28,12 @@ function service(t, { now = () => NOW, calls = [], telegram, log = () => {} } = 
     pushAll: async (message, { preference }) => { sent.push({ ...message, preference }); return [{ ok: true }]; },
   };
   const onCall = (companion, at) => calls.some(call => call.companion === companion && call.from <= at && at <= call.to);
+  // The Live Activity's timers wait for the test to fire them.
+  const timers = [];
+  const setTimer = (run, ms) => { const timer = { run, ms }; timers.push(timer); return timer; };
+  const clearTimer = timer => { const at = timers.indexOf(timer); if (at >= 0) timers.splice(at, 1); };
   return { push: createPushService({ home, grants, now, onCall, log, companionTitle: id => ({ roo: 'Roo' })[id] ?? id,
-    telegram: telegram ?? { read: () => null, write: () => null } }), sent, phones };
+    telegram: telegram ?? { read: () => null, write: () => null }, desktopSounds: () => sounds, setTimer, clearTimer }), sent, phones, timers };
 }
 const ask = (push, action, body = {}) => handlePushRequest(push,
   new Request(`http://mac/rubato/push/${action}`, { method: 'POST', body: JSON.stringify(body) }));
@@ -42,9 +46,10 @@ test('a thread that starts needing the person, or finishes, is one alert', async
   assert.deepEqual(sent[1], {
     kind: 'alert', title: 'Fix the login bug', subtitle: 'rubato', body: 'Agent finished', threadId: THREAD_STACK,
     collapseId: threadCollapseId('env-1', 'thread-1'),
-    category: 'rubato.thread', rubato: { kind: 'thread' }, preference: 'threads',
+    category: 'rubato.thread', rubato: { kind: 'thread' }, preference: 'threads', sound: 'rubato-completion.caf',
     data: { environmentId: 'env-1', threadId: 'thread-1', deepLink: '/threads/env-1/thread-1' },
   });
+  assert.equal(sent[0].sound, 'rubato-input.caf');
 });
 
 test("a finish shows the agent's last answer and how long the run took, and replaces the thread's earlier alert", async t => {
@@ -239,4 +244,111 @@ test("the Telegram switch writes every companion's messenger setting here and le
   assert.equal(existsSync(path.join(dir, '.rubato', 'companion', 'messenger')), false, 'a companion without a messenger is not given one');
   assert.deepEqual((await (await ask(push, 'status')).json()).telegram, { enabled: false });
   assert.equal((await ask(push, 'telegram', { enabled: 'no' })).status, 400);
+});
+
+test("a thread alert rings with the chime the desktop plays for it, which the phone keeps as a file", async t => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), 'rubato-desktop-settings-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, 'client-settings.json');
+  assert.deepEqual(readDesktopSounds(file), { completion: 'builtin:completion', input: 'builtin:input' });
+  writeFileSync(file, JSON.stringify({ notificationCompletionSound: 'mac:system/Glass.aiff', notificationInputSound: '../etc/passwd' }));
+  assert.deepEqual(readDesktopSounds(file), { completion: 'mac:system/Glass.aiff', input: 'builtin:input' });
+  assert.match(phoneSoundFile('mac:system/Glass.aiff'), /^rubato-mac-[0-9a-f]{12}\.caf$/);
+  assert.equal(phoneSoundFile('nope'), null);
+
+  const { push, sent } = service(t, { sounds: { completion: 'mac:system/Glass.aiff', input: 'builtin:input' } });
+  await push.threadChanged('thread-1', state('running'));
+  await push.threadChanged('thread-1', state('failed'));
+  assert.equal(sent[0].sound, phoneSoundFile('mac:system/Glass.aiff'));
+  // The phone asks which chimes to keep.
+  assert.deepEqual(await (await ask(push, 'sounds')).json(), { sounds: [
+    { kind: 'completion', id: 'mac:system/Glass.aiff', file: phoneSoundFile('mac:system/Glass.aiff') },
+    { kind: 'input', id: 'builtin:input', file: 'rubato-input.caf' },
+  ] });
+});
+
+const row = (threadId, phase, minutesAgo = 0, extra = {}) =>
+  state(phase, { threadId, threadTitle: `Thread ${threadId}`, updatedAt: new Date(NOW - minutesAgo * 60_000).toISOString(), deepLink: `/threads/env-1/${threadId}`, ...extra });
+
+test("the Live Activity card puts what needs the person first, keeps a recent finish, and drops what went quiet", () => {
+  const card = activityCard([
+    row('a', 'running', 1), row('b', 'waiting_for_approval', 3), row('c', 'completed', 5),
+    row('d', 'completed', 30), row('e', 'running', 3 * 60), row('f', 'waiting_for_input', 3 * 60),
+  ], { now: NOW });
+  assert.equal(card.title, 'Rubato');
+  assert.equal(card.subtitle, 'Agent work in progress');
+  assert.equal(card.environmentId, 'env-1');
+  assert.equal(card.activeCount, 3);
+  assert.deepEqual(card.activities.map(item => [item.threadId, item.status]), [['b', 'Approval'], ['f', 'Input'], ['a', 'Working'], ['c', 'Done']]);
+  assert.deepEqual(Object.keys(card.activities[0]).sort(),
+    ['deepLink', 'environmentId', 'modelTitle', 'phase', 'projectTitle', 'status', 'threadId', 'threadTitle', 'updatedAt']);
+  assert.equal(activityCard([row('c', 'completed', 5)], { now: NOW }).subtitle, 'Agent work completed');
+  assert.equal(activityCard([row('c', 'completed', 5)], { now: NOW }).activeCount, 0);
+  assert.equal(activityCard([row('d', 'completed', 30)], { now: NOW }), null);
+  // However long the titles, the card fits what APNs carries.
+  const long = activityCard(Array.from({ length: 9 }, (_, i) => row(`t${i}`, 'running', 0, { threadTitle: '긴 제목 '.repeat(40), projectTitle: '프로젝트 '.repeat(20) })), { now: NOW });
+  assert.ok(Buffer.byteLength(JSON.stringify(JSON.stringify(long))) <= 3000);
+  assert.ok(long.activities.length >= 1 && long.activities.length <= 5);
+});
+
+test('the card goes out once a burst settles, again only when it says something new, and ends when work stops', async t => {
+  let clock = NOW;
+  const { push, sent, timers } = service(t, { now: () => clock });
+  const cards = () => sent.filter(item => item.kind === 'activity');
+  await push.threadChanged('a', row('a', 'starting'));
+  await push.threadChanged('a', row('a', 'running'));
+  assert.equal(timers.length, 1, 'one settle timer for the burst');
+  await push.flushActivity();
+  assert.equal(cards().length, 1);
+  assert.equal(cards()[0].preference, 'liveActivity');
+  assert.equal(cards()[0].state.activeCount, 1);
+  assert.equal(cards()[0].urgent, undefined);
+
+  // The same card again (only times moved) is not sent; a thread needing the person is, at once.
+  await push.threadChanged('a', row('a', 'running', -1));
+  await push.flushActivity();
+  assert.equal(cards().length, 1);
+  await push.threadChanged('b', row('b', 'waiting_for_approval'));
+  await push.flushActivity();
+  assert.equal(cards().length, 2);
+  assert.equal(cards()[1].urgent, true);
+
+  // Before iOS would dim it, the card hears again while work runs.
+  clock += ACTIVITY_REFRESH_MS;
+  await push.flushActivity();
+  assert.equal(cards().length, 3);
+
+  // Everything done: the card ends, showing how it ended; nothing more after that.
+  await push.threadChanged('a', row('a', 'completed', -9));
+  await push.threadChanged('b', row('b', 'completed', -9));
+  await push.flushActivity();
+  assert.equal(cards().length, 4);
+  assert.equal(cards()[3].end, true);
+  assert.equal(cards()[3].state.activeCount, 0);
+  await push.flushActivity();
+  assert.equal(cards().length, 4);
+});
+
+test("a companion's room never shows on the card, and the phone can read the card as it is now", async t => {
+  const { push } = service(t);
+  push.threadSeen('a', row('a', 'running'));
+  push.threadSeen('room', row('room', 'running'));
+  push.companionRoom('room', 'roo');
+  await push.threadChanged('room', row('room', 'running'));
+  const { state: card } = await (await ask(push, 'activity')).json();
+  assert.deepEqual(card.activities.map(item => item.threadId), ['a']);
+});
+
+test('a state the server found on start shows on the card but never rings', async t => {
+  const { push, sent } = service(t);
+  push.threadSeen('a', row('a', 'waiting_for_approval'));
+  await push.threadChanged('a', row('a', 'waiting_for_approval'));
+  assert.equal(sent.filter(item => item.kind === 'alert').length, 0);
+  assert.equal((await (await ask(push, 'activity')).json()).state.activities[0].threadId, 'a');
+});
+
+test('with thread names hidden, the card says only that threads run', () => {
+  const card = activityCard([row('a', 'running')], { now: NOW, preview: 'generic' });
+  assert.equal(card.activities[0].threadTitle, 'A thread');
+  assert.equal(card.activities[0].projectTitle, '');
 });

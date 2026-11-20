@@ -14,14 +14,17 @@
 //   POST   /v1/devices/:id/grants   (phone)  { label? } → { grantId, grant }
 //   GET    /v1/devices/:id/grants   (phone)  → { grants: [{ grantId, label, createdAt, lastUsedAt }] }
 //   DELETE /v1/devices/:id/grants/:grantId   (phone)
-//   POST   /v1/push                 (Mac)    { kind: 'alert', title, subtitle?, body, threadId?, collapseId?, data?, rubato?, category?, mutableContent? }
+//   PUT    /v1/devices/:id/grants/:grantId/activity  (phone)  { activityToken }  the Live Activity the phone
+//                                            started for that Mac; null when it ended it
+//   POST   /v1/push                 (Mac)    { kind: 'alert', title, subtitle?, body, threadId?, collapseId?, data?, rubato?, category?, mutableContent?, sound? }
 //                                            { kind: 'call.ring', callId, uuid, companion, title, reason?, ringUntil }
+//                                            { kind: 'activity', state, end?, urgent? }   that Mac's Live Activity card
 //   GET    /v1/health                        → { ok, configured }
-import { alertPayload, apnsRequest, base64url, PROVIDER_TOKEN_TTL_S, providerTokenIsStale, ringPayload, signProviderToken, tokenIsDead } from './apns.mjs';
+import { activityPayload, alertPayload, apnsRequest, base64url, PROVIDER_TOKEN_TTL_S, providerTokenIsStale, ringPayload, signProviderToken, tokenIsDead } from './apns.mjs';
 
 const MAX_BODY = 8 * 1024;
 const MAX_GRANTS_PER_DEVICE = 20;
-const MAX_PAYLOAD = { alert: 4096, voip: 5120 };
+const MAX_PAYLOAD = { alert: 4096, voip: 5120, liveactivity: 4096 };
 const TOKEN = /^[0-9a-f]{64,200}$/i;
 
 class HttpError extends Error {
@@ -89,6 +92,20 @@ function category(value) {
   return value;
 }
 
+/** 'default', or a sound file the app keeps in Library/Sounds. */
+function sound(value) {
+  if (value === undefined || value === null || value === 'default') return 'default';
+  if (typeof value !== 'string' || !/^[A-Za-z0-9_-]{1,64}\.(caf|wav|aiff)$/.test(value)) throw new HttpError(400, 'invalid', 'sound must be default or a .caf, .wav or .aiff file name');
+  return value;
+}
+
+/** What a Live Activity card shows: the widget's props, an object, small enough for APNs. */
+function activityState(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) throw new HttpError(400, 'invalid', 'state must be an object');
+  return value;
+}
+
 /** APNs takes a collapse id of at most 64 bytes. */
 function collapseId(value) {
   if (value === undefined || value === null) return null;
@@ -141,12 +158,16 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     return jwt;
   }
 
-  async function deliver(row, kind, payload, expiration, collapse = null) {
-    const deviceToken = kind === 'voip' ? row.voip_token : row.apns_token;
-    if (!deviceToken) return { ok: false, reason: kind === 'voip' ? 'no-voip-token' : 'no-apns-token' };
-    if (JSON.stringify(payload).length > MAX_PAYLOAD[kind]) throw new HttpError(413, 'payload-too-large');
+  /**
+   * One push to one phone. The token is the phone's own for an alert or a ring; a Live Activity update
+   * passes the card's token and `forget`, which drops it once APNs says it is dead.
+   */
+  async function deliver(row, kind, payload, { expiration = 0, collapse = null, priority = 10, token: cardToken, forget } = {}) {
+    const deviceToken = kind === 'liveactivity' ? cardToken : kind === 'voip' ? row.voip_token : row.apns_token;
+    if (!deviceToken) return { ok: false, reason: kind === 'liveactivity' ? 'no-activity' : kind === 'voip' ? 'no-voip-token' : 'no-apns-token' };
+    if (new TextEncoder().encode(JSON.stringify(payload)).length > MAX_PAYLOAD[kind]) throw new HttpError(413, 'payload-too-large');
     const attempt = async jwt => {
-      const { url, init } = apnsRequest({ environment: row.environment, bundleId: row.bundle_id, token: deviceToken, kind, payload, jwt, expiration, collapseId: collapse });
+      const { url, init } = apnsRequest({ environment: row.environment, bundleId: row.bundle_id, token: deviceToken, kind, payload, jwt, expiration, collapseId: collapse, priority });
       const response = await send(url, init);
       const reason = response.ok ? null : (await response.json().catch(() => null))?.reason ?? null;
       return { status: response.status, reason, apnsId: response.headers.get('apns-id') };
@@ -155,8 +176,11 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     if (providerTokenIsStale(result.status, result.reason)) result = await attempt(await providerToken({ fresh: true }));
     if (result.status >= 200 && result.status < 300) return { ok: true, apnsId: result.apnsId };
     if (tokenIsDead(result.status, result.reason)) {
-      const column = kind === 'voip' ? 'voip_token' : 'apns_token';
-      await db.prepare(`UPDATE devices SET ${column} = NULL, updated_at = ? WHERE id = ? AND ${column} = ?`).bind(now(), row.id, deviceToken).run();
+      if (forget) await forget(deviceToken);
+      else {
+        const column = kind === 'voip' ? 'voip_token' : 'apns_token';
+        await db.prepare(`UPDATE devices SET ${column} = NULL, updated_at = ? WHERE id = ? AND ${column} = ?`).bind(now(), row.id, deviceToken).run();
+      }
       return { ok: false, reason: 'token-unregistered', apnsStatus: result.status, apnsReason: result.reason };
     }
     if (result.status === 429 || result.status >= 500) throw new HttpError(502, 'apns-unavailable', result.reason ?? `APNs ${result.status}`);
@@ -179,8 +203,8 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
         body: text(body.body, 'body', 300),
         threadId: text(body.threadId, 'threadId', 128, { optional: true }), data: alertData(body.data),
         rubato: body.rubato === undefined || body.rubato === null ? null : alertData(body.rubato, 'rubato'),
-        category: category(body.category), mutableContent: body.mutableContent === true });
-      result = await deliver(row, 'alert', payload, 0, collapseId(body.collapseId));
+        category: category(body.category), mutableContent: body.mutableContent === true, sound: sound(body.sound) });
+      result = await deliver(row, 'alert', payload, { collapse: collapseId(body.collapseId) });
     } else if (body.kind === 'call.ring') {
       const ringUntil = Number(body.ringUntil);
       if (!Number.isFinite(ringUntil)) throw new HttpError(400, 'invalid', 'ringUntil is required');
@@ -188,7 +212,17 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
       const payload = ringPayload({ callId: text(body.callId, 'callId', 128), uuid: text(body.uuid, 'uuid', 64),
         companion: text(body.companion, 'companion', 64), title: text(body.title, 'title', 80),
         reason: text(body.reason, 'reason', 300, { optional: true }), ringUntil });
-      result = await deliver(row, 'voip', payload, Math.ceil(ringUntil / 1000));
+      result = await deliver(row, 'voip', payload, { expiration: Math.ceil(ringUntil / 1000) });
+    } else if (body.kind === 'activity') {
+      // The card's token is the phone's to hand over (PUT .../activity); until then there is no card.
+      const end = body.end === true;
+      const state = activityState(body.state);
+      const card = grant.activity_token;
+      const forget = dead => db.prepare('UPDATE grants SET activity_token = NULL WHERE id = ? AND activity_token = ?').bind(grant.id, dead).run();
+      result = await deliver(row, 'liveactivity', activityPayload({ state, end, nowS: Math.floor(now() / 1000) }),
+        { priority: end || body.urgent === true ? 10 : 5, token: card, forget });
+      // An ended card takes no more updates; the next one the phone starts brings its own token.
+      if (end && result.ok) await forget(card);
     } else {
       throw new HttpError(400, 'invalid', 'unknown kind');
     }
@@ -242,6 +276,15 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
     return json({ grants: results.map(row => ({ grantId: row.id, label: row.label, createdAt: row.created_at, lastUsedAt: row.last_used_at })) });
   }
 
+  async function setActivity(request, id, grantId) {
+    await device(request, id);
+    const body = await readJson(request);
+    const activityToken = token(body.activityToken, 'activityToken') ?? null;
+    const { meta } = await db.prepare('UPDATE grants SET activity_token = ? WHERE id = ? AND device_id = ?').bind(activityToken, grantId, id).run();
+    if (!meta.changes) throw new HttpError(404, 'not-found');
+    return json({ ok: true });
+  }
+
   async function revoke(request, id, grantId) {
     await device(request, id);
     await db.prepare('DELETE FROM grants WHERE id = ? AND device_id = ?').bind(grantId, id).run();
@@ -264,6 +307,7 @@ export function createRelay(env, { fetch: send = globalThis.fetch, now = Date.no
         if (parts.length === 4 && sub === 'grants' && method === 'POST') return await mint(request, id);
         if (parts.length === 4 && sub === 'grants' && method === 'GET') return await list(request, id);
         if (parts.length === 5 && sub === 'grants' && method === 'DELETE') return await revoke(request, id, grantId);
+        if (parts.length === 6 && sub === 'grants' && parts[5] === 'activity' && method === 'PUT') return await setActivity(request, id, grantId);
       }
       throw new HttpError(404, 'not-found');
     } catch (error) {

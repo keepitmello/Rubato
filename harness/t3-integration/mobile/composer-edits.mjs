@@ -11,6 +11,7 @@
 //   height comes from T3's own onContentSizeChange.
 // - rubatoLiveDictationDisplay beside the shared voice controller places the heard words where the
 //   final text will land, for this field and the desktop's.
+// - ScheduledTaskPromptField: its plain text field shows the heard words while dictating.
 export const mobileComposerOverlays = [
   'apps/mobile/src/features/rubato-voice/RubatoComposerField.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoDictationStrip.tsx',
@@ -143,5 +144,16 @@ export const mobileComposerEdits = {
   'packages/client-runtime/src/voice-input/index.ts': [
     ['export {\n  VoiceTranscriptionError,\n',
       'export {\n  liveDictationDisplay,\n  type LiveDictationDisplay,\n  type LiveDictationRun,\n} from "./rubatoLiveDictationDisplay.ts";\n'],
+  ],
+  // A scheduled task's prompt is a plain text field: it shows the heard words grey while dictating.
+  'apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx': [
+    ["import type { useVoiceInputController } from \"../../voice-input/useVoiceInputController\";\n",
+      "import { useLiveDictationValue } from \"../../rubato-voice/RubatoComposerField\";\n"],
+    ["  const voice = props.voiceInput;\n",
+      "  const voice = props.voiceInput;\n  // Rubato: the words heard so far, in the field while dictation runs (live dictation).\n  const liveValue = useLiveDictationValue(voice.isBusy, props.value, props.selection);\n", 'replace'],
+    ["          value={props.value}\n          onChangeText={props.onChange}\n          selection={props.selection}\n          onSelectionChange={({ nativeEvent }) => props.onChangeSelection(nativeEvent.selection)}",
+      "          value={liveValue ?? props.value}\n          onChangeText={props.onChange}\n          selection={liveValue === null ? props.selection : undefined}\n          onSelectionChange={({ nativeEvent }) => {\n            if (liveValue === null) props.onChangeSelection(nativeEvent.selection);\n          }}", 'replace'],
+    ["          className=\"max-h-40 min-h-24 min-w-0 flex-1 font-sans text-base text-foreground\"\n",
+      "          className={\n            liveValue === null\n              ? \"max-h-40 min-h-24 min-w-0 flex-1 font-sans text-base text-foreground\"\n              : \"max-h-40 min-h-24 min-w-0 flex-1 font-sans text-base text-foreground-muted\"\n          }\n", 'replace'],
   ],
 };
