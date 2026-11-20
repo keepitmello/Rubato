@@ -34,6 +34,9 @@ async function mapFiles(items, read) {
   return result;
 }
 
+/** The folder beside a conversation file that holds its tool output and other artifacts. */
+const ARTIFACTS_SUFFIX = '-artifacts';
+
 /** A replacement prompt larger than this is refused rather than sent on every request. */
 export const SYSTEM_PROMPT_LIMIT = 512 * 1024;
 const shortText = (value, limit) => typeof value === 'string' && value.trim() && value.length <= limit ? value.trim() : undefined;
@@ -176,9 +179,11 @@ export class SessionFiles {
    * without adding a message, which `modifiedAt` does not count.
    */
   touchedAt(file) { return this.#touched.get(file); }
-  async #read(file, canonicalRoot, seen) {
+  async #read(file, canonicalRoot, seen, canonical = false) {
     try {
-      file = await realpath(file);
+      // A plain file listed in a folder already given by its real path needs no realpath(), which
+      // walks every component of the path and was most of a scan's cost.
+      if (!canonical) file = await realpath(file);
       if (!file.startsWith(canonicalRoot + path.sep)) return null;
       const before = await stat(file, { bigint: true });
       if (!before.isFile()) return null;
@@ -209,18 +214,24 @@ export class SessionFiles {
   async #scan() {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     const entries = await readdir(this.root, { withFileTypes: true });
-    const folders = [this.root, ...entries
-      .filter((entry) => entry.isDirectory()).map((entry) => path.join(this.root, entry.name))];
+    // A conversation's artifacts folder (`<name>-artifacts` beside `<name>.jsonl`) never holds a
+    // conversation. Listing every one of them on each scan (about 1,500, every 2 s) was most of
+    // the engine's CPU; only Pi's older per-cwd folders hold conversations.
+    const names = new Set(entries.map((entry) => entry.name));
+    const artifacts = (name) => name.endsWith(ARTIFACTS_SUFFIX) && names.has(`${name.slice(0, -ARTIFACTS_SUFFIX.length)}.jsonl`);
     const canonicalRoot = await realpath(this.root);
+    // Folders by real path: the root's own, and its subfolders (a Dirent directory is not a link).
+    const folders = [canonicalRoot, ...entries
+      .filter((entry) => entry.isDirectory() && !artifacts(entry.name)).map((entry) => path.join(canonicalRoot, entry.name))];
     await (this.#indexLoad ??= this.#loadIndex(canonicalRoot));
     const groups = await mapFiles(folders, async (dir) => {
-      try { return (await readdir(dir)).filter((name) => name.endsWith('.jsonl'))
+      try { return (await readdir(dir, { withFileTypes: true })).filter((entry) => entry.name.endsWith('.jsonl'))
         // Pi 1.0 lists each folder newest-name-first before its stable date sort, which decides ties.
-        .sort((x, y) => y.localeCompare(x)).map((name) => path.join(dir, name)); }
+        .sort((x, y) => y.name.localeCompare(x.name)).map((entry) => ({ file: path.join(dir, entry.name), canonical: entry.isFile() })); }
       catch { return []; }
     });
     const present = new Set();
-    const loaded = await mapFiles(groups.flat(), (file) => this.#read(file, canonicalRoot, present));
+    const loaded = await mapFiles(groups.flat(), ({ file, canonical }) => this.#read(file, canonicalRoot, present, canonical));
     // Preserve Pi's per-folder sort followed by the aggregate sort, including
     // legacy invalid dates (NaN comparisons) and ties; do not reorder history.
     let offset = 0;

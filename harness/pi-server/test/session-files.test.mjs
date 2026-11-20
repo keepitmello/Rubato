@@ -125,3 +125,19 @@ test('a transcript carries Pi\'s own custom messages hidden, so a client can tel
     [['user', null, null], ['custom', 'senpi-terminal:notification', false], ['assistant', null, null]],
     'the terminal finish comes hidden; a hidden session notice still stays out');
 });
+
+test("a conversation's artifacts folder is not searched for conversations; an older per-cwd folder still is", async (t) => {
+  const { mkdir, copyFile } = await import('node:fs/promises');
+  const root = await mkdtemp(join(tmpdir(), 'rubato-session-files-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = new SessionFiles(root);
+  const top = await store.create({ cwd: tmpdir(), title: 'Top level' });
+  const artifacts = top.file.replace(/\.jsonl$/, '-artifacts');
+  await mkdir(artifacts);
+  await copyFile(top.file, join(artifacts, 'stray.jsonl'));
+  const legacy = join(root, '--Users-someone-project--');
+  await mkdir(legacy);
+  const other = await new SessionFiles(legacy).create({ cwd: tmpdir(), title: 'Per-cwd folder' });
+  const files = (await new SessionFiles(root).list()).map((session) => session.file).sort();
+  assert.deepEqual(files, [top.file, other.file].sort(), 'artifacts skipped, the per-cwd folder listed');
+});
