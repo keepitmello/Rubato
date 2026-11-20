@@ -36,8 +36,8 @@ const WIRE_MODELS = Object.freeze({
     medium: "gemini-3.8-flash-medium",
     high: "gemini-3.8-flash-high",
   }),
-  // Wire names as agy 1.5.13 lists them (fetchAvailableModels, 2026-11-20). Neon has no
-  // minimal tier; the catalog hides it, and a stray `minimal` still lands on low.
+  // Wire names below are as agy 1.5.13 lists them (fetchAvailableModels, 2026-11-20). None of
+  // these has a minimal tier; the catalog hides it, and a stray `minimal` still lands on low.
   "gemini-4-neon": Object.freeze({
     default: "gemini-4-neon-high",
     minimal: "gemini-4-neon-low",
@@ -45,6 +45,21 @@ const WIRE_MODELS = Object.freeze({
     medium: "gemini-4-neon-medium",
     high: "gemini-4-neon-high",
     xhigh: "gemini-4-neon-xhigh",
+  }),
+  "gemini-4-hydrogen": Object.freeze({
+    default: "gemini-4-hydrogen-medium",
+    minimal: "gemini-4-hydrogen-low",
+    low: "gemini-4-hydrogen-low",
+    medium: "gemini-4-hydrogen-medium",
+    high: "gemini-4-hydrogen-high",
+    xhigh: "gemini-4-hydrogen-xhigh",
+  }),
+  "gemini-4-argon": Object.freeze({
+    default: "gemini-4-argon-medium",
+    minimal: "gemini-4-argon-low",
+    low: "gemini-4-argon-low",
+    medium: "gemini-4-argon-medium",
+    high: "gemini-4-argon-high",
   }),
 });
 

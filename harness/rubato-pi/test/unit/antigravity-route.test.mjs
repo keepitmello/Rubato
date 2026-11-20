@@ -45,17 +45,27 @@ test("catalog model baseUrl follows the endpoint override", () => {
   assert.equal(flash.baseUrl, "http://127.0.0.1:18888/custom");
 });
 
-test("catalog는 Neon 을 실제 네 단계와 262K 출력으로 공개한다", async () => {
+test("catalog는 agy 가 이 계정에 여는 Gemini 모델을 실제 단계·출력 상한과 함께 전부 공개한다", async () => {
   const { getSupportedThinkingLevels } = await import(
     pathToFileURL(join(senpiNested("@earendil-works/pi-ai"), "dist/models.js")).href
   );
-  const neon = antigravityModels().find((entry) => entry.id === "gemini-4-neon");
-  assert.ok(neon, "gemini-4-neon 이 Antigravity catalog 에 없다");
-  assert.equal(neon.provider, ANTIGRAVITY_PROVIDER_ID);
-  assert.deepEqual(neon.input, ["text", "image"]);
-  assert.equal(neon.contextWindow, 1_048_576);
-  assert.equal(neon.maxTokens, 262_144);
-  assert.deepEqual(getSupportedThinkingLevels(neon), ["low", "medium", "high", "xhigh"]);
+  // The Gemini rows of `agy models` on a Pro account, 2026-11-20, folded per base model.
+  const expected = {
+    "gemini-4-neon": { levels: ["low", "medium", "high", "xhigh"], maxTokens: 262_144, input: ["text", "image"] },
+    "gemini-4-hydrogen": { levels: ["low", "medium", "high", "xhigh"], maxTokens: 262_144, input: ["text", "image"] },
+    "gemini-4-argon": { levels: ["low", "medium", "high"], maxTokens: 65_536, input: ["text", "image"] },
+    "gemini-3.8-flash": { levels: ["off", "minimal", "low", "medium", "high"], maxTokens: 65_536, input: ["text", "image"] },
+  };
+  const catalog = antigravityModels();
+  assert.deepEqual(catalog.map((entry) => entry.id).sort(), Object.keys(expected).sort());
+  for (const entry of catalog) {
+    assert.equal(entry.provider, ANTIGRAVITY_PROVIDER_ID);
+    assert.deepEqual(
+      { levels: getSupportedThinkingLevels(entry), maxTokens: entry.maxTokens, input: entry.input },
+      expected[entry.id],
+      entry.id,
+    );
+  }
 });
 
 test("well-formed catalog model survives pinned attribution .includes", async () => {

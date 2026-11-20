@@ -29,17 +29,17 @@ export const ANTIGRAVITY_ENDPOINT_ENV = "RUBATO_ANTIGRAVITY_ENDPOINT";
 /** 삭제된 FX bridge 와 그 shadow. 직결 endpoint 가 여기를 가리키는 것은 언제나 잘못이다. */
 const LEGACY_BRIDGE_PORTS = new Set(["8788", "18788"]);
 
+// The Gemini models agy serves this account. Shift+Tab shows exactly the tiers each one is
+// served at; the wire names live in antigravity-api.mjs. Windows and output caps are what
+// fetchAvailableModels reports for a Pro account under the agy CLI identity (2026-11-20).
+// They share the Gemini quota, except Argon, which has a weekly bucket of its own on Pro.
+const LOW_TO_HIGH = Object.freeze({ off: null, minimal: null, low: "low", medium: "medium", high: "high" });
+const LOW_TO_XHIGH = Object.freeze({ ...LOW_TO_HIGH, xhigh: "xhigh" });
 const MODELS = Object.freeze([
   Object.freeze({ id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", contextWindow: 1_048_576, maxTokens: 65_536 }),
-  // Neon serves low, medium, high and xhigh only (agy 1.5.13 model list); the map keeps
-  // Shift+Tab to those four. Output cap is the 262,144 that fetchAvailableModels reports.
-  Object.freeze({
-    id: "gemini-4-neon",
-    name: "Gemini 4 Neon",
-    contextWindow: 1_048_576,
-    maxTokens: 262_144,
-    thinkingLevelMap: Object.freeze({ off: null, minimal: null, low: "low", medium: "medium", high: "high", xhigh: "xhigh" }),
-  }),
+  Object.freeze({ id: "gemini-4-neon", name: "Gemini 4 Neon", contextWindow: 1_048_576, maxTokens: 262_144, thinkingLevelMap: LOW_TO_XHIGH }),
+  Object.freeze({ id: "gemini-4-hydrogen", name: "Gemini 4 Hydrogen", contextWindow: 1_048_576, maxTokens: 262_144, thinkingLevelMap: LOW_TO_XHIGH }),
+  Object.freeze({ id: "gemini-4-argon", name: "Gemini 4 Argon", contextWindow: 1_048_576, maxTokens: 65_536, thinkingLevelMap: LOW_TO_HIGH }),
 ]);
 
 function zeroCost() {

@@ -97,6 +97,15 @@ test("Neon은 네 단계를 그대로, 없는 minimal은 low로, 생략은 high�
   assert.equal(resolveAntigravityWireModel(neon), `${neon}-high`);
 });
 
+test("Argon·Hydrogen 은 단계 접미사로 보내고, 생략은 medium 이다", () => {
+  for (const id of ["gemini-4-argon", "gemini-4-hydrogen"]) {
+    assert.equal(resolveAntigravityWireModel(id), `${id}-medium`, id);
+    assert.equal(resolveAntigravityWireModel(id, "high"), `${id}-high`, id);
+    assert.equal(resolveAntigravityWireModel(id, "minimal"), `${id}-low`, id);
+  }
+  assert.equal(resolveAntigravityWireModel("gemini-4-hydrogen", "xhigh"), "gemini-4-hydrogen-xhigh");
+});
+
 test("Pi 가 system 메시지에 실은 프롬프트와 도구가 systemInstruction 과 functionDeclarations 로 나간다", () => {
   const read = { name: "read", description: "Read a file", parameters: { type: "object", properties: { path: { type: "string" } } } };
   const later = { name: "web", description: "Search", parameters: { type: "object", properties: {} } };

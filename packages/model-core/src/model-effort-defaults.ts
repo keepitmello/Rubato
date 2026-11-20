@@ -40,16 +40,16 @@ function isAntigravityNeon(model: string): boolean {
   return provider === "google-antigravity" && id === "gemini-4-neon"
 }
 
-/** Vertex's own default thinking level for gemini-4-argon is MEDIUM (model card). */
-function isVertexArgon(model: string): boolean {
+/** Vertex's own default thinking level for gemini-4-argon is MEDIUM (model card); Antigravity serves it at 2 (MEDIUM). */
+function isGemini4Argon(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return provider === "google-vertex" && id === "gemini-4-argon"
+  return (provider === "google-vertex" || provider === "google-antigravity") && id === "gemini-4-argon"
 }
 
 /** Antigravity serves gemini-4-hydrogen at thinkingLevel 2 (MEDIUM) by default. */
-function isGeminiApiHydrogen(model: string): boolean {
+function isGemini4Hydrogen(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return provider === "google" && id === "gemini-4-hydrogen"
+  return (provider === "google" || provider === "google-antigravity") && id === "gemini-4-hydrogen"
 }
 
 /**
@@ -60,7 +60,7 @@ function isGeminiApiHydrogen(model: string): boolean {
  */
 export function configuredModelEffort(model: string): ConfiguredModelEffort | undefined {
   if (typeof model !== "string" || model.trim().length === 0) return undefined
-  if (isSolModel(model) || isAntigravityFlash(model) || isVertexArgon(model) || isGeminiApiHydrogen(model)) return "medium"
+  if (isSolModel(model) || isAntigravityFlash(model) || isGemini4Argon(model) || isGemini4Hydrogen(model)) return "medium"
   if (isClaudeOpus5Model(model) || isClaudeFable5Model(model) || isGrok47Model(model) || isAntigravityNeon(model)) return "high"
   return undefined
 }

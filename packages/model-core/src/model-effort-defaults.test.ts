@@ -25,6 +25,8 @@ describe("configuredModelEffort", () => {
     ["cursor/grok-4.7-high-fast", "high"],
     [`google-antigravity/${ANTIGRAVITY_FLASH}`, "medium"],
     [`google-antigravity/${ANTIGRAVITY_NEON}`, "high"],
+    ["google-antigravity/gemini-4-argon", "medium"],
+    ["google-antigravity/gemini-4-hydrogen", "medium"],
     [`google-vertex/${VERTEX_ARGON}`, "medium"],
   ] as const)("#given %s #then the seeded default is %s", (model, effort) => {
     expect(configuredModelEffort(model)).toBe(effort)
