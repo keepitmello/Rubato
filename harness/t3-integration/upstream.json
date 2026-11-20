@@ -8,6 +8,7 @@
     "apps/desktop/src/app/DesktopConnectionCatalogStore.ts": "d50e23582d56d186eaed577f5277dc4d055f5352ce0205a8dc9c2a5bef939ec8",
     "apps/desktop/src/app/DesktopEnvironment.ts": "e046db0bd9e1e479af0431c52e9231224dc4fd1d3590e41e2ccb1fe8225835b3",
     "apps/desktop/src/app/DesktopStatePaths.ts": "ae9704d2e66e0033c853750368faea0fea7aa898681ee4931c296891915e510a",
+    "apps/desktop/src/i18n/messages.ts": "a903c6338d58a7a77fe5d5b4f59823c6c083cc63d3529cce8bb1a1b04f13e788",
     "apps/desktop/src/ipc/methods/clientSettings.ts": "9959859d46d316ded35a60dcd198fa645e4e9cc87c881ef7c01192843001551e",
     "apps/desktop/src/permissions/MacPermissionHelper.ts": "e756f953a6c8c6169e1b98c421d054f771a57f6bd0d20dc849d616a1e5db49fa",
     "apps/desktop/src/preload.ts": "b4249c09833d22841addb97e681d2c0e734c7d9e84f87864ef35e8d155b206dc",

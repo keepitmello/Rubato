@@ -1,6 +1,6 @@
 # 한국어 화면
 
-설정 → 일반(General) → Display 묶음의 Language 에서 한국어를 고르면 화면이 한국어로 바뀐다. 언어 줄과 macOS 메뉴 번역은 T3 것이다.
+설정 → 일반(General) → Display 묶음의 Language 에서 한국어를 고르면 화면이 한국어로 바뀐다. 언어 줄은 T3 것이다.
 T3 는 자기 i18n(gt-react, `apps/web/src/i18n/`)과 한국어 카탈로그 `ko.json` 을 갖고 있고, Rubato 는 그 위에 두 가지만 얹는다.
 
 ```
@@ -13,7 +13,8 @@ Rubato 문구 영어 그대로 렌더 → 한국어일 때 사전에서 찾아 �
 | 자리 | 맡는 것 |
 |---|---|
 | `../overlay/packages/shared/src/rubatoI18n.ko.json` | 한국어 사전. 영어(화면에 보이는 그대로) → 한국어. 데스크톱과 폰이 같이 쓴다 |
-| `../overlay/packages/shared/src/rubatoWording.ts` | T3 카탈로그를 불러올 때 같은 영어의 해시에 Rubato 표현을 넣는다. 웹(`apps/web/src/i18n/rubatoWording.ts`)과 폰(`mobile/shell-edits.mjs` 의 I18nProvider 편집)이 부른다 |
+| `../overlay/packages/shared/src/rubatoWording.ts` | T3 카탈로그를 불러올 때 같은 영어의 해시에 Rubato 표현을 넣는다. 웹(`apps/web/src/i18n/rubatoWording.ts`), 폰(`mobile/shell-edits.mjs` 의 I18nProvider 편집), 데스크톱 메뉴·대화상자(`../overlay/apps/desktop/src/i18n/rubatoKorean.ts`)가 부른다 |
+| `../overlay/apps/desktop/src/i18n/rubatoKorean.ts` | macOS 메뉴 막대는 예전 Rubato 이름을 먼저 쓰고, 나머지는 사전, 그다음 T3 한국어 |
 | `../overlay/apps/web/src/rubatoI18n.ts` | Rubato 문구를 페이지에서 바꿔 끼우는 장치. 사전 형식과 키 규칙의 정본 |
 | `../i18n-edits.mjs` | 카탈로그 로더·언어 런타임·설정 검색·예전 설정 이전에 넣는 수정 |
 | `glossary.md` | 사용자가 정한 용어와 말투 |

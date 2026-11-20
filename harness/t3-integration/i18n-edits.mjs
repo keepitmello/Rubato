@@ -8,8 +8,10 @@
 // - Settings search also matches Rubato's titles in Korean.
 // - A settings file from before, with Rubato's `uiLanguage: "ko"` and no
 //   `language`, opens in Korean (DesktopClientSettings, rubatoUiLanguage.ts).
-// T3's Language row (Settings, Display) and its translated macOS menu replace
-// Rubato's own row and menu. The dictionary is built by i18n/ (README.md there).
+// - The desktop's own catalog (menus, native dialogs) takes the menu bar's
+//   earlier Korean names first, then the dictionary (apps/desktop/src/i18n/rubatoKorean.ts).
+// T3's Language row (Settings, Display) replaces Rubato's own row.
+// The dictionary is built by i18n/ (README.md there).
 export const i18nOverlays = [
   'apps/web/src/rubatoI18n.ts',
   'apps/web/src/rubatoI18n.test.tsx',
@@ -21,6 +23,8 @@ export const i18nOverlays = [
   'apps/web/src/rubatoKorean.browser.test.tsx',
   'apps/desktop/src/settings/rubatoUiLanguage.ts',
   'apps/desktop/src/settings/rubatoUiLanguage.test.ts',
+  'apps/desktop/src/i18n/rubatoKorean.ts',
+  'apps/desktop/src/i18n/rubatoKorean.test.ts',
 ];
 
 export const i18nEdits = {
@@ -56,6 +60,17 @@ export const i18nEdits = {
         "        // Rubato's titles are English literals; in Korean they read from Rubato's dictionary.",
         '        normalizeSearchText(uiText(decodeMsg(item.title))),',
         '        normalizeSearchText(uiText(decodeMsg(SETTINGS_SECTION_LABELS[item.to]))),',
+        '',
+      ].join('\n'),
+      'replace'],
+  ],
+  'apps/desktop/src/i18n/messages.ts': [
+    ['import * as ElectronApp from "../electron/ElectronApp.ts";\n',
+      'import { loadRubatoKorean } from "./rubatoKorean.ts";\n'],
+    ['  const catalog = (await CATALOGS[locale]!()).default;\n',
+      [
+        '  const upstream = (await CATALOGS[locale]!()).default;',
+        '  const catalog = locale === "ko" ? await loadRubatoKorean(upstream) : upstream;',
         '',
       ].join('\n'),
       'replace'],
