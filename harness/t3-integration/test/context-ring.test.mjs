@@ -32,3 +32,16 @@ test('the Mac composer shows only Rubato\'s microphone', skip, async () => {
   assert.match(composer, /speech: speechInput,\n\s+disabled: dictationDisabled \|\| isElectron,/);
   assert.match(composer, /\{isElectron \? \(\n\s+<RubatoVoiceControl/);
 });
+
+test('the ring keeps v0.1.0\'s setting: off unless turned on, switched from Settings › Labs', skip, async () => {
+  const contracts = await applied('packages/contracts/src/settings.ts');
+  assert.match(contracts, /contextWindowMeterEnabled: Schema\.Boolean\.pipe\(Schema\.withDecodingDefault\(Effect\.succeed\(false\)\)\),/);
+  assert.match(contracts, /contextWindowMeterEnabled: Schema\.optionalKey\(Schema\.Boolean\),/);
+  const composer = await applied('apps/web/src/components/chat/ChatComposer.tsx');
+  assert.match(composer, /\{dictationTakesFooter \|\| !settings\.contextWindowMeterEnabled \? null : rubatoContextWindow \? \(/);
+  const labs = await applied('apps/web/src/components/settings/LabsSettingsPanel.tsx');
+  assert.match(labs, /<RubatoContextRingRow \/>/);
+  assert.match(labs, /checked=\{settings\.contextWindowMeterEnabled\}/);
+  const search = await applied('apps/web/src/components/settings/settingsSearch.ts');
+  assert.match(search, /id: "legacy-context-window-indicator",\n\s+title: msg\("Context window indicator \(legacy\)"\),\n\s+to: "\/settings\/labs",/);
+});

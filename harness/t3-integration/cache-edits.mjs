@@ -6,6 +6,10 @@
 // ChatView's useRubatoSessionState); ChatView hands the composer that and the same context
 // snapshot Thread details reads. The switch posts to /rubato/cache-warming, which the bridge
 // answers (bridge.mjs).
+//
+// The ring keeps v0.1.0's client setting, contextWindowMeterEnabled (off unless turned on),
+// and its switch, Context window indicator, now on Settings › Labs: T3 v0.1.11 dropped both
+// together with its legacy section in General.
 export const cacheOverlays = [
   'apps/web/src/components/sidebar/RubatoCacheCapsule.tsx',
   'apps/web/src/components/sidebar/RubatoCacheCapsule.test.tsx',
@@ -42,7 +46,7 @@ export const cacheEdits = {
     ['                  <ComposerFooterPrimaryActions\n',
       [
         '                  {/* Rubato: the context ring with the prompt cache (cache-edits.mjs). */}',
-        '                  {dictationTakesFooter ? null : rubatoContextWindow ? (',
+        '                  {dictationTakesFooter || !settings.contextWindowMeterEnabled ? null : rubatoContextWindow ? (',
         '                    <ContextWindowMeter',
         '                      usage={rubatoContextWindow}',
         '                      onCompact={rubatoCompactAvailable ? compactThreadContextStable : undefined}',
@@ -56,9 +60,57 @@ export const cacheEdits = {
         '                      environmentId={environmentId}',
         '                      rubatoCache={rubatoCache}',
         '                    />',
-        '                  ) : rubatoReserveContextRing ? (',
+        '                  ) : rubatoReserveContextRing && settings.contextWindowMeterEnabled ? (',
         '                    <ContextWindowMeterPlaceholder />',
         '                  ) : null}',
+        '',
+      ].join('\n')],
+  ],
+  'packages/contracts/src/settings.ts': [
+    ['  boringSidebarEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n',
+      '  // Rubato: the composer\'s context ring, off unless turned on (cache-edits.mjs).\n  contextWindowMeterEnabled: Schema.Boolean.pipe(Schema.withDecodingDefault(Effect.succeed(false))),\n'],
+    ['  boringSidebarEnabled: Schema.optionalKey(Schema.Boolean),\n',
+      '  contextWindowMeterEnabled: Schema.optionalKey(Schema.Boolean),\n'],
+  ],
+  'apps/web/src/components/settings/LabsSettingsPanel.tsx': [
+    ['        <BoringSidebarRow />\n', '        <RubatoContextRingRow />\n'],
+    ['function BoringSidebarRow() {\n',
+      [
+        '/** Rubato: the composer\'s context ring with the prompt cache (cache-edits.mjs). */',
+        'function RubatoContextRingRow() {',
+        '  const searchableSetting = useSearchableSetting();',
+        '  const settings = useScopedSettings();',
+        '  const updateSettings = useUpdateScopedSettings();',
+        '  const gt = useGT();',
+        '  return (',
+        '    <SettingsRow',
+        '      {...searchableSetting("legacy-context-window-indicator")}',
+        '      description={gt("Shows context window usage as a circular indicator in the composer.")}',
+        '      control={',
+        '        <Switch',
+        '          checked={settings.contextWindowMeterEnabled}',
+        '          onCheckedChange={(checked) =>',
+        '            updateSettings({ contextWindowMeterEnabled: Boolean(checked) })',
+        '          }',
+        '          aria-label={gt("Context window indicator (legacy)")}',
+        '        />',
+        '      }',
+        '    />',
+        '  );',
+        '}',
+        '',
+        '',
+      ].join('\n')],
+  ],
+  'apps/web/src/components/settings/settingsSearch.ts': [
+    ['  {\n    id: "boring-sidebar",\n',
+      [
+        '  {',
+        '    id: "legacy-context-window-indicator",',
+        '    title: msg("Context window indicator (legacy)"),',
+        '    to: "/settings/labs",',
+        '    searchTerms: [msg("composer meter usage tokens circle old ring prompt cache 컨텍스트 링 캐시")],',
+        '  },',
         '',
       ].join('\n')],
   ],
