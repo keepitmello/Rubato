@@ -7,8 +7,10 @@
 //   wide bars        a forecast row under the bar, since the legend is hidden there
 //   account screen   the same line under "Even pace"
 //   usage kinds      Gemini and DeepSeek in the history's provider list
+//   limits layout    weekly and monthly windows only; each provider's heading folds it and moves
+//                    it up or down, kept in the phone's preferences (rubato-shell/usageLayout.ts)
 
-export const mobileUsageOverlays = [];
+export const mobileUsageOverlays = ['apps/mobile/src/features/rubato-shell/usageLayout.ts'];
 
 const FILE = 'apps/mobile/src/features/usage/UsageLimitsPooled.tsx';
 
@@ -52,7 +54,26 @@ export const mobileUsageEdits = {
   'apps/mobile/src/features/usage/providerColors.ts': [
     ['    muse: "#0866ff",\n', '    muse: "#0866ff",\n    gemini: "#4796e3",\n    deepseek: "#4d6bfe",\n', 'replace'],
   ],
+  // The phone's limits arrangement, kept with its other preferences.
+  'apps/mobile/src/persistence/mobile-preferences.ts': [
+    ["  readonly collapsedProjectGroups?: readonly string[];\n",
+      "  /** Rubato: the Usage page's provider order and folds (rubato-shell/usageLayout.ts). */\n  readonly rubatoUsageLayout?: { readonly order: readonly string[]; readonly collapsed: readonly string[] };\n"],
+    ["    collapsedProjectGroups?: readonly string[];\n",
+      "    rubatoUsageLayout?: { readonly order: readonly string[]; readonly collapsed: readonly string[] };\n"],
+    ["  if (Array.isArray(parsed.collapsedProjectGroups)) {",
+      "  if (\n    Array.isArray(parsed.rubatoUsageLayout?.order) &&\n    Array.isArray(parsed.rubatoUsageLayout?.collapsed)\n  ) {\n    const strings = (values: readonly unknown[]) =>\n      values.filter((value): value is string => typeof value === \"string\");\n    preferences.rubatoUsageLayout = {\n      order: strings(parsed.rubatoUsageLayout.order),\n      collapsed: strings(parsed.rubatoUsageLayout.collapsed),\n    };\n  }\n"],
+  ],
   [FILE]: [
+    ["import { SymbolView } from \"../../components/ui/AppSymbol\";\n",
+      "import { longLimitWindows } from \"@t3tools/shared/rubatoUsageLayout\";\nimport { useRubatoUsageLayout } from \"../rubato-shell/usageLayout\";\n"],
+    ["  collectLimitPools,\n  displayLimitWindows,\n  paceRemainingPercent,",
+      "  collectLimitPools,\n  paceRemainingPercent,", 'replace'],
+    ["  const pools = collectLimitPools(collectLimitAccounts(selected), now);",
+      "  // Rubato: weekly and monthly windows only, in the order and folds the person left.\n  const layout = useRubatoUsageLayout();\n  const pools = layout.arrange(\n    collectLimitPools(collectLimitAccounts(selected), now).filter(\n      (pool) => longLimitWindows(pool).length > 0,\n    ),\n  );", 'replace'],
+    ["      {pools.map((pool) => {\n        const windows = displayLimitWindows(pool);",
+      "      {pools.map((pool, index) => {\n        const windows = longLimitWindows(pool);\n        const collapsed = layout.isCollapsed(pool.driver);\n        const label = providerClients.get(pool.driver)?.label ?? pool.driver;", 'replace'],
+    ["              <View className=\"flex-row items-center gap-2 px-1\">\n                <ProviderIcon provider={pool.driver} size={18} />\n                <Text className=\"text-base font-t3-medium text-foreground\">\n                  {providerClients.get(pool.driver)?.label ?? pool.driver}\n                </Text>\n              </View>\n              {windows.map((window) => {",
+      "              <View className=\"flex-row items-center gap-1 px-1\">\n                <Pressable\n                  accessibilityRole=\"button\"\n                  accessibilityState={{ expanded: !collapsed }}\n                  onPress={() => layout.toggle(pool.driver)}\n                  className=\"min-h-11 min-w-0 flex-1 flex-row items-center gap-2 active:opacity-60\"\n                >\n                  <SymbolView\n                    name={collapsed ? \"chevron.right\" : \"chevron.down\"}\n                    size={12}\n                    tintColorClassName=\"accent-foreground-muted\"\n                  />\n                  <ProviderIcon provider={pool.driver} size={18} />\n                  <Text numberOfLines={1} className=\"shrink text-base font-t3-medium text-foreground\">\n                    {label}\n                  </Text>\n                  {collapsed ? (\n                    <Text numberOfLines={1} className=\"shrink text-xs tabular-nums text-foreground-muted\">\n                      {windows.map((window) => `${window.remainingPercent}%`).join(\" \u00b7 \")} left\n                    </Text>\n                  ) : null}\n                </Pressable>\n                {([[-1, \"chevron.up\", \"up\"], [1, \"chevron.down\", \"down\"]] as const).map(([delta, symbol, word]) => {\n                  const disabled = delta === -1 ? index === 0 : index === pools.length - 1;\n                  return (\n                    <Pressable\n                      key={word}\n                      accessibilityRole=\"button\"\n                      accessibilityLabel={`Move ${label} ${word}`}\n                      disabled={disabled}\n                      onPress={() => layout.move(pools.map((entry) => entry.driver), pool.driver, delta)}\n                      className=\"size-11 items-center justify-center active:opacity-60\"\n                      style={{ opacity: disabled ? 0.3 : 1 }}\n                    >\n                      <SymbolView name={symbol} size={14} tintColorClassName=\"accent-foreground-muted\" />\n                    </Pressable>\n                  );\n                })}\n              </View>\n              {(collapsed ? [] : windows).map((window) => {", 'replace'],
     ['import { msg, T, useGT, useMessages, Var } from "gt-react-native";',
       'import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";\nimport { paceForecast, paceForecastText, type PaceStage } from "@t3tools/shared/rubatoUsagePace";',
       'replace'],
