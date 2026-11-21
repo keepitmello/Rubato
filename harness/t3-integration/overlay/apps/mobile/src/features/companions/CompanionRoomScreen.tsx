@@ -191,13 +191,15 @@ function RoomHeader(props: {
   readonly onBack: () => void;
   readonly onCall: () => void;
   readonly onProfile: () => void;
+  /** What hangs under the header (a first conversation's chips): the soft edge reaches past it. */
+  readonly below: number;
 }) {
   const insets = useSafeAreaInsets();
   const top = insets.top;
   const named = props.companion === null || props.companion.macTitle !== null;
   return (
-    <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + 24 }}>
-      <TopEdge height={top + HEADER_DEPTH} />
+    <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + props.below + 24 }}>
+      <TopEdge height={top + HEADER_DEPTH + props.below} />
       <HeaderButton icon="chevron.left" label={copy.back} side="left" top={top} onPress={props.onBack} />
       <HeaderButton
         icon={{ ios: "phone.fill", android: "smartphone" }}
@@ -972,6 +974,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
         onBack={() => navigation.goBack()}
         onCall={call}
         onProfile={openProfile}
+        below={topInset}
       />
       {onboarding ? (
         <View
