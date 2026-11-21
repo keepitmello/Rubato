@@ -6,7 +6,8 @@
 //
 // The page shows only long windows (weekly, monthly), and each provider's heading moves it
 // up or down or folds it away; the arrangement stays in this browser
-// (overlay/apps/web/src/components/usage/rubatoUsageLayout.ts).
+// (overlay/apps/web/src/components/usage/rubatoUsageLayout.ts, with its meaning in
+// overlay/packages/shared/src/rubatoUsageLayout.ts, which the phone shares).
 //
 // Each account's bar says, as CodexBar does, how far its spend is off an even pace and when it
 // runs out at the speed so far ("12% in deficit · Runs out in 21h 32m"), and T3's even-pace tick
@@ -27,6 +28,7 @@ export const usageLimitsOverlays = [
   'apps/server/src/usage/RubatoUsageLimits.test.ts',
   'apps/web/src/components/usage/rubatoUsageLayout.ts',
   'apps/web/src/components/usage/rubatoUsageLayout.test.ts',
+  'packages/shared/src/rubatoUsageLayout.ts',
   'packages/shared/src/rubatoUsagePace.ts',
   'packages/shared/src/rubatoUsagePace.test.ts',
   'apps/web/src/components/usage/rubatoUsagePace.browser.test.tsx',
@@ -308,6 +310,7 @@ export const usageLimitsEdits = {
   ],
   'packages/shared/package.json': [
     ['    "./usageLimitsCopy": {\n',
-      '    "./rubatoUsagePace": {\n      "types": "./src/rubatoUsagePace.ts",\n      "import": "./src/rubatoUsagePace.ts"\n    },\n'],
+      '    "./rubatoUsageLayout": {\n      "types": "./src/rubatoUsageLayout.ts",\n      "import": "./src/rubatoUsageLayout.ts"\n    },\n'
+      + '    "./rubatoUsagePace": {\n      "types": "./src/rubatoUsagePace.ts",\n      "import": "./src/rubatoUsagePace.ts"\n    },\n'],
   ],
 };

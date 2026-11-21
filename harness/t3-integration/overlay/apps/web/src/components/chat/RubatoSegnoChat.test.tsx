@@ -313,3 +313,35 @@ it("opens each room fresh at its end, so a room left scrolled up does not hold t
   expect(second).not.toBe(first);
   expect(host.querySelector("button[aria-label='Scroll to end']")).toBeNull();
 });
+
+it("shows Segno's reply of several paragraphs as that many bubbles, typed one after another when it arrives", () => {
+  vi.setSystemTime(new Date(2026, 10, 2, 9, 10));
+  const said = (id: string, minute: number) => entry(id, "assistant", minute, "응, 봤어.\n\n저녁은 먹었어?\n\n```\na\n\nb\n```");
+  const texts = () =>
+    [...host.querySelectorAll("[data-rubato-segno-row][data-side='segno'] [data-rubato-segno-bubble]:not([data-rubato-segno-writing])")].map(
+      (bubble) => bubble.textContent,
+    );
+  const writing = () => host.querySelector("[data-rubato-segno-writing]") !== null;
+
+  // From history: all of it at once, one mark, the tail on the last bubble only.
+  render([...entries, said("h", 7)]);
+  expect(texts().slice(-3)).toEqual(["응, 봤어.", "저녁은 먹었어?", "```\na\n\nb\n```"]);
+  const rows = [...host.querySelectorAll("[data-rubato-segno-row][data-side='segno']")].slice(-3);
+  expect(rows.map((row) => row.hasAttribute("data-group-end"))).toEqual([false, false, true]);
+  expect(rows.map((row) => row.hasAttribute("data-group-start"))).toEqual([true, false, false]);
+  expect(writing()).toBe(false);
+
+  // Just said: the first bubble, the dots, then the next ones.
+  render([...entries, said("h", 7), entry("u", "user", 9, "응"), said("i", 10)]);
+  expect(texts().slice(-1)).toEqual(["응, 봤어."]);
+  expect(writing()).toBe(true);
+  act(() => {
+    vi.advanceTimersByTime(2500);
+  });
+  expect(texts().slice(-2)).toEqual(["응, 봤어.", "저녁은 먹었어?"]);
+  act(() => {
+    vi.advanceTimersByTime(2500);
+  });
+  expect(texts().slice(-3)).toEqual(["응, 봤어.", "저녁은 먹었어?", "```\na\n\nb\n```"]);
+  expect(writing()).toBe(false);
+});

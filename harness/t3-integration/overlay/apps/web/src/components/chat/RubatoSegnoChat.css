@@ -246,29 +246,78 @@
   color: var(--foreground);
 }
 
-/* ---- Segno is writing: three dots in its bubble ---- */
+/* ---- The typing bubble, Messages' (user a9b0890f): dots that brighten in turn, a two-circle tail,
+   and while a tool runs, the kind of work before the dots ---- */
 [data-rubato-segno-writing] {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  padding: 0.7rem 0.85rem;
+  gap: 0.3rem;
+  padding: 0.75rem 0.9rem;
+  overflow: visible;
 }
 [data-rubato-segno-writing] > span {
-  width: 0.45rem;
-  height: 0.45rem;
+  width: 0.5rem;
+  height: 0.5rem;
   border-radius: 999px;
-  background: color-mix(in oklab, var(--rubato-segno-text) 45%, transparent);
-  animation: rubato-segno-dot 1.2s ease-in-out infinite;
+  background: color-mix(in oklab, var(--rubato-segno-text) 55%, transparent);
+  animation: rubato-segno-dot 1.26s ease-in-out infinite;
 }
-[data-rubato-segno-writing] > span:nth-child(2) {
-  animation-delay: 0.15s;
+[data-rubato-segno-writing] > span:nth-of-type(2) {
+  animation-delay: 0.18s;
 }
-[data-rubato-segno-writing] > span:nth-child(3) {
-  animation-delay: 0.3s;
+[data-rubato-segno-writing] > span:nth-of-type(3) {
+  animation-delay: 0.36s;
 }
 @keyframes rubato-segno-dot {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.55; }
-  30% { transform: translateY(-0.28rem); opacity: 1; }
+  0%, 60%, 100% { opacity: 0.35; transform: scale(0.92); }
+  25% { opacity: 1; transform: scale(1); }
+}
+[data-rubato-segno-work] {
+  display: inline-flex;
+  width: 0;
+  margin-right: -0.3rem;
+  opacity: 0;
+  transform: scale(0.6);
+  overflow: hidden;
+  color: color-mix(in oklab, var(--rubato-segno-text) 60%, transparent);
+  transition: width 260ms cubic-bezier(0.25, 1, 0.5, 1), margin 260ms cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 200ms ease, transform 260ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+[data-rubato-segno-writing][data-working] > [data-rubato-segno-work] {
+  width: 0.95rem;
+  margin-right: 0.2rem;
+  opacity: 1;
+  transform: none;
+}
+[data-rubato-segno-work] > svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  stroke-width: 2.2;
+  animation: rubato-segno-work-in 220ms ease both;
+}
+@keyframes rubato-segno-work-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+[data-rubato-segno-typing-tail],
+[data-rubato-segno-typing-tail]::after {
+  position: absolute;
+  border-radius: 999px;
+  background: var(--rubato-bubble);
+}
+[data-rubato-segno-typing-tail] {
+  left: -0.18rem;
+  bottom: -0.12rem;
+  width: 0.8rem;
+  height: 0.8rem;
+}
+[data-rubato-segno-typing-tail]::after {
+  content: "";
+  left: -0.4rem;
+  bottom: -0.42rem;
+  width: 0.4rem;
+  height: 0.4rem;
 }
 
 /* ---- Arrivals: the person's bubble springs up from the composer, Segno's pops in ---- */

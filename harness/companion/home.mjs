@@ -572,6 +572,73 @@ export function replyDisplayText({ text, voice_text, files } = {}) {
     ...filesMarkdown(files)].filter(Boolean).join('\n\n');
 }
 
+// ── one reply, several bubbles ───────────────────────────────────────────────────────────
+// A reply reads like a messenger chat, not a letter (user, 2026-11-22: "카톡처럼 여러개로 끊어서"):
+// the companion calls reply once, and each paragraph — words between blank lines — reaches the
+// person as its own bubble, one after another, in the app and on Telegram. What only makes sense
+// whole stays whole: a fenced code block, a list whose items are spread over blank lines, a line
+// that leads into what follows (ends with ':'), a heading, an indented continuation, and the file
+// lines (filesMarkdown), which ride with the last words. The app keeps the same rule in
+// overlay/packages/shared/src/rubatoReplyBubbles.ts; change both together.
+
+/** At most this many bubbles; what is left joins the last one. */
+export const REPLY_BUBBLES_MAX = 8;
+const FENCE = /^\s*(```|~~~)/;
+const LIST_ITEM = /^\s*(?:[-*+•]|\d+[.)])\s/;
+const HEADING = /^#{1,6}\s/;
+const INDENTED = /^(?: {2,}|\t)\S/;
+const FILE_BLOCK = /^!?\[[^\]\n]*\]\(<\/[^>\n]+>\)$/;
+
+/** The paragraphs of a text, a fenced code block always one of them. */
+function paragraphs(text) {
+  const blocks = [];
+  let lines = [];
+  let fence = null;
+  for (const line of String(text ?? '').replace(/\r\n?/g, '\n').trim().split('\n')) {
+    if (fence) {
+      lines.push(line);
+      if (line.trim().startsWith(fence)) fence = null;
+    } else if (FENCE.test(line)) {
+      fence = line.match(FENCE)[1];
+      lines.push(line);
+    } else if (!line.trim()) {
+      if (lines.length) blocks.push(lines.join('\n'));
+      lines = [];
+    } else lines.push(line);
+  }
+  if (lines.length) blocks.push(lines.join('\n'));
+  return blocks;
+}
+
+/** Whether `block` belongs with the bubble that ends in `previous` instead of starting its own. */
+function joinsPrevious(previous, block) {
+  const last = previous.split('\n').at(-1);
+  const first = block.split('\n')[0];
+  return FILE_BLOCK.test(block.trim())
+    || (LIST_ITEM.test(last) && LIST_ITEM.test(first))
+    || INDENTED.test(first)
+    || last.trimEnd().endsWith(':')
+    || (previous.split('\n').length === 1 && HEADING.test(previous));
+}
+
+/**
+ * The bubbles one reply's text arrives as, in order. One paragraph is one bubble, as before;
+ * an empty text is none.
+ */
+export function replyBubbles(text, { max = REPLY_BUBBLES_MAX } = {}) {
+  const bubbles = [];
+  for (const block of paragraphs(text)) {
+    if (bubbles.length && joinsPrevious(bubbles.at(-1), block)) bubbles[bubbles.length - 1] += `\n\n${block}`;
+    else bubbles.push(block);
+  }
+  return bubbles.length > max ? [...bubbles.slice(0, max - 1), bubbles.slice(max - 1).join('\n\n')] : bubbles;
+}
+
+/** The pause before the next bubble shows, as if it were being typed: longer for more words, never long. */
+export function replyBubbleGapMs(next) {
+  return Math.min(2200, 600 + 20 * String(next ?? '').length);
+}
+
 /**
  * The files a reply may attach: absolute paths to regular files that exist. Throws naming the first
  * that is not, so a broken attachment never reaches the person.

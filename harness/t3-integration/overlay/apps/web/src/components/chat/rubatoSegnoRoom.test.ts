@@ -87,12 +87,12 @@ describe("Segno's chat room", () => {
     expect(bubbles(items)).toEqual(["time:separator:c", "me:c:startend"]);
   });
 
-  it("shows Segno writing only while its turn runs and the person waits for an answer", () => {
+  it("shows the typing bubble the whole time the person's turn runs, answered or not", () => {
     const asked = segnoChatItems([message("a", "assistant", 0), message("b", "user", 10_000)]);
     const answered = segnoChatItems([message("a", "user", 0), message("b", "assistant", 10_000)]);
     expect(segnoIsWriting(asked, true)).toBe(true);
     expect(segnoIsWriting(asked, false)).toBe(false);
-    expect(segnoIsWriting(answered, true)).toBe(false);
+    expect(segnoIsWriting(answered, true)).toBe(true);
     expect(segnoIsWriting([], true)).toBe(false);
   });
 

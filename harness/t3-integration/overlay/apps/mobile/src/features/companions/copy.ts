@@ -1,6 +1,7 @@
 // The words the companion screens show, in the phone's language: Korean when the phone is set to
 // Korean, English otherwise. The rest of the app is T3's English; these screens are the person's
 // rooms with Segno and Roo, so they speak the person's language.
+import { Platform, Settings } from "react-native";
 
 const KO = {
   noCompanions: "컴패니언이 아직 없어",
@@ -10,7 +11,7 @@ const KO = {
   roomLoading: "대화를 불러오는 중…",
   roomMissing: "아직 대화가 없어",
   roomMissingDetail: "Mac에서 이 컴패니언의 대화가 시작되면 열 수 있어.",
-  placeholder: "메시지 보내기",
+  placeholder: "메시지",
   send: "보내기",
   remove: "빼기",
   dictate: "받아쓰기",
@@ -132,8 +133,20 @@ const EN: typeof KO = {
 
 export type CopyKey = keyof typeof KO;
 
-/** The phone's language as Intl reports it, e.g. "ko-KR". */
+/**
+ * The phone's language, e.g. "ko-KR": the person's first preferred language on iOS. Intl alone
+ * reports the app bundle's language, and the app ships only English, so a Korean phone read as
+ * English and the room showed "Message".
+ */
 export const phoneLocale = (): string => {
+  if (Platform.OS === "ios") {
+    try {
+      const languages: unknown = Settings.get("AppleLanguages");
+      if (Array.isArray(languages) && typeof languages[0] === "string" && languages[0]) return languages[0];
+    } catch {
+      // Intl below.
+    }
+  }
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale;
   } catch {

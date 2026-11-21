@@ -103,6 +103,9 @@ const CONNECT_TIMEOUT_MS = 12_000;
 const SEND_SAMPLES = LIVE_SAMPLE_RATE / 20;
 /** Audio kept while connecting, at most (a connection that slow fails at CONNECT_TIMEOUT_MS anyway). */
 const MAX_BACKLOG_SAMPLES = LIVE_SAMPLE_RATE * 15;
+/** What a dictation says when the microphone handed over no sound at all. */
+export const LIVE_NO_SOUND = "No sound came from the microphone. Try again.";
+const NO_SOUND = LIVE_NO_SOUND;
 
 /**
  * Brings audio from the rate the platform captures to 24 kHz, piece after piece without seams:
@@ -256,6 +259,8 @@ class LiveConnection {
   /** Audio not sent yet: everything heard while connecting, then less than a piece. */
   private pending: Int16Array[] = [];
   private pendingSamples = 0;
+  /** Every sample the microphone handed over, sent or not. None means the microphone gave nothing. */
+  private heardSamples = 0;
   private listening = true;
   private lastLevel = 0;
   private closed = false;
@@ -342,6 +347,7 @@ class LiveConnection {
     const pcm = this.resample(samples, sampleRate);
     if (pcm.length === 0) return;
     this.lastLevel = peakLevel(pcm);
+    this.heardSamples += pcm.length;
     this.pending.push(pcm);
     this.pendingSamples += pcm.length;
     // Connecting can take long; keep the latest audio, not all of it.
@@ -389,6 +395,8 @@ class LiveConnection {
       this.wake = null;
     }
     const text = liveDictationText(this.snapshot());
+    // A microphone that handed over nothing leaves OpenAI an empty buffer; its error would blame OpenAI.
+    if (text.length === 0 && this.heardSamples === 0) throw this.platform.connectionFailed(NO_SOUND);
     if (text.length === 0 && this.failure) throw this.platform.connectionFailed(this.failure);
     return text;
   }
@@ -437,7 +445,7 @@ class LiveConnection {
       readonly item_id?: unknown;
       readonly delta?: unknown;
       readonly transcript?: unknown;
-      readonly error?: { readonly message?: unknown };
+      readonly error?: { readonly message?: unknown; readonly code?: unknown };
     };
     try {
       event = JSON.parse(data);
@@ -460,7 +468,12 @@ class LiveConnection {
         if (this.committed) this.settledAfterCommit = true;
         break;
       case "error":
-        this.failure = typeof event.error?.message === "string" ? "OpenAI stopped the dictation." : this.failure;
+        this.failure =
+          event.error?.code === "input_audio_buffer_commit_empty"
+            ? NO_SOUND
+            : typeof event.error?.message === "string"
+              ? `OpenAI stopped the dictation: ${event.error.message}`
+              : this.failure;
         // A commit with nothing in the buffer answers with an error: nothing more is coming.
         if (this.committed) this.settledAfterCommit = true;
         break;

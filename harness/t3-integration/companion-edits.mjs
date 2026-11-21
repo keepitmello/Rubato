@@ -48,9 +48,16 @@ export const companionOverlays = [
   'apps/web/src/components/chat/rubatoSegnoRoom.test.ts',
   'apps/web/src/components/chat/RubatoSegnoNotice.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoNoticeCoordinator.test.tsx',
+  // One reply, several bubbles: where the room and the phone break a reply (shared with mobile/companion-edits.mjs).
+  'packages/shared/src/rubatoReplyBubbles.ts',
+  'packages/shared/src/rubatoReplyBubbles.test.ts',
 ];
 
 export const companionEdits = {
+  'packages/shared/package.json': [
+    ['    "./delimitedPreview": {\n',
+      '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n'],
+  ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionModelRouteLayer } from "./RubatoCompanionModel.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
     ['    DeviceHubProxy.layer,\n', '    rubatoCompanionRouteLayer,\n    rubatoCompanionModelRouteLayer,\n    rubatoCompanionRewindRouteLayer,\n'],

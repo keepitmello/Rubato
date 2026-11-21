@@ -39,6 +39,7 @@ import { synthesizeVoice } from './voice.mjs';
 import { companionOffText, contextText, heartbeatText, parseControlCommand, segnoText } from './commands.mjs';
 import { botUsernameCandidates } from './scripts/create-bot.mjs';
 import { readSettings as readCompanionSettings, readState as readCompanionState, writeSettings as writeCompanionSettings } from '../companion.mjs';
+import { replyBubbleGapMs, replyBubbles } from '../home.mjs';
 import { openInbox } from '../inbox.mjs';
 import { createCallWindows } from '../call-window.mjs';
 
@@ -162,6 +163,7 @@ function plainText(message) {
  *   synthesize?: (text: string) => Promise<{ path: string, durationSec?: number }>,
  *   sessionStats?: (sessionId: string) => Promise<{ contextUsage?: { tokens: number|null, contextWindow: number, percent: number|null } }>,
  *   typingDelay?: () => number,
+ *   bubbleGap?: (next: string) => number,
  *   downloadRetryDelaysMs?: readonly number[],
  *   signal?: AbortSignal,
  *   pollMs?: number,
@@ -177,7 +179,7 @@ export function startCompanionMessenger({
   createApi = (token) => createBotApi({ token, baseUrl: env.RUBATO_TELEGRAM_API_BASE || undefined }),
   createBot = createBotOverMtproto, transcribe = defaultTranscriber(env), synthesize = (text) => synthesizeVoice(text, { env }),
   sessionStats, typingDelay: delayTyping = typingDelay, downloadRetryDelaysMs = DOWNLOAD_RETRY_DELAYS_MS,
-  signal, pollMs = 1000, longPollSeconds = 25, now = Date.now, callWindows = createCallWindows({ now }),
+  signal, pollMs = 1000, longPollSeconds = 25, now = Date.now, callWindows = createCallWindows({ now }), bubbleGap = replyBubbleGapMs,
 } = {}) {
   if (typeof deliver !== 'function') throw new TypeError('deliver is required');
   const companionId = env.RUBATO_COMPANION_ID || 'segno';
@@ -208,6 +210,19 @@ export function startCompanionMessenger({
   if (signal) signal.addEventListener('abort', () => stop.abort(), { once: true });
 
   const aborted = () => closed || stop.signal.aborted;
+
+  /**
+   * A reply's Telegram messages: one bubble each (home.mjs replyBubbles), cut from the words as the
+   * companion wrote them, since sanitizing makes every line a paragraph; each bubble then as many
+   * messages as Telegram needs. `opens` marks the first message of a bubble after the first.
+   */
+  const bubbleParts = (text, clean = (part) => part) => replyBubbles(text).map(clean).filter((bubble) => bubble.trim())
+    .flatMap((bubble, index) => splitText(bubble).map((part, at) => ({ text: part, opens: index > 0 && at === 0 })));
+  /** Before the next bubble: "typing…", and a pause as long as typing it would take. */
+  async function typeNext(client, chatId, next) {
+    Promise.resolve().then(() => client.sendChatAction({ chatId, action: 'typing' })).catch(() => {});
+    await sleep(bubbleGap(next), stop.signal);
+  }
 
   /**
    * Everything that sends to Telegram, one at a time and in order: the sync's answers, the tools'
@@ -566,14 +581,20 @@ export function startCompanionMessenger({
     const payload = row.text || row.voiceText
       ? prepareReplyPayload({ text: editedText ?? row.text, voiceText: row.voiceText, voice: row.voice, sanitize: row.sanitize })
       : { delivery: 'text' };
+    // A reply's words go as its bubbles; any other message as it was written.
+    const parts = !payload.text ? []
+      : row.source === 'reply' ? bubbleParts(editedText ?? row.text ?? row.voiceText, row.sanitize === false ? undefined : telegramText)
+        : splitText(payload.text).map((part) => ({ text: part, opens: false }));
     const files = (row.files ?? []).map(sendableFile);
     const sent = [];
     // Roo stops "typing…" the moment a message goes out to that chat (roo-runtime.ts outbound_sent).
     stopTyping(chatId);
-    const total = (payload.text ? splitText(payload.text).length : 0) + files.length;
+    const total = parts.length + files.length;
     try {
-      for (const part of payload.text ? splitText(payload.text) : []) {
-        sent.push((await client.sendMessage({ chatId, text: part, ...notification })).message_id);
+      for (const [index, part] of parts.entries()) {
+        if (part.opens) await typeNext(client, chatId, part.text);
+        // Only the first bubble rings; the rest follow it quietly.
+        sent.push((await client.sendMessage({ chatId, text: part.text, ...(index > 0 ? { disableNotification: true } : notification) })).message_id);
       }
       for (const file of files) {
         const ext = path.extname(file).toLowerCase();
@@ -809,13 +830,15 @@ export function startCompanionMessenger({
   async function sendSaid(client, said, { sentParts, onPart, countParts }) {
     const chatId = pairedChatId(env);
     if (!chatId) return;
-    const text = said.source === 'app-user' ? said.text : telegramText(said.text);
-    const parts = splitText(text);
+    // The person's own words from the app mirror as they are; the companion's reply as its bubbles.
+    const parts = said.source === 'app-user' ? splitText(said.text).map((part) => ({ text: part, opens: false }))
+      : bubbleParts(said.text, telegramText);
     countParts?.(parts.length);
     if (said.source !== 'app-user') stopTyping(chatId);
     for (let index = sentParts; index < parts.length; index += 1) {
-      await client.sendMessage({ chatId, text: parts[index],
-        ...(!said.final || said.disableNotification ? { disableNotification: true } : {}) });
+      if (parts[index].opens) await typeNext(client, chatId, parts[index].text);
+      await client.sendMessage({ chatId, text: parts[index].text,
+        ...(!said.final || said.disableNotification || index > 0 ? { disableNotification: true } : {}) });
       onPart(index + 1);
     }
     // reply records the person's visible answer once. Mirroring is delivery, not a second answer;

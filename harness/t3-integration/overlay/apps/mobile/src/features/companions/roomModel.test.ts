@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vite-plus/test";
+import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
 import {
-  callHeadline, companionIsWriting, companionTool, fileLines, roomItems, roomPreview, spokenText,
-  type RoomMessageInput, type RoomStep,
+  callHeadline, companionTyping, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
+  type RoomMessageInput,
 } from "./roomModel";
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 13, 3, 0) + minutes * 60_000).toISOString();
@@ -40,28 +41,42 @@ describe("a companion room", () => {
     expect(items.find((item) => item.id === "t" && item.kind === "bubble")).toMatchObject({ text: "텔레그램 음성" });
   });
 
-  it("shows the dots only while the companion owes an answer", () => {
-    const asked = roomItems([message("a", "assistant", "hey", 0), message("b", "user", "what's up", 1)], []);
-    expect(companionIsWriting(asked, true)).toBe(true);
-    expect(companionIsWriting(asked, false)).toBe(false);
-    expect(companionIsWriting(roomItems([message("a", "user", "hey", 0), message("b", "assistant", "hi", 1)], []), true)).toBe(false);
+  it("ends a group with a tail after a pause of more than a minute, even on the same side", () => {
+    const bubbles = roomItems([message("a", "assistant", "자냐~!!", 0), message("b", "assistant", "님아 꼭 해야됨", 2), message("c", "assistant", "야", 2.5)], [])
+      .filter((item) => item.kind === "bubble");
+    expect(bubbles.map((item) => [item.id, item.groupStart, item.groupEnd])).toEqual([["a", true, true], ["b", true, false], ["c", false, true]]);
   });
 
-  it("tells thinking from working by the tool that runs since the person's last message", () => {
-    const me: RoomStep = { kind: "message", role: "user" };
-    const tool = (icon: string, running: boolean): RoomStep => ({ kind: "tool", icon, running });
-    expect(companionTool([me])).toBe(null);
-    expect(companionTool([me, tool("search", false)])).toBe(null);
-    expect(companionTool([me, tool("search", false), tool("command", true)])).toBe("terminal");
-    expect(companionTool([me, tool("globe", true)])).toBe("search");
-    expect(companionTool([me, tool("edit", true)])).toBe("file");
-    expect(companionTool([me, tool("zap", true)])).toBe("other");
-    // The reply tool is the answer itself; a tool before the person's message is old work.
-    expect(companionTool([me, tool("message", true)])).toBe(null);
-    expect(companionTool([me, tool("agent", true)])).toBe(null);
-    expect(companionTool([me, { kind: "tool", icon: "wrench", running: true, name: "reply" }])).toBe(null);
-    expect(companionTool([me, { kind: "tool", icon: "wrench", running: true, name: "memory" }])).toBe("terminal");
-    expect(companionTool([tool("command", true), me])).toBe(null);
+  it("puts a time line between bubbles a quarter of an hour apart", () => {
+    const kinds = roomItems([message("a", "user", "hi", 0), message("b", "user", "hm", 14), message("c", "user", "?", 30)], [])
+      .map((item) => item.kind === "separator" ? "time" : item.id);
+    expect(kinds).toEqual(["time", "a", "b", "time", "c"]);
+  });
+
+  it("writes a time line as Messages does: today, yesterday, a weekday, then a date", () => {
+    const now = new Date(2026, 10, 22, 15, 0).getTime();
+    const ko = (date: Date) => separatorParts(date.getTime(), now, "ko-KR");
+    expect(ko(new Date(2026, 10, 22, 14, 12))).toEqual({ day: "오늘", time: "오후 2:12" });
+    expect(ko(new Date(2026, 10, 21, 21, 23)).day).toBe("어제");
+    expect(ko(new Date(2026, 10, 19, 9, 0)).day).toBe("목요일");
+    expect(ko(new Date(2026, 10, 7, 21, 23))).toEqual({ day: "11월 7일 (토)", time: "오후 9:23" });
+    expect(ko(new Date(2025, 10, 7, 21, 23)).day).toBe("2025년 11월 7일 (금)");
+    expect(separatorParts(new Date(2026, 10, 22, 14, 12).getTime(), now, "en-US")).toEqual({ day: "Today", time: "2:12 PM" });
+  });
+
+  it("shows the typing bubble the whole time the person's turn runs, answered or not, but not over a call", () => {
+    const answered = roomItems([message("a", "user", "봐줘", 0), message("b", "assistant", "응 볼게", 1)], []);
+    expect(companionTyping(answered, true)).toBe(true);
+    expect(companionTyping(answered, false)).toBe(false);
+    expect(companionTyping(roomItems([], [call({ minutes: 0, status: "active", endedAt: null })]), true)).toBe(false);
+    expect([roomTool("terminal"), roomTool("mystery"), roomTool(null)]).toEqual(["terminal", "other", null]);
+  });
+
+  it("moves the tail to the newest bubble in sight while a reply comes in bubble by bubble", () => {
+    const sent = Date.parse(at(0));
+    const items = roomItems([message("r", "assistant", "응.\n\n저녁은?", 0)], []);
+    const [only] = typedSoFar(items, sent).shown.filter((item) => item.kind === "bubble");
+    expect(only).toMatchObject({ id: "r", groupEnd: true });
   });
 
   it("names how a call went and how long it ran", () => {
@@ -85,6 +100,29 @@ describe("a companion room", () => {
     expect(roomPreview(roomItems([picture], []))).toMatchObject({ text: "📎 cat.png" });
   });
 
+  it("shows the companion's reply of several paragraphs as that many bubbles of one group, the files on the last", () => {
+    const reply = message("r", "assistant", "응, 봤어.\n\n저녁은 먹었어?\n\n- 하나\n\n- 둘\n\n![a.png](</tmp/a.png>)", 0);
+    const bubbles = roomItems([message("q", "user", "봤어?", 0), reply], []).filter((item) => item.kind === "bubble");
+    expect(bubbles.map((item) => [item.id, item.text, item.files, item.part, item.groupStart, item.groupEnd])).toEqual([
+      ["q", "봤어?", "", 0, true, true],
+      ["r", "응, 봤어.", "", 0, true, false],
+      ["r#1", "저녁은 먹었어?", "", 1, false, false],
+      ["r#2", "- 하나\n\n- 둘", "![a.png](</tmp/a.png>)", 2, false, true],
+    ]);
+    expect(roomPreview(roomItems([reply], []))).toMatchObject({ text: "- 하나 - 둘", side: "companion" });
+
+    // Said just now, its next bubbles come one after another; said a while ago, all at once.
+    const sent = Date.parse(at(0));
+    const items = roomItems([reply], []);
+    const ids = (clock: number) => typedSoFar(items, clock).shown.filter((item) => item.kind === "bubble").map((item) => item.id);
+    expect(ids(sent)).toEqual(["r"]);
+    expect(typedSoFar(items, sent).next).toBe(sent + replyBubbleGapMs("저녁은 먹었어?"));
+    expect(ids(sent + replyBubbleGapMs("저녁은 먹었어?"))).toEqual(["r", "r#1"]);
+    expect(ids(sent + 60_000)).toEqual(["r", "r#1", "r#2"]);
+    expect(typedSoFar(items, sent + 60_000).next).toBeNull();
+    expect(roomItems([message("p", "user", "한 문단\n\n두 문단", 0)], []).filter((item) => item.kind === "bubble")).toHaveLength(1);
+  });
+
   it("takes the companion's reply files out of its words, so the bubble draws them in its own layout", () => {
     const reply = message("r", "assistant", "캡처 두 장이야\n\n![fb-1.jpg](</tmp/fb-1.jpg>)\n\n![fb-2.jpg](</tmp/fb-2.jpg>)\n\n[notes.pdf](</tmp/notes.pdf>)", 0);
     const [bubble] = roomItems([reply], []).filter((item) => item.kind === "bubble");
@@ -104,7 +142,7 @@ describe("a companion room", () => {
     const items = roomItems([message("a", "assistant", "hi", 0), sending], []);
     expect(items.filter((item) => item.kind === "bubble").map((item) => item.kind === "bubble" && [item.id, item.side, item.pending !== null]))
       .toEqual([["a", "companion", false], ["s", "me", true]]);
-    expect(companionIsWriting(items, true)).toBe(true);
+    expect(companionTyping(items, true)).toBe(true);
     expect(roomPreview(items)).toMatchObject({ text: "📎 cat.jpg", side: "me" });
   });
 

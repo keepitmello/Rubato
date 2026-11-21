@@ -160,6 +160,30 @@ test('a split reply resumes after the parts already delivered, without repeating
   assert.equal(box.errors.length, 1);
 });
 
+test('a reply of several paragraphs arrives as that many messages, typed one after another, only the first ringing', async t => {
+  const gaps = [];
+  const box = await paired(t, { bubbleGap: next => { gaps.push(next); return 5; } });
+  transcript(box, [channelEntry('telegram'), ...mouth('b', '**응**, 봤어.\n\n저녁은 먹었어?\n\n```\na\n\nb\n```')]);
+  await settle(box.service);
+  const sent = box.fake.sent.filter(row => row.chatId === USER_CHAT && !/연결됐습니다/.test(row.text));
+  assert.deepEqual(sent.map(row => row.text), ['응, 봤어.', '저녁은 먹었어?', '```\n\na\n\nb\n\n```']);
+  assert.deepEqual(sent.map(row => row.disableNotification), [false, true, true]);
+  assert.deepEqual(gaps, ['저녁은 먹었어?', '```\n\na\n\nb\n\n```']);
+  assert.ok(box.fake.actions.filter(row => row.action === 'typing').length >= 2, 'typing… shows before each next bubble');
+});
+
+test('a rich reply sends its bubbles, then its files', async t => {
+  const box = await paired(t);
+  const photo = `${box.dir}/photo.png`;
+  writeFileSync(photo, 'test payload');
+  transcript(box, [channelEntry('telegram')]);
+  const result = await box.service.send({ source: 'reply', text: '사진 찍었어\n\n어때?', files: [photo] });
+  assert.equal(result.state, 'sent');
+  assert.deepEqual(sentTexts(box), ['사진 찍었어', '어때?']);
+  assert.deepEqual(box.fake.uploads.map(row => row.kind), ['photo']);
+  assert.equal(result.messageIds.length, 3);
+});
+
 test('an existing old cursor drops its held monologue and does not replay history', async t => {
   const box = await paired(t);
   const file = transcript(box, [appEntry('u', 'hello')]);
