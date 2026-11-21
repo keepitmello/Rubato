@@ -593,7 +593,7 @@ test("wake: session-age.sh's lengths of sleep", () => {
   assert.equal(said(now - 72 * HOUR), '직전 창: 3일 전 — 오랜만에 깸');
 });
 
-test('mood: one line kept six hours (leave-mood.sh, recall-mood.sh), written with segno_record kind mood', (t) => {
+test('mood: one line kept six hours (leave-mood.sh, recall-mood.sh), written with companion_record kind mood', (t) => {
   const env = sandbox(t);
   record('mood', '가방 속에서 잠들어', { at: at(21, 1), env });
   assert.deepEqual(readMood({ now: at(21, 3), env }), { note: '가방 속에서 잠들어', at: at(21, 1) });
@@ -903,5 +903,5 @@ test('prompt: a work area gets one canonical file in memory/work/ split like Roo
 test('prompt: repository documents linked under memory/ref/ are found by search and read-only; a wrong line goes to that repository\'s lead (Segno session 01a154ba, relaying the user)', () => {
   const companion = readFileSync(path.join(defaultsDir, 'companion.pi.md'), 'utf8');
   const records = companion.slice(companion.indexOf('## 기록'), companion.indexOf('## 잠 전 갈무리'));
-  assert.match(records, /- 레포 문서\(`memory\/ref\/`\): .*`segno_search`로 찾혀\. 읽기 전용이야\. 틀린 게 보이면 직접 고치지 않고 그 레포에서 리드한테 맡겨\./);
+  assert.match(records, /- 레포 문서\(`memory\/ref\/`\): .*`companion_search`로 찾혀\. 읽기 전용이야\. 틀린 게 보이면 직접 고치지 않고 그 레포에서 리드한테 맡겨\./);
 });

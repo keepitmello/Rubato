@@ -202,7 +202,7 @@ export interface SegnoLaunch {
   readonly error: string | null;
 }
 
-/** A segno_commit that changed something: the companion's own words for it and the files. */
+/** A companion_commit that changed something: the companion's own words for it and the files. */
 export interface SegnoCommit {
   readonly id: string;
   readonly message: string;

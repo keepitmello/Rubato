@@ -62,7 +62,9 @@ export function launchResult(text) {
   return head ? { sessionId: head[2], title: head[1], model: null } : null;
 }
 
-/** A segno_commit result (companion-home index.mjs): `Committed <sha>: <files>`, or nothing changed. */
+/** A companion_commit result (companion-home index.mjs; segno_commit in older transcripts): `Committed <sha>: <files>`, or nothing changed. */
+/** The commit tool by its name and by the name older transcripts carry. */
+const COMMIT_TOOLS = new Set(['companion_commit', 'segno_commit']);
 export function commitResult(text) {
   const match = /^Committed ([0-9a-f]{4,64})\b/.exec(String(text ?? ''));
   return match ? match[1] : null;
@@ -102,7 +104,7 @@ export function entryItems(entry, calls) {
             model: typeof args.model === 'string' ? args.model : null, sessionId: null,
             // A fork without a first message waits for the person; anything else starts working.
             startsWork: tool.name === 'session_create' || typeof args.text === 'string' } });
-        if (tool.name === 'segno_commit') Object.defineProperty(tool, 'commit', { enumerable: false, writable: true,
+        if (COMMIT_TOOLS.has(tool.name)) Object.defineProperty(tool, 'commit', { enumerable: false, writable: true,
           value: { message: typeof args.message === 'string' ? oneLine(args.message, 400) : '',
             files: Array.isArray(args.paths) ? args.paths.filter((file) => typeof file === 'string') : [], sha: null } });
         items.push(tool);
