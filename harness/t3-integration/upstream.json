@@ -96,6 +96,7 @@
     "apps/server/src/server.ts": "b56a6cfadffff0c09ff030888451e9e04710b0da3495ef0970de0420c05cce16",
     "apps/server/src/serverRuntimeStartup.ts": "a815e075a51f79436d36053d05e2bb35065520f0391edd6405c9a26e582e3075",
     "apps/server/src/usage/UsageLimitSources.ts": "fcbad574a679e582721fdf1e96b680f400bacc37f5c9827c99053311c7c44ac8",
+    "apps/server/src/usage/UsageService.ts": "5b227b8aa29bf8e8172825692e50c64bf26cb6374e34e6f57eaaad17347227c2",
     "apps/server/src/workspace/WorkspaceFileSystem.ts": "5e55a6ed77d7e8db081ba331262547de6ed3aa86e41468c31e65e82dcd2aff6b",
     "apps/server/src/ws.ts": "ba441196d1cc062865f86a7a9d4e4c13151db4eeabe1bc45a2e1efd9f0b15941",
     "apps/server/vite.config.ts": "d5198593f4e680acd992de43ffc397e24dc7d773ef0ef0d222fe7973653bceaf",

@@ -15,9 +15,11 @@
 //
 // The page's token and cost history reads Rubato's own sessions too. They are Pi session logs
 // under ~/.rubato-pi/agent/sessions, which T3's Pi reader never looked at, so usage through
-// Rubato (most of the Claude use) was missing. Each record counts under its model's vendor:
-// Anthropic under Claude, OpenAI Codex under Codex, xAI under Grok, Antigravity and Cursor under
-// their own; other providers stay under Pi.
+// Rubato (most of the Claude use) was missing. The summary splits that directory into one source
+// per model vendor (overlay/apps/server/src/usage/rubatoVendorUsage.ts): Anthropic under Claude,
+// OpenAI Codex under Codex, xAI under Grok, Antigravity and Cursor under their own; other
+// providers stay under Pi. The split happens after the scan cache, which holds one provider per
+// file, and before the clients, which take one provider per source.
 export const usageLimitsOverlays = [
   'apps/server/src/usage/RubatoUsageLimits.ts',
   'apps/server/src/usage/RubatoUsageLimits.test.ts',
@@ -26,7 +28,8 @@ export const usageLimitsOverlays = [
   'packages/shared/src/rubatoUsagePace.ts',
   'packages/shared/src/rubatoUsagePace.test.ts',
   'apps/web/src/components/usage/rubatoUsagePace.browser.test.tsx',
-  'packages/provider-pi/src/server/rubatoUsage.test.ts',
+  'apps/server/src/usage/rubatoVendorUsage.ts',
+  'apps/server/src/usage/rubatoVendorUsage.test.ts',
 ];
 
 const PACE_TICK_OLD = [
@@ -273,31 +276,22 @@ export const usageLimitsEdits = {
     ['        sourceLabel: "CLI Proxy",', '        sourceLabel: source.kind === "rubato" ? "Rubato" : "CLI Proxy",', 'replace'],
   ],
   'packages/provider-pi/src/server/usage.ts': [
-    ['function parseRecord(parsed: unknown, state: typeof PiScanState.Type): readonly UsageRecord[] {',
-      '// Rubato: a vendor\'s models count under that vendor, as its own CLI\'s history does (usage-limits-edits.mjs).\n'
-      + 'const RUBATO_VENDOR_KINDS = new Map<string, UsageRecord["provider"]>([\n'
-      + '  ["anthropic", "claude"],\n'
-      + '  ["openai-codex", "codex"],\n'
-      + '  ["xai", "grok"],\n'
-      + '  ["google-antigravity", "antigravity"],\n'
-      + '  ["cursor", "cursor"],\n'
-      + ']);\n\n'],
-    ['  const model = "provider" in source ? `${source.provider}/${rateModel}` : "Tools/summaries";',
-      '  const vendor = "provider" in source ? RUBATO_VENDOR_KINDS.get(source.provider) : undefined;\n'
-      + '  const model =\n'
-      + '    vendor !== undefined && rateModel !== undefined\n'
-      + '      ? rateModel\n'
-      + '      : "provider" in source\n'
-      + '        ? `${source.provider}/${rateModel}`\n'
-      + '        : "Tools/summaries";',
-      'replace'],
-    ['    {\n      provider: "pi",\n      timestampMs,',
-      '    {\n      provider: vendor ?? "pi",\n      timestampMs,', 'replace'],
     ['      { dir: resolvePiSessionsDir(environment, launchHome, path) },',
       '      { dir: resolvePiSessionsDir(environment, launchHome, path) },\n'
-      + '      // Rubato: its sessions are Pi logs under its own home.\n'
+      + '      // Rubato: its sessions are Pi logs under its own home (rubatoVendorUsage.ts splits them by vendor).\n'
       + '      { dir: path.join(home, ".rubato-pi", "agent", "sessions") },',
       'replace'],
+  ],
+  'apps/server/src/usage/UsageService.ts': [
+    ['import { canonicalModelFilter, resolveModelAliases, UsageAggregator } from "./usageAggregation.ts";',
+      'import { splitRubatoVendorSources } from "./rubatoVendorUsage.ts";\n'],
+    ['    const crossFileSessions = sharedSessions(filesByDir.flat());',
+      '    // Rubato: a Pi directory reports one source per model vendor (rubatoVendorUsage.ts).\n'
+      + '    const rubatoSources = splitRubatoVendorSources(scannedDirs, filesByDir);\n'],
+    ['    ] of scannedDirs.entries()) {\n      let scannedFiles = 0;',
+      '    ] of rubatoSources.dirs.entries()) {\n      let scannedFiles = 0;', 'replace'],
+    ['      for (const file of filesByDir[index] ?? []) {\n        malformedRecords += file.malformedRecords;',
+      '      for (const file of rubatoSources.files[index] ?? []) {\n        malformedRecords += file.malformedRecords;', 'replace'],
   ],
   'packages/shared/package.json': [
     ['    "./usageLimitsCopy": {\n',
