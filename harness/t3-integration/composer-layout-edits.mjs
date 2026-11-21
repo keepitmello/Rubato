@@ -4,8 +4,11 @@
 // attach button (and with it Rubato's mic and call button) to the left, and the access mode out of
 // the composer while it is the default. In a thread, back to v0.1.0:
 //
-//   [model+effort] [access mode]               [speed] [mic] [call] [attach] [ring] [send]
+//   [model+effort]                             [speed] [mic] [call] [attach] [ring] [send]
 //
+// The access mode ("Full access") shows nowhere (user 70c3ee81: "전체권한 이거는 그냥 안뜨게하자"):
+// not as a composer chip, not in the new-thread strip, not in the model picker's footer. The
+// thread's mode itself is untouched; only the control is gone.
 // keeping upstream's model button with its effort and its two-pane picker, which now opens above
 // the button at the left edge (popupAlign start) instead of over the transcript. The new-thread
 // composer (draft route) keeps T3 v0.1.11's layout, its strip included.
@@ -119,10 +122,60 @@ export const composerLayoutEdits = {
   ],
   'apps/web/src/components/chat/ComposerControlsBar.tsx': [
     ['    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,',
-      '    // Rubato: in a thread the access chip stays in the composer at the default mode too (composer-layout-edits.mjs).\n    matchesDefault: routeKind === "draft" ? accessMatchesDefault || props.permissionsShownInStrip : false,',
+      '    // Rubato: the access mode is never shown as a chip (composer-layout-edits.mjs).\n    matchesDefault: true,',
       'replace'],
     ['      popupAlign={composerControlsCollapsed ? "start" : "end"}',
       '      // Rubato: in a thread the picker leads the row and opens above it from the left (composer-layout-edits.mjs).\n      popupAlign={routeKind !== "draft" || composerControlsCollapsed ? "start" : "end"}',
+      'replace'],
+  ],
+  // The picker's footer keeps speed and Ultracode; with neither it is not drawn.
+  'apps/web/src/components/chat/ComposerModelEffort.tsx': [
+    [[
+      '    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2">',
+      '      {props.traits ? <SpeedControl traits={props.traits} /> : null}',
+      '      {props.traits ? <UltracodeControl traits={props.traits} /> : null}',
+      '      <PermissionsMenu',
+      '        runtimeMode={props.runtimeMode}',
+      '        options={props.runtimeModeOptions}',
+      '        onChange={props.onRuntimeModeChange}',
+      '      />',
+      '    </div>',
+      '',
+    ].join('\n'),
+      [
+        '    // Rubato: no access mode here (composer-layout-edits.mjs); an empty footer is not drawn.',
+        '    <div className="flex flex-wrap items-center gap-2 border-t border-border/70 bg-muted/40 px-3 py-2 empty:hidden">',
+        '      {props.traits ? <SpeedControl traits={props.traits} /> : null}',
+        '      {props.traits ? <UltracodeControl traits={props.traits} /> : null}',
+        '    </div>',
+        '',
+      ].join('\n'),
+      'replace'],
+  ],
+  // The new-thread strip's access control renders nothing; T3's stays in its file, unrendered.
+  'apps/web/src/components/ComposerContextPermissions.tsx': [
+    ['export function ComposerContextPermissions(props: {\n',
+      [
+        '// Rubato: the access mode is not shown (composer-layout-edits.mjs).',
+        'export function ComposerContextPermissions(',
+        '  _props: Parameters<typeof UpstreamComposerContextPermissions>[0],',
+        '): null {',
+        '  return null;',
+        '}',
+        '',
+        'export function UpstreamComposerContextPermissions(props: {',
+        '',
+      ].join('\n'),
+      'replace'],
+  ],
+  // T3's own test of the strip control keeps testing it.
+  'apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx': [
+    ['import { ComposerContextPermissions } from "../ComposerContextPermissions";\n',
+      'import { UpstreamComposerContextPermissions as ComposerContextPermissions } from "../ComposerContextPermissions";\n',
+      'replace'],
+    // The picker's footer has no Permissions menu to tap outside of.
+    ['it("on a touch tablet, tapping outside the Permissions menu leaves the editor unfocused", async () => {\n',
+      '// Rubato: the model picker has no Permissions menu (composer-layout-edits.mjs).\nit.skip("on a touch tablet, tapping outside the Permissions menu leaves the editor unfocused", async () => {\n',
       'replace'],
   ],
   'apps/web/src/components/chat/ProviderModelPicker.tsx': [

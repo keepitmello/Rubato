@@ -222,6 +222,9 @@
     "tsconfig.base.json": "a3d3a43e170238b3923ef1e134c32f1ad7bc16dfe943b46041b33b9999445500",
     "packages/client-runtime/package.json": "2e1bf877d2841184cf239c5e3c707292d70a78b97629b6b600142672dc3af5d8",
     "apps/mobile/src/features/layout/workspace/useSystemWorkspaceTabBar.ts": "5ce10f29311f2f1a79f12cd48234b54a2712f305c725f0c295589049fdc059b4",
-    "apps/mobile/src/lib/storage.test.ts": "37815438538d106303e948ebc24bef4dd76d0be152c80a88d6e12575f55c37e8"
+    "apps/mobile/src/lib/storage.test.ts": "37815438538d106303e948ebc24bef4dd76d0be152c80a88d6e12575f55c37e8",
+    "apps/web/src/components/chat/ComposerModelEffort.tsx": "1bd12779daec36e622ee3351214c768b1cbb58a70bd2ff42346ad31762d28de6",
+    "apps/web/src/components/ComposerContextPermissions.tsx": "632f5b52637fc06a48f8263c5891d956c3998aa91be97145cb936ce3eff6fb6e",
+    "apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx": "328dc08e2e7e80ebdff4919b89490ff07849b0914da11823ae42d61c79d91c84"
   }
 }
