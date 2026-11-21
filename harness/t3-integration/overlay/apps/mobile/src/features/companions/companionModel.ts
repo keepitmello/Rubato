@@ -69,3 +69,18 @@ export function decodeCompanions(stored: string | null): CompanionEntry[] {
     }];
   });
 }
+
+/**
+ * The room's thread when the Mac did not say which one it is now (it was slow or unreachable): the
+ * one this phone last knew for the same conversation, so the room, its preview and the Threads
+ * tab's filter keep working. A new conversation (another session) has no known thread yet.
+ */
+export function knownThreadId(
+  companions: readonly CompanionEntry[],
+  environmentId: string,
+  companionId: string,
+  sessionId: string | null,
+): string | null {
+  const known = companions.find((item) => item.environmentId === environmentId && item.id === companionId);
+  return known && known.sessionId === sessionId ? known.threadId : null;
+}

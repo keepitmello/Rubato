@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeCompanions, encodeCompanions, type CompanionEntry } from "./companionModel";
+import { decodeCompanions, encodeCompanions, knownThreadId, type CompanionEntry } from "./companionModel";
 
 const roo: CompanionEntry = {
   environmentId: "env-mac" as EnvironmentId,
@@ -39,5 +39,18 @@ describe("the kept companion list", () => {
       environmentId: "env-mac", id: "segno", title: "segno", macTitle: "segno", sessionId: null, threadId: null,
       art: null, callable: null, calls: false, callEffort: "medium",
     }]);
+  });
+});
+
+describe("the room's thread when the Mac does not say", () => {
+  it("keeps the thread it knew for the same conversation", () => {
+    expect(knownThreadId([roo], "env-mac", "roo", "session-1")).toBe("thread-1");
+  });
+
+  it("knows none for a new conversation, another Mac or another companion", () => {
+    expect(knownThreadId([roo], "env-mac", "roo", "session-2")).toBeNull();
+    expect(knownThreadId([roo], "env-other", "roo", "session-1")).toBeNull();
+    expect(knownThreadId([roo], "env-mac", "segno", "session-1")).toBeNull();
+    expect(knownThreadId([], "env-mac", "roo", "session-1")).toBeNull();
   });
 });
