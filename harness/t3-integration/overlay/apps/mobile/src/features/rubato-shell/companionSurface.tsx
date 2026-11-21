@@ -10,4 +10,5 @@ export {
   CompanionRoomRouteScreen,
   RubatoCallHost,
   type CompanionRoomParams,
+  useCreateCompanion,
 } from "../companions";

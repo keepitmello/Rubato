@@ -1,18 +1,17 @@
 // The companions, like a messenger's chat list (user 3ec923c9, in the style of Pickle): each row is
-// a companion's room with its face, name, the latest message and when it came. Under them, always,
-// "새 컴패니언" makes one on the Mac and opens its first conversation (intent companion-manage).
+// a companion's room with its face, name, the latest message and when it came. A new companion is
+// made from the small "+" in the header (useCreateCompanion.ts).
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useMemo, useState } from "react";
-import { ActionSheetIOS, ActivityIndicator, Alert, FlatList, Platform, Pressable, RefreshControl, View } from "react-native";
+import { useMemo } from "react";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { buildThreadFeed } from "../../lib/threadActivity";
-import { useEnvironments } from "../../state/environments";
 import { CompanionAvatar } from "./CompanionAvatar";
-import { createCompanion, useCompanions, type CompanionEntry } from "./companionsStore";
+import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, dateFormat } from "./copy";
 import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
 import { useRoomThread, useRoomTurnItems } from "./roomThread";
@@ -66,58 +65,10 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOp
   );
 }
 
-/** The dashed row under the list (the accepted mockup's first phone). */
-function NewCompanionRow(props: { readonly creating: boolean; readonly onPress: () => void }) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={copy.newCompanion}
-      disabled={props.creating}
-      onPress={props.onPress}
-      className="mx-5 mt-4 flex-row items-center justify-center gap-2 rounded-[16px] border border-dashed border-border py-4 active:opacity-70"
-    >
-      {props.creating ? <ActivityIndicator /> : null}
-      <Text className="font-t3-bold text-[16px] text-primary-text">
-        {props.creating ? copy.creating : `＋ ${copy.newCompanion}`}
-      </Text>
-    </Pressable>
-  );
-}
-
-/** Which Mac a new companion lives on: the only one, or the one the person picks. */
-function pickMac(macs: ReadonlyArray<{ readonly environmentId: EnvironmentId; readonly label: string }>): Promise<EnvironmentId | null> {
-  if (macs.length <= 1) return Promise.resolve(macs[0]?.environmentId ?? null);
-  return new Promise((resolve) => {
-    if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: copy.pickMac, options: [...macs.map((mac) => mac.label), copy.cancel], cancelButtonIndex: macs.length },
-        (index) => resolve(macs[index]?.environmentId ?? null),
-      );
-      return;
-    }
-    Alert.alert(copy.pickMac, undefined, [
-      ...macs.map((mac) => ({ text: mac.label, onPress: () => resolve(mac.environmentId) })),
-      { text: copy.cancel, style: "cancel" as const, onPress: () => resolve(null) },
-    ]);
-  });
-}
-
 export function CompanionListScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { companions, loaded, error, paired, refresh } = useCompanions();
-  const { environments } = useEnvironments();
-  const [creating, setCreating] = useState(false);
-  const create = async () => {
-    const environmentId = await pickMac(environments.map((item) => ({ environmentId: item.environmentId, label: item.label })));
-    if (environmentId === null) return;
-    setCreating(true);
-    await createCompanion(environmentId).then(
-      ({ id }) => navigation.dispatch(CommonActions.navigate("CompanionRoom", { companionId: id, environmentId })),
-      (cause: unknown) => Alert.alert(copy.createFailed, cause instanceof Error ? cause.message : String(cause)),
-    );
-    setCreating(false);
-  };
   const open = (companion: CompanionEntry) =>
     navigation.dispatch(
       CommonActions.navigate("CompanionRoom", {
@@ -137,7 +88,6 @@ export function CompanionListScreen() {
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
         renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
         ItemSeparatorComponent={() => <View className="h-[0.5px] bg-border" style={{ marginLeft: 90 }} />}
-        ListFooterComponent={paired ? <NewCompanionRow creating={creating} onPress={() => void create()} /> : undefined}
         ListEmptyComponent={
           <View className="flex-1 justify-center pb-24">
             {!paired ? (

@@ -38,12 +38,12 @@ export const mobileNavbarEdits = {
   ],
   "apps/mobile/src/features/layout/workspace/WorkspaceToolbar.tsx": [
     ["import { useWorkspaceCompose } from \"./useWorkspaceCompose\";",
-      "import { useWorkspaceCompose } from \"./useWorkspaceCompose\";\nimport { useSelectWorkspaceTab } from \"./useSelectWorkspaceTab\";", 'replace'],
+      "import { useWorkspaceCompose } from \"./useWorkspaceCompose\";\nimport { useSelectWorkspaceTab } from \"./useSelectWorkspaceTab\";\nimport { useCreateCompanion } from \"../../rubato-shell/companionSurface\";", 'replace'],
     ["  const compose = useWorkspaceCompose();",
-      "  const compose = useWorkspaceCompose();\n  // Rubato: the iPhone opens Settings from a gear here and comes back with the chevron; compose sits\n  // beside its tab bar (WorkspaceNativeTabs), as before v0.1.11.\n  const phoneHeader = deviceType === \"phone\" && !floatingTabs;\n  const selectTab = useSelectWorkspaceTab();", 'replace'],
+      "  const compose = useWorkspaceCompose();\n  // Rubato: the iPhone opens Settings from a gear here and comes back with the chevron; compose sits\n  // beside its tab bar (WorkspaceNativeTabs), as before v0.1.11.\n  const phoneHeader = deviceType === \"phone\" && !floatingTabs;\n  const selectTab = useSelectWorkspaceTab();\n  // Rubato: a new companion is rare, so it is a small \"+\" beside the gear on the Companions tab.\n  const newCompanion = useCreateCompanion();", 'replace'],
     ["      {workspace.settingsOpen ? (\n        <Toolbar placement=\"right\">",
       "      {phoneHeader && workspace.settingsOpen ? (\n        <Toolbar placement=\"left\">\n          <Toolbar.Button\n            accessibilityLabel={gt(\"Back\")}\n            icon=\"chevron.left\"\n            onPress={() => selectTab(workspace.state.selectedTab)}\n          />\n        </Toolbar>\n      ) : null}\n      {workspace.settingsOpen ? (\n        <Toolbar placement=\"right\">", 'replace'],
     ["          {compose === null ||\n          isDuoDevice(deviceType) ||",
-      "          {phoneHeader ? (\n            <Toolbar.Button\n              accessibilityLabel={gt(\"Settings\")}\n              icon=\"gearshape\"\n              onPress={() => selectTab(\"settings\")}\n            />\n          ) : null}\n          {compose === null ||\n          phoneHeader ||\n          isDuoDevice(deviceType) ||", 'replace'],
+      "          {phoneHeader ? (\n            <Toolbar.Button\n              accessibilityLabel={gt(\"Settings\")}\n              icon=\"gearshape\"\n              onPress={() => selectTab(\"settings\")}\n            />\n          ) : null}\n          {phoneHeader && selectedTab === \"companions\" && newCompanion.available ? (\n            <Toolbar.Button\n              accessibilityLabel={newCompanion.label}\n              icon=\"plus\"\n              onPress={newCompanion.create}\n            />\n          ) : null}\n          {compose === null ||\n          phoneHeader ||\n          isDuoDevice(deviceType) ||", 'replace'],
   ],
 };

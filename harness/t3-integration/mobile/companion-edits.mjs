@@ -66,6 +66,7 @@ export const mobileCompanionOverlays = [
   `${companions}/callStore.test.ts`,
   `${companions}/CallTranscriptScreen.tsx`,
   `${companions}/CompanionListScreen.tsx`,
+  `${companions}/useCreateCompanion.ts`,
   `${companions}/CompanionRoomScreen.tsx`,
   `${companions}/RubatoCallHost.tsx`,
   `${callModule}/index.ts`,

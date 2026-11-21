@@ -6,6 +6,7 @@ export { CompanionListScreen as CompanionListRouteScreen } from "./CompanionList
 export { CompanionRoomScreen as CompanionRoomRouteScreen, type CompanionRoomParams } from "./CompanionRoomScreen";
 export { RubatoCallHost } from "./RubatoCallHost";
 export { useCompanions, type CompanionEntry } from "./companionsStore";
+export { useCreateCompanion } from "./useCreateCompanion";
 export { CallTranscriptScreen as CompanionCallRouteScreen, type CompanionCallParams } from "./CallTranscriptScreen";
 export { CompanionNamesSettingsScreen as CompanionNamesSettingsRouteScreen } from "./CompanionNamesSettingsScreen";
 export { CompanionProfileScreen as CompanionProfileRouteScreen, type CompanionProfileParams } from "./CompanionProfileScreen";
