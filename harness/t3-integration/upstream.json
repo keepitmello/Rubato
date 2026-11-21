@@ -224,6 +224,7 @@
     "apps/mobile/src/lib/storage.test.ts": "37815438538d106303e948ebc24bef4dd76d0be152c80a88d6e12575f55c37e8",
     "apps/web/src/components/chat/ComposerModelEffort.tsx": "1bd12779daec36e622ee3351214c768b1cbb58a70bd2ff42346ad31762d28de6",
     "apps/web/src/components/ComposerContextPermissions.tsx": "632f5b52637fc06a48f8263c5891d956c3998aa91be97145cb936ce3eff6fb6e",
-    "apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx": "328dc08e2e7e80ebdff4919b89490ff07849b0914da11823ae42d61c79d91c84"
+    "apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx": "328dc08e2e7e80ebdff4919b89490ff07849b0914da11823ae42d61c79d91c84",
+    "apps/mobile/src/features/threads/ThreadSettingsSheet.tsx": "f2176972a9031df1345dea2ec1c882b1923b044b0f057edb9f9da29b612653c7"
   }
 }
