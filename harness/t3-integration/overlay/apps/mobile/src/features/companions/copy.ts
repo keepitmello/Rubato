@@ -1,6 +1,7 @@
-// The words the companion screens show, in the phone's language: Korean when the phone is set to
-// Korean, English otherwise. The rest of the app is T3's English; these screens are the person's
-// rooms with Segno and Roo, so they speak the person's language.
+// The words the companion screens show, in the app's language (Settings › Language, or the
+// phone's when that follows the system): Korean for Korean, English otherwise. The language comes
+// from the app's translation layer (companionLocale.ts), not from Intl: on iOS Intl reports the
+// app bundle's language, which is English only, so a Korean phone read as English.
 
 const KO = {
   noCompanions: "컴패니언이 아직 없어",
@@ -219,8 +220,21 @@ const EN: typeof KO = {
 
 export type CopyKey = keyof typeof KO;
 
-/** The phone's language as Intl reports it, e.g. "ko-KR". */
-export const phoneLocale = (): string => {
+/** Where the app's language comes from (companionLocale.ts); unset in tests and before it loads. */
+let localeSource: (() => string | null) | null = null;
+let appLocale: string | null = null;
+
+export function setCopyLocaleSource(source: () => string | null) {
+  localeSource = source;
+  appLocale = null;
+}
+
+/** The app switched language: the next words and dates use it. */
+export function setCopyLocale(locale: string) {
+  appLocale = locale;
+}
+
+const intlLocale = (): string => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale;
   } catch {
@@ -228,11 +242,39 @@ export const phoneLocale = (): string => {
   }
 };
 
+/** The app's language, e.g. "ko"; read once from its source, then kept until it switches. */
+export const phoneLocale = (): string => {
+  if (appLocale === null && localeSource !== null) {
+    try {
+      appLocale = localeSource();
+    } catch {
+      appLocale = null;
+    }
+  }
+  return appLocale ?? intlLocale();
+};
+
 export function copyFor(locale: string) {
   return locale.toLowerCase().startsWith("ko") ? KO : EN;
 }
 
-export const copy = copyFor(phoneLocale());
+/** The words in the app's language at the moment they are read. */
+export const copy: typeof KO = new Proxy({} as typeof KO, {
+  get: (_target, key) => copyFor(phoneLocale())[key as CopyKey],
+});
+
+const formats = new Map<string, Intl.DateTimeFormat>();
+/** A date format in the app's language, made once per language and options. */
+export function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const locale = phoneLocale();
+  const key = `${locale}\u0000${JSON.stringify(options)}`;
+  let format = formats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat(locale, options);
+    formats.set(key, format);
+  }
+  return format;
+}
 
 /** Whether a Korean word ends in a final consonant (받침), which picks 이라고 over 라고. */
 export function hasFinalConsonant(word: string): boolean {

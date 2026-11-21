@@ -6,12 +6,14 @@ import { Alert, AppState } from "react-native";
 import { RING_POLL_MS, callActions, pollLiveRings, startCallBridge, useCallView } from "./callStore";
 import { CallScreen, RingScreen } from "./CallScreen";
 import { useCompanions } from "./companionsStore";
+import { useCompanionLocale } from "./companionLocale";
 import { copy } from "./copy";
 
 // Before the first render, so an answer on the lock screen that launched the app is not missed.
 startCallBridge();
 
 export function RubatoCallHost() {
+  useCompanionLocale();
   const view = useCallView();
   const { companions } = useCompanions();
   useEffect(() => {

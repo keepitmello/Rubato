@@ -13,16 +13,16 @@ import { buildThreadFeed } from "../../lib/threadActivity";
 import { useEnvironments } from "../../state/environments";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { createCompanion, useCompanions, type CompanionEntry } from "./companionsStore";
-import { copy, phoneLocale } from "./copy";
+import { copy, dateFormat } from "./copy";
 import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
 import { useRoomThread, useRoomTurnItems } from "./roomThread";
 
-const timeFormat = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
-const dayFormat = new Intl.DateTimeFormat(phoneLocale(), { month: "short", day: "numeric" });
 
 /** When the latest message came, as a chat list says it: a time today, a date before. */
 export function listTime(at: number, now = Date.now()): string {
-  return new Date(at).toDateString() === new Date(now).toDateString() ? timeFormat.format(at) : dayFormat.format(at);
+  return new Date(at).toDateString() === new Date(now).toDateString()
+    ? dateFormat({ hour: "numeric", minute: "2-digit" }).format(at)
+    : dateFormat({ month: "short", day: "numeric" }).format(at);
 }
 
 /** A thread's messages as the room reads them. */

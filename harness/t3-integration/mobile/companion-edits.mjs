@@ -27,6 +27,7 @@ export const mobileCompanionOverlays = [
   `${companions}/companionModel.ts`,
   `${companions}/companionModel.test.ts`,
   `${companions}/copy.test.ts`,
+  `${companions}/companionLocale.ts`,
   `${companions}/onboardingModel.ts`,
   `${companions}/onboardingModel.test.ts`,
   `${companions}/proposalModel.ts`,

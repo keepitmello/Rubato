@@ -61,7 +61,7 @@ import { ProposalCard } from "./ProposalCard";
 import type { Proposal } from "./proposalModel";
 import { isClosedProposal, isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
 import { takeRoomRequest, useRoomRequest } from "./roomRequests";
-import { copy, phoneLocale } from "./copy";
+import { copy, dateFormat } from "./copy";
 import { EdgeFade } from "./EdgeFade";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
 import { companionIsWriting, companionTool, roomItems, type RoomItem, type RoomMessageInput, type RoomStep } from "./roomModel";
@@ -81,12 +81,12 @@ export type CompanionRoomParams = {
   readonly threadId?: string;
 };
 
-const separatorFormat = new Intl.DateTimeFormat(phoneLocale(), { month: "long", day: "numeric", weekday: "short" });
-const timeFormat = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
-const separatorText = (at: number) =>
-  new Date(at).toDateString() === new Date().toDateString()
-    ? timeFormat.format(at)
-    : `${separatorFormat.format(at)} ${timeFormat.format(at)}`;
+const separatorText = (at: number) => {
+  const time = dateFormat({ hour: "numeric", minute: "2-digit" }).format(at);
+  return new Date(at).toDateString() === new Date().toDateString()
+    ? time
+    : `${dateFormat({ month: "long", day: "numeric", weekday: "short" }).format(at)} ${time}`;
+};
 
 /** A companion's calls for its room, fetched again when a call this phone saw ends, and every so often. */
 function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) {

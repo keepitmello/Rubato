@@ -10,10 +10,10 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import type { CallRecord } from "./callTypes";
 import { CompanionAvatar } from "./CompanionAvatar";
-import { copy, phoneLocale } from "./copy";
+import { copy, dateFormat } from "./copy";
 import { callHeadline, spokenText } from "./roomModel";
 
-export const clock = new Intl.DateTimeFormat(phoneLocale(), { hour: "numeric", minute: "2-digit" });
+export const clock = { format: (at: number) => dateFormat({ hour: "numeric", minute: "2-digit" }).format(at) };
 export const MISSED_RED = "#FF3B30";
 
 export function callIcon(call: CallRecord): string {
