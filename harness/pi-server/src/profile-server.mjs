@@ -17,7 +17,7 @@ export { readDescriptor } from './descriptor.mjs';
  * `drainGate` and `drainTimeoutMs` are test seams: a hosted engine drains through the gate its
  * runtime build ships (drain.mjs); an engine without one closes at once, as before.
  * `resident` makes this the person's resident engine: it runs the resident services (the companion
- * keeper, the scheduler, ... — resident-services.mjs), each in its own thread. The CLI sets it for
+ * control tower, the scheduler, ... — resident-services.mjs), each in its own thread. The CLI sets it for
  * the person's own profile only; a test passes its own list of services, and `residentTimings`.
  */
 export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runtimeRoot, workerFactory, onError = console.error,

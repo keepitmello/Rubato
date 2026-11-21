@@ -24,7 +24,7 @@ export function messageText(taskName, text) {
 
 /**
  * The conversation a message goes to now. `companion` (`companion:<id>`) is whichever conversation
- * is that companion's when the time comes (harness/companion state.json, written by its keeper), so a new conversation for
+ * is that companion's when the time comes (harness/companion state.json, written by its control tower), so a new conversation for
  * the companion does not leave the task pointing at the old one.
  */
 export function resolveTarget(sendTo, { env = process.env } = {}) {

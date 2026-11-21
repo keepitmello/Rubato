@@ -9,13 +9,13 @@
 # `run` starts from an EMPTY environment (env -i) with HOME pointing inside <root>: every Rubato
 # path that is not set explicitly falls back under that HOME. On 2026-11-09 three launches that
 # kept the calling shell's environment reached live state: an inherited RUBATO_COMPANIONS_FILE ran a
-# keeper on the live Roo home, a cloned Segno woke on its own and triaged a cloned inbox alert, and
+# control tower on the live Roo home, a cloned Segno woke on its own and triaged a cloned inbox alert, and
 # a full copy of the app's 5 GB state database filled the disk. On 2026-11-21 an isolated server's
 # /rubato/call listed the person's real calls: the call service is a fixed loopback port
 # (src/call/service.mjs CALL_CONTROL), not a path under HOME. Hence:
 #   - the app's state database is never copied: the T3 server starts from an empty <root>/t3home;
 #   - real memory and Segno come in as APFS clones (`cp -c`), which take almost no space;
-#   - the cloned Segno is switched off (no keeper, heartbeat or greetings) and its inbox, messenger,
+#   - the cloned Segno is switched off (no control tower, heartbeat or greetings) and its inbox, messenger,
 #     wake state and followed work are dropped, so nothing in it runs unless a page sends to it;
 #   - no credentials are copied: model calls fail with zero tokens unless you add auth yourself;
 #   - the call service address points at a closed port, so no call can ring a real companion.

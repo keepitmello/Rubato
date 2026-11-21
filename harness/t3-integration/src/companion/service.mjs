@@ -1,8 +1,8 @@
 // Settings › Companion and the rail's Segno button, the server half. The T3 server loads this
 // module from the Rubato checkout (next to bridge.mjs) and forwards one action per request. The
 // companion's files belong to harness/companion: this page reads and writes the same files the
-// engine's keeper and the companion's role prompt read, and never talks to the engine itself.
-// Turning the companion on is a saved setting; the engine's keeper picks it up within seconds and
+// engine's control tower and the companion's role prompt read, and never talks to the engine itself.
+// Turning the companion on is a saved setting; the engine's control tower picks it up within seconds and
 // creates or loads the companion's conversation.
 //
 // Settings › Companion also shows the Telegram messenger (harness/companion/messenger): the bot it
@@ -194,7 +194,7 @@ export function createCompanionService(options = {}) {
         invalid(() => messenger.writeDecision(input.id, input.decision,
           { by: 'app', ...(input.text === undefined ? {} : { text: input.text }) }, env));
         return { telegram: messenger.messengerStatus(env) };
-      // The task panel beside Segno's chat: what it follows (the keeper's panel.json) and the
+      // The task panel beside Segno's chat: what it follows (the control tower's panel.json) and the
       // messages to other people that wait for the person.
       case 'panel':
         return panel(companion, messenger);
@@ -251,7 +251,7 @@ export function createCompanionService(options = {}) {
         if (typeof input.id !== 'string') throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => companion.writePiece(input.id, input.text, { defaultsDir, env }));
         return { pieces: pieces() };
-      // "Have Segno review it": a request file the engine's keeper wakes Segno for. The page never
+      // "Have Segno review it": a request file the engine's control tower wakes Segno for. The page never
       // wakes a conversation itself, and it never merges a default into the person's file.
       case 'review-persona':
         invalid(() => companion.requestPersonaReview(env));

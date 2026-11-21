@@ -957,7 +957,7 @@ export class RubatoPiBridge {
         try { sessionId = JSON.parse(readFileSync(path.join(this.sessionStateDir, name), 'utf8'))?.sessionId; } catch { continue; }
         threads.set(decodeURIComponent(name.slice(0, -'.json'.length)), sessionId);
       }
-      // A companion's conversation the keeper made has a thread from the inventory and no stream until
+      // A companion's conversation the control tower made has a thread from the inventory and no stream until
       // the person writes to it, so no saved state names it: Segno's replies to a new conversation
       // reached nothing (2026-11-01). Its thread has the inventory's id (RubatoPiSessions.ts importedPiThreadId).
       for (const row of rows.values()) {

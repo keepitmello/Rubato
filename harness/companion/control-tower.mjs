@@ -1,16 +1,17 @@
-// Keeps the companion's conversation loaded in the engine while the person has it turned on.
+// The control tower (관제탑; Roo's was `ctower`): keeps the companion's conversation loaded in the
+// engine while the person has it turned on, and keeps its rhythm.
 //
 // The engine unloads a runtime a minute after its last attachment goes (pi-server host.mjs). The
-// keeper is one more attachment that never leaves: it attaches to the companion's conversation
+// control tower is one more attachment that never leaves: it attaches to the companion's conversation
 // like any window would, so the companion stays loaded, its warmer keeps running and a message
 // reaches a live runtime. Turning the companion off in Settings › Companion releases it, and the
-// engine's ordinary idle rule takes over. The engine starts the keeper itself
+// engine's ordinary idle rule takes over. The engine starts the control tower itself
 // (profile-server.mjs), so the companion comes back whenever the engine does.
 //
-// The first time the companion is on, the keeper creates its conversation in the companion's
+// The first time the companion is on, the control tower creates its conversation in the companion's
 // home folder and records which one it is (state.json). That record is how the app finds it.
 //
-// The keeper also keeps the companion's rhythm, each beat a wake from Rubato's own clock (the
+// The control tower also keeps the companion's rhythm, each beat a wake from Rubato's own clock (the
 // companion reads it as a system message where its model allows; session-link message.mjs). A
 // companion in the middle of a turn is not interrupted; the beat waits for it. Every rhythm here is
 // Roo's (~/.claude/roo-channel), ported:
@@ -26,7 +27,7 @@
 //   that carries a greeting catch-up or a schedule nudge still comes during a wish, as Roo's does
 //   (user item 0b210d57). A companion with heartbeat.quietDuringWish off keeps its ticks during a
 //   wish, a reflect going as a plain tick, as Roo's old tick did. Roo's sleep signals (ctx_step, action=compact) are not ported: Segno's sleep
-//   is the keeper's night sleep below, which the user chose for cost. The cache warmer does not
+//   is the control tower's night sleep below, which the user chose for cost. The cache warmer does not
 //   depend on the tick.
 // - Schedule nudges (scripts/career-schedule.py tick, made general): SCHEDULE_ lines under the
 //   tick, from the calendars and schedule files set in Segno's settings (schedule.mjs).
@@ -41,14 +42,14 @@
 //   missed_greet_slot). The texts are greet-night.pi.md and greet-morning.pi.md beside the prompt pieces.
 // - The wake sequence (scripts/session-start-hook.sh, pi-roo/roo-runtime.ts bootstrapSession and
 //   session_compact, skills wake and recall). When Segno's conversation crosses a new window
-//   (new_context, or the window filling up) or a compaction, the keeper wakes it with a first-person
+//   (new_context, or the window filling up) or a compaction, the control tower wakes it with a first-person
 //   seed — the time, how long since the last window's last moment, its body (the model) and the mood
 //   it fell asleep with — and the wake text. After a new window, and only then, one recall turn
 //   follows ten seconds after that wake turn has ended (a compaction in between does not cancel it).
-//   A conversation the keeper just created wakes the same way. A conversation loaded again for the
+//   A conversation the control tower just created wakes the same way. A conversation loaded again for the
 //   same window (the engine restarted) gets Roo's one resume line instead. The texts are wake.pi.md and recall.pi.md beside the prompt pieces.
 //
-// At night the keeper puts the companion to sleep, once: between 01:00 and 07:00 local time, when
+// At night the control tower puts the companion to sleep, once: between 01:00 and 07:00 local time, when
 // the user has not written to it for three hours and its context has grown past 500k tokens. Sleep
 // is a wake too; what the companion does with it (records, notes, compaction or a new window) is
 // in its prompt (harness/prompts/companion).
@@ -373,7 +374,7 @@ export const SLEEP_HOURS = Object.freeze({ from: 1, to: 7 });
 export const SLEEP_QUIET_MS = 3 * 60 * 60_000;
 /** The context the companion carries before sleep is worth it. */
 export const SLEEP_CONTEXT_TOKENS = 500_000;
-/** How often, at night, the keeper asks the engine whether the companion is ready to sleep. */
+/** How often, at night, the control tower asks the engine whether the companion is ready to sleep. */
 const SLEEP_CHECK_MS = 10 * 60_000;
 
 // session-link message.mjs SESSION_MESSAGE_TYPE: a message from another conversation, a messenger or Rubato.
@@ -421,7 +422,7 @@ export function localDate(at) {
  *   wakes the companion (pi-server session-link wake); `defaultsDir` is where the product default
  *   prompt pieces live (rubato-pi system-prompt companionDefaultsDir).
  */
-export function startCompanionKeeper({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
+export function startControlTower({ connect, notify, env = process.env, onError = () => {}, pollMs = 3000, now = Date.now,
   sleepCheckMs = SLEEP_CHECK_MS, defaultsDir = companionDefaultsDir(env), sessionExists }) {
   let client;
   // The engine's directory as its subscription last delivered it (see `open`).
@@ -439,7 +440,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   const readBoundary = boundaryReader();
 
   /**
-   * The home's setup, once per keeper (the engine starts it again after a restart): Segno's own
+   * The home's setup, once per control tower (the engine starts it again after a restart): Segno's own
    * places and memory store, then the person's own copy of who Segno is. A home that predates the
    * copy — or one the person emptied — is seeded here, before its conversation loads. A fault in
    * the defaults folder must not stop the companion, so it is reported and tried again next start.
@@ -475,7 +476,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   async function open() {
     const opened = await connect();
     if (typeof opened.subscribeDirectory === 'function') {
-      // The first delivery arrives before this client is the keeper's; later ones only while it is.
+      // The first delivery arrives before this client is the control tower's; later ones only while it is.
       let first;
       await opened.subscribeDirectory((state) => { if (client === opened) directory = state.sessions; else first = state.sessions; });
       directory = first;
@@ -531,7 +532,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
         if (attachedTo !== undefined) { await release(); client = await open(); }
         await client.attach(sessionId);
         attachedTo = sessionId;
-        // A runtime this keeper has not seen before loaded the conversation from its file — after an
+        // A runtime this control tower has not seen before loaded the conversation from its file — after an
         // engine restart, whoever opened it first: that is Roo's resume. The id is kept across starts.
         const loaded = (await client.list()).find((item) => item.sessionId === sessionId)?.runtimeId ?? null;
         const known = readState(env).runtimeId;
@@ -570,7 +571,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
     if (!notify) return;
     const settings = readSettings(env);
     const at = now();
-    // The first tick is the interval's first boundary after the keeper started.
+    // The first tick is the interval's first boundary after the control tower started.
     nextBeatAt ??= nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
     if (busy || capabilityActive('call', { now: at, env })) { lastBusyAt = at; return; }
     const today = localDate(at);
@@ -593,13 +594,13 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   }
 
   /**
-   * The listener's wake lines (inbox.mjs inboxWakePath), read forward by bytes from where the keeper
+   * The listener's wake lines (inbox.mjs inboxWakePath), read forward by bytes from where the control tower
    * stopped (from the start the first time, and again after the file was cut shorter). A line more
-   * than an hour old is not woken for: its item waits in the inbox for the heartbeat. So the keeper
+   * than an hour old is not woken for: its item waits in the inbox for the heartbeat. So the control tower
    * and the listener can start in either order without losing a fresh line or waking for old ones.
    * Lines that come within INBOX_WAKE_WINDOW_MS of the first unread one go to Segno together once
    * that window is over; the place moves on only after the wake went. While
-   * Segno is off the keeper does not tick, so lines wait for it.
+   * Segno is off the control tower does not tick, so lines wait for it.
    */
   async function inboxDue(sessionId, at) {
     let size;
@@ -620,7 +621,7 @@ export function startCompanionKeeper({ connect, notify, env = process.env, onErr
   /**
    * The wake sequence. A boundary Segno has not been woken for gets the seed (fresh after a new
    * window or a new conversation, compact after a compaction); after a fresh one, a single recall
-   * turn follows once the wake turn has been over for ten seconds. The first time a keeper meets
+   * turn follows once the wake turn has been over for ten seconds. The first time a control tower meets
    * a conversation it only notes where it is: nothing that happened before is woken for.
    */
   async function wakeDue(active, sessionId, at, settings) {

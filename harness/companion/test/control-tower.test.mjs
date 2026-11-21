@@ -6,12 +6,12 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startCompanionKeeper } from '../keeper.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startControlTower } from '../control-tower.mjs';
 import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
-/** A keeper whose default pieces are the ones in this repository, not whatever this Mac has. */
-const startKeeper = (options) => startCompanionKeeper({ defaultsDir, ...options });
+/** A control tower whose default pieces are the ones in this repository, not whatever this Mac has. */
+const startTower = (options) => startControlTower({ defaultsDir, ...options });
 
 /** Rubato's defaults, copied so a test can change one the way an update would. */
 function defaultsCopy(t, edits = {}) {
@@ -23,7 +23,7 @@ function defaultsCopy(t, edits = {}) {
 }
 
 function sandbox(t) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-keeper-'));
+  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-companion-control-tower-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   return { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
 }
@@ -67,10 +67,10 @@ function fakeEngine() {
       },
     };
   };
-  /** A companion conversation that already exists and was already woken: the keeper attaches to it. */
+  /** A companion conversation that already exists and was already woken: the control tower attaches to it. */
   engine.existing = (env) => {
     const sessionId = 'segno-1';
-    // Already loaded, as after the keeper's first start: no resume line is owed.
+    // Already loaded, as after the control tower's first start: no resume line is owed.
     sessions.set(sessionId, { sessionId, status: 'idle', runtimeId: `r-${sessionId}`, attachments: 0, companion: true, companionId: 'segno' });
     writeState({ sessionId, woke: { boundary: null }, runtimeId: `r-${sessionId}` }, env);
     return sessionId;
@@ -78,33 +78,33 @@ function fakeEngine() {
   return engine;
 }
 
-test('turned off, the keeper creates and holds nothing', async (t) => {
+test('turned off, the control tower creates and holds nothing', async (t) => {
   const env = sandbox(t);
   const engine = fakeEngine();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.clients, 0);
   assert.equal(engine.sessions.size, 0);
 });
 
-test('turned on, the keeper creates the companion in its home once and keeps it attached', async (t) => {
+test('turned on, the control tower creates the companion in its home once and keeps it attached', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   const engine = fakeEngine();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.deepEqual(engine.created, [{ cwd: companionPaths(env).home, title: COMPANION_TITLE, titleLocked: true, companion: true }]);
   const { sessionId } = readState(env);
-  assert.equal(keeper.sessionId, sessionId);
+  assert.equal(tower.sessionId, sessionId);
   assert.equal(engine.attached(sessionId), 1);
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.created.length, 1, 'a known companion is not created again');
   assert.equal(engine.attached(sessionId), 1, 'and is not attached twice');
 });
 
-test('the keeper reads the engine directory from its subscription, not by asking for the list each poll', async (t) => {
+test('the control tower reads the engine directory from its subscription, not by asking for the list each poll', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   const engine = fakeEngine();
@@ -123,18 +123,18 @@ test('the keeper reads the engine directory from its subscription, not by asking
     };
     return client;
   };
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.attached(sessionId), 1);
   const afterAttach = lists;
-  for (let i = 0; i < 5; i++) await keeper.poke();
+  for (let i = 0; i < 5; i++) await tower.poke();
   assert.equal(lists, afterAttach, 'polls ask the engine for nothing');
   assert.equal(engine.attached(sessionId), 1);
-  // The runtime ended; the delivered directory says so and the keeper attaches again.
+  // The runtime ended; the delivered directory says so and the control tower attaches again.
   engine.crash(sessionId);
   for (const listener of listeners) listener({ sessions: [...engine.sessions.values()].map(({ attachments: _a, ...row }) => ({ ...row })) });
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.attached(sessionId), 1);
   assert.equal(engine.created.length, 0);
 });
@@ -150,9 +150,9 @@ test('a saved conversation missing from the delivered directory is looked up in 
     client.subscribeDirectory = async (listener) => { listener({ sessions: [] }); return async () => {}; };
     return client;
   };
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.created.length, 0);
   assert.equal(engine.attached(sessionId), 1);
 });
@@ -164,32 +164,32 @@ test('a saved conversation still on disk is never replaced, even when the engine
   writeState({ sessionId: 'roo-old', woke: { boundary: null } }, env);
   let onDisk = true;
   const errors = [];
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, sessionExists: async (id) => onDisk && id === 'roo-old',
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, sessionExists: async (id) => onDisk && id === 'roo-old',
     onError: (error) => errors.push(String(error?.message ?? error)) });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
   assert.equal(engine.created.length, 0, 'no second conversation while the first is on disk');
   assert.equal(readState(env).sessionId, 'roo-old');
   assert.match(errors[0], /roo-old is on disk but not in the engine's list \(0 rows\)/);
   onDisk = false;
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.created.length, 1, 'a conversation that is really gone is made again');
 });
 
-test('the keeper comes back to the same conversation, and re-attaches when its runtime ended', async (t) => {
+test('the control tower comes back to the same conversation, and re-attaches when its runtime ended', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   const engine = fakeEngine();
   engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
   writeState({ sessionId: 'segno' }, env);
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.created.length, 0);
   assert.equal(engine.attached('segno'), 1);
   engine.crash('segno');
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.attached('segno'), 1);
   assert.equal(engine.sessions.get('segno').status, 'idle');
 });
@@ -199,28 +199,28 @@ test('a recorded conversation the engine no longer has is replaced by a new one'
   writeSettings({ enabled: true }, env);
   writeState({ sessionId: 'gone' }, env);
   const engine = fakeEngine();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.created.length, 1);
   assert.notEqual(readState(env).sessionId, 'gone');
 });
 
-test('turning the companion off releases it, and closing the keeper does too', async (t) => {
+test('turning the companion off releases it, and closing the control tower does too', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   const engine = fakeEngine();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  await tower.ready;
   const { sessionId } = readState(env);
   writeSettings({ enabled: false }, env);
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.attached(sessionId), 0);
-  assert.equal(keeper.sessionId, undefined);
+  assert.equal(tower.sessionId, undefined);
   writeSettings({ enabled: true }, env);
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.attached(sessionId), 1);
-  await keeper.close();
+  await tower.close();
   assert.equal(engine.attached(sessionId), 0);
 });
 
@@ -231,12 +231,12 @@ test('an engine error is reported and the next poll tries again', async (t) => {
   let fail = true;
   const errors = [];
   const connect = async () => { if (fail) throw new Error('engine is starting'); return engine.connect(); };
-  const keeper = startKeeper({ connect, env, pollMs: 60_000, onError: (error) => errors.push(error.message) });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect, env, pollMs: 60_000, onError: (error) => errors.push(error.message) });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.deepEqual(errors, ['engine is starting']);
   fail = false;
-  await keeper.poke();
+  await tower.poke();
   assert.equal(engine.attached(readState(env).sessionId), 1);
 });
 
@@ -247,59 +247,59 @@ test('the heartbeat wakes the companion on its interval, waits while it is busy,
   engine.existing(env);
   const notices = [];
   let at = new Date(2026, 9, 20, 12, 0).getTime();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
     notify: async (sessionId, text, what) => { notices.push({ sessionId, text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  t.after(() => tower.close());
+  await tower.ready;
   const { sessionId } = readState(env);
   at += 29 * 60_000;
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices, []);
   at += 60_000;
   engine.sessions.get(sessionId).status = 'running';
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices, [], 'a busy companion is not interrupted');
   engine.sessions.get(sessionId).status = 'idle';
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices, [{ sessionId, text: heartbeatText({ tick: 1, at }), what: 'heartbeat' }]);
   at += 30 * 60_000;
   writeSettings({ heartbeat: { enabled: false } }, env);
-  await keeper.poke();
+  await tower.poke();
   assert.equal(notices.length, 1);
 });
 
-test("the keeper keeps the panel beside Segno's chat current from the engine's list", async (t) => {
+test("the control tower keeps the panel beside Segno's chat current from the engine's list", async (t) => {
   const { followingStore, readPanel } = await import('../companion.mjs');
   const env = sandbox(t);
   const engine = fakeEngine();
   engine.sessions.set('lead', { sessionId: 'lead', title: 'Login timeout', cwd: '/w/hash-game', status: 'running', runtimeId: 'r-lead', attachments: 1 });
   writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   followingStore(env).save({ lead: { companionId: 'x', base: { final: null, waiting: false, ui: [] }, since: 1000 } });
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.deepEqual(readPanel(env).leads, [{ sessionId: 'lead', title: 'Login timeout', cwd: '/w/hash-game', state: 'running', since: 1000 }]);
   engine.sessions.get('lead').status = 'waiting';
-  await keeper.poke();
+  await tower.poke();
   assert.equal(readPanel(env).leads[0].state, 'asked');
 });
 
-test('an existing home with an empty prompt folder is seeded when the keeper starts', async (t) => {
+test('an existing home with an empty prompt folder is seeded when the control tower starts', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   writeState({ sessionId: 'segno' }, env);
   const engine = fakeEngine();
   engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(engine.created.length, 0, 'the home already had its conversation');
   for (const id of ['preamble', 'soul', 'identity', 'user']) assert.ok(existsSync(personalPiecePath(env, id)), id);
   assert.equal(existsSync(personalPiecePath(env, 'companion')), false);
   assert.equal(existsSync(personalPiecePath(env, 'tools')), false);
 });
 
-test('the keeper leaves a prompt piece the person already has exactly as it is', async (t) => {
+test('the control tower leaves a prompt piece the person already has exactly as it is', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true }, env);
   writeState({ sessionId: 'segno' }, env);
@@ -307,9 +307,9 @@ test('the keeper leaves a prompt piece the person already has exactly as it is',
   writeFileSync(personalPiecePath(env, 'soul'), 'my own soul\n');
   const engine = fakeEngine();
   engine.sessions.set('segno', { sessionId: 'segno', companion: true, status: 'stored', runtimeId: null, attachments: 0 });
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000 });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000 });
+  t.after(() => tower.close());
+  await tower.ready;
   assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8'), 'my own soul\n');
   assert.ok(existsSync(personalPiecePath(env, 'preamble')), 'the pieces they have not touched are copied');
 });
@@ -339,13 +339,13 @@ async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } =
   const clock = { at: start };
   const notices = [];
   const errors = [];
-  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, sleepCheckMs,
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, sleepCheckMs,
     onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  const poke = async (time) => { clock.at = time; await keeper.poke(); };
+  t.after(() => tower.close());
+  await tower.ready;
+  const poke = async (time) => { clock.at = time; await tower.poke(); };
   t.after(() => assert.deepEqual(errors, []));
-  return { env, engine, keeper, notices, poke, write, sleeps: () => notices.filter((notice) => notice.what === 'sleep').length };
+  return { env, engine, tower, notices, poke, write, sleeps: () => notices.filter((notice) => notice.what === 'sleep').length };
 }
 
 test('sleep: at night, three quiet hours and a long context put Segno to sleep, as a wake', async (t) => {
@@ -355,7 +355,7 @@ test('sleep: at night, three quiet hours and a long context put Segno to sleep, 
   assert.equal(readState(n.env).sleptOn, '2026-10-21');
 });
 
-test('an active call suppresses the keeper rhythm, but a crashed call expires and cannot hold it awake', async t => {
+test('an active call suppresses the control tower rhythm, but a crashed call expires and cannot hold it awake', async t => {
   const start = at(21, 1);
   const n = await night(t, { entries: [userMessage(at(20, 22))], start: start - 1 });
   renewCapability('call', 'new-connection', { now: start, env: n.env });
@@ -387,16 +387,16 @@ test('sleep: once per night, and again the next night', async (t) => {
   assert.equal(n.sleeps(), 2);
 });
 
-test('sleep: once per night holds across a keeper restart (the night is stored)', async (t) => {
+test('sleep: once per night holds across a control tower restart (the night is stored)', async (t) => {
   const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
   await n.poke(at(21, 2));
-  await n.keeper.close();
+  await n.tower.close();
   const again = [];
-  const keeper = startCompanionKeeper({ connect: n.engine.connect, env: n.env, pollMs: 60_000, now: () => at(21, 4), sleepCheckMs: 0,
+  const tower = startControlTower({ connect: n.engine.connect, env: n.env, pollMs: 60_000, now: () => at(21, 4), sleepCheckMs: 0,
     notify: async (_sessionId, text, what) => { again.push(what); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
   assert.deepEqual(again, []);
 });
 
@@ -462,7 +462,7 @@ test('sleep: a Telegram message from the user counts like one in the app', async
   assert.equal(n.sleeps(), 1);
 });
 
-test('sleep: the keeper asks the engine at most every ten minutes at night, and never by day', async (t) => {
+test('sleep: the control tower asks the engine at most every ten minutes at night, and never by day', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
@@ -471,12 +471,12 @@ test('sleep: the keeper asks the engine at most every ten minutes at night, and 
   let asked = 0;
   const connect = async () => { const client = await engine.connect(); const command = client.command; client.command = (c) => { asked++; return command(c); }; return client; };
   let now = at(20, 12);
-  const keeper = startCompanionKeeper({ connect, env, pollMs: 60_000, now: () => now, notify: async () => {} });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
-  assert.equal(asked, 1, 'by day the keeper asks only once, where the session file is (the wake sequence follows it)');
-  for (const minute of [0, 3, 9, 10, 15]) { now = at(21, 2, minute); await keeper.poke(); }
+  const tower = startControlTower({ connect, env, pollMs: 60_000, now: () => now, notify: async () => {} });
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
+  assert.equal(asked, 1, 'by day the control tower asks only once, where the session file is (the wake sequence follows it)');
+  for (const minute of [0, 3, 9, 10, 15]) { now = at(21, 2, minute); await tower.poke(); }
   assert.equal(asked, 3, 'at 02:00 and 02:10');
 });
 
@@ -501,11 +501,11 @@ test('a default that moved wakes Segno once at engine start, with where to look,
   const engine = fakeEngine();
   engine.existing(env);
   const notices = [];
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: moved,
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: moved,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
   assert.deepEqual(notices.map((notice) => notice.what), ['persona-review']);
   assert.match(notices[0].text, /Rubato's default soul changed/);
   assert.match(notices[0].text, new RegExp(path.join(moved, 'soul.pi.md').replace(/[.[\]{}()*+?^$|\\]/g, '\\$&')));
@@ -514,10 +514,10 @@ test('a default that moved wakes Segno once at engine start, with where to look,
   assert.doesNotMatch(notices[0].text, /A new default voice/, 'the wake does not carry the default text');
   assert.equal(readFileSync(basePiecePath(env, 'soul'), 'utf8').trim(), '# I am Segno\n\nA new default voice.',
     'the base moved to the default Segno was told about');
-  await keeper.poke();
+  await tower.poke();
   assert.equal(notices.length, 1, 'the same default does not wake it twice');
   const again = defaultsCopy(t, { soul: '# I am Segno\n\nA third default voice.\n' });
-  const next = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: again,
+  const next = startTower({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: again,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
   t.after(() => next.close());
   await next.ready;
@@ -534,15 +534,15 @@ test('a default that changes while the engine runs waits for the next engine sta
   const engine = fakeEngine();
   engine.existing(env);
   const notices = [];
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: under,
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, defaultsDir: under,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
   assert.deepEqual(notices, []);
   // The defaults folder changes under a running engine: no polling, so nothing is sent.
   writeFileSync(path.join(under, 'soul.pi.md'), '# changed while running\n');
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices, []);
 });
 
@@ -552,19 +552,19 @@ test('the page can ask Segno to review even when no default moved', async (t) =>
   const engine = fakeEngine();
   engine.existing(env);
   const notices = [];
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, defaultsDir,
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, defaultsDir,
     notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  await tower.poke();
   assert.deepEqual(notices, []);
   requestPersonaReview(env);
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices.map((notice) => notice.what), ['persona-review']);
   assert.match(notices[0].text, /The user asked you to look over who you are/);
   assert.match(notices[0].text, new RegExp(defaultsDir.replace(/[.[\]{}()*+?^$|\\]/g, '\\$&')));
   assert.equal(readPersonaReviewRequest(env), undefined, 'the request is cleared once Segno is told');
-  await keeper.poke();
+  await tower.poke();
   assert.equal(notices.length, 1, 'a request does not repeat by itself');
 });
 
@@ -581,14 +581,14 @@ async function heartbeatDay(t, { entries = [], start = at(20, 12), env = sandbox
   const clock = { at: start };
   const notices = [];
   const errors = [];
-  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
     onError: (error) => errors.push(error), notify: async (_sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  t.after(() => tower.close());
+  await tower.ready;
   t.after(() => assert.deepEqual(errors, []));
-  const poke = async (time) => { clock.at = time; await keeper.poke(); };
+  const poke = async (time) => { clock.at = time; await tower.poke(); };
   const lines = () => notices.filter((notice) => notice.what === 'heartbeat').map((notice) => notice.text);
-  return { env, keeper, poke, write, lines, notices: () => notices };
+  return { env, tower, poke, write, lines, notices: () => notices };
 }
 const firstLine = (text) => text.split('\n')[0];
 
@@ -631,7 +631,7 @@ test('heartbeat: the tick survives an engine restart', async (t) => {
   const first = await heartbeatDay(t, { env });
   await first.poke(at(20, 12, 30));
   await first.poke(at(20, 13));
-  await first.keeper.close();
+  await first.tower.close();
   const second = await heartbeatDay(t, { env, start: at(20, 13, 10) });
   await second.poke(at(20, 13, 30));
   assert.match(second.lines().at(-1), /^HEARTBEAT tick=3 now="[^"]*" action=reflect$/);
@@ -734,7 +734,7 @@ test("heartbeat: the user's place from the location file in settings rides under
   assert.equal(heartbeatText({ tick: 1, at: now, location: 'LOCATION now="x" updated="22:57" (3분 전)', schedule: ['SCHEDULE_DUE y'] }),
     'HEARTBEAT tick=1 now="11월 18일(수) 오후 11:00"\nLOCATION now="x" updated="22:57" (3분 전)\nSCHEDULE_DUE y');
 
-  // A real beat: the keeper reads the file named in settings on each tick.
+  // A real beat: the control tower reads the file named in settings on each tick.
   place(new Date(2026, 10, 18, 22, 57).toISOString());
   assert.throws(() => writeSettings({ location: { source: 5 } }, env), /location\.source/);
   writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: false }, location: { source: file } }, env);
@@ -742,12 +742,12 @@ test("heartbeat: the user's place from the location file in settings rides under
   engine.existing(env);
   const notices = [];
   let at = new Date(2026, 10, 18, 22, 31).getTime();
-  const keeper = startKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
+  const tower = startTower({ connect: engine.connect, env, pollMs: 60_000, now: () => at,
     notify: async (sessionId, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
+  t.after(() => tower.close());
+  await tower.ready;
   at = now;
-  await keeper.poke();
+  await tower.poke();
   assert.deepEqual(notices.filter((notice) => notice.what === 'heartbeat').map((notice) => notice.text.split('\n')[1]),
     [`LOCATION now="세븐일레븐, '남현1길', 남현동" updated="22:57" (3분 전)`]);
 });

@@ -166,7 +166,7 @@ export function companionActivityAt(env = process.env) {
 
 // ── wake wish ──────────────────────────────────────────────────────────────────────────────
 // Roo's wake wish (~/.claude/roo-channel scripts/wake-wish.sh and heartbeat-tick.sh), ported. Segno
-// says when it next wants to look in and why. Until then no tick is sent (keeper.mjs counts them
+// says when it next wants to look in and why. Until then no tick is sent (control-tower.mjs counts them
 // silently; Roo's still come, the one departure, user 2026-10-20); the first tick at or after that
 // time carries action=reflect, reason=wake_wish and the reason. A wish further than six hours from
 // when it was set is cut to six.

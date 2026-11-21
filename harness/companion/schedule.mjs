@@ -20,7 +20,7 @@
 // `## 10/21(수)` with a `YYYY-MM-DD HH:MM 기준` stamp, and mark untimed items `시각 없음`, are read
 // too, as a compatibility reading.
 //
-// On a tick the keeper adds a line when there is a reason to nudge:
+// On a tick the control tower adds a line when there is a reason to nudge:
 //
 //   SCHEDULE_DUE   a timed item entered its 3-hours or 1-hour window, once per window
 //   SCHEDULE_NIGHT between 22:00 and 23:59, once a day, when tomorrow has items: time to hand over

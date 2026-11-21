@@ -1,4 +1,4 @@
-// Real engine/socket/session journal and keepers; only model execution is deterministic RPC.
+// Real engine/socket/session journal and control towers; only model execution is deterministic RPC.
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,14 +7,14 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { companionEnv } from '../../companion/registry.mjs';
 import { readState, writeSettings, writeState } from '../../companion/companion.mjs';
-import { startCompanionKeeper } from '../../companion/keeper.mjs';
+import { startControlTower } from '../../companion/control-tower.mjs';
 import { SessionClient } from '../src/client.mjs';
 import { workerEnv } from '../src/hosted-runtime.mjs';
 import { serveProfile } from '../src/profile-server.mjs';
 import { RpcWorker } from '../src/rpc-worker.mjs';
 import { SessionFiles } from '../src/session-files.mjs';
 
-test('two native keepers retain a legacy companion and a second private home over engine restart', async t => {
+test('two native control towers retain a legacy companion and a second private home over engine restart', async t => {
   const root = mkdtempSync(path.join(tmpdir(), 'mci-'));
   const env = { HOME: root, PATH: process.env.PATH,
     RUBATO_COMPANIONS_FILE: path.join(root, 'companions.json') };
@@ -39,19 +39,19 @@ test('two native keepers retain a legacy companion and a second private home ove
   const defaultsDir = path.resolve(import.meta.dirname, '../../prompts/companion');
   const errors = [];
   const wakes = [];
-  let engine, keepers = [];
+  let engine, towers = [];
   async function start() {
     engine = await serveProfile({ agentDir, socketPath: path.join(root, 's'),
       workerFactory: metadata => new RpcWorker(metadata, { cliPath, env: workerEnv(metadata, undefined, env) }),
       onError: error => errors.push(error) });
-    keepers = [segno, other].map(scoped => startCompanionKeeper({ env: scoped, defaultsDir, pollMs: 60_000,
+    towers = [segno, other].map(scoped => startControlTower({ env: scoped, defaultsDir, pollMs: 60_000,
       connect: async () => new SessionClient(engine.descriptor).connect(),
       notify: async (to, text, what) => wakes.push({ to, text, what }), onError: error => errors.push(error) }));
-    await Promise.all(keepers.map(keeper => keeper.ready));
+    await Promise.all(towers.map(tower => tower.ready));
   }
   async function stop() {
-    await Promise.all(keepers.map(keeper => keeper.close()));
-    keepers = [];
+    await Promise.all(towers.map(tower => tower.close()));
+    towers = [];
     await engine?.close(); engine = undefined;
   }
   t.after(async () => { await stop(); rmSync(root, { recursive: true, force: true }); });

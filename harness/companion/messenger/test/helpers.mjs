@@ -51,7 +51,7 @@ export async function settle(service) {
 export async function paired(t, { createBot, ...options } = {}) {
   const box = sandbox(t);
   writeSecret(TOKEN, box.env);
-  // The keeper has already created the companion's conversation; deliveries go there.
+  // The control tower has already created the companion's conversation; deliveries go there.
   writeCompanionState({ sessionId: 'S1' }, box.env);
   writeIntent({ action: 'pair' }, box.env);
   const fake = fakeTelegram();

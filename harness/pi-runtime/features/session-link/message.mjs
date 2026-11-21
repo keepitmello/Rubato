@@ -11,7 +11,7 @@ export const DELIVER_REQUEST = "rubato.session-link.deliver";
 // names the messenger, the chat and who wrote, and says whether that is the user. Its
 // `attachments` are the files the messenger saved from that message (a photo, a document);
 // a photo reaches the model as an image beside the envelope, as Roo's photos do.
-// `wake` is Rubato's own clock waking the conversation (harness/companion keeper.mjs): `what` is
+// `wake` is Rubato's own clock waking the conversation (harness/companion control-tower.mjs): `what` is
 // the heartbeat, a greeting (night or morning), the wake seed after a new window or a compaction,
 // the recall that follows a new window's wake, sleep, or a review of Segno's own prompt files, and
 // the text is Rubato's for it; `schedule` is a scheduled task's message (harness/scheduler), the

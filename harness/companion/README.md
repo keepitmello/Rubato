@@ -143,7 +143,7 @@ user messages; opportunities and call lifecycle lines are system-only context.
 Clients must keep `turnId` stable across retries. Durable receipts prevent repeated
 user input or repeated audible output after reconnection/restart; an interrupted
 turn is not automatically re-spoken. An open watch renews a home-local lease that
-suppresses keeper ticks and night sleep. A crashed connection expires automatically.
+suppresses control tower ticks and night sleep. A crashed connection expires automatically.
 
 To opt Segno in deliberately, the registry accepts top-level `default` with only
 `telegram` and/or `call`. Omitting it preserves current defaults.

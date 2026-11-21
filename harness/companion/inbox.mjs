@@ -34,8 +34,8 @@ export function inboxPath(env = process.env) {
  * The wake line file (user item 5b32e195): the user's Telegram listener (tgd) appends one JSON line
  * per message Segno should wake for — one that tags the user or answers the user's own message —
  * `{"v":1,"at":ISO,"marker":"b-…","itemIds":["…"],"text":"…"}`, after writing the items to the
- * inbox. Everything else only lands in the inbox and Segno sees it on its heartbeat. The keeper
- * reads the file forward by bytes and wakes Segno (keeper.mjs).
+ * inbox. Everything else only lands in the inbox and Segno sees it on its heartbeat. The control tower
+ * reads the file forward by bytes and wakes Segno (control-tower.mjs).
  */
 export function inboxWakePath(env = process.env) {
   return path.join(companionHomeFor(env), 'inbox', 'wake.jsonl');
@@ -47,7 +47,7 @@ export function inboxWakePath(env = process.env) {
  * 2026-10-30: a 5-minute window let the ops team's approval request wait 5 minutes).
  */
 export const INBOX_WAKE_WINDOW_MS = 30_000;
-/** A line older than this when the keeper reads it is not woken for: the item waits in the inbox. */
+/** A line older than this when the control tower reads it is not woken for: the item waits in the inbox. */
 export const INBOX_WAKE_STALE_MS = 60 * 60_000;
 
 /**

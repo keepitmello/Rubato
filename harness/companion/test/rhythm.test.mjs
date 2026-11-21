@@ -8,8 +8,8 @@ import path from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { readState, writeSettings, writeState } from '../companion.mjs';
-import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, inboxWakeText, moodText, recallText, resumeText, sessionAge, startCompanionKeeper,
-  wakeSeedText } from '../keeper.mjs';
+import { GREETINGS, RECALL_DELAY_MS, greetingText, heartbeatText, inboxWakeText, moodText, recallText, resumeText, sessionAge, startControlTower,
+  wakeSeedText } from '../control-tower.mjs';
 import { HELD_TEMPLATE, MOOD_FRESH_MS, SEGNO_SEARCH, commitOwned, searchSegnoMemory, segnoSearchEnv, ensureHomeRepo, ensureSegnoHome, leaveMood, oldMemorySeed, readMood,
   record, segnoPaths, seedText, sentMessages, sentText, setWakeWish, readWakeWish } from '../home.mjs';
 import { parseIcs, parseMarkdownSchedule, readSchedule, scheduleNudges, scheduleSources, showSchedule } from '../schedule.mjs';
@@ -76,22 +76,22 @@ function engineFor(env, { existing = true } = {}) {
   return engine;
 }
 
-async function keeperFor(t, env, engine, start, settings = {}) {
+async function towerFor(t, env, engine, start, settings = {}) {
   writeSettings({ enabled: true, heartbeat: { everyMinutes: 30 }, greetings: { enabled: true }, ...settings }, env);
   const clock = { at: start };
   const notices = [];
   const errors = [];
-  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir,
     onError: (error) => errors.push(error), notify: async (_id, text, what) => { notices.push({ text, what }); } });
-  t.after(() => keeper.close());
+  t.after(() => tower.close());
   t.after(() => assert.deepEqual(errors, []));
-  await keeper.ready;
-  const poke = async (time) => { clock.at = time; await keeper.poke(); };
-  return { keeper, notices, poke, of: (what) => notices.filter((notice) => notice.what === what) };
+  await tower.ready;
+  const poke = async (time) => { clock.at = time; await tower.poke(); };
+  return { tower, notices, poke, of: (what) => notices.filter((notice) => notice.what === what) };
 }
 const userSaid = (time) => ({ type: 'message', id: `u${time}`, timestamp: new Date(time).toISOString(), message: { role: 'user', content: 'hi', timestamp: time } });
 
-// ── inbox wakes (user items 5b32e195, 06ebe72b: no doorbell session; the keeper wakes Segno for the listener's lines) ──
+// ── inbox wakes (user items 5b32e195, 06ebe72b: no doorbell session; the control tower wakes Segno for the listener's lines) ──
 
 const wakeLine = (env, time, marker, itemIds, text) => {
   mkdirSync(path.dirname(inboxWakePath(env)), { recursive: true });
@@ -101,7 +101,7 @@ const wakeLine = (env, time, marker, itemIds, text) => {
 test('inbox: lines within seconds of the first unread one go to Segno in one wake, once, after the window', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   const s = (minute, second) => at(21, 10, minute) + second * 1000;
   wakeLine(env, s(1, 10), 'b-1', ['i1'], '운영팀: 운영지출 승인 부탁드립니다.');
   await k.poke(s(1, 12));
@@ -120,14 +120,14 @@ test('inbox: lines within seconds of the first unread one go to Segno in one wak
   assert.match(k.of('inbox')[1]?.text ?? '', /^INBOX marker=b-3 items=i3 /, 'a later line is its own wake, again within a minute');
 });
 
-test('inbox: lines over an hour old are not woken for, fresh ones are even from before the keeper first looked; a half line waits; a cut file is read again', async (t) => {
+test('inbox: lines over an hour old are not woken for, fresh ones are even from before the control tower first looked; a half line waits; a cut file is read again', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
   wakeLine(env, at(21, 8, 30), 'old', ['i0'], '오래된 거');
-  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   await k.poke(at(21, 10, 1));
   assert.equal(k.of('inbox').length, 0, 'a line from an hour and a half ago waits in the inbox, no wake');
-  assert.equal(readState(env).inboxWake.offset, readInboxWakes(0, env).end, 'and the keeper reads past it');
+  assert.equal(readState(env).inboxWake.offset, readInboxWakes(0, env).end, 'and the control tower reads past it');
   writeFileSync(inboxWakePath(env), JSON.stringify({ v: 1, at: new Date(at(21, 10, 2)).toISOString(), marker: 'b-3', itemIds: ['i3'], text: '반' }), { flag: 'a' });
   await k.poke(at(21, 10, 20));
   assert.equal(k.of('inbox').length, 0, 'no newline yet');
@@ -140,11 +140,11 @@ test('inbox: lines over an hour old are not woken for, fresh ones are even from 
   assert.match(k.of('inbox')[1].text, /marker=b-4 items=i4/);
 });
 
-test('inbox: the listener may start first — a line written before the keeper ever looked still wakes Segno', async (t) => {
+test('inbox: the listener may start first — a line written before the control tower ever looked still wakes Segno', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
   wakeLine(env, at(21, 9, 58), 'early', ['i9'], '수진: @우용 먼저 온 거');
-  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   await k.poke(at(21, 10, 3));
   assert.match(k.of('inbox')[0]?.text ?? '', /marker=early items=i9/);
 });
@@ -152,7 +152,7 @@ test('inbox: the listener may start first — a line written before the keeper e
 test('inbox: while Segno is busy or switched off the lines wait; they come when it is free and on again', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   await k.poke(at(21, 10, 0));
   writeSettings({ enabled: false }, env);
   wakeLine(env, at(21, 10, 1), 'b-5', ['i5'], '꺼져 있을 때');
@@ -180,7 +180,7 @@ test('inbox: the wake kind is one the engine accepts, and Segno\'s rules say wha
 test('greetings: night at 00:07 and morning at 09:07, each once a day, as a greeting wake with its text', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(20, 23, 50), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(20, 23, 50), { heartbeat: { enabled: false } });
   await k.poke(at(21, 0, 6));
   assert.equal(k.of('greeting').length, 0, '00:06 is too early');
   await k.poke(at(21, 0, 7));
@@ -197,7 +197,7 @@ test('greetings: night at 00:07 and morning at 09:07, each once a day, as a gree
 test('greetings: a busy Segno is not interrupted; the greeting waits until its first hour is over, then it is the tick\'s', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(20, 23, 50), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(20, 23, 50), { heartbeat: { enabled: false } });
   engine.busy(true);
   await k.poke(at(21, 0, 7));
   assert.equal(k.of('greeting').length, 0);
@@ -217,7 +217,7 @@ test('greetings: a missed greeting rides on an idle tick as greet_night (01–04
   const engine = engineFor(env);
   engine.append(userSaid(at(20, 22)));
   // The engine was down through 00:07 and came back at 01:05; 01:30 is its first tick.
-  const k = await keeperFor(t, env, engine, at(21, 1, 5));
+  const k = await towerFor(t, env, engine, at(21, 1, 5));
   assert.equal(k.of('greeting').length, 0, 'past the first hour the scheduled wake does not send it');
   await k.poke(at(21, 1, 30));
   const [line] = k.of('heartbeat').at(-1).text.split('\n');
@@ -239,15 +239,15 @@ test('greetings: a catch-up whose send failed is not spent; the next tick carrie
   const sent = [];
   let fail = true;
   const errors = [];
-  const keeper = startCompanionKeeper({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir, onError: (error) => errors.push(error),
+  const tower = startControlTower({ connect: engine.connect, env, pollMs: 60_000, now: () => clock.at, defaultsDir, onError: (error) => errors.push(error),
     notify: async (_id, text, what) => { if (fail && /greet_night/.test(text)) throw new Error('engine busy'); sent.push({ text, what }); } });
-  t.after(() => keeper.close());
-  await keeper.ready;
-  clock.at = at(21, 1, 30); await keeper.poke();
+  t.after(() => tower.close());
+  await tower.ready;
+  clock.at = at(21, 1, 30); await tower.poke();
   assert.equal(errors.length, 1);
   assert.equal(readState(env).greeted?.night, undefined, 'not marked: it never went');
   fail = false;
-  clock.at = at(21, 2); await keeper.poke();
+  clock.at = at(21, 2); await tower.poke();
   assert.match(sent.at(-1).text, /action=greet_night/);
   assert.equal(readState(env).greeted.night, '2026-10-21');
 });
@@ -255,7 +255,7 @@ test('greetings: a catch-up whose send failed is not spent; the next tick carrie
 test('greetings: no catch-up while the user is here (tick 0), and none after the window closes', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(21, 9, 50));
+  const k = await towerFor(t, env, engine, at(21, 9, 50));
   engine.append(userSaid(at(21, 9, 55)));
   await k.poke(at(21, 10));
   assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=0 now="[^"]*"$/);
@@ -266,7 +266,7 @@ test('greetings: no catch-up while the user is here (tick 0), and none after the
 test('greetings: switched off, neither the scheduled greeting nor its catch-up comes', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(20, 23, 50), { greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(20, 23, 50), { greetings: { enabled: false } });
   for (const time of [at(21, 0, 7), at(21, 1), at(21, 9, 7), at(21, 10)]) await k.poke(time);
   assert.equal(k.of('greeting').length, 0);
   assert.ok(k.of('heartbeat').every((notice) => !/greet_/.test(notice.text)));
@@ -283,7 +283,7 @@ test('wake wish: plain ticks stay silent, but a greeting catch-up still comes an
   const env = sandbox(t);
   const engine = engineFor(env);
   engine.append(userSaid(at(20, 22)));
-  const k = await keeperFor(t, env, engine, at(21, 1, 5));
+  const k = await towerFor(t, env, engine, at(21, 1, 5));
   setWakeWish({ target: '05:00', reason: '새벽에 리드 보기' }, { now: at(21, 1, 5), env });
   await k.poke(at(21, 1, 30));
   assert.match(k.of('heartbeat').at(-1).text, /^HEARTBEAT tick=\d+ now="[^"]*" action=greet_night\n/);
@@ -299,7 +299,7 @@ test('wake wish: a tick carrying a schedule nudge still comes', async (t) => {
   const engine = engineFor(env);
   const file = path.join(env.HOME, 'plan.md');
   writeFileSync(file, '## 2026-10-21\n- 14:00 Interview\n');
-  const k = await keeperFor(t, env, engine, at(21, 10, 50), { schedule: { sources: [{ location: file }] } });
+  const k = await towerFor(t, env, engine, at(21, 10, 50), { schedule: { sources: [{ location: file }] } });
   setWakeWish({ target: '15:00', reason: '오후에' }, { now: at(21, 10, 50), env });
   await k.poke(at(21, 11, 30));
   const text = k.of('heartbeat').at(-1)?.text ?? '';
@@ -471,7 +471,7 @@ test('schedule: its lines ride under the tick even at tick 0', async (t) => {
   const engine = engineFor(env);
   writeFileSync(path.join(env.HOME, 'plan.md'), PLAN);
   engine.append(userSaid(at(20, 21, 50)));
-  const k = await keeperFor(t, env, engine, at(20, 21, 55), { schedule: { sources: [{ location: '~/plan.md' }] } });
+  const k = await towerFor(t, env, engine, at(20, 21, 55), { schedule: { sources: [{ location: '~/plan.md' }] } });
   await k.poke(at(20, 22));
   const [line, nudge] = k.of('heartbeat').at(-1).text.split('\n');
   assert.match(line, /^HEARTBEAT tick=0 /);
@@ -480,10 +480,10 @@ test('schedule: its lines ride under the tick even at tick 0', async (t) => {
 
 // ── waking up (scripts/session-start-hook.sh, pi-roo/roo-runtime.ts, skills wake and recall) ──
 
-test('wake: a conversation the keeper creates opens with the seed, and one recall follows once the wake turn has rested ten seconds', async (t) => {
+test('wake: a conversation the control tower creates opens with the seed, and one recall follows once the wake turn has rested ten seconds', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env, { existing: false });
-  const k = await keeperFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
   const [wake] = k.of('wake');
   assert.ok(wake.text.startsWith(`방금 깼어. 나야, 세뇨.\n\n## 시각·경과\n현재: 2026-10-20 15:00 ${zone(at(20, 15))} (화)\n직전 창 기록 없음 — 처음 눈뜸`));
   assert.match(wake.text, /## 지금 몸\nanthropic\/claude-opus-5\n\n## 잠들 때의 온도\nNO_MOOD\n\n— 눈은 떴고, 지금의 나는…\n\n# 깨어나기/);
@@ -503,7 +503,7 @@ test('wake: a new window in the session file wakes fresh, with how long since th
   const env = sandbox(t);
   const engine = engineFor(env);
   engine.append(userSaid(at(20, 22)));
-  const k = await keeperFor(t, env, engine, at(21, 2), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 2), { heartbeat: { enabled: false } });
   assert.equal(k.of('wake').length, 0, 'what was already there is not woken for');
   engine.append({ type: 'message', id: 'a1', timestamp: new Date(at(21, 2, 1)).toISOString(), message: { role: 'assistant', content: [{ type: 'text', text: '잘게' }] } },
     { type: 'compaction', id: 'w2', timestamp: new Date(at(21, 2, 2)).toISOString(), details: { source: 'rubato-history-notes-v1', window: { windowId: 'w2' } } });
@@ -519,7 +519,7 @@ test('wake: a new window in the session file wakes fresh, with how long since th
 test('wake: a compaction wakes with the compact seed and no recall; a seen boundary never wakes twice', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  const k = await keeperFor(t, env, engine, at(21, 3), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 3), { heartbeat: { enabled: false } });
   engine.append({ type: 'message', id: 'c1', timestamp: new Date(at(21, 3, 1)).toISOString(), message: { role: 'assistant',
     content: [{ type: 'providerNative', subtype: 'compaction', raw: { type: 'compaction', content: 'summary' } }, { type: 'text', text: 'ok' }] } });
   await k.poke(at(21, 3, 2));
@@ -534,7 +534,7 @@ test('wake: a compaction wakes with the compact seed and no recall; a seen bound
 test('wake: a compaction while the fresh recall waits does not cancel it (roo-runtime.ts keeps pendingFreshRecall)', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env, { existing: false });
-  const k = await keeperFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(20, 15), { heartbeat: { enabled: false } });
   assert.equal(k.of('wake').length, 1);
   engine.append({ type: 'message', id: 'c1', timestamp: new Date(at(20, 15) + 3000).toISOString(), message: { role: 'assistant',
     content: [{ type: 'providerNative', subtype: 'compaction', raw: { type: 'compaction', content: 's' } }] } });
@@ -547,7 +547,7 @@ test('wake: a compaction while the fresh recall waits does not cancel it (roo-ru
 test('wake: a conversation loaded again for the same window gets Roo\'s resume line only (session-start-hook.sh MODE=resume)', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env, { existing: 'stored' });
-  const k = await keeperFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false } });
   assert.deepEqual(k.of('wake').map((notice) => notice.text), [resumeText(at(21, 9, 30))]);
   assert.equal(resumeText(at(21, 9, 30)), `[세션 재시작 — resume] 2026-10-21 09:30 ${zone(at(21, 9, 30))}. 직전 대화의 연속이야. 깨어나는 절차 없이 그대로 이어가면 돼.`);
   await k.poke(at(21, 9, 31));
@@ -560,22 +560,22 @@ test('wake: a restart before the fresh recall went resumes and forgets the recal
   const env = sandbox(t);
   const engine = engineFor(env, { existing: 'stored' });
   writeState({ woke: { boundary: null, pending: 'recall', at: at(21, 9, 29) } }, env);
-  const k = await keeperFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 9, 30), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   await k.poke(at(21, 9, 40));
   assert.deepEqual(k.notices.map((notice) => notice.what), ['wake']);
   assert.equal(readState(env).woke.pending, undefined);
 });
 
-test('wake: a restart where something else loaded the conversation first still gets the resume line; a keeper restart alone does not', async (t) => {
+test('wake: a restart where something else loaded the conversation first still gets the resume line; a control tower restart alone does not', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
-  // The app opened it first after an engine restart: loaded, but in a runtime the keeper has not seen.
+  // The app opened it first after an engine restart: loaded, but in a runtime the control tower has not seen.
   engine.sessions.get('segno-1').runtimeId = 'r-new';
-  const k = await keeperFor(t, env, engine, at(21, 11), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  const k = await towerFor(t, env, engine, at(21, 11), { heartbeat: { enabled: false }, greetings: { enabled: false } });
   assert.deepEqual(k.of('wake').map((notice) => notice.text), [resumeText(at(21, 11))]);
   assert.equal(readState(env).runtimeId, 'r-new');
-  const again = await keeperFor(t, env, engine, at(21, 11, 5), { heartbeat: { enabled: false }, greetings: { enabled: false } });
-  assert.equal(again.of('wake').length, 0, 'same runtime: the keeper only restarted');
+  const again = await towerFor(t, env, engine, at(21, 11, 5), { heartbeat: { enabled: false }, greetings: { enabled: false } });
+  assert.equal(again.of('wake').length, 0, 'same runtime: the control tower only restarted');
 });
 
 test('wake: the seed says when the heartbeat is off (session-start-hook.sh heartbeat_pause_note)', () => {

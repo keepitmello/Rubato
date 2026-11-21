@@ -198,7 +198,7 @@ export async function sessionFile(sessionId, env = process.env) {
 
 /**
  * What a span holds, for its folded line: counts and when it ran. `wakeKinds` counts what woke the
- * companion by its kind (keeper.mjs notify `what`), in the order the kinds first came, so the line
+ * companion by its kind (control-tower.mjs notify `what`), in the order the kinds first came, so the line
  * names each one — a heartbeat, the work room, a voice call — instead of one word for all.
  */
 export function spanSummary(items) {

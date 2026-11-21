@@ -49,7 +49,7 @@ test('pairing, control replies, approvals and off messages name the owning compa
 test('pairing waits for the code, and binds only the chat that sent it', async (t) => {
   const box = sandbox(t);
   writeSecret(TOKEN, box.env);
-  // The keeper has already created the companion's conversation; deliveries go there.
+  // The control tower has already created the companion's conversation; deliveries go there.
   writeCompanionState({ sessionId: 'S1' }, box.env);
   writeIntent({ action: 'pair' }, box.env);
   const fake = fakeTelegram();
