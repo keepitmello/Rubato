@@ -1105,12 +1105,12 @@ overlays.push(...composerLayoutOverlays);
 for (const [relative, changes] of Object.entries(composerLayoutEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
-// Local Antigravity agents (local-agy-edits.mjs).
 // The settings menu in v0.1.0's groups (settings-menu-edits.mjs), after the modules that add pages.
 overlays.push(...settingsMenuOverlays);
 for (const [relative, changes] of Object.entries(settingsMenuEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
+// Local Antigravity agents (local-agy-edits.mjs).
 // A local thread's preparing run is not a worktree setup (local-thread-edits.mjs).
 overlays.push(...localThreadOverlays);
 for (const [relative, changes] of Object.entries(localThreadEdits)) {
