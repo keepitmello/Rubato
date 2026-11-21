@@ -1,10 +1,14 @@
 // A companion's room, made after Messages (user 76b939e4): measures in roomLayout.ts, colors in
 // roomColors.ts, motion in RoomMotion.tsx. It is the companion's T3 thread; what the person sends
 // while the companion works steers into that work (user item 6b6a88c5), and the typing bubble
-// stands while the person's turn runs (roomLive.ts).
-import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
+// stands while the person's turn runs (roomLive.ts). A change the companion proposes to itself
+// shows as a card to apply, a new companion's first conversation shows its progress as chips under
+// the header, and the face or name at the top opens its profile, where its picture changes
+// (intent companion-manage).
+import { CommonActions, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { BlurView } from "expo-blur";
+import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
@@ -59,9 +63,14 @@ import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
 import { CompanionAvatar } from "./CompanionAvatar";
-import { useCompanion, type CompanionEntry } from "./companionsStore";
+import { forgetCompanionArt, useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
+import { OnboardingChips } from "./OnboardingChips";
+import { ProposalCard } from "./ProposalCard";
+import type { Proposal } from "./proposalModel";
+import { isClosedProposal, isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
+import { takeRoomRequest, useRoomRequest } from "./roomRequests";
 import { SENT_FOREGROUND, sentBubbleColor } from "./roomColors";
 import {
   BUBBLE_LINE_RATIO,
@@ -151,16 +160,32 @@ function TopEdge(props: { readonly height: number }) {
 /**
  * The face with its name in a glass pill under it, over the stack's own transparent bar: the bar
  * keeps iOS's glass back button, the call button and the swipe back (hiding the bar turns UIKit's
- * swipe back off; user b29122dd, a127a93e). Messages lays its header out the same way.
+ * swipe back off; user b29122dd, a127a93e). Messages lays its header out the same way. The name
+ * pill opens the profile, where the picture changes; the face sits over the bar, which takes taps
+ * there.
  */
-function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly title: string }) {
+function RoomHeader(props: {
+  readonly companion: CompanionEntry | null;
+  readonly title: string;
+  readonly onProfile: () => void;
+  /** What hangs under the header (a first conversation's chips): the soft edge reaches past it. */
+  readonly below: number;
+}) {
   const insets = useSafeAreaInsets();
   const top = insets.top;
+  const named = props.companion === null || props.companion.macTitle !== null;
   return (
-    <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + 24 }}>
-      <TopEdge height={top + HEADER_DEPTH} />
+    <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + props.below + 24 }}>
+      <TopEdge height={top + HEADER_DEPTH + props.below} />
       <View pointerEvents="box-none" accessibilityRole="header" accessibilityLabel={props.title} style={{ position: "absolute", left: 0, right: 0, top: top - 1.5, alignItems: "center" }}>
-        <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={HEADER_AVATAR} />
+        <CompanionAvatar art={props.companion?.art ?? null} title={named ? props.title : "?"} size={HEADER_AVATAR} />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${props.title}, ${copy.profile}`}
+          onPress={props.onProfile}
+          hitSlop={8}
+          className="active:opacity-70"
+        >
         <GlassSurface
           chrome="none"
           style={{ marginTop: -3, height: HEADER_NAME_HEIGHT, borderRadius: HEADER_NAME_HEIGHT / 2, paddingLeft: 14, paddingRight: 11, flexDirection: "row", alignItems: "center", gap: 4 }}
@@ -170,6 +195,7 @@ function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly
           </Text>
           <SymbolView name="chevron.right" size={10} weight="bold" tintColorClassName="accent-icon-muted" />
         </GlassSurface>
+        </Pressable>
       </View>
     </View>
   );
@@ -218,10 +244,27 @@ function RoomRow(props: {
   /** Sending the edit under way drops this row: the edited message or one after it. */
   readonly dropped: boolean;
   readonly reveal: SharedValue<number>;
+  readonly busyProposal: string | null;
+  readonly onProposal: (proposal: Proposal, action: "apply" | "more" | "decline" | "again") => void;
 }) {
   const { item } = props;
   const slide = useRevealStyle(props.reveal);
   if (item.kind === "separator") return <TimeLine at={item.at} />;
+  if (item.kind === "proposal")
+    return (
+      <Animated.View style={[{ marginTop: GAP_BEFORE_GROUP }, slide]}>
+        <ProposalCard
+          proposal={item.proposal}
+          body={props.body}
+          busy={props.busyProposal === item.proposal.id}
+          onApply={() => props.onProposal(item.proposal, "apply")}
+          onMore={() => props.onProposal(item.proposal, "more")}
+          onDecline={() => props.onProposal(item.proposal, "decline")}
+          onAskAgain={() => props.onProposal(item.proposal, "again")}
+        />
+        <RowTime at={item.at} />
+      </Animated.View>
+    );
   if (item.kind === "call")
     return (
       <Animated.View style={[{ marginTop: GAP_BEFORE_GROUP, opacity: item.call.status === "ringing" ? 0.7 : 1 }, slide]}>
@@ -393,6 +436,9 @@ function RoomComposer(props: {
   readonly sendColor: string;
   readonly onHeight: (height: number) => void;
   readonly threadKey: string;
+  /** Bumped to bring the keyboard up on the field ("더 고쳐줘", the profile's drawing request). */
+  readonly focusRequest: number;
+  readonly placeholder: string;
 }) {
   const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState({ start: props.draft.length, end: props.draft.length });
@@ -418,6 +464,12 @@ function RoomComposer(props: {
     setSelection({ start: end, end });
     editorRef.current?.focus();
   }, [editing]);
+  useEffect(() => {
+    if (props.focusRequest === 0) return;
+    const end = draftRef.current.length;
+    setSelection({ start: end, end });
+    editorRef.current?.focus();
+  }, [props.focusRequest]);
   const foreground = useUniwindTheme()["--color-foreground"];
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
   // Send while dictating, as ChatGPT's: stop, and send once the final text is in the draft.
@@ -504,7 +556,7 @@ function RoomComposer(props: {
                   onSelectionChange={setSelection}
                   onPasteImages={(uris) => void props.onPasteImages(uris)}
                   onPasteText={(paste) => void props.onPasteText(paste)}
-                  placeholder={copy.placeholder}
+                  placeholder={props.placeholder}
                   contentInsetVertical={fieldInset}
                   textStyle={{ ...props.body, color: foreground }}
                 />
@@ -575,6 +627,8 @@ function RoomBody(props: {
   readonly companionId: string;
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
+  /** What stands under the header besides it (a first conversation's chips). */
+  readonly topInset: number;
 }) {
   // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
   const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
@@ -594,6 +648,57 @@ function RoomBody(props: {
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
+  const proposals = useProposals(props.environmentId, props.companionId);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [placeholder, setPlaceholder] = useState<string>(copy.placeholder);
+  const focusComposer = useCallback((text: string | null, hint: string = copy.placeholder) => {
+    if (text !== null) composer.onChangeDraftMessage(text);
+    setPlaceholder(hint);
+    setFocusRequest((value) => value + 1);
+  }, [composer]);
+  // Another screen's request for the field (the profile's "ask it to draw"), taken once.
+  const request = useRoomRequest(props.environmentId, props.companionId);
+  useEffect(() => {
+    if (request === null) return;
+    takeRoomRequest(props.environmentId, props.companionId, request.id);
+    focusComposer(request.text);
+  }, [request, props.environmentId, props.companionId, focusComposer]);
+  const [busyProposal, setBusyProposal] = useState<string | null>(null);
+  const onProposal = useCallback(
+    (proposal: Proposal, action: "apply" | "more" | "decline" | "again") => {
+      if (action === "more") {
+        focusComposer(null, copy.morePlaceholder);
+        return;
+      }
+      if (action === "again") {
+        focusComposer(copy.askAgainText);
+        return;
+      }
+      if (busyProposal !== null) return;
+      setBusyProposal(proposal.id);
+      proposalActions[action](props.environmentId, props.companionId, proposal.id)
+        .then(
+          () => {
+            if (action !== "apply") return;
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            if (proposal.kind === "avatar") forgetCompanionArt({ environmentId: props.environmentId, id: props.companionId });
+          },
+          (error: unknown) => {
+            if (isClosedProposal(error)) return;
+            if (isStaleProposal(error)) {
+              Alert.alert(copy.stale, copy.staleDetail, [
+                { text: copy.cancel, style: "cancel" },
+                { text: copy.askAgain, onPress: () => focusComposer(copy.askAgainText) },
+              ]);
+              return;
+            }
+            Alert.alert(action === "apply" ? copy.applyFailed : copy.saveFailed, error instanceof Error ? error.message : String(error));
+          },
+        )
+        .finally(() => setBusyProposal(null));
+    },
+    [busyProposal, focusComposer, props.environmentId, props.companionId],
+  );
   // What the person sent shows the moment they send it, as a thread shows its outbox: a message
   // waits there until the Mac takes it, and a steer into the companion's work until that work
   // reaches it, and only then does the conversation hold it.
@@ -609,7 +714,7 @@ function RoomBody(props: {
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
-  const allItems = useMemo(() => roomItems(messages, calls), [messages, calls]);
+  const allItems = useMemo(() => roomItems(messages, calls, Date.now(), proposals), [messages, calls, proposals]);
   // A reply that arrives while the room is open comes in one bubble after another, as if typed, with
   // the typing bubble until its last bubble is in.
   const [clock, setClock] = useState(() => Date.now());
@@ -664,6 +769,7 @@ function RoomBody(props: {
   const send = useCallback(() => {
     hapticSend();
     toEnd();
+    setPlaceholder(copy.placeholder);
     void composer.onSendMessage();
   }, [composer, toEnd]);
   const reversed = useMemo(() => [...items].reverse(), [items]);
@@ -689,7 +795,7 @@ function RoomBody(props: {
         }),
     [reveal],
   );
-  const headerHeight = insets.top + HEADER_DEPTH;
+  const headerHeight = insets.top + HEADER_DEPTH + props.topInset;
   return (
     <>
       <GestureDetector gesture={timeDrag}>
@@ -703,7 +809,7 @@ function RoomBody(props: {
             onScroll={onScroll}
             scrollEventThrottle={32}
             data={reversed}
-            extraData={dropped}
+            extraData={[dropped, busyProposal]}
             keyExtractor={(item) => item.id}
             renderItem={({ item }) => (
               <RoomRow
@@ -718,6 +824,8 @@ function RoomBody(props: {
                 threadKey={threadKey}
                 dropped={dropped.has(item.id)}
                 reveal={reveal}
+                busyProposal={busyProposal}
+                onProposal={onProposal}
               />
             )}
             ListHeaderComponent={
@@ -769,6 +877,8 @@ function RoomBody(props: {
         sendColor={colors.sent}
         onHeight={setComposerHeight}
         threadKey={threadKey}
+        focusRequest={focusRequest}
+        placeholder={placeholder}
       />
       {modals}
     </>
@@ -787,6 +897,15 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     navigation.setParams({ environmentId: companion.environmentId, threadId: companion.threadId } as never);
   }, [companion?.threadId, companion?.environmentId, threadId, environmentId, navigation]);
   const title = companion?.title ?? companionId;
+  const openProfile = useCallback(() => {
+    const env = companion?.environmentId ?? environmentId;
+    if (!env) return;
+    navigation.dispatch(CommonActions.navigate("CompanionProfile", { companionId, environmentId: env }));
+  }, [navigation, companion?.environmentId, environmentId, companionId]);
+  const onboarding = companion?.onboarding ?? null;
+  const [chipsHeight, setChipsHeight] = useState(0);
+  const topInset = onboarding ? chipsHeight : 0;
+  const insets = useSafeAreaInsets();
   // The stack's bar stays, transparent and without a title: its back button and swipe back are
   // iOS's own. The face and name are drawn over it (RoomHeader).
   const options = useMemo(
@@ -812,7 +931,16 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
       <NativeStackScreenOptions options={options} optionsVersion={[title]} />
       {environmentId && threadId ? (
-        <RoomBody companion={companion} companionId={companionId} environmentId={environmentId as EnvironmentId} threadId={threadId as ThreadId} />
+        <RoomBody
+          companion={companion}
+          companionId={companionId}
+          environmentId={environmentId as EnvironmentId}
+          threadId={threadId as ThreadId}
+          topInset={topInset}
+        />
+      ) : onboarding ? (
+        // A new companion: the Mac is opening its first conversation, which takes a few seconds.
+        <LoadingScreen message={copy.waking} />
       ) : loaded && companion && !companion.threadId ? (
         <View className="flex-1 justify-center">
           <EmptyState variant="plain" title={copy.roomMissing} detail={copy.roomMissingDetail} />
@@ -820,7 +948,15 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       ) : (
         <LoadingScreen message={copy.roomLoading} />
       )}
-      <RoomHeader companion={companion} title={title} />
+      <RoomHeader companion={companion} title={title} onProfile={openProfile} below={topInset} />
+      {onboarding ? (
+        <View
+          style={{ position: "absolute", top: insets.top + HEADER_DEPTH, left: 0, right: 0 }}
+          onLayout={(event) => setChipsHeight(event.nativeEvent.layout.height)}
+        >
+          <OnboardingChips onboarding={onboarding} />
+        </View>
+      ) : null}
       <Toolbar placement="right">
         <Toolbar.Button
           accessibilityLabel={callable?.ready ? copy.call : copy.cannotCall}

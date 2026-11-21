@@ -3,7 +3,8 @@
 // reports VoIP pushes to CallKit. The shell mounts them (rubato-shell/companionSurface.tsx); the
 // only upstream edit exports the thread feed's attachment renderers for the room.
 //
-//   phone ── /rubato/companion ──▶ Mac   companions, room thread, picture
+//   phone ── /rubato/companion ──▶ Mac   companions, room thread, picture, create, set-avatar,
+//                                        proposals / apply-proposal / decline-proposal
 //   phone ── /rubato/call ──▶ Mac        dial, answer, decline, hangup, live, calls
 //   phone ── wss (tailnet :7443) ──▶ LiveKit on the Mac (call-agent remote.mjs)
 //   relay ── VoIP push ──▶ RubatoCallCenter.swift ──▶ CallKit ──▶ callStore.ts
@@ -25,6 +26,22 @@ export const mobileCompanionOverlays = [
   `${companions}/CompanionNamesSettingsScreen.tsx`,
   `${companions}/companionModel.ts`,
   `${companions}/companionModel.test.ts`,
+  `${companions}/profileLines.ts`,
+  `${companions}/profileLines.test.ts`,
+  `${companions}/onboardingModel.ts`,
+  `${companions}/onboardingModel.test.ts`,
+  `${companions}/proposalModel.ts`,
+  `${companions}/proposalModel.test.ts`,
+  `${companions}/proposalsStore.ts`,
+  `${companions}/pictureModel.ts`,
+  `${companions}/pictureModel.test.ts`,
+  `${companions}/avatarPicture.ts`,
+  `${companions}/roomRequests.ts`,
+  `${companions}/OnboardingChips.tsx`,
+  `${companions}/ProposalCard.tsx`,
+  `${companions}/CompanionProfileScreen.tsx`,
+  `${companions}/RoomPicturesScreen.tsx`,
+  `${companions}/AvatarCropScreen.tsx`,
   `${companions}/companionsStore.ts`,
   `${companions}/callStore.ts`,
   `${companions}/callTypes.ts`,

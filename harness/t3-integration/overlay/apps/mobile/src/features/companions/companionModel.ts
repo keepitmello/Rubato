@@ -6,6 +6,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import type { CallableCompanion } from "./callStore";
+import { decodeOnboarding, type Onboarding } from "./onboardingModel";
 
 /** The companion conversation's effort while a call is open (harness/companion/companion.mjs CALL_EFFORTS). */
 export type CallEffort = "conversation" | "low" | "medium" | "high";
@@ -14,15 +15,22 @@ export const CALL_EFFORTS: readonly CallEffort[] = ["conversation", "low", "medi
 export interface CompanionEntry {
   readonly environmentId: EnvironmentId;
   readonly id: string;
-  /** The name this phone shows (companionNames.ts: a rename, or 루/세뇨). */
+  /** The name this phone shows (companionNames.ts: a rename, or 루/세뇨; "새 컴패니언" while nameless). */
   readonly title: string;
-  /** The name the Mac knows it by. */
-  readonly macTitle: string;
+  /** The name the Mac knows it by, or null while it has none (a new companion before onboarding names it). */
+  readonly macTitle: string | null;
   readonly sessionId: string | null;
   /** The T3 thread that is its room; null until the Mac's app picked its conversation up. */
   readonly threadId: string | null;
   /** Its picture as a data URL, or null. */
   readonly art: string | null;
+  /** The Mac's picture version (its file time); a new one means the picture changed on some device. */
+  readonly avatarVersion: number | null;
+  /** What it calls the person, and since when they are together. */
+  readonly callsUser: string | null;
+  readonly since: string | null;
+  /** Its first conversation while it learns who it is; null once that settled. */
+  readonly onboarding: Onboarding | null;
   readonly callable: CallableCompanion | null;
   /** Whether it takes voice calls, and how much it thinks on one. */
   readonly calls: boolean;
@@ -54,15 +62,20 @@ export function decodeCompanions(stored: string | null): CompanionEntry[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item: Record<string, unknown> | null): CompanionEntry[] => {
     if (item === null || typeof item !== "object" || !text(item.environmentId) || !text(item.id)) return [];
-    const macTitle = textOrNull(item.macTitle) ?? item.id;
+    // A list kept before nameless companions existed always had a name; null is kept as null.
+    const macTitle = item.macTitle === null ? null : (textOrNull(item.macTitle) ?? item.id);
     return [{
       environmentId: item.environmentId as EnvironmentId,
       id: item.id,
-      title: textOrNull(item.title) ?? macTitle,
+      title: textOrNull(item.title) ?? macTitle ?? item.id,
       macTitle,
       sessionId: textOrNull(item.sessionId),
       threadId: textOrNull(item.threadId),
       art: textOrNull(item.art),
+      avatarVersion: typeof item.avatarVersion === "number" && Number.isFinite(item.avatarVersion) ? item.avatarVersion : null,
+      callsUser: textOrNull(item.callsUser),
+      since: textOrNull(item.since),
+      onboarding: decodeOnboarding(item.onboarding),
       callable: null,
       calls: item.calls === true,
       callEffort: CALL_EFFORTS.includes(item.callEffort as CallEffort) ? (item.callEffort as CallEffort) : "medium",
