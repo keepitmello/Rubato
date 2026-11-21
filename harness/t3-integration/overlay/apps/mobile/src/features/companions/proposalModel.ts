@@ -5,7 +5,8 @@
 // a piece proposal carries the changed passage before and after, which the card shows as a word
 // diff worked out here. No native module here, so tests read it.
 
-export type ProposalStatus = "open" | "applied" | "declined" | "superseded";
+/** stale: the passage is no longer in the text as it was, so the Mac will not apply it. */
+export type ProposalStatus = "open" | "applied" | "declined" | "superseded" | "stale";
 
 export type Proposal =
   | {
@@ -29,16 +30,20 @@ export type Proposal =
       readonly image: string;
     };
 
-const STATUSES: readonly ProposalStatus[] = ["open", "applied", "declined", "superseded"];
+const STATUSES: readonly ProposalStatus[] = ["open", "applied", "declined", "superseded", "stale"];
 
-/** One proposal from the Mac, or null for anything that does not read as one. */
+/**
+ * One proposal from the Mac, or null for anything that does not read as one. A status this phone
+ * does not know is left out: read as open it would offer to apply something the Mac closed.
+ */
 export function decodeProposal(value: unknown): Proposal | null {
   if (value === null || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (typeof item.id !== "string" || !item.id) return null;
   const createdAt = typeof item.createdAt === "number" ? item.createdAt : Date.parse(String(item.createdAt));
   if (!Number.isFinite(createdAt)) return null;
-  const status = STATUSES.includes(item.status as ProposalStatus) ? (item.status as ProposalStatus) : "open";
+  const status = item.status === undefined ? "open" : STATUSES.includes(item.status as ProposalStatus) ? (item.status as ProposalStatus) : null;
+  if (status === null) return null;
   const label = typeof item.label === "string" ? item.label : "";
   if (item.kind === "avatar") {
     const url = (item.image as { url?: unknown } | null | undefined)?.url;

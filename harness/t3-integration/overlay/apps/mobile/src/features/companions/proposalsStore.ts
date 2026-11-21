@@ -32,14 +32,23 @@ async function load(environmentId: EnvironmentId, companionId: string) {
 }
 
 /** The Mac would not apply it: the text changed since the companion proposed this. */
-export const isStaleProposal = (error: unknown) => isRubatoRequestError(error) && (error.code === "stale" || error.status === 409);
+export const isStaleProposal = (error: unknown) => isRubatoRequestError(error) && error.code === "stale";
 
 async function decide(environmentId: EnvironmentId, companionId: string, proposalId: string, action: "apply-proposal" | "decline-proposal") {
-  const answer = await postRubato<{ proposal?: unknown }>(environmentId, ROUTE, action, { companionId, proposalId });
+  const answer = await postRubato<{ proposal?: unknown }>(environmentId, ROUTE, action, { companionId, proposalId }).catch(
+    async (error: unknown) => {
+      // Stale or already closed (on the desktop, say): the card shows what the Mac now holds.
+      if (isRubatoRequestError(error) && error.status === 409) await load(environmentId, companionId).catch(() => undefined);
+      throw error;
+    },
+  );
   const proposal = decodeProposal(answer.proposal);
   if (proposal) merge(roomKey(environmentId, companionId), proposal);
   return proposal;
 }
+
+/** Decided elsewhere first: nothing to tell the person, the card already moved on. */
+export const isClosedProposal = (error: unknown) => isRubatoRequestError(error) && error.code === "closed";
 
 export const proposalActions = {
   apply: (environmentId: EnvironmentId, companionId: string, proposalId: string) =>

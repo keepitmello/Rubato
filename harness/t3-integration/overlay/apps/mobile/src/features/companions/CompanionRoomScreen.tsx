@@ -59,7 +59,7 @@ import { forgetCompanionArt, useCompanion, type CompanionEntry } from "./compani
 import { OnboardingChips } from "./OnboardingChips";
 import { ProposalCard } from "./ProposalCard";
 import type { Proposal } from "./proposalModel";
-import { isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
+import { isClosedProposal, isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
 import { takeRoomRequest, useRoomRequest } from "./roomRequests";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
@@ -157,7 +157,7 @@ function RoomRow(props: {
   /** Sending the edit under way drops this row: the edited message or one after it. */
   readonly dropped: boolean;
   readonly busyProposal: string | null;
-  readonly onProposal: (proposal: Proposal, action: "apply" | "more" | "decline") => void;
+  readonly onProposal: (proposal: Proposal, action: "apply" | "more" | "decline" | "again") => void;
 }) {
   const { item } = props;
   if (item.kind === "proposal")
@@ -169,6 +169,7 @@ function RoomRow(props: {
         onApply={() => props.onProposal(item.proposal, "apply")}
         onMore={() => props.onProposal(item.proposal, "more")}
         onDecline={() => props.onProposal(item.proposal, "decline")}
+        onAskAgain={() => props.onProposal(item.proposal, "again")}
       />
     );
   if (item.kind === "separator")
@@ -532,9 +533,13 @@ function RoomBody(props: {
   }, [request, props.environmentId, props.companionId, focusComposer]);
   const [busyProposal, setBusyProposal] = useState<string | null>(null);
   const onProposal = useCallback(
-    (proposal: Proposal, action: "apply" | "more" | "decline") => {
+    (proposal: Proposal, action: "apply" | "more" | "decline" | "again") => {
       if (action === "more") {
         focusComposer(null, copy.morePlaceholder);
+        return;
+      }
+      if (action === "again") {
+        focusComposer(copy.askAgainText);
         return;
       }
       if (busyProposal !== null) return;
@@ -547,6 +552,7 @@ function RoomBody(props: {
             if (proposal.kind === "avatar") forgetCompanionArt({ environmentId: props.environmentId, id: props.companionId });
           },
           (error: unknown) => {
+            if (isClosedProposal(error)) return;
             if (isStaleProposal(error)) {
               Alert.alert(copy.stale, copy.staleDetail, [
                 { text: copy.cancel, style: "cancel" },

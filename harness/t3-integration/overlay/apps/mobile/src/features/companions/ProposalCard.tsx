@@ -42,6 +42,7 @@ export function ProposalCard(props: {
   readonly onApply: () => void;
   readonly onMore: () => void;
   readonly onDecline: () => void;
+  readonly onAskAgain: () => void;
 }) {
   const { proposal } = props;
   const diff = useMemo(
@@ -52,7 +53,7 @@ export function ProposalCard(props: {
   return (
     <View
       className="mt-2.5 self-stretch rounded-[18px] border border-border bg-grouped-card px-3.5 py-3"
-      style={{ opacity: proposal.status === "declined" ? 0.6 : 1 }}
+      style={{ opacity: proposal.status === "declined" || proposal.status === "stale" ? 0.7 : 1 }}
     >
       {proposal.label ? (
         <Text numberOfLines={2} className="mb-1.5 text-[12px] text-foreground-muted">
@@ -99,6 +100,13 @@ export function ProposalCard(props: {
           <CardButton label={copy.more} kind="secondary" disabled={props.busy} onPress={props.onMore} />
           <View className="flex-1" />
           {props.busy ? <ActivityIndicator /> : <CardButton label={copy.keepAsIs} kind="plain" onPress={props.onDecline} />}
+        </View>
+      ) : proposal.status === "stale" ? (
+        <View className="mt-3 gap-2">
+          <Text className="text-[13px] text-foreground-muted">{copy.stale}</Text>
+          <View className="flex-row">
+            <CardButton label={copy.askAgain} kind="secondary" onPress={props.onAskAgain} />
+          </View>
         </View>
       ) : (
         <Text

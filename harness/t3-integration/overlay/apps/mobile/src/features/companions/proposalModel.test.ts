@@ -49,9 +49,21 @@ describe("the Mac's proposals", () => {
     expect(proposals.map((item) => [item.id, item.kind, item.status])).toEqual([
       ["p1", "piece", "open"],
       ["p2", "avatar", "applied"],
-      ["p6", "piece", "open"],
     ]);
-    expect(proposals[2]?.createdAt).toBe(Date.parse("2026-11-21T00:00:00Z"));
     expect(decodeProposals(null)).toEqual([]);
+  });
+
+  it("keeps a stale one, reads a time as ISO, and drops a status it does not know", () => {
+    const proposals = decodeProposals({
+      proposals: [
+        { id: "s", kind: "piece", createdAt: "2026-11-21T00:00:00Z", status: "stale", label: "말투", before: "a", after: "b" },
+        { id: "n", kind: "piece", createdAt: 5, label: "말투", before: "a", after: "b" },
+        { id: "w", kind: "piece", createdAt: 6, status: "weird", label: "말투", before: "a", after: "b" },
+      ],
+    });
+    expect(proposals.map((item) => [item.id, item.status, item.createdAt])).toEqual([
+      ["s", "stale", Date.parse("2026-11-21T00:00:00Z")],
+      ["n", "open", 5],
+    ]);
   });
 });
