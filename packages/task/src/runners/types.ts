@@ -100,6 +100,11 @@ export type ChildTurnFacts = {
 
 export type RpcChildHandle = ChildHandle & {
   readonly spawnSpec?: RpcSpawnSpec
+  // Whether a turn the parent tracks is still going. False once it settles, and on a reattached handle
+  // until something starts a tracked turn.
+  isRunActive?(): boolean
+  // Track a turn the child started on its own (team inbox, background work) after its run settled.
+  adoptRun?(): void
   terminalAssistantMessage?(): RpcTerminalAssistantMessage | undefined
   wasAbortedByUser?(): boolean
   switchSession?(sessionPath: string): Promise<RpcSwitchSessionResult>

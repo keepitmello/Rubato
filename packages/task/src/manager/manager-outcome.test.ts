@@ -1,13 +1,19 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { EventEmitter } from "node:events"
+import type { ChildProcess } from "node:child_process"
 
+import { createRpcChildHandle } from "../runners/rpc/handle"
+import type { RpcProtocolClient } from "../runners/rpc/protocol-client"
 import type { TaskRecord } from "../state"
 import { createTaskRecordStore, type TaskRecordStore } from "../store"
+import { adaptRpcHandle, type ManagedChildHandle } from "./child-handle"
 import {
   baseSpec,
   cleanupProjects,
   flush,
   makeManager,
 } from "./__fixtures__/manager-fakes"
+import type { ManagedRunner, ManagedStartSpec } from "./types"
 
 afterEach(cleanupProjects)
 
@@ -307,5 +313,60 @@ describe("TaskManager self-woken turns", () => {
     const record = await waiter
     expect(record.status).toBe("completed")
     expect(record.final_response).toBe("All five exports done.")
+  })
+
+  // A team member runs as its own process and wakes on its own inbox. Unadopted, its record kept the
+  // first run's `completed` and answer all day, so the team's completion wake read it as already woken.
+  test("#given a completed process child #when a team message wakes a turn #then the record runs again and closes with that turn's answer", async () => {
+    // given
+    const emitters = new Map<string, (event: unknown) => void>()
+    const rpcRunner: ManagedRunner = {
+      start: async (spec: ManagedStartSpec): Promise<ManagedChildHandle> => {
+        const listeners = new Set<(event: unknown) => void>()
+        const client = {
+          stderrTail: "",
+          send: () => Promise.resolve({ success: true }),
+          onEvent: (listener: (event: unknown) => void) => {
+            listeners.add(listener)
+            return () => listeners.delete(listener)
+          },
+          detach: () => listeners.clear(),
+        } as unknown as RpcProtocolClient
+        const child = Object.assign(new EventEmitter(), { pid: 4242 }) as unknown as ChildProcess
+        const handle = createRpcChildHandle({ client, child, taskId: spec.taskId, heartbeatIntervalMs: 60_000, now: Date.now })
+        await handle.startInitialPrompt(spec.prompt)
+        emitters.set(spec.taskId, (event) => { for (const listener of listeners) listener(event) })
+        return adaptRpcHandle(handle)
+      },
+    }
+    const { manager, store } = makeManager({ process: rpcRunner as never })
+    const started = await manager.start(baseSpec({ execution_mode: "process" }))
+    if (started.kind !== "started") throw new Error("expected started")
+    const taskId = started.task_id
+    const emit = emitters.get(taskId)
+    if (emit === undefined) throw new Error("expected rpc child")
+    const turn = (text: string) => {
+      emit({ type: "agent_start" })
+      emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" } })
+      emit({ type: "agent_end", willRetry: false, messages: [] })
+    }
+    turn("Board item claimed; waiting on the verifier.")
+    await flush()
+    expect(store.load(taskId)?.status).toBe("completed")
+    expect(store.load(taskId)?.notification.run_epoch).toBe(0)
+
+    // when
+    emit({ type: "agent_start" })
+
+    // then
+    const reopened = store.load(taskId)
+    expect(reopened?.status).toBe("running")
+    expect(reopened?.notification.run_epoch).toBe(1)
+    const waiter = manager.waitFor(taskId)
+    emit({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "Defect fixed; board item closed." }], stopReason: "stop" } })
+    emit({ type: "agent_end", willRetry: false, messages: [] })
+    const record = await waiter
+    expect(record.status).toBe("completed")
+    expect(record.final_response).toBe("Defect fixed; board item closed.")
   })
 })

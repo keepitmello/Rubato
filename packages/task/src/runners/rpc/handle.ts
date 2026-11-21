@@ -50,6 +50,8 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
   const outcomeWaiters: Array<(settled: RunnerOutcome) => void> = []
   const exitWaiters: Array<(outcome: ChildExitOutcome) => void> = []
   let reachedIdle = false
+  // A turn the parent is waiting on. A turn the child starts on its own is not tracked until adopted.
+  let turnTracked = false
   let sessionId: string | undefined
   let finalText: string | undefined
   let turnBaseline: string | undefined
@@ -62,6 +64,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
   const settleTurn = (settled: RunnerOutcome): void => {
     if (turnOutcome !== undefined) return
     turnOutcome = settled
+    turnTracked = false
     reachedIdle = true
     flush(idleWaiters)
     for (const waiter of outcomeWaiters.splice(0)) waiter(settled)
@@ -122,6 +125,7 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
       reachedIdle = false
       turnOutcome = undefined
     }
+    turnTracked = true
     terminalAssistantMessage = undefined
     abortedByUser = false
     turnBaseline = finalText
@@ -155,6 +159,11 @@ export function createRpcChildHandle(options: CreateRpcChildHandleOptions): Trac
     },
     get pid() {
       return child.pid ?? undefined
+    },
+    isRunActive: () => turnTracked,
+    adoptRun: () => {
+      if (turnTracked) return
+      beginTurn()
     },
     // AgentSend is documented to ALWAYS steer into the addressed child, so a steer that the
     // host rejects as busy degrades to followUp queueing rather than failing the delivery.

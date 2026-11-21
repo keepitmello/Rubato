@@ -29,9 +29,9 @@ export type ManagedChildHandle = {
   readonly sessionId: string | undefined
   readonly pid: number | undefined
   readonly spawnSpec?: RpcSpawnSpec
-  // Whether the run the record calls "running" is still going. In-process only; absent means unknown.
+  // Whether the run the record calls "running" is still going. Absent means unknown.
   isRunActive?(): boolean
-  // Track a turn the child's own background work woke after its run settled. In-process only.
+  // Track a turn the child's own background work woke after its run settled.
   adoptRun?(): void
   steer(text: string): Promise<void>
   followUp(text: string): Promise<void>
@@ -69,6 +69,8 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
   const switchSession = handle.switchSession
   const getEntries = handle.getEntries
   const readTurnFacts = handle.readTurnFacts
+  const isRunActive = handle.isRunActive
+  const adoptRun = handle.adoptRun
   return {
     task_id: handle.task_id,
     get sessionId() {
@@ -78,6 +80,8 @@ export function adaptRpcHandle(handle: RpcChildHandle): ManagedChildHandle {
       return handle.pid
     },
     ...(handle.spawnSpec === undefined ? {} : { spawnSpec: handle.spawnSpec }),
+    ...(isRunActive === undefined ? {} : { isRunActive: () => isRunActive.call(handle) }),
+    ...(adoptRun === undefined ? {} : { adoptRun: () => adoptRun.call(handle) }),
     steer: (text) => handle.steer(text),
     followUp: (text) => handle.followUp(text),
     abort: () => handle.abort(),

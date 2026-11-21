@@ -11,9 +11,10 @@ import { readEnvelopeHeaders } from "@rubato/team-core/team-mailbox"
 import { liveProgressSnapshot, type TaskLiveProgressSnapshot } from "./task-rpc-codec"
 
 /**
- * What a resident child does between the runs the manager tracks. A team member wakes on its own
- * inbox (member-extension self-poller) and on its own background work; those turns never touch
- * its record, which keeps saying `completed` with the first run's answer. Hosts read this instead.
+ * What a resident child does turn by turn. A team member wakes on its own inbox (member-extension
+ * self-poller) and on its own background work. The manager adopts such a turn as a new run when it
+ * can; this watch still carries what the record does not: the work that will wake the member, the
+ * last assignment it read, and a turn adoption had no slot for.
  */
 export type MemberTurn = {
   readonly state: "working" | "resting"
