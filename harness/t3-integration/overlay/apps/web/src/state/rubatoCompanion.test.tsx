@@ -13,6 +13,14 @@ vi.mock("./session", async () => {
   return { usePreparedConnection: () => ready };
 });
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+// The settings page's icons read gt-react; the test renders without its provider.
+vi.mock("gt-react", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("gt-react")>()),
+  useGT: () => (text: string, values: Record<string, unknown> = {}) =>
+    text.replace(/\{(\w+)\}/g, (_, key: string) => String(values[key])),
+  useMessages: () => (text: string) => text,
+  T: ({ children }: { children: ReactNode }) => children,
+}));
 vi.mock("../components/settings/settingsLayout", () => ({
   SettingsSection: ({ title, children }: { title: string; children: ReactNode }) => <section><h2>{title}</h2>{children}</section>,
   SettingsRow: ({ title, control, children }: { title: string; control?: ReactNode; children?: ReactNode }) =>
