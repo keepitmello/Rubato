@@ -5,6 +5,7 @@ import {
   createLiveDictation,
   LIVE_FINISH_TIMEOUT_MS,
   LIVE_HOLD_MS,
+  LIVE_NO_SOUND,
   liveDictationPieces,
   liveDictationStore,
   liveDictationTint,
@@ -193,13 +194,29 @@ describe("live dictation", () => {
     expect(prepared.locale).toBe("en");
   });
 
-  it("an empty buffer ends the wait at once instead of after the timeout", async () => {
+  it("an empty buffer ends the wait at once and says the microphone gave no sound", async () => {
     const h = harness();
     const prepared = await startRecording(h);
     const text = prepared.transcribe(h.live.recorder.uri!, { signal: new AbortController().signal });
     await vi.advanceTimersByTimeAsync(0);
-    h.socket.event({ type: "error", error: { message: "buffer too small" } });
-    await expect(text).rejects.toThrow("OpenAI stopped the dictation.");
+    h.socket.event({
+      type: "error",
+      error: { code: "input_audio_buffer_commit_empty", message: "buffer too small" },
+    });
+    await expect(text).rejects.toThrow(LIVE_NO_SOUND);
+  });
+
+  it("an error after sound was heard shows OpenAI's own reason", async () => {
+    const h = harness();
+    const prepared = await startRecording(h);
+    h.hear(Array.from({ length: 2_400 }, () => 100));
+    const text = prepared.transcribe(h.live.recorder.uri!, { signal: new AbortController().signal });
+    await vi.advanceTimersByTimeAsync(0);
+    const rejected = expect(text).rejects.toThrow("OpenAI stopped the dictation: overloaded");
+    h.socket.event({ type: "error", error: { code: "server_error", message: "overloaded" } });
+    h.advance(LIVE_FINISH_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(LIVE_FINISH_TIMEOUT_MS);
+    await rejected;
   });
 
   it("a key the Mac cannot mint fails the preparation with its reason and frees the microphone", async () => {

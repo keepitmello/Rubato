@@ -4,7 +4,7 @@
 // come back while the person talks (@t3tools/shared/rubatoLiveDictation). The OpenAI key and its
 // settings stay on the Mac. It replaces Apple's on-device transcriber for every composer (threads,
 // new tasks, companion rooms, scheduled tasks), since all run through VoiceInputProvider.
-import { AudioDeviceModule, mediaDevices } from "@livekit/react-native-webrtc";
+import { AudioDeviceModule, RTCPeerConnection, mediaDevices } from "@livekit/react-native-webrtc";
 import { NativeEventEmitter, NativeModules } from "react-native";
 import {
   VoiceTranscriptionError,
@@ -75,10 +75,18 @@ type LiveKitAudioSinks = {
 let liveKitEvents: NativeEventEmitter | null = null;
 
 /**
- * The microphone through iOS WebRTC with no call: local recording starts the audio engine (and its
- * echo and noise processing), and LiveKit's audio sink hands every processed 10 ms of it to JS as
- * 16-bit PCM. Nothing waits for a connection, so what is said while dictation connects is kept.
- * Both are in the native build already (@livekit/react-native-webrtc 150, @livekit/react-native 3).
+ * The microphone through iOS WebRTC: local recording starts the audio engine (and its echo and noise
+ * processing), and LiveKit's audio sink hands every 10 ms of it to JS as 16-bit PCM. Nothing waits for
+ * OpenAI, so what is said while dictation connects is kept.
+ *
+ * Local recording alone runs the engine but feeds no sink: on a real iPhone the microphone ran for
+ * 9 s and not one piece reached JS, so OpenAI got an empty buffer (2026-11-22). WebRTC processes
+ * captured audio for a track that is being sent, so the track is sent to a second connection on the
+ * phone itself, which is up in a fraction of a second over the device's own addresses. Both the
+ * microphone's sink and the received copy (silenced, so it is not played) are heard; the first that
+ * delivers is used, so no piece arrives twice.
+ * Everything here is in the native build already (@livekit/react-native-webrtc 150,
+ * @livekit/react-native 3).
  */
 async function openPhoneMicrophone(sink: LiveAudioSink): Promise<LiveMicrophone> {
   const sinks = NativeModules.LivekitReactNativeModule as LiveKitAudioSinks | undefined;
@@ -89,22 +97,38 @@ async function openPhoneMicrophone(sink: LiveAudioSink): Promise<LiveMicrophone>
     for (const each of stream.getTracks()) each.stop();
     throw failed("No microphone is available.");
   }
-  // -1: a track of no peer connection, so the sink listens to the microphone after processing.
-  const tag = sinks.createAudioSinkListener(-1, track.id);
+  const listeners: Array<{ readonly tag: string; readonly pcId: number; readonly trackId: string }> = [];
+  let source: string | null = null;
+  const listen = (pcId: number, trackId: string) => {
+    listeners.push({ tag: sinks.createAudioSinkListener(pcId, trackId), pcId, trackId });
+  };
   liveKitEvents ??= new NativeEventEmitter(NativeModules.LivekitReactNativeModule);
   const subscription = liveKitEvents.addListener("LK_AUDIO_DATA", (event: { readonly id?: string; readonly data?: string }) => {
-    if (event.id !== tag || typeof event.data !== "string") return;
+    if (typeof event.data !== "string" || !listeners.some((each) => each.tag === event.id)) return;
+    source ??= event.id ?? null;
+    if (event.id !== source) return;
     const bytes = Uint8Array.from(atob(event.data), (character) => character.charCodeAt(0));
     const samples = new Int16Array(bytes.buffer, 0, bytes.length >> 1);
     // Each piece is 10 ms, so its length gives the rate.
     sink(samples, samples.length * 100);
   });
+  // -1: the microphone's own track, after processing.
+  listen(-1, track.id);
+
+  const sending = new RTCPeerConnection();
+  const receiving = new RTCPeerConnection();
   let stopped = false;
   const stop = () => {
     if (stopped) return;
     stopped = true;
     subscription.remove();
-    sinks.deleteAudioSinkListener(tag, -1, track.id);
+    for (const each of listeners) {
+      try {
+        sinks.deleteAudioSinkListener(each.tag, each.pcId, each.trackId);
+      } catch {}
+    }
+    sending.close();
+    receiving.close();
     void AudioDeviceModule.stopLocalRecording().catch(() => {});
     for (const each of stream.getTracks()) each.stop();
   };
@@ -114,6 +138,28 @@ async function openPhoneMicrophone(sink: LiveAudioSink): Promise<LiveMicrophone>
     stop();
     throw failed(error instanceof Error ? error.message : "The microphone could not start.");
   }
+  sending.addEventListener("icecandidate", (event) => {
+    if (event.candidate) receiving.addIceCandidate(event.candidate).catch(() => {});
+  });
+  receiving.addEventListener("icecandidate", (event) => {
+    if (event.candidate) sending.addIceCandidate(event.candidate).catch(() => {});
+  });
+  receiving.addEventListener("track", (event) => {
+    const received = event.track;
+    if (stopped || !received || received.kind !== "audio") return;
+    received._setVolume(0);
+    listen(received._peerConnectionId, received.id);
+  });
+  sending.addTrack(track, stream);
+  // Not awaited: the microphone is already heard through its own sink if that delivers.
+  void (async () => {
+    const offer = await sending.createOffer({});
+    await sending.setLocalDescription(offer);
+    await receiving.setRemoteDescription(offer);
+    const answer = await receiving.createAnswer();
+    await receiving.setLocalDescription(answer);
+    await sending.setRemoteDescription(answer);
+  })().catch(() => {});
   return { stop };
 }
 

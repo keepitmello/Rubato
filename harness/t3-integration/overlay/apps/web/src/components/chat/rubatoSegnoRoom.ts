@@ -128,17 +128,12 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
 }
 
 /**
- * Segno is writing: its turn runs and it has not answered the person's last message yet. A turn the
- * person opened keeps its run until it settles, so once a reply is in, the dots go even if Segno
- * still works.
+ * The typing bubble stands the whole time the turn the person opened runs, answered or not: the
+ * companion often answers first and works after, and that work never showed (user a9b0890f). A
+ * turn of its own (a clock, another conversation) is not the person's and does not run here.
  */
 export function segnoIsWriting(items: ReadonlyArray<SegnoChatItem>, working: boolean): boolean {
-  if (!working) return false;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index]!;
-    if (item.kind === "bubble") return item.side === "me";
-  }
-  return false;
+  return working && items.some((item) => item.kind === "bubble");
 }
 
 /** How many of the latest days the room draws when it opens; scrolling up draws one more day each time. */

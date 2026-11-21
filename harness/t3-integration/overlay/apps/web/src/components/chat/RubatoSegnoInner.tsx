@@ -188,6 +188,42 @@ export function RubatoSegnoSpanLine(props: {
   );
 }
 
+/** What kind of work the typing bubble marks (bridge companion/inner.mjs workKind). */
+export type SegnoLiveWork = "search" | "file" | "terminal" | "other";
+const LIVE_WORKS: ReadonlySet<string> = new Set(["search", "file", "terminal", "other"]);
+
+/**
+ * The kind of work the companion's tool does right now, asked of the bridge about once a second
+ * while the person's turn runs (`active`); null while it thinks. The thread never carries the
+ * companion's work (intent companion-segno rev 17), so the room asks for it (user a9b0890f).
+ */
+export function useCompanionLiveWork(environmentId: EnvironmentId | undefined, companionId: string | undefined, active: boolean): SegnoLiveWork | null {
+  const [work, setWork] = useState<SegnoLiveWork | null>(null);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polling: the bridge's answer arrives over time
+  useEffect(() => {
+    if (!active || !environmentId || !companionId) return;
+    let stopped = false;
+    let timer: number | undefined;
+    const load = async () => {
+      try {
+        const answer = await rubatoCompanion.live(environmentId, companionId);
+        const kind = typeof answer.work === "string" ? (LIVE_WORKS.has(answer.work) ? (answer.work as SegnoLiveWork) : "other") : null;
+        if (!stopped) setWork(kind);
+      } catch {
+        // A bridge without the route: the bubble stays thinking.
+      }
+      if (!stopped) timer = window.setTimeout(load, 1_200);
+    };
+    void load();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+      setWork(null);
+    };
+  }, [environmentId, companionId, active]);
+  return active ? work : null;
+}
+
 /**
  * The summary of every span of the room, asked again when the bubbles change and every so often
  * while the room is open, more often while the companion is working.

@@ -1,6 +1,6 @@
 // Words in a room's bubble with the markdown they carry (lists, bold, links) and the media their
 // file lines name, drawn the way the app draws a message in a thread, at the bubble's size and in
-// the theme's colors (the person's bubble in the user-bubble colors).
+// the theme's colors (the person's bubble in white, on its accent: roomColors.ts).
 import { useMemo } from "react";
 import { useWindowDimensions } from "react-native";
 
@@ -8,11 +8,13 @@ import { FONT_FAMILIES } from "../../lib/fontFamilies";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { SelectableMarkdownText } from "../../native/SelectableMarkdownText";
 import { MarkdownImageAvailableWidthContext } from "../threads/ThreadMarkdownImage";
+import { SENT_FOREGROUND } from "./roomColors";
+import { BUBBLE_MAX_WIDTH, BUBBLE_PADDING_X } from "./roomLayout";
 import type { RoomMedia } from "./roomMedia";
 
-/** How wide a bubble's content can be: 80% of the room's width inside its 16 pt sides, less the bubble's 14 pt sides. */
+/** How wide a bubble's content can be: the bubble's widest, less its sides. */
 export function bubbleContentWidth(screenWidth: number) {
-  return Math.floor((screenWidth - 32) * 0.8 - 28);
+  return Math.floor(screenWidth * BUBBLE_MAX_WIDTH - BUBBLE_PADDING_X * 2);
 }
 
 export function BubbleMarkdown(props: {
@@ -27,13 +29,14 @@ export function BubbleMarkdown(props: {
   const { width } = useWindowDimensions();
   const mine = props.mine === true;
   const textStyle = useMemo(() => {
-    const color = mine ? theme["--color-user-bubble-foreground"] : theme["--color-foreground"];
+    const color = mine ? SENT_FOREGROUND : theme["--color-foreground"];
+    const mutedOnAccent = "rgba(255, 255, 255, 0.78)";
     return {
       color,
       strongColor: color,
-      mutedColor: mine ? theme["--color-user-bubble-foreground-muted"] : theme["--color-foreground-muted"],
+      mutedColor: mine ? mutedOnAccent : theme["--color-foreground-muted"],
       linkColor: mine ? color : theme["--color-md-link"],
-      inlineCodeColor: mine ? theme["--color-user-bubble-foreground-muted"] : theme["--color-foreground-secondary"],
+      inlineCodeColor: mine ? mutedOnAccent : theme["--color-foreground-secondary"],
       codeColor: mine ? theme["--color-md-user-code-text"] : theme["--color-md-code-text"],
       codeBackgroundColor: mine ? theme["--color-md-user-code-bg"] : theme["--color-md-code-bg"],
       codeBlockBackgroundColor: mine ? theme["--color-md-user-fence-bg"] : theme["--color-md-code-bg"],

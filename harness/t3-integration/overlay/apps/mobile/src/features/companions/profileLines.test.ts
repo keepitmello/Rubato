@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { callsUserLine, copy, dateFormat, hasFinalConsonant, setCopyLocale, setCopyLocaleSource, sinceLine, withName } from "./copy";
+import { callsUserLine, hasFinalConsonant, sinceLine, withName } from "./profileLines";
 
 describe("the profile's lines", () => {
   it("picks 라고 or 이라고 by the last sound", () => {
@@ -20,23 +20,5 @@ describe("the profile's lines", () => {
 
   it("fills the name in", () => {
     expect(withName("{name}한테 그려 달라기", "세뇨")).toBe("세뇨한테 그려 달라기");
-  });
-});
-
-describe("the language of the companion screens", () => {
-  it("follows the app's language, read once, and a switch after", () => {
-    let reads = 0;
-    setCopyLocaleSource(() => {
-      reads += 1;
-      return "ko";
-    });
-    expect(copy.newCompanion).toBe("새 컴패니언");
-    expect(copy.apply).toBe("적용");
-    expect(reads).toBe(1);
-    setCopyLocale("en-US");
-    expect(copy.newCompanion).toBe("New companion");
-    expect(dateFormat({ month: "long" }).resolvedOptions().locale).toBe("en-US");
-    setCopyLocale("ko-KR");
-    expect(dateFormat({ month: "long" }).format(Date.UTC(2026, 9, 20, 3))).toBe("10월");
   });
 });

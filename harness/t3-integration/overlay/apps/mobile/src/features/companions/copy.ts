@@ -1,7 +1,7 @@
-// The words the companion screens show, in the app's language (Settings › Language, or the
-// phone's when that follows the system): Korean for Korean, English otherwise. The language comes
-// from the app's translation layer (companionLocale.ts), not from Intl: on iOS Intl reports the
-// app bundle's language, which is English only, so a Korean phone read as English.
+// The words the companion screens show, in the phone's language: Korean when the phone is set to
+// Korean, English otherwise. The rest of the app is T3's English; these screens are the person's
+// rooms with Segno and Roo, so they speak the person's language.
+import { Platform, Settings } from "react-native";
 
 const KO = {
   noCompanions: "컴패니언이 아직 없어",
@@ -11,7 +11,7 @@ const KO = {
   roomLoading: "대화를 불러오는 중…",
   roomMissing: "아직 대화가 없어",
   roomMissingDetail: "Mac에서 이 컴패니언의 대화가 시작되면 열 수 있어.",
-  placeholder: "메시지 보내기",
+  placeholder: "메시지",
   send: "보내기",
   remove: "빼기",
   dictate: "받아쓰기",
@@ -220,21 +220,20 @@ const EN: typeof KO = {
 
 export type CopyKey = keyof typeof KO;
 
-/** Where the app's language comes from (companionLocale.ts); unset in tests and before it loads. */
-let localeSource: (() => string | null) | null = null;
-let appLocale: string | null = null;
-
-export function setCopyLocaleSource(source: () => string | null) {
-  localeSource = source;
-  appLocale = null;
-}
-
-/** The app switched language: the next words and dates use it. */
-export function setCopyLocale(locale: string) {
-  appLocale = locale;
-}
-
-const intlLocale = (): string => {
+/**
+ * The phone's language, e.g. "ko-KR": the person's first preferred language on iOS. Intl alone
+ * reports the app bundle's language, and the app ships only English, so a Korean phone read as
+ * English and the room showed "Message".
+ */
+export const phoneLocale = (): string => {
+  if (Platform.OS === "ios") {
+    try {
+      const languages: unknown = Settings.get("AppleLanguages");
+      if (Array.isArray(languages) && typeof languages[0] === "string" && languages[0]) return languages[0];
+    } catch {
+      // Intl below.
+    }
+  }
   try {
     return Intl.DateTimeFormat().resolvedOptions().locale;
   } catch {
@@ -242,29 +241,14 @@ const intlLocale = (): string => {
   }
 };
 
-/** The app's language, e.g. "ko"; read once from its source, then kept until it switches. */
-export const phoneLocale = (): string => {
-  if (appLocale === null && localeSource !== null) {
-    try {
-      appLocale = localeSource();
-    } catch {
-      appLocale = null;
-    }
-  }
-  return appLocale ?? intlLocale();
-};
-
 export function copyFor(locale: string) {
   return locale.toLowerCase().startsWith("ko") ? KO : EN;
 }
 
-/** The words in the app's language at the moment they are read. */
-export const copy: typeof KO = new Proxy({} as typeof KO, {
-  get: (_target, key) => copyFor(phoneLocale())[key as CopyKey],
-});
+export const copy = copyFor(phoneLocale());
 
 const formats = new Map<string, Intl.DateTimeFormat>();
-/** A date format in the app's language, made once per language and options. */
+/** A date format in the phone's language, made once per set of options. */
 export function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
   const locale = phoneLocale();
   const key = `${locale}\u0000${JSON.stringify(options)}`;
@@ -275,26 +259,3 @@ export function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFo
   }
   return format;
 }
-
-/** Whether a Korean word ends in a final consonant (받침), which picks 이라고 over 라고. */
-export function hasFinalConsonant(word: string): boolean {
-  const code = word.trim().codePointAt(word.trim().length - 1) ?? 0;
-  return code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0;
-}
-
-/** "나를 오빠라고 불러" / "Calls you 오빠": what the companion calls the person, as its profile says it. */
-export function callsUserLine(value: string, locale = phoneLocale()): string {
-  if (!locale.toLowerCase().startsWith("ko")) return `Calls you ${value}`;
-  return `나를 ${value}${hasFinalConsonant(value) ? "이라고" : "라고"} 불러`;
-}
-
-/** "10월 20일부터 함께" / "Together since Oct 20". */
-export function sinceLine(iso: string, locale = phoneLocale()): string | null {
-  const at = Date.parse(iso);
-  if (!Number.isFinite(at)) return null;
-  const date = new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(at);
-  return locale.toLowerCase().startsWith("ko") ? `${date}부터 함께` : `Together since ${date}`;
-}
-
-/** A copy line with `{name}` filled in. */
-export const withName = (line: string, name: string) => line.replaceAll("{name}", name);

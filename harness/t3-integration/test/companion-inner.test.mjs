@@ -6,7 +6,7 @@ import { appendFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { commitResult, createInnerReader, createSessionReader, launchResult, splitSpans, spanSummary, toolSummary } from '../src/companion/inner.mjs';
+import { commitResult, createInnerReader, createSessionReader, launchResult, liveWork, splitSpans, spanSummary, toolSummary, workKind } from '../src/companion/inner.mjs';
 import { createCompanionService, handleCompanionRequest } from '../src/companion/service.mjs';
 import { writeState } from '../../companion/companion.mjs';
 
@@ -151,4 +151,36 @@ test('the room asks the companion service for span summaries and one span\'s pie
   assert.deepEqual(items.map((item) => item.name), ['reply']);
   assert.deepEqual((await post('inner-items', { until: 1000 })).items.map((item) => item.kind), ['wake', 'thinking']);
   assert.equal((await post('inner', {})).error.code, 'invalid');
+});
+
+test('the typing bubble learns the kind of work the companion runs right now, and nothing once it is done', async (t) => {
+  const dir = sessionDir(t);
+  const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home'), RUBATO_PI_CODING_AGENT_DIR: path.join(dir, 'agent') };
+  const file = path.join(dir, 'agent', 'sessions', '2026-10-31T00-00-00-000Z_S7.jsonl');
+  const service = createCompanionService({ env, defaultsDir, inner: createInnerReader({ env }) });
+  const live = async () => (await (await handleCompanionRequest(service,
+    new Request('http://local/rubato/companion/live', { method: 'POST', body: '{}' }))).json()).work;
+  assert.equal(await live(), null, 'no conversation yet');
+  writeState({ sessionId: 'S7' }, env);
+  const a = person(null, '어제 거 찾아봐', 1000);
+  const b = said(a.id, 1100, [{ type: 'thinking', thinking: '찾아보자' }, { type: 'toolCall', id: 'g', name: 'grep', arguments: { pattern: 'x' } }]);
+  writeFileSync(file, [a, b].map(line).join(''));
+  assert.equal(await live(), 'file', 'a call without its result runs');
+  const c = result(b.id, 1200, 'g', 'found');
+  const d = said(c.id, 1300, [{ type: 'toolCall', id: 'w', name: 'web_search', arguments: { query: 'y' } }, { type: 'toolCall', id: 'b', name: 'bash', arguments: { command: 'ls' } }]);
+  const e = result(d.id, 1400, 'b', 'ok');
+  appendFileSync(file, [c, d, e].map(line).join(''));
+  assert.equal(await live(), 'search', 'one call of a step still runs while another is done');
+  const f = result(e.id, 1500, 'w', 'ok');
+  const g = said(f.id, 1600, [{ type: 'toolCall', id: 'r', name: 'reply', arguments: { text: '찾았어' } }]);
+  appendFileSync(file, [f, g].map(line).join(''));
+  assert.equal(await live(), null, 'the reply is the answer, not work');
+});
+
+test('a tool reads as the kind of work it does; an old call left without a result is over', () => {
+  assert.deepEqual(['bash', 'read', 'edit', 'notes_append_to_file', 'segno_record', 'web_fetch', 'memory_search', 'session_create', 'reply', 'say', 'call_say'].map(workKind),
+    ['terminal', 'file', 'file', 'file', 'file', 'search', 'search', 'other', null, null, null]);
+  const call = (name, done) => ({ kind: 'tool', name, at: 1, ...(done ? { done } : {}) });
+  assert.equal(liveWork([call('bash'), { kind: 'thinking', at: 2 }, call('read', 3)]), null);
+  assert.equal(liveWork([{ kind: 'text', at: 1 }]), null);
 });

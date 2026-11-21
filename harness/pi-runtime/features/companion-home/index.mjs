@@ -262,6 +262,9 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         description:
           "Say something to the user. This is the only way your words reach them: what you write anywhere else, in any turn, " +
           "stays with you. The engine puts it in the app and mirrors it to connected messengers; app conversations mirror silently. " +
+          "Like a messenger chat, each paragraph of text (words between blank lines) arrives as its own bubble, one after another " +
+          "with a short typing pause; call reply once and break the paragraphs where you want the bubbles. A code block, a list and " +
+          "a line ending in ':' stay with their bubble; text with no blank line is one bubble. " +
           "Files you want to show or hand over (a picture, a video, a document, an HTML page) go with this same tool, never as a path in the words. " +
           (media ? "Voice uses it too. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
         parameters: replyParameters(media),

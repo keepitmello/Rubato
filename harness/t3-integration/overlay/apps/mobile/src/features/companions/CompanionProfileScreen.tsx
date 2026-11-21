@@ -13,7 +13,8 @@ import { AppText as Text } from "../../components/ui/AppText";
 import { chooseFromAlbum, takePhoto, type PickResult } from "./avatarPicture";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion } from "./companionsStore";
-import { callsUserLine, copy, sinceLine, withName } from "./copy";
+import { copy, phoneLocale } from "./copy";
+import { callsUserLine, sinceLine, withName } from "./profileLines";
 import { requestRoomComposer } from "./roomRequests";
 
 export type CompanionProfileParams = {
@@ -90,7 +91,7 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
     ]);
   };
 
-  const since = companion?.since ? sinceLine(companion.since) : null;
+  const since = companion?.since ? sinceLine(companion.since, phoneLocale()) : null;
   return (
     <View className="flex-1 items-center bg-screen px-6 pt-10">
       <Pressable accessibilityRole="button" accessibilityLabel={copy.changePicture} onPress={openOptions} className="active:opacity-80">
@@ -106,7 +107,7 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
         {title}
       </Text>
       {companion?.callsUser ? (
-        <Text className="mt-1 text-[15px] text-foreground-muted">{callsUserLine(companion.callsUser)}</Text>
+        <Text className="mt-1 text-[15px] text-foreground-muted">{callsUserLine(companion.callsUser, phoneLocale())}</Text>
       ) : null}
       {since ? <Text className="mt-0.5 text-[13px] text-foreground-muted">{since}</Text> : null}
       <Pressable accessibilityRole="button" onPress={openOptions} className="mt-6 rounded-full border border-border px-5 py-2.5 active:opacity-70">

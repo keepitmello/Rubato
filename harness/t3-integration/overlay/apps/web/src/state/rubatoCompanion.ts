@@ -296,6 +296,8 @@ export const rubatoCompanion = {
       boundaries,
       ...(after === undefined ? {} : { after }),
     }),
+  /** The kind of work the companion's tool does right now ('search', 'file', 'terminal', 'other') or null (bridge companion/inner.mjs liveWork). */
+  live: (env: EnvironmentId | null, companionId: string) => call<{ work: string | null }>(env, "live", { companionId }),
   /** The pieces of one span: after `after`, up to and including `until` (null: up to now). */
   innerItems: (env: EnvironmentId | null, companionId: string, after: number | null, until: number | null) =>
     call<{ items: readonly SegnoInnerItem[] }>(env, "inner-items", {

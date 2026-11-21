@@ -2,9 +2,6 @@
 // first tab, the room a stack route with params { companionId, environmentId?, threadId? }, the
 // profile, the room's pictures and the picture crop are routes over it, and the call host renders
 // once at the app's root.
-// First, so the words and dates of every screen below read the app's language.
-import "./companionLocale";
-
 export { CompanionListScreen as CompanionListRouteScreen } from "./CompanionListScreen";
 export { CompanionRoomScreen as CompanionRoomRouteScreen, type CompanionRoomParams } from "./CompanionRoomScreen";
 export { RubatoCallHost } from "./RubatoCallHost";

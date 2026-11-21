@@ -5,16 +5,23 @@
 // gets a time line instead of a time on every bubble. Each call is one card, placed where it
 // started (user 0d108939: a card like a messenger's call, opened to read what was said). The desktop
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
+// The companion's reply reads like a messenger chat: each paragraph is its own bubble
+// (packages/shared rubatoReplyBubbles.ts, the same breaks its Telegram messages take).
 import type { ChatAttachment } from "@t3tools/contracts";
+import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { DraftComposerAttachment } from "../../lib/composerImages";
 import type { CallRecord } from "./callTypes";
 import type { Proposal } from "./proposalModel";
 
-/** Messages from one side within this gap of each other belong to one group. */
-export const GROUP_GAP_MS = 3 * 60_000;
-/** A gap at least this long, or a new day, puts a time line between two bubbles. */
-export const SEPARATOR_GAP_MS = 60 * 60_000;
+/**
+ * Messages from one side within this gap of each other belong to one group, as Messages groups
+ * them: a pause longer than this ends the group with a tail even when the same side goes on (user
+ * b2a00025, with an iMessage screenshot; agreed at one minute).
+ */
+export const GROUP_GAP_MS = 60_000;
+/** A gap at least this long, or a new day, puts a time line between two bubbles (user a9b0890f: as Messages does). */
+export const SEPARATOR_GAP_MS = 15 * 60_000;
 /** Slack around a call's own time for a message the conversation recorded a moment late. */
 export const CALL_EDGE_MS = 5_000;
 const VOICE_TAG = "[voice] ";
@@ -54,6 +61,16 @@ export type RoomItem =
       readonly streaming: boolean;
       readonly groupStart: boolean;
       readonly groupEnd: boolean;
+      /**
+       * Which of its message's bubbles this is: a companion's reply shows each paragraph as one,
+       * the first under the message's own id and the next ones under `<id>#<part>`.
+       */
+      readonly part: number;
+      /**
+       * How long after the message this bubble shows, as if typed after the ones before it: 0 for
+       * the first. Words said a while ago are past it and show at once (CompanionRoomScreen).
+       */
+      readonly typedAfter: number;
     }
   | { readonly kind: "call"; readonly id: string; readonly at: number; readonly call: CallRecord }
   | { readonly kind: "proposal"; readonly id: string; readonly at: number; readonly proposal: Proposal };
@@ -169,74 +186,101 @@ export function roomItems(
       next !== undefined &&
       next.kind === "message" &&
       next.side === entry.side &&
-      next.at - entry.at < GROUP_GAP_MS &&
+      next.at - entry.at <= GROUP_GAP_MS &&
       sameDay(entry.at, next.at);
-    items.push({
-      kind: "bubble",
-      id: entry.message.id,
-      side: entry.side,
-      text: entry.text,
-      files: entry.files,
-      attachments: entry.message.attachments ?? [],
-      pending: entry.message.pending ?? null,
-      at: entry.at,
-      streaming: entry.message.streaming,
-      groupStart: separated || previous === null || previous.side !== entry.side || entry.at - previous.at >= GROUP_GAP_MS,
-      groupEnd: !nextJoins,
+    // The files and attachments ride with the last words.
+    const parts = entry.side === "companion" && !entry.message.streaming ? replyBubbles(entry.text) : [];
+    const texts = parts.length > 1 ? parts : [entry.text];
+    let typedAfter = 0;
+    texts.forEach((text, part) => {
+      const last = part === texts.length - 1;
+      if (part > 0) typedAfter += replyBubbleGapMs(text);
+      items.push({
+        kind: "bubble",
+        id: part === 0 ? entry.message.id : `${entry.message.id}#${part}`,
+        side: entry.side,
+        text,
+        files: last ? entry.files : "",
+        attachments: last ? (entry.message.attachments ?? []) : [],
+        pending: entry.message.pending ?? null,
+        at: entry.at,
+        streaming: entry.message.streaming,
+        groupStart:
+          part === 0 && (separated || previous === null || previous.side !== entry.side || entry.at - previous.at > GROUP_GAP_MS),
+        groupEnd: last && !nextJoins,
+        part,
+        typedAfter,
+      });
     });
     previous = { at: entry.at, side: entry.side };
   }
   return items;
 }
 
-/** The companion is writing: its turn runs and it has not answered the person's last message yet. */
-export function companionIsWriting(items: ReadonlyArray<RoomItem>, working: boolean): boolean {
-  if (!working) return false;
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index]!;
-    if (item.kind === "bubble") return item.side === "me";
-    if (item.kind === "call") return false;
-  }
-  return false;
+/**
+ * What the room shows at `clock`: a reply's next bubbles wait their typing time after the message,
+ * and `next` is when the first still waiting shows (null: none waits).
+ */
+export function typedSoFar(items: ReadonlyArray<RoomItem>, clock: number): { shown: RoomItem[]; next: number | null } {
+  let next: number | null = null;
+  const shown = items.filter((item) => {
+    if (item.kind !== "bubble" || item.typedAfter === 0 || item.at + item.typedAfter <= clock) return true;
+    next = Math.min(next ?? Number.POSITIVE_INFINITY, item.at + item.typedAfter);
+    return false;
+  });
+  // The newest bubble in sight carries its group's tail until the next one comes, as in Messages.
+  const tailed = shown.map((item, index) => {
+    if (item.kind !== "bubble" || item.groupEnd) return item;
+    const after = shown[index + 1];
+    return after?.kind === "bubble" && after.side === item.side && !after.groupStart ? item : { ...item, groupEnd: true };
+  });
+  return { shown: tailed, next };
 }
 
-/** What a tool the companion runs is doing, as the room hints at it with a small mark. */
+/**
+ * The typing bubble shows while the companion works on what the person said: the turn their message
+ * started (or steered into) runs, whether or not it has answered yet, since it often answers first
+ * and works after (user a9b0890f: the work never showed). Its own turns (a clock, another
+ * conversation) are not the person's and show nothing; neither does a call that is on.
+ */
+export function companionTyping(items: ReadonlyArray<RoomItem>, personTurnRuns: boolean): boolean {
+  if (!personTurnRuns) return false;
+  const last = items[items.length - 1];
+  return !(last?.kind === "call" && (last.call.status === "active" || last.call.status === "ringing"));
+}
+
+/** The kind of work the companion's tool does, as the typing bubble marks it (Mac companion/inner.mjs workKind). */
 export type RoomTool = "search" | "file" | "terminal" | "other";
 
-/** A step of the companion's turn as the room reads it: a message, or a tool call and its state. */
-export type RoomStep =
-  | { readonly kind: "message"; readonly role: "user" | "assistant" | "system" }
-  | { readonly kind: "tool"; readonly running: boolean; readonly icon: string; readonly name?: string | null };
-
-const TOOL_BY_ICON: Readonly<Record<string, RoomTool | null>> = {
-  search: "search", globe: "search", browser: "search",
-  edit: "file", eye: "file", code: "file",
-  command: "terminal", computer: "terminal", wrench: "terminal",
-  // Reasoning is thinking, and a message is the answer itself, not work done before it.
-  agent: null,
-  message: null,
-  hammer: "other",
-};
-
-/** The companion's own mouth (companion home.mjs REPLY_TOOL, SAY_TOOL): the answer, not work before it. */
-const ANSWER_TOOLS = new Set(["reply", "say"]);
+const ROOM_TOOLS: ReadonlySet<string> = new Set(["search", "file", "terminal", "other"]);
+/** The Mac's answer to `live`, as a kind the bubble knows (an unknown kind still reads as work). */
+export const roomTool = (work: unknown): RoomTool | null =>
+  typeof work !== "string" ? null : ROOM_TOOLS.has(work) ? (work as RoomTool) : "other";
 
 /**
- * While the companion owes an answer: the tool it runs since the person's last message, or null
- * when none runs and it is thinking. The steps come oldest first.
+ * A time line's two parts as Messages writes them: the day in bold, then the time. Today and
+ * yesterday by name, the past week by weekday, older by date (with the year once it is not this one).
  */
-export function companionTool(steps: ReadonlyArray<RoomStep>): RoomTool | null {
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    const step = steps[index]!;
-    if (step.kind === "message") {
-      if (step.role === "user") return null;
-      continue;
-    }
-    if (!step.running) continue;
-    if (step.name && ANSWER_TOOLS.has(step.name)) return null;
-    return step.icon in TOOL_BY_ICON ? TOOL_BY_ICON[step.icon]! : "other";
+export function separatorParts(at: number, now: number, locale: string): { readonly day: string; readonly time: string } {
+  const korean = locale.toLowerCase().startsWith("ko");
+  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(at);
+  const startOf = (ms: number) => {
+    const date = new Date(ms);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  };
+  const days = Math.round((startOf(now) - startOf(at)) / 86_400_000);
+  if (days <= 0) return { day: korean ? "오늘" : "Today", time };
+  if (days === 1) return { day: korean ? "어제" : "Yesterday", time };
+  if (days < 7) return { day: new Intl.DateTimeFormat(locale, { weekday: "long" }).format(at), time };
+  const sameYear = new Date(at).getFullYear() === new Date(now).getFullYear();
+  if (korean) {
+    const date = new Date(at);
+    const weekday = new Intl.DateTimeFormat(locale, { weekday: "short" }).format(at);
+    const day = `${sameYear ? "" : `${date.getFullYear()}년 `}${date.getMonth() + 1}월 ${date.getDate()}일 (${weekday})`;
+    return { day, time };
   }
-  return null;
+  const day = new Intl.DateTimeFormat(locale, { weekday: "short", month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) }).format(at);
+  return { day, time: `at ${time}` };
 }
 
 /** A call's length as m:ss (h:mm:ss past an hour). */

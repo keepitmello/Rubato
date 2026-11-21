@@ -41,8 +41,9 @@ import {
 } from "react";
 
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
+import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SearchIcon, SparklesIcon, TerminalIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -57,7 +58,7 @@ import {
   RubatoMessageEditor,
   useRubatoMessageEditing,
 } from "./RubatoMessageEdit";
-import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
+import { RubatoSegnoSpanLine, useCompanionLiveWork, useSegnoSpanSummaries, type SegnoLiveWork } from "./RubatoSegnoInner";
 import { RubatoWorkCard } from "./RubatoWorkCard";
 import { rubatoLaunchOfSegno } from "./rubatoWorkCardModel";
 import type { SegnoSpanSummary } from "../../state/rubatoCompanion";
@@ -364,14 +365,70 @@ function Bubble({
   );
 }
 
-function Writing() {
+/** A reply said longer ago than this shows all its bubbles at once. */
+const TYPED_WITHIN_MS = 60_000;
+
+/**
+ * One message as the bubbles it reads as. Segno's reply shows each paragraph as its own bubble
+ * (rubatoReplyBubbles.ts, the same breaks its Telegram messages take); one that arrives while the room
+ * is open lets them in one after another, with the writing dots before each, as if typed. The
+ * person's message is one bubble.
+ */
+function Bubbles(props: Parameters<typeof Bubble>[0]) {
+  const { item } = props;
+  const parts = item.side === "segno" ? replyBubbles(item.text) : [];
+  // Only words said just now are typed out; a room drawn again shows older ones whole.
+  const [shown, setShown] = useState(() =>
+    props.enter && Date.now() - item.at < TYPED_WITHIN_MS ? 1 : Number.POSITIVE_INFINITY,
+  );
+  const next = parts[shown];
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: the next bubble shows once its typing time has passed
+  useEffect(() => {
+    if (next === undefined) return;
+    const timer = window.setTimeout(() => setShown((count) => count + 1), replyBubbleGapMs(next));
+    return () => window.clearTimeout(timer);
+  }, [next]);
+  if (parts.length < 2) return <Bubble {...props} />;
+  const last = parts.length - 1;
+  return (
+    <>
+      {parts.slice(0, shown).map((text, index) => (
+        <Bubble
+          // oxlint-disable-next-line react/no-array-index-key -- a message's bubbles have no identity besides their order
+          key={index}
+          {...props}
+          item={{ ...item, text, groupStart: item.groupStart && index === 0, groupEnd: item.groupEnd && index === last }}
+          mark={props.mark && index === 0}
+        />
+      ))}
+      {shown < parts.length ? <Writing /> : null}
+    </>
+  );
+}
+
+const WORK_ICON = { search: SearchIcon, file: FileTextIcon, terminal: TerminalIcon, other: SparklesIcon } as const;
+
+/**
+ * Messages' typing bubble (user a9b0890f): three dots that brighten in turn and two small circles
+ * for a tail. While the companion's tool runs, the bubble widens and the kind of work stands before
+ * the dots (decisions why-the-phone-room-splits-thinking-and-work).
+ */
+function Writing(props: { readonly work?: SegnoLiveWork | null }) {
+  const Icon = props.work ? WORK_ICON[props.work] : null;
   return (
     <div data-rubato-segno-row="" data-side="segno" data-group-start="" data-group-end="" data-enter="arrive">
-      <div data-rubato-segno-bubble="" data-rubato-segno-writing="" role="status" aria-label="Segno is writing">
+      <div
+        data-rubato-segno-bubble=""
+        data-rubato-segno-writing=""
+        data-working={Icon ? "" : undefined}
+        role="status"
+        aria-label="Segno is writing"
+      >
+        <i data-rubato-segno-work="">{Icon ? <Icon key={props.work} aria-hidden="true" /> : null}</i>
         <span />
         <span />
         <span />
-        <Tail />
+        <b data-rubato-segno-typing-tail="" aria-hidden="true" />
       </div>
     </div>
   );
@@ -419,6 +476,7 @@ function RubatoSegnoRoom(props: {
     return byId;
   }, [props.entries]);
   const writing = segnoIsWriting(items, props.working);
+  const work = useCompanionLiveWork(props.environmentId, companionId, writing);
   const locale = useLocale();
   const partial = props.historyControls?.hasMoreHistory === true;
   const spans = useMemo(() => segnoSpans(items, { writing: props.working, partial }), [items, props.working, partial]);
@@ -820,7 +878,7 @@ function RubatoSegnoRoom(props: {
               <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
             )),
             item.side === "segno" || !separated ? spanLine(place, `span:${item.id}`) : null,
-            <Bubble
+            <Bubbles
               key={item.id}
               item={item}
               enter={animated.current.has(item.id)}
@@ -837,7 +895,7 @@ function RubatoSegnoRoom(props: {
             })}
           </section>
         ))}
-        {writing ? <Writing /> : null}
+        {writing ? <Writing work={work} /> : null}
         {spanLine(spans.tail, "span:tail")}
         {placement.tail.map((call) => (
           <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
