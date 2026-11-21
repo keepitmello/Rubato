@@ -45,3 +45,9 @@ test('the ring keeps v0.1.0\'s setting: off unless turned on, switched from Sett
   const search = await applied('apps/web/src/components/settings/settingsSearch.ts');
   assert.match(search, /id: "legacy-context-window-indicator",\n\s+title: msg\("Context window indicator \(legacy\)"\),\n\s+to: "\/settings\/labs",/);
 });
+
+test('Restore defaults lists the ring and turns it off again', skip, async () => {
+  const panels = await applied('apps/web/src/components/settings/SettingsPanels.tsx');
+  assert.match(panels, /settings\.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS\.contextWindowMeterEnabled\n\s+\? \[gt\("Context window indicator"\)\]/);
+  assert.match(panels, /contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS\.contextWindowMeterEnabled,/);
+});

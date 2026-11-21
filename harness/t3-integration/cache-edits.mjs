@@ -114,6 +114,13 @@ export const cacheEdits = {
         '',
       ].join('\n')],
   ],
+  // Restore defaults turns the ring off again, as on v0.1.0.
+  'apps/web/src/components/settings/SettingsPanels.tsx': [
+    ['    ...(settings.enableAgentBrowserAccess !== DEFAULT_UNIFIED_SETTINGS.enableAgentBrowserAccess\n',
+      '    ...(settings.contextWindowMeterEnabled !== DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled\n      ? [gt("Context window indicator")]\n      : []),\n'],
+    ['      autoResumeLimitedThreads: DEFAULT_UNIFIED_SETTINGS.autoResumeLimitedThreads,\n',
+      '      contextWindowMeterEnabled: DEFAULT_UNIFIED_SETTINGS.contextWindowMeterEnabled,\n'],
+  ],
   'apps/web/src/components/ChatView.tsx': [
     ['  const compactDisabled = compactThreadUnavailable;\n',
       [
