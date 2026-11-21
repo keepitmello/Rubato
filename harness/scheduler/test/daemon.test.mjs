@@ -92,13 +92,13 @@ test('the CLI shows where a message task goes and queues a one-off message', asy
     let printed = '';
     assert.equal(await main(['list'], { store, out: (text) => { printed += text; } }), 0);
     assert.match(printed, /message, no session/);
-    assert.match(printed, /→ Segno/);
+    assert.match(printed, /→ companion segno \(the default\)/);
     await assert.rejects(main(['send', 'companion', 'Deploy', 'finished'], { store, out: () => {} }), (error) => error.code === 'scheduler-offline');
     const { writeFile } = await import('node:fs/promises');
     await writeFile(store.files.scheduler, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), lastTickAt: new Date().toISOString() }));
     printed = '';
     assert.equal(await main(['send', 'companion', 'Deploy', 'finished'], { store, out: (text) => { printed += text; } }), 0);
-    assert.match(printed, /Queued for Segno/);
+    assert.match(printed, /Queued for companion segno \(the default\)/);
     assert.deepEqual(store.read().requests.map((request) => request.message), [{ to: 'companion', text: 'Deploy finished' }]);
     await assert.rejects(main(['send'], { store, out: () => {} }), (error) => error.field === 'sendTo');
   } finally { await rm(root, { recursive: true, force: true }); }

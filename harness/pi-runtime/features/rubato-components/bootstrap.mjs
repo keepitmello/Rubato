@@ -65,7 +65,7 @@ export function createRubatoExtensionFactories({ cwd, agentDir, settingsManager,
   // Pi tears a session down one extension at a time in this list's order. This signal's extension
   // goes first so the components stop waking the session before anything else starts closing it.
   const sessionClosing = createSessionClosing();
-  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, sessionClosing, createTaskOptions: ({ createTaskRunnerFactories }) => ({
+  const componentFactory = servers.wrapFactory(createRubatoComponentExtension({ resolveCwd: () => cwd, env, sessionClosing, createTaskOptions: ({ createTaskRunnerFactories }) => ({
     // Stock ExtensionAPI does not expose Senpi's registration-time pi.cwd.
     // Bind task storage to this session, never the hosting process directory.
     resolveCwd: () => cwd,

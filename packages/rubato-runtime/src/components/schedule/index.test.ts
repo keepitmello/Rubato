@@ -106,7 +106,7 @@ describe("schedule tool", () => {
     const tasks = (await store.list()).tasks
     expect(tasks.map((task) => [task.sendTo, task.cwd, task.model])).toEqual([
       ["01a15e20-97b6-72b9-af17-78043d518515", null, null], ["companion", null, null]])
-    expect(text(await runScheduleTool(store, { action: "list" }, session))).toContain("sends to: Segno (companion)")
+    expect(text(await runScheduleTool(store, { action: "list" }, session))).toContain("sends to: companion segno (the default)")
     // A model on a message task is refused; switching back to a session takes the session's folder.
     expect((await runScheduleTool(store, { action: "update", task: "Evening report", model: "xai/grok-4.7" }, session)).isError).toBe(true)
     const back = await runScheduleTool(store, { action: "update", task: "Evening report", send_to: "", cwd: "sub" }, session)
@@ -119,6 +119,13 @@ describe("schedule tool", () => {
       send_to: "companion", schedule: { kind: "daily", time: "20:00" } }, session, "other-session", "other")
     expect(result.isError).toBeUndefined()
     expect((await store.list()).tasks[0]!.sendTo).toBe("companion:other")
+    expect(text(await runScheduleTool(store, { action: "list" }, session))).toContain("sends to: companion other (no new session)")
+  })
+
+  it("#given companion:<id> #when any conversation registers it #then the task names that companion", async () => {
+    await runScheduleTool(store, { action: "create", name: "Roo's", prompt: "Look in.", send_to: "companion:roo",
+      schedule: { kind: "daily", time: "20:00" } }, session, "segno-session", "segno")
+    expect((await store.list()).tasks[0]!.sendTo).toBe("companion:roo")
   })
 
   it("#given send_to this without a conversation id #when it registers #then it refuses", async () => {
@@ -140,5 +147,15 @@ describe("createScheduleComponent", () => {
     await tool.execute("call-2", { action: "create", name: "Here", prompt: "x", send_to: "this", schedule: { kind: "daily", time: "10:00" } },
       undefined, undefined, { sessionManager: { getSessionId: () => "01a15e20-97b6-72b9-af17-78043d518515" } })
     expect((await store.list()).tasks[1]!.sendTo).toBe("01a15e20-97b6-72b9-af17-78043d518515")
+  })
+
+  it("#given a companion's session in a shared engine #when it schedules to companion #then its own env, not the process's, names the companion", async () => {
+    const pi = new FakeExtensionAPI()
+    expect(process.env.RUBATO_COMPANION_ID).toBeUndefined()
+    const component = createScheduleComponent({ resolveCwd: () => session, createStore: () => store, env: { RUBATO_COMPANION_ID: "roo" } })
+    await component.register(pi, { logger: { info() {}, warn() {}, error() {} }, config: { getFlag: () => undefined } })
+    const tool = pi.tools.find((item) => item.name === SCHEDULE_TOOL_NAME) as Record<string, unknown> & { execute: Function }
+    await tool.execute("call-1", { action: "create", name: "Own", prompt: "x", send_to: "companion", schedule: { kind: "daily", time: "10:00" } })
+    expect((await store.list()).tasks[0]!.sendTo).toBe("companion:roo")
   })
 })

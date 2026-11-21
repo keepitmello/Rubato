@@ -10,7 +10,7 @@ import { engineLaunchAgentLoaded, startScheduler } from './launchd.mjs';
 const USAGE = `usage: rubato schedule [list] [--json]
        rubato schedule run <task>          start a task now (name, id or id prefix)
        rubato schedule runs <task> [--json] a task's recent runs
-       rubato schedule send <to> <text…>   send a message now to "companion" (Segno) or a conversation id
+       rubato schedule send <to> <text…>   send a message now to "companion" (the default companion), "companion:<id>" or a conversation id
        rubato schedule status              is the scheduler running on this Mac
        rubato schedule install             make sure it runs: the Rubato engine, kept by launchd, runs it`;
 
@@ -29,7 +29,8 @@ export function describeRun(run) {
   return `${run.status} · ${when}`;
 }
 
-const targetLabel = (sendTo) => (sendTo === COMPANION_TARGET ? 'Segno' : `conversation ${sendTo}`);
+const targetLabel = (sendTo) => (sendTo === COMPANION_TARGET ? 'companion segno (the default)'
+  : sendTo.startsWith(`${COMPANION_TARGET}:`) ? `companion ${sendTo.slice(COMPANION_TARGET.length + 1)}` : `conversation ${sendTo}`);
 
 export async function main(argv, { env = process.env, out = (text) => process.stdout.write(text), store = createScheduleStore({ env }) } = {}) {
   const args = argv.filter((arg) => arg !== '--json');

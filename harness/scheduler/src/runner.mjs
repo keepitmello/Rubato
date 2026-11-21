@@ -7,7 +7,7 @@ import { companionEnv } from '../../companion/registry.mjs';
 // end of its first turn. The engine keeps the conversation (JSONL) and T3 projects it into a
 // thread like any other; this side only records the outcome on the run row.
 // A message task's run starts no session: it hands its text to a conversation that already
-// exists (Segno, or one by id) and records whether the conversation took it.
+// exists (a companion, or one by id) and records whether the conversation took it.
 //
 // A failure before the session exists leaves `sessionId` null (nothing to open); after it, the
 // id stays so the page can still open the thread.
@@ -23,15 +23,15 @@ export function messageText(taskName, text) {
 }
 
 /**
- * The conversation a message goes to now. `companion` is whichever conversation is Segno's when
- * the time comes (harness/companion state.json, written by its keeper), so a new conversation for
- * Segno does not leave the task pointing at the old one.
+ * The conversation a message goes to now. `companion` (`companion:<id>`) is whichever conversation
+ * is that companion's when the time comes (harness/companion state.json, written by its keeper), so a new conversation for
+ * the companion does not leave the task pointing at the old one.
  */
 export function resolveTarget(sendTo, { env = process.env } = {}) {
   if (sendTo !== COMPANION_TARGET && !sendTo?.startsWith('companion:')) return sendTo;
   const scoped = sendTo.startsWith('companion:') ? companionEnv(sendTo.slice('companion:'.length), env) : env;
   const sessionId = readCompanionState(scoped)?.sessionId;
-  if (typeof sessionId !== 'string' || !sessionId) throw new Error('Segno has no conversation yet (turn the companion on in Settings › Companion).');
+  if (typeof sessionId !== 'string' || !sessionId) throw new Error(`${scoped.RUBATO_COMPANION_TITLE || 'The companion'} has no conversation yet (turn the companion on in Settings › Companion).`);
   return sessionId;
 }
 
