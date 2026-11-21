@@ -10,6 +10,7 @@ import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, useWindowDimensions, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import Svg, { Path } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
@@ -95,8 +96,12 @@ export function AvatarCropScreen(_props: StaticScreenProps<CompanionAvatarCropPa
     }
   };
 
-  // A ring whose border covers the whole screen but the circle: the dim outside, the clear inside.
-  const ring = Math.hypot(screenWidth, screenHeight);
+  // The dim outside the circle: the whole screen less the circle, filled even-odd. (A ring drawn
+  // as a screen-wide border did not render on iOS.)
+  const r = diameter / 2;
+  const cx = screenWidth / 2;
+  const cy = screenHeight / 2;
+  const dim = `M0 0H${screenWidth}V${screenHeight}H0Z M${cx - r} ${cy}a${r} ${r} 0 1 0 ${diameter} 0a${r} ${r} 0 1 0 ${-diameter} 0Z`;
   return (
     <View className="flex-1 overflow-hidden" style={{ backgroundColor: "#000" }}>
       <GestureDetector gesture={gesture}>
@@ -104,17 +109,9 @@ export function AvatarCropScreen(_props: StaticScreenProps<CompanionAvatarCropPa
           <Animated.View style={[{ width: image.width * base, height: image.height * base }, placed]}>
             <Image source={{ uri: params.uri }} style={{ width: "100%", height: "100%" }} contentFit="fill" accessibilityIgnoresInvertColors />
           </Animated.View>
-          <View
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              width: diameter + ring * 2,
-              height: diameter + ring * 2,
-              borderRadius: diameter / 2 + ring,
-              borderWidth: ring,
-              borderColor: "rgba(0,0,0,0.62)",
-            }}
-          />
+          <Svg pointerEvents="none" width={screenWidth} height={screenHeight} style={{ position: "absolute", left: 0, top: 0 }}>
+            <Path d={dim} fill="rgba(0,0,0,0.62)" fillRule="evenodd" />
+          </Svg>
           <View
             pointerEvents="none"
             style={{

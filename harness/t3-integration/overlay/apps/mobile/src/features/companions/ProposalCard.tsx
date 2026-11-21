@@ -61,7 +61,8 @@ export function ProposalCard(props: {
         </Text>
       ) : null}
       {proposal.kind === "piece" ? (
-        <Text selectable className="text-foreground" style={props.body}>
+        // A closed card is history: three lines say what it was about.
+        <Text selectable className="text-foreground" style={props.body} numberOfLines={open ? undefined : 3}>
           {diff.map((part, index) =>
             part.kind === "same" ? (
               part.text
