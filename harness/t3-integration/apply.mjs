@@ -33,6 +33,7 @@ import { sessionPromptEdits, sessionPromptOverlays } from './session-prompt-edit
 import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto-archive-edits.mjs';
+import { sidebarLookEdits, sidebarLookOverlays } from './sidebar-look-edits.mjs';
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
@@ -1080,6 +1081,12 @@ for (const [relative, changes] of Object.entries(threadFoldersEdits)) {
 // Idle threads go to the archive on their own (thread-auto-archive-edits.mjs).
 overlays.push(...threadAutoArchiveOverlays);
 for (const [relative, changes] of Object.entries(threadAutoArchiveEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The sidebar looks as on T3 v0.1.0 (sidebar-look-edits.mjs); last, since it restyles rows
+// other modules already edited.
+overlays.push(...sidebarLookOverlays);
+for (const [relative, changes] of Object.entries(sidebarLookEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

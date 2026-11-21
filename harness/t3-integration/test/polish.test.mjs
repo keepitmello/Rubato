@@ -76,9 +76,11 @@ test('sidebar cards stay readable over the see-through material', { skip: !proce
   const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
   const row = await applied('apps/web/src/components/sidebar/SidebarThreadRow.tsx');
   // A read or background thread's title sits one step below an unread one, never at the
-  // secondary label's gray (T3's own /75, back to full on hover and focus).
+  // secondary label's gray: 80% against 90-100% (sidebar-look-edits.mjs; T3's own is 75%).
   const title = row.slice(row.indexOf('variant !== "slim"'), row.indexOf('dir={textDirection(thread.title)}'));
-  assert.match(title, /variant !== "slim"\n\s+\? cn\(\n\s+"truncate",\n\s+shouldRecede\n\s+\? "text-foreground\/75 group-hover\/sidebar-row:text-foreground/);
+  assert.match(title, /variant !== "slim"\n\s+\? cn\(\n\s+"truncate",\n\s+shouldRecede\n\s+\? "text-foreground\/80"\n/);
+  assert.match(title, /: "text-foreground\/90",/);
+  assert.doesNotMatch(title, /text-foreground\/75/);
   // A working row no longer fades as a whole.
   assert.doesNotMatch(row, /status === "working" &&\n\s+"opacity-70/);
   // The default branch goes unnamed; the third line and its model logo stay.
