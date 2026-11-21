@@ -6,7 +6,7 @@ import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { COMPANION_TITLE, PIECES, basePiecePath, companionPaths, personalPiecePath, readPersonaReviewRequest,
   readState, requestPersonaReview, seedPromptPieces, writeSettings, writeState } from '../companion.mjs';
-import { SLEEP_CONTEXT_TOKENS, SLEEP_QUIET_MS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startControlTower } from '../control-tower.mjs';
+import { SLEEP_CONTEXT_TOKENS, SLEEP_TEXT, heartbeatText, locationLine, readUserLocation, localIso, timeLabel, lastUserMessageAt, localDate, nextBoundary, startControlTower } from '../control-tower.mjs';
 import { CAPABILITY_LEASE_MS, capabilityActive, renewCapability, clearCapability, noteCompanionActivity, readWakeWish, setWakeWish } from '../home.mjs';
 
 const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'prompts', 'companion');
@@ -326,8 +326,8 @@ const telegram = (time, isUser) => sessionMessage(time, { v: 1, kind: 'channel',
 const wake = (time, what) => sessionMessage(time, { v: 1, kind: 'wake', what, from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'tick' });
 const leadEnded = (time) => sessionMessage(time, { v: 1, kind: 'notice', from: { sessionId: 'lead-1', title: 'Login bug', cwd: '/w' }, text: 'Finished its turn.' });
 
-/** A sleepy night: Segno's context is long and the user last wrote in the app at `lastUser`. */
-async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } = {}) {
+/** A long conversation: Segno's context is `tokens` long and its session file holds `entries`. */
+async function night(t, { tokens = 600_000, entries = [], start, sleepCheckMs = 0, setup } = {}) {
   const env = sandbox(t);
   writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
@@ -336,6 +336,8 @@ async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } =
   engine.sessionFile = path.join(path.dirname(env.RUBATO_COMPANION_HOME), 'segno.jsonl');
   const write = (list) => writeFileSync(engine.sessionFile, [{ type: 'session', id: 'segno' }, ...list].map((entry) => JSON.stringify(entry)).join('\n') + '\n');
   write(entries);
+  // What holds before the control tower's first look (it checks once as it starts).
+  await setup?.({ env, engine });
   const clock = { at: start };
   const notices = [];
   const errors = [];
@@ -348,18 +350,29 @@ async function night(t, { tokens = 600_000, entries, start, sleepCheckMs = 0 } =
   return { env, engine, tower, notices, poke, write, sleeps: () => notices.filter((notice) => notice.what === 'sleep').length };
 }
 
-test('sleep: at night, three quiet hours and a long context put Segno to sleep, as a wake', async (t) => {
-  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 22)), assistantMessage(at(20, 22, 1))] });
-  await n.poke(at(21, 2));
+/** A lead Segno follows, as the engine lists it (`status`) and as the follower records it (`ended`). */
+async function followLead({ env, engine }, { status = 'running', ended = false } = {}) {
+  const { followingStore } = await import('../companion.mjs');
+  engine.sessions.set('lead', { sessionId: 'lead', title: 'Login bug', cwd: '/w', status, runtimeId: 'r-lead', attachments: 1 });
+  followingStore(env).save({ lead: { companionId: 'segno-1', base: { final: null, waiting: false, ui: [] }, since: 1000, ...(ended ? { ended: true } : {}) } });
+}
+
+const compaction = (id, time) => ({ type: 'compaction', id, timestamp: new Date(time).toISOString(), summary: 'earlier', tokensBefore: 600_000 });
+
+test('sleep: a long context puts Segno to sleep at any hour, even right after the user wrote, as a wake', async (t) => {
+  const n = await night(t, { start: at(21, 14, 59), entries: [userMessage(at(21, 14, 58)), assistantMessage(at(21, 14, 59))] });
+  noteCompanionActivity({ now: at(21, 14, 59), env: n.env });
+  await n.poke(at(21, 15));
   assert.deepEqual(n.notices, [{ text: SLEEP_TEXT, what: 'sleep' }]);
-  assert.equal(readState(n.env).sleptOn, '2026-10-21');
+  assert.equal(readState(n.env).sleptIn, null, 'slept in the window that has had no boundary yet');
 });
 
 test('an active call suppresses the control tower rhythm, but a crashed call expires and cannot hold it awake', async t => {
   const start = at(21, 1);
-  const n = await night(t, { entries: [userMessage(at(20, 22))], start: start - 1 });
+  const n = await night(t, { tokens: null, entries: [userMessage(at(20, 22))], start: start - 1 });
   renewCapability('call', 'new-connection', { now: start, env: n.env });
   clearCapability('call', 'old-connection', n.env);
+  n.engine.contextTokens = 600_000;
   assert.equal(capabilityActive('call', { now: start, env: n.env }), true);
   await n.poke(start);
   assert.equal(n.sleeps(), 0);
@@ -367,32 +380,26 @@ test('an active call suppresses the control tower rhythm, but a crashed call exp
   assert.equal(n.sleeps(), 1);
 });
 
-test('a real owner message in a retained capability counts as user activity for night sleep', async t => {
-  const start = at(21, 1);
-  const n = await night(t, { entries: [userMessage(at(20, 22))], start: start - 1 });
-  noteCompanionActivity({ now: start, env: n.env });
-  await n.poke(start);
-  assert.equal(n.sleeps(), 0);
-  await n.poke(start + SLEEP_QUIET_MS);
-  assert.equal(n.sleeps(), 1);
+test('sleep: once per window; a compaction or a new window opens the next', async (t) => {
+  const n = await night(t, { start: at(21, 10) });
+  await n.poke(at(21, 10, 1));
+  await n.poke(at(21, 13));
+  await n.poke(at(22, 3));
+  assert.equal(n.sleeps(), 1, 'Segno stayed in the window: it is not woken to sleep again');
+  n.write([compaction('c1', at(22, 3, 1))]);
+  await n.poke(at(22, 3, 2));
+  assert.equal(n.notices.at(-1).what, 'wake', 'the compaction is woken for first');
+  await n.poke(at(22, 3, 3));
+  assert.equal(n.sleeps(), 2, 'still long after the compaction: the new window sleeps once too');
+  assert.equal(readState(n.env).sleptIn, 'c1');
 });
 
-test('sleep: once per night, and again the next night', async (t) => {
-  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
-  await n.poke(at(21, 1, 30));
-  await n.poke(at(21, 3));
-  await n.poke(at(21, 6, 59));
-  assert.equal(n.sleeps(), 1, 'one sleep however long the night');
-  await n.poke(at(22, 1, 30));
-  assert.equal(n.sleeps(), 2);
-});
-
-test('sleep: once per night holds across a control tower restart (the night is stored)', async (t) => {
-  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
-  await n.poke(at(21, 2));
+test('sleep: once per window holds across a control tower restart (the window is stored)', async (t) => {
+  const n = await night(t, { start: at(21, 10) });
+  await n.poke(at(21, 10, 1));
   await n.tower.close();
   const again = [];
-  const tower = startControlTower({ connect: n.engine.connect, env: n.env, pollMs: 60_000, now: () => at(21, 4), sleepCheckMs: 0,
+  const tower = startControlTower({ connect: n.engine.connect, env: n.env, pollMs: 60_000, now: () => at(21, 12), sleepCheckMs: 0,
     notify: async (_sessionId, text, what) => { again.push(what); } });
   t.after(() => tower.close());
   await tower.ready;
@@ -400,69 +407,43 @@ test('sleep: once per night holds across a control tower restart (the night is s
   assert.deepEqual(again, []);
 });
 
-test('sleep: the user must have been quiet for three hours — the boundary is inclusive', async (t) => {
-  const last = at(21, 0, 30);
-  const n = await night(t, { start: at(21, 1), entries: [userMessage(last)] });
-  await n.poke(last + SLEEP_QUIET_MS - 1);
-  assert.equal(n.sleeps(), 0, 'one millisecond short of three hours');
-  await n.poke(last + SLEEP_QUIET_MS);
-  assert.equal(n.sleeps(), 1);
-});
-
-test('sleep: only from 01:00 up to 07:00 local time', async (t) => {
-  const n = await night(t, { start: at(20, 18), entries: [userMessage(at(20, 12))] });
-  await n.poke(at(21, 0, 59));
-  await n.poke(at(21, 7, 0));
-  await n.poke(at(21, 12, 0));
-  assert.equal(n.sleeps(), 0);
-  const m = await night(t, { start: at(20, 18), entries: [userMessage(at(20, 12))] });
-  await m.poke(at(21, 1, 0));
-  assert.equal(m.sleeps(), 1);
-});
-
 test('sleep: only with a context of 500k tokens or more', async (t) => {
-  const short = await night(t, { tokens: SLEEP_CONTEXT_TOKENS - 1, start: at(20, 23), entries: [userMessage(at(20, 20))] });
-  await short.poke(at(21, 2));
+  const short = await night(t, { tokens: SLEEP_CONTEXT_TOKENS - 1, start: at(21, 10) });
+  await short.poke(at(21, 11));
   assert.equal(short.sleeps(), 0);
-  const unknown = await night(t, { tokens: null, start: at(20, 23), entries: [userMessage(at(20, 20))] });
-  await unknown.poke(at(21, 2));
+  const unknown = await night(t, { tokens: null, start: at(21, 10) });
+  await unknown.poke(at(21, 11));
   assert.equal(unknown.sleeps(), 0, 'right after a compaction the size is unknown: not long');
-  const exact = await night(t, { tokens: SLEEP_CONTEXT_TOKENS, start: at(20, 23), entries: [userMessage(at(20, 20))] });
-  await exact.poke(at(21, 2));
+  const exact = await night(t, { tokens: SLEEP_CONTEXT_TOKENS, start: at(21, 10) });
+  await exact.poke(at(21, 11));
   assert.equal(exact.sleeps(), 1);
 });
 
 test('sleep: not while Segno is mid-turn; it sleeps once the turn ends', async (t) => {
-  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20))] });
+  const n = await night(t, { tokens: null, start: at(21, 10) });
   const { sessionId } = readState(n.env);
   n.engine.sessions.get(sessionId).status = 'running';
-  await n.poke(at(21, 2));
+  n.engine.contextTokens = 600_000;
+  await n.poke(at(21, 11));
   assert.equal(n.sleeps(), 0);
   n.engine.sessions.get(sessionId).status = 'idle';
-  await n.poke(at(21, 2, 5));
+  await n.poke(at(21, 11, 5));
   assert.equal(n.sleeps(), 1);
 });
 
-test('sleep: heartbeats, lead endings, other wakes and other people do not count as the user', async (t) => {
-  const quiet = at(20, 22);
-  const n = await night(t, { start: at(20, 23), entries: [
-    userMessage(quiet), assistantMessage(quiet + 60_000),
-    wake(at(21, 0), 'heartbeat'), assistantMessage(at(21, 0, 1)),
-    leadEnded(at(21, 0, 30)), wake(at(21, 0, 40), 'daily-report'), telegram(at(21, 1, 50), false),
-  ] });
-  await n.poke(at(21, 2));
-  assert.equal(n.sleeps(), 1, 'the user last wrote at 22:00; nothing after that is the user');
-});
-
-test('sleep: a Telegram message from the user counts like one in the app', async (t) => {
-  const n = await night(t, { start: at(20, 23), entries: [userMessage(at(20, 20)), telegram(at(21, 0, 30), true)] });
-  await n.poke(at(21, 2));
-  assert.equal(n.sleeps(), 0, 'the user wrote on Telegram at 00:30');
-  await n.poke(at(21, 3, 30));
+test('sleep: not while a lead Segno follows is working or still owes its turn; it sleeps once the lead ends', async (t) => {
+  const n = await night(t, { start: at(21, 10), setup: (n) => followLead(n, { status: 'running' }) });
+  await n.poke(at(21, 11));
+  assert.equal(n.sleeps(), 0, 'the lead is running');
+  await followLead(n, { status: 'idle' });
+  await n.poke(at(21, 11, 5));
+  assert.equal(n.sleeps(), 0, 'the lead is idle but its handed turn has not ended');
+  await followLead(n, { status: 'idle', ended: true });
+  await n.poke(at(21, 11, 10));
   assert.equal(n.sleeps(), 1);
 });
 
-test('sleep: the control tower asks the engine at most every ten minutes at night, and never by day', async (t) => {
+test('sleep: the control tower asks the engine for the context at most every ten minutes, by day too', async (t) => {
   const env = sandbox(t);
   writeSettings({ enabled: true, heartbeat: { enabled: false }, greetings: { enabled: false } }, env);
   const engine = fakeEngine();
@@ -470,14 +451,13 @@ test('sleep: the control tower asks the engine at most every ten minutes at nigh
   engine.contextTokens = 100_000;
   let asked = 0;
   const connect = async () => { const client = await engine.connect(); const command = client.command; client.command = (c) => { asked++; return command(c); }; return client; };
-  let now = at(20, 12);
+  let now = at(21, 12);
   const tower = startControlTower({ connect, env, pollMs: 60_000, now: () => now, notify: async () => {} });
   t.after(() => tower.close());
   await tower.ready;
-  await tower.poke();
-  assert.equal(asked, 1, 'by day the control tower asks only once, where the session file is (the wake sequence follows it)');
-  for (const minute of [0, 3, 9, 10, 15]) { now = at(21, 2, minute); await tower.poke(); }
-  assert.equal(asked, 3, 'at 02:00 and 02:10');
+  assert.equal(asked, 2, 'where the session file is (the wake sequence follows it), then the context');
+  for (const minute of [3, 9, 10, 15]) { now = at(21, 12, minute); await tower.poke(); }
+  assert.equal(asked, 3, 'again at 12:10, not before');
 });
 
 test('lastUserMessageAt reads the newest user message, in the app or from Telegram', async (t) => {

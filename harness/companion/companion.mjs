@@ -201,7 +201,8 @@ export function writeSettings(patch, env = process.env) {
 /**
  * What the control tower keeps: `greeted` is the local date (YYYY-MM-DD) each greeting last went out (Roo's
  * state/cron-last-run.json), `heartbeat` the last tick, `woke` the last boundary Segno was woken for
- * and what is still owed (a seed, or the recall that follows a fresh one), `sleptOn` the last night,
+ * and what is still owed (a seed, or the recall that follows a fresh one), `sleptIn` the window
+ * (that boundary, null before the first) the companion was last put to sleep in,
  * `inboxWake` how far the listener's wake lines were read.
  */
 export function readState(env = process.env) {
@@ -215,7 +216,7 @@ export function readState(env = process.env) {
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
     ...(greeted ? { greeted } : {}),
-    ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
+    ...(typeof state?.sleptIn === 'string' || state?.sleptIn === null ? { sleptIn: state.sleptIn } : {}),
     // The last heartbeat tick and when it went (control-tower.mjs, Roo's heartbeat.json tickCount).
     ...(state?.heartbeat && Number.isFinite(state.heartbeat.at) ? { heartbeat: { tick: state.heartbeat.tick, at: state.heartbeat.at } } : {}),
     ...(woke ? { woke } : {}),
