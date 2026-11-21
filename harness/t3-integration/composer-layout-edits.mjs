@@ -1,17 +1,18 @@
-// The thread composer's controls sit where T3 v0.1.0 had them (intent t3-v0-1-11-bump, user
-// 10dd0a87: "스레드에서 모델 위치나 마이크 버튼같은 배치는 기존처럼이 좋고(에포트랑 합치는 건 신버전이
-// 좋음)", "뉴스레드는 … 걍 애프터로 두자"). T3 v0.1.11 moved the model picker to the right, the
-// attach button (and with it Rubato's mic and call button) to the left, and the access mode out of
-// the composer while it is the default. In a thread, back to v0.1.0:
+// Both composers, the thread's and the new thread's (home), arrange their controls as T3 v0.1.0 did
+// (intent t3-v0-1-11-bump, user 10dd0a87: "스레드에서 모델 위치나 마이크 버튼같은 배치는 기존처럼이
+// 좋고(에포트랑 합치는 건 신버전이 좋음)"; user 4da99d2e approved the same row for home after "홈에서는
+// 아직도 배열이 이렇네"). T3 v0.1.11 moved the model picker to the right and the attach button (and
+// with it Rubato's mic and call button) to the left:
 //
-//   [model+effort]                             [speed] [mic] [call] [attach] [ring] [send]
+//   [model+effort]                             [speed] | [mic] [call] [attach] [ring] [send]
 //
+// keeping upstream's model button with its effort and its two-pane picker, which opens above the
+// button at the left edge (popupAlign start) instead of over the transcript. The new-thread strip
+// below the home composer stays T3's. The row's spacing (even inner padding, the model chip, one
+// 6px cluster on the right, the divider after the speed) is rubatoPolish.css's, not an edit here.
 // The access mode ("Full access") shows nowhere (user 70c3ee81: "전체권한 이거는 그냥 안뜨게하자"):
 // not as a composer chip, not in the new-thread strip, not in the model picker's footer. The
 // thread's mode itself is untouched; only the control is gone.
-// keeping upstream's model button with its effort and its two-pane picker, which now opens above
-// the button at the left edge (popupAlign start) instead of over the transcript. The new-thread
-// composer (draft route) keeps T3 v0.1.11's layout, its strip included.
 // Below 640px T3 stacks that picker's two panes and leaves the popup as narrow as its content
 // (about 260px), which cuts model names to a letter; there it takes the window's width up to 30rem.
 // Registered last: it moves lines voice-, call- and cache-edits put in.
@@ -65,31 +66,21 @@ export const composerLayoutOverlays = [];
 
 export const composerLayoutEdits = {
   'apps/web/src/components/chat/ChatComposer.tsx': [
-    // A thread opens the row with the model and access mode; a new thread keeps T3's order.
+    // The model leads the row in both composers.
     [leadingControls,
       [
-        '                {/* Rubato: in a thread, model and access mode lead the row, as on v0.1.0 (composer-layout-edits.mjs). */}',
-        '                {routeKind !== "draft" ? (',
-        '                  <div',
-        '                    ref={attachExpandedComposerControls}',
-        '                    data-chat-composer-controls="footer"',
-        '                    data-chat-composer-footer-controls="true"',
-        '                    className={cn(',
-        '                      "relative flex min-w-0 flex-1 items-center justify-start gap-0.5",',
-        '                      dictationTakesFooter && "hidden",',
-        '                    )}',
-        '                  >',
-        '                    {composerControls}',
-        '                  </div>',
-        '                ) : (',
-        '                  <>',
-        voiceControl.replace(/^ {16}/gm, '                    ').replace(/\n$/, ''),
-        '                    <RubatoCallComposerButton environmentId={environmentId} threadId={activeThreadId} />',
-        '                    {composerAttachButton && !dictationTakesFooter ? (',
-        '                      <div className="me-2">{composerAttachButton}</div>',
-        '                    ) : null}',
-        '                  </>',
-        '                )}',
+        '                {/* Rubato: the model leads the row, as on v0.1.0 (composer-layout-edits.mjs). */}',
+        '                <div',
+        '                  ref={attachExpandedComposerControls}',
+        '                  data-chat-composer-controls="footer"',
+        '                  data-chat-composer-footer-controls="true"',
+        '                  className={cn(',
+        '                    "relative flex min-w-0 flex-1 items-center justify-start gap-0.5",',
+        '                    dictationTakesFooter && "hidden",',
+        '                  )}',
+        '                >',
+        '                  {composerControls}',
+        '                </div>',
         '                <div',
         '                  data-chat-composer-actions="right"',
         '                  data-chat-composer-transition-actions="true"',
@@ -98,24 +89,18 @@ export const composerLayoutEdits = {
         '                  }',
         '                  className={cn(',
         '                    "flex flex-nowrap items-center justify-end gap-2",',
-        '                    routeKind !== "draft" && !dictationTakesFooter ? "shrink-0" : "min-w-0 flex-1",',
+        '                    !dictationTakesFooter ? "shrink-0" : "min-w-0 flex-1",',
         '                  )}',
         '                >',
         '',
       ].join('\n'),
       'replace'],
-    // In a thread, speed, mic, call and attach stand before the ring and send.
+    // Speed, mic, call and attach stand before the ring and send.
     [footerControls,
       [
-        '                  {routeKind !== "draft" ? (',
-        '                    <>',
-        voiceControl.replace(/^ {16}/gm, '                      ').replace(/\n$/, ''),
-        '                      <RubatoCallComposerButton environmentId={environmentId} threadId={activeThreadId} />',
-        '                      {composerAttachButton && !dictationTakesFooter ? composerAttachButton : null}',
-        '                    </>',
-        '                  ) : (',
-        footerControls.replace(/^ {18}/gm, '                    ').replace(/\n$/, ''),
-        '                  )}',
+        voiceControl.replace(/^ {16}/gm, '                  ').replace(/\n$/, ''),
+        '                  <RubatoCallComposerButton environmentId={environmentId} threadId={activeThreadId} />',
+        '                  {composerAttachButton && !dictationTakesFooter ? composerAttachButton : null}',
         '',
       ].join('\n'),
       'replace'],
@@ -125,7 +110,7 @@ export const composerLayoutEdits = {
       '    // Rubato: the access mode is never shown as a chip (composer-layout-edits.mjs).\n    matchesDefault: true,',
       'replace'],
     ['      popupAlign={composerControlsCollapsed ? "start" : "end"}',
-      '      // Rubato: in a thread the picker leads the row and opens above it from the left (composer-layout-edits.mjs).\n      popupAlign={routeKind !== "draft" || composerControlsCollapsed ? "start" : "end"}',
+      '      // Rubato: the picker leads the row and opens above it from the left (composer-layout-edits.mjs).\n      popupAlign="start"',
       'replace'],
   ],
   // The picker's footer keeps speed and Ultracode; with neither it is not drawn.
