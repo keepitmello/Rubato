@@ -12,7 +12,7 @@ import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as fishaudio from '@livekit/agents-plugin-fishaudio';
 import * as openai from '@livekit/agents-plugin-openai';
 import { createBridge, createSpeechBetween, cutFrom } from './bridge.mjs';
-import { readElevenLabsKey, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
+import { readElevenLabsKey, readLiveKitCloud, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
 import { AGENT_NAME } from './livekit.mjs';
 
 /** Tells the call service (control.mjs) what was said and when the call ended; best effort. */
@@ -183,6 +183,11 @@ export default defineAgent({
     const timings = { current: null };
     logger.info({ voice: engine.choice.id }, 'call voice');
 
+    // The full detector runs on LiveKit Inference with a LiveKit Cloud key; without one, or past the
+    // free monthly allowance, the local mini model judges.
+    const cloud = readLiveKitCloud();
+    const turnDetector = new inference.TurnDetector(cloud ? { version: 'v1', ...cloud, localFallback: true } : { version: 'v1-mini' });
+    logger.info({ detector: turnDetector.model }, 'turn detector');
     session = new voice.AgentSession({
       vad: new inference.VAD(),
       llm: new CompanionSlot(),
@@ -193,7 +198,7 @@ export default defineAgent({
         keywords: companion.keywords }),
       tts: engine.tts,
       turnHandling: {
-        turnDetection: new inference.TurnDetector({ version: 'v1-mini' }),
+        turnDetection: turnDetector,
         // The transcript lands about half a second after speech stops; ending a turn sooner commits
         // it without the last sentence.
         endpointing: { mode: 'dynamic', minDelay: 800, maxDelay: 3000 },
@@ -234,7 +239,7 @@ export default defineAgent({
     });
 
     session.on(AgentSessionEventTypes.EotPrediction, ev => record({ callId, companion: companion.id, at: Date.now(),
-      probability: ev.probability, threshold: ev.threshold, waitMs: ev.delayMs, words: wordsSoFar }, TURN_END_LOG));
+      detector: turnDetector.model, probability: ev.probability, threshold: ev.threshold, waitMs: ev.delayMs, words: wordsSoFar }, TURN_END_LOG));
 
     await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings, report }), room: ctx.room });
     sessionStarted();

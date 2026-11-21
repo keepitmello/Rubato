@@ -23,6 +23,23 @@ export function readOpenAiKey(env = process.env) {
   return env.OPENAI_API_KEY?.trim() || null;
 }
 
+/**
+ * A LiveKit Cloud project's key pair for the full turn detector (v1), which only runs on LiveKit
+ * Inference: LIVEKIT_INFERENCE_API_KEY / _SECRET, else ~/.rubato/call/livekit-cloud.json
+ * `{ apiKey, apiSecret }`. This Mac's own LiveKit key pair is a different one and never used here.
+ */
+export function readLiveKitCloud(env = process.env) {
+  const fromEnv = { apiKey: env.LIVEKIT_INFERENCE_API_KEY?.trim(), apiSecret: env.LIVEKIT_INFERENCE_API_SECRET?.trim() };
+  if (fromEnv.apiKey && fromEnv.apiSecret) return fromEnv;
+  try {
+    const file = path.join(env.RUBATO_CALL_HOME ?? path.join(env.HOME ?? os.homedir(), '.rubato', 'call'), 'livekit-cloud.json');
+    const { apiKey, apiSecret } = JSON.parse(readFileSync(file, 'utf8'));
+    if (typeof apiKey === 'string' && apiKey.trim() && typeof apiSecret === 'string' && apiSecret.trim())
+      return { apiKey: apiKey.trim(), apiSecret: apiSecret.trim() };
+  } catch {}
+  return null;
+}
+
 /** The ElevenLabs key: ELEVENLABS_API_KEY, else ~/.config/elevenlabs/api_key (as Fish keeps ~/.config/fish-audio). */
 export function readElevenLabsKey(env = process.env) {
   if (env.ELEVENLABS_API_KEY?.trim()) return env.ELEVENLABS_API_KEY.trim();

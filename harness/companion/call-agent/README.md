@@ -63,6 +63,14 @@ companion's ring, `ringUntil`. Every change goes to the push relay's Mac sender
 (`harness/push-relay/mac/sender.mjs`), which sends the phone's VoIP push for a ring; without it calls
 still ring every open app.
 
+## Turn detector
+
+The local `v1-mini` model judges when the caller has finished, unless a LiveKit Cloud project's key
+pair is in `~/.rubato/call/livekit-cloud.json` (`{ "apiKey", "apiSecret" }`) or
+`LIVEKIT_INFERENCE_API_KEY` / `_SECRET`. Then the full `v1` model judges on LiveKit Inference: 7,500
+predictions a month free for self-hosted agents, one per pause of 200 ms or more, and the mini model
+takes over past that on the free plan. The caller's audio goes to LiveKit Cloud for it.
+
 ## Words the transcription expects
 
 The companion's title and labels (`call.companionLabel`, `call.userLabel`) plus `call.keywords`, a
