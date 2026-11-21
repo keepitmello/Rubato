@@ -361,9 +361,14 @@ const step = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>, fallback: A
  * Indexes for Rubato's own lookups that upstream does not define (RubatoQueryPlans.test.ts holds
  * the plans). The Rubato inventory asks every five seconds which thread shows each running
  * session, by a field inside a JSON column; without these it read both tables whole each time.
- * The tables hold one row per thread, so building them takes milliseconds.
+ * Those tables hold one row per thread, so building them takes milliseconds. The bridge's
+ * backfill reads a thread's provider-session events (RubatoPiSessions.threadStreamGaps); the
+ * partial index holds only those two event types, so it stays small on a log of millions.
  */
 export const LOOKUP_INDEXES = [
+  ["orchestration_events", `CREATE INDEX IF NOT EXISTS rubato_orch_events_provider_session_idx
+    ON orchestration_events(stream_id, sequence)
+    WHERE event_type IN ('provider-session.updated','provider-session.attached')`],
   ["orchestration_v2_projection_provider_threads", `CREATE INDEX IF NOT EXISTS rubato_provider_threads_native_idx
     ON orchestration_v2_projection_provider_threads (driver, json_extract(payload_json, '$.nativeThreadRef.nativeId'))`],
   ["provider_session_runtime", `CREATE INDEX IF NOT EXISTS rubato_provider_session_runtime_session_idx
