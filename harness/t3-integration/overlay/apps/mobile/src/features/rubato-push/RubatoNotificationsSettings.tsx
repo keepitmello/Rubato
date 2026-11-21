@@ -32,12 +32,14 @@ async function readPermission(): Promise<Permission> {
   return permission.granted ? "granted" : permission.canAskAgain ? "ask" : "off";
 }
 
-function macRequest(connection: MacConnection, action: string, body: unknown = {}): Promise<unknown> {
-  return fetch(`${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`, {
+async function macRequest(connection: MacConnection, action: string, body: unknown = {}): Promise<unknown> {
+  const url = `${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`;
+  const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${connection.bearerToken}` },
+    headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
     body: JSON.stringify(body),
-  }).then((response) => (response.ok ? response.json() : null));
+  });
+  return response.ok ? response.json() : null;
 }
 
 export function RubatoNotificationsSettings() {

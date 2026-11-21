@@ -48,7 +48,8 @@ export interface PushState {
 export interface MacConnection {
   readonly environmentId: string;
   readonly httpBaseUrl: string;
-  readonly bearerToken: string;
+  /** The headers that authorize `method url` on this Mac (rubatoHttp.savedMacHeaders). */
+  readonly authorize: (method: "POST", url: string) => Promise<Record<string, string>>;
 }
 
 export interface PushSyncDeps {
@@ -82,13 +83,14 @@ async function call<T>(
   deps: PushSyncDeps,
   url: string,
   method: string,
-  { bearer, body }: { bearer?: string; body?: unknown } = {},
+  { bearer, mac, body }: { bearer?: string; mac?: MacConnection; body?: unknown } = {},
 ): Promise<T> {
   const response = await deps.fetch(url, {
     method,
     headers: {
       "content-type": "application/json",
       ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
+      ...(mac ? await mac.authorize("POST", url) : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
@@ -177,7 +179,7 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
         body: { label: new URL(httpBaseUrl).host },
       });
       await call(deps, `${httpBaseUrl}/rubato/push/register`, "POST", {
-        bearer: connection.bearerToken,
+        mac: connection,
         body: {
           relay: deps.relay,
           grant: minted.grant,
@@ -222,7 +224,7 @@ async function tellPreferences(deps: PushSyncDeps, start: PushState, connections
     if (!grant || samePreferences(grant.preferences, preferences)) continue;
     try {
       await call(deps, `${grant.httpBaseUrl}/rubato/push/preferences`, "POST", {
-        bearer: connection.bearerToken,
+        mac: connection,
         body: { deviceId: state.deviceId, preferences },
       });
       state = { ...state, grants: { ...state.grants, [connection.environmentId]: { ...grant, preferences } } };

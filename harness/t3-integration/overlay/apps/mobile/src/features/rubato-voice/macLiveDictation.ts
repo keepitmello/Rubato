@@ -15,6 +15,7 @@ import { createLiveDictation, type LiveAudioSink, type LiveMicrophone } from "@t
 import { fetch } from "expo/fetch";
 
 import type { SavedRemoteConnection } from "../../lib/connection";
+import { savedMacHeaders } from "../companions/rubatoHttp";
 import { macVoiceFailureMessage } from "./macVoiceFailures";
 
 const LIVE_ROUTE = "/rubato/voice/live";
@@ -38,25 +39,20 @@ export function onDictated(listener: (text: string) => void): () => void {
 export function reportDictationEdits(edits: { readonly heard: ReadonlyArray<string>; readonly sent: string }): void {
   const mac = connectionsReader ? pickMac(connectionsReader()) : null;
   if (!mac) return;
-  void fetch(`${mac.baseUrl}${CORRECTIONS_ROUTE}`, {
-    method: "POST",
-    headers: { ...mac.headers, "content-type": "application/json" },
-    body: JSON.stringify(edits),
-  }).catch(() => {});
+  const url = `${mac.baseUrl}${CORRECTIONS_ROUTE}`;
+  void savedMacHeaders(mac.saved, "POST", url)
+    .then((headers) =>
+      fetch(url, { method: "POST", headers: { ...headers, "content-type": "application/json" }, body: JSON.stringify(edits) }),
+    )
+    .catch(() => {});
 }
 
-type MacConnection = { readonly baseUrl: string; readonly headers: Record<string, string> };
+type MacConnection = { readonly baseUrl: string; readonly saved: SavedRemoteConnection };
 
-/** The Mac to dictate through: the first paired one that has a bearer session. */
+/** The Mac to dictate through: the first paired one (its credentials come per request, savedMacHeaders). */
 function pickMac(connections: ReadonlyArray<SavedRemoteConnection>): MacConnection | null {
-  for (const connection of connections) {
-    if (!connection.bearerToken) continue;
-    return {
-      baseUrl: connection.httpBaseUrl.replace(/\/+$/, ""),
-      headers: { authorization: `Bearer ${connection.bearerToken}` },
-    };
-  }
-  return null;
+  const connection = connections[0];
+  return connection ? { baseUrl: connection.httpBaseUrl.replace(/\/+$/, ""), saved: connection } : null;
 }
 
 /** T3's controller shows a transcription error's own message, so the Mac's reason reaches the composer. */
@@ -128,11 +124,10 @@ export function createMacLiveDictation(
       mint: async (signal) => {
         const mac = pickMac(readConnections());
         if (!mac) throw failed("Pair this phone with your Mac first: Threads › Add environment.");
-        const response = await fetch(`${mac.baseUrl}${LIVE_ROUTE}`, {
-          method: "POST",
-          headers: mac.headers,
-          signal,
-        }).catch(() => null);
+        const url = `${mac.baseUrl}${LIVE_ROUTE}`;
+        const response = await savedMacHeaders(mac.saved, "POST", url)
+          .then((headers) => fetch(url, { method: "POST", headers, signal }))
+          .catch(() => null);
         if (!response || !response.ok) {
           const payload = response
             ? ((await response.json().catch(() => null)) as { readonly error?: { readonly code?: unknown } } | null)

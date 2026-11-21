@@ -4,7 +4,11 @@ import { __resetLiveActivitiesForTest, syncLiveActivities, type CardHandle, type
 import { DEFAULT_PREFERENCES, type PushState } from "./sync";
 
 const RELAY = "https://relay.test";
-const MAC = { environmentId: "env-mac", httpBaseUrl: "https://wy-mac.tail.ts.net/", bearerToken: "session-token" };
+const MAC = {
+  environmentId: "env-mac",
+  httpBaseUrl: "https://wy-mac.tail.ts.net/",
+  authorize: async () => ({ authorization: "Bearer session-token" }),
+};
 const NOW = Date.UTC(2026, 10, 21, 12);
 
 const card = (activeCount: number): MacCard => ({

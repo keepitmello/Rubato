@@ -42,9 +42,10 @@ export function decodeBase64(text: string): Uint8Array {
 }
 
 async function macPost(deps: SoundSyncDeps, connection: MacConnection, route: string, body: unknown): Promise<Response | null> {
-  const response = await deps.fetch(`${connection.httpBaseUrl.replace(/\/+$/, "")}${route}`, {
+  const url = `${connection.httpBaseUrl.replace(/\/+$/, "")}${route}`;
+  const response = await deps.fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${connection.bearerToken}` },
+    headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
     body: JSON.stringify(body),
   });
   return response.ok ? response : null;

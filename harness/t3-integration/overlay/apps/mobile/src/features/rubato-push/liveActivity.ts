@@ -39,9 +39,10 @@ const listening = new Set<string>();
 
 async function macCard(deps: LiveActivityDeps, connection: MacConnection, httpBaseUrl: string): Promise<MacCard | null | undefined> {
   try {
-    const response = await deps.fetch(`${httpBaseUrl}/rubato/push/activity`, {
+    const url = `${httpBaseUrl}/rubato/push/activity`;
+    const response = await deps.fetch(url, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${connection.bearerToken}` },
+      headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
       body: "{}",
     });
     if (!response.ok) return undefined;

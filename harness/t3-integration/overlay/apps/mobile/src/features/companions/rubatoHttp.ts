@@ -1,10 +1,15 @@
 // One POST to a Rubato route on a paired Mac's server: `<route>/<action>`, JSON both ways. The Mac's
 // T3 server answers /rubato/companion and /rubato/call (harness/t3-integration overlay
-// RubatoCompanion.ts, RubatoServiceRoute.ts) for a session allowed to operate it; the phone proves
-// that with the bearer token it paired with. A relay (DPoP) connection has no Rubato routes.
+// RubatoCompanion.ts, RubatoServiceRoute.ts) for a session allowed to operate it, authenticated the way
+// T3's own endpoints are: the bearer of an older pairing, or a DPoP-bound token with a proof for each
+// request (client-runtime state/rubatoEnvironmentHttp.ts). A relay connection has no Rubato routes.
 import type { PreparedConnection } from "@t3tools/client-runtime/connection";
+import { rubatoEnvironmentAuthorization } from "@t3tools/client-runtime/state/rubatoEnvironmentHttp";
 import type { EnvironmentId } from "@t3tools/contracts";
+import * as Effect from "effect/Effect";
+import type { HttpMethod } from "effect/http";
 import * as Option from "effect/Option";
+import { AtomRegistry } from "effect/reactivity";
 import * as Schema from "effect/Schema";
 
 import { appAtomRegistry } from "../../state/atom-registry";
@@ -19,17 +24,75 @@ export class RubatoRequestError extends Schema.TaggedError<RubatoRequestError>()
 
 export const isRubatoRequestError = Schema.is(RubatoRequestError);
 
-/** Base URL and headers for a Rubato route, or null when this connection cannot reach one. */
-export function rubatoAccess(
-  prepared: PreparedConnection | null,
-): { readonly baseUrl: string; readonly headers: Record<string, string> } | null {
-  if (!prepared) return null;
+const notConnected = () =>
+  new RubatoRequestError({ code: "unavailable", message: "This Mac is not connected.", status: 0 });
+
+/**
+ * The headers that authorize `method url` on this connection, with the DPoP token they carry (null for a
+ * bearer). Null when this connection cannot reach a Rubato route.
+ */
+export async function rubatoAuthorization(
+  prepared: Pick<PreparedConnection, "httpAuthorization">,
+  method: HttpMethod.HttpMethod,
+  url: string,
+  rejectedAccessToken?: string,
+): Promise<{ readonly headers: Readonly<Record<string, string>>; readonly dpopAccessToken: string | null } | null> {
   const authorization = prepared.httpAuthorization;
-  if (authorization?._tag === "Dpop") return null;
-  return {
-    baseUrl: prepared.httpBaseUrl.replace(/\/+$/, ""),
-    headers: authorization ? { authorization: `Bearer ${authorization.token}` } : {},
+  // A bearer needs nothing from the runtime: no signing, no renewal.
+  if (authorization === null) return { headers: {}, dpopAccessToken: null };
+  if (authorization._tag === "Bearer")
+    return { headers: { authorization: `Bearer ${authorization.token}` }, dpopAccessToken: null };
+  // The connection runtime (keys, signer) loads only for a DPoP pairing; a bearer never needs it.
+  const { connectionAtomRuntime } = await import("../../connection/runtime");
+  return Effect.runPromise(
+    AtomRegistry.getResult(appAtomRegistry, connectionAtomRuntime).pipe(
+      Effect.flatMap((context) =>
+        rubatoEnvironmentAuthorization(prepared, method, url, rejectedAccessToken).pipe(Effect.provide(context)),
+      ),
+    ),
+  );
+}
+
+/**
+ * fetch with this connection's credentials. A DPoP token the Mac turns down (401) is renewed and the
+ * request sent once more, as T3's own requests do.
+ */
+export async function rubatoFetch(
+  prepared: Pick<PreparedConnection, "httpAuthorization">,
+  url: string,
+  init: RequestInit & { readonly method: HttpMethod.HttpMethod },
+): Promise<Response> {
+  const send = async (rejected?: string) => {
+    const access = await rubatoAuthorization(prepared, init.method, url, rejected);
+    if (!access) throw notConnected();
+    const headers = { ...(init.headers as Record<string, string> | undefined), ...access.headers };
+    return { response: await fetch(url, { ...init, headers }), token: access.dpopAccessToken };
   };
+  const first = await send();
+  if (first.response.status !== 401 || first.token === null) return first.response;
+  return (await send(first.token)).response;
+}
+
+/** A Mac this phone saved a pairing with: its id, and the session bearer an older pairing keeps. */
+export interface SavedMac {
+  readonly environmentId: string;
+  readonly bearerToken: string | null;
+}
+
+/**
+ * Headers for `method url` on a saved Mac: its live connection's credentials (bearer, or DPoP with a
+ * proof), or while it is not connected, the bearer an older pairing saved.
+ */
+export async function savedMacHeaders(
+  saved: SavedMac,
+  method: HttpMethod.HttpMethod,
+  url: string,
+): Promise<Record<string, string>> {
+  const prepared = readPrepared(saved.environmentId as EnvironmentId);
+  const access = prepared ? await rubatoAuthorization(prepared, method, url) : null;
+  if (access) return { ...access.headers };
+  if (saved.bearerToken) return { authorization: `Bearer ${saved.bearerToken}` };
+  throw notConnected();
 }
 
 export function readPrepared(environmentId: EnvironmentId): PreparedConnection | null {
@@ -93,20 +156,21 @@ export async function postRubato<T>(
     readonly waitForConnectionMs?: number;
   } = {},
 ): Promise<T> {
-  const access = rubatoAccess(await awaitPrepared(environmentId, options.waitForConnectionMs ?? 0, options.signal));
-  if (!access) throw new RubatoRequestError({ code: "unavailable", message: "This Mac is not connected.", status: 0 });
+  const prepared = await awaitPrepared(environmentId, options.waitForConnectionMs ?? 0, options.signal);
+  if (!prepared) throw notConnected();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
   options.signal?.addEventListener("abort", () => controller.abort());
   let response: Response;
   try {
-    response = await fetch(`${access.baseUrl}${route}/${action}`, {
+    response = await rubatoFetch(prepared, `${prepared.httpBaseUrl.replace(/\/+$/, "")}${route}/${action}`, {
       method: "POST",
-      headers: { "content-type": "application/json", ...access.headers },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (cause) {
+    if (isRubatoRequestError(cause)) throw cause;
     throw new RubatoRequestError({
       code: "network",
       message:

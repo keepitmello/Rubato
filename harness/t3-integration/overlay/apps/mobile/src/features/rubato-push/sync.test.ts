@@ -3,7 +3,11 @@ import { describe, expect, it } from "vite-plus/test";
 import { setRubatoPushPreferences, syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
 
 const RELAY = "https://relay.test";
-const MAC = { environmentId: "env-mac", httpBaseUrl: "https://wy-mac.tail.ts.net/", bearerToken: "session-token" };
+const MAC = {
+  environmentId: "env-mac",
+  httpBaseUrl: "https://wy-mac.tail.ts.net/",
+  authorize: async () => ({ authorization: "Bearer session-token" }),
+};
 
 function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; relayPut?: number } = {}) {
   let macPreferences = 200;

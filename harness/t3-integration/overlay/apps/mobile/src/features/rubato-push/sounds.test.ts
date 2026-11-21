@@ -2,7 +2,11 @@ import { describe, expect, it } from "vite-plus/test";
 
 import { BUILTIN_SOUNDS, decodeBase64, syncNotificationSounds, type SoundFolder } from "./sounds";
 
-const MAC = { environmentId: "env-mac", httpBaseUrl: "https://wy-mac.tail.ts.net/", bearerToken: "session-token" };
+const MAC = {
+  environmentId: "env-mac",
+  httpBaseUrl: "https://wy-mac.tail.ts.net/",
+  authorize: async () => ({ authorization: "Bearer session-token" }),
+};
 
 function world(sounds: unknown) {
   const files = new Map<string, Uint8Array>();
