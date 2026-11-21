@@ -63,6 +63,7 @@ import { timelineRailEdits, timelineRailOverlays } from './timeline-rail-edits.m
 import { mobileEdits, mobileOverlays } from './mobile/index.mjs';
 import { threadFoldersEdits, threadFoldersOverlays } from './thread-folders-edits.mjs';
 import { tailscaleEdits, tailscaleOverlays } from './tailscale-edits.mjs';
+import { localAgyEdits, localAgyOverlays } from './local-agy-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1093,6 +1094,11 @@ for (const [relative, changes] of Object.entries(sidebarLookEdits)) {
 // `t3 thread archive` (thread-archive-edits.mjs).
 overlays.push(...threadArchiveOverlays);
 for (const [relative, changes] of Object.entries(threadArchiveEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// Local Antigravity agents (local-agy-edits.mjs).
+overlays.push(...localAgyOverlays);
+for (const [relative, changes] of Object.entries(localAgyEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

@@ -1,0 +1,38 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { hasLocalAgyAgent, localAgyAgent, localAgyModels, localAgySpawn } from
+  '../overlay/apps/server/src/provider/RubatoLocalAgy.ts';
+
+test('local agy is opt-in and uses only the native agent selector', () => {
+  assert.equal(localAgyAgent([]), undefined);
+  const agent = localAgyAgent([{ name: 'RUBATO_LOCAL_AGY_AGENT', value: '내 에이전트' }]);
+  const command = localAgySpawn('/usr/bin/agy', agent, '/project', '/home/me', {
+    PATH: '/usr/bin',
+    HOME: '/isolated',
+    CLOUD_CODE_URL: 'https://example.invalid',
+    GEMINI_API_KEY: 'must-not-forward',
+  });
+  assert.deepEqual(command, {
+    command: '/usr/bin/agy',
+    args: ['acp', '--sandbox', '--agent', '내 에이전트'],
+    cwd: '/project',
+    env: { HOME: '/home/me', PATH: '/usr/bin' },
+    shell: false,
+    extendEnv: false,
+  });
+});
+
+test('do not accept missing profiles that agy itself silently falls back for', () => {
+  const listing = 'Available agents:\nlead-alt\n내 에이전트\n';
+  assert.equal(hasLocalAgyAgent(listing, 'lead'), false);
+  assert.equal(hasLocalAgyAgent(listing, '내 에이전트'), true);
+});
+
+test('picker preserves the native model slug and shows only Gemini models the session provides', () => {
+  const neon = { slug: 'gemini-4-neon-high', name: 'Gemini 4 Neon (High)', isDefault: true };
+  const other = { slug: 'claude-opus-5-5', name: 'Claude' };
+  assert.deepEqual(localAgyModels([neon, other], 'Lead'), [
+    { ...neon, name: 'Gemini 4 Neon (High) · Lead' },
+  ]);
+  assert.deepEqual(localAgyModels([], 'Lead'), []);
+});
