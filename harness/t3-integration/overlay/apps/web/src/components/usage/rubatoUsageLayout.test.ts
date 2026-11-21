@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 
 import { arrangePools, moveDriver, toggleCollapsed } from "./rubatoUsageLayout";
 
@@ -10,6 +10,19 @@ describe("rubatoUsageLayout", () => {
     expect(drivers(arrangePools(pools("codex", "grok", "claudeAgent", "cursor"), ["claudeAgent", "codex"])))
       .toEqual(["claudeAgent", "codex", "grok", "cursor"]);
     expect(drivers(arrangePools(pools("codex", "grok"), []))).toEqual(["codex", "grok"]);
+  });
+
+  describe("on Hermes, where Array.prototype.toSorted does not exist", () => {
+    const original = Object.getOwnPropertyDescriptor(Array.prototype, "toSorted");
+    beforeEach(() => void Reflect.deleteProperty(Array.prototype, "toSorted"));
+    afterEach(() => {
+      if (original) Reflect.defineProperty(Array.prototype, "toSorted", original);
+    });
+
+    it("still arranges providers", () => {
+      expect(drivers(arrangePools(pools("codex", "grok", "claudeAgent"), ["claudeAgent"])))
+        .toEqual(["claudeAgent", "codex", "grok"]);
+    });
   });
 
   it("moves a provider one place among those on screen and keeps the hidden ones", () => {

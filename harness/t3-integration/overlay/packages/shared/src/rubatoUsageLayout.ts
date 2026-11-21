@@ -29,9 +29,10 @@ export function arrangePools<T extends { readonly driver: string }>(
     const index = order.indexOf(driver);
     return index < 0 ? order.length : index;
   };
+  // .sort() on a fresh array, not .toSorted(): Hermes (the phone's engine) lacks the ES2023 method.
   return pools
     .map((pool, index) => ({ pool, index }))
-    .toSorted((left, right) => rank(left.pool.driver) - rank(right.pool.driver) || left.index - right.index)
+    .sort((left, right) => rank(left.pool.driver) - rank(right.pool.driver) || left.index - right.index)
     .map(({ pool }) => pool);
 }
 
