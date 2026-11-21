@@ -32,6 +32,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { GlassSurface } from "../../components/ui/GlassSurface";
+import { Toolbar } from "../../components/ui/Toolbar";
 import { ComposerAttachmentButton } from "../threads/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
 import type { FilePreviewSource } from "../../components/ui/FilePreviewModal";
@@ -83,7 +84,6 @@ import {
   GAP_BEFORE_GROUP,
   GAP_IN_GROUP,
   HEADER_AVATAR,
-  HEADER_BUTTON,
   HEADER_DEPTH,
   HEADER_NAME_HEIGHT,
   ROOM_SIDE,
@@ -141,32 +141,6 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
   return calls;
 }
 
-/** A glass circle in the header: back on the left, the call on the right. */
-function HeaderButton(props: {
-  readonly icon: ComponentProps<typeof SymbolView>["name"];
-  readonly label: string;
-  readonly onPress: () => void;
-  readonly side: "left" | "right";
-  readonly top: number;
-  readonly dimmed?: boolean;
-}) {
-  return (
-    <GlassSurface
-      chrome="none"
-      style={{ position: "absolute", top: props.top, [props.side]: ROOM_SIDE, width: HEADER_BUTTON, height: HEADER_BUTTON, borderRadius: HEADER_BUTTON / 2 }}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={props.label}
-        onPress={props.onPress}
-        className="h-full w-full items-center justify-center active:opacity-60"
-      >
-        <SymbolView name={props.icon} size={19} weight="semibold" tintColorClassName={props.dimmed ? "accent-icon-muted" : "accent-icon"} />
-      </Pressable>
-    </GlassSurface>
-  );
-}
-
 /**
  * Messages' soft top edge: the conversation blurs and darkens as it goes under the header. Blur
  * views stacked, each a little shorter, make the blur grow toward the top; the screen color fades
@@ -183,13 +157,16 @@ function TopEdge(props: { readonly height: number }) {
   );
 }
 
-/** The header: back, the companion's face with its name in glass under it, and the call. */
+/**
+ * The face with its name in a glass pill under it, over the stack's own transparent bar: the bar
+ * keeps iOS's glass back button, the call button and the swipe back (hiding the bar turns UIKit's
+ * swipe back off; user b29122dd, a127a93e). Messages lays its header out the same way. The name
+ * pill opens the profile, where the picture changes; the face sits over the bar, which takes taps
+ * there.
+ */
 function RoomHeader(props: {
   readonly companion: CompanionEntry | null;
   readonly title: string;
-  readonly canCall: boolean;
-  readonly onBack: () => void;
-  readonly onCall: () => void;
   readonly onProfile: () => void;
   /** What hangs under the header (a first conversation's chips): the soft edge reaches past it. */
   readonly below: number;
@@ -200,24 +177,15 @@ function RoomHeader(props: {
   return (
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + props.below + 24 }}>
       <TopEdge height={top + HEADER_DEPTH + props.below} />
-      <HeaderButton icon="chevron.left" label={copy.back} side="left" top={top} onPress={props.onBack} />
-      <HeaderButton
-        icon={{ ios: "phone.fill", android: "smartphone" }}
-        label={props.canCall ? copy.call : copy.cannotCall}
-        side="right"
-        top={top}
-        dimmed={!props.canCall}
-        onPress={props.onCall}
-      />
       <View pointerEvents="box-none" accessibilityRole="header" accessibilityLabel={props.title} style={{ position: "absolute", left: 0, right: 0, top: top - 1.5, alignItems: "center" }}>
-        {/* The face and the name open the profile, where the picture changes. */}
+        <CompanionAvatar art={props.companion?.art ?? null} title={named ? props.title : "?"} size={HEADER_AVATAR} />
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`${props.title}, ${copy.profile}`}
           onPress={props.onProfile}
-          className="items-center active:opacity-70"
+          hitSlop={8}
+          className="active:opacity-70"
         >
-        <CompanionAvatar art={props.companion?.art ?? null} title={named ? props.title : "?"} size={HEADER_AVATAR} />
         <GlassSurface
           chrome="none"
           style={{ marginTop: -3, height: HEADER_NAME_HEIGHT, borderRadius: HEADER_NAME_HEIGHT / 2, paddingLeft: 14, paddingRight: 11, flexDirection: "row", alignItems: "center", gap: 4 }}
@@ -806,13 +774,15 @@ function RoomBody(props: {
   }, [composer, toEnd]);
   const reversed = useMemo(() => [...items].reverse(), [items]);
   // Dragging the room left brings each message's time in from the right, as in Messages; it springs
-  // back on release. Only a leftward drag starts it, so the back swipe and the scroll keep theirs.
+  // back on release. It lets go at the first move to the right and never starts at the left edge, so
+  // the back swipe keeps its own (user b29122dd: with failOffsetX 12 the back swipe stopped working).
   const reveal = useSharedValue(0);
   const timeDrag = useMemo(
     () =>
       Gesture.Pan()
+        .hitSlop({ left: -32 })
         .activeOffsetX(-12)
-        .failOffsetX(12)
+        .failOffsetX(2)
         .failOffsetY([-10, 10])
         .onUpdate((event) => {
           "worklet";
@@ -936,8 +906,19 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   const [chipsHeight, setChipsHeight] = useState(0);
   const topInset = onboarding ? chipsHeight : 0;
   const insets = useSafeAreaInsets();
-  // The room draws its own header, Messages' (RoomHeader); the stack's back swipe stays.
-  const options = useMemo(() => ({ title, headerShown: false }), [title]);
+  // The stack's bar stays, transparent and without a title: its back button and swipe back are
+  // iOS's own. The face and name are drawn over it (RoomHeader).
+  const options = useMemo(
+    () => ({
+      title,
+      headerTitle: () => null,
+      unstable_navigationItemStyle: "navigator" as const,
+      // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
+      // the room draws its own edge (TopEdge).
+      scrollEdgeEffects: NO_EDGE_EFFECTS,
+    }),
+    [title],
+  );
   const callable = companion?.callable ?? null;
   const call = useCallback(() => {
     if (!callable?.ready || !environmentId) {
@@ -967,15 +948,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       ) : (
         <LoadingScreen message={copy.roomLoading} />
       )}
-      <RoomHeader
-        companion={companion}
-        title={title}
-        canCall={callable?.ready === true}
-        onBack={() => navigation.goBack()}
-        onCall={call}
-        onProfile={openProfile}
-        below={topInset}
-      />
+      <RoomHeader companion={companion} title={title} onProfile={openProfile} below={topInset} />
       {onboarding ? (
         <View
           style={{ position: "absolute", top: insets.top + HEADER_DEPTH, left: 0, right: 0 }}
@@ -984,6 +957,13 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           <OnboardingChips onboarding={onboarding} />
         </View>
       ) : null}
+      <Toolbar placement="right">
+        <Toolbar.Button
+          accessibilityLabel={callable?.ready ? copy.call : copy.cannotCall}
+          icon="phone.fill"
+          onPress={call}
+        />
+      </Toolbar>
     </KeyboardAvoidingView>
   );
 }
