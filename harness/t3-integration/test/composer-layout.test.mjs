@@ -43,12 +43,23 @@ test('a new thread keeps T3 v0.1.11: mic, call and attach lead; model, ring and 
     'data-chat-composer-actions="right"', 'justify-end gap-0.5', '<ContextWindowMeter', '<ComposerFooterPrimaryActions']);
 });
 
-test('the model button keeps its effort; the access chip shows in a thread; the picker opens from the left in a thread', skip, async () => {
+test('the model button keeps its effort; the picker opens from the left in a thread', skip, async () => {
   const bar = await applied('apps/web/src/components/chat/ComposerControlsBar.tsx');
-  assert.match(bar, /matchesDefault: routeKind === "draft" \? accessMatchesDefault \|\| props\.permissionsShownInStrip : false,/);
   assert.match(bar, /popupAlign=\{routeKind !== "draft" \|\| composerControlsCollapsed \? "start" : "end"\}/);
   assert.match(bar, /triggerSuffix=\{effort\.suffix\}/);
   assert.doesNotMatch(bar, /<TraitsPicker/);
+});
+
+test('the access mode shows nowhere: no chip, no new-thread strip control, no picker footer menu', skip, async () => {
+  const bar = await applied('apps/web/src/components/chat/ComposerControlsBar.tsx');
+  assert.match(bar, /matchesDefault: true,/);
+  const strip = await applied('apps/web/src/components/ComposerContextPermissions.tsx');
+  assert.match(strip, /export function ComposerContextPermissions\(\n  _props: [^)]*\[0\],\n\): null \{\n  return null;\n\}/);
+  const effort = await applied('apps/web/src/components/chat/ComposerModelEffort.tsx');
+  const footer = effort.slice(effort.indexOf('export function ComposerPickerFooter('));
+  assert.doesNotMatch(footer.slice(0, footer.indexOf('\n}\n')), /<PermissionsMenu/);
+  assert.match(footer, /px-3 py-2 empty:hidden/);
+  // ChatView still places it (no anchor there); the component draws nothing.
   const view = await applied('apps/web/src/components/ChatView.tsx');
   assert.match(view, /<ComposerContextPermissions/);
 });
