@@ -17,7 +17,11 @@
 // - The undo notice is a card above the footer (RubatoThreadUndoNotice.tsx), and the footer
 //   pads 4px below as above.
 // - The narrow-window project picker lists projects in Rubato's order (T3 v0.1.11 lifts pinned
-//   projects first); archived projects stay out, as upstream.
+//   projects first); archived projects stay out, as upstream. It opens under the search field,
+//   left-aligned and as wide as its names (up to 18rem), and each project keeps its settings
+//   gear in view (T3 v0.1.11: 18rem under the button, gear and pin on the highlighted row).
+// - The narrow-window drawer is as wide as its content, at most the window (T3 v0.1.11: the
+//   window less 12px). v0.1.0 set an invalid width there, which the browser drops to auto.
 export const sidebarLookOverlays = [
   'apps/web/src/components/sidebar/RubatoThreadUndoNotice.tsx',
 ];
@@ -162,11 +166,80 @@ export const sidebarLookEdits = {
       'replace'],
   ],
   'apps/web/src/components/ui/sidebar.tsx': [
+    ['const SIDEBAR_WIDTH_MOBILE = "calc(100vw - var(--spacing) * 3)";\n',
+      'const SIDEBAR_WIDTH_MOBILE = "auto"; // Rubato: v0.1.0 drawer width (sidebar-look-edits.mjs)\n',
+      'replace'],
     ['        "flex flex-col gap-2 px-[var(--sidebar-content-inset)] pt-1 pb-[var(--sidebar-content-inset)]",\n',
       '        "flex flex-col gap-2 px-[var(--sidebar-content-inset)] py-1", // Rubato: v0.1.0 footer (sidebar-look-edits.mjs)\n',
       'replace'],
   ],
+  'apps/web/src/components/sidebar/SidebarThreadHeader.tsx': [
+    ['  searchInputRef: RefObject<HTMLInputElement | null>;\n',
+      '  searchInputRef: RefObject<HTMLInputElement | null>;\n  /** Rubato: the field the narrow-window project picker opens under (sidebar-look-edits.mjs). */\n  searchFieldRef?: RefObject<HTMLDivElement | null>;\n',
+      'replace'],
+    ['  searchInputRef,\n  searchQuery,\n', '  searchInputRef,\n  searchFieldRef,\n  searchQuery,\n', 'replace'],
+    ['      <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5',
+      '      <div ref={searchFieldRef} className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5',
+      'replace'],
+  ],
   'apps/web/src/components/Sidebar.tsx': [
+    ['import { ProjectRowActions } from "./ProjectComboboxRow";\n',
+      '// Rubato: the narrow-window picker draws its own settings gear (sidebar-look-edits.mjs).\n', 'replace'],
+    ['import { isProjectPinShortcut, ProjectPinButton } from "./ProjectPinButton";\n',
+      'import { isProjectPinShortcut } from "./ProjectPinButton"; // Rubato: no pin button in the picker\n', 'replace'],
+    ['  const threadSearchInputRef = useRef<HTMLInputElement>(null);\n',
+      '  const threadSearchInputRef = useRef<HTMLInputElement>(null);\n  // Rubato: the narrow-window project picker opens under the search field (sidebar-look-edits.mjs).\n  const rubatoSearchFieldRef = useRef<HTMLDivElement>(null);\n',
+      'replace'],
+    ['              searchInputRef={threadSearchInputRef}\n',
+      '              searchInputRef={threadSearchInputRef}\n              searchFieldRef={rubatoSearchFieldRef}\n',
+      'replace'],
+    [
+      [
+        '                    align="start"',
+        '                    collisionAvoidance={{ side: "flip", align: "shift" }}',
+        '                    className="w-[min(18rem,var(--available-width))] overflow-hidden"',
+        '',
+      ].join('\n'),
+      [
+        '                    align="start"',
+        '                    anchor={rubatoSearchFieldRef}',
+        '                    collisionAvoidance={{ side: "flip", align: "shift" }}',
+        '                    className="max-w-[min(18rem,var(--available-width))] overflow-hidden"',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      [
+        '                              <ProjectRowActions',
+        '                                pin={',
+        '                                  canPinProject(project) ? (',
+        '                                    <ProjectPinButton',
+        '                                      name={project.displayName}',
+        '                                      pinned={project.pinned}',
+        '                                      shortcutLabel={shortcutLabelForCommand(',
+        '                                        keybindings,',
+        '                                        "thread.pin",',
+        '                                      )}',
+        '                                      onToggle={() => toggleProjectGroupPin(project)}',
+        '                                    />',
+        '                                  ) : null',
+        '                                }',
+        '                                settings={',
+        '                                  <Button',
+        '',
+      ].join('\n'),
+      [
+        '                              // Rubato: the settings gear stays in view, no pin (sidebar-look-edits.mjs).',
+        '                                  <Button',
+        '                                    className="ml-auto"',
+        '',
+      ].join('\n'),
+      'replace',
+    ],
+    ['                                  </Button>\n                                }\n                              />\n                            ) : (\n                              // Keeps "All projects" as tall as the project rows.\n',
+      '                                  </Button>\n                            ) : (\n                              // Keeps "All projects" as tall as the project rows (Rubato: no pin column).\n',
+      'replace'],
     ['    ...pickableProjectGroups(projectGroups).map((project) => ({\n',
       '    // Rubato: the projects in Rubato\'s order, pinned ones not lifted (sidebar-look-edits.mjs).\n    ...projectGroups.filter((group) => !group.archived).map((project) => ({\n',
       'replace'],

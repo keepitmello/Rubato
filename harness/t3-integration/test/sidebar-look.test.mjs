@@ -59,3 +59,15 @@ test('the narrow-window project picker keeps Rubato\'s order instead of lifting 
   assert.match(lookups, /\.\.\.projectGroups\.filter\(\(group\) => !group\.archived\)\.map\(/);
   assert.doesNotMatch(lookups, /pickableProjectGroups/);
 });
+
+test('the narrow-window drawer and project picker keep v0.1.0\'s size and gear', skip, async () => {
+  const ui = await applied('apps/web/src/components/ui/sidebar.tsx');
+  assert.match(ui, /const SIDEBAR_WIDTH_MOBILE = "auto";/);
+  const sidebar = await applied('apps/web/src/components/Sidebar.tsx');
+  assert.match(sidebar, /anchor=\{rubatoSearchFieldRef\}\n\s+collisionAvoidance=\{\{ side: "flip", align: "shift" \}\}\n\s+className="max-w-\[min\(18rem,var\(--available-width\)\)\] overflow-hidden"/);
+  assert.match(sidebar, /searchFieldRef=\{rubatoSearchFieldRef\}/);
+  assert.doesNotMatch(sidebar, /<ProjectRowActions/);
+  assert.match(sidebar, /<Button\n\s+className="ml-auto"\n\s+size="icon-xs"/);
+  const header = await applied('apps/web/src/components/sidebar/SidebarThreadHeader.tsx');
+  assert.match(header, /<div ref=\{searchFieldRef\} className="flex h-8 min-w-0 flex-1/);
+});

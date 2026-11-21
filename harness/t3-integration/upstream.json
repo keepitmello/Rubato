@@ -132,6 +132,8 @@
     "apps/web/src/components/chat/ThreadDetailsCard.tsx": "689abf485a4f461d847894dfd6ee8a7014212dd0c977af0db926800b4268efce",
     "apps/web/src/components/chat/ThreadDetailsPanel.tsx": "07a00f32a9825eaff08bd37f86d535c151f77c8ac9f27227bf58c657774321ac",
     "apps/web/src/components/ui/collapsible-section-header.tsx": "0cad2a001c7cbb2b3606bb899c900609aee9c3c37a4567d0209359927541e149",
+    "apps/web/src/components/settings/LabsSettingsPanel.tsx": "eaa4bc5d51078ca02509cecb42156a8142af3fe1e5c11bde66a6e50cf6158c99",
+    "apps/web/src/components/sidebar/SidebarThreadHeader.tsx": "f2264efdd2e8665ef8223882afb64c988722c06a141f2fc55fd9b8b007e620ef",
     "apps/server/src/cli/thread.ts": "74a0f6730cb426ec87c4472a626482c36c17927a6e45a89e1a52c78565e75e0d",
     "apps/web/src/components/chat/ThreadTimeline.tsx": "b9c23f37c257d47715cddac3b0cd6adab7024182eb1ea0b9072bb5d172c522a2",
     "apps/web/src/components/chat/TimelineAssistantRows.tsx": "5a6b140e5a2e1c252d89e157f7f7dd5dc078561160de3b7ad11b17812894c149",
