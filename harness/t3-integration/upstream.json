@@ -219,6 +219,7 @@
     "third-party-licenses.config.json": "b5902fb11e3891f72712ca0c54b663278b8e518c5a4fb4aad0408d41024e01cf",
     "tsconfig.base.json": "a3d3a43e170238b3923ef1e134c32f1ad7bc16dfe943b46041b33b9999445500",
     "packages/client-runtime/package.json": "2e1bf877d2841184cf239c5e3c707292d70a78b97629b6b600142672dc3af5d8",
+    "apps/mobile/src/features/layout/workspace/useSystemWorkspaceTabBar.ts": "5ce10f29311f2f1a79f12cd48234b54a2712f305c725f0c295589049fdc059b4",
     "apps/mobile/src/lib/storage.test.ts": "37815438538d106303e948ebc24bef4dd76d0be152c80a88d6e12575f55c37e8"
   }
 }
