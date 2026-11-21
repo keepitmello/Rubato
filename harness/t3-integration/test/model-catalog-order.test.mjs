@@ -95,6 +95,20 @@ test('reasoning models expose effort, and fast-capable models expose Fast', () =
   assert.equal(modelSupportsFast({ provider: 'anthropic', id: 'claude-fable-5-2-sub', api: 'anthropic-messages' }), true);
 });
 
+test('the effort picker starts where the engine will run the model', () => {
+  const sonnet = { provider: 'anthropic', id: 'claude-sonnet-5-5', reasoning: true };
+  const effort = (item) => optionDescriptorsFor(item).optionDescriptors[0];
+  const high = effort({ ...sonnet, startThinkingLevel: 'high' });
+  assert.equal(high.currentValue, 'high');
+  assert.deepEqual(high.options.filter((option) => option.isDefault).map((option) => option.id), ['high']);
+  // A level the model does not offer meets the next one up, else the next one down, as Pi clamps it.
+  assert.equal(effort({ ...sonnet, startThinkingLevel: 'xhigh' }).currentValue, 'high');
+  assert.equal(effort({ ...sonnet, startThinkingLevel: 'minimal' }).currentValue, 'low');
+  // An engine that does not report it keeps medium.
+  assert.equal(effort(sonnet).currentValue, 'medium');
+  assert.equal(effort({ ...sonnet, startThinkingLevel: 'bogus' }).currentValue, 'medium');
+});
+
 test('an Ultrafast model gets one Speed select instead of the Fast toggle, off by default', () => {
   const [sol] = CODEX_ULTRAFAST_MODEL_IDS;
   const item = { provider: 'openai-codex', id: sol, reasoning: true, api: 'openai-codex-responses' };

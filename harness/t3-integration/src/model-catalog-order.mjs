@@ -77,11 +77,31 @@ const SERVICE_TIER_OPTIONS = Object.freeze([
   Object.freeze({ id: SERVICE_TIERS.ultrafast, label: "Ultrafast" }),
 ]);
 
+// Pi's effort order, for meeting a level the model does not offer at its nearest one.
+const EFFORT_ORDER = Object.freeze(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
+
+/**
+ * The effort the picker starts at: the one the engine reports a new conversation will run at on
+ * this model (`startThinkingLevel`), met at the nearest offered level the way Pi clamps it (the
+ * next one up, else the next one down). An engine that does not report it leaves medium.
+ */
+function pickerStartLevel(item, levels) {
+  const wanted = item?.startThinkingLevel;
+  if (levels.includes(wanted)) return wanted;
+  const index = EFFORT_ORDER.indexOf(wanted);
+  if (index >= 0) {
+    const up = EFFORT_ORDER.slice(index + 1).find((level) => levels.includes(level));
+    const down = EFFORT_ORDER.slice(0, index).reverse().find((level) => levels.includes(level));
+    if (up ?? down) return up ?? down;
+  }
+  return levels.includes("medium") ? "medium" : levels[0];
+}
+
 export function optionDescriptorsFor(item) {
   const descriptors = [];
   const levels = supportedThinkingLevels(item).filter((level) => level !== "off");
   if (levels.length > 0) {
-    const current = levels.includes("medium") ? "medium" : levels[0];
+    const current = pickerStartLevel(item, levels);
     descriptors.push({
       id: "reasoningEffort",
       label: "Reasoning",
