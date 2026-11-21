@@ -21,7 +21,7 @@ import * as SqlitePersistence from "./persistence/Sqlite.ts";
 import * as EventSink from "./orchestration-v2/EventSink.ts";
 import * as EventStore from "./orchestration-v2/EventStore.ts";
 import * as ProjectionStore from "./orchestration-v2/ProjectionStore.ts";
-import { piSessionOfThread, threadOfPiSession } from "./provider/RubatoPiSessions.ts";
+import { piSessionOfThread, threadMessages, threadOfPiSession, threadStreamGaps } from "./provider/RubatoPiSessions.ts";
 import { RETENTION, compactEvents, ensureLookupIndexes, runRetention } from "./RubatoStateRetention.ts";
 
 /**
@@ -162,6 +162,9 @@ it.live("the server's hot reads and the state retention read no large table from
     yield* run(runRetention);
     yield* run(threadOfPiSession("session-without-a-thread"));
     yield* run(piSessionOfThread(threads[1]!));
+    // The bridge's backfill, per thread: its messages and its provider-session events.
+    yield* run(threadMessages(threadId));
+    yield* run(threadStreamGaps(threadId));
 
     const checked = recorded.filter(({ query }) => /^\s*(SELECT|WITH|INSERT|UPDATE|DELETE)\b/i.test(query));
     assert.isAbove(checked.length, 20, "the reads above ran");
