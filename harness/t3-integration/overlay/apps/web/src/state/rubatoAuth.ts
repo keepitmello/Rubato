@@ -62,6 +62,21 @@ export interface CheckResult {
   readonly message: string;
 }
 
+/** Pi's thinking levels, weakest first (src/auth/effort.mjs EFFORT_LEVELS). */
+export type EffortLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** The levels new conversations start at: for every model, and the models that keep their own. */
+export interface EffortSettings {
+  /** null: Pi's own default (the level a new conversation opens at). */
+  readonly defaultLevel: EffortLevel | null;
+  /** `provider/model-id` → that model's own level. */
+  readonly models: Readonly<Record<string, EffortLevel>>;
+}
+
+export type EffortChange =
+  | { readonly defaultLevel: EffortLevel }
+  | { readonly model: string; readonly level: EffortLevel | null };
+
 function call<T>(environmentId: EnvironmentId | null, action: string, body: Record<string, unknown> = {}): Promise<T> {
   return postRubato<T>(environmentId, AUTH_ROUTE, action, body, "provider accounts");
 }
@@ -78,6 +93,9 @@ export const rubatoAuth = {
     call<{ ok: true; loadBalancing: boolean }>(env, "load-balancing", { provider, enabled }),
   remove: (env: EnvironmentId | null, provider: string, account: string) =>
     call<{ ok: true }>(env, "remove", { provider, account }),
+  effort: (env: EnvironmentId | null) => call<EffortSettings>(env, "effort"),
+  setEffort: (env: EnvironmentId | null, change: EffortChange) =>
+    call<EffortSettings>(env, "set-effort", change as Record<string, unknown>),
   login: (env: EnvironmentId | null, provider: string, method: LoginMethod) =>
     call<LoginJob>(env, "login", { provider, method }),
   loginState: (env: EnvironmentId | null, job: string) => call<LoginJob>(env, "login-state", { job }),

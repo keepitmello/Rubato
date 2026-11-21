@@ -4723,7 +4723,14 @@
   "Dictation languages": "받아쓰기 언어",
   "Language codes you dictate in, such as ko, en. Leave it empty to use this Mac's languages.": "받아쓸 때 쓰는 언어 코드입니다. 예: ko, en. 비워 두면 이 Mac의 언어를 씁니다.",
   "Could not save the languages": "언어를 저장하지 못했습니다",
-  "Listening…": "듣는 중…"
+  "Listening…": "듣는 중…",
+  "Thinking effort": "추론 수준",
+  "New conversations think at": "새 대화의 추론 수준",
+  "Used for every model unless that model has its own level below. A level a model doesn't offer moves to its nearest one. A level picked in a conversation stays in that conversation.": "아래에서 따로 정하지 않은 모든 모델에 쓰입니다. 모델에 없는 수준은 가장 가까운 수준으로 맞춥니다. 대화에서 고른 수준은 그 대화에만 적용됩니다.",
+  "Back to the default": "기본값으로 되돌리기",
+  "Could not change thinking effort": "추론 수준을 바꿀 수 없습니다",
+  "This conversation only": "이 대화에만 적용",
+  "Change default": "기본값 바꾸기"
  },
  "templates": [
   [
@@ -8477,6 +8484,22 @@
   [
    "How much {0} thinks before each answer while you are on a call. Less thinking answers sooner, and the usual level comes back when the call ends.",
    "{0}가 통화 중에 답하기 전 얼마나 생각할지 정합니다. 덜 생각할수록 빨리 답하고, 통화가 끝나면 평소 수준으로 돌아갑니다."
+  ],
+  [
+   "Default · {0}",
+   "기본값 · {0}"
+  ],
+  [
+   "{0} now",
+   "지금 {0}"
+  ],
+  [
+   "{0} thinking effort",
+   "{0} 추론 수준"
+  ],
+  [
+   "Back to the default for {0}",
+   "{0} 기본값으로 되돌리기"
   ]
  ]
 }
