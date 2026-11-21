@@ -157,6 +157,18 @@
   padding-inline-end: calc(var(--spacing) * 4);
   padding-bottom: calc(var(--spacing) * 4);
 }
+/* A roomier composer (user 2f61360b, "좌우 여백 더 넉넉하게"): text and both ends of the
+ * control row sit 24px from the edge; the model chip's own 8px padding keeps its content on
+ * the text's line. A narrow composer keeps T3's 16px. */
+@container composer-surface (min-width: 481px) {
+  [data-chat-composer-surface="true"] [data-chat-composer-body="true"] {
+    padding-inline: calc(var(--spacing) * 6);
+  }
+  [data-chat-composer-surface="true"] [data-chat-composer-footer="true"] {
+    padding-inline-start: calc(var(--spacing) * 4);
+    padding-inline-end: calc(var(--spacing) * 6);
+  }
+}
 [data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"] {
   background-color: var(--rb-hairline);
 }
