@@ -64,7 +64,7 @@ export const shellEdits = {
       + '// the App Group group.com.keepitmello.rubato, which only the Apple account can put on the app ids\n'
       + '// com.keepitmello.rubato and com.keepitmello.rubato.widgets. Turning it on changes the native\n'
       + '// fingerprint: a TestFlight build, and every update after it, carries it.\n'
-      + 'const RUBATO_WIDGETS = false;\n\n'],
+      + 'const RUBATO_WIDGETS = true;\n\n'],
     ['  slug: "t3-code",', '  slug: "rubato",', 'replace'],
     // Rubato's own version line; build-ios.sh stamps the build number.
     ['  version: repoEnv.T3CODE_MOBILE_VERSION ?? "2.3.0",', '  version: "1.0.0",', 'replace'],
