@@ -343,3 +343,63 @@ test('a companion that takes calls says so, and its thinking on calls is a saved
     'the file the call bridge reads in the companion home');
   await assert.rejects(service.handle('save-settings', { companionId: 'other', patch: { call: { effort: 'max' } } }), /call\.effort/);
 });
+
+// intent companion-manage: create, the list's profile part, the picture and proposals, as both apps call them.
+test('a companion made from the app: create, its nameless row with chips, a picture, and a proposal applied only on apply', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-companion-manage-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = { HOME: root, RUBATO_COMPANIONS_FILE: path.join(root, '.rubato', 'companions.json') };
+  const service = createCompanionService({ env, defaultsDir, telegram: false, listSessions: async () => [] });
+  const post = async (action, body = {}) => {
+    const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
+      { method: 'POST', body: JSON.stringify(body) }));
+    return { status: response.status, body: await response.json() };
+  };
+  const made = await post('create');
+  assert.equal(made.status, 200);
+  const { id } = made.body.companion;
+  assert.match(id, /^companion-[0-9a-f]{8}$/);
+  assert.equal(made.body.companion.sessionId, null);
+  const rows = (await post('companions')).body.companions;
+  assert.deepEqual(rows.map((row) => row.id), ['segno', id]);
+  const row = rows[1];
+  assert.equal(row.title, null, 'nameless until its first meeting names it');
+  assert.equal(row.madeInApp, true);
+  assert.equal(row.telegram, false);
+  assert.equal(row.settings.enabled, true);
+  assert.deepEqual(row.onboarding.items.map((item) => item.key), ['name', 'callsUser', 'work', 'relationship', 'look', 'speech', 'closeness']);
+  assert.ok(row.profile.since);
+  assert.equal(row.profile.callsUser, null);
+  assert.equal(row.avatarVersion, null);
+  assert.equal(rows[0].title, 'Segno');
+  assert.equal(rows[0].onboarding, null);
+
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==';
+  const pictured = await post('set-avatar', { companionId: id, image: `data:image/png;base64,${png}` });
+  assert.equal(pictured.status, 200);
+  assert.equal(pictured.body.avatar.url, `data:image/png;base64,${png}`);
+  assert.equal((await post('companions')).body.companions[1].avatarVersion, pictured.body.avatar.version);
+  assert.equal((await post('set-avatar', { companionId: id, image: 'data:image/png;base64,AAAA' })).status, 400);
+
+  const { propose } = await import('../../companion/manage.mjs');
+  const { companionEnv } = await import('../../companion/registry.mjs');
+  const own = companionEnv(id, env);
+  const soul = path.join(own.RUBATO_COMPANION_HOME, 'prompt', 'soul.md');
+  const before = readFileSync(soul);
+  const first = propose({ piece: 'soul', label: '말투', before: 'When I work I am short and exact;', after: 'When I work I say one line;' }, { env: own, defaultsDir });
+  const listed = (await post('proposals', { companionId: id })).body.proposals;
+  assert.deepEqual(listed.map((item) => [item.id, item.status, item.label, item.piece]), [[first.id, 'open', '말투', 'soul']]);
+  assert.equal(listed[0].before, 'When I work I am short and exact;');
+  assert.equal((await post('decline-proposal', { companionId: id, proposalId: first.id })).body.proposal.status, 'declined');
+  assert.deepEqual(readFileSync(soul), before, 'declining leaves the piece byte-identical');
+  const again = await post('apply-proposal', { companionId: id, proposalId: first.id });
+  assert.equal(again.status, 409);
+  assert.equal(again.body.error.code, 'closed');
+  const second = propose({ piece: 'soul', label: '말투', before: 'When I work I am short and exact;', after: 'When I work I say one line;' }, { env: own, defaultsDir });
+  const applied = await post('apply-proposal', { companionId: id, proposalId: second.id });
+  assert.equal(applied.body.proposal.status, 'applied');
+  assert.match(readFileSync(soul, 'utf8'), /When I work I say one line;/);
+  assert.equal((await post('apply-proposal', { companionId: id, proposalId: 'nope' })).status, 400);
+
+  assert.deepEqual((await post('summaries', { companionId: id })).body, { who: null, me: null, updatedAt: null });
+});

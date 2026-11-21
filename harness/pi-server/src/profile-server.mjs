@@ -8,7 +8,7 @@ import { SessionWorker } from './session-worker.mjs';
 import { readDescriptor } from './descriptor.mjs';
 import { drainForRestart, resumeAfterRestart, resumeFilePath } from './drain.mjs';
 import { ensureSessionDefaults, sessionDefaultsLookCurrent } from '../../rubato-pi/src/session-defaults.mjs';
-import { residentServices, startResidentServices } from './resident-services.mjs';
+import { REGISTRY_POLL_MS, newCompanionServices, residentServices, startResidentServices } from './resident-services.mjs';
 import { followingStore } from '../../companion/companion.mjs';
 import { companionEnv, companionServiceName, listCompanions } from '../../companion/registry.mjs';
 export { readDescriptor } from './descriptor.mjs';
@@ -40,6 +40,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
   let compromised;
   let hosted;
   let residents;
+  let registryWatch;
   // 서버가 kill -9 로 죽으면 락은 stale 로 넘어갈 때까지 남고, 그 창이 그대로
   // 앱의 복구 지연이 된다. 실측 41초. 살아있는 서버는 update 마다 mtime 을 새로
   // 찍으므로 stale 은 update 의 세 배면 충분하다.
@@ -73,7 +74,9 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
     hosted?.bindHost(service.host);
     hosted?.sessionLink.bind({ host: service.host, sessionsDir, socketPath, serverId: service.serverId, onError,
       ...(resident ? { followStores: Object.fromEntries(listCompanions().map((profile) =>
-        [profile.id, followingStore(companionEnv(profile.id))])) } : {}) });
+        [profile.id, followingStore(companionEnv(profile.id))])),
+        // A companion registered while the engine runs keeps its followed work across restarts too.
+        followStoreFor: (id) => listCompanions().some((profile) => profile.id === id) ? followingStore(companionEnv(id)) : undefined } : {}) });
     if (compromised) throw compromised;
     const descriptor = { version: 1, serverId: service.serverId, socketPath };
     if (hosted) {
@@ -101,6 +104,16 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
       const services = Array.isArray(resident) ? resident : residentServices();
       residents = startResidentServices({ services,
         context: { agentDir, socketPath, serverId: service.serverId }, host, onError, log, timings: residentTimings });
+      // A companion made in the app while the engine runs: its services start here, no restart needed.
+      if (!Array.isArray(resident)) {
+        registryWatch = setInterval(() => {
+          let added;
+          try { added = newCompanionServices((name) => residents.has(name)); }
+          catch (error) { onError(error); return; }
+          for (const spec of added) if (residents.add(spec)) log(`resident service ${spec.name} added for a new companion`);
+        }, REGISTRY_POLL_MS);
+        registryWatch.unref?.();
+      }
       // The companion's telegram_send queues through the messenger service (harness/companion/messenger).
       if (sessionLink?.attachTelegram && services.some((entry) => entry.name === 'messenger' || entry.name.startsWith('messenger:'))) {
         sessionLink.attachTelegram((args) => {
@@ -122,6 +135,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
       close: ({ drain = false } = {}) => closing ??= (async () => {
       // The services stop first, so none starts new work while the engine drains.
       closingStep = 'resident services';
+      clearInterval(registryWatch);
       await residents?.close().catch(onError);
       // A restart lets running work reach the gate first; a second stop signal ends the wait.
       if (drain && !compromised) {

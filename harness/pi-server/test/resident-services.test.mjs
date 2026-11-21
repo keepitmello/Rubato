@@ -212,3 +212,21 @@ test('two engines and one companion home: only the engine that claimed it runs t
   const owner = JSON.parse(await readFile(path.join(home, '.engine-claims', 'companion.owner.json'), 'utf8'));
   assert.equal(owner.agentDir, isolated.agentDir);
 });
+
+test('a service added while the engine runs (a companion made in the app) starts once, and nothing is added after close', async (t) => {
+  const root = await mkdtemp(path.join(tmpdir(), 'rb-rs-add-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const first = path.join(root, 'first');
+  const later = path.join(root, 'later');
+  const residents = startResidentServices({ services: [{ name: 'first', module: faultModule, options: { marker: first } }],
+    context: { agentDir: root, socketPath: path.join(root, 's.sock'), serverId: 'x' }, timings: FAST });
+  await residents.ready;
+  assert.equal(residents.has('later'), false);
+  assert.equal(residents.add({ name: 'later', module: faultModule, options: { marker: later } }), true);
+  assert.equal(residents.add({ name: 'later', module: faultModule, options: { marker: later } }), false, 'a name already running is left alone');
+  await until(async () => (await lines(later)).length === 1, 'the added service started');
+  assert.ok(residents.status().some((item) => item.name === 'later'));
+  await residents.close();
+  assert.equal(residents.add({ name: 'after', module: faultModule, options: { marker: path.join(root, 'after') } }), false);
+  assert.deepEqual(await lines(later), ['start', 'closed'], 'started once and closed with the engine');
+});

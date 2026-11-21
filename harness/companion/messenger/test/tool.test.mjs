@@ -76,7 +76,8 @@ test('the settings tool asks the engine with this conversation\'s id, and is the
   assert.equal(tool.exposure, 'direct');
   const answer = await tool.execute('c1', { action: 'change', change: { companion: { greetings: { enabled: false } } } }, undefined, undefined,
     { sessionManager: { getSessionId: () => 'S1' } });
-  assert.deepEqual(asked, [{ sessionId: 'S1', action: 'change', piece: undefined, change: { companion: { greetings: { enabled: false } } } }]);
+  assert.deepEqual(asked, [{ sessionId: 'S1', action: 'change', piece: undefined, change: { companion: { greetings: { enabled: false } } },
+    proposal: undefined, summary: undefined, onboarding: undefined }]);
   assert.deepEqual(answer.details, { applied: ['companion'] });
   assert.match(tool.description, /companion-settings skill/);
   assert.equal(toolsOf(fakeLink()).has(COMPANION_SETTINGS_TOOL), false);

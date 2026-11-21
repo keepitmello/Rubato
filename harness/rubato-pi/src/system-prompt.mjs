@@ -19,6 +19,10 @@ const BUNDLED_RETURN_SKILL = join(dirname(fileURLToPath(import.meta.url)), "../.
  */
 export const COMPANION_SKILL_DIRS = Object.freeze([
   { dir: join(dirname(fileURLToPath(import.meta.url)), "../../companion/skills"), source: "companion" },
+  // Defaults a companion's own skill of the same name replaces (the first one listed wins): a
+  // companion made in the app rewrites itself by prompting-principles, and one that already keeps
+  // its own version, in its skillDirs or beside these, keeps reading that one.
+  { dir: join(dirname(fileURLToPath(import.meta.url)), "../../companion/skill-defaults"), source: "companion-default" },
 ]);
 const NON_INTERACTIVE_MODES = new Set(["json", "print"]);
 const DEFAULT_AGENT_DIR_SEGMENTS = [".rubato-pi", "agent"];

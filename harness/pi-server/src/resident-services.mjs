@@ -47,6 +47,17 @@ export const RESIDENT_SERVICES = [
 /** Voice calls with companions (harness/companion/call-agent); one service for every companion. */
 export const CALL_SERVICE = Object.freeze({ name: 'call', module: path.resolve(here, '../../companion/call-agent/service.mjs') });
 
+/** How often the person's engine looks for a companion registered while it runs (profile-server.mjs). */
+export const REGISTRY_POLL_MS = 3000;
+
+/**
+ * The companion services `residentServices` lists now that `running` lacks: a companion registered
+ * since the engine started. Only companion services join later; the shared ones started with the engine.
+ */
+export function newCompanionServices(running, env = process.env) {
+  return residentServices(env).filter((spec) => spec.options?.claim && !running(spec.name));
+}
+
 /** Each companion capability has its own supervised failure boundary and private environment. */
 export function residentServices(env = process.env) {
   const companions = listCompanions(env);
@@ -282,9 +293,20 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
     };
   }
 
+  let closed = false;
   return {
     /** Resolves when every service has been running once (tests and status pages). */
     ready: Promise.all([...supervisors.values()].map((item) => item.ready)),
+    /**
+     * Starts one more service while the engine runs: a companion made in the app gets its control tower
+     * and dream without an engine restart. A name already running is left alone; returns whether it started.
+     */
+    add(spec) {
+      if (closed || supervisors.has(spec.name)) return false;
+      supervisors.set(spec.name, supervise(spec));
+      return true;
+    },
+    has: (name) => supervisors.has(name),
     status: () => [...supervisors.values()].map(({ state }) => ({ ...state })),
     call(name, method, ...args) {
       const supervisor = supervisors.get(name);
@@ -292,6 +314,7 @@ export function startResidentServices({ services = RESIDENT_SERVICES, context, h
       return supervisor.call(method, args);
     },
     async close() {
+      closed = true;
       await Promise.all([...supervisors.values()].map((item) => item.close().catch((error) => { try { onError(error); } catch {} })));
     },
   };

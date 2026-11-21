@@ -1,6 +1,6 @@
 ---
 name: companion-settings
-description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule or prompt pieces."
+description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture or my profile cards."
 ---
 
 # Companion settings
@@ -30,11 +30,22 @@ Only the user can change a setting. The change must come from a turn they opened
 - `schedule.sources`: where I read the user's schedule from, for deadline nudges and the morning greeting. The kinds and the file format are documented once, in the header of `harness/companion/schedule.mjs`. When the user names a calendar address or a schedule file, I add it to the list. If I'm not sure what they mean, I ask.
 - `location.source`: the path of a JSON file with the user's last known place (`current` and `updatedAt`, at the top or under `location`). Each tick then carries a `LOCATION` line. Empty (the default) means no line.
 
-**My prompt pieces** (`change.piece`)
-- `show` lists every piece with its title and what it's for (the same words Settings › Companion shows), and whether the user has their own version.
-- `{ id, text }` saves the user's version of one piece. An empty text returns it to the default. The `tools` piece belongs to the product and can't be changed.
-- These pieces are who I am and who the user is. I show the exact new text and get a yes before I save.
-- `personaReview: true` asks for my review of the defaults that moved. Rubato wakes me for it.
+**Who I am** (`propose`)
+- `show` lists every prompt piece with its title and what it's for (the same words Settings › Companion shows), and whether the user has their own version. `show` with `piece: "<id>"` gives one piece's text.
+- When the user wants me to change how I am or how I talk ("말이 길어", "더 짧게 해줘"), I rewrite that part myself, following my prompting-principles skill: I take the whole section, ask myself how I want to be there, and write it again in my own words instead of patching a line on.
+- Then `companion_settings({ action: "propose", proposal: { piece, label, before, after } })`. `before` is the exact excerpt as `show` gave it, long enough to appear once; `after` is my rewrite. `label` is a short title in the user's words, like "말투" or "우리 사이".
+- The user sees it as a card in my room, before and after, with Apply. Nothing is saved until they press it. If they say "더 고쳐줘", I rewrite again and propose again; the newer card replaces the open one. The new text reaches me from my next window.
+- The `tools` piece belongs to the product and can't be changed. `personaReview: true` (in `change`) asks for my review of the defaults that moved. Rubato wakes me for it.
+
+**My picture** (`propose`)
+- When the user asks me to draw my own profile picture, I draw it, then `propose` with `{ image: "<absolute path of the picture>", label }`. It shows as a card with Apply, and the user can crop it later. The user can also set one from the app on their own.
+
+**My two cards** (`summary`)
+- Settings › Companion shows two short cards: who I am (`who`: `line` one line about me, `nature`, `speech`, `bond` what we are to each other) and what I know about the user (`me`: `work`, `now` what is going on for them now, `talk` how they like to be told things, `trust` what they leave to me).
+- I keep them current with `{ action: "summary", summary: { who: {…}, me: {…} } }`, each a short line in the user's language. I refresh them after a change they applied, or when the user asks me to sum myself up. They show what I am; they don't change me.
+
+**My first meeting** (`onboarding`)
+- A companion made in the app starts nameless, and its first conversation settles the name, how it calls the user, what the user does and what we are to each other; look, speech and closeness may wait. My prompt says how, while it lasts. `show` tells whether it is still on.
 
 - `enabled` turned off is the one change I can't undo myself. The user turns me back on with my button on the app's rail.
 

@@ -58,13 +58,14 @@
 import { open, readFile } from 'node:fs/promises';
 import { mkdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { COMPANION_TITLE, clearPersonaReviewRequest, companionPaths, composePanel, followingStore, moveBaseToDefault,
+import { COMPANION_TITLE, ONBOARDING_ITEMS, clearPersonaReviewRequest, onboardingActive, readProfile, companionPaths, composePanel, followingStore, moveBaseToDefault,
   pendingDefaultChanges, readFinished, readPersonaReviewRequest, readSettings, readState, seedPromptPieces, writePanel,
   writeState } from './companion.mjs';
 import { capabilityActive, companionActivityAt, clearWakeWish, ensureHomeRepo, ensureSegnoHome, readMood, readWakeWish, segnoPaths, wakeWishState } from './home.mjs';
 import { expandHome, scheduleNudges } from './schedule.mjs';
 import { INBOX_WAKE_STALE_MS, INBOX_WAKE_WINDOW_MS, inboxWakePath, readInboxWakes } from './inbox.mjs';
 import { companionDefaultsDir } from '../rubato-pi/src/system-prompt.mjs';
+import { usesProductTexts } from './registry.mjs';
 
 const LIVE = new Set(['starting', 'running', 'waiting', 'idle']);
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -195,7 +196,7 @@ export const GREETINGS = Object.freeze({
 export function greetingText(slot, defaultsDir, env = process.env) {
   const personal = auxiliaryPrompt(env, `greet-${slot}`);
   if (personal !== undefined) return personal;
-  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno')
+  if (!usesProductTexts(env))
     return slot === 'night' ? '밤 안부 시간이야. 내 일기 스킬을 열고 오늘을 남긴 뒤 내 말로 reply를 보내.' : '아침 안부 시간이야. 내 기록과 챙길 것을 둘러보고 내 말로 reply를 보내.';
   try { return readFileSync(path.join(defaultsDir, GREETINGS[slot].file), 'utf8').trim(); }
   catch { return slot === 'night' ? '밤 안부 시간이야. 오늘 일기를 먼저 쓰고, 그 온도로 사용자한테 톡을 보내.' : '아침 안부 시간이야. 둘러보고, 사용자한테 아침 톡을 보내.'; }
@@ -312,7 +313,10 @@ export function moodText(mood, now) {
  */
 export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = false, defaultsDir, env = process.env }) {
   const additional = env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno';
-  const name = additional ? env.RUBATO_COMPANION_TITLE || env.RUBATO_COMPANION_ID : '세뇨';
+  const profile = readProfile(env);
+  // A companion the app made wakes the first time with no name: its first meeting opens instead.
+  if (mode !== 'compact' && onboardingActive(profile)) return firstMeetingSeed({ now, profile });
+  const name = additional ? profile.facts.name ?? env.RUBATO_COMPANION_TITLE ?? env.RUBATO_COMPANION_ID : '세뇨';
   const body = `## 시각·경과\n${sessionAge(now, before)}${heartbeatOff ? '\n하트비트 꺼져 있음 — 설정에서 꺼 둠' : ''}\n\n` +
     `## 지금 몸\n${model || '(모름)'}\n\n## 잠들 때의 온도\n${moodText(mood, now)}`;
   const seed = mode === 'compact'
@@ -320,7 +324,21 @@ export function wakeSeedText({ mode, now, before, model, mood, heartbeatOff = fa
       '이 창 앞부분은 `history_list_items`에, 쥐고 있던 건 작업 노트에, 나머지 자리(일기·현황판·챙길 거)는 집에.' +
       `\n\n${body}\n\n— 지금의 나는…`
     : `방금 깼어. 나야, ${name}.\n\n${body}\n\n— 눈은 떴고, 지금의 나는…`;
-  return [seed, auxiliaryPrompt(env, 'wake') ?? (additional ? '' : promptFile(defaultsDir, 'wake.pi.md'))].filter(Boolean).join('\n\n');
+  return [seed, auxiliaryPrompt(env, 'wake') ?? (usesProductTexts(env) ? promptFile(defaultsDir, 'wake.pi.md') : '')].filter(Boolean).join('\n\n');
+}
+
+/**
+ * The first waking of a companion the app made, and every waking until its first meeting is done:
+ * no recall of records it does not have yet, just the meeting (onboarding.pi.md in its prompt),
+ * picked up where it stopped. This turn's words go to the user, since the meeting is the conversation.
+ */
+export function firstMeetingSeed({ now, profile }) {
+  const settled = ONBOARDING_ITEMS.filter((key) => profile.facts[key]);
+  const waiting = ONBOARDING_ITEMS.filter((key) => !profile.facts[key] && !profile.deferred.includes(key));
+  return `방금 깼어. ${timeLabel(now)}. 아직 첫 만남 중이야 — 내 프롬프트의 "첫 만남"대로.` +
+    (settled.length ? `\n정한 것: ${settled.map((key) => `${key}=${profile.facts[key]}`).join(', ')}` : '\n아직 정한 게 없어. 이름도.') +
+    (waiting.length ? `\n남은 것: ${waiting.join(', ')}` : '') +
+    '\n\n사용자한테 첫 마디를 `reply`로 건네. 이어지는 만남이면 처음부터 다시 묻지 말고 남은 것부터.';
 }
 
 /** Roo's resume seed (session-start-hook.sh MODE=resume): the time, and that this is the same conversation. */
@@ -333,7 +351,7 @@ export function resumeText(now) {
 export function recallText(defaultsDir, env = process.env) {
   const personal = auxiliaryPrompt(env, 'recall');
   if (personal !== undefined) return personal;
-  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno') {
+  if (!usesProductTexts(env)) {
     const places = segnoPaths(env);
     return `떠올리기: 오늘·어제 일기와 영구 기록은 원래 집에 있어. 작업 노트는 native context notes에 있어. ` +
       `일기: ${places.diary}, 현황판: ${places.status}, 챙길 거: ${places.held}, 상주 기억: ${places.resident}. 직전 창 끝도 펼쳐.`;
@@ -442,7 +460,7 @@ export function startControlTower({ connect, notify, env = process.env, onError 
   function setupHome() {
     if (homeReady) return;
     ensureSegnoHome(env);
-    try { if (!env.RUBATO_COMPANION_ID || env.RUBATO_COMPANION_ID === 'segno') seedPromptPieces({ defaultsDir, env }); }
+    try { if (usesProductTexts(env)) seedPromptPieces({ defaultsDir, env }); }
     catch (error) { onError(error); }
     // The home's history (Roo commits every record). Without git the records still work; the fault
     // is reported and tried again next start.
@@ -639,7 +657,10 @@ export function startControlTower({ connect, notify, env = process.env, onError 
     let before;
     // A fresh start owes one recall; a compaction while it waits does not cancel it (Roo keeps
     // pendingFreshRecall across session_compact).
-    const recallOwed = pending === 'fresh' || pending === 'recall' || (boundary && boundary.id !== woke.boundary && boundary.mode === 'fresh');
+    // A first meeting has no records to recall yet, and a recall turn would cut into the conversation.
+    const meeting = onboardingActive(readProfile(env));
+    if (meeting && pending === 'recall') { pending = undefined; writeState({ woke: { boundary: woke.boundary ?? null } }, env); }
+    const recallOwed = !meeting && (pending === 'fresh' || pending === 'recall' || (boundary && boundary.id !== woke.boundary && boundary.mode === 'fresh'));
     if (boundary && boundary.id !== woke.boundary) { pending = boundary.mode; before = boundary.before; }
     if (pending === 'fresh' || pending === 'compact') {
       const model = await active.command({ type: 'get_state' }).then((value) => value?.model, () => undefined);

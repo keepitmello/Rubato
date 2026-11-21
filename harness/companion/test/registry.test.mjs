@@ -120,7 +120,7 @@ test('private prompt mappings replace every piece without seeding or falling bac
 test('services and search indices are distinct while Segno Telegram remains off', t => {
   const { env, profile } = box(t);
   const services = residentServices(env);
-  assert.deepEqual(services.map(s => s.name), ['companion', 'companion-dream', 'companion:other', 'companion-dream:other', 'messenger:other', 'scheduler', 'hub']);
+  assert.deepEqual(services.map(s => s.name), ['companion', 'companion-dream', 'companion:other', 'companion-dream:other', 'messenger:other', 'scheduler', 'hub', 'simulator-watch']);
   const a = segnoSearchEnv(companionEnv('segno', env));
   const b = segnoSearchEnv(companionEnv(profile.id, env));
   assert.notEqual(a.MSEARCH_INDEX, b.MSEARCH_INDEX);

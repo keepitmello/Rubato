@@ -17,7 +17,8 @@
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { basePiecePath, clearPersonaReviewRequest, companionPaths, personalPiecePath, readPersonaReviewRequest, readSettings, readState } from './companion.mjs';
+import { clearPersonaReviewRequest, companionPaths, readPersonaReviewRequest, readProfile, readSettings, readState } from './companion.mjs';
+import { ManageError, cardsView, changeOnboarding, onboardingView, propose, writeCards } from './manage.mjs';
 import { TELEGRAM_ENABLED, messengerPaths, readMessengerSettings } from './messenger/store.mjs';
 import { locateTranscript } from './messenger/sync.mjs';
 import { originAt } from './origin.mjs';
@@ -25,7 +26,7 @@ import { originAt } from './origin.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const serviceFile = path.resolve(here, '..', 't3-integration', 'src', 'companion', 'service.mjs');
 
-export const SETTINGS_ACTIONS = Object.freeze(['show', 'change']);
+export const SETTINGS_ACTIONS = Object.freeze(['show', 'change', 'propose', 'summary', 'onboarding']);
 const PAIRING = new Set(['pair', 'unpair']);
 
 export class SettingsRefused extends Error {
@@ -166,15 +167,15 @@ async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED }
     throw new SettingsRefused('invalid', 'botToken is the token @BotFather gave');
   if (change.botToken !== undefined && change.pairing !== undefined)
     throw new SettingsRefused('invalid', 'Set the bot token first; pair in the next change');
-  if (change.piece !== undefined && (!change.piece || typeof change.piece !== 'object' || typeof change.piece.id !== 'string'))
-    throw new SettingsRefused('invalid', 'piece needs an id and its text');
+  // Who the companion is changes only through a proposal the person applies (action "propose").
+  if (change.piece !== undefined)
+    throw new SettingsRefused('invalid', 'A prompt piece is not changed directly: propose the rewrite (action "propose") and the user applies it');
   if (change.personaReview !== undefined && change.personaReview !== true) throw new SettingsRefused('invalid', 'personaReview is true');
 
   const applied = [];
   const undo = undoLog(env);
   const paths = { companion: companionPaths(env).settings, messenger: messengerPaths(env).settings,
     fishKey: messengerPaths(env).fishKey, intent: messengerPaths(env).intent };
-  const pieceFiles = (id) => { try { return [personalPiecePath(env, id), basePiecePath(env, id)]; } catch { return []; } };
   try {
     if (change.companion !== undefined) {
       await undo.step([paths.companion], () => service.handle('save-settings', { patch: change.companion }));
@@ -187,10 +188,6 @@ async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED }
     if (change.fishKey !== undefined) {
       await undo.step([paths.fishKey], () => service.handle('voice-key', { key: change.fishKey === null ? null : String(change.fishKey) }));
       applied.push(change.fishKey === null ? 'fishKey removed' : 'fishKey');
-    }
-    if (change.piece !== undefined) {
-      await undo.step(pieceFiles(change.piece.id), () => service.handle('save-piece', { id: change.piece.id, text: change.piece.text ?? '' }));
-      applied.push(`piece:${change.piece.id}`);
     }
     // The Telegram request goes last: the messenger acts on it after this answers, so nothing can
     // be refused after it is written.
@@ -217,12 +214,19 @@ async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED }
 }
 
 /**
- * The tool's one entry. `request` = { action: 'show' | 'change', piece?: id (show one piece's text),
- * change?: { companion?, telegram?, pairing?, piece?, personaReview? } }.
- * `sessionId` is the calling conversation, which must be the companion's.
+ * The tool's one entry. `request` = { action: 'show' | 'change' | 'propose' | 'summary' | 'onboarding',
+ * piece?: id (show one piece's text), change?: { companion?, telegram?, pairing?, personaReview? },
+ * proposal?: { piece, label, before, after } | { image, label }, summary?: { who?, me? },
+ * onboarding?: { set?, defer?, finish? } }.
+ * `sessionId` is the calling conversation, which must be the companion's. `retitle` renames the
+ * conversation when the first meeting gives the companion its name (session link).
+ *
+ * A proposal and the cards write nothing the person relies on, so any turn may make them: the
+ * person's apply is the authority for a proposal. The first meeting's facts shape the prompt, so
+ * like a setting they come only from a turn the user opened.
  */
-export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin,
-  telegram = env.RUBATO_COMPANION_TELEGRAM === '1' || TELEGRAM_ENABLED } = {}) {
+export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin, retitle,
+  telegram = env.RUBATO_COMPANION_TELEGRAM === '1' || TELEGRAM_ENABLED, defaultsDir } = {}) {
   const companionId = readState(env).sessionId;
   if (!sessionId || sessionId !== companionId) throw new SettingsRefused('not-companion', "Only a companion's own conversation has settings to change");
   const action = request.action ?? 'show';
@@ -232,7 +236,27 @@ export async function companionSettings({ sessionId, sessionsDir, request = {}, 
   const byUser = isUserOrigin(from);
   if (action === 'show') {
     if (typeof request.piece === 'string') return { piece: await pieceText(settings, request.piece) };
-    return { settings: await settingsView(settings, { showPairingCode: byUser, telegram }) };
+    const profile = readProfile(env);
+    return { settings: await settingsView(settings, { showPairingCode: byUser, telegram }),
+      cards: cardsView(profile), ...(onboardingView(profile) ? { onboarding: onboardingView(profile) } : {}) };
+  }
+  const dir = defaultsDir ?? (await import('../rubato-pi/src/system-prompt.mjs')).companionDefaultsDir(env);
+  const manage = (work) => {
+    try { return work(); }
+    catch (error) { if (error instanceof ManageError) throw new SettingsRefused(error.code === 'invalid' ? 'invalid' : error.code, error.message); throw error; }
+  };
+  if (action === 'propose') {
+    const proposal = manage(() => propose(request.proposal, { env, defaultsDir: dir }));
+    return { proposal: { id: proposal.id, kind: proposal.kind, label: proposal.label, status: proposal.status },
+      shown: 'The user sees it as a card in your room with Apply. Nothing is saved until they press it; another proposal for the same piece replaces this one.' };
+  }
+  if (action === 'summary') return { cards: manage(() => { writeCards(request.summary, { env }); return cardsView(readProfile(env)); }) };
+  if (action === 'onboarding') {
+    if (!byUser) throw new SettingsRefused('not-the-user', 'The first meeting is settled with the user: this turn was not opened by their message');
+    const result = manage(() => changeOnboarding(request.onboarding, { env, defaultsDir: dir }));
+    if (result.title && typeof retitle === 'function') await retitle(result.title).catch(() => {});
+    return { onboarding: result.onboarding, facts: result.profile.facts, deferred: result.profile.deferred,
+      ...(result.finished ? { finished: true, next: 'Say a short word with reply, then open a fresh window with new_context: from the next window you live under your name.' } : {}) };
   }
   if (!byUser) {
     throw new SettingsRefused('not-the-user', telegram

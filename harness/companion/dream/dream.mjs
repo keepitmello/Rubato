@@ -31,7 +31,8 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { NOTE_ENTRY } from '../../rubato-pi/src/context-notes/protocol.mjs';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
-import { COMPANION_ENTRY, memoryPiecePath, readPieces, readState } from '../companion.mjs';
+import { COMPANION_ENTRY, memoryPiecePath, readPieces, readProfile, readState, renderProfile } from '../companion.mjs';
+import { usesProductTexts } from '../registry.mjs';
 import { REPLY_TOOL, SAY_TOOL, commitOwned, landsInside, ensureHomeRepo, localDate, searchSegnoMemory, segnoPaths, segnoSearchEnv } from '../home.mjs';
 
 /** Re-indexes Segno's memory for its search (home.mjs searchSegnoMemory); the engine's service passes it. */
@@ -502,12 +503,13 @@ export function forwardDictationTerms(file, { env = process.env, runId, at = new
 
 export function composeDreamPrompt({ env = process.env, defaultsDir = companionDefaultsDir(env) } = {}) {
   const pieces = readPieces({ defaultsDir, env }).filter((piece) => piece.id !== 'tools');
-  const parts = pieces.map((piece) => piece.personalText ?? piece.defaultText).filter((text) => text?.length > 0);
+  const profile = readProfile(env);
+  const parts = pieces.map((piece) => renderProfile(piece.personalText ?? piece.defaultText, profile, env)).filter((text) => text?.length > 0);
   if (!pieces.some((piece) => piece.id === 'memory')) {
     const memory = readText(memoryPiecePath(env));
     if (memory) parts.push(memory);
   }
-  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno' && !env.RUBATO_COMPANION_DREAM_INSTRUCTIONS)
+  if (!usesProductTexts(env) && !env.RUBATO_COMPANION_DREAM_INSTRUCTIONS)
     throw new TypeError('A registered companion needs its own dream instructions');
   parts.push(readFileSync(env.RUBATO_COMPANION_DREAM_INSTRUCTIONS || INSTRUCTIONS, 'utf8').trim());
   return parts.join('\n\n');
@@ -526,7 +528,7 @@ function readText(file) {
 export function seedResidentMemory({ env = process.env, defaultsDir = companionDefaultsDir(env) } = {}) {
   const file = memoryPiecePath(env);
   if (existsSync(file)) return false;
-  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno')
+  if (!usesProductTexts(env))
     throw new TypeError('The registered resident memory is missing; refusing another companion’s seed');
   const frame = readText(path.join(defaultsDir, 'memory.pi.md'));
   if (!frame) return false;

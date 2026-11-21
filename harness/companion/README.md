@@ -9,6 +9,27 @@ The built-in `segno` profile keeps `~/.rubato/companion`, existing conversation 
 and settings. Old companion sessions without an ID remain Segno. Registering another
 profile never enables Telegram or calls for Segno.
 
+## Made in the app
+
+Settings › Companion and the phone's companion list make a companion without any file editing
+(`manage.mjs`, route actions in `harness/t3-integration/src/companion/service.mjs`). The app makes a
+home beside the registry (`companions/<id>`), registers it with `madeInApp: true`, and the engine
+starts its control tower and dream within seconds, without a restart. It wakes nameless with Segno's
+temperament from the new-companion pieces (`harness/prompts/companion/new`) and never Segno's name,
+art, memory or records. Its first conversation is the first meeting (`new/onboarding.pi.md`): it
+settles a name, how it calls the user, what the user does and what they are to each other; look,
+speech and closeness may wait and are left in its resident memory. Those facts fill the pieces'
+`{{slots}}` when the prompt is composed, so they are never written into the person's text.
+
+A companion made in the app reads Rubato's own work rules, tools, wake, recall, greetings and dream
+like Segno. The app's own records about every companion (picture, profile and cards, proposals) live
+in `companion-app/<id>` beside the registry, outside every home, so a registered existing home's
+records stay as they are.
+
+A companion changes who it is by proposing (`companion_settings` action `propose`): an exact excerpt
+of one piece and its rewrite, shown to the user as a before/after card. Only the user's apply writes
+the piece; a declined or superseded proposal writes nothing.
+
 ## Registration
 
 Use `$HOME/.rubato/companions.json`, or set `RUBATO_COMPANIONS_FILE` for an isolated

@@ -1,12 +1,22 @@
 // Advanced, local registration. The built-in companion keeps its historical home and identity.
 // Private names, paths and extension settings belong in the user's registry, never this bundle.
-import { readFileSync, realpathSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
 export const DEFAULT_COMPANION_ID = 'segno';
 const ID = /^[a-z][a-z0-9-]{0,47}$/;
 const PRIVATE_ENV = /^RUBATO_COMPANION_|^ROO_|^MSEARCH_/;
+
+/**
+ * Whether this companion lives on Rubato's own texts: Segno, and every companion the app made
+ * (registry `madeInApp`). Those read the product's work rules, tools, wake, recall, greetings and
+ * dream; a hand-registered existing home reads only the texts it mapped and never borrows these.
+ */
+export function usesProductTexts(env = process.env) {
+  return !env.RUBATO_COMPANION_ID || env.RUBATO_COMPANION_ID === DEFAULT_COMPANION_ID || env.RUBATO_COMPANION_MADE_IN_APP === '1';
+}
 function canonicalHome(home) {
   try { return realpathSync(home); }
   catch {
@@ -82,6 +92,7 @@ export function listCompanions(env = process.env) {
       value.skillDirs.some(dir => typeof dir !== 'string' || !path.isAbsolute(dir)))) throw new TypeError('skillDirs must be absolute');
     if (value.extensions !== undefined && (!Array.isArray(value.extensions) ||
       value.extensions.some(file => typeof file !== 'string' || !path.isAbsolute(file)))) throw new TypeError('extensions must be absolute');
+    if (value.madeInApp !== undefined && typeof value.madeInApp !== 'boolean') throw new TypeError('madeInApp must be true or false');
     validateCall(value.call, callPorts);
     seen.add(value.id); homes.add(canonicalHome(value.home)); agents.add(value.memoryAgent);
     return { ...value, home: path.resolve(value.home), title: value.title.trim(), telegram: value.telegram === true };
@@ -122,9 +133,88 @@ export function companionEnv(id = DEFAULT_COMPANION_ID, env = process.env) {
     ...(profile.dreamInstructions ? { RUBATO_COMPANION_DREAM_INSTRUCTIONS: profile.dreamInstructions } : {}),
     RUBATO_COMPANION_TELEGRAM: profile.telegram ? '1' : '0',
     RUBATO_COMPANION_AUTO_RECALL: '0',
-    RUBATO_COMPANION_RECORDS_ONLY: profile.id === DEFAULT_COMPANION_ID ? '0' : '1' };
+    ...(profile.madeInApp ? { RUBATO_COMPANION_MADE_IN_APP: '1' } : {}),
+    // A home the app made is Rubato's own layout, like Segno's; a registered existing home keeps its own instructions out.
+    RUBATO_COMPANION_RECORDS_ONLY: profile.id === DEFAULT_COMPANION_ID || profile.madeInApp ? '0' : '1' };
 }
 
 export function companionServiceName(kind, id = DEFAULT_COMPANION_ID) {
   return id === DEFAULT_COMPANION_ID ? kind : `${kind}:${id}`;
+}
+
+// The app writes the registry instead of the person (intent companion-manage). Every write is a
+// whole-file replace under a short lock, and the result must pass listCompanions before it lands,
+// so a write never leaves a registry the engine would refuse.
+const LOCK_STALE_MS = 10_000;
+
+function withRegistryLock(env, work) {
+  const file = registryPath(env);
+  mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  const lock = `${file}.lock`;
+  const deadline = Date.now() + 5000;
+  for (;;) {
+    try { closeSync(openSync(lock, 'wx', 0o600)); break; }
+    catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      try { if (Date.now() - statSync(lock).mtimeMs > LOCK_STALE_MS) { rmSync(lock, { force: true }); continue; } }
+      catch { continue; }
+      if (Date.now() > deadline) throw new Error('The companion registry is busy; try again');
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25);
+    }
+  }
+  try { return work(file); } finally { rmSync(lock, { force: true }); }
+}
+
+function readRegistryFile(file) {
+  try { return JSON.parse(readFileSync(file, 'utf8')); }
+  catch (error) { if (error.code === 'ENOENT') return { companions: [] }; throw error; }
+}
+
+function writeRegistryFile(file, data, env) {
+  // Refuse anything the engine itself would refuse to load.
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  writeFileSync(temporary, JSON.stringify(data, null, 2) + '\n', { mode: 0o600 });
+  try { listCompanions({ ...env, RUBATO_COMPANIONS_FILE: temporary }); }
+  catch (error) { rmSync(temporary, { force: true }); throw error; }
+  renameSync(temporary, file);
+}
+
+/** Where the app puts the homes it makes: beside the registry, one folder per companion. */
+export function appHomesDir(env = process.env) {
+  return path.join(path.dirname(registryPath(env)), 'companions');
+}
+
+/** A fresh id nobody used: never a reused one, so an old memory store or picture cannot attach to a new companion. */
+export function newCompanionId(env = process.env, random = () => randomBytes(4).toString('hex')) {
+  const taken = new Set(listCompanions(env).map((profile) => profile.id));
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const id = `companion-${random()}`;
+    if (!taken.has(id) && ID.test(id)) return id;
+  }
+  throw new Error('Could not pick a new companion id');
+}
+
+/** Adds one app-made companion to the registry; existing entries and fields stay as they were. */
+export function registerCompanion(entry, env = process.env) {
+  return withRegistryLock(env, (file) => {
+    const data = readRegistryFile(file);
+    if (!Array.isArray(data.companions)) throw new TypeError('companions must be a list');
+    data.companions.push(entry);
+    writeRegistryFile(file, data, env);
+    return companionProfile(entry.id, env);
+  });
+}
+
+/** Renames an app-made companion (its onboarding gave it a name). Hand-registered entries are the person's. */
+export function retitleCompanion(id, title, env = process.env) {
+  if (typeof title !== 'string' || !title.trim() || title.trim().length > 120) throw new TypeError('a name is 1 to 120 characters');
+  return withRegistryLock(env, (file) => {
+    const data = readRegistryFile(file);
+    const entry = (data.companions ?? []).find((item) => item?.id === id);
+    if (!entry) throw new TypeError(`Unknown companion: ${id}`);
+    if (entry.madeInApp !== true) throw new TypeError('Only a companion the app made is renamed here');
+    entry.title = title.trim();
+    writeRegistryFile(file, data, env);
+    return companionProfile(id, env);
+  });
 }

@@ -29,6 +29,7 @@ const pieceCopyFile = path.resolve(here, '..', '..', '..', 'companion', 'piece-c
 // Where the engine reads the default pieces from (rubato-pi system-prompt companionDefaultsDir).
 const systemPromptFile = path.resolve(here, '..', '..', '..', 'rubato-pi', 'src', 'system-prompt.mjs');
 const registryFile = path.resolve(here, '..', '..', '..', 'companion', 'registry.mjs');
+const manageFile = path.resolve(here, '..', '..', '..', 'companion', 'manage.mjs');
 const descriptorFile = path.resolve(here, '..', '..', '..', 'pi-server', 'src', 'descriptor.mjs');
 const clientFile = path.resolve(here, '..', '..', '..', 'pi-server', 'src', 'client.mjs');
 
@@ -68,9 +69,10 @@ export function createCompanionService(options = {}) {
     const inbox = options.inbox ?? await import(pathToFileURL(inboxFile).href);
     const tg = options.tg ?? await import(pathToFileURL(tgFile).href);
     const { withCopy } = await import(pathToFileURL(pieceCopyFile).href);
+    const manage = options.manage ?? await import(pathToFileURL(manageFile).href);
     const defaultsDir = options.defaultsDir
       ?? (await import(pathToFileURL(systemPromptFile).href)).companionDefaultsDir(env);
-    return { companion, messenger, inbox, tg, defaultsDir, withCopy };
+    return { companion, messenger, inbox, tg, defaultsDir, withCopy, manage };
   })().catch((error) => {
     loaded = undefined;
     throw new CompanionRequestError(500, 'companion-unavailable', `The companion module could not load: ${error.message}`);
@@ -128,7 +130,24 @@ export function createCompanionService(options = {}) {
     try { return await client.list(); } finally { await client.close().catch(() => {}); }
   }
 
+  /** A refusal from harness/companion/manage.mjs answers with its own status and code. */
+  const managed = async (work) => {
+    try { return await work(); }
+    catch (error) {
+      if (error?.name === 'ManageError') throw new CompanionRequestError(error.status ?? 400, error.code, error.message);
+      if (error instanceof TypeError) throw new CompanionRequestError(400, 'invalid', error.message);
+      throw error;
+    }
+  };
+
   async function handle(action, input) {
+    // A new companion: the app makes its home and registers it (manage.mjs createCompanion); the
+    // engine starts its control tower within seconds, which opens its conversation.
+    if (action === 'create') {
+      const { manage, defaultsDir } = await modules();
+      const created = await managed(() => manage.createCompanion({ env, defaultsDir }));
+      return { companion: { id: created.id, sessionId: null } };
+    }
     if (action === 'companions' || input?.companionId !== undefined) {
       const { companionEnv, listCompanions } = await import(pathToFileURL(registryFile).href);
       const registrations = listCompanions(env);
@@ -138,17 +157,26 @@ export function createCompanionService(options = {}) {
       };
       if (action === 'companions') {
         const rows = await (options.listSessions ?? engineSessions)().catch(() => null);
-        return { companions: await Promise.all(registrations.map(async profile => ({
-          id: profile.id, title: profile.title, ...await serviceFor(profile.id).handle('status', {}),
-          conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
-        }))) };
+        return { companions: await Promise.all(registrations.map(async profile => {
+          const own = serviceFor(profile.id);
+          const status = await own.handle('status', {});
+          const about = await own.handle('about', { createdAt: profile.createdAt });
+          return {
+            ...status, id: profile.id,
+            // Nameless while its first meeting has not named it; the apps show their own words then.
+            title: about.onboarding && !about.named ? null : profile.title,
+            profile: about.profile, onboarding: about.onboarding, avatarVersion: about.avatarVersion,
+            telegram: profile.telegram === true, madeInApp: profile.madeInApp === true,
+            conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
+          };
+        })) };
       }
       if (typeof input.companionId !== 'string' || !registrations.some(profile => profile.id === input.companionId))
         throw new CompanionRequestError(400, 'invalid', 'Unknown companion.');
       const { companionId, ...request } = input;
       return serviceFor(companionId).handle(action, request);
     }
-    const { companion, messenger, inbox, tg, defaultsDir, withCopy } = await modules();
+    const { companion, messenger, inbox, tg, defaultsDir, withCopy, manage } = await modules();
     // Each piece with what it is for (companion/piece-copy.mjs): the page and Segno read the same words.
     const pieces = () => companion.readPieces({ defaultsDir, env }).map(withCopy);
     if (action === 'telegram' && !telegramOn(messenger)) return { telegram: null };
@@ -231,6 +259,29 @@ export function createCompanionService(options = {}) {
       }
       case 'pieces':
         return { pieces: pieces() };
+      // The list row's profile part (the `companions` action): how it calls the person and since when,
+      // the first meeting's chips while it lasts, and which picture version to fetch.
+      case 'about': {
+        const profile = companion.readProfile(env);
+        const picture = companion.avatarFile(env);
+        return { profile: manage.profileView(profile, { createdAt: input.createdAt, home: companion.companionPaths(env).home }),
+          onboarding: manage.onboardingView(profile), named: Boolean(profile.facts.name),
+          avatarVersion: picture ? (await stat(picture)).mtimeMs : null };
+      }
+      // The picture from the profile on either device, already cropped square by the client; null clears it.
+      case 'set-avatar':
+        await managed(() => manage.setPicture(input.image, { env }));
+        return handle('avatar', {});
+      // What the companion proposed to change about itself, each waiting for the person's apply.
+      case 'proposals':
+        return { proposals: manage.listProposals({ env }).map((item) => manage.proposalView(item, { env })) };
+      case 'apply-proposal':
+        return { proposal: manage.proposalView(await managed(() => manage.applyProposal(input.proposalId, { env, defaultsDir })), { env }) };
+      case 'decline-proposal':
+        return { proposal: manage.proposalView(await managed(() => manage.declineProposal(input.proposalId, { env })), { env }) };
+      // The two readable cards the companion keeps: who it is, and what it knows about the person.
+      case 'summaries':
+        return manage.cardsView(companion.readProfile(env));
       // What the companion did between the room's bubbles: a summary per span for the folded lines,
       // and the items of one span when the person opens it (inner.mjs). `boundaries` are the bubble
       // times in ms, oldest first; `after` is where the first span starts.

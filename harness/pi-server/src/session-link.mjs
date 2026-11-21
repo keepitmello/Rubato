@@ -971,13 +971,18 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
      * The companion's settings, read or changed by talking to it (harness/companion/settings.mjs):
      * through the Settings page's own code, and a change only in a run the user opened.
      */
-    async companionSettings({ sessionId, action, piece, change } = {}) {
+    async companionSettings({ sessionId, action, piece, change, proposal, summary, onboarding } = {}) {
       requireId(sessionId, 'sessionId');
       const { sessionsDir } = need();
       if (row(sessionId) && row(sessionId).companion !== true) throw fail('not_companion', "Only a companion's own conversation has settings");
       const { companionSettings } = await import('../../companion/settings.mjs');
-      try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change },
-        env: companionEnv(row(sessionId)?.companionId) }); }
+      // The first meeting named the companion: its conversation and thread take the name too.
+      const retitle = async (title) => {
+        await control(sessionId, (client) => client.command({ type: 'set_session_name', name: title }));
+        await need().host.threadRequests.add({ sessionId, action: 'rename', title });
+      };
+      try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change, proposal, summary, onboarding },
+        env: companionEnv(row(sessionId)?.companionId), retitle }); }
       catch (error) { throw error?.name === 'SettingsRefused' ? fail(error.code, error.message) : error; }
     },
     /**
@@ -1003,7 +1008,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     api: facade,
     ...facade,
     /** `followStore` keeps the companion's followed handoffs across restarts (harness/companion followingStore). */
-    bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore, followStores }) {
+    bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore, followStores, followStoreFor }) {
       if (bound) throw new Error('session link is already bound');
       if (!host?.directory || typeof host.getSessionWorker !== 'function') throw new TypeError('session link requires a session host');
       if (!path.isAbsolute(sessionsDir ?? '') || !socketPath || !serverId) throw new TypeError('session link requires sessionsDir, socketPath and serverId');
@@ -1014,7 +1019,14 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       bound.follower = createCompanionFollower({ store: followStore, onError });
       bound.followers = new Map(Object.entries(followStores ?? {}).map(([id, store]) =>
         [id, createCompanionFollower({ store, onError })]));
-      bound.followerFor = (sessionId) => bound.followers.get(row(sessionId)?.companionId ?? 'segno') ?? bound.follower;
+      bound.followerFor = (sessionId) => {
+        const id = row(sessionId)?.companionId ?? 'segno';
+        if (!bound.followers.has(id) && typeof followStoreFor === 'function') {
+          const store = followStoreFor(id);
+          if (store) bound.followers.set(id, createCompanionFollower({ store, onError }));
+        }
+        return bound.followers.get(id) ?? bound.follower;
+      };
     },
     /** Rubato's own word to a conversation (`kind: 'notice'`); it wakes the conversation like any delivery. */
     async notice({ to, about, text } = {}) {

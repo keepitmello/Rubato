@@ -29,6 +29,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { SCHEDULE_SOURCE_LIMIT, normalizeSource } from './schedule.mjs';
+import { DEFAULT_COMPANION_ID, registryPath, usesProductTexts } from './registry.mjs';
 
 /** The session entry that marks a conversation as the companion (pi-server session-files create). */
 export const COMPANION_ENTRY = 'rubato.companion';
@@ -49,6 +50,14 @@ export const PIECES = Object.freeze([
 /** The pieces a home starts with as the person's own copy: who Segno is, and who they are. */
 export const SEEDED_PIECES = Object.freeze(['preamble', 'soul', 'identity', 'user']);
 const PIECE_IDS = new Set(PIECES.map((piece) => piece.id));
+/**
+ * A companion the app made starts from these instead of Segno's: the same temperament (a young
+ * wolf, a puppy with the user), but nameless. Their slots (`{{name}}` …) are filled from the
+ * companion's profile when the prompt is composed (renderProfile), so a name never has to be
+ * written into a person's own text. The other pieces are Rubato's own and shared with Segno.
+ */
+export const NEW_COMPANION_DEFAULTS = 'new';
+const NEW_COMPANION_PIECES = new Set(SEEDED_PIECES);
 /** A personal piece larger than this is refused: it rides on every request. */
 export const PIECE_LIMIT = 64 * 1024;
 
@@ -95,7 +104,10 @@ export function companionPaths(env = process.env) {
   const home = companionHome(env);
   return { home, settings: path.join(home, 'settings.json'), state: path.join(home, 'state.json'),
     following: path.join(home, 'following.json'), finished: path.join(home, 'finished.json'),
-    panel: path.join(home, 'panel.json'), dismissed: path.join(home, 'dismissed.json'), art: path.join(home, 'art'), prompt: path.join(home, 'prompt') };
+    panel: path.join(home, 'panel.json'), dismissed: path.join(home, 'dismissed.json'), art: path.join(home, 'art'), prompt: path.join(home, 'prompt'),
+    // What the app keeps about a companion lives outside its home (appDataDir), so a registered
+    // existing home's records and history stay exactly as they were.
+    profile: path.join(appDataDir(env), 'profile.json'), proposals: path.join(appDataDir(env), 'proposals') };
 }
 
 function readJson(file) {
@@ -336,16 +348,38 @@ export function stageArtFile(env = process.env, state = 'idle') {
   for (const name of [`stage-${state}.webp`, `stage-${state}.png`, 'stage.webp', 'stage.png']) {
     if (existsSync(path.join(own, name))) return path.join(own, name);
   }
-  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno')
+  if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== DEFAULT_COMPANION_ID)
     throw Object.assign(new Error('No personal companion art is configured'), { code: 'ENOENT' });
   return path.join(import.meta.dirname, 'art', `stage-${state}.webp`);
 }
 
 /**
- * The companion's face for a phone's chat list and room header: `art/avatar.{webp,png,jpg}` in its
- * own home, else its idle stage art, else null. The desktop's space keeps reading stage art only.
+ * What the app keeps about one companion: its picture, its profile (profile.json) and the changes it
+ * proposed (proposals/). Beside the registry, one folder per companion id, outside every home, so
+ * giving a companion a face or a card never touches its records.
+ */
+export function appDataDir(env = process.env) {
+  return path.join(path.dirname(registryPath(env)), 'companion-app', env.RUBATO_COMPANION_ID || DEFAULT_COMPANION_ID);
+}
+export const pictureDir = (env = process.env) => appDataDir(env);
+export const PICTURE_TYPES = Object.freeze({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' });
+
+/** The picture set in the app, if any. */
+export function pictureFile(env = process.env) {
+  const dir = pictureDir(env);
+  for (const ext of Object.values(PICTURE_TYPES)) {
+    if (existsSync(path.join(dir, `avatar.${ext}`))) return path.join(dir, `avatar.${ext}`);
+  }
+  return null;
+}
+
+/**
+ * The companion's face for the lists, the room header and the profile: the picture set in the app,
+ * else `art/avatar.{webp,png,jpg}` in its own home, else its idle stage art, else null.
  */
 export function avatarFile(env = process.env) {
+  const set = pictureFile(env);
+  if (set) return set;
   const own = companionPaths(env).art;
   for (const name of ['avatar.webp', 'avatar.png', 'avatar.jpg', 'avatar.jpeg']) {
     if (existsSync(path.join(own, name))) return path.join(own, name);
@@ -373,7 +407,10 @@ function pieceOf(id) {
   return PIECES.find((piece) => piece.id === id);
 }
 
-export const defaultPiecePath = (defaultsDir, id) => path.join(defaultsDir, `${pieceOf(id).id}.pi.md`);
+/** The product default of one piece: a companion the app made reads the nameless new-companion texts. */
+export const defaultPiecePath = (defaultsDir, id, env = {}) => path.join(
+  env.RUBATO_COMPANION_MADE_IN_APP === '1' && NEW_COMPANION_PIECES.has(pieceOf(id).id) ? path.join(defaultsDir, NEW_COMPANION_DEFAULTS) : defaultsDir,
+  `${pieceOf(id).id}.pi.md`);
 /** The resident memory piece lives with Segno's memory, where the dream keeps it, not under prompt/. */
 export const memoryPiecePath = (env = process.env) => path.join(companionHome(env),
   JSON.parse(env.RUBATO_COMPANION_LAYOUT || '{}').resident || 'memory/MEMORY.md');
@@ -420,7 +457,7 @@ export function seedPromptPieces({ defaultsDir, env = process.env } = {}) {
   for (const id of SEEDED_PIECES) {
     if (existsSync(personalPiecePath(env, id))) { kept.push(id); continue; }
     let text;
-    try { text = readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim(); }
+    try { text = readFileSync(defaultPiecePath(defaultsDir, id, env), 'utf8').trim(); }
     catch (error) { if (error?.code === 'ENOENT') { kept.push(id); continue; } throw error; }
     if (!text) { kept.push(id); continue; }
     if (!writeTextNew(personalPiecePath(env, id), text + '\n')) { kept.push(id); continue; }
@@ -444,9 +481,9 @@ export function pendingDefaultChanges({ defaultsDir, env = process.env } = {}) {
   for (const id of SEEDED_PIECES) {
     const base = readOptional(basePiecePath(env, id), (file) => readFileSync(file, 'utf8'));
     if (base === undefined) continue;
-    const defaultText = readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim();
+    const defaultText = readFileSync(defaultPiecePath(defaultsDir, id, env), 'utf8').trim();
     if (defaultText === base) continue;
-    pending.push({ id, baseText: base, defaultText, defaultPath: defaultPiecePath(defaultsDir, id) });
+    pending.push({ id, baseText: base, defaultText, defaultPath: defaultPiecePath(defaultsDir, id, env) });
   }
   return pending;
 }
@@ -456,7 +493,7 @@ export function pendingDefaultChanges({ defaultsDir, env = process.env } = {}) {
  * one default change wakes Segno once, and the next update compares from this default.
  */
 export function moveBaseToDefault(id, { defaultsDir, env = process.env } = {}) {
-  const defaultText = readFileSync(defaultPiecePath(defaultsDir, pieceOf(id).id), 'utf8').trim();
+  const defaultText = readFileSync(defaultPiecePath(defaultsDir, pieceOf(id).id, env), 'utf8').trim();
   mkdirSync(path.dirname(basePiecePath(env, id)), { recursive: true, mode: 0o700 });
   writeFileSync(basePiecePath(env, id), defaultText + '\n', { mode: 0o600 });
   return { id: pieceOf(id).id, baseText: defaultText };
@@ -484,10 +521,10 @@ export function clearPersonaReviewRequest(env = process.env) {
  */
 export function readPieces({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
   return PIECES.map(({ id, editable }) => {
-    const defaultText = readFile(defaultPiecePath(defaultsDir, id)).trim();
+    const defaultText = readFile(defaultPiecePath(defaultsDir, id, env)).trim();
     const mapped = JSON.parse(env.RUBATO_COMPANION_PROMPT_FILES || '{}')[id];
     const personal = editable || mapped ? readOptional(personalPiecePath(env, id), readFile) : undefined;
-    if (env.RUBATO_COMPANION_ID && env.RUBATO_COMPANION_ID !== 'segno' && personal === undefined)
+    if (!usesProductTexts(env) && personal === undefined)
       throw new TypeError(`Companion ${env.RUBATO_COMPANION_ID} has no private ${id} piece; refusing another persona's default`);
     if (personal === undefined) return { id, editable, defaultText };
     const base = readOptional(basePiecePath(env, id), readFile);
@@ -511,8 +548,8 @@ export function writePiece(id, text, { defaultsDir, env = process.env } = {}) {
   if (text.length > PIECE_LIMIT) throw new TypeError(`A piece holds at most ${PIECE_LIMIT} characters`);
   const file = personalPiecePath(env, id);
   const trimmed = text.trim();
-  const defaultText = defaultsDir && existsSync(defaultPiecePath(defaultsDir, id))
-    ? readFileSync(defaultPiecePath(defaultsDir, id), 'utf8').trim() : undefined;
+  const defaultText = defaultsDir && existsSync(defaultPiecePath(defaultsDir, id, env))
+    ? readFileSync(defaultPiecePath(defaultsDir, id, env), 'utf8').trim() : undefined;
   if (!trimmed || trimmed === defaultText) {
     // One step: the copy is set aside, its base removed, then the copy dropped. A base that cannot be
     // removed puts the copy back, so a failed reset leaves the person's file as it was.
@@ -542,7 +579,14 @@ export const CODA_CLOSE = '<!-- /segno:coda -->';
 
 /** The companion's whole role prompt: each piece, the person's version first, in order; memory and coda marked. */
 export function composeCompanionPrompt({ defaultsDir, env = process.env, readFile = (file) => readFileSync(file, 'utf8') } = {}) {
-  const pieces = readPieces({ defaultsDir, env, readFile }).map((piece) => ({ id: piece.id, text: piece.personalText ?? piece.defaultText }));
+  const profile = readProfile(env);
+  const pieces = readPieces({ defaultsDir, env, readFile })
+    .map((piece) => ({ id: piece.id, text: renderProfile(piece.personalText ?? piece.defaultText, profile, env) }));
+  // While a companion the app made is still being met, its first-meeting text rides after who the user is.
+  if (onboardingActive(profile)) {
+    const at = pieces.findIndex((piece) => piece.id === 'user') + 1;
+    pieces.splice(at, 0, { id: 'onboarding', text: readFile(path.join(defaultsDir, NEW_COMPANION_DEFAULTS, 'onboarding.pi.md')).trim() });
+  }
   const marked = { memory: [MEMORY_OPEN, MEMORY_CLOSE], coda: [CODA_OPEN, CODA_CLOSE] };
   return pieces.filter((piece) => piece.text.length > 0)
     .map((piece) => (marked[piece.id] ? `${marked[piece.id][0]}\n${piece.text}\n${marked[piece.id][1]}` : piece.text)).join('\n\n');
@@ -573,4 +617,58 @@ export function codaLast(prompt) {
 /** Whether a session's entries carry the companion marker. */
 export function isCompanionEntries(entries) {
   return Array.isArray(entries) && entries.some((entry) => entry?.type === 'custom' && entry.customType === COMPANION_ENTRY);
+}
+
+// What a companion is to the person, in plain facts: its name, how it calls them, what they do,
+// what they are to each other and the rest the first meeting settles (profile.json in its app folder, appDataDir).
+// The app shows these on the profile and as the first meeting's chips; the new-companion pieces
+// read them through their slots. `cards` are the two readable summaries the companion keeps of
+// itself and of the person ("who it is", "what it knows about me").
+//
+//   profile.json  { facts: { name?, callsUser?, … }, deferred: [key…],
+//                   onboarding?: { startedAt, finishedAt? }, cards?: { who?, me?, updatedAt } }
+export const ONBOARDING_ITEMS = Object.freeze(['name', 'callsUser', 'work', 'relationship', 'look', 'speech', 'closeness']);
+/** The first meeting settles these four; the rest may wait and be filled while living. */
+export const ONBOARDING_CORE = Object.freeze(['name', 'callsUser', 'work', 'relationship']);
+export const FACT_LIMIT = 300;
+export const CARD_KEYS = Object.freeze({ who: Object.freeze(['line', 'nature', 'speech', 'bond']), me: Object.freeze(['work', 'now', 'talk', 'trust']) });
+export const CARD_LIMIT = 400;
+const UNSET = '(not chosen yet)';
+
+const textOr = (value, limit) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, limit) : undefined);
+
+/** The profile as stored, with anything malformed left out. */
+export function readProfile(env = process.env) {
+  const value = readJson(companionPaths(env).profile);
+  const input = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const facts = {};
+  for (const key of ONBOARDING_ITEMS) { const text = textOr(input.facts?.[key], FACT_LIMIT); if (text) facts[key] = text; }
+  const deferred = Array.isArray(input.deferred) ? ONBOARDING_ITEMS.filter((key) => input.deferred.includes(key) && !facts[key]) : [];
+  const onboarding = input.onboarding && typeof input.onboarding === 'object' && typeof input.onboarding.startedAt === 'string'
+    ? { startedAt: input.onboarding.startedAt, ...(typeof input.onboarding.finishedAt === 'string' ? { finishedAt: input.onboarding.finishedAt } : {}) }
+    : undefined;
+  const cards = {};
+  for (const [card, keys] of Object.entries(CARD_KEYS)) {
+    const rows = keys.flatMap((key) => { const text = textOr(input.cards?.[card]?.[key], CARD_LIMIT); return text ? [[key, text]] : []; });
+    if (rows.length) cards[card] = Object.fromEntries(rows);
+  }
+  if (Object.keys(cards).length && typeof input.cards?.updatedAt === 'string') cards.updatedAt = input.cards.updatedAt;
+  return { facts, deferred, ...(onboarding ? { onboarding } : {}), ...(Object.keys(cards).length ? { cards } : {}) };
+}
+
+export function writeProfile(profile, env = process.env) {
+  writeJson(companionPaths(env).profile, profile);
+  return readProfile(env);
+}
+
+/** Whether the companion is still in its first meeting. */
+export const onboardingActive = (profile) => Boolean(profile?.onboarding && !profile.onboarding.finishedAt);
+
+/**
+ * Fills the new-companion pieces' slots from the profile. Only a companion the app made has slots:
+ * Segno's and a registered home's texts are returned exactly as written.
+ */
+export function renderProfile(text, profile, env = process.env) {
+  if (env.RUBATO_COMPANION_MADE_IN_APP !== '1' || typeof text !== 'string') return text;
+  return text.replace(/\{\{(\w+)\}\}/g, (whole, key) => (ONBOARDING_ITEMS.includes(key) ? profile.facts[key] ?? UNSET : whole));
 }
