@@ -199,6 +199,17 @@ export const shellEdits = {
     ['  if (parsed.sharedSlotTab === "pullRequests" || parsed.sharedSlotTab === "issues") {',
       '  // Rubato: Usage became the third tab; a phone with saved tabs gets it there once.\n  if (parsed.rubatoUsageTabPlaced !== true) Object.assign(preferences, placeUsageTab(preferences));\n  preferences.rubatoUsageTabPlaced = true;\n\n'],
   ],
+  // T3's storage tests are about storage: the one-time Usage placement above has its own tests
+  // (usageTabPlacement.test.ts), so here it moves nothing and its flag is left out of the result.
+  'apps/mobile/src/lib/storage.test.ts': [
+    ['import { loadPreferences, savePreferencesPatch } from "../persistence/imperative";\n',
+      'import { loadPreferences as loadSavedPreferences, savePreferencesPatch } from "../persistence/imperative";\n\n'
+      + 'vi.mock("../features/rubato-shell/usageTabPlacement", () => ({ placeUsageTab: () => ({}) }));\n'
+      + 'const loadPreferences = async () => {\n'
+      + '  const { rubatoUsageTabPlaced: _placed, ...preferences } = await loadSavedPreferences();\n'
+      + '  return preferences;\n'
+      + '};\n', 'replace'],
+  ],
   // The phone's floating tab picker draws its tabs natively, by name.
   'apps/mobile/modules/t3-native-controls/ios/T3SidebarTabBarView.swift': [
     ["    let labels = [\"threads\": \"Chats\", \"pullRequests\": \"PRs\",",

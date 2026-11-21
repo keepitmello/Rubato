@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sends the Rubato iPhone app's JavaScript over the air (EAS Update), in a minute or two instead of a
 # TestFlight build. Phones running a build whose native side matches (expo-updates' fingerprint
-# runtime version) pick it up on their next launch, or when the app comes back after a short while
-# (rubato-shell/RubatoUpdateHost.tsx), and ask before restarting into it. A change to native code
+# runtime version) pick it up on their next launch, or when the app comes back after two minutes
+# (T3's update check, features/updates/app-updates.ts), and ask before restarting into it. A change to native code
 # (Swift, a new native package, app.config) changes the fingerprint: such an update reaches no
 # phone, and build-ios.sh --testflight is the way.
 #

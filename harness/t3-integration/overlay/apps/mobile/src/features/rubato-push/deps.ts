@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 
 import { getAgentLiveActivities, startAgentLiveActivity } from "../agent-awareness/agentLiveActivity";
+import { savedMacHeaders } from "../companions/rubatoHttp";
 import { resolveApsEnvironment } from "../agent-awareness/registrationPayload";
 import { RUBATO_PUSH_RELAY } from "./config";
 import type { LiveActivityDeps } from "./liveActivity";
@@ -36,13 +37,16 @@ export function liveActivityDeps(): LiveActivityDeps {
   };
 }
 
-/** The saved Macs this phone reaches with its own session token (T3's cloud-managed ones are gone). */
+/**
+ * The saved Macs this phone pairs with directly (T3's cloud-managed ones are gone), each request
+ * authorized with that pairing's credentials: a bearer, or a DPoP-bound token (savedMacHeaders).
+ */
 export function macConnections(
-  connections: ReadonlyArray<{ environmentId: string; httpBaseUrl: string; bearerToken: string | null; authenticationMethod?: string }>,
+  connections: ReadonlyArray<{ environmentId: string; httpBaseUrl: string; bearerToken: string | null }>,
 ): MacConnection[] {
-  return connections.flatMap((connection) =>
-    connection.bearerToken && connection.authenticationMethod !== "dpop"
-      ? [{ environmentId: connection.environmentId, httpBaseUrl: connection.httpBaseUrl, bearerToken: connection.bearerToken }]
-      : [],
-  );
+  return connections.map((connection) => ({
+    environmentId: connection.environmentId,
+    httpBaseUrl: connection.httpBaseUrl,
+    authorize: (method, url, rejected) => savedMacHeaders(connection, method, url, rejected),
+  }));
 }

@@ -12,7 +12,14 @@ import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import { liveActivityDeps, liveActivitySupported, macConnections, rubatoPushDeps } from "./deps";
 import { syncLiveActivities } from "./liveActivity";
 import { loadPushState } from "./storage";
-import { pushPreferences, setRubatoPushPreferences, type MacConnection, type PushPreferences, type PushState } from "./sync";
+import {
+  macFetch,
+  pushPreferences,
+  setRubatoPushPreferences,
+  type MacConnection,
+  type PushPreferences,
+  type PushState,
+} from "./sync";
 
 // Settings > Notifications in the Rubato app. Each kind (companion messages, companion calls,
 // threads, the Live Activity card) is turned off on the Macs themselves, so nothing of it leaves
@@ -32,12 +39,12 @@ async function readPermission(): Promise<Permission> {
   return permission.granted ? "granted" : permission.canAskAgain ? "ask" : "off";
 }
 
-function macRequest(connection: MacConnection, action: string, body: unknown = {}): Promise<unknown> {
-  return fetch(`${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${connection.bearerToken}` },
+async function macRequest(connection: MacConnection, action: string, body: unknown = {}): Promise<unknown> {
+  const response = await macFetch(fetch, connection, `${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`, {
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  }).then((response) => (response.ok ? response.json() : null));
+  });
+  return response.ok ? response.json() : null;
 }
 
 export function RubatoNotificationsSettings() {

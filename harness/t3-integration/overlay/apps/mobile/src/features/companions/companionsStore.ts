@@ -11,7 +11,14 @@ import { RubatoCall } from "../../../modules/rubato-call";
 import Storage from "expo-sqlite/kv-store";
 
 import { callApi, type CallableCompanion } from "./callStore";
-import { COMPANIONS_CACHE_KEY, decodeCompanions, encodeCompanions, type CallEffort, type CompanionEntry } from "./companionModel";
+import {
+  COMPANIONS_CACHE_KEY,
+  decodeCompanions,
+  encodeCompanions,
+  knownThreadId,
+  type CallEffort,
+  type CompanionEntry,
+} from "./companionModel";
 import { companionDisplayName, dataUrlBase64, subscribeCompanionNames, useCompanionNames } from "./companionNames";
 import { postRubato } from "./rubatoHttp";
 
@@ -107,7 +114,10 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
               companionId: item.id,
               sessionId: item.sessionId,
               current: true,
-            }).then((answer) => answer.threadId, () => null)
+            }).then(
+              (answer) => answer.threadId,
+              () => knownThreadId(view.companions, environmentId, item.id, item.sessionId),
+            )
           : null,
         arts.has(key) ? arts.get(key) : fetchArt(environmentId, item.id),
       ]);

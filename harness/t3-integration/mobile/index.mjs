@@ -10,6 +10,7 @@
 //   composer-edits.mjs   the companion room's growing field, full-screen editor and live dictation
 //   theme-edits.mjs      the five Rubato themes in place of T3's palettes, and T3's theme tests
 //   usage-edits.mjs      the Usage page's pace forecast and red/green even-pace tick
+//   navbar-edits.mjs     the iPhone's tab bar, compose and Settings gear as before v0.1.11
 //
 // Two files must never edit one file at the same anchor: apply.mjs undoes an edit by
 // finding addition+anchor, and a second addition in between hides the first.
@@ -21,6 +22,7 @@ import { mobileMessageEditEdits, mobileMessageEditOverlays } from './message-edi
 import { mobileComposerEdits, mobileComposerOverlays } from './composer-edits.mjs';
 import { mobileThemeEdits, mobileThemeOverlays } from './theme-edits.mjs';
 import { mobileUsageEdits, mobileUsageOverlays } from './usage-edits.mjs';
+import { mobileNavbarEdits, mobileNavbarOverlays } from './navbar-edits.mjs';
 
 const tables = [
   [shellEdits, shellOverlays],
@@ -31,6 +33,7 @@ const tables = [
   [mobileComposerEdits, mobileComposerOverlays],
   [mobileThemeEdits, mobileThemeOverlays],
   [mobileUsageEdits, mobileUsageOverlays],
+  [mobileNavbarEdits, mobileNavbarOverlays],
 ];
 
 export const mobileOverlays = tables.flatMap(([, overlays]) => overlays);

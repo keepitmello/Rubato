@@ -7,6 +7,11 @@
 //   phone ── /rubato/call ──▶ Mac        dial, answer, decline, hangup, live, calls
 //   phone ── wss (tailnet :7443) ──▶ LiveKit on the Mac (call-agent remote.mjs)
 //   relay ── VoIP push ──▶ RubatoCallCenter.swift ──▶ CallKit ──▶ callStore.ts
+//
+// Every request to a Rubato route carries the headers rubatoHttp.ts gets from
+// client-runtime's state/rubatoEnvironmentHttp.ts (an overlay of ours): the bearer of an older
+// pairing, or upstream's DPoP-bound token with a proof per request. Its one upstream hook is the
+// package export below (one anchor per bump).
 const companions = 'apps/mobile/src/features/companions';
 const callModule = 'apps/mobile/modules/rubato-call';
 
@@ -49,12 +54,18 @@ export const mobileCompanionOverlays = [
   `${callModule}/ios/RubatoCallCenter.swift`,
   `${callModule}/ios/RubatoCallModule.swift`,
   'apps/mobile/targets/notification-service/NotificationService.swift',
+  'packages/client-runtime/src/state/rubatoEnvironmentHttp.ts',
+  'packages/client-runtime/src/state/rubatoEnvironmentHttp.test.ts',
 ];
 
 // The room draws attachments with the thread feed's own renderers, which the feed keeps private.
 const exported = (declaration) => [declaration, `export ${declaration}`, 'replace'];
 
 export const mobileCompanionEdits = {
+  'packages/client-runtime/package.json': [
+    ['    "./state/environmentHttpAuth": {\n',
+      '    "./state/rubatoEnvironmentHttp": {\n      "types": "./src/state/rubatoEnvironmentHttp.ts",\n      "default": "./src/state/rubatoEnvironmentHttp.ts"\n    },\n'],
+  ],
   'apps/mobile/src/features/threads/ThreadFeed.tsx': [
     exported('function MessageAttachmentImage(props: {'),
     exported('function MessageAttachmentFile(props: {'),

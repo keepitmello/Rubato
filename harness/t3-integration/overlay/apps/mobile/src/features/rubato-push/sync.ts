@@ -48,7 +48,36 @@ export interface PushState {
 export interface MacConnection {
   readonly environmentId: string;
   readonly httpBaseUrl: string;
-  readonly bearerToken: string;
+  /**
+   * The headers that authorize `method url` on this Mac (rubatoHttp.savedMacHeaders);
+   * `rejectedAccessToken` names a DPoP token the Mac just turned down.
+   */
+  readonly authorize: (method: "POST", url: string, rejectedAccessToken?: string) => Promise<Record<string, string>>;
+}
+
+/**
+ * A POST to a paired Mac with that Mac's credentials. A DPoP token the Mac turns down (401) is renewed
+ * and the request sent once more, as T3's own requests do.
+ */
+export async function macFetch(
+  fetchImpl: (url: string, init: RequestInit) => Promise<Response>,
+  connection: Pick<MacConnection, "authorize">,
+  url: string,
+  init: RequestInit = {},
+): Promise<Response> {
+  const send = async (rejected?: string) => {
+    const headers = await connection.authorize("POST", url, rejected);
+    const response = await fetchImpl(url, {
+      ...init,
+      method: "POST",
+      headers: { ...(init.headers as Record<string, string> | undefined), ...headers },
+    });
+    const dpop = headers.authorization?.startsWith("DPoP ") ? headers.authorization.slice(5) : null;
+    return { response, dpop };
+  };
+  const first = await send();
+  if (first.response.status !== 401 || first.dpop === null) return first.response;
+  return (await send(first.dpop)).response;
 }
 
 export interface PushSyncDeps {
@@ -82,16 +111,17 @@ async function call<T>(
   deps: PushSyncDeps,
   url: string,
   method: string,
-  { bearer, body }: { bearer?: string; body?: unknown } = {},
+  { bearer, mac, body }: { bearer?: string; mac?: MacConnection; body?: unknown } = {},
 ): Promise<T> {
-  const response = await deps.fetch(url, {
+  const init = {
     method,
     headers: {
       "content-type": "application/json",
       ...(bearer ? { authorization: `Bearer ${bearer}` } : {}),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  });
+  };
+  const response = mac ? await macFetch(deps.fetch, mac, url, init) : await deps.fetch(url, init);
   if (!response.ok) throw new RelayRefused({ status: response.status, message: `relay answered ${response.status}` });
   return (await response.json().catch(() => ({}))) as T;
 }
@@ -177,7 +207,7 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
         body: { label: new URL(httpBaseUrl).host },
       });
       await call(deps, `${httpBaseUrl}/rubato/push/register`, "POST", {
-        bearer: connection.bearerToken,
+        mac: connection,
         body: {
           relay: deps.relay,
           grant: minted.grant,
@@ -222,7 +252,7 @@ async function tellPreferences(deps: PushSyncDeps, start: PushState, connections
     if (!grant || samePreferences(grant.preferences, preferences)) continue;
     try {
       await call(deps, `${grant.httpBaseUrl}/rubato/push/preferences`, "POST", {
-        bearer: connection.bearerToken,
+        mac: connection,
         body: { deviceId: state.deviceId, preferences },
       });
       state = { ...state, grants: { ...state.grants, [connection.environmentId]: { ...grant, preferences } } };
