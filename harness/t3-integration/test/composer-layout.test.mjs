@@ -42,6 +42,9 @@ test('the control row keeps even insets, a model chip, one cluster and a divider
   assert.match(row, /\[data-chat-provider-model-picker="true"\] \{\n  background-color: var\(--rb-hairline\);/);
   assert.match(row, /\[data-chat-composer-actions="right"\] button\.rounded-full \{\n  width: calc\(var\(--spacing\) \* 7\);/);
   assert.match(row, /\[data-rubato-speed-label\]::after \{[^}]*background: var\(--rb-hairline-strong\);/);
+  // A narrow composer drops the speed before the model chip runs into it (verifier-r2, 400px).
+  assert.match(row, /@container composer-surface \(max-width: 480px\) \{[^}]*\[data-rubato-speed-label\] \{\n    display: none;/);
+  assert.match(row, /\[data-chat-provider-model-picker="true"\] \{\n  min-width: 0;\n  overflow: hidden;/);
 });
 
 test('the model button keeps its effort; the picker opens from the left', skip, async () => {

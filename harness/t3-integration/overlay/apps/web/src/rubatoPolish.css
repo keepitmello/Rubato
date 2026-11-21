@@ -172,6 +172,24 @@
   width: calc(var(--spacing) * 7);
   height: calc(var(--spacing) * 7);
 }
+/* Below T3's sm breakpoint its icon buttons grow to h-8 for touch; send grows with them. */
+@media (width < 40rem) {
+  [data-chat-composer-footer="true"] [data-chat-composer-actions="right"] button.rounded-full {
+    width: calc(var(--spacing) * 8);
+    height: calc(var(--spacing) * 8);
+  }
+}
+/* The model chip never paints past its box; a narrow composer drops the speed readout first. */
+[data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"] {
+  min-width: 0;
+  overflow: hidden;
+}
+@container composer-surface (max-width: 480px) {
+  /* One step more specific: the build may emit this block before the rule it overrides. */
+  [data-chat-composer-footer="true"] [data-chat-composer-actions="right"] [data-rubato-speed-label] {
+    display: none;
+  }
+}
 [data-chat-composer-footer="true"] [data-rubato-speed-label] {
   display: inline-flex;
   align-items: center;
