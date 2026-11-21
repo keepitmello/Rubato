@@ -45,15 +45,17 @@ test('mobile edits anchor once and add only new text at the pin', {skip: !proces
   }
 });
 
-test('the phone opens on companions, then threads, with pull requests, issues and usage hidden until shown', {skip: !process.env.T3_SOURCE}, async () => {
+test('the phone opens on companions, then threads and usage, with pull requests and issues hidden until shown', {skip: !process.env.T3_SOURCE}, async () => {
   const pin = JSON.parse(await readFile(new URL('../upstream.json', import.meta.url), 'utf8'));
   const edited = (relative) => mobileEdits[relative].reduce(
     (text, [anchor, addition, mode]) => mode === 'replace' ? text.replace(anchor, addition) : text.replace(anchor, addition + anchor),
     execFileSync('git', ['-C', process.env.T3_SOURCE, 'show', `${pin.upstreamCommit}:${relative}`], {encoding: 'utf8'}));
   const workspace = 'apps/mobile/src/features/layout/workspace/';
   const order = edited(`${workspace}navigation-tab-order.ts`);
-  assert.match(order, /NAVIGATION_TAB_ORDER = \[\n {2}"companions",\n {2}"threads",/);
-  assert.match(order, /RUBATO_HIDDEN_TABS: readonly NavigationTab\[\] = \["pullRequests", "issues", "usage"\]/);
+  assert.match(order, /NAVIGATION_TAB_ORDER = \[\n {2}"companions",\n {2}"threads",\n {2}"usage",/);
+  assert.match(order, /RUBATO_HIDDEN_TABS: readonly NavigationTab\[\] = \["pullRequests", "issues"\]/);
+  // A phone that saved its tabs before gets Usage third once.
+  assert.ok(edited('apps/mobile/src/persistence/mobile-preferences.ts').includes('placeUsageTab(preferences)'));
   assert.ok(edited(`${workspace}workspace-tabs-state.ts`).includes('selectedTab: WorkspaceTab = "companions"'));
   // The phone's floating tab picker names its tabs natively.
   const picker = edited('apps/mobile/modules/t3-native-controls/ios/T3SidebarTabBarView.swift');

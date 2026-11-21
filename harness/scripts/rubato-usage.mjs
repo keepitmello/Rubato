@@ -200,12 +200,18 @@ export function grokUsageWindows(body) {
   const type = String(body.config.currentPeriod?.type ?? "").replace(/^USAGE_PERIOD_TYPE_/, "");
   const kind = type === "WEEKLY" ? "weekly" : type === "MONTHLY" ? "monthly" : "other";
   const resetsAt = isoFromText(body.config.currentPeriod?.end);
+  const startsAt = isoFromText(body.config.currentPeriod?.start);
+  // The period's length lets the Usage page tell the pace and when the quota runs out.
+  const windowDurationMins = resetsAt && startsAt
+    ? Math.round((Date.parse(resetsAt) - Date.parse(startsAt)) / 60_000)
+    : 0;
   return [{
     id: "subscription",
     kind,
     label: kind === "weekly" ? "Weekly" : kind === "monthly" ? "Monthly" : "Subscription",
     usedPercent: clampPercent(used),
     ...(resetsAt ? { resetsAt } : {}),
+    ...(windowDurationMins > 0 ? { windowDurationMins } : {}),
   }];
 }
 

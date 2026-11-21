@@ -23,7 +23,7 @@ import { ProviderInstanceRegistry } from "./ProviderInstanceRegistry.ts";
 import { AgentAwarenessRelay } from "../relay/AgentAwarenessRelay.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { RubatoThreadImportError, RubatoThreadImporter, importFailure, isRubatoRun, nextTurnItemOrdinal, saidRunId,
-  type SessionMessage } from "./RubatoThreadImporter.ts";
+  sessionMessageRun, type SessionMessage } from "./RubatoThreadImporter.ts";
 import { rubatoBridgeFor, type PiBridge, type PiSessionMessage, type PiThreadRequest } from "./Drivers/RubatoPiDriver.ts";
 
 export interface PiSessionRef {
@@ -330,8 +330,13 @@ export const bindRubatoSessionLookup = Effect.gen(function* () {
     };
     const placed = item.ownRun === true ? yield* appendOwnRun(thread, message, ordinal) : null;
     if (placed === true) return;
+    // A live message goes into the run it arrived in or after, so it shows where it arrived
+    // (sessionMessageRun); with no run it would sit above every turn.
+    const runId = placed ?? message.runId ?? (item.ownRun === true ? null : sessionMessageRun(
+      (yield* orchestrator.value.getThreadRecords(thread, ["runs"]).pipe(
+        Effect.mapError(importFailure("Could not read the thread's runs")))).runs)?.id ?? null);
     yield* importer.value.appendSessionMessage({ threadId: thread, ordinal: yield* ordinal(),
-      message: placed === null ? message : { ...message, runId: placed } });
+      message: runId === null ? message : { ...message, runId } });
   });
   /**
    * The engine says the thread's session is at rest and last moved at `quietSince` (epoch ms), yet T3

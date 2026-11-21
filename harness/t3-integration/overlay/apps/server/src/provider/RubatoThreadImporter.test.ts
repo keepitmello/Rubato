@@ -3,7 +3,7 @@
 // message another agent sent, with the sender context and the sending thread when known.
 import {
   EventId, OrchestrationMessageContext, OrchestrationV2ConversationMessage, OrchestrationV2Run, OrchestrationV2TurnItem,
-  ProviderInstanceId, RunId, ThreadId, type OrchestrationV2DomainEvent,
+  ProviderInstanceId, RunId, ThreadId, TurnItemId, type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Clock from "effect/Clock";
@@ -13,7 +13,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vite-plus/test";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
-import { RubatoThreadImporter, SAID_RUN_PREFIX, isRubatoRun, isSaidRun, layer as importerLayer, saidRunId, sessionMessageRecords } from "./RubatoThreadImporter.ts";
+import * as TurnItemPositionStore from "../orchestration-v2/TurnItemPositionStore.ts";
+import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import { RubatoThreadImporter, SAID_RUN_PREFIX, isRubatoRun, isSaidRun, layer as importerLayer, saidRunId, sessionMessageRecords,
+  sessionMessageRun } from "./RubatoThreadImporter.ts";
 import { engineRunning } from "./RubatoPiInventory.ts";
 import { gapsFromProviderEvents } from "./RubatoPiSessions.ts";
 
@@ -74,6 +77,27 @@ describe("session message records", () => {
       text: "세뇨 포팅이 다 끝났어.", createdAt: "2026-10-20T13:17:17.578Z", context: record as never, runId: RunId.make("run-41") }, 3);
     expect(message.runId).toBe("run-41");
     expect(turnItem.runId).toBe("run-41");
+  });
+  it("arriving live, show after the turn it arrived in or after, not above every turn", async () => {
+    const at = DateTime.makeUnsafe("2026-11-21T12:00:00.000Z");
+    const runOf = (ordinal: number, status: OrchestrationV2Run["status"], started: boolean) =>
+      ({ id: RunId.make(`run-${ordinal}`), ordinal, status, startedAt: started ? at : null }) as unknown as OrchestrationV2Run;
+    const runs = [runOf(1, "completed", true), runOf(2, "running", true), runOf(3, "rolled_back", true), runOf(4, "queued", false)];
+    const run = sessionMessageRun(runs);
+    expect(run?.id).toBe("run-2");
+    expect(sessionMessageRun([runOf(1, "queued", false)])).toBeNull();
+    // Where T3 puts it: after the items run 2 already shows (TurnItemPositionStore, as the event sink normalizes).
+    const threadId = ThreadId.make("lead-thread");
+    const [answer, message, runless] = await Effect.runPromise(Effect.gen(function* () {
+      const positions = yield* TurnItemPositionStore.TurnItemPositionStoreV2;
+      const answer = yield* positions.allocate({ threadId, turnItemId: TurnItemId.make("answer"), runId: run!.id, runOrdinal: run!.ordinal });
+      const message = yield* positions.allocate({ threadId, turnItemId: TurnItemId.make("rubato-session:live"), runId: run!.id,
+        runOrdinal: run!.ordinal });
+      const runless = yield* positions.allocate({ threadId, turnItemId: TurnItemId.make("rubato-session:runless"), runId: null });
+      return [answer, message, runless] as const;
+    }).pipe(Effect.provide(TurnItemPositionStore.layer.pipe(Layer.provideMerge(SqlitePersistence.layerMemory)))));
+    expect(message).toBeGreaterThan(answer);
+    expect(runless).toBeLessThan(answer);
   });
 });
 
