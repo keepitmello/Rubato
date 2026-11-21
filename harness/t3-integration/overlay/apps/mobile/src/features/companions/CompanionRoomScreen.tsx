@@ -692,7 +692,7 @@ function RoomBody(props: {
               ]);
               return;
             }
-            Alert.alert(copy.applyFailed, error instanceof Error ? error.message : String(error));
+            Alert.alert(action === "apply" ? copy.applyFailed : copy.saveFailed, error instanceof Error ? error.message : String(error));
           },
         )
         .finally(() => setBusyProposal(null));
