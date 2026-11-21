@@ -3,11 +3,15 @@
 #
 #   build-ios.sh --simulator     Release build for the iOS simulator (no signing), installed
 #                                on a booted simulator when one is running
-#   build-ios.sh --testflight    signed archive, uploaded to App Store Connect for TestFlight
+#   build-ios.sh --archive       signed archive for a device, kept in ~/.rubato/t3-mobile-build;
+#                                nothing is uploaded
+#   build-ios.sh --upload ARCHIVE
+#                                uploads an archive made by --archive to App Store Connect
+#   build-ios.sh --testflight    --archive, then --upload of that archive
 #
 # It builds in its own tree ($RUBATO_T3_MOBILE, default ~/.rubato/t3-mobile): a git worktree
 # of the desktop's T3 checkout at the pin. The desktop's ~/.rubato/t3-source is never touched.
-# Upload signs in with the App Store Connect API key in ASC_KEY_ID / ASC_ISSUER_ID /
+# Signing and upload sign in with the App Store Connect API key in ASC_KEY_ID / ASC_ISSUER_ID /
 # ASC_KEY_PATH (a .p8 that stays on this Mac).
 set -euo pipefail
 
@@ -18,10 +22,52 @@ T3_MOBILE="${RUBATO_T3_MOBILE:-$HOME/.rubato/t3-mobile}"
 out="$HOME/.rubato/t3-mobile-build"
 TEAM_ID=5WGZKZGPQS
 MODE="${1:-}"
-case "$MODE" in --simulator|--testflight) ;; *)
-  printf '%s\n' 'usage: build-ios.sh --simulator | --testflight' >&2; exit 2 ;;
+usage='usage: build-ios.sh --simulator | --archive | --testflight | --upload ARCHIVE'
+case "$MODE" in --simulator|--archive|--testflight) ;; --upload) [ -n "${2:-}" ] || { printf '%s\n' "$usage" >&2; exit 2; } ;; *)
+  printf '%s\n' "$usage" >&2; exit 2 ;;
 esac
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0 EXPO_NO_GIT_STATUS=1 APP_VARIANT=production LANG=en_US.UTF-8
+
+asc_auth() {
+  : "${ASC_KEY_ID:?set ASC_KEY_ID}" "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}" "${ASC_KEY_PATH:?set ASC_KEY_PATH}"
+  auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME}"
+    -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+}
+
+# Exports the archive for App Store Connect and uploads it; the export folder is not kept.
+upload() {
+  local archive="$1" version build plist
+  plist="$archive/Info.plist"
+  build="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' "$plist")"
+  version="$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' "$plist")"
+  asc_auth
+  local tmp; tmp="$(mktemp -d)"
+  cat > "$tmp/export.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>method</key><string>app-store-connect</string>
+  <key>destination</key><string>upload</string>
+  <key>teamID</key><string>$TEAM_ID</string>
+  <key>signingStyle</key><string>automatic</string>
+  <key>manageAppVersionAndBuildNumber</key><false/>
+  <key>testFlightInternalTestingOnly</key><false/>
+</dict></plist>
+PLIST
+  mkdir -p "$out"
+  xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$tmp/export.plist" \
+    -exportPath "$tmp/export" "${auth[@]}" > "$out/export.log" 2>&1 \
+    || { rm -rf "$tmp"; grep -iE 'error|EXPORT FAILED' "$out/export.log" | tail -20; exit 1; }
+  rm -rf "$tmp"
+  printf 'uploaded %s (%s)\n' "$version" "$build"
+}
+
+if [ "$MODE" = --upload ]; then
+  archive="$(cd "$2" && pwd -P)"
+  [ -f "$archive/Info.plist" ] || { printf 'not an archive: %s\n' "$2" >&2; exit 1; }
+  upload "$archive"
+  exit 0
+fi
 
 pin="$(node -p "require('$INTEGRATION/upstream.json').upstreamCommit")"
 if [ ! -d "$T3_MOBILE/.git" ] && [ ! -f "$T3_MOBILE/.git" ]; then
@@ -114,30 +160,15 @@ if [ "$free_kb" -lt $((8 * 1024 * 1024)) ]; then
   printf 'only %s GB free; an archive needs about 8 GB. Free space first.\n' "$((free_kb / 1024 / 1024))" >&2
   exit 1
 fi
-: "${ASC_KEY_ID:?set ASC_KEY_ID}" "${ASC_ISSUER_ID:?set ASC_ISSUER_ID}" "${ASC_KEY_PATH:?set ASC_KEY_PATH}"
-auth=(-allowProvisioningUpdates -authenticationKeyPath "${ASC_KEY_PATH/#\~/$HOME}"
-  -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+asc_auth
 archive="$out/Rubato-$build_number.xcarchive"
 xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath "$out/device" \
   DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive > "$out/archive.log" 2>&1 \
   || { grep -E ' error: |^error:|ARCHIVE FAILED' "$out/archive.log" | tail -20; exit 1; }
-cat > "$work/export.plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>method</key><string>app-store-connect</string>
-  <key>destination</key><string>upload</string>
-  <key>teamID</key><string>$TEAM_ID</string>
-  <key>signingStyle</key><string>automatic</string>
-  <key>manageAppVersionAndBuildNumber</key><false/>
-  <key>testFlightInternalTestingOnly</key><false/>
-</dict></plist>
-PLIST
-xcodebuild -exportArchive -archivePath "$archive" -exportOptionsPlist "$work/export.plist" \
-  -exportPath "$out/export-$build_number" "${auth[@]}" > "$out/export.log" 2>&1 \
-  || { grep -iE 'error|EXPORT FAILED' "$out/export.log" | tail -20; exit 1; }
 # Keep the archive (symbols for crash reports) of the last two builds only; cleanup removes
 # the intermediates.
 ls -1dt "$out"/Rubato-*.xcarchive | tail -n +3 | while read -r old; do rm -rf "$old"; done
-printf 'uploaded build %s\n' "$build_number"
+printf 'archive: %s\n' "$archive"
+[ "$MODE" = --archive ] && exit 0
+upload "$archive"

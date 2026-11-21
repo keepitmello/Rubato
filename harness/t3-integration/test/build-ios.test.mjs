@@ -9,9 +9,10 @@ import { fileURLToPath } from 'node:url';
 const buildIos = fileURLToPath(new URL('../mobile/build-ios.sh', import.meta.url));
 const pin = JSON.parse(readFileSync(fileURLToPath(new URL('../upstream.json', import.meta.url)), 'utf8')).upstreamCommit;
 
-// Runs build-ios.sh --simulator against a fake T3 tree with stub tools on PATH. The stub
-// xcodebuild writes a Rubato.app into the derived data, or fails when STUB_XCODEBUILD_FAIL=1.
-function run(t, { fail = false } = {}) {
+// Runs build-ios.sh against a fake T3 tree with stub tools on PATH. The stub xcodebuild writes a
+// Rubato.app into the derived data or an archive, records each call in xcodebuild.calls, and fails
+// when STUB_XCODEBUILD_FAIL=1.
+function run(t, { fail = false, args = ['--simulator'] } = {}) {
   const root = mkdtempSync(path.join(tmpdir(), 'rb-build-ios-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const home = path.join(root, 'home');
@@ -48,11 +49,21 @@ exit 0`);
   stub('pod', 'mkdir -p Pods && echo pod > Pods/LiveKitWebRTC');
   stub('xcrun', 'exit 0');
   stub('xcodebuild', `[ "\${STUB_XCODEBUILD_FAIL:-}" = 1 ] && { echo 'BUILD FAILED'; exit 65; }
-while [ $# -gt 0 ]; do [ "$1" = -derivedDataPath ] && dd="$2"; shift; done
+echo "$*" >> "${path.join(root, 'xcodebuild.calls')}"
+for a in "$@"; do [ "$a" = -exportArchive ] && exit 0; done
+while [ $# -gt 0 ]; do
+  [ "$1" = -derivedDataPath ] && dd="$2"; [ "$1" = -archivePath ] && ar="$2"; shift
+done
 mkdir -p "$dd/Build/Products/Release-iphonesimulator/Rubato.app" "$dd/Build/Intermediates.noindex"
-echo app > "$dd/Build/Products/Release-iphonesimulator/Rubato.app/Rubato"`);
+echo app > "$dd/Build/Products/Release-iphonesimulator/Rubato.app/Rubato"
+if [ -n "\${ar:-}" ]; then
+  mkdir -p "$ar/Products/Applications/Rubato.app"
+  printf '%s\\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict><key>ApplicationProperties</key><dict>' \\
+    '<key>CFBundleShortVersionString</key><string>1.0.0</string><key>CFBundleVersion</key><string>7</string></dict></dict></plist>' > "$ar/Info.plist"
+fi`);
+  stub('df', 'printf "%s\\n" "Filesystem 1K-blocks Used Available" "disk 1 1 99999999"');
 
-  const result = spawnSync('bash', [buildIos, '--simulator'], {
+  const result = spawnSync('bash', [buildIos, ...args], {
     encoding: 'utf8',
     env: {
       ...process.env,
@@ -61,9 +72,12 @@ echo app > "$dd/Build/Products/Release-iphonesimulator/Rubato.app/Rubato"`);
       RUBATO_T3_MOBILE: mobile,
       RUBATO_MOBILE_WORKTREE: '1',
       STUB_XCODEBUILD_FAIL: fail ? '1' : '',
+      ASC_KEY_ID: 'KEY', ASC_ISSUER_ID: 'ISSUER', ASC_KEY_PATH: path.join(root, 'key.p8'),
     },
   });
-  return { result, out, ios };
+  const callsFile = path.join(root, 'xcodebuild.calls');
+  const calls = existsSync(callsFile) ? readFileSync(callsFile, 'utf8').trim().split('\n') : [];
+  return { result, out, ios, calls, root };
 }
 
 test('a simulator build keeps the app and its log, and no native tree or intermediates', { skip: process.platform !== 'darwin' }, (t) => {
@@ -83,4 +97,35 @@ test('a failed build still removes the native tree and intermediates but keeps t
   for (const gone of [ios, path.join(out, 'sim'), path.join(out, 'device'), path.join(out, 'export-old')]) {
     assert.ok(!existsSync(gone), `${gone} is removed`);
   }
+});
+
+test('--archive keeps a signed archive and uploads nothing', { skip: process.platform !== 'darwin' }, (t) => {
+  const { result, out, ios, calls } = run(t, { args: ['--archive'] });
+  assert.equal(result.status, 0, result.stderr);
+  const archive = result.stdout.match(/^archive: (.+)$/m)?.[1];
+  assert.ok(archive && existsSync(path.join(archive, 'Info.plist')), result.stdout);
+  assert.ok(archive.startsWith(out));
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], / archive$/);
+  assert.match(calls[0], /CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates/);
+  assert.ok(!calls.some((call) => call.includes('-exportArchive')), 'no upload');
+  for (const gone of [ios, path.join(out, 'device')]) assert.ok(!existsSync(gone), `${gone} is removed`);
+});
+
+test('--upload sends an existing archive without building', { skip: process.platform !== 'darwin' }, (t) => {
+  const made = run(t, { args: ['--archive'] });
+  const archive = made.result.stdout.match(/^archive: (.+)$/m)[1];
+  const archiveCopy = path.join(made.root, 'kept.xcarchive');
+  spawnSync('ditto', [archive, archiveCopy]);
+  const { result, calls } = run(t, { args: ['--upload', archiveCopy] });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0], /^-exportArchive -archivePath \S+kept\.xcarchive /);
+  assert.match(result.stdout, /^uploaded 1\.0\.0 \(7\)$/m);
+});
+
+test('--upload without an archive is a usage error', (t) => {
+  const { result, calls } = run(t, { args: ['--upload'] });
+  assert.equal(result.status, 2);
+  assert.equal(calls.length, 0);
 });
