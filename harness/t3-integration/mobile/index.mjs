@@ -11,6 +11,7 @@
 //   theme-edits.mjs      the five Rubato themes in place of T3's palettes, and T3's theme tests
 //   usage-edits.mjs      the Usage page's pace forecast and red/green even-pace tick
 //   navbar-edits.mjs     the iPhone's tab bar, compose and Settings gear as before v0.1.11
+//   access-mode-edits.mjs  no access-mode control in the composer's thread settings
 //
 // Two files must never edit one file at the same anchor: apply.mjs undoes an edit by
 // finding addition+anchor, and a second addition in between hides the first.
@@ -23,6 +24,7 @@ import { mobileComposerEdits, mobileComposerOverlays } from './composer-edits.mj
 import { mobileThemeEdits, mobileThemeOverlays } from './theme-edits.mjs';
 import { mobileUsageEdits, mobileUsageOverlays } from './usage-edits.mjs';
 import { mobileNavbarEdits, mobileNavbarOverlays } from './navbar-edits.mjs';
+import { mobileAccessModeEdits, mobileAccessModeOverlays } from './access-mode-edits.mjs';
 
 const tables = [
   [shellEdits, shellOverlays],
@@ -34,6 +36,7 @@ const tables = [
   [mobileThemeEdits, mobileThemeOverlays],
   [mobileUsageEdits, mobileUsageOverlays],
   [mobileNavbarEdits, mobileNavbarOverlays],
+  [mobileAccessModeEdits, mobileAccessModeOverlays],
 ];
 
 export const mobileOverlays = tables.flatMap(([, overlays]) => overlays);
