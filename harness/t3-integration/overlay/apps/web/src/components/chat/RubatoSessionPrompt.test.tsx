@@ -20,10 +20,18 @@ const LIBRARY = [
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => configs }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => configs } }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
+const http = vi.hoisted(() => ({ calls: 0, fail: false, connected: true }));
 vi.mock("~/state/rubatoHttp", () => ({
-  postRubato: async (_environmentId: string, _route: string, action: string) =>
-    action === "list" ? { prompts: LIBRARY } : {},
+  postRubato: async (_environmentId: string, _route: string, action: string) => {
+    http.calls += 1;
+    if (http.fail) throw new Error("This Mac is not connected.");
+    return action === "list" ? { prompts: LIBRARY } : {};
+  },
 }));
+vi.mock("~/state/session", async () => {
+  const Option = await import("effect/Option");
+  return { usePreparedConnection: () => (http.connected ? Option.some({}) : Option.none()) };
+});
 
 import {
   openRubatoSessionPromptMenu,
@@ -39,6 +47,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
+  Object.assign(http, { calls: 0, fail: false, connected: true });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -69,6 +78,19 @@ describe("/prompt", () => {
 });
 
 describe("RubatoSessionPromptPicker", () => {
+  it("waits for the Mac's connection and shows no error chip for a background load", async () => {
+    http.connected = false;
+    await renderPicker("draft-offline");
+    expect(http.calls).toBe(0);
+    expect(chip()).toBeNull();
+    http.connected = true;
+    http.fail = true;
+    await renderPicker("draft-offline");
+    expect(http.calls).toBe(1);
+    // The load failed, but nothing the person asked for is missing: Rubato's own prompt shows nothing.
+    expect(chip()).toBeNull();
+  });
+
   it("shows nothing on Rubato's own prompt until /prompt opens its menu", async () => {
     await renderPicker("draft-a");
     expect(chip()).toBeNull();

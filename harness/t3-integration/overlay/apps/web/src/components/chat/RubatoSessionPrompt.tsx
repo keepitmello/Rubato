@@ -3,7 +3,9 @@ import { useAtomValue } from "@effect/atom-react";
 import { ChevronDownIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import * as Option from "effect/Option";
 import { postRubato } from "~/state/rubatoHttp";
+import { usePreparedConnection } from "~/state/session";
 import { environmentServerConfigsAtom } from "~/state/server";
 import { appAtomRegistry } from "~/rpc/atomRegistry";
 import { cn } from "~/lib/utils";
@@ -156,6 +158,8 @@ export function RubatoSessionPromptPicker(props: {
   const { environmentId, draftKey, instanceId, onReturnFocus } = props;
   const configs = useAtomValue(environmentServerConfigsAtom);
   const rubato = draftKey !== null && runsOnRubato(configs, environmentId, instanceId);
+  // The library loads once the Mac's connection is up; a new draft can open before it is.
+  const connected = Option.isSome(usePreparedConnection(environmentId));
   const choice = useSyncExternalStore(subscribe, () => sessionPromptChoice(draftKey));
   const requested = useSyncExternalStore(subscribe, () => draftKey !== null && menuRequests.has(draftKey));
   const [open, setOpen] = useState(false);
@@ -166,7 +170,9 @@ export function RubatoSessionPromptPicker(props: {
   // A menu item that opens a dialog or the file picker keeps focus away from the composer.
   const focusElsewhere = useRef(false);
 
-  const load = async () => {
+  // quiet: a background load that fails leaves the chip hidden; only a menu the person opened
+  // shows why the library is missing.
+  const load = async (quiet = false) => {
     if (!instanceId) return null;
     try {
       const { prompts } = await postRubato<{ prompts: ReadonlyArray<SessionPromptEntry> }>(
@@ -176,16 +182,16 @@ export function RubatoSessionPromptPicker(props: {
       setError(null);
       return prompts;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (!quiet) setError(cause instanceof Error ? cause.message : String(cause));
       return null;
     }
   };
 
   // A new draft starts on the last file chosen, while that file is still in the library.
   useEffect(() => {
-    if (!rubato || draftKey === null) return;
+    if (!rubato || draftKey === null || !connected) return;
     let cancelled = false;
-    void load().then((prompts) => {
+    void load(true).then((prompts) => {
       if (cancelled || !prompts || choices.has(draftKey)) return;
       const last = lastChoiceId();
       const entry = prompts.find((item) => item.id === last);
@@ -193,7 +199,7 @@ export function RubatoSessionPromptPicker(props: {
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rubato, draftKey, environmentId, instanceId]);
+  }, [rubato, draftKey, environmentId, instanceId, connected]);
 
   useEffect(() => {
     if (!requested || draftKey === null) return;
