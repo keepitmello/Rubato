@@ -400,11 +400,13 @@ export const rubatoMemory = {
       | { models: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> }
       | { store: string; enabled: boolean }
       /** null puts titles back on the built-in ladder. */
-      | { titleModels: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> | null },
+      | { titleModels: ReadonlyArray<{ model: string; reasoning?: DreamReasoning }> | null }
+      /** The language small models write titles and summaries in; null follows each session's own. */
+      | { language: string | null },
   ) => call<{ saved: unknown[] }>(env, "config", change),
   /** The ladder session titles and the Stats card run on; `custom` is false while it is the built-in one. */
   titleModels: (env: EnvironmentId | null) =>
-    call<{ models: DreamModel[]; custom: boolean }>(env, "title-models"),
+    call<{ models: DreamModel[]; custom: boolean; language: string | null }>(env, "title-models"),
   self: (env: EnvironmentId | null) => call<SelfFiles>(env, "self"),
   saveSoul: (env: EnvironmentId | null, content: string, summary?: string) =>
     call<{ file: string; commit: string | null }>(env, "self-save", {

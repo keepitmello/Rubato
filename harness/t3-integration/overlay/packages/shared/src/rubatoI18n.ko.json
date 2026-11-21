@@ -3274,6 +3274,8 @@
   "Serves Aside's models to Rubato sessions.": "Aside 모델을 Rubato 세션에 제공합니다.",
   "Services Rubato keeps running": "Rubato가 상시 실행하는 서비스",
   "Session": "세션",
+  "Session titles and summaries are written in this language. Auto follows the language of each session.": "세션 제목과 요약을 쓰는 언어입니다. 자동은 각 세션에서 쓰는 언어를 따릅니다.",
+  "Could not save the language": "언어를 저장하지 못했습니다",
   "Session titles and the Stats page's longest-think summary use the first model that answers. The next one is the fallback.": "세션 제목과 통계 페이지의 최장 사고 요약에는 가장 먼저 응답하는 모델을 사용합니다. 다음 모델은 예비용입니다.",
   "Sessions": "세션",
   "Set": "설정하기",

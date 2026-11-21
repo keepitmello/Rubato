@@ -209,8 +209,16 @@ test('settings writes keep the user file and commit the self store', async (t) =
   assert.deepEqual(await f.service.handle('title-models', {}), {
     models: [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }, { model: 'xai/grok-4.7', reasoning: null }],
     custom: true,
+    language: null,
   });
   assert.match(await readFile(configFile, 'utf8'), /\/\/ 사용자 주석은 남아야 한다/);
+  // The language the small models write in shares the writer: null until set, validated, null again on null.
+  await f.service.handle('config', { language: 'ko' });
+  assert.equal((await f.service.handle('title-models', {})).language, 'ko');
+  assert.match(await readFile(configFile, 'utf8'), /"language": "ko"/);
+  await assert.rejects(f.service.handle('config', { language: 'not a language!!' }), /Language must be/);
+  await f.service.handle('config', { language: null });
+  assert.equal((await f.service.handle('title-models', {})).language, null);
   await assert.rejects(f.service.handle('config', { titleModels: [] }), /Titles and summaries needs 1 to 8 models/);
   await f.service.handle('config', { titleModels: null });
   assert.equal((await f.service.handle('title-models', {})).custom, false);

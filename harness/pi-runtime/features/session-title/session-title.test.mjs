@@ -7,6 +7,8 @@ import {
   isSeedTitle,
   isTitleLocked,
   lastAutoTitle,
+  languageName,
+  loadLanguage,
   loadTitleModels,
   titleConfigPath,
   titleLadder,
@@ -691,4 +693,35 @@ test("a session locked by the seed before this fix titles itself on resume", asy
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(completions, 1);
   assert.equal(names.at(-1), "Resumed Fix");
+});
+
+test("the configured language is told to the title model in its English name", async () => {
+  const read = (text) => () => text;
+  assert.equal(loadLanguage({ home: "/h", readFile: read('{ // mine\n "language": "ko", }') }), "Korean");
+  assert.equal(loadLanguage({ home: "/h", readFile: read('{"language":"Korean"}') }), "Korean");
+  assert.equal(loadLanguage({ home: "/h", readFile: read('{"language":"pt-BR"}') }), "Brazilian Portuguese");
+  assert.equal(loadLanguage({ home: "/h", readFile: read("{}") }), undefined, "unset keeps the model on the user's own language");
+  assert.equal(loadLanguage({ home: "/h", readFile: read('{"language":"\u30c4"}') }), undefined);
+  assert.equal(loadLanguage({ home: "/h", readFile: () => { throw new Error("ENOENT"); } }), undefined);
+  assert.equal(languageName("ko"), "Korean");
+
+  const picks = [{ n: 1, text: "fix the login bug" }];
+  assert.match(buildTitlePrompt(picks, undefined, "Korean"), /^Write the title in Korean\./);
+  assert.match(buildTitlePrompt(picks, "Login Fix", "Korean"), /^Write the title in Korean\.\n\nCurrent title: Login Fix/);
+  assert.equal(buildTitlePrompt(picks, undefined, undefined).includes("Write the title in"), false);
+
+  const calls = [];
+  const pi = { getSessionName: () => undefined, setSessionName() {}, appendEntry() {} };
+  const ctx = {
+    cwd: "/tmp/repo",
+    sessionManager: { getEntries: () => [userEntry("fix the login bug")] },
+    model: { id: "session" },
+    modelRegistry: {
+      find: () => undefined,
+      complete: async (_model, context) => { calls.push(context.messages[0].content[0].text); return { content: "<title>로그인 수정</title>" }; },
+    },
+    ui: { setTitle() {} },
+  };
+  await refreshSessionTitle(pi, ctx, { lastAuto: undefined, locked: false }, { loadModels: () => [], language: () => "Korean" });
+  assert.match(calls[0], /^Write the title in Korean\./);
 });

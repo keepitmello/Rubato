@@ -88,7 +88,7 @@ export const settingsLayoutEdits = {
         '    id: "rubato-title-models",',
         '    title: "Titles and summaries",',
         '    to: "/settings/threads",',
-        '    searchTerms: ["session title model fallback summary stats longest think text generation 제목 요약 모델"],',
+        '    searchTerms: ["session title model fallback summary stats longest think text generation 제목 요약 모델 language 언어"],',
         '  },',
         '',
       ].join('\n')],

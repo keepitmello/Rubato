@@ -7,6 +7,7 @@ import {
   firstUserText,
   isSeedTitle,
   isTitleLocked,
+  loadLanguage,
   loadTitleModels,
   parseTitle,
   shouldRetitle,
@@ -48,7 +49,7 @@ export function titleFromResponse(response) {
   return parseTitle(response?.content ?? response);
 }
 
-export async function refreshSessionTitle(pi, ctx, state, { loadModels = loadTitleModels } = {}) {
+export async function refreshSessionTitle(pi, ctx, state, { loadModels = loadTitleModels, language = loadLanguage } = {}) {
   if (state.locked) return;
   const texts = userTextsFromEntries(ctx.sessionManager?.getEntries?.() ?? ctx.sessionManager?.getBranch?.() ?? []);
   if (texts.length === 0) return;
@@ -63,7 +64,7 @@ export async function refreshSessionTitle(pi, ctx, state, { loadModels = loadTit
       {
         role: "user",
         // 엔진이 첫 메시지를 잘라 붙인 기본 이름은 제목이 아니므로, 자동 제목만 넘긴다.
-        content: [{ type: "text", text: buildTitlePrompt(texts, state.lastAuto) }],
+        content: [{ type: "text", text: buildTitlePrompt(texts, state.lastAuto, language()) }],
         timestamp: Date.now(),
       },
     ],
