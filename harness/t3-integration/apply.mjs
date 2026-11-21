@@ -34,6 +34,7 @@ import { stepRewindEdits, stepRewindOverlays } from './step-rewind-edits.mjs';
 import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-edits.mjs';
 import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto-archive-edits.mjs';
 import { sidebarLookEdits, sidebarLookOverlays } from './sidebar-look-edits.mjs';
+import { threadArchiveEdits, threadArchiveOverlays } from './thread-archive-edits.mjs';
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
@@ -1087,6 +1088,11 @@ for (const [relative, changes] of Object.entries(threadAutoArchiveEdits)) {
 // other modules already edited.
 overlays.push(...sidebarLookOverlays);
 for (const [relative, changes] of Object.entries(sidebarLookEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// `t3 thread archive` (thread-archive-edits.mjs).
+overlays.push(...threadArchiveOverlays);
+for (const [relative, changes] of Object.entries(threadArchiveEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */
