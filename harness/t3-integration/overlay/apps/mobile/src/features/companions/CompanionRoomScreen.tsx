@@ -4,9 +4,11 @@
 // The header and composer float on glass over the conversation, which fades under them.
 // The room is the companion's T3 thread; sending goes through the thread's own composer state. What
 // the person sends while the companion works steers into that work, since the room never shows it
-// (user item 6b6a88c5).
+// (user item 6b6a88c5). A change the companion proposes to itself shows as a card to apply, a new
+// companion's first conversation shows its progress as chips, and the face at the top opens its
+// profile, where its picture changes (intent companion-manage).
 import { HeaderHeightContext } from "@react-navigation/elements";
-import { useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
+import { CommonActions, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
@@ -51,8 +53,14 @@ import { BubbleFiles } from "./BubbleFiles";
 import { BubbleMarkdown } from "./BubbleMarkdown";
 import { CallCard } from "./CallCard";
 import { callActions, callApi, useCallView, type CallRecord } from "./callStore";
+import * as Haptics from "expo-haptics";
 import { CompanionAvatar } from "./CompanionAvatar";
-import { useCompanion, type CompanionEntry } from "./companionsStore";
+import { forgetCompanionArt, useCompanion, type CompanionEntry } from "./companionsStore";
+import { OnboardingChips } from "./OnboardingChips";
+import { ProposalCard } from "./ProposalCard";
+import type { Proposal } from "./proposalModel";
+import { isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
+import { takeRoomRequest, useRoomRequest } from "./roomRequests";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
@@ -109,14 +117,21 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
  * The room's title in the native bar, the same bar a thread has: the companion's face over its
  * name, sized to the bar (Pickle's centered layout at the thread title's scale).
  */
-function RoomTitle(props: { readonly companion: CompanionEntry | null; readonly title: string }) {
+function RoomTitle(props: { readonly companion: CompanionEntry | null; readonly title: string; readonly onPress: () => void }) {
+  const named = props.companion === null || props.companion.macTitle !== null;
   return (
-    <View className="items-center" accessibilityRole="header" accessibilityLabel={props.title}>
-      <CompanionAvatar art={props.companion?.art ?? null} title={props.title} size={28} />
+    <Pressable
+      className="items-center active:opacity-70"
+      accessibilityRole="button"
+      accessibilityLabel={`${props.title}, ${copy.profile}`}
+      onPress={props.onPress}
+      hitSlop={6}
+    >
+      <CompanionAvatar art={props.companion?.art ?? null} title={named ? props.title : "?"} size={28} />
       <Text numberOfLines={1} className="mt-0.5 font-t3-bold text-[12px] leading-[14px] text-foreground">
         {props.title}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -141,8 +156,21 @@ function RoomRow(props: {
   readonly threadKey: string;
   /** Sending the edit under way drops this row: the edited message or one after it. */
   readonly dropped: boolean;
+  readonly busyProposal: string | null;
+  readonly onProposal: (proposal: Proposal, action: "apply" | "more" | "decline") => void;
 }) {
   const { item } = props;
+  if (item.kind === "proposal")
+    return (
+      <ProposalCard
+        proposal={item.proposal}
+        body={props.body}
+        busy={props.busyProposal === item.proposal.id}
+        onApply={() => props.onProposal(item.proposal, "apply")}
+        onMore={() => props.onProposal(item.proposal, "more")}
+        onDecline={() => props.onProposal(item.proposal, "decline")}
+      />
+    );
   if (item.kind === "separator")
     return <Text className="mb-1 mt-4 text-center text-[12px] font-t3-bold text-foreground-muted">{separatorText(item.at)}</Text>;
   if (item.kind === "call")
@@ -265,6 +293,9 @@ function RoomComposer(props: {
   readonly body: { readonly fontSize: number; readonly lineHeight: number };
   readonly onHeight: (height: number) => void;
   readonly threadKey: string;
+  /** Bumped to bring the keyboard up on the field ("더 고쳐줘", the profile's drawing request). */
+  readonly focusRequest: number;
+  readonly placeholder: string;
 }) {
   const insets = useSafeAreaInsets();
   const [selection, setSelection] = useState({ start: props.draft.length, end: props.draft.length });
@@ -290,6 +321,12 @@ function RoomComposer(props: {
     setSelection({ start: end, end });
     editorRef.current?.focus();
   }, [editing]);
+  useEffect(() => {
+    if (props.focusRequest === 0) return;
+    const end = draftRef.current.length;
+    setSelection({ start: end, end });
+    editorRef.current?.focus();
+  }, [props.focusRequest]);
   const foreground = useUniwindTheme()["--color-foreground"];
   const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
   // Send while dictating, as ChatGPT's: stop, and send once the final text is in the draft.
@@ -367,7 +404,7 @@ function RoomComposer(props: {
               onSelectionChange={setSelection}
               onPasteImages={(uris) => void props.onPasteImages(uris)}
               onPasteText={(paste) => void props.onPasteText(paste)}
-              placeholder={copy.placeholder}
+              placeholder={props.placeholder}
               contentInsetVertical={6}
               textStyle={{ ...props.body, color: foreground }}
             />
@@ -460,6 +497,8 @@ function RoomBody(props: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly headerHeight: number;
+  /** What stands under the header besides it (a first conversation's chips). */
+  readonly topInset: number;
 }) {
   // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
   const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
@@ -476,6 +515,52 @@ function RoomBody(props: {
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
   const calls = useRoomCalls(props.environmentId, props.companionId);
+  const proposals = useProposals(props.environmentId, props.companionId);
+  const [focusRequest, setFocusRequest] = useState(0);
+  const [placeholder, setPlaceholder] = useState<string>(copy.placeholder);
+  const focusComposer = useCallback((text: string | null, hint: string = copy.placeholder) => {
+    if (text !== null) composer.onChangeDraftMessage(text);
+    setPlaceholder(hint);
+    setFocusRequest((value) => value + 1);
+  }, [composer]);
+  // Another screen's request for the field (the profile's "ask it to draw"), taken once.
+  const request = useRoomRequest(props.environmentId, props.companionId);
+  useEffect(() => {
+    if (request === null) return;
+    takeRoomRequest(props.environmentId, props.companionId, request.id);
+    focusComposer(request.text);
+  }, [request, props.environmentId, props.companionId, focusComposer]);
+  const [busyProposal, setBusyProposal] = useState<string | null>(null);
+  const onProposal = useCallback(
+    (proposal: Proposal, action: "apply" | "more" | "decline") => {
+      if (action === "more") {
+        focusComposer(null, copy.morePlaceholder);
+        return;
+      }
+      if (busyProposal !== null) return;
+      setBusyProposal(proposal.id);
+      proposalActions[action](props.environmentId, props.companionId, proposal.id)
+        .then(
+          () => {
+            if (action !== "apply") return;
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            if (proposal.kind === "avatar") forgetCompanionArt({ environmentId: props.environmentId, id: props.companionId });
+          },
+          (error: unknown) => {
+            if (isStaleProposal(error)) {
+              Alert.alert(copy.stale, copy.staleDetail, [
+                { text: copy.cancel, style: "cancel" },
+                { text: copy.askAgain, onPress: () => focusComposer(copy.askAgainText) },
+              ]);
+              return;
+            }
+            Alert.alert(copy.applyFailed, error instanceof Error ? error.message : String(error));
+          },
+        )
+        .finally(() => setBusyProposal(null));
+    },
+    [busyProposal, focusComposer, props.environmentId, props.companionId],
+  );
   // What the person sent shows the moment they send it, as a thread shows its outbox: a message
   // waits there until the Mac takes it, and a steer into the companion's work until that work
   // reaches it, and only then does the conversation hold it.
@@ -491,7 +576,7 @@ function RoomBody(props: {
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
-  const items = useMemo(() => roomItems(messages, calls), [messages, calls]);
+  const items = useMemo(() => roomItems(messages, calls, Date.now(), proposals), [messages, calls, proposals]);
   const writing = companionIsWriting(items, composer.activeThreadBusy);
   // Thinking or working: the tool the companion runs since the person's last message.
   const tool = useMemo(
@@ -549,6 +634,7 @@ function RoomBody(props: {
   const send = useCallback(() => {
     hapticSend();
     toEnd();
+    setPlaceholder(copy.placeholder);
     void composer.onSendMessage();
   }, [composer, toEnd]);
   const reversed = useMemo(() => [...items].reverse(), [items]);
@@ -571,7 +657,7 @@ function RoomBody(props: {
         onScroll={onScroll}
         scrollEventThrottle={32}
         data={reversed}
-        extraData={dropped}
+        extraData={[dropped, busyProposal]}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
           <RoomRow
@@ -584,6 +670,8 @@ function RoomBody(props: {
             fresh={seen.current !== null && !seen.current.has(item.id)}
             threadKey={threadKey}
             dropped={dropped.has(item.id)}
+            busyProposal={busyProposal}
+            onProposal={onProposal}
           />
         )}
         ListHeaderComponent={
@@ -593,12 +681,12 @@ function RoomBody(props: {
             ) : null}
           </View>
         }
-        ListFooterComponent={<View style={{ height: props.headerHeight + 8 }} />}
+        ListFooterComponent={<View style={{ height: props.headerHeight + props.topInset + 8 }} />}
         contentContainerStyle={{ paddingHorizontal: 16 }}
         contentInsetAdjustmentBehavior="never"
         automaticallyAdjustContentInsets={false}
         renderScrollComponent={renderRoomScrollView}
-        scrollIndicatorInsets={{ top: composerHeight, bottom: props.headerHeight }}
+        scrollIndicatorInsets={{ top: composerHeight, bottom: props.headerHeight + props.topInset }}
         keyboardDismissMode="interactive"
         keyboardShouldPersistTaps="handled"
       />
@@ -638,6 +726,8 @@ function RoomBody(props: {
         body={body}
         onHeight={setComposerHeight}
         threadKey={threadKey}
+        focusRequest={focusRequest}
+        placeholder={placeholder}
       />
       {modals}
     </>
@@ -659,21 +749,32 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     navigation.setParams({ environmentId: companion.environmentId, threadId: companion.threadId } as never);
   }, [companion?.threadId, companion?.environmentId, threadId, environmentId, navigation]);
   const title = companion?.title ?? companionId;
+  const openProfile = useCallback(() => {
+    const env = companion?.environmentId ?? environmentId;
+    if (!env) return;
+    navigation.dispatch(CommonActions.navigate("CompanionProfile", { companionId, environmentId: env }));
+  }, [navigation, companion?.environmentId, environmentId, companionId]);
   const options = useMemo(
     () => ({
       title,
-      headerTitle: () => <RoomTitle companion={companion} title={title} />,
+      headerTitle: () => <RoomTitle companion={companion} title={title} onPress={openProfile} />,
       // The face and name stand centered over the room (Pickle's layout), not leading as a thread's title.
       unstable_navigationItemStyle: "navigator" as const,
       // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
       // the room draws its own band under the bar (HeaderBand).
       scrollEdgeEffects: NO_EDGE_EFFECTS,
     }),
-    [companion, title],
+    [companion, title, openProfile],
   );
+  const onboarding = companion?.onboarding ?? null;
+  const [chipsHeight, setChipsHeight] = useState(0);
+  const topInset = onboarding ? chipsHeight : 0;
   return (
     <KeyboardAvoidingView behavior="padding" className="flex-1 bg-screen">
-      <NativeStackScreenOptions options={options} optionsVersion={[title, companion?.art ?? null]} />
+      <NativeStackScreenOptions
+        options={options}
+        optionsVersion={[title, companion?.art ?? null, companion?.macTitle ?? null, companion?.environmentId ?? null]}
+      />
       {environmentId && threadId ? (
         <RoomBody
           companion={companion}
@@ -681,7 +782,11 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           environmentId={environmentId as EnvironmentId}
           threadId={threadId as ThreadId}
           headerHeight={headerHeight}
+          topInset={topInset}
         />
+      ) : onboarding ? (
+        // A new companion: the Mac is opening its first conversation, which takes a few seconds.
+        <LoadingScreen message={copy.waking} />
       ) : loaded && companion && !companion.threadId ? (
         <View className="flex-1 justify-center">
           <EmptyState variant="plain" title={copy.roomMissing} detail={copy.roomMissingDetail} />
@@ -689,7 +794,15 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       ) : (
         <LoadingScreen message={copy.roomLoading} />
       )}
-      <HeaderBand height={headerHeight} />
+      <HeaderBand height={headerHeight + topInset} />
+      {onboarding ? (
+        <View
+          style={{ position: "absolute", top: headerHeight, left: 0, right: 0 }}
+          onLayout={(event) => setChipsHeight(event.nativeEvent.layout.height)}
+        >
+          <OnboardingChips onboarding={onboarding} />
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
   );
 }

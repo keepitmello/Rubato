@@ -2,7 +2,8 @@
 // its picture, and whether it can take a call. The Mac's /rubato/companion route answers
 // (t3-integration overlay RubatoCompanion.ts; the files live in the Rubato checkout's
 // harness/companion). A room's thread is the companion's current conversation; asking for it with
-// `current` also takes it out of the archive on the Mac.
+// `current` also takes it out of the archive on the Mac. A new companion is made here too (`create`),
+// and its picture set (`set-avatar`): the Mac keeps both for every device (intent companion-manage).
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
@@ -19,7 +20,9 @@ import {
   type CallEffort,
   type CompanionEntry,
 } from "./companionModel";
+import { decodeOnboarding } from "./onboardingModel";
 import { companionDisplayName, dataUrlBase64, subscribeCompanionNames, useCompanionNames } from "./companionNames";
+import { copy } from "./copy";
 import { postRubato } from "./rubatoHttp";
 
 const COMPANION_ROUTE = "/rubato/companion";
@@ -31,8 +34,13 @@ const CONNECTION_WAIT_MS = 20_000;
 
 interface CompanionStatus {
   readonly id: string;
-  readonly title: string;
+  /** Null while a new companion has no name yet. */
+  readonly title: string | null;
   readonly sessionId: string | null;
+  readonly profile?: { readonly callsUser?: string | null; readonly since?: string | null } | null;
+  /** The picture's version (file time); a change means fetch `avatar` again. */
+  readonly avatarVersion?: number | null;
+  readonly onboarding?: unknown;
   readonly settings?: { readonly enabled?: boolean; readonly call?: { readonly effort?: CallEffort } };
   /** Whether it takes voice calls at all; its call settings only mean something then. */
   readonly calls?: boolean;
@@ -78,8 +86,12 @@ function publish(next: Partial<CompanionsView>) {
   for (const listener of listeners) listener();
 }
 
-/** Pictures by `<environment>:<companion>`, fetched once per launch; the kept list shows them until then. */
+/**
+ * Pictures by `<environment>:<companion>`, fetched once per launch and again when the Mac's version
+ * of it moves (a change on the desktop or another phone); the kept list shows them until then.
+ */
 const arts = new Map<string, string | null>();
+const artVersions = new Map<string, number | null>();
 const keptArt = (environmentId: EnvironmentId, companionId: string) =>
   view.companions.find((item) => item.environmentId === environmentId && item.id === companionId)?.art ?? null;
 
@@ -108,6 +120,8 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
   return Promise.all(
     enabled.map(async (item) => {
       const key = `${environmentId}:${item.id}`;
+      // A Mac without picture versions answers undefined: then the picture is fetched once per launch.
+      const version = typeof item.avatarVersion === "number" ? item.avatarVersion : null;
       const [threadId, art] = await Promise.all([
         item.sessionId
           ? companionCall<{ threadId: string | null }>(environmentId, "thread", {
@@ -119,17 +133,25 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
               () => knownThreadId(view.companions, environmentId, item.id, item.sessionId),
             )
           : null,
-        arts.has(key) ? arts.get(key) : fetchArt(environmentId, item.id),
+        arts.has(key) && artVersions.get(key) === version ? arts.get(key) : fetchArt(environmentId, item.id),
       ]);
-      if (art !== undefined) arts.set(key, art);
+      if (art !== undefined) {
+        arts.set(key, art);
+        artVersions.set(key, version);
+      }
+      const macTitle = item.title?.trim() ? item.title : null;
       return {
         environmentId,
         id: item.id,
-        title: item.title || item.id,
-        macTitle: item.title || item.id,
+        title: entryTitle(item.id, macTitle),
+        macTitle,
         sessionId: item.sessionId,
         threadId,
         art: arts.has(key) ? (arts.get(key) ?? null) : keptArt(environmentId, item.id),
+        avatarVersion: version,
+        callsUser: item.profile?.callsUser?.trim() || null,
+        since: item.profile?.since || null,
+        onboarding: decodeOnboarding(item.onboarding ?? null),
         callable: callable.find((entry) => entry.id === item.id) ?? null,
         calls: item.calls === true,
         callEffort: item.settings?.call?.effort ?? "medium",
@@ -156,6 +178,68 @@ export async function saveCallEffort(companion: CompanionEntry, effort: CallEffo
   }
 }
 
+/** The name a companion shows: the person's rename or default, or "새 컴패니언" while it has none. */
+export function entryTitle(companionId: string, macTitle: string | null): string {
+  return macTitle === null ? companionDisplayName(companionId, copy.newCompanion) : companionDisplayName(companionId, macTitle);
+}
+
+const sameEntry = (a: Pick<CompanionEntry, "environmentId" | "id">) => (b: CompanionEntry) =>
+  a.environmentId === b.environmentId && a.id === b.id;
+
+/**
+ * Makes a new companion on that Mac: the Mac registers its home and wakes it without a name, and its
+ * first conversation (the room, once the Mac opened it) is where it learns who it is.
+ */
+export async function createCompanion(environmentId: EnvironmentId): Promise<{ readonly id: string }> {
+  const answer = await companionCall<{ companion?: { id?: unknown } }>(environmentId, "create");
+  const id = answer.companion?.id;
+  if (typeof id !== "string" || !id) throw new Error(copy.createFailed);
+  // Shown at once as "새 컴패니언"; the list fills in its conversation as the Mac opens it.
+  if (!view.companions.some(sameEntry({ environmentId, id })))
+    publish({
+      companions: [
+        ...view.companions,
+        {
+          environmentId, id, title: copy.newCompanion, macTitle: null, sessionId: null, threadId: null, art: null,
+          avatarVersion: null, callsUser: null, since: null, onboarding: decodeOnboarding({ items: [] }),
+          callable: null, calls: false, callEffort: "medium",
+        },
+      ],
+    });
+  void refreshCompanions(pairedIds.length > 0 ? pairedIds : [environmentId]);
+  return { id };
+}
+
+/**
+ * Sets the companion's picture (a square data URL the phone cropped), or clears it with null. The
+ * Mac keeps it for the desktop and every phone; this phone shows it at once.
+ */
+export async function setCompanionAvatar(companion: Pick<CompanionEntry, "environmentId" | "id">, image: string | null): Promise<void> {
+  const answer = await companionCall<{ avatar: { url: string; version?: number } | null }>(companion.environmentId, "set-avatar", {
+    companionId: companion.id,
+    image,
+  });
+  const key = `${companion.environmentId}:${companion.id}`;
+  const url = answer.avatar?.url ?? null;
+  const version = typeof answer.avatar?.version === "number" ? answer.avatar.version : null;
+  arts.set(key, url);
+  artVersions.set(key, version);
+  const companions = view.companions.map((item) => (sameEntry(companion)(item) ? { ...item, art: url, avatarVersion: version } : item));
+  writeIdentities(companions);
+  publish({ companions });
+}
+
+/** Fetches the picture again on the next refresh (an applied drawing changed it on the Mac). */
+export function forgetCompanionArt(companion: Pick<CompanionEntry, "environmentId" | "id">) {
+  const key = `${companion.environmentId}:${companion.id}`;
+  arts.delete(key);
+  artVersions.delete(key);
+  void refreshCompanions(pairedIds.length > 0 ? pairedIds : [companion.environmentId]);
+}
+
+/** The paired Macs the list last asked, for a refresh started outside a screen. */
+let pairedIds: readonly EnvironmentId[] = [];
+
 /** What the native store last got per companion, so a face is written only when it changes. */
 const written = new Map<string, string>();
 
@@ -163,7 +247,7 @@ const written = new Map<string, string>();
 function writeIdentities(companions: readonly CompanionEntry[]) {
   if (!RubatoCall) return;
   for (const companion of companions) {
-    const name = companionDisplayName(companion.id, companion.macTitle);
+    const name = entryTitle(companion.id, companion.macTitle);
     const key = `${name}\u0000${companion.art?.length ?? 0}:${companion.art?.slice(-32) ?? ""}`;
     if (written.get(companion.id) === key) continue;
     written.set(companion.id, key);
@@ -176,6 +260,7 @@ let loading: Promise<void> | null = null;
 
 /** Asks every paired Mac again; a Mac that does not answer keeps what it said last. */
 export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Promise<void> {
+  pairedIds = environmentIds;
   loading ??= (async () => {
     const results = await Promise.allSettled(environmentIds.map(loadEnvironment));
     const answered = new Set<EnvironmentId>();
@@ -206,12 +291,15 @@ export function useCompanions() {
   const stored = useSyncExternalStore(subscribe, () => view);
   const names = useCompanionNames();
   const current = useMemo(
-    () => ({ ...stored, companions: stored.companions.map((item) => ({ ...item, title: companionDisplayName(item.id, item.macTitle) })) }),
+    () => ({ ...stored, companions: stored.companions.map((item) => ({ ...item, title: entryTitle(item.id, item.macTitle) })) }),
     // `names` changes when a rename does; the display name reads it.
     // oxlint-disable-next-line react/exhaustive-effect-dependencies
     [stored, names],
   );
-  const waiting = current.companions.some((item) => item.sessionId !== null && item.threadId === null);
+  // A room still opening, and a first conversation whose chips move with each answer, ask more often.
+  const waiting = current.companions.some(
+    (item) => item.onboarding !== null || (item.sessionId !== null && item.threadId === null),
+  );
   const key = environmentIds.join(",");
   useEffect(() => {
     if (environmentIds.length === 0) return;

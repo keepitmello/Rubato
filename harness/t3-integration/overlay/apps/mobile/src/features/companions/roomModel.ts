@@ -9,6 +9,7 @@ import type { ChatAttachment } from "@t3tools/contracts";
 
 import type { DraftComposerAttachment } from "../../lib/composerImages";
 import type { CallRecord } from "./callTypes";
+import type { Proposal } from "./proposalModel";
 
 /** Messages from one side within this gap of each other belong to one group. */
 export const GROUP_GAP_MS = 3 * 60_000;
@@ -54,7 +55,8 @@ export type RoomItem =
       readonly groupStart: boolean;
       readonly groupEnd: boolean;
     }
-  | { readonly kind: "call"; readonly id: string; readonly at: number; readonly call: CallRecord };
+  | { readonly kind: "call"; readonly id: string; readonly at: number; readonly call: CallRecord }
+  | { readonly kind: "proposal"; readonly id: string; readonly at: number; readonly proposal: Proposal };
 
 /**
  * The person's words as a bubble shows them. T3 writes an attached picture into the message as a
@@ -114,15 +116,20 @@ export function withoutCallSpeech(
 
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
-/** Bubbles, call cards and time lines, oldest first. */
+/**
+ * Bubbles, call cards, change cards and time lines, oldest first. A change the companion replaced
+ * with a newer one (superseded) leaves the room: the newer card stands for it.
+ */
 export function roomItems(
   messages: ReadonlyArray<RoomMessageInput>,
   calls: ReadonlyArray<CallRecord>,
   now = Date.now(),
+  proposals: ReadonlyArray<Proposal> = [],
 ): RoomItem[] {
   type Entry =
     | { kind: "message"; at: number; side: RoomSide; message: RoomMessageInput; text: string; files: string }
-    | { kind: "call"; at: number; call: CallRecord };
+    | { kind: "call"; at: number; call: CallRecord }
+    | { kind: "proposal"; at: number; proposal: Proposal };
   const entries: Entry[] = [
     ...withoutCallSpeech(messages, calls, now)
       .filter((message) => message.role === "user" || message.role === "assistant")
@@ -135,16 +142,25 @@ export function roomItems(
         && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0
           || (entry.message.pending?.attachments.length ?? 0) > 0 || entry.message.streaming)),
     ...calls.map((call) => ({ kind: "call" as const, at: call.createdAt, call })),
-  ].sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === "call" ? 1 : -1));
+    ...proposals
+      .filter((proposal) => proposal.status !== "superseded")
+      .map((proposal) => ({ kind: "proposal" as const, at: proposal.createdAt, proposal })),
+  ].sort((a, b) => a.at - b.at || (a.kind === b.kind ? 0 : a.kind === "message" ? -1 : b.kind === "message" ? 1 : 0));
 
   const items: RoomItem[] = [];
   let previous: { at: number; side: RoomSide | "call" } | null = null;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index]!;
     const separated = previous === null || entry.at - previous.at >= SEPARATOR_GAP_MS || !sameDay(previous.at, entry.at);
-    if (separated) items.push({ kind: "separator", id: `separator:${entry.kind === "call" ? entry.call.id : entry.message.id}`, at: entry.at });
+    const entryId = entry.kind === "call" ? entry.call.id : entry.kind === "proposal" ? entry.proposal.id : entry.message.id;
+    if (separated) items.push({ kind: "separator", id: `separator:${entryId}`, at: entry.at });
     if (entry.kind === "call") {
       items.push({ kind: "call", id: `call:${entry.call.id}`, at: entry.at, call: entry.call });
+      previous = { at: entry.at, side: "call" };
+      continue;
+    }
+    if (entry.kind === "proposal") {
+      items.push({ kind: "proposal", id: `proposal:${entry.proposal.id}`, at: entry.at, proposal: entry.proposal });
       previous = { at: entry.at, side: "call" };
       continue;
     }

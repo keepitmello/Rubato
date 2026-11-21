@@ -103,7 +103,7 @@ export const shellEdits = {
     ['        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.\n        microphonePermission: "Allow T3 Code to use your microphone for voice input.",',
       '        // `false` makes this plugin add RECORD_AUDIO to blockedPermissions, breaking Android dictation.\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",', 'replace'],
     ['        cameraPermission: "Allow T3 Code to access your camera so you can scan pairing QR codes.",',
-      '        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",', 'replace'],
+      '        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac and to take a companion\'s picture.",', 'replace'],
     ['        image: variant.assets.splashIcon,\n        resizeMode: "contain",', '        image: RUBATO_ICON,\n        resizeMode: "contain",', 'replace'],
     ['          image: variant.assets.splashIcon,\n          backgroundColor: "#0a0a0a",', '          image: RUBATO_ICON,\n          backgroundColor: "#0a0a0a",', 'replace'],
     // Builds the targets/ folder's extensions (the notification service).
@@ -111,7 +111,7 @@ export const shellEdits = {
       '    ...(RUBATO_NOTIFICATION_EXTENSION ? ["@bacons/apple-targets"] : []),\n    "./plugins/withAndroidGradleHeap.cjs",', 'replace'],
     // LiveKit's native setup for companion calls (deps-edits.mjs).
     ['    "./plugins/withIosCocoaPodsUuidCache.cjs",\n',
-      '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
+      '    "@livekit/react-native-expo-plugin",\n    [\n      "@config-plugins/react-native-webrtc",\n      {\n        cameraPermission: "Allow Rubato to use your camera to scan the pairing QR code from your Mac and to take a companion\'s picture.",\n        microphonePermission:\n          "Rubato uses the microphone for calls with your companions and for dictation.",\n      },\n    ],\n    "./plugins/withIosCocoaPodsUuidCache.cjs",\n', 'replace'],
     // Without the share extension and T3's relay, the JavaScript must not reach for either:
     // both check this flag (IncomingShareProvider, agent-awareness/capabilities).
     ['    iosPersonalTeamBuild: isIosPersonalTeamBuild,',
@@ -294,14 +294,14 @@ export const shellEdits = {
   ],
   'apps/mobile/src/Stack.tsx': [
     ["import { McpAppFullscreenScreen } from \"./features/threads/McpAppFullscreenScreen\";\n",
-      "import {\n  CompanionCallRouteScreen,\n  CompanionNamesSettingsRouteScreen,\n  CompanionRoomRouteScreen,\n} from \"./features/rubato-shell/companionSurface\";\n"],
+      "import {\n  CompanionAvatarCropRouteScreen,\n  CompanionCallRouteScreen,\n  CompanionNamesSettingsRouteScreen,\n  CompanionPicturesRouteScreen,\n  CompanionProfileRouteScreen,\n  CompanionRoomRouteScreen,\n} from \"./features/rubato-shell/companionSurface\";\n"],
     // The companions' names (Korean by default, renamable), among the other settings.
     ["  SettingsNotifications: msg(\"Notifications\"),\n",
       "  SettingsCompanions: msg(\"Companions\"),\n"],
     ["  SettingsNotifications: createNativeStackScreen({\n",
       "  SettingsCompanions: createNativeStackScreen({\n    screen: CompanionNamesSettingsRouteScreen,\n    linking: \"settings/companions\",\n    options: settingsPage(),\n  }),\n"],
     ["    NotFound: createNativeStackScreen({\n      screen: NotFoundScreen,",
-      "    // Rubato: a companion's room, pushed over the tabs like a thread; it sets its own title\n    // (avatar over name).\n    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: \"companions/:companionId\",\n      options: pageRoute(),\n    }),\n    // One call's full transcript, over the room.\n    CompanionCall: createNativeStackScreen({\n      screen: CompanionCallRouteScreen,\n      linking: \"companions/:companionId/calls/:callId\",\n      options: sheetRoute({ detent: 0.5, maxDetent: 0.92, header: \"none\" }),\n    }),\n"],
+      "    // Rubato: a companion's room, pushed over the tabs like a thread; it sets its own title\n    // (avatar over name).\n    CompanionRoom: createNativeStackScreen({\n      screen: CompanionRoomRouteScreen,\n      linking: \"companions/:companionId\",\n      options: pageRoute(),\n    }),\n    // One call's full transcript, over the room.\n    CompanionCall: createNativeStackScreen({\n      screen: CompanionCallRouteScreen,\n      linking: \"companions/:companionId/calls/:callId\",\n      options: sheetRoute({ detent: 0.5, maxDetent: 0.92, header: \"none\" }),\n    }),\n    // Its profile from the face over the room, where its picture changes; the pictures of its\n    // room to pick one from; and the circle a new picture is placed in.\n    CompanionProfile: createNativeStackScreen({\n      screen: CompanionProfileRouteScreen,\n      linking: \"companions/:companionId/profile\",\n      options: sheetRoute({ detent: 0.6, maxDetent: 0.92, header: \"none\" }),\n    }),\n    CompanionPictures: createNativeStackScreen({\n      screen: CompanionPicturesRouteScreen,\n      linking: \"companions/:companionId/pictures\",\n      options: sheetRoute({ detent: 0.75, maxDetent: 0.92, header: \"none\" }),\n    }),\n    CompanionAvatarCrop: createNativeStackScreen({\n      screen: CompanionAvatarCropRouteScreen,\n      options: { ...modalRoute({ header: \"none\" }), gestureEnabled: false },\n    }),\n"],
   ],
   // Rubato's screens that keep a latest-value ref read during render, as T3's own listed ones do.
   'apps/mobile/src/reactCompilerCoverage.test.ts': [

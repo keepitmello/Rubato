@@ -114,3 +114,26 @@ describe("a companion room", () => {
       .toMatchObject({ callKey: "missedCall" });
   });
 });
+
+describe("change cards in the room", () => {
+  const proposal = (id: string, minutes: number, status: "open" | "applied" | "declined" | "superseded" = "open") => ({
+    kind: "piece" as const, id, createdAt: Date.parse(at(minutes)), status, label: "말투", piece: "soul", before: "a", after: "b",
+  });
+  it("puts a card where it was proposed, and leaves out one a newer card replaced", () => {
+    const items = roomItems(
+      [message("a", "user", "더 짧게 해줘", 0), message("b", "assistant", "이렇게 고치면 어때?", 1), message("c", "assistant", "적용하면 바뀌어", 2)],
+      [],
+      Date.now(),
+      [proposal("old", 1, "superseded"), proposal("new", 1)],
+    );
+    expect(items.filter((item) => item.kind !== "separator").map((item) => item.id)).toEqual(["a", "b", "proposal:new", "c"]);
+    const after = items.find((item) => item.id === "c");
+    expect(after).toMatchObject({ kind: "bubble", groupStart: true });
+  });
+
+  it("does not take a card for the list preview", () => {
+    const items = roomItems([message("a", "assistant", "고쳐봤어", 0)], [], Date.now(), [proposal("p", 1)]);
+    expect(roomPreview(items)?.text).toBe("고쳐봤어");
+  });
+});
+

@@ -56,13 +56,14 @@ function NameRow(props: { readonly companion: CompanionEntry; readonly separated
   const [draft, setDraft] = useState(companionRename(companion.id) ?? "");
   // A rename made elsewhere (another row's save does not touch this one) shows here.
   useEffect(() => setDraft(companionRename(companion.id) ?? ""), [names, companion.id]);
-  const fallback = DEFAULT_COMPANION_NAMES[companion.id] ?? companion.macTitle;
+  const macName = companion.macTitle ?? companion.title;
+  const fallback = DEFAULT_COMPANION_NAMES[companion.id] ?? macName;
   return (
     <View className={props.separated ? "flex-row items-center gap-3 border-t border-border px-4 py-3" : "flex-row items-center gap-3 px-4 py-3"}>
       <CompanionAvatar art={companion.art} title={companion.title} size={40} />
       <View className="min-w-0 flex-1">
         <TextInput
-          accessibilityLabel={`${companion.macTitle} ${copy.nameLabel}`}
+          accessibilityLabel={`${macName} ${copy.nameLabel}`}
           value={draft}
           onChangeText={setDraft}
           onEndEditing={() => renameCompanion(companion.id, draft)}
@@ -74,7 +75,7 @@ function NameRow(props: { readonly companion: CompanionEntry; readonly separated
           className="font-sans text-base text-foreground"
         />
         <Text className="mt-0.5 text-xs text-foreground-muted">
-          {copy.onTheMac} {companion.macTitle}
+          {copy.onTheMac} {macName}
         </Text>
       </View>
     </View>

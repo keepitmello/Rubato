@@ -4,7 +4,7 @@
 
 const KO = {
   noCompanions: "컴패니언이 아직 없어",
-  noCompanionsDetail: "Mac의 Rubato에서 컴패니언을 켜면 여기에 나타나.",
+  noCompanionsDetail: "아래에서 새 컴패니언을 만들거나 Mac의 Rubato에서 켜면 여기에 나타나.",
   notConnected: "Mac에 연결되지 않았어",
   notConnectedDetail: "Tailscale로 Mac에 연결되면 컴패니언이 보여.",
   roomLoading: "대화를 불러오는 중…",
@@ -65,11 +65,56 @@ const KO = {
   callEffortHigh: "높게",
   callEffortHighDetail: "따져 봐야 할 때 더 깊게 생각해",
   saveFailed: "저장하지 못했어",
+  // A new companion and its first conversation.
+  newCompanion: "새 컴패니언",
+  creating: "만드는 중…",
+  waking: "눈 뜨는 중…",
+  createFailed: "새 컴패니언을 만들지 못했어",
+  pickMac: "어느 Mac에 만들까?",
+  onboardingName: "이름",
+  onboardingCallsUser: "호칭",
+  onboardingWork: "하는 일",
+  onboardingRelationship: "우리 사이",
+  onboardingLook: "모습",
+  onboardingSpeech: "말투",
+  onboardingCloseness: "거리감",
+  onboardingLater: "나중에",
+  onboardingSet: "정해짐",
+  // A change the companion proposes to itself.
+  apply: "적용",
+  more: "더 고쳐줘",
+  keepAsIs: "그대로 둘래",
+  applied: "적용했어",
+  declined: "그대로 뒀어",
+  applyFailed: "적용하지 못했어",
+  stale: "그 사이 글이 바뀌었어",
+  staleDetail: "지금 글을 보고 다시 고쳐 달라고 할 수 있어.",
+  askAgain: "다시 고쳐 달라기",
+  askAgainText: "지금 글 기준으로 다시 고쳐줘",
+  morePlaceholder: "어떻게 더 고칠지 말해줘",
+  pictureApply: "이 사진으로",
+  // The profile and its picture.
+  profile: "프로필",
+  changePicture: "사진 바꾸기",
+  takePhoto: "사진 찍기",
+  chooseFromAlbum: "앨범에서 고르기",
+  chooseFromRoom: "대화에 온 사진에서 고르기",
+  askToDraw: "{name}한테 그려 달라기",
+  drawRequest: "내 프사로 쓸 네 그림 하나 그려줘. ",
+  viewPicture: "지금 사진 크게 보기",
+  roomPictures: "대화에 온 사진",
+  noRoomPictures: "아직 대화에 온 사진이 없어",
+  cropTitle: "동그라미 안에 맞춰 줘",
+  choose: "선택",
+  pictureFailed: "사진을 바꾸지 못했어",
+  cameraUnavailable: "카메라를 쓸 수 없어",
+  cameraUnavailableDetail: "설정 › Rubato에서 카메라를 켜 줘.",
+  savingPicture: "바꾸는 중…",
 };
 
 const EN: typeof KO = {
   noCompanions: "No companions yet",
-  noCompanionsDetail: "Turn on a companion in Rubato on your Mac and it shows up here.",
+  noCompanionsDetail: "Make a new companion below, or turn one on in Rubato on your Mac.",
   notConnected: "Not connected to your Mac",
   notConnectedDetail: "Connect to your Mac over Tailscale to see your companions.",
   roomLoading: "Loading the conversation…",
@@ -128,6 +173,48 @@ const EN: typeof KO = {
   callEffortHigh: "High",
   callEffortHighDetail: "Thinks harder when something needs working out",
   saveFailed: "Could not save",
+  newCompanion: "New companion",
+  creating: "Making it…",
+  waking: "Waking up…",
+  createFailed: "Could not make a new companion",
+  pickMac: "Which Mac should it live on?",
+  onboardingName: "Name",
+  onboardingCallsUser: "What it calls you",
+  onboardingWork: "Your work",
+  onboardingRelationship: "Relationship",
+  onboardingLook: "Look",
+  onboardingSpeech: "Speech",
+  onboardingCloseness: "Closeness",
+  onboardingLater: "later",
+  onboardingSet: "set",
+  apply: "Apply",
+  more: "Change more",
+  keepAsIs: "Keep as is",
+  applied: "Applied",
+  declined: "Kept as it was",
+  applyFailed: "Could not apply",
+  stale: "The text changed in the meantime",
+  staleDetail: "You can ask for the change again on the current text.",
+  askAgain: "Ask again",
+  askAgainText: "Please redo that change on the current text",
+  morePlaceholder: "Say what else to change",
+  pictureApply: "Use this picture",
+  profile: "Profile",
+  changePicture: "Change picture",
+  takePhoto: "Take a photo",
+  chooseFromAlbum: "Choose from album",
+  chooseFromRoom: "Choose from the conversation",
+  askToDraw: "Ask {name} to draw one",
+  drawRequest: "Draw a picture of yourself for your profile. ",
+  viewPicture: "View current picture",
+  roomPictures: "Pictures in the conversation",
+  noRoomPictures: "No pictures in the conversation yet",
+  cropTitle: "Fit it in the circle",
+  choose: "Choose",
+  pictureFailed: "Could not change the picture",
+  cameraUnavailable: "The camera is unavailable",
+  cameraUnavailableDetail: "Turn on the camera for Rubato in Settings.",
+  savingPicture: "Saving…",
 };
 
 export type CopyKey = keyof typeof KO;
@@ -146,3 +233,26 @@ export function copyFor(locale: string) {
 }
 
 export const copy = copyFor(phoneLocale());
+
+/** Whether a Korean word ends in a final consonant (받침), which picks 이라고 over 라고. */
+export function hasFinalConsonant(word: string): boolean {
+  const code = word.trim().codePointAt(word.trim().length - 1) ?? 0;
+  return code >= 0xac00 && code <= 0xd7a3 && (code - 0xac00) % 28 !== 0;
+}
+
+/** "나를 오빠라고 불러" / "Calls you 오빠": what the companion calls the person, as its profile says it. */
+export function callsUserLine(value: string, locale = phoneLocale()): string {
+  if (!locale.toLowerCase().startsWith("ko")) return `Calls you ${value}`;
+  return `나를 ${value}${hasFinalConsonant(value) ? "이라고" : "라고"} 불러`;
+}
+
+/** "10월 20일부터 함께" / "Together since Oct 20". */
+export function sinceLine(iso: string, locale = phoneLocale()): string | null {
+  const at = Date.parse(iso);
+  if (!Number.isFinite(at)) return null;
+  const date = new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(at);
+  return locale.toLowerCase().startsWith("ko") ? `${date}부터 함께` : `Together since ${date}`;
+}
+
+/** A copy line with `{name}` filled in. */
+export const withName = (line: string, name: string) => line.replaceAll("{name}", name);
