@@ -33,15 +33,29 @@ describe("rubatoVendorRecord", () => {
     expect(rubatoVendorRecord(record("xai/grok-4.7")).provider).toBe("grok");
   });
 
-  it("leaves other providers, tool summaries and other readers alone", () => {
-    expect(rubatoVendorRecord(record("opengateway/deepseek/deepseek-v4.1")).provider).toBe("pi");
+  it("counts a model reached through another road under its maker, each lane by its own name", () => {
+    const eco = rubatoVendorRecord(record("opengateway/deepseek/deepseek-v4.1-flash-eco"));
+    const fast = rubatoVendorRecord(record("opengateway/deepseek/deepseek-v4.1-flash-ultrafast"));
+    expect([eco.provider, eco.model]).toEqual(["deepseek", "deepseek-v4.1-flash-eco"]);
+    expect([fast.provider, fast.model]).toEqual(["deepseek", "deepseek-v4.1-flash-ultrafast"]);
+    expect(eco.rateModel).toBe("deepseek/deepseek-v4.1-flash-eco");
+    expect(rubatoVendorRecord(record("google-vertex/gemini-4-argon"))).toMatchObject({
+      provider: "gemini",
+      model: "gemini-4-argon",
+    });
+    expect(rubatoVendorRecord(record("google-antigravity/gemini-4-argon")).provider).toBe("antigravity");
+  });
+
+  it("leaves unknown models, tool summaries and other readers alone", () => {
+    expect(rubatoVendorRecord(record("nanogpt/glm-5.3")).provider).toBe("pi");
     expect(rubatoVendorRecord(record("Tools/summaries")).provider).toBe("pi");
     expect(rubatoVendorRecord(record("claude-opus-5-5", "s1", "claude")).model).toBe("claude-opus-5-5");
   });
 
   it("tells a record cached under a bare model name by its family", () => {
     expect(rubatoVendorRecord(record("claude-opus-5-5")).provider).toBe("claude");
-    expect(rubatoVendorRecord(record("deepseek-v4.1")).provider).toBe("pi");
+    expect(rubatoVendorRecord(record("gemini-4-neon")).provider).toBe("antigravity");
+    expect(rubatoVendorRecord(record("glm-5.3")).provider).toBe("pi");
   });
 });
 
@@ -56,7 +70,11 @@ describe("splitRubatoVendorSources", () => {
         [
           {
             path: "/a.jsonl",
-            records: [record("anthropic/claude-opus-5-5", "a"), record("opengateway/deepseek", "a")],
+            records: [
+              record("anthropic/claude-opus-5-5", "a"),
+              record("nanogpt/glm-5.3", "a"),
+              record("Tools/summaries", "a"),
+            ],
             malformedRecords: 2,
           },
           { path: "/b.jsonl", records: [record("anthropic/claude-sonnet-5-5", "b")], malformedRecords: 0 },
@@ -72,8 +90,9 @@ describe("splitRubatoVendorSources", () => {
       ["/a.jsonl", 1, 2],
       ["/b.jsonl", 0, 0],
     ]);
+    // A file's tool results and summaries go to the vendor its model calls went to.
     expect(split.files[2]!.map((file) => [file.path, file.records.map((r) => r.model)])).toEqual([
-      ["/a.jsonl", ["claude-opus-5-5"]],
+      ["/a.jsonl", ["claude-opus-5-5", "Tools/summaries"]],
       ["/b.jsonl", ["claude-sonnet-5-5"]],
     ]);
   });

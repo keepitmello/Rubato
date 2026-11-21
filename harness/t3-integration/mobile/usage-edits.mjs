@@ -6,6 +6,7 @@
 //   legend rows      the forecast line under each account's name
 //   wide bars        a forecast row under the bar, since the legend is hidden there
 //   account screen   the same line under "Even pace"
+//   usage kinds      Gemini and DeepSeek in the history's provider list
 
 export const mobileUsageOverlays = [];
 
@@ -43,6 +44,14 @@ const FORECAST = [
 ].join('\n');
 
 export const mobileUsageEdits = {
+  // Gemini and DeepSeek usage kinds (usage-limits-edits.mjs adds them to the contract).
+  'apps/mobile/src/features/usage/usageProviders.ts': [
+    ['  "pi",\n  "muse",\n];', '  "pi",\n  "muse",\n  "gemini",\n  "deepseek",\n];', 'replace'],
+    ['  pi: "Pi",\n  muse: "Muse Code",\n};', '  pi: "Pi",\n  muse: "Muse Code",\n  gemini: "Gemini",\n  deepseek: "DeepSeek",\n};', 'replace'],
+  ],
+  'apps/mobile/src/features/usage/providerColors.ts': [
+    ['    muse: "#0866ff",\n', '    muse: "#0866ff",\n    gemini: "#4796e3",\n    deepseek: "#4d6bfe",\n', 'replace'],
+  ],
   [FILE]: [
     ['import { msg, T, useGT, useMessages, Var } from "gt-react-native";',
       'import { msg, T, useGT, useLocale, useMessages, Var } from "gt-react-native";\nimport { paceForecast, paceForecastText, type PaceStage } from "@t3tools/shared/rubatoUsagePace";',

@@ -519,8 +519,8 @@ const edits = {
   // 두 글자로 떨어져서 Rubato 가 "RU" 로 보였다. 모델마다 그 레인의 로고와 이름을
   // 쓰는 매핑은 overlay rubatoModelIcons.tsx 에 있다.
   'apps/web/src/components/chat/ProviderInstanceIcon.tsx': [
-    ['import { cn } from "~/lib/utils";', 'import { GeminiIcon } from "../GeminiIcon";\nimport { RubatoIcon } from "../RubatoIcon";\n'],
-    ['  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n};', '  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n};', 'replace'],
+    ['import { cn } from "~/lib/utils";', 'import { DeepSeekIcon } from "../DeepSeekIcon";\nimport { GeminiIcon } from "../GeminiIcon";\nimport { RubatoIcon } from "../RubatoIcon";\n'],
+    ['  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n};', '  [ProviderDriverKind.make("ollama")]: OllamaIcon,\n  [ProviderDriverKind.make("rubato-pi")]: RubatoIcon,\n  [ProviderDriverKind.make("gemini")]: GeminiIcon,\n  [ProviderDriverKind.make("deepseek")]: DeepSeekIcon,\n};', 'replace'],
   ],
   // An untouched speed select with Ultrafast is sent as Normal, like the Fast toggle's implicit false.
   'packages/shared/src/model.ts': [

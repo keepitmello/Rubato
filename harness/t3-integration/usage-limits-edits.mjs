@@ -17,8 +17,10 @@
 // under ~/.rubato-pi/agent/sessions, which T3's Pi reader never looked at, so usage through
 // Rubato (most of the Claude use) was missing. The summary splits that directory into one source
 // per model vendor (overlay/apps/server/src/usage/rubatoVendorUsage.ts): Anthropic under Claude,
-// OpenAI Codex under Codex, xAI under Grok, Antigravity and Cursor under their own; other
-// providers stay under Pi. The split happens after the scan cache, which holds one provider per
+// OpenAI Codex under Codex, xAI under Grok, Antigravity and Cursor under their own, and a
+// Gemini or DeepSeek model reached through another road (Vertex, OpenGateway) under Gemini or
+// DeepSeek, two usage kinds Rubato adds. Each model keeps its full name, so DeepSeek's eco and
+// ultrafast lanes stay apart. The split happens after the scan cache, which holds one provider per
 // file, and before the clients, which take one provider per source.
 export const usageLimitsOverlays = [
   'apps/server/src/usage/RubatoUsageLimits.ts',
@@ -292,6 +294,17 @@ export const usageLimitsEdits = {
       '    ] of rubatoSources.dirs.entries()) {\n      let scannedFiles = 0;', 'replace'],
     ['      for (const file of filesByDir[index] ?? []) {\n        malformedRecords += file.malformedRecords;',
       '      for (const file of rubatoSources.files[index] ?? []) {\n        malformedRecords += file.malformedRecords;', 'replace'],
+  ],
+  // Gemini and DeepSeek as usage kinds, with their names, colours and marks on the page.
+  'packages/contracts/src/usage.ts': [
+    ['  "pi",\n  "muse",\n]);\nexport type UsageProviderKind', '  "pi",\n  "muse",\n  "gemini",\n  "deepseek",\n]);\nexport type UsageProviderKind', 'replace'],
+  ],
+  'apps/web/src/components/usage/usageProviders.ts': [
+    ['} satisfies Record<UsageProviderKind, UsageProviderPresentation>;',
+      '  gemini: { label: "Gemini", color: "#4796e3", driverKind: ProviderDriverKind.make("gemini") },\n'
+      + '  deepseek: { label: "DeepSeek", color: "#4d6bfe", driverKind: ProviderDriverKind.make("deepseek") },\n'
+      + '} satisfies Record<UsageProviderKind, UsageProviderPresentation>;',
+      'replace'],
   ],
   'packages/shared/package.json': [
     ['    "./usageLimitsCopy": {\n',
