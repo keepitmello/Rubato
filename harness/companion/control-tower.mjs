@@ -566,7 +566,15 @@ export function startControlTower({ connect, notify, env = process.env, onError 
     const at = now();
     // The first tick is the interval's first boundary after the control tower started.
     nextBeatAt ??= nextBoundary(at, settings.heartbeat.everyMinutes * 60_000);
-    if (busy || capabilityActive('call', { now: at, env })) { lastBusyAt = at; return; }
+    if (busy || capabilityActive('call', { now: at, env })) {
+      lastBusyAt = at;
+      // A person calling Segno in a work room does not wait for the turn to end: Segno's turns chain (lead notices, the
+      // user's messages), so waiting for idle left a tag unseen for minutes (11-22 01:59, 97 s). The engine joins the
+      // wake to the running turn, as it does a lead's notice. Not during a call, and not before the wake seed owed to
+      // a fresh or compacted window, which must come first.
+      if (busy && !capabilityActive('call', { now: at, env }) && !readState(env).woke?.pending) await inboxDue(sessionId, at);
+      return;
+    }
     const today = localDate(at);
     if (await wakeDue(active, sessionId, at, settings)) return;
     if (await inboxDue(sessionId, at)) return;

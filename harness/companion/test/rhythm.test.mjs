@@ -149,7 +149,7 @@ test('inbox: the listener may start first — a line written before the control 
   assert.match(k.of('inbox')[0]?.text ?? '', /marker=early items=i9/);
 });
 
-test('inbox: while Segno is busy or switched off the lines wait; they come when it is free and on again', async (t) => {
+test('inbox: switched off the lines wait and come when it is on again; busy Segno is woken at once (joins the running turn)', async (t) => {
   const env = sandbox(t);
   const engine = engineFor(env);
   const k = await towerFor(t, env, engine, at(21, 10, 0), { heartbeat: { enabled: false }, greetings: { enabled: false } });
@@ -161,11 +161,13 @@ test('inbox: while Segno is busy or switched off the lines wait; they come when 
   writeSettings({ enabled: true }, env);
   engine.busy(true);
   await k.poke(at(21, 10, 40));
-  assert.equal(k.of('inbox').length, 0, 'not while it works');
-  engine.busy(false);
-  await k.poke(at(21, 10, 41));
-  assert.match(k.of('inbox')[0].text, /marker=b-5/);
+  assert.match(k.of('inbox')[0].text, /marker=b-5/, 'a person calling Segno does not wait for the turn to end: it joins the running turn');
   assert.equal(readInboxWakes(0, env).end, readState(env).inboxWake.offset);
+  wakeLine(env, at(21, 10, 41) + 50_000, 'b-6', ['i6'], '일하는 중에 또');
+  await k.poke(at(21, 10, 41) + 60_000);
+  assert.equal(k.of('inbox').length, 1, 'inside the 30 s window it still waits for the lines that follow');
+  await k.poke(at(21, 10, 41) + 85_000);
+  assert.match(k.of('inbox')[1].text, /marker=b-6/);
 });
 
 test('inbox: the wake kind is one the engine accepts, and Segno\'s rules say what an INBOX line is', () => {
