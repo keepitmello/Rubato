@@ -4,7 +4,8 @@
 // 2026-11-20, after ChatGPT's iOS app). The words come from the Mac's one-time key and OpenAI's
 // live transcription (rubato-voice/macLiveDictation.ts, @t3tools/shared/rubatoLiveDictation).
 // Thread composers keep T3's own composer and dictation controls; they transcribe through the same
-// Mac (shell-edits.mjs, VoiceInputProvider).
+// Mac (shell-edits.mjs, VoiceInputProvider), and show the heard words above the dictation row
+// (rubato-voice/RubatoLiveWords.tsx): T3 flips the draft row away while dictating.
 //
 // T3 pieces this touches:
 // - T3ComposerEditorView/Module (iOS): `dictationJson` colours the text word by word. The field's
@@ -15,6 +16,7 @@
 export const mobileComposerOverlays = [
   'apps/mobile/src/features/rubato-voice/RubatoComposerField.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoDictationStrip.tsx',
+  'apps/mobile/src/features/rubato-voice/RubatoLiveWords.tsx',
   // Shared with the desktop's composer, which places the heard words the same way.
   'packages/client-runtime/src/voice-input/rubatoLiveDictationDisplay.ts',
   'packages/client-runtime/src/voice-input/rubatoLiveDictationDisplay.test.ts',
@@ -144,6 +146,13 @@ export const mobileComposerEdits = {
   'packages/client-runtime/src/voice-input/index.ts': [
     ['export {\n  VoiceTranscriptionError,\n',
       'export {\n  liveDictationDisplay,\n  type LiveDictationDisplay,\n  type LiveDictationRun,\n} from "./rubatoLiveDictationDisplay.ts";\n'],
+  ],
+  // The thread composer: the words heard so far above the dictation row while dictating.
+  'apps/mobile/src/features/threads/ThreadComposer.tsx': [
+    ['} from "../voice-input/ComposerDictationControl";\n',
+      '} from "../voice-input/ComposerDictationControl";\nimport { RubatoLiveWords } from "../rubato-voice/RubatoLiveWords";\n', 'replace'],
+    ['          <View\n            onLayout={(event) => {\n              compactEditor.onRowLayout(event);',
+      '          <RubatoLiveWords visible={isVoiceInputPresented} />\n'],
   ],
   // A scheduled task's prompt is a plain text field: it shows the heard words grey while dictating.
   'apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx': [
