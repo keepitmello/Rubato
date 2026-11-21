@@ -21,7 +21,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { KeyboardAvoidingView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -101,6 +101,11 @@ export type CompanionRoomParams = {
 };
 
 const LOCALE = phoneLocale();
+/**
+ * The status bar's height, from the window: inside a screen whose stack bar shows, the screen's own
+ * top inset also counts the bar, which pushed the face and the blur down over the messages.
+ */
+const STATUS_TOP = initialWindowMetrics?.insets.top ?? 59;
 const timeFormat = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
 
 /** The two bubble colors and the words on the companion's. */
@@ -154,8 +159,7 @@ function TopEdge(props: { readonly height: number }) {
  * swipe back off; user b29122dd, a127a93e). Messages lays its header out the same way.
  */
 function RoomHeader(props: { readonly companion: CompanionEntry | null; readonly title: string }) {
-  const insets = useSafeAreaInsets();
-  const top = insets.top;
+  const top = STATUS_TOP;
   return (
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + 24 }}>
       <TopEdge height={top + HEADER_DEPTH} />
@@ -581,7 +585,6 @@ function RoomBody(props: {
   const draft = useComposerDraft(composer.composerDraftKey ?? null);
   const { selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const insets = useSafeAreaInsets();
   const scaled = useScaledTextRole("body");
   // Messages' words: the body size, set closer than a thread's.
   const body = useMemo<BodyText>(() => ({ fontSize: scaled.fontSize, lineHeight: Math.round(scaled.fontSize * BUBBLE_LINE_RATIO) }), [scaled.fontSize]);
@@ -689,7 +692,7 @@ function RoomBody(props: {
         }),
     [reveal],
   );
-  const headerHeight = insets.top + HEADER_DEPTH;
+  const headerHeight = STATUS_TOP + HEADER_DEPTH;
   return (
     <>
       <GestureDetector gesture={timeDrag}>
@@ -791,8 +794,8 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   // iOS's own. The face and name are drawn over it (RoomHeader).
   const options = useMemo(
     () => ({
-      title,
-      headerTitle: () => null,
+      // No title in the bar: the name stands in its pill under the face.
+      title: "",
       unstable_navigationItemStyle: "navigator" as const,
       // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
       // the room draws its own edge (TopEdge).
