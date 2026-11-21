@@ -705,13 +705,15 @@ function RoomBody(props: {
   }, [composer, toEnd]);
   const reversed = useMemo(() => [...items].reverse(), [items]);
   // Dragging the room left brings each message's time in from the right, as in Messages; it springs
-  // back on release. Only a leftward drag starts it, so the back swipe and the scroll keep theirs.
+  // back on release. It lets go at the first move to the right and never starts at the left edge, so
+  // the back swipe keeps its own (user b29122dd: with failOffsetX 12 the back swipe stopped working).
   const reveal = useSharedValue(0);
   const timeDrag = useMemo(
     () =>
       Gesture.Pan()
+        .hitSlop({ left: -32 })
         .activeOffsetX(-12)
-        .failOffsetX(12)
+        .failOffsetX(2)
         .failOffsetY([-10, 10])
         .onUpdate((event) => {
           "worklet";
@@ -823,7 +825,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   }, [companion?.threadId, companion?.environmentId, threadId, environmentId, navigation]);
   const title = companion?.title ?? companionId;
   // The room draws its own header, Messages' (RoomHeader); the stack's back swipe stays.
-  const options = useMemo(() => ({ title, headerShown: false }), [title]);
+  const options = useMemo(() => ({ title, headerShown: false, gestureEnabled: true }), [title]);
   const callable = companion?.callable ?? null;
   const call = useCallback(() => {
     if (!callable?.ready || !environmentId) {
