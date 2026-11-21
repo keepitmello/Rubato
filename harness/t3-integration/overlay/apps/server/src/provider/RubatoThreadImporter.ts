@@ -107,6 +107,17 @@ const ownRole = (context: unknown): "assistant" | "user" | null => {
   }
   return null;
 };
+/**
+ * The run a session message that arrived live goes into: the thread's last run that started and
+ * was not rewound, or null when it has none. T3 positions an item by its run (TurnItemPositionStore:
+ * run N's items take N×1,000,000 onward and an item with no run takes 0–999,999), so a message
+ * written with no run sat above every turn. In that run it takes the run's next position, after
+ * everything the thread already shows. A queued run has not started: the person's message waiting
+ * in it has not been sent yet.
+ */
+export const sessionMessageRun = (runs: ReadonlyArray<OrchestrationV2Run>): OrchestrationV2Run | null =>
+  runs.filter((run) => run.startedAt !== null && run.status !== "rolled_back")
+    .reduce<OrchestrationV2Run | null>((last, run) => (last === null || run.ordinal > last.ordinal ? run : last), null);
 /** The message and turn item of a session message, both keyed by its id (a replay replaces them). */
 export const sessionMessageRecords = (threadId: ThreadId, entry: SessionMessage, ordinal: number) => {
   const at = DateTime.makeUnsafe(entry.createdAt);
