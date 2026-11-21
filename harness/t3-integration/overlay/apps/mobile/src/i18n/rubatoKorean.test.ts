@@ -32,4 +32,20 @@ describe("the phone's Korean catalog", () => {
     )!;
     expect(merged[hash]).toBe((korean as Catalog)[hash]);
   });
+
+  // The user's choice for provider-switched sentences: GitHub's side reads "PR", GitLab's keeps 병합 요청.
+  it("writes PR on the GitHub side of provider-switched sentences", () => {
+    const switched = Object.entries(english).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string" && /\bmr \{/.test(entry[1]),
+    );
+    expect(switched.length).toBeGreaterThan(10);
+    const count = (text: unknown, word: string) => String(text).split(word).length - 1;
+    for (const [hash] of switched) {
+      expect(merged[hash]).not.toContain("풀 리퀘스트");
+      expect(count(merged[hash], "병합 요청")).toBe(count((korean as Catalog)[hash], "병합 요청"));
+    }
+    expect(merged[hashOf("Open {term, select, mr {merge request} cr {change request} other {pull request}}")]).toBe(
+      "{term, select, mr {병합 요청} cr {변경 요청} other {PR}} 열기",
+    );
+  });
 });
