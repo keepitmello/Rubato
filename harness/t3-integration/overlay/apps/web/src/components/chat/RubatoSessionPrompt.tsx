@@ -243,6 +243,9 @@ export function RubatoSessionPromptPicker(props: {
             onOpenChange={(next) => {
               setOpen(next);
               if (next) { focusElsewhere.current = false; void load(); }
+              // A failed list belongs to the menu that asked for it; closing it drops the notice,
+              // so Rubato's own prompt leaves nothing behind.
+              else setError(null);
             }}
           >
             <MenuTrigger
