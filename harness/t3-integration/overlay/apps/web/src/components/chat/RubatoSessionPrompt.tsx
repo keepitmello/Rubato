@@ -170,19 +170,28 @@ export function RubatoSessionPromptPicker(props: {
   // A menu item that opens a dialog or the file picker keeps focus away from the composer.
   const focusElsewhere = useRef(false);
 
-  // quiet: a background load that fails leaves the chip hidden; only a menu the person opened
-  // shows why the library is missing.
-  const load = async (quiet = false) => {
+  // A list request belongs to the menu that sent it: its failure shows only while that same menu
+  // is still open. A background load (menu null) and an answer that arrives after the menu closed
+  // leave the chip hidden. File errors are set by the file picker and stay their own.
+  const menuCount = useRef(0);
+  const openMenu = useRef(0);
+  const openMenuNow = () => {
+    menuCount.current += 1;
+    openMenu.current = menuCount.current;
+    return menuCount.current;
+  };
+  const load = async (menu: number | null) => {
     if (!instanceId) return null;
     try {
       const { prompts } = await postRubato<{ prompts: ReadonlyArray<SessionPromptEntry> }>(
         environmentId, ROUTE, "list", { instanceId }, WHAT,
       );
       setLibrary(prompts);
-      setError(null);
+      if (menu !== null && openMenu.current === menu) setError(null);
       return prompts;
     } catch (cause) {
-      if (!quiet) setError(cause instanceof Error ? cause.message : String(cause));
+      if (menu !== null && openMenu.current === menu)
+        setError(cause instanceof Error ? cause.message : String(cause));
       return null;
     }
   };
@@ -191,7 +200,7 @@ export function RubatoSessionPromptPicker(props: {
   useEffect(() => {
     if (!rubato || draftKey === null || !connected) return;
     let cancelled = false;
-    void load(true).then((prompts) => {
+    void load(null).then((prompts) => {
       if (cancelled || !prompts || choices.has(draftKey)) return;
       const last = lastChoiceId();
       const entry = prompts.find((item) => item.id === last);
@@ -207,7 +216,7 @@ export function RubatoSessionPromptPicker(props: {
     if (!rubato) return;
     focusElsewhere.current = false;
     setOpen(true);
-    void load();
+    void load(openMenuNow());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requested, draftKey, rubato]);
 
@@ -242,10 +251,10 @@ export function RubatoSessionPromptPicker(props: {
             open={open}
             onOpenChange={(next) => {
               setOpen(next);
-              if (next) { focusElsewhere.current = false; void load(); }
+              if (next) { focusElsewhere.current = false; void load(openMenuNow()); }
               // A failed list belongs to the menu that asked for it; closing it drops the notice,
               // so Rubato's own prompt leaves nothing behind.
-              else setError(null);
+              else { openMenu.current = 0; setError(null); }
             }}
           >
             <MenuTrigger
