@@ -126,9 +126,10 @@ EXPO_UPDATES_FINGERPRINT_OVERRIDE="$(corepack pnpm exec expo-updates fingerprint
   | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.stdout.write(JSON.parse(s).hash))')"
 export EXPO_UPDATES_FINGERPRINT_OVERRIDE
 corepack pnpm exec expo prebuild --clean --platform ios --no-install >/dev/null
-(cd ios && pod install)
-# This Mac has little disk: CocoaPods' download cache regrows to several GB per install.
-rm -rf "$HOME/Library/Caches/CocoaPods"
+# This Mac has little disk: CocoaPods' download cache regrows to several GB per install, so it
+# lives in this run's folder, which cleanup removes. The shared ~/Library/Caches/CocoaPods is not
+# used: another build installing pods at the same time read a cache this one was deleting.
+(cd ios && CP_CACHE_DIR="$work/cocoapods-cache" pod install)
 
 build_number="$(date -u +%Y%m%d%H%M)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" ios/Rubato/Info.plist
