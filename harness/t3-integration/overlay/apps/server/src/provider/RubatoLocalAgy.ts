@@ -15,10 +15,15 @@ export function localAgySpawn(
 ) {
   // Start real agy with its normal home and login, without handing it secrets,
   // provider endpoint overrides, or another agent's environment.
+  // Windows keeps the profile and temp folders in its own variables, and Path in any case.
   const env = { HOME: home } as Record<string, string>;
-  for (const key of ["PATH", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL"]) {
-    const value = environment[key];
-    if (value !== undefined) env[key] = value;
+  const wanted = new Set([
+    "PATH", "USER", "LOGNAME", "SHELL", "TMPDIR", "LANG", "LC_ALL",
+    "USERPROFILE", "APPDATA", "LOCALAPPDATA", "SYSTEMROOT", "WINDIR", "TEMP", "TMP",
+    "PATHEXT", "COMSPEC", "HOMEDRIVE", "HOMEPATH", "PROGRAMDATA",
+  ]);
+  for (const [key, value] of Object.entries(environment)) {
+    if (value !== undefined && wanted.has(key.toUpperCase()) && key.toUpperCase() !== "HOME") env[key] = value;
   }
   return {
     command: binary,

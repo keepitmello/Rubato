@@ -58,17 +58,32 @@ export async function renderLeadAgent(promptsDir = PROMPTS) {
 
 // PATH 먼저, 그다음 공식 설치기가 두는 ~/.local/bin. launchd 로 도는 업데이트는 PATH 가
 // 짧아서 뒤쪽이 없으면 못 찾는다. 인스턴스에는 절대경로가 들어가야 한다.
-export async function findAgy(env) {
-  const directories = (env.PATH ?? '').split(path.delimiter).filter((entry) => path.isAbsolute(entry));
-  if (env.HOME) directories.push(path.join(env.HOME, '.local', 'bin'));
+/**
+ * The official agy on PATH (or ~/.local/bin). Windows reads its Path variable whatever its
+ * case, splits on ";" and looks for agy.exe — a .cmd shim cannot be spawned without a shell.
+ */
+export async function findAgy(env, platform = process.platform) {
+  const windows = platform === 'win32';
+  const pathValue = windows
+    ? Object.entries(env).findLast(([key]) => key.toUpperCase() === 'PATH')?.[1]
+    : env.PATH;
+  const isAbsolute = windows ? path.win32.isAbsolute : path.posix.isAbsolute;
+  const directories = (pathValue ?? '').split(windows ? ';' : ':').filter((entry) => isAbsolute(entry));
+  const home = agyHome(env, platform);
+  if (home) directories.push(path.join(home, '.local', 'bin'));
   for (const directory of directories) {
-    const candidate = path.join(directory, 'agy');
+    const candidate = path.join(directory, windows ? 'agy.exe' : 'agy');
     try {
-      await access(candidate, constants.X_OK);
+      await access(candidate, windows ? constants.F_OK : constants.X_OK);
       return candidate;
     } catch { /* 다음 자리 */ }
   }
   return null;
+}
+
+/** The home agy keeps its login and agents under: HOME, or USERPROFILE on Windows. */
+export function agyHome(env, platform = process.platform) {
+  return env.HOME || (platform === 'win32' ? env.USERPROFILE : undefined) || undefined;
 }
 
 export async function installLeadAgent(home, promptsDir = PROMPTS) {

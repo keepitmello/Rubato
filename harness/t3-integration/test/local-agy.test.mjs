@@ -36,3 +36,26 @@ test('picker preserves the native model slug and shows only Gemini models the se
   ]);
   assert.deepEqual(localAgyModels([], 'Lead'), []);
 });
+
+test('on Windows agy keeps its profile, temp and system folders, whatever the variable case', () => {
+  const command = localAgySpawn('C:\\Users\\me\\.local\\bin\\agy.exe', 'rubato-lead', 'C:\\work', 'C:\\Users\\me', {
+    Path: 'C:\\Windows\\System32',
+    USERPROFILE: 'C:\\Users\\me',
+    APPDATA: 'C:\\Users\\me\\AppData\\Roaming',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    SystemRoot: 'C:\\Windows',
+    TEMP: 'C:\\Temp',
+    ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+    GEMINI_API_KEY: 'must-not-forward',
+  });
+  assert.deepEqual(command.env, {
+    HOME: 'C:\\Users\\me',
+    Path: 'C:\\Windows\\System32',
+    USERPROFILE: 'C:\\Users\\me',
+    APPDATA: 'C:\\Users\\me\\AppData\\Roaming',
+    LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local',
+    SystemRoot: 'C:\\Windows',
+    TEMP: 'C:\\Temp',
+    ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+  });
+});

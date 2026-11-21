@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  GENERATED_MARK, LEAD_AGENT, LEAD_INSTANCE_ID, RUBATO_ONLY, findAgy, installLeadAgent, leadInstance, renderLeadAgent,
+  GENERATED_MARK, LEAD_AGENT, LEAD_INSTANCE_ID, RUBATO_ONLY, agyHome, findAgy, installLeadAgent, leadInstance, renderLeadAgent,
 } from '../agy-lead.mjs';
 
 const writer = fileURLToPath(new URL('../write-gui-settings.mjs', import.meta.url));
@@ -131,4 +131,23 @@ test('without agy, or for a T3 home outside HOME, nothing agy-related is written
   runWriter({ HOME: home, PATH: path.join(root, 'none'), RUBATO_GUI_T3_HOME: elsewhere });
   assert.equal(readSettings(elsewhere).providerInstances[LEAD_INSTANCE_ID], undefined);
   assert.equal(existsSync(path.join(home, '.gemini')), false);
+});
+
+test('on Windows agy.exe is found through Path (any case, ";"-separated) or USERPROFILE', async (t) => {
+  const root = mkdtempSync(path.join(tmpdir(), 'agy-win-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bin = path.join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(path.join(bin, 'agy'), '');
+  writeFileSync(path.join(bin, 'agy.cmd'), '');
+  // A shim without the .exe is not spawnable without a shell, so it is not taken.
+  assert.equal(await findAgy({ Path: `relative;${bin}` }, 'win32'), null);
+  writeFileSync(path.join(bin, 'agy.exe'), '');
+  assert.equal(await findAgy({ Path: `relative;${bin}` }, 'win32'), path.join(bin, 'agy.exe'));
+  const profile = path.join(root, 'profile');
+  mkdirSync(path.join(profile, '.local', 'bin'), { recursive: true });
+  writeFileSync(path.join(profile, '.local', 'bin', 'agy.exe'), '');
+  assert.equal(await findAgy({ PATH: '', USERPROFILE: profile }, 'win32'), path.join(profile, '.local', 'bin', 'agy.exe'));
+  assert.equal(agyHome({ USERPROFILE: profile }, 'win32'), profile);
+  assert.equal(agyHome({ USERPROFILE: profile }, 'darwin'), undefined);
 });
