@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vite-plus/test";
+import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
 import {
-  callHeadline, companionIsWriting, companionTool, fileLines, roomItems, roomPreview, spokenText,
+  callHeadline, companionIsWriting, companionTool, fileLines, roomItems, roomPreview, spokenText, typedSoFar,
   type RoomMessageInput, type RoomStep,
 } from "./roomModel";
 
@@ -83,6 +84,29 @@ describe("a companion room", () => {
     expect(first).toMatchObject({ text: "", attachments: [{ name: "cat.png" }] });
     expect(second).toMatchObject({ text: "봐봐", files: "![shot.png](</Users/me/shot.png>)" });
     expect(roomPreview(roomItems([picture], []))).toMatchObject({ text: "📎 cat.png" });
+  });
+
+  it("shows the companion's reply of several paragraphs as that many bubbles of one group, the files on the last", () => {
+    const reply = message("r", "assistant", "응, 봤어.\n\n저녁은 먹었어?\n\n- 하나\n\n- 둘\n\n![a.png](</tmp/a.png>)", 0);
+    const bubbles = roomItems([message("q", "user", "봤어?", 0), reply], []).filter((item) => item.kind === "bubble");
+    expect(bubbles.map((item) => [item.id, item.text, item.files, item.part, item.groupStart, item.groupEnd])).toEqual([
+      ["q", "봤어?", "", 0, true, true],
+      ["r", "응, 봤어.", "", 0, true, false],
+      ["r#1", "저녁은 먹었어?", "", 1, false, false],
+      ["r#2", "- 하나\n\n- 둘", "![a.png](</tmp/a.png>)", 2, false, true],
+    ]);
+    expect(roomPreview(roomItems([reply], []))).toMatchObject({ text: "- 하나 - 둘", side: "companion" });
+
+    // Said just now, its next bubbles come one after another; said a while ago, all at once.
+    const sent = Date.parse(at(0));
+    const items = roomItems([reply], []);
+    const ids = (clock: number) => typedSoFar(items, clock).shown.filter((item) => item.kind === "bubble").map((item) => item.id);
+    expect(ids(sent)).toEqual(["r"]);
+    expect(typedSoFar(items, sent).next).toBe(sent + replyBubbleGapMs("저녁은 먹었어?"));
+    expect(ids(sent + replyBubbleGapMs("저녁은 먹었어?"))).toEqual(["r", "r#1"]);
+    expect(ids(sent + 60_000)).toEqual(["r", "r#1", "r#2"]);
+    expect(typedSoFar(items, sent + 60_000).next).toBeNull();
+    expect(roomItems([message("p", "user", "한 문단\n\n두 문단", 0)], []).filter((item) => item.kind === "bubble")).toHaveLength(1);
   });
 
   it("takes the companion's reply files out of its words, so the bubble draws them in its own layout", () => {

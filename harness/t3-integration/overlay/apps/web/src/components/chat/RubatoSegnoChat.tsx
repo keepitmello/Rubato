@@ -41,6 +41,7 @@ import {
 } from "react";
 
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
+import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { ChevronDownIcon } from "lucide-react";
 
@@ -361,6 +362,47 @@ function Bubble({
         />
       ) : null}
     </div>
+  );
+}
+
+/** A reply said longer ago than this shows all its bubbles at once. */
+const TYPED_WITHIN_MS = 60_000;
+
+/**
+ * One message as the bubbles it reads as. Segno's reply shows each paragraph as its own bubble
+ * (rubatoReplyBubbles.ts, the same breaks its Telegram messages take); one that arrives while the room
+ * is open lets them in one after another, with the writing dots before each, as if typed. The
+ * person's message is one bubble.
+ */
+function Bubbles(props: Parameters<typeof Bubble>[0]) {
+  const { item } = props;
+  const parts = item.side === "segno" ? replyBubbles(item.text) : [];
+  // Only words said just now are typed out; a room drawn again shows older ones whole.
+  const [shown, setShown] = useState(() =>
+    props.enter && Date.now() - item.at < TYPED_WITHIN_MS ? 1 : Number.POSITIVE_INFINITY,
+  );
+  const next = parts[shown];
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: the next bubble shows once its typing time has passed
+  useEffect(() => {
+    if (next === undefined) return;
+    const timer = window.setTimeout(() => setShown((count) => count + 1), replyBubbleGapMs(next));
+    return () => window.clearTimeout(timer);
+  }, [next]);
+  if (parts.length < 2) return <Bubble {...props} />;
+  const last = parts.length - 1;
+  return (
+    <>
+      {parts.slice(0, shown).map((text, index) => (
+        <Bubble
+          // oxlint-disable-next-line react/no-array-index-key -- a message's bubbles have no identity besides their order
+          key={index}
+          {...props}
+          item={{ ...item, text, groupStart: item.groupStart && index === 0, groupEnd: item.groupEnd && index === last }}
+          mark={props.mark && index === 0}
+        />
+      ))}
+      {shown < parts.length ? <Writing /> : null}
+    </>
   );
 }
 
@@ -820,7 +862,7 @@ function RubatoSegnoRoom(props: {
               <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
             )),
             item.side === "segno" || !separated ? spanLine(place, `span:${item.id}`) : null,
-            <Bubble
+            <Bubbles
               key={item.id}
               item={item}
               enter={animated.current.has(item.id)}

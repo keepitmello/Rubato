@@ -34,6 +34,8 @@ export function start({ env, agentDir, fake, createBot, ...options }) {
     createApi: () => fake.api,
     ...(createBot ? { createBot } : {}),
     pollMs: 3_600_000, longPollSeconds: 0,
+    // A reply's bubbles follow each other at once here; a test that looks at the pause gives its own.
+    bubbleGap: () => 0,
     onError: (error) => errors.push(error),
     ...options,
   });

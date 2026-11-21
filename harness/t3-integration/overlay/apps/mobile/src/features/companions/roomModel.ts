@@ -5,7 +5,10 @@
 // gets a time line instead of a time on every bubble. Each call is one card, placed where it
 // started (user 0d108939: a card like a messenger's call, opened to read what was said). The desktop
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
+// The companion's reply reads like a messenger chat: each paragraph is its own bubble
+// (packages/shared rubatoReplyBubbles.ts, the same breaks its Telegram messages take).
 import type { ChatAttachment } from "@t3tools/contracts";
+import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { DraftComposerAttachment } from "../../lib/composerImages";
 import type { CallRecord } from "./callTypes";
@@ -53,6 +56,16 @@ export type RoomItem =
       readonly streaming: boolean;
       readonly groupStart: boolean;
       readonly groupEnd: boolean;
+      /**
+       * Which of its message's bubbles this is: a companion's reply shows each paragraph as one,
+       * the first under the message's own id and the next ones under `<id>#<part>`.
+       */
+      readonly part: number;
+      /**
+       * How long after the message this bubble shows, as if typed after the ones before it: 0 for
+       * the first. Words said a while ago are past it and show at once (CompanionRoomScreen).
+       */
+      readonly typedAfter: number;
     }
   | { readonly kind: "call"; readonly id: string; readonly at: number; readonly call: CallRecord };
 
@@ -155,22 +168,47 @@ export function roomItems(
       next.side === entry.side &&
       next.at - entry.at < GROUP_GAP_MS &&
       sameDay(entry.at, next.at);
-    items.push({
-      kind: "bubble",
-      id: entry.message.id,
-      side: entry.side,
-      text: entry.text,
-      files: entry.files,
-      attachments: entry.message.attachments ?? [],
-      pending: entry.message.pending ?? null,
-      at: entry.at,
-      streaming: entry.message.streaming,
-      groupStart: separated || previous === null || previous.side !== entry.side || entry.at - previous.at >= GROUP_GAP_MS,
-      groupEnd: !nextJoins,
+    // The files and attachments ride with the last words.
+    const parts = entry.side === "companion" && !entry.message.streaming ? replyBubbles(entry.text) : [];
+    const texts = parts.length > 1 ? parts : [entry.text];
+    let typedAfter = 0;
+    texts.forEach((text, part) => {
+      const last = part === texts.length - 1;
+      if (part > 0) typedAfter += replyBubbleGapMs(text);
+      items.push({
+        kind: "bubble",
+        id: part === 0 ? entry.message.id : `${entry.message.id}#${part}`,
+        side: entry.side,
+        text,
+        files: last ? entry.files : "",
+        attachments: last ? (entry.message.attachments ?? []) : [],
+        pending: entry.message.pending ?? null,
+        at: entry.at,
+        streaming: entry.message.streaming,
+        groupStart:
+          part === 0 && (separated || previous === null || previous.side !== entry.side || entry.at - previous.at >= GROUP_GAP_MS),
+        groupEnd: last && !nextJoins,
+        part,
+        typedAfter,
+      });
     });
     previous = { at: entry.at, side: entry.side };
   }
   return items;
+}
+
+/**
+ * What the room shows at `clock`: a reply's next bubbles wait their typing time after the message,
+ * and `next` is when the first still waiting shows (null: none waits).
+ */
+export function typedSoFar(items: ReadonlyArray<RoomItem>, clock: number): { shown: RoomItem[]; next: number | null } {
+  let next: number | null = null;
+  const shown = items.filter((item) => {
+    if (item.kind !== "bubble" || item.typedAfter === 0 || item.at + item.typedAfter <= clock) return true;
+    next = Math.min(next ?? Number.POSITIVE_INFINITY, item.at + item.typedAfter);
+    return false;
+  });
+  return { shown, next };
 }
 
 /** The companion is writing: its turn runs and it has not answered the person's last message yet. */

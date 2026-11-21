@@ -56,7 +56,15 @@ import { useCompanion, type CompanionEntry } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
-import { companionIsWriting, companionTool, roomItems, type RoomItem, type RoomMessageInput, type RoomStep } from "./roomModel";
+import {
+  companionIsWriting,
+  companionTool,
+  roomItems,
+  typedSoFar,
+  type RoomItem,
+  type RoomMessageInput,
+  type RoomStep,
+} from "./roomModel";
 import {
   CompanionWorkIndicator,
   hapticReceive,
@@ -491,8 +499,19 @@ function RoomBody(props: {
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
-  const items = useMemo(() => roomItems(messages, calls), [messages, calls]);
-  const writing = companionIsWriting(items, composer.activeThreadBusy);
+  const allItems = useMemo(() => roomItems(messages, calls), [messages, calls]);
+  // A reply that arrives while the room is open comes in one bubble after another, as if typed, with
+  // the writing dots until its last bubble is in.
+  const [clock, setClock] = useState(() => Date.now());
+  const typed = useMemo(() => typedSoFar(allItems, clock), [allItems, clock]);
+  const items = typed.shown;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a timer: the clock moves when the next typed bubble is due
+  useEffect(() => {
+    if (typed.next === null) return;
+    const timer = setTimeout(() => setClock(Date.now()), Math.max(0, typed.next - Date.now()));
+    return () => clearTimeout(timer);
+  }, [typed.next]);
+  const writing = companionIsWriting(items, composer.activeThreadBusy) || typed.next !== null;
   // Thinking or working: the tool the companion runs since the person's last message.
   const tool = useMemo(
     () =>
