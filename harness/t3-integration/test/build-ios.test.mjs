@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -128,4 +128,12 @@ test('--upload without an archive is a usage error', (t) => {
   const { result, calls } = run(t, { args: ['--upload'] });
   assert.equal(result.status, 2);
   assert.equal(calls.length, 0);
+});
+
+// The script is documented and called as ./build-ios.sh, not through bash.
+test('the build scripts stay executable', () => {
+  for (const script of ['build-ios.sh', 'update-ios.sh']) {
+    const mode = statSync(fileURLToPath(new URL(`../mobile/${script}`, import.meta.url))).mode;
+    assert.ok(mode & 0o100, `${script} is executable`);
+  }
 });
