@@ -152,7 +152,7 @@ const WORDS = {
  */
 export async function runUpdate({
   token, parentPid, root = repo, env = process.env, kind = 'update',
-  updateTimeoutMs = 30 * 60_000, readyTimeoutMs = 90_000,
+  updateTimeoutMs = 30 * 60_000, readyTimeoutMs = 90_000, launchTimeoutMs = 20 * 60_000,
   command, args,
   notify = notifyFailure,
 } = {}) {
@@ -166,6 +166,10 @@ export async function runUpdate({
   if (!release) return { duplicate: true };
   const resultFile = path.join(directory, 'result.json');
   const readyFile = path.join(directory, `ready-${token}.json`);
+  // The reopened app notes its pid here as soon as it starts. Its window acknowledges only once
+  // the backend is up, which the first start after a T3 upgrade can hold for minutes while it
+  // migrates a large state database; a live launching app gets launchTimeoutMs, a dead one fails.
+  const launchingFile = path.join(directory, `launching-${token}.json`);
   // restart-gui.sh leaves this when the app could stay open: nothing it runs
   // changed, so it only reconnects to the new engine and no window reopens.
   const keptFile = path.join(directory, `kept-${token}.json`);
@@ -198,13 +202,21 @@ export async function runUpdate({
     if (!app) result = { token, kind, status: 'succeeded', finishedAt: Date.now() };
     else if ((await readJson(keptFile))?.token === token && alive(parentPid))
       result = { token, kind, status: 'succeeded', appPid: parentPid, kept: true, finishedAt: Date.now() };
-    const deadline = Date.now() + readyTimeoutMs;
-    while (app && !result && !controller.signal.aborted && Date.now() < deadline) {
+    const waitStarted = Date.now();
+    let launchingPid = null;
+    while (app && !result && !controller.signal.aborted) {
       const ready = await readJson(readyFile);
       if (ready?.token === token && ready.pid !== parentPid && alive(ready.pid)) {
         result = { token, kind, status: 'succeeded', appPid: ready.pid, finishedAt: Date.now() };
         break;
       }
+      const launching = await readJson(launchingFile);
+      if (launching?.token === token && Number.isSafeInteger(launching.pid) && launching.pid !== parentPid)
+        launchingPid = launching.pid;
+      if (launchingPid !== null && !alive(launchingPid))
+        throw new Error(`${words.did} ran, but the reopened app quit while starting. Open Rubato yourself.`);
+      const waited = Date.now() - waitStarted;
+      if (waited >= (launchingPid === null ? readyTimeoutMs : launchTimeoutMs)) break;
       await delay(200, undefined, { signal: controller.signal });
     }
     if (!result) throw new Error(`${words.did} ran, but the app did not confirm it reopened. Open Rubato yourself.`);
@@ -215,6 +227,7 @@ export async function runUpdate({
       if (result) await atomicJson(resultFile, result);
     } finally {
       await unlink(readyFile).catch(() => {});
+      await unlink(launchingFile).catch(() => {});
       await unlink(keptFile).catch(() => {});
       await release();
       process.removeListener('SIGHUP', ignoreHangup);

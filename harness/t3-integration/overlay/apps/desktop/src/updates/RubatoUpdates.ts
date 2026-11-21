@@ -253,6 +253,18 @@ function publish(next: RubatoUpdateState) {
     if (!window.isDestroyed()) window.webContents.send(STATE_CHANNEL, state);
   }
 }
+// The app a restart reopened notes its pid at once, before the backend and window are up, so the
+// updater (gui-update.mjs) can tell a slow first start from a launch that died.
+async function announceLaunch() {
+  if (!restartToken || !/^[a-f0-9-]{36}$/.test(restartToken)) return;
+  const stateDir = directory();
+  const lock = await read<{ token: string }>(path.join(stateDir, "lock.json"));
+  if (lock?.token === restartToken)
+    await write(path.join(stateDir, `launching-${restartToken}.json`),
+      { token: restartToken, pid: process.pid, startedAt: Date.now() });
+}
+void announceLaunch().catch(console.warn);
+
 async function acknowledgeWindow(window: BrowserWindow) {
   if (window.isDestroyed()) return;
   if (window.webContents.isLoadingMainFrame()) {

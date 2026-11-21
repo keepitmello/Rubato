@@ -441,3 +441,64 @@ test('menu check: a prompt already on screen answers it; closing it does not re-
   await delay(0);
   assert.equal(dialogs.length, 1);
 });
+
+// An updater script that reopens an "app" running `appCode` with the job's environment.
+async function launcherScript(h, appCode) {
+  const script = path.join(h.root, `launch-${randomUUID()}.mjs`);
+  await writeFile(script, `
+    import {spawn} from 'node:child_process';
+    import {writeFileSync} from 'node:fs';
+    const app=spawn(process.execPath,['-e',${JSON.stringify(`
+      const fs=require('node:fs'),path=require('node:path');
+      const token=process.env.RUBATO_GUI_UPDATE_TOKEN;
+      const dir=path.join(process.env.HOME,'.rubato-pi','gui-update');
+      ${appCode}
+    `)}],{detached:true,stdio:'ignore',env:process.env});
+    writeFileSync(${JSON.stringify(path.join(h.root, 'app.pid'))},String(app.pid));
+    app.unref();
+  `);
+  return script;
+}
+
+test('a reopened app still starting its backend is waited for past the ready limit', async (t) => {
+  const h = await fixture(t);
+  // Launching at once; the window acknowledges only after a slow first start.
+  const script = await launcherScript(h, `
+    fs.writeFileSync(path.join(dir,'launching-'+token+'.json'),JSON.stringify({token,pid:process.pid}));
+    setTimeout(()=>fs.writeFileSync(path.join(dir,'ready-'+token+'.json'),JSON.stringify({token,pid:process.pid})),1500);
+    setInterval(()=>{},1000);
+  `);
+  const result = await runUpdate({ ...h.options, kind: 'restart', args: [script], readyTimeoutMs: 300, launchTimeoutMs: 20_000 });
+  assert.equal(result.status, 'succeeded');
+  assert.equal(await readJson(path.join(h.directory, `launching-${h.options.token}.json`)), null);
+});
+
+test('a reopened app that quits while starting fails at once, not at the long limit', async (t) => {
+  const h = await fixture(t);
+  const script = await launcherScript(h, `
+    fs.writeFileSync(path.join(dir,'launching-'+token+'.json'),JSON.stringify({token,pid:process.pid}));
+    setTimeout(()=>process.exit(1),300);
+  `);
+  const started = Date.now();
+  const result = await runUpdate({ ...h.options, kind: 'restart', args: [script], readyTimeoutMs: 100, launchTimeoutMs: 60_000 });
+  assert.equal(result.status, 'failed');
+  assert.match(result.message, /quit while starting/);
+  assert.ok(Date.now() - started < 15_000, 'failed without waiting for the launch limit');
+});
+
+test('a launching note from the old app or another restart does not extend the wait', async (t) => {
+  const h = await fixture(t);
+  await writeFile(path.join(h.directory, `launching-${h.options.token}.json`),
+    JSON.stringify({ token: h.options.token, pid: h.options.parentPid }));
+  const started = Date.now();
+  const result = await runUpdate({ ...h.options, kind: 'restart', args: ['-e', ''], readyTimeoutMs: 200, launchTimeoutMs: 60_000 });
+  assert.equal(result.status, 'failed');
+  assert.match(result.message, /did not confirm it reopened/);
+  assert.ok(Date.now() - started < 15_000);
+});
+
+test('the reopened app notes its launch before its window exists', async () => {
+  const source = await readFile(fileURLToPath(new URL('../overlay/apps/desktop/src/updates/RubatoUpdates.ts', import.meta.url)), 'utf8');
+  assert.match(source, /void announceLaunch\(\)\.catch\(console\.warn\);/);
+  assert.match(source, /`launching-\$\{restartToken\}\.json`/);
+});
