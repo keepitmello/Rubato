@@ -9,6 +9,8 @@
 // keeping upstream's model button with its effort and its two-pane picker, which now opens above
 // the button at the left edge (popupAlign start) instead of over the transcript. The new-thread
 // composer (draft route) keeps T3 v0.1.11's layout, its strip included.
+// Below 640px T3 stacks that picker's two panes and leaves the popup as narrow as its content
+// (about 260px), which cuts model names to a letter; there it takes the window's width up to 30rem.
 // Registered last: it moves lines voice-, call- and cache-edits put in.
 const voiceControl = [
   '                {isElectron ? (',
@@ -121,6 +123,15 @@ export const composerLayoutEdits = {
       'replace'],
     ['      popupAlign={composerControlsCollapsed ? "start" : "end"}',
       '      // Rubato: in a thread the picker leads the row and opens above it from the left (composer-layout-edits.mjs).\n      popupAlign={routeKind !== "draft" || composerControlsCollapsed ? "start" : "end"}',
+      'replace'],
+  ],
+  'apps/web/src/components/chat/ProviderModelPicker.tsx': [
+    ['        className="before:hidden"\n',
+      [
+        '        // Rubato: stacked below 640px, the picker takes the window width (composer-layout-edits.mjs).',
+        '        className={cn("before:hidden", docked && "max-sm:w-[min(30rem,calc(100vw-2rem))]")}',
+        '',
+      ].join('\n'),
       'replace'],
   ],
 };

@@ -41,12 +41,15 @@ export const threadForkEdits = {
     ['    DeviceHubProxy.layer,\n', '    rubatoThreadForkRouteLayer,\n'],
   ],
   'apps/web/src/components/threadActionMenu.logic.ts': [
+    // The desktop shows this menu natively, out of the page translation's reach.
+    ['import { m, type MessageResolver } from "../i18n/messages";\n',
+      'import { uiText } from "../rubatoI18n";\n'],
     ['  | "rename"\n', '  | "fork"\n'],
     ['    readonly titleRegeneration: boolean;\n  };\n',
       '    readonly titleRegeneration: boolean;\n    /** The thread runs on Rubato, which can copy its conversation (rubatoThreadFork.ts). */\n    readonly fork?: boolean;\n  };\n',
       'replace'],
     ['    { id: "mark-unread", label: resolve(msg("Mark unread")), icon: "mail-open" },\n',
-      '    ...(state.supports.fork\n      ? [{ id: "fork" as const, label: "Fork thread", icon: "git-branch" }]\n      : []),\n'],
+      '    ...(state.supports.fork\n      ? [{ id: "fork" as const, label: uiText("Fork thread"), icon: "git-branch" }]\n      : []),\n'],
   ],
   'apps/web/src/components/Sidebar.tsx': [
     ['import {\n  buildDraftActionMenuItems,\n  buildThreadActionMenuItems,\n',
