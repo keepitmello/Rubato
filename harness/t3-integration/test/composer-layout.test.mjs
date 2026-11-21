@@ -32,6 +32,12 @@ test('model and access lead the row; speed, mic, call, attach, ring and send fol
 test('the access mode stays in the composer and the new-thread strip does not repeat it', skip, async () => {
   const bar = await applied('apps/web/src/components/chat/ComposerControlsBar.tsx');
   assert.match(bar, /matchesDefault: false,/);
+  // The effort is its own button between the model and the access chip, not a model suffix.
+  const model = bar.indexOf('{composerModelPicker}\n');
+  const effort = bar.indexOf('<TraitsPicker\n', model);
+  const access = bar.indexOf('restingBlockDefs.map(', model);
+  assert.ok(model > 0 && model < effort && effort < access, 'model, effort, access in that order');
+  assert.match(bar, /triggerSuffix=\{null\}/);
   assert.match(bar, /popupAlign="start"/);
   const view = await applied('apps/web/src/components/ChatView.tsx');
   assert.doesNotMatch(view, /<ComposerContextPermissions/);

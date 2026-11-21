@@ -4,8 +4,10 @@
 // access mode out of the composer while it is the default. Back to v0.1.0, in the thread and
 // the new-thread composer alike:
 //
-//   [model picker] [access mode]                [speed] [mic] [call] [attach] [ring] [send]
+//   [model] [effort] [access mode]            [speed] [mic] [call] [attach] [ring] [send]
 //
+// The effort is its own button again (TraitsPicker), not a suffix on the model button; the model
+// picker keeps its effort column.
 // The access chip shows even at the default mode, so the new-thread strip below the composer
 // no longer repeats it. Registered last: it moves lines voice-, call- and cache-edits put in.
 const voiceControl = [
@@ -107,6 +109,27 @@ export const composerLayoutEdits = {
       'replace'],
   ],
   'apps/web/src/components/chat/ComposerControlsBar.tsx': [
+    ['import type { PromptUltrathink } from "./TraitsPicker";\n',
+      'import { TraitsPicker, type PromptUltrathink } from "./TraitsPicker"; // Rubato: the effort button (composer-layout-edits.mjs)\n',
+      'replace'],
+    ['      triggerSuffix={effort.suffix}\n      triggerDetail={effort.detail}\n',
+      '      // Rubato: the effort has its own button beside the picker (composer-layout-edits.mjs).\n      triggerSuffix={null}\n      triggerDetail={null}\n',
+      'replace'],
+    ['      {composerModelPicker}\n',
+      [
+        '      {composerModelPicker}',
+        '      {/* Rubato: the effort as its own button, as on v0.1.0 (composer-layout-edits.mjs). */}',
+        '      {traitsInput ? (',
+        '        <TraitsPicker',
+        '          {...traitsInput}',
+        '          size={controlSize}',
+        '          hidden={composerControlsHidden}',
+        '          disabled={providerCatalogPending || isSendBusy}',
+        '        />',
+        '      ) : null}',
+        '',
+      ].join('\n'),
+      'replace'],
     ['    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,',
       '    // Rubato: the access chip stays in the composer at the default mode too (composer-layout-edits.mjs).\n    matchesDefault: false,',
       'replace'],
