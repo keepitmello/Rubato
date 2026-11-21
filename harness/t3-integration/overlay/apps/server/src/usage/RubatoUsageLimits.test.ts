@@ -77,6 +77,26 @@ it.effect("each Rubato account is its own row under its provider's driver", () =
   }),
 );
 
+it.effect("a provider with a sub account names its rows Main and Sub, in that order", () =>
+  Effect.gen(function* () {
+    const source = yield* readRubatoUsageSource(
+      stubCheckout({
+        accounts: [
+          row("anthropic", "setup-token", [window("seven_day", 91)], { modelSuffix: "" }),
+          row("anthropic", "default", [window("seven_day", 33)], { modelSuffix: "-sub" }),
+          row("openai-codex", "default", [window("primary", 31)], { modelSuffix: "" }),
+        ],
+      }),
+      [],
+    );
+    assert.deepEqual(
+      source?.accounts.map((account) => account.id),
+      ["Claude · Main", "Claude · Sub", "Codex"],
+      "a provider with only its main account keeps the plain name",
+    );
+  }),
+);
+
 it.effect("a read that failed this time keeps the account's last good bars", () =>
   Effect.gen(function* () {
     const previous: UsageLimitSourceSnapshot[] = [{
