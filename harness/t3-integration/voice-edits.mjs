@@ -67,6 +67,12 @@ export const voiceEdits = {
       'import { RubatoVoiceControl } from "./RubatoVoiceControl";\nimport { RubatoLiveDictationText } from "./RubatoLiveDictationText";\nimport { useRubatoVoiceInput } from "./useRubatoVoiceInput";\nimport { isElectron } from "../../env";\n'],
     ['  const insertComposerTextAtEnd: ChatComposerHandle["insertTextAtEnd"] = (text, options) => {', composerVoiceWiring],
     ['                {composerAttachButton && !dictationTakesFooter ? (', composerVoiceControl, 'replace'],
+    // The Mac app keeps one microphone, Rubato's: T3's own dictation button, its recording
+    // capsule and its shortcut stay off there. A browser without the Mac app keeps T3's.
+    ['    speech: speechInput,\n    disabled: dictationDisabled,\n',
+      '    speech: speechInput,\n    disabled: dictationDisabled || isElectron,\n', 'replace'],
+    ['                    {speechInput.available ? (\n',
+      '                    {speechInput.available && !isElectron ? (\n', 'replace'],
     ['                <ComposerContextActionsContext value={composerContextActions}>\n                  <ComposerPromptEditor\n',
       [
         '                {voiceInput.showsLive ? (',

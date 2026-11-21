@@ -234,7 +234,7 @@ export const agentsSurfaceEdits = {
       '      cwd={gitCwd}',
       '')],
     // The Speed label sits in the composer's footer (apply.mjs's ChatComposer edits); the
-    // prompt cache goes to Thread details with the context window (cache-edits.mjs).
+    // context ring with the prompt cache beside it (cache-edits.mjs).
     ['                                canOperateThread={canOperateThread}\n                                reportedModelSelection={reportedModelSelection}\n',
       '                                sessionSpeedLabel={sessionSpeedLabel}\n'],
     ['          onAddDevice={addDeviceSurfaceStable}\n          onAddSideChat=',
