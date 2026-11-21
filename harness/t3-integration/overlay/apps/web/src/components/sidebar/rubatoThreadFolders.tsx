@@ -259,7 +259,13 @@ export function withRubatoFolderMenu<T extends string>(
     })),
     { id: "rubato-folder:new", label: uiText("New folder…"), separatorBefore: true },
     ...(current !== null
-      ? [{ id: "rubato-folder:out" as const, label: uiText(`Remove from ${current.name}`) }]
+      ? [
+          {
+            id: "rubato-folder:out" as const,
+            // Only the frame is interface text; the folder's name goes in as the user wrote it.
+            label: uiText("Remove from {0}").replace("{0}", () => current.name),
+          },
+        ]
       : []),
   ];
   const menu: ContextMenuItem<RubatoFolderMenuId> = {

@@ -129,7 +129,7 @@ export const composerLayoutEdits = {
     ['        className="before:hidden"\n',
       [
         '        // Rubato: stacked below 640px, the picker takes the window width (composer-layout-edits.mjs).',
-        '        className={cn("before:hidden", docked && "max-sm:w-[min(30rem,calc(100vw-2rem))]")}',
+        '        className={cn("before:hidden", docked && "max-sm:w-[min(30rem,calc(100vw-1rem))]")}',
         '',
       ].join('\n'),
       'replace'],
