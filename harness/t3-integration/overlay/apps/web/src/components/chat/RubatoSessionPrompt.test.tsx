@@ -20,10 +20,11 @@ const LIBRARY = [
 vi.mock("@effect/atom-react", () => ({ useAtomValue: () => configs }));
 vi.mock("~/rpc/atomRegistry", () => ({ appAtomRegistry: { get: () => configs } }));
 vi.mock("~/state/server", () => ({ environmentServerConfigsAtom: {} }));
-const http = vi.hoisted(() => ({ calls: 0, fail: false, connected: true }));
+const http = vi.hoisted(() => ({ calls: 0, fail: false, connected: true, hold: null as Promise<void> | null }));
 vi.mock("~/state/rubatoHttp", () => ({
   postRubato: async (_environmentId: string, _route: string, action: string) => {
     http.calls += 1;
+    if (http.hold) await http.hold;
     if (http.fail) throw new Error("This Mac is not connected.");
     return action === "list" ? { prompts: LIBRARY } : {};
   },
@@ -47,7 +48,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   localStorage.clear();
-  Object.assign(http, { calls: 0, fail: false, connected: true });
+  Object.assign(http, { calls: 0, fail: false, connected: true, hold: null });
   container = document.createElement("div");
   document.body.append(container);
   root = createRoot(container);
@@ -78,6 +79,23 @@ describe("/prompt", () => {
 });
 
 describe("RubatoSessionPromptPicker", () => {
+  it("ignores a list failure that arrives after its menu closed", async () => {
+    await renderPicker("draft-late");
+    let release!: () => void;
+    http.hold = new Promise<void>((resolve) => { release = resolve; });
+    http.fail = true;
+    await act(async () => openRubatoSessionPromptMenu("draft-late"));
+    await settle();
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(chip()).toBeNull();
+    await act(async () => release());
+    await settle();
+    expect(chip()).toBeNull();
+  });
+
   it("drops a failed list's notice when the menu that asked for it closes", async () => {
     await renderPicker("draft-fail");
     http.fail = true;
