@@ -35,6 +35,8 @@ import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-e
 import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto-archive-edits.mjs';
 import { sidebarLookEdits, sidebarLookOverlays } from './sidebar-look-edits.mjs';
 import { threadArchiveEdits, threadArchiveOverlays } from './thread-archive-edits.mjs';
+import { composerLayoutEdits, composerLayoutOverlays } from './composer-layout-edits.mjs';
+import { settingsMenuEdits, settingsMenuOverlays } from './settings-menu-edits.mjs';
 import { localThreadEdits, localThreadOverlays } from './local-thread-edits.mjs';
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
@@ -1095,6 +1097,17 @@ for (const [relative, changes] of Object.entries(sidebarLookEdits)) {
 // `t3 thread archive` (thread-archive-edits.mjs).
 overlays.push(...threadArchiveOverlays);
 for (const [relative, changes] of Object.entries(threadArchiveEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The composer's controls in v0.1.0's places (composer-layout-edits.mjs); after voice-, call- and
+// cache-edits, whose lines it moves.
+overlays.push(...composerLayoutOverlays);
+for (const [relative, changes] of Object.entries(composerLayoutEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// The settings menu in v0.1.0's groups (settings-menu-edits.mjs), after the modules that add pages.
+overlays.push(...settingsMenuOverlays);
+for (const [relative, changes] of Object.entries(settingsMenuEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Local Antigravity agents (local-agy-edits.mjs).
