@@ -4,12 +4,15 @@
 // chats do not, and T3 v0.1.11 lists the old ones as ordinary threads. They are archived,
 // not deleted, so Settings › Archive brings any of them back.
 //
-//   node harness/t3-integration/archive-old-side-chats.mjs [--dry-run]
+//   node harness/t3-integration/archive-old-side-chats.mjs                 list them
+//   node harness/t3-integration/archive-old-side-chats.mjs --expect <id,id,...>   archive them
 //        [--t3-home ~/.rubato/t3-home] [--t3 ~/.rubato/t3-source]
 //
 // The state database is only read (read-only connection) to find them; the archive goes
 // through the running server (`t3 thread archive`, thread-archive-edits.mjs), so it needs
-// the v0.1.11 app running. A second run finds nothing to do.
+// the v0.1.11 app running. It archives only the ids the person reviewed (--expect): a listed
+// side chat outside that list stops the run before anything is sent, and reviewed ids that
+// are already archived are skipped, so a second run finds nothing to do.
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import os from 'node:os';
@@ -38,6 +41,16 @@ export function listOldSideChats(databasePath) {
   }
 }
 
+/**
+ * What to archive: the listed old side chats, all of which must be in `expected` (the reviewed
+ * ids). Reviewed ids no longer listed are already archived or gone and are skipped.
+ */
+export function planArchive(found, expected) {
+  const reviewed = new Set(expected);
+  const unexpected = found.filter((thread) => !reviewed.has(thread.id)).map((thread) => thread.id);
+  return { archive: unexpected.length === 0 ? found.map((thread) => thread.id) : [], unexpected };
+}
+
 /** Archives `ids` through the running server's CLI; returns its exit status. */
 export function archiveThroughServer({ t3, t3Home, ids }) {
   const result = spawnSync(process.execPath,
@@ -48,7 +61,7 @@ export function archiveThroughServer({ t3, t3Home, ids }) {
 
 async function main() {
   const { values } = parseArgs({ options: {
-    'dry-run': { type: 'boolean', default: false },
+    expect: { type: 'string' },
     't3-home': { type: 'string', default: path.join(os.homedir(), '.rubato/t3-home') },
     t3: { type: 'string', default: path.join(os.homedir(), '.rubato/t3-source') },
   } });
@@ -57,15 +70,24 @@ async function main() {
   if (!existsSync(database)) throw new Error(`No state database at ${database}`);
   const found = listOldSideChats(database);
   for (const thread of found) console.log(`${thread.id}\t${thread.createdAt}\t${thread.title}`);
-  if (found.length === 0) { console.log('No old side chats to archive.'); return 0; }
-  if (values['dry-run']) { console.log(`${found.length} old side chat(s) would be archived.`); return 0; }
-  const status = archiveThroughServer({ t3: path.resolve(values.t3), t3Home, ids: found.map((thread) => thread.id) });
+  if (values.expect === undefined) {
+    console.log(`${found.length} old side chat(s) listed. Archive them with --expect ${found.map((thread) => thread.id).join(',') || '<ids>'}`);
+    return 0;
+  }
+  const expected = values.expect.split(',').map((id) => id.trim()).filter(Boolean);
+  const plan = planArchive(found, expected);
+  if (plan.unexpected.length > 0) {
+    console.error(`Not reviewed, nothing archived: ${plan.unexpected.join(', ')}`);
+    return 1;
+  }
+  if (plan.archive.length === 0) { console.log('No old side chats to archive.'); return 0; }
+  const status = archiveThroughServer({ t3: path.resolve(values.t3), t3Home, ids: plan.archive });
   const left = listOldSideChats(database);
   if (status !== 0 || left.length > 0) {
     console.error(`Archive incomplete: exit ${status}, ${left.length} old side chat(s) still listed.`);
     return 1;
   }
-  console.log(`Archived ${found.length} old side chat(s).`);
+  console.log(`Archived ${plan.archive.length} old side chat(s).`);
   return 0;
 }
 
