@@ -7,6 +7,8 @@ import type { EnvironmentId } from "@t3tools/contracts";
 import * as Option from "effect/Option";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
+import { subscribeUiLanguage, uiLanguage, uiText } from "../rubatoI18n";
+
 import { usePrimaryEnvironmentId } from "./environments";
 import { postRubato } from "./rubatoHttp";
 import { usePreparedConnection } from "./session";
@@ -32,7 +34,8 @@ export type CallEffort = "conversation" | "low" | "medium" | "high";
 
 export interface CompanionStatus {
   readonly id?: string;
-  readonly title?: string;
+  /** Null while the companion has no name yet (its onboarding has not got there). */
+  readonly title?: string | null;
   readonly settings: CompanionSettings;
   /** The companion's conversation, once the engine created it. */
   readonly sessionId: string | null;
@@ -44,11 +47,57 @@ export interface CompanionStatus {
   readonly calls?: boolean;
   /** The call efforts the engine accepts. */
   readonly callEfforts?: readonly CallEffort[];
+  /** What it calls the person and since when it is with them (ISO date). */
+  readonly profile?: { readonly callsUser: string | null; readonly since: string | null };
+  /** Moves when its picture changes; null when it has none. */
+  readonly avatarVersion?: number | null;
+  /** True only when a picture was set in the app (not the companion's own art). */
+  readonly pictureSet?: boolean;
+  /** Its first conversation, while it lasts: which topics are settled, open or left for later. */
+  readonly onboarding?: CompanionOnboarding | null;
+  /** Whether its profile has Telegram; the connection row shows only then. */
+  readonly telegram?: boolean;
+  /** Made from the app's list rather than by hand. */
+  readonly madeInApp?: boolean;
+}
+
+export interface CompanionOnboarding {
+  readonly items: ReadonlyArray<{ readonly key: string; readonly state: "set" | "open" | "deferred"; readonly value?: string }>;
+}
+
+/** A change the companion proposes to its own text or picture; nothing is saved before Apply. */
+export interface CompanionProposal {
+  readonly id: string;
+  readonly kind: "piece" | "avatar";
+  /** Epoch ms. */
+  readonly createdAt: number;
+  readonly status: "open" | "applied" | "declined" | "superseded" | "stale";
+  /** The companion's own words for what it changes, in the person's language. */
+  readonly label: string;
+  readonly piece?: CompanionPieceId;
+  /** The changed excerpt before and after, not the whole piece. */
+  readonly before?: string;
+  readonly after?: string;
+  readonly image?: { readonly url: string };
+}
+
+/** The two readable cards of Settings › Companion; null until the companion has written that card. */
+export interface CompanionSummaries {
+  readonly who: { readonly rows: ReadonlyArray<{ readonly key: string; readonly text: string }> } | null;
+  readonly me: { readonly rows: ReadonlyArray<{ readonly key: string; readonly text: string }> } | null;
+  readonly updatedAt: string | null;
+}
+
+export interface CompanionAvatar {
+  readonly url: string;
+  readonly version: number;
 }
 
 export interface CompanionChoice extends CompanionStatus {
   readonly id: string;
+  /** Its name, or "New companion" while it has none (`nameless`). */
   readonly title: string;
+  readonly nameless?: boolean;
   readonly threadId: string | null;
   /** Every conversation with this companion's mark, the current one too; null when the engine did not answer. */
   readonly conversations?: readonly string[] | null;
@@ -232,7 +281,10 @@ export type SegnoInnerItem =
 
 const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
   postRubato<T>(env, COMPANION_ROUTE, action,
-    action === "companions" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
+    action === "companions" || action === "create" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
+
+/** What the list and the pages call a companion that has no name yet. */
+export const NAMELESS_TITLE = "New companion";
 
 export const rubatoCompanion = {
   companions: (env: EnvironmentId | null) => call<{ companions: Array<Omit<CompanionChoice, "threadId" | "conversationThreadIds">> }>(env, "companions"),
@@ -273,6 +325,24 @@ export const rubatoCompanion = {
   /** Closes finished work in the panel for good; the conversations stay. Answers the panel after. */
   dismiss: (env: EnvironmentId | null, endings: ReadonlyArray<Pick<SegnoFinished, "sessionId" | "at">>, companionId = selectedCompanionId) =>
     call<SegnoPanel>(env, "dismiss", { companionId, endings: endings.map(({ sessionId, at }) => ({ sessionId, at })) }),
+  /** Makes and registers a new companion's home; the engine opens its first conversation within seconds. */
+  create: (env: EnvironmentId | null) => call<{ companion: { id: string; sessionId: string | null } }>(env, "create"),
+  /** The companion's picture as a data URL; null when it has none. */
+  avatar: (env: EnvironmentId | null, companionId: string) =>
+    call<{ avatar: CompanionAvatar | null }>(env, "avatar", { companionId }),
+  /** A square jpeg, png or webp data URL (at most 2 MB), or null to clear the picture set here. */
+  setAvatar: (env: EnvironmentId | null, companionId: string, image: string | null) =>
+    call<{ avatar: CompanionAvatar | null }>(env, "set-avatar", { companionId, image }),
+  /** The changes it proposed, newest last. */
+  proposals: (env: EnvironmentId | null, companionId: string) =>
+    call<{ proposals: CompanionProposal[] }>(env, "proposals", { companionId }),
+  /** Saves one proposal; the only write. 409 `stale` when its text moved, `closed` when not open. */
+  applyProposal: (env: EnvironmentId | null, companionId: string, proposalId: string) =>
+    call<{ proposal: CompanionProposal }>(env, "apply-proposal", { companionId, proposalId }),
+  declineProposal: (env: EnvironmentId | null, companionId: string, proposalId: string) =>
+    call<{ proposal: CompanionProposal }>(env, "decline-proposal", { companionId, proposalId }),
+  /** "Who it is" and "what it knows about me", in the companion's own words. */
+  summaries: (env: EnvironmentId | null, companionId: string) => call<CompanionSummaries>(env, "summaries", { companionId }),
   /** Segno's art for one expression of its space, as a data URL; `version` changes when the file is swapped. */
   art: (env: EnvironmentId | null, state: SegnoStageState = "idle", companionId = selectedCompanionId) =>
     call<{ art: { url: string; version: number } }>(env, "art", { state, companionId }),
@@ -337,10 +407,11 @@ const subscribe = (listener: () => void) => {
 export function acceptCompanionStatus(status: CompanionStatus): void {
   const id = status.id ?? selectedCompanionId;
   const companions = view.companions.map(item => item.id === id ? { ...item, ...status,
-    id: item.id, title: status.title ?? item.title,
+    id: item.id, ...(status.title === undefined ? { title: item.title, nameless: item.nameless ?? false } : titled(status)),
     threadId: item.sessionId === status.sessionId ? item.threadId : null } : item);
   publish({ ...view, companions, ...(id === selectedCompanionId ?
-    { status, threadId: status.sessionId === view.status?.sessionId ? view.threadId : null } : {}) });
+    { status: companions.find(item => item.id === id) ?? status,
+      threadId: status.sessionId === view.status?.sessionId ? view.threadId : null } : {}) });
   void refresh(lastEnvironment);
 }
 
@@ -355,6 +426,12 @@ export function selectCompanion(id: string): void {
 
 export function companionForThread(threadId: string): CompanionChoice | undefined {
   return view.companions.find(item => item.threadId === threadId);
+}
+
+/** A nameless companion (title null) shows as "New companion" wherever a name goes. */
+function titled(status: { readonly title?: string | null }): { title: string; nameless: boolean } {
+  const title = typeof status.title === "string" && status.title.trim() !== "" && status.title !== NAMELESS_TITLE ? status.title : null;
+  return { title: title ?? NAMELESS_TITLE, nameless: title === null };
 }
 
 let lastEnvironment: EnvironmentId | null = null;
@@ -387,7 +464,7 @@ function refresh(env: EnvironmentId | null): Promise<void> {
         const conversationThreadIds = Array.isArray(status.conversations)
           ? await threadsOf(env, status.conversations)
           : previous?.conversationThreadIds ?? [];
-        return { ...status, threadId, conversationThreadIds };
+        return { ...status, ...titled(status), threadId, conversationThreadIds };
       }));
       const selected = companions.find(item => item.id === selectedCompanionId) ?? companions[0];
       if (selected) selectedCompanionId = selected.id;
@@ -410,7 +487,8 @@ const SLOW_POLL_MS = 60_000;
 export function useRubatoCompanion(): CompanionView {
   const environmentId = useReadyEnvironmentId();
   const current = useSyncExternalStore(subscribe, () => view);
-  const waiting = current.companions.some(item => item.settings.enabled && item.threadId === null);
+  // A conversation on its way, or a first meeting whose chips should follow the talk, polls quickly.
+  const waiting = current.companions.some(item => item.settings.enabled && (item.threadId === null || item.onboarding != null));
   useEffect(() => {
     if (environmentId === null) return;
     lastEnvironment = environmentId;
@@ -422,6 +500,90 @@ export function useRubatoCompanion(): CompanionView {
     return () => window.clearInterval(timer);
   }, [environmentId, waiting]);
   return current;
+}
+
+/** Asks the server again now, after any refresh already under way, so the answer is fresh. */
+async function refreshNow(env: EnvironmentId): Promise<void> {
+  if (refreshing) await refreshing;
+  await refresh(env);
+}
+
+/**
+ * Makes a new companion and shows it in the list, selected. Its first conversation follows within
+ * seconds (waitForCompanionRoom).
+ */
+export async function createCompanion(env: EnvironmentId): Promise<string> {
+  lastEnvironment = env;
+  const { companion } = await rubatoCompanion.create(env);
+  await refreshNow(env);
+  selectCompanion(companion.id);
+  return companion.id;
+}
+
+/** The companion's room thread once the app shows it; null when it has not come within `timeoutMs`. */
+export async function waitForCompanionRoom(env: EnvironmentId, companionId: string, timeoutMs = 90_000, stepMs = 2_000): Promise<string | null> {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    await refreshNow(env);
+    const threadId = view.companions.find(item => item.id === companionId)?.threadId ?? null;
+    if (threadId !== null) return threadId;
+    if (Date.now() >= until) return null;
+    await new Promise(resolve => setTimeout(resolve, stepMs));
+  }
+}
+
+// Each companion's picture, fetched when its version moves; shared by the list, the rail and the room.
+const avatars = new Map<string, { readonly version: number | null | undefined; readonly url: string | null }>();
+const avatarsLoading = new Set<string>();
+const avatarListeners = new Set<() => void>();
+const publishAvatars = () => {
+  for (const listener of avatarListeners) listener();
+};
+const subscribeAvatars = (listener: () => void) => {
+  avatarListeners.add(listener);
+  return () => avatarListeners.delete(listener);
+};
+
+/**
+ * Takes the picture the settings page just set (or cleared), so every face follows at once.
+ * `pictureSet` says whether it is now a picture set in the app; omitted, the next refresh tells.
+ */
+export function acceptCompanionAvatar(companionId: string, avatar: CompanionAvatar | null, pictureSet?: boolean): void {
+  avatars.set(companionId, { version: avatar?.version ?? null, url: avatar?.url ?? null });
+  publishAvatars();
+  publish({ ...view, companions: view.companions.map(item =>
+    item.id === companionId
+      ? { ...item, avatarVersion: avatar?.version ?? null, ...(pictureSet === undefined ? {} : { pictureSet }) }
+      : item) });
+}
+
+/**
+ * The companion's picture as a data URL, or null while it has none or it has not loaded. A server
+ * that does not say `avatarVersion` is asked once per app session.
+ */
+export function useCompanionAvatar(companionId: string | null | undefined): string | null {
+  const environmentId = useReadyEnvironmentId();
+  const current = useSyncExternalStore(subscribe, () => view);
+  // Read through the store, not the map: a value read from module state during render would be
+  // memoized by the React Compiler and never see the picture arrive.
+  const cached = useSyncExternalStore(subscribeAvatars, () => (companionId ? avatars.get(companionId) : undefined));
+  const known = companionId ? current.companions.some(item => item.id === companionId) : false;
+  const wanted = companionId ? current.companions.find(item => item.id === companionId)?.avatarVersion : undefined;
+  const stale = known && wanted !== null && (cached === undefined || (wanted !== undefined && cached.version !== wanted));
+  useEffect(() => {
+    if (!companionId || environmentId === null || !stale || avatarsLoading.has(companionId)) return;
+    avatarsLoading.add(companionId);
+    rubatoCompanion.avatar(environmentId, companionId).then(
+      ({ avatar }) => avatars.set(companionId, { version: avatar?.version ?? wanted ?? null, url: avatar?.url ?? null }),
+      // Asked again only when the version moves.
+      () => avatars.set(companionId, { version: wanted, url: avatars.get(companionId)?.url ?? null }),
+    ).finally(() => {
+      avatarsLoading.delete(companionId);
+      publishAvatars();
+    });
+  }, [companionId, environmentId, stale, wanted]);
+  if (!companionId || wanted === null) return null;
+  return cached?.url ?? null;
 }
 
 /** Whether `threadId` is Segno's conversation, as far as the app knows it now. */
@@ -529,4 +691,13 @@ export function isCompanionProject(
   home: string | null | undefined,
 ): boolean {
   return home != null && findProjectByPath([project], home) !== undefined;
+}
+
+/**
+ * Interface text in the current language, for text built in code (a companion's name inside a
+ * Korean phrase). The language is an input, so a switch recomputes it.
+ */
+export function useUiText(text: string): string {
+  const language = useSyncExternalStore(subscribeUiLanguage, uiLanguage, uiLanguage);
+  return useMemo(() => (language === "ko" ? uiText(text) : text), [text, language]);
 }

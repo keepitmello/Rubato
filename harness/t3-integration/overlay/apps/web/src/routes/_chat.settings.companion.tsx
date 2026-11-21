@@ -6,7 +6,7 @@ import { SettingsPageContainer } from "../components/settings/settingsLayout";
 // Settings › Companion (companion-edits.mjs).
 function SettingsCompanionRoute() {
   return (
-    <SettingsPageContainer>
+    <SettingsPageContainer width="wide">
       <RubatoCompanionSettingsPanel />
     </SettingsPageContainer>
   );

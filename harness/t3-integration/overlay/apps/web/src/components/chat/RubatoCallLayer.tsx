@@ -4,7 +4,7 @@
 import { MicIcon, MicOffIcon, PhoneIcon, PhoneOffIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { rubatoCompanion, useReadyEnvironmentId, useRubatoCompanion } from "../../state/rubatoCompanion";
+import { useCompanionAvatar, useReadyEnvironmentId, useRubatoCompanion } from "../../state/rubatoCompanion";
 import { rubatoCallActions, useRubatoCall, useRubatoCallRinging, type CallAgentState } from "../../state/rubatoCall";
 import { callLength, spokenText } from "./rubatoCallRoom";
 import "./RubatoCall.css";
@@ -16,17 +16,6 @@ const STATE_TEXT: Record<CallAgentState, string> = {
   speaking: "Talking",
 };
 
-function useAvatar(companion: string | undefined) {
-  const env = useReadyEnvironmentId();
-  const [url, setUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!companion || env === null) return;
-    let live = true;
-    rubatoCompanion.art(env, "idle", companion).then((answer) => { if (live) setUrl(answer.art.url); }, () => undefined);
-    return () => { live = false; };
-  }, [companion, env]);
-  return url;
-}
 
 function useClock(on: boolean) {
   const [now, setNow] = useState(Date.now());
@@ -45,7 +34,8 @@ export function RubatoCallLayer() {
   useRubatoCallRinging(titleOf);
   const { ringing, current, error } = useRubatoCall();
   const shown = current?.call ?? ringing;
-  const avatar = useAvatar(shown?.companion);
+  // The companion's picture (the app-set one first, else its own art): every companion has a face here.
+  const avatar = useCompanionAvatar(shown?.companion);
   const now = useClock(current !== null);
   if (error && !shown)
     return (

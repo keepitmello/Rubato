@@ -1,31 +1,56 @@
-// Settings › Companion: turning Segno on, its heartbeat and daily report, the pieces its system
-// prompt is made of, and the Telegram messenger while the product runs one. The server half is
-// harness/t3-integration/src/companion/service.mjs over harness/companion. A saved piece reaches
-// Segno when its conversation next crosses a compaction or a new window (prompt-rules
-// role-prompt.mjs); the tools piece follows the product and only reads here.
+// Settings › Companion (intent companion-manage; mockup ~/.rubato/scratch/companion-ux/mock.html).
+// Talking is the way to change a companion; this page is its view and fallback.
+//
+//   ┌ My companions ┐ ┌ profile: picture (camera menu) · name · what it calls you · since · on · Talk ┐
+//   │ face name     │ │ ┌ Who it is ───────────┐ ┌ What it knows about me ┐                          │
+//   │ line          │ │ │ rows · Change by talking (primary) · Full text                         │
+//   │ + New         │ │ ┌ Life ────────────────┐ ┌ Connections ───────────┐                          │
+//   └───────────────┘ │ ▸ Advanced: every prompt piece, tools, resident memory, Rubato's defaults       │
+//
+// The list always shows, even with one companion; "New companion" makes one (create) and opens its
+// room once its first conversation is in the app. "Change by talking" opens the room with a short
+// draft naming the card; the companion answers with a proposal card there, and only Apply saves.
+// Advanced keeps every piece editor the page had: a saved piece reaches the companion when its
+// conversation next crosses a compaction or a new window (prompt-rules role-prompt.mjs); the tools
+// piece follows the product and only reads here.
 //
 // The Telegram part reads and writes the same files the engine's resident messenger reads
 // (harness/companion/messenger/store.mjs): a request is a file, and the answer shows up here a
-// second or two later, so this panel polls while it is open. While the product runs no Telegram
-// (store.mjs TELEGRAM_ENABLED) the server answers no status and the panel shows nothing.
-import { RotateCcwIcon } from "lucide-react";
-import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useState } from "react";
+// second or two later, so it polls while the page is open. While the product runs no Telegram
+// (store.mjs TELEGRAM_ENABLED) the server answers no status and those rows do not show; the
+// Telegram row itself shows only for a profile that has Telegram.
+import { ChevronRightIcon, MessageCircleIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
+import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
 
+import { cn } from "../../lib/utils";
+import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
 import {
   acceptCompanionStatus,
+  createCompanion,
   rubatoCompanion,
   selectCompanion,
   useReadyEnvironmentId,
   useRubatoCompanion,
+  useUiText,
+  waitForCompanionRoom,
+  type CallEffort,
+  type CompanionChoice,
   type CompanionPiece,
   type CompanionPieceId,
   type CompanionSettingsPatch,
-  type CallEffort,
+  type CompanionSummaries,
   type TelegramHeldMessage,
   type TelegramStatus,
 } from "../../state/rubatoCompanion";
+import {
+  companionDraft,
+  companionLine,
+  companionListLine,
+  sinceLine,
+  type CompanionDraft,
+} from "../../state/rubatoCompanionModel";
+import { RubatoCompanionFace, useOpenCompanionRoom } from "../chat/RubatoCompanionFace";
 import { Badge } from "../ui/badge";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
@@ -34,8 +59,8 @@ import { Spinner } from "../ui/spinner";
 import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
+import { RubatoCompanionPicture } from "./RubatoCompanionPicture";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
-
 
 function reportError(title: string, error: unknown) {
   toastManager.add({
@@ -57,6 +82,16 @@ const CALL_EFFORT_LABELS: Record<CallEffort, string> = {
   medium: "Medium",
   high: "High",
 };
+
+/** The summary cards' row names (contract `summaries` keys); the text in them is the companion's. */
+const WHO_ROWS: Record<string, string> = { line: "In a line", nature: "Nature", speech: "Speech", bond: "Between us" };
+const ME_ROWS: Record<string, string> = { work: "What I do", now: "Right now", talk: "How to talk to me", trust: "Trusted with" };
+
+/** The interface language, following a switch. */
+function useLanguage(): "en" | "ko" {
+  return useSyncExternalStore(subscribeUiLanguage, uiLanguage, uiLanguage) === "ko" ? "ko" : "en";
+}
+
 
 interface DiffRow {
   readonly kind: "same" | "removed" | "added";
@@ -156,14 +191,17 @@ function PieceCompare({ piece }: { piece: CompanionPiece }) {
 function PieceEditor({
   piece,
   busy,
+  initiallyOpen = false,
   onSave,
 }: {
   piece: CompanionPiece;
   busy: boolean;
+  /** "Full text" on a summary card opens its piece here. */
+  initiallyOpen?: boolean;
   onSave: (text: string) => Promise<void>;
 }) {
   const current = piece.personalText ?? piece.defaultText;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   // The parent keys this editor by the saved text, so a save starts a fresh draft.
   const [draft, setDraft] = useState(current);
   const changed = draft.trim() !== current.trim();
@@ -226,23 +264,213 @@ function PieceEditor({
 }
 
 
+
+// ── The list ──────────────────────────────────────────────────────────────────────────────────
+
+function CompanionList({ companions, selectedId }: { companions: readonly CompanionChoice[]; selectedId: string }) {
+  const environmentId = useReadyEnvironmentId();
+  const openRoom = useOpenCompanionRoom();
+  const [creating, setCreating] = useState(false);
+  const create = async () => {
+    if (environmentId === null || creating) return;
+    setCreating(true);
+    try {
+      const id = await createCompanion(environmentId);
+      const threadId = await waitForCompanionRoom(environmentId, id);
+      if (threadId !== null) await openRoom(threadId);
+      else
+        toastManager.add({
+          type: "info",
+          title: "It is still waking up",
+          description: "It shows in the list now; its room opens from Talk once it is awake.",
+        });
+    } catch (cause) {
+      reportError("Could not make a new companion", cause);
+    }
+    setCreating(false);
+  };
+  return (
+    <nav
+      aria-label="My companions"
+      data-rubato-companion-list=""
+      className="flex w-56 shrink-0 flex-col gap-1 self-start rounded-2xl border border-border bg-card p-2.5 text-card-foreground"
+    >
+      <div className="px-2 pt-1 pb-1.5 text-muted-foreground text-xs">My companions</div>
+      {companions.map((item) => {
+        const line = companionListLine(item);
+        return (
+          <button
+            key={item.id}
+            type="button"
+            data-rubato-companion-item={item.id}
+            aria-current={item.id === selectedId ? "true" : undefined}
+            onClick={() => selectCompanion(item.id)}
+            className={cn(
+              "flex w-full cursor-pointer items-center gap-2.5 rounded-xl px-2 py-2 text-left transition-colors",
+              "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring",
+              item.id === selectedId ? "bg-accent" : "hover:bg-accent/60",
+            )}
+          >
+            <RubatoCompanionFace companion={item} className="size-9 text-sm" />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate font-semibold text-sm">{item.title}</span>
+              <span className="truncate text-muted-foreground text-xs">
+                {line.map((part, index) => (
+                  <span key={part}>
+                    {index > 0 ? " · " : null}
+                    <span>{part}</span>
+                  </span>
+                ))}
+              </span>
+            </span>
+          </button>
+        );
+      })}
+      <button
+        type="button"
+        data-rubato-companion-new=""
+        disabled={creating || environmentId === null}
+        onClick={() => void create()}
+        className={cn(
+          "mt-2 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-2 py-2.5 font-medium text-primary text-sm",
+          "hover:bg-accent/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70",
+        )}
+      >
+        {creating ? <Spinner className="size-3.5" /> : <PlusIcon aria-hidden="true" className="size-4" />}
+        <span>{creating ? "Waking it up…" : "New companion"}</span>
+      </button>
+    </nav>
+  );
+}
+
+// ── Cards ─────────────────────────────────────────────────────────────────────────────────────
+
+function Card({ id, title, children, className }: { id?: string; title: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <section id={id} className={cn("flex min-w-0 flex-col rounded-2xl border border-border bg-card px-4 py-3.5 text-card-foreground", className)}>
+      <h3 className="mb-1.5 font-semibold text-[0.95rem]">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function CardRow({ id, title, description, control }: { id?: string; title: ReactNode; description?: ReactNode; control?: ReactNode }) {
+  return (
+    <div id={id} className="flex items-center justify-between gap-3 border-border border-t py-2 first-of-type:border-t-0">
+      <div className="flex min-w-0 flex-col">
+        <span className="text-sm">{title}</span>
+        {description ? <span className="text-muted-foreground text-xs">{description}</span> : null}
+      </div>
+      {control ? <div className="flex shrink-0 items-center gap-2">{control}</div> : null}
+    </div>
+  );
+}
+
+/** "Who it is" or "What it knows about me", in the companion's own words. */
+function SummaryCard({
+  id,
+  title,
+  card,
+  labels,
+  loaded,
+  waitingText,
+  onTalk,
+  onSumUp,
+  onFullText,
+  canTalk,
+}: {
+  id: string;
+  title: string;
+  card: CompanionSummaries["who"] | undefined;
+  labels: Record<string, string>;
+  loaded: boolean;
+  waitingText: string;
+  onTalk: () => void;
+  onSumUp: () => void;
+  onFullText: () => void;
+  canTalk: boolean;
+}) {
+  return (
+    <Card id={id} title={<span translate="no">{title}</span>}>
+      {!loaded ? (
+        <div className="py-3">
+          <Spinner className="size-4" />
+        </div>
+      ) : card && card.rows.length > 0 ? (
+        <dl className="flex flex-col">
+          {card.rows.map((row) => (
+            <div key={row.key} className="flex gap-3 border-border border-t py-1.5 text-sm first:border-t-0">
+              <dt className="w-20 shrink-0 text-muted-foreground">{labels[row.key] ?? row.key}</dt>
+              <dd className="min-w-0 flex-1" translate="no">
+                {row.text}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="py-1.5 text-muted-foreground text-sm">{waitingText}</p>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        {loaded && !card ? (
+          <Button size="sm" disabled={!canTalk} onClick={onSumUp}>
+            <MessageCircleIcon aria-hidden="true" className="size-3.5" />
+            Ask it to sum up
+          </Button>
+        ) : (
+          <Button size="sm" disabled={!canTalk} onClick={onTalk}>
+            <MessageCircleIcon aria-hidden="true" className="size-3.5" />
+            Change by talking
+          </Button>
+        )}
+        <Button size="sm" variant="ghost" onClick={onFullText}>
+          Full text
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/** The two cards' text; read once per visit and again every half minute while the page shows. */
+function useSummaries(environmentId: EnvironmentId | null, companionId: string) {
+  const [summaries, setSummaries] = useState<CompanionSummaries | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (environmentId === null) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const next = await rubatoCompanion.summaries(environmentId, companionId);
+        if (alive) setSummaries(next);
+      } catch {
+        // A server without summaries shows the cards as not written yet.
+      }
+      if (alive) setLoaded(true);
+    };
+    void load();
+    const timer = window.setInterval(() => void load(), 30_000);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+    };
+  }, [environmentId, companionId]);
+  return { summaries, loaded };
+}
+
+// ── Connections ───────────────────────────────────────────────────────────────────────────────
+
 const HELD_KIND = (message: TelegramHeldMessage): string =>
   message.target?.name ?? message.target?.chatId ?? "you";
 
-function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null }) {
-  const title = useRubatoCompanion().status?.title ?? "Segno";
+/** The messenger's state for this companion, polled while the page is open; null while the product runs none. */
+function useTelegram(environmentId: EnvironmentId | null) {
   const [telegram, setTelegram] = useState<TelegramStatus | null>(null);
-  const [token, setToken] = useState("");
-  const [voiceKey, setVoiceKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [off, setOff] = useState(false);
-
   const apply = useCallback((next: { telegram: TelegramStatus }) => {
     setTelegram(next.telegram);
     setError(null);
   }, []);
-
   useEffect(() => {
     if (environmentId === null) return;
     let alive = true;
@@ -268,165 +496,217 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
       window.clearInterval(timer);
     };
   }, [environmentId, apply]);
-
   const run = async (work: () => Promise<{ telegram: TelegramStatus }>) => {
     setBusy(true);
     try {
       apply(await work());
     } catch (cause) {
       reportError("Could not change the Telegram connection", cause);
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
+  return { telegram, busy, error, off, run };
+}
 
-  const made = telegram?.bot.token != null;
-  const paired = telegram?.pairing.status === "paired";
-  const waiting = telegram?.pairing.status === "pending";
-  const state = !made ? (
-    <Badge variant="outline">No bot yet</Badge>
-  ) : paired ? (
-    <Badge variant="success">Connected</Badge>
-  ) : waiting ? (
-    <Badge variant="outline">Waiting for the code</Badge>
-  ) : (
-    <Badge variant="outline">Not paired</Badge>
-  );
-
-  if (off) return null;
+function TelegramDetails({
+  environmentId,
+  title,
+  botName,
+  telegram,
+  busy,
+  run,
+}: {
+  environmentId: EnvironmentId | null;
+  /** The name as the page shows it. */
+  title: string;
+  /** The companion's own name, which its new bot takes. */
+  botName: string;
+  telegram: TelegramStatus;
+  busy: boolean;
+  run: (work: () => Promise<{ telegram: TelegramStatus }>) => Promise<void>;
+}) {
+  const [token, setToken] = useState("");
+  const made = telegram.bot.token != null;
+  const paired = telegram.pairing.status === "paired";
+  const waiting = telegram.pairing.status === "pending";
   return (
-    <SettingsSection id="rubato-companion-telegram" title="Telegram">
-      {error ? <SettingsRow title="Could not read the Telegram connection" description={error} /> : null}
-      {telegram === null && !error ? (
-        <SettingsRow title="Reading the Telegram connection" control={<Spinner className="size-4" />} />
-      ) : null}
-      {telegram ? (
-        <>
-          <SettingsRow
-            id="rubato-companion-telegram-enabled"
-            title="Telegram"
-            description={`Talk to ${title} from your own Telegram chat. Anything ${title} writes to someone else waits here for you.`}
-            status={state}
-            control={
-              <Switch
-                aria-label="Telegram"
-                checked={telegram.settings.enabled}
-                disabled={busy}
-                onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { enabled: next }))}
-              />
-            }
+    <div data-rubato-companion-telegram="" className="mt-1 mb-2 flex flex-col rounded-xl border border-border px-3 py-1">
+      <CardRow
+        id="rubato-companion-telegram-enabled"
+        title="Telegram"
+        description={`Talk to ${title} from your own Telegram chat. Anything ${title} writes to someone else waits here for you.`}
+        control={
+          <Switch
+            aria-label="Telegram"
+            checked={telegram.settings.enabled}
+            disabled={busy}
+            onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { enabled: next }))}
           />
-          {!made ? (
-            <>
-              <SettingsRow
-                id="rubato-companion-telegram-token"
-                title="Paste the token @BotFather gave you"
-                description="In Telegram, open @BotFather, send /newbot, answer its two questions, and paste the token it sends back here."
-                control={
-                  <span className="flex items-center gap-2">
-                    <Input
-                      aria-label="Telegram bot token"
-                      className="h-8 w-64"
-                      placeholder="123456789:AA…"
-                      value={token}
-                      disabled={busy}
-                      onChange={(event) => setToken(event.target.value)}
-                    />
-                    <Button size="sm" disabled={busy || token.trim() === ""}
-                      onClick={() => void run(() => rubatoCompanion.setTelegramToken(environmentId, token.trim()))}>
-                      {busy ? <Spinner className="size-3.5" /> : null}
-                      Save
-                    </Button>
-                  </span>
-                }
-              />
-              {telegram.botCreation?.available ? (
-                <SettingsRow
-                  id="rubato-companion-telegram-create"
-                  title="Or let Rubato make it"
-                  description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
-                  control={
-                    <Button size="sm" variant="outline" disabled={busy}
-                      onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, title))}>
-                      {busy ? <Spinner className="size-3.5" /> : null}
-                      Create the bot
-                    </Button>
-                  }
-                />
-              ) : null}
-            </>
-          ) : (
-            <SettingsRow
-              id="rubato-companion-telegram-bot"
-              title={telegram.bot.name ?? `${title}'s bot`}
-              description={telegram.bot.username ? `@${telegram.bot.username}` : `The bot Rubato made for ${title}.`}
-              status={telegram.bot.token ? <Badge variant="outline">{telegram.bot.token}</Badge> : null}
+        }
+      />
+      {!made ? (
+        <>
+          <CardRow
+            id="rubato-companion-telegram-token"
+            title="Paste the token @BotFather gave you"
+            description="In Telegram, open @BotFather, send /newbot, answer its two questions, and paste the token it sends back here."
+          />
+          <div className="flex items-center gap-2 pb-2">
+            <Input
+              aria-label="Telegram bot token"
+              className="h-8 flex-1"
+              placeholder="123456789:AA…"
+              value={token}
+              disabled={busy}
+              onChange={(event) => setToken(event.target.value)}
             />
-          )}
-          {telegram.handoff.error ? (
-            <SettingsRow id="rubato-companion-telegram-error" title="The last Telegram request failed" description={telegram.handoff.error} />
-          ) : null}
-          {made && !paired ? (
-            <SettingsRow
-              id="rubato-companion-telegram-pair"
-              title="Pair your chat"
-              description="Only the chat that sends this code becomes yours; nothing else counts as you."
-              status={waiting && telegram.pairing.code ? <Badge variant="outline">{telegram.pairing.code}</Badge> : null}
-              control={
-                <Button size="sm" disabled={busy} onClick={() => void run(() => rubatoCompanion.pairTelegram(environmentId))}>
-                  {waiting ? "New code" : "Pair"}
-                </Button>
-              }
-            >
-              {waiting ? (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Open the bot in Telegram and send it this code. Send it before the code is replaced.
-                </p>
-              ) : null}
-            </SettingsRow>
-          ) : null}
-          {paired ? (
-            <SettingsRow
-              id="rubato-companion-telegram-chat"
-              title="Your chat"
-              description={telegram.pairing.chat?.name ?? telegram.pairing.chat?.chatId ?? ""}
+            <Button size="sm" disabled={busy || token.trim() === ""}
+              onClick={() => void run(() => rubatoCompanion.setTelegramToken(environmentId, token.trim()))}>
+              {busy ? <Spinner className="size-3.5" /> : null}
+              Save
+            </Button>
+          </div>
+          {telegram.botCreation?.available ? (
+            <CardRow
+              id="rubato-companion-telegram-create"
+              title="Or let Rubato make it"
+              description="Rubato asks @BotFather from your own Telegram account and keeps the token. Nothing for you to do in Telegram."
               control={
                 <Button size="sm" variant="outline" disabled={busy}
-                  onClick={() => void run(() => rubatoCompanion.unpairTelegram(environmentId))}>
-                  Unpair
+                  onClick={() => void run(() => rubatoCompanion.createTelegramBot(environmentId, botName))}>
+                  {busy ? <Spinner className="size-3.5" /> : null}
+                  Create the bot
                 </Button>
               }
             />
           ) : null}
-          <SettingsRow
-            id="rubato-companion-telegram-approval"
-            title="Hold messages to others"
-            description={`Anything ${title} writes to someone other than you waits here, and in your Telegram chat, until you approve it.`}
+        </>
+      ) : (
+        <CardRow
+          id="rubato-companion-telegram-bot"
+          title={telegram.bot.name ?? `${title}'s bot`}
+          description={telegram.bot.username ? `@${telegram.bot.username}` : `The bot Rubato made for ${title}.`}
+          control={telegram.bot.token ? <Badge variant="outline">{telegram.bot.token}</Badge> : null}
+        />
+      )}
+      {telegram.handoff.error ? (
+        <CardRow id="rubato-companion-telegram-error" title="The last Telegram request failed" description={telegram.handoff.error} />
+      ) : null}
+      {made && !paired ? (
+        <CardRow
+          id="rubato-companion-telegram-pair"
+          title="Pair your chat"
+          description={
+            waiting
+              ? "Open the bot in Telegram and send it this code. Send it before the code is replaced."
+              : "Only the chat that sends this code becomes yours; nothing else counts as you."
+          }
+          control={
+            <>
+              {waiting && telegram.pairing.code ? <Badge variant="outline">{telegram.pairing.code}</Badge> : null}
+              <Button size="sm" disabled={busy} onClick={() => void run(() => rubatoCompanion.pairTelegram(environmentId))}>
+                {waiting ? "New code" : "Pair"}
+              </Button>
+            </>
+          }
+        />
+      ) : null}
+      {paired ? (
+        <CardRow
+          id="rubato-companion-telegram-chat"
+          title="Your chat"
+          description={telegram.pairing.chat?.name ?? telegram.pairing.chat?.chatId ?? ""}
+          control={
+            <Button size="sm" variant="outline" disabled={busy}
+              onClick={() => void run(() => rubatoCompanion.unpairTelegram(environmentId))}>
+              Unpair
+            </Button>
+          }
+        />
+      ) : null}
+      <CardRow
+        id="rubato-companion-telegram-approval"
+        title="Hold messages to others"
+        description={`Anything ${title} writes to someone other than you waits here, and in your Telegram chat, until you approve it.`}
+        control={
+          <Switch
+            aria-label="Hold messages to others"
+            checked={telegram.settings.approvalRequired}
+            disabled={busy}
+            onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { approvalRequired: next }))}
+          />
+        }
+      />
+    </div>
+  );
+}
+
+function telegramState(telegram: TelegramStatus): string {
+  if (telegram.bot.token == null) return "No bot yet";
+  if (telegram.pairing.status === "paired") return telegram.settings.enabled ? "Connected" : "Off";
+  if (telegram.pairing.status === "pending") return "Waiting for the code";
+  return "Not paired";
+}
+
+function ConnectionsCard({ companion, title }: { companion: CompanionChoice; title: string }) {
+  const environmentId = useReadyEnvironmentId();
+  const { telegram, busy, error, off, run } = useTelegram(environmentId);
+  const [telegramOpen, setTelegramOpen] = useState(false);
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceKey, setVoiceKey] = useState("");
+  const showTelegram = companion.telegram === true && telegram !== null;
+  const showVoice = telegram !== null;
+  const waiting = telegram?.waiting ?? [];
+  return (
+    <Card id="rubato-companion-connections" title="Connections">
+      {error && !off ? <CardRow title="Could not read the Telegram connection" description={error} /> : null}
+      {showTelegram ? (
+        <>
+          <CardRow
+            id="rubato-companion-telegram"
+            title="Telegram"
+            description={telegramState(telegram)}
             control={
-              <Switch
-                aria-label="Hold messages to others"
-                checked={telegram.settings.approvalRequired}
-                disabled={busy}
-                onCheckedChange={(next) => void run(() => rubatoCompanion.saveTelegramSettings(environmentId, { approvalRequired: next }))}
-              />
+              <>
+                {waiting.length > 0 ? <Badge variant="warning">{waiting.length}</Badge> : null}
+                <Button size="xs" variant="outline" aria-expanded={telegramOpen} onClick={() => setTelegramOpen((value) => !value)}>
+                  {telegramOpen ? "Close" : telegram.bot.token == null ? "Connect" : "Manage"}
+                </Button>
+              </>
             }
           />
-          <SettingsRow
+          {telegramOpen ? (
+            <TelegramDetails environmentId={environmentId} title={title} botName={companion.title} telegram={telegram} busy={busy} run={run} />
+          ) : null}
+        </>
+      ) : null}
+      {showVoice ? (
+        <>
+          <CardRow
             id="rubato-companion-voice"
-            title={`${title}'s voice`}
-            description={`Voice replies speak in this Fish Audio voice. Ask ${title} to pick or change it.`}
-            status={<Badge variant="outline">{telegram.settings.voice?.voiceId ?? "Not chosen"}</Badge>}
-          />
-          <SettingsRow
-            id="rubato-companion-voice-key"
-            title="Fish Audio key"
-            description={`Voice replies need a Fish Audio API key. Give it to ${title}, or paste it here.`}
-            status={<Badge variant={telegram.fishKey ? "success" : "outline"}>{telegram.fishKey ?? "Not set"}</Badge>}
+            title="Its voice"
+            description={
+              <>
+                Fish Audio · <span translate={telegram.settings.voice?.voiceId ? "no" : undefined}>{telegram.settings.voice?.voiceId ?? "Not chosen"}</span>
+              </>
+            }
             control={
-              <span className="flex items-center gap-2">
+              <Button size="xs" variant="outline" aria-expanded={voiceOpen} onClick={() => setVoiceOpen((value) => !value)}>
+                {voiceOpen ? "Close" : "Change"}
+              </Button>
+            }
+          />
+          {voiceOpen ? (
+            <div data-rubato-companion-voice="" className="mb-2 flex flex-col gap-2 rounded-xl border border-border px-3 py-2">
+              <p className="text-muted-foreground text-xs">{`Voice replies speak in this Fish Audio voice. Ask ${title} to pick or change it.`}</p>
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Fish Audio key</span>
+                <Badge variant={telegram.fishKey ? "success" : "outline"}>{telegram.fishKey ?? "Not set"}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
                 <Input
                   aria-label="Fish Audio API key"
-                  className="h-8 w-64"
+                  className="h-8 flex-1"
                   value={voiceKey}
                   disabled={busy}
                   onChange={(event) => setVoiceKey(event.target.value)}
@@ -439,59 +719,80 @@ function TelegramPanel({ environmentId }: { environmentId: EnvironmentId | null 
                   })}>
                   Save
                 </Button>
-              </span>
-            }
-          />
-          {telegram.waiting.map((message) => (
-            <SettingsRow
-              key={message.id}
-              id={`rubato-companion-telegram-held-${message.id}`}
-              title={`For ${HELD_KIND(message)}`}
-              description={message.text}
-              control={
-                <span className="flex items-center gap-2">
-                  <Button size="sm" disabled={busy}
-                    onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "approve"))}>
-                    Approve
-                  </Button>
-                  <Button size="sm" variant="outline" disabled={busy}
-                    onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "reject"))}>
-                    Reject
-                  </Button>
-                </span>
-              }
-            />
-          ))}
+              </div>
+            </div>
+          ) : null}
         </>
       ) : null}
-    </SettingsSection>
+      {companion.calls ? (
+        <CardRow id="rubato-companion-calls" title="Calls" description="Takes calls on your phone" control={<Badge variant="success">On</Badge>} />
+      ) : null}
+      {!showTelegram && !showVoice && !companion.calls ? (
+        <p className="py-1.5 text-muted-foreground text-sm">Nothing connected yet.</p>
+      ) : null}
+      {/* Messages to other people wait here until the person decides, whether or not the rows are open. */}
+      {waiting.map((message) => (
+        <CardRow
+          key={message.id}
+          id={`rubato-companion-telegram-held-${message.id}`}
+          title={`For ${HELD_KIND(message)}`}
+          description={message.text}
+          control={
+            <>
+              <Button size="xs" disabled={busy}
+                onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "approve"))}>
+                Approve
+              </Button>
+              <Button size="xs" variant="outline" disabled={busy}
+                onClick={() => void run(() => rubatoCompanion.decideTelegram(environmentId, message.id, "reject"))}>
+                Reject
+              </Button>
+            </>
+          }
+        />
+      ))}
+    </Card>
   );
 }
 
+// ── The page ──────────────────────────────────────────────────────────────────────────────────
+
 export function RubatoCompanionSettingsPanel() {
   const { companions, selectedId } = useRubatoCompanion();
-  return <>
-    {companions.length > 1 ? <SettingsSection title="Companion">
-      <SettingsRow title="Companion" control={
-        <select aria-label="Companion" value={selectedId} onChange={event => selectCompanion(event.target.value)}
-          className="rounded-md border bg-background px-3 py-2 text-sm">
-          {companions.map(item => <option key={item.id} value={item.id}>{item.title}</option>)}
-        </select>
-      } />
-    </SettingsSection> : null}
-    <CompanionSettingsBody key={selectedId} />
-  </>;
+  const selected = companions.find((item) => item.id === selectedId) ?? companions[0];
+  return (
+    <div id="rubato-companion" data-rubato-companion-page="" className="flex min-w-0 items-start gap-6">
+      <CompanionList companions={companions} selectedId={selected?.id ?? selectedId} />
+      <div className="min-w-0 flex-1">
+        {selected ? (
+          <CompanionDetail key={selected.id} companion={selected} />
+        ) : (
+          <div className="flex items-center gap-2 py-6 text-muted-foreground text-sm">
+            <Spinner className="size-4" />
+            <span>Reading the companion</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
-function CompanionSettingsBody() {
-  const navigate = useNavigate();
+function CompanionDetail({ companion }: { companion: CompanionChoice }) {
   const environmentId = useReadyEnvironmentId();
-  const { status, threadId } = useRubatoCompanion();
-  const title = status?.title ?? "Segno";
+  const language = useLanguage();
+  const openRoom = useOpenCompanionRoom();
+  // Its name as the page shows it ("New companion" in the interface's language), for phrases built here.
+  const name = useUiText(companion.title);
+  const title = companion.title;
+  const threadId = companion.threadId;
   const [pieces, setPieces] = useState<CompanionPiece[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewPending, setReviewPending] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  // "Full text" opens Advanced at the card's piece.
+  const [focusPiece, setFocusPiece] = useState<{ id: CompanionPieceId; at: number } | null>(null);
+  const { summaries, loaded } = useSummaries(environmentId, companion.id);
 
   const loadPieces = useCallback(async () => {
     if (environmentId === null) return;
@@ -512,9 +813,8 @@ function CompanionSettingsBody() {
       acceptCompanionStatus(await rubatoCompanion.saveSettings(environmentId, patch));
     } catch (cause) {
       reportError("Could not save the companion settings", cause);
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const savePiece = async (id: CompanionPieceId, text: string) => {
     setBusy(true);
@@ -522,9 +822,8 @@ function CompanionSettingsBody() {
       setPieces((await rubatoCompanion.savePiece(environmentId, id, text)).pieces);
     } catch (cause) {
       reportError("Could not save the piece", cause);
-    } finally {
-      setBusy(false);
     }
+    setBusy(false);
   };
   const reviewPersona = async () => {
     setBusy(true);
@@ -534,17 +833,16 @@ function CompanionSettingsBody() {
       setReviewPending(true);
       toastManager.add({
         type: "info",
-        title: `${title} will look at it`,
+        title: `${name} will look at it`,
         description: "It reads your file and Rubato's, then tells you what it recommends. Nothing changes until you say so.",
       });
     } catch (cause) {
-      reportError("Could not ask Segno to review", cause);
-    } finally {
-      setBusy(false);
+      reportError(`Could not ask ${name} to review`, cause);
     }
+    setBusy(false);
   };
 
-  // While a review is on its way, read the pieces again until Segno has seen the new default.
+  // While a review is on its way, read the pieces again until the companion has seen the new default.
   useEffect(() => {
     if (!reviewPending) return;
     const timer = window.setInterval(() => void loadPieces(), 3_000);
@@ -553,183 +851,214 @@ function CompanionSettingsBody() {
   useEffect(() => {
     if (reviewPending && pieces !== null && !pieces.some((piece) => piece.defaultChanged)) setReviewPending(false);
   }, [pieces, reviewPending]);
+  useEffect(() => {
+    if (focusPiece === null) return;
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById(`rubato-companion-piece-${focusPiece.id}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" }),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusPiece, pieces]);
 
-  const settings = status?.settings;
-  const enabled = settings?.enabled === true;
-  const state = !enabled ? null : threadId !== null ? (
-    <Badge variant="success">On</Badge>
-  ) : (
-    <Badge variant="outline">Starting</Badge>
-  );
+  const talk = (draft?: CompanionDraft) => void openRoom(threadId, draft === undefined ? undefined : companionDraft(draft, language));
+  const fullText = (id: CompanionPieceId) => {
+    setAdvanced(true);
+    setFocusPiece({ id, at: Date.now() });
+  };
+
+  const settings = companion.settings;
+  const enabled = settings.enabled === true;
+  const meta = [
+    companion.profile?.callsUser ? companionLine("calls-user", companion.profile.callsUser, language) : null,
+    sinceLine(companion.profile?.since, language),
+  ].filter((part): part is string => part !== null);
 
   return (
-    <>
-      <SettingsSection id="rubato-companion" title={title}>
-        {error ? <SettingsRow title="Could not read the companion" description={error} /> : null}
-        {settings === undefined && !error ? (
-          <SettingsRow title="Reading the companion" control={<Spinner className="size-4" />} />
-        ) : null}
-        {settings ? (
-          <>
-            <SettingsRow
-              id="rubato-companion-enabled"
-              title={title}
-              description="One conversation that is always on. You talk to it; it starts lead conversations for the work, follows them and tells you how they went."
-              status={state}
-              control={
+    <div data-rubato-companion-detail={companion.id} className="flex min-w-0 flex-col gap-4">
+      <header className="flex items-center gap-5">
+        <RubatoCompanionPicture companion={companion} environmentId={environmentId} onAskToDraw={() => talk("draw")} />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <h2 className="truncate font-bold text-2xl">{companion.title}</h2>
+          {meta.length > 0 ? (
+            <p className="truncate text-muted-foreground text-sm" translate="no">
+              {meta.join(" · ")}
+            </p>
+          ) : companion.onboarding ? (
+            <p className="truncate text-muted-foreground text-sm">Getting to know you</p>
+          ) : null}
+        </div>
+        <Switch
+          aria-label={`Turn ${name} on`}
+          checked={enabled}
+          disabled={busy}
+          onCheckedChange={(next) => void save({ enabled: next })}
+        />
+        <Button size="sm" variant="outline" disabled={threadId === null || environmentId === null} onClick={() => talk()}>
+          {enabled && threadId === null ? <Spinner className="size-3.5" /> : null}
+          Talk
+        </Button>
+      </header>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <SummaryCard
+          id="rubato-companion-who"
+          title={companionLine("who-title", name, language)}
+          card={summaries?.who}
+          labels={WHO_ROWS}
+          loaded={loaded}
+          waitingText="Not summed up yet."
+          canTalk={threadId !== null}
+          onTalk={() => talk("who")}
+          onSumUp={() => talk("sum-up-who")}
+          onFullText={() => fullText("soul")}
+        />
+        <SummaryCard
+          id="rubato-companion-me"
+          title={companionLine("me-title", name, language)}
+          card={summaries?.me}
+          labels={ME_ROWS}
+          loaded={loaded}
+          waitingText="Not summed up yet."
+          canTalk={threadId !== null}
+          onTalk={() => talk("me")}
+          onSumUp={() => talk("sum-up-me")}
+          onFullText={() => fullText("user")}
+        />
+
+        <Card id="rubato-companion-life" title="Life">
+          <CardRow
+            id="rubato-companion-heartbeat"
+            title="Heartbeat"
+            description="How often it wakes while on its own"
+            control={
+              <>
+                <Select
+                  value={String(settings.heartbeat.everyMinutes)}
+                  onValueChange={(next) => {
+                    if (typeof next === "string") void save({ heartbeat: { everyMinutes: Number(next) } });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-auto min-w-36" aria-label="Heartbeat interval" disabled={busy || !settings.heartbeat.enabled}>
+                    <SelectValue>{minutesLabel(settings.heartbeat.everyMinutes)}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {(companion.heartbeatMinutes ?? []).map((minutes) => (
+                      <SelectItem key={minutes} value={String(minutes)}>
+                        {minutesLabel(minutes)}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
                 <Switch
-                  aria-label={`Turn ${title} on`}
-                  checked={enabled}
+                  aria-label="Heartbeat"
+                  checked={settings.heartbeat.enabled}
                   disabled={busy}
-                  onCheckedChange={(next) => void save({ enabled: next })}
+                  onCheckedChange={(next) => void save({ heartbeat: { enabled: next } })}
                 />
+              </>
+            }
+          />
+          <CardRow
+            id="rubato-companion-greetings"
+            title="Night and morning greetings"
+            description="Its diary and good night at 00:07, the day's report at 09:07"
+            control={
+              <Switch
+                aria-label="Night and morning greetings"
+                checked={settings.greetings.enabled}
+                disabled={busy}
+                onCheckedChange={(next) => void save({ greetings: { enabled: next } })}
+              />
+            }
+          />
+          <CardRow
+            id="rubato-companion-schedule"
+            title="Keeping your schedule"
+            description={
+              settings.schedule.sources.length === 0 ? (
+                "No calendar yet. Tell it where yours is."
+              ) : (
+                <span translate="no">{settings.schedule.sources.map((source) => source.name ?? source.location).join(", ")}</span>
+              )
+            }
+          />
+          {companion.calls ? (
+            <CardRow
+              id="rubato-companion-call-effort"
+              title="Thinking level on calls"
+              description="Less thinking answers sooner"
+              control={
+                <Select
+                  value={settings.call.effort}
+                  onValueChange={(next) => {
+                    if (typeof next === "string") void save({ call: { effort: next as CallEffort } });
+                  }}
+                >
+                  <SelectTrigger size="sm" className="w-auto min-w-36" aria-label="Thinking on calls" disabled={busy}>
+                    <SelectValue>{CALL_EFFORT_LABELS[settings.call.effort]}</SelectValue>
+                  </SelectTrigger>
+                  <SelectPopup align="end" alignItemWithTrigger={false}>
+                    {(companion.callEfforts ?? (Object.keys(CALL_EFFORT_LABELS) as CallEffort[])).map((effort) => (
+                      <SelectItem key={effort} value={effort}>
+                        {CALL_EFFORT_LABELS[effort]}
+                      </SelectItem>
+                    ))}
+                  </SelectPopup>
+                </Select>
               }
             />
-            {enabled ? (
+          ) : null}
+        </Card>
+
+        <ConnectionsCard companion={companion} title={name} />
+      </div>
+
+      <section data-rubato-companion-advanced="" className="rounded-2xl border border-border">
+        <button
+          type="button"
+          aria-expanded={advanced}
+          onClick={() => setAdvanced((value) => !value)}
+          className="flex w-full cursor-pointer items-center justify-between gap-3 px-4 py-3 text-left text-muted-foreground text-sm hover:text-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <span>Advanced — how it works · tools · resident memory · opening and closing lines · Rubato&apos;s defaults</span>
+          <ChevronRightIcon aria-hidden="true" className={cn("size-4 shrink-0 transition-transform", advanced && "rotate-90")} />
+        </button>
+        {advanced ? (
+          <div className="border-border border-t px-2 pb-2">
+            <SettingsSection id="rubato-companion-prompt" title={`${name}'s prompt`}>
+              {error ? <SettingsRow title="Could not read the companion" description={error} /> : null}
+              {pieces === null && !error ? (
+                <SettingsRow title="Reading the prompt" control={<Spinner className="size-4" />} />
+              ) : null}
               <SettingsRow
-                id="rubato-companion-open"
-                title={`Talk to ${title}`}
-                description={`${title} also has its own button on the left rail.`}
+                id="rubato-companion-review"
+                title="Rubato's defaults"
+                description={`When Rubato changes who ${name} is by default, ${name} compares it with your own file and tells you what it recommends. Nothing is merged without you.`}
+                status={
+                  pieces?.some((piece) => piece.defaultChanged) ? (
+                    <Badge variant="warning">Default update available</Badge>
+                  ) : reviewPending ? (
+                    <Badge variant="outline">Reviewing</Badge>
+                  ) : null
+                }
                 control={
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={threadId === null || environmentId === null}
-                    onClick={() => {
-                      if (threadId === null || environmentId === null) return;
-                      void navigate({
-                        to: "/$environmentId/$threadId",
-                        params: { environmentId, threadId },
-                      });
-                    }}
-                  >
-                    Open
+                  <Button size="sm" variant="outline" disabled={busy || pieces === null} onClick={() => void reviewPersona()}>
+                    {`Have ${name} review it`}
                   </Button>
                 }
               />
-            ) : null}
-            <SettingsRow
-              id="rubato-companion-heartbeat"
-              title="Heartbeat"
-              description={`${title} looks over the work it follows on a schedule and only writes when something needs you.`}
-              control={
-                <span className="flex items-center gap-2">
-                  <Select
-                    value={String(settings.heartbeat.everyMinutes)}
-                    onValueChange={(next) => {
-                      if (typeof next === "string")
-                        void save({ heartbeat: { everyMinutes: Number(next) } });
-                    }}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="w-40"
-                      aria-label="Heartbeat interval"
-                      disabled={busy || !settings.heartbeat.enabled}
-                    >
-                      <SelectValue>{minutesLabel(settings.heartbeat.everyMinutes)}</SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup align="end" alignItemWithTrigger={false}>
-                      {(status?.heartbeatMinutes ?? []).map((minutes) => (
-                        <SelectItem key={minutes} value={String(minutes)}>
-                          {minutesLabel(minutes)}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                  <Switch
-                    aria-label="Heartbeat"
-                    checked={settings.heartbeat.enabled}
-                    disabled={busy}
-                    onCheckedChange={(next) => void save({ heartbeat: { enabled: next } })}
-                  />
-                </span>
-              }
-            />
-            <SettingsRow
-              id="rubato-companion-greetings"
-              title="Night and morning greetings"
-              description={`At 00:07 ${title} writes the day's diary and says good night; at 09:07 it says good morning with the day's report: what came in, what finished, what is still running and what waits for you.`}
-              control={
-                <Switch
-                  aria-label="Night and morning greetings"
-                  checked={settings.greetings.enabled}
-                  disabled={busy}
-                  onCheckedChange={(next) => void save({ greetings: { enabled: next } })}
+              {pieces?.map((piece) => (
+                <PieceEditor
+                  key={`${piece.id}:${piece.personalText ?? ""}:${focusPiece?.id === piece.id ? focusPiece.at : 0}`}
+                  piece={piece}
+                  busy={busy}
+                  initiallyOpen={focusPiece?.id === piece.id}
+                  onSave={(text) => savePiece(piece.id, text)}
                 />
-              }
-            />
-            {status?.calls ? (
-              <SettingsRow
-                id="rubato-companion-call-effort"
-                title="Thinking on calls"
-                description={`How much ${title} thinks before each answer while you are on a call. Less thinking answers sooner, and the usual level comes back when the call ends.`}
-                control={
-                  <Select
-                    value={settings.call.effort}
-                    onValueChange={(next) => {
-                      if (typeof next === "string") void save({ call: { effort: next as CallEffort } });
-                    }}
-                  >
-                    <SelectTrigger size="sm" className="w-40" aria-label="Thinking on calls" disabled={busy}>
-                      <SelectValue>{CALL_EFFORT_LABELS[settings.call.effort]}</SelectValue>
-                    </SelectTrigger>
-                    <SelectPopup align="end" alignItemWithTrigger={false}>
-                      {(status.callEfforts ?? (Object.keys(CALL_EFFORT_LABELS) as CallEffort[])).map((effort) => (
-                        <SelectItem key={effort} value={effort}>
-                          {CALL_EFFORT_LABELS[effort]}
-                        </SelectItem>
-                      ))}
-                    </SelectPopup>
-                  </Select>
-                }
-              />
-            ) : null}
-            <SettingsRow
-              id="rubato-companion-schedule"
-              title="Schedule"
-              description={
-                settings.schedule.sources.length === 0
-                  ? `No calendar or schedule file yet. Tell ${title} where yours is (a calendar's ICS address, an .ics file or a schedule file) and it sets it here; it nudges you 3 hours and 1 hour before a timed item and at 22:00 about tomorrow.`
-                  : `${title} reads ${settings.schedule.sources
-                      .map((source) => source.name ?? source.location)
-                      .join(", ")}. Tell ${title} to add or remove one.`
-              }
-            />
-          </>
+              ))}
+            </SettingsSection>
+          </div>
         ) : null}
-      </SettingsSection>
-      <TelegramPanel environmentId={environmentId} />
-      <SettingsSection id="rubato-companion-prompt" title={`${title}'s prompt`}>
-        {pieces === null && !error ? (
-          <SettingsRow title="Reading the prompt" control={<Spinner className="size-4" />} />
-        ) : null}
-        <SettingsRow
-          id="rubato-companion-review"
-          title="Rubato's defaults"
-          description={`When Rubato changes who ${title} is by default, ${title} compares it with your own file and tells you what it recommends. Nothing is merged without you.`}
-          status={
-            pieces?.some((piece) => piece.defaultChanged) ? (
-              <Badge variant="warning">Default update available</Badge>
-            ) : reviewPending ? (
-              <Badge variant="outline">Reviewing</Badge>
-            ) : null
-          }
-          control={
-            <Button size="sm" variant="outline" disabled={busy || pieces === null} onClick={() => void reviewPersona()}>
-              Have {title} review it
-            </Button>
-          }
-        />
-        {pieces?.map((piece) => (
-          <PieceEditor
-            key={`${piece.id}:${piece.personalText ?? ""}`}
-            piece={piece}
-            busy={busy}
-            onSave={(text) => savePiece(piece.id, text)}
-          />
-        ))}
-      </SettingsSection>
-    </>
+      </section>
+    </div>
   );
 }

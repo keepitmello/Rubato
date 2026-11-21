@@ -163,9 +163,10 @@ export function createCompanionService(options = {}) {
           const about = await own.handle('about', { createdAt: profile.createdAt });
           return {
             ...status, id: profile.id,
-            // Nameless while its first meeting has not named it; the apps show their own words then.
-            title: about.onboarding && !about.named ? null : profile.title,
-            profile: about.profile, onboarding: about.onboarding, avatarVersion: about.avatarVersion,
+            // The name its first meeting gave it, as soon as it is said; null while it has none (the apps
+            // show their own words then). Registered companions keep their registry title.
+            title: about.name ?? (profile.madeInApp ? null : profile.title),
+            profile: about.profile, onboarding: about.onboarding, avatarVersion: about.avatarVersion, pictureSet: about.pictureSet,
             telegram: profile.telegram === true, madeInApp: profile.madeInApp === true,
             conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
           };
@@ -265,8 +266,8 @@ export function createCompanionService(options = {}) {
         const profile = companion.readProfile(env);
         const picture = companion.avatarFile(env);
         return { profile: manage.profileView(profile, { createdAt: input.createdAt, home: companion.companionPaths(env).home }),
-          onboarding: manage.onboardingView(profile), named: Boolean(profile.facts.name),
-          avatarVersion: picture ? (await stat(picture)).mtimeMs : null };
+          onboarding: manage.onboardingView(profile), name: profile.facts.name ?? null,
+          avatarVersion: picture ? (await stat(picture)).mtimeMs : null, pictureSet: Boolean(companion.pictureFile(env)) };
       }
       // The picture from the profile on either device, already cropped square by the client; null clears it.
       case 'set-avatar':

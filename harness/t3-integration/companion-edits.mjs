@@ -16,8 +16,19 @@ export const companionOverlays = [
   'apps/server/src/RubatoCompanionModel.ts',
   'apps/web/src/state/rubatoCompanion.ts',
   'apps/web/src/state/rubatoCompanion.test.tsx',
+  // What the companion pages draw, without React: word diff, crop, list line, chips, drafts.
+  'apps/web/src/state/rubatoCompanionModel.ts',
+  'apps/web/src/state/rubatoCompanionModel.test.ts',
   'apps/web/src/hooks/rubatoCompanionProjectBoundary.test.ts',
   'apps/web/src/components/settings/RubatoCompanionSettings.tsx',
+  // The profile picture: camera menu, round crop, pictures from the conversation (intent companion-manage).
+  'apps/web/src/components/settings/RubatoCompanionPicture.tsx',
+  // A companion's face wherever one is drawn, and the one way the pages open its room with a draft.
+  'apps/web/src/components/chat/RubatoCompanionFace.tsx',
+  // Proposal cards and onboarding chips in the room.
+  'apps/web/src/components/chat/RubatoCompanionProposals.tsx',
+  'apps/web/src/components/chat/RubatoCompanionProposals.test.tsx',
+  'apps/web/src/components/settings/RubatoCompanionSettings.test.tsx',
   'apps/web/src/components/sidebar/RubatoSegnoIcon.tsx',
   'apps/web/src/routes/_chat.settings.companion.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
@@ -355,6 +366,14 @@ export const companionEdits = {
   'apps/web/src/components/chat/ChatHeader.tsx': [
     ['        {activeProject ? (\n', '        {activeProject && !isCompanionThread(activeThreadId) ? (\n', 'replace'],
     ['import { cn } from "~/lib/utils";\n', 'import { isCompanionThread } from "../../state/rubatoCompanion";\n'],
+    // The companion's face before its name; it opens the companion's page, where the picture changes.
+    ['        {parentThreadLink ? (\n',
+      '        {isCompanionThread(activeThreadId) ? (\n'
+        + '          <WorkspaceBreadcrumbItem className="shrink-0">\n'
+        + '            <RubatoCompanionHeaderFace threadId={activeThreadId} />\n'
+        + '          </WorkspaceBreadcrumbItem>\n'
+        + '        ) : null}\n'],
+    ['import { cn } from "~/lib/utils";\n', 'import { RubatoCompanionHeaderFace } from "./RubatoCompanionFace";\n'],
   ],
   // The thread list every sidebar section is laid out from.
   'apps/web/src/components/Sidebar.tsx': [

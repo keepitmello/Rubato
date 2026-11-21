@@ -583,3 +583,109 @@
   color: var(--muted-foreground);
   overflow-wrap: anywhere;
 }
+
+/* ---- What the companion proposes (RubatoCompanionProposals.tsx) ---- */
+/* A card in Segno's column, as wide as a long bubble: its own words for the change, the excerpt with
+   what goes struck and what comes marked, then Apply and More. */
+[data-rubato-segno-row][data-rubato-proposal-row] {
+  margin-top: 0.7rem;
+}
+[data-rubato-proposal] {
+  width: min(85%, 34rem);
+  padding: 0.65rem 0.8rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: var(--card);
+  color: var(--card-foreground);
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+[data-rubato-proposal-label] {
+  margin-bottom: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted-foreground);
+}
+[data-rubato-proposal-removed] {
+  padding: 0 0.15rem;
+  border-radius: 0.2rem;
+  background: color-mix(in oklab, var(--destructive) 16%, transparent);
+  color: color-mix(in oklab, var(--destructive) 85%, var(--foreground));
+  text-decoration: line-through;
+}
+[data-rubato-proposal-added] {
+  padding: 0 0.15rem;
+  border-radius: 0.2rem;
+  background: color-mix(in oklab, var(--success, #3fb68b) 18%, transparent);
+  color: color-mix(in oklab, var(--success, #3fb68b) 70%, var(--foreground));
+  text-decoration: none;
+}
+[data-rubato-proposal-image] {
+  display: block;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 9999px;
+  object-fit: cover;
+  object-position: top;
+  border: 1px solid var(--border);
+}
+[data-rubato-proposal-actions] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+[data-rubato-proposal-stale] > span {
+  font-size: 0.78rem;
+  color: var(--muted-foreground);
+}
+[data-rubato-proposal-done] {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+[data-rubato-proposal][data-status="declined"],
+[data-rubato-proposal][data-status="applied"] {
+  opacity: 0.8;
+}
+
+/* ---- A new companion's onboarding chips, at the top of its room ---- */
+[data-rubato-companion-onboarding] {
+  top: 3.25rem;
+}
+[data-rubato-companion-onboarding] ul {
+  justify-content: flex-start;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: color-mix(in oklab, var(--background) 88%, transparent);
+  backdrop-filter: blur(12px);
+}
+[data-rubato-onboarding-chip] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.1rem 0.55rem;
+  border-radius: 9999px;
+  background: var(--muted);
+  color: var(--muted-foreground);
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+[data-rubato-onboarding-chip][data-required]:not([data-state="set"]) {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent);
+}
+[data-rubato-onboarding-chip][data-state="set"] {
+  background: color-mix(in oklab, var(--success, #3fb68b) 18%, transparent);
+  color: color-mix(in oklab, var(--success, #3fb68b) 75%, var(--foreground));
+}
+[data-rubato-onboarding-chip][data-state="deferred"] {
+  opacity: 0.75;
+}
+[data-rubato-onboarding-chip] small {
+  font-size: 0.65rem;
+  opacity: 0.85;
+}

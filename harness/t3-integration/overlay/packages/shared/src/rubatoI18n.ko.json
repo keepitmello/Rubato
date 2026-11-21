@@ -4730,7 +4730,70 @@
   "Back to the default": "기본값으로 되돌리기",
   "Could not change thinking effort": "추론 수준을 바꿀 수 없습니다",
   "This conversation only": "이 대화에만 적용",
-  "Change default": "기본값 바꾸기"
+  "Change default": "기본값 바꾸기",
+  "Getting to know you": "알아 가는 중",
+  "What it calls you": "호칭",
+  "Your work": "하는 일",
+  "Your relationship": "우리 사이",
+  "Look": "모습",
+  "Speech": "말투",
+  "Closeness": "친밀감",
+  "Apply": "적용",
+  "Change more": "더 고쳐줘",
+  "Ask again": "다시 부탁하기",
+  "Proposed change": "고칠 제안",
+  "Could not apply the change": "적용하지 못했습니다",
+  "Getting to know each other": "서로 알아 가는 중",
+  "The text changed since this was written.": "그새 글이 바뀌었습니다.",
+  "Crop the picture": "사진 자르기",
+  "Drag to move the picture": "끌어서 사진 옮기기",
+  "Use this picture": "이 사진 쓰기",
+  "Could not change the picture": "사진을 바꾸지 못했습니다",
+  "Pick a picture from the conversation": "대화에 온 사진에서 고르기",
+  "No pictures in the conversation yet.": "대화에 온 사진이 아직 없습니다.",
+  "Upload a photo": "사진 올리기",
+  "Pick from the conversation": "대화에 온 사진에서 고르기",
+  "Change the picture": "사진 바꾸기",
+  "Could not open the picture": "사진을 열지 못했습니다",
+  "This picture could not be opened. Try a JPEG, PNG or WebP.": "이 사진은 열 수 없습니다. JPEG, PNG, WebP로 해 보세요.",
+  "The picture is still over 2 MB after compressing it.": "줄여도 2MB가 넘습니다.",
+  "This window cannot draw pictures.": "이 창에서는 그림을 그릴 수 없습니다.",
+  "My companions": "내 컴패니언",
+  "New companion": "새 컴패니언",
+  "Waking it up…": "깨우는 중…",
+  "It is still waking up": "아직 깨어나는 중입니다",
+  "It shows in the list now; its room opens from Talk once it is awake.": "목록에는 벌써 있습니다. 깨어나면 대화하기로 방이 열립니다.",
+  "Could not make a new companion": "새 컴패니언을 만들지 못했습니다",
+  "In a line": "한 줄",
+  "Nature": "성격",
+  "What I do": "하는 일",
+  "Right now": "지금",
+  "How to talk to me": "말하는 법",
+  "Trusted with": "맡긴 일",
+  "Ask it to sum up": "정리해 달라기",
+  "Change by talking": "대화로 고치기",
+  "Full text": "전체 글 보기",
+  "Not summed up yet.": "아직 정리 전입니다.",
+  "Its voice": "목소리",
+  "Not chosen": "고르기 전",
+  "Change": "바꾸기",
+  "Calls": "통화",
+  "Takes calls on your phone": "폰으로 전화 받기",
+  "Nothing connected yet.": "아직 연결된 게 없습니다.",
+  "Manage": "관리",
+  "Life": "생활",
+  "How often it wakes while on its own": "혼자 있을 때 깨어나는 간격",
+  "Night and morning greetings": "밤·아침 인사",
+  "Its diary and good night at 00:07, the day's report at 09:07": "00:07에 일기와 밤 인사, 09:07에 하루 보고",
+  "Keeping your schedule": "일정 챙기기",
+  "No calendar yet. Tell it where yours is.": "연결된 달력이 없습니다. 어디 있는지 말해 주세요.",
+  "Thinking level on calls": "통화할 때 생각 수준",
+  "Less thinking answers sooner": "덜 생각할수록 빨리 대답합니다",
+  "Talk": "대화하기",
+  "Fish Audio key": "Fish Audio 키",
+  "Fish Audio API key": "Fish Audio API 키",
+  "Hold messages to others": "다른 사람에게 가는 말 붙잡아 두기",
+  "Advanced — how it works · tools · resident memory · opening and closing lines · Rubato's defaults": "고급 — 일하는 방식 · 도구 · 늘 들고 있는 기억 · 시작과 끝맺음 글 · 루바토 기본값 비교"
  },
  "templates": [
   [
@@ -8500,6 +8563,62 @@
   [
    "Back to the default for {0}",
    "{0} 기본값으로 되돌리기"
+  ],
+  [
+   "Turn {0} on",
+   "{0} 켜기"
+  ],
+  [
+   "Have {0} review it",
+   "{0}한테 검토 맡기기"
+  ],
+  [
+   "{0}'s prompt",
+   "{0} 프롬프트"
+  ],
+  [
+   "{0} will look at it",
+   "{0}한테 맡겼습니다"
+  ],
+  [
+   "Could not ask {0} to review",
+   "{0}한테 검토를 맡기지 못했습니다"
+  ],
+  [
+   "Ask {0} to draw one",
+   "{0}한테 그려 달라기"
+  ],
+  [
+   "{0}'s profile",
+   "{0} 프로필"
+  ],
+  [
+   "For {0}",
+   "받는 사람: {0}"
+  ],
+  [
+   "{0}'s bot",
+   "{0} 봇"
+  ],
+  [
+   "The bot Rubato made for {0}.",
+   "루바토가 {0} 몫으로 만든 봇입니다."
+  ],
+  [
+   "Talk to {0} from your own Telegram chat. Anything {0} writes to someone else waits here for you.",
+   "내 텔레그램 대화에서 {0}한테 말을 겁니다. {0}한테서 다른 사람에게 가는 말은 여기서 기다립니다."
+  ],
+  [
+   "Anything {0} writes to someone other than you waits here, and in your Telegram chat, until you approve it.",
+   "{0}한테서 다른 사람에게 가는 말은 승인할 때까지 여기와 내 텔레그램 대화에서 기다립니다."
+  ],
+  [
+   "Voice replies speak in this Fish Audio voice. Ask {0} to pick or change it.",
+   "음성 답장은 이 Fish Audio 목소리로 나갑니다. 고르거나 바꾸는 건 {0}한테 말하세요."
+  ],
+  [
+   "When Rubato changes who {0} is by default, {0} compares it with your own file and tells you what it recommends. Nothing is merged without you.",
+   "루바토 기본값이 바뀌면 {0}한테서 내 파일과 비교한 추천을 받습니다. 내가 정하기 전엔 아무것도 합쳐지지 않습니다."
   ]
  ]
 }

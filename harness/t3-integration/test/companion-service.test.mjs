@@ -372,13 +372,20 @@ test('a companion made from the app: create, its nameless row with chips, a pict
   assert.equal(row.profile.callsUser, null);
   assert.equal(row.avatarVersion, null);
   assert.equal(rows[0].title, 'Segno');
+  const { changeOnboarding } = await import('../../companion/manage.mjs');
+  const { companionEnv: scoped } = await import('../../companion/registry.mjs');
+  changeOnboarding({ set: { name: '미루' } }, { env: scoped(id, env), defaultsDir });
+  assert.equal((await post('companions')).body.companions[1].title, '미루', 'named as soon as it is said, before the meeting ends');
   assert.equal(rows[0].onboarding, null);
 
   const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAwS2OUAAAAABJRU5ErkJggg==';
   const pictured = await post('set-avatar', { companionId: id, image: `data:image/png;base64,${png}` });
   assert.equal(pictured.status, 200);
   assert.equal(pictured.body.avatar.url, `data:image/png;base64,${png}`);
-  assert.equal((await post('companions')).body.companions[1].avatarVersion, pictured.body.avatar.version);
+  const after = (await post('companions')).body.companions[1];
+  assert.equal(after.avatarVersion, pictured.body.avatar.version);
+  assert.equal(after.pictureSet, true);
+  assert.equal(rows[0].pictureSet, false, "Segno's stage art is not a picture set in the app");
   assert.equal((await post('set-avatar', { companionId: id, image: 'data:image/png;base64,AAAA' })).status, 400);
 
   const { propose } = await import('../../companion/manage.mjs');

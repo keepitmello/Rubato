@@ -85,6 +85,8 @@ import "./RubatoSegnoChat.css";
 import { RubatoCallCard } from "./RubatoCallCard";
 import { callPlacement, withoutCallSpeech } from "./rubatoCallRoom";
 import { useRoomCalls } from "../../state/rubatoCall";
+import { proposalPlacement, shownProposals } from "../../state/rubatoCompanionModel";
+import { RubatoOnboardingChips, RubatoProposalCard, useCompanionProposals } from "./RubatoCompanionProposals";
 
 /** Closer to the end than this, the room follows new bubbles down. */
 const FOLLOW_PX = 64;
@@ -413,6 +415,17 @@ function RubatoSegnoRoom(props: {
   const calls = useRoomCalls(props.environmentId ?? null, companionId);
   const items = useMemo(() => segnoChatItems(withoutCallSpeech(messagesOf(props.entries), calls)), [props.entries, calls]);
   const placement = useMemo(() => callPlacement(items, calls), [items, calls]);
+  // What the companion proposes to change stands among the bubbles by when it was written.
+  const proposals = useCompanionProposals(props.environmentId, companionId, `${items.length}:${props.working}`);
+  const proposalPlace = useMemo(
+    () =>
+      proposalPlacement(
+        items.flatMap((item) => (item.kind === "bubble" ? [{ id: item.id, at: item.at }] : [])),
+        shownProposals(proposals.proposals, null),
+      ),
+    [items, proposals.proposals],
+  );
+  const onboarding = companionChoice?.onboarding ?? null;
   const messageById = useMemo(() => {
     const byId = new Map<string, ChatMessage>();
     for (const entry of props.entries) if (entry.kind === "message") byId.set(entry.message.id, entry.message);
@@ -439,6 +452,18 @@ function RubatoSegnoRoom(props: {
     [environmentId, threadId],
   );
   const rewind = useCallback((messageId: string) => onRewind?.(messageId as MessageId), [onRewind]);
+  const proposalCard = (proposal: (typeof proposals.proposals)[number]) =>
+    companionId ? (
+      <RubatoProposalCard
+        key={`proposal:${proposal.id}`}
+        proposal={proposal}
+        companionId={companionId}
+        environmentId={environmentId}
+        threadId={threadId}
+        onUpdate={proposals.update}
+        onRefresh={() => void proposals.refresh()}
+      />
+    ) : null;
   // The work behind a reply stands above its bubble; what came of it (cards, memory changes) below.
   const spanOutcome = (place: (typeof spans)["tail"] | undefined, key: string) =>
     place ? <SegnoSpanOutcome key={`${key}:outcome`} summary={summaries[place.index]} environmentId={environmentId} locale={locale} /> : null;
@@ -788,7 +813,11 @@ function RubatoSegnoRoom(props: {
       data-rubato-segno-scroller=""
       className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain"
     >
-      <div ref={lane} className="chat-content-lane flex flex-col pt-14" style={{ paddingBottom: props.bottomInset + 20 }}>
+      <div
+        ref={lane}
+        className="chat-content-lane flex flex-col pt-14"
+        style={{ paddingBottom: props.bottomInset + 20, ...(onboarding ? { paddingTop: "6.75rem" } : {}) }}
+      >
         {drawStart > 0 || history?.hasMoreHistory ? (
           <button type="button" data-rubato-segno-earlier="" disabled={history?.loading === true} onClick={drawEarlier}>
             {history?.loading ? "Loading…" : "Load earlier messages"}
@@ -820,6 +849,7 @@ function RubatoSegnoRoom(props: {
               <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />
             )),
             item.side === "segno" || !separated ? spanLine(place, `span:${item.id}`) : null,
+            ...(proposalPlace.before.get(item.id) ?? []).map(proposalCard),
             <Bubble
               key={item.id}
               item={item}
@@ -837,6 +867,7 @@ function RubatoSegnoRoom(props: {
             })}
           </section>
         ))}
+        {proposalPlace.tail.map(proposalCard)}
         {writing ? <Writing /> : null}
         {spanLine(spans.tail, "span:tail")}
         {placement.tail.map((call) => (
@@ -844,6 +875,7 @@ function RubatoSegnoRoom(props: {
         ))}
       </div>
     </div>
+    <RubatoOnboardingChips onboarding={onboarding} />
     <RubatoTimelineRail
       items={marks}
       times={markTimes}

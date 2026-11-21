@@ -27,6 +27,8 @@ vi.mock("../components/settings/settingsLayout", () => ({
     <div><span>{title}</span>{control}{children}</div>,
 }));
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
+// The picture control reads the room's thread store, which this test does not set up.
+vi.mock("../components/settings/RubatoCompanionPicture", () => ({ RubatoCompanionPicture: () => null }));
 vi.mock("./rubatoHttp", () => ({
   postRubato: async (_env: unknown, _route: string, action: string, body: Record<string, unknown>) => {
     fake.calls.push({ action, body });
@@ -51,7 +53,7 @@ import { companionComposerSettings, companionForThread, isCompanionThread, rubat
 let dispose: (() => void) | undefined;
 afterEach(() => { dispose?.(); vi.unstubAllGlobals(); });
 
-it("the rendered picker switches homes and subsequent settings requests without changing the sibling", async () => {
+it("the rendered list switches homes and subsequent settings requests without changing the sibling", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("matchMedia", () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
   vi.stubGlobal("ResizeObserver", class { observe() {} unobserve() {} disconnect() {} });
@@ -62,7 +64,7 @@ it("the rendered picker switches homes and subsequent settings requests without 
   function Read() { current = useRubatoCompanion(); return <RubatoCompanionSettingsPanel />; }
   dispose = () => { act(() => root.unmount()); host.remove(); };
   await act(async () => root.render(<Read />));
-  await vi.waitFor(() => expect(host.querySelectorAll("select[aria-label=Companion] option")).toHaveLength(2));
+  await vi.waitFor(() => expect(host.querySelectorAll("[data-rubato-companion-item]")).toHaveLength(2));
   expect(isCompanionThread("thread-1")).toBe(true);
   expect(isCompanionThread("thread-2")).toBe(true);
   // A companion's room steers while it works, whatever Settings › Chat says; any other thread keeps it.
@@ -76,8 +78,7 @@ it("the rendered picker switches homes and subsequent settings requests without 
   expect(fake.calls.filter(item => item.action === "thread").map(item => [item.body.sessionId, item.body.current]))
     .toEqual(expect.arrayContaining([["s1", true], ["s2", true]]));
   expect(companionForThread("thread-2")?.home).toBe("/original-repo");
-  const picker = host.querySelector<HTMLSelectElement>("select[aria-label=Companion]")!;
-  await act(async () => { picker.value = "other"; picker.dispatchEvent(new Event("change", { bubbles: true })); });
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-rubato-companion-item="other"]')!.click());
   await vi.waitFor(() => expect(current.selectedId).toBe("other"));
   expect(current.status?.home).toBe("/original-repo");
   expect(current.threadId).toBe("thread-2");
