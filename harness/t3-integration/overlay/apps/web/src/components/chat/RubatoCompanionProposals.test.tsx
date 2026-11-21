@@ -80,11 +80,11 @@ it("shows the change as struck and added words, and Apply saves it through apply
   expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ status: "applied" }));
 });
 
-it("More only puts the caret in the composer; nothing is sent or saved", async () => {
+it("Rewrite more only puts the caret in the composer; nothing is sent or saved", async () => {
   const host = mount(
     <RubatoProposalCard proposal={proposal} companionId="segno" environmentId={"env" as never} threadId="t1" onUpdate={vi.fn()} onRefresh={vi.fn()} />,
   );
-  await act(async () => buttonNamed(host, "More").click());
+  await act(async () => buttonNamed(host, "Rewrite more").click());
   expect(fake.focus).toHaveBeenCalled();
   expect(fake.apply).not.toHaveBeenCalled();
   expect(fake.setPrompt).not.toHaveBeenCalled();

@@ -1,6 +1,6 @@
 // What a companion proposes in its room (intent companion-manage, "change by talking"): a card with
 // the changed excerpt as a word diff (or the new picture), its own words for the change, Apply and
-// "More". Nothing is saved before Apply; "More" is an ordinary message, so it only puts the caret in
+// "Rewrite more". Nothing is saved before Apply; "Rewrite more" is an ordinary message, so it only puts the caret in
 // the composer, and the companion's next proposal for the same text replaces this one. A card whose
 // text moved under it (409 stale) asks for the change again instead of failing.
 //
@@ -143,7 +143,7 @@ export function RubatoProposalCard({
               Apply
             </Button>
             <Button size="xs" variant="outline" disabled={busy} onClick={focusRoomComposer}>
-              More
+              Rewrite more
             </Button>
           </div>
         ) : proposal.status === "stale" ? (

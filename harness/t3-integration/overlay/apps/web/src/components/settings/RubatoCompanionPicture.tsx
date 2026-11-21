@@ -93,11 +93,11 @@ function CropDialog({
   const height = picture.image.naturalHeight;
   const [view, setView] = useState<CropView>(() => initialCrop(width, height));
   const [saving, setSaving] = useState(false);
-  const canvas = useRef<HTMLCanvasElement>(null);
+  // The dialog mounts its content after this component, so the preview draws once the canvas exists.
+  const [element, setElement] = useState<HTMLCanvasElement | null>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
   useEffect(() => () => picture.release(), [picture]);
   useEffect(() => {
-    const element = canvas.current;
     const context = element?.getContext("2d");
     if (!element || !context) return;
     const scale = window.devicePixelRatio || 1;
@@ -107,7 +107,7 @@ function CropDialog({
     context.imageSmoothingQuality = "high";
     context.clearRect(0, 0, element.width, element.height);
     context.drawImage(picture.image, square.sx, square.sy, square.size, square.size, 0, 0, element.width, element.height);
-  }, [picture, view, width, height]);
+  }, [element, picture, view, width, height]);
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     drag.current = { x: event.clientX, y: event.clientY };
@@ -144,7 +144,7 @@ function CropDialog({
         <DialogPanel className="flex flex-col items-center gap-3">
           <div className="relative overflow-hidden rounded-xl bg-muted" style={{ width: PREVIEW_PX, height: PREVIEW_PX }}>
             <canvas
-              ref={canvas}
+              ref={setElement}
               aria-label="Drag to move the picture"
               style={{ width: PREVIEW_PX, height: PREVIEW_PX, touchAction: "none" }}
               className="cursor-grab active:cursor-grabbing"
