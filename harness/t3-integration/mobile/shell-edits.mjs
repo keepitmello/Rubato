@@ -5,8 +5,10 @@
 //   app.config.ts              name, bundle id com.keepitmello.rubato, team 5WGZKZGPQS,
 //                              no Clerk plugin/associated domains, no OTA updates, no widget
 //                              or share extensions (each needs its own app id and app group)
-//   workspace tabs             companions | threads; companions opens first. T3's pull
-//                              request tab is not shown: the phone is not where PRs are read
+//   workspace tabs             companions | threads | usage; companions opens first. T3's pull
+//                              request and issue tabs start hidden: the phone is not where PRs
+//                              are read. A phone that saved its tabs before gets usage third once
+//                              (rubato-shell/usageTabPlacement.ts)
 //   Stack.tsx                  CompanionRoom route (companions/:companionId)
 //   ProviderIcon.tsx           rubato-pi models: vendor glyph (rubatoModelGlyph.ts)
 //
@@ -36,6 +38,8 @@ export const shellOverlays = [
   'apps/mobile/src/features/rubato-shell/tabSwipe.ts',
   'apps/mobile/src/features/rubato-shell/tabSwipe.test.ts',
   'apps/mobile/src/features/rubato-shell/WorkspaceTabSwipe.tsx',
+  'apps/mobile/src/features/rubato-shell/usageTabPlacement.ts',
+  'apps/mobile/src/features/rubato-shell/usageTabPlacement.test.ts',
 ];
 
 const RUBATO_ICON = './assets/rubato/icon.png';
@@ -139,40 +143,40 @@ export const shellEdits = {
     ["} from \"./workspace-tabs-state\";\n",
       "} from \"./workspace-tabs-state\";\n\nconst initialWorkspaceTabsState = (selectedTab: WorkspaceTab = \"threads\") =>\n  initialRubatoWorkspaceTabsState(selectedTab);\n", 'replace'],
     ["  it(\"keeps the registered defaults while customization is unavailable\", () => {\n    expect(resolveWorkspaceTabOrder(undefined)).toEqual([\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n      \"usage\",\n    ]);\n    expect(resolveWorkspaceTabOrder([\"home\", \"usage\", \"issues\", \"threads\"])).toEqual(\n      resolveWorkspaceTabOrder(undefined),\n    );\n  });",
-      "  it(\"opens on Companions, which leads the default order, and keeps a saved order\", () => {\n    expect(initialRubatoWorkspaceTabsState().selectedTab).toBe(\"companions\");\n    expect(resolveWorkspaceTabOrder(undefined)).toEqual([\n      \"companions\",\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n      \"usage\",\n    ]);\n    expect(resolveWorkspaceTabOrder([\"home\", \"usage\", \"issues\", \"threads\"])).toEqual([\n      \"usage\",\n      \"issues\",\n      \"threads\",\n      \"companions\",\n      \"pullRequests\",\n    ]);\n  });", 'replace'],
+      "  it(\"opens on Companions, which leads the default order, and keeps a saved order\", () => {\n    expect(initialRubatoWorkspaceTabsState().selectedTab).toBe(\"companions\");\n    expect(resolveWorkspaceTabOrder(undefined)).toEqual([\n      \"companions\",\n      \"threads\",\n      \"usage\",\n      \"pullRequests\",\n      \"issues\",\n    ]);\n    expect(resolveWorkspaceTabOrder([\"home\", \"usage\", \"issues\", \"threads\"])).toEqual([\n      \"usage\",\n      \"issues\",\n      \"threads\",\n      \"companions\",\n      \"pullRequests\",\n    ]);\n  });", 'replace'],
   ],
-  // T3's tab-order tests, with Companions first and pull requests, issues and usage hidden by default.
+  // T3's tab-order tests, with Companions first, Usage third, and pull requests and issues hidden by default.
   'apps/mobile/src/features/layout/workspace/navigation-tab-order.test.ts': [
     ["    expect(navigationCustomizationAvailable()).toBe(false);\n",
       "    // Rubato hides some tabs by default, so its Navigation page is always there.\n    expect(navigationCustomizationAvailable()).toBe(true);\n", 'replace'],
     ["    ).toEqual([\"usage\", \"threads\", \"pullRequests\", \"issues\"]);",
       "    ).toEqual([\"usage\", \"companions\", \"threads\", \"pullRequests\", \"issues\"]);", 'replace'],
     ["    expect(visibleNavigationTabs()).toEqual(NAVIGATION_TAB_ORDER);\n",
-      "    expect(visibleNavigationTabs()).toEqual([\"companions\", \"threads\"]);\n    expect(visibleNavigationTabs(undefined, [])).toEqual(NAVIGATION_TAB_ORDER.slice(0, 4));\n    expect(overflowNavigationTabs(undefined, [])).toEqual([\"usage\"]);\n", 'replace'],
+      "    expect(visibleNavigationTabs()).toEqual([\"companions\", \"threads\", \"usage\"]);\n    expect(visibleNavigationTabs(undefined, [])).toEqual(NAVIGATION_TAB_ORDER.slice(0, 4));\n    expect(overflowNavigationTabs(undefined, [])).toEqual([\"issues\"]);\n", 'replace'],
     ["    expect(selectedNavigationTab(undefined, \"usage\", false)).toBe(\"usage\");\n",
-      "    expect(selectedNavigationTab(undefined, \"usage\", false)).toBe(\"settings\");\n    expect(selectedNavigationTab(undefined, \"issues\", false, [])).toBe(\"issues\");\n", 'replace'],
+      "    expect(selectedNavigationTab(undefined, \"usage\", false)).toBe(\"usage\");\n    expect(selectedNavigationTab(undefined, \"pullRequests\", false)).toBe(\"settings\");\n    expect(selectedNavigationTab(undefined, \"pullRequests\", false, [])).toBe(\"pullRequests\");\n    expect(selectedNavigationTab(undefined, \"issues\", false, [])).toBe(\"settings\");\n", 'replace'],
     ["    expect(enabledNavigationTabs(order, hidden)).toEqual([\"threads\", \"pullRequests\", \"issues\"]);",
       "    expect(enabledNavigationTabs(order, hidden)).toEqual([\n      \"companions\",\n      \"threads\",\n      \"pullRequests\",\n      \"issues\",\n    ]);", 'replace'],
     ["    expect(resolveSelectedNavigationTab(undefined, [\"threads\"], \"threads\")).toBe(\"pullRequests\");",
       "    expect(resolveSelectedNavigationTab(undefined, [\"threads\"], \"threads\")).toBe(\"companions\");", 'replace'],
     ["  it(\"falls back when the selected section is hidden, including when all are hidden\", () => {",
-      "  it(\"starts with pull requests, issues and usage hidden until the user shows them\", () => {\n    expect(enabledNavigationTabs()).toEqual([\"companions\", \"threads\"]);\n    expect(toggleNavigationTabVisibility(undefined, \"usage\")).toEqual([\"pullRequests\", \"issues\"]);\n  });\n\n  it(\"falls back when the selected section is hidden, including when all are hidden\", () => {", 'replace'],
+      "  it(\"starts with pull requests and issues hidden until the user shows them\", () => {\n    expect(enabledNavigationTabs()).toEqual([\"companions\", \"threads\", \"usage\"]);\n    expect(toggleNavigationTabVisibility(undefined, \"issues\")).toEqual([\"pullRequests\"]);\n    expect(toggleNavigationTabVisibility(undefined, \"usage\")).toEqual([\"pullRequests\", \"issues\", \"usage\"]);\n  });\n\n  it(\"falls back when the selected section is hidden, including when all are hidden\", () => {", 'replace'],
   ],
   'apps/mobile/src/features/layout/workspace/WorkspaceTabsContext.tsx': [
     ["  const scrollOffsets: Record<WorkspaceSearchTab, number> = {\n    threads: 0,",
       "  const scrollOffsets: Record<WorkspaceSearchTab, number> = {\n    companions: 0,\n    threads: 0,", 'replace'],
   ],
-  // The tab order: Companions, then Threads. Pull requests, issues and usage start hidden, as the
+  // The tab order: Companions, Threads, Usage. Pull requests and issues start hidden, as the
   // phone did not show them, and the Navigation settings page turns each one on.
   'apps/mobile/src/features/layout/workspace/navigation-tab-order.ts': [
     ["export const NAVIGATION_TAB_ORDER = [\"threads\", \"pullRequests\", \"issues\", \"usage\"] as const;",
-      "export const NAVIGATION_TAB_ORDER = [\n  \"companions\",\n  \"threads\",\n  \"pullRequests\",\n  \"issues\",\n  \"usage\",\n] as const;", 'replace'],
+      "export const NAVIGATION_TAB_ORDER = [\n  \"companions\",\n  \"threads\",\n  \"usage\",\n  \"pullRequests\",\n  \"issues\",\n] as const;", 'replace'],
     ["  registeredSections: number = NAVIGATION_TAB_ORDER.length - 1,\n",
       "  // Rubato: some tabs start hidden (RUBATO_HIDDEN_TABS), so the page that shows them is always there.\n  registeredSections: number = NAVIGATION_TAB_ORDER.length,\n", 'replace'],
     ["  threads: msg(\"Threads\", { $context: \"navigation tab, list of chat threads\" }),\n",
       "  companions: msg(\"Companions\", { $context: \"navigation tab, rooms of the companions\" }),\n"],
     ["export function resolveHiddenNavigationTabs(saved?: readonly unknown[]): readonly NavigationTab[] {\n  return [...new Set(saved?.filter(isNavigationTab) ?? [])];",
-      "/** Rubato: the tabs a phone that never chose shows hidden. */\nconst RUBATO_HIDDEN_TABS: readonly NavigationTab[] = [\"pullRequests\", \"issues\", \"usage\"];\n\nexport function resolveHiddenNavigationTabs(saved?: readonly unknown[]): readonly NavigationTab[] {\n  return [...new Set(saved?.filter(isNavigationTab) ?? RUBATO_HIDDEN_TABS)];", 'replace'],
+      "/** Rubato: the tabs a phone that never chose shows hidden. */\nconst RUBATO_HIDDEN_TABS: readonly NavigationTab[] = [\"pullRequests\", \"issues\"];\n\nexport function resolveHiddenNavigationTabs(saved?: readonly unknown[]): readonly NavigationTab[] {\n  return [...new Set(saved?.filter(isNavigationTab) ?? RUBATO_HIDDEN_TABS)];", 'replace'],
   ],
   // Threads keep their name (not "Chats", which reads as the companions) and a code glyph.
   'apps/mobile/src/features/layout/workspace/navigation-tabs.ts': [
@@ -180,6 +184,20 @@ export const shellEdits = {
       "        // Rubato: Threads keep their name; \"Chats\" would read as the companions.\n", 'replace'],
     ["export const NAVIGATION_TAB_ICONS = {\n  threads: \"text.bubble\",",
       "export const NAVIGATION_TAB_ICONS = {\n  companions: \"bubble.left.and.bubble.right\",\n  threads: \"chevron.left.forwardslash.chevron.right\",", 'replace'],
+  ],
+  // A phone that saved its tabs before Usage became the third keeps them over the defaults; the first
+  // load after moves Usage there once and remembers it did (rubato-shell/usageTabPlacement.ts).
+  'apps/mobile/src/persistence/mobile-preferences.ts': [
+    ['import * as MobileDatabase from "./mobile-database";\n',
+      'import { placeUsageTab } from "../features/rubato-shell/usageTabPlacement";\n'],
+    ['  readonly hiddenNavigationTabs?: readonly string[];\n  /** Whether pull requests or issues last held',
+      '  readonly hiddenNavigationTabs?: readonly string[];\n  /** Rubato: Usage was moved to the third tab once (usageTabPlacement.ts). */\n  readonly rubatoUsageTabPlaced?: boolean;\n  /** Whether pull requests or issues last held',
+      'replace'],
+    ['    hiddenNavigationTabs?: readonly string[];\n    sharedSlotTab?: "pullRequests" | "issues";',
+      '    hiddenNavigationTabs?: readonly string[];\n    rubatoUsageTabPlaced?: boolean;\n    sharedSlotTab?: "pullRequests" | "issues";',
+      'replace'],
+    ['  if (parsed.sharedSlotTab === "pullRequests" || parsed.sharedSlotTab === "issues") {',
+      '  // Rubato: Usage became the third tab; a phone with saved tabs gets it there once.\n  if (parsed.rubatoUsageTabPlaced !== true) Object.assign(preferences, placeUsageTab(preferences));\n  preferences.rubatoUsageTabPlaced = true;\n\n'],
   ],
   // The phone's floating tab picker draws its tabs natively, by name.
   'apps/mobile/modules/t3-native-controls/ios/T3SidebarTabBarView.swift': [

@@ -7,12 +7,67 @@
 // The page shows only long windows (weekly, monthly), and each provider's heading moves it
 // up or down or folds it away; the arrangement stays in this browser
 // (overlay/apps/web/src/components/usage/rubatoUsageLayout.ts).
+//
+// Each account's bar says, as CodexBar does, how far its spend is off an even pace and when it
+// runs out at the speed so far ("12% in deficit · Runs out in 21h 32m"), and T3's even-pace tick
+// turns red in deficit and green in reserve (overlay/packages/shared/src/rubatoUsagePace.ts,
+// shared with the phone's Usage page in mobile/shell-edits.mjs).
 export const usageLimitsOverlays = [
   'apps/server/src/usage/RubatoUsageLimits.ts',
   'apps/server/src/usage/RubatoUsageLimits.test.ts',
   'apps/web/src/components/usage/rubatoUsageLayout.ts',
   'apps/web/src/components/usage/rubatoUsageLayout.test.ts',
+  'packages/shared/src/rubatoUsagePace.ts',
+  'packages/shared/src/rubatoUsagePace.test.ts',
+  'apps/web/src/components/usage/rubatoUsagePace.browser.test.tsx',
 ];
+
+const PACE_TICK_OLD = [
+  '            className="absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full bg-foreground"',
+].join('\n');
+
+const PACE_TICK_NEW = [
+  '            className={cn(',
+  '              "absolute inset-y-0.5 w-0.5 -translate-x-1/2 rounded-full",',
+  '              PACE_TICK[paceForecast(window, now)?.stage ?? "on"],',
+  '            )}',
+].join('\n');
+
+const PACE_FORECAST_LINE = [
+  '// Rubato: the tick\'s colour and the line under a bar, from rubatoUsagePace.ts.',
+  'const PACE_TICK: Record<PaceStage, string> = {',
+  '  deficit: "bg-destructive",',
+  '  reserve: "bg-success",',
+  '  on: "bg-foreground",',
+  '};',
+  '',
+  'function PaceForecastLine({',
+  '  window,',
+  '  now,',
+  '  className,',
+  '  style,',
+  '}: {',
+  '  readonly window: LimitPoolMember["window"];',
+  '  readonly now: number;',
+  '  readonly className?: string;',
+  '  readonly style?: CSSProperties;',
+  '}) {',
+  '  const locale = useLocale();',
+  '  const m = useMessages();',
+  '  const forecast = paceForecast(window, now);',
+  '  if (!forecast) return null;',
+  '  return (',
+  '    <span',
+  '      className={cn("truncate text-2xs text-muted-foreground tabular-nums", className)}',
+  '      style={style}',
+  '    >',
+  '      {paceForecastText(forecast, locale, (ms) => formatDuration(ms, m))}',
+  '    </span>',
+  '  );',
+  '}',
+  '',
+  '',
+].join('\n');
 
 const POOL_SECTION_OLD = [
   'function PoolSection({ pool, now }: { readonly pool: LimitPool; readonly now: number }) {',
@@ -117,6 +172,37 @@ export const usageLimitsEdits = {
       'replace',
     ],
     ['} from "./UsageLimits";\n', '} from "./UsageLimits";\nimport { longLimitWindows, useRubatoUsageLayout } from "./rubatoUsageLayout";\n', 'replace'],
+    [
+      'import { T, useGT, useMessages } from "gt-react";',
+      'import { T, useGT, useLocale, useMessages } from "gt-react";\nimport { paceForecast, paceForecastText, type PaceStage } from "@t3tools/shared/rubatoUsagePace";',
+      'replace',
+    ],
+    [
+      '  formatResetsIn,\n  resetCreditChoices,\n} from "@t3tools/shared/usageLimitsCopy";',
+      '  formatDuration,\n  formatResetsIn,\n  resetCreditChoices,\n} from "@t3tools/shared/usageLimitsCopy";',
+      'replace',
+    ],
+    [PACE_TICK_OLD, PACE_TICK_NEW, 'replace'],
+    [
+      '      <LegendRow payload={payload} color={color} now={now} index={index} />',
+      [
+        '      <LegendRow payload={payload} color={color} now={now} index={index} />',
+        '      <PaceForecastLine',
+        '        window={window}',
+        '        now={now}',
+        '        className="hidden px-0.5 @2xl/pool:block"',
+        '        style={{ gridColumn: index, gridRow: 2 }}',
+        '      />',
+      ].join('\n'),
+      'replace',
+    ],
+    [
+      '<span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>',
+      '<span className="shrink-0 font-semibold text-foreground tabular-nums">{remaining}%</span>\n      <PaceForecastLine window={window} now={now} className="min-w-0 flex-1" />',
+      'replace',
+    ],
+    ['function LegendRow({', PACE_FORECAST_LINE],
+    ['  createContext,\n  Fragment,\n  type ReactNode,\n', '  createContext,\n  type CSSProperties,\n  Fragment,\n  type ReactNode,\n', 'replace'],
     [POOL_SECTION_OLD, POOL_SECTION_NEW, 'replace'],
     [
       '  const pools = collectLimitPools(collectLimitAccounts(presentations), now);',
@@ -178,5 +264,9 @@ export const usageLimitsEdits = {
   ],
   'packages/shared/src/usageLimits.ts': [
     ['        sourceLabel: "CLI Proxy",', '        sourceLabel: source.kind === "rubato" ? "Rubato" : "CLI Proxy",', 'replace'],
+  ],
+  'packages/shared/package.json': [
+    ['    "./usageLimitsCopy": {\n',
+      '    "./rubatoUsagePace": {\n      "types": "./src/rubatoUsagePace.ts",\n      "import": "./src/rubatoUsagePace.ts"\n    },\n'],
   ],
 };

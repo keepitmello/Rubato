@@ -99,6 +99,9 @@ test("provider answers map to windows the Usage page draws", () => {
   assert.deepEqual(grokUsageWindows({
     config: { creditUsagePercent: 5, currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY", end: "2026-10-23T21:06:17.270640+00:00" } },
   }), [{ id: "subscription", kind: "weekly", label: "Weekly", usedPercent: 5, resetsAt: "2026-10-23T21:06:17.270Z" }]);
+  assert.deepEqual(grokUsageWindows({
+    config: { creditUsagePercent: 6, currentPeriod: { type: "USAGE_PERIOD_TYPE_WEEKLY", start: "2026-11-20T21:06:17.270640+00:00", end: "2026-11-27T21:06:17.270640+00:00" } },
+  })[0].windowDurationMins, 10080, "a period with a start reports its length");
   assert.deepEqual(grokUsageWindows({ config: {} }), []);
 });
 
