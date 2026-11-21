@@ -21,6 +21,8 @@ export const i18nOverlays = [
   'apps/web/src/i18n/rubatoWording.ts',
   'apps/web/src/i18n/rubatoWording.test.ts',
   'apps/web/src/rubatoKorean.browser.test.tsx',
+  // Rubato's labels in the native right-click menu (thread folders, Fork thread).
+  'apps/web/src/components/sidebar/rubatoContextMenuKorean.test.ts',
   'apps/desktop/src/settings/rubatoUiLanguage.ts',
   'apps/desktop/src/settings/rubatoUiLanguage.test.ts',
   'apps/desktop/src/i18n/rubatoKorean.ts',

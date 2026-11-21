@@ -23,6 +23,7 @@ import { FolderIcon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { uiText } from "../../rubatoI18n";
 import { environmentServerConfigsAtom, serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
 import { Button } from "../ui/button";
@@ -239,7 +240,10 @@ export function isRubatoFolderMenuId(id: string): id is RubatoFolderMenuId {
   return id.startsWith("rubato-folder:");
 }
 
-/** "Move to folder" with the thread's folder checked, after Pin/Unpin (or first). */
+/**
+ * "Move to folder" with the thread's folder checked, after Pin/Unpin (or first). The desktop
+ * shows this menu natively, out of the page's reach, so Rubato's labels are translated here.
+ */
 export function withRubatoFolderMenu<T extends string>(
   folders: RubatoThreadFolders,
   thread: ThreadRefLike,
@@ -253,14 +257,14 @@ export function withRubatoFolderMenu<T extends string>(
       label: folder.name,
       checked: current?.id === folder.id,
     })),
-    { id: "rubato-folder:new", label: "New folder…", separatorBefore: true },
+    { id: "rubato-folder:new", label: uiText("New folder…"), separatorBefore: true },
     ...(current !== null
-      ? [{ id: "rubato-folder:out" as const, label: `Remove from ${current.name}` }]
+      ? [{ id: "rubato-folder:out" as const, label: uiText(`Remove from ${current.name}`) }]
       : []),
   ];
   const menu: ContextMenuItem<RubatoFolderMenuId> = {
     id: "rubato-folder:menu",
-    label: "Move to folder",
+    label: uiText("Move to folder"),
     icon: "folder",
     children,
   };
