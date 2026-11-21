@@ -35,6 +35,7 @@ import { stateRetentionEdits, stateRetentionOverlays } from './state-retention-e
 import { threadAutoArchiveEdits, threadAutoArchiveOverlays } from './thread-auto-archive-edits.mjs';
 import { sidebarLookEdits, sidebarLookOverlays } from './sidebar-look-edits.mjs';
 import { threadArchiveEdits, threadArchiveOverlays } from './thread-archive-edits.mjs';
+import { localThreadEdits, localThreadOverlays } from './local-thread-edits.mjs';
 import { stateQueryEdits, stateQueryOverlays } from './state-query-edits.mjs';
 import { stepRewindUiEdits, stepRewindUiOverlays } from './step-rewind-ui-edits.mjs';
 import { turnActionsEdits, turnActionsOverlays } from './turn-actions-edits.mjs';
@@ -1097,6 +1098,11 @@ for (const [relative, changes] of Object.entries(threadArchiveEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // Local Antigravity agents (local-agy-edits.mjs).
+// A local thread's preparing run is not a worktree setup (local-thread-edits.mjs).
+overlays.push(...localThreadOverlays);
+for (const [relative, changes] of Object.entries(localThreadEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
 overlays.push(...localAgyOverlays);
 for (const [relative, changes] of Object.entries(localAgyEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];

@@ -83,11 +83,16 @@ export const threadMessages = Effect.fn("RubatoPiSessions.threadMessages")(funct
  * an idle stop among them) to the next time one was attached or ready again, or now. These are
  * T3's own provider-session events, the same ones that stopped it (bridge backfill.mjs).
  */
+// A thread's events are stored under aggregate_kind 'thread'. Naming it puts the query on the
+// (aggregate_kind, stream_id, sequence) index prefix; without it, and with T3 v0.1.11 clearing the
+// planner statistics at startup, SQLite scanned the whole event log (~100 s on a 900k-row log)
+// while every other statement waited for the one connection.
 export const threadStreamGaps = Effect.fn("RubatoPiSessions.threadStreamGaps")(function* (threadId: string) {
   const sql = yield* SqlClient.SqlClient;
   const rows = yield* sql<{ readonly event_type: string; readonly occurred_at: string; readonly payload_json: string }>`
       SELECT event_type, occurred_at, payload_json FROM orchestration_events
-      WHERE stream_id = ${threadId} AND event_type IN ('provider-session.updated', 'provider-session.attached')
+      WHERE aggregate_kind = 'thread' AND stream_id = ${threadId}
+        AND event_type IN ('provider-session.updated', 'provider-session.attached')
       ORDER BY sequence ASC`;
   return gapsFromProviderEvents(rows);
 });
