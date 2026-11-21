@@ -83,5 +83,10 @@ A companion needs both, and the page says which is missing:
 
 - Turns are sent once, never speculatively: a speculative turn would land in the companion's real
   conversation.
-- A new turn while the companion is still answering cancels that answer on both sides.
+- A heard line steers into whatever the companion is doing, as a chat message does. Cutting in stops
+  its voice and that answer's unspoken words, never its run or its tools; hanging up does not stop
+  them either.
+- The companion speaks whenever the call is open. Its first `call_say` after a heard line answers
+  that line; any later one, while it keeps working, comes over the open call stream as `say` /
+  `say_end` and plays once the person is not talking (`createSpeechBetween` in `bridge.mjs`).
 - The worker does not refuse calls when the Mac is busy (`loadFunc` is 0): one person, one call.

@@ -11,7 +11,7 @@ import { AgentSessionEventTypes, ServerOptions, cli, defineAgent, inference, llm
 import * as elevenlabs from '@livekit/agents-plugin-elevenlabs';
 import * as fishaudio from '@livekit/agents-plugin-fishaudio';
 import * as openai from '@livekit/agents-plugin-openai';
-import { createBridge, heardBeforeCut } from './bridge.mjs';
+import { createBridge, createSpeechBetween, heardBeforeCut } from './bridge.mjs';
 import { readElevenLabsKey, readOpenAiKey, resolveCompanion, voiceChoices } from './companion.mjs';
 import { AGENT_NAME } from './livekit.mjs';
 
@@ -164,14 +164,22 @@ export default defineAgent({
     const bridge = createBridge(companion.bridge);
     const callId = job.callId ?? ctx.room.name ?? randomUUID();
     const report = reporter(job.callId);
+    // What the companion says while it works, between heard lines; it plays once the session runs.
+    let session, sessionStarted;
+    const started = new Promise(resolve => { sessionStarted = resolve; });
+    const between = createSpeechBetween({
+      speak: async stream => { await started; session.say(stream, { allowInterruptions: true }); },
+      onSentence: text => void report('said', text),
+      onError: error => logger.warn({ error: String(error) }, 'could not speak between turns'),
+    });
     // Echo mode tests the audio path without reaching the companion's conversation at all.
     const opened = process.env.RUBATO_CALL_ECHO === '1' ? { health: {}, end: async () => {} }
-      : await bridge.open(callId, { onEvent: event => logger.debug({ event }, 'bridge') });
-    ctx.addShutdownCallback(async () => { await opened.end(); await report('ended'); });
+      : await bridge.open(callId, { onEvent: event => { logger.debug({ event }, 'bridge'); between.event(event); } });
+    ctx.addShutdownCallback(async () => { between.close(); await opened.end(); await report('ended'); });
     const timings = { current: null };
     logger.info({ voice: engine.choice.id }, 'call voice');
 
-    const session = new voice.AgentSession({
+    session = new voice.AgentSession({
       vad: new inference.VAD(),
       llm: new CompanionSlot(),
       // The markdown and emoji filters hold each sentence back until the next one arrives. call_say
@@ -194,6 +202,7 @@ export default defineAgent({
     session.on(AgentSessionEventTypes.UserStateChanged, ev => {
       logger.debug({ from: ev.oldState, to: ev.newState }, 'user state');
       if (ev.newState === 'listening' && ev.oldState === 'speaking') timings.speechEndedAt = Date.now();
+      between.personSpeaking(ev.newState === 'speaking');
     });
     session.on(AgentSessionEventTypes.AgentStateChanged, ev => {
       logger.debug({ from: ev.oldState, to: ev.newState }, 'agent state');
@@ -218,6 +227,7 @@ export default defineAgent({
     });
 
     await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings, report }), room: ctx.room });
+    sessionStarted();
     logger.info({ companion: companion.id, callId, session: opened.health.sessionId }, 'call open');
     // Whoever placed the call, the companion speaks first: it picks up the person's call with its
     // own hello, or opens the one it placed. Its own words each time, read by its own voice.

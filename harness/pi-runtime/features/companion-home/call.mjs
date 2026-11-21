@@ -78,6 +78,9 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
   let server, ctx, active, call, starting, closed = false, briefed = false, admission = Promise.resolve();
   let briefTransport = null;
   const completed = new Map();
+  // call_say written while no heard line holds the call: after the first words of an answer, while
+  // the companion keeps working. Keyed by content index; each goes out on the open call's stream.
+  const between = new Map();
   const timers = new Set();
   const safe = file => {
     if (!landsInside(home, file)) throw new Error("Call state must stay inside its companion home");
@@ -155,19 +158,14 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     try { writeJson(turn.file, { ...turn.receipt, status, result, endedAt: Date.now() }); } catch (error) { onError(error); }
     turn.response.end();
   }
-  async function abort(turn) {
-    if (!turn?.armed) return;
-    try { await ctx?.abort?.(); } catch (error) { onError(error); }
-    for (let at = 0; at < 40 && ctx?.isIdle?.() === false; at++)
-      await new Promise(resolve => setTimeout(resolve, 50));
-  }
   function endCall() {
     if (!call) return false;
     const current = call; call = undefined; briefed = false; briefTransport = null;
     clearInterval(current.timer);
     try { clearCapability("call", current.owner, env); } catch (error) { onError(error); }
-    const turn = active;
-    if (turn) { finish(turn, "call ended", "interrupted"); void abort(turn); }
+    // Hanging up ends what the call hears, not what the companion is doing.
+    if (active) finish(active, "call ended", "interrupted");
+    between.clear();
     restoreEffort();
     try {
       system(`[voice] 통화 종료 (약 ${Math.max(1, Math.round((Date.now() - current.startedAt) / 1000))}초)`,
@@ -176,19 +174,47 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     current.response.end();
     return true;
   }
-  function commit(turn, index, value, final) {
-    const held = turn.seen.get(index) ?? { committed: "", latest: "" };
-    held.latest = value; turn.seen.set(index, held);
-    if (!value.startsWith(held.committed)) return;
+  /** The sentences of a growing call_say text that are new and stable; all the rest when final. */
+  function newSentences(held, value, final) {
+    held.latest = value;
+    const sentences = [];
+    if (!value.startsWith(held.committed)) return sentences;
     for (;;) {
       const pending = value.slice(held.committed.length);
       const cut = final ? pending.length : stableSentenceCut(pending);
-      if (cut <= 0) return;
+      if (cut <= 0) return sentences;
       const sentence = pending.slice(0, cut);
-      held.committed += sentence; turn.said += sentence;
-      event(turn, { t: "delta", text: sentence });
-      if (final) return;
+      held.committed += sentence; sentences.push(sentence);
+      if (final) return sentences;
     }
+  }
+  function commit(turn, index, value, final) {
+    const held = turn.seen.get(index) ?? { committed: "", latest: "" };
+    turn.seen.set(index, held);
+    for (const sentence of newSentences(held, value, final)) {
+      turn.said += sentence;
+      event(turn, { t: "delta", text: sentence });
+    }
+  }
+  function callEvent(value) {
+    try { if (call && !call.response.destroyed) call.response.write(JSON.stringify(value) + "\n"); }
+    catch (error) { onError(error); }
+  }
+  /**
+   * Words between heard lines go out on the open call's stream as `say` sentences and a `say_end`,
+   * the call client plays them as they come. Returns whether a call was open to carry them.
+   */
+  function sayBetween(index, value, final, id) {
+    if (!call) return false;
+    let held = between.get(index);
+    if (!held) { held = { sayId: randomUUID(), committed: "", latest: "" }; between.set(index, held); }
+    for (const text of newSentences(held, value, final)) callEvent({ t: "say", sayId: held.sayId, text });
+    if (!final) return true;
+    between.delete(index);
+    callEvent({ t: "say_end", sayId: held.sayId });
+    if (held.committed.trim()) transcript(config.companionLabel || env.RUBATO_COMPANION_TITLE || "companion", held.committed.trim());
+    authorize(id, CALL_SAY_TOOL);
+    return true;
   }
   function authorize(id, name) {
     if (!id) return;
@@ -219,6 +245,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     return [own || [
       "[통화 시작] 사용자가 목소리로 이 대화에 말을 걸고 있어.",
       "`call_say`에 넣은 말만 통화로 나가. 평문은 혼잣말이고 앱·텔레그램 답장과 통화는 별개야.",
+      "통화가 열려 있는 동안 `call_say`는 언제든 나가. 말하고, 도구로 일하다가, 또 말해도 돼. 일하는 중에 들어온 사용자 말은 채팅처럼 하던 일 사이에 끼어 와.",
       transport === "qwen" ? "음성 계층이 말차례와 끼어들기를 맡아. 네 말은 안전한 차례에 재생돼."
         : "완성한 문장부터 사용자의 스피커로 나가. 소리로 자연스럽게 들릴 문장으로 말해.",
       "기억과 도구는 이 대화의 것을 그대로 써.",
@@ -281,7 +308,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       if (url.pathname === "/call/cancel") {
         const turn = active;
         const cancelled = Boolean(turn && input.turnId && turn.clientId === input.turnId);
-        if (cancelled) { finish(turn, "cancelled by call client", "interrupted"); await abort(turn); }
+        // The person's words stop; the companion's work goes on, as when they type over it in chat.
+        if (cancelled) finish(turn, "cancelled by call client", "interrupted");
         return json(response, 200, { ok: true, cancelled });
       }
       const opportunity = url.pathname === "/call/opportunity";
@@ -305,7 +333,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
           previousStatus: receipt.bootId === bootId ? receipt.status : "interrupted" }) + "\n");
         return;
       }
-      if (active) { const previous = active; finish(previous, "superseded by a new call turn", "interrupted"); await abort(previous); }
+      // A newer line steers into the work in progress, as a message does in chat; nothing is aborted.
+      if (active) finish(active, "superseded by a new call turn", "interrupted");
       const transport = url.pathname === "/call/qwen-turn" ? "qwen" : "standard";
       const messageId = randomUUID();
       const prompt = opportunity ? [
@@ -319,11 +348,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const turn = { clientId, file, receipt, messageId, prompt, kind: opportunity ? "opportunity" : "reply",
         response, closed: false, armed: false, said: "", seen: new Map(), toolsBeforeSay: [] };
       active = turn;
-      turn.timer = setTimeout(() => { if (active === turn) { finish(turn, "call turn timed out", "interrupted"); void abort(turn); } }, timeoutMs);
-      response.on("close", () => {
-        if (active !== turn) return;
-        finish(turn, undefined, "interrupted"); void abort(turn);
-      });
+      turn.timer = setTimeout(() => { if (active === turn) finish(turn, "call turn timed out", "interrupted"); }, timeoutMs);
+      response.on("close", () => { if (active === turn) finish(turn, undefined, "interrupted"); });
       if (!briefed) { system(brief(transport)); briefed = true; }
       briefTransport = transport;
       if (opportunity) system(prompt, { messageId, triggerTurn: true, deliverAs: "steer" });
@@ -351,6 +377,13 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
         // the older line, which the call client already cancelled, so they stay unspoken.
         if (turn?.kind === "reply" && !turn.armed)
           return { isError: true, content: [text("Not spoken: the person kept talking, and their newer line comes in right after this. Answer that line with call_say; it can carry what you meant to say here.")] };
+        // Between heard lines a call_say goes straight out while the call is open. The stream
+        // usually carried it already; this covers a model whose stream showed no tool call.
+        if (!turn && name === CALL_SAY_TOOL) {
+          if (typeof args?.text !== "string" || !args.text.trim()) return { isError: true, content: [text("Nothing to say.")] };
+          if (!sayBetween(`run:${id}`, args.text, true, null)) return { isError: true, content: [text("No call is open, so nothing was spoken.")] };
+          return { terminate: true, content: [text("Delivered on the call.")] };
+        }
         if (!turn || !turn.armed || !completeTool(turn, name, args, id))
           return { isError: true, content: [text("No matching call turn is listening for this action.")] };
         completed.delete(id);
@@ -358,7 +391,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       } });
   }
   register(CALL_SAY_TOOL, { text: { type: "string", minLength: 1 } }, ["text"],
-    "Speak on this conversation's live call. Only these explicit words reach the speaker; ordinary text stays private. Complete sentences stream as you write. No markdown or lists. Available only during a call turn.");
+    "Speak on this conversation's live call. Only these explicit words reach the speaker; ordinary text stays private. Complete sentences stream as you write. No markdown or lists. Works whenever a call is open: speak, keep working with other tools, and speak again.");
   register(CALL_WAIT_TOOL, { after_seconds: { type: "integer", minimum: CALL_WAIT_SECONDS.min, maximum: CALL_WAIT_SECONDS.max },
     reason: { type: "string", minLength: 1 } }, ["after_seconds", "reason"],
     "During a machine-opened call opportunity only, ask for another opportunity after 5–300 seconds for a concrete reason. It emits no speech.");
@@ -417,6 +450,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
   pi.on("session_compact", (_event, context) => { ctx = context; briefed = false; briefTransport = null; });
   pi.on("message_start", (event, context) => {
     ctx = context;
+    if (event.message?.role === "assistant") between.clear();
     const turn = active;
     if (!turn) return;
     if (event.message?.role === "user") {
@@ -428,7 +462,20 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
   pi.on("message_update", (event, context) => {
     ctx = context;
     const turn = active, stream = event.assistantMessageEvent;
-    if (!turn?.armed || turn.closed || !stream) return;
+    if (!stream) return;
+    // No heard line holds the call: words go out between turns. A newer line that has not entered
+    // yet holds it (turn not armed), and words written before it answer only the older line.
+    if (!turn) {
+      if (stream.type === "toolcall_delta") {
+        const block = stream.partial?.content?.[stream.contentIndex];
+        if (block?.name === CALL_SAY_TOOL && typeof block.arguments?.text === "string")
+          sayBetween(stream.contentIndex, block.arguments.text, false);
+      } else if (stream.type === "toolcall_end" && stream.toolCall?.name === CALL_SAY_TOOL
+        && typeof stream.toolCall.arguments?.text === "string" && stream.toolCall.arguments.text.trim())
+        sayBetween(stream.contentIndex, stream.toolCall.arguments.text, true, stream.toolCall.id);
+      return;
+    }
+    if (!turn.armed || turn.closed) return;
     if (stream.type.startsWith("thinking_")) {
       eventTiming(turn, stream.type, { contentIndex: stream.contentIndex }); return;
     }

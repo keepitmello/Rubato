@@ -34,11 +34,52 @@ export function heardBeforeCut(items) {
   return null;
 }
 
+/**
+ * What the companion says between heard lines: after the first words of an answer, while it keeps
+ * working. The bridge sends each such call_say on the open call's stream as `say` sentences and a
+ * `say_end`; each becomes one text stream handed to `speak`, started only while the person is not
+ * talking, in the order the companion said them.
+ */
+export function createSpeechBetween({ speak, onSentence = () => {}, onError = () => {} }) {
+  const open = new Map();
+  let quiet = Promise.resolve(), release = null;
+  return {
+    event(item) {
+      if (item?.t === 'say' && typeof item.text === 'string') {
+        let controller = open.get(item.sayId);
+        if (!controller) {
+          const stream = new ReadableStream({ start(own) { controller = own; } });
+          open.set(item.sayId, controller);
+          void quiet.then(() => speak(stream)).catch(onError);
+        }
+        onSentence(item.text);
+        controller.enqueue(item.text);
+      } else if (item?.t === 'say_end') {
+        open.get(item.sayId)?.close();
+        open.delete(item.sayId);
+      }
+    },
+    /** Holds new speech while the person talks and lets it go when they stop. */
+    personSpeaking(speaking) {
+      if (speaking && !release) quiet = new Promise(resolve => { release = resolve; });
+      else if (!speaking && release) { release(); release = null; }
+    },
+    close() {
+      for (const controller of open.values()) { try { controller.close(); } catch {} }
+      open.clear();
+      release?.(); release = null;
+    },
+  };
+}
+
 export function createBridge({ url, token = null, fetch: call = globalThis.fetch }) {
   const headers = { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) };
   const post = (route, body, signal) => call(`${url}${route}`, { method: 'POST', headers, body: JSON.stringify(body), signal });
 
-  /** Opens the call. The companion treats the call as live while this request stays open. */
+  /**
+   * Opens the call. The companion treats the call as live while this request stays open, and what
+   * it says between heard lines arrives here as `onEvent` items (see createSpeechBetween).
+   */
   async function open(callId, { onEvent = () => {} } = {}) {
     const controller = new AbortController();
     const response = await call(`${url}/call/health?watch=1&callId=${encodeURIComponent(callId)}`,

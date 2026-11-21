@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { CALL_SAY_TOOL, createCompanionCall } from '../../../pi-runtime/features/companion-home/call.mjs';
-import { createBridge, heardBeforeCut } from '../bridge.mjs';
+import { createBridge, createSpeechBetween, heardBeforeCut } from '../bridge.mjs';
 import { callableCompanions, resolveCompanion, voiceChoices } from '../companion.mjs';
 
 // The companion's real call bridge on a fake session: `say` streams call_say the way a model
@@ -54,7 +54,7 @@ test('a heard turn reaches the companion as voice and its sentences come back in
   assert.match(companion.system.at(-1), /^\[voice\] 통화 종료/);
 });
 
-test('cutting a turn off on this side stops the companion mid-thought', async t => {
+test('cutting a turn off on this side ends that turn and leaves the companion working', async t => {
   const companion = await companionSession(t, () => {});
   const client = createBridge({ url: companion.url });
   const controller = new AbortController();
@@ -62,9 +62,13 @@ test('cutting a turn off on this side stops the companion mid-thought', async t 
   const first = turn.next();
   setTimeout(() => controller.abort(), 100);
   await assert.rejects(first);
-  for (let at = 0; at < 50 && companion.aborts() === 0; at++) await new Promise(resolve => setTimeout(resolve, 20));
-  assert.equal(companion.aborts(), 1);
-  const [receipt] = readdirSync(path.join(companion.home, 'call', 'turns'));
+  let receipt;
+  while (!receipt) {
+    await new Promise(resolve => setTimeout(resolve, 20));
+    const file = readdirSync(path.join(companion.home, 'call', 'turns')).map(name => path.join(companion.home, 'call', 'turns', name))[0];
+    if (JSON.parse(readFileSync(file, 'utf8')).status !== 'running') receipt = path.basename(file);
+  }
+  assert.equal(companion.aborts(), 0);
   assert.equal(JSON.parse(readFileSync(path.join(companion.home, 'call', 'turns', receipt), 'utf8')).status, 'interrupted');
 });
 
@@ -122,4 +126,39 @@ test('cutting in tells the companion how far its last reply was heard, in the ch
   const client = createBridge({ url: companion.url });
   for await (const _ of client.turn('잠깐만', { cut: heardBeforeCut(cutIn) }));
   assert.deepEqual(companion.heard, ['[voice] 잠깐만\n(네 직전 말은 "응, 들려! 나 여기"까지 들리고 끊겼어. 그 뒤는 안 들렸어.)']);
+});
+
+test('words the companion says while it works play in order, and wait while the person talks', async t => {
+  const companion = await companionSession(t, emit => {
+    emit('message_update', { assistantMessageEvent: { type: 'toolcall_end', contentIndex: 0,
+      toolCall: { type: 'toolCall', id: 'first', name: CALL_SAY_TOOL, arguments: { text: '잠깐만, 볼게.' } } } });
+    emit('tool_execution_start', { toolName: 'bash', toolCallId: 'look' });
+    setTimeout(() => {
+      emit('tool_execution_end', { toolName: 'bash', toolCallId: 'look' });
+      emit('message_start', { message: { role: 'assistant', content: [] } });
+      say('봤어. 정의는 하나도 없더라.')(emit);
+    }, 30);
+  });
+  const spoken = [];
+  const between = createSpeechBetween({ speak: async stream => {
+    const parts = [];
+    spoken.push(parts);
+    for await (const part of stream) parts.push(part);
+  } });
+  between.personSpeaking(true);
+  const client = createBridge({ url: companion.url });
+  const call = await client.open('room-between', { onEvent: event => between.event(event) });
+  const answer = [];
+  for await (const event of client.turn('개발방 읽어봐')) if (event.t === 'delta') answer.push(event.text);
+  assert.deepEqual(answer, ['잠깐만, 볼게.']);
+  await new Promise(resolve => setTimeout(resolve, 80));
+  assert.deepEqual(spoken, [], 'nothing starts while the person is talking');
+  between.personSpeaking(false);
+  for (const end = Date.now() + 2000; spoken.flat().join('') !== '봤어. 정의는 하나도 없더라.';) {
+    if (Date.now() > end) assert.fail(`never spoken; got ${JSON.stringify(spoken)}`);
+    await new Promise(resolve => setTimeout(resolve, 5));
+  }
+  assert.deepEqual(spoken, [['봤어. ', '정의는 하나도 없더라.']]);
+  assert.equal(companion.aborts(), 0);
+  await call.end();
 });

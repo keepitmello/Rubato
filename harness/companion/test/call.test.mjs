@@ -124,14 +124,14 @@ test('opportunities are machine context; wait/pass/end emit no speech and keep t
   assert.equal(box.messages.at(-1).options.triggerTurn, false);
 });
 
-test('cancellation interrupts generation and a replay after restart never repeats a human turn or its speech', async t => {
+test('cancelling a turn stops its words but not the work, and a replay after restart never repeats a human turn or its speech', async t => {
   const box = await fixture(t);
   const response = await box.post('/call/turn', { text: 'do not repeat', turnId: 'durable-turn' });
   await new Promise(resolve => setImmediate(resolve));
   const cancelled = await (await box.post('/call/cancel', { turnId: 'durable-turn' })).json();
   assert.equal(cancelled.cancelled, true);
   await eventsOf(response);
-  assert.equal(box.aborts(), 1);
+  assert.equal(box.aborts(), 0, 'the conversation keeps running, as when the person types over it in chat');
   await box.bridge.close();
   const again = await fixture(t, { home: box.home });
   const replay = await eventsOf(await again.post('/call/turn', { text: 'do not repeat', turnId: 'durable-turn' }));
@@ -286,4 +286,97 @@ test('the call brief explains a cut-in and leaves how to carry the talk to the c
   assert.doesNotMatch(brief, /공백/, "a quiet line is the companion's own to read (its voice tone file)");
   assert.match(brief, /어디까지 들렸는지가 그 말 아래 적혀 와/);
   assert.doesNotMatch(brief, /기계가 연 기회/);
+});
+
+/** Items the open call's stream carries, collected as they arrive. */
+function watchItems(response) {
+  const items = [];
+  const done = (async () => {
+    const decoder = new TextDecoder();
+    let buffered = '';
+    try {
+      for await (const chunk of response.body) {
+        buffered += decoder.decode(chunk, { stream: true });
+        let newline;
+        while ((newline = buffered.indexOf('\n')) >= 0) {
+          const line = buffered.slice(0, newline).trim();
+          buffered = buffered.slice(newline + 1);
+          if (line) items.push(JSON.parse(line));
+        }
+      }
+    } catch {}
+  })();
+  const until = async test => {
+    for (const end = Date.now() + 2000; !items.some(test);) {
+      if (Date.now() > end) assert.fail(`the call stream never carried it; it carried ${JSON.stringify(items)}`);
+      await new Promise(resolve => setTimeout(resolve, 5));
+    }
+  };
+  return { items, done, until };
+}
+const sayDelta = (emit, index, value) => emit('message_update', { assistantMessageEvent: { type: 'toolcall_delta', contentIndex: index,
+  partial: { content: Object.assign([], { [index]: { type: 'toolCall', name: CALL_SAY_TOOL, arguments: { text: value } } }) } } });
+const sayEnd = (emit, index, id, value) => emit('message_update', { assistantMessageEvent: { type: 'toolcall_end', contentIndex: index,
+  toolCall: { type: 'toolCall', id, name: CALL_SAY_TOOL, arguments: { text: value } } } });
+
+test('after its first words the companion keeps working and speaks again on the open call', async t => {
+  // The 2026-11-22 call: Roo said it would look, read the room in 11 seconds, and its next words
+  // were refused because the turn had closed; it sat silent for 97 seconds until asked.
+  const found = '봤어. 한 줄에 세 단어씩 던지더라.';
+  const box = await fixture(t, { script: ({ emit, machine }) => {
+    if (machine) return;
+    emit('message_start', { message: { role: 'assistant', content: [] } });
+    sayEnd(emit, 0, 'first', '응, 잠깐만 볼게.');
+    emit('tool_execution_start', { toolName: 'bash', toolCallId: 'look' });
+    emit('tool_execution_end', { toolName: 'bash', toolCallId: 'look' });
+    emit('message_start', { message: { role: 'assistant', content: [] } });
+    for (let end = 1; end <= found.length; end++) sayDelta(emit, 0, found.slice(0, end));
+    sayEnd(emit, 0, 'second', found);
+    emit('agent_settled');
+  } });
+  const watch = watchItems(await fetch(`${box.base}/call/health?watch=1&callId=c1`));
+  const rows = await eventsOf(await box.post('/call/turn', { text: '개발방 읽어봐', turnId: 'look-1' }));
+  assert.equal(rows.filter(row => row.t === 'delta').map(row => row.text).join(''), '응, 잠깐만 볼게.');
+  await watch.until(item => item.t === 'say_end');
+  const said = watch.items.filter(item => item.t === 'say');
+  assert.deepEqual(said.map(item => item.text), ['봤어. ', '한 줄에 세 단어씩 던지더라.'], 'sentence by sentence, as it was written');
+  assert.equal(new Set(said.map(item => item.sayId)).size, 1);
+  for (const id of ['first', 'second']) {
+    const done = await box.tools.get(CALL_SAY_TOOL).execute(id, {});
+    assert.deepEqual([done.isError, done.content[0].text], [undefined, 'Delivered on the call.']);
+  }
+  // A model whose stream showed no tool call still gets its words out while the call is open.
+  assert.equal((await box.tools.get(CALL_SAY_TOOL).execute('unstreamed', { text: '하나 더.' })).isError, undefined);
+  await watch.until(item => item.t === 'say' && item.text === '하나 더.');
+  const transcript = readFileSync(path.join(box.home, 'call/transcripts', readdirSync(path.join(box.home, 'call/transcripts'))[0]), 'utf8');
+  assert.match(transcript, /응, 잠깐만 볼게\.[\s\S]*봤어\. 한 줄에 세 단어씩 던지더라\./);
+  await endCall(box, 'c1', { body: { cancel: async () => {} } });
+  assert.equal((await box.tools.get(CALL_SAY_TOOL).execute('after', { text: '여보세요?' })).content[0].text, 'No call is open, so nothing was spoken.');
+  assert.equal(box.aborts(), 0);
+  assert.deepEqual(box.errors, []);
+});
+
+test('a line heard while the companion works steers into that work and never stops it', async t => {
+  let lines = 0;
+  const box = await fixture(t, { script: ({ emit, machine }) => {
+    // The first line: the companion starts searching before it says anything.
+    if (machine || ++lines > 1) return;
+    emit('tool_execution_start', { toolName: 'bash', toolCallId: 'search' });
+  } });
+  const watch = watchItems(await fetch(`${box.base}/call/health?watch=1&callId=c1`));
+  const first = box.post('/call/turn', { text: '턴이라는 말 찾아봐', turnId: 'search-1' });
+  while (!box.bridge.active) await new Promise(resolve => setTimeout(resolve, 5));
+  const second = box.post('/call/turn', { text: '천천히 해도 돼', turnId: 'search-2' });
+  assert.equal((await eventsOf(await first)).at(-1).t, 'error', 'the older line stops listening');
+  const heard = box.messages.filter(item => item.message.role === 'user');
+  assert.deepEqual(heard.map(item => [item.message.content, item.options.deliverAs]),
+    [['[voice] 턴이라는 말 찾아봐', 'steer'], ['[voice] 천천히 해도 돼', 'steer']]);
+  assert.equal(box.aborts(), 0, 'the search goes on');
+  box.emit('tool_execution_end', { toolName: 'bash', toolCallId: 'search' });
+  sayEnd(box.emit, 0, 'answer', '다 찾았어.');
+  box.emit('agent_settled');
+  assert.equal((await eventsOf(await second)).filter(row => row.t === 'delta').map(row => row.text).join(''), '다 찾았어.');
+  assert.equal(watch.items.some(item => item.t === 'say'), false, 'an answer to a heard line goes out with that line');
+  await endCall(box, 'c1', { body: { cancel: async () => {} } });
+  assert.equal(box.aborts(), 0, 'hanging up does not stop the work either');
 });
