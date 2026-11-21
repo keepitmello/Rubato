@@ -725,7 +725,7 @@ function RoomBody(props: {
             )}
             ListHeaderComponent={
               <View style={{ paddingBottom: composerHeight + 8 }}>
-                {writing ? <CompanionTypingBubble tool={tool} bubbleColor={colors.received} dotColor={theme["--color-foreground-muted"]} /> : null}
+                {writing ? <CompanionTypingBubble tool={tool} bubbleColor={colors.received} dotColor={theme["--color-foreground-muted"]} penColor={theme["--color-foreground"]} /> : null}
               </View>
             }
             ListFooterComponent={<View style={{ height: headerHeight + 10 }} />}

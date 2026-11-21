@@ -246,59 +246,93 @@
   color: var(--foreground);
 }
 
-/* ---- The typing bubble, Messages' (user a9b0890f): dots that brighten in turn, a two-circle tail,
-   and while a tool runs, the kind of work before the dots ---- */
+/* ---- The typing bubble, Messages' shape with a pen in it (user a7a3ec4e): a line writes itself and
+   is erased while the companion thinks; while a tool runs the bubble widens and the pen draws the
+   kind of work, the dots pulsing after it ---- */
 [data-rubato-segno-writing] {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.75rem 0.9rem;
+  width: 60px;
+  height: 38px;
+  padding: 0;
   overflow: visible;
+  transition: width 420ms cubic-bezier(0.25, 1, 0.5, 1);
+}
+[data-rubato-segno-writing][data-working] {
+  width: 84px;
+}
+[data-rubato-segno-ink] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+[data-ink-line] {
+  stroke: color-mix(in oklab, var(--rubato-segno-text) 55%, transparent);
+  stroke-width: 2;
+  animation: rubato-ink-write 1.6s linear infinite;
+  transition: opacity 200ms ease;
+}
+@keyframes rubato-ink-write {
+  0% { stroke-dasharray: 0 1; stroke-dashoffset: 0; animation-timing-function: ease-in-out; }
+  60% { stroke-dasharray: 1 1; stroke-dashoffset: 0; animation-timing-function: ease-in; }
+  100% { stroke-dasharray: 1 1; stroke-dashoffset: -1; }
+}
+[data-rubato-segno-pen] {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 4.4px;
+  height: 4.4px;
+  border-radius: 999px;
+  background: var(--rubato-segno-text);
+  offset-path: path("M 13.00 21.00 L 14.42 20.02 L 15.83 20.83 L 17.25 21.08 L 18.67 20.60 L 20.08 19.47 L 21.50 18.02 L 22.92 16.76 L 24.33 16.17 L 25.75 16.53 L 27.17 17.81 L 28.58 19.64 L 30.00 21.40 L 31.42 22.20 L 32.83 21.88 L 34.25 20.65 L 35.67 19.00 L 37.08 17.50 L 38.50 16.64 L 39.92 16.64 L 41.33 17.40 L 42.75 18.59 L 44.17 19.76 L 45.58 20.53 L 47.00 20.70");
+  offset-rotate: 0deg;
+  animation: rubato-ink-pen 1.6s linear infinite;
+}
+@keyframes rubato-ink-pen {
+  0% { offset-distance: 0%; opacity: 1; animation-timing-function: ease-in-out; }
+  60% { offset-distance: 100%; opacity: 1; }
+  60.1%, 100% { offset-distance: 100%; opacity: 0; }
+}
+/* Keyframes carry their own opacity, so the pen's stroke is switched off, not paused. */
+[data-rubato-segno-writing][data-working] [data-ink-line],
+[data-rubato-segno-writing][data-working] > [data-rubato-segno-pen] {
+  opacity: 0;
+  animation: none;
+}
+[data-ink-work] > path {
+  stroke: var(--rubato-segno-text);
+  stroke-width: 1.6;
+  stroke-dasharray: 1 1;
+  stroke-dashoffset: 1;
+  animation: rubato-ink-draw 0.45s cubic-bezier(0.33, 1, 0.68, 1) forwards;
+}
+@keyframes rubato-ink-draw {
+  to { stroke-dashoffset: 0; }
 }
 [data-rubato-segno-writing] > span {
-  width: 0.5rem;
-  height: 0.5rem;
+  position: absolute;
+  top: 16.4px;
+  width: 5.2px;
+  height: 5.2px;
   border-radius: 999px;
   background: color-mix(in oklab, var(--rubato-segno-text) 55%, transparent);
-  animation: rubato-segno-dot 1.26s ease-in-out infinite;
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
-[data-rubato-segno-writing] > span:nth-of-type(2) {
-  animation-delay: 0.18s;
-}
-[data-rubato-segno-writing] > span:nth-of-type(3) {
-  animation-delay: 0.36s;
+[data-rubato-segno-writing] > span:nth-of-type(1) { left: 38px; }
+[data-rubato-segno-writing] > span:nth-of-type(2) { left: 48.7px; animation-delay: 0.18s; }
+[data-rubato-segno-writing] > span:nth-of-type(3) { left: 59.4px; animation-delay: 0.36s; }
+[data-rubato-segno-writing][data-working] > span {
+  animation: rubato-segno-dot 1.16s ease-in-out infinite;
 }
 @keyframes rubato-segno-dot {
-  0%, 60%, 100% { opacity: 0.35; transform: scale(0.92); }
-  25% { opacity: 1; transform: scale(1); }
-}
-[data-rubato-segno-work] {
-  display: inline-flex;
-  width: 0;
-  margin-right: -0.3rem;
-  opacity: 0;
-  transform: scale(0.6);
-  overflow: hidden;
-  color: color-mix(in oklab, var(--rubato-segno-text) 60%, transparent);
-  transition: width 260ms cubic-bezier(0.25, 1, 0.5, 1), margin 260ms cubic-bezier(0.25, 1, 0.5, 1),
-    opacity 200ms ease, transform 260ms cubic-bezier(0.25, 1, 0.5, 1);
-}
-[data-rubato-segno-writing][data-working] > [data-rubato-segno-work] {
-  width: 0.95rem;
-  margin-right: 0.2rem;
-  opacity: 1;
-  transform: none;
-}
-[data-rubato-segno-work] > svg {
-  width: 0.95rem;
-  height: 0.95rem;
-  stroke-width: 2.2;
-  animation: rubato-segno-work-in 220ms ease both;
-}
-@keyframes rubato-segno-work-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  0%, 100% { opacity: 0.35; }
+  28% { opacity: 1; }
+  64% { opacity: 0.35; }
 }
 [data-rubato-segno-typing-tail],
 [data-rubato-segno-typing-tail]::after {
@@ -340,7 +374,9 @@
 
 @media (prefers-reduced-motion: reduce) {
   [data-rubato-segno-row][data-enter] > [data-rubato-segno-bubble],
-  [data-rubato-segno-writing] > span {
+  [data-rubato-segno-writing] > span,
+  [data-ink-line],
+  [data-rubato-segno-pen] {
     animation: none;
   }
 }

@@ -43,7 +43,7 @@ import {
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
 import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ChevronDownIcon, FileTextIcon, SearchIcon, SparklesIcon, TerminalIcon } from "lucide-react";
+import { ChevronDownIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -406,25 +406,48 @@ function Bubbles(props: Parameters<typeof Bubble>[0]) {
   );
 }
 
-const WORK_ICON = { search: SearchIcon, file: FileTextIcon, terminal: TerminalIcon, other: SparklesIcon } as const;
+/** The pen line the typing bubble writes while the companion thinks (mobile RoomMotion.tsx draws the same). */
+const INK_LINE = "M 13.00 21.00 L 14.42 20.02 L 15.83 20.83 L 17.25 21.08 L 18.67 20.60 L 20.08 19.47 L 21.50 18.02 L 22.92 16.76 L 24.33 16.17 L 25.75 16.53 L 27.17 17.81 L 28.58 19.64 L 30.00 21.40 L 31.42 22.20 L 32.83 21.88 L 34.25 20.65 L 35.67 19.00 L 37.08 17.50 L 38.50 16.64 L 39.92 16.64 L 41.33 17.40 L 42.75 18.59 L 44.17 19.76 L 45.58 20.53 L 47.00 20.70";
+/** Each kind of work as the pen draws it, around (0, 0). */
+const INK_WORK: Record<SegnoLiveWork, readonly string[]> = {
+  search: ["M -2.2 -6.8 a 4.6 4.6 0 1 0 0.01 0", "M 1.3 1.3 L 5.6 5.6"],
+  file: ["M -4.8 -6.5 L 1.6 -6.5 L 4.8 -3.3 L 4.8 6.5 L -4.8 6.5 Z", "M -2.6 -0.6 L 2.6 -0.6", "M -2.6 2.6 L 2.6 2.6"],
+  terminal: [
+    "M -6.4 -5.2 L 6.4 -5.2 Q 7.4 -5.2 7.4 -4.2 L 7.4 4.6 Q 7.4 5.6 6.4 5.6 L -6.4 5.6 Q -7.4 5.6 -7.4 4.6 L -7.4 -4.2 Q -7.4 -5.2 -6.4 -5.2 Z",
+    "M -4.2 -2 L -1.6 0.3 L -4.2 2.6",
+    "M 0.4 2.8 L 3.8 2.8",
+  ],
+  other: ["M 0 -6.5 Q 0.9 -0.9 6.5 0 Q 0.9 0.9 0 6.5 Q -0.9 0.9 -6.5 0 Q -0.9 -0.9 0 -6.5 Z"],
+};
 
 /**
- * Messages' typing bubble (user a9b0890f): three dots that brighten in turn and two small circles
- * for a tail. While the companion's tool runs, the bubble widens and the kind of work stands before
- * the dots (decisions why-the-phone-room-splits-thinking-and-work).
+ * Messages' typing bubble with a pen in it (user a7a3ec4e chose the drawing): while the companion
+ * thinks, a line writes itself across the bubble and is erased, again and again; while its tool
+ * runs, the bubble widens and the pen draws the kind of work, with the dots pulsing after it
+ * (decisions why-the-phone-room-splits-thinking-and-work).
  */
 function Writing(props: { readonly work?: SegnoLiveWork | null }) {
-  const Icon = props.work ? WORK_ICON[props.work] : null;
+  const work = props.work ?? null;
   return (
     <div data-rubato-segno-row="" data-side="segno" data-group-start="" data-group-end="" data-enter="arrive">
       <div
         data-rubato-segno-bubble=""
         data-rubato-segno-writing=""
-        data-working={Icon ? "" : undefined}
+        data-working={work ? "" : undefined}
         role="status"
         aria-label="Segno is writing"
       >
-        <i data-rubato-segno-work="">{Icon ? <Icon key={props.work} aria-hidden="true" /> : null}</i>
+        <svg data-rubato-segno-ink="" width="84" height="38" viewBox="0 0 84 38" aria-hidden="true">
+          <path data-ink-line="" d={INK_LINE} pathLength={1} />
+          {work ? (
+            <g key={work} data-ink-work="" transform="translate(15 19)">
+              {INK_WORK[work].map((d, index) => (
+                <path key={index} d={d} pathLength={1} style={{ animationDelay: `${(index * 0.9) / INK_WORK[work].length}s` }} />
+              ))}
+            </g>
+          ) : null}
+        </svg>
+        <i data-rubato-segno-pen="" aria-hidden="true" />
         <span />
         <span />
         <span />
