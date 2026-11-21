@@ -247,6 +247,12 @@ export function createCompanionService(options = {}) {
         const until = Number.isFinite(input.until) ? input.until : null;
         return { items: sessionId ? await inner.span(sessionId, after, until) : [] };
       }
+      // The kind of work the companion's tool does right now ('search', 'file', 'terminal', 'other')
+      // or null, for the room's typing bubble while it works on the person's message (inner.mjs liveWork).
+      case 'live': {
+        const sessionId = companion.readState(env).sessionId;
+        return { work: sessionId ? await inner.live(sessionId) : null };
+      }
       case 'save-piece':
         if (typeof input.id !== 'string') throw new CompanionRequestError(400, 'invalid', 'id is missing.');
         invalid(() => companion.writePiece(input.id, input.text, { defaultsDir, env }));

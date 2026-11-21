@@ -43,7 +43,7 @@ import {
 import { ThreadId, type EnvironmentId, type MessageId, type ScopedThreadRef } from "@t3tools/contracts";
 import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, FileTextIcon, SearchIcon, SparklesIcon, TerminalIcon } from "lucide-react";
 
 import { useAssetUrls } from "~/assets/assetUrls";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -58,7 +58,7 @@ import {
   RubatoMessageEditor,
   useRubatoMessageEditing,
 } from "./RubatoMessageEdit";
-import { RubatoSegnoSpanLine, useSegnoSpanSummaries } from "./RubatoSegnoInner";
+import { RubatoSegnoSpanLine, useCompanionLiveWork, useSegnoSpanSummaries, type SegnoLiveWork } from "./RubatoSegnoInner";
 import { RubatoWorkCard } from "./RubatoWorkCard";
 import { rubatoLaunchOfSegno } from "./rubatoWorkCardModel";
 import type { SegnoSpanSummary } from "../../state/rubatoCompanion";
@@ -406,14 +406,29 @@ function Bubbles(props: Parameters<typeof Bubble>[0]) {
   );
 }
 
-function Writing() {
+const WORK_ICON = { search: SearchIcon, file: FileTextIcon, terminal: TerminalIcon, other: SparklesIcon } as const;
+
+/**
+ * Messages' typing bubble (user a9b0890f): three dots that brighten in turn and two small circles
+ * for a tail. While the companion's tool runs, the bubble widens and the kind of work stands before
+ * the dots (decisions why-the-phone-room-splits-thinking-and-work).
+ */
+function Writing(props: { readonly work?: SegnoLiveWork | null }) {
+  const Icon = props.work ? WORK_ICON[props.work] : null;
   return (
     <div data-rubato-segno-row="" data-side="segno" data-group-start="" data-group-end="" data-enter="arrive">
-      <div data-rubato-segno-bubble="" data-rubato-segno-writing="" role="status" aria-label="Segno is writing">
+      <div
+        data-rubato-segno-bubble=""
+        data-rubato-segno-writing=""
+        data-working={Icon ? "" : undefined}
+        role="status"
+        aria-label="Segno is writing"
+      >
+        <i data-rubato-segno-work="">{Icon ? <Icon key={props.work} aria-hidden="true" /> : null}</i>
         <span />
         <span />
         <span />
-        <Tail />
+        <b data-rubato-segno-typing-tail="" aria-hidden="true" />
       </div>
     </div>
   );
@@ -461,6 +476,7 @@ function RubatoSegnoRoom(props: {
     return byId;
   }, [props.entries]);
   const writing = segnoIsWriting(items, props.working);
+  const work = useCompanionLiveWork(props.environmentId, companionId, writing);
   const locale = useLocale();
   const partial = props.historyControls?.hasMoreHistory === true;
   const spans = useMemo(() => segnoSpans(items, { writing: props.working, partial }), [items, props.working, partial]);
@@ -879,7 +895,7 @@ function RubatoSegnoRoom(props: {
             })}
           </section>
         ))}
-        {writing ? <Writing /> : null}
+        {writing ? <Writing work={work} /> : null}
         {spanLine(spans.tail, "span:tail")}
         {placement.tail.map((call) => (
           <RubatoCallCard key={call.id} call={call} title={companionChoice?.title ?? call.companion} locale={locale} />

@@ -260,5 +260,38 @@ export function createInnerReader({ env = process.env } = {}) {
     async span(sessionId, after, until) {
       return (await itemsOf(sessionId)).filter((item) => item.at > after && (until === null || item.at <= until));
     },
+    /** The kind of work the companion's tool does right now, or null (liveWork). */
+    async live(sessionId) {
+      return liveWork(await itemsOf(sessionId));
+    },
   };
+}
+
+/** The companion's own mouth (companion-home REPLY_TOOL, SAY_TOOL, and its voice on a call): the answer, not work before it. */
+const ANSWER_TOOLS = new Set(['reply', 'say', 'call_say']);
+
+/** What kind of work a tool does, for the small mark on the room's typing bubble. */
+export function workKind(name) {
+  const tool = String(name ?? '').toLowerCase();
+  if (ANSWER_TOOLS.has(tool)) return null;
+  if (/search|fetch|browse|web|aside|outpost|recall/.test(tool)) return 'search';
+  if (/^(bash|shell|exec|eval|terminal)|_bash$|terminal/.test(tool)) return 'terminal';
+  if (/^(read|write|edit|multi_edit|apply_patch|grep|find|ls|glob|ast_grep)|notes_|memory_|commit|piece|record/.test(tool)) return 'file';
+  return 'other';
+}
+
+/**
+ * What the room's typing bubble shows while the companion works on the person's message: the kind
+ * of the tool that runs now (its call is in the file and its result is not), or null while none
+ * runs. Only the calls of the latest step count (a step can call several at once): an older call
+ * left without a result (an aborted turn) is over.
+ * Read from the session file, so the thread still gets nothing (intent companion-segno rev 17).
+ */
+export function liveWork(items) {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    const item = items[index];
+    if (item.kind !== 'tool') return null;
+    if (item.done === undefined && workKind(item.name) !== null) return workKind(item.name);
+  }
+  return null;
 }
