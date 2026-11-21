@@ -227,11 +227,11 @@ test("Segno's reply sent while its thread has no stream reaches the thread throu
 
 // 2026-11-01: the control tower moved Segno to a new conversation. Its thread came from the inventory and
 // the person had not written to it, so no saved state named it and Segno's replies reached nothing.
-test("a companion conversation no stream ever opened still gets Segno's replies, in its inventory thread", async (t) => {
+for (const fresh of [false, true]) test(`a companion conversation no stream ever opened still gets Segno's replies, in its inventory thread${fresh ? ' (a fresh T3 home with no saved state yet: a companion just made in the app)' : ''}`, async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-backfill-fresh-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const stateDir = path.join(dir, 'state');
-  mkdirSync(stateDir, { recursive: true });
+  if (!fresh) mkdirSync(stateDir, { recursive: true });
   const threadId = 'import:rubato-test:srv:S9';
   const session = [{ role: 'custom', customType: SESSION_MESSAGE_TYPE, display: false, content: 'wake', timestamp: at(10),
       details: { v: 1, messageId: 'wake-10', kind: 'wake', what: 'wake', from: { sessionId: 'rubato', title: 'Rubato', cwd: '' }, text: 'wake' } },

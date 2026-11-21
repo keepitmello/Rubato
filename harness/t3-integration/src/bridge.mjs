@@ -946,7 +946,10 @@ export class RubatoPiBridge {
     if (this.closed || !this.sessionStateDir) return Promise.resolve();
     return (this.backfilling ??= (async () => {
       let names;
-      try { names = readdirSync(this.sessionStateDir).filter((name) => name.endsWith('.json') && !name.startsWith('.')); } catch { return; }
+      // A fresh T3 home has no saved session state until a thread first streams; a companion made
+      // in the app before that must still get its first words into its room.
+      try { names = readdirSync(this.sessionStateDir).filter((name) => name.endsWith('.json') && !name.startsWith('.')); }
+      catch (error) { if (error?.code !== 'ENOENT') return; names = []; }
       // With nothing saved, only companion conversations are looked at, and this pass never opens
       // the engine connection for them: the inventory opens it within seconds of startup.
       if (!names.length && !this.inventoryClient?.client.connected) return;
