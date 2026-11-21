@@ -39,6 +39,26 @@ describe("Rubato's labels in a thread's right-click menu, Korean interface", () 
     expect(menu?.children?.map((child) => child.label)).toEqual(["Research", "새 폴더…", "Research에서 빼기"]);
   });
 
+  it("keeps a folder named like interface text as written", () => {
+    for (const name of ["Docs", "Settings", "Files"]) {
+      const folder = { id: "a", name, createdAt: "2026-11-14T00:00:00.000Z", threadCount: 0, environmentId: mac };
+      const items = withRubatoFolderMenu(
+        {
+          folders: [folder],
+          byId: new Map([["a", folder]]),
+          loaded: true,
+          folderOf: () => folder,
+          foldersOn: () => [folder],
+          settingsOf: () => ({}) as ServerSettings,
+        },
+        { environmentId: mac, id: "t1" },
+        [] as ContextMenuItem<"pin">[],
+      );
+      const children = items.find((item) => item.id === "rubato-folder:menu")?.children;
+      expect(children?.map((child) => child.label)).toEqual([name, "새 폴더…", `${name}에서 빼기`]);
+    }
+  });
+
   it("names Fork thread in Korean", () => {
     const items = buildThreadActionMenuItems({
       canOperate: true,
