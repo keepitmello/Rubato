@@ -1,6 +1,7 @@
 #!/usr/bin/env node
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { findAgy, installLeadAgent, LEAD_INSTANCE_ID, seedLeadInstance } from './agy-lead.mjs';
 import { catalogSlugs } from './src/model-catalog-order.mjs';
 
 const home = process.env.RUBATO_GUI_T3_HOME;
@@ -58,6 +59,25 @@ instances.rubato = {
   enabled: true,
   config: { bridgeModule: bridge, descriptorPath: descriptor, catalogueCwd: catalogue },
 };
+// 공식 agy 가 있으면 Rubato 리드를 agy 에이전트와 "루바토 리드" 인스턴스로 건넨다
+// (agy-lead.mjs). 에이전트는 이 T3 홈 주인의 HOME 에 둔다. T3 홈이 HOME 밖이면 테스트나
+// 따로 띄운 홈이라 그 HOME 의 ~/.gemini 를 건드리지 않는다. 인스턴스는 한 번만 넣고
+// 표식을 남긴다 — 사용자가 지운 것을 업데이트마다 되살리지 않는다.
+const agyHome = process.env.HOME;
+const agyOfferedPath = path.join(userdata, '.rubato-agy-lead');
+const homeOwned = agyHome && path.isAbsolute(agyHome) && !path.relative(agyHome, home).startsWith('..');
+let agyOffered = false;
+if (process.platform !== 'win32' && homeOwned) {
+  const agy = await findAgy(process.env);
+  if (agy) {
+    try { await installLeadAgent(agyHome); } catch (error) { console.warn(`agy 리드 에이전트를 쓰지 못했다: ${error.message}`); }
+    const offered = await access(agyOfferedPath).then(() => true, () => false);
+    if (!offered) {
+      seedLeadInstance(instances, agy);
+      agyOffered = true;
+    }
+  }
+}
 settings.providerInstances = instances;
 const prefs = settings.providerModelPreferences && typeof settings.providerModelPreferences === 'object'
   ? settings.providerModelPreferences : {};
@@ -107,6 +127,7 @@ const nextSettings = `${JSON.stringify(settings, null, 2)}\n`;
 let currentSettings = null;
 try { currentSettings = await readFile(settingsPath, 'utf8'); } catch { /* first install */ }
 if (currentSettings !== nextSettings) await writeFile(settingsPath, nextSettings);
+if (agyOffered) await writeFile(agyOfferedPath, `${JSON.stringify({ instance: LEAD_INSTANCE_ID })}\n`);
 
 const clientPath = path.join(userdata, 'client-settings.json');
 let client = {};
