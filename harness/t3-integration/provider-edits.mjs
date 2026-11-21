@@ -13,6 +13,12 @@ export const providerOverlays = [
   'apps/web/src/components/settings/RubatoProvidersSettings.tsx',
   // Titles and summaries: the session-title ladder the Stats card shares.
   'apps/web/src/components/settings/RubatoTitleModels.tsx',
+  // Thinking effort: the level new conversations start at (src/auth/effort.mjs), and the line under
+  // the picker's levels that says a level picked there stays in the conversation.
+  'apps/web/src/components/settings/RubatoEffortSettings.tsx',
+  'apps/web/src/components/settings/RubatoEffortSettings.logic.ts',
+  'apps/web/src/components/settings/RubatoEffortSettings.logic.test.ts',
+  'apps/web/src/components/chat/RubatoEffortScope.tsx',
 ];
 
 const t3Route = [
@@ -70,6 +76,41 @@ export const providerEdits = {
   'apps/web/src/routes/_chat.settings.providers.tsx': [
     [t3Route, 'import { RubatoProvidersSettingsPanel } from "../components/settings/RubatoProvidersSettings";\n', 'replace'],
     ['  component: SettingsProvidersRoute,\n', '  component: RubatoProvidersSettingsPanel,\n', 'replace'],
+  ],
+  // Under the picker's levels: a level picked here stays in this conversation; the default is on this page.
+  'apps/web/src/components/chat/ComposerModelEffort.tsx': [
+    ['import { ComposerPermissionsSection, type RuntimeModeOption } from "./ComposerFooterControls";\n',
+      'import { RubatoEffortScope } from "./RubatoEffortScope";\n'],
+    [[
+      '  return (',
+      '    <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">',
+      '      {locked ? (',
+    ].join('\n'), [
+      '  return (',
+      '    <>',
+      '    <div role="radiogroup" aria-label={descriptor.label} className="flex flex-col gap-0.5">',
+      '      {locked ? (',
+    ].join('\n'), 'replace'],
+    [[
+      '          onPick={() => traits.changeSelect(control.descriptor, option.id)}',
+      '        />',
+      '      ))}',
+      '    </div>',
+      '  );',
+      '}',
+      '',
+    ].join('\n'), [
+      '          onPick={() => traits.changeSelect(control.descriptor, option.id)}',
+      '        />',
+      '      ))}',
+      '    </div>',
+      '    {/* Rubato: where the default lives (provider-edits.mjs). */}',
+      '    <RubatoEffortScope />',
+      '    </>',
+      '  );',
+      '}',
+      '',
+    ].join('\n'), 'replace'],
   ],
   // The page reads the Mac this app runs on, so the scope selects have nothing to choose.
   'apps/web/src/components/settings/SettingsScopeSentence.tsx': [

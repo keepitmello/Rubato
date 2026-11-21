@@ -43,6 +43,8 @@ const PROVIDERS: Readonly<Record<string, { readonly driver: string; readonly lab
 interface RubatoUsageRow {
   readonly provider?: unknown;
   readonly account?: unknown;
+  /** The account's model lane: "" main, "-sub" sub, "-sub2" the second sub (harness/scripts/rubato-usage.mjs). */
+  readonly modelSuffix?: unknown;
   readonly email?: unknown;
   readonly plan?: unknown;
   readonly usageLimits?: unknown;
@@ -73,11 +75,26 @@ async function readUsage(bridgeModule: string): Promise<unknown> {
   return module.authService().handle("usage");
 }
 
-/** One stable row id per account: the provider's name, and the account's when it is not the only one. */
-export function rubatoAccountId(provider: string, account: string): string {
+const LANES: Readonly<Record<string, string>> = { "": "Main", "-sub": "Sub", "-sub2": "Sub 2" };
+
+/**
+ * One stable row id per account, which the page also shows as its name: the provider's name, and
+ * which account it is when it is not the only one. A provider with a sub account names its rows
+ * Main and Sub, as the model picker's lanes do, so the page tells them apart the same way.
+ */
+export function rubatoAccountId(provider: string, account: string, lane?: string): string {
   const label = PROVIDERS[provider]?.label ?? provider;
+  if (lane !== undefined) return `${label} · ${lane}`;
   // A Keychain-held key is the provider's only account of that kind, like "default".
   return account === "default" || account === "keychain" ? label : `${label} · ${account}`;
+}
+
+function laneOf(row: RubatoUsageRow, rows: ReadonlyArray<RubatoUsageRow>): string | undefined {
+  if (typeof row.modelSuffix !== "string") return undefined;
+  const hasSub = rows.some(
+    (other) => other?.provider === row.provider && typeof other.modelSuffix === "string" && other.modelSuffix !== "",
+  );
+  return hasSub ? LANES[row.modelSuffix] : undefined;
 }
 
 /** `rubato auth usage --json` → the source's accounts. Rows this build cannot draw are dropped. */
@@ -89,7 +106,7 @@ export function rubatoUsageAccounts(answer: unknown): ReadonlyArray<UsageLimitSo
     const provider = PROVIDERS[row.provider];
     if (!provider) return [];
     const decoded = decodeAccount({
-      id: rubatoAccountId(row.provider, row.account),
+      id: rubatoAccountId(row.provider, row.account, laneOf(row, rows)),
       driver: ProviderDriverKind.make(provider.driver),
       ...(typeof row.email === "string" && row.email.trim() ? { email: row.email } : {}),
       ...(typeof row.plan === "string" && row.plan.trim() ? { plan: row.plan } : {}),

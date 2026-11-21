@@ -387,8 +387,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     return { cache, contextTokens: facts.contextTokens };
   }
   /**
-   * The sender's own name and folder, and whether it is the companion (its words then reach the
-   * receiver framed as work Segno, the user's Chief of Staff leading it, assigned (message.mjs); callers pass ids only.
+   * The sender's own name and folder, and whether it is a companion (its words then reach a lead
+   * framed as work that companion leads and assigned, and another companion as a peer's (message.mjs)); callers pass ids only.
    */
   async function sender(id) {
     const known = row(id);
@@ -974,7 +974,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     async companionSettings({ sessionId, action, piece, change } = {}) {
       requireId(sessionId, 'sessionId');
       const { sessionsDir } = need();
-      if (row(sessionId) && row(sessionId).companion !== true) throw fail('not_companion', "Only Segno's own conversation has settings");
+      if (row(sessionId) && row(sessionId).companion !== true) throw fail('not_companion', "Only a companion's own conversation has settings");
       const { companionSettings } = await import('../../companion/settings.mjs');
       try { return await companionSettings({ sessionId, sessionsDir, request: { action, piece, change },
         env: companionEnv(row(sessionId)?.companionId) }); }
@@ -1024,7 +1024,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     },
     /**
      * Rubato's own clock (`kind: 'wake'`): the companion's heartbeat and daily report (harness/companion
-     * keeper.mjs) and scheduled messages (harness/scheduler). The conversation takes it as a system
+     * control-tower.mjs) and scheduled messages (harness/scheduler). The conversation takes it as a system
      * message where its model allows, and it draws no bubble; only the turn it starts shows. A caller
      * that may deliver again (a restarted scheduler) passes its own `messageId`, so the conversation
      * takes it once.

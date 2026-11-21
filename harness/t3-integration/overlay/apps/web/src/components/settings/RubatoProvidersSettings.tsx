@@ -30,6 +30,7 @@ import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
+import { EffortDefaultSection, ModelEffortControl, useEffortSettings, type EffortState } from "./RubatoEffortSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
@@ -144,6 +145,7 @@ export function RubatoProvidersSettingsPanel() {
     if (environmentId === null) return;
     void refreshServerProviders({ environmentId, input: { refreshModels: true } });
   }, [environmentId, refreshServerProviders]);
+  const effort = useEffortSettings(environmentId, refreshModels);
 
   useEffect(() => {
     void loadStatus();
@@ -161,6 +163,7 @@ export function RubatoProvidersSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <EffortDefaultSection effort={effort} />
       <SettingsSection
         id="rubato-providers"
         title="Providers"
@@ -222,6 +225,7 @@ export function RubatoProvidersSettingsPanel() {
               environmentId={environmentId}
               provider={selected}
               setupToken={status?.setupToken ?? null}
+              effort={effort}
               onChanged={() => {
                 void loadStatus();
                 refreshModels();
@@ -238,11 +242,13 @@ function ProviderDetail({
   environmentId,
   provider,
   setupToken,
+  effort,
   onChanged,
 }: {
   environmentId: EnvironmentId;
   provider: ProviderStatus;
   setupToken: AuthStatus["setupToken"] | null;
+  effort: EffortState;
   onChanged: () => void;
 }) {
   const [job, setJob] = useState<LoginJob | null>(null);
@@ -394,7 +400,7 @@ function ProviderDetail({
         )}
       </div>
 
-      <ProviderModels providerId={provider.id} name={name} />
+      <ProviderModels providerId={provider.id} name={name} effort={effort} />
     </div>
   );
 }
@@ -697,8 +703,8 @@ function LoginFlow({
   );
 }
 
-/** The provider's models in the Rubato picker, with the one T3 setting worth keeping: visibility. */
-function ProviderModels({ providerId, name }: { providerId: string; name: string }) {
+/** The provider's models in the Rubato picker: how hard each thinks, and the one T3 setting worth keeping, visibility. */
+function ProviderModels({ providerId, name, effort }: { providerId: string; name: string; effort: EffortState }) {
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const settings = usePrimarySettings();
   const rubato = serverProviders.find((provider) => provider.driver === RUBATO_DRIVER);
@@ -736,11 +742,14 @@ function ProviderModels({ providerId, name }: { providerId: string; name: string
               title={model.name}
               description={<code className="text-xs">{model.slug}</code>}
               control={
-                <Switch
-                  checked={!hidden.has(model.slug)}
-                  onCheckedChange={(checked) => setShown(model.slug, Boolean(checked))}
-                  aria-label={`Show ${model.name} in the model picker`}
-                />
+                <div className="flex items-center gap-3">
+                  <ModelEffortControl slug={model.slug} name={model.name} capabilities={model.capabilities} effort={effort} />
+                  <Switch
+                    checked={!hidden.has(model.slug)}
+                    onCheckedChange={(checked) => setShown(model.slug, Boolean(checked))}
+                    aria-label={`Show ${model.name} in the model picker`}
+                  />
+                </div>
               }
             />
           ))

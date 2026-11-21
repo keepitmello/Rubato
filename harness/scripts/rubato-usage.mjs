@@ -357,7 +357,7 @@ export const USAGE_READERS = Object.freeze({
 /**
  * @param {object} input
  * @param {readonly { id: string, label: string }[]} input.providers
- * @param {(providerId: string) => Promise<readonly { name: string, source: string }[]>} input.accountsOf
+ * @param {(providerId: string) => Promise<readonly { name: string, source: string, modelSuffix?: string | null }[]>} input.accountsOf
  * @param {(providerId: string) => Promise<object | undefined>} input.credentialOf
  * @param {(credential: object | undefined, name: string) => object | undefined} input.slotOf
  * @param {object} input.observed  `readObservedUsage(...)`
@@ -394,6 +394,7 @@ export async function collectUsage({
             providerLabel: provider.label,
             account: account.name,
             source: account.source,
+            ...lane(account),
             usageLimits: {
               checkedAt,
               windows: [],
@@ -407,6 +408,7 @@ export async function collectUsage({
           providerLabel: provider.label,
           account: account.name,
           source: account.source,
+          ...lane(account),
           ...(result.email ? { email: result.email } : {}),
           ...(result.plan ? { plan: result.plan } : {}),
           usageLimits: { checkedAt: result.checkedAt ?? checkedAt, windows: result.windows },
@@ -414,5 +416,25 @@ export async function collectUsage({
       })());
     }
   }
-  return { accounts: (await Promise.all(jobs)).filter(Boolean) };
+  // Within a provider, the main account first, then sub and sub2, as the model picker names them.
+  const rows = (await Promise.all(jobs)).filter(Boolean);
+  const order = new Map(providers.map((provider, index) => [provider.id, index]));
+  return {
+    accounts: rows
+      .map((row, index) => ({ row, index }))
+      .sort((left, right) => (order.get(left.row.provider) - order.get(right.row.provider))
+        || (laneOrder(left.row.modelSuffix) - laneOrder(right.row.modelSuffix))
+        || (left.index - right.index))
+      .map(({ row }) => row),
+  };
+}
+
+/** The model-id suffix of the account's lane: "" is the main account, "-sub" the sub (accounts.mjs). */
+function lane(account) {
+  return typeof account.modelSuffix === "string" ? { modelSuffix: account.modelSuffix } : {};
+}
+
+function laneOrder(modelSuffix) {
+  const at = ["", "-sub", "-sub2"].indexOf(modelSuffix);
+  return at === -1 ? 3 : at;
 }

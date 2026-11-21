@@ -1,6 +1,6 @@
 // Segno's dream as a resident service of the engine (pi-server resident-services.mjs): its own
 // thread, so a fault here ends this thread only and the engine starts it again, and the companion's
-// keeper and conversation keep going. Once a minute it asks whether the dream is due (dream.mjs
+// control tower and conversation keep going. Once a minute it asks whether the dream is due (dream.mjs
 // dreamDue) and, when it is, starts the dream as its own engine process (ctx.spawn, so the engine
 // owns and reaps it and stops it if this thread ends).
 //

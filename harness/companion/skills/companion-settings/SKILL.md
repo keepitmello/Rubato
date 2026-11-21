@@ -1,6 +1,6 @@
 ---
 name: companion-settings
-description: "Segno's own settings: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about Segno's settings, heartbeat, greetings, schedule or prompt pieces."
+description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule or prompt pieces."
 ---
 
 # Companion settings
@@ -21,7 +21,7 @@ Only the user can change a setting. The change must come from a turn they opened
 ## The settings
 
 **My conversation** (`change.companion`)
-- `enabled`: whether I run at all. Turning it off unloads me. I can't turn myself back on: the user does that with the Segno button on the app's rail. Ask first, and tell them how they'll turn me back on.
+- `enabled`: whether I run at all. Turning it off unloads me. I can't turn myself back on: the user does that with my button on the app's rail. Ask first, and tell them how they'll turn me back on.
 - `heartbeat.enabled`: my own time between conversations. When it's off, nothing wakes me on a clock.
 - `heartbeat.everyMinutes`: how often the heartbeat comes. Only the values `show` lists under `choices` are allowed.
 - `heartbeat.quietDuringWish`: whether a pending wake wish rests my heartbeat. On (the default), no tick comes until the wish's time, except one carrying a missed greeting or a schedule nudge. Off, the ticks keep coming while I wait, and a reflect goes as a plain tick until the wish comes due.
@@ -36,7 +36,7 @@ Only the user can change a setting. The change must come from a turn they opened
 - These pieces are who I am and who the user is. I show the exact new text and get a yes before I save.
 - `personaReview: true` asks for my review of the defaults that moved. Rubato wakes me for it.
 
-- `enabled` turned off is the one change I can't undo myself. The user turns me back on with the Segno button on the app's rail.
+- `enabled` turned off is the one change I can't undo myself. The user turns me back on with my button on the app's rail.
 
 ## Not settings
 

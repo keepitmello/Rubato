@@ -13,8 +13,9 @@ import { pruneRuns } from './judge.mjs';
 
 export const THINKING_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 /**
- * Where a message task sends its text: the companion (Segno), whichever conversation is its own
- * when the time comes, or one conversation by id. A task without `sendTo` starts a new session.
+ * Where a message task sends its text: a companion (`companion` is the default one, Segno;
+ * `companion:<id>` one from ~/.rubato/companions.json), whichever conversation is its own when the
+ * time comes, or one conversation by id. A task without `sendTo` starts a new session.
  */
 export const COMPANION_TARGET = 'companion';
 /** A message rides one session-link delivery (8,000 characters) with a short header. */
@@ -67,13 +68,13 @@ function directoryOrThrow(cwd) {
   return resolved;
 }
 
-/** `companion`, a conversation id, or null (start a new session). */
+/** `companion`, `companion:<id>`, a conversation id, or null (start a new session). */
 export function validateSendTo(value) {
   if (value === null || value === undefined) return null;
   const target = typeof value === 'string' ? value.trim() : value;
   if (target === '') return null;
   if (target === COMPANION_TARGET || (typeof target === 'string' && (/^companion:[a-z][a-z0-9-]{0,47}$/.test(target) || SESSION_ID.test(target)))) return target;
-  throw invalid('Send to "companion" (Segno) or a conversation id, or leave it empty to start a new session.', 'sendTo');
+  throw invalid('Send to "companion", "companion:<id>" or a conversation id, or leave it empty to start a new session.', 'sendTo');
 }
 
 /** The text a message task sends now, checked as a delivery: not empty, within MESSAGE_CHARS. */
@@ -334,7 +335,7 @@ export function createScheduleStore(options = {}) {
      */
     async send({ to, text } = {}) {
       const target = validateSendTo(to);
-      if (target === null) throw invalid('Name where the message goes: "companion" (Segno) or a conversation id.', 'sendTo');
+      if (target === null) throw invalid('Name where the message goes: "companion", "companion:<id>" or a conversation id.', 'sendTo');
       const message = validateMessageText(text);
       return mutate((state) => {
         if (!schedulerStatus().running) {

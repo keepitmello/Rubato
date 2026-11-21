@@ -64,7 +64,7 @@ export function rubatoSessionMessageHeading(link: RubatoSessionMessageLink): str
 
 /**
  * What a notice says happened, in a word or two (pi-server companion-follow.mjs noticeText and
- * harness/companion keeper.mjs write these). Unknown text keeps its first sentence.
+ * harness/companion control-tower.mjs write these). Unknown text keeps its first sentence.
  */
 export function rubatoNoticeLabel(text: string): string {
   const first = text.trim();

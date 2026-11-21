@@ -1,7 +1,7 @@
 // One engine keeps a companion home. Two engines driving the same home fight over its state: on
-// 2026-11-09 an isolated test engine that inherited the companions file ran a keeper on the live
-// Roo home, and the two keepers flipped Roo's conversation six times in thirty seconds. Each
-// companion service (keeper, dream, messenger) therefore claims its kind in the home before it
+// 2026-11-09 an isolated test engine that inherited the companions file ran a control tower on the live
+// Roo home, and the two control towers flipped Roo's conversation six times in thirty seconds. Each
+// companion service (control tower, dream, messenger) therefore claims its kind in the home before it
 // starts; a claim another live engine holds makes the start fail, and the supervisor tries again
 // with its backoff. The claim is a lock directory refreshed while the service runs, the same
 // mechanism as the engine's own profile lock: a crashed engine's claim goes stale and the next

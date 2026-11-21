@@ -285,6 +285,21 @@ const sameItem = (a, b) => Object.keys(a).length === Object.keys(b).length &&
   Object.keys(a).every((key) => Object.is(a[key], b[key]));
 
 /**
+ * Each model with `startThinkingLevel`: the effort a new conversation runs at once it moves to that
+ * model, so the GUI picker shows what the engine will use. Same order as Pi's model switch: the
+ * level remembered for the model, then the profile default, then the level a new conversation
+ * opens at (`openLevel`). Without `settings` (a worker in another process) the models go as they
+ * are, and the picker keeps its own default.
+ */
+export function withStartThinkingLevels(models, settings, openLevel) {
+  if (typeof settings?.getModelThinkingLevel !== 'function') return models;
+  return models.map((model) => {
+    const level = settings.getModelThinkingLevel(model.provider, model.id) ?? settings.getDefaultThinkingLevel?.() ?? openLevel;
+    return typeof level === 'string' && level ? { ...model, startThinkingLevel: level } : model;
+  });
+}
+
+/**
  * Turns the replicated list `draft`, which holds `previous`, into `next` with the few edits between
  * them, keyed by sessionId. Assigning the new array sent every stored conversation (about 300KB for
  * 2000) to each presentation whenever one of them changed status; an edit sends that one entry.
@@ -364,7 +379,8 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
         const [models, commands] = await Promise.all([
           worker.request({ type: 'get_available_models' }), worker.request({ type: 'get_commands' }),
         ]);
-        return { models: models.models ?? [], commands: commands.commands ?? [], model: state.model ?? null };
+        return { models: withStartThinkingLevels(models.models ?? [], worker.runtime?.session?.settingsManager, state.thinkingLevel),
+          commands: commands.commands ?? [], model: state.model ?? null };
       } finally {
         await worker?.stop(); await rm(root, { force: true, recursive: true });
         const ms = performance.now() - began;

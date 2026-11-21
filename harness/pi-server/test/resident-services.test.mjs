@@ -57,7 +57,7 @@ test('a throw, a rejection, an exit, a self-kill, a hang or a failed start in a 
   const faults = ['throw', 'reject', 'exit', 'kill', 'hang', 'start-throw'];
   const services = [
     ...faults.map((fault) => ({ name: `bare-${fault}`, module: faultModule, options: { fault, marker: marker(`bare-${fault}`) } })),
-    // The real keeper and the real scheduler, each with a fault injected into its own thread.
+    // The real control tower and the real scheduler, each with a fault injected into its own thread.
     { name: 'companion', module: faultModule, options: { fault: 'throw', target: service('companion'), marker: marker('companion') } },
     { name: 'scheduler', module: faultModule, options: { fault: 'reject', target: service('scheduler'), marker: marker('scheduler') } },
   ];
@@ -89,8 +89,8 @@ test('a throw, a rejection, an exit, a self-kill, a hang or a failed start in a 
   assert.ok(errors.some((line) => /bare-exit: stopped \(exit 7\)/.test(line)));
   assert.ok(errors.some((line) => /bare-kill: .*process\.kill\(\d+, SIGKILL\) refused/s.test(line)));
   assert.ok(errors.some((line) => /bare-hang: did not answer/.test(line)));
-  // The keeper is back on the same companion conversation; the scheduler beats again.
-  const state = await until(async () => JSON.parse(await readFile(path.join(companionHome, 'state.json'), 'utf8').catch(() => 'null')), 'the keeper saved its conversation');
+  // The control tower is back on the same companion conversation; the scheduler beats again.
+  const state = await until(async () => JSON.parse(await readFile(path.join(companionHome, 'state.json'), 'utf8').catch(() => 'null')), 'the control tower saved its conversation');
   assert.ok((await client.list()).some((item) => item.sessionId === state.sessionId), 'the companion conversation is kept');
   await until(() => createScheduleStore({ env: process.env }).schedulerStatus().running, 'the scheduler beats');
   assert.equal(createScheduleStore({ env: process.env }).schedulerStatus().pid, process.pid, 'the scheduler runs inside the engine');
@@ -182,7 +182,7 @@ test('a service that keeps failing backs off instead of spinning', async (t) => 
 
 test('two engines and one companion home: only the engine that claimed it runs the service, the other names the holder and takes over once it closes', async (t) => {
   // 2026-11-09: an isolated engine that inherited the companions file drove the live Roo home
-  // beside the live engine, and the two keepers flipped Roo's conversation six times.
+  // beside the live engine, and the two control towers flipped Roo's conversation six times.
   const root = await mkdtemp(path.join(tmpdir(), 'rb-resident-claim-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   const home = path.join(root, 'companion-home');

@@ -6,6 +6,8 @@ import type { RubatoComponent } from "./types"
 
 export function createRubatoComponents(taskComponent: RubatoComponent, options: {
   readonly resolveCwd?: () => string
+  /** This session's own environment: a hosted engine runs many sessions in one process. */
+  readonly env?: NodeJS.ProcessEnv
 } = {}): RubatoComponent[] {
   const shared = options
   return [

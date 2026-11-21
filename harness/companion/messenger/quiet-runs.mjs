@@ -1,7 +1,7 @@
 // Journal-shape compatibility helpers. origin.mjs owns settings authority; sync.mjs
 // owns explicit output receipts. Neither derives authorization from a reply target.
 const SESSION_MESSAGE_TYPE = 'rubato-session-message';
-/** The wakes of Rubato's clock (harness/companion keeper.mjs). */
+/** The wakes of Rubato's clock (harness/companion control-tower.mjs). */
 export const QUIET_WAKES = Object.freeze(['heartbeat', 'greeting', 'wake', 'recall', 'daily-report', 'sleep']);
 
 const isSessionMessage = (message) => message?.role === 'custom' && message.customType === SESSION_MESSAGE_TYPE;

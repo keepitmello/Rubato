@@ -176,7 +176,7 @@ export interface SegnoSpanSummary {
   readonly text: number;
   readonly tools: number;
   readonly wakes: number;
-  /** What woke the companion, by kind (keeper.mjs notify `what`), in the order they first came. */
+  /** What woke the companion, by kind (control-tower.mjs notify `what`), in the order they first came. */
   readonly wakeKinds?: Readonly<Record<string, number>>;
   readonly messages: number;
   /** When the span's first and last piece happened, in ms; null for an empty span. */
@@ -202,7 +202,7 @@ export interface SegnoLaunch {
   readonly error: string | null;
 }
 
-/** A segno_commit that changed something: the companion's own words for it and the files. */
+/** A companion_commit that changed something: the companion's own words for it and the files. */
 export interface SegnoCommit {
   readonly id: string;
   readonly message: string;
@@ -243,7 +243,7 @@ export const rubatoCompanion = {
   /** An empty text, or the default itself, returns the piece to the default. */
   savePiece: (env: EnvironmentId | null, id: CompanionPieceId, text: string) =>
     call<{ pieces: CompanionPiece[] }>(env, "save-piece", { id, text }),
-  /** Asks Segno to review the defaults that moved; the engine's keeper wakes it. */
+  /** Asks Segno to review the defaults that moved; the engine's control tower wakes it. */
   reviewPersona: (env: EnvironmentId | null) =>
     call<{ pieces: CompanionPiece[]; reviewRequested: string | null }>(env, "review-persona"),
   /** null while the product runs no Telegram (harness/companion/messenger/store.mjs TELEGRAM_ENABLED). */
@@ -401,7 +401,7 @@ function refresh(env: EnvironmentId | null): Promise<void> {
   return refreshing;
 }
 
-// The keeper creates the conversation within seconds of turning the companion on, and the app
+// The control tower creates the conversation within seconds of turning the companion on, and the app
 // shows it within five more; until then poll quickly, after that rarely.
 const QUICK_POLL_MS = 3_000;
 const SLOW_POLL_MS = 60_000;

@@ -224,7 +224,7 @@ async function applyChange(service, change, env, { telegram = TELEGRAM_ENABLED }
 export async function companionSettings({ sessionId, sessionsDir, request = {}, env = process.env, service, origin,
   telegram = env.RUBATO_COMPANION_TELEGRAM === '1' || TELEGRAM_ENABLED } = {}) {
   const companionId = readState(env).sessionId;
-  if (!sessionId || sessionId !== companionId) throw new SettingsRefused('not-companion', "Only Segno's own conversation has settings to change");
+  if (!sessionId || sessionId !== companionId) throw new SettingsRefused('not-companion', "Only a companion's own conversation has settings to change");
   const action = request.action ?? 'show';
   if (!SETTINGS_ACTIONS.includes(action)) throw new SettingsRefused('invalid', `action is one of ${SETTINGS_ACTIONS.join(', ')}`);
   const settings = service ?? await defaultService(env);

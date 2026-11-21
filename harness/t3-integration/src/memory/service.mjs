@@ -26,7 +26,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
-import { TITLE_MODELS, titleLadder } from '../../../pi-runtime/features/session-title/session-title.mjs';
+import { TITLE_MODELS, languageName, titleLadder } from '../../../pi-runtime/features/session-title/session-title.mjs';
 import { createCompanionMemory, CompanionMemoryError } from './companion.mjs';
 import { createInsights } from './insights.mjs';
 
@@ -402,6 +402,12 @@ export function createMemoryService(options = {}) {
     // null puts titles back on the built-in ladder.
     if (input.titleModels === null) edits.push([['titles', 'models'], undefined]);
     else if (input.titleModels !== undefined) edits.push([['titles', 'models'], ladderInput(input.titleModels, 'Titles and summaries')]);
+    // null puts the small models back on the language of what they write about.
+    if (input.language === null) edits.push([['language'], undefined]);
+    else if (input.language !== undefined) {
+      if (languageName(input.language) === undefined) throw bad('Language must be a code like ko or a name like Korean.');
+      edits.push([['language'], input.language.trim()]);
+    }
     if (input.store !== undefined || input.enabled !== undefined) {
       assertStore(input.store);
       if (typeof input.enabled !== 'boolean') throw bad('Enabled must be true or false.');
@@ -412,13 +418,17 @@ export function createMemoryService(options = {}) {
     return { saved: edits.map(([keyPath, value]) => ({ key: keyPath.join('.'), value })) };
   }
 
-  // The session-title ladder in effect: the user's titles.models, else the built-in one.
+  // The session-title ladder in effect: the user's titles.models, else the built-in one, and the
+  // language the small models write in (the config's `language` as written, null when unset).
   async function titleModels() {
-    const configured = titleLadder(parseConfig((await readConfigText()).text)?.titles?.models);
+    const config = parseConfig((await readConfigText()).text);
+    const configured = titleLadder(config?.titles?.models);
+    const language = languageName(config?.language) === undefined ? null : String(config.language).trim();
     const ladder = configured.length > 0 ? configured : TITLE_MODELS;
     return {
       models: ladder.map((rung) => ({ model: `${rung.provider}/${rung.id}`, reasoning: rung.reasoning ?? null })),
       custom: configured.length > 0,
+      language,
     };
   }
 
@@ -883,7 +893,7 @@ export function createMemoryService(options = {}) {
    * line per project for this week. `start: false` only reads what is cached.
    */
   async function insights({ language, start = true, days } = {}) {
-    const tongue = typeof language === 'string' && LANGUAGE.test(language) ? language : 'English';
+    const tongue = typeof language === 'string' && LANGUAGE.test(language) ? language : languageName(parseConfig((await readConfigText()).text)?.language) ?? 'English';
     const [view, changes, registered] = await Promise.all([
       userView().catch(() => null),
       projectChanges({ days }),

@@ -96,11 +96,14 @@ test('a span names the conversations the companion started or forked and the rec
   const e = result(d.id, 2300, 'k2', `Forked into "Fork of it" (S3) with 4 messages.\n${json({ sessionId: 'S3', title: 'Fork of it', cwd: '/w', copiedMessages: 4 })}`);
   const f = said(e.id, 2400, [{ type: 'toolCall', id: 'k3', name: 'session_create', arguments: { text: 'y' } }]);
   const g = result(f.id, 2500, 'k3', 'Could not create a conversation in /nope', true);
-  const h = said(g.id, 2600, [{ type: 'toolCall', id: 'k4', name: 'segno_commit', arguments: { paths: ['memory/status.md'], message: '카줌 셀러 컨택은 수찬 전화 먼저' } }]);
+  const h = said(g.id, 2600, [{ type: 'toolCall', id: 'k4', name: 'companion_commit', arguments: { paths: ['memory/status.md'], message: '카줌 셀러 컨택은 수찬 전화 먼저' } }]);
   const i = result(h.id, 2700, 'k4', 'Committed 5f8e228: memory/status.md');
   const j = said(i.id, 2800, [{ type: 'toolCall', id: 'k5', name: 'segno_commit', arguments: { paths: ['memory/us.md'], message: 'nothing' } }]);
   const k = result(j.id, 2900, 'k5', 'Nothing changed; nothing committed.');
-  writeFileSync(file, [a, b, c, d, e, f, g, h, i, j, k].map(line).join(''));
+  // An older transcript carries the tool's former name.
+  const l = said(k.id, 3000, [{ type: 'toolCall', id: 'k6', name: 'segno_commit', arguments: { paths: ['memory/diary/x.md'], message: '밤안부: 일기' } }]);
+  const m = result(l.id, 3100, 'k6', 'Committed 9a1b2c3: memory/diary/x.md');
+  writeFileSync(file, [a, b, c, d, e, f, g, h, i, j, k, l, m].map(line).join(''));
   const items = await createSessionReader(file).items();
   const summary = spanSummary(items);
   assert.deepEqual(summary.launches, [
@@ -108,7 +111,8 @@ test('a span names the conversations the companion started or forked and the rec
     { id: 'k2', tool: 'fork', title: 'Fork of it', model: null, sessionId: 'S3', startsWork: false, at: 2200, done: 2300, error: null },
     { id: 'k3', tool: 'create', title: null, model: null, sessionId: null, startsWork: true, at: 2400, done: 2500, error: 'Could not create a conversation in /nope' },
   ]);
-  assert.deepEqual(summary.commits, [{ id: 'k4', message: '카줌 셀러 컨택은 수찬 전화 먼저', files: ['memory/status.md'], sha: '5f8e228', at: 2700 }],
+  assert.deepEqual(summary.commits, [{ id: 'k4', message: '카줌 셀러 컨택은 수찬 전화 먼저', files: ['memory/status.md'], sha: '5f8e228', at: 2700 },
+    { id: 'k6', message: '밤안부: 일기', files: ['memory/diary/x.md'], sha: '9a1b2c3', at: 3100 }],
     'a commit that changed nothing leaves no line');
   assert.equal(items[0].launch.sessionId, 'S2');
   assert.equal(Object.keys(items[0]).includes('launch'), false, 'the opened span\'s pieces stay as they were');

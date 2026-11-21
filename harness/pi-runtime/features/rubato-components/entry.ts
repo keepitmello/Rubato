@@ -7,6 +7,7 @@ export { createSessionClosing } from "../../../../packages/rubato-runtime/src/ex
 
 type RubatoExtensionOptions = {
   resolveCwd?: () => string;
+  env?: NodeJS.ProcessEnv;
   createTaskOptions?: (module: any) => any;
   sessionClosing?: SessionClosing;
 };

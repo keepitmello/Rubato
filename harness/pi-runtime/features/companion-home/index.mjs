@@ -1,9 +1,11 @@
-// Segno's own memory, in its own words, and the things its own time reaches for.
+// A companion's own memory, in its own words, and the things its own time reaches for. Every
+// companion (Segno, and those in ~/.rubato/companions.json) gets the same tools over its own home.
 //
-// - `segno_record` writes the daily (facts, decisions, what is still open), the diary (feelings and
-//   memorable exchanges, in Segno's voice), a working note, or the mood it falls asleep with.
-// - `segno_search` searches Segno's own memory/ with msearch (Roo's msearch.sh over Roo's memory/).
-// - `segno_commit` commits the record files Segno changed to its home's history (Roo commit-owned.sh).
+// - `companion_record` writes the daily (facts, decisions, what is still open), the diary (feelings and
+//   memorable exchanges, in the companion's voice), a working note, or the mood it falls asleep with.
+// - `companion_search` searches the companion's own memory/ with msearch (Roo's msearch.sh over Roo's memory/).
+// - `companion_commit` commits the record files the companion changed to its home's history (Roo commit-owned.sh).
+// - `segno_record`, `segno_search`, `segno_commit` are their former names, still answered (LEGACY_TOOL_NAMES).
 // - `reply` is Segno's mouth (Roo's telegram_reply, intent companion-segno rev 11): in every turn,
 //   the one the user opened too, everything else Segno writes is its own monologue, and only what it
 //   sends with `reply` reaches its thread and the user's phone (bridge said-echo.mjs). Files and
@@ -28,6 +30,16 @@ import { showSchedule } from "./schedule.mjs";
 import path from "node:path";
 
 const text = (value) => ({ type: "text", text: value });
+
+export const RECORD_TOOL = "companion_record";
+export const COMMIT_TOOL = "companion_commit";
+export const SEARCH_TOOL = "companion_search";
+/**
+ * The names these tools had while Segno was the only companion. Each answers as its new name does,
+ * so a prompt piece in a companion's own home that still names one keeps working. Drop them once
+ * no companion's own pieces name them (`rg 'segno_(record|commit|search)'` in each home).
+ */
+export const LEGACY_TOOL_NAMES = Object.freeze({ segno_record: RECORD_TOOL, segno_commit: COMMIT_TOOL, segno_search: SEARCH_TOOL });
 
 /** What Segno reads when a turn the user opened ended without a reply (Roo's TELEGRAM_REPLY_REMINDER). */
 export const REPLY_REMINDER = "사용자가 답을 기다리고 있어. 방금 하려던 말을 `reply`로 보내.";
@@ -122,14 +134,26 @@ export function writeRefusal(event, { cwd, env = process.env } = {}) {
   return undefined;
 }
 
+/** pi.registerTool that also answers each renamed tool's former name (LEGACY_TOOL_NAMES). */
+function registerWithLegacyNames(pi) {
+  const legacy = new Map(Object.entries(LEGACY_TOOL_NAMES).map(([old, name]) => [name, old]));
+  return (tool) => {
+    pi.registerTool(tool);
+    const old = legacy.get(tool.name);
+    if (old) pi.registerTool({ ...tool, name: old, searchKeywords: [old],
+      description: `Former name of ${tool.name}, the same tool. Call ${tool.name}.` });
+  };
+}
+
 export function createCompanionHomeFactories({ sessionLink, env = process.env } = {}) {
   const inbox = () => openInbox({ env });
   const media = env.RUBATO_COMPANION_TELEGRAM === "1" && typeof sessionLink?.telegramSend === "function";
   return [{
     name: "companion-home",
     factory: (pi) => {
-      pi.registerTool({
-        name: "segno_record",
+      const registerTool = registerWithLegacyNames(pi);
+      registerTool({
+        name: RECORD_TOOL,
         label: "Record",
         exposure: "direct",
         searchKeywords: ["daily", "diary", "note", "mood", "record", "write", "일기", "기록", "메모", "기분"],
@@ -158,8 +182,8 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         },
       });
 
-      pi.registerTool({
-        name: "segno_commit",
+      registerTool({
+        name: COMMIT_TOOL,
         label: "Commit records",
         exposure: "direct",
         searchKeywords: ["commit", "git", "history", "record", "커밋", "기록", "이력"],
@@ -181,14 +205,14 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         },
       });
 
-      pi.registerTool({
-        name: "segno_search",
+      registerTool({
+        name: SEARCH_TOOL,
         label: "Search my memory",
         exposure: "direct",
         searchKeywords: ["search", "memory", "recall", "remember", "msearch", "기억", "검색", "찾기"],
         description:
           "Search your own memory — your daily records, diary, canonical pages and resident memory in your home's " +
-          "memory/ — the way Roo's msearch does: hybrid meaning and keyword search, newest writes included. Ask with " +
+          "memory/: hybrid meaning and keyword search, newest writes included. Ask with " +
           "the people, events, time and key words you are after, not the user's whole sentence.",
         parameters: {
           type: "object", additionalProperties: false, required: ["query"],
@@ -349,7 +373,7 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
         exposure: "direct",
         searchKeywords: ["inbox", "issue", "bug", "report", "ticket", "인박스", "버그", "리포트"],
         description:
-          "The issues Segno keeps: bug reports from other chats, things the user handed over, work it " +
+          "The issues you keep: bug reports from other chats, things the user handed over, work it " +
           "set aside. 'open' means still somebody's work (open, in-progress, waiting). Each row says " +
           "its id, status, title, reporter and the lead it is linked to.",
         parameters: {

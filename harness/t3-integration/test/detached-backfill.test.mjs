@@ -225,7 +225,7 @@ test("Segno's reply sent while its thread has no stream reaches the thread throu
     [['T1', '운영방에서 어드민 느리다고 태그 왔어.', true]], 'only the reply, once, in a run of its own so the phone hears of it');
 });
 
-// 2026-11-01: the keeper moved Segno to a new conversation. Its thread came from the inventory and
+// 2026-11-01: the control tower moved Segno to a new conversation. Its thread came from the inventory and
 // the person had not written to it, so no saved state named it and Segno's replies reached nothing.
 test("a companion conversation no stream ever opened still gets Segno's replies, in its inventory thread", async (t) => {
   const dir = mkdtempSync(path.join(tmpdir(), 'rubato-backfill-fresh-'));

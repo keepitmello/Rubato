@@ -3274,6 +3274,8 @@
   "Serves Aside's models to Rubato sessions.": "Aside 모델을 Rubato 세션에 제공합니다.",
   "Services Rubato keeps running": "Rubato가 상시 실행하는 서비스",
   "Session": "세션",
+  "Session titles and summaries are written in this language. Auto follows the language of each session.": "세션 제목과 요약을 쓰는 언어입니다. 자동은 각 세션에서 쓰는 언어를 따릅니다.",
+  "Could not save the language": "언어를 저장하지 못했습니다",
   "Session titles and the Stats page's longest-think summary use the first model that answers. The next one is the fallback.": "세션 제목과 통계 페이지의 최장 사고 요약에는 가장 먼저 응답하는 모델을 사용합니다. 다음 모델은 예비용입니다.",
   "Sessions": "세션",
   "Set": "설정하기",
@@ -4436,15 +4438,15 @@
   "Could not save the companion settings": "컴패니언 설정을 저장할 수 없습니다",
   "Could not save the piece": "조각을 저장할 수 없습니다",
   "Preamble": "프리앰블",
-  "The first words Segno reads: its name and its welcome.": "세뇨가 가장 먼저 읽는 글입니다. 이름과 환영 인사가 들어갑니다.",
+  "The first words the companion reads: its name and its welcome.": "컴패니언이 가장 먼저 읽는 글입니다. 이름과 환영 인사가 들어갑니다.",
   "Soul": "소울",
-  "Who Segno is and how it speaks.": "세뇨가 어떤 존재이고 어떻게 말하는지입니다.",
+  "Who the companion is and how it speaks.": "컴패니언이 어떤 존재이고 어떻게 말하는지입니다.",
   "Identity": "아이덴티티",
   "Name, look and what stays the same.": "이름, 모습, 그리고 변하지 않는 것들입니다.",
   "Your business, your repositories, how you like to be told things.": "하는 일, repo, 보고받고 싶은 방식입니다.",
-  "How Segno works": "세뇨의 일하는 방식",
+  "How the companion works": "컴패니언의 일하는 방식",
   "Leads, approvals, reports, heartbeat.": "리드, 승인, 보고, 하트비트.",
-  "The tools Segno has. It follows Rubato and cannot be changed.": "세뇨가 가진 도구입니다. Rubato 를 따라가므로 바꿀 수 없습니다.",
+  "The tools the companion has. It follows Rubato and cannot be changed.": "컴패니언이 가진 도구입니다. Rubato 를 따라가므로 바꿀 수 없습니다.",
   "Yours": "직접 고침",
   "View": "보기",
   "Back to default": "기본값으로 되돌리기",
@@ -4721,7 +4723,14 @@
   "Dictation languages": "받아쓰기 언어",
   "Language codes you dictate in, such as ko, en. Leave it empty to use this Mac's languages.": "받아쓸 때 쓰는 언어 코드입니다. 예: ko, en. 비워 두면 이 Mac의 언어를 씁니다.",
   "Could not save the languages": "언어를 저장하지 못했습니다",
-  "Listening…": "듣는 중…"
+  "Listening…": "듣는 중…",
+  "Thinking effort": "추론 수준",
+  "New conversations think at": "새 대화의 추론 수준",
+  "Used for every model unless that model has its own level below. A level a model doesn't offer moves to its nearest one. A level picked in a conversation stays in that conversation.": "아래에서 따로 정하지 않은 모든 모델에 쓰입니다. 모델에 없는 수준은 가장 가까운 수준으로 맞춥니다. 대화에서 고른 수준은 그 대화에만 적용됩니다.",
+  "Back to the default": "기본값으로 되돌리기",
+  "Could not change thinking effort": "추론 수준을 바꿀 수 없습니다",
+  "This conversation only": "이 대화에만 적용",
+  "Change default": "기본값 바꾸기"
  },
  "templates": [
   [
@@ -8475,6 +8484,22 @@
   [
    "How much {0} thinks before each answer while you are on a call. Less thinking answers sooner, and the usual level comes back when the call ends.",
    "{0}가 통화 중에 답하기 전 얼마나 생각할지 정합니다. 덜 생각할수록 빨리 답하고, 통화가 끝나면 평소 수준으로 돌아갑니다."
+  ],
+  [
+   "Default · {0}",
+   "기본값 · {0}"
+  ],
+  [
+   "{0} now",
+   "지금 {0}"
+  ],
+  [
+   "{0} thinking effort",
+   "{0} 추론 수준"
+  ],
+  [
+   "Back to the default for {0}",
+   "{0} 기본값으로 되돌리기"
   ]
  ]
 }

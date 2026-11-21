@@ -1,5 +1,5 @@
 // A resident service for the fault tests (resident-services.test.mjs). It counts its starts in
-// `options.marker`, starts the real service named by `options.target` when given (the keeper, the
+// `options.marker`, starts the real service named by `options.target` when given (the control tower, the
 // scheduler, ...), and on its first start injects `options.fault` into its own thread.
 import { appendFileSync, readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';

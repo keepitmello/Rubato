@@ -308,7 +308,7 @@ export function spanDuration(ms: number, locale: string | undefined): string {
 }
 
 /**
- * What woke the companion, by its kind (keeper.mjs notify `what`, the scheduler, a voice call), as the
+ * What woke the companion, by its kind (control-tower.mjs notify `what`, the scheduler, a voice call), as the
  * folded line and the opened span name it. Each kind has its own name: only a heartbeat is called one
  * (user ffaeed47).
  */

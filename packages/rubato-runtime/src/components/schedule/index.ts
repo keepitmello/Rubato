@@ -50,7 +50,7 @@ export const ScheduleToolParams = Type.Object({
   task: Type.Optional(Type.String({ description: "Existing task's name or id (update, delete, run_now, history)" })),
   name: Type.Optional(Type.String()),
   prompt: Type.Optional(Type.String({ description: "First user message of each run's session; for a task with send_to, the message it sends" })),
-  send_to: Type.Optional(Type.String({ description: "Send prompt as a message instead of starting a session: \"this\" (this conversation), \"companion\" (Segno) or a conversation id; empty string switches back to starting a session" })),
+  send_to: Type.Optional(Type.String({ description: "Send prompt as a message instead of starting a session: \"this\" (this conversation), \"companion\" (from a companion's conversation, that companion itself; from any other, the default companion), \"companion:<id>\" for one companion by its id, or a conversation id; empty string switches back to starting a session" })),
   cwd: Type.Optional(Type.String({ description: "Project folder; defaults to this session's folder" })),
   model: Type.Optional(Type.String({ description: "provider/model; omit for the user's default model (empty string clears it)" })),
   thinking: Type.Optional(Type.String({ description: "off minimal low medium high xhigh max; empty string clears it" })),
@@ -61,7 +61,7 @@ export type ScheduleToolInput = Static<typeof ScheduleToolParams>
 
 export const SCHEDULE_TOOL_DESCRIPTION = [
   "Manages Rubato scheduled tasks: at a chosen local time, the scheduler on this Mac starts an ordinary session in a folder with a prompt and runs it unattended. Each run appears as its own thread in the app.",
-  "A task with send_to starts no session: at its time it sends its prompt text into a conversation that already exists (\"this\" conversation, \"companion\" for Segno, or a conversation id), as Rubato's clock, and that conversation answers in its own turn. Use it for reminders and wake-ups of a conversation (\"remind me here every evening\", \"wake Segno at 8 for its report\"); no thread, folder or model of its own. The text is at most 7,000 characters.",
+  "A task with send_to starts no session: at its time it sends its prompt text into a conversation that already exists (\"this\" conversation, \"companion\" for the companion, \"companion:<id>\" for one companion by id, or a conversation id), as Rubato's clock, and that conversation answers in its own turn. Called from a companion's conversation, \"companion\" means that same companion. Use it for reminders and wake-ups of a conversation (\"remind me here every evening\", \"wake the companion at 8 for its report\"); no thread, folder or model of its own. The text is at most 7,000 characters.",
   "",
   "Schedules are one of five kinds: daily {time}, weekdays {time} (Mon–Fri), weekly {days, time}, interval {everyHours: 1|2|3|4|6|12, window?: {start, end}} and once {date, time}. Times are 24-hour HH:MM in the Mac's local time.",
   "Only these five kinds exist. For any other cadence (monthly, day-of-month, every N days or minutes, cron), offer the nearest of them (e.g. monthly → weekly on one weekday, or a once task per date; every 30 minutes → every hour) and ask before registering. When a call is refused, the tool names the closest supported schedule.",
@@ -89,7 +89,8 @@ function describeRun(run: Run | null): string {
   return `${run.status} (${when})${run.sessionId ? `, session ${run.sessionId}` : ""}`
 }
 
-const describeTarget = (sendTo: string): string => (sendTo === COMPANION_TARGET ? "Segno (companion)" : `conversation ${sendTo}`)
+const describeTarget = (sendTo: string): string => (sendTo === COMPANION_TARGET ? "companion segno (the default)"
+  : sendTo.startsWith(`${COMPANION_TARGET}:`) ? `companion ${sendTo.slice(COMPANION_TARGET.length + 1)}` : `conversation ${sendTo}`)
 
 function describeTask(task: TaskView): string {
   const clipped = task.prompt.length > 200 ? `${task.prompt.slice(0, 200)}…` : task.prompt
@@ -197,6 +198,8 @@ export async function runScheduleTool(store: ScheduleStore, params: ScheduleTool
 
 export interface ScheduleComponentOptions {
   readonly resolveCwd?: () => string
+  /** This session's environment; RUBATO_COMPANION_ID there names the companion it belongs to. */
+  readonly env?: NodeJS.ProcessEnv
   readonly createStore?: () => ScheduleStore
 }
 
@@ -219,7 +222,8 @@ export function createScheduleComponent(options: ScheduleComponentOptions = {}):
         exposure: "direct",
         executionMode: "sequential",
         execute: async (_toolCallId: string, params: ScheduleToolInput, _signal?: unknown, _onUpdate?: unknown, ctx?: { sessionManager?: { getSessionId?(): string } }) =>
-          runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd(), ctx?.sessionManager?.getSessionId?.(), process.env.RUBATO_COMPANION_ID),
+          runScheduleTool(createStore(), params, pi.cwd ?? resolveCwd(), ctx?.sessionManager?.getSessionId?.(),
+            (options.env ?? process.env).RUBATO_COMPANION_ID),
       })
     },
   }

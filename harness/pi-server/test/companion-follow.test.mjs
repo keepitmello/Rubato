@@ -58,13 +58,13 @@ test('a lead that ends its turns on background work is told once, with the answe
   // Woken by the job, it waits on another one.
   w.state.set('lead', { status: 'running', final: { entryId: 'f1', text: 'waiting for the flush' }, handoff: 'before' });
   await f.poll();
-  w.state.set('lead', { status: 'idle', final: { entryId: 'f2', text: 'still waiting on the keeper' }, handoff: 'before' });
+  w.state.set('lead', { status: 'idle', final: { entryId: 'f2', text: 'still waiting on the control tower' }, handoff: 'before' });
   await f.poll();
   assert.deepEqual(w.notices, [], 'no notice while it waits');
   // The last wait ends: its wake has the grace to start the next turn.
   waits = 0;
   await f.poll();
-  w.state.set('lead', { status: 'running', final: { entryId: 'f2', text: 'still waiting on the keeper' }, handoff: 'before' });
+  w.state.set('lead', { status: 'running', final: { entryId: 'f2', text: 'still waiting on the control tower' }, handoff: 'before' });
   w.tick(AWAIT_GRACE_MS);
   await f.poll();
   w.state.set('lead', { status: 'idle', final: { entryId: 'f3', text: 'the path is fine: it was late' }, handoff: 'before' });

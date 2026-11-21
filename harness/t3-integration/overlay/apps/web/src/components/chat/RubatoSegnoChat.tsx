@@ -17,7 +17,7 @@
 // Two things the companion did stay out of that line, because the person needs them without opening
 // it: a conversation it started or forked shows as a work card that follows that conversation live
 // (RubatoWorkCard.tsx), and a record it committed to its home leaves one grey line with its own words
-// for the change ("Memory changed · …"), read from the conversation's own segno_commit call — so the
+// for the change ("Memory changed · …"), read from the conversation's own companion_commit call (segno_commit in older transcripts) — so the
 // line is this conversation's change, not a file change seen from outside.
 //
 // The room has what an ordinary thread has for moving through a long conversation: the timeline at

@@ -335,7 +335,7 @@ test('a copy the person already edited is still reviewed from the base it was se
   assert.equal(readFileSync(personalPiecePath(env, 'soul'), 'utf8').trim(), 'my own soul', 'their file is not touched');
 });
 
-test('the page asks for a review with a request the keeper can read and clear', (t) => {
+test('the page asks for a review with a request the control tower can read and clear', (t) => {
   const env = sandbox(t);
   assert.equal(readPersonaReviewRequest(env), undefined);
   requestPersonaReview(env, { at: Date.parse('2026-10-20T05:00:00.000Z') });

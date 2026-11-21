@@ -2,7 +2,7 @@
   "name": "rubato-companion",
   "private": true,
   "type": "module",
-  "description": "The companion (Segno): its files, its prompt pieces and the engine keeper that keeps it loaded.",
+  "description": "The companion (Segno): its files, its prompt pieces and the engine control tower that keeps it loaded.",
   "engines": {
     "node": ">=24"
   },

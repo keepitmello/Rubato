@@ -195,6 +195,22 @@ test("every account gets its own row; setup-token reads its last reply, failures
   assert.equal(calls.filter((call) => call.url.includes("anthropic")).length, 2, "setup-token never calls the usage endpoint");
 });
 
+test("rows name each account's lane and list the main account before the sub", async () => {
+  const observed = { version: 1, accounts: {} };
+  const { accounts: rows } = await collectUsage({
+    providers: PROVIDERS,
+    accountsOf: async (id) => id === "anthropic"
+      ? [{ name: "default", source: "login", modelSuffix: "-sub" }, { name: "setup-token", source: "setup-token", modelSuffix: "" }]
+      : [],
+    credentialOf: async () => undefined,
+    slotOf: () => undefined,
+    observed,
+    fetchImpl: async () => new Response("{}", { status: 404 }),
+    now: () => NOW,
+  });
+  assert.deepEqual(rows.map((row) => [row.account, row.modelSuffix]), [["setup-token", ""], ["default", "-sub"]]);
+});
+
 test("an OAuth account whose read fails falls back to its last reply", async () => {
   const { fetchImpl } = fakeFetch({ "https://api.anthropic.com/api/oauth/usage": { status: 429 } });
   const { accounts: rows } = await collectUsage({

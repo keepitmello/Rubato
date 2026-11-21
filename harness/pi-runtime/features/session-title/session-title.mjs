@@ -49,6 +49,35 @@ export function loadTitleModels({ home = process.env.HOME || homedir(), readFile
   }
   return TITLE_MODELS;
 }
+
+const LANGUAGE_CODE = /^[A-Za-z]{2,3}(-[A-Za-z0-9]+)*$/;
+const LANGUAGE_NAME = /^[A-Za-z][A-Za-z ()-]{1,40}$/;
+
+/**
+ * 설정의 `language`("ko", "pt-BR", "Korean") → 모델에게 말할 영어 이름("Korean"). 못 알아보면 undefined.
+ * 제목·요약·이야기 같은 작은 모델 호출이 같은 말로 쓰게 하는 한 줄이다.
+ */
+export function languageName(value) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!LANGUAGE_NAME.test(text)) return undefined;
+  if (!LANGUAGE_CODE.test(text)) return text;
+  try {
+    return new Intl.DisplayNames(["en"], { type: "language" }).of(text) ?? text;
+  } catch {
+    return text;
+  }
+}
+
+/** 설정의 `language` 가 가리키는 말의 이름. 없거나 못 읽으면 undefined: 호출이 쓰던 대로 간다. */
+export function loadLanguage({ home = process.env.HOME || homedir(), readFile = readFileSync } = {}) {
+  try {
+    const config = parseJsonc(readFile(titleConfigPath(home), "utf8"), [], { allowTrailingComma: true });
+    return languageName(config?.language);
+  } catch {
+    return undefined;
+  }
+}
+
 export const TITLE_ENTRY = "rubato-pi.session-title";
 
 export const TITLE_SYSTEM_PROMPT = `Name this coding-agent session.
@@ -62,6 +91,7 @@ Rules:
 - Drop articles, filler, and any word the title still reads fine without.
 - Do not include quotes, trailing punctuation, markdown, or explanations.
 - If the input is only a greeting or too vague to title, return <title>none</title>.
+- Write the title in the language you are told to write in; when none is given, in the language the user writes in.
 - Respond only as <title>Session Title</title>.`;
 
 export function textOfContent(content) {
@@ -96,9 +126,9 @@ export function userTextsFromEntries(entries, { limit = 12, recent = 4, maxChars
   return [...picked, ...tail];
 }
 
-export function buildTitlePrompt(picks, current) {
+export function buildTitlePrompt(picks, current, language) {
   const lines = picks.map(({ n, text }) => `${n}. ${text}`);
-  const head = current ? `Current title: ${current}\n\n` : "";
+  const head = `${language ? `Write the title in ${language}.\n\n` : ""}${current ? `Current title: ${current}\n\n` : ""}`;
   return `${head}User messages sampled across the session, numbered in order:\n${lines.join("\n")}`;
 }
 

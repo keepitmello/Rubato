@@ -35,7 +35,7 @@ test('status starts off with no conversation, and turning it on is a saved setti
   assert.deepEqual(saved.body.settings.heartbeat, { enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' });
   assert.equal(saved.body.settings.enabled, true);
   writeState({ sessionId: 'segno' }, env);
-  assert.equal((await post('status')).body.sessionId, 'segno', 'the conversation the keeper recorded');
+  assert.equal((await post('status')).body.sessionId, 'segno', 'the conversation the control tower recorded');
   const refused = await post('save-settings', { patch: { heartbeat: { everyMinutes: 3 } } });
   assert.equal(refused.status, 400);
   assert.equal(refused.body.error.code, 'invalid');
@@ -264,7 +264,7 @@ test('the page marks a default that moved and asks Segno to look at it', async (
 
   const asked = await ask('review-persona');
   assert.equal(asked.status, 200);
-  assert.ok(asked.body.reviewRequested, 'the keeper has something to read');
+  assert.ok(asked.body.reviewRequested, 'the control tower has something to read');
   assert.equal(readPersonaReviewRequest(env), asked.body.reviewRequested);
   assert.equal(asked.body.pieces.find((piece) => piece.id === 'soul').defaultChanged, true,
     'the mark stays until the engine moves the base under it');

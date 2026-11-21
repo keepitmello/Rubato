@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { REPLY_REMINDER, REPLY_REMINDER_TYPE, createCompanionHomeFactories, createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
+import { LEGACY_TOOL_NAMES, REPLY_REMINDER, REPLY_REMINDER_TYPE, createCompanionHomeFactories, createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { openInbox } from '../inbox.mjs';
 import { REPLY_TOOL, SAY_TOOL, readRecord, readWakeWish, sentMessages } from '../home.mjs';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -33,21 +33,29 @@ test('the companion writes a daily and a diary with its own tools', async (t) =>
   Object.assign(process.env, env);
   t.after(() => { process.env = before; });
   const tools = toolsOf();
-  assert.deepEqual([...tools.keys()].sort(), ['inbox_add', 'inbox_list', 'inbox_update', 'memory_seed', 'reply', 'segno_commit',
-    'segno_record', 'segno_search', 'sent_messages', 'user_schedule', 'wake_wish', 'world_fragment']);
-  await tools.get('segno_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
-  await tools.get('segno_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
+  assert.deepEqual([...tools.keys()].sort(), ['companion_commit', 'companion_record', 'companion_search', 'inbox_add', 'inbox_list',
+    'inbox_update', 'memory_seed', 'reply', 'segno_commit', 'segno_record', 'segno_search', 'sent_messages', 'user_schedule',
+    'wake_wish', 'world_fragment']);
+  await tools.get('companion_record').execute('c1', { kind: 'daily', text: '리드 하나 시작했어. 우용이 말 그대로 옮겼어.' });
+  await tools.get('companion_record').execute('c2', { kind: 'diary', heading: '버그 리포트가 들어온 오후', text: '오랜만에 판이 살아 있는 느낌이었어.' });
+  // A former name still answers, as the same tool, and says which name to call.
+  for (const [old, name] of Object.entries(LEGACY_TOOL_NAMES)) {
+    assert.equal(tools.get(old).execute, tools.get(name).execute, old);
+    assert.match(tools.get(old).description, new RegExp(`Call ${name}\\.$`));
+  }
+  await tools.get('segno_record').execute('c3', { kind: 'daily', text: '옛 이름으로도 남아.' });
   const daily = readRecord('daily', { env });
   const diary = readRecord('diary', { env });
   assert.match(daily, /리드 하나 시작했어/);
+  assert.match(daily, /옛 이름으로도 남아/);
   assert.match(diary, /## 버그 리포트가 들어온 오후/);
 });
 
 test('two hosted companion tool factories write only to their explicit home, never the shared process home', async t => {
   const a = sandbox(t), b = sandbox(t);
   const toolsA = toolsOf({ env: a }), toolsB = toolsOf({ env: b });
-  await toolsA.get('segno_record').execute('a', { kind: 'daily', text: 'Only companion A' });
-  await toolsB.get('segno_record').execute('b', { kind: 'daily', text: 'Only companion B' });
+  await toolsA.get('companion_record').execute('a', { kind: 'daily', text: 'Only companion A' });
+  await toolsB.get('companion_record').execute('b', { kind: 'daily', text: 'Only companion B' });
   assert.match(readRecord('daily', { env: a }), /Only companion A/);
   assert.doesNotMatch(readRecord('daily', { env: a }), /Only companion B/);
   assert.match(readRecord('daily', { env: b }), /Only companion B/);

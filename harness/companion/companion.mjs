@@ -1,10 +1,10 @@
 // The companion (Segno): one always-on conversation above the leads. This module is the one
-// place that knows where its files live and what they hold; the engine keeper, the role prompt
+// place that knows where its files live and what they hold; the engine control tower, the role prompt
 // and the app's Companion settings page all read and write through it.
 //
 //   ~/.rubato/companion/                 the companion's home and its conversation's folder
 //     settings.json                      what the person chose in Settings › Companion
-//     state.json                         which conversation is the companion (written by the keeper)
+//     state.json                         which conversation is the companion (written by the control tower)
 //     prompt/<piece>.md                  the person's version of one prompt piece
 //     prompt/.base/<piece>.md            the product default that version was copied from
 //     memory/MEMORY.md                   the resident memory piece (Roo MEMORY.md), kept by the dream
@@ -65,7 +65,7 @@ export const HEARTBEAT_MINUTES = Object.freeze([15, 30, 45]);
  * is the companion's own text under each reflect tick, after a blank line as a greeting's body goes.
  * `location.source` is a JSON file with the user's last known place (`{ current, updatedAt }`, at the
  * top or under `location`, as Roo's OwnTracks state/user.json keeps it); each tick carries it as a
- * LOCATION line (keeper.mjs). Empty by default: no line.
+ * LOCATION line (control-tower.mjs). Empty by default: no line.
  */
 /** `heartbeat.reflectNote` rides on every reflect tick; longer than this is refused. */
 export const REFLECT_NOTE_LIMIT = 2000;
@@ -199,9 +199,10 @@ export function writeSettings(patch, env = process.env) {
 }
 
 /**
- * What the keeper keeps: `greeted` is the local date (YYYY-MM-DD) each greeting last went out (Roo's
+ * What the control tower keeps: `greeted` is the local date (YYYY-MM-DD) each greeting last went out (Roo's
  * state/cron-last-run.json), `heartbeat` the last tick, `woke` the last boundary Segno was woken for
- * and what is still owed (a seed, or the recall that follows a fresh one), `sleptOn` the last night,
+ * and what is still owed (a seed, or the recall that follows a fresh one), `sleptIn` the window
+ * (that boundary, null before the first) the companion was last put to sleep in,
  * `inboxWake` how far the listener's wake lines were read.
  */
 export function readState(env = process.env) {
@@ -215,13 +216,13 @@ export function readState(env = process.env) {
   return {
     ...(typeof state?.sessionId === 'string' && state.sessionId ? { sessionId: state.sessionId } : {}),
     ...(greeted ? { greeted } : {}),
-    ...(typeof state?.sleptOn === 'string' ? { sleptOn: state.sleptOn } : {}),
-    // The last heartbeat tick and when it went (keeper.mjs, Roo's heartbeat.json tickCount).
+    ...(typeof state?.sleptIn === 'string' || state?.sleptIn === null ? { sleptIn: state.sleptIn } : {}),
+    // The last heartbeat tick and when it went (control-tower.mjs, Roo's heartbeat.json tickCount).
     ...(state?.heartbeat && Number.isFinite(state.heartbeat.at) ? { heartbeat: { tick: state.heartbeat.tick, at: state.heartbeat.at } } : {}),
     ...(woke ? { woke } : {}),
-    // The runtime the keeper last found the conversation loaded in; a new one means it was loaded again.
+    // The runtime the control tower last found the conversation loaded in; a new one means it was loaded again.
     ...(typeof state?.runtimeId === 'string' && state.runtimeId ? { runtimeId: state.runtimeId } : {}),
-    // How far the keeper has read the listener's wake lines (inbox.mjs inboxWakePath), in bytes.
+    // How far the control tower has read the listener's wake lines (inbox.mjs inboxWakePath), in bytes.
     ...(Number.isInteger(state?.inboxWake?.offset) && state.inboxWake.offset >= 0 ? { inboxWake: { offset: state.inboxWake.offset } } : {}),
   };
 }
@@ -383,7 +384,7 @@ export const personalPiecePath = (env, id) => {
 };
 /** Where the default text a personal copy was seeded from is kept; never read by the composer. */
 export const basePiecePath = (env, id) => path.join(companionPaths(env).prompt, '.base', `${pieceOf(id).id}.md`);
-/** The settings page's "have Segno look at it" request; the keeper reads it and wakes Segno. */
+/** The settings page's "have Segno look at it" request; the control tower reads it and wakes Segno. */
 const reviewRequestPath = (env) => path.join(companionPaths(env).home, 'persona-review.json');
 
 /** Writes text as a new file, refusing to replace one already there. */
@@ -461,7 +462,7 @@ export function moveBaseToDefault(id, { defaultsDir, env = process.env } = {}) {
   return { id: pieceOf(id).id, baseText: defaultText };
 }
 
-/** The page's on-demand review: a request file the keeper picks up on its next pass. */
+/** The page's on-demand review: a request file the control tower picks up on its next pass. */
 export function requestPersonaReview(env = process.env, { at = Date.now() } = {}) {
   writeJson(reviewRequestPath(env), { at: new Date(at).toISOString() });
 }

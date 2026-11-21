@@ -6,11 +6,13 @@
 // pool state answers for them. A login is a child process that talks JSON lines; the
 // page polls its state and answers its prompts. Secrets pass through the child's
 // stdin and are never kept in a job snapshot.
+// The page's thinking effort (`effort`, `set-effort`) is Pi settings, not auth: effort.mjs.
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createEffortSettings, EffortRequestError } from './effort.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..', '..', '..', '..');
@@ -36,13 +38,14 @@ function need(value, pattern, name) {
 }
 
 /**
- * @param {{ env?: NodeJS.ProcessEnv, auth?: readonly string[] }} [options]
+ * @param {{ env?: NodeJS.ProcessEnv, auth?: readonly string[], effort?: ReturnType<typeof createEffortSettings> }} [options]
  *   `auth` is the argv prefix that runs `rubato auth`; default: this checkout's script.
  */
 export function createAuthService(options = {}) {
   const env = options.env ?? process.env;
   const home = env.HOME ?? env.USERPROFILE ?? homedir();
   const auth = options.auth ?? ['/bin/sh', path.join(repoRoot, 'harness', 'scripts', 'rubato-auth.sh')];
+  const effort = options.effort ?? createEffortSettings({ env });
   // The app is often launched from the Dock with a PATH of /usr/bin:/bin.
   const childEnv = { ...env, PATH: [
     path.join(home, '.bun', 'bin'), path.join(home, '.local', 'share', 'vite-plus', 'bin'), path.join(home, '.local', 'bin'),
@@ -164,6 +167,8 @@ export function createAuthService(options = {}) {
 
   async function handle(action, input = {}) {
     if (action === 'status') return runJson(['status']);
+    if (action === 'effort') return effort.read();
+    if (action === 'set-effort') return effort.write(input);
     // The Usage page's Rubato rows (overlay/apps/server/src/usage/RubatoUsageLimits.ts).
     if (action === 'usage') return runJson(['usage']);
     if (action === 'check') {
@@ -228,8 +233,9 @@ export async function handleAuthRequest(service, request) {
   try {
     return Response.json(await service.handle(action, input));
   } catch (error) {
-    const status = error instanceof AuthRequestError ? error.status : 500;
-    const code = error instanceof AuthRequestError ? error.code : 'failed';
+    const known = error instanceof AuthRequestError || error instanceof EffortRequestError;
+    const status = known ? error.status : 500;
+    const code = known ? error.code : 'failed';
     return Response.json({ error: { code, message: error instanceof Error ? error.message : String(error) } }, { status });
   }
 }

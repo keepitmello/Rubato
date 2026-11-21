@@ -1,5 +1,5 @@
 // The services the person's own engine keeps running beside its conversations: the companion
-// keeper, the companion's nightly dream, the scheduler, the remote hub's supervisor, the watch that
+// control tower, the companion's nightly dream, the scheduler, the remote hub's supervisor, the watch that
 // shuts down a forgotten or runaway iOS simulator (simulator-watch.mjs) and, while the product runs
 // Telegram, the messenger. Each one runs in its own
 // thread (resident-thread.mjs), so nothing a service does can stop the engine or a conversation:
@@ -36,7 +36,7 @@ export const MESSENGER_SERVICE = Object.freeze({ name: 'messenger', module: path
 
 /** The services the person's own profile engine runs (cli.mjs decides which engine that is). */
 export const RESIDENT_SERVICES = [
-  { name: 'companion', module: path.resolve(here, '../../companion/keeper-service.mjs') },
+  { name: 'companion', module: path.resolve(here, '../../companion/control-tower-service.mjs') },
   { name: 'companion-dream', module: path.resolve(here, '../../companion/dream/service.mjs') },
   { name: 'scheduler', module: path.resolve(here, '../../scheduler/src/service.mjs') },
   ...(TELEGRAM_ENABLED ? [MESSENGER_SERVICE] : []),
