@@ -315,8 +315,9 @@ const MEASURED_RETURN_TEST = `  // Rubato (handoff-recovery-edits.mjs): the targ
               driver: CLAUDE_DRIVER,
               capabilities: ClaudeProviderCapabilitiesV2,
               modelSelection: CLAUDE_MODEL_SELECTION,
-              // Saved text past the window; the session compacted it away.
-              responseByRunOrdinal: { 2: "y".repeat(40_000), 4: "Claude resumed" },
+              // Saved text past the window (T3 counts 4 bytes a token: 40k tokens in a
+              // 32k window); the session compacted it away.
+              responseByRunOrdinal: { 2: "y".repeat(160_000), 4: "Claude resumed" },
               capturedTurns,
               getModelContextWindow: () => 32_000,
               ...(measurement === "measured" ? { readContextTokens: Effect.succeed(4_000) } : {}),
