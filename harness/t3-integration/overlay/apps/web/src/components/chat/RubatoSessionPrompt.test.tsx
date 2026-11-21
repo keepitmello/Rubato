@@ -78,6 +78,19 @@ describe("/prompt", () => {
 });
 
 describe("RubatoSessionPromptPicker", () => {
+  it("drops a failed list's notice when the menu that asked for it closes", async () => {
+    await renderPicker("draft-fail");
+    http.fail = true;
+    await act(async () => openRubatoSessionPromptMenu("draft-fail"));
+    await settle();
+    expect(chip()?.textContent).toContain("This Mac is not connected.");
+    await act(async () => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    });
+    await settle();
+    expect(chip()).toBeNull();
+  });
+
   it("waits for the Mac's connection and shows no error chip for a background load", async () => {
     http.connected = false;
     await renderPicker("draft-offline");
