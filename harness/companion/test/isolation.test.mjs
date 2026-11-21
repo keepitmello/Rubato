@@ -73,7 +73,12 @@ test("Segno's own skills are listed for Segno only, and the shared skills folder
   assert.match(replaceSystemPrompt(engineListing, 'companion', hooks), /companion-settings/);
   assert.doesNotMatch(replaceSystemPrompt(engineListing, 'lead', hooks), /companion-settings/);
   // Not bundled into the folder every session and CLI reads, and taken out of it on update.
-  for (const { dir: own } of COMPANION_SKILL_DIRS) assert.ok(existsSync(path.join(own, 'companion-settings', 'SKILL.md')));
+  assert.ok(existsSync(path.join(COMPANION_SKILL_DIRS[0].dir, 'companion-settings', 'SKILL.md')));
+  // The defaults a companion's own skill of the same name replaces: listed for companions only, after their own.
+  assert.ok(existsSync(path.join(COMPANION_SKILL_DIRS.at(-1).dir, 'prompting-principles', 'SKILL.md')));
+  assert.match(segno, /prompting-principles/);
+  assert.doesNotMatch(lead, /prompting-principles/);
+  assert.ok(!existsSync(path.join(harness, 'skills', 'prompting-principles')));
   assert.ok(!existsSync(path.join(harness, 'skills', 'companion-settings')));
   assert.match(readFileSync(path.join(harness, 'scripts', 'install-skills.sh'), 'utf8'), /for name in [^\n]*companion-settings/);
 });
