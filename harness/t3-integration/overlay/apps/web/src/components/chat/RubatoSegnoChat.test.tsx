@@ -13,6 +13,7 @@ const spanState = vi.hoisted(() => ({ summaries: [] as unknown[] }));
 vi.mock("./RubatoSegnoInner", () => ({
   RubatoSegnoSpanLine: () => null,
   useSegnoSpanSummaries: () => spanState.summaries,
+  useCompanionLiveWork: () => null,
 }));
 vi.mock("./RubatoWorkCard", () => ({
   RubatoWorkCard: ({ launch }: { launch: { title: string; sessionId: string } }) => (
