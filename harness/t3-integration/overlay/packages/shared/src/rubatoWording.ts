@@ -251,7 +251,75 @@ function rubatoJsx(source: unknown, upstream: unknown, wording: Wording): unknow
   return result.length === 1 && typeof result[0] === "string" ? result[0] : result;
 }
 
-/** T3's Korean catalog with Rubato's wording wherever the dictionary has the same English. */
+// ── GitHub's term in T3's provider-switched sentences ──
+//
+// T3 words one sentence for GitHub, GitLab and others with
+// `{term, select, mr {병합 요청} cr {변경 요청} other {풀 리퀘스트}}`. Rubato's glossary
+// keeps GitHub's term as "PR", so every branch other than mr (GitLab) and cr reads
+// "PR". Only selects that have an mr branch are provider switches.
+
+const PR_TERM: ReadonlyArray<readonly [RegExp, string]> = [
+  // "PR" ends in a consonant (피알), so the particle after it changes form.
+  [/(?:풀 리퀘스트|PR)를/g, "PR을"],
+  [/(?:풀 리퀘스트|PR)가/g, "PR이"],
+  [/(?:풀 리퀘스트|PR)는/g, "PR은"],
+  [/(?:풀 리퀘스트|PR)와/g, "PR과"],
+  [/풀 리퀘스트/g, "PR"],
+];
+
+const SELECT_HEAD = /\{\s*[A-Za-z_]\w*\s*,\s*select\s*,/g;
+
+/** One ICU message with GitHub's branch of every provider switch reading "PR". */
+export function withGitHubPrTerm(message: string): string {
+  let result = "";
+  let copied = 0;
+  const heads = new RegExp(SELECT_HEAD.source, "g");
+  for (let head = heads.exec(message); head; head = heads.exec(message)) {
+    const branches: { key: string; start: number; end: number }[] = [];
+    let index = head.index + head[0].length;
+    let closed = false;
+    while (index < message.length) {
+      while (/\s/.test(message[index] ?? "")) index++;
+      if (message[index] === "}") {
+        closed = true;
+        break;
+      }
+      const selector = /^(\w+)\s*\{/.exec(message.slice(index));
+      if (!selector) break;
+      let depth = 1;
+      let end = index + selector[0].length;
+      const start = end;
+      while (end < message.length && depth > 0) {
+        if (message[end] === "{") depth++;
+        else if (message[end] === "}") depth--;
+        end++;
+      }
+      if (depth !== 0) break;
+      branches.push({ key: selector[1]!, start, end: end - 1 });
+      index = end;
+    }
+    if (!closed || !branches.some((branch) => branch.key === "mr")) continue;
+    for (const branch of branches) {
+      if (branch.key === "mr" || branch.key === "cr") continue;
+      const body = message.slice(branch.start, branch.end);
+      result += message.slice(copied, branch.start) + PR_TERM.reduce((text, [pattern, to]) => text.replace(pattern, to), body);
+      copied = branch.end;
+    }
+    heads.lastIndex = index + 1;
+  }
+  return copied === 0 ? message : result + message.slice(copied);
+}
+
+function prTermEntry(value: unknown): unknown {
+  if (typeof value === "string") return withGitHubPrTerm(value);
+  if (Array.isArray(value)) return value.map((part) => (typeof part === "string" ? withGitHubPrTerm(part) : part));
+  return value;
+}
+
+/**
+ * T3's Korean catalog with Rubato's wording wherever the dictionary has the same English,
+ * and GitHub's term in provider-switched sentences as "PR".
+ */
 export function withRubatoWording(upstream: Catalog, english: Catalog, dictionary: UiDictionary): Catalog {
   const wording = indexWording(dictionary);
   const merged: Record<string, unknown> = { ...upstream };
@@ -260,5 +328,6 @@ export function withRubatoWording(upstream: Catalog, english: Catalog, dictionar
       typeof source === "string" ? rubatoMessage(source, wording) : rubatoJsx(source, upstream[hash], wording);
     if (korean !== null) merged[hash] = korean;
   }
+  for (const [hash, value] of Object.entries(merged)) merged[hash] = prTermEntry(value);
   return merged;
 }

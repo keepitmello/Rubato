@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import dictionary from "@t3tools/shared/rubatoI18n.ko.json";
-import type { UiDictionary } from "@t3tools/shared/rubatoWording";
+import { withGitHubPrTerm, type UiDictionary } from "@t3tools/shared/rubatoWording";
 import { sourceText, withRubatoWording, type Catalog } from "./rubatoWording";
 import english from "./translations/en.json";
 import korean from "./translations/ko.json";
@@ -67,5 +67,43 @@ describe("Rubato's wording over T3's Korean catalog", () => {
   it("keeps T3's Korean where Rubato has no entry", () => {
     const untouched = Object.keys(korean as Catalog).filter((hash) => merged[hash] === (korean as Catalog)[hash]);
     expect(untouched.length).toBeGreaterThan(4000);
+  });
+});
+
+describe("GitHub's term in provider-switched sentences", () => {
+  const merged = withRubatoWording(korean as Catalog, english as Catalog, rubato);
+
+  it("reads PR on GitHub's branch with the particle PR takes, and keeps GitLab's 병합 요청", () => {
+    const hash = hashOf(
+      "Opens a thread that knows which {term, select, mr {merge request} cr {change request} other {pull request}} you mean.",
+    );
+    expect((korean as Catalog)[hash]).toContain("other {풀 리퀘스트를}");
+    expect(merged[hash]).toBe(
+      "어떤 {term, select, mr {병합 요청을} cr {변경 요청을} other {PR을}} 말하는지 알고 있는 스레드를 엽니다.",
+    );
+  });
+
+  it("reaches a switch nested in a plural and leaves selects without an mr branch alone", () => {
+    expect(withGitHubPrTerm("{count, plural, other {{term, select, mr {병합 요청} cr {변경 요청} other {풀 리퀘스트}} {count}개}}")).toBe(
+      "{count, plural, other {{term, select, mr {병합 요청} cr {변경 요청} other {PR}} {count}개}}",
+    );
+    const linking = "{status, select, inProgress {풀 리퀘스트 연결 중} other {풀 리퀘스트 연결 중}}";
+    expect(withGitHubPrTerm(linking)).toBe(linking);
+    expect(withGitHubPrTerm("{term, select, mr {MR을} cr {변경 요청을} other {PR를}} 만들까요?")).toBe(
+      "{term, select, mr {MR을} cr {변경 요청을} other {PR을}} 만들까요?",
+    );
+  });
+
+  it("leaves no 풀 리퀘스트 on GitHub's branch anywhere in the catalog", () => {
+    const left = Object.values(merged).filter(
+      (value) => typeof value === "string" && /select, mr \{/.test(value) && /other \{[^{}]*풀 리퀘스트/.test(value),
+    );
+    expect(left).toEqual([]);
+    const switches = Object.entries(korean as Catalog).filter(
+      ([, value]) => typeof value === "string" && /select, mr \{/.test(value),
+    );
+    for (const [hash, value] of switches) {
+      expect((merged[hash] as string).match(/병합 요청/g)?.length).toBe((value as string).match(/병합 요청/g)?.length);
+    }
   });
 });
