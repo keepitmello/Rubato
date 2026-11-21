@@ -54,7 +54,8 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
   function send(details, options) {
     state.waiting.delete(details.messageId);
     state.handed.add(details.messageId);
-    pi.sendMessage(buildSessionMessage(details), options);
+    // A companion reads another companion's message as a peer's (message.mjs buildEnvelope).
+    pi.sendMessage(buildSessionMessage(details, { companion }), options);
   }
 
   // Pi writes every message it was sent by the time it is idle again; one it did not write (its run
