@@ -19,17 +19,32 @@ export async function* ndjson(body) {
   if (buffered.trim()) yield JSON.parse(buffered);
 }
 
+/** How long the person talks over the companion before its voice stops (LiveKit's default 0.5 s). */
+export const TALK_OVER_SECONDS = 0.5;
+
 /**
- * What the person heard of the companion's last reply when they cut in, or null when it played to
- * the end. LiveKit keeps an interrupted reply in the call's chat context as only the part that
- * played out, marked `interrupted`; it sits right before the person's words that cut in.
+ * The companion's last reply when the person cut it off, or null when it played to the end.
+ * LiveKit keeps an interrupted reply right before the person's words that cut in, marked
+ * `interrupted`, with when its voice started and stopped. `said` is its text (LiveKit may keep only
+ * part of it), `heardSeconds` how long it played before the person was talking, and `pace` the
+ * replies of this call that played in full, to measure the voice by.
  */
-export function heardBeforeCut(items) {
+export function cutFrom(items) {
+  const played = item => {
+    const { startedSpeakingAt: from, stoppedSpeakingAt: to } = item.metrics ?? {};
+    return Number.isFinite(from) && Number.isFinite(to) && to > from ? to - from : null;
+  };
   for (let at = items.length - 1; at >= 0; at--) {
     const item = items[at];
     if (item.type !== 'message' || item.role === 'user') continue;
     if (item.role !== 'assistant' || !item.interrupted) return null;
-    return item.textContent?.trim() || null;
+    const said = item.textContent?.trim();
+    const seconds = played(item);
+    if (!said || seconds === null) return null;
+    const pace = items.slice(0, at).filter(other => other.type === 'message' && other.role === 'assistant' && !other.interrupted)
+      .map(other => ({ text: other.textContent ?? '', seconds: played(other) }))
+      .filter(other => other.text && other.seconds).slice(-5);
+    return { said, heardSeconds: Math.max(0, seconds - TALK_OVER_SECONDS), pace };
   }
   return null;
 }
@@ -102,7 +117,7 @@ export function createBridge({ url, token = null, fetch: call = globalThis.fetch
   /**
    * One heard turn. Yields `{ t: 'delta', text }` sentences as the companion writes them, timing
    * events, and a final `done` or `error`. Aborting the signal cancels the turn on the bridge too.
-   * `cut` is what the person heard of the companion's previous reply before cutting in.
+   * `cut` is the companion's previous reply when the person cut in on it (`cutFrom`).
    */
   async function* turn(text, { turnId = randomUUID(), signal, cut = null } = {}) {
     const response = await post('/call/turn', { text, turnId, ...(cut ? { cut } : {}) }, signal);

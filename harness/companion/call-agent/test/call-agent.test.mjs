@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { CALL_SAY_TOOL, createCompanionCall } from '../../../pi-runtime/features/companion-home/call.mjs';
-import { createBridge, createSpeechBetween, heardBeforeCut } from '../bridge.mjs';
+import { createBridge, createSpeechBetween, cutFrom, TALK_OVER_SECONDS } from '../bridge.mjs';
 import { callableCompanions, resolveCompanion, voiceChoices } from '../companion.mjs';
 
 // The companion's real call bridge on a fake session: `say` streams call_say the way a model
@@ -113,19 +113,23 @@ test('a call speaks in the companion voice by default; ElevenLabs needs its own 
   assert.equal(voiceChoices({ ...companion, voice: { ...companion.voice, model: 'drama-3' } }, { HOME: home }).filter(item => item.provider === 'fish').length, 2);
 });
 
-test('cutting in tells the companion how far its last reply was heard, in the chat context LiveKit keeps', async t => {
+test('cutting in sends the cut reply, how long it played and this voice\'s pace, from the chat context LiveKit keeps', async t => {
   const { llm } = await import('@livekit/agents');
-  const message = (role, content, interrupted = false) => llm.ChatMessage.create({ role, content, interrupted });
-  const cutIn = [message('user', '루야 들려?'), message('assistant', '응, 들려! 나 여기', true), message('user', '잠깐만')];
-  assert.equal(heardBeforeCut(cutIn), '응, 들려! 나 여기');
-  assert.equal(heardBeforeCut([message('user', 'a'), message('assistant', '끝까지 다 들림'), message('user', 'b')]), null);
-  assert.equal(heardBeforeCut([message('assistant', '앞 통화에서 끊김', true), message('user', 'a'), message('assistant', '다 들림'), message('user', 'b')]), null,
-    'only the reply right before these words counts');
+  const message = (role, content, { interrupted = false, from, to } = {}) => llm.ChatMessage.create({ role, content, interrupted,
+    ...(from !== undefined ? { metrics: { startedSpeakingAt: from, stoppedSpeakingAt: to } } : {}) });
+  const items = [message('user', '루야 들려?'), message('assistant', '응, 들려! 나 여기 있어.', { from: 10, to: 13 }),
+    message('user', '피곤해'), message('assistant', '헐. 오늘은 좀 자자!', { interrupted: true, from: 20, to: 22 }), message('user', '아까')];
+  assert.deepEqual(cutFrom(items), { said: '헐. 오늘은 좀 자자!', heardSeconds: 2 - TALK_OVER_SECONDS,
+    pace: [{ text: '응, 들려! 나 여기 있어.', seconds: 3 }] });
+  assert.equal(cutFrom([message('user', 'a'), message('assistant', '끝까지 다 들림', { from: 1, to: 2 }), message('user', 'b')]), null);
+  assert.equal(cutFrom([message('assistant', '앞 통화에서 끊김', { interrupted: true, from: 1, to: 2 }), message('user', 'a'),
+    message('assistant', '다 들림', { from: 3, to: 4 }), message('user', 'b')]), null, 'only the reply right before these words counts');
+  assert.equal(cutFrom([message('assistant', '시각 없음', { interrupted: true }), message('user', 'a')]), null);
 
   const companion = await companionSession(t, say('아 미안, 말해.'));
   const client = createBridge({ url: companion.url });
-  for await (const _ of client.turn('잠깐만', { cut: heardBeforeCut(cutIn) }));
-  assert.deepEqual(companion.heard, ['[voice] 잠깐만\n(네 직전 말은 "응, 들려! 나 여기"까지 들리고 끊겼어. 그 뒤는 안 들렸어.)']);
+  for await (const _ of client.turn('잠깐만', { cut: cutFrom(items) }));
+  assert.deepEqual(companion.heard, ['[voice] 잠깐만'], 'nothing is added to what the person said');
 });
 
 test('words the companion says while it works play in order, and wait while the person talks', async t => {

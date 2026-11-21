@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { CALL_EFFORTS, CALL_SAY_TOOL, CUT_QUOTE_CHARS, cutNote, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
+import { CALL_EFFORTS, CALL_SAY_TOOL, CUT_MARK, DEFAULT_SPOKEN_PER_SECOND, heardPrefix, spokenPerSecond, CALL_WAIT_TOOL, CALL_PASS_TOOL, DEFAULT_CALL_EFFORT, createCompanionCall,
   createCompanionCallFactories, stableSentenceCut } from '../../pi-runtime/features/companion-home/call.mjs';
 import { createReplyWait } from '../../pi-runtime/features/companion-home/index.mjs';
 import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
@@ -45,7 +45,8 @@ async function fixture(t, { home, config = {}, script, level = 'high' } = {}) {
   t.after(async () => { await bridge.close(); rmSync(home, { recursive: true, force: true }); });
   const base = `http://127.0.0.1:${bridge.address().port}`;
   const post = (url, value) => fetch(`${base}${url}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(value) });
-  return { pi, bridge, ctx, base, post, home, env, errors, tools, emit, messages, thinking, aborts: () => aborts };
+  const readBack = messages => (handlers.get('context') ?? []).reduce((current, handler) => handler({ messages: current }, ctx)?.messages ?? current, messages);
+  return { pi, bridge, ctx, base, post, home, env, errors, tools, emit, messages, thinking, readBack, aborts: () => aborts };
 }
 const eventsOf = async response => (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 const toolEnd = (emit, name, args, id = 'call-tool') => {
@@ -266,16 +267,48 @@ test('an engine that stopped mid-call puts the level back when the conversation 
   assert.equal(existsSync(path.join(home, 'call/effort.json')), false);
 });
 
-test('words that cut the companion off carry how far it was heard, only the end of a long reply', async t => {
-  const box = await fixture(t, { script: ({ emit }) => toolEnd(emit, CALL_SAY_TOOL, { text: 'Sorry, go on.' }) });
-  const long = `${'앞부분 '.repeat(30)}여기까지 들렸어`;
-  await eventsOf(await box.post('/call/turn', { text: '잠깐만', turnId: 'cut-1', cut: long }));
+test('how much of a reply was heard is counted in spoken characters and ends on a whole word', () => {
+  const reply = '좀 풀리는 중이면 다행이다. [작게] 근데 PCCP 있는 거 알지? 오늘은 좀 자자!';
+  assert.equal(heardPrefix(reply, 2, 6), '좀 풀리는 중이면 다행이다.', '"근" of 근데 is out, so 근데 is unheard');
+  assert.equal(heardPrefix(reply, 2.5, 6), '좀 풀리는 중이면 다행이다. [작게] 근데', 'the acted tag takes no characters');
+  assert.equal(heardPrefix(reply, 0.1, 6), '');
+  assert.equal(heardPrefix(reply, 30, 6), null, 'heard to the end');
+  assert.equal(spokenPerSecond([]), DEFAULT_SPOKEN_PER_SECOND);
+  assert.equal(spokenPerSecond([{ text: '가나다 라마, 바사아자차!', seconds: 2 }]), 5);
+  assert.equal(spokenPerSecond([{ text: '가나다', seconds: 1 }]), DEFAULT_SPOKEN_PER_SECOND, 'too short to measure the voice by');
+});
+
+test('a cut-off reply reads back only as far as it was heard, with nothing added to the person\'s words', async t => {
+  const reply = '좀 풀리는 중이면 다행이다. 근데 PCCP 있는 거 알지? 오늘은 좀 자자!';
+  let lines = 0;
+  const script = ({ emit, machine }) => { if (!machine && ++lines === 1) toolEnd(emit, CALL_SAY_TOOL, { text: reply }, 'long'); else if (!machine) emit('agent_settled'); };
+  const box = await fixture(t, { script });
+  await eventsOf(await box.post('/call/turn', { text: '조금 풀렸어', turnId: 'cut-0' }));
+  // LiveKit may keep only part of the cut reply; it played 2 s at this voice's 6 per second.
+  const cut = { said: '좀 풀리는 중이면 다행이다. 근데', heardSeconds: 2, pace: [{ text: '가나다라마바사아자차가나', seconds: 2 }] };
+  await eventsOf(await box.post('/call/turn', { text: '아까', turnId: 'cut-1', cut }));
   const human = box.messages.filter(item => item.message.role === 'user').map(item => item.message.content);
-  assert.equal(human.length, 1);
-  assert.equal(human[0], `[voice] 잠깐만\n${cutNote(long)}`);
-  assert.match(cutNote(long), /^\(네 직전 말은 "….*여기까지 들렸어"까지 들리고 끊겼어/);
-  assert.ok(cutNote(long).length < CUT_QUOTE_CHARS + 60);
-  assert.equal((await box.post('/call/turn', { text: '잠깐만', turnId: 'cut-1', cut: 'something else' })).status, 409,
+  assert.deepEqual(human, ['[voice] 조금 풀렸어', '[voice] 아까'], 'the person\'s words arrive as they were said');
+
+  const said = { role: 'assistant', content: [{ type: 'thinking', thinking: 'plan' },
+    { type: 'toolCall', id: 'long', name: CALL_SAY_TOOL, arguments: { text: reply } }] };
+  const other = { role: 'assistant', content: [{ type: 'toolCall', id: 'other', name: CALL_SAY_TOOL, arguments: { text: '다른 말.' } }] };
+  const history = [{ role: 'user', content: '[voice] 조금 풀렸어' }, said, other, { role: 'user', content: '[voice] 아까' }];
+  const sent = box.readBack(history);
+  assert.equal(sent[1].content[1].arguments.text, `좀 풀리는 중이면 다행이다.${CUT_MARK}`);
+  assert.equal(sent[1].content[0], said.content[0]);
+  assert.equal(sent[2], other, 'words heard in full are untouched');
+  assert.equal(said.content[1].arguments.text, reply, 'the stored conversation keeps what was written');
+  assert.deepEqual(box.readBack(history), sent, 'every request reads it back the same way');
+  const untouched = [other];
+  assert.equal(box.readBack(untouched), untouched);
+
+  // The same reading after the engine restarts, so the cached prompt is not broken again.
+  await box.bridge.close();
+  const again = await fixture(t, { home: box.home });
+  assert.deepEqual(again.readBack(history), sent);
+  assert.equal((await box.post('/call/turn', { text: '아까', turnId: 'cut-1', cut: { ...cut, heardSeconds: 3 } }).catch(() => ({ status: 'closed' }))).status, 'closed');
+  assert.equal((await again.post('/call/turn', { text: '아까', turnId: 'cut-1', cut: { ...cut, heardSeconds: 3 } })).status, 409,
     'the same turn id with a different cut is different input');
 });
 
@@ -284,7 +317,7 @@ test('the call brief explains a cut-in and leaves how to carry the talk to the c
   await eventsOf(await box.post('/call/turn', { text: 'hello', turnId: 'brief-1' }));
   const brief = box.messages[0].message.details.text;
   assert.doesNotMatch(brief, /공백/, "a quiet line is the companion's own to read (its voice tone file)");
-  assert.match(brief, /어디까지 들렸는지가 그 말 아래 적혀 와/);
+  assert.match(brief, new RegExp(`들린 데까지만 남고 끝에 ${CUT_MARK}가 붙어`));
   assert.doesNotMatch(brief, /기계가 연 기회/);
 });
 

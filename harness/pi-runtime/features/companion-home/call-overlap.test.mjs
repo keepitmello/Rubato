@@ -208,3 +208,22 @@ test("words written for a line the person talked over stay unspoken, and the new
   await wait(50);
   assert.equal(call.session.isIdle, true);
 });
+
+test("a reply the person cut off reaches the model only as far as it was heard", async (t) => {
+  const call = await liveCall(t, "cut-read-back");
+  const { step } = call;
+  const reply = "좀 풀리는 중이면 다행이다. 근데 PCCP 있는 거 알지? 오늘은 좀 자자!";
+  call.setScript([
+    () => step([CALL_SAY_TOOL, "long", reply]),
+    () => step([CALL_SAY_TOOL, "again", "아, 좀 풀린다고 했어."]),
+  ]);
+  await eventsOf(await call.turn("조금 풀렸어", "line-1"));
+  const cut = { said: reply, heardSeconds: 2, pace: [{ text: "가나다라마바사아자차가나", seconds: 2 }] };
+  const rows = await eventsOf(await fetch(`http://127.0.0.1:${call.bridge.address().port}/call/turn`, { method: "POST",
+    headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "아까", turnId: "line-2", cut }) }));
+  assert.equal(rows.at(-1).source, CALL_SAY_TOOL);
+  const said = call.requests[1].find((message) => message.role === "assistant").content.find((block) => block.id === "long");
+  assert.equal(said.arguments.text, "좀 풀리는 중이면 다행이다.—");
+  assert.equal(JSON.stringify(call.requests[1].at(-1)).includes("끊겼"), false, "the person's words carry no note");
+  assert.match(JSON.stringify(call.session.messages), /오늘은 좀 자자!/, "the stored conversation keeps what was written");
+});

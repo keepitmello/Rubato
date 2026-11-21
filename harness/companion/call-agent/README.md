@@ -86,6 +86,10 @@ A companion needs both, and the page says which is missing:
 - A heard line steers into whatever the companion is doing, as a chat message does. Cutting in stops
   its voice and that answer's unspoken words, never its run or its tools; hanging up does not stop
   them either.
+- A reply the person cut off reads back to the companion only as far as it was heard, ending in `—`;
+  nothing is added to the person's words. The worker sends how long the reply played and replies of
+  this call that played in full (`cutFrom`); the bridge cuts the call_say there on a word boundary and
+  rewrites it the same way in every request, kept on disk so the cached prompt breaks once.
 - The companion speaks whenever the call is open. Its first `call_say` after a heard line answers
   that line; any later one, while it keeps working, comes over the open call stream as `say` /
   `say_end` and plays once the person is not talking (`createSpeechBetween` in `bridge.mjs`).

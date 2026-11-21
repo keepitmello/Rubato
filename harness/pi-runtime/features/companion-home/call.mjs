@@ -17,8 +17,12 @@ export const CALL_USER_TOOL = "call_user";
 /** The call service (harness/companion/call-agent/control.mjs) that rings the person's devices. */
 const CALL_CONTROL = "http://127.0.0.1:18790";
 export const CALL_BODY_BYTES = 256 * 1024;
-/** How much of a cut-off reply the companion is told it got through: the end of what was heard. */
-export const CUT_QUOTE_CHARS = 80;
+/** The mark a cut-off call_say ends with in what the companion reads back, as a script marks it. */
+export const CUT_MARK = "—";
+/** Spoken characters per second when the call has no fully played reply to measure the voice by. */
+export const DEFAULT_SPOKEN_PER_SECOND = 6;
+/** How many cut-off call_say texts are kept; a dropped one reads in full again. */
+const CUTS_KEPT = 1000;
 export const CALL_WAIT_SECONDS = Object.freeze({ min: 5, max: 300 });
 /**
  * The conversation's effort while a call is open, from `call.effort` in the companion's
@@ -31,11 +35,38 @@ export const DEFAULT_CALL_EFFORT = "medium";
 const LOOPBACK = new Set(["127.0.0.1", "::1", "localhost"]);
 const text = value => ({ type: "text", text: value });
 const voice = value => `[voice] ${value}`;
-/** The line under heard words that cut the companion off: how far its last reply got. */
-export const cutNote = heardPart => {
-  const quoted = heardPart.length > CUT_QUOTE_CHARS ? `…${heardPart.slice(-CUT_QUOTE_CHARS).trimStart()}` : heardPart;
-  return `(네 직전 말은 "${quoted}"까지 들리고 끊겼어. 그 뒤는 안 들렸어.)`;
-};
+/** Characters that take time to say: not spaces, punctuation or [performance tags] the voice acts out. */
+export function spokenLength(value) {
+  return String(value).replace(/\[[^\]]*\]/gu, "").replace(/[\s\p{P}\p{S}]/gu, "").length;
+}
+/** Spoken characters per second of this voice, from replies that played to the end. */
+export function spokenPerSecond(pace = []) {
+  let spoken = 0, seconds = 0;
+  for (const item of Array.isArray(pace) ? pace : []) {
+    if (typeof item?.text !== "string" || !(item.seconds > 0)) continue;
+    spoken += spokenLength(item.text); seconds += item.seconds;
+  }
+  return seconds >= 2 && spoken > 0 ? spoken / seconds : DEFAULT_SPOKEN_PER_SECOND;
+}
+/**
+ * The words of `value` heard in `seconds` at `perSecond`, ending on a word boundary, or null when it
+ * was heard to the end. A word the voice had not finished is not heard.
+ */
+export function heardPrefix(value, seconds, perSecond) {
+  const budget = Math.max(0, seconds) * perSecond;
+  let spoken = 0, boundary = 0, tag = false;
+  for (let at = 0; at < value.length; at++) {
+    const char = value[at];
+    if (char === "[") tag = true;
+    if (tag) { if (char === "]") tag = false; continue; }
+    if (/\s/u.test(char)) { boundary = at; continue; }
+    if (/[\p{P}\p{S}]/u.test(char)) continue;
+    // A tag right before the unheard word was never acted out; it goes with that word.
+    if (++spoken > budget) return value.slice(0, boundary).replace(/(?:\s*\[[^\]]*\])+\s*$/u, "").trimEnd();
+  }
+  return null;
+}
+const sameWords = value => String(value).replace(/\s+/g, " ").trim();
 const optionalText = file => { try { return readFileSync(file, "utf8").trim(); } catch { return ""; } };
 const messageText = message => typeof message?.content === "string" ? message.content.trim()
   : (message?.content ?? []).filter(part => part.type === "text").map(part => part.text).join("").trim();
@@ -81,6 +112,13 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
   // call_say written while no heard line holds the call: after the first words of an answer, while
   // the companion keeps working. Keyed by content index; each goes out on the open call's stream.
   const between = new Map();
+  // The companion's recent call_say words that played, newest last, to find the one a cut stopped.
+  const spoken = [];
+  // call_say ids cut off mid-way → the words heard. Every request reads them back that way, the same
+  // each time, so a cut changes the cached prompt once. On disk, so a restart reads them the same.
+  const cutsFile = path.join(stateDir, "cuts.json");
+  const cuts = new Map();
+  try { for (const [id, heard] of JSON.parse(readFileSync(cutsFile, "utf8"))) cuts.set(id, heard); } catch {}
   const timers = new Set();
   const safe = file => {
     if (!landsInside(home, file)) throw new Error("Call state must stay inside its companion home");
@@ -154,6 +192,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
         ...(turn.wait ? { waitMs: turn.wait.afterMs, waitReason: turn.wait.reason } : {}) };
     event(turn, result);
     turn.closed = true;
+    if (turn.said.trim() && turn.sayId) noteSpoken(turn.sayId, turn.said);
     if (turn.said.trim()) transcript(config.companionLabel || env.RUBATO_COMPANION_TITLE || "companion", turn.said.trim());
     try { writeJson(turn.file, { ...turn.receipt, status, result, endedAt: Date.now() }); } catch (error) { onError(error); }
     turn.response.end();
@@ -196,6 +235,45 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       event(turn, { t: "delta", text: sentence });
     }
   }
+  function noteSpoken(id, value) {
+    spoken.push({ id, text: value });
+    if (spoken.length > 20) spoken.shift();
+  }
+  /**
+   * The person cut in: what they heard of the companion's last words decides how that call_say reads
+   * from now on. `said` is the words the call client was playing, `heardSeconds` how long they played
+   * before the person was talking, `pace` replies that played in full, to measure the voice by.
+   */
+  function noteCut(cut) {
+    const said = sameWords(cut?.said ?? "");
+    if (!said || !(cut.heardSeconds >= 0)) return;
+    const head = said.slice(0, 24);
+    const words = [...spoken].reverse().find(item => sameWords(item.text).startsWith(head));
+    if (!words || cuts.has(words.id)) return;
+    const heard = heardPrefix(words.text.trim(), cut.heardSeconds, spokenPerSecond(cut.pace));
+    if (heard === null) return;
+    cuts.set(words.id, heard);
+    while (cuts.size > CUTS_KEPT) cuts.delete(cuts.keys().next().value);
+    try { writeJson(cutsFile, [...cuts]); } catch (error) { onError(error); }
+  }
+  /** What the companion reads back of its own call_say: only the words heard, then the cut mark. */
+  function readBack(messages) {
+    if (!cuts.size) return messages;
+    let changed = false;
+    const next = messages.map(message => {
+      if (message?.role !== "assistant" || !Array.isArray(message.content)) return message;
+      let touched = false;
+      const content = message.content.map(block => {
+        if (block?.type !== "toolCall" || block.name !== CALL_SAY_TOOL || !cuts.has(block.id)) return block;
+        touched = true;
+        return { ...block, arguments: { ...block.arguments, text: `${cuts.get(block.id)}${CUT_MARK}` } };
+      });
+      if (!touched) return message;
+      changed = true;
+      return { ...message, content };
+    });
+    return changed ? next : messages;
+  }
   function callEvent(value) {
     try { if (call && !call.response.destroyed) call.response.write(JSON.stringify(value) + "\n"); }
     catch (error) { onError(error); }
@@ -212,6 +290,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     if (!final) return true;
     between.delete(index);
     callEvent({ t: "say_end", sayId: held.sayId });
+    if (held.committed.trim() && id) noteSpoken(id, held.committed);
     if (held.committed.trim()) transcript(config.companionLabel || env.RUBATO_COMPANION_TITLE || "companion", held.committed.trim());
     authorize(id, CALL_SAY_TOOL);
     return true;
@@ -231,6 +310,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     if (name === CALL_SAY_TOOL) {
       if (typeof args?.text !== "string" || !args.text.trim()) return false;
       commit(turn, index, args.text, true);
+      turn.sayId = id;
     } else {
       if (turn.kind !== "opportunity") return false;
       if (name === CALL_WAIT_TOOL) { turn.wait = waitIntent(args); if (!turn.wait) return false; }
@@ -249,7 +329,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       transport === "qwen" ? "음성 계층이 말차례와 끼어들기를 맡아. 네 말은 안전한 차례에 재생돼."
         : "완성한 문장부터 사용자의 스피커로 나가. 소리로 자연스럽게 들릴 문장으로 말해.",
       "기억과 도구는 이 대화의 것을 그대로 써.",
-      "사용자가 네 말 중간에 끼어들면, 어디까지 들렸는지가 그 말 아래 적혀 와. 그 뒤는 안 들린 말이야.",
+      `사용자가 네 말 중간에 끼어들면, 네 call_say는 들린 데까지만 남고 끝에 ${CUT_MARK}가 붙어.`,
       // How a companion keeps a call going and what it does with a quiet line is its own, in its
       // voice tone file (config.voiceToneFile) or its prompt; said here too, it pushed twice.
     ].join("\n"), tone].filter(Boolean).join("\n\n");
@@ -315,7 +395,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const opportunity = url.pathname === "/call/opportunity";
       if (!opportunity && !["/call/turn", "/call/qwen-turn"].includes(url.pathname)) return json(response, 404, { error: "not found" });
       const heard = typeof input.text === "string" ? input.text.trim() : "";
-      const cut = !opportunity && typeof input.cut === "string" ? input.cut.replace(/\s+/g, " ").trim() : "";
+      const cut = !opportunity && input.cut && typeof input.cut === "object" ? input.cut : null;
       if (!opportunity && !heard) return json(response, 422, { error: "text is required" });
       if (opportunity && (!call || active || ctx?.isIdle?.() === false))
         return json(response, 409, { error: "no idle active call for an opportunity" });
@@ -323,7 +403,7 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
       const file = safe(ledgerFile(clientId));
       let receipt;
       try { receipt = JSON.parse(readFileSync(file, "utf8")); } catch (error) { if (error.code !== "ENOENT") throw error; }
-      const digest = createHash("sha256").update(`${opportunity}:${heard}:${cut}`).digest("hex");
+      const digest = createHash("sha256").update(`${opportunity}:${heard}:${JSON.stringify(cut)}`).digest("hex");
       if (receipt) {
         if (receipt.digest !== digest) return json(response, 409, { error: "turnId was already used for different input" });
         // Speech already emitted cannot be unspoken. Reconnection never repeats that human turn
@@ -341,7 +421,8 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
         "[voice] 통화는 열려 있고 사용자는 조용해.",
         typeof input.reason === "string" && input.reason.trim() ? `상황: ${input.reason.slice(0, 500)}` : "",
         "할 말이 있으면 call_say, 지금은 조용히 두는 게 맞으면 call_pass. 평문은 소리로 나가지 않아.",
-      ].filter(Boolean).join("\n") : [voice(heard), cut ? cutNote(cut) : ""].filter(Boolean).join("\n");
+      ].filter(Boolean).join("\n") : voice(heard);
+      if (cut) noteCut(cut);
       receipt = { clientId, digest, bootId, status: "running", sessionId: ctx?.sessionManager?.getSessionId?.(), startedAt: Date.now() };
       writeJson(file, receipt, true);
       stream(response);
@@ -446,6 +527,10 @@ export function createCompanionCall(pi, { env = process.env, config = callConfig
     if (server?.listening) await new Promise(resolve => { server.close(resolve); server.closeAllConnections(); });
   }
   pi.on("session_start", (_event, context) => start(context));
+  pi.on("context", event => {
+    const messages = readBack(event.messages);
+    if (messages !== event.messages) return { messages };
+  });
   pi.on("session_shutdown", close);
   pi.on("session_compact", (_event, context) => { ctx = context; briefed = false; briefTransport = null; });
   pi.on("message_start", (event, context) => {
