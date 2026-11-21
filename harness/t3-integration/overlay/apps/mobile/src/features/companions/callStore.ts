@@ -11,6 +11,7 @@ import { Room, RoomEvent, type Participant } from "livekit-client";
 import { useSyncExternalStore } from "react";
 
 import { RubatoCall, type RubatoCallEndReason, type RubatoCallInfo } from "../../../modules/rubato-call";
+import { beginForegroundHandoff } from "../../lib/foreground-handoff";
 import type { CallLine, CallRecord } from "./callTypes";
 import { copy } from "./copy";
 import { ringCheck, type LiveAnswer } from "./ringCheck";
@@ -76,9 +77,11 @@ export interface CallView {
   readonly error: string | null;
   /** Bumps whenever a call this phone saw ends, so a room fetches its call cards again. */
   readonly version: number;
+  /** The call screen is put away so the app can be used; the call goes on and a pill brings it back. */
+  readonly minimized: boolean;
 }
 
-let view: CallView = { current: null, ringing: null, error: null, version: 0 };
+let view: CallView = { current: null, ringing: null, error: null, version: 0, minimized: false };
 const listeners = new Set<() => void>();
 function publish(next: Partial<CallView>) {
   view = { ...view, ...next };
@@ -100,6 +103,11 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // ── a live call ──────────────────────────────────────────────────────────────────────────────────
 
 let room: Room | null = null;
+/**
+ * Holds off T3's deferred app-update restart (it waits out foreground handoffs) while a call is on:
+ * a restart reloads the JavaScript, which drops the call's audio while CallKit still shows the call.
+ */
+let releaseUpdateHold: (() => void) | null = null;
 
 function update(target: Room, patch: Partial<CurrentCall>) {
   if (room === target && view.current) publish({ current: { ...view.current, ...patch } });
@@ -110,9 +118,11 @@ async function join(environmentId: EnvironmentId, joined: Joined, callKit: boole
     audioCaptureDefaults: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
   });
   room = next;
+  releaseUpdateHold ??= beginForegroundHandoff();
   publish({
     error: null,
     ringing: null,
+    minimized: false,
     current: {
       call: joined.call,
       environmentId,
@@ -172,7 +182,9 @@ async function finish(reason: RubatoCallEndReason) {
   const current = view.current;
   const ending = room;
   room = null;
-  if (current) publish({ current: null, version: view.version + 1 });
+  releaseUpdateHold?.();
+  releaseUpdateHold = null;
+  if (current) publish({ current: null, minimized: false, version: view.version + 1 });
   await ending?.disconnect().catch(() => undefined);
   if (!current) return;
   if (current.call.uuid) RubatoCall?.endCall(current.call.uuid, reason);
@@ -374,6 +386,9 @@ export function startCallBridge() {
   for (const call of RubatoCall.activeCalls()) {
     if (call.state === "ringing") onIncoming(call);
     if (call.state === "answering") void onAnswer(call);
+    // A call CallKit still shows as connecting or on, though this JavaScript has just started and
+    // holds no audio for it: the app was reloaded under it. Ending it leaves no silent call behind.
+    if (call.state === "connecting" || call.state === "active") RubatoCall.endCall(call.uuid, "failed");
   }
 }
 
@@ -450,4 +465,12 @@ export const callActions = {
     publish({ current: { ...view.current, speaker: on } });
   },
   dismissError: () => publish({ error: null }),
+  /** Puts the call screen away; the call goes on. */
+  minimize() {
+    if (view.current && !view.minimized) publish({ minimized: true });
+  },
+  /** Brings the call screen back. */
+  restore() {
+    if (view.minimized) publish({ minimized: false });
+  },
 };

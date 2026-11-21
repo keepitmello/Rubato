@@ -1,10 +1,11 @@
 // Mounted once at the app's root: wires the system call screen to the call store, keeps an open app
 // listening for a companion's ring, and shows the call the phone is on.
+import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
 import { Alert, AppState } from "react-native";
 
-import { RING_POLL_MS, callActions, pollLiveRings, startCallBridge, useCallView } from "./callStore";
-import { CallScreen, RingScreen } from "./CallScreen";
+import { RING_POLL_MS, callActions, pollLiveRings, readCallView, startCallBridge, useCallView } from "./callStore";
+import { CallPill, CallScreen, RingScreen } from "./CallScreen";
 import { useCompanions } from "./companionsStore";
 import { copy } from "./copy";
 
@@ -30,14 +31,24 @@ export function RubatoCallHost() {
       if (timer !== null) clearInterval(timer);
     };
   }, []);
+  // Opening a notification during a call goes where it points, under the call: the call screen
+  // steps aside and the pill brings it back.
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(() => {
+      if (readCallView().current) callActions.minimize();
+    });
+    return () => subscription.remove();
+  }, []);
   useEffect(() => {
     if (!view.error) return;
     Alert.alert(copy.callFailed, view.error, [{ text: copy.dismiss, onPress: callActions.dismissError }]);
   }, [view.error]);
   const companionOf = (id: string, environmentId: string) =>
     companions.find((item) => item.id === id && item.environmentId === environmentId) ?? null;
-  if (view.current)
-    return <CallScreen current={view.current} companion={companionOf(view.current.call.companion, view.current.environmentId)} />;
+  if (view.current) {
+    const companion = companionOf(view.current.call.companion, view.current.environmentId);
+    return view.minimized ? <CallPill current={view.current} companion={companion} /> : <CallScreen current={view.current} companion={companion} />;
+  }
   if (view.ringing) return <RingScreen call={view.ringing} companion={companionOf(view.ringing.companion, view.ringing.environmentId)} />;
   return null;
 }

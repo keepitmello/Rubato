@@ -84,6 +84,47 @@ function RoundButton(props: {
   );
 }
 
+/** The call while its screen is put away: the companion's face, the time and a green phone, tap to go back. */
+export function CallPill(props: { readonly current: CurrentCall; readonly companion: CompanionEntry | null }) {
+  const { current } = props;
+  const insets = useSafeAreaInsets();
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+  const art = props.companion?.art ?? null;
+  const title = props.companion?.title ?? current.call.title ?? current.call.companion;
+  const time = current.connectedAt === null ? copy.connecting : callLength(now - current.connectedAt);
+  return (
+    <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { zIndex: 1000 }]}>
+      <View pointerEvents="box-none" style={{ position: "absolute", top: insets.top + 52, right: 12 }}>
+        <GlassSurface
+          glassEffectStyle="regular"
+          chrome="none"
+          tintColor="rgba(52,199,89,0.22)"
+          fallbackColor="rgba(28,28,30,0.92)"
+          style={{ borderRadius: 22 }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${copy.backToCall}, ${title}`}
+            onPress={callActions.restore}
+            className="flex-row items-center gap-2 active:opacity-70"
+            style={{ height: 44, paddingLeft: 6, paddingRight: 14 }}
+          >
+            <CompanionAvatar art={art} title={title} size={32} />
+            <SymbolView name={{ ios: "phone.fill" as never, android: "smartphone" }} size={13} tintColor={ANSWER_GREEN} />
+            <Text className="text-[15px]" style={{ color: ANSWER_GREEN, fontVariant: ["tabular-nums"] }}>
+              {time}
+            </Text>
+          </Pressable>
+        </GlassSurface>
+      </View>
+    </View>
+  );
+}
+
 export function CallScreen(props: { readonly current: CurrentCall; readonly companion: CompanionEntry | null }) {
   const { current } = props;
   const insets = useSafeAreaInsets();
@@ -103,6 +144,25 @@ export function CallScreen(props: { readonly current: CurrentCall; readonly comp
   return (
     <Modal visible animationType="fade" presentationStyle="overFullScreen" transparent statusBarTranslucent onRequestClose={callActions.hangUp}>
       <CallBackdrop art={art} />
+      <View style={{ position: "absolute", top: insets.top + 8, left: 20, zIndex: 1 }}>
+        <GlassSurface
+          glassEffectStyle="clear"
+          chrome="none"
+          tintColor="rgba(255,255,255,0.16)"
+          fallbackColor="rgba(255,255,255,0.18)"
+          style={{ width: 44, height: 44, borderRadius: 22 }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={copy.minimizeCall}
+            hitSlop={8}
+            onPress={callActions.minimize}
+            className="flex-1 items-center justify-center active:opacity-70"
+          >
+            <SymbolView name={{ ios: "chevron.down" as never, android: "smartphone" }} size={20} tintColor="#FFFFFF" />
+          </Pressable>
+        </GlassSurface>
+      </View>
       <View className="flex-1 items-center px-8" style={{ paddingTop: insets.top + 56, paddingBottom: insets.bottom + 32 }}>
         <CompanionAvatar art={art} title={title} size={120} />
         <Text className="mt-5 font-t3-bold text-[30px]" style={{ color: "#FFFFFF" }}>
