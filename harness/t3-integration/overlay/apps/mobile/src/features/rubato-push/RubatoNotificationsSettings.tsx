@@ -12,7 +12,14 @@ import { SettingsSwitchRow } from "../settings/components/SettingsSwitchRow";
 import { liveActivityDeps, liveActivitySupported, macConnections, rubatoPushDeps } from "./deps";
 import { syncLiveActivities } from "./liveActivity";
 import { loadPushState } from "./storage";
-import { pushPreferences, setRubatoPushPreferences, type MacConnection, type PushPreferences, type PushState } from "./sync";
+import {
+  macFetch,
+  pushPreferences,
+  setRubatoPushPreferences,
+  type MacConnection,
+  type PushPreferences,
+  type PushState,
+} from "./sync";
 
 // Settings > Notifications in the Rubato app. Each kind (companion messages, companion calls,
 // threads, the Live Activity card) is turned off on the Macs themselves, so nothing of it leaves
@@ -33,10 +40,8 @@ async function readPermission(): Promise<Permission> {
 }
 
 async function macRequest(connection: MacConnection, action: string, body: unknown = {}): Promise<unknown> {
-  const url = `${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
+  const response = await macFetch(fetch, connection, `${connection.httpBaseUrl.replace(/\/+$/, "")}/rubato/push/${action}`, {
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   return response.ok ? response.json() : null;

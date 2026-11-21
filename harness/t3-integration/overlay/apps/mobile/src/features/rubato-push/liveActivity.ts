@@ -11,7 +11,7 @@
 // Upstream starts its card only in front for the same reason: a card the relay started in the
 // background often never got its token back to the relay.
 import type { AgentActivityProps } from "../../widgets/AgentActivity";
-import type { MacConnection, PushState, PushSyncDeps } from "./sync";
+import { macFetch, type MacConnection, type PushState, type PushSyncDeps } from "./sync";
 import { pushPreferences } from "./sync";
 
 /** What the Mac's card shows; `environmentId` says whose card it is. */
@@ -39,10 +39,8 @@ const listening = new Set<string>();
 
 async function macCard(deps: LiveActivityDeps, connection: MacConnection, httpBaseUrl: string): Promise<MacCard | null | undefined> {
   try {
-    const url = `${httpBaseUrl}/rubato/push/activity`;
-    const response = await deps.fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
+    const response = await macFetch(deps.fetch, connection, `${httpBaseUrl}/rubato/push/activity`, {
+      headers: { "content-type": "application/json" },
       body: "{}",
     });
     if (!response.ok) return undefined;

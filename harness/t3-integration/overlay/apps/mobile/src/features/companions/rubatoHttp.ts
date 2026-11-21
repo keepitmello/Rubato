@@ -87,9 +87,12 @@ export async function savedMacHeaders(
   saved: SavedMac,
   method: HttpMethod.HttpMethod,
   url: string,
+  rejectedAccessToken?: string,
 ): Promise<Record<string, string>> {
-  const prepared = readPrepared(saved.environmentId as EnvironmentId);
-  const access = prepared ? await rubatoAuthorization(prepared, method, url) : null;
+  const environmentId = saved.environmentId as EnvironmentId;
+  // A DPoP pairing has no credential of its own until its connection is made (right after launch).
+  const prepared = readPrepared(environmentId) ?? (saved.bearerToken ? null : await awaitPrepared(environmentId, 20_000));
+  const access = prepared ? await rubatoAuthorization(prepared, method, url, rejectedAccessToken) : null;
   if (access) return { ...access.headers };
   if (saved.bearerToken) return { authorization: `Bearer ${saved.bearerToken}` };
   throw notConnected();

@@ -7,7 +7,7 @@
 //
 // A file the phone does not have yet plays as the default sound.
 import { COMPLETION_CAF_BASE64, INPUT_CAF_BASE64 } from "./builtinSounds";
-import type { MacConnection } from "./sync";
+import { macFetch, type MacConnection } from "./sync";
 
 export const BUILTIN_SOUNDS: Readonly<Record<string, string>> = {
   "rubato-completion.caf": COMPLETION_CAF_BASE64,
@@ -42,10 +42,8 @@ export function decodeBase64(text: string): Uint8Array {
 }
 
 async function macPost(deps: SoundSyncDeps, connection: MacConnection, route: string, body: unknown): Promise<Response | null> {
-  const url = `${connection.httpBaseUrl.replace(/\/+$/, "")}${route}`;
-  const response = await deps.fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json", ...(await connection.authorize("POST", url)) },
+  const response = await macFetch(deps.fetch, connection, `${connection.httpBaseUrl.replace(/\/+$/, "")}${route}`, {
+    headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
   return response.ok ? response : null;

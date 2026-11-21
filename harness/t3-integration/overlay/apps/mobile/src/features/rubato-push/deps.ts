@@ -47,6 +47,6 @@ export function macConnections(
   return connections.map((connection) => ({
     environmentId: connection.environmentId,
     httpBaseUrl: connection.httpBaseUrl,
-    authorize: (method, url) => savedMacHeaders(connection, method, url),
+    authorize: (method, url, rejected) => savedMacHeaders(connection, method, url, rejected),
   }));
 }

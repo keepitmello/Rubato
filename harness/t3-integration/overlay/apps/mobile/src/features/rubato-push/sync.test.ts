@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { setRubatoPushPreferences, syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
+import { macFetch, setRubatoPushPreferences, syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
 
 const RELAY = "https://relay.test";
 const MAC = {
@@ -123,5 +123,44 @@ describe("syncRubatoPush", () => {
     requests.length = 0;
     await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });
     expect(requests).toEqual([]);
+  });
+});
+
+describe("a request to a Mac on a DPoP-bound pairing", () => {
+  it("renews a token the Mac turns down and sends the request once more", async () => {
+    const asked: Array<string | undefined> = [];
+    const mac = {
+      authorize: async (_method: "POST", _url: string, rejected?: string) => {
+        asked.push(rejected);
+        return { authorization: `DPoP ${rejected ? "renewed" : "current"}`, dpop: "proof" };
+      },
+    };
+    const sent: string[] = [];
+    const response = await macFetch(
+      async (_url, init) => {
+        const authorization = (init.headers as Record<string, string>).authorization!;
+        sent.push(authorization);
+        return new Response("{}", { status: authorization === "DPoP current" ? 401 : 200 });
+      },
+      mac,
+      "https://wy-mac.tail.ts.net/rubato/push/register",
+    );
+    expect(response.status).toBe(200);
+    expect(asked).toEqual([undefined, "current"]);
+    expect(sent).toEqual(["DPoP current", "DPoP renewed"]);
+  });
+
+  it("does not resend a bearer request the Mac turns down", async () => {
+    let calls = 0;
+    const response = await macFetch(
+      async () => {
+        calls += 1;
+        return new Response("{}", { status: 401 });
+      },
+      MAC,
+      "https://wy-mac.tail.ts.net/rubato/push/register",
+    );
+    expect(response.status).toBe(401);
+    expect(calls).toBe(1);
   });
 });
