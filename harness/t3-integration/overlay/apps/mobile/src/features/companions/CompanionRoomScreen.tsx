@@ -25,7 +25,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { KeyboardAvoidingView, KeyboardStickyView, useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { initialWindowMetrics, useSafeAreaInsets } from "react-native-safe-area-context";
 import Svg, { Path } from "react-native-svg";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -110,6 +110,11 @@ export type CompanionRoomParams = {
 };
 
 const LOCALE = phoneLocale();
+/**
+ * The status bar's height, from the window: inside a screen whose stack bar shows, the screen's own
+ * top inset also counts the bar, which pushed the face and the blur down over the messages.
+ */
+const STATUS_TOP = initialWindowMetrics?.insets.top ?? 59;
 const timeFormat = new Intl.DateTimeFormat(LOCALE, { hour: "numeric", minute: "2-digit" });
 
 /** The two bubble colors and the words on the companion's. */
@@ -171,8 +176,8 @@ function RoomHeader(props: {
   /** What hangs under the header (a first conversation's chips): the soft edge reaches past it. */
   readonly below: number;
 }) {
-  const insets = useSafeAreaInsets();
-  const top = insets.top;
+  // The window's status bar height: with the bar shown, the safe-area top counts the bar too (f32806572).
+  const top = STATUS_TOP;
   const named = props.companion === null || props.companion.macTitle !== null;
   return (
     <View pointerEvents="box-none" style={{ position: "absolute", left: 0, right: 0, top: 0, height: top + HEADER_DEPTH + props.below + 24 }}>
@@ -635,7 +640,6 @@ function RoomBody(props: {
   const draft = useComposerDraft(composer.composerDraftKey ?? null);
   const { selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
-  const insets = useSafeAreaInsets();
   const scaled = useScaledTextRole("body");
   // Messages' words: the body size, set closer than a thread's.
   const body = useMemo<BodyText>(() => ({ fontSize: scaled.fontSize, lineHeight: Math.round(scaled.fontSize * BUBBLE_LINE_RATIO) }), [scaled.fontSize]);
@@ -795,7 +799,7 @@ function RoomBody(props: {
         }),
     [reveal],
   );
-  const headerHeight = insets.top + HEADER_DEPTH + props.topInset;
+  const headerHeight = STATUS_TOP + HEADER_DEPTH + props.topInset;
   return (
     <>
       <GestureDetector gesture={timeDrag}>
@@ -830,7 +834,7 @@ function RoomBody(props: {
             )}
             ListHeaderComponent={
               <View style={{ paddingBottom: composerHeight + 8 }}>
-                {writing ? <CompanionTypingBubble tool={tool} bubbleColor={colors.received} dotColor={theme["--color-foreground-muted"]} /> : null}
+                {writing ? <CompanionTypingBubble tool={tool} bubbleColor={colors.received} dotColor={theme["--color-foreground-muted"]} penColor={theme["--color-foreground"]} /> : null}
               </View>
             }
             ListFooterComponent={<View style={{ height: headerHeight + 10 }} />}
@@ -905,13 +909,12 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
   const onboarding = companion?.onboarding ?? null;
   const [chipsHeight, setChipsHeight] = useState(0);
   const topInset = onboarding ? chipsHeight : 0;
-  const insets = useSafeAreaInsets();
   // The stack's bar stays, transparent and without a title: its back button and swipe back are
   // iOS's own. The face and name are drawn over it (RoomHeader).
   const options = useMemo(
     () => ({
-      title,
-      headerTitle: () => null,
+      // No title in the bar: the name stands in its pill under the face.
+      title: "",
       unstable_navigationItemStyle: "navigator" as const,
       // UIKit's scroll edge reads the inverted list from the wrong end and blurs the whole room;
       // the room draws its own edge (TopEdge).
@@ -951,7 +954,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       <RoomHeader companion={companion} title={title} onProfile={openProfile} below={topInset} />
       {onboarding ? (
         <View
-          style={{ position: "absolute", top: insets.top + HEADER_DEPTH, left: 0, right: 0 }}
+          style={{ position: "absolute", top: STATUS_TOP + HEADER_DEPTH, left: 0, right: 0 }}
           onLayout={(event) => setChipsHeight(event.nativeEvent.layout.height)}
         >
           <OnboardingChips onboarding={onboarding} />
