@@ -80,7 +80,8 @@ test('a call reaches only companions with a bridge and a chosen voice, in that v
     mkdirSync(path.join(home, 'messenger'), { recursive: true });
     return { id, title: id, home, memoryAgent: id, call };
   };
-  const voiced = profile('voiced', { enabled: true, port: 18001, elevenlabsVoiceId: 'eleven-voice' });
+  const voiced = profile('voiced', { enabled: true, port: 18001, elevenlabsVoiceId: 'eleven-voice',
+    companionLabel: '보이스', userLabel: '우용이', keywords: ['세뇨', ' 미카엘 ', '보이스', 7] });
   const silent = profile('silent', { enabled: true, port: 18002 });
   const closed = profile('closed', { enabled: false });
   const voiceId = '3c7ee7e408104d76a777ebaadc201896';
@@ -92,6 +93,7 @@ test('a call reaches only companions with a bridge and a chosen voice, in that v
 
   const resolved = resolveCompanion('voiced', env);
   assert.equal(resolved.bridge.url, 'http://127.0.0.1:18001');
+  assert.deepEqual(resolved.keywords, ['voiced', '보이스', '우용이', '세뇨', '미카엘'], 'names transcription should expect, once each');
   assert.deepEqual([resolved.voice.voiceId, resolved.voice.model, resolved.fishKey], [voiceId, 's2.1-pro', 'fish-key']);
   assert.throws(() => resolveCompanion('silent', env), /no voice is chosen for silent/);
   assert.throws(() => resolveCompanion('closed', env), /closed has no call bridge/);

@@ -28,7 +28,8 @@ why in the engine log. `node run.mjs` runs the same stack in a terminal.
 The control surface (`control.mjs`) listens on <http://127.0.0.1:18790/> with a test page. The app
 reaches it through its own authenticated route. The LiveKit key pair is made once in
 `~/.rubato/call/livekit.yaml`; each call is a file under `~/.rubato/call/calls/`; process logs are in
-`~/.rubato/call/logs/`; each spoken turn's timing is appended to `~/.rubato/call/latency.jsonl`.
+`~/.rubato/call/logs/`; each spoken turn's timing is appended to `~/.rubato/call/latency.jsonl`, and each pause the turn detector
+judged (its end-of-turn probability, the language threshold, the words so far) to `turn-ends.jsonl`.
 
 ## Calls both ways
 
@@ -61,6 +62,11 @@ Each call record carries `uuid` (the phone's CallKit id), `title` (the companion
 companion's ring, `ringUntil`. Every change goes to the push relay's Mac sender
 (`harness/push-relay/mac/sender.mjs`), which sends the phone's VoIP push for a ring; without it calls
 still ring every open app.
+
+## Words the transcription expects
+
+The companion's title and labels (`call.companionLabel`, `call.userLabel`) plus `call.keywords`, a
+list of names and terms the person says often, go to transcription as hints.
 
 ## Voice engines
 

@@ -72,6 +72,10 @@ export function resolveCompanion(id, env = process.env) {
     bridge: { url: `http://${call.host?.includes(':') ? `[${call.host}]` : call.host ?? '127.0.0.1'}:${call.port}`, token: call.token ?? null },
     voice, fishKey,
     userLabel: call.userLabel ?? null,
+    // Words the transcription should expect: who is on the call, and names the person says often
+    // (`call.keywords` in the profile), so 세뇨 is not written down as 새뉴.
+    keywords: [...new Set([title, call.companionLabel, call.userLabel, ...(Array.isArray(call.keywords) ? call.keywords : [])]
+      .filter(word => typeof word === 'string' && word.trim()).map(word => word.trim()))],
     elevenlabsVoiceId: typeof call.elevenlabsVoiceId === 'string' ? call.elevenlabsVoiceId : null,
     speakable: text => pronunciationText(text, own),
   };

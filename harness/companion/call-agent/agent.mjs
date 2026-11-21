@@ -47,7 +47,10 @@ function sentences(events, { onSentence = () => {}, onFirst = () => {}, onEnd = 
     cancel: () => onCancel(),
   });
 }
-const LATENCY_LOG = path.join(process.env.RUBATO_CALL_HOME ?? path.join(os.homedir(), '.rubato', 'call'), 'latency.jsonl');
+const CALL_HOME = process.env.RUBATO_CALL_HOME ?? path.join(os.homedir(), '.rubato', 'call');
+const LATENCY_LOG = path.join(CALL_HOME, 'latency.jsonl');
+/** Each pause the turn detector judged: how sure it was the person had finished, and what they had said. */
+const TURN_END_LOG = path.join(CALL_HOME, 'turn-ends.jsonl');
 
 function lastUserText(chatCtx) {
   for (let at = chatCtx.items.length - 1; at >= 0; at--) {
@@ -57,10 +60,10 @@ function lastUserText(chatCtx) {
   return '';
 }
 
-function record(entry) {
+function record(entry, file = LATENCY_LOG) {
   try {
-    mkdirSync(path.dirname(LATENCY_LOG), { recursive: true, mode: 0o700 });
-    appendFileSync(LATENCY_LOG, JSON.stringify(entry) + '\n', { mode: 0o600 });
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    appendFileSync(file, JSON.stringify(entry) + '\n', { mode: 0o600 });
   } catch {}
 }
 
@@ -187,7 +190,7 @@ export default defineAgent({
       // already forbids markdown, so sentences go straight to the voice.
       ttsTextTransforms: null,
       stt: new openai.STT({ apiKey: openAiKey, model: 'gpt-live-transcribe', useRealtime: true, language: 'ko',
-        keywords: [companion.title, companion.userLabel].filter(Boolean) }),
+        keywords: companion.keywords }),
       tts: engine.tts,
       turnHandling: {
         turnDetection: new inference.TurnDetector({ version: 'v1-mini' }),
@@ -221,11 +224,17 @@ export default defineAgent({
       logger.info(summary, 'call latency');
       record({ ...timing, voice: engine.choice.id, ...summary });
     });
+    // What the person had said when the detector judged a pause; it reads the audio, this shows the words.
+    let wordsSoFar = '';
     session.on(AgentSessionEventTypes.UserInputTranscribed, ev => {
+      wordsSoFar = ev.transcript;
       if (!ev.isFinal) return;
       logger.info({ transcript: ev.transcript }, 'heard');
       void report('heard', ev.transcript);
     });
+
+    session.on(AgentSessionEventTypes.EotPrediction, ev => record({ callId, companion: companion.id, at: Date.now(),
+      probability: ev.probability, threshold: ev.threshold, waitMs: ev.delayMs, words: wordsSoFar }, TURN_END_LOG));
 
     await session.start({ agent: new CompanionVoice({ companion, bridge, callId, timings, report }), room: ctx.room });
     sessionStarted();
