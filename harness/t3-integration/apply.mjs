@@ -50,6 +50,7 @@ import { handoffRecoveryEdits } from './handoff-recovery-edits.mjs';
 import { themeEdits, themeOverlays } from './theme-edits.mjs';
 import { polishEdits, polishOverlays } from './polish-edits.mjs';
 import { chatTableEdits, chatTableOverlays } from './chat-table-edits.mjs';
+import { markdownTildeEdits, markdownTildeOverlays } from './markdown-tilde-edits.mjs';
 import { windowMaterialEdits, windowMaterialOverlays } from './window-material-edits.mjs';
 import { readOpenEdits, readOpenOverlays } from './read-open-edits.mjs';
 import { projectRailEdits, projectRailOverlays } from './project-rail-edits.mjs';
@@ -1000,6 +1001,11 @@ for (const [relative, changes] of Object.entries(polishEdits)) {
 // Chat tables take the chat width and wrap their cells (chat-table-edits.mjs).
 overlays.push(...chatTableOverlays);
 for (const [relative, changes] of Object.entries(chatTableEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+// A lone ~ in a reply stays a tilde on the Mac and the phone (markdown-tilde-edits.mjs).
+overlays.push(...markdownTildeOverlays);
+for (const [relative, changes] of Object.entries(markdownTildeEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 // The sidebar material: opaque, macOS vibrancy or Liquid Glass; its CSS imports after the polish (window-material-edits.mjs).

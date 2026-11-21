@@ -226,6 +226,9 @@
     "apps/web/src/components/chat/ComposerModelEffort.tsx": "1bd12779daec36e622ee3351214c768b1cbb58a70bd2ff42346ad31762d28de6",
     "apps/web/src/components/ComposerContextPermissions.tsx": "632f5b52637fc06a48f8263c5891d956c3998aa91be97145cb936ce3eff6fb6e",
     "apps/web/src/components/chat/ComposerPermissionsSection.browser.test.tsx": "328dc08e2e7e80ebdff4919b89490ff07849b0914da11823ae42d61c79d91c84",
-    "apps/mobile/src/features/threads/ThreadSettingsSheet.tsx": "f2176972a9031df1345dea2ec1c882b1923b044b0f057edb9f9da29b612653c7"
+    "apps/mobile/src/features/threads/ThreadSettingsSheet.tsx": "f2176972a9031df1345dea2ec1c882b1923b044b0f057edb9f9da29b612653c7",
+    "packages/shared/src/markdownPipeline.ts": "317c5856add1482ae64e2e5eaa71b16aa83a630f4473cdaf41fc2faef28bc4a6",
+    "apps/mobile/src/lib/markdownDocument.ts": "01c4a7b78b130d94af0ddb7051ae09437bf243f1127e62b0c67f1399b9c5abb0",
+    "packages/shared/src/markdownPipeline.test.ts": "bde4990ff4499695a44cf4d6983d5bf13c28a5607dc07f857f52c198fa590dfc"
   }
 }
