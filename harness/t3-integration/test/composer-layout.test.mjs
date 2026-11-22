@@ -35,16 +35,26 @@ test('both composers: the model leads; speed, mic, call, attach, ring and send f
   ]);
 });
 
-test('the control row keeps even insets, a model chip, one cluster and a divider (rubatoPolish.css)', async () => {
+test('the control row keeps even insets, one cluster and a divider (rubatoPolish.css)', async () => {
   const css = await readFile(new URL('../overlay/apps/web/src/rubatoPolish.css', import.meta.url), 'utf8');
   const row = css.slice(css.indexOf('[data-chat-composer-footer="true"] {'));
   assert.match(row, /^\[data-chat-composer-footer="true"\] \{\n  padding-inline-end: calc\(var\(--spacing\) \* 4\);\n  padding-bottom: calc\(var\(--spacing\) \* 4\);/);
-  assert.match(row, /\[data-chat-provider-model-picker="true"\] \{\n  background-color: var\(--rb-hairline\);/);
   assert.match(row, /\[data-chat-composer-actions="right"\] button\.rounded-full \{\n  width: calc\(var\(--spacing\) \* 7\);/);
   assert.match(row, /\[data-rubato-speed-label\]::after \{[^}]*background: var\(--rb-hairline-strong\);/);
-  // A narrow composer drops the speed before the model chip runs into it (verifier-r2, 400px).
+  // A narrow composer drops the speed before the model label runs into it (verifier-r2, 400px).
   assert.match(row, /@container composer-surface \(max-width: 480px\) \{[^}]*\[data-rubato-speed-label\] \{\n    display: none;/);
   assert.match(row, /\[data-chat-provider-model-picker="true"\] \{\n  min-width: 0;\n  overflow: hidden;/);
+});
+
+test('composer model buttons only get a background on hover', async () => {
+  const css = await readFile(new URL('../overlay/apps/web/src/rubatoPolish.css', import.meta.url), 'utf8');
+  assert.doesNotMatch(css, /\[data-chat-provider-model-picker="true"\][^{]*\{[^}]*\bbackground(?:-color)?:/);
+});
+
+test('an open picker does not highlight the composer model button without hover', skip, async () => {
+  const bar = await applied('apps/web/src/components/chat/ComposerControlsBar.tsx');
+  assert.match(bar, /const MODEL_TRIGGER_STATES = "data-pressed:bg-transparent data-pressed:hover:bg-accent";/);
+  assert.match(bar, /triggerClassName=\{cn\(\s*"group\/model-trigger",\s*MODEL_TRIGGER_STATES,/);
 });
 
 test('the model button keeps its effort; the picker opens from the left', skip, async () => {

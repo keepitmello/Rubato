@@ -149,16 +149,15 @@
 
 /*
  * The composer's control row (user 4da99d2e, "너무 좌우 여백이 없이 딱붙어보여서"): the right
- * and bottom insets equal the text's left inset (the body's px-4), the model sits on a quiet
- * chip whose content lines up with the text, the right side is one cluster of controls as tall
- * as the model chip, and a hairline divides the speed readout from the buttons.
+ * and bottom insets equal the text's left inset (the body's px-4), the model label lines up
+ * with the text, and a hairline divides the speed readout from the cluster of buttons.
  */
 [data-chat-composer-footer="true"] {
   padding-inline-end: calc(var(--spacing) * 4);
   padding-bottom: calc(var(--spacing) * 4);
 }
 /* A roomier composer (user 2f61360b, "좌우 여백 더 넉넉하게"): text and both ends of the
- * control row sit 24px from the edge; the model chip's own 8px padding keeps its content on
+ * control row sit 24px from the edge; the model button's own 8px padding keeps its content on
  * the text's line. A narrow composer keeps T3's 16px. */
 @container composer-surface (min-width: 481px) {
   [data-chat-composer-surface="true"] [data-chat-composer-body="true"] {
@@ -168,13 +167,6 @@
     padding-inline-start: calc(var(--spacing) * 4);
     padding-inline-end: calc(var(--spacing) * 6);
   }
-}
-[data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"] {
-  background-color: var(--rb-hairline);
-}
-[data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"]:hover,
-[data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"][data-pressed] {
-  background-color: var(--accent);
 }
 [data-chat-composer-footer="true"] [data-chat-composer-actions="right"],
 [data-chat-composer-footer="true"] [data-chat-composer-actions="right"] > .gap-2 {
@@ -191,7 +183,7 @@
     height: calc(var(--spacing) * 8);
   }
 }
-/* The model chip never paints past its box; a narrow composer drops the speed readout first. */
+/* The model label never paints past its box; a narrow composer drops the speed readout first. */
 [data-chat-composer-footer="true"] [data-chat-provider-model-picker="true"] {
   min-width: 0;
   overflow: hidden;

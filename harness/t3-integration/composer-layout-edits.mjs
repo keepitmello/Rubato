@@ -8,7 +8,7 @@
 //
 // keeping upstream's model button with its effort and its two-pane picker, which opens above the
 // button at the left edge (popupAlign start) instead of over the transcript. The new-thread strip
-// below the home composer stays T3's. The row's spacing (even inner padding, the model chip, one
+// below the home composer stays T3's. The row's spacing (even inner padding, one
 // 6px cluster on the right, the divider after the speed) is rubatoPolish.css's, not an edit here.
 // The access mode ("Full access") shows nowhere (user 70c3ee81: "전체권한 이거는 그냥 안뜨게하자"):
 // not as a composer chip, not in the new-thread strip, not in the model picker's footer. The
@@ -106,6 +106,9 @@ export const composerLayoutEdits = {
       'replace'],
   ],
   'apps/web/src/components/chat/ComposerControlsBar.tsx': [
+    ['const MODEL_TRIGGER_STATES = "data-popup-open:bg-accent data-popup-open:text-foreground";',
+      '// Rubato: Base UI keeps data-pressed while the picker is click-open; only hover paints the button.\nconst MODEL_TRIGGER_STATES = "data-pressed:bg-transparent data-pressed:hover:bg-accent";',
+      'replace'],
     ['    matchesDefault: accessMatchesDefault || props.permissionsShownInStrip,',
       '    // Rubato: the access mode is never shown as a chip (composer-layout-edits.mjs).\n    matchesDefault: true,',
       'replace'],
