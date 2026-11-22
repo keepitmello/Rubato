@@ -838,7 +838,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       if (fromCompanion(from)) need().followerFor(from).follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
       const target = await describe(to);
       // What the target's handler said, never more: an older runtime answers without these.
-      return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status },
+      return { messageId: id, cursor, to: { sessionId: to, title: target.title, status: target.status,
+        ...(fromCompanion(to) ? { companion: true } : {}) },
         duplicate: typeof answer?.duplicate === 'boolean' ? answer.duplicate : null,
         state: answer?.state === 'queued' || answer?.state === 'written' ? answer.state : null,
         delivery: DELIVERIES.includes(answer?.delivery) ? answer.delivery : null };

@@ -322,13 +322,16 @@ function sessionTools(getLink, { companion }) {
           ...(params.mode === undefined ? {} : { mode: params.mode }),
           ...(params.allowCold === true ? { allowCold: true } : {}) }), signal);
         const to = result.to ?? {};
+        const finish = !companion && to.companion === true
+          ? "If this is your whole report and nothing changes, use the exact text you just sent as your final answer, without a recap or a delivery confirmation. " +
+            "If there is a new result, question, approval request or failure, report it. " : "";
         const next = companion ? "If you asked for an answer, it will arrive here as a message."
           : typeof result.cursor === "string" && result.cursor
           ? `If you asked for an answer, use session_wait with afterCursor ${JSON.stringify(result.cursor)} for it.`
           : "If you asked for an answer, use session_wait for it.";
         return {
           content: [text(`Sent to "${to.title ?? params.sessionId}" (${to.sessionId ?? params.sessionId}, ${to.status ?? "unknown status"}). ` +
-            `${DELIVERY_TEXT[result.delivery] ?? ""}${next}\n${json(result)}`)],
+            `${DELIVERY_TEXT[result.delivery] ?? ""}${finish}${next}\n${json(result)}`)],
           details: result,
         };
       },

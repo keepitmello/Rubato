@@ -33,7 +33,8 @@ export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "
  */
 export const SYSTEM_ANCHOR = "<system>";
 export const LEAD_ACK = "[handoff acknowledged]";
-const LEAD_REPORT = "Your final answer reaches Segno. Before then, use session_send only for a result, a question (including approval), or a blocker, not progress. " +
+const LEAD_REPORT = "When the result is ready, give it in your final answer; that alone reaches Segno. " +
+  "Use session_send only when Segno needs a result, a question (including approval), or a blocker before you finish, not for progress. " +
   `If you are only acknowledging a handoff and nothing changed or needs an answer, reply with exactly ${LEAD_ACK}.`;
 const ORIGINS = Object.freeze({
   message: "From another agent conversation",

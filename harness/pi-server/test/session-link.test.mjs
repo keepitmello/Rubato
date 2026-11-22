@@ -876,6 +876,8 @@ test("what Segno creates or sends is marked as Segno's, so the lead reads it as 
   const plain = await env.api.create({ from: lead.id, cwd: env.root, title: 'Plain', text: 'start here' });
   const fromLead = await env.deliveries(plain.sessionId);
   assert.equal(fromLead[0].data.from.companion, undefined);
+  const report = await env.api.send({ from: lead.id, to: segno.id, text: '동기화 오류 0건' });
+  assert.equal(report.to.companion, true, 'the lead can finish without paraphrasing its report to the companion');
 });
 
 test("the companion hears once when a lead it started or sent work to ends its turn; other creators do not", async (t) => {
