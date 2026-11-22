@@ -201,9 +201,9 @@ test('a stop, an error and a question to the user are each told as what they are
   await f.poll();
   const text = Object.fromEntries(w.notices.map((notice) => [notice.targetId, notice.text]));
   assert.equal(text.stopped, 'Was stopped before finishing.\n\nIts last words:\nhalf');
-  assert.equal(text.failed, 'Ended with an error.');
+  assert.equal(text.failed, 'Ended with an error. No cause was recorded.');
   assert.equal(text.asking, 'Is waiting for the user to answer it (ask).\n\nWhat it said:\nDeploy now?');
-  assert.equal(text.crashed, 'Ended with an error.');
+  assert.equal(text.crashed, 'Ended with an error. No cause was recorded.');
   assert.deepEqual(f.following({ ended: false }), ['asking'], 'a question is not the end: its turn goes on once the user answers');
   assert.deepEqual(f.following({ ended: true }).sort(), ['failed', 'stopped'], 'a runtime that errored is not followed on');
   await f.poll();

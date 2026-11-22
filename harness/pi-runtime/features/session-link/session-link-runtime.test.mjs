@@ -100,8 +100,8 @@ async function openSession(name, sessionLink, env = {}) {
       content: [{ type: "text", text: `reply ${requests.length}` }], stopReason: "stop" };
     const finish = () => stream.push({ type: "done", reason: "stop", message });
     const abort = () => stream.push({ type: "error", reason: "aborted", error: { ...message, content: [], stopReason: "aborted", errorMessage: "fixture abort" } });
-    const callTool = (name = "fixture_step") => stream.push({ type: "done", reason: "toolUse",
-      message: { ...message, content: [{ type: "toolCall", id: `call-${requests.length}`, name, arguments: {} }], stopReason: "toolUse" } });
+    const callTool = (name = "fixture_step", args = {}) => stream.push({ type: "done", reason: "toolUse",
+      message: { ...message, content: [{ type: "toolCall", id: `call-${requests.length}`, name, arguments: args }], stopReason: "toolUse" } });
     // A reply carrying a tool call the provider already executed (Cursor): its result arrives with the
     // reply and nothing runs locally, so the run can end normally with tool results present.
     const providerTool = async () => {
@@ -210,6 +210,29 @@ const deliverTo = (session) => (data) => session.extensionRunner.requestRpc("rub
 const idsIn = (session) => sessionMessages(session).map((entry) => entry.details.messageId);
 
 const mentions = (messages, text) => JSON.stringify(messages).includes(text);
+
+test("a real lead send identifies its tool step and the companion wakes once, not twice, for its answer", async () => {
+  const sent = [];
+  const lead = await openSession("reporter", { send: async (args) => { sent.push(args); return {}; } });
+  const companion = await openSession("chief", {}, { RUBATO_PI_ROLE: "companion" });
+  try {
+    lead.session.setActiveToolsByName([...lead.session.getActiveToolNames(), "session_send"]);
+    const held = lead.hold();
+    const run = lead.session.prompt("Report");
+    (await held).callTool("session_send", { sessionId: "chief", text: "승인할까?" });
+    await run;
+    const step = lead.session.sessionManager.getBranch().find((e) => e.message?.stopReason === "toolUse");
+    assert.ok(step);
+    assert.equal(sent[0].sourceEntryId, step.id);
+    const deliver = deliverTo(companion.session);
+    const msg = { ...delivery("sent", sent[0].text), sourceEntryId: step.id };
+    await deliver(msg);
+    await deliver({ ...msg, kind: "notice", messageId: "end", text: "Finished its turn.", repeatOf: { steps: [step.id], text: msg.text } });
+    await settle(companion.session);
+    assert.equal(companion.requests.length, 1);
+    assert.deepEqual(idsIn(companion.session), ["sent"]);
+  } finally { await close(companion.session); await close(lead.session); }
+});
 
 // A message that arrives while a run goes on is held until the run ends, however the run ends normally;
 // then the next run starts with it. What the engine and T3 see: they treat an announced agent_settled

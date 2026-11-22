@@ -53,9 +53,22 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
 
   function send(details, options) {
     state.waiting.delete(details.messageId);
+    if (details.repeatOf) {
+      const { repeatOf, ...message } = details;
+      // Check at the actual wake, after any earlier queued send got its own turn. A stop,
+      // a failure, or a rewind can leave a written message that the companion never read.
+      const branch = state.ctx?.sessionManager?.getBranch?.() ?? [];
+      const reply = branch.findLastIndex((e) => e.type === "message" && e.message?.role === "assistant" &&
+        ["stop", "toolUse"].includes(e.message.stopReason));
+      if (reply >= 0 && branch.slice(0, reply).some((e) => e.type === "custom_message" && e.customType === SESSION_MESSAGE_TYPE &&
+        e.details?.kind === "message" && e.details.from?.sessionId === details.from.sessionId &&
+        repeatOf.steps.includes(e.details.sourceEntryId) && e.details.text === repeatOf.text)) return false;
+      details = message;
+    }
     state.handed.add(details.messageId);
     // A companion reads another companion's message as a peer's (message.mjs buildEnvelope).
     pi.sendMessage(buildSessionMessage(details, { companion }), options);
+    return true;
   }
 
   // Pi writes every message it was sent by the time it is idle again; one it did not write (its run
@@ -81,7 +94,7 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
       return;
     }
     // One message starts the run; the rest follow at its boundaries.
-    send(state.waiting.values().next().value, { triggerTurn: true });
+    for (const details of state.waiting.values()) if (send(details, { triggerTurn: true })) break;
   }
 
   let untrackSideChat = () => {};
@@ -131,6 +144,8 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
 
   pi.rpc?.handle(DELIVER_REQUEST, (data) => {
     const details = parseDelivery(data);
+    if (companion && details.kind === "notice" && typeof data.repeatOf?.text === "string" && Array.isArray(data.repeatOf.steps))
+      details.repeatOf = data.repeatOf;
     const mode = parseDeliveryMode(data);
     const { messageId } = details;
     reconcile();

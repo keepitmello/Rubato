@@ -316,7 +316,9 @@ function sessionTools(getLink, { companion }) {
       },
       async execute(_id, params, signal, _onUpdate, ctx) {
         const from = ownSessionId(ctx);
+        const sourceEntryId = ctx.sessionManager?.getLeafId?.();
         const result = await untilAborted(() => link().send({ from, to: params.sessionId, text: params.text,
+          ...(sourceEntryId ? { sourceEntryId } : {}),
           ...(params.mode === undefined ? {} : { mode: params.mode }),
           ...(params.allowCold === true ? { allowCold: true } : {}) }), signal);
         const to = result.to ?? {};

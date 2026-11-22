@@ -8,7 +8,7 @@ import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
 import { AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
-import { WAKES } from '../../pi-runtime/features/session-link/message.mjs';
+import { LEAD_ACK, WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 import { EFFORT_LEVELS } from '../../pi-runtime/features/session-link/tools.mjs';
 import { findRewindTarget } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheSnapshot } from '../../pi-runtime/features/statusline/statusline.mjs';
@@ -145,13 +145,29 @@ function summarize(entry, maxChars, { tools = false } = {}) {
 }
 
 /** What a waiter compares: the newest completed answer, and whether the user is needed. */
-function progressOf(branch) {
+function progressOf(branch, following) {
   const final = branch.findLast(isFinal);
   const latest = branch.findLast((entry) => isAssistant(entry) && textOf(entry.message.content));
   const tool = branch.findLast((entry) => isAssistant(entry) && entry.message.content?.some?.((part) => part?.type === 'toolCall'));
   const toolName = tool?.message.content.findLast((part) => part?.type === 'toolCall')?.name;
+  const before = following && final ? branch.slice(0, branch.indexOf(final)) : [];
+  const boundary = before.findLastIndex((entry) => isFinal(entry) || entry.type === 'custom_message' || entry.message?.role === 'user');
+  const steps = before.slice(boundary + 1);
+  const input = before[boundary];
+  const failedTool = final?.message.stopReason === 'error' && steps.findLast((e) => e.message?.role === 'toolResult' && e.message.isError)?.message;
+  const error = final?.message.errorMessage || (failedTool && `No cause was recorded. Earlier tool error: ${failedTool.toolName}: ${textOf(failedTool.content)}`);
+  const finalText = final ? textOf(final.message.content) : '';
   return {
-    final: final ? { entryId: final.id, text: clip(textOf(final.message.content), LIMITS.charsDefault),
+    ...(following && final?.message.stopReason === 'stop' ? {
+      // Only tool steps on this branch since the last input/end can vouch for a send in this turn.
+      ...(finalText.length && finalText.length <= LIMITS.textChars ? { repeatOf: { text: finalText, steps: steps.filter(isAssistant).map((e) => e.id) } } : {}),
+      ackTo: !steps.some((e) => e.type === 'message' && e.message?.role !== 'system') && isSessionMessage(input) &&
+        ['message', 'create'].includes(input.details?.kind) && input.details.from?.companion === true &&
+        finalText === LEAD_ACK ? input.details.from.sessionId : undefined,
+    } : {}),
+    final: final ? { entryId: final.id, text: clip(finalText, LIMITS.charsDefault),
+      ...(following && final.message.stopReason === 'error' && typeof error === 'string' && error.trim()
+        ? { error: clip(error.trim(), LIMITS.charsDefault) } : {}),
       ...(final.message.stopReason === 'aborted' || final.message.stopReason === 'error' ? { stopReason: final.message.stopReason } : {}) } : undefined,
     latestAssistant: latest ? { entryId: latest.id, text: clip(textOf(latest.message.content), LIMITS.charsDefault) } : undefined,
     latestTool: tool ? { entryId: tool.id, name: toolName } : undefined,
@@ -537,22 +553,22 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
     listeners.set(id, { worker, stop: () => worker.off('event', onEvent) });
   }
   /** `seen` carries the last parse per file, so an unchanged transcript is not read again. */
-  async function progress(id, seen) {
+  async function progress(id, seen, following = false) {
     const file = await locate(id);
     const stats = await stat(file).catch(() => undefined);
     const key = stats ? `${file}:${stats.size}:${stats.mtimeMs}` : `${file}:absent`;
     let parsed = seen.get(id)?.key === key ? seen.get(id).progress : undefined;
     if (!parsed) {
       const { branch } = await readBranch(file, (entries) => entries.some(isFinal));
-      parsed = { leaf: branch.at(-1)?.id ?? null, ...progressOf(branch) };
+      parsed = { leaf: branch.at(-1)?.id ?? null, ...progressOf(branch, following) };
       seen.set(id, { key, progress: parsed });
     }
     return parsed;
   }
-  async function snapshot(id, seen, listeners, asked) {
+  async function snapshot(id, seen, listeners, asked, following = false) {
     const status = row(id)?.status ?? (need().host.getSessionWorker(id) ? 'idle' : 'stored');
     listen(id, listeners, asked);
-    return { status, ui: [...new Set(asked.get(id) ?? [])], pending: need().host.pendingQuestions?.(id) ?? [], ...await progress(id, seen) };
+    return { status, ui: [...new Set(asked.get(id) ?? [])], pending: need().host.pendingQuestions?.(id) ?? [], ...await progress(id, seen, following) };
   }
   /**
    * Whether the handoff message was written before the final `finalId` ('before'), after it or not
@@ -602,14 +618,17 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       followsOn: (id) => !fromCompanion(id),
       inspect: async (id, record) => {
         const described = await describe(id);
-        const current = await snapshot(id, seen, listeners, asked);
+        const current = await snapshot(id, seen, listeners, asked, true);
         const handoff = record?.messageId && current.final ? await handoffOrder(id, record.messageId, current.final.entryId, orders) : undefined;
         return { ...current, title: described.title, cwd: described.cwd, ...(handoff ? { handoff } : {}) };
       },
-      notify: async (companionId, targetId, text) => {
+      notify: async (companionId, targetId, text, completed) => {
+        const lead = completed && !fromCompanion(targetId);
+        if (lead && completed.ackTo === companionId) return;
         const about = await describe(targetId);
-        return deliver(companionId, envelope({ messageId: randomUUID(), kind: 'notice',
-          from: { sessionId: targetId, title: about.title, cwd: about.cwd }, text }));
+        const data = envelope({ messageId: randomUUID(), kind: 'notice', from: { sessionId: targetId, title: about.title, cwd: about.cwd }, text });
+        if (lead && completed.repeatOf?.steps.length) data.repeatOf = completed.repeatOf;
+        return deliver(companionId, data);
       },
     });
   }
@@ -786,7 +805,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
      * inside that run at its next step. An idle target starts a turn either way. The answer's
      * `delivery` is what the target's handler did (`started`, `steered`, `queued`).
      */
-    async send({ from, to, text, messageId, mode = 'queue', allowCold = false } = {}) {
+    async send({ from, to, text, messageId, sourceEntryId, mode = 'queue', allowCold = false } = {}) {
       requireId(from, 'from'); requireId(to, 'to'); requireText(text);
       if (!SEND_MODES.includes(mode)) throw fail('invalid', `mode must be one of ${SEND_MODES.join(', ')}`);
       const id = messageIdOf(messageId);
@@ -813,6 +832,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       } catch (error) { release(); throw error; }
       let answer;
       const data = envelope({ messageId: id, kind: 'message', from: origin, text });
+      if (fromCompanion(to) && typeof sourceEntryId === 'string') data.sourceEntryId = sourceEntryId;
       try { answer = await deliver(to, mode === 'steer' ? { ...data, mode } : data); }
       catch (error) { release(); throw error; }
       if (fromCompanion(from)) need().followerFor(from).follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });

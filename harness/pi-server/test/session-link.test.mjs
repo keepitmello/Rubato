@@ -11,6 +11,7 @@ import { RpcWorker } from '../src/rpc-worker.mjs';
 import { startSessionServer } from '../src/host.mjs';
 import { SessionClient } from '../src/client.mjs';
 import { createSessionLink, COLD_SEND_TOKENS, LIMITS, TAIL_BYTES } from '../src/session-link.mjs';
+import { LEAD_ACK } from '../../pi-runtime/features/session-link/message.mjs';
 
 const fixture = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate, message = 'Condition did not settle') => {
@@ -50,7 +51,7 @@ async function setup(t, { now, startDelayMs = 0 } = {}) {
   };
   const deliveries = (id) => service.host.getSessionWorker(id)
     .request({ type: 'extension_request', name: 'fixture.session-link.deliveries' });
-  return { root, sessionsDir, service, host: service.host, link, api: link.api, row, listed, make, client, deliveries, errors };
+  return { root, sessionsDir, socketPath, service, host: service.host, link, api: link.api, row, listed, make, client, deliveries, errors };
 }
 
 const stamp = () => new Date().toISOString();
@@ -900,6 +901,49 @@ test("the companion hears once when a lead it started or sent work to ends its t
   await until(async () => env.row(plain.sessionId)?.status === 'idle');
   await delay(100);
   assert.equal(env.host.getSessionWorker(lead.id), undefined, 'nothing was delivered to a lead that created a conversation');
+});
+
+test("the follower folds bare handoff acks and identifies only the current turn's steps for a possible repeat", async (t) => {
+  const env = await setup(t);
+  const companion = await env.make('Chief', { companion: true });
+  const handoff = { type: 'custom_message', customType: 'rubato-session-message',
+    details: { kind: 'message', from: { sessionId: companion.id, companion: true }, text: '여기서 손 떼 줘' } };
+  const call = assistant('', { stopReason: 'toolUse', tools: ['session_send'] });
+  const request = '배포를 승인할까?';
+  const prefix = 'x'.repeat(LIMITS.charsDefault);
+  const quota = assistant('', { stopReason: 'error' });
+  quota.message.errorMessage = '429: provider quota exceeded';
+  const tool = toolResult('permission denied');
+  tool.message.isError = true;
+  const records = {}, expected = new Map(), finished = [];
+  for (const [entries, notice, exact] of [
+    [[handoff, assistant(LEAD_ACK)], null],
+    [[handoff, assistant(`${LEAD_ACK} ${request}`)], request],
+    [[user('Return this literal'), assistant(LEAD_ACK)], LEAD_ACK],
+    [[handoff, call, assistant(request)], request, request],
+    [[handoff, call, assistant('first'), user('again?'), assistant(request)], request],
+    [[handoff, call, assistant(prefix + request)], prefix + '…', prefix + request],
+    [[handoff, call, quota], quota.message.errorMessage],
+    [[handoff, call, tool, assistant('', { stopReason: 'error' })], 'Earlier tool error: read: permission denied'],
+  ]) {
+    const lead = await writeSession(env.sessionsDir, env.root, entries);
+    await env.listed(lead.id);
+    records[lead.id] = { companionId: companion.id, base: { final: null, ui: [] } };
+    if (notice) expected.set(lead.id, { notice, repeatOf: exact ? { steps: [lead.entries[1].id], text: exact } : undefined });
+  }
+  // Restore the follower, so nothing in the sender's memory can stand in for delivery.
+  const follower = createSessionLink({ followPollMs: 20 });
+  follower.bind({ host: env.host, sessionsDir: env.sessionsDir, socketPath: env.socketPath, serverId: env.service.serverId,
+    followStore: { load: () => records, save() {}, finished: (entry) => finished.push(entry) } });
+  t.after(() => follower.close());
+  await until(() => finished.length === Object.keys(records).length);
+  const notices = (await env.deliveries(companion.id)).filter((item) => item.data.kind === 'notice');
+  assert.equal(notices.length, expected.size);
+  for (const [id, { notice, repeatOf }] of expected) {
+    const data = notices.find((n) => n.data.from.sessionId === id)?.data;
+    assert.ok(data?.text.includes(notice), notice);
+    assert.deepEqual(data.repeatOf, repeatOf);
+  }
 });
 
 test("two companions that each sent the other a message hear each answer once and do not wake each other with every later end", async (t) => {

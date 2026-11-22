@@ -38,7 +38,7 @@ export function noticeText(outcome, current) {
   switch (outcome) {
     case 'completed': return `Finished its turn.${answer('Its answer', current.final)}`;
     case 'stopped': return `Was stopped before finishing.${answer('Its last words', current.final)}`;
-    case 'failed': return `Ended with an error.${answer('Its last words', current.final ?? current.latestAssistant)}`;
+    case 'failed': return `Ended with an error. ${current.final?.error ?? 'No cause was recorded.'}${answer('Its last words', current.final?.text ? current.final : current.latestAssistant)}`;
     case 'lost': return 'Stopped mid-turn without finishing: its runtime went away.';
     case 'lost-waiting': return `Stopped while waiting on background work: its runtime went away before the work woke it.${answer('Its last words', current.final)}`;
     case 'needs-attention': return `Is waiting for the user to answer it${current.latestTool?.name ? ` (${current.latestTool.name})` : ''}.` +
@@ -82,7 +82,7 @@ export function judge(record, current, at) {
  * @param {object} options
  * @param {(id: string) => Promise<{ status: string, title?: string, final?: object, latestAssistant?: object, latestTool?: object, ui: string[] }>} options.inspect
  *   the followed conversation now; throws with code `unknown_session` once it is gone
- * @param {(companionId: string, targetId: string, text: string) => Promise<unknown>} options.notify
+ * @param {(companionId: string, targetId: string, text: string, completed?: object) => Promise<unknown>} options.notify
  * @param {(id: string) => Promise<number | null>} [options.awaiting]
  *   how many waits the lead's last turn left that will wake it again (background commands,
  *   monitors, subagents); null when no runtime holds the conversation. Asked only when a turn ended.
@@ -156,7 +156,7 @@ export function createFollower({ inspect, notify, awaiting = async () => 0, stor
     }
     // A companion turned off is not woken: the notice waits, and goes once it is on again.
     if (store?.paused && safe(() => store.paused(), onError) === true) return false;
-    try { await notify(record.companionId, id, noticeText(outcome, current)); }
+    try { await notify(record.companionId, id, noticeText(outcome, current), outcome === 'completed' ? current : undefined); }
     catch (error) {
       record.failures = (record.failures ?? 0) + 1;
       if (record.failures >= NOTICE_TRIES) records.delete(id);
