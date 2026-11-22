@@ -14,7 +14,6 @@ const LIST_PROVIDERS = Object.freeze([
   "anthropic",
   "xai",
   "cursor",
-  "google-antigravity",
   "opencode",
   "kiro",
 ]);

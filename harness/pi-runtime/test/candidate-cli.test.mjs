@@ -176,7 +176,7 @@ test("actual candidate main RPC binds Rubato against canonical services across n
   assert.ok(dirname(state.sessionFile).startsWith(join(agentDir, "sessions")), state.sessionFile);
   // Registered, not necessarily active: most tools wait in the tool_search catalog.
   for (const name of ["Agent", "team_create", "memory", "memory_apply_patch", "bash_input", "eval", "webfetch", "look_at", "apply_patch"]) assert.ok(initial.tools.includes(name), `missing ${name}`);
-  for (const name of ["openai-codex", "xai", "cursor", "anthropic", "kiro", "google-antigravity", "opencode"]) assert.ok(initial.providers.includes(name), `missing ${name}`);
+  for (const name of ["openai-codex", "xai", "cursor", "anthropic", "kiro", "opencode"]) assert.ok(initial.providers.includes(name), `missing ${name}`);
   const promptAndSettle = async (message) => {
     const from = frames.length;
     await request("prompt", { message });

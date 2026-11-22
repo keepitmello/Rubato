@@ -49,7 +49,6 @@ export const PROVIDERS = Object.freeze([
   { id: "cursor", label: "Cursor", aliases: ["cursor"], methods: ["oauth"] },
   { id: "anthropic", label: "Anthropic", aliases: ["anthropic", "claude"], methods: ["oauth", "setup-token"] },
   { id: "kiro", label: "Kiro", aliases: ["kiro"], methods: ["api_key"] },
-  { id: "google-antigravity", label: "Antigravity", aliases: ["google-antigravity", "antigravity"], methods: ["oauth"] },
   { id: "opencode", label: "OpenCode", aliases: ["opencode"], methods: ["api_key"] },
   { id: "b-ai", label: "DeepSeek", aliases: ["b-ai", "deepseek"], methods: ["api_key"] },
   { id: "opengateway", label: "OpenGateway", aliases: ["opengateway"], methods: ["api_key"] },
@@ -533,11 +532,6 @@ async function loadModelRuntime(root) {
  * `Unknown provider: google-antigravity` 로 로그인이 통째로 막힌다 (cursor 도 같다).
  */
 const RUBATO_OWNED_PROVIDERS = Object.freeze({
-  "google-antigravity": async (env) => {
-    const { antigravityDirectProvider } = await import("../rubato-pi/src/antigravity-route.mjs");
-    const built = await antigravityDirectProvider({ env });
-    return built.provider;
-  },
   cursor: async (env) => {
     const { cursorDirectProvider } = await import("../rubato-pi/src/cursor-route.mjs");
     return cursorDirectProvider({ env });
@@ -888,10 +882,6 @@ export async function usageJson(ctx, overrides = {}) {
     slotOf: (credential, name) => findSlot(credential, name),
     observed: readObservedUsage(usageObservedPath(authJsonPath(env, ctx.home))),
     geminiRequestsPath: geminiRequestsPath(authJsonPath(env, ctx.home)),
-    renewAntigravity: async (credential) => {
-      const { antigravityOAuth } = await import("../rubato-pi/src/antigravity-route.mjs");
-      return antigravityOAuth({ env }).refresh(credential);
-    },
     ...overrides,
   });
 }

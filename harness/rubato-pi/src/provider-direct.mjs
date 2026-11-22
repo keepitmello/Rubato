@@ -14,7 +14,6 @@ import { defaultTargetAuthPath } from "./credential-import.mjs";
 import { cursorDirectProvider } from "./cursor-route.mjs";
 import { senpiNested } from "./engine-paths.mjs";
 import { ensureKiroSidecar, kiroDirectProvider, withKiroSidecarEnsure } from "./kiro-route.mjs";
-import { antigravityDirectProvider } from "./antigravity-route.mjs";
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
@@ -630,7 +629,6 @@ export async function directProviders({
   cursor,
   anthropic,
   kiro,
-  antigravity,
   opencode: opencodeOptions,
   vertex: vertexOptions,
   gemini: geminiOptions,
@@ -644,13 +642,11 @@ export async function directProviders({
 } = {}) {
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
-  const antigravityFactory = routeFactories.antigravity ?? antigravityDirectProvider;
-  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, antigravityDirect, cursorProvider, opencodeProvider, vertexProvider, geminiApiProvider] = await Promise.all([
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, cursorProvider, opencodeProvider, vertexProvider, geminiApiProvider] = await Promise.all([
     nativeFactoryLoader("openai-codex.js", "openaiCodexProvider"),
     nativeFactoryLoader("xai.js", "xaiProvider"),
     nativeFactoryLoader("anthropic.js", "anthropicProvider"),
     kiroFactory({ env, ...(kiro ?? {}) }),
-    antigravityFactory({ env, ...(antigravity ?? {}) }),
     cursorFactory({ env, ...(cursor ?? {}) }),
     nativeFactoryLoader("opencode.js", "opencodeProvider"),
     nativeFactoryLoader("google-vertex.js", "googleVertexProvider"),
@@ -697,13 +693,6 @@ export async function directProviders({
     ]),
     ANTHROPIC_PICKER_IDS,
   );
-
-  if (antigravity && typeof antigravity === "object") {
-    Object.assign(antigravity, {
-      stateStore: antigravityDirect.stateStore,
-      lineage: antigravityDirect.lineage,
-    });
-  }
 
   // OpenCode 는 pinned factory 그대로다. Muse Spark 1.3 Contributor Free 는
   // pin catalog 에 이미 있으므로 파생하지 않는다. 피커만 그 모델로 줄인다.
@@ -753,7 +742,6 @@ export async function directProviders({
       kiroNative,
       kiro?.ensureKiro ?? (() => ensureKiroSidecar(env)),
     )),
-    wrap(antigravityDirect.provider),
     wrap(opencode),
     wrap(vertex),
     wrap(geminiApi),

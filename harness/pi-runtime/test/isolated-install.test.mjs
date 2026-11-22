@@ -30,7 +30,7 @@ const scriptsDir = join(sourceRoot, "scripts");
 const docsDir = resolve(sourceRoot, "../../docs/pi-migration");
 
 const CORE_TOOLS = ["Agent", "team_create", "memory", "memory_apply_patch", "bash_input", "eval", "webfetch", "look_at", "apply_patch"];
-const CORE_PROVIDERS = ["openai-codex", "xai", "cursor", "anthropic", "kiro", "google-antigravity", "opencode"];
+const CORE_PROVIDERS = ["openai-codex", "xai", "cursor", "anthropic", "kiro", "opencode"];
 
 function which(cmd) {
   for (const dir of (process.env.PATH ?? "").split(":")) {

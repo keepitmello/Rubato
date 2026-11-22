@@ -3,8 +3,6 @@ export { builtinProviderIds, foreignProviderIds };
 import { DIRECT_PROVIDER_IDS, directProviders, warnIgnoredDirectOptOut } from "../provider-direct.mjs";
 import { admitProviders, validateProviderAdmission } from "../provider-capabilities.mjs";
 import { importLegacyDirectCredentials, unavailableDirectProviders } from "../credential-import.mjs";
-import { ANTIGRAVITY_ENDPOINT, loadAntigravityProjectId, registerAntigravityLifecycle } from "../antigravity-route.mjs";
-import { importAntigravityKeychainCredential } from "../antigravity-keychain-import.mjs";
 import { registerCursorExecNotice } from "../cursor-exec-notice.mjs";
 
 /**
@@ -24,10 +22,9 @@ function warn(message) {
  * 위를 덮는 두 번째 등록이었다. 이제 합성할 catalog 도, 덮을 대상도 없다 — pinned pi-ai
  * factory 가 모델 metadata 의 유일한 권위다.
  */
-export async function supportedProviders({ env = process.env, antigravity, cursor, opencode } = {}) {
+export async function supportedProviders({ env = process.env, cursor, opencode } = {}) {
   return await directProviders({
     env,
-    ...(antigravity ? { antigravity } : {}),
     ...(cursor ? { cursor } : {}),
     ...(opencode ? { opencode } : {}),
   });
@@ -54,10 +51,7 @@ export default async function providerOverlay(pi, {
   providerFactory = supportedProviders,
   legacyCredentialImporter = importLegacyDirectCredentials,
   availabilityChecker = unavailableDirectProviders,
-  antigravityCredentialImporter = importAntigravityKeychainCredential,
-  antigravityProjectLoader = loadAntigravityProjectId,
   cursorNoticeRegistrar = registerCursorExecNotice,
-  fetchImpl = globalThis.fetch,
   opencode,
 } = {}) {
   // 직결은 조건이 아니다. bridge 가 없으므로 이것이 유일한 경로이고, 여기서 갈라지면
@@ -66,10 +60,8 @@ export default async function providerOverlay(pi, {
   warnIgnoredDirectOptOut(env, warn);
   // `env` 를 넘긴다. 넘기지 않으면 native 층이 `process.env` 를 다시 읽고, 격리된
   // 세션(별도 profile, 별도 gate)이 그 지점에서 깨진다.
-  const antigravity = {};
   const natives = await providerFactory({
     env,
-    antigravity,
     // 이 overlay 를 싣는 것은 격리 자식뿐이다(`brand.mjs` 가 자식 env 에 경로를
     // 싣는다). 자격이 회전했을 때 다시 살리는 일은 권위를 가진 부모의 몫이라
     // 자식에서는 걸지 않는다.
@@ -99,25 +91,6 @@ export default async function providerOverlay(pi, {
       "Log in again.",
     );
   }
-  // 기존 Codex/xAI 진단이 먼저다. 같은 target 이 깨졌을 때 Antigravity 이관이
-  // 그 오류를 가리면 사용자는 원래 부팅 blocker 를 보지 못한다.
-  //
-  // **이관은 자식이 하지 않는다.** 이 overlay 는 격리 memory/reflection 자식에만
-  // 실리는데, 걸어두면 자식마다 Keychain 을 읽고 `loadCodeAssist` 로 Google 에
-  // 요청한다 — 시작 부작용이 자식 수만큼 곱해진다. 권위를 가진 부모 후보가 그것을
-  // 소유한다.
-  const antigravityEndpoint = env.RUBATO_ANTIGRAVITY_ENDPOINT || ANTIGRAVITY_ENDPOINT;
-  const antigravityReport = await antigravityCredentialImporter({
-    env,
-    enabled: false,
-    resolveProjectId: (token, { signal }) => antigravityProjectLoader(token.access, antigravityEndpoint, fetchImpl, signal),
-  });
-  if (["target_invalid_json", "target_not_an_object", "target_rejected_by_engine", "rejected"].includes(antigravityReport.status)) {
-    throw new Error(
-      `provider-overlay: Antigravity credential import failed (${antigravityReport.status}` +
-      `${antigravityReport.reason ? `:${antigravityReport.reason}` : ""})`,
-    );
-  }
   const degraded = report.status !== "imported" && report.status !== "nothing_to_import" && report.status !== "legacy_absent";
   if (degraded || rejectedIds.length > 0) {
     warn(
@@ -129,9 +102,6 @@ export default async function providerOverlay(pi, {
   // 1) native 등록. `DIRECT_PROVIDER_IDS` 밖의 provider 는 손대지 않는다.
   admitProviders(pi, admitted);
   installOpenAiApiRefusal(pi);
-  if (antigravity.stateStore && antigravity.lineage) {
-    registerAntigravityLifecycle(pi, { ...antigravity, env });
-  }
   // 지난 세션이 남긴 `unknown` server-driven tool call 을 세션 시작에 한 번 알린다.
   // journal 을 읽기만 한다 — 단일 owner 는 `cursor-exec-bridge` 다.
   cursorNoticeRegistrar(pi);

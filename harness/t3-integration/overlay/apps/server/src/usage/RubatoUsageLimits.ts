@@ -35,7 +35,6 @@ const PROVIDERS: Readonly<Record<string, { readonly driver: string; readonly lab
   anthropic: { driver: "claudeAgent", label: "Claude" },
   cursor: { driver: "cursor", label: "Cursor" },
   xai: { driver: "grok", label: "Grok" },
-  "google-antigravity": { driver: "antigravity", label: "Antigravity" },
   // Gemini API keys have no T3 driver; "gemini" picks up the Gemini glyph and name (apply.mjs, usage-limits-edits.mjs).
   google: { driver: "gemini", label: "Gemini API" },
 };

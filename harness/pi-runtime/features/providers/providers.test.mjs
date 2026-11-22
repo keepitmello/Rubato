@@ -19,7 +19,6 @@ const PROVIDER_IDS = Object.freeze([
   "cursor",
   "anthropic",
   "kiro",
-  "google-antigravity",
   "opencode",
   "google-vertex",
   "google",
@@ -426,56 +425,6 @@ test("actual stock SDK registers all nine and completes a Kiro Anthropic request
   assert.equal(captured.body.model, "claude-opus-5");
 });
 
-test("actual stock SDK preserves Antigravity OAuth env and request/response hooks", async (t) => {
-  const captured = {};
-  const server = http.createServer(async (request, response) => {
-    let raw = "";
-    for await (const chunk of request) raw += chunk;
-    captured.url = request.url;
-    captured.authorization = request.headers.authorization;
-    captured.body = JSON.parse(raw);
-    response.writeHead(200, { "content-type": "text/event-stream", "x-rubato-mock": "antigravity" });
-    response.end(`data: ${JSON.stringify({
-      response: {
-        candidates: [{ content: { parts: [{ text: "antigravity-ok" }] }, finishReason: "STOP" }],
-        usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 1, totalTokenCount: 3 },
-      },
-    })}\n\n`);
-  });
-  const baseUrl = await listen(server);
-  t.after(() => closeServer(server));
-  const responses = [];
-  const observer = (pi) => {
-    pi.on("before_provider_request", (event) => ({
-      ...event.payload,
-      request: { ...event.payload.request, rubatoHook: "applied" },
-    }));
-    pi.on("after_provider_response", (event) => responses.push(event));
-  };
-  const selectedModel = model({
-    provider: "google-antigravity",
-    id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")),
-    api: "rubato-antigravity",
-    baseUrl,
-    input: ["text", "image"],
-  });
-  const session = await startSession(t, {
-    selectedModel,
-    env: environment({ RUBATO_ANTIGRAVITY_ENDPOINT: baseUrl }),
-    observers: [observer],
-  });
-
-  await session.prompt("hello Antigravity");
-  assert.equal(assistantText(session), "antigravity-ok");
-  assert.equal(captured.url, "/v1internal:streamGenerateContent?alt=sse");
-  assert.equal(captured.authorization, "Bearer antigravity-test-not-real");
-  assert.equal(captured.body.project, "local-project", "stored OAuth env must reach the request");
-  assert.equal(captured.body.request.rubatoHook, "applied");
-  assert.equal(responses.length, 1);
-  assert.equal(responses[0].status, 200);
-  assert.equal(responses[0].headers["x-rubato-mock"], "antigravity");
-});
-
 test("actual stock SDK carries the shared Speed and final requested tier through message_end JSON", async (t) => {
   let sent;
   const server = http.createServer(async (request, response) => {
@@ -599,7 +548,7 @@ test("actual stock SDK completes Cursor HTTP/2 Connect and exposes the request h
   assert.equal(payloads.length, 1);
 });
 
-test("Kiro and Antigravity abort with one terminal; Cursor abort and clean EOF do the same", async (t) => {
+test("Kiro aborts with one terminal; Cursor abort and clean EOF do the same", async (t) => {
   const providers = await feature.createRubatoProviders({
     env: environment(),
     kiro: { ensureKiro: async () => {} },
@@ -611,11 +560,6 @@ test("Kiro and Antigravity abort with one terminal; Cursor abort and clean EOF d
       "kiro",
       model({ provider: "kiro", id: "claude-opus-5", api: "anthropic-messages", baseUrl: "http://127.0.0.1:9" }),
       {},
-    ],
-    [
-      "google-antigravity",
-      model({ provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")), api: "rubato-antigravity", baseUrl: "http://127.0.0.1:9" }),
-      { env: { RUBATO_ANTIGRAVITY_PROJECT: "local-project" }, antigravityState: { sessionId: "abort", stepIndex: 0 } },
     ],
   ]) {
     const controller = new AbortController();

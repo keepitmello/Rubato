@@ -20,8 +20,7 @@ export const localAgyEdits = {
       '  readonly authMethod?: AntigravityAuthMethod;\n',
       '  readonly authMethod?: AntigravityAuthMethod;\n' +
       '  /** Rely on the login the agy CLI already holds: no eager or on-demand authenticate. */\n' +
-      '  readonly useExistingLogin?: boolean;\n' +
-      '  readonly clientInfo?: AcpSessionRuntime.AcpSessionRuntimeOptions["clientInfo"];\n',
+      '  readonly useExistingLogin?: boolean;\n',
       'replace',
     ],
     [
@@ -32,7 +31,9 @@ export const localAgyEdits = {
     ],
     [
       '      clientInfo: antigravityClientInfo(input.runtimeVersion),',
-      '      clientInfo: input.clientInfo ?? antigravityClientInfo(input.runtimeVersion),',
+      '      clientInfo: antigravityClientInfo(\n' +
+      '        input.useExistingLogin ? OPEN_MODEL_ACCESS_RELEASE.join(".") : input.runtimeVersion,\n' +
+      '      ),',
       'replace',
     ],
   ],
@@ -106,12 +107,7 @@ export const localAgyEdits = {
     [
       '        runtimeVersion: executable.version,\n',
       '        runtimeVersion: executable.version,\n' +
-      '        ...(localAgent\n' +
-      '          ? {\n' +
-      '              useExistingLogin: true,\n' +
-      '              clientInfo: { name: "rubato", version: processEnvironment.RUBATO_APP_VERSION || "0.0.0" },\n' +
-      '            }\n' +
-      '          : {}),\n',
+      '        ...(localAgent ? { useExistingLogin: true } : {}),\n',
       'replace',
     ],
     [

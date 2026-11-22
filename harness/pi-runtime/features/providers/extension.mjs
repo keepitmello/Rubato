@@ -1,6 +1,5 @@
 import { directProviders } from "./src/provider-direct.mjs";
 import { admitProviders } from "./src/provider-capabilities.mjs";
-import { registerAntigravityLifecycle } from "./src/antigravity-route.mjs";
 import { join } from "node:path";
 import { DIRECT_PROVIDER_IDS } from "./src/provider-direct.mjs";
 import { builtinProviderIds, foreignProviderIds, installOpenAiApiRefusal } from "./src/provider-ids.mjs";
@@ -56,7 +55,6 @@ export async function createRubatoProviders(options = {}) {
 export function createProvidersExtension(options = {}) {
   return async (pi) => {
     const env = options.env ?? process.env;
-    const antigravity = options.antigravity ?? {};
     const agentDir = options.agentDir ?? env.RUBATO_PI_CODING_AGENT_DIR ?? env.PI_CODING_AGENT_DIR;
     if (typeof agentDir !== "string" || agentDir.length === 0) {
       throw new Error("providers: agentDir is required (options.agentDir or RUBATO_PI_CODING_AGENT_DIR / PI_CODING_AGENT_DIR)");
@@ -97,7 +95,7 @@ export function createProvidersExtension(options = {}) {
     if (options.modelRuntime && speedStore) options.modelRuntime.speedIndexStore = speedStore;
     let admitted;
     try {
-      const providers = await createRubatoProviders({ ...options, antigravity, env, speedIndexStore: speedStore });
+      const providers = await createRubatoProviders({ ...options, env, speedIndexStore: speedStore });
       admitted = admitProviders(pi, providers);
     } catch (error) {
       // A failed load may never see session_shutdown; probes already started.
@@ -107,9 +105,6 @@ export function createProvidersExtension(options = {}) {
     installOpenAiApiRefusal(pi);
     // The Anthropic request path asks this on every request; the file is re-read only when it changes.
     globalThis[MESSAGE_THREADS_SETTING] = () => currentMessageThreadsEnabled(env?.HOME || undefined);
-    if (antigravity.stateStore && antigravity.lineage) {
-      registerAntigravityLifecycle(pi, { ...antigravity, env });
-    }
     if (typeof pi.unregisterProvider === "function") {
       for (const id of foreignProviderIds(builtinProviderIds())) {
         if (DIRECT_PROVIDER_IDS.includes(id)) continue;

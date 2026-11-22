@@ -27,7 +27,22 @@ import * as ServerSecretStore from "../../auth/ServerSecretStore.ts";
 
 const windowsHost = HostProcess.Platform.defaultValue() === "win32";
 const decodeRequest = Schema.decodeEffect(
-  Schema.fromJsonString(Schema.Struct({ method: Schema.optional(Schema.String) })),
+  Schema.fromJsonString(
+    Schema.Struct({
+      method: Schema.optional(Schema.String),
+      params: Schema.optional(
+        Schema.Struct({
+          clientInfo: Schema.optional(
+            Schema.Struct({
+              name: Schema.String,
+              title: Schema.optional(Schema.String),
+              version: Schema.String,
+            }),
+          ),
+        }),
+      ),
+    }),
+  ),
 );
 const minimalEnvironment = new Set([
   "HOME",
@@ -142,6 +157,9 @@ const makeHarness = Effect.fn("makeLocalAgyHarness")(function* (agent: string) {
     launches,
     installationUses,
     calls: readLines(callLog),
+    requests: readLines(requestLog).pipe(
+      Effect.flatMap((lines) => Effect.forEach(lines, (line) => decodeRequest(line))),
+    ),
     methods: readLines(requestLog).pipe(
       Effect.flatMap((lines) => Effect.forEach(lines, (line) => decodeRequest(line))),
       Effect.map((requests) => requests.map((request) => request.method)),
@@ -210,11 +228,17 @@ it.layer(layerTest)("Rubato local agy", (it) => {
         const calls = yield* h.calls;
         expect(calls).toContain(`${h.home}||agents`);
         expect(calls).toContain(`${h.home}||acp --sandbox --agent rubato-lead`);
-        const methods = yield* h.methods;
+        const requests = yield* h.requests;
+        const methods = requests.map((request) => request.method);
         expect(methods).toContain("initialize");
         expect(methods).toContain("session/new");
         expect(methods).not.toContain("auth/login");
         expect(methods).not.toContain("authenticate");
+        const initRequest = requests.find((request) => request.method === "initialize");
+        expect(initRequest?.params?.clientInfo).toMatchObject({
+          name: "t3-code",
+          title: "T3 Code",
+        });
 
         const snapshot = yield* h.instance.snapshot.getSnapshot;
         expect(snapshot.status).toBe("ready");

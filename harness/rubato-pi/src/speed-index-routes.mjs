@@ -15,10 +15,6 @@ export const SPEED_INDEX_NETWORK_ROUTES = Object.freeze({
   anthropic: Object.freeze({ kind: "probe", origin: "https://api.anthropic.com" }),
   cursor: Object.freeze({ kind: "probe", origin: "https://api2.cursor.sh" }),
   kiro: Object.freeze({ kind: "unsupported", reason: "loopback_sidecar" }),
-  "google-antigravity": Object.freeze({
-    kind: "probe",
-    origin: "https://daily-cloudcode-pa.googleapis.com",
-  }),
   opencode: Object.freeze({ kind: "probe", origin: "https://opencode.ai/zen/v1" }),
   // location 이 global 이면 genai SDK 가 지역 접두사 없는 이 호스트로 보낸다.
   "google-vertex": Object.freeze({ kind: "probe", origin: "https://aiplatform.googleapis.com" }),

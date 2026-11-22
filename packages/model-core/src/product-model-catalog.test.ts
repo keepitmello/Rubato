@@ -26,12 +26,13 @@ const [SOL] = PRODUCT_MODEL_ORDER["openai-codex"]
 const pick = (item: { provider: string; id: string }) => `${item.provider}/${item.id}`
 
 describe("product model catalog", () => {
-  test("#given the Vertex Argon row #when sorted and labeled #then it follows Antigravity and keeps its full name", () => {
+  test("#given the Vertex Argon row #when sorted and labeled #then it follows xai, keeps its full name, and direct Antigravity is excluded", () => {
     const argon = { provider: "google-vertex", id: PRODUCT_MODEL_ORDER["google-vertex"][0] }
-    const flash = { provider: "google-antigravity", id: PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash")) }
+    const xai = { provider: "xai", id: XAI_GROK }
     const kiro = { provider: "kiro", id: PRODUCT_MODEL_ORDER.kiro[0] }
-    expect(sortProductCatalogItems([kiro, argon, flash]).map(pick)).toEqual([pick(flash), pick(argon), pick(kiro)])
+    expect(sortProductCatalogItems([kiro, argon, xai]).map(pick)).toEqual([pick(xai), pick(argon), pick(kiro)])
     expect(isProductCatalogSlug(pick(argon))).toBe(true)
+    expect(isProductCatalogSlug("google-antigravity/gemini-4-neon")).toBe(false)
     expect(productCatalogLabel(argon)).toBe("Gemini 4 Argon")
   })
 

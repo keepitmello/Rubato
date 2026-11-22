@@ -11,7 +11,6 @@ export const SUPPORTED_PROVIDER_IDS = Object.freeze([
   "cursor",
   "anthropic",
   "kiro",
-  "google-antigravity",
   "opencode",
   "google-vertex",
   "google",

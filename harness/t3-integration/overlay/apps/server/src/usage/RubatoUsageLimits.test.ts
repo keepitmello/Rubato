@@ -67,7 +67,6 @@ it.effect("each Rubato account is its own row under its provider's driver", () =
         ["Claude · setup-token", "claudeAgent"],
         ["Cursor", "cursor"],
         ["Grok", "grok"],
-        ["Antigravity", "antigravity"],
         ["Gemini API", "gemini"],
       ],
       "a provider without a T3 driver and a row the page cannot draw are dropped",

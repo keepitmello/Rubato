@@ -227,13 +227,9 @@ test("an OAuth account whose read fails falls back to its last reply", async () 
   assert.equal(rows[0].usageLimits.checkedAt, "2026-10-17T17:00:00.000Z");
 });
 
-test("an expired Antigravity token is renewed in memory only", async () => {
+test("direct google-antigravity usage is disconnected and makes no requests", async () => {
   const renewed = [];
-  const { fetchImpl, calls } = fakeFetch({
-    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary": {
-      body: { groups: [{ buckets: [{ bucketId: "3p-weekly", window: "weekly", remainingFraction: 0.75 }] }] },
-    },
-  });
+  const { fetchImpl, calls } = fakeFetch({});
   const credential = { type: "oauth", access: "stale", refresh: "keep", expires: NOW - 1, env: { RUBATO_ANTIGRAVITY_PROJECT: "p" } };
   const { accounts: rows } = await collectUsage({
     providers: [{ id: "google-antigravity", label: "Antigravity" }],
@@ -248,13 +244,9 @@ test("an expired Antigravity token is renewed in memory only", async () => {
       return { access: "fresh" };
     },
   });
-  assert.deepEqual(renewed, ["keep"]);
-  assert.equal(calls[0].authorization, "Bearer fresh");
-  assert.equal(calls[0].userAgent, ANTIGRAVITY_USER_AGENT, "usage asks as the same client the sessions do");
-  assert.equal(credential.access, "stale", "the stored credential is untouched");
-  assert.deepEqual(rows[0].usageLimits.windows.map((window) => [window.id, window.label, window.usedPercent]), [
-    ["3p-weekly", "Claude & GPT (shared) · Weekly", 25],
-  ]);
+  assert.deepEqual(renewed, []);
+  assert.deepEqual(calls, []);
+  assert.deepEqual(rows, []);
 });
 
 test("a Pro account's separate Argon bucket keeps its own name beside the shared Gemini pair", () => {

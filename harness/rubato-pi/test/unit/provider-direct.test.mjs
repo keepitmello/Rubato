@@ -44,7 +44,6 @@ const directProviders = (options = {}) => nativeDirectProviders({
 // 현재 세대 id 는 소스/카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
 const FABLE_ID = ANTHROPIC_PICKER_IDS[0];
 const XAI_GROK = XAI_PICKER_IDS[0];
-const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"));
 
 const CATALOG = [
   { id: "xai/grok-4.7", name: "Grok 4.7" },
@@ -81,11 +80,7 @@ function recordingPi() {
   };
 }
 
-const antigravityCredentialImporter = async () => ({ status: "keychain_unavailable" });
-const providerOverlay = (pi, options = {}) => providerOverlayImpl(pi, {
-  antigravityCredentialImporter,
-  ...options,
-});
+const providerOverlay = (pi, options = {}) => providerOverlayImpl(pi, options);
 
 function isolatedDirectEnv(t) {
   const root = mkdtempSync(join(tmpdir(), "rubato-direct-auth-"));
@@ -792,7 +787,7 @@ test("legacy 와 target 이 같은 경로면 아무것도 하지 않는다", asy
 // 예전에는 지원 신원과 활성 등록이 갈라져 있었다: 이 목록은 제품 계약이고, 활성 권위는
 // bridge catalog 에서 유도한 `ourProviderIds(catalog)` 였다. bridge 가 삭제되면서 물을
 // 곳이 없어졌으므로 이 목록이 유일한 권위다.
-test("지원 신원은 아홉 개이고 정적이다", async () => {
+test("지원 신원은 여덟 개이고 정적이다", async () => {
   const { SUPPORTED_PROVIDER_IDS, foreignProviderIds } = await import("../../src/provider-ids.mjs");
   assert.deepEqual([...SUPPORTED_PROVIDER_IDS], [
     "openai-codex",
@@ -800,7 +795,6 @@ test("지원 신원은 아홉 개이고 정적이다", async () => {
     "cursor",
     "anthropic",
     "kiro",
-    "google-antigravity",
     "opencode",
     "google-vertex",
     "google",
@@ -831,9 +825,6 @@ function stockDirectOptions() {
     routeFactories: {
       cursor: async () => injectedRouteProvider("cursor", "https://cursor.invalid"),
       kiro: async () => injectedRouteProvider("kiro", "http://127.0.0.1:8990"),
-      antigravity: async () => ({
-        provider: injectedRouteProvider("google-antigravity", "https://antigravity.invalid"),
-      }),
     },
   };
 }
@@ -847,10 +838,6 @@ function injectedOverlayOptions(events, providerFactory) {
       return { status: "nothing_to_import", rejected: {} };
     },
     availabilityChecker: async () => [],
-    antigravityCredentialImporter: async () => {
-      events.push("antigravity-import");
-      return { status: "keychain_unavailable" };
-    },
     cursorNoticeRegistrar: () => events.push("cursor-notice"),
   };
 }
@@ -911,7 +898,7 @@ test("overlay admits the complete stock-backed seven-lane factory before registr
     return await directProviders(stockDirectOptions());
   }));
 
-  assert.deepEqual(events.slice(0, 3), ["factory", "legacy-import", "antigravity-import"]);
+  assert.deepEqual(events.slice(0, 2), ["factory", "legacy-import"]);
   assert.deepEqual(
     events.filter((entry) => entry.startsWith("register:")),
     DIRECT_PROVIDER_IDS.map((id) => `register:${id}`),
@@ -1255,35 +1242,8 @@ test("presence 판정도 custom agentDir 를 본다", async () => {
   }
 });
 
-// brand.mjs 가 이 overlay 를 격리 자식에만 싣는다. 자식이 Keychain 과 loadCodeAssist 를
-// 때리지 않도록 이관은 꺼 둔다.
-test("Antigravity 이관은 격리 자식에서 하지 않는다", async (t) => {
-  const calls = [];
-  const importer = async ({ enabled }) => {
-    calls.push(enabled);
-    return { status: enabled === true ? "already_present" : "disabled" };
-  };
-
-  await providerOverlay(recordingPi(), {
-    env: isolatedDirectEnv(t),
-    antigravityCredentialImporter: importer,
-  });
-  assert.equal(calls.at(-1), false, "자식이 이관을 시도했다");
-});
-
-test("자식 overlay 도 현재 Antigravity flash 를 입학시킨다", async (t) => {
-  const original = process.argv;
+test("직결 google-antigravity 는 더 이상 등록되지 않는다", async (t) => {
   const pi = recordingPi();
-  try {
-    process.argv = ["node", "senpi", "-p", "--no-extensions", "-e", "/x/provider-overlay.mjs"];
-    await providerOverlay(pi, { env: isolatedDirectEnv(t) });
-  } finally {
-    process.argv = original;
-  }
-  const antigravity = pi.registered.get("google-antigravity");
-  assert.ok(antigravity, "자식이 google-antigravity 를 등록하지 않았다");
-  const flash = antigravity.getModels?.().find((entry) => entry.id === ANTIGRAVITY_FLASH);
-  assert.ok(flash, `자식 catalog 에 ${ANTIGRAVITY_FLASH} 가 없다`);
-  assert.equal(flash.provider, "google-antigravity");
-  assert.deepEqual(flash.input, ["text", "image"]);
+  await providerOverlay(pi, { env: isolatedDirectEnv(t) });
+  assert.equal(pi.registered.has("google-antigravity"), false);
 });

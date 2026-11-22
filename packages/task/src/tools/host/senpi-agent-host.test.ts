@@ -180,7 +180,7 @@ describe("startSpecFromResolved service tier", () => {
 describe("liveModelCatalog", () => {
   // 세대 id 는 카탈로그가 소유한다 — 여기서 손으로 적으면 세대가 바뀔 때마다 깨진다.
   const XAI_GROK = PRODUCT_MODEL_ORDER.xai[0]
-  const ANTIGRAVITY_FLASH = PRODUCT_MODEL_ORDER["google-antigravity"].find((id) => id.includes("flash"))
+  const VERTEX_ARGON = PRODUCT_MODEL_ORDER["google-vertex"][0]
   const ANTHROPIC_FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
 
   test("#given no registry #when asked whether a model exists #then it fails closed", () => {
@@ -191,16 +191,16 @@ describe("liveModelCatalog", () => {
 
   test("#given a live registry #when the exact provider/id is present #then it admits that model only", () => {
     const catalog = liveModelCatalog(() => ({
-      getAvailable: () => [{ provider: "xai", id: XAI_GROK }, { provider: "google-antigravity", id: ANTIGRAVITY_FLASH }],
+      getAvailable: () => [{ provider: "xai", id: XAI_GROK }, { provider: "google-vertex", id: VERTEX_ARGON }],
     }))
 
     expect(catalog.has(`xai/${XAI_GROK}`)).toBe(true)
-    expect(catalog.has(`google-antigravity/${ANTIGRAVITY_FLASH}`)).toBe(true)
+    expect(catalog.has(`google-vertex/${VERTEX_ARGON}`)).toBe(true)
     expect(catalog.has("missing/model")).toBe(false)
     expect(catalog.has(XAI_GROK)).toBe(false)
     expect(catalog.list?.()).toEqual([
       `xai/${XAI_GROK}`,
-      `google-antigravity/${ANTIGRAVITY_FLASH}`,
+      `google-vertex/${VERTEX_ARGON}`,
     ])
   })
 

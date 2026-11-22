@@ -61,7 +61,7 @@ test("login aliases map to engine provider ids", () => {
   assert.deepEqual(resolveLoginProvider("xai"), { id: "xai" });
   assert.deepEqual(resolveLoginProvider("grok"), { id: "xai" });
   assert.deepEqual(resolveLoginProvider("codex"), { id: "openai-codex" });
-  assert.deepEqual(resolveLoginProvider("antigravity"), { id: "google-antigravity" });
+  assert.deepEqual(resolveLoginProvider("antigravity"), { error: "unknown", name: "antigravity" });
   assert.deepEqual(resolveLoginProvider("claude"), { id: "anthropic" });
   assert.deepEqual(resolveLoginProvider("anthropic"), { id: "anthropic" });
   assert.deepEqual(resolveLoginProvider("kiro"), { id: "kiro" });
