@@ -910,6 +910,8 @@ test("the follower folds bare handoff acks and identifies only the current turn'
   const companion = await env.make('Chief', { companion: true });
   const handoff = { type: 'custom_message', customType: 'rubato-session-message',
     details: { kind: 'message', from: { sessionId: companion.id, companion: true }, text: '여기서 손 떼 줘' } };
+  const peer = { ...handoff, details: { ...handoff.details, from: { sessionId: randomUUID() } } };
+  const channel = { ...handoff, details: { kind: 'channel', from: { isUser: true }, text: 'Return this literal' } };
   const call = assistant('', { stopReason: 'toolUse', tools: ['session_send'] });
   const request = '배포를 승인할까?';
   const prefix = 'x'.repeat(LIMITS.charsDefault);
@@ -920,8 +922,15 @@ test("the follower folds bare handoff acks and identifies only the current turn'
   const records = {}, expected = new Map(), finished = [];
   for (const [entries, notice, exact] of [
     [[handoff, assistant(LEAD_ACK)], null],
-    [[handoff, assistant(`${LEAD_ACK} ${request}`)], request],
+    [[peer, assistant(LEAD_ACK)], null],
+    [[{ ...peer, details: { ...peer.details, kind: 'create' } }, assistant(LEAD_ACK)], null],
+    [[peer, assistant(`${LEAD_ACK} ${request}`)], request],
+    [[peer, assistant(LEAD_ACK), peer, assistant('The tests passed.')], 'The tests passed.'],
+    [[peer, call, assistant(LEAD_ACK)], LEAD_ACK, LEAD_ACK],
     [[user('Return this literal'), assistant(LEAD_ACK)], LEAD_ACK],
+    [[channel, assistant(LEAD_ACK)], LEAD_ACK],
+    [[peer, assistant(LEAD_ACK, { stopReason: 'aborted' })], 'Was stopped before finishing.'],
+    [[peer, assistant(LEAD_ACK, { stopReason: 'error' })], 'Ended with an error.'],
     [[handoff, call, assistant(request)], request, request],
     [[handoff, call, assistant('first'), user('again?'), assistant(request)], request],
     [[handoff, call, assistant(prefix + request)], prefix + '…', prefix + request],

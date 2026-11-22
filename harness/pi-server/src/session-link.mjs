@@ -161,9 +161,10 @@ function progressOf(branch, following) {
     ...(following && final?.message.stopReason === 'stop' ? {
       // Only tool steps on this branch since the last input/end can vouch for a send in this turn.
       ...(finalText.length && finalText.length <= LIMITS.textChars ? { repeatOf: { text: finalText, steps: steps.filter(isAssistant).map((e) => e.id) } } : {}),
-      ackTo: !steps.some((e) => e.type === 'message' && e.message?.role !== 'system') && isSessionMessage(input) &&
-        ['message', 'create'].includes(input.details?.kind) && input.details.from?.companion === true &&
-        finalText === LEAD_ACK ? input.details.from.sessionId : undefined,
+      // A lead can reuse the acknowledgment its companion taught it on a peer's handoff.
+      // Fold just the bare reply to an agent handoff, not a user reply or a turn that did work.
+      handoffAck: finalText === LEAD_ACK && isSessionMessage(input) && ['message', 'create'].includes(input.details?.kind) &&
+        !steps.some((e) => e.type === 'message' && e.message?.role !== 'system'),
     } : {}),
     final: final ? { entryId: final.id, text: clip(finalText, LIMITS.charsDefault),
       ...(following && final.message.stopReason === 'error' && typeof error === 'string' && error.trim()
@@ -624,7 +625,7 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       },
       notify: async (companionId, targetId, text, completed) => {
         const lead = completed && !fromCompanion(targetId);
-        if (lead && completed.ackTo === companionId) return;
+        if (lead && completed.handoffAck) return;
         const about = await describe(targetId);
         const data = envelope({ messageId: randomUUID(), kind: 'notice', from: { sessionId: targetId, title: about.title, cwd: about.cwd }, text });
         if (lead && completed.repeatOf?.steps.length) data.repeatOf = completed.repeatOf;
