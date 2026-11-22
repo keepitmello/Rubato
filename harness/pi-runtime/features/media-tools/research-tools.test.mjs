@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -23,10 +24,6 @@ function fixture(t) {
 	const otherTranscript = join(cwd, "another.jsonl");
 	const calls = [];
 	const pids = new Set();
-	const run = join(cwd, ".outpost", "test");
-	mkdirSync(run, { recursive: true });
-	const packet = join(run, "packet.md");
-	writeFileSync(packet, "# Which approach?\n");
 	const jobHarness = () => {
 		const harness = researchJobs({
 			interval: 10,
@@ -44,7 +41,7 @@ function fixture(t) {
 		t.after(() => harness.close());
 		return harness;
 	};
-	return { cwd, transcript, otherTranscript, calls, pids, jobHarness, run, packet };
+	return { cwd, transcript, otherTranscript, calls, pids, jobHarness };
 }
 
 async function until(predicate) {
@@ -109,7 +106,7 @@ test("Aside interruption inspects the same session without a second exec", async
 	const harness = jobHarness();
 	const results = [];
 	harness.open(transcript, (_, result) => results.push(result));
-	harness.submit(transcript, WEB_AGENT, { prompt: "read", account: "u1", host: "local" }, cwd);
+	await harness.submit(transcript, WEB_AGENT, { prompt: "read", account: "u1", host: "local" }, cwd);
 	writeFileSync(calls[0].err, `\x1b[90mSession: ${asideId}\x1b[0m\n`);
 	calls[0].finish(1);
 	assert.deepEqual(calls[1].args, ["session", "inspect", "--json", "--account=u1", "--host=local", asideId]);
@@ -122,15 +119,21 @@ test("Aside interruption inspects the same session without a second exec", async
 });
 
 test("an interrupted Outpost reopens on its original conversation and only recovers", async (t) => {
-	const { cwd, transcript, otherTranscript, calls, pids, jobHarness, run, packet } = fixture(t);
+	const { cwd, transcript, otherTranscript, calls, pids, jobHarness } = fixture(t);
 	const first = jobHarness();
 	const attachment = join(cwd, "explicit input.txt");
 	writeFileSync(attachment, "evidence");
 	first.open(transcript, () => assert.fail("closed conversation was notified"));
-	const job = first.submit(transcript, DEEP_RESEARCH, { packet, attachments: [attachment], artifact: true }, cwd);
-	assert.ok(calls[0].args.includes(`--attach=${attachment}`));
+	const params = { question: "Which approach?\n\nResearch scope", attachments: [attachment], artifact: true };
+	const job = await first.submit(transcript, DEEP_RESEARCH, params, cwd, "research-call");
+	const { run } = job;
+	assert.equal(readFileSync(join(run, "packet.md"), "utf8"), "# Which approach?\n\nWhich approach?\n\nResearch scope\n");
+	const archive = join(run, "evidence.zip");
+	assert.ok(calls[0].args.includes(`--attach=${archive}`));
+	assert.equal(execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" }).trim(), "1-explicit input.txt");
+	assert.equal(execFileSync("unzip", ["-p", archive, "1-explicit input.txt"], { encoding: "utf8" }), "evidence");
 	assert.ok(calls[0].args.includes(`--artifact=${join(run, "artifact.zip")}`));
-	assert.throws(() => first.submit(transcript, DEEP_RESEARCH, { packet }, cwd), /already queued/);
+	assert.equal((await first.submit(transcript, DEEP_RESEARCH, params, cwd, "research-call")).existing, true);
 	const path = join(run, "result.json");
 	put(path, receipt({ ok: false, status: "submitted_pending" }));
 	first.close();
@@ -152,15 +155,20 @@ test("an interrupted Outpost reopens on its original conversation and only recov
 	assert.equal(deliveries[0].owner.id, job.id);
 	assert.equal(readFileSync(deliveries[0].result.response, "utf8"), "original Pro response");
 	assert.equal(calls.filter((call) => call.args[0] === "send").length, 1);
-	assert.throws(() => afterRestart.submit(transcript, DEEP_RESEARCH, { packet }, cwd), /already has a receipt/);
+	assert.equal((await afterRestart.submit(transcript, DEEP_RESEARCH, params, cwd, "research-call")).existing, true);
+	assert.equal(calls.length, 2);
 });
 
-test("an unverified Outpost result is a failure and never resubmits", (t) => {
-	const { cwd, transcript, calls, jobHarness, run, packet } = fixture(t);
+test("an unverified Outpost result is a failure and never resubmits", async (t) => {
+	const { cwd, transcript, calls, jobHarness } = fixture(t);
 	const results = [];
 	const harness = jobHarness();
 	harness.open(transcript, (_, result) => results.push(result));
-	const { id } = harness.submit(transcript, DEEP_RESEARCH, { packet }, cwd);
+	await assert.rejects(harness.submit(transcript, DEEP_RESEARCH,
+		{ question: "question", attachments: ["unknown.txt"] }, cwd), /ENOENT/);
+	assert.equal(calls.length, 0);
+	const { id, run } = await harness.submit(transcript, DEEP_RESEARCH, { question: "question" }, cwd);
+	assert.ok(!calls[0].args.some((arg) => arg.startsWith("--attach")));
 	assert.ok(existsSync(join(researchArtifacts(transcript), id, "job.json")));
 	const state = join(run, "result.json");
 	put(state, receipt({ ok: false, modelOk: false }));
@@ -189,7 +197,7 @@ printf '%s\\n' '${JSON.stringify({ session: { id: asideId, status: "idle" }, ans
 	const after = researchJobs({ interval: 10 });
 	t.after(() => { before.close(); after.close(); });
 	before.open(transcript, () => assert.fail("the original watcher is closed"));
-	const { id } = before.submit(transcript, WEB_AGENT, { prompt: "check persistence" }, cwd);
+	const { id } = await before.submit(transcript, WEB_AGENT, { prompt: "check persistence" }, cwd);
 	before.close();
 	const delivered = [];
 	after.open(transcript, (job, result) => delivered.push({ job, result }));

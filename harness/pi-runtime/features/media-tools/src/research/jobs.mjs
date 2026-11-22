@@ -1,10 +1,12 @@
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { execFile, spawn } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import {
 	closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync,
-	realpathSync, renameSync, statSync, writeFileSync,
+	realpathSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { copyFile } from "node:fs/promises";
+import { basename, join, resolve } from "node:path";
+import { promisify } from "node:util";
 
 export const WEB_AGENT = "web_agent";
 export const DEEP_RESEARCH = "deep_research";
@@ -35,7 +37,31 @@ function file(cwd, value) {
 }
 const opt = (name, value) => value ? [`--${name}=${value}`] : [];
 
-export function prepareResearch(name, params, cwd) {
+const exec = promisify(execFile);
+async function packEvidence(run, attachments) {
+	if (!attachments.length) return [];
+	const archive = join(run, "evidence.zip");
+	if (attachments.length === 1 && /\.zip$/i.test(attachments[0])) {
+		await copyFile(attachments[0], archive);
+		return [archive];
+	}
+	const staging = join(run, "evidence-input");
+	mkdirSync(staging, { mode: 0o700 });
+	try {
+		const names = [];
+		for (const [i, source] of attachments.entries()) {
+			const name = `${i + 1}-${basename(source)}`;
+			await copyFile(source, join(staging, name));
+			names.push(name);
+		}
+		await exec("zip", ["-q", archive, "--", ...names], { cwd: staging, timeout: 60_000 });
+		return [archive];
+	} finally {
+		rmSync(staging, { recursive: true, force: true });
+	}
+}
+
+export async function prepareResearch(name, params, cwd, run) {
 	if (name === WEB_AGENT) {
 		const target = [...opt("account", params.account), ...opt("host", params.host)];
 		const prompt = params.prompt.trim();
@@ -51,16 +77,19 @@ export function prepareResearch(name, params, cwd) {
 			recovery: { target },
 		};
 	}
-	const packet = file(cwd, params.packet);
-	if (basename(packet) !== "packet.md") throw new Error("Use a prepared .outpost/<run>/packet.md.");
-	const run = dirname(packet);
+	const question = params.question.trim();
+	if (!question) throw new Error("A research question is required.");
 	const attachments = (params.attachments ?? []).map((path) => file(cwd, path));
+	const packet = join(run, "packet.md");
+	const subject = Array.from(question.split(/\r?\n/, 1)[0].replace(/^#+\s*/, "").trim()).slice(0, 100).join("") || "Research question";
+	writeFileSync(packet, `# ${subject}\n\n${question}\n`, { mode: 0o600 });
+	const evidence = await packEvidence(run, attachments);
 	const quality = params.quality ?? "pro";
 	return {
 		command: "outpost",
 		args: ["send", `--quality=${quality}`, `--run=${run}`, ...opt("to", params.thread),
 			...(params.artifact ? [`--artifact=${join(run, "artifact.zip")}`] : []),
-			...attachments.map((path) => `--attach=${path}`), "--", packet],
+			...evidence.map((path) => `--attach=${path}`), "--", packet],
 		recovery: { run, quality },
 	};
 }
@@ -240,23 +269,31 @@ export function researchJobs({ start = launch, isAlive = alive, now = Date.now, 
 			}
 			watch();
 		},
-		submit(path, name, params, cwd) {
+		async submit(path, name, params, cwd, toolCallId, signal) {
 			if (!path || path !== sessionFile) throw new Error("Open a saved Rubato conversation to start research.");
-			const request = prepareResearch(name, params, cwd);
-			const id = randomUUID();
+			const id = name === DEEP_RESEARCH && toolCallId
+				? createHash("sha256").update(toolCallId).digest("hex").slice(0, 32) : randomUUID();
 			const dir = join(researchArtifacts(path), id);
-			if (name === DEEP_RESEARCH) {
-				const run = request.recovery.run;
-				const receipt = join(run, "result.json");
-				if (existsSync(receipt)) throw new Error(`Outpost already has a receipt at ${receipt}. Use a new packet directory for a new turn.`);
-				try {
-					writeFileSync(join(run, ".rubato-outpost"), `${id}\n`, { flag: "wx", mode: 0o600 });
-				} catch (error) {
-					if (error.code === "EEXIST") throw new Error(`Rubato already queued this Outpost packet: ${run}. It will not be resent.`);
-					throw error;
-				}
+			const existing = json(join(dir, "job.json"));
+			if (existing?.id === id) {
+				return { id, ...(existing.run ? { run: existing.run } : {}), existing: true };
 			}
-			mkdirSync(dir, { recursive: true, mode: 0o700 });
+			mkdirSync(researchArtifacts(path), { recursive: true, mode: 0o700 });
+			try { mkdirSync(dir, { mode: 0o700 }); }
+			catch (error) {
+				if (error.code === "EEXIST") throw new Error(`Rubato already reserved this research request: ${id}. It will not be resent.`);
+				throw error;
+			}
+			let request;
+			try {
+				request = await prepareResearch(name, params, cwd, dir);
+				signal?.throwIfAborted();
+				if (path !== sessionFile) throw new Error("The originating Rubato conversation changed before submission.");
+			}
+			catch (error) {
+				rmSync(dir, { recursive: true, force: true });
+				throw error;
+			}
 			const job = { id, name, dir, cwd, ...request.recovery };
 			spawnPhase(job, "send", request.command, request.args);
 			jobs.set(id, job);

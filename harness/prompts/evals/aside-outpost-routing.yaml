@@ -13,7 +13,6 @@ suite: aside-outpost-routing
 prompt_files:
   - harness/prompts/base.pi.md
   - harness/skills/aside/SKILL.md
-  - harness/skills/outpost/SKILL.md
 trials: 3
 release_policy:
   failures_allowed: 0

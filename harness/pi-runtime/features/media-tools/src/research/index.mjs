@@ -18,8 +18,9 @@ const webParameters = Type.Object({
 	effort: Type.Optional(choice("off", "minimal", "low", "medium", "high", "xhigh", "max", "ultrabrowse")),
 }, { additionalProperties: false });
 const deepParameters = Type.Object({
-	packet: string("Prepared Outpost packet.md path. Read the outpost skill before preparing it."),
-	attachments: Type.Optional(Type.Array(string("Explicit file to send with the packet."), { maxItems: 32 })),
+	question: Type.String({ minLength: 1, maxLength: 120_000,
+		description: "The research question and the relevant context, evidence, and constraints. Start with the subject if the brief is long. Leave out secrets and unnecessary private data." }),
+	attachments: Type.Optional(Type.Array(string("Path to an explicitly selected file to send to ChatGPT. Do not include secrets or unnecessary private data."), { maxItems: 32 })),
 	thread: optionalString("Outpost thread ID or ChatGPT conversation URL to continue."),
 	quality: Type.Optional(choice("pro", "xhigh")),
 	artifact: Type.Optional(Type.Boolean({ description: "Save a generated ZIP alongside the response." })),
@@ -73,12 +74,14 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 
 	const tool = (name, label, description, parameters) => defineTool({
 		name, label, description, parameters, exposure: "search",
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+		async execute(toolCallId, params, signal, _onUpdate, ctx) {
 			try {
 				signal?.throwIfAborted();
-				const job = jobs.submit(ctx.sessionManager.getSessionFile(), name, params, ctx.cwd);
+				const job = await jobs.submit(ctx.sessionManager.getSessionFile(), name, params, ctx.cwd, toolCallId, signal);
 				return {
-					content: [{ type: "text", text: `${label} started (${job.id}). Rubato will bring the result back to this conversation when it finishes. Do not poll or start a second run.` }],
+					content: [{ type: "text", text: job.existing
+						? `${label} (${job.id}) was already queued in this conversation. Rubato did not send it again.`
+						: `${label} started (${job.id}). Rubato will bring the result back to this conversation when it finishes. Do not poll or start a second run.` }],
 					details: { ...job, status: "running" },
 				};
 			} catch (error) {
@@ -87,9 +90,9 @@ export function registerResearchTools(pi, jobs = researchJobs()) {
 		},
 	});
 	pi.registerTool(tool(WEB_AGENT, "Web Agent",
-		"Delegate a browser task to Aside: broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task. For exact tab control or a Playwright script, use the Aside skill instead.",
+		"Delegate a browser task to Aside: broad fresh web search, multi-site evidence collection, and work on signed-in sites. Give the whole browser task, scope, and needed evidence. Leave unrequested posts, messages, purchases, and other changes outside the task.",
 		webParameters));
 	pi.registerTool(tool(DEEP_RESEARCH, "Deep Research",
-		"Send a prepared Outpost research packet to ChatGPT for depth, independent judgment, synthesis, or diagnosis. Use the outpost skill to prepare the packet. Returns asynchronously; recovering a submission never spends another Pro turn.",
+		"Ask ChatGPT Pro for deep research, independent judgment, synthesis, or diagnosis. Provide the question and optionally the exact files to send. Rubato packages and submits them and returns the result asynchronously. After a possible submission it recovers the same run, rather than resending.",
 		deepParameters));
 }

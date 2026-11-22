@@ -1,13 +1,11 @@
 ---
 name: "outpost"
-description: "Use when quality depends on deep research, synthesis, architecture, diagnosis, or independent judgment through a packeted ChatGPT GPT-6 Pro project-agent run."
+description: "Maintenance and terminal-only operation for the Outpost sender: diagnosing failures, rehearsing, recovering existing submissions, or using Outpost outside Rubato."
 ---
 
 # Outpost
 
-The local session owns the question, the packet, and verification. `outpost` owns
-the ChatGPT project send. Do not assemble engine flags, and do not hand the
-packet to another browser or agent.
+In Rubato, `deep_research` is the ordinary interface and needs no skill or prepared packet. This guide is for CLI-only operation and maintenance. `outpost` owns the ChatGPT project send; no other sender may repeat it.
 
 `outpost` ships with this skill and is the only sender. Confirm the command
 before trusting remembered flags: `command -v outpost`.
@@ -44,15 +42,7 @@ constraints, failed attempts, and acceptance criteria that can change the
 answer. Scan for secrets. Ask for a natural Korean report; leave structure
 and terms to the consultant.
 
-What the packet buys is a judgment. The consultant's habit is to treat a
-missing official statement as missing evidence and to fill the answer with
-"no public evidence" and "cannot be ruled out"; the custom instructions alone
-do not stop it. A request to "separate confirmed facts from inference" feeds
-that habit, so do not write one. Ask instead for the conclusion first, as
-its own call with a stated confidence, and say that companies rarely announce
-what they filter, cut, or throttle, so community measurements, firsthand
-reports, and insider accounts count as evidence to be weighed, not dismissed
-as anecdote.
+Ask for the consultant's own conclusion with confidence first. Weigh unofficial evidence when companies are unlikely to disclose the answer; do not treat the absence of an official statement as negative evidence.
 
 To receive a generated zip back, add `--artifact .outpost/<run>/artifact.zip`.
 To upload extra input files with the packet, add `--attach <path>` (repeatable).
@@ -63,9 +53,7 @@ Complex packets: `references/context-checklist.md`.
 
 ## Command
 
-In Rubato, find `deep_research` with `tool_search` and pass the prepared `packet` path, any explicit `attachments`, and a `thread` only when continuing an existing one. The tool defaults to `pro`; use `xhigh` only for a wiring check. Set `artifact: true` to request the generated ZIP. Rubato returns the saved response and receipt in this conversation and recovers a submitted run without spending a second Pro turn. Do not poll or run the CLI sender alongside it.
-
-For terminal use outside that tool, or to inspect existing threads and diagnose the sender:
+For terminal use, thread inspection, or diagnosis:
 
 ```bash
 outpost list
