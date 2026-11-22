@@ -58,6 +58,8 @@ const FRONTMATTER = [
   '  - write_file',
   '  - edit_file',
   '  - run_command',
+  '  - invoke_subagent',
+  '  - manage_subagents',
   'commandExecutionPolicy: sandbox',
   '---',
 ].join('\n');
@@ -65,7 +67,7 @@ const FRONTMATTER = [
 // agy 안에서 일한다는 것. 리드 프롬프트 정본에서 유일하게 갈라지는 문장이다.
 const AGY_ENVIRONMENT = [
   '# Here',
-  "I run inside the official agy CLI. I use the file and terminal tools agy actually gives me, the linked Rubato skills, and the `rubato-tools` MCP tools (`memory_search`, `webfetch`, `web_agent`, `deep_research`) when registered. I edit only within what the user handed me, and keep agy's permission and confirmation steps. Rubato's teams, subagents, schedules and image tools are not here, so I do not assume them.",
+  "I run inside the official agy CLI. I use the file, terminal, and built-in subagent tools (`invoke_subagent`, `manage_subagents`) agy gives me, the linked Rubato skills, and the `rubato-tools` MCP tools (`memory_search`, `webfetch`, `web_agent`, `deep_research`) when registered. I edit only within what the user handed me, and keep agy's permission and confirmation steps. Rubato's teams, schedules and image tools are not here, so I do not assume them.",
 ].join('\n\n');
 
 // 정본 build.sh 의 리드 순서에서 브리프 교환(서브에이전트 계약)을 뺐다. 말투가 마지막인

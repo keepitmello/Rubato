@@ -28,6 +28,8 @@ const agentFile = (home, name = LEAD_AGENT) => path.join(home, '.gemini', 'confi
 test('the lead agent comes from the canonical lead prompt, without tools agy does not have', async () => {
   const text = await renderLeadAgent();
   assert.match(text, new RegExp(`^---\\nname: ${LEAD_AGENT}\\n[\\s\\S]*?mainAgent: true\\n[\\s\\S]*?\\n---\\n\\n`));
+  assert.ok(text.includes('  - invoke_subagent\n'));
+  assert.ok(text.includes('  - manage_subagents\n'));
   assert.ok(text.includes(GENERATED_MARK));
   assert.doesNotMatch(text, RUBATO_ONLY);
   const prompts = fileURLToPath(new URL('../../prompts/', import.meta.url));
