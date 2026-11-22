@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { COMPANION_ROLE as ROLE_PROMPT_COMPANION_ROLE, createRolePromptExtensionFactories, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SERVER_COMPACTION_BLOCK, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
+import { COMPANION_ROLE as ROLE_PROMPT_COMPANION_ROLE, createRolePromptExtensionFactories, LEAD_ROLE_ENTRY_TYPE, openingTurnMessage, ROLE_PROMPT_FACTORY_NAME, SERVER_COMPACTION_BLOCK, SYSTEM_PROMPT_REPLACEMENT_ENTRY_TYPE } from "./role-prompt.mjs";
 import { isAnthropicCompactionBlock } from "../compaction/anthropic-server-compaction.mjs";
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from "../session-prompt/patches.mjs";
 import { promptForAgentStart, replaceSystemPrompt } from "../../../rubato-pi/src/system-prompt.mjs";
@@ -136,23 +136,29 @@ test("the role prompt file stays pinned to the session until /reload", async (t)
   };
 
   write("first version");
+  branches.set("session-a", [{ type: "custom", customType: LEAD_ROLE_ENTRY_TYPE, data: { name: "ops", value: "Assigned operations brief." } }]);
   let handlers = await boot();
   await handlers.session_start({ reason: "startup" }, ctxFor("session-a"));
   assert.match(await compose(handlers, "session-a"), /first version/);
+  assert.match(await compose(handlers, "session-a"), /Assigned operations brief/);
 
   write("second version");
   assert.match(await compose(handlers, "session-a"), /first version/, "a running session keeps its prompt");
   assert.doesNotMatch(await compose(handlers, "session-a"), /second version/);
 
+  branches.get("session-a").push({ type: "compaction", id: "new-window" });
   handlers = await boot();
   await handlers.session_start({ reason: "resume" }, ctxFor("session-a"));
   assert.match(await compose(handlers, "session-a"), /first version/, "a restart keeps the pinned prompt");
+  assert.match(await compose(handlers, "session-a"), /Assigned operations brief/);
 
   await handlers.session_start({ reason: "new" }, ctxFor("session-b"));
   assert.match(await compose(handlers, "session-b"), /second version/, "a new session takes the current file");
+  assert.doesNotMatch(await compose(handlers, "session-b"), /Assigned operations brief/);
 
   await handlers.session_start({ reason: "reload" }, ctxFor("session-a"));
   assert.match(await compose(handlers, "session-a"), /second version/, "/reload takes the current file");
+  assert.equal((await compose(handlers, "session-a")).split("Assigned operations brief.").length, 2);
   write("third version");
   assert.match(await compose(handlers, "session-a"), /second version/);
 });

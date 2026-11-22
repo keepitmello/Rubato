@@ -4,6 +4,9 @@ export const SKILLS_LISTING_ENTRY_TYPE = "rubato.skills-listing";
 
 export const ROLE_PROMPT_ENTRY_TYPE = "rubato.role-prompt";
 
+// Chosen at creation. /reload refreshes the base prompt, not this lead's assigned job.
+export const LEAD_ROLE_ENTRY_TYPE = "rubato.lead-role";
+
 export const PROJECT_CONTEXT_ENTRY_TYPE = "rubato.project-context";
 
 export const PROJECT_RULES_ENTRY_TYPE = "rubato.project-rules";
@@ -106,7 +109,7 @@ export function createRolePromptExtension({ env = process.env } = {}) {
       const hooks = id === undefined || typeof loadRolePrompt !== "function"
         ? { renderCoda: false }
         : { renderCoda: false, loadRolePrompt: () => (role === COMPANION_ROLE ? pinAtBoundary : pin)(id, ctx, ROLE_PROMPT_ENTRY_TYPE,
-          () => loadRolePrompt(role, { env })) };
+          () => [loadRolePrompt(role, { env }), role === "lead" && recordedEntry(ctx, LEAD_ROLE_ENTRY_TYPE)].filter(Boolean).join("\n\n")) };
       const rebuilt = promptForAgentStart(base === undefined ? event : { ...event, systemPrompt: base }, ctx, role, { ...hooks, env });
       let composed = additions.trim().length > 0 ? `${rebuilt}\n\n${additions.trim()}` : rebuilt;
       if (id !== undefined) {

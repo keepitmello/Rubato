@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, readFile, writeFile, appendFile, realpath, readdir } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, readFile, writeFile, appendFile, realpath, readdir, symlink } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -12,6 +12,7 @@ import { startSessionServer } from '../src/host.mjs';
 import { SessionClient } from '../src/client.mjs';
 import { createSessionLink, COLD_SEND_TOKENS, LIMITS, TAIL_BYTES } from '../src/session-link.mjs';
 import { LEAD_ACK } from '../../pi-runtime/features/session-link/message.mjs';
+import { LEAD_ROLE_ENTRY_TYPE } from '../../pi-runtime/features/prompt-rules/role-prompt.mjs';
 
 const fixture = fileURLToPath(new URL('./fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate, message = 'Condition did not settle') => {
@@ -861,6 +862,32 @@ test('read view notes: the current version of each context note, one note by pat
   assert.deepEqual(notes.notes.map((note) => [note.path, note.text, note.windowId]), [['log.md', 'tried X', 'w1'], ['now.md', 'new goal', 'w2']]);
   const one = await env.api.read({ sessionId: session.id, view: 'notes', notePath: 'now.md' });
   assert.deepEqual([one.notes.map((note) => note.text), one.paths], [['new goal'], ['log.md', 'now.md']]);
+});
+
+test('a named role comes only from the sending companion home and is saved apart from the task', async (t) => {
+  const env = await setup(t);
+  const home = path.join(env.root, 'other-companion');
+  const registry = path.join(env.root, 'companions.json');
+  const previous = process.env.RUBATO_COMPANIONS_FILE;
+  process.env.RUBATO_COMPANIONS_FILE = registry;
+  t.after(() => { if (previous === undefined) delete process.env.RUBATO_COMPANIONS_FILE; else process.env.RUBATO_COMPANIONS_FILE = previous; });
+  const roles = path.join(home, 'prompt', 'lead-roles');
+  await mkdir(roles, { recursive: true });
+  await writeFile(registry, JSON.stringify({ companions: [{ id: 'test-peer', title: 'Peer', home, memoryAgent: 'test-peer' }] }));
+  const file = path.join(roles, 'ops.md');
+  await writeFile(file, 'Operations duties.');
+  const peer = await env.make('Peer', { companion: true, companionId: 'test-peer' });
+  const plain = await env.make('Plain');
+  const create = (from, role) => env.api.create({ from, role, cwd: env.root, text: 'first task' });
+  await assert.rejects(create(plain.id, 'ops'), { code: 'not_companion' });
+  await symlink(registry, path.join(roles, 'link.md'));
+  for (const role of ['../other', 'missing', 'link']) await assert.rejects(create(peer.id, role), { code: 'invalid' });
+  const { sessionId } = await create(peer.id, 'ops');
+  await rm(file);
+  const saved = await new SessionFiles(env.sessionsDir).resolve(sessionId);
+  const entries = (await readFile(saved.file, 'utf8')).trim().split('\n').map(JSON.parse);
+  assert.deepEqual(entries.find(e => e.customType === LEAD_ROLE_ENTRY_TYPE)?.data, { name: 'ops', value: 'Operations duties.' });
+  assert.equal((await env.deliveries(sessionId))[0].data.text, 'first task');
 });
 
 test("what Segno creates or sends is marked as Segno's, so the lead reads it as work Segno leads and assigned; a lead's is not", async (t) => {

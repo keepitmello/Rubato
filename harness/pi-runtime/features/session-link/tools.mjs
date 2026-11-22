@@ -346,6 +346,7 @@ function sessionTools(getLink, { companion }) {
         required: ["text"],
         properties: {
           text: { type: "string", minLength: 1, description: "The first message for the new conversation, at most 8000 characters." },
+          ...(companion ? { role: { type: "string", pattern: "^[a-z][a-z0-9-]{0,47}$", description: "Name of a lead role in your home (prompt/lead-roles/<name>.md). Its instructions join the lead's system prompt for the life of this conversation; text is just the first task." } } : {}),
           cwd: { type: "string", minLength: 1, description: "Folder for the new conversation; defaults to this conversation's folder." },
           title: { type: "string", minLength: 1, description: "Optional title for the new conversation." },
           model: { type: "string", minLength: 1, description: "Optional model it runs on, as provider/model-id (anthropic/claude-opus-5-5) or just the model id " +
@@ -365,6 +366,7 @@ function sessionTools(getLink, { companion }) {
           cwd,
           ...(params.title === undefined ? {} : { title: params.title }),
           text: params.text,
+          ...(companion && params.role !== undefined ? { role: params.role } : {}),
           ...(model === undefined ? {} : { model }),
           ...(params.effort === undefined ? {} : { thinking: params.effort }),
         }), signal);

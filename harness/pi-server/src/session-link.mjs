@@ -850,18 +850,20 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
      * runtime before its first message, so the first turn already runs on them. The model clamps
      * an unsupported level to its nearest one; the answer reports what took effect.
      */
-    async create({ from, cwd, title, text, model, thinking } = {}) {
+    async create({ from, cwd, title, text, model, thinking, role } = {}) {
       requireId(from, 'from'); requireText(text);
       if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw fail('invalid', 'cwd must be an absolute path');
       if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw fail('invalid', 'title must be a non-empty string of at most 512 characters');
       if (model !== undefined && (typeof model !== 'string' || !/^[^/\s]+\/\S+$/.test(model))) throw fail('invalid', 'model must be "provider/model-id"');
       if (thinking !== undefined && !EFFORT_LEVELS.includes(thinking)) throw fail('invalid', `thinking must be one of ${EFFORT_LEVELS.join(', ')}`);
       const origin = await sender(from);
+      if (role !== undefined && !origin.companion) throw fail('not_companion', 'Only a companion conversation can select a lead role');
       // A repeated create is a second conversation, so it counts as a duplicate per folder.
       const release = admit(from, `create:${cwd}`, text, { inbound: false });
       let created;
       try {
-        created = await withClient(async (client) => client.create({ cwd, title: title?.trim(), titleLocked: title !== undefined }));
+        created = await withClient(async (client) => client.create({ cwd, title: title?.trim(), titleLocked: title !== undefined,
+          ...(role === undefined ? {} : { leadRole: { name: role, companionId: origin.companionId } }) }));
       } catch (error) {
         release();
         throw fail('invalid', `Could not create a conversation in ${cwd}: ${error?.message ?? error}`);

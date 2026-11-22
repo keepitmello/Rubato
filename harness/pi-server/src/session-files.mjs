@@ -7,6 +7,8 @@ import { TITLE_ENTRY } from '../../pi-runtime/features/session-title/session-tit
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from '../../pi-runtime/features/session-prompt/patches.mjs';
 import { SESSION_MESSAGE } from './session-link.mjs';
 import { COMPANION_ENTRY } from '../../companion/companion.mjs';
+import { companionProfile } from '../../companion/registry.mjs';
+import { LEAD_ROLE_ENTRY_TYPE } from '../../pi-runtime/features/prompt-rules/role-prompt.mjs';
 
 const fingerprint = (stats) => [stats.dev, stats.ino, stats.size, stats.mtimeNs, stats.ctimeNs, stats.mode].join(':');
 const newestFirst = (a, b) => b.modifiedAt - a.modifiedAt;
@@ -107,6 +109,18 @@ const ARTIFACTS_SUFFIX = '-artifacts';
 /** A replacement prompt larger than this is refused rather than sent on every request. */
 export const SYSTEM_PROMPT_LIMIT = 512 * 1024;
 const shortText = (value, limit) => typeof value === 'string' && value.trim() && value.length <= limit ? value.trim() : undefined;
+
+async function readLeadRole({ name, companionId }) {
+  if (typeof name !== 'string' || !/^[a-z][a-z0-9-]{0,47}$/.test(name)) throw new TypeError('Invalid lead role name');
+  const home = await realpath(companionProfile(companionId).home);
+  const file = path.join(home, 'prompt', 'lead-roles', `${name}.md`);
+  if (await realpath(file) !== file) throw new TypeError(`Lead role ${name} must be a file in the companion's roles directory`);
+  const info = await stat(file);
+  if (!info.isFile() || info.size > SYSTEM_PROMPT_LIMIT) throw new TypeError(`Lead role ${name} must be a file of at most ${SYSTEM_PROMPT_LIMIT} bytes`);
+  const value = (await readFile(file, 'utf8')).trim();
+  if (!value) throw new TypeError(`Lead role ${name} is empty`);
+  return { name, value };
+}
 
 function replacementEntry(input) {
   const text = typeof input === 'object' ? input.text : undefined;
@@ -350,13 +364,15 @@ export class SessionFiles {
    * `companion` marks the conversation as the companion (harness/companion): the engine runs it
    * under the companion role.
    */
-  async create({ cwd, title, titleLocked = false, systemPrompt, companion = false, companionId } = {}) {
+  async create({ cwd, title, titleLocked = false, systemPrompt, leadRole, companion = false, companionId } = {}) {
     if (typeof companion !== 'boolean') throw new TypeError('companion must be a boolean');
     if (companionId !== undefined && (!companion || !/^[a-z][a-z0-9-]{0,47}$/.test(companionId)))
       throw new TypeError('companionId needs a companion and a valid id');
     if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw new TypeError('cwd must be absolute');
     if (title !== undefined && (typeof title !== 'string' || title.length > 512)) throw new TypeError('Invalid title');
     const replacement = systemPrompt === undefined || systemPrompt === null ? undefined : replacementEntry(systemPrompt);
+    if (leadRole !== undefined && (companion || replacement)) throw new TypeError('leadRole needs an ordinary lead prompt');
+    const role = leadRole === undefined ? undefined : await readLeadRole(leadRole);
     cwd = await realpath(cwd);
     if (!(await stat(cwd)).isDirectory()) throw new TypeError('cwd must be a directory');
     await mkdir(this.root, { recursive: true, mode: 0o700 });
@@ -375,8 +391,9 @@ export class SessionFiles {
     const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomUUID()}.tmp`);
     try {
       await writeFile(temporary, JSON.stringify(manager.getHeader()) + '\n', { flag: 'wx', mode: 0o600 });
-      if (title || replacement || companion) {
+      if (title || replacement || role || companion) {
         const opened = SessionManager.open(temporary, this.root);
+        if (role) opened.appendCustomEntry(LEAD_ROLE_ENTRY_TYPE, role);
         if (companion) opened.appendCustomEntry(COMPANION_ENTRY, { since: new Date().toISOString(), ...(companionId ? { id: companionId } : {}) });
         if (replacement) opened.appendCustomEntry(SYSTEM_PROMPT_REPLACEMENT_ENTRY, replacement);
         if (title) opened.appendSessionInfo(title);

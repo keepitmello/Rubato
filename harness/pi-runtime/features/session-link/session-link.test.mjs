@@ -551,6 +551,16 @@ test("the companion gets every conversation tool except waiting, plus its hands 
   assert.ok(companion.every((tool) => tool.exposure === "direct"), "the companion's tools are always in its requests");
 });
 
+test("only the companion can select a session_create role", async () => {
+  const { link, calls } = fakeLink({ create: () => ({ sessionId: "01new" }) });
+  const pi = fakePi();
+  createSessionLinkFactories({ sessionLink: link, companion: true })[0].factory(pi);
+  assert.ok(pi.tools.get("session_create").parameters.properties.role);
+  assert.equal(install(link).tools.get("session_create").parameters.properties.role, undefined);
+  await execute(pi, "session_create", { role: "ops", text: "first task" });
+  assert.equal(calls.at(-1).args.role, "ops");
+});
+
 test("only the companion's session_send describes and passes allowCold, for a cold conversation with a large context", async () => {
   const { link, calls } = fakeLink({ send: (args) => ({ messageId: "m-1", cursor: "c", to: { sessionId: args.to, title: "B", status: "idle" } }) });
   const pi = fakePi();
