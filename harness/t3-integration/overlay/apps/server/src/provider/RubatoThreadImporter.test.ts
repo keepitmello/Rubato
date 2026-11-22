@@ -3,7 +3,7 @@
 // message another agent sent, with the sender context and the sending thread when known.
 import {
   EventId, OrchestrationMessageContext, OrchestrationV2ConversationMessage, OrchestrationV2Run, OrchestrationV2TurnItem,
-  ProviderInstanceId, RunId, ThreadId, TurnItemId, type OrchestrationV2DomainEvent,
+  ProjectId, ProviderInstanceId, RunId, ThreadId, TurnItemId, type OrchestrationV2DomainEvent,
 } from "@t3tools/contracts";
 import * as IdAllocator from "@t3tools/provider-core/server/IdAllocator";
 import * as Clock from "effect/Clock";
@@ -17,7 +17,7 @@ import * as TurnItemPositionStore from "../orchestration-v2/TurnItemPositionStor
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import { RubatoThreadImporter, SAID_RUN_PREFIX, isRubatoRun, isSaidRun, layer as importerLayer, saidRunId, sessionMessageRecords,
   sessionMessageRun } from "./RubatoThreadImporter.ts";
-import { engineRunning } from "./RubatoPiInventory.ts";
+import { companionLeadLocation, emptySession, engineRunning } from "./RubatoPiInventory.ts";
 import { gapsFromProviderEvents } from "./RubatoPiSessions.ts";
 
 const context = { version: 1 as const, records: [{
@@ -217,5 +217,47 @@ describe("a turn the engine runs while T3 holds no stream (RubatoPiInventory.ts)
     expect(engineRunning({ status: "starting" })).toBe(true);
     expect(engineRunning({ status: "waiting" })).toBe(true);
     for (const status of ["stored", "idle", "unloading"]) expect(engineRunning({ status })).toBe(false);
+  });
+});
+
+describe("a lead opened by a companion", () => {
+  const cwd = "/work/unregistered";
+  const scratchId = ProjectId.make("no-project");
+  const registeredId = ProjectId.make("registered");
+
+  it("imports under No project with the original working directory and the same session binding", async () => {
+    const threads: OrchestrationV2DomainEvent[] = [];
+    const sink = Layer.succeed(EventSink.EventSinkV2, { write: ({ events }: { events: ReadonlyArray<OrchestrationV2DomainEvent> }) =>
+      Effect.sync(() => { threads.push(...events); return []; }) } as never);
+    const ids = Layer.succeed(IdAllocator.IdAllocatorV2, { derive: { providerThread: () => "native-lead" } } as never);
+    await Effect.runPromise(Effect.gen(function* () {
+      const importer = yield* RubatoThreadImporter;
+      const location = yield* companionLeadLocation(cwd, { getByWorkspaceRoot: (root, options) => {
+        expect(root).toBe(cwd);
+        expect(options?.includeDeleted).not.toBe(true);
+        return Effect.succeedNone;
+      } }, { ensureScratchProject: Effect.succeed({ projectId: scratchId }) });
+      yield* importer.importPiSessionThread({ ...location, threadId: ThreadId.make("lead"),
+        title: "Lead", sessionId: "existing-pi-session",
+        modelSelection: { instanceId: ProviderInstanceId.make("rubato-pi"), model: "claude" },
+        runtimeMode: "full-access", interactionMode: "default", createdAt: "2026-10-20T00:00:00.000Z",
+        messages: [], settled: true });
+    }).pipe(Effect.provide(importerLayer.pipe(Layer.provide(Layer.mergeAll(sink, ids))))));
+    expect(threads.map((event) => event.payload)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "lead", projectId: scratchId, worktreePath: cwd, activeProviderThreadId: "native-lead" }),
+      expect.objectContaining({ id: "native-lead", nativeThreadRef: expect.objectContaining({ nativeId: "existing-pi-session" }) }),
+    ]));
+  });
+
+  it("uses a registered project without allocating a projectless home", async () => {
+    const location = await Effect.runPromise(companionLeadLocation(cwd,
+      { getByWorkspaceRoot: () => Effect.succeedSome({ id: registeredId } as never) },
+      { ensureScratchProject: Effect.die("unexpected projectless home") }));
+    expect(location).toEqual({ projectId: registeredId });
+  });
+
+  it("treats the opening handoff as history even before Pi counts a normal message", () => {
+    expect(emptySession({ status: "stored", messageCount: 0, companionLead: true })).toBe(false);
+    expect(emptySession({ status: "stored", messageCount: 0 })).toBe(true);
   });
 });

@@ -38,6 +38,8 @@ export const importFailure = (detail: string) => (cause: unknown) =>
 export interface PiSessionThreadInput {
   readonly threadId: ThreadId;
   readonly projectId: ProjectId;
+  /** Original working directory for a session shown under "No project". */
+  readonly worktreePath?: string;
   readonly title: string;
   readonly sessionId: string;
   readonly modelSelection: ModelSelection;
@@ -170,7 +172,7 @@ const make = Effect.gen(function* () {
       createdBy: "system", creationSource: "server", id: input.threadId, projectId: input.projectId,
       title: input.title.trim() === "" ? "Rubato session" : input.title, providerInstanceId: instanceId,
       modelSelection: input.modelSelection, runtimeMode: input.runtimeMode, interactionMode: input.interactionMode,
-      branch: null, worktreePath: null, linkedPullRequest: null, branchPullRequest: null,
+      branch: null, worktreePath: input.worktreePath ?? null, linkedPullRequest: null, branchPullRequest: null,
       activeProviderThreadId: providerThreadId, historyOrigin: "v1_import",
       lineage: { parentThreadId: null, relationshipToParent: null, rootThreadId: input.threadId },
       forkedFrom: null, createdAt, updatedAt, archivedAt: null,

@@ -49,6 +49,8 @@ export interface PiSummary {
   readonly sideChatOf?: string;
   /** Segno's own conversation (the engine's session list marks it). */
   readonly companion?: boolean;
+  /** The persisted opening handoff came from a companion, not the companion's own chat. */
+  readonly companionLead?: boolean;
   /** Messages the session holds; absent from an engine that does not count them. */
   readonly messageCount?: number;
 }

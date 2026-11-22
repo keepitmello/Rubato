@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, realpath, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +13,7 @@ import { CATALOGUE_REUSE_MS, companionEntry, handleCacheWarmingRequest, rewindPl
 import { errorDetail, EventProjection, sessionMessageId } from '../src/events.mjs';
 import {t3Modules} from './t3-source.mjs';
 import { CODEX_ULTRAFAST_MODEL_IDS } from '../../../packages/model-core/src/product-model-catalog.mjs';
+import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
 const fixture = fileURLToPath(new URL('../../pi-server/test/fixtures/rpc.mjs', import.meta.url));
 const until = async (predicate) => { for (let i=0;i<500;i++) { if (await predicate()) return; await delay(10); } throw new Error('Condition did not settle'); };
 // On T3's V2 orchestrator these records feed only the session-state fold (session-state.mjs);
@@ -629,6 +630,27 @@ test('the app is offered work a person opened, not a scratch run', () => {
   assert.equal(userStartedSession({ sessionId:'d', cwd:'/Users/nobody/deleted-project', status:'stored' }), false);
   assert.equal(userStartedSession({ sessionId:'e', cwd:process.cwd(), status:'stored' }), true);
   assert.equal(userStartedSession({ sessionId:'f', cwd:'relative/path', status:'stored' }), false);
+});
+
+test('a stored companion lead reaches the inventory even in a temporary working folder', async (t) => {
+  const { root, service, external } = await setup(t);
+  const bridge = new RubatoPiBridge({ descriptorPath: service.descriptorPath, instanceId: 'rubato-policy' });
+  t.after(() => bridge.close());
+  const ids = {};
+  for (const [title, kind, companion] of [['lead', 'create', true], ['later-message', 'message', true], ['ordinary', 'create', false]]) {
+    const { sessionId } = await external.create({ cwd: root, title });
+    ids[title] = sessionId;
+    const { file } = await service.host.resolveSession(sessionId);
+    await appendFile(file, JSON.stringify({ type: 'custom_message', customType: SESSION_MESSAGE_TYPE,
+      id: 'handoff', parentId: null, timestamp: new Date().toISOString(),
+      content: 'Check this folder', display: true, details: { kind, from: { companion } } }) + '\n');
+  }
+  await until(async () => (await bridge.inventory()).some((entry) => entry.sessionId === ids.lead));
+  const rows = await bridge.inventory();
+  assert.deepEqual(rows.map((row) => row.sessionId), [ids.lead]);
+  assert.equal(rows[0].companionLead, true);
+  assert.equal(rows[0].cwd, await realpath(root));
+  assert.equal(rows[0].runtimeId, null);
 });
 
 test('a scratch session never reaches the app, and the app keeps what it made itself', async (t) => {

@@ -33,5 +33,5 @@ test('companionsStore shares one AppState-gated poller and skips identical publi
 
 test('RubatoPiInventory settles sessions whose deleted project returns null so they are not rescanned every 5s', async () => {
   const source = await overlay('apps/server/src/provider/RubatoPiInventory.ts');
-  assert.match(source, /if\s*\(project === null\)\s*\{\s*settledSessions\.add\(entry\.sessionId\);\s*return;\s*\}/);
+  assert.match(source, /if\s*\(location === null\)\s*\{\s*settledSessions\.add\(entry\.sessionId\);\s*return;\s*\}/);
 });

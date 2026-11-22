@@ -54,7 +54,7 @@ export function userStartedSession(entry) {
   if (entry?.runtimeId && LIVE_STATUS.has(entry.status)) return true;
   const cwd = entry?.cwd;
   if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) return false;
-  if (insideTemporary(cwd)) return false;
+  if (entry.companionLead !== true && insideTemporary(cwd)) return false;
   // statSync 다. Github-repos/agent-taskforce 와 Rubato 는 심볼릭 링크라서
   // lstat 으로 보면 폴더가 아니고, 실제 대화 146 개가 통째로 사라졌다.
   try { return statSync(cwd).isDirectory(); } catch { return false; }

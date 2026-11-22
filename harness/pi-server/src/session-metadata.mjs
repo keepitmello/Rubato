@@ -3,6 +3,7 @@ import { createReadStream, readFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { finished } from 'node:stream/promises';
 import { SIDE_CHAT_ENTRY } from '../../pi-runtime/features/session-link/side-chat.mjs';
+import { SESSION_MESSAGE_TYPE } from '../../pi-runtime/features/session-link/message.mjs';
 import { SYSTEM_PROMPT_REPLACEMENT_ENTRY } from '../../pi-runtime/features/session-prompt/patches.mjs';
 import { COMPANION_ENTRY } from '../../companion/companion.mjs';
 
@@ -11,7 +12,8 @@ const EDGE = 256;
 const NEWLINE = 0x0a;
 
 const emptyFold = () => ({ header: undefined, name: undefined, firstMessage: '', messageCount: 0, lastActivityTime: undefined,
-  sideChatOf: undefined, systemPrompt: undefined, companion: false, companionId: undefined, invalid: false });
+  sideChatOf: undefined, systemPrompt: undefined, companion: false, companionId: undefined,
+  companionLead: false, invalid: false });
 
 /** The pinned Pi SessionInfo semantics, without retaining allMessagesText, one line at a time.
  * Keep the differential test against SessionManager.listAll when updating Pi.
@@ -39,6 +41,10 @@ function foldLine(fold, line) {
       fold.companion = true;
       fold.companionId = entry.data?.id ?? 'segno';
     }
+    // The persisted opening handoff distinguishes a lead from a conversation the companion
+    // only messaged later. This also works for leads created before the app showed them.
+    if (entry.type === 'custom_message' && entry.customType === SESSION_MESSAGE_TYPE &&
+        entry.details?.kind === 'create' && entry.details.from?.companion === true) fold.companionLead = true;
     if (entry.type !== 'message') return;
     fold.messageCount++;
     const message = entry.message;
@@ -71,7 +77,8 @@ function metadataOf(fold, file, stats) {
     title: fold.name || fold.firstMessage || '(no messages)', createdAt: new Date(header.timestamp).getTime(), modifiedAt,
     messageCount: fold.messageCount,
     ...(fold.sideChatOf ? { sideChatOf: fold.sideChatOf } : {}), ...(fold.systemPrompt ? { systemPrompt: fold.systemPrompt } : {}),
-    ...(fold.companion ? { companion: true, companionId: fold.companionId } : {}) };
+    ...(fold.companion ? { companion: true, companionId: fold.companionId }
+      : fold.companionLead ? { companionLead: true } : {}) };
 }
 
 /** Whether the bytes a progress was taken over are still where they were. */
