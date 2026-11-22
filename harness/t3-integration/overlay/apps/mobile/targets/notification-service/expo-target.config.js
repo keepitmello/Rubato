@@ -10,10 +10,6 @@ module.exports = {
   bundleIdentifier: ".NotificationService",
   deploymentTarget: "18.0",
   frameworks: ["UserNotifications", "Intents"],
-  images: {
-    "roo-notification": "./roo-notification.png",
-    "segno-notification": "./segno-notification.png",
-  },
   entitlements: {
     "com.apple.security.application-groups": ["group.com.keepitmello.rubato"],
   },
