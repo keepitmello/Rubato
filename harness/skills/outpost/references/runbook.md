@@ -161,16 +161,13 @@ is swept after a day. The composer
 starts with the packet H1 topic, then `ID: <hex>`, followed by a short
 ID-bound instruction. Packet location, blank lines,
 and trailing newlines therefore do not participate in browser input validation.
-The runner fills the composer first, then uses the unrestricted `#upload-files`
-input with a unique `outpost-<id>.md` name. Work already contains many
-`packet.md` uploads, so ChatGPT renames a colliding chip to
-`packet(<timestamp>).md` and an exact `packet.md` locator dies after the
-upload finishes. The runner waits for the file-tile `group` whose name
-contains the outpost ID, or for `outpost-<id>` in the page text, including
-after send becomes enabled. A second upload with the same ID (a heal retry) of
-`outpost-<id>.md` shows as `outpost-<id>(1).md`, and matching the
-full name would upload the packet again and leave send disabled at the click.
-A chip can still show an active upload, so submission also waits until the send
+The runner observes the current controls after each action. It only changes
+unmet conditions, including picker selection, the draft, and upload. A known
+dismiss-only announcement can be closed; other dialogs are not guessed at.
+Each requested file must show up in the composer. ChatGPT can add a numeric
+suffix before the extension, such as `outpost-<id>(1).md`; that still counts.
+After editing and attaching, the runner verifies the model and tier on the
+prepared draft. A chip can still show an active upload, so submission also waits until the send
 button has neither native `disabled`, `aria-disabled="true"`, nor
 `data-visually-disabled`; image/video-only inputs and fixed sleeps are not
 valid packet transports. The runner opens Aside, pings REPL until it answers,
@@ -341,13 +338,12 @@ Two more limits sit on top of that, and both fail silently:
 - **Only the `aria-label` counts as a name.** An element named by its own text
   — the Pro pill (`6 Pro`), the model radios (`GPT-6`) — is invisible to it.
 
-String names go through `waitRole()`. Pattern names and text-named elements go
-through `waitNamedRef()`, which reads the computed name off the `snapshot()`
-tree (`- button "6 Pro" [ref=e66]`) and returns the ref locator. `doctor` probes
-the tier pill with `waitNamedRef()`, the same lookup `send` uses, so its green
-light cannot come from a path the send does not have. When a role probe misses,
-check the name's type and the element's `aria-label` before calling it a UI
-change.
+The preparation runner reads computed roles and names from a fresh
+`snapshot()` tree (`- button "6 Pro" [ref=e66]`). It uses a unique ref from that
+observation and discards it after acting. The Pro rehearsal in `doctor` uses
+the same preparation runner as `send`. If the site exposes no recognizable
+control for an unmet condition, the runner reports its stage without clicking
+Send.
 
 ## Nothing is lost after the send
 

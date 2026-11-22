@@ -278,7 +278,7 @@ class ModelAndLossGuardTest(unittest.TestCase):
             self.assertIn("FILENAMES.txt", names)
             self.assertIn("plain.md", names)
 
-    def test_every_role_lookup_is_primed_by_a_snapshot(self) -> None:
+    def test_picker_uses_fresh_snapshot_refs_not_a_precomputed_sequence(self) -> None:
         script = MODULE.build_repl_script(
             project_url="https://chatgpt.com/g/g-p-test-work/project",
             quality="pro",
@@ -288,13 +288,64 @@ class ModelAndLossGuardTest(unittest.TestCase):
             outpost_id="abc123",
             response_timeout_ms=1000,
         )
-        self.assertIn("async function primeRoles(target)", script)
-        self.assertIn("waitNamedRef(workPage, 'button', tierNameRe", script)
-        self.assertIn("waitRole(workPage, 'menuitem', tierSliderNames[sliderIndex]", script)
-        self.assertIn("waitNamedRef(workPage, 'menuitemradio', modelNameRe", script)
-        self.assertIn("waitRole(workPage, 'group', attachmentName", script)
-        # a bare role lookup before the first snapshot silently matches nothing
-        self.assertNotIn("workPage.getByRole('heading'", script.split("await primeRoles")[0])
+        observation = script.split("async function observePreparation()", 1)[1]
+        self.assertLess(observation.index("await snapshot(workPage"), observation.index("named('button', tierNameRe)"))
+        self.assertIn("aliases('menuitem', tierSliderNames)", observation)
+        self.assertIn("named('menuitemradio', modelNameRe)", observation)
+        self.assertIn("await prepareFromPage(observePreparation, applyPreparation", observation)
+        self.assertNotIn("workPage.getByRole(", observation)
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js runs the REPL controller")
+    def test_preparation_routes_by_observation_and_never_submits(self) -> None:
+        checks = r"""
+const assert = require('node:assert/strict');
+const popup = knownPreparationDialog('- dialog "What\'s new"\\n  - button "Got it" [ref=e12]'.replace('\\n', '\n'));
+assert.deepEqual(popup, {present: true, dismiss: 'e12'});
+assert.deepEqual(knownPreparationDialog('- dialog "Share"\\n  - button "Close" [ref=e13]'.replace('\\n', '\n')),
+                 {present: true, dismiss: null});
+assert.equal(findRefByName('- button "Pro" [ref=e1]\n- button "Pro" [ref=e2]', 'button', 'Pro'), null);
+assert.equal(attachmentsComplete('- group "packet (1).md"\n- button "Remove file: evidence.zip"', ['packet.md', 'evidence.zip']), true);
+assert.equal(attachmentsComplete('- group "packet.md"', ['packet.md', 'evidence.zip']), false);
+assert.equal(attachmentsComplete('- group "packet.md"\n- progressbar "Uploading"', ['packet.md']), false);
+
+async function exercise(views, expected) {
+  const performed = [];
+  const ready = { project: 'work' };
+  let offset = 0;
+  assert.equal(await prepareFromPage(
+    () => {
+      const view = views[offset++];
+      return view ? { action: nextPreparation(view) } : { ready };
+    },
+    (action) => performed.push(action), () => assert.fail('no fixture should wait')
+  ), ready);
+  assert.deepEqual(performed, expected);
+}
+(async () => {
+  const correctTier = {matched: true};
+  await exercise([
+    {dialog: true, dismiss: popup.dismiss},
+    {pickerOpen: true, radio: 'e2'}, // This variant shows the model first.
+    {pickerOpen: true, radio: 'e3', modelVerified: true},
+    {pickerOpen: true, tier: correctTier, modelVerified: true, qualityVerified: true},
+    {qualityVerified: true, composer: true},
+    {qualityVerified: true, promptVerified: true, fileInput: true},
+  ], [['dismiss', 'e12'], ['model', 'e2'], ['leave-model-menu'], ['close-picker'], ['fill'], ['attach']]);
+  await exercise([
+    {fileInput: true}, // One layout exposes attachments before its picker.
+    {picker: 'e10', uploadStarted: true},
+    {pickerOpen: true, tier: correctTier, modelMenu: 'e11'},
+    {pickerOpen: true, radio: 'e14', tier: correctTier, modelVerified: true, qualityVerified: true},
+  ], [['attach'], ['open-picker', 'e10'], ['model-menu', 'e11'], ['close-picker']]);
+  await assert.rejects(prepareFromPage(() => ({action: null}),
+    () => assert.fail('nothing verified'), () => {}, 2), /verified ready state/);
+})().catch(error => {console.error(error); process.exitCode = 1;});
+"""
+        result = subprocess.run(
+            ["node"], input=MODULE.NAME_LOOKUP_HELPERS + MODULE.PREPARE_CONTROLLER + checks,
+            text=True, capture_output=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js runs the actual REPL JavaScript")
     def test_tier_status_handles_mixed_locale_and_rejects_ambiguity(self) -> None:

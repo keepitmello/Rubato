@@ -1172,25 +1172,79 @@ async function ensureProjectAccount(target, gizmoId) {
 
 NAME_LOOKUP_HELPERS = r"""
 function findRefByName(tree, role, name) {
-  var pattern = new RegExp('- ' + role + ' "([^"]*)" \\[ref=(e\\d+)\\]', 'g');
+  var pattern = new RegExp('- ' + role + ' "([^"]*)" \\[ref=((?:f\\d+)?e\\d+)\\]', 'g');
   var matched = null;
   var row;
   while ((row = pattern.exec(tree)) !== null) {
     var label = row[1];
-    if (name instanceof RegExp ? name.test(label) : label === name) matched = row[2];
+    if (name instanceof RegExp ? name.test(label) : label === name) {
+      if (matched !== null) return null;
+      matched = row[2];
+    }
   }
   return matched;
 }
-async function waitNamedRef(target, role, name, timeoutMs) {
-  var refDeadline = Date.now() + timeoutMs;
-  while (true) {
-    var tree = '';
-    try { tree = (await snapshot(target, { interactive: true })).tree; } catch (error) {}
-    var ref = findRefByName(tree, role, name);
-    if (ref) return target.locator(ref);
-    if (Date.now() >= refDeadline) return null;
-    await sleep(500);
+"""
+
+PREPARE_CONTROLLER = r"""
+function knownPreparationDialog(tree) {
+  const rows = tree.split('\n');
+  const dialogs = [];
+  for (let i = 0; i < rows.length; i++) {
+    const found = rows[i].match(/^(\s*)- (?:alertdialog|dialog)(?: "([^"]*)")?/);
+    if (!found) continue;
+    let end = i + 1;
+    while (end < rows.length && rows[end].search(/\S/) > found[1].length) end++;
+    dialogs.push({ name: found[2] || '', tree: rows.slice(i, end).join('\n') });
   }
+  const [dialog] = dialogs;
+  const dismiss = dialogs.length === 1 && /^(?:What's new|New in ChatGPT|새 기능|ChatGPT의 새로운 기능)$/i.test(dialog.name)
+    ? findRefByName(dialog.tree, 'button', /^(?:Close|Dismiss|Got it|닫기|알겠어요)$/i) : null;
+  return { present: dialogs.length > 0, dismiss };
+}
+
+function attachmentsComplete(tree, names) {
+  const text = tree.split('\n');
+  if (text.some((line) => /^\s*- progressbar.*(?:업로드 중|uploading)/i.test(line))) return false;
+  return names.every((name) => {
+    const dot = name.lastIndexOf('.');
+    const stem = dot > 0 ? name.slice(0, dot) : name;
+    const ext = dot > 0 ? name.slice(dot) : '';
+    function escape(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+    const label = escape(stem) + '(?:\\s*\\(\\d+\\))?' + escape(ext);
+    const chip = new RegExp('^\\s*- (?:group|text|button)(?::)? "(?:파일 삭제:?\\s*|Remove file:?\\s*)?' + label + '"', 'i');
+    return text.some((line) => chip.test(line));
+  });
+}
+
+// Fresh observations select the next action. The controller has no submit
+// capability; only its caller can click, after receiving fresh ready evidence.
+async function prepareFromPage(observe, apply, wait, limit = 100) {
+  for (let i = 0; i < limit; i += 1) {
+    const state = await observe();
+    if (state.ready) return state.ready;
+    if (state.blocked) throw new Error(state.blocked);
+    if (state.action) await apply(state.action);
+    else await wait();
+  }
+  throw new Error('preparation did not reach a verified ready state');
+}
+
+function nextPreparation(state) {
+  if (state.dialog) return state.dismiss ? ['dismiss', state.dismiss] : null;
+  if (state.pickerOpen || !state.qualityVerified) {
+    if (state.tier && !state.tier.matched && state.slider) return ['tier', state.slider];
+    if (state.radio && !state.modelVerified) return ['model', state.radio];
+    if (state.tier && state.tier.matched && !state.modelVerified && state.modelMenu) return ['model-menu', state.modelMenu];
+    if (state.radio && !state.tier) return ['leave-model-menu'];
+    if (state.qualityVerified && state.pickerOpen) return ['close-picker'];
+    if (!state.pickerOpen && state.picker) return ['open-picker', state.picker];
+    // Some composer variants reveal the picker only after the draft or the upload.
+    if (state.pickerOpen) return null;
+  }
+  if (!state.promptVerified && state.composer) return ['fill'];
+  if (!state.filesVerified && !state.uploadStarted && state.fileInput) return ['attach'];
+  return null;
 }
 """
 
@@ -1270,7 +1324,6 @@ function readTier(tree) {{
 }}
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
-var packetStem = {js(packet_name.rsplit(".", 1)[0])};
 var packetFile = {js(packet_path)};
 var extraUploads = {js(list(uploads or []))};
 var artifactRequested = {js(artifact_output is not None)};
@@ -1289,25 +1342,8 @@ var submitStage = 'load-staged-files';
 var diagPage = null;
 var diagEmitted = false;
 var presubmitDone = false;
-// Aside builds its role/accessible-name index inside snapshot(). getByRole()
-// returns zero matches on a page that was never snapshotted in this REPL
-// session, so every role lookup below primes the index first.
-// waitRole() takes a string name only. Use waitNamedRef() when the name is a
-// pattern or when the element carries no aria-label.
-async function primeRoles(target) {{
-  try {{ await snapshot(target, {{ interactive: true }}); }} catch (error) {{}}
-}}
-async function waitRole(target, role, name, timeoutMs) {{
-  var roleDeadline = Date.now() + timeoutMs;
-  while (true) {{
-    await primeRoles(target);
-    var located = target.getByRole(role, {{ name: name }});
-    if ((await located.count()) > 0) return located;
-    if (Date.now() >= roleDeadline) return null;
-    await sleep(500);
-  }}
-}}
 {NAME_LOOKUP_HELPERS}
+{PREPARE_CONTROLLER}
 {ACCOUNT_HELPERS}
 async function bodyTextOf(target) {{
   return await target.evaluate(function () {{
@@ -1508,142 +1544,142 @@ var submitState = await Promise.race([
       ? workPage.locator(anyComposerSelector)
       : workPage.locator(projectComposerSelector);
     await composer.waitFor({{ state: 'visible', timeout: 15000 }});
-    submitStage = 'select-tier';
-    // Closed Pro pill accessible name is quota+label, e.g. "6 Pro" or "6Pro".
-    // The pill has no aria-label, so resolve its name off the snapshot tree.
-    var tierButton = await waitNamedRef(workPage, 'button', tierNameRe, 20000);
-    if (!tierButton) {{
-      var foundTiers = await workPage.locator('button[aria-haspopup="menu"]').evaluateAll((els) =>
-        els.map((el) => ({{
-          text: (el.innerText || '').replace(/\\s+/g, ' ').trim(),
-          visible: !!(el.offsetWidth || el.offsetHeight)
-        }}))
-      ).catch(() => []);
-      throw new Error(
-        'tier button not visible: expected ' + tierNameRe + ' found ' +
-        JSON.stringify(foundTiers) +
-        ' url=' + workPage.url()
-      );
+    var fileInput = workPage.locator(fileInputSelector);
+    var send = workPage.locator(sendSelector);
+    var draftFormSelector = 'form:has(:is(' + (continueMode ? anyComposerSelector : projectComposerSelector) + '))';
+    var modelVerified = false;
+    var pickerEntered = false;
+    var sweepingRight = quality === 'pro';
+    var tierReversed = false;
+    var uploadStarted = false;
+    var reviewingDraft = false;
+    var lastActionKey = '';
+    var lastActionAt = 0;
+    var expectedFiles = uploadFiles.map((file) => file.name);
+    function currentTarget() {{
+      var currentUrl = new URL(workPage.url());
+      if (currentUrl.origin !== 'https://chatgpt.com') return false;
+      var path = currentUrl.pathname.replace(/\\/$/, '');
+      return continueMode
+        ? path.endsWith('/c/' + expectedConversationId) && Boolean(expectedConversationId)
+        : path === new URL(projectUrl).pathname.replace(/\\/$/, '');
     }}
-    await tierButton.click();
-    submitStage = 'open-tier-slider';
-    var performance = null;
-    var sliderName = null;
-    var sliderDeadline = Date.now() + 8000;
-    while (!performance && Date.now() < sliderDeadline) {{
-      for (var sliderIndex = 0; sliderIndex < tierSliderNames.length; sliderIndex += 1) {{
-        performance = await waitRole(workPage, 'menuitem', tierSliderNames[sliderIndex], 0);
-        if (performance) {{
-          sliderName = tierSliderNames[sliderIndex];
-          break;
+    async function composerText() {{
+      return await composer.evaluate((el) =>
+        Array.from(el.children).map((child) => child.textContent || '').join('\\n')
+      ).catch(() => null);
+    }}
+    async function observePreparation() {{
+      if (!currentTarget()) return {{ blocked: 'composer left the intended project or conversation' }};
+      // Match chips only in this draft, never a previous turn in a follow-up.
+      // Take the whole-page snapshot last: it supplies the refs for actions.
+      var draftTree = uploadStarted ? (await snapshot(workPage, {{
+        interactive: true, selector: draftFormSelector
+      }}).catch(() => ({{ tree: '' }}))).tree : '';
+      var tree = (await snapshot(workPage, {{ interactive: true }})).tree;
+      var named = (role, name) => findRefByName(tree, role, name);
+      var aliases = (role, names) => {{
+        var matches = [...new Set(names.map((name) => named(role, name)).filter(Boolean))];
+        return matches.length === 1 ? matches[0] : null;
+      }};
+      var popup = knownPreparationDialog(tree);
+      var slider = aliases('menuitem', tierSliderNames);
+      var modelMenu = aliases('menuitem', modelMenuNames);
+      var radio = named('menuitemradio', modelNameRe);
+      var picker = named('button', tierNameRe);
+      var tier = slider ? readTier(tree) : null;
+      if (tier) {{
+        tier.matched = targetLabels.includes(tier.label);
+        verifiedTier = tier.matched ? tier.label + ' (' + tier.index + ' of ' + tier.total + ')' : null;
+        if (!tier.matched) modelVerified = false;
+      }}
+      if (radio) {{
+        modelVerified = (await workPage.locator(radio).getAttribute('aria-checked').catch(() => null)) === 'true';
+        modelRadiosSeen = [{{ name: targetModel, checked: modelVerified }}];
+      }}
+      var pickerOpen = Boolean(slider || modelMenu || radio);
+      if (await workToggle.getAttribute('aria-checked').catch(() => null) === 'true') {{
+        if (!(await chatToggle.isVisible().catch(() => false))) return {{ blocked: 'Work mode selected and Chat toggle missing' }};
+        submitStage = 'select-chat-surface';
+        return {{ action: ['chat'] }};
+      }}
+      var composerValue = pickerOpen ? null : await composerText();
+      var promptVerified = composerValue === composerPrompt;
+      var filesVerified = attachmentsComplete(draftTree, expectedFiles);
+      if (!pickerOpen && !popup.present) {{
+        if (!promptVerified || !filesVerified) reviewingDraft = false;
+        else if (!reviewingDraft) {{
+          // The upload or draft edit can re-render the composer or switch its
+          // picker. Verify the actual prepared draft, not the earlier empty one.
+          reviewingDraft = true;
+          verifiedTier = null;
+          modelVerified = false;
+          tierReversed = false;
+          sweepingRight = quality === 'pro';
         }}
       }}
-      if (!performance) await sleep(500);
-    }}
-    if (!performance) throw new Error('performance menuitem not visible: expected ' + tierSliderNames.join(' | '));
-    submitStage = 'read-tier';
-    var tierSnapshot = await snapshot(workPage, {{ interactive: true }});
-    var current = readTier(tierSnapshot.tree);
-    if (!current) throw new Error('tier position not readable');
-    submitStage = 'pick-tier';
-    if (targetLabels.indexOf(current.label) === -1) {{
-      await primeRoles(workPage);
-      performance = workPage.getByRole('menuitem', {{ name: sliderName }});
-      await performance.focus();
-      for (var i = 0; i < current.total; i += 1) {{
-        await workPage.keyboard.press('ArrowLeft');
+      var qualityVerified = Boolean(verifiedTier && modelVerified);
+      if (reviewingDraft && !popup.present && !pickerOpen && qualityVerified && promptVerified && filesVerified && (await send.count()) === 1
+          && await send.isVisible().catch(() => false)) {{
+        submitStage = 'ready-to-send';
+        return {{ ready: true }};
       }}
-      var found = false;
-      var total = current.total;
-      for (var i = 0; i < total; i += 1) {{
-        current = readTier((await snapshot(workPage, {{ interactive: true }})).tree);
-        if (!current) throw new Error('tier position not readable');
-        if (targetLabels.indexOf(current.label) !== -1) {{
-          found = true;
-          break;
+      var state = {{
+        dialog: popup.present, dismiss: popup.dismiss, picker, pickerOpen, tier, slider, modelMenu, radio,
+        modelVerified, qualityVerified, promptVerified, composer: composerValue !== null,
+        filesVerified, uploadStarted, fileInput: !pickerOpen && (await fileInput.count()) === 1
+      }};
+      var action = nextPreparation(state);
+      submitStage = popup.present ? 'select-chat-surface'
+        : slider && !tier ? 'read-tier'
+        : pickerOpen && !qualityVerified ? (radio ? 'verify-model' : tier?.matched ? 'open-model-menu' : 'pick-tier')
+        : !qualityVerified ? (pickerEntered ? 'open-tier-slider' : 'select-tier')
+        : !promptVerified ? 'fill-composer'
+        : !filesVerified && !uploadStarted ? 'attach-packet' : 'ready-to-send';
+      if (action && action[0] === 'tier') {{
+        if (sweepingRight ? tier.index === tier.total : tier.index === 1) {{
+          if (tierReversed || tier.total === 1) return {{ blocked: 'requested tier not verified' }};
+          tierReversed = true;
+          sweepingRight = !sweepingRight;
         }}
-        if (i < total - 1) await workPage.keyboard.press('ArrowRight');
+        action.push(sweepingRight ? 'ArrowRight' : 'ArrowLeft', tier.index);
       }}
-      if (!found) throw new Error('requested tier not verified');
+      // React may not have committed the previous action yet. Don't press or
+      // upload twice against the same observation while the page is settling.
+      var key = action && [action[0], action[3], tier?.label, modelVerified].join(':');
+      if (key === lastActionKey && Date.now() - lastActionAt < 1200) action = null;
+      if (action) {{ lastActionKey = key; lastActionAt = Date.now(); }}
+      return {{ action }};
     }}
-    var selectedSnapshot = await snapshot(workPage, {{ interactive: true }});
-    var selected = readTier(selectedSnapshot.tree);
-    if (!selected || targetLabels.indexOf(selected.label) === -1) throw new Error('requested tier not verified');
-    verifiedTier = selected.label + ' (' + selected.index + ' of ' + selected.total + ')';
-    submitStage = 'open-model-menu';
-    var modelMenu = null;
-    var modelMenuDeadline = Date.now() + 8000;
-    while (!modelMenu && Date.now() < modelMenuDeadline) {{
-      for (var menuIndex = 0; menuIndex < modelMenuNames.length && !modelMenu; menuIndex += 1) {{
-        modelMenu = await waitRole(workPage, 'menuitem', modelMenuNames[menuIndex], 0);
+    async function applyPreparation([action, ref, key]) {{
+      if (action === 'chat') {{
+        verifiedTier = null;
+        modelVerified = false;
+        reviewingDraft = false;
+        return await chatToggle.click();
       }}
-      if (!modelMenu) await sleep(500);
-    }}
-    if (!modelMenu) throw new Error('model menu not visible: expected ' + modelMenuNames.join(' | '));
-    await modelMenu.click();
-    submitStage = 'verify-model';
-    // The model radio has no aria-label either; its name is its own text.
-    var latest = await waitNamedRef(workPage, 'menuitemradio', modelNameRe, 8000);
-    if (!latest) {{
-      var foundRadios = await workPage.locator('[role="menuitemradio"]').evaluateAll((els) =>
-        els.map((el) => (el.innerText || '').replace(/\\s+/g, ' ').trim())
-      ).catch(() => []);
-      throw new Error(
-        targetModel + ' radio not visible; found ' + JSON.stringify(foundRadios)
-      );
-    }}
-    if ((await latest.getAttribute('aria-checked')) !== 'true') await latest.click();
-    if ((await latest.getAttribute('aria-checked')) !== 'true') throw new Error(targetModel + ' not checked');
-    if (dryRun) {{
-      // The rehearsal reports what the picker actually offers so doctor can
-      // refresh the saved contract from the same walk the send performs.
-      modelRadiosSeen = await workPage.locator('[role="menuitemradio"]').evaluateAll((els) =>
-        els.map((el) => ({{
-          name: (el.getAttribute('aria-label') || el.innerText || '').replace(/\\s+/g, ' ').trim(),
-          checked: el.getAttribute('aria-checked') === 'true'
-        }})).filter((row) => row.name)
-      ).catch(() => []);
-    }}
-    await workPage.keyboard.press('Escape');
-    submitStage = 'fill-composer';
-    await composer.focus();
-    await composer.press('Meta+A');
-    await composer.press('Backspace');
-    await workPage.keyboard.insertText(composerPrompt);
-    var composerValue = await composer.evaluate(
-      (el) => Array.from(el.children).map((child) => child.textContent || '').join('\\n')
-    );
-    if (composerValue !== composerPrompt) throw new Error('composer prompt mismatch');
-    submitStage = 'attach-packet';
-    var fileInput = workPage.locator(fileInputSelector).first();
-    var attachmentName = {js(outpost_id)};
-    async function attachmentPresent(timeoutMs) {{
-      var attachDeadline = Date.now() + timeoutMs;
-      while (true) {{
-        if (await waitRole(workPage, 'group', attachmentName, 0)) return true;
-        // ChatGPT renames a name it has seen before to `outpost-<id>(1).md`,
-        // so match the name without its extension.
-        if ((await bodyTextOf(workPage)).indexOf(packetStem) !== -1) return true;
-        if (Date.now() >= attachDeadline) return false;
-        await sleep(1000);
+      if (action === 'leave-model-menu' || action === 'close-picker') return await workPage.keyboard.press('Escape');
+      if (action === 'fill') {{
+        await composer.focus();
+        await composer.press('Meta+A');
+        await composer.press('Backspace');
+        return await workPage.keyboard.insertText(composerPrompt);
       }}
-    }}
-    var attached = false;
-    for (var attachAttempt = 0; attachAttempt < 2 && !attached; attachAttempt += 1) {{
-      await fileInput.setInputFiles(uploadFiles);
-      attached = await attachmentPresent(30000);
-    }}
-    if (!attached) throw new Error('packet attachment missing before send');
-    submitStage = 'ready-to-send';
-    var send = workPage.locator(sendSelector).first();
-    await send.waitFor({{ state: 'visible', timeout: 60000 }});
-    if (!(await attachmentPresent(10000))) {{
-      await fileInput.setInputFiles(uploadFiles);
-      if (!(await attachmentPresent(30000))) {{
-        throw new Error('packet attachment missing before send');
+      if (action === 'attach') {{
+        uploadStarted = true;
+        return await fileInput.setInputFiles(uploadFiles);
       }}
+      if (action === 'tier') {{
+        modelVerified = false;
+        await workPage.locator(ref).focus();
+        return await workPage.keyboard.press(key);
+      }}
+      if (action === 'open-picker') pickerEntered = true;
+      await workPage.locator(ref).click();
     }}
-    return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore, composer }};
+    await prepareFromPage(observePreparation, applyPreparation, () => sleep(500));
+    return {{ workPage, ownedTargetId: ownedTab.targetId, send, assistantCountBefore, composer,
+      ready: async () => Boolean((await observePreparation()).ready) }};
     }} catch (error) {{
       await emitDiag().catch(() => {{}});
       var failMessage = String(error && error.message || error);
@@ -1702,6 +1738,7 @@ await submitState.send.waitFor({{
 // A click that throws proves nothing either way: the turn may already be out.
 // The page decides below, and the runner asks the backend when it cannot.
 var clickError = '';
+if (!(await submitState.ready())) throw new Error('OUTPOST_FAIL stage=ready-to-send preparation changed before submit');
 try {{
   await submitState.send.click({{ timeout: Math.max(1, 120000 - (Date.now() - submitStartedAt)) }});
 }} catch (error) {{

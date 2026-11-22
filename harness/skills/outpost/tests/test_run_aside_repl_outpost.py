@@ -59,7 +59,8 @@ class AsideReplConsultTest(unittest.TestCase):
         )
         # The pre-submit promise hands the composer over so the rehearsal can put
         # the project draft back before it closes the tab.
-        self.assertIn("assistantCountBefore, composer }", script)
+        self.assertIn("assistantCountBefore, composer,", script)
+        self.assertLess(script.index("await submitState.ready()"), script.index("submitState.send.click"))
         # A top-level `return` makes the REPL drop the whole script silently.
         self.assertNotIn("\n  return;\n", script)
 
@@ -262,7 +263,7 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn('var targetLabels = ["Extra High", "매우 높음"]', xhigh)
         self.assertNotIn('"Pro"]', xhigh.split("var targetLabels = ")[1].split("\n")[0])
         self.assertIn("[0-9]* ?Pro", pro)
-        self.assertIn("tier button not visible", pro)
+        self.assertIn("requested tier not verified", pro)
         self.assertNotIn("매우 높음|Pro)$", pro)
         self.assertIn("OUTPOST_FAIL stage=", pro)
         self.assertIn("OUTPOST_FAIL stage=' + submitStage", pro)
@@ -322,17 +323,15 @@ class AsideReplConsultTest(unittest.TestCase):
         self.assertIn("composer.press('Backspace')", pro)
         self.assertIn("keyboard.insertText(composerPrompt)", pro)
         self.assertIn("Array.from(el.children)", pro)
-        self.assertIn("composerValue !== composerPrompt", pro)
+        self.assertIn("composerValue === composerPrompt", pro)
         # send waits for an enabled button, whichever selector the map gives it
         send_line = next(line for line in pro.splitlines() if line.startswith("var sendSelector = "))
         send_selector = json.loads(send_line[len("var sendSelector = "):].rstrip(";"))
         for part in send_selector.split(", "):
             self.assertTrue(part.endswith(':not([data-visually-disabled])'), part)
-        self.assertIn("waitRole(workPage, 'group'", pro)
-        self.assertIn("attachmentPresent(", pro)
+        self.assertIn("attachmentsComplete(draftTree, expectedFiles)", pro)
         self.assertNotIn("getByText(packetName, { exact: true })", pro)
-        self.assertLess(pro.index("fill-composer"), pro.index("attach-packet"))
-        self.assertIn("packet attachment missing before send", pro)
+        self.assertIn("reviewingDraft &&", pro)
         self.assertNotIn("attachmentChip.isVisible()", pro)
         self.assertNotIn("assistant could not read the attached packet", pro)
         self.assertNotIn("Fast 모드 활성화", pro)
@@ -911,20 +910,6 @@ printf '%s\\n' 'ASIDE_REPL_RESPONSE_RESULT {{"modelSlug":"gpt-6-pro","responseTe
                 else:
                     self.assertEqual(saved["status"], expected_status)
                     recover.assert_not_called()
-
-    def test_a_renamed_attachment_chip_still_counts_as_attached(self) -> None:
-        script = MODULE.build_repl_script(
-            project_url="https://chatgpt.com/g/g-p-test-work/project",
-            quality="xhigh",
-            packet_name="outpost-abc123.md",
-            packet_path="/tmp/packet.md",
-            topic="t",
-            outpost_id="abc123",
-            response_timeout_ms=1000,
-        )
-        # ChatGPT shows a name it has seen before as outpost-abc123(1).md.
-        self.assertIn('var packetStem = "outpost-abc123";', script)
-        self.assertIn("indexOf(packetStem)", script)
 
     def test_single_repl_preserves_committed_turn_on_response_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
