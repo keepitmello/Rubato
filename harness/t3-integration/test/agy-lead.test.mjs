@@ -1,12 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  GENERATED_MARK, LEAD_AGENT, LEAD_INSTANCE_ID, RUBATO_ONLY, agyHome, findAgy, installLeadAgent, leadInstance, renderLeadAgent,
+  AGY_SKILLS, GENERATED_MARK, LEAD_AGENT, LEAD_INSTANCE_ID, MCP_SERVER_NAME, RUBATO_ONLY,
+  agyHome, findAgy, installLeadAgent, installLeadMcp, installLeadSkills, leadInstance, renderLeadAgent,
 } from '../agy-lead.mjs';
 
 const writer = fileURLToPath(new URL('../write-gui-settings.mjs', import.meta.url));
@@ -96,6 +97,9 @@ test('the installer offers the lead once when agy is present and leaves other in
   assert.deepEqual(instances['agy-mine'], mine);
   assert.equal(readFileSync(agentFile(home), 'utf8'), await renderLeadAgent());
   assert.equal(readFileSync(agentFile(home, 'my-agent'), 'utf8'), 'mine\n');
+  assert.equal(lstatSync(path.join(home, '.gemini', 'config', 'skills', 'aside')).isSymbolicLink(), true);
+  const mcp = JSON.parse(readFileSync(path.join(home, '.gemini', 'config', 'mcp_config.json'), 'utf8'));
+  assert.equal(mcp.mcpServers[MCP_SERVER_NAME].disabled, false);
 
   // Removed by the user: an update does not bring it back.
   const settings = readSettings(t3Home);
@@ -150,4 +154,66 @@ test('on Windows agy.exe is found through Path (any case, ";"-separated) or USER
   assert.equal(await findAgy({ PATH: '', USERPROFILE: profile }, 'win32'), path.join(profile, '.local', 'bin', 'agy.exe'));
   assert.equal(agyHome({ USERPROFILE: profile }, 'win32'), profile);
   assert.equal(agyHome({ USERPROFILE: profile }, 'darwin'), undefined);
+});
+
+test('installLeadSkills symlinks Rubato skills and never overwrites user-owned entries', { skip: process.platform === 'win32' }, async (t) => {
+  const root = scratch(t);
+  const home = path.join(root, 'home');
+  const destSkills = path.join(home, '.gemini', 'config', 'skills');
+  mkdirSync(destSkills, { recursive: true });
+  // User-owned directory and external symlink must be kept untouched.
+  mkdirSync(path.join(destSkills, 'laws'), { recursive: true });
+  writeFileSync(path.join(destSkills, 'laws', 'SKILL.md'), 'user laws\n');
+  const external = path.join(root, 'external-aside');
+  mkdirSync(external, { recursive: true });
+  symlinkSync(external, path.join(destSkills, 'aside'));
+  // Moved Rubato checkout link should be updated to the current checkout.
+  const staleRubato = path.join(root, 'old', 'harness', 'skills', 'outpost');
+  symlinkSync(staleRubato, path.join(destSkills, 'outpost'));
+
+  const first = await installLeadSkills(home);
+  assert.deepEqual(first.kept.sort(), ['aside', 'laws']);
+  assert.deepEqual(first.updated, ['outpost']);
+  assert.equal(first.missing.length, 0);
+  assert.equal(first.linked.length, AGY_SKILLS.length - 3);
+  assert.equal(readlinkSync(path.join(destSkills, 'aside')), external);
+  assert.equal(readFileSync(path.join(destSkills, 'laws', 'SKILL.md'), 'utf8'), 'user laws\n');
+
+  const second = await installLeadSkills(home);
+  assert.equal(second.linked.length, 0);
+  assert.equal(second.updated.length, 0);
+  assert.deepEqual(second.kept.sort(), ['aside', 'laws']);
+  assert.equal(second.unchanged.length, AGY_SKILLS.length - 2);
+});
+
+test('installLeadMcp preserves other servers, user disabled state, and invalid JSON files', async (t) => {
+  const home = scratch(t);
+  const configPath = path.join(home, '.gemini', 'config', 'mcp_config.json');
+  mkdirSync(path.dirname(configPath), { recursive: true });
+  writeFileSync(configPath, JSON.stringify({
+    mcpServers: { other: { command: '/usr/bin/other', args: [], disabled: false } },
+  }, null, 2));
+
+  assert.equal(await installLeadMcp(home, { serverPath: '/repo/agy-mcp-server.mjs', nodePath: '/usr/bin/node' }), 'written');
+  let parsed = JSON.parse(readFileSync(configPath, 'utf8'));
+  assert.deepEqual(parsed.mcpServers.other, { command: '/usr/bin/other', args: [], disabled: false });
+  assert.deepEqual(parsed.mcpServers[MCP_SERVER_NAME], {
+    command: '/usr/bin/node',
+    args: ['/repo/agy-mcp-server.mjs'],
+    disabled: false,
+  });
+  assert.equal(await installLeadMcp(home, { serverPath: '/repo/agy-mcp-server.mjs', nodePath: '/usr/bin/node' }), 'unchanged');
+
+  // If the user disabled rubato-tools, keep it disabled even when updating paths.
+  parsed.mcpServers[MCP_SERVER_NAME].disabled = true;
+  writeFileSync(configPath, JSON.stringify(parsed, null, 2));
+  assert.equal(await installLeadMcp(home, { serverPath: '/new/agy-mcp-server.mjs', nodePath: '/usr/bin/node' }), 'written');
+  parsed = JSON.parse(readFileSync(configPath, 'utf8'));
+  assert.equal(parsed.mcpServers[MCP_SERVER_NAME].disabled, true);
+  assert.deepEqual(parsed.mcpServers[MCP_SERVER_NAME].args, ['/new/agy-mcp-server.mjs']);
+
+  // Malformed JSON is never clobbered.
+  writeFileSync(configPath, '{ broken json');
+  assert.equal(await installLeadMcp(home), 'invalid');
+  assert.equal(readFileSync(configPath, 'utf8'), '{ broken json');
 });

@@ -9,15 +9,42 @@
 // 사람 것은 건드리지 않는다. 표식 줄이 없는 에이전트 파일은 사용자가 쓴 것이라 그대로
 // 두고, 같은 id 의 인스턴스가 이미 있으면 그대로 둔다. 인스턴스는 한 번만 넣는다 —
 // 사용자가 지운 것을 업데이트마다 되살리지 않는다.
-import { access, constants, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, constants, lstat, mkdir, readFile, readlink, symlink, unlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const LEAD_AGENT = 'rubato-lead';
 export const LEAD_INSTANCE_ID = 'agy-rubato-lead';
+export const MCP_SERVER_NAME = 'rubato-tools';
 export const GENERATED_MARK =
   '<!-- Rubato 설치기가 harness/prompts 의 리드 프롬프트로 만든다. 고친 내용을 지키려면 이 줄을 지워라. -->';
 const PROMPTS = fileURLToPath(new URL('../prompts/', import.meta.url));
+const SKILLS = fileURLToPath(new URL('../skills/', import.meta.url));
+const MCP_SERVER = fileURLToPath(new URL('./agy-mcp-server.mjs', import.meta.url));
+
+/** Rubato skills that work inside official `agy` (excluding Rubato-only team/subagent orchestration). */
+export const AGY_SKILLS = Object.freeze([
+  'aside',
+  'browser-cli',
+  'claude-prompting-lab',
+  'deep-dive',
+  'find-skills',
+  'frontend-ux-router',
+  'humanize-korean',
+  'insane-search',
+  'keep-simple',
+  'laws',
+  'macos-computer-use',
+  'memory-discipline',
+  'metaframe',
+  'outpost',
+  'product-framing',
+  'product-reframing',
+  'supabase-postgres-best-practices',
+  'vercel-react-best-practices',
+  'work-intent',
+  'wrapping-sessions',
+]);
 
 const FRONTMATTER = [
   '---',
@@ -38,13 +65,13 @@ const FRONTMATTER = [
 // agy 안에서 일한다는 것. 리드 프롬프트 정본에서 유일하게 갈라지는 문장이다.
 const AGY_ENVIRONMENT = [
   '# Here',
-  "I run inside the official agy CLI. I use the file and terminal tools agy actually gives me, edit only within what the user handed me, and keep agy's permission and confirmation steps. Rubato's teams, subagents, skills, memory and image tools are not here, so I do not assume them.",
+  "I run inside the official agy CLI. I use the file and terminal tools agy actually gives me, the linked Rubato skills, and the `rubato-tools` MCP tools (`memory_search`, `webfetch`, `web_agent`, `deep_research`) when registered. I edit only within what the user handed me, and keep agy's permission and confirmation steps. Rubato's teams, subagents, schedules and image tools are not here, so I do not assume them.",
 ].join('\n\n');
 
 // 정본 build.sh 의 리드 순서에서 브리프 교환(서브에이전트 계약)을 뺐다. 말투가 마지막인
 // 이유도 build.sh 와 같다.
 const PIECES = ['preamble.pi.md', 'base.pi.md', 'core-lead.pi.md', AGY_ENVIRONMENT, 'calm.pi.md', 'voice.md'];
-export const RUBATO_ONLY = /Skill\(|`Agent`|team_create|AgentPause|tool_search|memory_search|image_create|Mermaid|verifier/;
+export const RUBATO_ONLY = /Skill\(|`Agent`|team_create|AgentPause|tool_search|image_create|Mermaid|verifier/;
 
 export async function renderLeadAgent(promptsDir = PROMPTS) {
   const sections = [];
@@ -95,6 +122,104 @@ export async function installLeadAgent(home, promptsDir = PROMPTS) {
   if (current === next) return 'unchanged';
   await mkdir(path.dirname(file), { recursive: true });
   await writeFile(file, next);
+  return 'written';
+}
+
+function isRubatoSkillLink(target, skillName) {
+  const normalized = target.replaceAll('\\', '/').replace(/\/+$/, '');
+  return normalized.endsWith(`/harness/skills/${skillName}`) || normalized.endsWith(`harness/skills/${skillName}`);
+}
+
+/**
+ * Symlinks Rubato's agy-compatible skills into `~/.gemini/config/skills/<name>`.
+ * Leaves user-owned directories and non-Rubato symlinks untouched (`kept`).
+ */
+export async function installLeadSkills(
+  home,
+  { skillsDir = SKILLS, skills = AGY_SKILLS, platform = process.platform } = {},
+) {
+  const destRoot = path.join(home, '.gemini', 'config', 'skills');
+  await mkdir(destRoot, { recursive: true });
+  const linkType = platform === 'win32' ? 'junction' : 'dir';
+  const results = { linked: [], updated: [], unchanged: [], kept: [], missing: [] };
+
+  for (const name of skills) {
+    const source = path.resolve(skillsDir, name);
+    try {
+      await access(path.join(source, 'SKILL.md'), constants.R_OK);
+    } catch {
+      results.missing.push(name);
+      continue;
+    }
+    const linkPath = path.join(destRoot, name);
+    let existing = null;
+    try { existing = await lstat(linkPath); } catch { /* absent */ }
+    if (existing === null) {
+      await symlink(source, linkPath, linkType);
+      results.linked.push(name);
+      continue;
+    }
+    if (!existing.isSymbolicLink()) {
+      results.kept.push(name);
+      continue;
+    }
+    const currentRaw = await readlink(linkPath);
+    const currentResolved = path.resolve(destRoot, currentRaw);
+    if (currentResolved === source) {
+      results.unchanged.push(name);
+      continue;
+    }
+    if (!isRubatoSkillLink(currentResolved, name)) {
+      results.kept.push(name);
+      continue;
+    }
+    await unlink(linkPath);
+    await symlink(source, linkPath, linkType);
+    results.updated.push(name);
+  }
+  return results;
+}
+
+/**
+ * Registers or updates the `rubato-tools` stdio MCP server in `~/.gemini/config/mcp_config.json`.
+ * Preserves all other user MCP servers and keeps `disabled: true` if the user disabled it.
+ */
+export async function installLeadMcp(
+  home,
+  { serverPath = MCP_SERVER, nodePath = process.execPath } = {},
+) {
+  const configPath = path.join(home, '.gemini', 'config', 'mcp_config.json');
+  let config = {};
+  let currentRaw = null;
+  try {
+    currentRaw = await readFile(configPath, 'utf8');
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+  if (currentRaw !== null && currentRaw.trim().length > 0) {
+    try {
+      const parsed = JSON.parse(currentRaw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'invalid';
+      config = parsed;
+    } catch {
+      return 'invalid';
+    }
+  }
+  const servers = config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers)
+    ? { ...config.mcpServers }
+    : {};
+  const previous = servers[MCP_SERVER_NAME];
+  const disabled = Boolean(previous && typeof previous === 'object' && previous.disabled === true);
+  servers[MCP_SERVER_NAME] = {
+    ...(previous && typeof previous === 'object' ? previous : {}),
+    command: nodePath,
+    args: [path.resolve(serverPath)],
+    disabled,
+  };
+  const nextRaw = `${JSON.stringify({ ...config, mcpServers: servers }, null, 2)}\n`;
+  if (currentRaw === nextRaw) return 'unchanged';
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, nextRaw);
   return 'written';
 }
 

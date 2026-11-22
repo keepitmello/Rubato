@@ -1,7 +1,15 @@
 #!/usr/bin/env node
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { agyHome as resolveAgyHome, findAgy, installLeadAgent, LEAD_INSTANCE_ID, seedLeadInstance } from './agy-lead.mjs';
+import {
+  agyHome as resolveAgyHome,
+  findAgy,
+  installLeadAgent,
+  installLeadMcp,
+  installLeadSkills,
+  LEAD_INSTANCE_ID,
+  seedLeadInstance,
+} from './agy-lead.mjs';
 import { catalogSlugs } from './src/model-catalog-order.mjs';
 
 const home = process.env.RUBATO_GUI_T3_HOME;
@@ -71,6 +79,8 @@ if (homeOwned) {
   const agy = await findAgy(process.env);
   if (agy) {
     try { await installLeadAgent(agyHome); } catch (error) { console.warn(`agy 리드 에이전트를 쓰지 못했다: ${error.message}`); }
+    try { await installLeadSkills(agyHome); } catch (error) { console.warn(`agy 스킬 링크를 쓰지 못했다: ${error.message}`); }
+    try { await installLeadMcp(agyHome); } catch (error) { console.warn(`agy MCP 설정을 쓰지 못했다: ${error.message}`); }
     const offered = await access(agyOfferedPath).then(() => true, () => false);
     if (!offered) {
       seedLeadInstance(instances, agy);
