@@ -37,11 +37,9 @@ export function localAgySpawn(
 
 export function localAgyModels<Model extends { readonly slug: string; readonly name: string }>(
   models: ReadonlyArray<Model>,
-  agentLabel: string,
+  _agentLabel?: string,
 ): ReadonlyArray<Model> {
-  return models
-    .filter((model) => /^gemini-\d/i.test(model.slug))
-    .map((model) => ({ ...model, name: `${model.name} · ${agentLabel}` }));
+  return models.filter((model) => /^gemini-(?:[4-9]|[1-9]\d+)(?:[.-]|$)/i.test(model.slug));
 }
 
 // `agy agents` prints one agent per line; agy silently falls back to its default for an unknown name.

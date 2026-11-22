@@ -88,7 +88,8 @@ if (homeOwned) {
     }
   }
 }
-settings.providerInstances = instances;
+const { rubato: rubatoInstance, ...otherInstances } = instances;
+settings.providerInstances = { rubato: rubatoInstance, ...otherInstances };
 const prefs = settings.providerModelPreferences && typeof settings.providerModelPreferences === 'object'
   ? settings.providerModelPreferences : {};
 const rubatoPrefs = prefs.rubato && typeof prefs.rubato === 'object' ? prefs.rubato : {};

@@ -4,7 +4,7 @@
 //              (harness/prompts 조각)에서 매번 만든다. 손으로 따로 들고 있는 사본은
 //              정본과 갈라지기 때문이다. agy 에 없는 Rubato 도구(팀·서브에이전트·
 //              스킬·기억·이미지)를 말하는 문단은 빼고, agy 안에서 일한다는 문단을 넣는다.
-//   인스턴스 — T3 의 "루바토 리드". local-agy-edits.mjs 가 그 에이전트로 공식 agy 를 띄운다.
+//   인스턴스 — T3 의 "Antigravity". local-agy-edits.mjs 가 rubato-lead 에이전트로 공식 agy 를 띄운다.
 //
 // 사람 것은 건드리지 않는다. 표식 줄이 없는 에이전트 파일은 사용자가 쓴 것이라 그대로
 // 두고, 같은 id 의 인스턴스가 이미 있으면 그대로 둔다. 인스턴스는 한 번만 넣는다 —
@@ -228,7 +228,7 @@ export async function installLeadMcp(
 export function leadInstance(agyPath) {
   return {
     driver: 'antigravity',
-    displayName: '루바토 리드',
+    displayName: 'Antigravity',
     environment: [{ name: 'RUBATO_LOCAL_AGY_AGENT', value: LEAD_AGENT, sensitive: false }],
     enabled: true,
     config: { authMethod: 'oauth-personal', binaryPath: agyPath },

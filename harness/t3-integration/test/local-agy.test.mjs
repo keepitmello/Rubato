@@ -28,13 +28,12 @@ test('do not accept missing profiles that agy itself silently falls back for', (
   assert.equal(hasLocalAgyAgent(listing, '내 에이전트'), true);
 });
 
-test('picker preserves the native model slug and shows only Gemini models the session provides', () => {
+test('picker preserves the native model slug and name, and shows only Gemini 4+ models', () => {
   const neon = { slug: 'gemini-4-neon-high', name: 'Gemini 4 Neon (High)', isDefault: true };
+  const flash38 = { slug: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash' };
   const other = { slug: 'claude-opus-5-5', name: 'Claude' };
-  assert.deepEqual(localAgyModels([neon, other], 'Lead'), [
-    { ...neon, name: 'Gemini 4 Neon (High) · Lead' },
-  ]);
-  assert.deepEqual(localAgyModels([], 'Lead'), []);
+  assert.deepEqual(localAgyModels([neon, flash38, other], 'Antigravity'), [neon]);
+  assert.deepEqual(localAgyModels([], 'Antigravity'), []);
 });
 
 test('on Windows agy keeps its profile, temp and system folders, whatever the variable case', () => {

@@ -441,4 +441,9 @@ export const shellEdits = {
   'apps/mobile/src/features/threads/thread-list-v2-items.tsx': [
     ['provider={providerInstance.driverKind}\n', 'model={thread.modelSelection.model}\n              '],
   ],
+  // Rubato stays expanded by default in Thread settings, alongside the built-in harnesses.
+  'apps/mobile/src/features/threads/ThreadSettingsSheet.tsx': [
+    ['const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([\n  "claudeAgent",\n',
+      'const PRIMARY_PROVIDER_DRIVERS: ReadonlySet<string> = new Set([\n  "rubato-pi",\n  "claudeAgent",\n', 'replace'],
+  ],
 };

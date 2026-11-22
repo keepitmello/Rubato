@@ -95,6 +95,8 @@ test('the installer offers the lead once when agy is present and leaves other in
 
   runWriter(env);
   let instances = readSettings(t3Home).providerInstances;
+  assert.equal(leadInstance(agy).displayName, 'Antigravity');
+  assert.equal(Object.keys(instances)[0], 'rubato');
   assert.deepEqual(instances[LEAD_INSTANCE_ID], leadInstance(agy));
   assert.deepEqual(instances['agy-mine'], mine);
   assert.equal(readFileSync(agentFile(home), 'utf8'), await renderLeadAgent());
