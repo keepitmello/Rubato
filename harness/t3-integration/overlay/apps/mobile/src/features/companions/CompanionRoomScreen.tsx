@@ -10,7 +10,7 @@ import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Alert, AppState, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   FadeInDown,
@@ -129,18 +129,35 @@ function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) 
   useEffect(() => {
     if (environmentId === null) return;
     let live = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    let lastJson = "";
+    const stop = () => {
+      if (timer !== null) clearInterval(timer);
+      timer = null;
+    };
     const load = () =>
       callApi.calls(environmentId, companionId).then(
         (list) => {
-          if (live) setCalls(list);
+          if (!live) return;
+          const nextJson = JSON.stringify(list);
+          if (nextJson === lastJson) return;
+          lastJson = nextJson;
+          setCalls(list);
         },
         () => undefined,
       );
-    void load();
-    const timer = setInterval(load, onCall ? 5_000 : 15_000);
+    const sync = (active: boolean) => {
+      stop();
+      if (!active || !live) return;
+      void load();
+      timer = setInterval(load, onCall ? 5_000 : 30_000);
+    };
+    sync(AppState.currentState === "active");
+    const appSub = AppState.addEventListener("change", (state) => sync(state === "active"));
     return () => {
       live = false;
-      clearInterval(timer);
+      appSub.remove();
+      stop();
     };
   }, [environmentId, companionId, version, onCall]);
   return calls;

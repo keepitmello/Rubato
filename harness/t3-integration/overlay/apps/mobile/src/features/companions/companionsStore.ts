@@ -6,6 +6,7 @@
 // and its picture set (`set-avatar`): the Mac keeps both for every device (intent companion-manage).
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { AppState } from "react-native";
 
 import { useEnvironments } from "../../state/environments";
 import { RubatoCall } from "../../../modules/rubato-call";
@@ -28,7 +29,9 @@ import { postRubato } from "./rubatoHttp";
 const COMPANION_ROUTE = "/rubato/companion";
 /** How often the list refreshes while a companion's conversation has no thread yet, and otherwise. */
 const QUICK_POLL_MS = 5_000;
-const SLOW_POLL_MS = 30_000;
+const SLOW_POLL_MS = 120_000;
+/** Minimum gap between automatic foreground refreshes when nothing is waiting. */
+const MIN_RESUME_REFRESH_MS = 15_000;
 /** How long a list request waits for a Mac's connection still being made, before it counts as no answer. */
 const CONNECTION_WAIT_MS = 20_000;
 
@@ -257,6 +260,21 @@ function writeIdentities(companions: readonly CompanionEntry[]) {
 subscribeCompanionNames(() => writeIdentities(view.companions));
 
 let loading: Promise<void> | null = null;
+let lastRefreshedAt = 0;
+
+function sameCompanionsSnapshot(a: readonly CompanionEntry[], b: readonly CompanionEntry[]): boolean {
+  if (a.length !== b.length) return false;
+  return encodeCompanions(a) === encodeCompanions(b) && a.every((item, index) => {
+    const other = b[index]!;
+    return (
+      item.callable?.ready === other.callable?.ready &&
+      item.callable?.reason === other.callable?.reason &&
+      item.calls === other.calls &&
+      item.callEffort === other.callEffort &&
+      JSON.stringify(item.onboarding) === JSON.stringify(other.onboarding)
+    );
+  });
+}
 
 /** Asks every paired Mac again; a Mac that does not answer keeps what it said last. */
 export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Promise<void> {
@@ -272,16 +290,90 @@ export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Pro
     });
     const kept = view.companions.filter((item) => !answered.has(item.environmentId) && environmentIds.includes(item.environmentId));
     const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    const nextCompanions = [...fresh, ...kept];
+    const nextLoaded = view.loaded || answered.size > 0;
+    const nextError =
+      answered.size === 0 && failure ? (failure.reason instanceof Error ? failure.reason.message : String(failure.reason)) : null;
+    lastRefreshedAt = Date.now();
     writeIdentities(fresh);
-    publish({
-      companions: [...fresh, ...kept],
-      loaded: view.loaded || answered.size > 0,
-      error: answered.size === 0 && failure ? (failure.reason instanceof Error ? failure.reason.message : String(failure.reason)) : null,
-    });
+    if (
+      nextLoaded === view.loaded &&
+      nextError === view.error &&
+      sameCompanionsSnapshot(view.companions, nextCompanions)
+    ) {
+      return;
+    }
+    publish({ companions: nextCompanions, loaded: nextLoaded, error: nextError });
   })().finally(() => {
     loading = null;
   });
   return loading;
+}
+
+// Single shared poller across all `useCompanions()` mounts: avoids duplicate intervals when multiple
+// screens (e.g. HomeRouteScreen + Companions tab + Room) stay mounted simultaneously, and pauses in background.
+const activeWatchers = new Map<symbol, { environmentIds: readonly EnvironmentId[]; key: string; waiting: boolean }>();
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollIntervalMs: number | null = null;
+let pollKey = "";
+let appStateSub: { remove(): void } | null = null;
+
+function desiredPollConfig() {
+  let latestIds: readonly EnvironmentId[] = [];
+  let key = "";
+  let waiting = false;
+  for (const entry of activeWatchers.values()) {
+    if (entry.environmentIds.length > 0) {
+      latestIds = entry.environmentIds;
+      key = entry.key;
+    }
+    if (entry.waiting) waiting = true;
+  }
+  return { environmentIds: latestIds, key, waiting };
+}
+
+function stopSharedPoller() {
+  if (pollTimer !== null) clearInterval(pollTimer);
+  pollTimer = null;
+  pollIntervalMs = null;
+}
+
+function syncSharedPoller(triggerImmediate = false) {
+  const { environmentIds, key, waiting } = desiredPollConfig();
+  if (activeWatchers.size === 0 || environmentIds.length === 0) {
+    stopSharedPoller();
+    pollKey = "";
+    appStateSub?.remove();
+    appStateSub = null;
+    return;
+  }
+  appStateSub ??= AppState.addEventListener("change", (state) => {
+    if (state === "active") syncSharedPoller(true);
+    else stopSharedPoller();
+  });
+  if (AppState.currentState !== "active") {
+    stopSharedPoller();
+    return;
+  }
+  const intervalMs = waiting || !view.loaded ? QUICK_POLL_MS : SLOW_POLL_MS;
+  const keyChanged = key !== pollKey;
+  pollKey = key;
+  if (
+    keyChanged ||
+    (triggerImmediate && (waiting || !view.loaded || Date.now() - lastRefreshedAt >= MIN_RESUME_REFRESH_MS))
+  ) {
+    void refreshCompanions(environmentIds);
+  }
+  if (pollTimer === null || pollIntervalMs !== intervalMs) {
+    stopSharedPoller();
+    pollIntervalMs = intervalMs;
+    pollTimer = setInterval(() => {
+      const current = desiredPollConfig();
+      if (current.environmentIds.length > 0 && AppState.currentState === "active") {
+        void refreshCompanions(current.environmentIds);
+      }
+    }, intervalMs);
+  }
 }
 
 /** The companions of every paired Mac, kept fresh while something shows them. */
@@ -303,9 +395,13 @@ export function useCompanions() {
   const key = environmentIds.join(",");
   useEffect(() => {
     if (environmentIds.length === 0) return;
-    void refreshCompanions(environmentIds);
-    const timer = setInterval(() => void refreshCompanions(environmentIds), waiting || !view.loaded ? QUICK_POLL_MS : SLOW_POLL_MS);
-    return () => clearInterval(timer);
+    const token = Symbol("companions-watcher");
+    activeWatchers.set(token, { environmentIds, key, waiting });
+    syncSharedPoller(true);
+    return () => {
+      activeWatchers.delete(token);
+      syncSharedPoller(false);
+    };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `key` stands for the id list.
   }, [key, waiting]);
   const refresh = () => refreshCompanions(environmentIds);

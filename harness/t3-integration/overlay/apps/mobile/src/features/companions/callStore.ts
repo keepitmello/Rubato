@@ -22,12 +22,23 @@ export type { CallLine, CallRecord, CallStatus } from "./callTypes";
 registerGlobals();
 
 const CALL_ROUTE = "/rubato/call";
-/** How often an open app, or a ring on the call screen, asks the Mac about calls. */
+/** How often an active ring on the call screen asks the Mac whether it is still ringing. */
 export const RING_POLL_MS = 2_000;
+/** How often an open app without PushKit VoIP push asks the Mac about incoming rings. */
+export const IDLE_RING_POLL_MS = 15_000;
 /** How long a call may stay connecting before it is given up with an error. */
 export const CONNECT_MS = 20_000;
 /** How long an answer from the lock screen waits for the app to reach a Mac. */
 const ANSWER_WAIT_MS = 12_000;
+
+/** PushKit delivers incoming rings even while the app is open, so periodic idle polling is unnecessary. */
+export function hasVoipPush(): boolean {
+  try {
+    return Boolean(RubatoCall?.getVoipToken?.());
+  } catch {
+    return false;
+  }
+}
 
 interface Joined {
   readonly call: CallRecord;
@@ -338,37 +349,45 @@ async function onMute(event: { uuid: string; muted: boolean }) {
   update(target, { muted: event.muted });
 }
 
+let livePollRunning = false;
+
 /**
  * A ring found while the app is open: shown on the system call screen (CallKit lets an app report a
  * call any time), or in the app itself where CallKit is not built in.
  */
 export async function pollLiveRings() {
-  for (const environmentId of pairedEnvironmentIds()) {
-    let live: CallRecord[];
-    try {
-      live = await callApi.live(environmentId);
-    } catch {
-      continue;
+  if (livePollRunning) return;
+  livePollRunning = true;
+  try {
+    for (const environmentId of pairedEnvironmentIds()) {
+      let live: CallRecord[];
+      try {
+        live = await callApi.live(environmentId);
+      } catch {
+        continue;
+      }
+      const ringing = live.find((call) => call.status === "ringing" && call.direction === "incoming");
+      if (!RubatoCall) {
+        if (view.current) continue;
+        if (ringing?.id !== view.ringing?.id) publish({ ringing: ringing ? { ...ringing, environmentId } : null });
+        continue;
+      }
+      if (!ringing?.uuid || rings.has(ringing.uuid) || view.current?.call.id === ringing.id) continue;
+      const info: RubatoCallInfo = {
+        uuid: ringing.uuid,
+        callId: ringing.id,
+        companion: ringing.companion,
+        title: ringing.title ?? ringing.companion,
+        reason: ringing.reason,
+        ringUntil: ringing.ringUntil ?? null,
+        direction: "incoming",
+      };
+      rings.set(info.uuid, { ...info, state: "ringing", environmentId });
+      await RubatoCall.reportIncomingCall(info).catch(() => false);
+      watchRings();
     }
-    const ringing = live.find((call) => call.status === "ringing" && call.direction === "incoming");
-    if (!RubatoCall) {
-      if (view.current) continue;
-      if (ringing?.id !== view.ringing?.id) publish({ ringing: ringing ? { ...ringing, environmentId } : null });
-      continue;
-    }
-    if (!ringing?.uuid || rings.has(ringing.uuid) || view.current?.call.id === ringing.id) continue;
-    const info: RubatoCallInfo = {
-      uuid: ringing.uuid,
-      callId: ringing.id,
-      companion: ringing.companion,
-      title: ringing.title ?? ringing.companion,
-      reason: ringing.reason,
-      ringUntil: ringing.ringUntil ?? null,
-      direction: "incoming",
-    };
-    rings.set(info.uuid, { ...info, state: "ringing", environmentId });
-    await RubatoCall.reportIncomingCall(info).catch(() => false);
-    watchRings();
+  } finally {
+    livePollRunning = false;
   }
 }
 

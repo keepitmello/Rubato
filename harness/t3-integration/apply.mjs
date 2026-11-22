@@ -68,6 +68,7 @@ import { mobileEdits, mobileOverlays } from './mobile/index.mjs';
 import { threadFoldersEdits, threadFoldersOverlays } from './thread-folders-edits.mjs';
 import { tailscaleEdits, tailscaleOverlays } from './tailscale-edits.mjs';
 import { localAgyEdits, localAgyOverlays } from './local-agy-edits.mjs';
+import { acpPerfEdits, acpPerfOverlays } from './acp-perf-edits.mjs';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const hash = (value) => createHash('sha256').update(value).digest('hex');
@@ -1124,6 +1125,10 @@ for (const [relative, changes] of Object.entries(localThreadEdits)) {
 }
 overlays.push(...localAgyOverlays);
 for (const [relative, changes] of Object.entries(localAgyEdits)) {
+  edits[relative] = [...(edits[relative] ?? []), ...changes];
+}
+overlays.push(...acpPerfOverlays);
+for (const [relative, changes] of Object.entries(acpPerfEdits)) {
   edits[relative] = [...(edits[relative] ?? []), ...changes];
 }
 /** The full edit and overlay tables, for checks that apply part of them. */

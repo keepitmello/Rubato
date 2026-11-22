@@ -235,6 +235,8 @@
     "packages/shared/src/markdownPipeline.ts": "317c5856add1482ae64e2e5eaa71b16aa83a630f4473cdaf41fc2faef28bc4a6",
     "apps/mobile/src/lib/markdownDocument.ts": "01c4a7b78b130d94af0ddb7051ae09437bf243f1127e62b0c67f1399b9c5abb0",
     "packages/shared/src/markdownPipeline.test.ts": "bde4990ff4499695a44cf4d6983d5bf13c28a5607dc07f857f52c198fa590dfc",
-    "apps/mobile/src/features/threads/ThreadComposer.tsx": "7ecb7aade10dd2a42e10c0c037d71d2771720274a85a85f2808914f0e902105a"
+    "apps/mobile/src/features/threads/ThreadComposer.tsx": "7ecb7aade10dd2a42e10c0c037d71d2771720274a85a85f2808914f0e902105a",
+    "apps/mobile/src/lib/threadActivity.ts": "22325e63f902d78233d68c79993e39126f049642d1a0f36c4e72d2840c3468ed",
+    "packages/provider-acp/src/server/adapter.ts": "ddf8e1c10a579e5c469f79f07e06ca3bc738657865f9826b105154cdff7cb520"
   }
 }

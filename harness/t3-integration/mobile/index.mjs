@@ -25,6 +25,7 @@ import { mobileThemeEdits, mobileThemeOverlays } from './theme-edits.mjs';
 import { mobileUsageEdits, mobileUsageOverlays } from './usage-edits.mjs';
 import { mobileNavbarEdits, mobileNavbarOverlays } from './navbar-edits.mjs';
 import { mobileAccessModeEdits, mobileAccessModeOverlays } from './access-mode-edits.mjs';
+import { mobilePerfEdits, mobilePerfOverlays } from './perf-edits.mjs';
 
 const tables = [
   [shellEdits, shellOverlays],
@@ -37,6 +38,7 @@ const tables = [
   [mobileUsageEdits, mobileUsageOverlays],
   [mobileNavbarEdits, mobileNavbarOverlays],
   [mobileAccessModeEdits, mobileAccessModeOverlays],
+  [mobilePerfEdits, mobilePerfOverlays],
 ];
 
 export const mobileOverlays = tables.flatMap(([, overlays]) => overlays);

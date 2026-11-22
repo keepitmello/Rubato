@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 // The call store with LiveKit, CallKit and the Mac faked: what it does to the app around a call.
 const native = vi.hoisted(() => ({
   calls: [] as { uuid: string; state: string }[],
+  voipToken: "tok-123" as string | null,
   endCall: vi.fn(),
   requestEnd: vi.fn(),
   refuseCallKit: true,
@@ -23,6 +24,7 @@ vi.mock("livekit-client", () => {
 });
 vi.mock("../../../modules/rubato-call", () => ({
   RubatoCall: {
+    getVoipToken: () => native.voipToken,
     activeCalls: () => native.calls,
     addListener: () => ({ remove() {} }),
     endCall: native.endCall,
@@ -84,5 +86,13 @@ describe("a call on the phone", () => {
     const { startCallBridge } = await store();
     startCallBridge();
     expect(native.endCall.mock.calls).toEqual([["left", "failed"], ["dialing", "failed"]]);
+  });
+
+  it("reports whether PushKit VoIP push is active so foreground idle polling can stay off", async () => {
+    native.voipToken = "voip-token-abc";
+    const { hasVoipPush } = await store();
+    expect(hasVoipPush()).toBe(true);
+    native.voipToken = null;
+    expect(hasVoipPush()).toBe(false);
   });
 });

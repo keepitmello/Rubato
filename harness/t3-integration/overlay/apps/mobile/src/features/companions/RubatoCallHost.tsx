@@ -1,10 +1,20 @@
-// Mounted once at the app's root: wires the system call screen to the call store, keeps an open app
-// listening for a companion's ring, and shows the call the phone is on.
+// Mounted once at the app's root: wires the system call screen to the call store, checks for a live
+// ring on foreground (or polls gently where PushKit VoIP push is unavailable), and shows the active call.
 import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
 import { Alert, AppState } from "react-native";
 
-import { RING_POLL_MS, callActions, pollLiveRings, readCallView, startCallBridge, useCallView } from "./callStore";
+import { RubatoCall } from "../../../modules/rubato-call";
+import {
+  IDLE_RING_POLL_MS,
+  callActions,
+  hasVoipPush,
+  pollLiveRings,
+  readCallView,
+  startCallBridge,
+  useCallView,
+  type CallView,
+} from "./callStore";
 import { CallPill, CallScreen, RingScreen } from "./CallScreen";
 import { useCompanions } from "./companionsStore";
 import { copy } from "./copy";
@@ -12,23 +22,55 @@ import { copy } from "./copy";
 // Before the first render, so an answer on the lock screen that launched the app is not missed.
 startCallBridge();
 
+/** Mounted only while a call or in-app ring is active, so idle threads never subscribe to companionsStore here. */
+function ActiveCallSurface(props: { readonly view: CallView }) {
+  const { companions } = useCompanions();
+  const companionOf = (id: string, environmentId: string) =>
+    companions.find((item) => item.id === id && item.environmentId === environmentId) ?? null;
+  if (props.view.current) {
+    const companion = companionOf(props.view.current.call.companion, props.view.current.environmentId);
+    return props.view.minimized ? (
+      <CallPill current={props.view.current} companion={companion} />
+    ) : (
+      <CallScreen current={props.view.current} companion={companion} />
+    );
+  }
+  if (props.view.ringing) {
+    return (
+      <RingScreen
+        call={props.view.ringing}
+        companion={companionOf(props.view.ringing.companion, props.view.ringing.environmentId)}
+      />
+    );
+  }
+  return null;
+}
+
 export function RubatoCallHost() {
   const view = useCallView();
-  const { companions } = useCompanions();
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
-    const run = (active: boolean) => {
+    const stop = () => {
       if (timer !== null) clearInterval(timer);
       timer = null;
-      if (!active) return;
-      void pollLiveRings();
-      timer = setInterval(() => void pollLiveRings(), RING_POLL_MS);
     };
-    run(AppState.currentState === "active");
-    const subscription = AppState.addEventListener("change", (state) => run(state === "active"));
+    const sync = (active: boolean, checkNow: boolean) => {
+      stop();
+      if (!active) return;
+      if (checkNow) void pollLiveRings();
+      // Real iOS devices receive incoming rings through PushKit VoIP push even in the foreground.
+      // Only fall back to periodic polling when no VoIP token is available (simulator, Android).
+      if (!hasVoipPush()) {
+        timer = setInterval(() => void pollLiveRings(), IDLE_RING_POLL_MS);
+      }
+    };
+    sync(AppState.currentState === "active", true);
+    const appSub = AppState.addEventListener("change", (state) => sync(state === "active", state === "active"));
+    const voipSub = RubatoCall?.addListener("voipToken", () => sync(AppState.currentState === "active", false));
     return () => {
-      subscription.remove();
-      if (timer !== null) clearInterval(timer);
+      appSub.remove();
+      voipSub?.remove();
+      stop();
     };
   }, []);
   // Opening a notification during a call goes where it points, under the call: the call screen
@@ -43,12 +85,6 @@ export function RubatoCallHost() {
     if (!view.error) return;
     Alert.alert(copy.callFailed, view.error, [{ text: copy.dismiss, onPress: callActions.dismissError }]);
   }, [view.error]);
-  const companionOf = (id: string, environmentId: string) =>
-    companions.find((item) => item.id === id && item.environmentId === environmentId) ?? null;
-  if (view.current) {
-    const companion = companionOf(view.current.call.companion, view.current.environmentId);
-    return view.minimized ? <CallPill current={view.current} companion={companion} /> : <CallScreen current={view.current} companion={companion} />;
-  }
-  if (view.ringing) return <RingScreen call={view.ringing} companion={companionOf(view.ringing.companion, view.ringing.environmentId)} />;
-  return null;
+  if (!view.current && !view.ringing) return null;
+  return <ActiveCallSurface view={view} />;
 }

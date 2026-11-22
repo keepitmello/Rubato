@@ -107,7 +107,7 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     const threadId = importedPiThreadId(instance.instanceId, entry.serverId, entry.sessionId);
     if (yield* knownThread(threadId)) { settledSessions.add(entry.sessionId); return; }
     const project = yield* projectFor(entry.cwd);
-    if (project === null) return;
+    if (project === null) { settledSessions.add(entry.sessionId); return; }
     const saved = yield* tryBridge("transcript", () => bridge.transcript(entry.sessionId));
     const snapshot = yield* instance.snapshot.getSnapshot;
     const lastModel = "model" in saved && typeof saved.model === "string" ? saved.model : null;

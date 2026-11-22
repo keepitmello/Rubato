@@ -4,25 +4,24 @@
 // bubble is Messages' shape (two small circles for its tail) with a pen in it: it writes a line
 // while the companion thinks and draws the kind of work while its tool runs (user a7a3ec4e chose
 // the drawing; the split itself is the user's, decisions why-the-phone-room-splits-thinking-and-work).
+import { useIsFocused } from "@react-navigation/native";
 import * as Haptics from "expo-haptics";
 import { useEffect } from "react";
-import { View } from "react-native";
+import { Animated as NativeAnimated, Easing as NativeEasing, useAnimatedValue, View } from "react-native";
 import Animated, {
   Easing,
   interpolate,
   useAnimatedProps,
   useAnimatedStyle,
   useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
   withSpring,
   withTiming,
   type SharedValue,
 } from "react-native-reanimated";
 
-import Svg, { Circle, G, Path } from "react-native-svg";
+import Svg, { G, Path } from "react-native-svg";
 
+import { useAppActive, useReduceMotionEnabled } from "../../lib/appState";
 import { copy } from "./copy";
 import type { RoomTool } from "./roomModel";
 
@@ -97,10 +96,6 @@ function squiggle(x0: number, x1: number, steps = 24): ReadonlyArray<readonly [n
 }
 const LINE = squiggle(13, 47);
 const LINE_D = LINE.map(([x, y], index) => `${index === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`).join(" ");
-const LINE_AT: number[] = [0];
-for (let index = 1; index < LINE.length; index += 1)
-  LINE_AT.push(LINE_AT[index - 1]! + Math.hypot(LINE[index]![0] - LINE[index - 1]![0], LINE[index]![1] - LINE[index - 1]![1]));
-const LINE_LENGTH = LINE_AT[LINE_AT.length - 1]!;
 const LINE_XS = LINE.map(([x]) => x);
 const LINE_YS = LINE.map(([, y]) => y);
 /** Of one stroke of the pen: the share of the time it writes; the rest it erases. */
@@ -130,8 +125,14 @@ const WORK_STROKES: Record<RoomTool, ReadonlyArray<{ readonly d: string; readonl
   ],
 };
 
+const LINE_CLIP_LEFT = 11;
+const LINE_CLIP_WIDTH = 38;
+const PEN_RADIUS = 2.2;
+const PEN_INPUT_RANGE = [...LINE.map((_, index) => (index / (LINE.length - 1)) * WRITE_SHARE), 1];
+const PEN_X_OUTPUT = [...LINE_XS.map((x) => x - PEN_RADIUS), LINE_XS[LINE_XS.length - 1]! - PEN_RADIUS];
+const PEN_Y_OUTPUT = [...LINE_YS.map((y) => y - PEN_RADIUS), LINE_YS[LINE_YS.length - 1]! - PEN_RADIUS];
+
 const AnimatedPath = Animated.createAnimatedComponent(Path);
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const AnimatedG = Animated.createAnimatedComponent(G);
 
 /**
@@ -139,6 +140,9 @@ const AnimatedG = Animated.createAnimatedComponent(G);
  * while the companion thinks, a line writes itself across the bubble and is erased, again and
  * again; while its tool runs, the bubble widens and the pen draws the kind of work, with the
  * dots pulsing after it.
+ *
+ * Uses React Native's native-driven Animated (never Reanimated withRepeat) for looping motion so
+ * per-frame shadow tree commits cannot starve React under DISABLE_COMMIT_PAUSING_MECHANISM.
  */
 export function CompanionTypingBubble(props: {
   readonly tool: RoomTool | null;
@@ -146,39 +150,44 @@ export function CompanionTypingBubble(props: {
   readonly dotColor: string;
   readonly penColor: string;
 }) {
+  const appIsActive = useAppActive();
+  const screenIsFocused = useIsFocused();
+  const reducedMotion = useReduceMotionEnabled();
   const working = useSharedValue(props.tool ? 1 : 0);
   useEffect(() => {
     working.set(withSpring(props.tool ? 1 : 0, ROOM_SPRING));
   }, [props.tool, working]);
-  const stroke = useSharedValue(0);
+  const stroke = useAnimatedValue(0, { useNativeDriver: true });
+  const animateThinking = props.tool === null && appIsActive && screenIsFocused && !reducedMotion;
   useEffect(() => {
-    stroke.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.linear }), -1, false));
-  }, [stroke]);
+    stroke.setValue(0);
+    if (!animateThinking) return;
+    const loop = NativeAnimated.loop(
+      NativeAnimated.timing(stroke, {
+        toValue: 1,
+        duration: 1600,
+        easing: NativeEasing.linear,
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [animateThinking, stroke]);
   const shell = useAnimatedStyle(() => ({ width: interpolate(working.get(), [0, 1], [THINKING_WIDTH, WORKING_WIDTH]) }));
-  const lineFade = useAnimatedProps(() => ({ opacity: Math.max(0, 1 - working.get() * 1.8) }));
-  const line = useAnimatedProps(() => {
-    const phase = stroke.get();
-    if (phase < WRITE_SHARE) {
-      const head = Easing.inOut(Easing.quad)(phase / WRITE_SHARE);
-      return { strokeDashoffset: LINE_LENGTH * (1 - head) };
-    }
-    const tail = Easing.in(Easing.quad)((phase - WRITE_SHARE) / (1 - WRITE_SHARE));
-    return { strokeDashoffset: -LINE_LENGTH * tail };
+  const thinkingFade = useAnimatedStyle(() => ({ opacity: Math.max(0, 1 - working.get() * 1.8) }));
+  const clipTranslateX = stroke.interpolate({
+    inputRange: [0, WRITE_SHARE, 1],
+    outputRange: [-LINE_CLIP_WIDTH, 0, LINE_CLIP_WIDTH],
   });
-  const pen = useAnimatedProps(() => {
-    const phase = stroke.get();
-    const writing = phase < WRITE_SHARE;
-    const at = LINE_LENGTH * Easing.inOut(Easing.quad)(Math.min(1, phase / WRITE_SHARE));
-    let index = 1;
-    while (index < LINE_AT.length - 1 && LINE_AT[index]! < at) index += 1;
-    const from = LINE_AT[index - 1]!;
-    const span = LINE_AT[index]! - from || 1;
-    const u = (at - from) / span;
-    return {
-      cx: LINE_XS[index - 1]! + (LINE_XS[index]! - LINE_XS[index - 1]!) * u,
-      cy: LINE_YS[index - 1]! + (LINE_YS[index]! - LINE_YS[index - 1]!) * u,
-      opacity: writing ? Math.max(0, 1 - working.get() * 1.8) : 0,
-    };
+  const counterTranslateX = stroke.interpolate({
+    inputRange: [0, WRITE_SHARE, 1],
+    outputRange: [LINE_CLIP_WIDTH, 0, -LINE_CLIP_WIDTH],
+  });
+  const penTranslateX = stroke.interpolate({ inputRange: PEN_INPUT_RANGE, outputRange: PEN_X_OUTPUT });
+  const penTranslateY = stroke.interpolate({ inputRange: PEN_INPUT_RANGE, outputRange: PEN_Y_OUTPUT });
+  const penOpacity = stroke.interpolate({
+    inputRange: [0, WRITE_SHARE - 0.02, WRITE_SHARE, 1],
+    outputRange: [1, 1, 0, 0],
   });
   return (
     <Animated.View
@@ -193,22 +202,70 @@ export function CompanionTypingBubble(props: {
       <View style={{ position: "absolute", left: -3, bottom: -2, width: 13, height: 13, borderRadius: 6.5, backgroundColor: props.bubbleColor }} />
       <View style={{ position: "absolute", left: -8.5, bottom: -8.5, width: 6.5, height: 6.5, borderRadius: 3.25, backgroundColor: props.bubbleColor }} />
       <Animated.View style={[{ height: HEIGHT, borderRadius: HEIGHT / 2, backgroundColor: props.bubbleColor, overflow: "hidden" }, shell]}>
-        <Svg width={WORKING_WIDTH} height={HEIGHT} style={{ position: "absolute", left: 0, top: 0 }}>
-          <AnimatedG animatedProps={lineFade}>
-            <AnimatedPath
-              d={LINE_D}
-              fill="none"
-              stroke={props.dotColor}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeDasharray={[LINE_LENGTH, LINE_LENGTH]}
-              animatedProps={line}
+        <Animated.View
+          pointerEvents="none"
+          style={[{ position: "absolute", left: 0, top: 0, width: THINKING_WIDTH, height: HEIGHT }, thinkingFade]}
+        >
+          <View
+            style={{
+              position: "absolute",
+              left: LINE_CLIP_LEFT,
+              top: 0,
+              width: LINE_CLIP_WIDTH,
+              height: HEIGHT,
+              overflow: "hidden",
+            }}
+          >
+            <NativeAnimated.View
+              style={{
+                width: LINE_CLIP_WIDTH,
+                height: HEIGHT,
+                overflow: "hidden",
+                transform: [{ translateX: animateThinking ? clipTranslateX : 0 }],
+              }}
+            >
+              <NativeAnimated.View
+                style={{
+                  marginLeft: -LINE_CLIP_LEFT,
+                  width: THINKING_WIDTH,
+                  height: HEIGHT,
+                  transform: [{ translateX: animateThinking ? counterTranslateX : 0 }],
+                }}
+              >
+                <Svg width={THINKING_WIDTH} height={HEIGHT}>
+                  <Path
+                    d={LINE_D}
+                    fill="none"
+                    stroke={props.dotColor}
+                    strokeWidth={2}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </Svg>
+              </NativeAnimated.View>
+            </NativeAnimated.View>
+          </View>
+          {animateThinking ? (
+            <NativeAnimated.View
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: PEN_RADIUS * 2,
+                height: PEN_RADIUS * 2,
+                borderRadius: PEN_RADIUS,
+                backgroundColor: props.penColor,
+                opacity: penOpacity,
+                transform: [{ translateX: penTranslateX }, { translateY: penTranslateY }],
+              }}
             />
-          </AnimatedG>
-          <AnimatedCircle r={2.2} fill={props.penColor} animatedProps={pen} />
-          {props.tool ? <WorkDrawing key={props.tool} tool={props.tool} color={props.penColor} working={working} /> : null}
-        </Svg>
+          ) : null}
+        </Animated.View>
+        {props.tool ? (
+          <Svg width={WORKING_WIDTH} height={HEIGHT} style={{ position: "absolute", left: 0, top: 0 }}>
+            <WorkDrawing key={props.tool} tool={props.tool} color={props.penColor} working={working} />
+          </Svg>
+        ) : null}
         {props.tool ? (
           <View style={{ position: "absolute", left: 38, top: 0, bottom: 0, flexDirection: "row", alignItems: "center", gap: 5.5 }}>
             {[0, 1, 2].map((index) => (
@@ -268,23 +325,44 @@ function WorkStroke(props: {
 
 /** One of the working dots: brightens after the one before it, as Messages' do, and dims again. */
 function Dot(props: { readonly index: number; readonly color: string }) {
-  const pulse = useSharedValue(0);
+  const appIsActive = useAppActive();
+  const screenIsFocused = useIsFocused();
+  const reducedMotion = useReduceMotionEnabled();
+  const pulse = useAnimatedValue(0, { useNativeDriver: true });
+  const animate = appIsActive && screenIsFocused && !reducedMotion;
   useEffect(() => {
-    pulse.set(withDelay(
-      props.index * 180,
-      withRepeat(
-        withSequence(
-          withTiming(1, { duration: 320, easing: Easing.out(Easing.quad) }),
-          withTiming(0, { duration: 420, easing: Easing.in(Easing.quad) }),
-          withTiming(0, { duration: 420 }),
-        ),
-        -1,
-        false,
-      ),
-    ));
-  }, [props.index, pulse]);
-  const style = useAnimatedStyle(() => ({ opacity: 0.35 + 0.65 * pulse.get() }));
-  return <Animated.View style={[{ width: 5.2, height: 5.2, borderRadius: 2.6, backgroundColor: props.color }, style]} />;
+    pulse.setValue(0);
+    if (!animate) return;
+    let loop: NativeAnimated.CompositeAnimation | null = null;
+    const start = () => {
+      loop = NativeAnimated.loop(
+        NativeAnimated.sequence([
+          NativeAnimated.timing(pulse, {
+            toValue: 1,
+            duration: 320,
+            easing: NativeEasing.out(NativeEasing.quad),
+            useNativeDriver: true,
+          }),
+          NativeAnimated.timing(pulse, {
+            toValue: 0,
+            duration: 420,
+            easing: NativeEasing.in(NativeEasing.quad),
+            useNativeDriver: true,
+          }),
+          NativeAnimated.delay(420),
+        ]),
+      );
+      loop.start();
+    };
+    const timer = props.index > 0 ? setTimeout(start, props.index * 180) : null;
+    if (timer === null) start();
+    return () => {
+      if (timer !== null) clearTimeout(timer);
+      loop?.stop();
+    };
+  }, [animate, props.index, pulse]);
+  const opacity = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] });
+  return <NativeAnimated.View style={{ width: 5.2, height: 5.2, borderRadius: 2.6, backgroundColor: props.color, opacity }} />;
 }
 
 /** A bubble the person sent that the Mac has not taken yet stands dimmed, and clears when it is taken. */

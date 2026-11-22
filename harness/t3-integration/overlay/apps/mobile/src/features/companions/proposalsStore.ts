@@ -4,19 +4,24 @@
 // seconds while it is open, the way it asks for its calls.
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { AppState } from "react-native";
 
 import { decodeProposal, decodeProposals, type Proposal } from "./proposalModel";
 import { isRubatoRequestError, postRubato } from "./rubatoHttp";
 
 const ROUTE = "/rubato/companion";
-const POLL_MS = 6_000;
+const POLL_MS = 15_000;
 
 const byRoom = new Map<string, readonly Proposal[]>();
+const serializedByRoom = new Map<string, string>();
 const listeners = new Set<() => void>();
 const NONE: readonly Proposal[] = Object.freeze([]);
 const roomKey = (environmentId: string, companionId: string) => `${environmentId}:${companionId}`;
 
 function put(key: string, proposals: readonly Proposal[]) {
+  const nextJson = JSON.stringify(proposals);
+  if (serializedByRoom.get(key) === nextJson) return;
+  serializedByRoom.set(key, nextJson);
   byRoom.set(key, proposals);
   for (const listener of listeners) listener();
 }
@@ -68,14 +73,26 @@ export function useProposals(environmentId: EnvironmentId | null, companionId: s
   useEffect(() => {
     if (environmentId === null) return;
     let live = true;
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const stop = () => {
+      if (timer !== null) clearInterval(timer);
+      timer = null;
+    };
     const ask = () => {
       if (live) void load(environmentId, companionId).catch(() => undefined);
     };
-    ask();
-    const timer = setInterval(ask, POLL_MS);
+    const sync = (active: boolean) => {
+      stop();
+      if (!active || !live) return;
+      ask();
+      timer = setInterval(ask, POLL_MS);
+    };
+    sync(AppState.currentState === "active");
+    const appSub = AppState.addEventListener("change", (state) => sync(state === "active"));
     return () => {
       live = false;
-      clearInterval(timer);
+      appSub.remove();
+      stop();
     };
   }, [environmentId, companionId]);
   return proposals;
