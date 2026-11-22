@@ -375,7 +375,8 @@ export function RubatoProjectRail() {
             }}
           >
             <span className={item.settings.enabled ? "" : "opacity-40"}>
-              {(item.id === "roo" || item.id === "segno") && item.pictureSet !== true ? (
+              {/* Roo and Segno are fixed navigation icons, separate from their profile photos. */}
+              {item.id === "roo" || item.id === "segno" ? (
                 <RubatoCompanionRailIcon id={item.id} />
               ) : (
                 <RubatoCompanionFace companion={item} className="size-6 text-xs" />

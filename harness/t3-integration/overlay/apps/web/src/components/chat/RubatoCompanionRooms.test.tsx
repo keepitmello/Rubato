@@ -78,6 +78,7 @@ vi.mock("../ui/popover", () => ({
 }));
 
 import { RubatoProjectRail } from "../sidebar/RubatoProjectRail";
+import { RubatoCompanionFace } from "./RubatoCompanionFace";
 import { RubatoSegnoSpace } from "./RubatoSegnoSpace";
 
 let dispose: (() => void) | undefined;
@@ -96,6 +97,10 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   dispose = () => { act(() => root.unmount()); host.remove(); };
   const render = () => root.render(<>
     <RubatoProjectRail />
+    <div data-testid="profile-faces">
+      <RubatoCompanionFace companion={{ id: "roo", title: "Roo" }} />
+      <RubatoCompanionFace companion={{ id: "segno", title: "Segno" }} />
+    </div>
     <RubatoSegnoSpace companionId={fake.selectedId}><div className="chat-content-lane">Conversation</div></RubatoSegnoSpace>
   </>);
   fake.navigate.mockImplementation(({ params }: { params: { threadId: string } }) => {
@@ -124,19 +129,19 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   await vi.waitFor(() => expect(host.querySelector("[data-rubato-segno-art]")?.getAttribute("src")).toContain("SEGNO_ONLY"));
   await act(async () => { roo.click(); render(); });
   expect(host.querySelectorAll("[data-rubato-segno-art], aside img")).toHaveLength(0);
-  // A picture set for Roo (intent companion-manage) shows on its rail button; its space still draws no stage art.
+  // A profile photo saved on either device updates the face without replacing the fixed rail glyphs.
   fake.choices.find(item => item.id === "roo")!.pictureSet = true;
-  fake.avatars.roo = "data:image/png;base64,ROO_PICTURE";
-  await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
-  expect(roo.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,ROO_PICTURE");
-  // Segno's own art is its avatar too, but the rail keeps the drawn glyph until a picture is set in the app.
-  fake.avatars.segno = "data:image/png;base64,SEGNO_ART";
-  await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
-  expect(segno.querySelector("[data-rubato-segno-icon]")).not.toBeNull();
-  expect(segno.querySelector("img")).toBeNull();
   fake.choices.find(item => item.id === "segno")!.pictureSet = true;
+  fake.avatars.roo = "data:image/png;base64,ROO_PICTURE";
   fake.avatars.segno = "data:image/png;base64,SEGNO_SET";
   await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
-  expect(host.querySelector("button[aria-label=Segno] img")?.getAttribute("src")).toBe("data:image/png;base64,SEGNO_SET");
+  expect([...host.querySelectorAll("[data-testid=profile-faces] img")].map((img) => img.getAttribute("src"))).toEqual([
+    fake.avatars.roo,
+    fake.avatars.segno,
+  ]);
+  expect(roo.querySelector("[data-rubato-roo-icon]")).not.toBeNull();
+  expect(segno.querySelector("[data-rubato-segno-icon]")).not.toBeNull();
+  expect(roo.querySelector("img")).toBeNull();
+  expect(segno.querySelector("img")).toBeNull();
   expect(host.querySelectorAll("[data-rubato-segno-art], aside img")).toHaveLength(0);
 });
