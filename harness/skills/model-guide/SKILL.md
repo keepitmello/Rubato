@@ -26,9 +26,6 @@ and effort.
 For a subagent, pick from the default allocation below and spawn it; the choice
 needs no measurement or prior failure.
 
-For a team, put each member's model in the combined intent/roster proposal with a
-one-line reason; the user's correction to the roster decides.
-
 If a chosen route is unavailable or out of quota, choose another from the list
 below and say which ran. A registered label is not proof that a route works.
 Acceptance criteria stay the same whichever model runs.
@@ -84,16 +81,14 @@ a preset by its own configured policy; any result still needs its approval.
 ## Approval
 
 Fable, and Astra as an owner or subagent, require explicit
-user approval naming the outcome, model and effort before assignment. A readable
-combined intent/roster approval satisfies that gate when it includes those
-commitments. An approval covers its stated scope, not the whole pool. Astra as
-the default verifier needs no model-specific approval; a team that includes it
-still goes through the combined intent/roster approval.
+user approval naming the outcome, model and effort before assignment. An approval
+covers its stated scope, not the whole pool. Astra as
+the default verifier needs no model-specific approval.
 
 Corrections, retries and re-verification by the same approved owner on the same
-outcome keep that approval. A new outcome, a materially changed roster or a higher
+outcome keep that approval. A new outcome or a higher
 restricted-model effort needs the relevant confirmation. Other models have no
-model-specific gate; team formation, write boundaries and delivery
+model-specific gate; write boundaries and delivery
 permissions still apply, and a subagent does not bypass any approval.
 
 ## Advice and independent verification

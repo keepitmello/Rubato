@@ -18,33 +18,21 @@ assigned outcomes.
 ## 2. Preserve the user's choices
 
 Preserve the chosen lead model and whether to use product-framing, an active frame,
-or the user's existing directive/spec. If a material choice is missing, inspect
-what can be established and include a recommendation in the combined proposal.
+or the user's existing directive/spec.
 Framing runs when the user chooses it.
 
 Use an active `FRAME_LOCK` as the authority for value and invariants. Ordinary
 bugs, migrations, infrastructure and settled implementation need no new formal
 product frame. `references/04-framing-bridge.md` handles conflicts.
 
-## 3. Resolve intent and confirm one proposal
+## 3. Resolve intent
 
-Read `work-intent` and its alignment guide. Reuse the existing authoritative source
+Reuse the existing authoritative source
 and canonical workspace. Inspect code, documents and available external evidence
 for discoverable gaps. Keep uncertain findings provisional. Stop discovery once it
 can support a direction and a useful ownership decision.
 
-A bounded discovery agent gathers authorized evidence under a draft with a stated
-scale and nothing more; execution owners go through the combined confirmation. Draft only when no
-existing source serves the purpose. Show the result, preserved behavior, non-goals,
-completion evidence, meaningful choices and smallest useful roster together in the
-user's language, using the sibling `work-intent/templates/approval-message.md`.
-
-Wait for explicit acceptance of both intent and roster. Link the actual human reply
-to the proposal and reviewed intent revision; only an explicit reply to this
-proposal counts. Follow work-intent for partial approval, accepted corrections and
-changed scope. Model, spend, frame and delivery permissions stay separate approvals.
-Carry exact `intent_ref` and canonical workspace into briefs and board
-metadata; the mission links these rather than duplicating intent.
+Model, spend, frame and delivery permissions stay separate approvals.
 
 ## 4. Allocate responsibility by outcome
 
@@ -62,8 +50,7 @@ checkpoints are judged against criteria their account did not shape.
 
 Include the concrete reason for separate context, parallel work, fresh evidence or
 resource allocation. Quote a saving only from measurements. Preserve approved
-owners through corrections and re-verification. Like-for-like recovery is recovery;
-material restaffing, new scope or cost commitments receive a concise delta proposal
+owners through corrections and re-verification. New scope or cost commitments receive a concise delta proposal
 before affected work. The roster can change while the team runs: add a member to the
 same team when a new outcome or an independent check appears, and remove one whose
 outcome is done or dropped. Removing a finished member needs no proposal; dropping

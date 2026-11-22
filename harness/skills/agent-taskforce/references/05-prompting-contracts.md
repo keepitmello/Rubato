@@ -45,7 +45,7 @@ role contract supplies behavior.
 | Focused subagent | A bounded contribution; the sender retains the wider outcome |
 
 These are not model identities. The lead proposes supported assignments under
-model-guide and the existing combined approval path. A powerful owner can do its
+model-guide. A powerful owner can do its
 own execution; a subagent can reason inside a bounded assignment. No role implies
 a mandatory worker below it.
 

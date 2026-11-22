@@ -1,6 +1,6 @@
 ---
 name: agent-taskforce
-description: "Read when work splits into outcomes that can progress on their own, long execution would crowd the user conversation, an independent check could change acceptance, a second Agent is about to go toward the same goal, or the user asks for 클롱이 (a continuing companion reviewer). Chooses between direct work, subagents and a team (team_create), and confirms one readable intent/roster proposal with the user."
+description: "Read when work splits into outcomes that can progress on their own, long execution would crowd the user conversation, an independent check could change acceptance, or the user asks for 클롱이 (a continuing companion reviewer). Chooses between direct work, subagents and a team (team_create)."
 ---
 
 # Agent Taskforce
@@ -30,13 +30,12 @@ actual role/model identity. Read its adapter before staffing:
 
 ## Scope of this skill
 
-This skill owns the choice of execution shape, team authority, approved staffing
+This skill owns the choice of execution shape, team authority, staffing
 and the evidence path to acceptance. Skill(model-guide) owns model allocation and
 approval; configured model settings own default effort. Skill(dispatching) owns
 handoffs and continuity. General prompt/context guidance belongs to
 `claude-prompting-lab`; it does not override those runtime settings or model permissions.
 The user's optional product-value framing workflow belongs to `product-framing`.
 
-For continuing ownership, read the sibling `work-intent` and reuse existing
-user/frame/spec authority. Small direct work and subagents need no invented
+Small direct work and subagents need no invented
 mission, board, interview or additional ceremony.

@@ -33,20 +33,14 @@ node "$HELPER" activate --workspace "$PROJECT" --id document-authority \
 
 Use the newly returned `intent_ref` after activation. A caller supplies the approval
 reference; the CLI records it but cannot authenticate the human or judge its sufficiency.
-Never fabricate this value. For a new taskforce, cite the actual human reply accepting
-both the concrete intent summary and roster; the earlier generic task request does not
-approve a roster the user has not seen. Keep the proposal-message reference, its intent
-revision and the matching roster in the existing mission. Do not put staffing into intent.
-For non-team work, cite the user's reply to the message that showed the intended result;
-the originating request is the `source`, never the approval.
+Never fabricate this value. Do not put staffing into intent.
 Resolve material outcome-blocking questions before activation. The CLI validates content
 integrity and status, not the meaning of open questions or the scope of a human reply.
 
 When the user accepts with a clear correction, incorporate that correction in the same
 record before activation and cite that reply. No second yes is needed for an unambiguous
 accepted variant. A newly unsettled material implication needs a delta confirmation.
-Partial approval is not combined approval. Keep an unchanged already active intent as is;
-wait for any newly proposed roster to be accepted without needlessly revising the intent.
+Keep an unchanged already active intent as is.
 
 ```sh
 node "$HELPER" check --workspace "$PROJECT" --id document-authority \
