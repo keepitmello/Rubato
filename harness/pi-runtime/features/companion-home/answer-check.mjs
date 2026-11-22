@@ -1,1 +1,0 @@
-../../../companion/answer-check.mjs

@@ -1,3 +1,7 @@
+// Not wired: the user turned the reply checks off on 11-22 ("나랑은 얘기 엄청많이하는데 거기에 다 검사기
+// 거는 건 좀 말 안되는거같은데" → "응 끄자"), so no reply runs them. Commit af0754449 shows how the reply
+// tool called checkReply.
+//
 // The checks on the companion's `reply`: what reaches the user answers what they said and claims only
 // what the companion saw. User, 2026-11-22: "구조적으로 동문서답 자체가 불가능하게 하라고", "제발 동문서답
 // 하지 말라고 내가 20번은 말하지않았냐", then (13:0x) "근거 대조도 붙히자 못 지어내게".

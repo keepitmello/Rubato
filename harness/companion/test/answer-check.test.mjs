@@ -1,13 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 import { ANSWER_CHECK_MODELS, GROUND_SYSTEM, OWN_WORD_TOOLS, PENDING_MAX_AGE_MS, RESTART_CONTINUE_TEXT, checkReply, combineVerdicts, conversation, evidenceOf,
   parseAnswer, parseGround, pendingAsk, pickEvidence, refusalText } from '../answer-check.mjs';
 import { T3_RESTART_CONTINUE_TEXT } from '../../t3-integration/src/rpc-connection.mjs';
-import { OWN_CHAT_EDIT_REFUSAL, createCompanionHomeFactories } from '../../pi-runtime/features/companion-home/index.mjs';
-import { REPLY_TOOL, sentMessages } from '../home.mjs';
+import { REPLY_TOOL } from '../home.mjs';
 
 const T0 = Date.parse('2026-11-22T01:40:00Z');
 let n = 0;
@@ -237,48 +233,4 @@ test('a second promise for a question already promised once is refused; the end 
   const registry = registryOf(() => mapping([]));
   await checkReply({ entries: [user(`${'운영팀이 옮긴 긴 대화. '.repeat(400)}\n\n이거도 동문서답 아니야?`)], draft: '응', registry, now: T0 });
   assert.match(registry.calls.find((call) => call.check === 'answer').user, /이거도 동문서답 아니야\?/);
-});
-
-function sandbox(t) {
-  const dir = mkdtempSync(path.join(tmpdir(), 'rubato-answer-check-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return { HOME: dir, RUBATO_COMPANION_HOME: path.join(dir, 'companion') };
-}
-function homeTools(options) {
-  const tools = new Map();
-  const handlers = new Map();
-  createCompanionHomeFactories(options)[0].factory({ registerTool: (tool) => tools.set(tool.name, tool), on: (name, handler) => handlers.set(name, handler), sendMessage() {} });
-  tools.handlers = handlers;
-  return tools;
-}
-
-test('a held reply reaches nobody: no messenger send, no sent record, an error result naming what was missed', async (t) => {
-  const env = { ...sandbox(t), RUBATO_COMPANION_TELEGRAM: '1' };
-  const sends = [];
-  const reply = homeTools({ env, sessionLink: { telegramSend: async (request) => { sends.push(request); return { state: 'sent', messageIds: [1] }; } } }).get(REPLY_TOOL);
-  const ctxWith = (registry, entries = waiting) => ({ sessionManager: { getBranch: () => entries, getSessionId: () => 's' }, modelRegistry: registry });
-  const refuse = registryOf(() => mapping([{ q: '칸이 왜 떴냐', line: 0, how: 'none' }], { hint: '칸이 뭔지 첫 줄에' }));
-  await assert.rejects(reply.execute('a', { text: '새로고침하면 없어져', voice: true }, undefined, undefined, ctxWith(refuse)), /Not delivered[\s\S]*칸이 왜 떴냐[\s\S]*칸이 뭔지 첫 줄에/);
-  await assert.rejects(reply.execute('b', { text: '새로고침하면 없어져' }, undefined, undefined, ctxWith(registryOf(() => new Error('down'), { ground: () => new Error('down') }))), /could not run/);
-  await assert.rejects(reply.execute('c', { text: '새로고침하면 없어져' }, undefined, undefined, { sessionManager: {} }), /no conversation to read/);
-  const unfounded = registryOf(() => mapping([]), { ground: () => claims([{ s: '다 고쳤어', t: 'fact', ev: [] }]) });
-  await assert.rejects(reply.execute('g', { text: '다 고쳤어' }, undefined, undefined, ctxWith(unfounded, [wake()])), /supports:\n  "다 고쳤어"/);
-  assert.deepEqual([sends.length, sentMessages({ env }).length], [0, 0]);
-  const promise = await reply.execute('d', { text: '확인해볼게' }, undefined, undefined, ctxWith(registryOf(() => mapping([{ q: '왜 떴냐', line: 1, how: 'promise' }]))));
-  assert.deepEqual(promise.details.answerCheck.cleared, false, 'the next reply is checked against the same question');
-  const proactive = await reply.execute('e', { text: '좋은 아침!' }, undefined, undefined, ctxWith(registryOf(() => { throw new Error('must not be called'); }), [wake()]));
-  assert.equal(proactive.details.answerCheck.cleared, true);
-  assert.equal(sentMessages({ env }).length, 2);
-  const heard = registryOf(() => mapping([{ q: '칸이 왜 떴냐', line: 0, how: 'none' }]));
-  await assert.rejects(reply.execute('f', { text: '출금 문자가 짝을 못 찾으면 생기는 칸이야', voice: 'only', voice_text: '새로고침하면 없어져' },
-    undefined, undefined, ctxWith(heard)), /Not delivered/);
-  assert.match(heard.calls.find((call) => call.check === 'answer').user, /1: 새로고침하면 없어져/, 'a voice-only reply is checked as it is heard');
-});
-
-test('editing a message in the user\'s own Telegram chat is refused; another chat\'s edit is not this gate\'s', () => {
-  const tools = homeTools({ env: { HOME: '/tmp/x', RUBATO_COMPANION_HOME: '/tmp/x/companion' } });
-  const onCall = tools.handlers.get('tool_call');
-  assert.deepEqual(onCall({ toolName: 'telegram_edit', input: { message_id: 3, text: '딴소리' } }, {}), { block: true, reason: OWN_CHAT_EDIT_REFUSAL });
-  assert.deepEqual(onCall({ toolName: 'telegram_edit', input: { message_id: 3, text: '딴소리', to: 'user' } }, {}), { block: true, reason: OWN_CHAT_EDIT_REFUSAL });
-  assert.equal(onCall({ toolName: 'telegram_edit', input: { message_id: 3, text: '정정', to: 'CSR' } }, {}), undefined);
 });
