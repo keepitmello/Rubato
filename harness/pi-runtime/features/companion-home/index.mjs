@@ -144,9 +144,10 @@ export const OWN_CHAT_EDIT_REFUSAL = "An edit to the user's own chat would chang
   "Send the corrected words with reply instead.";
 
 /**
- * Runs the answer check for one reply (answer-check.mjs) and throws the refusal when it holds the reply
- * back. Without the conversation to read, it refuses: a check that cannot see what the user said
- * must not wave the reply through. Each checked reply leaves one line in <home>/logs/answer-check.jsonl.
+ * Runs the reply check (answer-check.mjs: answers what the user said, claims only what was seen) for
+ * one reply and throws the refusal when it holds the reply back. Without the conversation to read, it
+ * refuses: a check that cannot see what the user said or what was seen must not wave the reply
+ * through. Each reply leaves one line in <home>/logs/answer-check.jsonl.
  */
 export async function gateReply(params, ctx, { env = process.env, check = checkReply, now = Date.now() } = {}) {
   // What the user gets: a voice-only reply is heard as voice_text, so that is what is checked.
@@ -156,19 +157,19 @@ export async function gateReply(params, ctx, { env = process.env, check = checkR
   const getBranch = ctx?.sessionManager?.getBranch;
   if (typeof getBranch !== "function") throw new Error(unavailableText(["this engine gave the reply no conversation to read"]));
   const result = await check({ entries: getBranch.call(ctx.sessionManager), draft, registry: ctx?.modelRegistry, now });
-  if (!result.checked) return undefined;
   try {
     const file = path.join(segnoPaths(env).home, "logs", "answer-check.jsonl");
     mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
     appendFileSync(file, `${JSON.stringify({ at: new Date(now).toISOString(), ok: result.ok, cleared: result.cleared ?? false,
       model: result.model, errors: result.errors, asks: result.verdict?.asks, firstSays: result.verdict?.firstSays,
+      unsupported: result.verdict?.unsupported, flip: result.verdict?.flip, evidence: result.evidence?.length,
       lines: result.pending?.lines?.map((line) => line.text), draft })}\n`, { mode: 0o600 });
   } catch {
     // The log is for calibration; a full disk must not decide whether a reply goes out.
   }
   if (result.unavailable) throw new Error(unavailableText(result.errors));
   if (!result.ok) throw new Error(refusalText(result.verdict));
-  return { cleared: result.cleared, model: result.model, asks: result.verdict.asks.length };
+  return { cleared: result.cleared, model: result.model, asks: result.verdict.asks.length, claims: result.verdict.claims.length };
 }
 
 /** pi.registerTool that also answers each renamed tool's former name (LEGACY_TOOL_NAMES). */
@@ -303,8 +304,10 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
           "with a short typing pause; call reply once and break the paragraphs where you want the bubbles. A code block, a list and " +
           "a line ending in ':' stay with their bubble; text with no blank line is one bubble. " +
           "Files you want to show or hand over (a picture, a video, a document, an HTML page) go with this same tool, never as a path in the words. " +
-          "A reply to the user's own message is checked before it goes out: its first line must answer what they asked or pointed at " +
-          "(the option they gave, the reason when they asked why, the thing they meant by 그거), or it comes back refused with what was missed and nothing reaches them. " +
+          "Every reply is checked before it goes out. A reply to the user's own message must answer what they asked or pointed at in its first line " +
+          "(the option they gave, the reason when they asked why, the thing they meant by 그거). Every factual sentence, quoted drafts included, must rest on " +
+          "what you saw in this window (tool results, leads' messages, inbox, the user's words); a claim the user questioned changes only after a new check. " +
+          "Otherwise it comes back refused with what failed and nothing reaches them. " +
           (media ? "Voice uses it too. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
         parameters: replyParameters(media),
         async execute(_id, params, _signal, _onUpdate, ctx) {

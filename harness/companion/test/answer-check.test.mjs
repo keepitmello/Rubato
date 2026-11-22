@@ -3,7 +3,8 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { ANSWER_CHECK_MODELS, PENDING_MAX_AGE_MS, RESTART_CONTINUE_TEXT, checkReply, conversation, parseVerdict, pendingAsk, refusalText } from '../answer-check.mjs';
+import { ANSWER_CHECK_MODELS, GROUND_SYSTEM, OWN_WORD_TOOLS, PENDING_MAX_AGE_MS, RESTART_CONTINUE_TEXT, checkReply, combineVerdicts, conversation, evidenceOf,
+  parseAnswer, parseGround, pendingAsk, pickEvidence, refusalText } from '../answer-check.mjs';
 import { T3_RESTART_CONTINUE_TEXT } from '../../t3-integration/src/rpc-connection.mjs';
 import { OWN_CHAT_EDIT_REFUSAL, createCompanionHomeFactories } from '../../pi-runtime/features/companion-home/index.mjs';
 import { REPLY_TOOL, sentMessages } from '../home.mjs';
@@ -56,31 +57,44 @@ test('a refused reply answers nothing; the user\'s Telegram lines count as the u
   assert.deepEqual(conversation(entries).map((item) => item.who), ['user']);
 });
 
-test('code decides from the mapping: every point needs a line, and the first line must answer one', () => {
+const grounded = JSON.stringify({ claims: [], challenge: { c: 0, changed: false } });
+const claims = (list, challenge = { c: 0, changed: false }) => JSON.stringify({ claims: list, challenge });
+/** A tool call and its result, as the companion saw it. */
+const tool = (name, args, text, at = T0) => {
+  const id = `t${++n}`;
+  return [
+    { type: 'message', message: { role: 'assistant', content: [{ type: 'toolCall', id, name, arguments: args }], timestamp: at } },
+    { type: 'message', message: { role: 'toolResult', toolCallId: id, toolName: name, content: [{ type: 'text', text }], timestamp: at } },
+  ];
+};
+const notice = (text, at = T0) => ({ type: 'custom_message', customType: 'rubato-session-message', timestamp: new Date(at).toISOString(),
+  details: { kind: 'notice', from: { title: '88 오진창 입금 신청 금액 표시 차이' }, text } });
+
+test('code decides from the answer mapping: every point needs a line, and the first line must answer one', () => {
   const lines = ['네 19일부터 바뀌었습니다', '거절되면 개발실에 바로 뜨게 바꾸는 중'];
-  assert.equal(parseVerdict(mapping([]), { lines }).ok, true, 'nothing asked: chat passes');
-  const options = parseVerdict(mapping([{ q: '문구를 띄우나, 신청건을 만드나', options: ['문구', '신청건'], line: 0, how: 'none' }]), { lines });
-  assert.equal(options.ok, false);
-  assert.match(refusalText(options), /문구 \/ 신청건/);
-  const buried = parseVerdict(mapping([{ q: '그 칸이 왜 떴냐', line: 2, how: 'answer' }]), { lines });
-  assert.equal(buried.ok, false, 'the answer on line 2 behind something else is refused');
-  assert.match(refusalText(buried), /first line says instead/);
-  assert.equal(parseVerdict(mapping([{ q: '왜 떴냐', line: 9, how: 'answer' }]), { lines }).ok, false, 'a line the draft does not have is no answer');
-  const promise = parseVerdict(mapping([{ q: '처리됐어?', line: 1, how: 'promise' }]), { lines });
-  assert.deepEqual([promise.ok, promise.cleared], [true, false]);
-  const answered = parseVerdict(mapping([{ q: '처리됐어?', line: 1, how: 'answer' }, { q: '왜?', line: 2, how: 'answer' }]), { lines });
-  assert.deepEqual([answered.ok, answered.cleared], [true, true]);
-  assert.throws(() => parseVerdict('잘 모르겠어', { lines }), /JSON/);
-  assert.throws(() => parseVerdict(mapping([{ q: '', line: 0, how: 'none' }]), { lines }), /malformed/, 'a blank ask is not "nothing asked"');
-  assert.throws(() => parseVerdict(mapping([{ q: '왜 떴냐', line: 1, how: 'none' }]), { lines }), /malformed/, 'a line with how none contradicts itself');
-  assert.throws(() => parseVerdict(mapping([{ q: '왜 떴냐', line: 0, how: 'answer' }]), { lines }), /malformed/);
+  assert.equal(parseAnswer(mapping([]), { lines }).answered, true, 'nothing asked: chat passes');
+  const options = parseAnswer(mapping([{ q: '문구를 띄우나, 신청건을 만드나', options: ['문구', '신청건'], line: 0, how: 'none' }]), { lines });
+  assert.equal(options.answered, false);
+  assert.match(refusalText(combineVerdicts(options, parseGround(grounded))), /문구 \/ 신청건/);
+  const buried = parseAnswer(mapping([{ q: '그 칸이 왜 떴냐', line: 2, how: 'answer' }]), { lines });
+  assert.equal(buried.answered, false, 'the answer on line 2 behind something else is refused');
+  assert.match(refusalText(combineVerdicts(buried, parseGround(grounded))), /first line says instead/);
+  assert.equal(parseAnswer(mapping([{ q: '왜 떴냐', line: 9, how: 'answer' }]), { lines }).answered, false, 'a line the draft does not have is no answer');
+  const promise = parseAnswer(mapping([{ q: '처리됐어?', line: 1, how: 'promise' }]), { lines });
+  assert.deepEqual([promise.answered, promise.cleared], [true, false]);
+  const answered = parseAnswer(mapping([{ q: '처리됐어?', line: 1, how: 'answer' }, { q: '왜?', line: 2, how: 'answer' }]), { lines });
+  assert.deepEqual([answered.answered, answered.cleared], [true, true]);
+  assert.throws(() => parseAnswer('잘 모르겠어', { lines }), /JSON/);
+  assert.throws(() => parseAnswer(mapping([{ q: '', line: 0, how: 'none' }]), { lines }), /malformed/, 'a blank ask is not "nothing asked"');
+  assert.throws(() => parseAnswer(mapping([{ q: '왜 떴냐', line: 1, how: 'none' }]), { lines }), /malformed/, 'a line with how none contradicts itself');
+  assert.throws(() => parseAnswer(mapping([{ q: '왜 떴냐', line: 0, how: 'answer' }]), { lines }), /malformed/);
 });
 
 test('a short lead-in the model reads as empty lets line 2 answer; a short line with its own claim does not', () => {
   const ask = [{ q: '7번 8번이 뭔 상황이야', kind: 'question', line: 2, how: 'answer' }];
-  assert.equal(parseVerdict(mapping(ask, { lead_in: true }), { lines: ['쉽게 말하면 이거야.', '7번: 출금을 접어야 할 때야'] }).ok, true);
-  assert.equal(parseVerdict(mapping(ask, { lead_in: false }), { lines: ['네 19일부터 바뀌었습니다', '거절되면 개발실에 뜨게 바꾸는 중'] }).ok, false);
-  assert.equal(parseVerdict(mapping(ask, { lead_in: true }), { lines: ['응, 이상하게 한 거 맞아. 오빠가 자는 동안 내가 이렇게 했어:', '- CSR 칸'] }).ok, false,
+  assert.equal(parseAnswer(mapping(ask, { lead_in: true }), { lines: ['쉽게 말하면 이거야.', '7번: 출금을 접어야 할 때야'] }).answered, true);
+  assert.equal(parseAnswer(mapping(ask, { lead_in: false }), { lines: ['네 19일부터 바뀌었습니다', '거절되면 개발실에 뜨게 바꾸는 중'] }).answered, false);
+  assert.equal(parseAnswer(mapping(ask, { lead_in: true }), { lines: ['응, 이상하게 한 거 맞아. 오빠가 자는 동안 내가 이렇게 했어:', '- CSR 칸'] }).answered, false,
     'a long first line is never a lead-in, whatever the model says');
 });
 
@@ -88,20 +102,71 @@ test('a work order next to an answered question does not hold the reply back; al
   const lines = ['인피녹스가 묶인 건 아니야, 출금 통장이 비어서 그래', '윤종호 통장을 겸용으로 바꾸면 돼'];
   const why = { q: '인피녹스 출금이 왜 안 되냐', kind: 'question', line: 1, how: 'answer' };
   const order = { q: '업체 방 확인하고 마저 하자', kind: 'request', line: 0, how: 'none' };
-  assert.equal(parseVerdict(mapping([why, order]), { lines }).ok, true);
-  assert.equal(parseVerdict(mapping([order]), { lines }).ok, false);
-  assert.equal(parseVerdict(mapping([why, { ...order, options: ['문구', '신청건'] }]), { lines }).ok, false);
+  assert.equal(parseAnswer(mapping([why, order]), { lines }).answered, true);
+  assert.equal(parseAnswer(mapping([order]), { lines }).answered, false);
+  assert.equal(parseAnswer(mapping([why, { ...order, options: ['문구', '신청건'] }]), { lines }).answered, false);
 });
 
-/** A model registry that answers from `answer(model)`: a string, or an Error to throw. */
-function registryOf(answer, { signedOut = [] } = {}) {
+test('the evidence is what was seen in this window: tool results with their call, leads, the user; not the companion\'s own words', () => {
+  const before = [...tool('bash', { command: 'tg history' }, '옛 창에서 본 것: 신유미 통장')];
+  const kept = user('창 경계 직전 사용자 말');
+  const entries = [...before, { ...kept, id: 'k1' }, { type: 'compaction', id: 'c1', firstKeptEntryId: 'k1', summary: '요약: 오늘 원화 정산 작업 중' },
+    ...tool('session_read', { sessionId: 'lead' }, '주문 3625892088은 업체 지정 250,000원, 회원 확정 금액 비어 있음'),
+    ...tool('companion_record', { kind: 'daily', text: '88 시스템이 API로 만들었음' }, 'Wrote to memory/2026-11-22.md'),
+    ...replied('88 시스템이 API로 만든 거야'), notice('이 주문은 업체가 250,000원으로 신청한 게 맞아'), user('그니까 유저가 신청을한게 아니라고? 확실해?')];
+  const seen = evidenceOf(entries);
+  assert.deepEqual(seen.map((item) => item.kind), ['user', 'summary', 'tool', 'message', 'user']);
+  assert.match(seen[2].label, /^session_read \{"sessionId":"lead"\}/);
+  assert.ok(!seen.some((item) => /API로/.test(item.text)), 'its own record and its own reply are not evidence');
+  assert.ok(OWN_WORD_TOOLS.has('companion_record') && OWN_WORD_TOOLS.has('reply'));
+});
+
+test('the evidence picked for a draft: the newest pieces, then the ones sharing its rarer words, numbered in time order', () => {
+  const filler = Array.from({ length: 40 }, (_, i) => ({ index: i, kind: 'tool', label: 'bash', text: `로그 ${i} 정상 처리 완료 `.repeat(20) }));
+  const key = { index: 3, kind: 'message', label: 'notice', text: '주문 3625892088 업체 지정 250,000원, 회원 확정 금액 비어 있음' };
+  const items = [...filler.slice(0, 3), key, ...filler.slice(3)].map((item, i) => ({ ...item, index: i }));
+  const picked = pickEvidence(items, '업체가 25만원 아니 250,000원으로 지정한 주문 3625892088이야', { budget: 8000 });
+  assert.ok(picked.some((item) => item.text.includes('3625892088')), 'the piece sharing the rare words is in');
+  assert.ok(picked.some((item) => item.index === items.length - 1), 'the newest piece is in');
+  assert.deepEqual(picked.map((item) => item.id), picked.map((_, i) => `E${i + 1}`));
+  assert.deepEqual(picked.map((item) => item.index), [...picked.map((item) => item.index)].sort((a, b) => a - b));
+  assert.ok(picked.length < items.length, 'the budget leaves most of the window out');
+  assert.ok(picked.reduce((sum, item) => sum + item.text.length, 0) <= 8000 + 3000);
+});
+
+test('grounding: a fact needs evidence it was given; a hedge needs none; a changed claim after a doubt needs a new tool result', () => {
+  const ids = new Set(['E1', 'E2']);
+  const v = parseGround(claims([{ s: '업체가 250,000원으로 지정했어', t: 'fact', ev: ['E1'] }, { s: '유저가 신청하면 올라오는 게 맞고', t: 'fact', ev: [] },
+    { s: '88 사이트에서 뭘 했는지는 아직 모르겠어', t: 'hedge', ev: [] }, { s: '통장은 조상범이야', t: 'fact', ev: ['E9'] },
+    { s: '리드한테 맡겼어', t: 'fact', cls: 'mine', ev: [] }, { s: '그게 흔한 순서야', t: 'fact', cls: 'other', ev: [] },
+    { s: '잔액은 136만이야', t: 'fact', cls: 'number', ev: [] }]), { evidenceIds: ids });
+  assert.deepEqual(v.unsupported, ['유저가 신청하면 올라오는 게 맞고', '통장은 조상범이야', '잔액은 136만이야'],
+    'numbers, done, behavior and causes need evidence (an unnamed kind counts as behavior); its own acts and the rest do not');
+  const recent = [{ who: 'me', text: '업체가 신청한 거야', index: 10 }, { who: 'user', text: '그니까 유저가 신청을한게 아니라고? 확실해?', index: 12 }];
+  assert.equal(parseGround(claims([], { c: 2, changed: true }), { recent, toolResultsSince: () => 0 }).flip, '그니까 유저가 신청을한게 아니라고? 확실해?');
+  assert.equal(parseGround(claims([], { c: 2, changed: true }), { recent, toolResultsSince: (index) => (index === 12 ? 1 : 0) }).flip, undefined, 'checked again: may change');
+  assert.equal(parseGround(claims([], { c: 1, changed: true }), { recent }).flip, undefined, 'only a doubt the user voiced counts');
+  assert.equal(parseGround(claims([], { c: 2, changed: false }), { recent }).flip, undefined);
+  assert.throws(() => parseGround(JSON.stringify({ challenge: {} })), /no claims/, 'a mapping without claims checked nothing');
+  assert.throws(() => parseGround(claims([{ s: '', ev: [] }])), /malformed/);
+  const text = refusalText(combineVerdicts(undefined, { ...v, flip: '확실해?' }));
+  assert.match(text, /supports:\n  "유저가 신청하면 올라오는 게 맞고"/);
+  assert.match(text, /doubted your claim/);
+});
+
+/**
+ * A model registry: the answer check gets `answer(model)`, the grounding check `ground(model)` (a
+ * string, or an Error to throw). Calls are recorded with which check made them.
+ */
+function registryOf(answer, { ground = () => grounded, signedOut = [] } = {}) {
   const calls = [];
   return { calls,
     find: (provider, id) => ({ provider, id }),
     hasConfiguredAuth: (model) => !signedOut.includes(model.id),
-    async complete(model, context) {
-      calls.push({ id: model.id, user: context.messages[0].content[0].text, system: context.systemPrompt });
-      const out = answer(model);
+    async complete(model, context, options) {
+      const check = context.systemPrompt === GROUND_SYSTEM ? 'ground' : 'answer';
+      calls.push({ id: model.id, check, reasoning: options.reasoning, user: context.messages[0].content[0].text });
+      const out = (check === 'ground' ? ground : answer)(model);
       if (out instanceof Error) throw out;
       return { content: [{ type: 'text', text: out }] };
     } };
@@ -109,32 +174,57 @@ function registryOf(answer, { signedOut = [] } = {}) {
 const waiting = [user('화면에 그런 칸이 왜 떴냐')];
 const [first, last] = ANSWER_CHECK_MODELS;
 
-test('no model call when nothing waits; one call when something does, with every waiting line and the draft', async () => {
-  const quiet = registryOf(() => mapping([]));
-  assert.deepEqual(await checkReply({ entries: [wake()], draft: '좋은 아침!', registry: quiet, now: T0 }), { checked: false });
-  assert.equal(quiet.calls.length, 0);
+test('a reply with nothing waiting gets only the grounding check; with lines waiting both run, the answer check thinking', async () => {
+  const quiet = registryOf(() => { throw new Error('the answer check must not run'); });
+  const proactive = await checkReply({ entries: [wake()], draft: '좋은 아침!', registry: quiet, now: T0 });
+  assert.equal(proactive.ok, true);
+  assert.deepEqual(quiet.calls.map((call) => [call.check, call.reasoning]), [['ground', 'low']]);
   const registry = registryOf(() => mapping([{ q: '칸이 왜 떴냐', line: 0, how: 'none' }]));
   const result = await checkReply({ entries: [user('CSR이 짝 없는 탭이 생겼대'), ...waiting], draft: '새로고침하면 없어져', registry, now: T0 });
-  assert.deepEqual([result.checked, result.ok], [true, false]);
-  assert.equal(registry.calls.length, 1);
-  assert.match(registry.calls[0].user, /1\. CSR이 짝 없는 탭이 생겼대\n2\. 화면에 그런 칸이 왜 떴냐/);
-  assert.match(registry.calls[0].user, /1: 새로고침하면 없어져/);
-  assert.ok(first.map((model) => model.id).includes(registry.calls[0].id), 'the first tier answers first');
+  assert.equal(result.ok, false);
+  const answerCall = registry.calls.find((call) => call.check === 'answer');
+  assert.equal(answerCall.reasoning, 'high');
+  assert.match(answerCall.user, /1\. CSR이 짝 없는 탭이 생겼대\n2\. 화면에 그런 칸이 왜 떴냐/);
+  assert.match(answerCall.user, /1: 새로고침하면 없어져/);
+  assert.ok(first.map((model) => model.id).includes(answerCall.id), 'the first tier answers first');
+});
+
+test('a proactive or follow-up reply with a made-up fact is refused; restating what a lead reported passes', async () => {
+  const entries = [notice('이 주문은 업체가 250,000원으로 신청한 게 맞아. 회원이 입금 폼에서 확인을 안 눌렀어.')];
+  const made = await checkReply({ entries, draft: '아니요 유저가 신청하면 저희 쪽에 올라오는 게 맞고', now: T0,
+    registry: registryOf(() => mapping([]), { ground: () => claims([{ s: '아니요 유저가 신청하면 저희 쪽에 올라오는 게 맞고', t: 'fact', ev: [] }]) }) });
+  assert.equal(made.ok, false);
+  assert.match(refusalText(made.verdict), /유저가 신청하면/);
+  const ground = registryOf(() => mapping([]), { ground: () => claims([{ s: '업체가 25만 원으로 신청했고', t: 'fact', ev: ['E1'] }]) });
+  const restated = await checkReply({ entries, draft: '업체가 25만 원으로 신청했고, 회원이 확인을 아직 안 눌렀어.', registry: ground, now: T0 });
+  assert.equal(restated.ok, true);
+  assert.match(ground.calls[0].user, /E1 \[notice · 88 오진창 입금 신청 금액 표시 차이/);
+});
+
+test('a claim changed after "확실해?" is refused until a tool ran since the question', async () => {
+  const flipped = () => claims([], { c: 2, changed: true });
+  const asked = [...replied('업체가 신청한 거야'), user('그니까 유저가 신청을한게 아니라고? 확실해?')];
+  const blind = await checkReply({ entries: asked, draft: '아니, 회원이 신청한 거야', registry: registryOf(() => mapping([{ q: '확실해?', line: 1, how: 'answer' }]), { ground: flipped }), now: T0 });
+  assert.deepEqual([blind.ok, blind.verdict.flip], [false, '그니까 유저가 신청을한게 아니라고? 확실해?']);
+  const looked = await checkReply({ entries: [...asked, ...tool('session_send', { text: '회원이 신청했는지 DB로 봐줘' }, 'Sent')],
+    draft: '아니, 회원이 신청한 거야', registry: registryOf(() => mapping([{ q: '확실해?', line: 1, how: 'answer' }]), { ground: flipped }), now: T0 });
+  assert.equal(looked.ok, true);
 });
 
 test('a failing account hands over to the other, then to the next tier; when none answers the reply is refused, not passed', async () => {
   const firstIds = first.map((model) => model.id);
-  const handed = registryOf((model) => firstIds.includes(model.id) ? new Error('429 out of quota') : mapping([]));
+  const flaky = (model) => firstIds.includes(model.id) ? new Error('429 out of quota') : mapping([]);
+  const handed = registryOf(flaky, { ground: (model) => firstIds.includes(model.id) ? new Error('429') : grounded });
   const passed = await checkReply({ entries: waiting, draft: '출금 문자가 신청이랑 안 이어지면 그 칸에 모여', registry: handed, now: T0 });
-  assert.deepEqual([passed.ok, handed.calls.length], [true, 3]);
-  assert.ok(last.map((model) => model.id).includes(passed.model.split('/')[1]));
-  const down = registryOf(() => new Error('overloaded'), { signedOut: [last[1].id] });
+  assert.deepEqual([passed.ok, handed.calls.filter((call) => call.check === 'answer').length], [true, 3]);
+  assert.ok(last.map((model) => model.id).some((id) => passed.model.includes(id)));
+  const down = registryOf(() => new Error('overloaded'), { ground: () => new Error('overloaded'), signedOut: [last[1].id] });
   const refused = await checkReply({ entries: waiting, draft: '출금 문자가 신청이랑 안 이어지면 그 칸에 모여', registry: down, now: T0 });
   assert.deepEqual([refused.ok, refused.unavailable], [false, true]);
-  assert.equal(refused.errors.length, 4);
-  assert.match(refused.errors.join(' '), /not signed in/);
-  const garbled = registryOf(() => '음 글쎄');
-  assert.equal((await checkReply({ entries: waiting, draft: 'x', registry: garbled, now: T0 })).unavailable, true, 'an answer that is not the mapping is no pass');
+  assert.match(refused.errors.join(' '), /answer check: .*not signed in/);
+  const groundDown = registryOf(() => mapping([]), { ground: () => '음 글쎄' });
+  assert.equal((await checkReply({ entries: [wake()], draft: '좋은 아침', registry: groundDown, now: T0 })).unavailable, true,
+    'a grounding answer that is not the mapping is no pass, also for a proactive reply');
 });
 
 test('a second promise for a question already promised once is refused; the end of a long pasted line reaches the model', async () => {
@@ -146,7 +236,7 @@ test('a second promise for a question already promised once is refused; the end 
   assert.equal(answered.ok, true);
   const registry = registryOf(() => mapping([]));
   await checkReply({ entries: [user(`${'운영팀이 옮긴 긴 대화. '.repeat(400)}\n\n이거도 동문서답 아니야?`)], draft: '응', registry, now: T0 });
-  assert.match(registry.calls[0].user, /이거도 동문서답 아니야\?/);
+  assert.match(registry.calls.find((call) => call.check === 'answer').user, /이거도 동문서답 아니야\?/);
 });
 
 function sandbox(t) {
@@ -169,18 +259,20 @@ test('a held reply reaches nobody: no messenger send, no sent record, an error r
   const ctxWith = (registry, entries = waiting) => ({ sessionManager: { getBranch: () => entries, getSessionId: () => 's' }, modelRegistry: registry });
   const refuse = registryOf(() => mapping([{ q: '칸이 왜 떴냐', line: 0, how: 'none' }], { hint: '칸이 뭔지 첫 줄에' }));
   await assert.rejects(reply.execute('a', { text: '새로고침하면 없어져', voice: true }, undefined, undefined, ctxWith(refuse)), /Not delivered[\s\S]*칸이 왜 떴냐[\s\S]*칸이 뭔지 첫 줄에/);
-  await assert.rejects(reply.execute('b', { text: '새로고침하면 없어져' }, undefined, undefined, ctxWith(registryOf(() => new Error('down')))), /could not run/);
+  await assert.rejects(reply.execute('b', { text: '새로고침하면 없어져' }, undefined, undefined, ctxWith(registryOf(() => new Error('down'), { ground: () => new Error('down') }))), /could not run/);
   await assert.rejects(reply.execute('c', { text: '새로고침하면 없어져' }, undefined, undefined, { sessionManager: {} }), /no conversation to read/);
+  const unfounded = registryOf(() => mapping([]), { ground: () => claims([{ s: '다 고쳤어', t: 'fact', ev: [] }]) });
+  await assert.rejects(reply.execute('g', { text: '다 고쳤어' }, undefined, undefined, ctxWith(unfounded, [wake()])), /supports:\n  "다 고쳤어"/);
   assert.deepEqual([sends.length, sentMessages({ env }).length], [0, 0]);
   const promise = await reply.execute('d', { text: '확인해볼게' }, undefined, undefined, ctxWith(registryOf(() => mapping([{ q: '왜 떴냐', line: 1, how: 'promise' }]))));
   assert.deepEqual(promise.details.answerCheck.cleared, false, 'the next reply is checked against the same question');
   const proactive = await reply.execute('e', { text: '좋은 아침!' }, undefined, undefined, ctxWith(registryOf(() => { throw new Error('must not be called'); }), [wake()]));
-  assert.equal(proactive.details.answerCheck, undefined);
+  assert.equal(proactive.details.answerCheck.cleared, true);
   assert.equal(sentMessages({ env }).length, 2);
   const heard = registryOf(() => mapping([{ q: '칸이 왜 떴냐', line: 0, how: 'none' }]));
   await assert.rejects(reply.execute('f', { text: '출금 문자가 짝을 못 찾으면 생기는 칸이야', voice: 'only', voice_text: '새로고침하면 없어져' },
     undefined, undefined, ctxWith(heard)), /Not delivered/);
-  assert.match(heard.calls[0].user, /1: 새로고침하면 없어져/, 'a voice-only reply is checked as it is heard');
+  assert.match(heard.calls.find((call) => call.check === 'answer').user, /1: 새로고침하면 없어져/, 'a voice-only reply is checked as it is heard');
 });
 
 test('editing a message in the user\'s own Telegram chat is refused; another chat\'s edit is not this gate\'s', () => {

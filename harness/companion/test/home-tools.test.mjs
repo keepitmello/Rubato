@@ -16,16 +16,18 @@ function sandbox(t) {
 
 /**
  * The tools as the runtime registers them, and Pi's events and messages around them. These tests are
- * about delivery, so reply reads a conversation with no user line waiting unless a test gives one:
- * the answer check itself is in answer-check.test.mjs.
+ * about delivery, so reply reads a conversation with no user line waiting and a model that finds
+ * nothing ungrounded, unless a test gives its own: the reply check itself is in answer-check.test.mjs.
  */
+const groundedRegistry = { find: (provider, id) => ({ provider, id }),
+  complete: async () => ({ content: [{ type: 'text', text: JSON.stringify({ claims: [], challenge: { c: 0, changed: false } }) }] }) };
 function toolsOf(options) {
   const tools = new Map();
   const handlers = new Map();
   const sent = [];
   const [feature] = createCompanionHomeFactories(options);
   const quiet = (tool) => tool.name !== REPLY_TOOL ? tool : { ...tool, execute: (id, params, signal, onUpdate, ctx) =>
-    tool.execute(id, params, signal, onUpdate, { ...ctx, sessionManager: { getBranch: () => [], ...ctx?.sessionManager } }) };
+    tool.execute(id, params, signal, onUpdate, { modelRegistry: groundedRegistry, ...ctx, sessionManager: { getBranch: () => [], ...ctx?.sessionManager } }) };
   feature.factory({ registerTool: (tool) => tools.set(tool.name, quiet(tool)), on: (name, handler) => handlers.set(name, handler),
     sendMessage: (message, delivery) => sent.push([message, delivery]) });
   tools.emit = (name, event) => handlers.get(name)?.(event);
@@ -143,7 +145,7 @@ test('reply records what Segno said, and sent_messages preserves historical tran
   assert.deepEqual(Object.keys(reply.parameters.properties).sort(), ['files', 'text'], 'no messenger: files, but no voice');
   assert.doesNotMatch(reply.description, /telegram/i);
   const answer = await reply.execute('c1', { text: '좋은 아침! 오늘 마감 하나 있어.' });
-  assert.deepEqual(Object.keys(answer.details).sort(), ['at', 'text', 'toUser', 'via']);
+  assert.deepEqual(Object.keys(answer.details).sort(), ['answerCheck', 'at', 'text', 'toUser', 'via']);
   assert.equal(answer.details.via, REPLY_TOOL);
   const rows = sentMessages({ env });
   assert.deepEqual(rows.map((row) => [row.text, row.via]), [['어제 그 버그 고쳤어', 'telegram_send'], ['좋은 아침! 오늘 마감 하나 있어.', 'reply']]);
