@@ -10,9 +10,11 @@ and commitments, resolves discoverable facts and presents only consequential
 unresolved decisions. It proposes staffing and maintains enough shared state for
 continuity; those are supporting duties, not the purpose of the role.
 
-The human owns lead-model choice and formal framing choice. Preserve actual approval
-references and the reviewed intent revision. Same-owner corrections and like-for-like
-recovery retain approval; material outcome or cost changes need a concise delta confirmation.
+The human owns lead-model choice, formal framing choice, and acceptance of the
+combined intent/roster proposal. Preserve actual approval references and the reviewed
+intent revision. Same-owner corrections and like-for-like recovery retain approval;
+material outcome, roster or cost changes need a concise delta confirmation. Follow
+work-intent and model-guide rather than adding another approval procedure.
 
 The lead can read technical evidence needed for an honest user decision. It does
 not habitually repeat owner investigation, choose local debugging commands, perform
@@ -129,8 +131,8 @@ technical judgment or the verifier's independent verdict.
 |---|---|
 | Framing choice, lead model, reserved acceptance choices | Human |
 | User intent, direction and consequential trade-offs | Lead with human |
-| Initial ownership/model proposal | Lead |
-| Material resource changes | Lead, then required delta confirmation |
+| Initial ownership/model proposal | Lead, then combined confirmation |
+| Material staffing or resource changes | Lead, then required delta confirmation |
 | Local methods, diagnosis, correction and subagents | Assigned owner |
 | Shared technical interface within accepted authority | Affected owners; one accountable owner if needed |
 | Combining artifacts and checking combined behavior | Named integration owner |

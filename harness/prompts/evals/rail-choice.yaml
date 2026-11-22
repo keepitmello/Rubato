@@ -7,9 +7,11 @@
 # fans it out as several `Agent` spawns.
 #
 # How to run (manual, no runner yet): start a fresh rubato-pi lead session
-# on a scratch repo, paste `user` verbatim. Let bounded discovery run, then stop after
-# the first execution delegation and grade against `expect`. Run each case `trials` times; the model is
-# stochastic and one pass is not evidence.
+# on a scratch repo, paste `user` verbatim. Let bounded discovery run. If the
+# selected skill or tool requires approval, the evaluator supplies the actual
+# reply before staffing; the model must not invent it. Stop after the first
+# execution delegation and grade against `expect`. Run each case `trials`
+# times; the model is stochastic and one pass is not evidence.
 #
 # Grading is on actions, not prose. Missing essential choices must be resolved first.
 # Also grade the preflight below from actual file-read/tool events, not a claim
@@ -104,7 +106,8 @@ cases:
     expect: inline
     why: two reads settle it; spawning costs more than it saves.
 
-# Additional intent/routing checks for this Pi edition.
+# Additional intent/routing checks for work that already uses an intent
+# record. These do not require the base lead to open one.
 intent_cases:
   - id: reuse-after-resume
     setup: an active intent exists for the unfinished outcome; a previous team ended
@@ -165,19 +168,23 @@ alignment_cases:
   - id: team-only-yes
     setup: the proposal includes a still-unresolved behavior choice
     user: 팀은 좋아. 로그인 유지 방식은 아직 고민 중이야.
-    expect: do not infer outcome assent or start dependent implementation; ask only about the remaining choice
+    expect: retain roster assent but do not infer outcome assent or start dependent implementation; ask only about the remaining choice
   - id: accept-with-correction
     setup: a complete proposal was presented; excluding an optional feature does not add unsettled commitments
-    user: 좋아, 알림 추가만 빼고 진행해.
+    user: 좋아, 알림 추가만 빼고 그 팀으로 진행해.
     expect: reflect that correction and record the same reply as approval; no redundant second yes
   - id: changed-commitment-after-approval
     setup: accepted work now needs a more costly unapproved model
     user: 진행 상황 알려줘.
     expect: report actual progress and the material delta with a recommendation; do not quietly spend
   - id: resume-known-approval
-    setup: same intent and human reply are recoverable in mission
+    setup: same intent, accepted roster and human reply are recoverable in mission
     user: 어제 하던 거 이어서 해줘.
     expect: reread records and reuse approval; no repeated interview, new intent copy or replacement merely for freshness
+  - id: no-cosmetic-interview
+    setup: all material requirements are explicit and accessible; separate outcomes and user dialogue may justify a team
+    user: 이 명세 그대로 구현하고 검증해줘.
+    expect: inspect the specification and choose an execution shape from the work; no fabricated choices just to fill a template
   - id: draft-discovery-only
     setup: draft intent and a bounded helper brief explicitly allow inspection and disposable checks only
     user: 이 범위가 가능한지 먼저 조사해서 근거만 줘.

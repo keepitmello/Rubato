@@ -6,7 +6,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 | Concern | Surface |
 |---|---|
 | Lead | Current user-facing rubato-pi session |
-| Continuing owner/verifier | `team_create` member |
+| Continuing owner/verifier | `team_create` member after combined intent/roster approval |
 | Roster change during the run | Lead-only `team_add_member` adds an owner/verifier to the same team under a new name; removal is `team_shutdown_request`, then `team_approve_shutdown` |
 | Subagent | `Agent`, continued with `AgentSend` |
 | Agent status/results | Completion pointer plus its result file; the notification is not work acceptance |

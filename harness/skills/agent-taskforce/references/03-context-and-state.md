@@ -4,7 +4,7 @@
 
 ## Separate the layers of authority
 
-- User directives and approvals: current intent, framing choice, lead choice
+- User directives and approvals: current intent, framing choice, lead choice, and roster approval
 - Active `FRAME_LOCK`: product value, users, and outcome invariants
 - Spec/ADR/schema: technical contracts and structural decisions
 - Accepted intent: this requested change and its human acceptance, referencing upstream frame/spec authority
@@ -16,7 +16,8 @@ Do not let the mission, task list or intent restate an existing authoritative fr
 
 ## Resolve and retain the intent
 
-Resolve the project's existing authority first. For managed records, keep `intent_ref` with the
+Use the sibling `work-intent` lifecycle before continuing-owner work. Resolve the
+project's existing authority first. For managed records, keep `intent_ref` with the
 lead's canonical workspace and carry it through mission, briefs and task metadata.
 A run/thread ID is not an intent ID. Keep the same record across related runs and
 worktrees; unrelated outcomes may have distinct active records.
@@ -59,8 +60,9 @@ Remove old tool output, refuted narratives, superseded documents, and duplicate 
 
 ## Recover the accepted proposal, not another interview
 
-After activation, carry the returned fresh intent_ref. Partial acceptance never
-becomes full approval in a summary. On resumption,
+The existing mission links the proposal message, the intent revision shown, the exact
+roster, and the human reply accepting both. After activation, carry the returned fresh
+intent_ref. Partial acceptance never becomes full approval in a summary. On resumption,
 reread those records before asking the user to repeat a decision. Gather new discoverable
 facts locally and surface only material unresolved choices, with a recommendation. Keep
 routine method changes and same-owner follow-ups inside the existing approval.

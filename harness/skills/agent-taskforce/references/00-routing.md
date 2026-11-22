@@ -21,7 +21,8 @@ require a fabricated numeric saving. Continue the same subagent on related work.
 
 A team can be useful when one deep execution context should stay separate from the
 user's evolving conversation, when independent outcomes can progress, or when peers
-need sustained interface and evidence exchange. One owner is allowed.
+need sustained interface and evidence exchange. One owner is allowed. A continuing
+owner is not a short subagent used to bypass intent/roster approval.
 
 Keep coupled state and local judgment together. Assign an integration owner only
 where outputs must be combined, normally an existing owner. Independent competing
@@ -43,4 +44,5 @@ resource availability. Balance that against repeated work, waiting and coordinat
 This is a provisional execution choice, not a prediction of hidden task difficulty.
 Reconsider when observed dependencies or the user's needs change.
 
-The human keeps the lead-model and formal framing choices.
+The human keeps the lead-model and formal framing choices. `LEAD.md` owns the
+combined intent/roster proposal, approval and material changes.

@@ -1,6 +1,6 @@
 ---
 name: work-intent
-description: "Resolve and preserve the user's intended result: investigate available evidence first and recommend a direction. A request that already says what to make and how far stays inline."
+description: "Resolve and preserve the user's intended result: investigate available evidence first, recommend a direction, and combine remaining human decisions with intent/roster confirmation before staffing. Read before starting whenever you would have to decide what to make or how far to go, and for durable work, continuing owners or a referenced intent. A request that already says what to make and how far stays inline."
 ---
 
 # Work intent
@@ -14,7 +14,7 @@ This is not a product-framing exercise, an interview script or a team-creation c
 ## Resolve before creating
 
 Establish the current request in the user's terms. For small local work, retain it
-in context without a file. Before work that needs
+in context without a file. Before continuing-owner assignments or work that needs
 durable resumption, inspect the project's instructions and existing intent home.
 Reuse the record for the same unresolved outcome, including after a session reset,
 worktree change, failed verification or different team composition. A fresh run is
@@ -59,7 +59,7 @@ benefit. Present materially different alternatives only when the choice matters.
 recommendation is a proposal until accepted, not a newly discovered user requirement.
 Implementation methods remain revisable; avoid freezing guessed file layouts in intent.
 
-## Capture
+## Capture and accept together
 
 Preserve the originating request or an exact retrievable reference, its problem,
 proposed outcome, affected users/systems, constraints and material open decisions.
@@ -71,18 +71,41 @@ not a dump of parser headings, IDs or paths.
 Link existing frame/spec clauses instead of duplicating what they own. Roster and run
 progress stay in the mission; brief discovery findings need no separate report.
 
-Keep a new proposal in draft until accepted. An already active intent stays active when unchanged.
-After activation, carry the newly returned reference; activation itself changes the file hash.
+Whenever you would have to decide what to make or how far to go, team or not, show the user your
+reading of it before starting anything: the intended result, the recommended direction
+and why, what stays unchanged, and how completion will be checked. For a taskforce, add
+the smallest role/model/effort roster with plain-language responsibilities so it is
+**one combined proposal**. Use [the message guide](templates/approval-message.md); omit
+inapplicable parts. Avoid a questionnaire, a second intent-only approval, or
+technical-detail overload. The user should be able to approve in one short reply.
+
+Wait for **explicit confirmation before activating an intent or forming a team**, in
+Pi and Codex alike. The originating request is the intent's source, not its approval;
+approval is the user's reply to the message that showed your reading. A reply approving
+the concrete combined proposal covers both intent and roster; a generic earlier
+"implement it", silence, or approval of only one part does not. Keep a
+new proposal in draft until accepted. An already active intent stays active when unchanged;
+its acceptance alone does not approve a newly proposed roster. Cite the actual human
+instruction/review, the proposal message, and the intent revision it covered. Store roster
+acceptance with the existing mission, never as another intent record. After activation,
+carry the newly returned reference; activation itself changes the file hash.
 
 When the user accepts with a clear correction or chooses an offered alternative, apply
 exactly that change and record their reply as its authority; do not demand a ceremonial
-second yes. If the correction changes a still-unsettled material commitment or
+second yes. If the correction changes a still-unsettled material roster, commitment or
 outcome, clarify only that delta before dependent work. Partial approval preserves what
 was accepted; ask only for the missing decision, not the whole interview again.
 
-Outcome-blocking choices stay open until the human resolves them or
+Only interrupt before the combined proposal when one unavailable fact or human decision
+blocks safe, meaningful discovery itself or prevents proposing any viable direction.
+Otherwise batch remaining material choices into that proposal, with a recommendation and
+its consequence. Outcome-blocking choices stay open until the human resolves them or
 explicitly delegates a bounded choice. Local methods inside accepted scope stay autonomous.
-An active `FRAME_LOCK` remains authoritative for product-value invariants.
+For non-team work where you decide what to make or how far to go, use the same evidence-first approach without inventing a
+roster: the proposal is shorter, but it is still shown and answered before dependent work.
+
+Intent/roster confirmation preserves independent frame, model, budget, delivery and runtime
+permissions. An active `FRAME_LOCK` remains authoritative for product-value invariants.
 Reference it; use the existing human framing/reopen process for genuine conflicts. If
 framing was skipped, do not rebuild a miniature interview or frame inside this skill.
 
@@ -116,13 +139,13 @@ Methods may change inside approved scope without revising intent or asking again
 Material changes to outcome, constraints or acceptance criteria return intent to draft
 with a reason; retain the ID for the same work. A genuinely different replacement gets
 a new intent with an explicit supersession link. Send affected owners/reviewers the
-change and pause only dependent work.
-Unchanged approvals and same-owner corrections do not need a fresh ceremony.
+change and pause only dependent work. Present changed intent and any affected roster
+together; unchanged approvals and same-owner corrections do not need a fresh ceremony.
 Keep previous evidence attached to its original revision.
 
 On resumption, handle the latest user direction, then reread intent and relevant
 mission/board. Check status/revision before dependent execution; a compacted summary or
-newest timestamp is not authority. Recover accepted proposal references instead
+newest timestamp is not authority. Recover accepted proposal/roster references instead
 of asking the user to repeat them. Investigate ordinary new factual gaps locally.
 
 Fulfill only after the lead accepts evidence for the intended result and promised

@@ -10,6 +10,8 @@ specification or a duplicate task list. Omit empty sections that add no useful s
 
 - Intent reference and canonical workspace:
 - Actual human intent acceptance:
+- Combined proposal and reviewed intent revision:
+- Actual reply accepting both intent and roster, including corrections:
 - Run / board scope:
 - Framing choice and existing frame/spec/ADR:
 - Lead model selected by the user:
@@ -28,7 +30,7 @@ Link the accepted clauses covered by this run and the evidence required. Do not
 restate the whole intent. Identify unresolved user choices without reopening
 settled ones.
 
-## Assignments
+## Approved assignments
 
 | Outcome / role | Session | Requested model/effort | Actual model/route | Selection evidence or resource reason | Approval |
 |---|---|---|---|---|---|
@@ -36,8 +38,8 @@ settled ones.
 | Owner / result | | | | | |
 | Verifier / claim (only when useful) | | | | | |
 
-Existing owners continue through related corrections.
-Model availability is not permission. Unknown telemetry remains
+Existing owners continue through related corrections. Material reassignment gets a
+delta approval; model availability is not permission. Unknown telemetry remains
 unknown, not zero consumption or proof of capacity.
 
 ## Boundaries and technical integration
