@@ -1,15 +1,16 @@
 // The companion room's composer field and live dictation (rubato-voice/RubatoComposerField.tsx):
-// the field grows with its text up to six lines and opens full screen past that, and dictation
+// the field grows with its text up to four lines and opens full screen from there, and dictation
 // writes its words into the field while the person talks, grey with the newest words blue (user
 // 2026-11-20, after ChatGPT's iOS app). The words come from the Mac's one-time key and OpenAI's
 // live transcription (rubato-voice/macLiveDictation.ts, @t3tools/shared/rubatoLiveDictation).
 // Thread composers keep T3's own composer and dictation controls; they transcribe through the same
-// Mac (shell-edits.mjs, VoiceInputProvider), and show the heard words above the dictation row
-// (rubato-voice/RubatoLiveWords.tsx): T3 flips the draft row away while dictating.
+// Mac (shell-edits.mjs, VoiceInputProvider), and show the draft with the heard words in it above the
+// dictation row (rubato-voice/RubatoLiveWords.tsx): T3 flips the draft row away while dictating.
 //
 // T3 pieces this touches:
 // - T3ComposerEditorView/Module (iOS): `dictationJson` colours the text word by word. The field's
-//   height comes from T3's own onContentSizeChange.
+//   height comes from T3's own onContentSizeChange, which leaves out the vertical insets and stops at
+//   four lines (rubato-voice/composerFieldLayout.ts).
 // - rubatoLiveDictationDisplay beside the shared voice controller places the heard words where the
 //   final text will land, for this field and the desktop's.
 // - ScheduledTaskPromptField: its plain text field shows the heard words while dictating.
@@ -17,6 +18,8 @@ export const mobileComposerOverlays = [
   'apps/mobile/src/features/rubato-voice/RubatoComposerField.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoDictationStrip.tsx',
   'apps/mobile/src/features/rubato-voice/RubatoLiveWords.tsx',
+  'apps/mobile/src/features/rubato-voice/composerFieldLayout.ts',
+  'apps/mobile/src/features/rubato-voice/composerFieldLayout.test.ts',
   // Shared with the desktop's composer, which places the heard words the same way.
   'packages/client-runtime/src/voice-input/rubatoLiveDictationDisplay.ts',
   'packages/client-runtime/src/voice-input/rubatoLiveDictationDisplay.test.ts',
@@ -147,12 +150,12 @@ export const mobileComposerEdits = {
     ['export {\n  VoiceTranscriptionError,\n',
       'export {\n  liveDictationDisplay,\n  type LiveDictationDisplay,\n  type LiveDictationRun,\n} from "./rubatoLiveDictationDisplay.ts";\n'],
   ],
-  // The thread composer: the words heard so far above the dictation row while dictating.
+  // The thread composer: the draft with the words heard so far above the dictation row while dictating.
   'apps/mobile/src/features/threads/ThreadComposer.tsx': [
     ['} from "../voice-input/ComposerDictationControl";\n',
       '} from "../voice-input/ComposerDictationControl";\nimport { RubatoLiveWords } from "../rubato-voice/RubatoLiveWords";\n', 'replace'],
     ['          <View\n            onLayout={(event) => {\n              compactEditor.onRowLayout(event);',
-      '          <RubatoLiveWords visible={isVoiceInputPresented} />\n'],
+      '          <RubatoLiveWords\n            visible={isVoiceInputPresented}\n            draft={draftMessage}\n            selection={composerMenu.selection}\n            textStyle={bodyText}\n          />\n'],
   ],
   // A scheduled task's prompt is a plain text field: it shows the heard words grey while dictating.
   'apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx': [

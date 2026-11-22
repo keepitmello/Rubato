@@ -1,10 +1,11 @@
 // Rubato: the phone composers' text field (thread and companion room), as ChatGPT's works.
 //
-// - It grows with its text from `minLines` to `maxLines`, then scrolls. T3's field sat between
-//   fixed heights because nothing read the native editor's content height; this reads it
-//   (T3ComposerEditorView emits it as onComposerContentSizeChange).
-// - Past `maxLines` an expand control appears at its top right and opens the draft full screen,
-//   with its own send.
+// - It grows with its text from `minLines` to `maxLines` (at most the four lines T3's native editor
+//   measures), then scrolls. The native editor reports its text's height without the vertical
+//   insets, so the field adds them back (composerFieldLayout.ts); without them the top line was cut
+//   off and the field stopped short of its text.
+// - Once the text fills it, an expand control appears at the top of the column on its right, above
+//   the composer's own buttons (`trailing`), and opens the draft full screen with its own send.
 // - While live dictation runs for this composer, the editor shows the draft with the words heard
 //   so far where the final text will land, grey, each new word fading in blue and fading to grey a
 //   moment later on its own clock, the caret after them; once the final text lands it all turns
@@ -12,7 +13,7 @@
 //   into the draft through T3's controller at stop (client-runtime rubatoLiveDictationDisplay.ts).
 import { liveDictationDisplay } from "@t3tools/client-runtime/voice-input";
 import { createDictationEdits, liveDictationPieces, liveDictationStore } from "@t3tools/shared/rubatoLiveDictation";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { Modal, Pressable, StyleSheet, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,6 +22,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { ComposerEditor, type ComposerEditorProps } from "../../components/ComposerEditor";
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { ComposerEditorProps as NativeEditorProps, ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
+import { composerFieldHeight } from "./composerFieldLayout";
 import { onDictated, reportDictationEdits } from "./macLiveDictation";
 
 export type RubatoComposerFieldProps = ComposerEditorProps & {
@@ -35,6 +37,8 @@ export type RubatoComposerFieldProps = ComposerEditorProps & {
     readonly canSend: boolean;
     readonly onSend: () => void;
   };
+  /** The composer's buttons, at the bottom of the column on the field's right. */
+  readonly trailing?: ReactNode;
 };
 
 const EXPAND_LABELS = { open: "Expand", close: "Collapse" } as const;
@@ -155,19 +159,17 @@ export function RubatoComposerField({
   dictating,
   lineHeight,
   minLines = 1,
-  maxLines = 6,
+  maxLines = 4,
   expand,
+  trailing,
   style,
   ...props
 }: RubatoComposerFieldProps) {
   const ink = rgbaOf(StyleSheet.flatten(props.textStyle)?.color) ?? [0, 0, 0, 1];
   const live = useLiveDictationDisplay(dictating, props.value, props.selection, ink);
   const inset = props.contentInsetVertical ?? 0;
-  const minHeight = minLines * lineHeight + inset * 2;
-  const maxHeight = maxLines * lineHeight + inset * 2;
   const [contentHeight, setContentHeight] = useState(0);
-  const height = Math.min(maxHeight, Math.max(minHeight, Math.ceil(contentHeight)));
-  const overflows = contentHeight > maxHeight + 1;
+  const { height, overflows } = composerFieldHeight({ contentHeight, lineHeight, inset, minLines, maxLines });
   const [fullScreen, setFullScreen] = useState(false);
   // A dictation the person changed is reported once the draft goes out (the Mac keeps the fixed words
   // for the user dream's dictation vocabulary); another draft starts afresh.
@@ -186,35 +188,43 @@ export function RubatoComposerField({
     if (dictating) setFullScreen(false);
   }, [dictating]);
 
+  const showsExpand = expand !== undefined && overflows && !dictating;
   return (
-    <View className="relative">
-      <ComposerEditor
-        {...props}
-        value={live?.value ?? props.value}
-        selection={live?.selection ?? props.selection}
-        dictation={live?.dictation ?? null}
-        readOnly={props.readOnly || dictating}
-        // The display is not the draft: nothing it does may reach the draft's selection.
-        onSelectionChange={dictating ? undefined : props.onSelectionChange}
-        scrollEnabled
-        onContentSizeChange={(size) => setContentHeight(size.height)}
-        style={[style, { height, minHeight: undefined, maxHeight: undefined }]}
-      />
-      {expand && overflows && !dictating ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={EXPAND_LABELS.open}
-          hitSlop={10}
-          onPress={() => setFullScreen(true)}
-          className="absolute right-0 top-0 h-7 w-7 items-center justify-center rounded-full bg-subtle active:opacity-60"
-        >
-          <SymbolView
-            name="arrow.up.left.and.arrow.down.right"
-            size={12}
-            weight="semibold"
-            tintColorClassName="accent-icon-muted"
-          />
-        </Pressable>
+    <View className="flex-row items-stretch">
+      <View className="min-w-0 flex-1">
+        <ComposerEditor
+          {...props}
+          value={live?.value ?? props.value}
+          selection={live?.selection ?? props.selection}
+          dictation={live?.dictation ?? null}
+          readOnly={props.readOnly || dictating}
+          // The display is not the draft: nothing it does may reach the draft's selection.
+          onSelectionChange={dictating ? undefined : props.onSelectionChange}
+          scrollEnabled
+          onContentSizeChange={(size) => setContentHeight(size.height)}
+          style={[style, { height, minHeight: undefined, maxHeight: undefined }]}
+        />
+      </View>
+      {trailing !== undefined || showsExpand ? (
+        <View className="items-end justify-between">
+          {showsExpand ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={EXPAND_LABELS.open}
+              hitSlop={10}
+              onPress={() => setFullScreen(true)}
+              className="mr-1 mt-2 h-7 w-7 items-center justify-center rounded-full bg-subtle active:opacity-60"
+            >
+              <SymbolView
+                name="arrow.up.left.and.arrow.down.right"
+                size={12}
+                weight="semibold"
+                tintColorClassName="accent-icon-muted"
+              />
+            </Pressable>
+          ) : <View />}
+          {trailing}
+        </View>
       ) : null}
       {expand ? (
         <FullScreenComposer

@@ -417,10 +417,10 @@ function SendButton(props: { readonly color: string; readonly disabled: boolean;
 }
 
 /**
- * Messages' composer: a + circle, then one glass field whose right end is dictation while it is
- * empty and send once it holds something. Its sides narrow when the keyboard comes up, as Messages'
- * do. Dictation writes the heard words into the field as they come; its strip opens under the
- * words inside the field.
+ * Messages' composer: a + circle, then one glass field whose right end is dictation, with send
+ * beside it once the field holds something (dictating more onto a draft stays one tap away, as in
+ * ChatGPT's). Its sides narrow when the keyboard comes up, as Messages' do. Dictation writes the
+ * heard words into the field as they come; its strip opens under the words inside the field.
  */
 function RoomComposer(props: {
   readonly environmentId: EnvironmentId;
@@ -446,7 +446,18 @@ function RoomComposer(props: {
   readonly placeholder: string;
 }) {
   const insets = useSafeAreaInsets();
-  const [selection, setSelection] = useState({ start: props.draft.length, end: props.draft.length });
+  // Where the person put the caret in this room; until then the end. A caret placed in an empty field
+  // says nothing about a draft that arrives later (drafts load from storage after the first render),
+  // and one past the draft's end belongs to a sent draft: both read as the end. A caret left at 0
+  // put dictation in front of a restored draft.
+  type Placed = { readonly ownerKey: string | null; readonly start: number; readonly end: number; readonly inEmpty: boolean };
+  const [placed, setPlaced] = useState<Placed | null>(null);
+  const setSelection = (next: { start: number; end: number }) =>
+    setPlaced({ ownerKey: props.ownerKey, start: next.start, end: next.end, inEmpty: draftRef.current.length === 0 });
+  const selection = placed !== null && placed.ownerKey === props.ownerKey && placed.end <= props.draft.length &&
+    !(placed.inEmpty && props.draft.length > 0)
+    ? { start: placed.start, end: placed.end }
+    : { start: props.draft.length, end: props.draft.length };
   const [height, setHeight] = useState(insets.bottom + 56);
   const draftRef = useRef(props.draft);
   draftRef.current = props.draft;
@@ -545,41 +556,45 @@ function RoomComposer(props: {
             </View>
           </GlassSurface>
           <GlassSurface chrome="none" style={{ flex: 1, minHeight: COMPOSER_HEIGHT, borderRadius: COMPOSER_HEIGHT / 2 }}>
-            <View className="flex-row items-end" style={{ paddingLeft: 16, paddingRight: 4 }}>
-              <View className="min-w-0 flex-1">
-                <RubatoComposerField
-                  ref={editorRef}
-                  dictating={dictation.isBusy}
-                  lineHeight={props.body.lineHeight}
-                  expand={{ sendLabel: copy.send, canSend: hasText && !dictation.blocksSubmission, onSend: props.onSend }}
-                  draftKey={props.ownerKey}
-                  environmentId={props.environmentId}
-                  multiline
-                  value={props.draft}
-                  selection={selection}
-                  onChangeText={props.onChange}
-                  onSelectionChange={setSelection}
-                  onPasteImages={(uris) => void props.onPasteImages(uris)}
-                  onPasteText={(paste) => void props.onPasteText(paste)}
-                  placeholder={props.placeholder}
-                  contentInsetVertical={fieldInset}
-                  textStyle={{ ...props.body, color: foreground }}
-                />
-              </View>
-              <View className="items-center justify-center" style={{ height: COMPOSER_HEIGHT, minWidth: 31, marginLeft: 6 }}>
-                {hasText && !dictating ? (
-                  <SendButton color={props.sendColor} disabled={dictation.blocksSubmission} onPress={props.onSend} />
-                ) : !dictating ? (
-                  <ComposerDictationPrimaryAction
-                    state={dictation.state}
-                    presentation={presentation}
-                    isAvailable={dictation.isAvailable}
-                    onStart={dictation.start}
-                    onConfirm={() => void dictation.stop()}
-                    onCancel={dictation.cancel}
-                  />
-                ) : null}
-              </View>
+            <View style={{ paddingLeft: 16, paddingRight: 4 }}>
+              <RubatoComposerField
+                ref={editorRef}
+                dictating={dictation.isBusy}
+                lineHeight={props.body.lineHeight}
+                expand={{ sendLabel: copy.send, canSend: hasText && !dictation.blocksSubmission, onSend: props.onSend }}
+                draftKey={props.ownerKey}
+                environmentId={props.environmentId}
+                multiline
+                value={props.draft}
+                selection={selection}
+                onChangeText={props.onChange}
+                onSelectionChange={setSelection}
+                onPasteImages={(uris) => void props.onPasteImages(uris)}
+                onPasteText={(paste) => void props.onPasteText(paste)}
+                placeholder={props.placeholder}
+                contentInsetVertical={fieldInset}
+                textStyle={{ ...props.body, color: foreground }}
+                trailing={
+                  <View className="flex-row items-center" style={{ height: COMPOSER_HEIGHT, minWidth: 31, marginLeft: 6 }}>
+                    {!dictating ? (
+                      // The microphone's 44 pt target leans into the gap before send.
+                      <View style={hasText ? { marginRight: -4 } : undefined}>
+                        <ComposerDictationPrimaryAction
+                          state={dictation.state}
+                          presentation={presentation}
+                          isAvailable={dictation.isAvailable}
+                          onStart={dictation.start}
+                          onConfirm={() => void dictation.stop()}
+                          onCancel={dictation.cancel}
+                        />
+                      </View>
+                    ) : null}
+                    {hasText && !dictating ? (
+                      <SendButton color={props.sendColor} disabled={dictation.blocksSubmission} onPress={props.onSend} />
+                    ) : null}
+                  </View>
+                }
+              />
             </View>
             {dictating ? (
               <Animated.View entering={FadeInDown.duration(180)} exiting={FadeOut.duration(140)} style={{ paddingHorizontal: 4, paddingBottom: 2 }}>
