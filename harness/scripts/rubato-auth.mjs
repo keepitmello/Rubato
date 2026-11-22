@@ -54,7 +54,6 @@ export const PROVIDERS = Object.freeze([
   { id: "opengateway", label: "OpenGateway", aliases: ["opengateway"], methods: ["api_key"] },
   { id: "nanogpt", label: "NanoGPT", aliases: ["nanogpt", "nano-gpt"], methods: ["api_key"] },
   { id: VERTEX_PROVIDER_ID, label: "Vertex AI", aliases: [VERTEX_PROVIDER_ID, "vertex"], methods: ["api_key"] },
-  { id: GEMINI_PROVIDER_ID, label: "Gemini API", aliases: [GEMINI_PROVIDER_ID, "gemini"], methods: ["api_key"] },
 ]);
 
 // Vertex 자격증명은 auth.json 이 아니라 Keychain 서비스 `vertex` 에 산다. 계정은 그 항목 하나다.
@@ -651,7 +650,7 @@ async function addSetupToken(ctx) {
 }
 
 /** 엔진을 거치지 않고 키를 auth.json 에 바로 넣는 provider. */
-const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai", "opengateway", "nanogpt", VERTEX_PROVIDER_ID, GEMINI_PROVIDER_ID]);
+const STORED_KEY_PROVIDERS = new Set(["kiro", "opencode", "b-ai", "opengateway", "nanogpt", VERTEX_PROVIDER_ID]);
 
 /** 키를 auth.json 이 아니라 provider 가 읽는 자리에 넣는 provider. */
 async function saveProviderKey(providerId, key, ctx) {

@@ -1,7 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasLocalAgyAgent, localAgyAgent, localAgyModels, localAgySpawn } from
-  '../overlay/apps/server/src/provider/RubatoLocalAgy.ts';
+import { lstatSync, mkdirSync, mkdtempSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import {
+  hasLocalAgyAgent,
+  linkLocalAgyProfileConfig,
+  localAgyAgent,
+  localAgyIsolated,
+  localAgyModels,
+  localAgySpawn,
+  localAgyWithAgentArgs,
+} from '../overlay/apps/server/src/provider/RubatoLocalAgy.ts';
 
 test('local agy is opt-in and uses only the native agent selector', () => {
   assert.equal(localAgyAgent([]), undefined);
@@ -57,4 +67,34 @@ test('on Windows agy keeps its profile, temp and system folders, whatever the va
     TEMP: 'C:\\Temp',
     ComSpec: 'C:\\Windows\\System32\\cmd.exe',
   });
+});
+
+test('isolated local agy flag, agent args, and user config symlinks work for extra Google accounts', { skip: process.platform === 'win32' }, async (t) => {
+  assert.equal(localAgyIsolated([]), false);
+  assert.equal(localAgyIsolated([{ name: 'RUBATO_LOCAL_AGY_ISOLATED', value: '1' }]), true);
+  assert.equal(localAgyIsolated([{ name: 'RUBATO_LOCAL_AGY_ISOLATED', value: 'true' }]), true);
+
+  const spawn = localAgyWithAgentArgs(
+    { command: '/usr/bin/agy', args: ['acp', '--gemini-dir', '/tmp/p', '--app-data-dir', 'antigravity-acp'] },
+    'rubato-lead',
+  );
+  assert.deepEqual(spawn.args, [
+    'acp', '--gemini-dir', '/tmp/p', '--app-data-dir', 'antigravity-acp', '--sandbox', '--agent', 'rubato-lead',
+  ]);
+
+  const root = mkdtempSync(path.join(tmpdir(), 'rb-local-agy-iso-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const userHome = path.join(root, 'home');
+  const profileDir = path.join(root, 'profile');
+  mkdirSync(path.join(userHome, '.gemini', 'config', 'agents'), { recursive: true });
+  writeFileSync(path.join(userHome, '.gemini', 'config', 'agents', 'rubato-lead.md'), '# lead\n');
+  writeFileSync(path.join(userHome, '.gemini', 'config', 'mcp_config.json'), '{"mcpServers":{}}\n');
+
+  await linkLocalAgyProfileConfig(profileDir, userHome);
+  const agentsLink = path.join(profileDir, 'config', 'agents');
+  const mcpLink = path.join(profileDir, 'config', 'mcp_config.json');
+  assert.equal(lstatSync(agentsLink).isSymbolicLink(), true);
+  assert.equal(readlinkSync(agentsLink), path.join(userHome, '.gemini', 'config', 'agents'));
+  assert.equal(lstatSync(mcpLink).isSymbolicLink(), true);
+  assert.equal(readlinkSync(mcpLink), path.join(userHome, '.gemini', 'config', 'mcp_config.json'));
 });

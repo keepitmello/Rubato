@@ -17,7 +17,6 @@ import { ensureKiroSidecar, kiroDirectProvider, withKiroSidecarEnsure } from "./
 import {
   ANTHROPIC_PICKER_IDS,
   CODEX_PICKER_IDS,
-  GEMINI_API_PICKER_IDS,
   OPENCODE_PICKER_IDS,
   VERTEX_PICKER_IDS,
   XAI_PICKER_IDS,
@@ -25,8 +24,6 @@ import {
   withPickerIds,
   withSubAccountCopies,
 } from "./picker-catalog.mjs";
-import { withGeminiKeychain } from "./gemini-keychain.mjs";
-import { geminiRequestsPath, withGeminiRequestCount } from "./gemini-request-count.mjs";
 import { withOpenCodeKeychain } from "./opencode-keychain.mjs";
 import { withVertexKeychain } from "./vertex-keychain.mjs";
 import { wrapProviderStreams } from "./rubato-stream.mjs";
@@ -631,7 +628,6 @@ export async function directProviders({
   kiro,
   opencode: opencodeOptions,
   vertex: vertexOptions,
-  gemini: geminiOptions,
   env = process.env,
   speedIndexStore: speedStore = speedIndexStore(env),
   nativeFactoryLoader = loadPinnedFactory,
@@ -642,7 +638,7 @@ export async function directProviders({
 } = {}) {
   const cursorFactory = routeFactories.cursor ?? cursorDirectProvider;
   const kiroFactory = routeFactories.kiro ?? kiroDirectProvider;
-  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, cursorProvider, opencodeProvider, vertexProvider, geminiApiProvider] = await Promise.all([
+  const [openaiCodexProvider, xaiProvider, anthropicProvider, kiroNative, cursorProvider, opencodeProvider, vertexProvider] = await Promise.all([
     nativeFactoryLoader("openai-codex.js", "openaiCodexProvider"),
     nativeFactoryLoader("xai.js", "xaiProvider"),
     nativeFactoryLoader("anthropic.js", "anthropicProvider"),
@@ -650,7 +646,6 @@ export async function directProviders({
     cursorFactory({ env, ...(cursor ?? {}) }),
     nativeFactoryLoader("opencode.js", "opencodeProvider"),
     nativeFactoryLoader("google-vertex.js", "googleVertexProvider"),
-    nativeFactoryLoader("google.js", "googleProvider"),
   ]);
 
   const codexNative = withContextWindowCap(openaiCodexProvider(), CODEX_DEFAULT_CONTEXT_WINDOW, CODEX_CONTEXT_WINDOWS);
@@ -710,19 +705,6 @@ export async function directProviders({
     { env, ...(vertexOptions ?? {}) },
   );
 
-  // Gemini API(AI Studio 키)는 pinned google factory 에 Hydrogen 한 행을 더하고 피커를 그 행으로
-  // 줄인다. Hydrogen 은 Gemini API 무료 등급에서도 열리고 Antigravity 는 Pro·Ultra 에만 연다.
-  // 키는 GEMINI_API_KEY 또는 Keychain `gemini` — `/login` 을 요구하지 않는다. 무료 등급 하루 한도는
-  // 응답이 알려 주지 않아서 요청마다 직접 센다(gemini-request-count.mjs, 사용량 화면이 읽는다).
-  const geminiApiNative = geminiApiProvider();
-  const geminiApi = withGeminiKeychain(
-    withGeminiRequestCount(
-      withPickerIds(withExtraModels(geminiApiNative, gemini4HydrogenModels(geminiApiNative.getModels())), GEMINI_API_PICKER_IDS),
-      { path: geminiOptions?.requestsPath ?? geminiRequestsPath(defaultTargetAuthPath(homedir(), env)) },
-    ),
-    { env, ...(geminiOptions ?? {}) },
-  );
-
   const store = speedStore;
   const setupOptions = { env, ...(anthropic ?? {}) };
   const foundSetupToken = await readSetupToken(setupOptions);
@@ -744,6 +726,5 @@ export async function directProviders({
     )),
     wrap(opencode),
     wrap(vertex),
-    wrap(geminiApi),
   ];
 }

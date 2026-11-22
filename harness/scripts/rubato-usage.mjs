@@ -350,7 +350,6 @@ export const USAGE_READERS = Object.freeze({
   anthropic: readAnthropic,
   cursor: readCursor,
   xai: readGrok,
-  google: readGeminiApi,
 });
 
 /**

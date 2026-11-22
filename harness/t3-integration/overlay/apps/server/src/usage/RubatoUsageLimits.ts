@@ -26,6 +26,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import { tryBridge } from "../RubatoMemory.ts";
+import { localAgyAgent } from "../provider/RubatoLocalAgy.ts";
 
 export const RUBATO_USAGE_SOURCE_ID = "rubato" as UsageLimitSourceId;
 
@@ -35,8 +36,6 @@ const PROVIDERS: Readonly<Record<string, { readonly driver: string; readonly lab
   anthropic: { driver: "claudeAgent", label: "Claude" },
   cursor: { driver: "cursor", label: "Cursor" },
   xai: { driver: "grok", label: "Grok" },
-  // Gemini API keys have no T3 driver; "gemini" picks up the Gemini glyph and name (apply.mjs, usage-limits-edits.mjs).
-  google: { driver: "gemini", label: "Gemini API" },
 };
 
 interface RubatoUsageRow {
@@ -141,7 +140,15 @@ export const readRubatoUsageSource = Effect.fn("readRubatoUsageSource")(function
   const bridgeModule = bridgeModuleOf(settings);
   if (!bridgeModule) return undefined;
   const checkedAt = DateTime.formatIso(yield* DateTime.now);
-  const before = previous.find((source) => source.id === RUBATO_USAGE_SOURCE_ID)?.accounts ?? [];
+  // An enabled local AGY instance reports Gemini's real subscription bars as a native
+  // provider. The independent AI Studio key's daily counter is not that account's quota.
+  const hasLocalAgy = Object.values(settings?.providerInstances ?? {}).some(
+    (instance) => instance.enabled && instance.driver === "antigravity" && localAgyAgent(instance.environment),
+  );
+  const showAccount = (account: UsageLimitSourceAccount) =>
+    !hasLocalAgy || account.driver !== "gemini";
+  const before = (previous.find((source) => source.id === RUBATO_USAGE_SOURCE_ID)?.accounts ?? [])
+    .filter(showAccount);
   const base = { id: RUBATO_USAGE_SOURCE_ID, kind: "rubato", label: "Rubato", checkedAt } as const;
   const answer = yield* tryBridge("usage", () => readUsage(bridgeModule)).pipe(Effect.result);
   if (answer._tag === "Failure") {
@@ -154,6 +161,6 @@ export const readRubatoUsageSource = Effect.fn("readRubatoUsageSource")(function
   }
   return {
     ...base,
-    accounts: keepLastGoodReads(rubatoUsageAccounts(answer.success), before),
+    accounts: keepLastGoodReads(rubatoUsageAccounts(answer.success).filter(showAccount), before),
   };
 });

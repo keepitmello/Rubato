@@ -1,11 +1,16 @@
 // Local Antigravity: an Antigravity instance whose environment sets RUBATO_LOCAL_AGY_AGENT
-// drives the user's own official `agy` CLI with that agy agent and the login agy already
-// has, instead of T3's isolated profile and sign-in. The instance starts
-// `agy acp --sandbox --agent <name>` with the user's HOME and a minimal environment, refuses
-// agents `agy agents` does not list (agy would silently fall back to its default), never
-// authenticates or signs out on agy's behalf, offers only Gemini models labelled with the
-// agent, and has no quota probe or background text generation. Instances without the
-// variable keep upstream's behavior.
+// drives the user's own official `agy` CLI with that agy agent.
+//
+// Two account modes are supported:
+//   - Default (no RUBATO_LOCAL_AGY_ISOLATED): uses the login `agy` already holds under HOME,
+//     never authenticates or signs out on agy's behalf.
+//   - Isolated (RUBATO_LOCAL_AGY_ISOLATED=1): uses T3's per-instance `--gemini-dir` profile
+//     and browser Google sign-in (`authFlow.controller`) so users can sign in multiple Google
+//     accounts like Claude multi-account, while sharing `~/.gemini/config/{agents,skills,mcp_config.json}`.
+//
+// Both modes always identify as `t3-code`, verify the agent exists via `agy agents`, filter to
+// Gemini models labelled with the instance name, and disable quota probing and background text
+// generation. Instances without RUBATO_LOCAL_AGY_AGENT keep upstream's behavior.
 const driver = 'apps/server/src/provider/Drivers/AntigravityDriver.ts';
 const support = 'apps/server/src/provider/acp/AntigravityAcpSupport.ts';
 
@@ -20,7 +25,9 @@ export const localAgyEdits = {
       '  readonly authMethod?: AntigravityAuthMethod;\n',
       '  readonly authMethod?: AntigravityAuthMethod;\n' +
       '  /** Rely on the login the agy CLI already holds: no eager or on-demand authenticate. */\n' +
-      '  readonly useExistingLogin?: boolean;\n',
+      '  readonly useExistingLogin?: boolean;\n' +
+      '  /** Always identify as `t3-code` even when runtimeVersion is unknown before initialize. */\n' +
+      '  readonly preferT3ClientInfo?: boolean;\n',
       'replace',
     ],
     [
@@ -32,7 +39,9 @@ export const localAgyEdits = {
     [
       '      clientInfo: antigravityClientInfo(input.runtimeVersion),',
       '      clientInfo: antigravityClientInfo(\n' +
-      '        input.useExistingLogin ? OPEN_MODEL_ACCESS_RELEASE.join(".") : input.runtimeVersion,\n' +
+      '        input.useExistingLogin || input.preferT3ClientInfo\n' +
+      '          ? OPEN_MODEL_ACCESS_RELEASE.join(".")\n' +
+      '          : input.runtimeVersion,\n' +
       '      ),',
       'replace',
     ],
@@ -40,12 +49,14 @@ export const localAgyEdits = {
   [driver]: [
     [
       'import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";\n',
-      'import { hasLocalAgyAgent, localAgyAgent, localAgyModels, localAgySpawn } from "../RubatoLocalAgy.ts";\n',
+      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyIsolated, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n' +
-      '    const localAgent = localAgyAgent(environment);\n',
+      '    const localAgent = localAgyAgent(environment);\n' +
+      '    const localIsolated = Boolean(localAgent) && localAgyIsolated(environment);\n' +
+      '    const localExistingLogin = Boolean(localAgent) && !localIsolated;\n',
       'replace',
     ],
     [
@@ -69,10 +80,10 @@ export const localAgyEdits = {
           return yield* new ProviderSetupError({
             instanceId,
             operation: "configure",
-            detail: "Use an absolute path to official agy and sign in from agy itself.",
+            detail: "Use an absolute path to official agy and sign in with Google.",
           });
         }
-        const spawn = localAgySpawn(settings.binaryPath, localAgent, cwd, userHome, baseEnv);
+        const localBaseSpawn = localAgySpawn(settings.binaryPath, localAgent, cwd, userHome, baseEnv);
         const agentMissing = (cause?: unknown) =>
           new ProviderSetupError({
             instanceId,
@@ -82,9 +93,9 @@ export const localAgyEdits = {
           });
         const listing = yield* spawner
           .string(
-            ChildProcess.make(spawn.command, ["agents"], {
+            ChildProcess.make(localBaseSpawn.command, ["agents"], {
               cwd,
-              env: spawn.env,
+              env: localBaseSpawn.env,
               extendEnv: false,
               shell: false,
             }),
@@ -100,14 +111,77 @@ export const localAgyEdits = {
           version: null,
           managedVersionDirectory: null,
         };
-        return { executable, spawn };
+        if (!localIsolated) {
+          return { executable, spawn: localBaseSpawn };
+        }
+        const profile = yield* prepareAntigravityProfile({
+          profileDirectory,
+          baseEnv: processEnvironment,
+          auth,
+          userHome,
+          tempDirectory: directories.runtimeTemp,
+        }).pipe(
+          Effect.provideService(FileSystem.FileSystem, fileSystem),
+          Effect.provideService(Path.Path, path),
+          Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
+          Effect.mapError((cause) =>
+            isNodeRuntimeUnavailableError(cause.cause)
+              ? new ProviderSetupError({
+                  instanceId,
+                  operation: "start",
+                  detail: nodeRuntimeUnavailableMessage("Antigravity sign-in"),
+                  cause,
+                })
+              : cause,
+          ),
+        );
+        yield* Effect.promise(() =>
+          linkLocalAgyProfileConfig(profile.geminiHome, userHome, profile.platform),
+        );
+        const runtimeTempDirectory = yield* Effect.acquireRelease(
+          fileSystem.makeTempDirectory({ directory: profile.tempDirectory, prefix: "run-" }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new ProviderSetupError({
+                  instanceId,
+                  operation: "start",
+                  detail: "Could not create an Antigravity runtime temp directory.",
+                  cause,
+                }),
+            ),
+          ),
+          (directory) =>
+            fileSystem
+              .remove(directory, { recursive: true, force: true })
+              .pipe(
+                Effect.catch(() =>
+                  Effect.logWarning("Could not remove an Antigravity runtime temp directory."),
+                ),
+              ),
+        );
+        const isolatedSpawn = localAgyWithAgentArgs(
+          buildAntigravityAcpSpawnInput({
+            installation: executable,
+            profile,
+            cwd,
+            baseEnv,
+            auth,
+            runtimeTempDirectory,
+          }),
+          localAgent,
+        );
+        return { executable, spawn: isolatedSpawn };
       }
 `,
     ],
     [
       '        runtimeVersion: executable.version,\n',
       '        runtimeVersion: executable.version,\n' +
-      '        ...(localAgent ? { useExistingLogin: true } : {}),\n',
+      '        ...(localExistingLogin\n' +
+      '          ? { useExistingLogin: true }\n' +
+      '          : localIsolated\n' +
+      '            ? { preferT3ClientInfo: true }\n' +
+      '            : {}),\n',
       'replace',
     ],
     [
@@ -126,7 +200,7 @@ export const localAgyEdits = {
         return {
           protocolVersion: 1,
           agentCapabilities: {},
-          authMethods: [],
+          authMethods: localIsolated ? [{ id: "oauth-personal", name: "Log in with Google" }] : [],
           agentInfo: { name: "agy", version: "" },
         };
       }
@@ -162,7 +236,7 @@ export const localAgyEdits = {
     [
       '    return {\n      instanceId,\n      driverKind: DRIVER,\n      continuationIdentity,\n',
       `    // Read the account's actual model list at start, without sending a prompt.
-    if (enabled && localAgent) {
+    if (enabled && localExistingLogin) {
       yield* refreshModels().pipe(
         Effect.catch((cause) => Effect.logWarning(cause.detail)),
         Effect.forkScoped,
@@ -172,9 +246,10 @@ export const localAgyEdits = {
 `,
     ],
     // Without the controller nothing can start agy's sign-in or sign it out of its own login.
+    // Isolated accounts use their own per-instance profile, so they keep the sign-in controller.
     [
       '      auth: authFlow.controller,\n      refreshModels,\n',
-      '      ...(localAgent ? {} : { auth: authFlow.controller }),\n      refreshModels,\n',
+      '      ...(localExistingLogin ? {} : { auth: authFlow.controller }),\n      refreshModels,\n',
       'replace',
     ],
   ],

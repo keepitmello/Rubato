@@ -13,7 +13,6 @@ export const SUPPORTED_PROVIDER_IDS = Object.freeze([
   "kiro",
   "opencode",
   "google-vertex",
-  "google",
 ]);
 
 function providerId(provider, index) {

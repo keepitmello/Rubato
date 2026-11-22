@@ -8,13 +8,14 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { LOCAL_AGY_AGENT } from "../provider/RubatoLocalAgy.ts";
 import { RUBATO_USAGE_SOURCE_ID, readRubatoUsageSource } from "./RubatoUsageLimits.ts";
 
 const CHECKED_AT = "2026-10-17T18:00:00.000Z";
 const window = (id: string, usedPercent: number) => ({ id, kind: "weekly", label: "Weekly", usedPercent });
 
 /** A checkout whose auth service answers `usage` with `answer`, or fails when it is an Error. */
-function stubCheckout(answer: unknown): ServerSettings {
+function stubCheckout(answer: unknown, localAgyEnabled?: boolean): ServerSettings {
   const root = mkdtempSync(join(tmpdir(), "rubato-usage-source-"));
   mkdirSync(join(root, "auth"));
   writeFileSync(join(root, "bridge.mjs"), "export {};\n");
@@ -26,7 +27,16 @@ function stubCheckout(answer: unknown): ServerSettings {
     `export function authService() { return { async handle(action) { if (action !== "usage") throw new Error("unexpected " + action); ${body} } }; }\n`,
   );
   return {
-    providerInstances: { rubato: { driver: "rubato-pi", config: { bridgeModule: join(root, "bridge.mjs") } } },
+    providerInstances: {
+      rubato: { driver: "rubato-pi", config: { bridgeModule: join(root, "bridge.mjs") } },
+      ...(localAgyEnabled === undefined ? {} : {
+        local: {
+          driver: "antigravity",
+          enabled: localAgyEnabled,
+          environment: [{ name: LOCAL_AGY_AGENT, value: "rubato-lead" }],
+        },
+      }),
+    },
   } as unknown as ServerSettings;
 }
 
@@ -67,12 +77,27 @@ it.effect("each Rubato account is its own row under its provider's driver", () =
         ["Claude · setup-token", "claudeAgent"],
         ["Cursor", "cursor"],
         ["Grok", "grok"],
-        ["Gemini API", "gemini"],
       ],
       "a provider without a T3 driver and a row the page cannot draw are dropped",
     );
     assert.equal(source.accounts[0]?.email, "me@example.com");
     assert.equal(source.accounts[0]?.plan, "ChatGPT Pro");
+  }),
+);
+
+it.effect("only enabled local AGY replaces the Gemini API daily row", () =>
+  Effect.gen(function* () {
+    const answer = { accounts: [
+      row("google", "keychain", [window("daily_gemini-4-hydrogen", 15)]),
+      row("openai-codex", "default", [window("primary", 62)]),
+    ] };
+    const before = yield* readRubatoUsageSource(stubCheckout(answer, false), []);
+    assert.ok(before);
+    assert.deepEqual(before.accounts.map((account) => account.driver), ["gemini", "codex"]);
+    const current = yield* readRubatoUsageSource(stubCheckout(answer, true), [before]);
+    assert.deepEqual(current?.accounts.map((account) => account.driver), ["codex"]);
+    const failed = yield* readRubatoUsageSource(stubCheckout(new Error("read failed"), true), [before]);
+    assert.deepEqual(failed?.accounts.map((account) => account.driver), ["codex"]);
   }),
 );
 

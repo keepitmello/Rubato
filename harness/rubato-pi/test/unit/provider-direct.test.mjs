@@ -787,7 +787,7 @@ test("legacy 와 target 이 같은 경로면 아무것도 하지 않는다", asy
 // 예전에는 지원 신원과 활성 등록이 갈라져 있었다: 이 목록은 제품 계약이고, 활성 권위는
 // bridge catalog 에서 유도한 `ourProviderIds(catalog)` 였다. bridge 가 삭제되면서 물을
 // 곳이 없어졌으므로 이 목록이 유일한 권위다.
-test("지원 신원은 여덟 개이고 정적이다", async () => {
+test("지원 신원은 일곱 개이고 정적이다", async () => {
   const { SUPPORTED_PROVIDER_IDS, foreignProviderIds } = await import("../../src/provider-ids.mjs");
   assert.deepEqual([...SUPPORTED_PROVIDER_IDS], [
     "openai-codex",
@@ -797,7 +797,6 @@ test("지원 신원은 여덟 개이고 정적이다", async () => {
     "kiro",
     "opencode",
     "google-vertex",
-    "google",
   ]);
   // 등록하는 id 는 어느 것도 foreign 이 아니다 — 정리 단계가 그것을 지우면 안 된다.
   const foreign = foreignProviderIds([...SUPPORTED_PROVIDER_IDS, "vercel-ai-gateway", "ollama"]);

@@ -1,9 +1,20 @@
+import { access, copyFile, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises";
+import path from "node:path";
+
 export const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
+export const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
 
 export function localAgyAgent(
   environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined,
 ) {
   return environment?.find((entry) => entry.name === LOCAL_AGY_AGENT)?.value.trim() || undefined;
+}
+
+export function localAgyIsolated(
+  environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined,
+) {
+  const raw = environment?.find((entry) => entry.name === LOCAL_AGY_ISOLATED)?.value.trim().toLowerCase();
+  return raw === "1" || raw === "true";
 }
 
 export function localAgySpawn(
@@ -33,6 +44,57 @@ export function localAgySpawn(
     shell: false as const,
     extendEnv: false as const,
   };
+}
+
+export function localAgyWithAgentArgs<Spawn extends { readonly args: ReadonlyArray<string> }>(
+  spawn: Spawn,
+  agent: string,
+): Spawn {
+  return {
+    ...spawn,
+    args: [...spawn.args, "--sandbox", "--agent", agent],
+  };
+}
+
+/**
+ * Link the user's `~/.gemini/config/agents` and `mcp_config.json` into an isolated
+ * Antigravity profile so extra Google accounts share the Rubato lead agent and MCP tools.
+ * (Skills are already linked by upstream `linkAntigravityUserConfig`.)
+ */
+export async function linkLocalAgyProfileConfig(
+  profileDirectory: string,
+  userHome: string,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  const userConfig = path.join(userHome, ".gemini", "config");
+  const profileConfig = path.join(profileDirectory, "config");
+  await mkdir(profileConfig, { recursive: true });
+
+  const linkOrSkip = async (name: string, kind: "dir" | "file") => {
+    const target = path.join(userConfig, name);
+    try { await access(target); } catch { return; }
+    const dest = path.join(profileConfig, name);
+    if (platform === "win32" && kind === "file") {
+      try { await copyFile(target, dest); } catch { /* best-effort */ }
+      return;
+    }
+    let existing = null;
+    try { existing = await lstat(dest); } catch { /* absent */ }
+    if (existing !== null) {
+      if (existing.isSymbolicLink()) {
+        const current = path.resolve(profileConfig, await readlink(dest));
+        if (current === path.resolve(target)) return;
+        await rm(dest, { force: true });
+      } else {
+        return;
+      }
+    }
+    const symlinkType = kind === "dir" ? (platform === "win32" ? "junction" : "dir") : "file";
+    await symlink(target, dest, symlinkType);
+  };
+
+  try { await linkOrSkip("agents", "dir"); } catch { /* best-effort */ }
+  try { await linkOrSkip("mcp_config.json", "file"); } catch { /* best-effort */ }
 }
 
 export function localAgyModels<Model extends { readonly slug: string; readonly name: string }>(

@@ -1,11 +1,21 @@
 import { useAtomValue } from "@effect/atom-react";
-import type { ProviderInstanceId, ServerProviderModel } from "@t3tools/contracts";
-import { CheckIcon, CopyIcon, ExternalLinkIcon, PinIcon, PinOffIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import {
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ProviderInstanceConfig,
+  type ServerProvider,
+  type ServerProviderModel,
+} from "@t3tools/contracts";
+import { CheckIcon, CopyIcon, ExternalLinkIcon, PinIcon, PinOffIcon, PlusIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import * as Option from "effect/Option";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 
 import { requestConfirmDialog } from "../../confirmDialog";
-import { updateClientSettings, usePrimarySettings } from "../../hooks/useSettings";
+import {
+  updateClientSettings,
+  usePersistEnvironmentProviderInstanceMutation,
+  usePrimarySettings,
+} from "../../hooks/useSettings";
 import { cn } from "../../lib/utils";
 import { readLocalApi } from "../../localApi";
 import {
@@ -30,30 +40,48 @@ import { rubatoAccountLabel, rubatoAccountOrder } from "../../rubatoAccountLabel
 import { Switch } from "../ui/switch";
 import { toastManager } from "../ui/toast";
 import { SettingsGroup } from "./SettingsGroup";
+import { ProviderAuthenticationSection } from "./ProviderAuthenticationSection";
 import { EffortDefaultSection, ModelEffortControl, useEffortSettings, type EffortState } from "./RubatoEffortSettings";
 import { SettingsPageContainer, SettingsRow, SettingsSection } from "./settingsLayout";
 
 type EnvironmentId = ReturnType<typeof usePrimaryEnvironmentId>;
+type ReadyEnvironmentId = NonNullable<EnvironmentId>;
 
 /** The Rubato driver's instance; its models carry `<provider>/<model>` slugs. */
 const RUBATO_DRIVER = "rubato-pi";
+const ANTIGRAVITY_ACP_NAV_ID = "antigravity-acp";
+const ANTIGRAVITY_DRIVER = "antigravity";
+const LOCAL_AGY_AGENT_ENV = "RUBATO_LOCAL_AGY_AGENT";
+const LOCAL_AGY_ISOLATED_ENV = "RUBATO_LOCAL_AGY_ISOLATED";
 
 // `rubato auth` names providers for the terminal; the page names what people pick.
 const DISPLAY_NAME: Record<string, string> = {
   anthropic: "Claude",
   "openai-codex": "Codex",
+  [ANTIGRAVITY_ACP_NAV_ID]: "Antigravity ACP",
   xai: "Grok",
   cursor: "Cursor",
   "b-ai": "b.ai",
   opengateway: "OpenGateway",
   nanogpt: "NanoGPT",
   "google-vertex": "Vertex AI",
-  google: "Gemini API",
   kiro: "Kiro",
   "google-antigravity": "Antigravity",
   opencode: "OpenCode",
 };
-const DISPLAY_ORDER = ["anthropic", "openai-codex", "xai", "cursor", "b-ai", "opengateway", "nanogpt", "google-vertex", "google", "kiro", "opencode"];
+const DISPLAY_ORDER = [
+  "anthropic",
+  "openai-codex",
+  ANTIGRAVITY_ACP_NAV_ID,
+  "xai",
+  "cursor",
+  "b-ai",
+  "opengateway",
+  "nanogpt",
+  "google-vertex",
+  "kiro",
+  "opencode",
+];
 
 const STATE_VIEW: Record<ConnectionState, { label: string; dot: string; badge: "success" | "warning" | "outline" }> = {
   connected: { label: "Connected", dot: "bg-success", badge: "success" },
@@ -79,7 +107,8 @@ function displayName(provider: Pick<ProviderStatus, "id" | "label">): string {
 }
 
 function ProviderIcon({ id, className }: { id: string; className?: string }) {
-  const Icon = iconForProviderModel(RUBATO_DRIVER as never, { slug: `${id}/_` });
+  const iconId = id === ANTIGRAVITY_ACP_NAV_ID ? "google-antigravity" : id;
+  const Icon = iconForProviderModel(RUBATO_DRIVER as never, { slug: `${iconId}/_` });
   return Icon ? <Icon className={cn("size-4 shrink-0", className)} aria-hidden /> : null;
 }
 
@@ -151,15 +180,52 @@ export function RubatoProvidersSettingsPanel() {
     void loadStatus();
   }, [loadStatus]);
 
-  const providers = useMemo(() => {
-    const list = status?.providers ?? [];
+  const serverProviders = useAtomValue(primaryServerProvidersAtom);
+  const settings = usePrimarySettings();
+
+  const agyEntries = useMemo(
+    () =>
+      Object.entries(settings.providerInstances ?? {})
+        .filter(([, instance]) => instance?.driver === ANTIGRAVITY_DRIVER)
+        .toSorted(([leftId], [rightId]) => {
+          if (leftId === "agy-rubato-lead") return -1;
+          if (rightId === "agy-rubato-lead") return 1;
+          return leftId.localeCompare(rightId);
+        }),
+    [settings.providerInstances],
+  );
+
+  const agySummary = useMemo((): { state: ConnectionState; text: string; disabled: boolean } => {
+    const enabledEntries = agyEntries.filter(([, instance]) => instance.enabled !== false);
+    const liveById = new Map(serverProviders.map((provider) => [provider.instanceId, provider]));
+    const connectedCount = enabledEntries.filter(([id, instance]) => {
+      const live = liveById.get(id as ProviderInstanceId);
+      const isolated = isIsolatedAgyInstance(instance);
+      if (isolated) return live?.auth.status === "authenticated" || live?.status === "ready";
+      return live ? live.status === "ready" : true;
+    }).length;
+    const state: ConnectionState = connectedCount > 0 ? "connected" : "absent";
+    const parts = [STATE_VIEW[state].label];
+    if (agyEntries.length > 0 && enabledEntries.length === 0) parts.push("Off");
+    if (agyEntries.length > 1) parts.push(`${agyEntries.length} accounts`);
+    return { state, text: parts.join(" · "), disabled: agyEntries.length > 0 && enabledEntries.length === 0 };
+  }, [agyEntries, serverProviders]);
+
+  const navItems = useMemo(() => {
     const rank = (id: string) => {
       const index = DISPLAY_ORDER.indexOf(id);
       return index < 0 ? DISPLAY_ORDER.length : index;
     };
-    return list.toSorted((a, b) => rank(a.id) - rank(b.id));
+    const items: Array<
+      | { kind: "rubato"; id: string; provider: ProviderStatus }
+      | { kind: "antigravity-acp"; id: string }
+    > = [
+      ...(status?.providers ?? []).map((provider) => ({ kind: "rubato" as const, id: provider.id, provider })),
+      { kind: "antigravity-acp" as const, id: ANTIGRAVITY_ACP_NAV_ID },
+    ];
+    return items.toSorted((a, b) => rank(a.id) - rank(b.id));
   }, [status]);
-  const selected = providers.find((provider) => provider.id === selectedId) ?? providers[0];
+  const selectedItem = navItems.find((item) => item.id === selectedId) ?? navItems[0];
 
   return (
     <SettingsPageContainer>
@@ -193,44 +259,65 @@ export function RubatoProvidersSettingsPanel() {
             <SettingsRow title="Reading provider accounts" control={<Spinner className="size-4" />} />
           </SettingsGroup>
         ) : null}
-        {selected ? (
+        {selectedItem ? (
           <SettingsGroup divided={false} className="overflow-hidden md:grid md:grid-cols-[15rem_minmax(0,1fr)]">
             <nav
               aria-label="Providers"
               className="divide-y divide-border/50 border-b border-border/60 bg-muted/10 md:border-r md:border-b-0"
             >
-              {providers.map((provider) => (
-                <button
-                  key={provider.id}
-                  type="button"
-                  onClick={() => setSelectedId(provider.id)}
-                  aria-current={provider.id === selected.id ? "true" : undefined}
-                  className={cn(
-                    "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40",
-                    provider.id === selected.id && "bg-accent/60",
-                    provider.disabled && "opacity-60",
-                  )}
-                >
-                  <ProviderIcon id={provider.id} className="size-5" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium">{displayName(provider)}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{summary(provider)}</span>
-                  </span>
-                  <span className={cn("size-2 shrink-0 rounded-full", STATE_VIEW[provider.state].dot)} aria-hidden />
-                </button>
-              ))}
+              {navItems.map((item) => {
+                const isSelected = item.id === selectedItem.id;
+                const isAgy = item.kind === "antigravity-acp";
+                const label = isAgy ? "Antigravity ACP" : displayName(item.provider);
+                const sub = isAgy ? agySummary.text : summary(item.provider);
+                const dot = isAgy ? STATE_VIEW[agySummary.state].dot : STATE_VIEW[item.provider.state].dot;
+                const dimmed = isAgy ? agySummary.disabled : item.provider.disabled;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setSelectedId(item.id)}
+                    aria-current={isSelected ? "true" : undefined}
+                    className={cn(
+                      "flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/40",
+                      isSelected && "bg-accent/60",
+                      dimmed && "opacity-60",
+                    )}
+                  >
+                    <ProviderIcon id={item.id} className="size-5" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{label}</span>
+                      <span className="block truncate text-xs text-muted-foreground">{sub}</span>
+                    </span>
+                    <span className={cn("size-2 shrink-0 rounded-full", dot)} aria-hidden />
+                  </button>
+                );
+              })}
             </nav>
-            <ProviderDetail
-              key={selected.id}
-              environmentId={environmentId}
-              provider={selected}
-              setupToken={status?.setupToken ?? null}
-              effort={effort}
-              onChanged={() => {
-                void loadStatus();
-                refreshModels();
-              }}
-            />
+            {selectedItem.kind === "antigravity-acp" ? (
+              environmentId !== null ? (
+                <AntigravityAcpDetail
+                  environmentId={environmentId}
+                  entries={agyEntries}
+                  serverProviders={serverProviders}
+                  onChanged={refreshModels}
+                />
+              ) : (
+                <div className="min-w-0 p-4 text-sm text-muted-foreground">Connecting to environment…</div>
+              )
+            ) : (
+              <ProviderDetail
+                key={selectedItem.id}
+                environmentId={environmentId}
+                provider={selectedItem.provider}
+                setupToken={status?.setupToken ?? null}
+                effort={effort}
+                onChanged={() => {
+                  void loadStatus();
+                  refreshModels();
+                }}
+              />
+            )}
           </SettingsGroup>
         ) : null}
       </SettingsSection>
@@ -755,6 +842,304 @@ function ProviderModels({ providerId, name, effort }: { providerId: string; name
           ))
         )}
       </SettingsGroup>
+    </div>
+  );
+}
+
+function isIsolatedAgyInstance(instance: ProviderInstanceConfig): boolean {
+  const env = instance.environment ?? [];
+  const hasLocalAgent = env.some(
+    (entry) => entry.name === LOCAL_AGY_AGENT_ENV && typeof entry.value === "string" && entry.value.trim().length > 0,
+  );
+  if (!hasLocalAgent) return true;
+  const isolatedEntry = env.find((entry) => entry.name === LOCAL_AGY_ISOLATED_ENV);
+  const isolated = typeof isolatedEntry?.value === "string" ? isolatedEntry.value.trim().toLowerCase() : "";
+  return isolated === "1" || isolated === "true";
+}
+
+function agyBinaryPathOf(entries: ReadonlyArray<readonly [string, ProviderInstanceConfig]>): string {
+  for (const [, instance] of entries) {
+    const config = instance.config as { readonly binaryPath?: unknown } | undefined;
+    if (typeof config?.binaryPath === "string" && config.binaryPath.trim().length > 0) {
+      return config.binaryPath.trim();
+    }
+  }
+  return "";
+}
+
+function nextAgyAccountSlot(existingIds: ReadonlySet<string>): { id: string; defaultLabel: string } {
+  if (!existingIds.has("agy-rubato-lead-sub")) {
+    return { id: "agy-rubato-lead-sub", defaultLabel: "루바토 리드 [sub]" };
+  }
+  for (let index = 2; index < 100; index += 1) {
+    const id = `agy-rubato-lead-sub${index}`;
+    if (!existingIds.has(id)) {
+      return { id, defaultLabel: `루바토 리드 [sub${index}]` };
+    }
+  }
+  const suffix = Date.now().toString(36);
+  return { id: `agy-rubato-lead-${suffix}`, defaultLabel: `루바토 리드 [${suffix}]` };
+}
+
+function AntigravityAcpDetail({
+  environmentId,
+  entries,
+  serverProviders,
+  onChanged,
+}: {
+  environmentId: ReadyEnvironmentId;
+  entries: ReadonlyArray<readonly [string, ProviderInstanceConfig]>;
+  serverProviders: ReadonlyArray<ServerProvider>;
+  onChanged: () => void;
+}) {
+  const persistInstance = usePersistEnvironmentProviderInstanceMutation(environmentId);
+  const detectedBinary = agyBinaryPathOf(entries);
+  const [label, setLabel] = useState("");
+  const [binaryPath, setBinaryPath] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
+
+  const liveById = useMemo(
+    () => new Map(serverProviders.map((provider) => [provider.instanceId, provider])),
+    [serverProviders],
+  );
+  const existingIds = useMemo(() => new Set(entries.map(([id]) => id)), [entries]);
+  const nextSlot = useMemo(() => nextAgyAccountSlot(existingIds), [existingIds]);
+
+  const toggleEnabled = async (id: string, instance: ProviderInstanceConfig, enabled: boolean) => {
+    setBusyId(id);
+    try {
+      const result = await persistInstance({
+        operation: "upsert",
+        instanceId: ProviderInstanceId.make(id),
+        instance: { ...instance, enabled },
+      });
+      if (result._tag !== "Success") {
+        reportError("Could not update Antigravity account", "Settings update failed.");
+        return;
+      }
+      onChanged();
+    } catch (error) {
+      reportError("Could not update Antigravity account", error);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const removeAccount = async (id: string, name: string) => {
+    if (!(await confirm(`Remove Antigravity account "${name}"?`))) return;
+    setBusyId(id);
+    try {
+      const result = await persistInstance({
+        operation: "remove",
+        instanceId: ProviderInstanceId.make(id),
+      });
+      if (result._tag !== "Success") {
+        reportError("Could not remove Antigravity account", "Settings update failed.");
+        return;
+      }
+      toastManager.add({ type: "info", title: `Removed ${name}` });
+      onChanged();
+    } catch (error) {
+      reportError("Could not remove Antigravity account", error);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const addAccount = async (event: FormEvent) => {
+    event.preventDefault();
+    const resolvedBinary = detectedBinary || binaryPath.trim();
+    if (!resolvedBinary) {
+      reportError("Official agy path required", "Install official agy and enter its full path (for example ~/.local/bin/agy).");
+      return;
+    }
+    const displayName = label.trim() || nextSlot.defaultLabel;
+    setAdding(true);
+    try {
+      const instance: ProviderInstanceConfig = {
+        driver: ProviderDriverKind.make(ANTIGRAVITY_DRIVER),
+        displayName,
+        enabled: true,
+        environment: [
+          { name: LOCAL_AGY_AGENT_ENV, value: "rubato-lead", sensitive: false },
+          { name: LOCAL_AGY_ISOLATED_ENV, value: "1", sensitive: false },
+        ],
+        config: {
+          authMethod: "oauth-personal",
+          binaryPath: resolvedBinary,
+        },
+      };
+      const result = await persistInstance({
+        operation: "create",
+        instanceId: ProviderInstanceId.make(nextSlot.id),
+        instance,
+      });
+      if (result._tag !== "Success") {
+        reportError("Could not add Antigravity account", "Settings update failed.");
+        return;
+      }
+      setLabel("");
+      toastManager.add({
+        type: "success",
+        title: `Added ${displayName}`,
+        description: "Click Sign in below to connect a Google account in your browser.",
+      });
+      onChanged();
+    } catch (error) {
+      reportError("Could not add Antigravity account", error);
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const connectedCount = entries.filter(([id, instance]) => {
+    if (instance.enabled === false) return false;
+    const live = liveById.get(id as ProviderInstanceId);
+    if (isIsolatedAgyInstance(instance)) return live?.auth.status === "authenticated" || live?.status === "ready";
+    return live ? live.status === "ready" : true;
+  }).length;
+  const headerBadge: ConnectionState = connectedCount > 0 ? "connected" : "absent";
+
+  return (
+    <div className="min-w-0 space-y-6 p-4">
+      <div className="flex items-center gap-3">
+        <ProviderIcon id={ANTIGRAVITY_ACP_NAV_ID} className="size-6" />
+        <h3 className="flex-1 text-base font-medium">Antigravity ACP</h3>
+        <Badge variant={STATE_VIEW[headerBadge].badge}>{STATE_VIEW[headerBadge].label}</Badge>
+      </div>
+
+      <div className="space-y-3">
+        <h4 className="px-1 text-sm text-foreground/70">Accounts</h4>
+        {entries.length === 0 ? (
+          <SettingsGroup>
+            <SettingsRow
+              title="No Antigravity account yet"
+              description="Add a Google account below to run Gemini through official agy ACP."
+            />
+          </SettingsGroup>
+        ) : (
+          entries.map(([id, instance]) => {
+            const live = liveById.get(id as ProviderInstanceId);
+            const isolated = isIsolatedAgyInstance(instance);
+            const name = instance.displayName?.trim() || id;
+            const enabled = instance.enabled !== false;
+            const signedIn = isolated
+              ? live?.auth.status === "authenticated" || live?.status === "ready"
+              : live
+                ? live.status === "ready"
+                : enabled;
+            const badge: ConnectionState = !enabled ? "absent" : signedIn ? "connected" : "stale";
+            const badgeText = !enabled
+              ? "Off"
+              : signedIn
+                ? "Connected"
+                : isolated
+                  ? "Sign in"
+                  : "Checking…";
+            const modelNames = (live?.models ?? []).map((model) => model.name);
+            return (
+              <SettingsGroup key={id}>
+                <SettingsRow
+                  title={
+                    <span className="flex flex-wrap items-center gap-2">
+                      <span>{name}</span>
+                      <Badge variant="outline">{isolated ? "Google OAuth" : "agy CLI"}</Badge>
+                      <Badge variant={STATE_VIEW[badge].badge}>{badgeText}</Badge>
+                    </span>
+                  }
+                  description={
+                    modelNames.length > 0
+                      ? modelNames.join(" · ")
+                      : isolated
+                        ? "Isolated profile with its own Google sign-in. Shares your Rubato lead prompt, skills, and MCP tools."
+                        : "Uses the login your official agy CLI already holds."
+                  }
+                  control={
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={enabled}
+                        disabled={busyId === id}
+                        onCheckedChange={(checked) => void toggleEnabled(id, instance, Boolean(checked))}
+                        aria-label={`Use ${name}`}
+                      />
+                      <Button
+                        size="icon-xs"
+                        variant="ghost"
+                        disabled={busyId === id}
+                        onClick={() => void removeAccount(id, name)}
+                        aria-label={`Remove ${name}`}
+                      >
+                        <Trash2Icon className="size-3.5" />
+                      </Button>
+                    </div>
+                  }
+                />
+                {isolated && enabled && live ? (
+                  <ProviderAuthenticationSection
+                    environmentId={environmentId}
+                    environmentLabel="this machine"
+                    instanceId={ProviderInstanceId.make(id)}
+                    provider={live}
+                    readOnly={false}
+                  />
+                ) : null}
+              </SettingsGroup>
+            );
+          })
+        )}
+        {entries.length > 1 ? (
+          <p className="px-1 text-xs text-muted-foreground">
+            Pick an account&apos;s Gemini model from the composer picker before starting a new thread.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <h4 className="px-1 text-sm text-foreground/70">Add account</h4>
+        <SettingsGroup>
+          <form onSubmit={(event) => void addAccount(event)} className="space-y-3 p-4">
+            <div className="space-y-1.5">
+              <label htmlFor="agy-account-label" className="text-xs font-medium text-foreground/80">
+                Account label (optional)
+              </label>
+              <Input
+                id="agy-account-label"
+                size="sm"
+                value={label}
+                onChange={(event) => setLabel(event.target.value)}
+                placeholder={nextSlot.defaultLabel}
+                disabled={adding}
+              />
+            </div>
+            {!detectedBinary ? (
+              <div className="space-y-1.5">
+                <label htmlFor="agy-binary-path" className="text-xs font-medium text-foreground/80">
+                  Official agy binary path
+                </label>
+                <Input
+                  id="agy-binary-path"
+                  size="sm"
+                  value={binaryPath}
+                  onChange={(event) => setBinaryPath(event.target.value)}
+                  placeholder="/Users/you/.local/bin/agy"
+                  disabled={adding}
+                />
+              </div>
+            ) : null}
+            <div className="flex items-center gap-2">
+              <Button type="submit" size="sm" disabled={adding}>
+                {adding ? <Spinner className="size-3.5" /> : <PlusIcon className="size-3.5" />}
+                Add Google account
+              </Button>
+            </div>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Creates a separate Google sign-in profile using your installed official{" "}
+              <code className="rounded bg-muted px-1">agy</code> CLI and shares your Rubato lead agent, skills, and MCP tools.
+            </p>
+          </form>
+        </SettingsGroup>
+      </div>
     </div>
   );
 }
