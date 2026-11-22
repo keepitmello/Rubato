@@ -14,13 +14,19 @@ function sandbox(t) {
   return { HOME: dir, RUBATO_COMPANION_HOME: path.join(dir, 'companion') };
 }
 
-/** The tools as the runtime registers them, and Pi's events and messages around them. */
+/**
+ * The tools as the runtime registers them, and Pi's events and messages around them. These tests are
+ * about delivery, so reply reads a conversation with no user line waiting unless a test gives one:
+ * the answer check itself is in answer-check.test.mjs.
+ */
 function toolsOf(options) {
   const tools = new Map();
   const handlers = new Map();
   const sent = [];
   const [feature] = createCompanionHomeFactories(options);
-  feature.factory({ registerTool: (tool) => tools.set(tool.name, tool), on: (name, handler) => handlers.set(name, handler),
+  const quiet = (tool) => tool.name !== REPLY_TOOL ? tool : { ...tool, execute: (id, params, signal, onUpdate, ctx) =>
+    tool.execute(id, params, signal, onUpdate, { ...ctx, sessionManager: { getBranch: () => [], ...ctx?.sessionManager } }) };
+  feature.factory({ registerTool: (tool) => tools.set(tool.name, quiet(tool)), on: (name, handler) => handlers.set(name, handler),
     sendMessage: (message, delivery) => sent.push([message, delivery]) });
   tools.emit = (name, event) => handlers.get(name)?.(event);
   tools.sent = sent;

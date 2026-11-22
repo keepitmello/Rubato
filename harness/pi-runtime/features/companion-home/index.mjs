@@ -12,6 +12,9 @@
 //   voice are options of that same tool. Historical `say` replies remain readable.
 //   A turn the user opened that settles without either gets one reminder (Roo's
 //   telegram-reply-reminder.ts), which starts a turn of its own.
+//   A reply to the user's own messages goes out only after the answer check (answer-check.mjs) finds
+//   that it answers them; a held reply is an error result, which neither the app nor the messenger
+//   delivers. Editing what the user already has in their own Telegram chat is refused for the same reason.
 // - `inbox_list`, `inbox_add`, `inbox_update` carry the issue list: a report that came in, what
 //   Segno set aside, which lead holds it and whether it is done.
 // - `wake_wish` is Roo's wake wish: when Segno next wants to look in, and why.
@@ -24,10 +27,12 @@
 // harness/companion.
 import { openInbox, INBOX_STATUSES } from "./inbox.mjs";
 import { RECORD_KINDS, REPLY_TOOL, SAY_TOOL, attachableFiles, commitOwned, landsInside, oldMemorySeed, segnoPaths, record, recordTold, replyDisplayText, searchSegnoMemory, seedText, sentMessages, sentText, setWakeWish } from "./home.mjs";
+import { checkReply, refusalText, unavailableText } from "./answer-check.mjs";
 import { CALL_SAY_TOOL } from "./call.mjs";
 import { worldFragment, worldText } from "./world.mjs";
 import { showSchedule } from "./schedule.mjs";
 import path from "node:path";
+import { appendFileSync, mkdirSync } from "node:fs";
 
 const text = (value) => ({ type: "text", text: value });
 
@@ -132,6 +137,38 @@ export function writeRefusal(event, { cwd, env = process.env } = {}) {
     return targets.map(refusal).find(Boolean);
   }
   return undefined;
+}
+
+/** What Segno reads when it tries to change words the user already has (telegram_edit in their own chat). */
+export const OWN_CHAT_EDIT_REFUSAL = "An edit to the user's own chat would change what they read without the answer check. " +
+  "Send the corrected words with reply instead.";
+
+/**
+ * Runs the answer check for one reply (answer-check.mjs) and throws the refusal when it holds the reply
+ * back. Without the conversation to read, it refuses: a check that cannot see what the user said
+ * must not wave the reply through. Each checked reply leaves one line in <home>/logs/answer-check.jsonl.
+ */
+export async function gateReply(params, ctx, { env = process.env, check = checkReply, now = Date.now() } = {}) {
+  // What the user gets: a voice-only reply is heard as voice_text, so that is what is checked.
+  const draft = params?.voice === "only" && typeof params.voice_text === "string" && params.voice_text.trim()
+    ? replyDisplayText({ text: params.voice_text, files: params.files }) : replyDisplayText(params);
+  if (!draft) return undefined;
+  const getBranch = ctx?.sessionManager?.getBranch;
+  if (typeof getBranch !== "function") throw new Error(unavailableText(["this engine gave the reply no conversation to read"]));
+  const result = await check({ entries: getBranch.call(ctx.sessionManager), draft, registry: ctx?.modelRegistry, now });
+  if (!result.checked) return undefined;
+  try {
+    const file = path.join(segnoPaths(env).home, "logs", "answer-check.jsonl");
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    appendFileSync(file, `${JSON.stringify({ at: new Date(now).toISOString(), ok: result.ok, cleared: result.cleared ?? false,
+      model: result.model, errors: result.errors, asks: result.verdict?.asks, firstSays: result.verdict?.firstSays,
+      lines: result.pending?.lines?.map((line) => line.text), draft })}\n`, { mode: 0o600 });
+  } catch {
+    // The log is for calibration; a full disk must not decide whether a reply goes out.
+  }
+  if (result.unavailable) throw new Error(unavailableText(result.errors));
+  if (!result.ok) throw new Error(refusalText(result.verdict));
+  return { cleared: result.cleared, model: result.model, asks: result.verdict.asks.length };
 }
 
 /** pi.registerTool that also answers each renamed tool's former name (LEGACY_TOOL_NAMES). */
@@ -266,6 +303,8 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
           "with a short typing pause; call reply once and break the paragraphs where you want the bubbles. A code block, a list and " +
           "a line ending in ':' stay with their bubble; text with no blank line is one bubble. " +
           "Files you want to show or hand over (a picture, a video, a document, an HTML page) go with this same tool, never as a path in the words. " +
+          "A reply to the user's own message is checked before it goes out: its first line must answer what they asked or pointed at " +
+          "(the option they gave, the reason when they asked why, the thing they meant by 그거), or it comes back refused with what was missed and nothing reaches them. " +
           (media ? "Voice uses it too. Include text, voice_text or files. Media delivery failures are reported; do not claim they arrived. " : ""),
         parameters: replyParameters(media),
         async execute(_id, params, _signal, _onUpdate, ctx) {
@@ -274,6 +313,8 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
           if (!media && (params.voice === true || params.voice === "only" || params.voice_text)) {
             throw new Error("No media messenger is connected to this companion.");
           }
+          // Held back here, before anything is sent anywhere.
+          const answerCheck = await gateReply(params, ctx, { env });
           if (media && (files.length || params.voice === true || params.voice === "only" || params.voice_text)) {
             const sessionId = ctx?.sessionManager?.getSessionId?.();
             const result = await sessionLink.telegramSend({ text: params.text, files: params.files, voice: params.voice,
@@ -284,12 +325,14 @@ export function createCompanionHomeFactories({ sessionLink, env = process.env } 
           }
           const told = recordTold(replyDisplayText(params), { via: REPLY_TOOL, env });
           return { content: [text(telegram ? `Reply recorded in the app; messenger: ${JSON.stringify(telegram)}` : "Sent to the user.")],
-            details: { ...told, ...(telegram ? { telegram } : {}) } };
+            details: { ...told, ...(telegram ? { telegram } : {}), ...(answerCheck ? { answerCheck } : {}) } };
         },
       });
 
       // Segno writes only in its home, and never through a link out of it (user, 2026-10-21).
       pi.on("tool_call", (event, ctx) => {
+        // The same destinations the messenger reads as the user's own chat (messenger/service.mjs targetOf).
+        if (event?.toolName === "telegram_edit" && [undefined, null, "", "user"].includes(event.input?.to)) return { block: true, reason: OWN_CHAT_EDIT_REFUSAL };
         const reason = writeRefusal(event, { cwd: ctx?.cwd, env });
         return reason ? { block: true, reason } : undefined;
       });
