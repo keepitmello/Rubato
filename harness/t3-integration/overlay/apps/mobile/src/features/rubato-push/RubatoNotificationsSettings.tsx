@@ -153,10 +153,18 @@ export function RubatoNotificationsSettings() {
           <SettingsSwitchRow
             icon="checkmark.circle"
             label="Threads"
-            subtitle="A thread finished, failed or needs your answer."
+            subtitle="Your threads finish or fail, or any thread needs your input or approval."
             disabled={!registered}
             value={preferences.threads}
             onValueChange={(on) => changePreference("threads", on)}
+          />
+          <SettingsSwitchRow
+            icon="checkmark.circle"
+            label="Companion-Created Threads"
+            subtitle="A run started by a companion finished or failed."
+            disabled={!registered}
+            value={preferences.companionThreads}
+            onValueChange={(on) => changePreference("companionThreads", on)}
           />
           {liveActivitySupported() ? (
             <SettingsSwitchRow
@@ -172,7 +180,7 @@ export function RubatoNotificationsSettings() {
             icon={{ ios: "lock", android: "lock" }}
             label="Show Thread Names"
             subtitle="Off: the lock screen only says that a thread finished or needs you."
-            disabled={status === null || !preferences.threads}
+            disabled={status === null || !(preferences.threads || preferences.companionThreads)}
             value={status?.preview !== "generic"}
             onValueChange={changeShowNames}
           />

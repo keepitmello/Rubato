@@ -167,24 +167,34 @@ test('a bad grant is refused with the reason', async t => {
   assert.match((await response.json()).error.message, /https/);
 });
 
-test('a run a companion opened finishes quietly; its asks, and runs the person opened, still alert', async t => {
+test('a companion outcome is optional, unlike requests for the person and their own runs', async t => {
   const { push, sent } = service(t);
   const opened = { 'thread-1': true };
   const forget = push.companionRuns(async threadId => opened[threadId] === true);
   for (const phase of ['running', 'completed', 'running', 'waiting_for_approval', 'running', 'failed']) await push.threadChanged('thread-1', state(phase));
-  assert.deepEqual(sent.map(item => item.body), ['Approval needed']);
+  assert.deepEqual(sent.map(item => [item.preference, item.body]), [
+    ['companionThreads', 'Agent finished'],
+    ['threads', 'Approval needed'],
+    ['companionThreads', '⚠︎ Agent failed'],
+  ]);
+  assert.deepEqual(await (await ask(push, 'desktop-thread-muted', { threadId: 'thread-1' })).json(), { muted: false });
+  await ask(push, 'desktop-companion-threads', { enabled: false });
+  await ask(push, 'settings', { preview: 'generic' });
+  assert.deepEqual(await (await ask(push, 'desktop-thread-muted', { threadId: 'thread-1' })).json(), { muted: true });
+  await ask(push, 'settings', { preview: 'full' });
   opened['thread-1'] = false;
   for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
-  assert.deepEqual(sent.map(item => item.body), ['Approval needed', 'Agent finished']);
+  assert.deepEqual(await (await ask(push, 'desktop-thread-muted', { threadId: 'thread-1' })).json(), { muted: false });
+  assert.deepEqual([sent.at(-1).preference, sent.at(-1).body], ['threads', 'Agent finished']);
   // An answer that cannot be had counts as the person's run, and a forgotten answer is not asked.
   const failing = push.companionRuns(async () => { throw new Error('engine away'); });
   for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
-  assert.equal(sent.length, 3);
+  assert.equal(sent.length, 5);
   failing();
   opened['thread-1'] = true;
   forget();
   for (const phase of ['running', 'completed']) await push.threadChanged('thread-1', state(phase));
-  assert.equal(sent.length, 4);
+  assert.equal(sent.length, 6);
 });
 
 test("a companion's words arrive as a message from it; its room's runs are never thread alerts", async t => {

@@ -23,7 +23,7 @@ function run(t, { fail = false, args = ['--simulator'] } = {}) {
   writeFileSync(path.join(mobile, '.git'), 'gitdir: elsewhere\n');
   writeFileSync(path.join(mobile, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n');
   writeFileSync(path.join(ios, 'Rubato/Info.plist'), '<?xml version="1.0" encoding="UTF-8"?>\n'
-    + '<plist version="1.0"><dict><key>CFBundleVersion</key><string>1</string></dict></plist>\n');
+    + '<plist version="1.0"><dict><key>CFBundleVersion</key><string>1</string><key>CFBundleShortVersionString</key><string>1.0.0</string></dict></plist>\n');
   // Left over from an earlier run that died before its own cleanup.
   mkdirSync(path.join(out, 'device'), { recursive: true });
   mkdirSync(path.join(out, 'export-old'), { recursive: true });
@@ -42,7 +42,7 @@ function run(t, { fail = false, args = ['--simulator'] } = {}) {
 [ "$3" = expo-updates ] && echo '{"hash":"stub"}'
 if [ "$3" = expo ] && [ "$4" = prebuild ]; then
   mkdir -p ios/Rubato
-  printf '%s\\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict><key>CFBundleVersion</key><string>1</string></dict></plist>' > ios/Rubato/Info.plist
+  printf '%s\\n' '<?xml version="1.0" encoding="UTF-8"?>' '<plist version="1.0"><dict><key>CFBundleVersion</key><string>1</string><key>CFBundleShortVersionString</key><string>1.0.0</string></dict></plist>' > ios/Rubato/Info.plist
 fi
 exit 0`);
   stub('sips', 'exit 0');
@@ -107,7 +107,7 @@ test('--archive keeps a signed archive and uploads nothing', { skip: process.pla
   assert.ok(archive.startsWith(out));
   assert.equal(calls.length, 1);
   assert.match(calls[0], / archive$/);
-  assert.match(calls[0], /CODE_SIGN_STYLE=Automatic -allowProvisioningUpdates/);
+  assert.match(calls[0], /CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION=\d{12} MARKETING_VERSION=1\.0\.0 -allowProvisioningUpdates/);
   assert.ok(!calls.some((call) => call.includes('-exportArchive')), 'no upload');
   for (const gone of [ios, path.join(out, 'device')]) assert.ok(!existsSync(gone), `${gone} is removed`);
 });

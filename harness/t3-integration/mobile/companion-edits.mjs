@@ -77,6 +77,8 @@ export const mobileCompanionOverlays = [
   `${callModule}/ios/RubatoCallCenter.swift`,
   `${callModule}/ios/RubatoCallModule.swift`,
   'apps/mobile/targets/notification-service/NotificationService.swift',
+  'apps/mobile/targets/notification-service/roo-notification.png',
+  'apps/mobile/targets/notification-service/segno-notification.png',
   'packages/client-runtime/src/state/rubatoEnvironmentHttp.ts',
   'packages/client-runtime/src/state/rubatoEnvironmentHttp.test.ts',
 ];

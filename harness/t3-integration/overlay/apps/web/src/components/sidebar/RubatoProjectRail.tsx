@@ -43,7 +43,7 @@ import { useRubatoRemoveProject } from "./rubatoRemoveProject";
 import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings";
 import { companionRailAction } from "./rubatoCompanionRailAction";
 import { useOpenListAfterSegno } from "../chat/RubatoSegnoSpace";
-import { RubatoSegnoIcon } from "./RubatoSegnoIcon";
+import { RubatoCompanionRailIcon } from "./RubatoSegnoIcon";
 import { RubatoCompanionFace } from "../chat/RubatoCompanionFace";
 import { useRubatoProjectList } from "./rubatoProjectList";
 import {
@@ -375,10 +375,11 @@ export function RubatoProjectRail() {
             }}
           >
             <span className={item.settings.enabled ? "" : "opacity-40"}>
-              {/* Segno keeps its drawn glyph among the rail's icons until a picture is set in the app
-                  (`pictureSet`); every other companion shows its picture, or its first letter, "?"
-                  while nameless — intent companion-manage. */}
-              {item.id === "segno" && item.pictureSet !== true ? <RubatoSegnoIcon /> : <RubatoCompanionFace companion={item} className="size-6 text-xs" />}
+              {(item.id === "roo" || item.id === "segno") && item.pictureSet !== true ? (
+                <RubatoCompanionRailIcon id={item.id} />
+              ) : (
+                <RubatoCompanionFace companion={item} className="size-6 text-xs" />
+              )}
             </span>
           </RailButton>
         ))}

@@ -107,8 +107,8 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   const roo = host.querySelector<HTMLButtonElement>("button[aria-label=Roo]")!;
   expect(segno).not.toBeNull();
   expect(roo).not.toBeNull();
-  expect(segno.querySelector("svg")).not.toBeNull();
-  expect(roo.textContent).toBe("R");
+  expect(segno.querySelector("[data-rubato-segno-icon]")).not.toBeNull();
+  expect(roo.querySelector("[data-rubato-roo-icon]")).not.toBeNull();
   expect(roo.querySelector("img")).toBeNull();
   await act(async () => { roo.click(); render(); });
   expect(fake.navigate).toHaveBeenLastCalledWith({
@@ -125,13 +125,14 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   await act(async () => { roo.click(); render(); });
   expect(host.querySelectorAll("[data-rubato-segno-art], aside img")).toHaveLength(0);
   // A picture set for Roo (intent companion-manage) shows on its rail button; its space still draws no stage art.
+  fake.choices.find(item => item.id === "roo")!.pictureSet = true;
   fake.avatars.roo = "data:image/png;base64,ROO_PICTURE";
-  await act(async () => { for (const listener of fake.avatarListeners) listener(); });
+  await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
   expect(roo.querySelector("img")?.getAttribute("src")).toBe("data:image/png;base64,ROO_PICTURE");
   // Segno's own art is its avatar too, but the rail keeps the drawn glyph until a picture is set in the app.
   fake.avatars.segno = "data:image/png;base64,SEGNO_ART";
   await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
-  expect(segno.querySelector("svg")).not.toBeNull();
+  expect(segno.querySelector("[data-rubato-segno-icon]")).not.toBeNull();
   expect(segno.querySelector("img")).toBeNull();
   fake.choices.find(item => item.id === "segno")!.pictureSet = true;
   fake.avatars.segno = "data:image/png;base64,SEGNO_SET";

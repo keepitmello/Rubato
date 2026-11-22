@@ -16,16 +16,16 @@ const SEND_TIMEOUT_MS = 10_000;
  * What a phone can turn off, each on its own: a Mac sends nothing of a kind its phone turned off.
  * `liveActivity` is the lock-screen and Dynamic Island card of this Mac's running threads.
  */
-export const PUSH_KINDS = Object.freeze(['threads', 'companionMessages', 'companionCalls', 'liveActivity']);
+export const PUSH_KINDS = Object.freeze(['threads', 'companionThreads', 'companionMessages', 'companionCalls', 'liveActivity']);
 
 /** Answers that are no failure: the phone has no card open for this Mac right now. */
 const QUIET = new Set(['no-activity']);
 
-/** A phone's choices, every kind on unless it said otherwise. */
+/** A phone's choices. Companion work was silent by default before it got its own switch. */
 export function normalizePreferences(value, base = {}) {
   const input = value && typeof value === 'object' ? value : {};
   return Object.fromEntries(PUSH_KINDS.map(kind => [kind,
-    typeof input[kind] === 'boolean' ? input[kind] : typeof base[kind] === 'boolean' ? base[kind] : true]));
+    typeof input[kind] === 'boolean' ? input[kind] : typeof base[kind] === 'boolean' ? base[kind] : kind !== 'companionThreads']));
 }
 
 /** A relay must be HTTPS; plain HTTP only on this machine, for tests and a local relay. */

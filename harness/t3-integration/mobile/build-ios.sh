@@ -130,6 +130,8 @@ corepack pnpm exec expo prebuild --clean --platform ios --no-install >/dev/null
 # lives in this run's folder, which cleanup removes. The shared ~/Library/Caches/CocoaPods is not
 # used: another build installing pods at the same time read a cache this one was deleting.
 (cd ios && CP_CACHE_DIR="$work/cocoapods-cache" pod install)
+# The installed Pods have their own files. Don't hold a second copy throughout the archive.
+rm -rf "$work/cocoapods-cache"
 
 build_number="$(date -u +%Y%m%d%H%M)"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $build_number" ios/Rubato/Info.plist
@@ -165,7 +167,9 @@ asc_auth
 archive="$out/Rubato-$build_number.xcarchive"
 xcodebuild -workspace ios/Rubato.xcworkspace -scheme Rubato -configuration Release \
   -destination 'generic/platform=iOS' -archivePath "$archive" -derivedDataPath "$out/device" \
-  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic "${auth[@]}" archive > "$out/archive.log" 2>&1 \
+  DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic CURRENT_PROJECT_VERSION="$build_number" \
+  MARKETING_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' ios/Rubato/Info.plist)" \
+  "${auth[@]}" archive > "$out/archive.log" 2>&1 \
   || { grep -E ' error: |^error:|ARCHIVE FAILED' "$out/archive.log" | tail -20; exit 1; }
 # Keep the archive (symbols for crash reports) of the last two builds only; cleanup removes
 # the intermediates.

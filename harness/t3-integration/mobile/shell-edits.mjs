@@ -58,8 +58,8 @@ export const shellEdits = {
       + `const RUBATO_ICON = "${RUBATO_ICON}";\n`
       + '// Rubato: the notification service extension and the entitlements it needs (Communication\n'
       + '// Notifications, App Group). Off until the Apple account enables both capabilities on the\n'
-      + '// app ids; build-ios.sh sets RUBATO_IOS_NOTIFICATION_EXTENSION=1 once they exist.\n'
-      + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION === "1";\n'
+      + '// app ids; a native build may explicitly opt out for local debugging.\n'
+      + 'const RUBATO_NOTIFICATION_EXTENSION = process.env.RUBATO_IOS_NOTIFICATION_EXTENSION !== "0";\n'
       + '// Rubato: the widget extension that draws the Live Activity card (expo-widgets). It and the app share\n'
       + '// the App Group group.com.keepitmello.rubato, which only the Apple account can put on the app ids\n'
       + '// com.keepitmello.rubato and com.keepitmello.rubato.widgets. Turning it on changes the native\n'

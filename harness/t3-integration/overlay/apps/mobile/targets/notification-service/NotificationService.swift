@@ -1,4 +1,5 @@
 import Intents
+import UIKit
 import UserNotifications
 
 /// A companion's message as a messenger's notification (user f38fd3c2): the companion's name and
@@ -70,8 +71,13 @@ final class NotificationService: UNNotificationServiceExtension {
   }
 
   private static func avatar(for companionId: String) -> Data? {
-    guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup) else { return nil }
     let safe = companionId.replacingOccurrences(of: "[^A-Za-z0-9_-]", with: "_", options: .regularExpression)
-    return try? Data(contentsOf: container.appendingPathComponent("companions", isDirectory: true).appendingPathComponent("\(safe).png"))
+    if let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup),
+       let data = try? Data(contentsOf: container.appendingPathComponent("companions", isDirectory: true).appendingPathComponent("\(safe).png")) {
+      return data
+    }
+    // A first message can arrive before the companion list has loaded, even with the Mac offline.
+    guard defaultNames[companionId] != nil else { return nil }
+    return UIImage(named: "\(companionId)-notification", in: Bundle(for: NotificationService.self), compatibleWith: nil)?.pngData()
   }
 }

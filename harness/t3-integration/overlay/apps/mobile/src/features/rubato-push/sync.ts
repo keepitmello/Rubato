@@ -15,13 +15,14 @@ export type ApsEnvironment = "sandbox" | "production";
 /** What the phone wants to hear about; each paired Mac sends nothing of a kind turned off. */
 export interface PushPreferences {
   readonly threads: boolean;
+  readonly companionThreads: boolean;
   readonly companionMessages: boolean;
   readonly companionCalls: boolean;
   /** The lock-screen and Dynamic Island card of each Mac's running threads (liveActivity.ts). */
   readonly liveActivity: boolean;
 }
 
-export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionMessages: true, companionCalls: true, liveActivity: true };
+export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionThreads: false, companionMessages: true, companionCalls: true, liveActivity: true };
 
 export interface PushGrant {
   readonly grantId: string;
@@ -234,11 +235,12 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
 const samePreferences = (a: PushPreferences | undefined, b: PushPreferences) =>
   !!a &&
   a.threads === b.threads &&
+  a.companionThreads === b.companionThreads &&
   a.companionMessages === b.companionMessages &&
   a.companionCalls === b.companionCalls &&
   a.liveActivity === b.liveActivity;
 
-/** A choice saved before a kind existed reads as on, as the Mac reads it (push-relay/mac/grants.mjs). */
+/** Apply the same defaults as the Mac to choices saved before a kind existed. */
 export function pushPreferences(state: PushState | null): PushPreferences {
   return { ...DEFAULT_PREFERENCES, ...state?.preferences };
 }

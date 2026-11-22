@@ -10,12 +10,16 @@ export const aboutOverlays = [
   'apps/web/src/state/rubatoApp.ts',
   'apps/web/src/components/settings/RubatoAboutSection.tsx',
   'apps/web/src/state/rubatoApp.test.tsx',
+  'apps/web/src/state/rubatoPush.ts',
+  'apps/web/src/components/settings/RubatoCompanionThreadNotifications.tsx',
 ];
 
 export const aboutEdits = {
   'apps/web/src/components/settings/SettingsPanels.tsx': [
     ['import { useDesktopUpdateState } from "../../state/desktopUpdate";\n',
-      'import { RubatoAboutSection } from "./RubatoAboutSection";\n'],
+      'import { RubatoAboutSection } from "./RubatoAboutSection";\n'
+        + 'import { RubatoCompanionThreadNotifications } from "./RubatoCompanionThreadNotifications";\n'],
+    ['        <NotificationSettings />\n', '        <RubatoCompanionThreadNotifications />\n'],
     ['    <SettingsPageContainer>\n      <SettingsSection id="notifications" title={gt("Notifications")}>\n',
       [
         '    <SettingsPageContainer>',

@@ -26,6 +26,8 @@ export interface CompanionEntry {
   readonly art: string | null;
   /** The Mac's picture version (its file time); a new one means the picture changed on some device. */
   readonly avatarVersion: number | null;
+  /** Explicitly picked in the app, rather than the Mac's default art. */
+  readonly pictureSet?: boolean;
   /** What it calls the person, and since when they are together. */
   readonly callsUser: string | null;
   readonly since: string | null;
@@ -73,6 +75,7 @@ export function decodeCompanions(stored: string | null): CompanionEntry[] {
       threadId: textOrNull(item.threadId),
       art: textOrNull(item.art),
       avatarVersion: typeof item.avatarVersion === "number" && Number.isFinite(item.avatarVersion) ? item.avatarVersion : null,
+      pictureSet: item.pictureSet === true,
       callsUser: textOrNull(item.callsUser),
       since: textOrNull(item.since),
       onboarding: decodeOnboarding(item.onboarding),

@@ -318,15 +318,22 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
   };
   const told = new Set();
   const settingsFile = path.join(home, 'settings.json');
-  const readPreview = () => {
-    try { return JSON.parse(readFileSync(settingsFile, 'utf8')).preview === 'generic' ? 'generic' : 'full'; }
-    catch { return 'full'; }
+  const readSettings = () => {
+    let settings;
+    try { settings = JSON.parse(readFileSync(settingsFile, 'utf8')); } catch { /* first use */ }
+    return {
+      preview: settings?.preview === 'generic' ? 'generic' : 'full',
+      desktopCompanionThreads: settings?.desktopCompanionThreads !== false,
+    };
   };
-  const writePreview = preview => {
+  const readPreview = () => readSettings().preview;
+  const writeSettings = patch => {
+    const settings = { ...readSettings(), ...patch };
     mkdirSync(home, { recursive: true, mode: 0o700 });
     const temporary = `${settingsFile}.${randomUUID()}.tmp`;
-    writeFileSync(temporary, JSON.stringify({ preview }) + '\n', { mode: 0o600 });
+    writeFileSync(temporary, JSON.stringify(settings) + '\n', { mode: 0o600 });
     renameSync(temporary, settingsFile);
+    return settings;
   };
 
   const actions = {
@@ -338,7 +345,7 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       if (typeof grantId !== 'string') throw new PushRequestError(400, 'invalid', 'grantId is required');
       return { removed: grants.remove(grantId) };
     },
-    status: () => ({ phones: grants.list(), preview: readPreview(), telegram: telegram.read() }),
+    status: () => ({ phones: grants.list(), ...readSettings(), telegram: telegram.read() }),
     preferences({ deviceId, preferences }) {
       if (typeof deviceId !== 'string' || !preferences || typeof preferences !== 'object')
         throw new PushRequestError(400, 'invalid', 'deviceId and preferences are required');
@@ -352,8 +359,15 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
     },
     settings({ preview }) {
       if (preview !== 'full' && preview !== 'generic') throw new PushRequestError(400, 'invalid', 'preview must be full or generic');
-      writePreview(preview);
-      return { preview };
+      return { preview: writeSettings({ preview }).preview };
+    },
+    'desktop-companion-threads'({ enabled }) {
+      if (typeof enabled !== 'boolean') throw new PushRequestError(400, 'invalid', 'enabled must be true or false');
+      return { enabled: writeSettings({ desktopCompanionThreads: enabled }).desktopCompanionThreads };
+    },
+    async 'desktop-thread-muted'({ threadId }) {
+      if (typeof threadId !== 'string' || !threadId) throw new PushRequestError(400, 'invalid', 'threadId is required');
+      return { muted: !readSettings().desktopCompanionThreads && await companionOpened(threadId) };
     },
     sounds() {
       const chosen = desktopSounds();
@@ -422,13 +436,13 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       phases.set(threadId, state?.phase ?? null);
       const at = now();
       if (!isNews(state, previous, at)) return null;
-      // A run a companion opened ends in the companion's own words (companionSaid). An ask for
-      // approval or an answer still comes: only the person can give it.
-      if (TERMINAL.has(state.phase) && await companionOpened(threadId)) return null;
+      // Only routine outcomes are optional. An ask for approval or an answer still uses
+      // the normal thread preference: only the person can give it.
+      const preference = TERMINAL.has(state.phase) && await companionOpened(threadId) ? 'companionThreads' : 'threads';
       const preview = readPreview();
       const reply = preview === 'full' && TERMINAL.has(state.phase) ? await lastReply(threadId) : null;
       const sound = phoneSoundFile(desktopSounds()[TERMINAL.has(state.phase) ? 'completion' : 'input']) ?? 'default';
-      return grants.pushAll({ ...alertFor(state, previous, { now: at, preview, run, reply }), sound }, { preference: 'threads' });
+      return grants.pushAll({ ...alertFor(state, previous, { now: at, preview, run, reply }), sound }, { preference });
     },
     /**
      * A thread's state as the server found it on start: the card shows it, and no alert follows for a

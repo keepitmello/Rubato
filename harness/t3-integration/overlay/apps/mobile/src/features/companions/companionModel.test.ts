@@ -12,6 +12,7 @@ const roo: CompanionEntry = {
   threadId: "thread-1",
   art: "data:image/png;base64,AAAA",
   avatarVersion: 1732170000000,
+  pictureSet: true,
   callsUser: "우용",
   since: "2026-10-20T00:00:00.000Z",
   onboarding: null,
@@ -41,14 +42,14 @@ describe("the kept companion list", () => {
     ]);
     expect(decodeCompanions(stored)).toEqual([{
       environmentId: "env-mac", id: "segno", title: "segno", macTitle: "segno", sessionId: null, threadId: null,
-      art: null, avatarVersion: null, callsUser: null, since: null, onboarding: null,
+      art: null, avatarVersion: null, pictureSet: false, callsUser: null, since: null, onboarding: null,
       callable: null, calls: false, callEffort: "medium",
     }]);
   });
 
   it("keeps a nameless new companion nameless, with where its first conversation stands", () => {
     const fresh: CompanionEntry = {
-      ...roo, id: "c-1", title: "새 컴패니언", macTitle: null, art: null, avatarVersion: null, callsUser: null, since: null,
+      ...roo, id: "c-1", title: "새 컴패니언", macTitle: null, art: null, avatarVersion: null, pictureSet: false, callsUser: null, since: null,
       onboarding: { items: [
         { key: "name", state: "set", value: "미루" }, { key: "callsUser", state: "open", value: null },
         { key: "work", state: "open", value: null }, { key: "relationship", state: "open", value: null },

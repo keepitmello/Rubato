@@ -43,6 +43,7 @@ interface CompanionStatus {
   readonly profile?: { readonly callsUser?: string | null; readonly since?: string | null } | null;
   /** The picture's version (file time); a change means fetch `avatar` again. */
   readonly avatarVersion?: number | null;
+  readonly pictureSet?: boolean;
   readonly onboarding?: unknown;
   readonly settings?: { readonly enabled?: boolean; readonly call?: { readonly effort?: CallEffort } };
   /** Whether it takes voice calls at all; its call settings only mean something then. */
@@ -152,6 +153,7 @@ async function loadEnvironment(environmentId: EnvironmentId): Promise<CompanionE
         threadId,
         art: arts.has(key) ? (arts.get(key) ?? null) : keptArt(environmentId, item.id),
         avatarVersion: version,
+        pictureSet: item.pictureSet === true,
         callsUser: item.profile?.callsUser?.trim() || null,
         since: item.profile?.since || null,
         onboarding: decodeOnboarding(item.onboarding ?? null),
@@ -227,7 +229,7 @@ export async function setCompanionAvatar(companion: Pick<CompanionEntry, "enviro
   const version = typeof answer.avatar?.version === "number" ? answer.avatar.version : null;
   arts.set(key, url);
   artVersions.set(key, version);
-  const companions = view.companions.map((item) => (sameEntry(companion)(item) ? { ...item, art: url, avatarVersion: version } : item));
+  const companions = view.companions.map((item) => (sameEntry(companion)(item) ? { ...item, art: url, avatarVersion: version, pictureSet: image !== null } : item));
   writeIdentities(companions);
   publish({ companions });
 }
@@ -251,10 +253,12 @@ function writeIdentities(companions: readonly CompanionEntry[]) {
   if (!RubatoCall) return;
   for (const companion of companions) {
     const name = entryTitle(companion.id, companion.macTitle);
-    const key = `${name}\u0000${companion.art?.length ?? 0}:${companion.art?.slice(-32) ?? ""}`;
+    const builtIn = companion.id === "roo" || companion.id === "segno";
+    const art = builtIn && !companion.pictureSet ? null : companion.art;
+    const key = `${name}\u0000${art?.length ?? 0}:${art?.slice(-32) ?? ""}`;
     if (written.get(companion.id) === key) continue;
     written.set(companion.id, key);
-    void RubatoCall.setCompanionIdentity(companion.id, name, dataUrlBase64(companion.art)).catch(() => written.delete(companion.id));
+    void RubatoCall.setCompanionIdentity(companion.id, name, dataUrlBase64(art)).catch(() => written.delete(companion.id));
   }
 }
 subscribeCompanionNames(() => writeIdentities(view.companions));

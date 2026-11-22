@@ -30,6 +30,7 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoCompanionProposals.test.tsx',
   'apps/web/src/components/settings/RubatoCompanionSettings.test.tsx',
   'apps/web/src/components/sidebar/RubatoSegnoIcon.tsx',
+  'apps/web/src/components/sidebar/RubatoRooIcon.tsx',
   'apps/web/src/routes/_chat.settings.companion.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.tsx',
   'apps/web/src/components/chat/RubatoSegnoSpace.css',
@@ -345,7 +346,9 @@ export const companionEdits = {
   'apps/web/src/components/ThreadNotificationCoordinator.tsx': [
     ['import { resolveSidebarThreadStatus, type SidebarThreadStatus } from "./Sidebar.logic";\n',
       'import { notifySegnoCompletion } from "./chat/RubatoSegnoNotice";\n'
-        + 'import { isCompanionThread } from "../state/rubatoCompanion";\n'],
+        + 'import { isCompanionThread } from "../state/rubatoCompanion";\n'
+        + 'import { rubatoPush } from "../state/rubatoPush";\n'],
+    ['  const present = (\n', '  const present = async (\n', 'replace'],
     ['    const active = activeThread();\n',
       '    const active = activeThread();\n'
         + '    // Rubato: Segno\'s thread notifies like a messenger (companion-edits.mjs).\n'
@@ -366,7 +369,9 @@ export const companionEdits = {
         + '          trackNotification(notifiedEnvironmentId, thread.id, notification),\n'
         + '      });\n'
         + '      return;\n'
-        + '    }\n',
+        + '    }\n'
+        + '    if (!isCompanionThread(thread.id) && (kind === "completion" || status === "failed")\n'
+        + '      && await rubatoPush.desktopThreadMuted(environmentId, thread.id)) return;\n',
       'replace'],
   ],
   // Segno's header is just its name: its folder is not a project.
