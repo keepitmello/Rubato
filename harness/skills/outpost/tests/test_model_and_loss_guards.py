@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shutil
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import tempfile
@@ -293,6 +295,41 @@ class ModelAndLossGuardTest(unittest.TestCase):
         self.assertIn("waitRole(workPage, 'group', attachmentName", script)
         # a bare role lookup before the first snapshot silently matches nothing
         self.assertNotIn("workPage.getByRole('heading'", script.split("await primeRoles")[0])
+
+    @unittest.skipUnless(shutil.which("node"), "Node.js runs the actual REPL JavaScript")
+    def test_tier_status_handles_mixed_locale_and_rejects_ambiguity(self) -> None:
+        script = MODULE.build_repl_script(
+            project_url="https://chatgpt.com/g/g-p-test-work/project",
+            quality="pro",
+            packet_name="packet.md",
+            packet_path="/tmp/packet.md",
+            topic="t",
+            outpost_id="abc123",
+            response_timeout_ms=1000,
+        )
+        start = script.index("var tierPositionRe ")
+        end = script.index("\n}", script.index("function readTier(", start)) + 2
+        checks = r"""
+const assert = require('node:assert/strict');
+const status = (value) => `    - status: "${value}"`;
+const extraHigh = status('Extra High, 4 of 5.');
+const pro = status('Pro, 5 of 5.');
+const koreanPro = status('Pro, 5개 중 5번째');
+assert.deepEqual(readTier(`- menuitem "파워" [focused]\n${extraHigh}`),
+                 { label: 'Extra High', index: 4, total: 5 });
+assert.deepEqual(readTier(pro), { label: 'Pro', index: 5, total: 5 });
+assert.deepEqual(readTier(koreanPro), readTier(pro));
+assert.deepEqual(readTier('- text: "Pro, 5개 중 5번째"'), readTier(pro)); // legacy
+assert.equal(readTier(status('Pro, 6 of 5.')), null);
+assert.equal(readTier(status('Pro, 0개 중 0번째')), null);
+assert.equal(readTier(`${pro}\n${extraHigh}`), null);
+assert.equal(readTier('- text: "Pro"'), null);
+"""
+        result = subprocess.run(
+            ["node"], input=script[start:end] + "\n" + checks,
+            text=True, capture_output=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_no_regexp_name_reaches_get_by_role(self) -> None:
         # getByRole(role, {name}) silently matches nothing when the name is a

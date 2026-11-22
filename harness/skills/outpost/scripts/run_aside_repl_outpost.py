@@ -1245,6 +1245,29 @@ var userMessageSelector = {js(UI.css(ui["userMessage"]))};
 var assistantMessageSelector = {js(UI.css(ui["assistantMessage"]))};
 var modelMenuNames = {js(list(ui["modelMenuNames"]))};
 var tierPositionRe = new RegExp({js(ui["tierPositionPattern"])});
+function readTier(tree) {{
+  // ChatGPT can announce the position in English even in a Korean menu.
+  // Read the accessibility status before trying the learned snapshot pattern.
+  var positions = [];
+  for (var line of tree.split('\\n')) {{
+    var status = line.match(/^\\s*- status: "([^"\\n]+?),\\s*(?:(\\d+)개\\s*중\\s*(\\d+)번째|(\\d+)\\s+of\\s+(\\d+))\\.?"\\s*$/i);
+    if (status) positions.push({{
+      label: status[1].trim(), total: Number(status[2] ?? status[5]), index: Number(status[3] ?? status[4])
+    }});
+  }}
+  if (positions.length === 0) {{
+    var legacy = Array.from(tree.matchAll(new RegExp(tierPositionRe.source, 'g')));
+    if (legacy.length !== 1 || !legacy[0].groups) return null;
+    var groups = legacy[0].groups;
+    positions.push({{
+      label: groups.label.replace(/^.*text: "/, '').trim(), total: Number(groups.total), index: Number(groups.index)
+    }});
+  }}
+  if (positions.length !== 1) return null;
+  var position = positions[0];
+  return position.label && Number.isSafeInteger(position.total) && Number.isSafeInteger(position.index) &&
+    position.index >= 1 && position.index <= position.total ? position : null;
+}}
 var quality = {js(quality)};
 var packetName = {js(packet_name)};
 var packetStem = {js(packet_name.rsplit(".", 1)[0])};
@@ -1518,15 +1541,6 @@ var submitState = await Promise.race([
       if (!performance) await sleep(500);
     }}
     if (!performance) throw new Error('performance menuitem not visible: expected ' + tierSliderNames.join(' | '));
-    var readTier = (tree) => {{
-      var match = tree.match(tierPositionRe);
-      if (!match || !match.groups) return null;
-      return {{
-        label: match.groups.label.replace(/^.*text: "/, '').trim(),
-        total: Number(match.groups.total),
-        index: Number(match.groups.index)
-      }};
-    }};
     submitStage = 'read-tier';
     var tierSnapshot = await snapshot(workPage, {{ interactive: true }});
     var current = readTier(tierSnapshot.tree);
