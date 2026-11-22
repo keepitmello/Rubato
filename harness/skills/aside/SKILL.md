@@ -15,6 +15,8 @@ Use it when the main quality bottleneck is breadth, recall or freshness. Hand al
 
 Give Aside the whole browser-bound outcome. It plans the steps and controls the browser. When its evidence will feed later analysis, require source links, dates, quotations, contradictions, and collection gaps. Plain text only.
 
+In Rubato, find `web_agent` with `tool_search` and use it for the handoff. Rubato brings the result back to this conversation; do not poll, restart it in Bash, or launch a second browser task. The CLI instructions below cover hosts without the tool and direct session control.
+
 Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 
 ### Start a task
@@ -38,7 +40,7 @@ Use `-m <provider/model>` only when the user names a different model that exists
 on this account.
 Never pass `openai/gpt-5.6-sol` or `cursor/gpt-5.6-sol`.
 
-### Hand it off, collect the result
+### Background handoff on CLI-only hosts
 
 Start each task as its own background shell session (Bash `run_in_background: true`), one task per session; independent tasks can run side by side. Do not background it inside a foreground command (`&`, `nohup`, a subshell): the CLI dies with that terminal.
 

@@ -63,6 +63,10 @@ Complex packets: `references/context-checklist.md`.
 
 ## Command
 
+In Rubato, find `deep_research` with `tool_search` and pass the prepared `packet` path, any explicit `attachments`, and a `thread` only when continuing an existing one. The tool defaults to `pro`; use `xhigh` only for a wiring check. Set `artifact: true` to request the generated ZIP. Rubato returns the saved response and receipt in this conversation and recovers a submitted run without spending a second Pro turn. Do not poll or run the CLI sender alongside it.
+
+For terminal use outside that tool, or to inspect existing threads and diagnose the sender:
+
 ```bash
 outpost list
 outpost doctor

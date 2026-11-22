@@ -14,8 +14,8 @@ description: "Only when manual browser control is required (direct tab control, 
 
 ## Route
 
-- Default to the Mac-local Aside browser agent through `aside exec`. Give it the complete outcome, relevant context, constraints, approval boundaries, and evidence required.
-- Treat the Aside CLI process as the delegated workstream: keep it attached, poll it, surface a short user update at least every 60 seconds, and recover its final output and exit status. Starting the command is not completion.
+- For whole browser tasks in Rubato, use `web_agent`. Give it the complete outcome, relevant context, constraints, approval boundaries, and evidence required. Rubato brings the result back; do not poll or start a second task.
+- On a CLI-only host, use the Aside skill's background handoff and recovery instructions.
 - Use `aside --session <id> "..."` only to continue a session whose exact ID the CLI returned. Never guess a session ID.
 - Use `aside repl` only when the task explicitly needs direct page inspection, deterministic low-level interaction, screenshots, downloads, or exact browser-state evidence that whole-task delegation cannot provide.
 - Use `agent-browser` with shared Cloak only as a manual fallback when the user explicitly requests it or Aside cannot perform the required low-level step.
@@ -23,7 +23,7 @@ description: "Only when manual browser control is required (direct tab control, 
 - Use `chrome-devtools` only for Lighthouse, performance insights, heap, or memory analysis. Use ordinary Chrome `9222` for reproducible performance baselines.
 - Do not use `browser-use` or `chrome-use`.
 
-## Default workflow: delegate and recover
+## CLI-only workflow: delegate and recover
 
 Before relying on remembered flags, inspect the installed CLI:
 

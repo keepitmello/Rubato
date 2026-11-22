@@ -5,6 +5,7 @@ import webfetchExtension, { isWebfetchEnabled } from "./webfetch/index.js";
 import lookAtExtension from "./look-at/index.js";
 import { installImageLimit } from "./host/image-limit.mjs";
 import { installVideoLimit } from "./read-media/index.mjs";
+import { registerResearchTools } from "./research/index.mjs";
 
 export {
 	imageGenExtension,
@@ -21,6 +22,7 @@ export function registerMediaTools(pi, host = {}) {
 	webfetchExtension(pi);
 	lookAtExtension(pi, host);
 	imageGenExtension(pi);
+	registerResearchTools(pi);
 	openaiWebSearchExtension(pi);
 	anthropicBashExtension(pi);
 }

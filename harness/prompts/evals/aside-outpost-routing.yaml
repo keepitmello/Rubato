@@ -20,13 +20,13 @@ release_policy:
 
 expect_vocabulary:
   aside: >
-    Aside is the only external rail selected because evidence coverage,
+    web_agent (Aside) is the only external rail selected because evidence coverage,
     freshness, recall, or browser interaction is the main bottleneck.
   outpost: >
-    Outpost is the only external rail selected because analysis, synthesis,
+    deep_research (Outpost) is the only external rail selected because analysis, synthesis,
     architecture, diagnosis, or independent judgment is the main bottleneck.
   aside_then_outpost: >
-    Aside gathers the evidence first and Outpost analyzes it second because
+    web_agent gathers the evidence first and deep_research analyzes it second because
     both evidence coverage and reasoning depth materially affect the outcome.
 
 cases:
