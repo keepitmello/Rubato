@@ -23,6 +23,9 @@ describe("configuredModelEffort", () => {
     ["google-antigravity/gemini-4-neon", "high"],
     ["google-antigravity/gemini-4-argon", "medium"],
     ["google-antigravity/gemini-4-hydrogen", "medium"],
+    ["agy/gemini-4-neon", "high"],
+    ["agy/gemini-4-hydrogen", "medium"],
+    ["agy/gemini-4-argon", "medium"],
     [`google-vertex/${VERTEX_ARGON}`, "medium"],
   ] as const)("#given %s #then the seeded default is %s", (model, effort) => {
     expect(configuredModelEffort(model)).toBe(effort)

@@ -5,6 +5,8 @@ import {
   type EffortSource,
 } from "@rubato/model-core"
 import {
+  findLocalAgySync,
+  isAgyAgentModel,
   resolveAgent,
   type AgentDefinition,
   type ChildPlanner,
@@ -219,6 +221,24 @@ function resolveExactModel(model: string, resolveRegistry: ResolveModelRegistry)
       error: {
         code: "invalid_target",
         message: `Model "${model}" is not a complete provider/model identifier.`,
+      },
+    }
+  }
+  if (isAgyAgentModel(`${metadata.provider}/${metadata.model_id}`)) {
+    if (findLocalAgySync() === undefined) {
+      return {
+        kind: "error",
+        error: {
+          code: "model_unavailable",
+          message: `No available model "${model}" (official agy CLI is not installed).`,
+        },
+      }
+    }
+    return {
+      kind: "resolved",
+      plan: {
+        model: `${metadata.provider}/${metadata.model_id}`,
+        resolved_model: metadata,
       },
     }
   }

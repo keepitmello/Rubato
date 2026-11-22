@@ -506,3 +506,16 @@ export { replaceTeamMember, TeamMemberReplacementError } from "./team"
 export type { ReplaceTeamMemberInput, ReplaceTeamMemberResult, ReplaceTeamMemberDeps } from "./team"
 export { addTeamMember, liveMemberNames, stopMemberTask, TeamMemberAddError } from "./team"
 export type { AddTeamMemberInput, AddTeamMemberResult, AddTeamMemberDeps } from "./team"
+export {
+  AGY_AGENT_MODELS,
+  AGY_PROVIDER_ID,
+  agyModelSlug,
+  availableAgyAgentModels,
+  createAgyManagedRunner,
+  findLocalAgySync,
+  isAgyAgentModel,
+  minimalAgyEnv,
+  resolveAgyUserHome,
+  wrapRunnerWithAgy,
+} from "./runners/agy"
+export type { AgyRunnerOptions } from "./runners/agy"

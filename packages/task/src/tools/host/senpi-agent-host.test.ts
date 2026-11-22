@@ -184,7 +184,7 @@ describe("liveModelCatalog", () => {
   const ANTHROPIC_FABLE = PRODUCT_MODEL_ORDER.anthropic[0]
 
   test("#given no registry #when asked whether a model exists #then it fails closed", () => {
-    const catalog = liveModelCatalog(() => undefined)
+    const catalog = liveModelCatalog(() => undefined, { agyModels: () => [] })
     expect(catalog.has(`xai/${XAI_GROK}`)).toBe(false)
     expect(catalog.list?.()).toEqual([])
   })
@@ -192,7 +192,7 @@ describe("liveModelCatalog", () => {
   test("#given a live registry #when the exact provider/id is present #then it admits that model only", () => {
     const catalog = liveModelCatalog(() => ({
       getAvailable: () => [{ provider: "xai", id: XAI_GROK }, { provider: "google-vertex", id: VERTEX_ARGON }],
-    }))
+    }), { agyModels: () => [] })
 
     expect(catalog.has(`xai/${XAI_GROK}`)).toBe(true)
     expect(catalog.has(`google-vertex/${VERTEX_ARGON}`)).toBe(true)
@@ -204,6 +204,19 @@ describe("liveModelCatalog", () => {
     ])
   })
 
+  test("#given local agy models #when listed #then agy/* Agent models appear alongside live catalog models", () => {
+    const catalog = liveModelCatalog(
+      () => ({ getAvailable: () => [{ provider: "xai", id: XAI_GROK }] }),
+      { agyModels: () => ["agy/gemini-4-neon", "agy/gemini-4-hydrogen"] },
+    )
+    expect(catalog.has("agy/gemini-4-neon")).toBe(true)
+    expect(catalog.list?.()).toEqual([
+      `xai/${XAI_GROK}`,
+      "agy/gemini-4-neon",
+      "agy/gemini-4-hydrogen",
+    ])
+  })
+
   test("#given live extras and a Fast-only cursor row #when listed #then only catalog identities remain", () => {
     const catalog = liveModelCatalog(() => ({
       getAvailable: () => [
@@ -211,7 +224,7 @@ describe("liveModelCatalog", () => {
         { provider: "cursor", id: `${CURSOR_GROK_BASE_ID}-high-fast` },
         { provider: "cursor", id: "secret-lab" },
       ],
-    }))
+    }), { agyModels: () => [] })
 
     expect(catalog.has(CURSOR_GROK_PRESENTED_ID)).toBe(true)
     expect(catalog.has(CURSOR_GROK_DEFAULT_FAST_ID)).toBe(true)
@@ -227,7 +240,7 @@ describe("liveModelCatalog", () => {
         { provider: "openai-codex", id: CODEX_SOL },
         { provider: "openai-codex", id: `${CODEX_SOL}-sub` },
       ],
-    }))
+    }), { agyModels: () => [] })
 
     expect(catalog.has(`anthropic/${ANTHROPIC_FABLE}-sub`)).toBe(true)
     expect(catalog.has(`openai-codex/${CODEX_SOL}-sub`)).toBe(true)

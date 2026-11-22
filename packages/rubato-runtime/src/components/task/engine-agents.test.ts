@@ -117,4 +117,29 @@ describe("task engine agent overlay", () => {
     expect(buildTaskToolDescription({ rubatoConfig: engine.rubatoConfig, agents: engine.agents }))
       .toContain("No presets are currently loaded; provide `model`.")
   })
+
+  test("#given an agy/* model #when official agy is present #then planner resolves it with seeded effort", () => {
+    const cwd = tempProject()
+    const fakeBin = join(cwd, "agy")
+    writeFileSync(fakeBin, "#!/bin/sh\nexit 0\n", { mode: 0o755 })
+    const prev = process.env.RUBATO_AGY_BINARY
+    process.env.RUBATO_AGY_BINARY = fakeBin
+    try {
+      const engine = composeIn(cwd)
+      const resolved = engine.planner({
+        model: "agy/gemini-4-neon",
+        prompt: "Review",
+        parent_session_id: "parent-1",
+        depth: 1,
+      })
+      expect(resolved.kind).toBe("resolved")
+      if (resolved.kind === "resolved") {
+        expect(resolved.plan.model).toBe("agy/gemini-4-neon")
+        expect(resolved.plan.variant).toBe("high")
+      }
+    } finally {
+      if (prev === undefined) delete process.env.RUBATO_AGY_BINARY
+      else process.env.RUBATO_AGY_BINARY = prev
+    }
+  })
 })

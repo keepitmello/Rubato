@@ -37,19 +37,19 @@ function isAntigravityFlash(model: string): boolean {
 /** agy opens a new session on gemini-4-neon-high (session/new currentModelId, 1.5.13). */
 function isAntigravityNeon(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return provider === "google-antigravity" && id === "gemini-4-neon"
+  return (provider === "google-antigravity" || provider === "agy") && id === "gemini-4-neon"
 }
 
 /** Vertex's own default thinking level for gemini-4-argon is MEDIUM (model card); Antigravity serves it at 2 (MEDIUM). */
 function isGemini4Argon(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return (provider === "google-vertex" || provider === "google-antigravity") && id === "gemini-4-argon"
+  return (provider === "google-vertex" || provider === "google-antigravity" || provider === "agy") && id === "gemini-4-argon"
 }
 
 /** Antigravity serves gemini-4-hydrogen at thinkingLevel 2 (MEDIUM) by default. */
 function isGemini4Hydrogen(model: string): boolean {
   const { provider, id } = providerAndId(model)
-  return (provider === "google" || provider === "google-antigravity") && id === "gemini-4-hydrogen"
+  return (provider === "google" || provider === "google-antigravity" || provider === "agy") && id === "gemini-4-hydrogen"
 }
 
 /**

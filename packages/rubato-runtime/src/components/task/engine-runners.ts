@@ -3,6 +3,7 @@ import type { RubatoConfig, RubatoTaskSettings } from "@rubato/config-core"
 import {
   InProcessRunner,
   RpcProcessRunner,
+  createAgyManagedRunner,
   createInProcessManagedRunner,
   createChildResourceLoader,
   createParentRegistrySessionContext,
@@ -10,6 +11,7 @@ import {
   mapRubatoConfigAgents,
   parseExtensionEntries,
   buildRpcSpawn,
+  wrapRunnerWithAgy,
   type AgentDefinition,
   type ChildSpec,
   type CreateChildSession,
@@ -109,9 +111,11 @@ export function createTaskRunnerFactories(options: TaskRunnerFactoryOptions = {}
   const createInProcessSession = options.createInProcessSession === undefined
     ? undefined
     : createStockInProcessSessionAdapter(options.createInProcessSession, options.stockModelRuntime, childExtensionFactories, childAgentDir)
+  // One shared agy runner enforces the single-active-agy limit across both execution modes.
+  const agyRunner = createAgyManagedRunner({ maxConcurrent: 1 })
   return {
-    inProcess: (build) => buildInProcessRunner(build, createInProcessSession),
-    process: (build) => buildProcessRunner(build, options.rpcSpawnRuntime, rpcChildExtensions),
+    inProcess: (build) => wrapRunnerWithAgy(buildInProcessRunner(build, createInProcessSession), agyRunner),
+    process: (build) => wrapRunnerWithAgy(buildProcessRunner(build, options.rpcSpawnRuntime, rpcChildExtensions), agyRunner),
     rpcRespawn: (build) => buildRpcProcessRunner(build, options.rpcSpawnRuntime, rpcChildExtensions),
   }
 }

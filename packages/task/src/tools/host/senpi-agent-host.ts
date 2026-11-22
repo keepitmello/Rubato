@@ -14,6 +14,7 @@ import type { RubatoConfig } from "@rubato/config-core"
 
 import type { AgentDefinition } from "../../agents"
 import { resolveExecutionMode, type ExecutionMode, type ManagerStartSpec, type TaskManager } from "../../manager"
+import { availableAgyAgentModels } from "../../runners/agy"
 import type { TaskRecord, TaskStatus } from "../../state"
 import type { CancelOutcome, SendOutcome } from "../../steering"
 
@@ -39,16 +40,24 @@ export type SenpiAgentHandleOptions = {
   readonly allScope?: boolean
 }
 
+export type LiveModelCatalogOptions = {
+  readonly agyModels?: () => readonly string[]
+}
+
 export function liveModelCatalog(
   resolveRegistry: () => { getAvailable?: () => unknown } | undefined,
+  options: LiveModelCatalogOptions = {},
 ): ModelCatalog {
+  const resolveAgyModels = options.agyModels ?? availableAgyAgentModels
   const availableModels = (): readonly string[] => {
     const registry = resolveRegistry()
     if (registry === undefined || typeof registry.getAvailable !== "function") return []
     try {
       const available = registry.getAvailable()
       if (!Array.isArray(available)) return []
-      return availableProductModelIds(available)
+      const base = availableProductModelIds(available)
+      const agy = resolveAgyModels()
+      return agy.length === 0 ? base : [...base, ...agy.filter((id) => !base.includes(id))]
     } catch {
       return []
     }
