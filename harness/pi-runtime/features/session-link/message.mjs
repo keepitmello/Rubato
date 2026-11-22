@@ -32,10 +32,10 @@ export const WAKES = Object.freeze(["heartbeat", "greeting", "wake", "recall", "
  * same bytes and the cached prefix holds.
  */
 export const SYSTEM_ANCHOR = "<system>";
+// Legacy reply recognized by the server when following a lead, not an instruction to the model.
 export const LEAD_ACK = "[handoff acknowledged]";
 const LEAD_REPORT = "When the result is ready, give it in your final answer; that alone reaches Segno. " +
-  "Use session_send only when Segno needs a result, a question (including approval), or a blocker before you finish, not for progress. " +
-  `If you are only acknowledging a handoff and nothing changed or needs an answer, reply with exactly ${LEAD_ACK}.`;
+  "Use session_send only when Segno needs a result, a question (including approval), or a blocker before you finish, not for progress.";
 const ORIGINS = Object.freeze({
   message: "From another agent conversation",
   create: "Another agent conversation created this conversation with this first message",
