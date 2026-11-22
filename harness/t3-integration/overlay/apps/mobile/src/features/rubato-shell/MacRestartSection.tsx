@@ -1,124 +1,147 @@
-// Rubato: Settings › About › "Rubato on your Mac" — restart the Mac's Rubato from the phone
+// Rubato: Settings › Environments › selected Mac — restart that Mac's Rubato from the phone
 // (macRestart.ts). Asks first, then follows the job through the Mac's absence to its result.
-import type { EnvironmentId } from "@t3tools/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { AuthEnvironmentMaintainScope, type EnvironmentId } from "@t3tools/contracts";
+import { useGT } from "gt-react-native";
+import { useEffect, useRef, useState } from "react";
 import { Alert, View } from "react-native";
 
 import { AppText as Text } from "../../components/ui/AppText";
-import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
-import { postRubato, isRubatoRequestError } from "../companions/rubatoHttp";
 import { ListActionRow } from "../../components/ui/ListActionRow";
+import { useEnvironmentScope } from "../../state/session";
+import { isRubatoRequestError, postRubato } from "../companions/rubatoHttp";
 import { SettingsSection } from "../settings/components/SettingsSection";
 import { describeMacRestart, macRestartLine, type MacRestartStatus } from "./macRestart";
 
 const APP_ROUTE = "/rubato/app";
 const POLL_MS = 3_000;
 
-export function MacRestartSection() {
-  const { savedConnectionsById } = useSavedRemoteConnections();
-  const macs = Object.values(savedConnectionsById);
-  if (macs.length === 0) return null;
-  return (
-    <SettingsSection
-      title="Rubato on your Mac"
-      footer="Rebuilds and reopens Rubato on the Mac, like Restart in the Mac's Settings › About. This phone reconnects by itself."
-    >
-      {macs.map((mac) => (
-        <MacRestartRow
-          key={mac.environmentId}
-          environmentId={mac.environmentId}
-          label={mac.environmentLabel}
-          many={macs.length > 1}
-        />
-      ))}
-    </SettingsSection>
-  );
-}
-
-function MacRestartRow(props: {
+export function MacRestartSection(props: {
   readonly environmentId: EnvironmentId;
   readonly label: string;
-  readonly many: boolean;
+  readonly connected: boolean;
+  readonly supported: boolean;
 }) {
+  const gt = useGT();
+  const canMaintain = useEnvironmentScope(props.environmentId, AuthEnvironmentMaintainScope);
+  const canRestart = props.supported && props.connected && canMaintain;
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<MacRestartStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const mounted = useRef(true);
-  useEffect(() => () => void (mounted.current = false), []);
+  useEffect(() => {
+    mounted.current = true;
+    return () => void (mounted.current = false);
+  }, []);
   const view = describeMacRestart(token, status);
   const settled = view.phase === "idle" || view.phase === "succeeded" || view.phase === "failed";
 
   // While a restart runs, ask the Mac again; no answer means it is between processes.
   useEffect(() => {
     if (token === null || settled) return;
-    const poll = () =>
-      postRubato<MacRestartStatus>(props.environmentId, APP_ROUTE, "restart-status", {}, { timeoutMs: 5_000 })
-        .then((next) => mounted.current && setStatus(next))
-        .catch(() => mounted.current && setStatus(null));
-    const timer = setInterval(poll, POLL_MS);
-    return () => clearInterval(timer);
+    let timer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+    const poll = async () => {
+      const next = await postRubato<MacRestartStatus>(
+        props.environmentId,
+        APP_ROUTE,
+        "restart-status",
+        {},
+        { timeoutMs: 5_000 },
+      ).catch(() => null);
+      if (stopped) return;
+      setStatus(next);
+      timer = setTimeout(poll, POLL_MS);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
   }, [props.environmentId, token, settled]);
 
-  const start = useCallback(() => {
+  function start() {
     Alert.alert(
-      `Restart Rubato on ${props.label}?`,
-      "It rebuilds and reopens Rubato on the Mac. Conversations that are working are waited for unless you choose Restart now.",
+      gt("Restart Rubato on {mac}?", { mac: props.label }),
+      gt("Rubato waits for running work to finish before reopening on your Mac."),
       [
-        { text: "Cancel", style: "cancel" },
+        { text: gt("Cancel"), style: "cancel" },
         {
-          text: "Restart",
+          text: gt("Restart"),
           onPress: () => {
             setStarting(true);
-            postRubato<{ token: string }>(props.environmentId, APP_ROUTE, "restart")
+            postRubato<{ token: string }>(props.environmentId, APP_ROUTE, "restart-app")
               .then((answer) => {
+                if (!mounted.current) return;
                 setStatus(null);
                 setToken(answer.token);
               })
-              .catch((error: unknown) =>
+              .catch((error: unknown) => {
+                if (!mounted.current) return;
+                const message = !isRubatoRequestError(error)
+                  ? gt("The Mac did not take the restart.")
+                  : error.status === 404
+                    ? gt("Update Rubato on this Mac to restart it from the phone.")
+                    : error.message;
                 Alert.alert(
-                  "Could not restart",
-                  isRubatoRequestError(error) ? error.message : "The Mac did not take the restart.",
-                ),
-              )
+                  gt("Could not restart"),
+                  message,
+                );
+              })
               .finally(() => mounted.current && setStarting(false));
           },
         },
       ],
     );
-  }, [props.environmentId, props.label]);
+  }
 
-  const restartNow = useCallback(() => {
-    Alert.alert("Restart now?", "Work still running on the Mac is cut off.", [
-      { text: "Keep waiting", style: "cancel" },
+  function restartNow() {
+    Alert.alert(gt("Restart now?"), gt("Work still running on the Mac will be interrupted."), [
+      { text: gt("Keep waiting"), style: "cancel" },
       {
-        text: "Restart now",
+        text: gt("Restart now"),
         style: "destructive",
         onPress: () =>
-          void postRubato(props.environmentId, APP_ROUTE, "restart-now").catch((error: unknown) =>
-            Alert.alert("Could not restart now", error instanceof Error ? error.message : String(error)),
-          ),
+          void postRubato(props.environmentId, APP_ROUTE, "restart-now").catch((error: unknown) => {
+            if (mounted.current)
+              Alert.alert(gt("Could not restart now"), error instanceof Error ? error.message : String(error));
+          }),
       },
     ]);
-  }, [props.environmentId]);
+  }
 
+  // Keep a requested restart visible while the connection (and its config) is down.
+  if (!props.supported && token === null && !starting) return null;
   const line = macRestartLine(view);
+  const description = !settled
+    ? null
+    : !props.connected
+      ? gt("Connect to this Mac to restart Rubato.")
+      : !canMaintain
+        ? gt("This connection does not have permission to restart Rubato.")
+        : null;
   return (
-    <View>
-      <ListActionRow
-        icon="arrow.clockwise"
-        label={props.many ? `Restart Rubato on ${props.label}` : "Restart Rubato"}
-        loading={starting || !settled}
-        disabled={starting || !settled}
-        onPress={start}
-      />
-      {view.phase === "draining" && !view.now ? (
-        <ListActionRow icon="bolt.circle" label="Restart now" tone="danger" onPress={restartNow} />
-      ) : null}
-      {line ? (
-        <Text className="px-4 pb-3 text-sm text-foreground-muted" selectable={view.phase === "failed"}>
-          {line}
-        </Text>
-      ) : null}
-    </View>
+    <SettingsSection
+      title="Rubato"
+      footer={gt("This phone reconnects automatically when Rubato is back on your Mac.")}
+    >
+      <View>
+        <ListActionRow
+          icon="arrow.clockwise"
+          label={gt("Restart Rubato")}
+          {...(description === null ? {} : { description })}
+          loading={starting || !settled}
+          disabled={!canRestart || starting || !settled}
+          onPress={start}
+        />
+        {canRestart && view.phase === "draining" && !view.now ? (
+          <ListActionRow icon="bolt.circle" label={gt("Restart now")} tone="danger" onPress={restartNow} />
+        ) : null}
+        {line ? (
+          <Text className="px-4 pb-3 text-sm text-foreground-muted" selectable={view.phase === "failed"}>
+            {line}
+          </Text>
+        ) : null}
+      </View>
+    </SettingsSection>
   );
 }

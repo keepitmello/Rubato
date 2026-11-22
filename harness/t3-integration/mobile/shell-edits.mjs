@@ -392,11 +392,21 @@ export const shellEdits = {
     ["  \"SettingsLanguage\",\n",
       "  \"SettingsCompanions\",\n"],
   ],
-  'apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx': [
-    // Restart the Mac's Rubato from here, as the Mac's own About does (rubato-shell/MacRestartSection.tsx).
+  'apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx': [
     ['import { SettingsScreen } from "./components/SettingsScreen";\n',
       'import { SettingsScreen } from "./components/SettingsScreen";\nimport { MacRestartSection } from "../rubato-shell/MacRestartSection";\n', 'replace'],
-    ['        <AppSettingsSection />\n', '        <AppSettingsSection />\n        <MacRestartSection />\n', 'replace'],
+    ['            {outdated ? (\n',
+      '            <MacRestartSection\n'
+        + '              environmentId={environmentId}\n'
+        + '              label={environment.environmentLabel}\n'
+        + '              connected={connected}\n'
+        + '              supported={\n'
+        + '                !outdated &&\n'
+        + '                config?.environment.platform.os === "darwin" &&\n'
+        + '                config.environment.capabilities.serverSelfUpdate === "desktop-managed" &&\n'
+        + '                config.providers.some((provider) => provider.driver === "rubato-pi")\n'
+        + '              }\n'
+        + '            />\n'],
   ],
 
   // Model logos: a Rubato model shows its vendor, not T3's OpenAI fallback.

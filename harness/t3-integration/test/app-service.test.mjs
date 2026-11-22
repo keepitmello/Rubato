@@ -73,6 +73,35 @@ test('restart hands `rubato restart` to the updater, detached and without Electr
   assert.equal(response.status, 404);
 });
 
+test('the remote Mac restart requires POST and a desktop app, and requests a full relaunch', async (t) => {
+  const f = await checkout(t);
+  const seen = path.join(f.home, 'seen.json');
+  const options = {
+    root: f.root,
+    env: { ...process.env, HOME: f.home },
+    runner: [process.execPath, '-e',
+      `require('node:fs').writeFileSync(${JSON.stringify(seen)}, JSON.stringify({ argv: process.argv.slice(1), reopen: process.env.RUBATO_GUI_RESTART_APP }))`],
+  };
+  const url = 'http://x/rubato/app/restart-app';
+  const service = createAppService({ ...options, appPid: 4242 });
+  assert.equal((await handleAppRequest(service, new Request(url))).status, 405);
+  const headless = createAppService({ ...options, appPid: 0 });
+  assert.equal((await handleAppRequest(headless, new Request(url, { method: 'POST' }))).status, 409);
+  const response = await handleAppRequest(service, new Request(url, { method: 'POST' }));
+  if (process.platform !== 'darwin') {
+    assert.equal(response.status, 409);
+    return;
+  }
+  assert.equal(response.status, 200);
+  const { token } = await response.json();
+  let ran = null;
+  for (let i = 0; i < 100 && !ran; i += 1) {
+    ran = JSON.parse(await readFile(seen, 'utf8').catch(() => 'null'));
+    if (!ran) await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.deepEqual(ran, { argv: ['restart', token, '4242'], reopen: '1' });
+});
+
 test('restart is refused while an update or restart holds the updater', async (t) => {
   const f = await checkout(t);
   const directory = path.join(f.home, '.rubato-pi', 'gui-update');

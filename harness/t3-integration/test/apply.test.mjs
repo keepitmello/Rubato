@@ -32,6 +32,17 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   assert.doesNotMatch(desktopApp, /if \(settings\.wslOnly === true && settings\.wslBackendEnabled === true\)/);
   assert.ok(desktopApp.indexOf('yield* desktopWindow.showConnectingSplash;') < desktopApp.indexOf('yield* primaryBackend.start;'));
   assert.match(await readFile(path.join(root, 'apps/desktop/src/window/DesktopWindow.ts'), 'utf8'), /Rubato를 여는 중/);
+  const settings = 'apps/web/src/components/settings';
+  const panels = await readFile(path.join(root, settings, 'SettingsPanels.tsx'), 'utf8');
+  const general = panels.split('export function GeneralSettingsPanel()')[1].split('\nexport function ')[0];
+  assert.match(general, /<SettingsPageContainer>\s*(?:\{\/\*.*\*\/\}\s*)?<SettingsSection id="rubato-about"[^>]*>\s*<RubatoAboutSection \/>/);
+  assert.equal(panels.split('<RubatoAboutSection />').length, 2, 'show only one Rubato information card');
+  const settingsNav = await readFile(path.join(root, settings, 'SettingsSidebarNav.tsx'), 'utf8');
+  assert.match(settingsNav, /to === "\/settings\/general" \? <RubatoUpdateDot \/>/);
+  const mobileSettings = 'apps/mobile/src/features/settings';
+  const detail = await readFile(path.join(root, mobileSettings, 'SettingsEnvironmentDetailRouteScreen.tsx'), 'utf8');
+  assert.match(detail, /<MacRestartSection\s+environmentId=\{environmentId\}\s+label=\{environment\.environmentLabel\}/);
+  assert.doesNotMatch(await readFile(path.join(root, mobileSettings, 'SettingsAboutRouteScreen.tsx'), 'utf8'), /MacRestartSection/);
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
   assert.equal(first.changes.length,Object.keys(installed.files).length);
   // Account roles belong in settings, not in the conversation composer.

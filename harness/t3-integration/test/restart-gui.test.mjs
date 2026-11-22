@@ -404,6 +404,14 @@ test('a current bundle with changed app code reopens the app without rebuilding'
   assert.equal(h.relaunched(), 'relaunched');
 });
 
+test('an explicit app restart reopens even a current app', (t) => {
+  const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 0, codeCurrent: true });
+  const result = h.run({ RUBATO_GUI_RESTART_APP: '1' });
+  assert.equal(result.status, 0, result.stderr + result.stdout);
+  assert.equal(h.calls(), 'INSTALL-GUI --prepare\n-e tell application "Rubato" to quit\nSSH-SERVERS\nSTART-GUI\n');
+  assert.equal(h.relaunched(), 'relaunched');
+});
+
 test('a bundle staged with the app open is swapped in after the app quits', (t) => {
   const h = harness(t, { hostOs: 'Darwin', app: true, running: true, prepareStatus: 10, codeCurrent: true });
   const result = h.run();

@@ -49,8 +49,8 @@ const RUBATO_SEARCH_TARGETS: Readonly<
   Record<string, Pick<SettingsSearchItem, "to" | "targetId">>
 > = {
   "project-order": { to: "/settings/projects", targetId: RUBATO_PROJECT_LIST_ANCHOR },
-  "app-version": { to: "/settings/about", targetId: "rubato-about" },
-  "update-track": { to: "/settings/about", targetId: "rubato-about" },
+  "app-version": { to: "/settings/general", targetId: "rubato-about" },
+  "update-track": { to: "/settings/general", targetId: "rubato-about" },
 };
 
 function rubatoSearchItem<Item extends SettingsSearchItem>(item: Item): Item {

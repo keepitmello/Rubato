@@ -5,7 +5,8 @@
 //   version   the checkout's commit, the pinned stock Pi, T3's upstream pin
 //   check     rubato update --check (via gui-update.mjs) and what the update brings
 //   restart   `rubato restart` through the one-shot updater (gui-update.mjs), detached:
-//             it quits and reopens this very app, under the updater's lock
+//             it restarts the engine and reloads the app when its code changed
+//   restart-app  a paired phone explicitly asks the Mac app to quit and reopen
 //   restart-status  that job's result, so the page can tell a failed restart, and what a
 //             running job waits on (its build, or running work finishing)
 //   restart-now     the running update or restart stops waiting for running work and
@@ -116,7 +117,9 @@ export function createAppService(options = {}) {
   // launchd (gui-update.mjs handOffToLaunchd). The updater's lock is the one
   // guard against a second restart or an update at the same time; checking it
   // here only turns the common case into an answer instead of a silent no-op.
-  async function restart() {
+  async function restart(reopenApp = false) {
+    if (reopenApp && (process.platform !== 'darwin' || appPid < 2))
+      throw new AppRequestError(409, 'no-desktop-app', 'This connection is not managed by Rubato on a Mac.');
     const { stateDirectory, readJson, alive } = await updater();
     const directory = stateDirectory(env);
     const owner = await readJson(path.join(directory, 'lock.json'));
@@ -128,6 +131,7 @@ export function createAppService(options = {}) {
     // ELECTRON_RUN_AS_NODE belongs to this server alone. Handed down, it would
     // reach the bundle rebuild and anything else that runs the Electron binary.
     const { ELECTRON_RUN_AS_NODE: _serverOnly, ...restartEnv } = childEnv;
+    if (reopenApp) restartEnv.RUBATO_GUI_RESTART_APP = '1';
     const fd = openSync(log, 'a', 0o600);
     try {
       const child = spawn(runner[0], [...runner.slice(1), 'restart', token, String(appPid)], {
@@ -169,7 +173,10 @@ export function createAppService(options = {}) {
     return { token: owner.token };
   }
 
-  const actions = { version, check, restart, 'restart-status': restartStatus, 'restart-now': restartNow };
+  const actions = {
+    version, check, restart, 'restart-app': () => restart(true),
+    'restart-status': restartStatus, 'restart-now': restartNow,
+  };
   return {
     async handle(action) {
       const handler = Object.hasOwn(actions, action) ? actions[action] : undefined;
@@ -181,8 +188,10 @@ export function createAppService(options = {}) {
 
 export async function handleAppRequest(service, request) {
   const action = new URL(request.url).pathname.split('/').filter(Boolean).at(-1) ?? '';
-  if (request.method !== 'POST' && request.method !== 'GET')
-    return Response.json({ error: { code: 'method', message: 'Use GET or POST.' } }, { status: 405 });
+  if (request.method !== 'POST' && (request.method !== 'GET' || action === 'restart-app'))
+    return Response.json({
+      error: { code: 'method', message: action === 'restart-app' ? 'Use POST.' : 'Use GET or POST.' },
+    }, { status: 405 });
   try {
     return Response.json(await service.handle(action));
   } catch (error) {

@@ -1,6 +1,6 @@
-// Rubato: restarting the Mac's Rubato from the phone, the job desktop Settings › About runs
-// (harness/t3-integration/src/app/service.mjs: restart, restart-status, restart-now, then
-// `rubato restart` rebuilds and reopens). The phone's own connection drops while the Mac
+// Rubato: restarting the Mac's Rubato from the phone uses the desktop's restart job
+// (harness/t3-integration/src/app/service.mjs: restart-app, restart-status, restart-now).
+// The phone's connection drops while the Mac
 // restarts, so this reads the job's status again until the Mac answers with this restart's result.
 
 /** What /rubato/app/restart-status answers (service.mjs restartStatus). */

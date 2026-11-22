@@ -312,7 +312,8 @@ if [ "${GUI_ALREADY_CLOSED-}" != 1 ]; then
   else
     PREPARE_STATUS=0
   fi
-  if [ "$PREPARE_STATUS" = 0 ] && loaded_code_current; then
+  # The phone's Restart Rubato action explicitly asks to reopen the Mac app.
+  if [ "${RUBATO_GUI_RESTART_APP-}" != 1 ] && [ "$PREPARE_STATUS" = 0 ] && loaded_code_current; then
     ui_ok "데스크톱 앱은 그대로 둬요 (앱이 읽는 코드가 그대로라 새 엔진에 다시 붙어요)"
     # GUI 업데이터는 다시 켜진 창을 기다린다. 다시 켤 창이 없다고 알린다.
     if [ -n "${RUBATO_GUI_UPDATE_TOKEN-}" ]; then

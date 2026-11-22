@@ -1,5 +1,9 @@
 import { pathToFileURL } from "node:url";
-import { AuthOrchestrationOperateScope } from "@t3tools/contracts";
+import {
+  AuthEnvironmentMaintainScope,
+  AuthOrchestrationOperateScope,
+  type AuthEnvironmentScope,
+} from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -10,7 +14,7 @@ import { bridgeModuleOf, tryBridge } from "./RubatoMemory.ts";
 import * as ServerSettings from "./serverSettings.ts";
 
 // Settings pages that talk to the Rubato checkout: Providers (`rubato auth`),
-// About (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts), Stats, and
+// General (version, update check, restart) and Scheduled Tasks (RubatoSchedule.ts), Stats, and
 // the Agents panel's conversations (`/rubato/agents`). The work happens in a module found
 // next to the bridge module the Rubato provider is wired to: the checkout that
 // runs the sessions answers for them. A route only authenticates and hands the
@@ -69,16 +73,26 @@ function handle(
 ) {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest;
-    if (!(yield* authorized(auth, request))) return HttpServerResponse.empty({ status: 401 });
+    const remoteRestart =
+      spec.route === "/rubato/app" &&
+      Option.exists(HttpServerRequest.toURL(request), (url) =>
+        url.pathname.split("/").filter(Boolean).at(-1) === "restart-app",
+      );
+    const scope = remoteRestart ? AuthEnvironmentMaintainScope : AuthOrchestrationOperateScope;
+    if (!(yield* authorized(auth, request, scope))) return HttpServerResponse.empty({ status: 401 });
     return yield* answerFromService(spec, serverSettings, path, request);
   });
 }
 
 /** Whether the request carries a session allowed to operate this environment. */
-export function authorized(auth: EnvironmentAuth["Service"], request: HttpServerRequest.HttpServerRequest) {
+export function authorized(
+  auth: EnvironmentAuth["Service"],
+  request: HttpServerRequest.HttpServerRequest,
+  scope: AuthEnvironmentScope = AuthOrchestrationOperateScope,
+) {
   return auth.authenticateHttpRequest(request).pipe(
     Effect.option,
-    Effect.map((session) => Option.isSome(session) && session.value.scopes.includes(AuthOrchestrationOperateScope)),
+    Effect.map((session) => Option.isSome(session) && session.value.scopes.includes(scope)),
   );
 }
 

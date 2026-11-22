@@ -48,14 +48,14 @@ describe("Rubato on T3's settings", () => {
     expect(rubatoSettingsSearchItems(ITEMS)).toBe(rubatoSettingsSearchItems(ITEMS));
   });
 
-  it("sends version results to Rubato's About section", () => {
+  it("sends version results to Rubato's About section in General", () => {
     const results = rubatoSettingsSearchItems([
       { id: "app-version", title: "Version", to: "/settings/about" },
       { id: "update-track", title: "Update track", to: "/settings/maintenance" },
     ]);
     expect(results.map((item) => [item.to, item.targetId])).toEqual([
-      ["/settings/about", "rubato-about"],
-      ["/settings/about", "rubato-about"],
+      ["/settings/general", "rubato-about"],
+      ["/settings/general", "rubato-about"],
     ]);
   });
 

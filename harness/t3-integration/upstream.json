@@ -47,7 +47,7 @@
     "apps/mobile/src/features/layout/workspace/workspace-tab-navigation.ts": "859d58c00facc073c9d67614a44cdce443fc3fee98ee73b8df181ceef4ce603f",
     "apps/mobile/src/features/layout/workspace/workspace-tabs-state.test.ts": "ef0e39ebfecd22f359ce8fff0b26491b66f36679e9ebb5a2de092fcfef1187f9",
     "apps/mobile/src/features/layout/workspace/workspace-tabs-state.ts": "7450fe80f24fac3067fba21ebdf0a61430ffb955912f2e17afc9e638ca355bae",
-    "apps/mobile/src/features/settings/SettingsAboutRouteScreen.tsx": "4fe15b3c4acaf842a2d9ff4a38619af94828ed29c7f45d988835a05002d04622",
+    "apps/mobile/src/features/settings/SettingsEnvironmentDetailRouteScreen.tsx": "fdd3d18c7bf7c7986545df7a5de47d970a89ed50a95d6b11634dc4c94dc4e78d",
     "apps/mobile/src/features/settings/SettingsNotificationsRouteScreen.tsx": "eec911b3dfc9c2c178cd2a1806531b469dfa899465c3eb27bc3d891488d44ad5",
     "apps/mobile/src/features/settings/SettingsRouteScreen.tsx": "760a394115b11ff6576fa81b3675f099e35b4ef4507877c288a4c4b4b4024774",
     "apps/mobile/src/features/settings/components/ScheduledTaskPromptField.tsx": "60de3b45e4d64e5544df8f2b505cbc35aad1c362e45f3c535e82c9fc6dbce7d6",

@@ -140,7 +140,7 @@ export const settingsLayoutEdits = {
     ['    </SettingsPageContainer>\n  );\n}\n\nexport function MaintenanceSettingsPanel() {\n',
       '      {/* Rubato: the models that title sessions (settings-layout-edits.mjs). */}\n'
         + '      <RubatoTitleModelsSection />\n'],
-    // About: T3's version and updater rows give way to Rubato's About section above them.
+    // About: hide T3's desktop version and updater; Rubato shows its own in General.
     ['        {isElectron || HOSTED_APP_CHANNEL ? (\n          <AboutVersionSection />\n        ) : (\n',
       '        {/* Rubato: the app\'s version and updates are Rubato\'s About section (settings-layout-edits.mjs). */}\n'
         + '        {isElectron || HOSTED_APP_CHANNEL ? null : (\n',
