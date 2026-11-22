@@ -21,6 +21,8 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as EventSink from "../orchestration-v2/EventSink.ts";
 
 const DRIVER = "rubato-pi";
+/** Server notification that mirrors an already-running engine turn, not a T3 wake. */
+export const RUBATO_ENGINE_RUN_PREFIX = "rubato-engine-run:";
 /** Item ids of a Pi session's stored history written into a V2 thread (importPiSessionThread). */
 export const PI_IMPORT_ITEM = (sessionId: string) => `rubato-pi-import:${sessionId}:`;
 

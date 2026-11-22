@@ -35,7 +35,7 @@ import { isAbsoluteLocalPath, rubatoBridgeFor, type PiSummary } from "./Drivers/
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
 import { BUSY_RUN, importedPiThreadId, threadOfPiSession } from "./RubatoPiSessions.ts";
-import { RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
+import { RUBATO_ENGINE_RUN_PREFIX, RubatoThreadImporter, type PiSessionThreadInput } from "./RubatoThreadImporter.ts";
 import { reopenAutoArchived } from "../RubatoThreadAutoArchive.ts";
 import { tryBridge } from "../RubatoMemory.ts";
 
@@ -177,10 +177,10 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     }
     const { runs } = yield* orchestrator.value.getThreadRecords(ThreadId.make(threadId), ["runs"]);
     if (runs.some((run) => BUSY_RUN.has(run.status))) return;
-    const id = yield* uuid;
+    const id = `${RUBATO_ENGINE_RUN_PREFIX}${yield* uuid}`;
     bridge.markEngineRun(threadId);
-    yield* orchestrator.value.dispatch({ type: "message.dispatch", commandId: CommandId.make(`rubato-engine-run:${id}`),
-      threadId: ThreadId.make(threadId), messageId: MessageId.make(`rubato-engine-run:${id}`), text: bridge.engineRunText,
+    yield* orchestrator.value.dispatch({ type: "message.dispatch", commandId: CommandId.make(id),
+      threadId: ThreadId.make(threadId), messageId: MessageId.make(id), text: bridge.engineRunText,
       notification: { source: { kind: "system" }, outcome: "updated", summary: "Rubato started this turn" },
       attachments: [], dispatchMode: { type: "queue_after_active" }, createdBy: "agent", creationSource: "server" });
   }).pipe(Effect.catch((cause) => Effect.logWarning("Rubato engine run not shown", { sessionId: entry.sessionId, cause })));

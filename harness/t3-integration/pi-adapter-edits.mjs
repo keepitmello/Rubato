@@ -4,14 +4,44 @@
 // orchestrator (turns, items, settles, wakes, usage) is the one we want. What differs
 // is where the RPC stream comes from: upstream spawns one `pi` per session, Rubato
 // attaches to the engine through the bridge (src/bridge.mjs openRpc). These edits
-// only open the adapter to a caller-supplied driver kind, connection and capability
-// set; with none supplied the upstream Pi driver behaves exactly as before.
+// open the adapter to a caller-supplied driver kind, connection and capability set
+// and give a mirrored engine turn its own work clock instead of inheriting a wake's.
 export const piAdapterOverlays = [
   'apps/server/src/provider/RubatoThreadImporter.ts',
   'apps/server/src/provider/RubatoThreadImporter.test.ts',
 ];
 
 export const piAdapterEdits = {
+  'apps/server/src/orchestration-v2/Orchestrator.ts': [
+    ['import * as DateTime from "effect/DateTime";\n',
+      'import { RUBATO_ENGINE_RUN_PREFIX } from "../provider/RubatoThreadImporter.ts";\n'],
+    ['    readonly notification?: unknown;\n    readonly delegatedCompletion?: unknown;\n    readonly restartContinuationOfRunId?: RunId | undefined;\n',
+      '    readonly messageId: MessageId;\n    readonly notification?: unknown;\n    readonly delegatedCompletion?: unknown;\n    readonly restartContinuationOfRunId?: RunId | undefined;\n', 'replace'],
+    ['): Pick<OrchestrationV2Run, "workStartedAt"> {\n',
+      '): Pick<OrchestrationV2Run, "workStartedAt"> {\n'
+        + '  // Rubato mirrors a new native turn as a notification to keep it quiet, not to continue old work.\n'
+        + '  if (trigger.creationSource === "server" && trigger.messageId.startsWith(RUBATO_ENGINE_RUN_PREFIX)) return {};\n', 'replace'],
+    ['            senderThreadId: queuedMessage.senderThreadId,\n            notification: queuedMessage.notification,\n',
+      '            senderThreadId: queuedMessage.senderThreadId,\n            messageId: queuedMessage.id,\n            notification: queuedMessage.notification,\n', 'replace'],
+  ],
+  'apps/server/src/orchestration-v2/runtimeLayer.test.ts': [
+    ['import * as Orchestrator from "./Orchestrator.ts";\n',
+      'import { RUBATO_ENGINE_RUN_PREFIX } from "../provider/RubatoThreadImporter.ts";\n'],
+    ['      const messageId = (key: string) => MessageId.make(`runtime-layer-wake-work-start-${key}`);\n',
+      '      const messageId = (key: string) => MessageId.make(key === "engine-turn"\n'
+        + '        ? `${RUBATO_ENGINE_RUN_PREFIX}${key}` : `runtime-layer-wake-work-start-${key}`);\n', 'replace'],
+    ['          creationSource: wake ? "provider" : "web",\n',
+      '          creationSource: key === "engine-turn" ? "server" : wake ? "provider" : "web",\n', 'replace'],
+    ['          ...(wake\n            ? {\n                notification: {\n                  source: { kind: "background_task" as const },\n',
+      '          ...(wake\n            ? {\n                notification: {\n'
+        + '                  source: { kind: key === "engine-turn" ? ("system" as const) : ("background_task" as const) },\n', 'replace'],
+    ['      const ordinals = yield* Effect.forEach(\n        ["prompt", "early-wake", "queued", "late-wake"],\n', `
+      yield* dispatch("engine-turn", true);
+      yield* settle("late-wake", DateTime.add(now, { minutes: 11 }));
+      assert.equal(yield* Queue.take(startedRunIds), (yield* runFor("engine-turn")).id);
+      assert.isUndefined((yield* runFor("engine-turn")).workStartedAt);
+`],
+  ],
   'packages/provider-pi/src/server/adapter.test.ts': [
     ['  it.effect("rejects rollback while native wake output is awaiting ownership", () =>\n', [
       '  describe("when the connection closes", () => {',
