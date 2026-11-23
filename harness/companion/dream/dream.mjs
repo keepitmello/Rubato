@@ -117,14 +117,16 @@ export const DREAM_MODELS = Object.freeze([
 ]);
 
 /**
- * The models a companion dream runs on: the dream ladder the user set (`memory.dream.models`, in
- * rubato.jsonc or Settings › Memory), else DREAM_MODELS. `loaded` is the config loader's result
- * (its raw `layers` tell a set ladder from the schema's default); `ladder` turns entries into rungs
- * (packages/rubato-runtime src/dream/ladder.ts dreamLadder).
+ * The models a companion dream runs on: the dream ladder the user set (`memory.dream.models` in
+ * ~/.rubato/rubato.jsonc, which Settings › Memory writes), else DREAM_MODELS. `config` is that file
+ * as written, so the schema's default ladder never stands in for the user's choice; `ladder` turns
+ * entries into rungs (packages/rubato-runtime src/dream/ladder.ts dreamLadder).
  */
-export function companionDreamModels(loaded, ladder) {
-  const set = (loaded?.layers ?? []).some((layer) => layer?.config?.memory?.dream?.models !== undefined);
-  const rungs = set ? ladder(loaded?.config?.memory?.dream?.models ?? []) : [];
+export function companionDreamModels(config, ladder) {
+  const models = config?.memory?.dream?.models;
+  const entries = (Array.isArray(models) ? models : [])
+    .filter((entry) => typeof entry === 'string' || typeof entry?.model === 'string');
+  const rungs = entries.length ? ladder(entries) : [];
   return rungs.length ? rungs : DREAM_MODELS;
 }
 /**

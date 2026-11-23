@@ -12,7 +12,7 @@ import { DEFAULT_SETTINGS, readSettings, writeSettings, writeState } from '../co
 import { heartbeatText } from '../control-tower.mjs';
 import { DOCS_CADENCE_HOURS, docsDue, docsReportLine, immutableFiles, runDocsDream } from '../dream/docs.mjs';
 import { DREAM_MODELS, companionDreamModels, readDreamState, runCompanionDream } from '../dream/dream.mjs';
-import { dreamNight } from '../dream/service.mjs';
+import { dreamNight, resolveModels } from '../dream/service.mjs';
 import { companionSettings } from '../settings.mjs';
 import { appEntry } from '../messenger/test/helpers.mjs';
 import { dreamLadder } from '../../../packages/rubato-runtime/src/dream/ladder.ts';
@@ -266,16 +266,19 @@ test('immutable files are found by their flag, not by their name', { skip: !darw
   assert.deepEqual(immutableFiles(path.join(dir, 'f'), 'linux'), [], 'no such flag elsewhere');
 });
 
-test('the companion dream runs on the dream ladder the user set, and on its own models when none is set', () => {
-  const set = { layers: [{ config: { memory: { dream: { models: [{ model: 'xai/grok-4.7', reasoning: 'medium' }] } } } }],
-    config: { memory: { dream: { models: [{ model: 'xai/grok-4.7', reasoning: 'medium' }] } } } };
-  assert.deepEqual(companionDreamModels(set, dreamLadder), [{ model: 'xai/grok-4.7', thinking: 'medium' }]);
-  // Unset in every layer: the schema's default ladder is not the user's choice, so the companion keeps its own.
-  const unset = { layers: [{ config: { memory: { dream: { enabled: false } } } }],
-    config: { memory: { dream: { models: [{ model: 'b-ai/deepseek-v4.1-flash', reasoning: 'medium' }] } } } };
-  assert.equal(companionDreamModels(unset, dreamLadder), DREAM_MODELS);
-  assert.equal(companionDreamModels({ layers: [{ config: { memory: { dream: { models: ['not-a-model'] } } } }], config: { memory: { dream: { models: ['not-a-model'] } } } }, dreamLadder),
-    DREAM_MODELS, 'nothing launchable falls back');
+test('the companion dream runs on the dream ladder the user set in rubato.jsonc, and on its own models when none is set', async (t) => {
+  const { dir } = sandbox(t);
+  const env = { HOME: dir };
+  assert.equal(await resolveModels(env), DREAM_MODELS, 'no config file');
+  put(path.join(dir, '.rubato', 'rubato.jsonc'), '{\n  // 꿈\n  "memory": { "dream": { "enabled": false, },\n  },\n}\n');
+  assert.equal(await resolveModels(env), DREAM_MODELS, 'a config without a ladder: the schema default is not the user\'s choice');
+  put(path.join(dir, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [ { "model": "xai/grok-4.7", "reasoning": "medium" }, "anthropic/claude-haiku-5-5" ] } } }');
+  assert.deepEqual(await resolveModels(env), [{ model: 'xai/grok-4.7', thinking: 'medium' }, { model: 'anthropic/claude-haiku-5-5' }]);
+  assert.equal(companionDreamModels({ memory: { dream: { models: ['not-a-model', { reasoning: 'high' }] } } }, dreamLadder), DREAM_MODELS,
+    'nothing launchable falls back');
+  const errors = [];
+  put(path.join(dir, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [ { "model": 3 } ] } } }');
+  assert.equal(await resolveModels(env, (error) => errors.push(error)), DREAM_MODELS);
 });
 
 test('a night is the memory dream, then the docs job; the docs job neither hides nor breaks the memory record', async (t) => {

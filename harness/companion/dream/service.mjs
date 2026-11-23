@@ -12,7 +12,9 @@
 // A night's dream is two jobs in turn: the memory dream (dream.mjs), then, when its cadence has come
 // and the companion has roots to tend, document upkeep (docs.mjs). Both run on the dream ladder the
 // user set (memory.dream.models), else on dream.mjs DREAM_MODELS.
-import { open } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { open, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import { readSettings, readState } from '../companion.mjs';
@@ -30,14 +32,21 @@ async function resolveLaunch(env) {
   return resolvePiMemoryChildLaunch({ root: resolvePiEngineDir(env) });
 }
 
-/** The dream ladder from the user's config (dream.mjs companionDreamModels); DREAM_MODELS when it cannot be read. */
-async function resolveModels(env, onError = () => {}) {
+/**
+ * The dream ladder from the user's config file (dream.mjs companionDreamModels), read the way
+ * Settings › Memory reads it (t3-integration memory/service.mjs): rubato.jsonc, else rubato.json.
+ * DREAM_MODELS when there is no file; a file that cannot be read is reported and falls back too.
+ */
+export async function resolveModels(env, onError = () => {}) {
   try {
-    const [{ loadSenpiRubatoConfig }, { dreamLadder }] = await Promise.all([
-      import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'components', 'config-resolution', 'index.ts')),
-      import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'dream', 'ladder.ts')),
-    ]);
-    return companionDreamModels(loadSenpiRubatoConfig({ cwd: homedir(), env }), dreamLadder);
+    const home = env.HOME || homedir();
+    const jsonc = path.join(home, '.rubato', 'rubato.jsonc');
+    const json = path.join(home, '.rubato', 'rubato.json');
+    const file = !existsSync(jsonc) && existsSync(json) ? json : jsonc;
+    if (!existsSync(file)) return DREAM_MODELS;
+    const { parse } = createRequire(path.join(repoRoot, 'packages', 'rubato-config-core', 'package.json'))('jsonc-parser');
+    const { dreamLadder } = await import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'dream', 'ladder.ts'));
+    return companionDreamModels(parse(await readFile(file, 'utf8'), [], { allowTrailingComma: true }), dreamLadder);
   } catch (error) {
     onError(error);
     return DREAM_MODELS;
