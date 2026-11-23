@@ -45,6 +45,8 @@ import { useAppActive } from "../../lib/appState";
 import { startRoomPoll } from "./roomPoll";
 import { useRoomLaunches } from "./roomLaunches";
 import { RoomLaunchCard } from "./RoomLaunchCard";
+import { RoomLeadsSheet } from "./RoomLeadsSheet";
+import { useGT } from "gt-react-native";
 import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useComposerDraft } from "../../state/use-composer-drafts";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -929,10 +931,12 @@ function OtherRoomFrame({ children }: React.PropsWithChildren) {
 const RoomFrame = Platform.OS === "ios" ? IosRoomFrame : OtherRoomFrame;
 
 export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParams>) {
+  const gt = useGT();
   const route = useRoute<RouteProp<Record<string, CompanionRoomParams>>>();
   const navigation = useNavigation();
   const { companionId, environmentId, threadId } = route.params;
   const { companion, loaded } = useCompanion(companionId, environmentId);
+  const [showLeads, setShowLeads] = useState(false);
   // A room opened by name (a call, a link) learns its Mac and thread once the list knows them.
   useEffect(() => {
     if (!companion?.threadId) return;
@@ -1005,7 +1009,20 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           icon="phone.fill"
           onPress={call}
         />
+        {/* UIKit lays out right-bar items from the outside in. */}
+        <Toolbar.Button
+          accessibilityLabel={gt("Lead threads")}
+          icon="list.bullet"
+          onPress={() => setShowLeads(true)}
+          disabled={!environmentId || !threadId}
+        />
       </Toolbar>
+      {showLeads && environmentId && threadId ? (
+        <RoomLeadsSheet
+          environmentId={environmentId as EnvironmentId} companionId={companionId} roomThreadId={threadId}
+          close={() => setShowLeads(false)}
+        />
+      ) : null}
     </RoomFrame>
   );
 }

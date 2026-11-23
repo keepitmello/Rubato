@@ -10,6 +10,8 @@
   "Show companion-created threads": "컴패니언이 만든 스레드 표시",
   "When hidden, you can still open them from a companion chat. Notifications are separate.": "목록에서 숨겨도 컴패니언 톡방에서 열 수 있어요. 알림에는 영향을 주지 않아요.",
   "Lead thread": "리드 스레드",
+  "Lead threads": "리드 스레드",
+  "No lead threads yet": "아직 띄운 리드가 없어요",
   "Couldn’t start": "시작하지 못했어요",
   "Thread unavailable": "열 수 없는 스레드",
   "Thread isn’t ready yet": "스레드를 아직 열 수 없어요",
