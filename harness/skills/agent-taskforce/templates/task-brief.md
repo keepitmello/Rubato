@@ -41,7 +41,9 @@ not the technical message relay.
 A subagent can reason within this scope; the sender keeps the wider outcome.
 
 **Return decisions:** changes to intent, write boundaries, freezes, shared public
-commitments, irreversible actions or unapproved resource use. Ordinary diagnosis
+commitments, irreversible actions, or spending outside the approved team (new
+teammates, paid API balance). Runs, retries and subagents the outcome needs are the
+owner's call; do not add a clause that sends them back to the lead. Ordinary diagnosis
 and authorized technical integration belong to owners. Do not add per-check or
 approved-usage reporting duties; use the taskforce communication contract.
 

@@ -34,9 +34,11 @@ rather than duplicating all their work. Respect their write boundaries; agree on
 writer where surfaces converge.
 
 Resolve technical issues with the affected owners and verifier. Bring
-changes to accepted scope, public commitments, resource authority or user preferences
-to the lead with evidence, viable options and a recommendation. Also notify the
-lead when a conclusion already communicated to the user must be corrected.
+changes to accepted scope, public commitments or user preferences to the lead with
+evidence, viable options and a recommendation. The runs, retries, subagents and
+checks your outcome needs are your call inside the approved team; decide, proceed
+and list them in your result. Also notify the lead when a conclusion already
+communicated to the user must be corrected.
 
 When a verifier refutes a method, keep correction and the recheck request with the
 responsible owner even if the lead originally suggested it. Send the changed
