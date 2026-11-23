@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   BUILT_IN_NOTIFICATION_SOUNDS,
+  NOTIFICATION_SOUND_SETTING,
   defaultNotificationSound,
   listMacSounds,
   notificationSoundLabel,
@@ -63,29 +64,27 @@ function NotificationSoundRow({
   macSounds: ReadonlyArray<MacSound>;
   onOpen: () => void;
 }) {
-  const value = useScopedSettings((settings) =>
-    kind === "completion" ? settings.notificationCompletionSound : settings.notificationInputSound,
-  );
+  const key = NOTIFICATION_SOUND_SETTING[kind];
+  const value = useScopedSettings((settings) => settings[key]);
   const updateSettings = useUpdateScopedSettings();
   const fallback = defaultNotificationSound(kind);
-  const choose = (sound: string) =>
-    updateSettings(
-      kind === "completion" ? { notificationCompletionSound: sound } : { notificationInputSound: sound },
-    );
+  const choose = (sound: string) => updateSettings({ [key]: sound });
   const groups = (["system", "local", "user"] as const)
     .map((folder) => ({ folder, sounds: macSounds.filter((sound) => sound.folder === folder) }))
     .filter((group) => group.sounds.length > 0);
   const label = (id: string) =>
-    `${notificationSoundLabel(id, macSounds)}${id === fallback ? " (Default)" : ""}`;
-  const subject = kind === "completion" ? "completion sound" : "input sound";
+    id === "default" ? "Default" : `${notificationSoundLabel(id, macSounds)}${id === fallback ? " (Default)" : ""}`;
+  const subject = { completion: "completion sound", input: "input sound", companion: "companion message sound" }[kind];
 
   return (
     <SettingsRow
-      {...searchableSetting(kind === "completion" ? "notification-completion-sound" : "notification-input-sound")}
+      {...searchableSetting(`notification-${kind}-sound`)}
       description={
-        kind === "completion"
-          ? "Plays when a thread finishes, if Thread notifications include sound."
-          : "Plays when a thread needs input or approval, or fails. Add your own sounds to ~/Library/Sounds."
+        {
+          completion: "Plays when a thread finishes, if Thread notifications include sound.",
+          input: "Plays when a thread needs input or approval, or fails. Add your own sounds to ~/Library/Sounds.",
+          companion: "Plays for companion messages. Default keeps the usual Mac chime and the iPhone system sound.",
+        }[kind]
       }
       resetAction={
         value !== fallback ? <SettingResetButton ariaLabel={`Reset ${subject} to default`} onClick={() => choose(fallback)} /> : null
@@ -111,12 +110,13 @@ function NotificationSoundRow({
               void previewNotificationSound(kind, next);
             }}
           >
-            <SelectTrigger size="sm" className="min-w-0 flex-1 sm:w-56 sm:flex-none" aria-label={`Thread ${subject}`}>
+            <SelectTrigger size="sm" className="min-w-0 flex-1 sm:w-56 sm:flex-none" aria-label={subject}>
               <SelectValue>{label(value)}</SelectValue>
             </SelectTrigger>
             <SelectPopup align="end" alignItemWithTrigger={false}>
               <SelectGroup>
                 <SelectGroupLabel>Built-in</SelectGroupLabel>
+                {kind === "companion" ? <SelectItem value={fallback}>{label(fallback)}</SelectItem> : null}
                 {BUILT_IN_NOTIFICATION_SOUNDS.map((sound) => (
                   <SelectItem key={sound.id} hideIndicator value={sound.id}>
                     {label(sound.id)}
@@ -147,6 +147,7 @@ export function RubatoNotificationSoundSettings() {
     <>
       <NotificationSoundRow kind="completion" macSounds={sounds} onOpen={refresh} />
       <NotificationSoundRow kind="input" macSounds={sounds} onOpen={refresh} />
+      <NotificationSoundRow kind="companion" macSounds={sounds} onOpen={refresh} />
     </>
   );
 }

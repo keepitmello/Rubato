@@ -82,6 +82,11 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("segnoNotice", () => {
+  it("plays the companion chime in sound mode", async () => {
+    await notifySegnoCompletion(completion({ mode: "notifications-and-sound" }));
+    expect(state.sound).toHaveBeenCalledWith("companion", expect.any(Function));
+  });
+
   it("shows the start of what Segno said as plain text under its name", () => {
     expect(segnoNotice("**안녕!** 오늘 [일정](https://x)은 `10:00`.\n\n- 우산")).toEqual({
       title: "Segno",

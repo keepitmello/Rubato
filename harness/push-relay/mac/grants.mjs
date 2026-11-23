@@ -24,8 +24,14 @@ const QUIET = new Set(['no-activity']);
 /** A phone's choices. Companion work was silent by default before it got its own switch. */
 export function normalizePreferences(value, base = {}) {
   const input = value && typeof value === 'object' ? value : {};
-  return Object.fromEntries(PUSH_KINDS.map(kind => [kind,
+  const preferences = Object.fromEntries(PUSH_KINDS.map(kind => [kind,
     typeof input[kind] === 'boolean' ? input[kind] : typeof base[kind] === 'boolean' ? base[kind] : kind !== 'companionThreads']));
+  const soundChoices = ['mac', 'default', 'builtin:completion', 'builtin:input'];
+  for (const key of ['threadSound', 'companionMessageSound']) {
+    if (soundChoices.includes(input[key])) preferences[key] = input[key];
+    else if (soundChoices.includes(base[key])) preferences[key] = base[key];
+  }
+  return preferences;
 }
 
 /** A relay must be HTTPS; plain HTTP only on this machine, for tests and a local relay. */
@@ -92,15 +98,17 @@ export function createGrantStore({ home = PUSH_HOME, fetch: send = globalThis.fe
      * Send one message to every paired phone that wants its kind (`preference`, one of PUSH_KINDS). Never
      * throws: a phone that cannot be reached is reported, a grant the relay says is revoked is dropped.
      */
-    async pushAll(message, { preference } = {}) {
+    async pushAll(message, { preference, soundOverride } = {}) {
       if (!PUSH_KINDS.includes(preference)) throw new TypeError(`preference must be one of ${PUSH_KINDS.join(', ')}`);
-      const wanted = read().filter(entry => normalizePreferences(entry.preferences)[preference]);
+      const wanted = read().map(entry => ({ ...entry, preferences: normalizePreferences(entry.preferences) }))
+        .filter(entry => entry.preferences[preference]);
       const results = await Promise.all(wanted.map(async entry => {
         try {
+          const sound = soundOverride?.(entry.preferences);
           const response = await send(`${entry.relay}/v1/push`, {
             method: 'POST',
             headers: { authorization: `Bearer ${entry.grant}`, 'content-type': 'application/json' },
-            body: JSON.stringify(message),
+            body: JSON.stringify(sound ? { ...message, sound } : message),
             signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
           });
           const value = await response.json().catch(() => null);

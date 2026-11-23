@@ -1,5 +1,6 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import {
+  DEFAULT_NOTIFICATION_COMPANION_SOUND,
   DEFAULT_NOTIFICATION_COMPLETION_SOUND,
   DEFAULT_NOTIFICATION_INPUT_SOUND,
 } from "@t3tools/contracts/settings";
@@ -17,7 +18,7 @@ import { readPreparedConnection } from "./state/session";
 // "mac:<folder>/<file>", one of this Mac's alert sounds that the server lists
 // and sends (harness/t3-integration/src/sounds/service.mjs in the Rubato checkout).
 
-export type NotificationSoundKind = "completion" | "input";
+export type NotificationSoundKind = "completion" | "input" | "companion";
 
 export const SOUNDS_ROUTE = "/rubato/sounds";
 
@@ -40,14 +41,21 @@ const BUILT_IN_URLS: Readonly<Record<string, string>> = {
 export const NOTIFICATION_SOUND_SETTING = {
   completion: "notificationCompletionSound",
   input: "notificationInputSound",
+  companion: "notificationCompanionSound",
 } as const;
 
 export function defaultNotificationSound(kind: NotificationSoundKind): string {
+  if (kind === "companion") return DEFAULT_NOTIFICATION_COMPANION_SOUND;
   return kind === "completion" ? DEFAULT_NOTIFICATION_COMPLETION_SOUND : DEFAULT_NOTIFICATION_INPUT_SOUND;
 }
 
 export function selectedNotificationSound(kind: NotificationSoundKind): string {
   return getClientSettings()[NOTIFICATION_SOUND_SETTING[kind]];
+}
+
+/** Keep the previous desktop chime when iPhone alerts use the system default. */
+export function desktopNotificationSound(id: string): string {
+  return id === DEFAULT_NOTIFICATION_COMPANION_SOUND ? DEFAULT_NOTIFICATION_COMPLETION_SOUND : id;
 }
 
 /** The name a sound id shows in the picker; a Mac sound not listed (yet) shows its file name. */

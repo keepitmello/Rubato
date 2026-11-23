@@ -42,7 +42,7 @@ export async function notifySegnoCompletion(input: SegnoCompletion): Promise<voi
   const notice = segnoNotice(said, companion?.title);
   if (notice === null) return;
   if (hasNotificationSound(input.mode)) {
-    void playNotificationSound("completion", () =>
+    void playNotificationSound("companion", () =>
       hasNotificationSound(getClientSettings().notificationMode),
     );
   }

@@ -1,6 +1,6 @@
 import * as Notifications from "expo-notifications";
 import { useCallback, useEffect, useState } from "react";
-import { AppState, Linking } from "react-native";
+import { ActionSheetIOS, AppState, Linking, Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { ScreenScrollView as ScrollView } from "../../components/ui/ScreenScrollView";
@@ -18,6 +18,7 @@ import {
   setRubatoPushPreferences,
   type MacConnection,
   type PushPreferences,
+  type PushSoundChoice,
   type PushState,
 } from "./sync";
 
@@ -28,6 +29,18 @@ import {
 // live on each Mac too (/rubato/push/settings, /rubato/push/telegram).
 
 type Permission = "checking" | "granted" | "ask" | "off";
+
+const SOUND_CHOICES = [
+  { id: "mac", label: "Follow Mac Settings" },
+  { id: "default", label: "iPhone Default" },
+  { id: "builtin:completion", label: "Completion Chime" },
+  { id: "builtin:input", label: "Input Chime" },
+] as const satisfies ReadonlyArray<{ id: PushSoundChoice; label: string }>;
+
+const SOUND_ROWS = [
+  { key: "companionMessageSound", label: "Companion Message Sound" },
+  { key: "threadSound", label: "Thread Sound" },
+] as const;
 
 interface MacStatus {
   readonly preview?: "full" | "generic";
@@ -80,8 +93,8 @@ export function RubatoNotificationsSettings() {
   }, [firstId]);
 
   const preferences = pushPreferences(state);
-  const changePreference = (kind: keyof PushPreferences, on: boolean) => {
-    const next = { ...preferences, [kind]: on };
+  const changePreference = <K extends keyof PushPreferences>(kind: K, value: PushPreferences[K]) => {
+    const next = { ...preferences, [kind]: value };
     setState((current) => (current ? { ...current, preferences: next } : current));
     void setRubatoPushPreferences(rubatoPushDeps(), connections, next)
       .then((saved) => saved && setState(saved))
@@ -110,6 +123,15 @@ export function RubatoNotificationsSettings() {
   };
 
   const registered = state !== null;
+  const chooseSound = (key: (typeof SOUND_ROWS)[number]["key"], label: string) => {
+    ActionSheetIOS.showActionSheetWithOptions(
+      { title: label, options: [...SOUND_CHOICES.map((choice) => choice.label), "Cancel"], cancelButtonIndex: SOUND_CHOICES.length },
+      (index) => {
+        const choice = SOUND_CHOICES[index];
+        if (choice) changePreference(key, choice.id);
+      },
+    );
+  };
   return (
     <SettingsScreen title="Notifications">
       <ScrollView
@@ -133,6 +155,20 @@ export function RubatoNotificationsSettings() {
             onValueChange={changePermission}
           />
         </SettingsSection>
+        {Platform.OS === "ios" ? (
+          <SettingsSection title="Notification Sounds">
+            {SOUND_ROWS.map(({ key, label }) => (
+              <SettingsRow
+                key={key}
+                icon="bell.badge"
+                label={label}
+                value={SOUND_CHOICES.find((choice) => choice.id === preferences[key])?.label ?? SOUND_CHOICES[0].label}
+                disabled={!registered}
+                onPress={() => chooseSound(key, label)}
+              />
+            ))}
+          </SettingsSection>
+        ) : null}
         <SettingsSection title="Notify Me About">
           <SettingsSwitchRow
             icon="text.bubble"

@@ -54,6 +54,7 @@ vi.mock("../../state/rubatoCompanion", () => ({
   isCompanionThread: (threadId: string) => threadId === "segno-thread",
 }));
 vi.mock("./RubatoSegnoNotice", () => ({ notifySegnoCompletion: state.segno }));
+vi.mock("../../state/rubatoPush", () => ({ rubatoPush: { desktopThreadMuted: async () => false } }));
 
 import { environmentShell } from "../../state/shell";
 import { startThreadNotifications } from "../ThreadNotificationCoordinator";
@@ -162,23 +163,23 @@ describe("Segno's thread in the app's notifications", () => {
     expect(state.segno.mock.calls[0]?.[0]).toMatchObject({ viewing: true });
   });
 
-  it("leaves another thread's completion toast as it was", () => {
+  it("leaves another thread's completion toast as it was", async () => {
     start();
     publish("lead-thread");
     expect(state.segno).not.toHaveBeenCalled();
-    expect(state.add).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(state.add).toHaveBeenCalledWith(
       expect.objectContaining({ title: "Thread completed", description: "Fix the login form" }),
-    );
+    ));
   });
 
-  it("leaves another thread's desktop notification as it was", () => {
+  it("leaves another thread's desktop notification as it was", async () => {
     state.mode = "notifications";
     state.focused = false;
     start();
     publish("lead-thread");
-    expect(state.notification).toHaveBeenCalledWith(
+    await vi.waitFor(() => expect(state.notification).toHaveBeenCalledWith(
       "Thread completed",
       expect.objectContaining({ body: "Fix the login form" }),
-    );
+    ));
   });
 });

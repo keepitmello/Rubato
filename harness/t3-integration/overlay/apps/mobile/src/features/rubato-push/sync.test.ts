@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { macFetch, setRubatoPushPreferences, syncRubatoPush, type PushState, type PushSyncDeps } from "./sync";
+import { DEFAULT_PREFERENCES, macFetch, setRubatoPushPreferences, syncRubatoPush, type PushPreferences, type PushState, type PushSyncDeps } from "./sync";
 
 const RELAY = "https://relay.test";
 const MAC = {
@@ -11,6 +11,7 @@ const MAC = {
 
 function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; relayPut?: number } = {}) {
   let macPreferences = 200;
+  let acceptsSounds = false;
   let stored: PushState | null = null;
   const requests: Array<{ method: string; url: string; auth: string | null; body: any }> = [];
   let grants = 0;
@@ -27,7 +28,9 @@ function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; rela
     }
     if (url.startsWith(`${RELAY}/v1/devices/dev-1/grants/`) && init.method === "DELETE") return respond(200, { ok: true });
     if (url === "https://wy-mac.tail.ts.net/rubato/push/register") return respond(macAnswers, { ok: true });
-    if (url === "https://wy-mac.tail.ts.net/rubato/push/preferences") return respond(macPreferences, { ok: true });
+    if (url === "https://wy-mac.tail.ts.net/rubato/push/preferences") {
+      return respond(macPreferences, acceptsSounds ? { preferences: body.preferences } : { ok: true });
+    }
     return respond(404);
   }) as unknown as typeof globalThis.fetch;
   const deps: PushSyncDeps = {
@@ -41,10 +44,29 @@ function world({ macAnswers = 200, relayPut = 200 }: { macAnswers?: number; rela
       stored = state;
     },
   };
-  return { deps, requests, stored: () => stored, macDown: (down: boolean) => { macPreferences = down ? 503 : 200; } };
+  return { deps, requests, stored: () => stored, upgradeMac: () => { acceptsSounds = true; }, macDown: (down: boolean) => { macPreferences = down ? 503 : 200; } };
 }
 
 describe("syncRubatoPush", () => {
+  it("keeps both sound choices and sends them again after the paired Mac upgrades", async () => {
+    const { deps, requests, stored, upgradeMac } = world();
+    const input = { apnsToken: "aa", voipToken: "bb", connections: [MAC] };
+    await syncRubatoPush(deps, input);
+    const preferences: PushPreferences = {
+      ...DEFAULT_PREFERENCES, threadSound: "default", companionMessageSound: "builtin:input",
+    };
+    await setRubatoPushPreferences(deps, [MAC], preferences);
+    expect(stored()?.preferences).toEqual(preferences);
+    expect(stored()?.grants[MAC.environmentId]?.preferences).toEqual(DEFAULT_PREFERENCES);
+    upgradeMac();
+    await syncRubatoPush(deps, input);
+    expect(requests.at(-1)?.body.preferences).toEqual(preferences);
+    expect(stored()?.grants[MAC.environmentId]?.preferences).toEqual(preferences);
+    requests.length = 0;
+    await syncRubatoPush(deps, input);
+    expect(requests).toEqual([]);
+  });
+
   it("registers the tokens with the relay only, and hands each Mac a grant, not a token", async () => {
     const { deps, requests, stored } = world();
     await syncRubatoPush(deps, { apnsToken: "aa", voipToken: "bb", connections: [MAC] });

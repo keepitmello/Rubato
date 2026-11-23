@@ -89,6 +89,24 @@ test('a grant the phone revoked is dropped from this Mac; the rest keep working'
   assert.ok(readFileSync(path.join(dir, 'grants.json'), 'utf8').includes(kept.grant));
 });
 
+test('two phones can receive the same alert with different sounds', async t => {
+  const relay = await relayServer(t);
+  const grants = createGrantStore({ home: home(t) });
+  const one = await relay.phone('5'.repeat(64));
+  const two = await relay.phone('6'.repeat(64));
+  for (const phone of [one, two]) grants.add({ ...phone, relay: relay.url });
+  grants.setPreferences(one.deviceId, { threadSound: 'default' });
+  grants.setPreferences(one.deviceId, { threadSound: '../invalid' });
+  const alert = { kind: 'alert', title: 't', body: 'b', sound: 'rubato-input.caf' };
+  const options = { preference: 'threads', soundOverride: prefs => prefs.threadSound === 'default' ? 'default' : null };
+  await grants.pushAll(alert, options);
+  assert.deepEqual(relay.apns.map(item => [item.url.at(-1), item.payload.aps.sound]).sort(),
+    [['5', 'default'], ['6', alert.sound]]);
+  grants.setPreferences(one.deviceId, { threadSound: 'mac' });
+  await grants.pushAll(alert, options);
+  assert.deepEqual(relay.apns.slice(2).map(item => item.payload.aps.sound), [alert.sound, alert.sound]);
+});
+
 test('an unreachable relay never throws into the caller', async t => {
   const grants = createGrantStore({ home: home(t) });
   grants.add({ relay: 'http://127.0.0.1:9', grant: 'g', grantId: 'gid', deviceId: 'd' });

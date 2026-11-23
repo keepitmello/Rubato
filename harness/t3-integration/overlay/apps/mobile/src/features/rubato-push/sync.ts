@@ -12,6 +12,8 @@ import * as Schema from "effect/Schema";
 
 export type ApsEnvironment = "sandbox" | "production";
 
+export type PushSoundChoice = "mac" | "default" | "builtin:completion" | "builtin:input";
+
 /** What the phone wants to hear about; each paired Mac sends nothing of a kind turned off. */
 export interface PushPreferences {
   readonly threads: boolean;
@@ -20,6 +22,8 @@ export interface PushPreferences {
   readonly companionCalls: boolean;
   /** The lock-screen and Dynamic Island card of each Mac's running threads (liveActivity.ts). */
   readonly liveActivity: boolean;
+  readonly threadSound?: PushSoundChoice;
+  readonly companionMessageSound?: PushSoundChoice;
 }
 
 export const DEFAULT_PREFERENCES: PushPreferences = { threads: true, companionThreads: false, companionMessages: true, companionCalls: true, liveActivity: true };
@@ -207,7 +211,7 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
         bearer: state.deviceSecret,
         body: { label: new URL(httpBaseUrl).host },
       });
-      await call(deps, `${httpBaseUrl}/rubato/push/register`, "POST", {
+      const registered = await call<{ preferences?: PushPreferences }>(deps, `${httpBaseUrl}/rubato/push/register`, "POST", {
         mac: connection,
         body: {
           relay: deps.relay,
@@ -218,7 +222,7 @@ export async function syncRubatoPush(deps: PushSyncDeps, input: PushSyncInput): 
           preferences: pushPreferences(state),
         },
       });
-      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl, preferences: pushPreferences(state) } };
+      grants = { ...grants, [connection.environmentId]: { grantId: minted.grantId, httpBaseUrl, preferences: acknowledgedPreferences(pushPreferences(state), registered) } };
       state = { ...state, grants };
       await deps.save(state);
     } catch (error) {
@@ -238,7 +242,15 @@ const samePreferences = (a: PushPreferences | undefined, b: PushPreferences) =>
   a.companionThreads === b.companionThreads &&
   a.companionMessages === b.companionMessages &&
   a.companionCalls === b.companionCalls &&
-  a.liveActivity === b.liveActivity;
+  a.liveActivity === b.liveActivity &&
+  (a.threadSound ?? "mac") === (b.threadSound ?? "mac") &&
+  (a.companionMessageSound ?? "mac") === (b.companionMessageSound ?? "mac");
+
+// Older Macs take the switches but do not echo sound choices. Retry those on the next sync.
+function acknowledgedPreferences(sent: PushPreferences, result: { preferences?: PushPreferences } | null): PushPreferences {
+  const { threadSound: _threadSound, companionMessageSound: _companionMessageSound, ...switches } = sent;
+  return { ...switches, ...result?.preferences };
+}
 
 /** Apply the same defaults as the Mac to choices saved before a kind existed. */
 export function pushPreferences(state: PushState | null): PushPreferences {
@@ -253,11 +265,11 @@ async function tellPreferences(deps: PushSyncDeps, start: PushState, connections
     const grant = state.grants[connection.environmentId];
     if (!grant || samePreferences(grant.preferences, preferences)) continue;
     try {
-      await call(deps, `${grant.httpBaseUrl}/rubato/push/preferences`, "POST", {
+      const accepted = await call<{ preferences?: PushPreferences }>(deps, `${grant.httpBaseUrl}/rubato/push/preferences`, "POST", {
         mac: connection,
         body: { deviceId: state.deviceId, preferences },
       });
-      state = { ...state, grants: { ...state.grants, [connection.environmentId]: { ...grant, preferences } } };
+      state = { ...state, grants: { ...state.grants, [connection.environmentId]: { ...grant, preferences: acknowledgedPreferences(preferences, accepted) } } };
       await deps.save(state);
     } catch (error) {
       (deps.log ?? (() => {}))("rubato push: Mac has not taken the new choices yet", error);

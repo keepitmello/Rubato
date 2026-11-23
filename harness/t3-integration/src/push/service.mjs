@@ -155,6 +155,7 @@ export function readDesktopSounds(file = desktopSettingsFile()) {
   return {
     completion: pick(settings.notificationCompletionSound, DEFAULT_SOUNDS.completion),
     input: pick(settings.notificationInputSound, DEFAULT_SOUNDS.input),
+    companion: pick(settings.notificationCompanionSound, 'default'),
   };
 }
 
@@ -164,6 +165,11 @@ export function phoneSoundFile(id) {
   if (id === 'builtin:input') return 'rubato-input.caf';
   if (typeof id === 'string' && SOUND_ID.test(id)) return `rubato-mac-${createHash('sha256').update(id).digest('hex').slice(0, 12)}.caf`;
   return null;
+}
+
+/** An iPhone's override; undefined or 'mac' keeps the sound chosen by the Mac. */
+function phoneSoundOverride(id) {
+  return id === 'default' ? id : phoneSoundFile(id);
 }
 
 const ACTIVITY_STATUS = {
@@ -371,7 +377,9 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
     },
     sounds() {
       const chosen = desktopSounds();
-      return { sounds: ['completion', 'input'].map(kind => ({ kind, id: chosen[kind], file: phoneSoundFile(chosen[kind]) })) };
+      return { sounds: ['completion', 'input', 'companion'].map(kind => ({
+        kind, id: chosen[kind] ?? 'default', file: phoneSoundFile(chosen[kind]),
+      })) };
     },
     activity: () => ({ state: currentCard() }),
   };
@@ -444,7 +452,10 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       const preview = readPreview();
       const reply = preview === 'full' && TERMINAL.has(state.phase) ? await lastReply(threadId) : null;
       const sound = phoneSoundFile(desktopSounds()[TERMINAL.has(state.phase) ? 'completion' : 'input']) ?? 'default';
-      return grants.pushAll({ ...alertFor(state, previous, { now: at, preview, run, reply }), sound }, { preference });
+      return grants.pushAll({ ...alertFor(state, previous, { now: at, preview, run, reply }), sound }, {
+        preference,
+        soundOverride: preferences => phoneSoundOverride(preferences.threadSound),
+      });
     },
     /**
      * A thread's state as the server found it on start: the card shows it, and no alert follows for a
@@ -495,7 +506,12 @@ export function createPushService({ home = PUSH_HOME, log = pushLog, grants = cr
       // The call card has what was said on a call.
       if (onCall(companionId, at)) return null;
       const alert = companionAlert({ companionId, title: title ?? companionTitle(companionId), text, threadId, environmentId });
-      return alert ? grants.pushAll(alert, { preference: 'companionMessages' }) : null;
+      if (!alert) return null;
+      const sound = phoneSoundFile(desktopSounds().companion) ?? 'default';
+      return grants.pushAll({ ...alert, sound }, {
+        preference: 'companionMessages',
+        soundOverride: preferences => phoneSoundOverride(preferences.companionMessageSound),
+      });
     },
   };
 }

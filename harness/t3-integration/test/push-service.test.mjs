@@ -15,7 +15,8 @@ const state = (phase, extra = {}) => ({
   modelTitle: 'claude-opus-5-5', updatedAt: new Date(NOW - 1000).toISOString(), deepLink: '/threads/env-1/thread-1', ...extra,
 });
 
-function service(t, { now = () => NOW, calls = [], telegram, log = () => {}, sounds = { completion: 'builtin:completion', input: 'builtin:input' } } = {}) {
+function service(t, { now = () => NOW, calls = [], telegram, log = () => {}, phonePreferences = {},
+  sounds = { completion: 'builtin:completion', input: 'builtin:input' } } = {}) {
   const home = mkdtempSync(path.join(os.tmpdir(), 'rubato-push-service-'));
   t.after(() => rmSync(home, { recursive: true, force: true }));
   const sent = [];
@@ -25,7 +26,11 @@ function service(t, { now = () => NOW, calls = [], telegram, log = () => {}, sou
     remove: id => phones.splice(phones.findIndex(item => item.grantId === id), 1).length,
     list: () => phones.map(({ grant: _grant, ...rest }) => rest),
     setPreferences: (deviceId, preferences) => { const phone = phones.find(item => item.deviceId === deviceId); if (!phone) return null; phone.preferences = { ...phone.preferences, ...preferences }; return phone.preferences; },
-    pushAll: async (message, { preference }) => { sent.push({ ...message, preference }); return [{ ok: true }]; },
+    pushAll: async (message, { preference, soundOverride }) => {
+      const sound = soundOverride?.(phonePreferences);
+      sent.push({ ...message, ...(sound ? { sound } : {}), preference });
+      return [{ ok: true }];
+    },
   };
   const onCall = (companion, at) => calls.some(call => call.companion === companion && call.from <= at && at <= call.to);
   // The Live Activity's timers wait for the test to fire them.
@@ -206,7 +211,7 @@ test("a companion's words arrive as a message from it; its room's runs are never
   await push.companionSaid({ id: 'said-1', threadId: 'room-roo', text: '첫 통화 끝 📞', at: NOW });
   assert.deepEqual(sent, [{
     kind: 'alert', title: 'Roo', body: '첫 통화 끝 📞 목소리로 들으니까 좋더라', threadId: 'companion:roo',
-    category: 'rubato.companion.message', mutableContent: true, preference: 'companionMessages',
+    category: 'rubato.companion.message', mutableContent: true, preference: 'companionMessages', sound: 'default',
     rubato: { kind: 'companion-message', companionId: 'roo', threadId: 'room-roo' },
   }]);
   await push.companionSaid({ id: 'said-2', threadId: 'room-roo', text: '가'.repeat(500), at: NOW });
@@ -260,9 +265,9 @@ test("a thread alert rings with the chime the desktop plays for it, which the ph
   const dir = mkdtempSync(path.join(os.tmpdir(), 'rubato-desktop-settings-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const file = path.join(dir, 'client-settings.json');
-  assert.deepEqual(readDesktopSounds(file), { completion: 'builtin:completion', input: 'builtin:input' });
+  assert.deepEqual(readDesktopSounds(file), { completion: 'builtin:completion', input: 'builtin:input', companion: 'default' });
   writeFileSync(file, JSON.stringify({ notificationCompletionSound: 'mac:system/Glass.aiff', notificationInputSound: '../etc/passwd' }));
-  assert.deepEqual(readDesktopSounds(file), { completion: 'mac:system/Glass.aiff', input: 'builtin:input' });
+  assert.deepEqual(readDesktopSounds(file), { completion: 'mac:system/Glass.aiff', input: 'builtin:input', companion: 'default' });
   assert.match(phoneSoundFile('mac:system/Glass.aiff'), /^rubato-mac-[0-9a-f]{12}\.caf$/);
   assert.equal(phoneSoundFile('nope'), null);
 
@@ -274,7 +279,29 @@ test("a thread alert rings with the chime the desktop plays for it, which the ph
   assert.deepEqual(await (await ask(push, 'sounds')).json(), { sounds: [
     { kind: 'completion', id: 'mac:system/Glass.aiff', file: phoneSoundFile('mac:system/Glass.aiff') },
     { kind: 'input', id: 'builtin:input', file: 'rubato-input.caf' },
+    { kind: 'companion', id: 'default', file: null },
   ] });
+});
+
+test("Mac companion chimes and the iPhone's overrides are independent of thread sounds", async t => {
+  const sounds = { completion: 'builtin:completion', input: 'builtin:input', companion: 'mac:system/Glass.aiff' };
+  const phonePreferences = { threadSound: 'default', companionMessageSound: 'mac' };
+  const { push, sent } = service(t, { sounds, phonePreferences });
+  push.companionRoom('room-roo', 'roo');
+  await push.companionSaid({ id: 'one', threadId: 'room-roo', text: 'Hello', at: NOW });
+  await push.threadChanged('thread-1', state('running'));
+  await push.threadChanged('thread-1', state('failed'));
+  phonePreferences.companionMessageSound = 'builtin:input';
+  await push.companionSaid({ id: 'two', threadId: 'room-roo', text: 'Hello again', at: NOW });
+  assert.deepEqual(sent.map(item => [item.preference, item.sound]), [
+    ['companionMessages', phoneSoundFile(sounds.companion)],
+    ['threads', 'default'],
+    ['companionMessages', phoneSoundFile('builtin:input')],
+  ]);
+  const result = await (await ask(push, 'sounds')).json();
+  assert.deepEqual(result.sounds.find(item => item.kind === 'companion'), {
+    kind: 'companion', id: sounds.companion, file: phoneSoundFile(sounds.companion),
+  });
 });
 
 const row = (threadId, phase, minutesAgo = 0, extra = {}) =>
