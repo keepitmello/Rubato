@@ -4,18 +4,25 @@
 // draw one (that request goes into the room's field; the drawing comes back as a card to apply).
 // Whatever is chosen is placed in a circle (AvatarCropScreen) and the Mac keeps it for every device.
 import { CommonActions, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { CompanionModelSelection } from "@t3tools/shared/rubatoCompanionModelChoice";
+import * as Haptics from "expo-haptics";
 import { Image } from "expo-image";
-import { useState } from "react";
-import { ActionSheetIOS, Alert, Modal, Platform, Pressable, View } from "react-native";
+import { useMemo, useRef, useState } from "react";
+import { ActionSheetIOS, Alert, Modal, Platform, Pressable, ScrollView, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
+import { useQuietThreadShell } from "../../state/entities";
+import { useRemoteEnvironmentRuntime } from "../../state/use-remote-environment-registry";
 import { chooseFromAlbum, takePhoto, type PickResult } from "./avatarPicture";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion } from "./companionsStore";
 import { copy, phoneLocale } from "./copy";
 import { callsUserLine, sinceLine, withName } from "./profileLines";
+import { roomModelMenu, roomModelRequest } from "./roomModelChoice";
 import { requestRoomComposer } from "./roomRequests";
+import { postRubato } from "./rubatoHttp";
 
 export type CompanionProfileParams = {
   readonly companionId: string;
@@ -30,8 +37,42 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
   const { companionId, environmentId } = route.params;
   const { companion } = useCompanion(companionId, environmentId);
   const [viewing, setViewing] = useState(false);
+  const [modelPage, setModelPage] = useState<readonly string[] | null>(null);
+  const [applied, setApplied] = useState<{ threadId: ThreadId; selection: CompanionModelSelection } | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const picking = useRef(false);
   const title = companion?.title ?? companionId;
   const named = companion?.macTitle != null;
+  const threadId = companion?.threadId;
+  const envId = environmentId as EnvironmentId;
+  const ref = useMemo(() => threadId ? { environmentId: envId, threadId: threadId as ThreadId } : null, [envId, threadId]);
+  const thread = useQuietThreadShell(ref);
+  const config = useRemoteEnvironmentRuntime(envId)?.serverConfig;
+  const selectModel = async (selection: CompanionModelSelection) => {
+    if (!ref || picking.current) return;
+    picking.current = true;
+    setSwitching(true);
+    try {
+      await postRubato(envId, "/rubato/companion-room", "model", roomModelRequest(ref.threadId, selection), { timeoutMs: 30_000 });
+      setApplied({ threadId: ref.threadId, selection });
+      setModelPage(null);
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      Alert.alert(copy.modelFailed, error instanceof Error ? error.message : String(error));
+    } finally {
+      picking.current = false;
+      setSwitching(false);
+    }
+  };
+  const menu = ref && thread && config ? roomModelMenu({
+    providers: config.providers,
+    instances: config.settings.providerInstances,
+    owner: thread.modelSelection.instanceId,
+    applied: applied?.threadId === ref.threadId ? applied.selection : null,
+    busy: switching,
+    labels: { menu: copy.changeModel, rubato: copy.modelRubato, gemini: account => withName(copy.modelGemini, account), defaultModel: copy.modelDefault },
+    onPick: selection => void selectModel(selection),
+  }) : null;
 
   const crop = (result: PickResult) => {
     if (result === null) return;
@@ -92,8 +133,43 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
   };
 
   const since = companion?.since ? sinceLine(companion.since, phoneLocale()) : null;
+  if (modelPage !== null && menu) {
+    let { items, title: heading } = menu;
+    for (const id of modelPage) {
+      const group = items.find(item => item.id === id && "items" in item);
+      if (!group || !("items" in group)) break;
+      items = group.items;
+      heading = group.title ?? heading;
+    }
+    return (
+      <ScrollView className="flex-1 bg-screen px-6 pt-8" key={modelPage.join("/")}>
+        <Pressable accessibilityRole="button" accessibilityState={{ disabled: switching }} disabled={switching}
+          onPress={() => setModelPage(modelPage.length ? modelPage.slice(0, -1) : null)} className="min-h-11 justify-center">
+          <Text className="text-primary">{copy.back}</Text>
+        </Pressable>
+        <Text accessibilityRole="header" className="mb-2 font-t3-bold text-xl text-foreground">{heading}</Text>
+        {items.map(item => {
+          const group = "items" in item;
+          const disabled = switching || (!group && item.disabled === true);
+          return (
+            <Pressable key={item.id} accessibilityRole="button"
+              accessibilityState={{ disabled, ...(!group ? { selected: item.selected } : {}) }}
+              disabled={disabled}
+              onPress={() => group ? setModelPage([...modelPage, item.id]) : item.onPress()}
+              className="min-h-11 flex-row items-center justify-between border-b border-border py-2 active:opacity-70">
+              <View className="flex-1">
+                <Text className="text-foreground">{item.title}</Text>
+                {!group && item.subtitle ? <Text className="text-foreground-muted">{item.subtitle}</Text> : null}
+              </View>
+              {group || item.selected ? <SymbolView name={group ? "chevron.right" : "checkmark"} size={14} tintColorClassName="text-foreground-muted" /> : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+    );
+  }
   return (
-    <View className="flex-1 items-center bg-screen px-6 pt-10">
+    <ScrollView className="flex-1 bg-screen" contentContainerClassName="items-center px-6 pb-6 pt-10">
       <Pressable accessibilityRole="button" accessibilityLabel={copy.changePicture} onPress={openOptions} className="active:opacity-80">
         <CompanionAvatar art={companion?.art ?? null} title={named ? title : "?"} size={AVATAR} />
         <View
@@ -113,6 +189,11 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
       <Pressable accessibilityRole="button" onPress={openOptions} className="mt-6 rounded-full border border-border px-5 py-2.5 active:opacity-70">
         <Text className="font-t3-bold text-[15px] text-foreground">{copy.changePicture}</Text>
       </Pressable>
+      {menu ? (
+        <Pressable accessibilityRole="button" onPress={() => setModelPage([])} className="mt-2 rounded-full border border-border px-5 py-2.5 active:opacity-70">
+          <Text className="font-t3-bold text-[15px] text-foreground">{copy.changeModel}</Text>
+        </Pressable>
+      ) : null}
       <Modal visible={viewing} transparent animationType="fade" onRequestClose={() => setViewing(false)}>
         <Pressable
           accessibilityRole="button"
@@ -126,6 +207,6 @@ export function CompanionProfileScreen(_props: StaticScreenProps<CompanionProfil
           ) : null}
         </Pressable>
       </Modal>
-    </View>
+    </ScrollView>
   );
 }

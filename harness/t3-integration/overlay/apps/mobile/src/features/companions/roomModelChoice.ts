@@ -1,7 +1,7 @@
-// The room header's model menu (intent companion-agy-parity): a pick switches the companion now,
+// The profile sheet's room model picker: a pick switches the companion now,
 // as the desktop room's picker does (server RubatoCompanionModel.ts). It offers the Rubato engine that
 // owns the room's thread and the Gemini accounts the Add flow offers; the thread stays with its engine.
-// The phone cannot read the session's current model, so only the pick this room applied is ticked.
+// The phone cannot read the session's current model, so only a pick applied here is ticked.
 import type { ServerProvider, ServerSettings } from "@t3tools/contracts";
 import {
   companionModelAccounts,
@@ -79,7 +79,7 @@ function rubatoGroups(input: RoomModelMenuInput): ReadonlyArray<{
  * The room's model menu, or null when the Mac offers nothing to switch to (its engine is not
  * running and no Antigravity account qualifies).
  */
-export function roomModelMenu(input: RoomModelMenuInput): AppBarMenu | null {
+export function roomModelMenu(input: RoomModelMenuInput): Pick<AppBarMenu, "title" | "items"> | null {
   const action = (selection: CompanionModelSelection, title: string, subtitle?: string): AppBarMenuItem => ({
     id: `${selection.instanceId}\u0000${selection.model}`,
     title,
@@ -117,7 +117,7 @@ export function roomModelMenu(input: RoomModelMenuInput): AppBarMenu | null {
     });
   }
   if (items.length === 0) return null;
-  return { title: input.labels.menu, icon: { ios: "brain", android: "psychology" }, items };
+  return { title: input.labels.menu, items };
 }
 
 /** The body of POST /rubato/companion-room/model: the two routing fields and nothing else. */

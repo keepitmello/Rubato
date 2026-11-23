@@ -82,7 +82,6 @@ describe("roomModelMenu", () => {
   it("offers the room's own engine by sub-provider, then each local agy account's Gemini models", () => {
     const result = menu();
     expect(result?.title).toBe("Model");
-    expect(result?.icon).toEqual({ ios: "brain", android: "psychology" });
     expect(shape(result!.items)).toEqual([
       {
         title: "Rubato",

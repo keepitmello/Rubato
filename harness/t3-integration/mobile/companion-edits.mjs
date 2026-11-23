@@ -5,7 +5,7 @@
 //
 //   phone ── /rubato/companion ──▶ Mac   companions, room thread, picture, create, set-avatar,
 //                                        proposals / apply-proposal / decline-proposal
-//   phone ── /rubato/companion-room/model ──▶ Mac   the room header's model menu (roomModelChoice.ts)
+//   phone ── /rubato/companion-room/model ──▶ Mac   the companion profile's model picker
 //   phone ── /rubato/call ──▶ Mac        dial, answer, decline, hangup, live, calls
 //   phone ── wss (tailnet :7443) ──▶ LiveKit on the Mac (call-agent remote.mjs)
 //   relay ── VoIP push ──▶ RubatoCallCenter.swift ──▶ CallKit ──▶ callStore.ts
@@ -52,8 +52,7 @@ export const mobileCompanionOverlays = [
   `${companions}/roomMedia.tsx`,
   `${companions}/roomModel.ts`,
   `${companions}/roomModel.test.ts`,
-  // The room header's model menu (intent companion-agy-parity): what it offers, and that T3's
-  // header menu draws it beside the call button.
+  // The profile sheet's model picker: what it offers and how the selection is applied.
   `${companions}/roomModelChoice.ts`,
   `${companions}/roomModelChoice.test.ts`,
   `${companions}/roomModelMenu.test.tsx`,
