@@ -33,7 +33,7 @@ import {
 import { resurrections } from "./guard"
 import { consolidationGuide } from "../dream/consolidation"
 import { blockingTombstone, readLedger, type Ledger } from "./ledger"
-import { collectPending, consumeInputs, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
+import { collectPending, consumeInputs, currentEvidence, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
 import { listRecords } from "./records"
 import { isRulePath, reconcileRuleChoices } from "./rule-choices"
 import { ensureUserStore, readJsonFile, userStore, writeJsonFile, type UserStore } from "./store"
@@ -138,6 +138,8 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   const repo = new GitMemoryRepo({ dir: store.paths.repo, agentId: store.id, exec })
   await underWriterLock(store.paths, store.id, "user dream adopt", () => repo.adoptStrayEdits())
   const baseRevision = (await git(store.paths.repo, ["rev-parse", "--verify", "HEAD^{commit}"])).stdout.trim()
+  await writeFile(join(inputsDir, "existing-evidence.jsonl"),
+    await currentEvidence(store, await listRecords(git, store.paths.repo, baseRevision), ledger))
   const branch = `dream/${runId}`
   const worktree = join(store.paths.worktrees, runId)
   await mkdir(store.paths.worktrees, { recursive: true })

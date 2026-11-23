@@ -206,6 +206,12 @@ describe("user facts are noticed in every project and curated into one shared st
 
     expect(record.status).toBe("merged")
     expect(readFileSync(join(w.user.paths.runtime, "dream", "runs", record.runId, "inputs", "observations.md"), "utf8")).toContain("- situation: choosing the format for a single report")
+    const review = await userDream(w.memoryRoot, curatingChild(), { force: true })
+    const existing = readFileSync(join(w.user.paths.runtime, "dream/runs", review.runId, "inputs/existing-evidence.jsonl"), "utf8")
+    expect(existing.split("\n").map(line => JSON.parse(line))).toContainEqual({
+      path: "preferences/prefers-short-answers.md", said: "claim: Prefers short answers | 짧게 말해줘",
+      when: "2026-09-28T01:00:00.000Z", situation: "choosing the format for a single report",
+    })
     expect(userFiles(w.memoryRoot)).toEqual(["preferences/prefers-short-answers.md", "preferences/works-on-macos.md"])
     const short = parseRecord("x", readFileSync(join(w.user.paths.repo, "preferences/prefers-short-answers.md"), "utf8"))
     expect(short.evidence[0]).toMatchObject({ date: "2026-09-28", where: "project alpha", quote: "claim: Prefers short answers | 짧게 말해줘" })

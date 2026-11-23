@@ -17,7 +17,8 @@ import { join } from "node:path"
 import { buildIdentityPaths, isUserStore, selfRepoPath } from "@rubato/memory-core"
 
 import type { CondensedSession } from "../dream/transcript"
-import { foldText } from "./ledger"
+import { blockingTombstone, foldText, type Ledger } from "./ledger"
+import type { UserRecord } from "./records"
 import { readJsonFile, writeJsonFile, type UserStore } from "./store"
 
 export const OBSERVATIONS_OUT = "user-observations.jsonl"
@@ -156,6 +157,36 @@ export interface PendingInputs {
   readonly corrections: readonly Correction[]
   /** The legacy user.md to carry over, when it has content not carried yet. */
   readonly legacyProfile?: { readonly text: string; readonly hash: string }
+}
+
+/** Published records display the day. Reattach the time and situation of the actual quote for
+ * reconciliation: an older observation can arrive after a correction made later on that same day.
+ * Only evidence the current record still cites comes back, never the whole archive. */
+export async function currentEvidence(store: UserStore, records: readonly UserRecord[], ledger: Ledger): Promise<string> {
+  const targets = new Map<string, Set<string>>()
+  const key = (...fields: string[]) => JSON.stringify(fields)
+  for (const record of records) for (const line of record.evidence) {
+    if (!line.date || !line.where?.startsWith("project ") || !line.quote) continue
+    const id = key(line.date, line.where.slice("project ".length), foldText(line.quote))
+    const paths = targets.get(id) ?? new Set<string>()
+    paths.add(record.path)
+    targets.set(id, paths)
+  }
+  const found = new Map<string, { at: string; line: string }>()
+  if (targets.size) for (const file of safeList(store.observations).filter(name => name.endsWith(".json"))) {
+    const entries = await readJsonFile<Observation[]>(join(store.observations, file))
+    if (!Array.isArray(entries)) continue
+    for (const entry of entries) {
+      if (!entry?.at || !entry.project || !entry.quote) continue
+      const paths = targets.get(key(entry.at.slice(0, 10), entry.project, foldText(entry.quote)))
+      if (!paths || blockingTombstone(`${entry.claim}\n${entry.quote}\n${entry.situation ?? ""}`, entry.at, ledger)) continue
+      for (const path of paths) {
+        const line = JSON.stringify({ path, said: entry.quote, when: entry.at, situation: entry.situation })
+        found.set(line, { at: entry.at, line })
+      }
+    }
+  }
+  return [...found.values()].sort((a, b) => b.at.localeCompare(a.at)).map(row => row.line).join("\n")
 }
 
 /** Everything a user dream has not taken yet, across every project store. */
