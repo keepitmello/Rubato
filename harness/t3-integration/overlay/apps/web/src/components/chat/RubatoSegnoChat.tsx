@@ -92,8 +92,9 @@ import { RubatoOnboardingChips, RubatoProposalCard, useCompanionProposals } from
 /** Spoken words: a light line in the bubble's own ink, the way ChatGPT marks a dictation. */
 const VOICE_UNDERLINE = {
   textDecorationLine: "underline",
-  textDecorationColor: "color-mix(in srgb, currentColor 40%, transparent)",
-  textUnderlineOffset: "0.25em",
+  textDecorationThickness: "1px",
+  textDecorationColor: "color-mix(in srgb, currentColor 18%, transparent)",
+  textUnderlineOffset: "0.3em",
 } as const;
 
 /** Closer to the end than this, the room follows new bubbles down. */

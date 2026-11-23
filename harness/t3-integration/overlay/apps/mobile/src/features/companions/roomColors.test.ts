@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { parseColor, SENT_CONTRAST, sentBubbleColor, toOklch, whiteContrast } from "./roomColors";
+import { parseColor, rubatoFaintInk, SENT_CONTRAST, sentBubbleColor, toOklch, whiteContrast } from "./roomColors";
 
 const linear = (hex: string) =>
   parseColor(hex)!.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
@@ -30,5 +30,13 @@ describe("the person's bubble color", () => {
     expect(parseColor("#fff")).toEqual([1, 1, 1]);
     expect(parseColor("rgba(255, 0, 0, 0.5)")).toEqual([1, 0, 0]);
     expect(parseColor("oklch(0.5 0.1 200)")).toBeNull();
+  });
+});
+
+describe("the spoken-message underline", () => {
+  it("is the ink at a faint alpha", () => {
+    expect(rubatoFaintInk("#ffffff")).toBe("rgba(255, 255, 255, 0.18)");
+    expect(rubatoFaintInk("rgb(10, 20, 30)", 0.1)).toBe("rgba(10, 20, 30, 0.1)");
+    expect(rubatoFaintInk("not a color")).toBe("not a color");
   });
 });

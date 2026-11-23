@@ -46,7 +46,7 @@ Write in English; the user's words stay verbatim in their original language, nev
 
 One file, `vocabulary/dictation-terms.md`, lists the names and terms the user says that speech recognition must spell right. The voice service sends its list as hints with every dictation, so keep it short and real: at most 80 terms, each one line, exactly as it should be written (`INFINOX`, `VaultOne`, `세뇨`, `hash-game`). No angle brackets.
 
-- Add a term from a `term:` observation, or from a correction whose `sent` side is a name or term (a company, person, product, project, code word, or a word of the user's domain such as `출금` when dictation keeps writing `출근`). Ordinary words the user fixed once are noise; a fix made twice or more is a term.
+- Add a term from a `term:` observation, or from a correction whose `sent` side is a name or term (a company, person, product, project, code word, or a word of the user's domain such as `출금` when dictation keeps writing `출근`), written in its plain form (`잔액`, not `잔액같은`). An ordinary word or phrase (`아니`, `있게`, `진짜`, `메시지 고쳐`) is never a term however often it was fixed: every hint pulls the rest of the speech toward itself, and a fix that changes what was said (`없잖아` → `있게`) is an edit, not a mishearing.
 - Never add a word only an agent used. The user said it, or the user typed it as the fix.
 - When the list is full, drop the term whose newest evidence is oldest.
 

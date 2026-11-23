@@ -225,7 +225,7 @@ function TimeLine(props: { readonly at: number }) {
 const TAIL_PATH = "M0,-19 C0,-10.5 -2.4,-5.2 -9.6,-0.6 C-9.9,2.2 -9.1,4.6 -7.6,5.9 C-8.2,6.7 -9.6,6.6 -11,5.9 L-21,0 L-21,-19 Z";
 
 /** Spoken words: a light line in the sent bubble's white ink, the way ChatGPT marks a dictation. */
-const VOICE_UNDERLINE = { textDecorationLine: "underline", textDecorationColor: "rgba(255,255,255,0.45)" } as const;
+const VOICE_UNDERLINE = { textDecorationLine: "underline", textDecorationColor: "rgba(255,255,255,0.22)" } as const;
 
 function BubbleTail(props: { readonly mine: boolean; readonly color: string }) {
   return (

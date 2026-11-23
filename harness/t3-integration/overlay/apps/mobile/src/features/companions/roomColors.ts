@@ -83,3 +83,10 @@ export function sentBubbleColor(accent: string): string {
 
 /** The words on the person's bubble. */
 export const SENT_FOREGROUND = "#ffffff";
+
+/** A color at the faint alpha of a spoken message's underline; the color itself if it does not parse. */
+export function rubatoFaintInk(color: string, alpha = 0.18): string {
+  const rgb = parseColor(color);
+  if (!rgb) return color;
+  return `rgba(${rgb.map((channel) => Math.round(channel * 255)).join(", ")}, ${alpha})`;
+}
