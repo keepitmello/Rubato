@@ -2,7 +2,8 @@ import type { RoomLaunch } from "./roomModel";
 
 export function roomLeadRows(launches: readonly RoomLaunch[]) {
   const seen = new Set<string>();
-  return launches.toSorted((a, b) => b.at - a.at).filter((launch) => {
+  // Hermes on iOS does not provide Array.prototype.toSorted.
+  return [...launches].sort((a, b) => b.at - a.at).filter((launch) => {
     if (launch.error || (!launch.sessionId && launch.done !== null)) return false;
     const key = launch.sessionId ?? launch.id;
     if (seen.has(key)) return false;
