@@ -54,6 +54,8 @@ jobs:
         run: |
           npm --prefix harness/pi-server install --ignore-scripts --workspaces=false
           npm --prefix harness/pi-runtime ci --workspaces=false --ignore-scripts
+          # The companion dream reads the user's rubato.jsonc with config-core's parser.
+          npm --prefix packages/rubato-config-core install --workspaces=false --ignore-scripts --no-save --no-package-lock
       - name: Test isolated Pi server
         run: |
           set -o pipefail

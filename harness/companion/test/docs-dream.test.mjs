@@ -291,7 +291,10 @@ test('the companion dream runs on the dream ladder the user set in rubato.jsonc,
   put(path.join(dir, '.rubato', 'rubato.jsonc'), '{\n  // 꿈\n  "memory": { "dream": { "enabled": false, },\n  },\n}\n');
   assert.equal(await resolveModels(env), DREAM_MODELS, 'a config without a ladder: the schema default is not the user\'s choice');
   put(path.join(dir, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [ { "model": "xai/grok-4.7", "reasoning": "medium" }, "anthropic/claude-haiku-5-5" ] } } }');
-  assert.deepEqual(await resolveModels(env), [{ model: 'xai/grok-4.7', thinking: 'medium' }, { model: 'anthropic/claude-haiku-5-5' }]);
+  const readErrors = [];
+  const ladder = await resolveModels(env, (error) => readErrors.push(error.message));
+  assert.deepEqual(readErrors, [], 'the user\'s file is read, not skipped for a missing parser');
+  assert.deepEqual(ladder, [{ model: 'xai/grok-4.7', thinking: 'medium' }, { model: 'anthropic/claude-haiku-5-5' }]);
   assert.equal(companionDreamModels({ memory: { dream: { models: ['not-a-model', { reasoning: 'high' }] } } }, dreamLadder), DREAM_MODELS,
     'nothing launchable falls back');
   const errors = [];

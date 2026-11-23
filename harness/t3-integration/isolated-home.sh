@@ -54,6 +54,11 @@ launch_env() {
     "PI_CODING_AGENT_DIR=$home/.rubato-pi/agent"
 }
 
+# An APFS clone (`cp -c`) on macOS takes almost no space; elsewhere a plain copy.
+clone_tree() {
+  if [[ "$(uname -s)" == Darwin ]]; then cp -c -R "$1" "$2"; else cp -R "$1" "$2"; fi
+}
+
 check() {
   [[ -d "$home" ]] || die "no isolated home at $home; run prepare first"
   local pattern; pattern=$(forbidden)
@@ -65,7 +70,7 @@ check() {
       grep -E -n "$pattern" "$config" >&2 || true
       die "a live path is in a copied configuration: $config"
     fi
-  done < <(find "$home/.rubato" "$home/.rubato-pi" "$root/t3home" -maxdepth 3 \( -name '*.json' -o -name '*.jsonc' \) -size -1M 2>/dev/null)
+  done < <(find "$home/.rubato" "$home/.rubato-pi" "$root/t3home" -maxdepth 3 \( -name '*.json' -o -name '*.jsonc' \) -size -1024k 2>/dev/null)
   local free_kb; free_kb=$(df -Pk "$root" | awk 'NR==2 {print $4}')
   (( free_kb >= MIN_FREE_GB * 1024 * 1024 )) || die "only $((free_kb / 1024 / 1024)) GB free under $root; need $MIN_FREE_GB GB"
 }
@@ -81,14 +86,14 @@ prepare() {
   printf '{ "companions": [] }\n' > "$home/.rubato/companions.json"
   if $memory; then
     [[ -d "$LIVE_HOME/.rubato/memory" ]] || die "no live memory to clone"
-    cp -c -R "$LIVE_HOME/.rubato/memory" "$home/memory"
+    clone_tree "$LIVE_HOME/.rubato/memory" "$home/memory"
   else
     mkdir -p "$home/memory"
   fi
   if $segno; then
     local src="$LIVE_HOME/.rubato/companion" dst="$home/.rubato/companion"
     [[ -d "$src" ]] || die "no live Segno home to clone"
-    cp -c -R "$src" "$dst"
+    clone_tree "$src" "$dst"
     # Drop what would make the clone act on its own: the inbox and messenger, its conversation and
     # wake state, followed work, the side panel's list and the dream's runs.
     rm -rf "$dst/inbox" "$dst/messenger" "$dst/dream" "$dst/tmp" "$dst/.engine-claims"
