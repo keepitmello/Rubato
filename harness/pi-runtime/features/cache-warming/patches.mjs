@@ -535,6 +535,32 @@ function projectEntryMessages(entry) {
     const edited = messages.map((message) => {`,
     "stable-edit",
   );
+  // The same branch projects once. Pi builds the projection (a walk of the whole branch) for every
+  // context, usage meter and boundary preview, and Rubato's context notes ask for it again on each
+  // new entry: about a dozen times per tool round, 15-30 ms each in a 24,000-entry conversation
+  // (2026-11-21). Entries are append-only; the list is replaced, pushed onto or popped (a failed
+  // write), never edited in place, so its identity, length and last entry, the leaf and the index
+  // say whether anything changed. Callers get their own arrays; the messages are the shared,
+  // already stable objects.
+  next = replaceOnce(
+    next,
+    `    buildSessionProjection() {
+        return buildSessionProjection(this.getEntries(), this.leafId, this.byId);
+    }`,
+    `    buildSessionProjection() {
+        const entries = this.fileEntries;
+        const last = entries[entries.length - 1];
+        const memo = this.rubatoProjection;
+        if (!memo || memo.entries !== entries || memo.length !== entries.length || memo.last !== last
+            || memo.leafId !== this.leafId || memo.byId !== this.byId || memo.indexed !== this.byId.size) {
+            const value = buildSessionProjection(this.getEntries(), this.leafId, this.byId);
+            this.rubatoProjection = { entries, length: entries.length, last, leafId: this.leafId, byId: this.byId, indexed: this.byId.size, value };
+        }
+        const { value } = this.rubatoProjection;
+        return { ...value, entries: [...value.entries], messages: [...value.messages] };
+    }`,
+    "projection-memo",
+  );
   return replaceOnce(
     next,
     `        return { ...message, content };

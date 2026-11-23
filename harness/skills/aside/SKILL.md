@@ -7,7 +7,7 @@ description: "Use when research quality depends on broad, fresh, high-recall evi
 # Aside browser
 
 Aside is an AI browser. Inside Aside, there is an intelligent agent designed to handle complex tasks across user's credentials, cookies, browsing history, and various websites the user uses.
-Use it when the main quality bottleneck is breadth, recall or freshness. Hand all browser automation to Aside. Write JavaScript only when the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both in one request.
+Use it when the main quality bottleneck is breadth, recall or freshness. Hand all browser automation to Aside. Write JavaScript to drive the browser only when the user named Playwright or asked you to attach to a specific tab and run code. Do not mix both browser-control paths in one request.
 
 `aside --help` and `aside <command> --help` print current flags and examples.
 
@@ -21,7 +21,7 @@ Start Aside Browser before running CLI commands. (Use `aside -h` to see how.)
 
 ### Start a task
 
-Omit `-m`. The model comes from Aside settings Task models, not from `aside guide`.
+By default, omit `-m`. The model comes from Aside settings Task models, not from `aside guide`.
 `--effort` is thinking level, not the model.
 
 `aside guide` and `aside exec --help` print `-m openai/gpt-5.6-sol` as a generic
@@ -36,9 +36,48 @@ aside --permission full-access "Install the CLI from the project README"
 aside "https://example.com"
 ```
 
-Use `-m <provider/model>` only when the user names a different model that exists
-on this account.
+Use `-m <provider/model>` when the user specifies a different model or provider
+route that is configured on the active account.
 Never pass `openai/gpt-5.6-sol` or `cursor/gpt-5.6-sol`.
+
+### Use a personal ChatGPT subscription
+
+When the user asks to use their ChatGPT subscription instead of Aside credits,
+use the connected `openai-codex` provider, not `aside`. The same model name
+can appear on both routes. For example, `aside/gpt-6.1-terra` spends Aside
+credits; `openai-codex/gpt-6.1-terra` uses the connected ChatGPT subscription.
+`--account` selects an Aside account or browser profile, not the model provider.
+Check Aside Settings → Task models for the exact configured provider and model
+ID. From the CLI, `aside repl 'console.log(JSON.stringify(aside.settings.get("modelCategories")))'`
+shows the configured Task model routes. A configured route does not prove the
+subscription is still signed in.
+
+For a new task:
+
+```bash
+aside -m openai-codex/gpt-6.1-terra "Research current listings"
+```
+
+For a stopped or failed task, keep the same session and change only its
+model. `aside session resume` does not accept `-m`. See `aside skills show aside`
+for the session settings API. This example assumes the desired model is saved
+under the `deep` task category:
+
+```bash
+aside repl '
+const model = aside.settings.get("modelCategories").deep;
+if (model?.provider !== "openai-codex" || model.modelId !== "gpt-6.1-terra") {
+  throw new Error("The deep task model is not subscription-backed Terra 6.1");
+}
+await aside.sessions.update("<session-id>", { model });
+'
+aside session resume "<session-id>" "Continue the task"
+```
+
+Use the same Aside account and host for the settings check, session update,
+and resume. Leave global defaults alone. If the requested subscription route
+isn't connected or is out of quota, report that instead of falling back to
+Aside credits or another model without approval.
 
 ### Background handoff on CLI-only hosts
 

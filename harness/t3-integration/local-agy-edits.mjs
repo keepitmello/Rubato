@@ -9,7 +9,7 @@
 //     accounts like Claude multi-account, while sharing `~/.gemini/config/{agents,skills,mcp_config.json}`.
 //
 // Both modes always identify as `t3-code`, verify the agent exists via `agy agents`, filter to
-// Gemini models labelled with the instance name, and disable quota probing and background text
+// Gemini models labelled with the instance name, and disable background text
 // generation. Instances without RUBATO_LOCAL_AGY_AGENT keep upstream's behavior.
 const driver = 'apps/server/src/provider/Drivers/AntigravityDriver.ts';
 const support = 'apps/server/src/provider/acp/AntigravityAcpSupport.ts';
@@ -20,6 +20,75 @@ export const localAgyOverlays = [
 ];
 
 export const localAgyEdits = {
+  'apps/server/src/provider/antigravityUsageLimits.ts': [
+    [
+      'import * as NodeModule from "node:module";',
+      'import { execFile } from "node:child_process";\nimport * as NodeModule from "node:module";',
+      'replace',
+    ],
+    [
+      '        platform === "win32"\n          ? readWindowsCliCredential(architecture)',
+      `        platform === "darwin"
+          // go-keyring trusts Apple's security tool, not the Electron server. Keep
+          // this read out of the server's worker pool and bound the wait.
+          ? await new Promise<Buffer | undefined>((resolve) => {
+              execFile(
+                "/usr/bin/security",
+                ["find-generic-password", "-s", "gemini", "-a", "antigravity", "-w"],
+                { encoding: "buffer", timeout: 2000, maxBuffer: 65536, killSignal: "SIGKILL" },
+                (error, stdout) => resolve(error ? undefined : Buffer.from(stdout.toString().trim())),
+              );
+            })
+          : platform === "win32"
+          ? readWindowsCliCredential(architecture)`,
+      'replace',
+    ],
+    [
+      '  readonly readKeyringSecret?: Effect.Effect<string | undefined, AntigravityKeyringError>;',
+      '  readonly useLocalAgyLogin?: boolean;\n' +
+      '  readonly readKeyringSecret?: Effect.Effect<string | undefined, AntigravityKeyringError>;',
+      'replace',
+    ],
+    [
+      '    if (!(yield* fs.exists(tokenPath))) {',
+      '    if (input.useLocalAgyLogin || !(yield* fs.exists(tokenPath))) {',
+      'replace',
+    ],
+    [
+      '      const stored = (yield* fs.exists(cliTokenPath))\n        ? yield* fs.readFileString(cliTokenPath)\n        : input.authMethod === "oauth-business"',
+      '      const stored = !input.useLocalAgyLogin && (yield* fs.exists(cliTokenPath))\n' +
+      '        ? yield* fs.readFileString(cliTokenPath)\n' +
+      '        : input.useLocalAgyLogin || input.authMethod === "oauth-business"',
+      'replace',
+    ],
+  ],
+  'apps/server/src/provider/antigravityUsageLimits.test.ts': [
+    [
+      '  it.effect("reads the native CLI\'s stored sign-in when acp_token.json is absent", () =>',
+      '  it.effect("uses the existing agy login for a local personal account", () =>\n' +
+      '    Effect.gen(function* () {\n' +
+      '      const { probe, requests } = yield* fixture({\n' +
+      '        useLocalAgyLogin: true, missingToken: true,\n' +
+      '        keyringSecret: JSON.stringify({ token: { access_token: "access-token", expiry: "2099-01-01T00:00:00Z" } }),\n' +
+      '      });\n' +
+      '      expect((yield* probe).unavailable?.reason).not.toBe("unsupported");\n' +
+      '      expect(requests.length).toBeGreaterThan(0);\n' +
+      '    }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),\n' +
+      '  );\n\n' +
+      '  it.effect("reads the native CLI\'s stored sign-in when acp_token.json is absent", () =>',
+      'replace',
+    ],
+    [
+      '    keyringSecret?: string;',
+      '    useLocalAgyLogin?: boolean;\n    keyringSecret?: string;',
+      'replace',
+    ],
+    [
+      '    authMethod: options.authMethod ?? "oauth-personal",',
+      '    authMethod: options.authMethod ?? "oauth-personal",\n    useLocalAgyLogin: options.useLocalAgyLogin,',
+      'replace',
+    ],
+  ],
   [support]: [
     [
       '  readonly authMethod?: AntigravityAuthMethod;\n',
@@ -207,8 +276,8 @@ export const localAgyEdits = {
 `,
     ],
     [
-      '      probeUsage: usage.probe,\n      clearUsage: usage.clear,\n',
-      '      ...(localAgent ? {} : { probeUsage: usage.probe, clearUsage: usage.clear }),\n',
+      '    const usage = yield* makeAntigravityUsageProbe({\n      profileDirectory,',
+      '    const usage = yield* makeAntigravityUsageProbe({\n      profileDirectory,\n      useLocalAgyLogin: localExistingLogin,',
       'replace',
     ],
     [

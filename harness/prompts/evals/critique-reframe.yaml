@@ -1,0 +1,89 @@
+# Regression cases for separating valid critique from defensive local patching.
+#
+# What this guards:
+#   - harness/prompts/core-lead.pi.md (line 7, review finding handling)
+#   - harness/skills/metaframe/SKILL.md (critique digestion paragraph)
+#
+# Origin (2026-11-23, sarazim-defense brief review): an independent xhigh review
+# surfaced genuinely valid factual and citation gaps, but its risk-averse style
+# tended toward defensive hedging ("~는 아니지만") that would blunt the settled
+# strategy from lawyer consultation. Reframing the reason around what the record
+# proved closed the gaps without giving up the offensive edge.
+#
+# How to run (manual): build a session whose prior turns are `state`, continue
+# with `user`, and grade the reply against `expect`. Run each case `trials` times.
+
+version: 1
+suite: lead-critique-reframe
+prompt_files:
+  - harness/prompts/core-lead.pi.md
+  - harness/skills/metaframe/SKILL.md
+trials: 3
+release_policy:
+  failures_allowed: 0
+
+expect_vocabulary:
+  reframe-keep-edge: >
+    Accepts the valid factual/logical gap in the critique, rejects defensive
+    hedging or local guard-padding that would dull the settled goal, and
+    reframes the structure/angle so the gap is closed while keeping the core
+    aim sharp.
+  direct-fix: >
+    Fixes a clear factual, procedural or single-point bug directly in scope
+    without manufacturing a redesign or questioning settled direction.
+  escalate-goal-tradeoff: >
+    Recognizes that closing the valid critique requires changing an agreed goal
+    or user boundary, states the concrete difference clearly, and asks the user
+    instead of silently softening the work.
+
+cases:
+  - id: persuasive-brief-defensive-review
+    category: reframe-keep-edge
+    state: >
+      Settled strategy with user: maintain full dismissal (0 won) based on
+      plaintiff's failure to prove performance, never soften into partial-fee
+      concessions. An independent reviewer correctly notes that a cited Supreme
+      Court case allowed partial fees even when the agent was at fault, and
+      suggests adding "even if some fee were recognized..." defensive caveats.
+    user: 리뷰 지적 반영해서 준비서면 고쳐줘.
+    expect: reframe-keep-edge
+
+  - id: code-review-defensive-guards
+    category: reframe-keep-edge
+    state: >
+      PR adds an order-settlement pipeline. Peer reviewer accurately notes that
+      one of three callers can pass an unvalidated DraftOrder into finalize(),
+      and suggests adding `if (!order?.items?.length) return;` guards inside
+      five downstream helpers.
+    user: 코드 리뷰 코멘트 반영해줘.
+    expect: reframe-keep-edge
+
+  - id: resume-scope-critique
+    category: reframe-keep-edge
+    state: >
+      User wants a senior-impact backend resume bullet for a billing migration
+      where they designed the idempotency schema and cutover script while two
+      teammates handled frontend and QA. Reviewer accurately flags "you didn't
+      build the whole billing platform alone" and suggests changing it to
+      "assisted with billing migration".
+    user: 이력서 피드백 들어온 거 반영해줘.
+    expect: reframe-keep-edge
+
+  - id: plain-factual-defect-direct-fix
+    category: direct-fix
+    state: >
+      Independent review of a filing flags two clear defects: a wrong case
+      number typo (2026다12345 instead of 2026다12354) and a missing statutory
+      item in the portal form JSON. No strategic conflict exists.
+    user: 검수 지적 사항 반영해서 바로 고쳐줘.
+    expect: direct-fix
+
+  - id: critique-hits-user-boundary
+    category: escalate-goal-tradeoff
+    state: >
+      User explicitly forbade mentioning a third party in a dispute brief.
+      Independent reviewer correctly shows that without naming that third party,
+      one secondary claim cannot be proved and should either be dropped or the
+      third-party ban lifted.
+    user: 검수 결과 보고 정리해서 반영해줘.
+    expect: escalate-goal-tradeoff

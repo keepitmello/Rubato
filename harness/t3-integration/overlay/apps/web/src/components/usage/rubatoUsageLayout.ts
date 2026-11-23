@@ -13,7 +13,7 @@ import { useCallback } from "react";
 
 import { useLocalStorage } from "../../hooks/useLocalStorage";
 
-export { arrangePools, longLimitWindows, moveDriver, toggleCollapsed } from "@t3tools/shared/rubatoUsageLayout";
+export { arrangePools, moveDriver, toggleCollapsed, visibleLimitWindows } from "@t3tools/shared/rubatoUsageLayout";
 
 export const RUBATO_USAGE_LAYOUT_KEY = "rubato.usageLimits.layout";
 

@@ -13,28 +13,46 @@ export function emitActivationMarker(activations) {
   return `${TOOL_SEARCH_ACTIVATION_MARKER_V2} ${JSON.stringify(activations)}`;
 }
 
+// A history message does not change once written, and the history is searched again whenever the
+// catalog changes (MCP feeds it before every turn): serialising every message each time held the
+// engine's thread ~115 ms per turn in a 100 MB conversation (2026-11-21). Each message object is
+// read once.
+const markersByMessage = new WeakMap();
+
 export function parseActivationMarkers(messages) {
   const markers = [];
   for (const message of messages) {
-    let blob;
+    const cacheable = message !== null && typeof message === "object";
+    let found = cacheable ? markersByMessage.get(message) : undefined;
+    if (!found) {
+      found = messageMarkers(message);
+      if (cacheable) markersByMessage.set(message, found);
+    }
+    markers.push(...found);
+  }
+  return markers;
+}
+
+function messageMarkers(message) {
+  const markers = [];
+  let blob;
+  try {
+    blob = JSON.stringify(message) ?? "";
+  } catch {
+    return markers;
+  }
+  for (const payload of extractV2Payloads(blob)) {
     try {
-      blob = JSON.stringify(message) ?? "";
+      const parsed = JSON.parse(payload);
+      const activations = Array.isArray(parsed) ? parsed.filter(isActivationIdentity) : [];
+      if (activations.length > 0) markers.push({ version: 2, activations });
     } catch {
-      continue;
+      // Malformed history is ignored during best-effort rehydration.
     }
-    for (const payload of extractV2Payloads(blob)) {
-      try {
-        const parsed = JSON.parse(payload);
-        const activations = Array.isArray(parsed) ? parsed.filter(isActivationIdentity) : [];
-        if (activations.length > 0) markers.push({ version: 2, activations });
-      } catch {
-        // Malformed history is ignored during best-effort rehydration.
-      }
-    }
-    for (const segment of extractLegacySegments(blob)) {
-      const names = segment.trim().split(/\s+/).filter(Boolean);
-      if (names.length > 0) markers.push({ version: 1, names });
-    }
+  }
+  for (const segment of extractLegacySegments(blob)) {
+    const names = segment.trim().split(/\s+/).filter(Boolean);
+    if (names.length > 0) markers.push({ version: 1, names });
   }
   return markers;
 }

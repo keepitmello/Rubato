@@ -170,7 +170,8 @@ async function waitForStatus(client, want, { timeoutMs = 120_000 } = {}) {
 }
 
 /** Runs the bench and returns its rows, the engine's stall lines and the scripted model's counts. */
-export async function runBench({ profile, runtimeRoot, flows: only, repeat = 3, idleSeconds = 20, verbose = false, log = (line) => console.error(line) }) {
+export async function runBench({ profile, runtimeRoot, flows: only, repeat = 3, idleSeconds = 20, verbose = false, cpuProfiles,
+  log = (line) => console.error(line) }) {
   const manifest = JSON.parse(readFileSync(path.join(profile, 'manifest.json'), 'utf8'));
   const { SessionClient } = await import('../pi-server/src/client.mjs');
   runtimeRoot ??= (await import('../pi-server/src/discovery.mjs')).installedSharedRuntime();
@@ -194,13 +195,22 @@ export async function runBench({ profile, runtimeRoot, flows: only, repeat = 3, 
     log(`${name}: held ${row.held.toFixed(0)}ms (longest ${row.longest.toFixed(0)}ms) wall ${row.wall.toFixed(0)}ms cpu ${row.cpu.toFixed(0)}ms bytes ${row.bytes}${row.over ? '  OVER' : ''}`);
     return row;
   };
-  const measure = async (fn) => {
+  // `cpuProfiles`: a V8 CPU profile of the engine per measured run, written there (the sampling
+  // inflates `held`; profile in a separate run). cpu-profile-summary.mjs reads them.
+  let measured = 0;
+  const measure = async (fn, name = 'flow') => {
+    if (cpuProfiles) { await engine.inspector.post('Profiler.enable'); await engine.inspector.post('Profiler.setSamplingInterval', { interval: 250 }); await engine.inspector.post('Profiler.start'); }
     const before = await engine.inspector.probe();
     const bytes = proxy.bytes.in + proxy.bytes.out;
     const began = performance.now();
     await fn();
     const wall = performance.now() - began;
     const after = await engine.inspector.probe();
+    if (cpuProfiles) {
+      const { profile: cpu } = await engine.inspector.post('Profiler.stop');
+      mkdirSync(cpuProfiles, { recursive: true });
+      writeFileSync(path.join(cpuProfiles, `${String(++measured).padStart(2, '0')}-${name.replace(/[^\w]+/g, '-')}.cpuprofile`), JSON.stringify(cpu));
+    }
     return { held: after.active - before.active, longest: after.longest, wall, cpu: after.cpu - before.cpu,
       bytes: proxy.bytes.in + proxy.bytes.out - bytes };
   };
@@ -210,7 +220,7 @@ export async function runBench({ profile, runtimeRoot, flows: only, repeat = 3, 
     try {
       for (let i = 0; i < times; i += 1) {
         const context = await setup?.();
-        try { samples.push(await measure(() => fn(context))); } finally { await teardown?.(context); }
+        try { samples.push(await measure(() => fn(context), name)); } finally { await teardown?.(context); }
       }
     } catch (error) {
       log(`${name}: FAILED ${error?.message ?? error}`);
@@ -252,14 +262,14 @@ export async function runBench({ profile, runtimeRoot, flows: only, repeat = 3, 
       record(name, samples);
       if (resume.length && want('idle, 5 loaded')) {
         await sleep(3000);
-        record('idle, 5 loaded (per second)', [perSecond(await measure(() => sleep(idleSeconds * 1000)))]);
+        record('idle, 5 loaded (per second)', [perSecond(await measure(() => sleep(idleSeconds * 1000), 'idle-5-loaded'))]);
       }
       await stop();
     }
     await start();
     if (want('idle (per second)')) {
       await sleep(3000);
-      record('idle (per second)', [perSecond(await measure(() => sleep(idleSeconds * 1000)))]);
+      record('idle (per second)', [perSecond(await measure(() => sleep(idleSeconds * 1000), 'idle'))]);
     }
     await flow('directory list', () => client.list());
     await flow('directory subscribe', async () => { const stopListening = await client.subscribeDirectory(() => {}); await stopListening(); });
@@ -308,14 +318,15 @@ export function formatTable(rows) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const { values } = parseArgs({ options: { profile: { type: 'string' }, 'runtime-root': { type: 'string' }, flows: { type: 'string' },
-    repeat: { type: 'string' }, 'idle-seconds': { type: 'string' }, json: { type: 'string' }, verbose: { type: 'boolean' }, help: { type: 'boolean' } } });
+    repeat: { type: 'string' }, 'idle-seconds': { type: 'string' }, json: { type: 'string' }, verbose: { type: 'boolean' }, 'cpu-profiles': { type: 'string' }, help: { type: 'boolean' } } });
   if (values.help || !values.profile) {
-    console.log('Usage: node harness/bench/engine-flows.mjs --profile /absolute/aged-profile [--runtime-root /engine/build] [--flows "open large,turn"] [--repeat 3] [--idle-seconds 20] [--json out.json]');
+    console.log('Usage: node harness/bench/engine-flows.mjs --profile /absolute/aged-profile [--runtime-root /engine/build] [--flows "open large,turn"] [--repeat 3] [--idle-seconds 20] [--json out.json] [--cpu-profiles dir] [--verbose]');
     process.exitCode = values.profile ? 0 : 1;
   } else {
     const result = await runBench({ profile: path.resolve(values.profile), runtimeRoot: values['runtime-root'],
       flows: values.flows?.split(',').map((flow) => flow.trim()).filter(Boolean), repeat: Number(values.repeat ?? 3),
-      idleSeconds: Number(values['idle-seconds'] ?? 20), verbose: values.verbose });
+      idleSeconds: Number(values['idle-seconds'] ?? 20), verbose: values.verbose,
+      cpuProfiles: values['cpu-profiles'] && path.resolve(values['cpu-profiles']) });
     console.log(formatTable(result.rows));
     if (result.stalls.length) console.log(`\nengine log during the bench:\n${result.stalls.join('\n')}`);
     if (values.json) writeFileSync(values.json, `${JSON.stringify(result, null, 2)}\n`);

@@ -97,6 +97,8 @@
     "apps/server/src/provider/Drivers/AntigravityDriver.ts": "d06229ae95c3fe9a24626cc0e434641cf3a1f509bd850e705f590fd6a81b9937",
     "apps/server/src/provider/ProviderRegistry.ts": "e8c61c92b15fc2319e0e750ae8bcd6b266a9135b9c16378901c508b268f899dc",
     "apps/server/src/provider/acp/AntigravityAcpSupport.ts": "3d3e28ae8f9a8570063c072dcb8ff850ef569f0fd43549c45b905ddd09d6a927",
+    "apps/server/src/provider/antigravityUsageLimits.test.ts": "8e3e5122ea6688b875e310b174a8a1943d4de5c75732053be36bff6f8fd3ae47",
+    "apps/server/src/provider/antigravityUsageLimits.ts": "4508d707acbd21166dc256562f5c94252e0ef39a73fdb35741ceabdf3dd7ba66",
     "apps/server/src/provider/builtInDrivers.ts": "d378267315fce89748be95b96fa99bed797ecd41d0bc9372e3b67c3e37d1f5fd",
     "apps/server/src/provider/providerStatusCache.ts": "7ec27ae04aff35942767eb0f9d714a82fca41d2273cd208e69910ca14fb863ef",
     "apps/server/src/relay/AgentAwarenessRelay.ts": "865e92bd9fa30bd71202f02f839bc65730f6afe316a983f9d69b59d9db882468",

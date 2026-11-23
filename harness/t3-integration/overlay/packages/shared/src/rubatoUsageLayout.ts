@@ -1,7 +1,6 @@
 /**
  * The Usage page's limits, arranged the way the person left them: which providers come first,
- * which are folded away, and only the long windows (weekly, monthly). Five-hour session windows
- * reset before they can change a plan, so the page leaves them out. The desktop keeps the
+ * which are folded away, and which quota windows to show. The desktop keeps the
  * arrangement in its browser storage (apps/web/src/components/usage/rubatoUsageLayout.ts), the
  * phone in its preferences (apps/mobile/src/features/rubato-shell/usageLayout.ts); a provider seen
  * for the first time joins at the end.
@@ -15,9 +14,12 @@ export interface UsageLayout {
 
 export const EMPTY_USAGE_LAYOUT: UsageLayout = { order: [], collapsed: [] };
 
-/** The windows a provider shows: everything but the five-hour session windows. */
-export function longLimitWindows(pool: LimitPool) {
-  return displayLimitWindows(pool).filter((window) => window.kind !== "session");
+/** Keep the long windows and Gemini's shared five-hour quota. */
+export function visibleLimitWindows(pool: LimitPool) {
+  return displayLimitWindows(pool).filter(
+    (window) =>
+      window.kind !== "session" || (pool.driver === "antigravity" && window.id === "gemini-5h"),
+  );
 }
 
 /** Pools in the saved order; ones the order does not name keep their place after it. */

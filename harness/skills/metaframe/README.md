@@ -1,6 +1,6 @@
 # metaframe v4
 
-metaframe is a skill for deciding again whether to keep or change the current approach when observations contradict the current explanation or local fixes keep breaking each other. The model may load it at that signal, and you can invoke it yourself. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
+metaframe is a skill for deciding whether to patch or reframe the current approach when observations contradict the current explanation, local fixes keep breaking each other, or applying review findings literally would blunt the work. The model may load it at that signal, and you can invoke it yourself. It is meant to improve the use of capability already present in the model, not to replace the model with a decision system.
 
 ## What this version keeps
 

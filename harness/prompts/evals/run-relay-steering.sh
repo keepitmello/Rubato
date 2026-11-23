@@ -3,6 +3,8 @@
 #
 #   run-relay-steering.sh <prompts 폴더> <출력 폴더> [모델] [판 수]
 #
+# 다른 묶음은 SUITE=<yaml> 로 준다. 같은 형식(state·user·role)이면 이 스크립트로 돈다.
+#
 # 프롬프트는 실제 로더(system-prompt.mjs loadRolePrompt)로 조립한다. 그래서 세뇨는
 # 그 사람 집의 조각까지 들어간 프롬프트로 돈다. 고치기 전과 후를 비교하려면
 # 고치기 전 prompts 폴더를 복사해 두고 두 폴더로 한 번씩 돌린다.
@@ -13,7 +15,7 @@ PROMPTS="$(cd "$1" && pwd)"; OUT="$2"; MODEL="${3:-anthropic/claude-opus-5-5}"; 
 LOADER="$HERE/../../rubato-pi/src/system-prompt.mjs"
 mkdir -p "$OUT"
 
-python3 - "$HERE/relay-steering.yaml" "$OUT" <<'EOF'
+python3 - "${SUITE:-$HERE/relay-steering.yaml}" "$OUT" <<'EOF'
 import sys, yaml, os
 suite = yaml.safe_load(open(sys.argv[1]))
 for c in suite["cases"]:

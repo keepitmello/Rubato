@@ -451,3 +451,33 @@ test("the companion warms without an end until the person turns its warming off"
   await advance(40 * MIN);
   assert.equal(warms.length, 36);
 });
+
+test("the same branch projects once; an append, a branch move or a rollback projects again", () => {
+  const manager = SessionManager.inMemory(scratch);
+  const user = (text) => ({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() });
+  const first = manager.appendMessage(user("one"));
+  manager.appendMessage({ role: "assistant", content: [{ type: "text", text: "two" }], usage, stopReason: "stop", timestamp: Date.now() });
+  let walks = 0;
+  const getEntries = manager.getEntries.bind(manager);
+  manager.getEntries = () => { walks += 1; return getEntries(); };
+
+  const a = manager.buildSessionProjection();
+  const b = manager.buildSessionProjection();
+  assert.equal(walks, 1, "a second projection of the same branch walks nothing");
+  assert.notEqual(a.messages, b.messages, "each caller gets its own list");
+  assert.deepEqual(b.messages, a.messages);
+  assert.equal(b.messages[0], a.messages[0], "the messages are the same stable objects");
+  b.messages.push("caller's own");
+  assert.equal(manager.buildSessionProjection().messages.length, 2);
+
+  manager.appendMessage(user("three"));
+  assert.deepEqual(manager.buildSessionProjection().messages.map((message) => message.content[0].text), ["one", "two", "three"]);
+  assert.equal(walks, 2);
+  manager.branch(first);
+  assert.deepEqual(manager.buildSessionProjection().messages.map((message) => message.content[0].text), ["one"]);
+  assert.equal(walks, 3);
+  // A failed write pops its entry back off (session-catalog): the list is as it was before it.
+  manager.fileEntries.push({ type: "message", id: "torn0001", parentId: first, timestamp: new Date().toISOString(), message: user("torn") });
+  manager.fileEntries.pop();
+  assert.deepEqual(manager.buildSessionProjection().messages.map((message) => message.content[0].text), ["one"]);
+});

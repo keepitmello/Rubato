@@ -35,3 +35,21 @@ Reason from what users can actually see, know, expect, and do. Treat unobserved 
 ## When fresh context finds nothing new
 
 A fresh view may conclude that the original framing is adequate. That is a useful result. Proceed without manufacturing a frame shift or explaining the meta-process to the user.
+
+## A valid critique whose literal patch blunts the argument
+
+> 외부 검수가 "인용한 판결은 원고 귀책이 있어도 기수행 부분 보수를 인정한 사건이라, '귀책이 있으므로 0원'이라고 단정하면 공격받는다"고 짚었어.
+
+The factual point is right, but patching the sentence with defensive caveats ("반드시 0원은 아니더라도…") weakens the settled strategy. Separate the factual gap from the reviewer's risk-averse remedy: reframe the sentence around what the record actually proves ("원고가 실제로 처리한 사무를 증명하지 못했으므로 비율 보수도 0원") so the citation is exact and the claim stays sharp. By contrast, a wrong case number or date in the same review is a factual defect—fix it directly without reframing.
+
+## A valid edge-case review that invites defensive padding
+
+> 코드 리뷰에서 "호출부 세 곳 중 한 곳은 빈 상태 객체가 넘어올 수 있다"고 지적했어.
+
+Pasting null/empty guards and fallback defaults across every downstream helper hides the defect and muddies the code. Check whether the boundary or type contract can make the invalid state unrepresentable so the gap closes structurally. If the issue is a genuine single-point boundary bug (e.g., an external API returning null), fix that boundary directly rather than redesigning the module.
+
+## A valid scope critique on a resume or business offer
+
+> 이력서/제안서 리뷰에서 "전체 플랫폼을 혼자 만든 건 아니잖아" 혹은 "엔터프라이즈 예외 케이스가 빠졌다"고 지적했어.
+
+Watering down the bullet into "일부 지원" or piling disclaimers onto the offer satisfies the reviewer by erasing the value. Reframe around the exact high-leverage decision, mechanism or target scope actually owned so the statement is both strictly accurate and unmistakably strong.
