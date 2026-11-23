@@ -9,6 +9,8 @@
 import { CheckIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { startRoomPoll } from "@t3tools/shared/rubatoRoomPoll";
+import { useRubatoRoomVisible } from "../../hooks/useRubatoRoomVisible";
 
 import { uiLanguage } from "../../rubatoI18n";
 import {
@@ -36,23 +38,16 @@ export function useCompanionProposals(
   poke: unknown,
 ) {
   const [proposals, setProposals] = useState<readonly CompanionProposal[]>([]);
-  const refresh = useCallback(async () => {
-    if (!environmentId || !companionId) return;
-    try {
-      const answer = await rubatoCompanion.proposals(environmentId, companionId);
-      setProposals(Array.isArray(answer?.proposals) ? answer.proposals : []);
-    } catch {
-      // A server without proposals shows none.
-    }
-  }, [environmentId, companionId]);
+  const visible = useRubatoRoomVisible(Boolean(environmentId && companionId));
+  const [revision, bump] = useState(0);
+  const refresh = useCallback(() => bump((v) => v + 1), []);
   useEffect(() => {
-    void refresh();
-    const timer = window.setInterval(() => void refresh(), PROPOSALS_POLL_MS);
-    return () => window.clearInterval(timer);
-  }, [refresh]);
-  useEffect(() => {
-    void refresh();
-  }, [poke, refresh]);
+    if (!visible || !environmentId || !companionId) return;
+    return startRoomPoll(PROPOSALS_POLL_MS, async (signal) => {
+      const answer = await rubatoCompanion.proposals(environmentId, companionId, signal);
+      if (!signal.aborted) setProposals(Array.isArray(answer?.proposals) ? answer.proposals : []);
+    });
+  }, [visible, environmentId, companionId, poke, revision]);
   const update = useCallback((next: CompanionProposal) => {
     setProposals((current) => current.map((item) => (item.id === next.id ? next : item)));
   }, []);

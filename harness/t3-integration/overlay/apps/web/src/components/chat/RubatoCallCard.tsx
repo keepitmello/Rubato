@@ -19,7 +19,7 @@ export function RubatoCallCard({ call, title, locale }: { call: CallRecord; titl
   const [open, setOpen] = useState(false);
   const headline = callHeadline(call);
   const clock = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit" }).format(call.createdAt);
-  const lines = call.transcript.map((line) => ({ ...line, text: spokenText(line.text) })).filter((line) => line.text);
+  const lines = open ? call.transcript.map((line) => ({ ...line, text: spokenText(line.text) })).filter((line) => line.text) : [];
   return (
     <div data-rubato-call-card="" data-status={call.status}>
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)}>

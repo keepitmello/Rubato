@@ -69,6 +69,7 @@ export async function postRubato<T>(
   action: string,
   body: Record<string, unknown>,
   what: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const prepared = environmentId === null ? null : readPreparedConnection(environmentId);
   if (!prepared) throw new RubatoRequestError("unavailable", "This Mac is not connected.");
@@ -77,6 +78,7 @@ export async function postRubato<T>(
     throw new RubatoRequestError("unavailable", `${what[0]!.toUpperCase()}${what.slice(1)} are not available on this connection.`);
   const response = await fetch(`${access.baseUrl}${route}/${action}`, {
     method: "POST",
+    ...(signal ? { signal } : {}),
     credentials: access.credentials,
     headers: { ...access.headers, "content-type": "application/json" },
     body: JSON.stringify(body),

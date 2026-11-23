@@ -3,7 +3,7 @@ import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
 import {
-  callHeadline, companionTyping, feedRoomPreview, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
+  callHeadline, callPreviewLines, companionTyping, feedRoomPreview, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
   type RoomMessageInput,
 } from "./roomModel";
 
@@ -21,6 +21,16 @@ const call = (patch: Partial<CallRecord> & { minutes: number; length?: number })
 };
 
 describe("a companion room", () => {
+  it("previews the last two spoken lines without reading the rest of a long call", () => {
+    let reads = 0;
+    const transcript = Array.from({ length: 2000 }, (_, i) => ({
+      who: "me" as const, at: i,
+      get text() { reads++; return i === 1998 ? "[sigh]" : `line ${i}`; },
+    }));
+    expect(callPreviewLines(call({ minutes: 0, transcript })).map((line) => line.text))
+      .toEqual(["line 1997", "line 1999"]);
+    expect(reads).toBe(3);
+  });
   it("keeps unchanged bubble rows across arrivals, but redraws a previous group tail", () => {
     const a = message("a", "user", "hi", 0);
     const b = message("b", "assistant", "one", 2);

@@ -22,6 +22,8 @@ export class CallError extends Error {
 export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange = () => {} }) {
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const calls = new Map();
+  // Restored calls are final. A device checking for a ring needn't scan the archive.
+  const liveCalls = new Set();
   const waiters = new Map();
   const timers = new Map();
   for (const name of readdirSync(dir)) {
@@ -48,6 +50,8 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
     const temporary = `${file}.${randomUUID()}.tmp`;
     writeFileSync(temporary, JSON.stringify(call) + '\n', { mode: 0o600 });
     renameSync(temporary, file);
+    if (call.status === 'ringing' || call.status === 'active') liveCalls.add(call);
+    else liveCalls.delete(call);
     onChange(call);
     return call;
   }
@@ -63,7 +67,8 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
     return call;
   }
   function busy(companion) {
-    return [...calls.values()].some(call => call.companion === companion && ['ringing', 'active'].includes(call.status));
+    for (const call of liveCalls) if (call.companion === companion) return true;
+    return false;
   }
   function open({ companion, direction, voice = null, reason = null, title = null }) {
     if (busy(companion)) throw new CallError(`${companion} is already on a call`);
@@ -117,7 +122,7 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
     },
     get: id => view(get(id)),
     /** Ringing and live calls, for a device to show. */
-    live: () => [...calls.values()].filter(call => ['ringing', 'active'].includes(call.status)).map(view),
+    live: () => Array.from(liveCalls, view),
     /** Calls of one companion since `since`, oldest first. */
     history: ({ companion, since = 0 } = {}) => [...calls.values()]
       .filter(call => (!companion || call.companion === companion) && call.createdAt >= since)

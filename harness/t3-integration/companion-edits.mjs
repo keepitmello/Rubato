@@ -42,6 +42,8 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoChat.css',
   'apps/web/src/components/chat/RubatoSegnoChat.test.tsx',
   'apps/web/src/components/chat/RubatoSegnoInner.tsx',
+  'apps/web/src/hooks/useRubatoRoomVisible.ts',
+  'apps/web/src/components/chat/RubatoRoomActivity.test.tsx',
   // The room's side panel: status board, questions, memory, records (intent memory-redesign-work-cards).
   'apps/web/src/components/chat/RubatoSegnoPanel.tsx',
   'apps/web/src/components/chat/RubatoSegnoPanel.test.tsx',
@@ -51,13 +53,14 @@ export const companionOverlays = [
   'apps/web/src/components/chat/RubatoSegnoNoticeCoordinator.test.tsx',
   // One reply, several bubbles: where the room and the phone break a reply (shared with mobile/companion-edits.mjs).
   'packages/shared/src/rubatoReplyBubbles.ts',
+  'packages/shared/src/rubatoRoomPoll.ts',
   'packages/shared/src/rubatoReplyBubbles.test.ts',
 ];
 
 export const companionEdits = {
   'packages/shared/package.json': [
     ['    "./delimitedPreview": {\n',
-      '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n'],
+      '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n    "./rubatoRoomPoll": {\n      "types": "./src/rubatoRoomPoll.ts",\n      "import": "./src/rubatoRoomPoll.ts"\n    },\n'],
   ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionModelRouteLayer } from "./RubatoCompanionModel.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],

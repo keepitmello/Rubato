@@ -49,6 +49,7 @@ test('a ring nobody picks up is missed, a declined one is declined, and the call
   const call = await waitFor(async () => (await (await fetch(`${box.base}/live`)).json())[0]);
   await box.post('/decline', { callId: call.id });
   assert.equal((await (await ringing).json()).status, 'declined');
+  assert.deepEqual(box.log.live(), []);
   assert.deepEqual(box.log.history({ companion: 'roo' }).map(item => item.status), ['missed', 'declined']);
 });
 
@@ -62,6 +63,20 @@ test('the person dials; one call per companion; a companion that cannot be calle
   const refused = await box.post('/dial', { companion: 'segno' });
   assert.equal(refused.status, 422);
   assert.match((await refused.json()).error, /no voice is chosen/);
+});
+
+test('checking for rings keeps only unfinished calls and leaves history intact', t => {
+  const log = createCallLog({ dir: tmp(t) });
+  t.after(() => log.close());
+  const a = log.dial({ companion: 'roo' }), b = log.ring({ companion: 'segno' });
+  log.answer(b.id);
+  log.end(a.id);
+  assert.deepEqual(log.live().map(c => [c.id, c.status]), [[b.id, 'active']]);
+  const next = log.ring({ companion: 'roo' });
+  log.decline(next.id);
+  log.end(b.id);
+  assert.deepEqual(log.live(), []);
+  assert.equal(log.history().length, 3);
 });
 
 test('what both sides said is kept on the call while it is live, and the call ends once', async t => {

@@ -4,6 +4,8 @@
 // Audio goes over LiveKit: its browser client is loaded only when a call starts (public/rubato-livekit-client.mjs).
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { startRoomPoll } from "@t3tools/shared/rubatoRoomPoll";
+import { useRubatoRoomVisible } from "../hooks/useRubatoRoomVisible";
 
 import { uiText } from "../rubatoI18n";
 import { postRubato } from "./rubatoHttp";
@@ -37,12 +39,12 @@ interface Joined {
   readonly token: string;
 }
 
-const act = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
-  postRubato<T>(env, CALL_ROUTE, action, body, "voice calls");
+const act = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}, signal?: AbortSignal) =>
+  postRubato<T>(env, CALL_ROUTE, action, body, "voice calls", signal);
 
 export const rubatoCall = {
   live: (env: EnvironmentId | null) => act<CallRecord[]>(env, "live"),
-  calls: (env: EnvironmentId | null, companion: string) => act<CallRecord[]>(env, "calls", { companion }),
+  calls: (env: EnvironmentId | null, companion: string, signal?: AbortSignal) => act<CallRecord[]>(env, "calls", { companion }, signal),
   dial: (env: EnvironmentId | null, companion: string) => act<Joined>(env, "dial", { companion }),
   answer: (env: EnvironmentId | null, callId: string) => act<Joined>(env, "answer", { callId }),
   decline: (env: EnvironmentId | null, callId: string) => act<CallRecord>(env, "decline", { callId }),
@@ -288,15 +290,15 @@ export interface CallableCompanion {
 /** Whether a companion can be called now, checked every so often while something shows it. */
 export function useCallableCompanion(env: EnvironmentId | null, companion: string | undefined) {
   const [callable, setCallable] = useState<CallableCompanion | null>(null);
+  const visible = useRubatoRoomVisible(env !== null && !!companion);
   useEffect(() => {
     if (env === null || !companion) { setCallable(null); return; }
-    let live = true;
-    const load = () => act<CallableCompanion[]>(env, "companions").then(
-      (list) => { if (live) setCallable(list.find((item) => item.id === companion) ?? null); }, () => undefined);
-    void load();
-    const timer = window.setInterval(load, 30_000);
-    return () => { live = false; window.clearInterval(timer); };
-  }, [env, companion]);
+    if (!visible) return;
+    return startRoomPoll(30_000, async (signal) => {
+      const list = await act<CallableCompanion[]>(env, "companions", {}, signal);
+      if (!signal.aborted) setCallable(list.find((item) => item.id === companion) ?? null);
+    });
+  }, [env, companion, visible]);
   return callable;
 }
 
@@ -305,15 +307,16 @@ export function useCallableCompanion(env: EnvironmentId | null, companion: strin
  * so often, so a call taken on another device or a missed ring shows up too.
  */
 export function useRoomCalls(env: EnvironmentId | null, companion: string | undefined) {
-  const { version, current } = useRubatoCall();
+  const version = useSyncExternalStore(subscribe, () => view.version);
+  const onCall = useSyncExternalStore(subscribe, () => view.current !== null);
+  const visible = useRubatoRoomVisible(env !== null && !!companion);
   const [calls, setCalls] = useState<readonly CallRecord[]>([]);
   useEffect(() => {
-    if (env === null || !companion) return;
-    let live = true;
-    const load = () => rubatoCall.calls(env, companion).then((list) => { if (live) setCalls(list); }, () => undefined);
-    void load();
-    const timer = window.setInterval(load, current ? 5_000 : 15_000);
-    return () => { live = false; window.clearInterval(timer); };
-  }, [env, companion, version, current !== null]);
+    if (!visible || env === null || !companion) return;
+    return startRoomPoll(onCall ? 5_000 : 15_000, async (signal) => {
+      const list = await rubatoCall.calls(env, companion, signal);
+      if (!signal.aborted) setCalls(list);
+    });
+  }, [env, companion, version, onCall, visible]);
   return calls;
 }

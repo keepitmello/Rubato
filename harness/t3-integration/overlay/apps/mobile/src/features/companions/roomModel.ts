@@ -11,7 +11,7 @@ import type { ChatAttachment } from "@t3tools/contracts";
 import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { DraftComposerAttachment } from "../../lib/composerImages";
-import type { CallRecord } from "./callTypes";
+import type { CallLine, CallRecord } from "./callTypes";
 import type { Proposal } from "./proposalModel";
 
 /**
@@ -338,6 +338,17 @@ export function spokenText(text: string): string {
     .replace(/<\/?[a-z]{2,12}>?/g, "")
     .replace(/^\[voice\]\s*/, "")
     .trim();
+}
+
+/** The last two spoken lines of the call. A voice direction alone isn't a line. */
+export function callPreviewLines(call: CallRecord): CallLine[] {
+  const preview: CallLine[] = [];
+  for (let i = call.transcript.length - 1; i >= 0 && preview.length < 2; i--) {
+    const line = call.transcript[i]!;
+    const text = spokenText(line.text);
+    if (text) preview.push({ who: line.who, at: line.at, text });
+  }
+  return preview.reverse();
 }
 
 /** A one-line preview of the room's latest bubble or call, for the companion list. */

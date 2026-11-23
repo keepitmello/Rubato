@@ -6,6 +6,8 @@
 // companion/inner.mjs), never written into the thread, so nothing here reaches the phone.
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
+import { startLiveWorkPoll } from "@t3tools/shared/rubatoRoomPoll";
+import { useRubatoRoomVisible } from "../../hooks/useRubatoRoomVisible";
 
 import { rubatoCompanion, type SegnoInnerItem, type SegnoSpanSummary } from "../../state/rubatoCompanion";
 import { OTHER_WAKE, spanCounts, spanDuration, WAKE_LABELS, wakeCounts, type SegnoSpanPlace } from "./rubatoSegnoRoom";
@@ -121,9 +123,10 @@ export function RubatoSegnoSpanLine(props: {
   const live = place.placement === "live";
   const runsOn = place.until === null;
   const version = summary ? `${summary.from}:${summary.to}:${summary.tools}:${summary.thinking}:${summary.text}` : "";
+  const visible = useRubatoRoomVisible(open);
 
   useEffect(() => {
-    if (!open || !environmentId || !companionId) return;
+    if (!visible || !environmentId || !companionId) return;
     let stopped = false;
     let timer: number | undefined;
     const load = async () => {
@@ -143,7 +146,7 @@ export function RubatoSegnoSpanLine(props: {
       if (timer !== undefined) window.clearTimeout(timer);
     };
     // A span that ends at a bubble is read again only when its summary moved.
-  }, [open, environmentId, companionId, place.after, place.until, runsOn, version]);
+  }, [visible, environmentId, companionId, place.after, place.until, runsOn, version]);
 
   const empty = !summary || summary.from === null;
   if (empty && !live) return null;
@@ -199,29 +202,20 @@ const LIVE_WORKS: ReadonlySet<string> = new Set(["search", "file", "terminal", "
  */
 export function useCompanionLiveWork(environmentId: EnvironmentId | undefined, companionId: string | undefined, active: boolean): SegnoLiveWork | null {
   const [work, setWork] = useState<SegnoLiveWork | null>(null);
+  const visible = useRubatoRoomVisible(active);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polling: the bridge's answer arrives over time
   useEffect(() => {
-    if (!active || !environmentId || !companionId) return;
-    let stopped = false;
-    let timer: number | undefined;
-    const load = async () => {
-      try {
-        const answer = await rubatoCompanion.live(environmentId, companionId);
-        const kind = typeof answer.work === "string" ? (LIVE_WORKS.has(answer.work) ? (answer.work as SegnoLiveWork) : "other") : null;
-        if (!stopped) setWork(kind);
-      } catch {
-        // A bridge without the route: the bubble stays thinking.
-      }
-      if (!stopped) timer = window.setTimeout(load, 1_200);
-    };
-    void load();
+    if (!visible || !environmentId || !companionId) return;
+    const stop = startLiveWorkPoll(async (signal) => {
+      const answer = await rubatoCompanion.live(environmentId, companionId, signal);
+      return typeof answer.work === "string" ? (LIVE_WORKS.has(answer.work) ? (answer.work as SegnoLiveWork) : "other") : null;
+    }, setWork);
     return () => {
-      stopped = true;
-      if (timer !== undefined) window.clearTimeout(timer);
+      stop();
       setWork(null);
     };
-  }, [environmentId, companionId, active]);
-  return active ? work : null;
+  }, [environmentId, companionId, visible]);
+  return visible ? work : null;
 }
 
 /**
@@ -239,8 +233,9 @@ export function useSegnoSpanSummaries(input: {
   const [spans, setSpans] = useState<ReadonlyArray<SegnoSpanSummary | null>>([]);
   // The bubble times as one value, so a new array of the same times asks nothing again.
   const key = input.boundaries.join(",");
+  const visible = useRubatoRoomVisible(Boolean(environmentId && companionId));
   useEffect(() => {
-    if (!environmentId || !companionId) return;
+    if (!visible || !environmentId || !companionId) return;
     let stopped = false;
     let timer: number | undefined;
     const load = async () => {
@@ -259,6 +254,6 @@ export function useSegnoSpanSummaries(input: {
       stopped = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [environmentId, companionId, key, after, working]);
+  }, [environmentId, companionId, key, after, working, visible]);
   return spans;
 }

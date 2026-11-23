@@ -3,7 +3,6 @@
 // (CallTranscriptScreen; user decision 534dda27: no inline expand). The words come from the Mac's call
 // log, which hears the person and the companion alike.
 import { CommonActions, useNavigation } from "@react-navigation/native";
-import { useEffect, useState } from "react";
 import { Pressable, View } from "react-native";
 
 import { SymbolView } from "../../components/ui/AppSymbol";
@@ -11,7 +10,8 @@ import { AppText as Text } from "../../components/ui/AppText";
 import type { CallRecord } from "./callTypes";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { copy, dateFormat } from "./copy";
-import { callHeadline, spokenText } from "./roomModel";
+import { callHeadline, callPreviewLines, spokenText } from "./roomModel";
+import { useVisibleSecondClock } from "../threads/use-visible-second-clock";
 
 export const clock = { format: (at: number) => dateFormat({ hour: "numeric", minute: "2-digit" }).format(at) };
 export const MISSED_RED = "#FF3B30";
@@ -30,12 +30,7 @@ export function callLines(call: CallRecord) {
 
 /** A call's length that keeps moving while it is live. */
 export function useCallHeadline(call: CallRecord) {
-  const [now, setNow] = useState(Date.now());
-  useEffect(() => {
-    if (call.status !== "active") return;
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, [call.status]);
+  const now = useVisibleSecondClock(call.status === "active");
   return callHeadline(call, now);
 }
 
@@ -83,7 +78,7 @@ export function CallCard(props: {
 }) {
   const { call } = props;
   const navigation = useNavigation();
-  const preview = callLines(call).slice(-2);
+  const preview = callPreviewLines(call);
   const open = () =>
     navigation.dispatch(
       CommonActions.navigate("CompanionCall", {

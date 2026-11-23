@@ -279,9 +279,9 @@ export type SegnoInnerItem =
   | { readonly kind: "message"; readonly from: string; readonly text: string; readonly at: number }
   | { readonly kind: "compaction"; readonly at: number };
 
-const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}) =>
+const call = <T>(env: EnvironmentId | null, action: string, body: Record<string, unknown> = {}, signal?: AbortSignal) =>
   postRubato<T>(env, COMPANION_ROUTE, action,
-    action === "companions" || action === "create" ? body : { companionId: selectedCompanionId, ...body }, "companion settings");
+    action === "companions" || action === "create" ? body : { companionId: selectedCompanionId, ...body }, "companion settings", signal);
 
 /** What the list and the pages call a companion that has no name yet. */
 export const NAMELESS_TITLE = "New companion";
@@ -334,8 +334,8 @@ export const rubatoCompanion = {
   setAvatar: (env: EnvironmentId | null, companionId: string, image: string | null) =>
     call<{ avatar: CompanionAvatar | null }>(env, "set-avatar", { companionId, image }),
   /** The changes it proposed, newest last. */
-  proposals: (env: EnvironmentId | null, companionId: string) =>
-    call<{ proposals: CompanionProposal[] }>(env, "proposals", { companionId }),
+  proposals: (env: EnvironmentId | null, companionId: string, signal?: AbortSignal) =>
+    call<{ proposals: CompanionProposal[] }>(env, "proposals", { companionId }, signal),
   /** Saves one proposal; the only write. 409 `stale` when its text moved, `closed` when not open. */
   applyProposal: (env: EnvironmentId | null, companionId: string, proposalId: string) =>
     call<{ proposal: CompanionProposal }>(env, "apply-proposal", { companionId, proposalId }),
@@ -367,7 +367,7 @@ export const rubatoCompanion = {
       ...(after === undefined ? {} : { after }),
     }),
   /** The kind of work the companion's tool does right now ('search', 'file', 'terminal', 'other') or null (bridge companion/inner.mjs liveWork). */
-  live: (env: EnvironmentId | null, companionId: string) => call<{ work: string | null }>(env, "live", { companionId }),
+  live: (env: EnvironmentId | null, companionId: string, signal?: AbortSignal) => call<{ work: string | null }>(env, "live", { companionId }, signal),
   /** The pieces of one span: after `after`, up to and including `until` (null: up to now). */
   innerItems: (env: EnvironmentId | null, companionId: string, after: number | null, until: number | null) =>
     call<{ items: readonly SegnoInnerItem[] }>(env, "inner-items", {
