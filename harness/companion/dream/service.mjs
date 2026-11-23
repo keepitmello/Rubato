@@ -8,11 +8,18 @@
 // more: it never attaches to Segno's conversation and never calls the engine's wake or notice, so
 // the dream starts, runs and ends without a word in Segno's context (intent companion-segno, user
 // item bfe3d27d).
-import { open } from 'node:fs/promises';
-import { userInfo } from 'node:os';
+//
+// A night's dream is two jobs in turn: the memory dream (dream.mjs), then, when its cadence has come
+// and the companion has roots to tend, document upkeep (docs.mjs). Both run on one ladder: the
+// companion's own dream.models, else the user's memory.dream.models, else dream.mjs DREAM_MODELS.
+import { existsSync } from 'node:fs';
+import { open, readFile } from 'node:fs/promises';
+import { createRequire } from 'node:module';
+import { homedir, userInfo } from 'node:os';
 import path from 'node:path';
 import { readSettings, readState } from '../companion.mjs';
-import { dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream, searchSegnoJson } from './dream.mjs';
+import { DREAM_MODELS, companionDreamModels, dreamDue, readDreamState, reindexSegnoMemory, runCompanionDream, searchSegnoJson } from './dream.mjs';
+import { runDocsDream } from './docs.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '..', '..', '..');
 const BUSY = new Set(['starting', 'running', 'waiting']);
@@ -23,6 +30,50 @@ async function resolveLaunch(env) {
   const { resolvePiEngineDir } = await import(path.join(repoRoot, 'harness', 'rubato-pi', 'src', 'engine-paths.mjs'));
   const { resolvePiMemoryChildLaunch } = await import(path.join(repoRoot, 'harness', 'pi-runtime', 'features', 'child-runtime', 'stock-rpc-runtime.mjs'));
   return resolvePiMemoryChildLaunch({ root: resolvePiEngineDir(env) });
+}
+
+/**
+ * The dream ladder for this companion, first found of: its own `dream.models` (companion settings,
+ * set by talking to it or on Settings › Companion), the user's `memory.dream.models` in
+ * ~/.rubato/rubato.jsonc (else rubato.json), read the way Settings › Memory reads it
+ * (t3-integration memory/service.mjs), and dream.mjs DREAM_MODELS. The global file is only read; the
+ * user-memory and project dreams read it themselves. A global file that cannot be read or parsed is
+ * reported and falls back to DREAM_MODELS.
+ */
+export async function resolveModels(env, onError = () => {}) {
+  try {
+    const [{ dreamLadder }, { REASONING_LEVELS }] = await Promise.all([
+      import(path.join(repoRoot, 'packages', 'rubato-runtime', 'src', 'dream', 'ladder.ts')),
+      import(path.join(repoRoot, 'packages', 'rubato-config-core', 'src', 'schema', 'reasoning-vocabulary.ts')),
+    ]);
+    const own = readSettings(env).dream.models;
+    if (own.length) {
+      const rungs = companionDreamModels({ memory: { dream: { models: own } } }, dreamLadder, REASONING_LEVELS);
+      if (rungs !== DREAM_MODELS) return rungs;
+    }
+    const home = env.HOME || homedir();
+    const jsonc = path.join(home, '.rubato', 'rubato.jsonc');
+    const json = path.join(home, '.rubato', 'rubato.json');
+    const file = !existsSync(jsonc) && existsSync(json) ? json : jsonc;
+    if (!existsSync(file)) return DREAM_MODELS;
+    const { parse } = createRequire(path.join(repoRoot, 'packages', 'rubato-config-core', 'package.json'))('jsonc-parser');
+    const errors = [];
+    const config = parse(await readFile(file, 'utf8'), errors, { allowTrailingComma: true });
+    // A file that does not parse is not the user's ladder; half of one could name the wrong model.
+    if (errors.length) throw new Error(`${file} does not parse (${errors.length} error${errors.length > 1 ? 's' : ''}); the dream keeps its own models`);
+    return companionDreamModels(config, dreamLadder, REASONING_LEVELS);
+  } catch (error) {
+    onError(error);
+    return DREAM_MODELS;
+  }
+}
+
+/** One night: the memory dream, then document upkeep when it is due. The record is the memory dream's, with `docs` beside it. */
+export async function dreamNight({ env, runMemory, runDocs }) {
+  const record = await runMemory();
+  let docs;
+  try { docs = await runDocs(readSettings(env)); } catch (error) { docs = { status: 'failed', reason: String(error?.message ?? error) }; }
+  return docs?.status === 'not-due' ? record : { ...record, docs };
 }
 
 /**
@@ -90,8 +141,13 @@ export async function start(ctx) {
   // (the same rule as home.mjs segnoSearchEnv).
   const liveHome = path.join(userInfo().homedir, '.rubato', 'companion');
   const ownHome = path.resolve(env.RUBATO_COMPANION_HOME || path.join(env.HOME || userInfo().homedir, '.rubato', 'companion')) === liveHome;
-  const run = async () => runCompanionDream({ env, launch: await resolveLaunch(env), childEnv, launchModel: launchProductModel, spawnChild,
-    ...(ownHome ? { reindex: reindexSegnoMemory, search: searchSegnoJson } : {}) });
+  const run = async () => {
+    const [launch, models] = await Promise.all([resolveLaunch(env), resolveModels(env, ctx.onError)]);
+    const common = { env, launch, models, childEnv, launchModel: launchProductModel, spawnChild, ...(ownHome ? { reindex: reindexSegnoMemory } : {}) };
+    return dreamNight({ env,
+      runMemory: () => runCompanionDream({ ...common, ...(ownHome ? { search: searchSegnoJson } : {}) }),
+      runDocs: (settings) => runDocsDream({ ...common, settings }) });
+  };
   const loop = startDreamLoop({ env, isBusy, run, onError: ctx.onError, log: ctx.log });
   return { check: () => loop.check(), close: () => loop.close() };
 }

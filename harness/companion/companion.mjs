@@ -84,6 +84,43 @@ export const REFLECT_NOTE_LIMIT = 2000;
  * Medium by default: a call waits on each turn, and high made thinking turns 1.5–2 s slower (user 2026-11-14).
  */
 export const CALL_EFFORTS = Object.freeze(['conversation', 'low', 'medium', 'high']);
+/**
+ * `dream.docs` is the dream's second job, document upkeep (dream/docs.mjs, dream/docs.md): how often
+ * it comes (`cadence`) and the folders or files it tends (`roots`). Each root is `{ path, mode }`:
+ * `edit` changes it in place and is only for a place inside the companion's home; `branch` works in
+ * a git worktree of the root's repository and leaves its commits on a `dream/docs-YYYYMMDD` branch for
+ * review; `report` only reads. No roots (the default) means the job never runs.
+ */
+export const DOCS_CADENCES = Object.freeze(['off', 'daily', 'weekly', 'monthly']);
+export const DOCS_ROOT_MODES = Object.freeze(['edit', 'branch', 'report']);
+export const DOCS_ROOT_LIMIT = 20;
+/**
+ * `dream.models` is this companion's own dream ladder: the models its memory dream and its docs job
+ * run on, in fallback order, each `{ model: "<provider>/<id>", reasoning? }` as in the global
+ * `memory.dream.models`. Empty (the default) means the global ladder, then dream.mjs DREAM_MODELS
+ * (dream/service.mjs resolveModels).
+ */
+export const DREAM_MODEL_LIMIT = 8;
+/** The reasoning levels a rung may name: config-core REASONING_LEVELS (a test keeps the two the same). */
+export const DREAM_REASONING_LEVELS = Object.freeze(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+const DREAM_MODEL_ID = /^[A-Za-z0-9][\w.-]*\/[^\s]{1,200}$/;
+
+/** One rung as stored, `{ model, reasoning? }`, from a string or an object; undefined when it is not one. */
+function dreamRung(entry) {
+  const value = typeof entry === 'string' ? { model: entry } : entry;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  if (Object.keys(value).some((key) => key !== 'model' && key !== 'reasoning')) return undefined;
+  const model = typeof value.model === 'string' ? value.model.trim() : '';
+  if (!DREAM_MODEL_ID.test(model)) return undefined;
+  if (value.reasoning !== undefined && !DREAM_REASONING_LEVELS.includes(value.reasoning)) return undefined;
+  return value.reasoning === undefined ? { model } : { model, reasoning: value.reasoning };
+}
+
+function normalizeDreamModels(value) {
+  const seen = new Set();
+  return (Array.isArray(value) ? value : []).map(dreamRung)
+    .filter((rung) => rung && !seen.has(rung.model) && seen.add(rung.model)).slice(0, DREAM_MODEL_LIMIT);
+}
 export const DEFAULT_SETTINGS = Object.freeze({
   enabled: false,
   heartbeat: Object.freeze({ enabled: true, everyMinutes: 30, quietDuringWish: true, reflectNote: '' }),
@@ -91,9 +128,48 @@ export const DEFAULT_SETTINGS = Object.freeze({
   schedule: Object.freeze({ sources: Object.freeze([]) }),
   location: Object.freeze({ source: '' }),
   call: Object.freeze({ effort: 'medium' }),
+  dream: Object.freeze({ models: Object.freeze([]), docs: Object.freeze({ cadence: 'weekly', roots: Object.freeze([]) }) }),
 });
 /** A location source longer than this is not a path. */
 const LOCATION_SOURCE_LIMIT = 2048;
+
+/** A docs root's path with `~/` read against HOME, resolved; undefined when it is not a usable path. */
+export function docsRootPath(value, env = process.env) {
+  if (typeof value !== 'string') return undefined;
+  const text = value.trim();
+  if (!text || text.length > LOCATION_SOURCE_LIMIT || /[\u0000-\u001f]/.test(text)) return undefined;
+  if (text === '~' || text.startsWith('~/')) return path.join(env.HOME || homedir(), text.slice(1));
+  return path.isAbsolute(text) ? path.resolve(text) : undefined;
+}
+
+const insideOf = (root, target) => { const rel = path.relative(root, target); return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)); };
+
+/**
+ * Why a docs root cannot be kept, or undefined when it can: the path must be absolute (or `~/…`),
+ * `edit` only inside the companion's home (anywhere else a change would have no review), and a
+ * place inside the home is never a `branch` (the home keeps its own history).
+ */
+export function docsRootProblem(root, env = process.env) {
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return 'each docs root is { path, mode }';
+  const full = docsRootPath(root.path, env);
+  if (!full) return 'a docs root path is absolute or starts with ~/';
+  if (!DOCS_ROOT_MODES.includes(root.mode)) return `a docs root's mode is one of ${DOCS_ROOT_MODES.join(', ')}`;
+  const inHome = insideOf(companionHome(env), full);
+  if (root.mode === 'edit' && !inHome) return "edit is only for a place inside the companion's home; a repository is a branch root, anything else a report root";
+  if (root.mode === 'branch' && inHome) return "the companion's home is an edit or report root, never a branch";
+  return undefined;
+}
+
+function normalizeDocs(value, env) {
+  const input = value && typeof value === 'object' ? value : {};
+  const seen = new Set();
+  const roots = (Array.isArray(input.roots) ? input.roots : [])
+    .filter((root) => !docsRootProblem(root, env))
+    .map((root) => ({ path: root.path.trim(), mode: root.mode }))
+    .filter((root) => !seen.has(root.path) && seen.add(root.path))
+    .slice(0, DOCS_ROOT_LIMIT);
+  return { cadence: DOCS_CADENCES.includes(input.cadence) ? input.cadence : DEFAULT_SETTINGS.dream.docs.cadence, roots };
+}
 
 export function companionHome(env = process.env) {
   if (env.RUBATO_COMPANION_HOME) return path.resolve(env.RUBATO_COMPANION_HOME);
@@ -123,7 +199,7 @@ function writeJson(file, value) {
 }
 
 /** Settings as stored, with every missing or malformed field at its default. */
-export function normalizeSettings(value) {
+export function normalizeSettings(value, env = process.env) {
   const input = value && typeof value === 'object' ? value : {};
   const heartbeat = input.heartbeat && typeof input.heartbeat === 'object' ? input.heartbeat : {};
   // A home from before the greetings kept `dailyReport`; its switch is the greetings' switch now.
@@ -150,11 +226,12 @@ export function normalizeSettings(value) {
     location: { source: typeof location.source === 'string' && location.source.trim().length <= LOCATION_SOURCE_LIMIT
       ? location.source.trim() : DEFAULT_SETTINGS.location.source },
     call: { effort: CALL_EFFORTS.includes(call.effort) ? call.effort : DEFAULT_SETTINGS.call.effort },
+    dream: { models: normalizeDreamModels(input.dream?.models), docs: normalizeDocs(input.dream?.docs, env) },
   };
 }
 
 export function readSettings(env = process.env) {
-  return normalizeSettings(readJson(companionPaths(env).settings));
+  return normalizeSettings(readJson(companionPaths(env).settings), env);
 }
 
 /** Applies `patch` over the stored settings; a field outside the schema is refused. */
@@ -202,10 +279,45 @@ export function writeSettings(patch, env = process.env) {
       }
     }
   }
+  const dream = patch.dream;
+  if (dream !== undefined) {
+    if (!dream || typeof dream !== 'object' || Array.isArray(dream)) throw new TypeError('dream must be an object');
+    if (dream.models !== undefined) {
+      if (!Array.isArray(dream.models)) throw new TypeError('dream.models must be a list');
+      if (dream.models.length > DREAM_MODEL_LIMIT) throw new TypeError(`dream.models holds at most ${DREAM_MODEL_LIMIT} models`);
+      const seen = new Set();
+      for (const entry of dream.models) {
+        const rung = dreamRung(entry);
+        if (!rung) throw new TypeError(`each dream model is "<provider>/<id>" or { model, reasoning } with reasoning one of ${DREAM_REASONING_LEVELS.join(', ')}`);
+        if (seen.has(rung.model)) throw new TypeError(`dream.models names ${rung.model} twice`);
+        seen.add(rung.model);
+      }
+    }
+    const docs = dream.docs;
+    if (docs !== undefined) {
+      if (!docs || typeof docs !== 'object' || Array.isArray(docs)) throw new TypeError('dream.docs must be an object');
+      if (docs.cadence !== undefined && !DOCS_CADENCES.includes(docs.cadence))
+        throw new TypeError(`dream.docs.cadence must be one of ${DOCS_CADENCES.join(', ')}`);
+      if (docs.roots !== undefined) {
+        if (!Array.isArray(docs.roots)) throw new TypeError('dream.docs.roots must be a list');
+        if (docs.roots.length > DOCS_ROOT_LIMIT) throw new TypeError(`dream.docs.roots holds at most ${DOCS_ROOT_LIMIT} roots`);
+        const seen = new Set();
+        for (const root of docs.roots) {
+          const problem = docsRootProblem(root, env);
+          if (problem) throw new TypeError(problem);
+          // One place, one mode: a second entry for the same place would be dropped on reading.
+          const full = docsRootPath(root.path, env);
+          if (seen.has(full)) throw new TypeError(`dream.docs.roots names ${root.path.trim()} twice; keep one entry with one mode`);
+          seen.add(full);
+        }
+      }
+    }
+  }
   const { dailyReport: _old, career: _career, ...rest } = patch;
   const next = normalizeSettings({ ...current, ...rest, heartbeat: { ...current.heartbeat, ...heartbeat },
     greetings: { ...current.greetings, ...greetings }, schedule: { ...current.schedule, ...schedule },
-    location: { ...current.location, ...location }, call: { ...current.call, ...call } });
+    location: { ...current.location, ...location }, call: { ...current.call, ...call },
+    dream: { ...current.dream, ...dream, docs: { ...current.dream.docs, ...dream?.docs } } }, env);
   writeJson(companionPaths(env).settings, next);
   return next;
 }
@@ -236,6 +348,8 @@ export function readState(env = process.env) {
     ...(typeof state?.runtimeId === 'string' && state.runtimeId ? { runtimeId: state.runtimeId } : {}),
     // How far the control tower has read the listener's wake lines (inbox.mjs inboxWakePath), in bytes.
     ...(Number.isInteger(state?.inboxWake?.offset) && state.inboxWake.offset >= 0 ? { inboxWake: { offset: state.inboxWake.offset } } : {}),
+    // The last docs report the control tower put under a tick (dream/docs.mjs docsReportLine), by run id.
+    ...(typeof state?.docsReportSeen === 'string' && state.docsReportSeen ? { docsReportSeen: state.docsReportSeen } : {}),
   };
 }
 

@@ -1,6 +1,6 @@
 ---
 name: companion-settings
-description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture, sidebar icon or profile cards."
+description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture, sidebar icon, profile cards, which documents my dream tends and how often, or which models my dream runs on."
 ---
 
 # Companion settings
@@ -29,6 +29,21 @@ Only the user can change a setting. The change must come from a turn they opened
 - `greetings.enabled`: the night greeting (with my diary) and the morning greeting (with the day's report).
 - `schedule.sources`: where I read the user's schedule from, for deadline nudges and the morning greeting. The kinds and the file format are documented once, in the header of `harness/companion/schedule.mjs`. When the user names a calendar address or a schedule file, I add it to the list. If I'm not sure what they mean, I ask.
 - `location.source`: the path of a JSON file with the user's last known place (`current` and `updatedAt`, at the top or under `location`). Each tick then carries a `LOCATION` line. Empty (the default) means no line.
+
+**My dream's document upkeep** (`change.companion.dream.docs`)
+- Besides my memory, my dream can tend documents the user names: one canonical place per topic, repeated rules collapsed into it with one-line links elsewhere, documents that disagree with the code reported, text rewritten to the prompting-lab standard. It runs after my memory dream; each run leaves a report, and a `DOCS_REPORT` line under my next tick points to it.
+- `cadence`: `off`, `daily`, `weekly` (the default) or `monthly`.
+- `roots`: the places to tend, each `{ path, mode }`, at most 20. `path` is absolute or starts with `~/`. With no roots (the default) the upkeep never runs.
+  - `edit`: changed in place. Only for a place inside my home; only its `memory/` and `notes/` files come back, and never my resident memory.
+  - `branch`: a folder or file in a git repository. The dream works in a separate worktree, and its changes wait on a `dream/docs-YYYYMMDD` branch for the user's review. The branch the user works on is never written and nothing is pushed.
+  - `report`: read only; what it finds goes in the report.
+- Files locked with the immutable flag (`chflags uchg`) are never changed in any mode, only reported.
+- When and what to tend is the user's choice, so I settle it with them in conversation: which folders, which mode for each, how often. If they name a repository, it is a `branch` root unless they say to only look. A list is replaced as a whole.
+
+**My dream's models** (`change.companion.dream.models`)
+- The models my dream runs on, both its memory work and its document upkeep, tried in order until one finishes: each `{ model: "<provider>/<id>", reasoning }`, at most 8. `reasoning` is one of `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, or left out for the model's own level.
+- Empty (the default) means the user's dream models for all of Rubato (`memory.dream.models` in Settings › Memory), and without those Rubato's own (Opus, then Sonnet). Setting mine changes only my dream; the other dreams keep theirs.
+- Two models from different providers keep one provider's limit from stopping the whole night. The list is replaced as a whole, so I read it, then write it back in the order the user wants.
 
 **Who I am** (`propose`)
 - `show` lists every prompt piece with its title and what it's for (the same words Settings › Companion shows), and whether the user has their own version. `show` with `piece: "<id>"` gives one piece's text.
