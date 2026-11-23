@@ -1145,10 +1145,13 @@ function untransform(text, changes) {
     text = mode === 'replace' ? text.replace(addition, anchor) : text.replace(addition + anchor, anchor);
   return text;
 }
+const fileEncoding = (file) => file.endsWith('.png') ? null : 'utf8';
+const equalContent = (left, right) => left === right ||
+  (Buffer.isBuffer(left) && Buffer.isBuffer(right) && left.equals(right));
 async function existing(file) {
   try {
     if ((await lstat(file)).isSymbolicLink()) throw new Error(`Refusing symlink target: ${file}`);
-    return await readFile(file,'utf8');
+    return await readFile(file,fileEncoding(file));
   } catch (error) { if (error.code === 'ENOENT') return null; throw error; }
 }
 async function atomic(file, content) {
@@ -1223,8 +1226,8 @@ export async function applyIntegration({t3,check=false,remove=false}) {
       if (!recorded && current!==original && current!==next) throw new Error(`Partial external edit in T3 target: ${relative}`);
     } else {
       original = priorOf(relative)?.original ?? null;
-      next = await readFile(path.join(root,'overlay',relative),'utf8');
-      if (current!==null && current!==next && hash(current)!==priorOf(relative)?.installedHash)
+      next = await readFile(path.join(root,'overlay',relative),fileEncoding(relative));
+      if (current!==null && !equalContent(current,next) && hash(current)!==priorOf(relative)?.installedHash)
         throw new Error(`Refusing to overwrite a different provider file: ${relative}`);
     }
     if (remove) {
@@ -1261,7 +1264,7 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     planned.push({relative,destination,current,next:record.original});
   }
   if (!check) {
-    for (const item of planned) if (item.current!==item.next) {
+    for (const item of planned) if (!equalContent(item.current,item.next)) {
       if (item.next===null) await unlink(item.destination);
       else {
         await mkdir(path.dirname(item.destination),{recursive:true});
@@ -1271,7 +1274,7 @@ export async function applyIntegration({t3,check=false,remove=false}) {
     if (remove) await unlink(manifestPath);
     else await atomic(manifestPath,JSON.stringify(manifest,null,2)+'\n');
   }
-  return {compatible:true,check,remove,changes:planned.filter((item)=>item.current!==item.next).map((item)=>item.relative),
+  return {compatible:true,check,remove,changes:planned.filter((item)=>!equalContent(item.current,item.next)).map((item)=>item.relative),
     upstreamCommit:upstream.upstreamCommit};
 }
 // t3-source 는 핀 + overlay 로 만들어지는 산출물이고, 원본은 이 레포에 있다. 그래도

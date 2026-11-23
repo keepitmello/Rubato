@@ -28,6 +28,12 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   await mkdir(path.join(root,'apps/desktop/src/updates'),{recursive:true});
   await mkdir(path.join(root,'apps/web/src/components/desktop'),{recursive:true});
   const first=await applyIntegration({t3:root});
+  const catalog = 'apps/mobile/targets/notification-service/Assets.xcassets';
+  for (const name of ['roo-notification', 'segno-notification']) {
+    const asset = `${catalog}/${name}.imageset/${name}.png`;
+    const original = await readFile(new URL(`../overlay/${asset}`, import.meta.url));
+    assert.deepEqual(await readFile(path.join(root, asset)), original);
+  }
   const desktopApp = await readFile(path.join(root, 'apps/desktop/src/app/DesktopApp.ts'), 'utf8');
   assert.doesNotMatch(desktopApp, /if \(settings\.wslOnly === true && settings\.wslBackendEnabled === true\)/);
   assert.ok(desktopApp.indexOf('yield* desktopWindow.showConnectingSplash;') < desktopApp.indexOf('yield* primaryBackend.start;'));
@@ -42,7 +48,12 @@ test('overlay is guarded, idempotent, reversible and rejects dirty upstream befo
   const mobileSettings = 'apps/mobile/src/features/settings';
   const detail = await readFile(path.join(root, mobileSettings, 'SettingsEnvironmentDetailRouteScreen.tsx'), 'utf8');
   assert.match(detail, /<MacRestartSection\s+environmentId=\{environmentId\}\s+label=\{environment\.environmentLabel\}/);
-  assert.doesNotMatch(await readFile(path.join(root, mobileSettings, 'SettingsAboutRouteScreen.tsx'), 'utf8'), /MacRestartSection/);
+  const about = path.join(mobileSettings, 'SettingsAboutRouteScreen.tsx');
+  const aboutText = await readFile(path.join(root, about), 'utf8').catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+    return execFileSync('git',['-C',source,'show',`${pin.upstreamCommit}:${about}`],{encoding:'utf8'});
+  });
+  assert.doesNotMatch(aboutText, /MacRestartSection/);
   const installed=JSON.parse(await readFile(path.join(root,'.rubato-pi-overlay.json'),'utf8'));
   assert.equal(first.changes.length,Object.keys(installed.files).length);
   // Account roles belong in settings, not in the conversation composer.
