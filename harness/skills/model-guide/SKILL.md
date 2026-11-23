@@ -44,6 +44,7 @@ when new experience changes it.
 - Verifier: **Astra**, then **Opus**, then any other capable model.
 - Astra runs at `xhigh` in every role (user, 2026-10-08).
 - Any approved model can own or verify.
+- **Gemini**: use **Gemini 4 Hydrogen** by default and **Gemini 4 Neon** for design work.
 - **Local `agy` (`agy/gemini-4-neon`, `agy/gemini-4-hydrogen`, `agy/gemini-4-argon`)**: occasional single `Agent` calls only (reviews, second opinions, bounded research). Never use in teams, parallel fan-outs, or automated loops — at most one `agy` agent runs at a time, and team members are rejected. For high-volume or team Gemini workers, use Vertex AI (`google-vertex/*`) or Gemini API (`google/*`).
 
 The `Agent` catalog lists only models from providers this user has signed in to,
