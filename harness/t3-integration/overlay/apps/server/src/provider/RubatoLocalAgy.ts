@@ -1,3 +1,4 @@
+// @effect-diagnostics nodeBuiltinImport:off -- the agy home is prepared with plain file calls before the CLI starts.
 import { access, copyFile, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises";
 import path from "node:path";
 
@@ -5,27 +6,32 @@ export const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 export const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
 export const LOCAL_AGY_APPROVAL_BRIDGE = "RUBATO_LOCAL_AGY_APPROVAL_BRIDGE";
 
+/** A provider instance's environment: a value is a string or a reference to a stored secret. */
+type InstanceEnvironment = ReadonlyArray<{ readonly name: string; readonly value: unknown }> | undefined;
+
+/** The named plain value, trimmed; a secret reference or a missing entry is none. */
+function plainValue(environment: InstanceEnvironment, name: string): string | undefined {
+  const value = environment?.find((entry) => entry.name === name)?.value;
+  return typeof value === "string" ? value.trim() || undefined : undefined;
+}
+
 export function localAgyApprovalSpawn<T extends {
   readonly command: string;
   readonly args: ReadonlyArray<string>;
   readonly env?: NodeJS.ProcessEnv;
-}>(spawn: T, environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined): T {
-  const bridge = environment?.find(entry => entry.name === LOCAL_AGY_APPROVAL_BRIDGE)?.value;
+}>(spawn: T, environment: InstanceEnvironment): T {
+  const bridge = plainValue(environment, LOCAL_AGY_APPROVAL_BRIDGE);
   if (!bridge || !path.isAbsolute(bridge)) return spawn;
   return { ...spawn, command: process.execPath, args: [bridge, spawn.command, ...spawn.args],
     env: { ...spawn.env, ELECTRON_RUN_AS_NODE: "1" } };
 }
 
-export function localAgyAgent(
-  environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined,
-) {
-  return environment?.find((entry) => entry.name === LOCAL_AGY_AGENT)?.value.trim() || undefined;
+export function localAgyAgent(environment: InstanceEnvironment) {
+  return plainValue(environment, LOCAL_AGY_AGENT);
 }
 
-export function localAgyIsolated(
-  environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined,
-) {
-  const raw = environment?.find((entry) => entry.name === LOCAL_AGY_ISOLATED)?.value.trim().toLowerCase();
+export function localAgyIsolated(environment: InstanceEnvironment) {
+  const raw = plainValue(environment, LOCAL_AGY_ISOLATED)?.toLowerCase();
   return raw === "1" || raw === "true";
 }
 

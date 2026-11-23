@@ -23,7 +23,7 @@ export const localAgyEdits = {
   'apps/server/src/provider/antigravityUsageLimits.ts': [
     [
       'import * as NodeModule from "node:module";',
-      'import { execFile } from "node:child_process";\nimport * as NodeModule from "node:module";',
+      '// @effect-diagnostics-next-line nodeBuiltinImport:off -- the keyring read runs Apple\'s security tool with a timeout.\nimport { execFile } from "node:child_process";\nimport * as NodeModule from "node:module";',
       'replace',
     ],
     [
@@ -85,7 +85,7 @@ export const localAgyEdits = {
     ],
     [
       '    authMethod: options.authMethod ?? "oauth-personal",',
-      '    authMethod: options.authMethod ?? "oauth-personal",\n    useLocalAgyLogin: options.useLocalAgyLogin,',
+      '    authMethod: options.authMethod ?? "oauth-personal",\n    ...(options.useLocalAgyLogin === undefined ? {} : { useLocalAgyLogin: options.useLocalAgyLogin }),',
       'replace',
     ],
   ],
