@@ -9,7 +9,7 @@ import { onLiveActivitySyncRequest, syncLiveActivities } from "./liveActivity";
 import { librarySounds } from "./soundFolder";
 import { syncNotificationSounds } from "./sounds";
 import { syncRubatoPush, type MacConnection } from "./sync";
-import { createPushSyncQueue } from "./syncQueue";
+import { createPushSyncQueue, foregroundPushRefresh } from "./syncQueue";
 
 // Mounted once in App.tsx. Keeps the relay and every paired Mac in line with this phone's push
 // tokens (sync.ts): at start, when a Mac is paired or removed, when iOS hands out a new token,
@@ -39,6 +39,7 @@ export function RubatoPushHost(): null {
   const { savedConnectionsById } = useSavedRemoteConnections();
   const connections = useRef<ReadonlyArray<MacConnection>>([]);
   const tokens = useRef<{ apns: string | null; voip: string | null }>({ apns: null, voip: null });
+  const resume = useMemo(() => foregroundPushRefresh(AppState.currentState ?? null), []);
   const sync = useMemo(() => createPushSyncQueue(async () => {
     try {
       await syncRubatoPush(rubatoPushDeps(), {
@@ -51,12 +52,13 @@ export function RubatoPushHost(): null {
     }
     await syncNotificationSounds({ folder: librarySounds(), fetch: globalThis.fetch }, connections.current).catch(() => {});
   }, async () => {
-    if (AppState.currentState === "active" && liveActivitySupported()) {
+    if (AppState.currentState !== "active") resume.missedCard();
+    else if (liveActivitySupported()) {
       await syncLiveActivities(liveActivityDeps(), connections.current).catch((error: unknown) =>
         console.warn("rubato push: live activity sync failed", error),
       );
     }
-  }), []);
+  }), [resume]);
 
   useEffect(() => {
     connections.current = macConnections(Object.values(savedConnectionsById));
@@ -80,7 +82,8 @@ export function RubatoPushHost(): null {
       void sync("full");
     });
     const foreground = AppState.addEventListener("change", (next) => {
-      if (next === "active") void sync("full");
+      const scope = resume.change(next);
+      if (scope) void sync(scope);
     });
     const workStarted = onLiveActivitySyncRequest(() => { void sync("card"); });
     return () => {
@@ -90,7 +93,7 @@ export function RubatoPushHost(): null {
       voipChanged?.remove();
       foreground.remove();
     };
-  }, [sync]);
+  }, [sync, resume]);
 
   return null;
 }

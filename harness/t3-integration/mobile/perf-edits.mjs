@@ -5,6 +5,25 @@
 export const mobilePerfOverlays = ['apps/mobile/src/lib/rubatoThreadFeedReuse.test.ts'];
 
 export const mobilePerfEdits = {
+  'apps/mobile/src/Stack.tsx': [
+    [
+      '  const path = getPathFromState(effectiveState, navigationPathConfig);',
+      '  const path = rootPathnameFromState(effectiveState);', 'replace',
+    ],
+    [
+      'export function rootPathnameFromState(state: NavigationState): string {\n  const path = getPathFromState(state, navigationPathConfig);\n  return path.startsWith("/") ? path : `/${path}`;\n}',
+      `// Root layout, workspace chrome and notification routing read the same immutable state.
+const pathByNavigationState = new WeakMap<NavigationState, string>();
+export function rootPathnameFromState(state: NavigationState): string {
+  const known = pathByNavigationState.get(state);
+  if (known !== undefined) return known;
+  const path = getPathFromState(state, navigationPathConfig);
+  const absolute = path.startsWith("/") ? path : \`/\${path}\`;
+  pathByNavigationState.set(state, absolute);
+  return absolute;
+}`, 'replace',
+    ],
+  ],
   'apps/mobile/src/lib/threadActivity.ts': [
     [
       '  const foldedAnswerRunIdByMessageId = new Map<string, RunId | null>();',

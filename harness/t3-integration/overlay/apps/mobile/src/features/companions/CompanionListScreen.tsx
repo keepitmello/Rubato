@@ -60,7 +60,7 @@ export function CompanionListScreen() {
   const foreground = useAppForeground();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
-  const { companions, loaded, error, paired, refresh } = useCompanions();
+  const { companions, loaded, error, paired, refresh } = useCompanions(visible);
   const open = (companion: CompanionEntry) =>
     navigation.dispatch(
       CommonActions.navigate("CompanionRoom", {

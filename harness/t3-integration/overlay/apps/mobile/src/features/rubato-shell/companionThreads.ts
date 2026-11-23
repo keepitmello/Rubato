@@ -4,11 +4,12 @@
 import { useMemo } from "react";
 
 import { useCompanions } from "../companions/companionsStore";
+import { useHomeRouteVisible } from "../home/home-route-visibility";
 import { withoutThreads, type ThreadRef } from "./companionThreadFilter";
 
 export function useWithoutCompanionThreads<T extends ThreadRef>(
   threads: ReadonlyArray<T>,
 ): ReadonlyArray<T> {
-  const { companions } = useCompanions();
+  const { companions } = useCompanions(useHomeRouteVisible());
   return useMemo(() => withoutThreads(threads, companions), [threads, companions]);
 }

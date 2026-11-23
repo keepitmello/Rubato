@@ -1,5 +1,22 @@
 import { expect, it, vi } from "vite-plus/test";
-import { createPushSyncQueue } from "./syncQueue";
+import { createPushSyncQueue, foregroundPushRefresh } from "./syncQueue";
+
+it("notification shade is silent; replays a missed card and does one full sync on a real return", () => {
+  const resume = foregroundPushRefresh("active");
+  for (let i = 0; i < 10; i++) {
+    expect(resume.change("inactive")).toBeNull();
+    expect(resume.change("active")).toBeNull();
+  }
+  resume.change("inactive");
+  resume.missedCard();
+  expect(resume.change("active")).toBe("card");
+  resume.change("background");
+  resume.missedCard();
+  resume.change("inactive");
+  expect(resume.change("active")).toBe("full");
+  expect(resume.change("active")).toBeNull();
+  expect(foregroundPushRefresh(null).change("active")).toBe("full");
+});
 
 it("a send updates only the card; a foreground refresh covers card requests during registration", async () => {
   const wait = Promise.withResolvers<void>();

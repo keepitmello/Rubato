@@ -24,3 +24,21 @@ export function createPushSyncQueue(register: () => Promise<void>, refreshCard: 
     }
   };
 }
+
+/** Notification Center and system prompts make iOS inactive, not backgrounded. Only replay
+ * a card that actually missed its foreground window; a real return also reconciles tokens. */
+export function foregroundPushRefresh(initial: string | null) {
+  let needsFull = initial !== "active";
+  let missed = false;
+  return {
+    missedCard() { missed = true; },
+    change(state: string): "full" | "card" | null {
+      if (state === "background") needsFull = true;
+      if (state !== "active") return null;
+      const scope = needsFull ? "full" : missed ? "card" : null;
+      needsFull = false;
+      missed = false;
+      return scope;
+    },
+  };
+}

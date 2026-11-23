@@ -5,6 +5,7 @@
 // `current` also takes it out of the archive on the Mac. A new companion is made here too (`create`),
 // and its picture set (`set-avatar`): the Mac keeps both for every device (intent companion-manage).
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useIsFocused } from "@react-navigation/native";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
 
@@ -333,7 +334,6 @@ function syncSharedPoller(triggerImmediate = false) {
   const { environmentIds, key, waiting } = desiredPollConfig();
   if (activeWatchers.size === 0 || environmentIds.length === 0) {
     stopSharedPoller();
-    pollKey = "";
     appStateSub?.remove();
     appStateSub = null;
     return;
@@ -351,7 +351,7 @@ function syncSharedPoller(triggerImmediate = false) {
   pollKey = key;
   if (
     keyChanged ||
-    (triggerImmediate && (waiting || !view.loaded || Date.now() - lastRefreshedAt >= MIN_RESUME_REFRESH_MS))
+    (triggerImmediate && Date.now() - lastRefreshedAt >= (waiting || !view.loaded ? QUICK_POLL_MS : MIN_RESUME_REFRESH_MS))
   ) {
     void refreshCompanions(environmentIds);
   }
@@ -368,10 +368,12 @@ function syncSharedPoller(triggerImmediate = false) {
 }
 
 /** The companions of every paired Mac, kept fresh while something shows them. */
-export function useCompanions() {
+const noWatch = () => () => {};
+
+export function useCompanions(visible = true) {
   const { environments } = useEnvironments();
   const environmentIds = useMemo(() => environments.map((item) => item.environmentId), [environments]);
-  const stored = useSyncExternalStore(subscribe, () => view);
+  const stored = useSyncExternalStore(visible ? subscribe : noWatch, () => view);
   const names = useCompanionNames();
   const current = useMemo(
     () => ({ ...stored, companions: stored.companions.map((item) => ({ ...item, title: entryTitle(item.id, item.macTitle) })) }),
@@ -385,7 +387,7 @@ export function useCompanions() {
   );
   const key = environmentIds.join(",");
   useEffect(() => {
-    if (environmentIds.length === 0) return;
+    if (!visible || environmentIds.length === 0) return;
     const token = Symbol("companions-watcher");
     activeWatchers.set(token, { environmentIds, key, waiting });
     syncSharedPoller(true);
@@ -394,13 +396,13 @@ export function useCompanions() {
       syncSharedPoller(false);
     };
     // oxlint-disable-next-line react/exhaustive-effect-dependencies -- `key` stands for the id list.
-  }, [key, waiting]);
+  }, [key, waiting, visible]);
   const refresh = () => refreshCompanions(environmentIds);
   return { ...current, paired: environmentIds.length > 0, refresh };
 }
 
 export function useCompanion(companionId: string, environmentId?: string | null) {
-  const all = useCompanions();
+  const all = useCompanions(useIsFocused());
   const companion =
     all.companions.find((item) => item.id === companionId && (!environmentId || item.environmentId === environmentId)) ?? null;
   return { ...all, companion };

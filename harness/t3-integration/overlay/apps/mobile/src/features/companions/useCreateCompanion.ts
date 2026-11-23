@@ -7,7 +7,7 @@ import { useRef, useState } from "react";
 import { ActionSheetIOS, Alert, Platform } from "react-native";
 
 import { useEnvironments } from "../../state/environments";
-import { createCompanion, useCompanions } from "./companionsStore";
+import { createCompanion } from "./companionsStore";
 import { copy } from "./copy";
 
 /** Which Mac a new companion lives on: the only one, or the one the person picks. */
@@ -31,7 +31,6 @@ function pickMac(macs: ReadonlyArray<{ readonly environmentId: EnvironmentId; re
 /** `available` while a Mac is paired; `create` ignores presses while one is being made. */
 export function useCreateCompanion(): { readonly available: boolean; readonly creating: boolean; readonly label: string; readonly create: () => void } {
   const navigation = useNavigation();
-  const { paired } = useCompanions();
   const { environments } = useEnvironments();
   const [creating, setCreating] = useState(false);
   const busy = useRef(false);
@@ -51,5 +50,5 @@ export function useCreateCompanion(): { readonly available: boolean; readonly cr
       setCreating(false);
     });
   };
-  return { available: paired, creating, label: creating ? copy.creating : copy.newCompanion, create };
+  return { available: environments.length > 0, creating, label: creating ? copy.creating : copy.newCompanion, create };
 }

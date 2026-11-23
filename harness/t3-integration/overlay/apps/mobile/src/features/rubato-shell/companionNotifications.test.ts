@@ -8,6 +8,8 @@ describe("companionNotificationOnScreen", () => {
   it("is quiet only in that companion's own room", () => {
     expect(companionNotificationOnScreen(message, "/companions/roo")).toBe(true);
     expect(companionNotificationOnScreen(message, "/companions/roo?environmentId=mac")).toBe(true);
+    expect(companionNotificationOnScreen(message, "/companions/roo?environmentId=other")).toBe(false);
+    expect(companionNotificationOnScreen(message, "/companions/roo?environmentId=mac&threadId=older")).toBe(false);
     expect(companionNotificationOnScreen(message, "/companions/segno")).toBe(false);
     expect(companionNotificationOnScreen(message, "/threads/mac/t1")).toBe(false);
     expect(companionNotificationOnScreen(message, null)).toBe(false);

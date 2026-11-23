@@ -12,12 +12,19 @@ export const COMPANION_ROOM_ON_SCREEN: NotificationBehavior = {
   shouldSetBadge: false,
 };
 
-const pathOnly = (path: string): string => path.split("?")[0]!.replace(/\/+$/, "");
-
 /** Whether this notification is a message from the companion whose room is on screen. */
 export function companionNotificationOnScreen(data: unknown, pathname: string | null): boolean {
+  if (!pathname?.startsWith("/companions/")) return false;
   const link = companionNotificationLink(data);
-  return link !== null && pathname !== null && pathOnly(link) === pathOnly(pathname);
+  if (!link) return false;
+  const [room, query] = pathname.split("?");
+  const [target, targetQuery] = link.split("?");
+  if (room!.replace(/\/+$/, "") !== target) return false;
+  const shown = new URLSearchParams(query);
+  const sent = new URLSearchParams(targetQuery);
+  // A bare room route hasn't resolved its Mac yet. Once known, don't silence another Mac's room.
+  return ["environmentId", "threadId"].every((key) =>
+    !shown.get(key) || !sent.get(key) || shown.get(key) === sent.get(key));
 }
 
 export { companionNotificationLink };

@@ -43,6 +43,7 @@ export const mobileCompanionOverlays = [
   `${companions}/RoomPicturesScreen.tsx`,
   `${companions}/AvatarCropScreen.tsx`,
   `${companions}/companionsStore.ts`,
+  `${companions}/companionsStore.visibility.test.ts`,
   `${companions}/callStore.ts`,
   `${companions}/callTypes.ts`,
   `${companions}/ringCheck.ts`,
