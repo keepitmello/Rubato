@@ -346,6 +346,8 @@ function sessionTools(getLink, { companion }) {
         required: ["text"],
         properties: {
           text: { type: "string", minLength: 1, description: "The first message for the new conversation, at most 8000 characters." },
+          ...(companion ? { goal: { type: "boolean", description: "Start the lead with a goal (default false): its first message is the objective, and Rubato keeps starting the lead's next turn whenever one ends, until the lead itself calls the goal complete or blocked. " +
+            "Use it for work that must run to the end by itself; leave it off for a short question or a read-only check, where the lead's one answer is the whole job. You are told when the goal completes, blocks, or the turn is stopped." } } : {}),
           ...(companion ? { role: { type: "string", pattern: "^[a-z][a-z0-9-]{0,47}$", description: "Name of a lead role in your home (prompt/lead-roles/<name>.md). Its instructions join the lead's system prompt for the life of this conversation; text is just the first task." } } : {}),
           cwd: { type: "string", minLength: 1, description: "Folder for the new conversation; defaults to this conversation's folder." },
           title: { type: "string", minLength: 1, description: "Optional title for the new conversation." },
@@ -367,6 +369,7 @@ function sessionTools(getLink, { companion }) {
           ...(params.title === undefined ? {} : { title: params.title }),
           text: params.text,
           ...(companion && params.role !== undefined ? { role: params.role } : {}),
+          ...(companion && params.goal !== undefined ? { goal: params.goal } : {}),
           ...(model === undefined ? {} : { model }),
           ...(params.effort === undefined ? {} : { thinking: params.effort }),
         }), signal);

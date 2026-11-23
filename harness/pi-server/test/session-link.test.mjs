@@ -998,6 +998,91 @@ test("two companions that each sent the other a message hear each answer once an
   assert.deepEqual((await notices(roo.id)).map((item) => item.data.text), ['Finished its turn.\n\nIts answer:\nreply: hello Segno']);
 });
 
+const goalCalls = (env, id) => env.host.getSessionWorker(id).request({ type: 'extension_request', name: 'fixture.goal.calls' });
+const writeGoal = async (env, id, goal) => {
+  const { file } = await new SessionFiles(env.sessionsDir).resolve(id);
+  const dir = path.join(path.dirname(file), 'extensions', 'goal');
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, `${encodeURIComponent(id)}.json`), JSON.stringify({ version: 1, goal }));
+};
+
+test('a lead the companion starts with goal true gets its goal set from the first message before that message starts a turn; only a companion can ask, and without it nothing changes', async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const lead = await env.make('Lead');
+  const brief = 'ship the importer end to end';
+  await assert.rejects(env.api.create({ from: lead.id, cwd: env.root, text: brief, goal: true }), { code: 'not_companion' });
+  await assert.rejects(env.api.create({ from: segno.id, cwd: env.root, text: brief, goal: 'yes' }), { code: 'invalid' });
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Importer', text: brief, goal: true });
+  const calls = await goalCalls(env, created.sessionId);
+  assert.deepEqual(calls, [{ name: 'start', data: { objective: brief }, deliveriesBefore: 0 }], 'the goal starts first, with the first message as its objective');
+  const [first] = await env.deliveries(created.sessionId);
+  assert.equal(first.data.goal, true, 'the lead is told its work is a goal');
+  const plain = await env.api.create({ from: segno.id, cwd: env.root, title: 'Check', text: 'read only check' });
+  assert.deepEqual(await goalCalls(env, plain.sessionId), [], 'no goal option: no goal');
+  assert.equal((await env.deliveries(plain.sessionId))[0].data.goal, undefined);
+});
+
+test("a companion's message to a lead asks its goal to resume; a lead's message to the companion or one companion's to another does not", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const roo = await env.make('Roo', { companion: true, companionId: 'roo' });
+  const lead = await env.make('Lead');
+  await env.api.send({ from: segno.id, to: lead.id, text: 'go on' });
+  assert.deepEqual(await goalCalls(env, lead.id), [{ name: 'resume' }]);
+  await env.api.send({ from: lead.id, to: segno.id, text: 'done' });
+  await env.api.send({ from: segno.id, to: roo.id, text: 'hi' });
+  assert.deepEqual(await goalCalls(env, segno.id), []);
+  assert.deepEqual(await goalCalls(env, roo.id), []);
+});
+
+test('a lead whose goal is active is not reported finished at each turn end; the companion hears once when the goal ends, with how it ended', async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const notices = async () => env.host.getSessionWorker(segno.id) ? (await env.deliveries(segno.id)).filter((item) => item.data.kind === 'notice') : [];
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Importer', text: 'ship it', goal: true });
+  await until(async () => env.row(created.sessionId)?.status === 'idle' && (await env.deliveries(created.sessionId)).length === 1);
+  await delay(600);
+  assert.deepEqual(await notices(), [], 'the goal is active: its next turn is coming, so this end is not the work\'s end');
+  await writeGoal(env, created.sessionId, { status: 'blocked', blockedReason: 'the registry is down' });
+  await env.host.getSessionWorker(created.sessionId).request({ type: 'extension_request', name: 'fixture.goal.pending', data: false });
+  for (let i = 0; i < 200 && (await notices()).length === 0; i++) await delay(50);
+  const [notice] = await notices();
+  assert.match(notice.data.text, /^Finished its turn\.\n\nIts answer:\nreply: ship it\n\nGoal blocked: the registry is down\.$/);
+  await delay(200);
+  assert.equal((await notices()).length, 1, 'told once');
+});
+
+test("a message is not sent when the lead's goal could not be resumed for it; a runtime without the goal extension just gets the message", async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const lead = await env.make('Lead');
+  await env.api.send({ from: segno.id, to: lead.id, text: 'first' });
+  const worker = env.host.getSessionWorker(lead.id);
+  await worker.request({ type: 'extension_request', name: 'fixture.goal.resume-error', data: 'disk full' });
+  await assert.rejects(env.api.send({ from: segno.id, to: lead.id, text: 'second' }), { code: 'delivery_failed', message: /Could not resume the goal/ });
+  assert.deepEqual((await env.deliveries(lead.id)).map((item) => item.data.text), ['first'], 'the refused message was not delivered');
+  await worker.request({ type: 'extension_request', name: 'fixture.goal.resume-error', data: 'Unknown extension RPC request' });
+  await env.api.send({ from: segno.id, to: lead.id, text: 'third' });
+  assert.deepEqual((await env.deliveries(lead.id)).map((item) => item.data.text), ['first', 'third']);
+});
+
+test('a runtime that does not answer whether its goal continues is not read as nothing coming: the stored active goal holds the notice', async (t) => {
+  const env = await setup(t);
+  const segno = await env.make('Segno', { companion: true });
+  const notices = async () => env.host.getSessionWorker(segno.id) ? (await env.deliveries(segno.id)).filter((item) => item.data.kind === 'notice') : [];
+  const created = await env.api.create({ from: segno.id, cwd: env.root, title: 'Importer', text: 'ship it', goal: true });
+  const worker = env.host.getSessionWorker(created.sessionId);
+  await worker.request({ type: 'extension_request', name: 'fixture.goal.pending', data: 'unavailable' });
+  await writeGoal(env, created.sessionId, { status: 'active' });
+  await until(async () => env.row(created.sessionId)?.status === 'idle' && (await env.deliveries(created.sessionId)).length === 1);
+  await delay(600);
+  assert.deepEqual(await notices(), []);
+  await writeGoal(env, created.sessionId, { status: 'complete' });
+  for (let i = 0; i < 200 && (await notices()).length === 0; i++) await delay(50);
+  assert.match((await notices())[0].data.text, /Goal complete/);
+});
+
 test("a lead that ends its turn with a subagent still running is told only once that work is done, with its newest answer", async (t) => {
   const env = await setup(t);
   const segno = await env.make('Segno', { companion: true });

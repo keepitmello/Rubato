@@ -134,6 +134,15 @@ export function installSessionLink(pi, { sessionLink, companion = false } = {}) 
     sendWhenIdle({ settled: true });
   });
 
+  // The goal extension asks before it starts a turn of its own: a message held here or handed to Pi and not yet run
+  // starts the next turn itself (user-commands-agent goal/extension.mjs).
+  pi.events?.on("rubato.session-link.query-held", (query) => {
+    if (query && typeof query === "object") {
+      const done = written();
+      query.count = (Number(query.count) || 0) + state.waiting.size + [...state.handed].filter((id) => !done.has(id)).length;
+    }
+  });
+
   pi.registerMessageRenderer(SESSION_MESSAGE_TYPE, renderSessionMessage);
 
   pi.on("context_with_system", (event, ctx) => {

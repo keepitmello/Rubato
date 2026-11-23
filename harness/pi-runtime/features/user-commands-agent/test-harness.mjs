@@ -12,6 +12,7 @@ export const runtime = resolvePiRuntime({ root: runtimeRoot });
 export const sdk = await import(pathToFileURL(runtime.sdkEntry));
 const { AssistantMessageEventStream } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/event-stream.js",
 )).href);
+export { AssistantMessageEventStream };
 // 0.86.0: provider stream 입력이 Context -> TranscriptContext 로 바뀌어
 // 시스템 프롬프트는 context.systemPrompt 가 아니라 messages 에서 읽는다.
 const { getCurrentSystemPrompt } = await import(pathToFileURL(join(runtime.packages["@earendil-works/pi-ai"].dir, "dist/utils/transcript.js",
@@ -126,6 +127,7 @@ export async function createCommandSession(options = {}) {
     timerPort: options.timerPort,
     now: options.now,
     fetch: options.fetch,
+    ...options.factoryOptions,
   };
   let factories = createUserCommandsAgentFactories(factoryOptions);
   if (options.only) factories = factories.filter((entry) => options.only.includes(entry.name));

@@ -10,6 +10,8 @@ import { loadPiFeatures } from "../../feature-catalog.mjs";
 import { resolvePiRuntime } from "../../resolve-runtime.mjs";
 import { stagePiRuntime } from "../../stage-runtime.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
+import { GOAL_PENDING_REQUEST, GOAL_RESUME_REQUEST, GOAL_START_REQUEST } from "../user-commands-agent/goal/extension.mjs";
+import { goalStoreRef, readGoal, updateGoal } from "../user-commands-agent/goal/store.mjs";
 
 // The staged candidate, assembled by bootstrap.mjs exactly as the engine assembles it, with a fake
 // sessionLink in place of the engine's. Everything lives in a temp directory with a temp HOME.
@@ -527,4 +529,69 @@ test("a steer refused for a kind that cannot steer or an unknown mode writes not
   } finally {
     await close(session);
   }
+});
+
+test("the engine's goal requests start a goal from a first message, resume a paused or blocked one, and say whether the goal will continue by itself", async () => {
+  const { session, api, errors, requests } = await openSession("goal-rpc", { async list() { return { sessions: [], truncated: false }; } });
+  try {
+    assert.deepEqual(errors, []);
+    const request = (name, data) => session.extensionRunner.requestRpc(name, data);
+    const ref = () => goalStoreRef(session.sessionManager, agentDir);
+    assert.deepEqual(await request(GOAL_PENDING_REQUEST), { pending: false }, "no goal: nothing is coming");
+    assert.ok(!session.getActiveToolNames().includes("update_goal"));
+    assert.equal((await request(GOAL_START_REQUEST, { objective: "ship the importer end to end" })).started, true);
+    const goal = await readGoal(ref());
+    assert.deepEqual([goal.objective, goal.status], ["ship the importer end to end", "active"]);
+    assert.ok(session.getActiveToolNames().includes("update_goal"), "a lead with a goal has the tool that ends it in its request");
+    assert.ok(api.getAllTools().some((tool) => tool.name === "update_goal"));
+    assert.equal(requests.length, 0, "starting the goal runs nothing: the first message does");
+    assert.deepEqual(await request(GOAL_PENDING_REQUEST), { pending: true });
+    await assert.rejects(request(GOAL_START_REQUEST, { objective: "another" }), /already has a goal/);
+
+    await updateGoal(ref(), { status: "blocked", reason: "registry down" }, "user");
+    assert.deepEqual(await request(GOAL_PENDING_REQUEST), { pending: false });
+    assert.deepEqual(await request(GOAL_RESUME_REQUEST), { resumed: true });
+    assert.equal((await readGoal(ref())).status, "active");
+    assert.deepEqual(await request(GOAL_RESUME_REQUEST), { resumed: false }, "an active goal is left as it is");
+    await updateGoal(ref(), { status: "complete" }, "user");
+    assert.deepEqual(await request(GOAL_RESUME_REQUEST), { resumed: false }, "a finished goal stays finished");
+    assert.deepEqual(await request(GOAL_PENDING_REQUEST), { pending: false });
+  } finally { await close(session); }
+});
+
+test("a lead started with a goal reads in its first message that the work is a goal; a plain lead's first message says nothing of one", async () => {
+  const { session, requests, errors } = await openSession("goal-first", { async list() { return { sessions: [], truncated: false }; } });
+  try {
+    assert.deepEqual(errors, []);
+    const from = { sessionId: "01segno", title: "Segno", cwd: "/w", companion: true };
+    const deliver = (data) => session.extensionRunner.requestRpc("rubato.session-link.deliver", data);
+    await deliver({ v: 1, messageId: "g-1", kind: "create", from, text: "Ship it.", goal: true });
+    await settle(session);
+    const seen = lastUserText(requests[0]);
+    assert.match(seen, /This work is a goal\./);
+    assert.match(seen, /update_goal/);
+    assert.equal(sessionMessages(session)[0].details.goal, true);
+    await deliver({ v: 1, messageId: "g-2", kind: "create", from: { ...from, companion: undefined }, text: "Ship it.", goal: true });
+    await settle(session);
+    assert.equal(sessionMessages(session)[1].details.goal, undefined, "only a companion's create carries a goal");
+  } finally { await close(session); }
+});
+
+test("session-link tells the goal how many messages it holds for the next turn, and not the ones whose turn already ran", async () => {
+  const { session, api, hold, errors } = await openSession("held-query", { async list() { return { sessions: [], truncated: false }; } });
+  try {
+    assert.deepEqual(errors, []);
+    const held = () => { const query = { count: 0 }; api.events.emit("rubato.session-link.query-held", query); return query.count; };
+    assert.equal(held(), 0);
+    const started = hold();
+    const run = session.prompt("Work");
+    const gate = await started;
+    await deliverTo(session)(delivery("held-1", "Also check signup."));
+    assert.equal(held(), 1, "a message held while a run goes on is counted");
+    gate.release();
+    await run;
+    await settle(session);
+    assert.equal(sessionMessages(session).length, 1);
+    assert.equal(held(), 0, "once its turn ran it is no longer held");
+  } finally { await close(session); }
 });

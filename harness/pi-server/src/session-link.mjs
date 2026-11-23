@@ -7,7 +7,7 @@ import { companionEnv } from '../../companion/registry.mjs';
 import { SessionClient } from './client.mjs';
 import { createFollower } from './companion-follow.mjs';
 import { readSessionMetadata } from './session-metadata.mjs';
-import { AWAITED_WAKES_REQUEST, PENDING_WORK_REQUEST, UI_METHODS } from './contracts.mjs';
+import { AWAITED_WAKES_REQUEST, GOAL_PENDING_REQUEST, GOAL_RESUME_REQUEST, GOAL_START_REQUEST, PENDING_WORK_REQUEST, UI_METHODS } from './contracts.mjs';
 import { sideChatEntries } from '../../pi-runtime/features/session-link/side-chat.mjs';
 import { LEAD_ACK, WAKES } from '../../pi-runtime/features/session-link/message.mjs';
 import { EFFORT_LEVELS } from '../../pi-runtime/features/session-link/tools.mjs';
@@ -597,7 +597,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
 
   /**
    * The waits a lead's last turn left that will wake it again: the terminal's awaited wakes (the
-   * ones the app keeps a turn open for) and subagents still running or owing their completion.
+   * ones the app keeps a turn open for), subagents still running or owing their completion, and an
+   * active goal that continues the lead by itself.
    * null when no runtime holds the conversation; a source that cannot answer holds nothing.
    */
   async function awaitedWork(id) {
@@ -608,9 +609,26 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       return Promise.race([worker.request({ type: 'extension_request', name }).catch(() => undefined),
         new Promise((done) => { timer = setTimeout(done, WARMING_ASK_MS); })]).finally(() => clearTimeout(timer));
     };
-    const [wakes, tasks] = await Promise.all([ask(AWAITED_WAKES_REQUEST), ask(PENDING_WORK_REQUEST)]);
+    const [wakes, tasks, goal] = await Promise.all([ask(AWAITED_WAKES_REQUEST), ask(PENDING_WORK_REQUEST), ask(GOAL_PENDING_REQUEST)]);
     const count = (value) => { const number = Number(value); return Number.isFinite(number) && number > 0 ? number : 0; };
-    return (Array.isArray(wakes?.items) ? wakes.items.length : 0) + count(tasks?.active) + count(tasks?.undelivered);
+    // An active goal starts the lead's next turn itself, so the end of this one is not the end of the work.
+    // A runtime that did not answer (slow, or without the goal extension) is no "nothing is coming": the stored goal decides.
+    const goalComing = goal === undefined ? (await goalOf(id))?.status === 'active' : goal.pending === true;
+    return (Array.isArray(wakes?.items) ? wakes.items.length : 0) + count(tasks?.active) + count(tasks?.undelivered) + (goalComing ? 1 : 0);
+  }
+  /**
+   * The lead's goal as its goal extension stores it beside the transcript (pi-runtime
+   * user-commands-agent goal/store.mjs goalStoreRef): status and, when blocked, why. Read from the
+   * file so a lead whose runtime unloaded still tells how its goal ended.
+   */
+  async function goalOf(id) {
+    try {
+      const file = await locate(id);
+      const stored = JSON.parse(await readFile(path.join(path.dirname(file), 'extensions', 'goal', `${encodeURIComponent(id)}.json`), 'utf8'));
+      const goal = stored?.goal;
+      if (!goal || typeof goal.status !== 'string') return undefined;
+      return { status: goal.status, ...(typeof goal.blockedReason === 'string' && goal.blockedReason ? { reason: goal.blockedReason } : {}) };
+    } catch { return undefined; }
   }
   /** The companion's handoffs are followed while they can still go on (companion-follow.mjs). */
   const fromCompanion = (id) => row(id)?.companion === true;
@@ -626,7 +644,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
         const described = await describe(id);
         const current = await snapshot(id, seen, listeners, asked, true);
         const handoff = record?.messageId && current.final ? await handoffOrder(id, record.messageId, current.final.entryId, orders) : undefined;
-        return { ...current, title: described.title, cwd: described.cwd, ...(handoff ? { handoff } : {}) };
+        const goal = await goalOf(id);
+        return { ...current, title: described.title, cwd: described.cwd, ...(handoff ? { handoff } : {}), ...(goal ? { goal } : {}) };
       },
       notify: async (companionId, targetId, text, completed) => {
         const lead = completed && !fromCompanion(targetId);
@@ -839,7 +858,14 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
       let answer;
       const data = envelope({ messageId: id, kind: 'message', from: origin, text });
       if (fromCompanion(to) && typeof sourceEntryId === 'string') data.sourceEntryId = sourceEntryId;
-      try { answer = await deliver(to, mode === 'steer' ? { ...data, mode } : data); }
+      // A companion's word to a lead whose goal is paused or blocked restarts the goal (the goal extension decides whether it was).
+      const resumeGoal = fromCompanion(from) && !fromCompanion(to)
+        ? async (worker) => {
+          try { await worker.request({ type: 'extension_request', name: GOAL_RESUME_REQUEST }); }
+          // A runtime without the goal extension has no goal to resume; any other failure leaves the goal as it was, so the message is not sent.
+          catch (error) { if (!/Unknown extension RPC request/.test(error?.message)) throw fail('delivery_failed', `Could not resume the goal of ${to}: ${error?.message ?? error}`); }
+        } : undefined;
+      try { answer = await deliver(to, mode === 'steer' ? { ...data, mode } : data, resumeGoal); }
       catch (error) { release(); throw error; }
       if (fromCompanion(from)) need().followerFor(from).follow(to, from, { final: before.final?.entryId ?? null, busy, messageId: id });
       const target = await describe(to);
@@ -855,14 +881,16 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
      * runtime before its first message, so the first turn already runs on them. The model clamps
      * an unsupported level to its nearest one; the answer reports what took effect.
      */
-    async create({ from, cwd, title, text, model, thinking, role } = {}) {
+    async create({ from, cwd, title, text, model, thinking, role, goal } = {}) {
       requireId(from, 'from'); requireText(text);
       if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw fail('invalid', 'cwd must be an absolute path');
       if (title !== undefined && (typeof title !== 'string' || !title.trim() || title.length > 512)) throw fail('invalid', 'title must be a non-empty string of at most 512 characters');
       if (model !== undefined && (typeof model !== 'string' || !/^[^/\s]+\/\S+$/.test(model))) throw fail('invalid', 'model must be "provider/model-id"');
       if (thinking !== undefined && !EFFORT_LEVELS.includes(thinking)) throw fail('invalid', `thinking must be one of ${EFFORT_LEVELS.join(', ')}`);
+      if (goal !== undefined && typeof goal !== 'boolean') throw fail('invalid', 'goal must be a boolean');
       const origin = await sender(from);
       if (role !== undefined && !origin.companion) throw fail('not_companion', 'Only a companion conversation can select a lead role');
+      if (goal === true && !origin.companion) throw fail('not_companion', 'Only a companion conversation can start a lead with a goal');
       // A repeated create is a second conversation, so it counts as a duplicate per folder.
       const release = admit(from, `create:${cwd}`, text, { inbound: false });
       let created;
@@ -889,7 +917,15 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
           throw fail('invalid', `could not select ${[model, thinking && `effort ${thinking}`].filter(Boolean).join(' at ')}: ${error?.message ?? error}`);
         }
       };
-      try { await deliver(created.sessionId, envelope({ messageId: randomUUID(), kind: 'create', from: origin, text }), select); }
+      // The goal is set before the first message starts the first turn, so no turn runs without it.
+      const start = goal !== true ? select : async (worker) => {
+        await select?.(worker);
+        try { await worker.request({ type: 'extension_request', name: GOAL_START_REQUEST, data: { objective: text } }); }
+        catch (error) { throw fail('invalid', `could not start the goal: ${error?.message ?? error}`); }
+      };
+      const first = envelope({ messageId: randomUUID(), kind: 'create', from: origin, text });
+      if (goal === true) first.goal = true;
+      try { await deliver(created.sessionId, first, start); }
       catch (error) { throw fail(error.code ?? 'delivery_failed', `Created conversation ${created.sessionId}, but its first message was not delivered: ${error.message}`); }
       if (fromCompanion(from)) need().followerFor(from).follow(created.sessionId, from);
       const described = await describe(created.sessionId);

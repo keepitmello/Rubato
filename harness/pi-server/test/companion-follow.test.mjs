@@ -401,3 +401,12 @@ test('while the companion is turned off a lead ending does not wake it: the noti
   await f.poll();
   assert.deepEqual(w.notices.map((notice) => notice.text), ['Finished its turn.\n\nIts answer:\ndone']);
 });
+
+test('the notice says how a lead\'s goal ended: done, blocked with its reason, or paused by a stop; an active goal adds nothing', () => {
+  const final = { text: 'all green' };
+  assert.equal(noticeText('completed', { final, goal: { status: 'complete' } }), 'Finished its turn.\n\nIts answer:\nall green\n\nGoal complete: the lead called it achieved.');
+  assert.equal(noticeText('completed', { final, goal: { status: 'blocked', reason: 'registry down' } }), 'Finished its turn.\n\nIts answer:\nall green\n\nGoal blocked: registry down.');
+  assert.match(noticeText('stopped', { final, goal: { status: 'paused' } }), /\n\nGoal paused: its turn was stopped, so it does not continue by itself until you send it a message\.$/);
+  assert.equal(noticeText('completed', { final, goal: { status: 'active' } }), 'Finished its turn.\n\nIts answer:\nall green');
+  assert.equal(noticeText('completed', { final }), 'Finished its turn.\n\nIts answer:\nall green');
+});

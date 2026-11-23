@@ -12,8 +12,8 @@ import { USER_COMMAND_FACTORY_NAMES, createUserCommandsAgentFactories } from "./
 import { applyFeatureToggles, readDisabledFeatures } from "../rubato-components/feature-toggles.mjs";
 import { CANDIDATE_FEATURE_NAMES } from "../rubato-components/candidate-main.mjs";
 import { PI_FEATURE_NAMES } from "../../feature-catalog.mjs";
-import { WAKE_SOURCE_STATE_EVENT } from "./goal/extension.mjs";
-import { goalStoreRef } from "./goal/store.mjs";
+import { SESSION_HELD_QUERY_EVENT, WAKE_SOURCE_STATE_EVENT } from "./goal/extension.mjs";
+import { createGoal, goalStoreRef, readGoal } from "./goal/store.mjs";
 import { DEFAULT_TODO_NAG_TEXT } from "./goal/todo-nag.mjs";
 import { parseLoopArgs, intervalToMs } from "./loop/parse.mjs";
 import {
@@ -26,6 +26,7 @@ import {
   complete,
   assistantMessage,
   sdk,
+  AssistantMessageEventStream,
 } from "./test-harness.mjs";
 
 const fixtures = [];
@@ -113,6 +114,8 @@ test("/goal sets, shows, pauses, and clears a persistent goal", async () => {
   assert.match(fixture.notices.at(-1).message, /paused/);
   await fixture.session.prompt("/goal resume");
   assert.match(fixture.notices.at(-1).message, /active/);
+  // The resumed goal runs its own turns (the fixture model only talks) until it blocks; clearing it then is deterministic.
+  await until(async () => (await readGoal(goalStoreRef(fixture.session.sessionManager, fixture.agentDir)))?.status === "blocked", "the resumed goal runs out its turns");
   await fixture.session.prompt("/goal clear");
   assert.match(fixture.notices.at(-1).message, /Goal cleared/);
   await fixture.session.prompt("/goal");
@@ -298,4 +301,116 @@ test("stock RPC get_commands lists the three commands and /fallback is gone", as
   }
   assert.equal(names.includes("fallback"), false, "/fallback is not a Rubato command: " + names.join(","));
   child.kill("SIGTERM");
+});
+
+// A goal keeps taking turns by itself: what ends it is the model (update_goal) or a rule that stops a goal making no progress.
+const goalRef = (fixture) => goalStoreRef(fixture.session.sessionManager, fixture.agentDir);
+const until = async (check, what, ms = 8000) => {
+  const start = Date.now();
+  while (!(await check())) {
+    if (Date.now() - start > ms) throw new Error("timed out: " + what);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+};
+const toolCall = (name, args) => complete([{ type: "toolCall", id: "call-" + Math.random().toString(36).slice(2), name, arguments: args }]);
+
+test("an active goal starts the lead's next turn every time one ends, until the model calls it complete", async () => {
+  const captures = [];
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"],
+    streamSimple: (model, context) => {
+      captures.push({ model: model.id });
+      return captures.length === 3 ? toolCall("update_goal", { status: "complete" }) : complete(captures.length === 4 ? "all done" : "working on it");
+    } });
+  await fixture.session.prompt("/goal ship the importer");
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "complete", "the goal completes");
+  await until(async () => captures.length === 4 && !fixture.session.isStreaming, "the turn after the tool result ends");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(captures.length, 4, "two turns that only said 'working on it', the turn that completed it, and its closing answer; then nothing more");
+});
+
+test("three automatic goal turns in a row that touch no tool block the goal with the reason, and no turn follows", async () => {
+  const captures = [];
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"],
+    streamSimple: (model) => { captures.push({ model: model.id }); return complete("Next I will check the tests."); } });
+  await fixture.session.prompt("/goal make the tests pass");
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "blocked", "the goal blocks");
+  const goal = await readGoal(goalRef(fixture));
+  assert.match(goal.blockedReason, /3 goal turns in a row used no tool/);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(captures.length, 3);
+});
+
+test("a stopped turn pauses the goal and a failed one blocks it; neither is continued", async () => {
+  const stopped = [];
+  const first = await session({ only: ["rubato-goal"], captures: stopped, tools: ["update_goal"],
+    streamSimple: (model, context, options) => {
+      stopped.push({ model: model.id });
+      const stream = new AssistantMessageEventStream();
+      const message = assistantMessage([], "aborted");
+      options?.signal?.addEventListener("abort", () => stream.push({ type: "error", reason: "aborted", error: { ...message, errorMessage: "stopped" } }), { once: true });
+      return stream;
+    } });
+  await first.session.prompt("/goal long job");
+  await until(() => stopped.length === 1, "the continuation asks the model");
+  await first.session.abort();
+  await until(async () => (await readGoal(goalRef(first)))?.status === "paused", "the goal pauses");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(stopped.length, 1, "a paused goal starts nothing");
+
+  const failed = [];
+  const second = await session({ only: ["rubato-goal"], captures: failed, tools: ["update_goal"],
+    streamSimple: (model) => {
+      failed.push({ model: model.id });
+      const stream = new AssistantMessageEventStream();
+      stream.push({ type: "error", reason: "error", error: { ...assistantMessage([], "error"), errorMessage: "provider down" } });
+      return stream;
+    } });
+  second.session.setAutoRetryEnabled?.(false);
+  await second.session.prompt("/goal long job");
+  await until(async () => (await readGoal(goalRef(second)))?.status === "blocked", "the goal blocks", 15000);
+  assert.match((await readGoal(goalRef(second))).blockedReason, /ended with an error: provider down/);
+});
+
+test("a message another extension holds for the lead starts the next turn itself, so the goal sends none", async () => {
+  const captures = [];
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"],
+    extraFactories: [{ name: "held-probe", factory: (pi) => { pi.events.on(SESSION_HELD_QUERY_EVENT, (query) => { query.count += 1; }); } }],
+    streamSimple: (model) => { captures.push({ model: model.id }); return complete("ok"); } });
+  await fixture.session.prompt("/goal ship it");
+  await until(() => captures.length === 1 && !fixture.session.isStreaming, "the first turn ends");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(captures.length, 1, "nothing of the goal's own followed");
+  assert.equal((await readGoal(goalRef(fixture))).status, "active", "the goal stays for the held message's turn to carry on");
+});
+
+test("a stop that lands after the run's last message pauses the goal instead of letting it restart the work", async () => {
+  const captures = [];
+  let runner;
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"],
+    extraFactories: [{ name: "stop-probe", factory: (pi) => { pi.on("agent_end", async () => { await runner.emit({ type: "session_abort" }); }); } }],
+    streamSimple: (model) => { captures.push({ model: model.id }); return complete("ok"); } });
+  runner = fixture.session.extensionRunner;
+  await fixture.session.prompt("/goal ship it");
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "paused", "the goal pauses");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(captures.length, 1);
+});
+
+test("background work holds the goal's next turn back, and it looks again later instead of waiting for a wake that may never come", async () => {
+  const captures = [];
+  let emitWake;
+  const fixture = await session({ only: ["rubato-goal"], captures, tools: ["update_goal"], factoryOptions: { recheckMs: 80 },
+    extraFactories: [{ name: "wake-probe", factory: (pi) => { emitWake = (data) => pi.events.emit(WAKE_SOURCE_STATE_EVENT, data); } }],
+    streamSimple: (model) => { captures.push({ model: model.id }); return captures.length === 2 ? toolCall("update_goal", { status: "complete" }) : complete("waiting on the server"); } });
+  emitWake({ source: "terminal-background-sessions", activeCount: 1 });
+  await fixture.session.prompt("/goal keep the dev server up");
+  await until(() => captures.length === 1 && !fixture.session.isStreaming, "the first turn ends");
+  await until(async () => (await readGoal(goalRef(fixture)))?.status === "complete", "the recheck starts another turn that completes it");
+});
+
+test("a goal keeps the whole objective a companion's first message can carry", async () => {
+  const fixture = await session({ only: ["rubato-goal"] });
+  const objective = "x".repeat(7000) + " acceptance: all green";
+  const goal = await createGoal(goalRef(fixture), objective);
+  assert.equal(goal.objective, objective);
 });

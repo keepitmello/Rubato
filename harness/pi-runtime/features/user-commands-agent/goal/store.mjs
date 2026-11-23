@@ -7,8 +7,8 @@ const locks = new Map();
 
 export const GOAL_STATUS_VALUES = Object.freeze(["active", "paused", "blocked", "complete"]);
 export const MODEL_SETTABLE_GOAL_STATUS_VALUES = Object.freeze(["complete", "blocked"]);
-export const MAX_OBJECTIVE_LENGTH = 4000;
-export const GOAL_CONTINUATION_CAP = 8;
+export const MAX_OBJECTIVE_LENGTH = 8000;
+export const GOAL_CONTINUATION_CAP = 50;
 
 export function encodedThreadId(ref) {
   return encodeURIComponent(ref.threadId);

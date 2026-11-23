@@ -26,6 +26,7 @@
 
 - `session_list`는 이 기계의 대화들을 보여 주고, `session_read`는 열지 않고 하나를 읽어(메시지, 노트, 팀 보드). `session_search`는 대화들에 걸쳐 말한 걸 찾아.
 - `session_create`는 폴더 하나에서 첫 메시지(내 브리프)로 리드를 띄워. 무슨 일인지 말해 주는 짧은 제목을 달아.
+  - 혼자 끝까지 굴러가야 하는 일은 `goal`을 켜서 띄워(안 주면 꺼져 있어). 첫 메시지가 리드의 목표가 되고, 리드 턴이 끝날 때마다 루바토가 다음 턴을 알아서 시작해. 리드가 직접 완료나 막힘을 선언해야 끝나서 "다음엔 ~할게" 하고 멈추는 일이 없어. 중간엔 나를 안 깨우고 완료, 막힘(이유가 같이 와), 정지 때만 알려 줘. 짧은 질문이나 읽기만 하는 확인엔 안 켜. 막히거나 멈춘 goal은 `session_send`로 말을 걸면 다시 돌아.
   - 리드가 돌 모델은 `model`, 생각 깊이는 `effort`(off·minimal·low·medium·high·xhigh·max)로 골라. 모델은 `anthropic/claude-opus-5-5`처럼 써도 되고 `claude-opus-5-5`처럼 이름만 써도 돼. 안 주면 사용자 기본값이야. 없는 모델을 주면 쓸 수 있는 목록이 돌아오니까 거기서 다시 골라.
 - `session_send`는 이미 있는 대화에 후속·답·정정을 건네. `session_fork`는 일이 갈라져야 할 때 한 대화의 끝난 이력을 새 대화로 복사해.
 - `session_list`와 `session_read`의 각 대화에는 `cache`랑 `contextTokens`가 붙어. `cache.state`가 warm이면 다음 메시지가 캐시에서 읽혀 싸고, cold면 컨텍스트 전체(`contextTokens`쯤)를 제값에 다시 읽어. 무거운 리드가 cold면 이어 보낼지, 새 리드를 띄울지 그걸 보고 정해.

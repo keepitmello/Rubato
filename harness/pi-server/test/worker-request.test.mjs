@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { COMMANDS } from '../src/contracts.mjs';
+import { GOAL_PENDING_REQUEST, GOAL_RESUME_REQUEST, GOAL_START_REQUEST } from '../src/contracts.mjs';
+import { GOAL_PENDING_REQUEST as RUNTIME_PENDING, GOAL_RESUME_REQUEST as RUNTIME_RESUME, GOAL_START_REQUEST as RUNTIME_START } from '../../pi-runtime/features/user-commands-agent/goal/extension.mjs';
 import { workerRequest, SERVICE_TIER_REQUEST, AWAITED_WAKES_REQUEST, TASK_LIVE_MESSAGE_REQUEST, TASK_SNAPSHOT_REQUEST } from '../src/host.mjs';
 import { TERMINAL_AWAITED_WAKES_REQUEST } from '../../pi-runtime/features/terminal/src/host/monitor-state-event.ts';
 
@@ -28,4 +30,8 @@ test('an attached client asks the terminal what the idle agent still waits on', 
   assert.ok(COMMANDS.has('get_awaited_wakes'));
   assert.equal(AWAITED_WAKES_REQUEST, TERMINAL_AWAITED_WAKES_REQUEST);
   assert.deepEqual(workerRequest({ type: 'get_awaited_wakes' }), { type: 'extension_request', name: TERMINAL_AWAITED_WAKES_REQUEST });
+});
+
+test("the engine asks the goal extension under the names the extension answers to", () => {
+  assert.deepEqual([GOAL_START_REQUEST, GOAL_RESUME_REQUEST, GOAL_PENDING_REQUEST], [RUNTIME_START, RUNTIME_RESUME, RUNTIME_PENDING]);
 });

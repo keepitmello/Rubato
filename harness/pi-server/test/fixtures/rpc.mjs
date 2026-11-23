@@ -17,6 +17,10 @@ let warming = { enabled: true, hours: 2, state: 'inactive' };
 // the real commands, which replace each other. `__ultrafast_supported` stands for a model that serves it.
 let fast = { active: false, supported: true, ultrafast: false, ultrafastSupported: false };
 let blockMessages = false;
+// The goal extension's requests (pi-runtime goal/extension.mjs): what the engine asked, and whether the goal would continue by itself.
+let goalPending = false; // true, false, or 'unavailable' (the runtime does not answer)
+let goalResumeError = null;
+const goalCalls = [];
 // What `set_model` can pick and the efforts each allows; an unsupported effort drops to the nearest lower one.
 const MODELS = { 'fixture/local': ['off'], 'fixture/deep': ['off', 'minimal', 'low', 'medium', 'high'] };
 let model = 'fixture/local';
@@ -220,6 +224,19 @@ lines.on('line', (line) => {
       }
       if (command.name === 'fixture.session-link.deliveries') { data = deliveries; break; }
       if (command.name === 'fixture.session-link.answer') { scripted.push(command.data); data = null; break; }
+      if (command.name === 'rubato.goal.start') { goalCalls.push({ name: 'start', data: command.data, deliveriesBefore: deliveries.length }); goalPending = true; data = { started: true }; break; }
+      if (command.name === 'rubato.goal.resume') {
+        goalCalls.push({ name: 'resume' });
+        if (goalResumeError) { emit({ id: command.id, type: 'response', command: command.type, success: false, error: goalResumeError }); return; }
+        data = { resumed: true }; break;
+      }
+      if (command.name === 'rubato.goal.pending') {
+        if (goalPending === 'unavailable') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'busy' }); return; }
+        data = { pending: goalPending }; break;
+      }
+      if (command.name === 'fixture.goal.resume-error') { goalResumeError = command.data; data = null; break; }
+      if (command.name === 'fixture.goal.pending') { goalPending = command.data; data = null; break; }
+      if (command.name === 'fixture.goal.calls') { data = goalCalls; break; }
       if (command.name === 'fixture.pending-work') { pendingWork = command.data; data = null; break; }
       if (command.name === 'rubato.terminal.pending-work') { data = { active: terminalWork, undelivered: 0 }; break; }
       if (command.name !== 'rubato.task.pending-work') { emit({ id: command.id, type: 'response', command: command.type, success: false, error: 'Unknown extension RPC request' }); return; }

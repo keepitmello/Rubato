@@ -35,6 +35,22 @@ export const NOTICE_TRIES = 5;
 /** What the companion reads about how the work ended. */
 export function noticeText(outcome, current) {
   const answer = (label, part) => part?.text ? `\n\n${label}:\n${part.text}` : '';
+  return noticeBody(outcome, current, answer) + goalLine(current.goal);
+}
+
+/**
+ * Where a lead's goal stands when its turn ended. A goal that is still active never reaches here at
+ * a finished turn (the follower holds the end while it continues), so this tells how it ended:
+ * complete, blocked with the reason, or paused because the turn was stopped.
+ */
+function goalLine(goal) {
+  if (!goal || goal.status === 'active') return '';
+  const how = { complete: 'complete: the lead called it achieved', blocked: `blocked${goal.reason ? `: ${goal.reason}` : ''}`,
+    paused: 'paused: its turn was stopped, so it does not continue by itself until you send it a message'}[goal.status] ?? goal.status;
+  return `\n\nGoal ${how}.`;
+}
+
+function noticeBody(outcome, current, answer) {
   switch (outcome) {
     case 'completed': return `Finished its turn.${answer('Its answer', current.final)}`;
     case 'stopped': return `Was stopped before finishing.${answer('Its last words', current.final)}`;

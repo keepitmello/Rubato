@@ -23,4 +23,8 @@ export const PENDING_WORK_REQUEST = 'rubato.task.pending-work';
 export const TERMINAL_PENDING_WORK_REQUEST = 'rubato.terminal.pending-work';
 /** Answered by the terminal extension: the waits an idle agent ended its turn on (pending-work.ts terminalAwaitedWakes). */
 export const AWAITED_WAKES_REQUEST = 'rubato.terminal.awaited-wakes';
+/** Answered by the goal extension (pi-runtime user-commands-agent goal/extension.mjs): the engine starts, resumes and asks about a lead's goal. */
+export const GOAL_START_REQUEST = 'rubato.goal.start';
+export const GOAL_RESUME_REQUEST = 'rubato.goal.resume';
+export const GOAL_PENDING_REQUEST = 'rubato.goal.pending';
 export const json = (value) => JSON.parse(JSON.stringify(value));
