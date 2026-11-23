@@ -228,7 +228,6 @@ test("an OAuth account whose read fails falls back to its last reply", async () 
 });
 
 test("direct google-antigravity usage is disconnected and makes no requests", async () => {
-  const renewed = [];
   const { fetchImpl, calls } = fakeFetch({});
   const credential = { type: "oauth", access: "stale", refresh: "keep", expires: NOW - 1, env: { RUBATO_ANTIGRAVITY_PROJECT: "p" } };
   const { accounts: rows } = await collectUsage({
@@ -239,14 +238,52 @@ test("direct google-antigravity usage is disconnected and makes no requests", as
     observed: { accounts: {} },
     fetchImpl,
     now: () => NOW,
-    renewAntigravity: async (value) => {
-      renewed.push(value.refresh);
-      return { access: "fresh" };
-    },
   });
-  assert.deepEqual(renewed, []);
   assert.deepEqual(calls, []);
   assert.deepEqual(rows, []);
+});
+
+const agyInputs = (readAgyLogin, routes = {}) => {
+  const { fetchImpl, calls } = fakeFetch(routes);
+  return {
+    calls,
+    input: {
+      providers: [], accountsOf: async () => [], credentialOf: async () => undefined, slotOf: () => undefined,
+      observed: { accounts: {} }, fetchImpl, now: () => NOW, readAgyLogin,
+    },
+  };
+};
+
+test("the local agy login reports Gemini quota as its own row, asking as the sessions do", async () => {
+  const { calls, input } = agyInputs(async () => ({ access: "agy-access", expiry: new Date(NOW + 3_600_000).toISOString() }), {
+    "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuotaSummary": {
+      body: { groups: [{ buckets: [
+        { bucketId: "gemini-weekly", window: "weekly", remainingFraction: 0.6 },
+        { bucketId: "gemini-5h", window: "5h", remainingFraction: 1 },
+      ] }] },
+    },
+  });
+  const { accounts: rows } = await collectUsage(input);
+  assert.equal(calls[0].authorization, "Bearer agy-access");
+  assert.equal(calls[0].userAgent, ANTIGRAVITY_USER_AGENT);
+  assert.deepEqual(rows.map((row) => [row.provider, row.account]), [["google-antigravity", "agy"]]);
+  assert.deepEqual(rows[0].usageLimits.windows.map((window) => [window.label, Math.round(window.usedPercent)]), [
+    ["Gemini · Weekly", 40],
+    ["Gemini · 5-hour", 0],
+  ]);
+});
+
+test("a lapsed agy token says so without asking Google", async () => {
+  const { calls, input } = agyInputs(async () => ({ access: "old", expiry: new Date(NOW - 1).toISOString() }));
+  const { accounts: rows } = await collectUsage(input);
+  assert.deepEqual(calls, []);
+  assert.match(rows[0].usageLimits.unavailable.message, /renews the next time agy runs/);
+});
+
+test("no agy login, no agy row", async () => {
+  const { calls, input } = agyInputs(async () => undefined);
+  assert.deepEqual((await collectUsage(input)).accounts, []);
+  assert.deepEqual(calls, []);
 });
 
 test("a Pro account's separate Argon bucket keeps its own name beside the shared Gemini pair", () => {
@@ -281,6 +318,7 @@ test("usageJson reads accounts and observations from the agent directory", async
     providers: [{ id: "anthropic", label: "Anthropic" }],
     accountsOf: async () => [{ name: "setup-token", source: "setup-token" }],
     fetchImpl,
+    readAgyLogin: async () => undefined,
   });
   assert.deepEqual(result.accounts.map((row) => [row.account, row.usageLimits.windows.length]), [["setup-token", 2]]);
 });
@@ -297,6 +335,7 @@ test("Gemini API is removed from usage collection", async () => {
     providers: [{ id: "google", label: "Gemini API" }],
     accountsOf: async () => [{ name: "keychain", source: "gemini Keychain" }],
     now: () => NOW,
+    readAgyLogin: async () => undefined,
   });
   assert.equal(result.accounts.length, 0);
 });

@@ -881,8 +881,23 @@ export async function usageJson(ctx, overrides = {}) {
     slotOf: (credential, name) => findSlot(credential, name),
     observed: readObservedUsage(usageObservedPath(authJsonPath(env, ctx.home))),
     geminiRequestsPath: geminiRequestsPath(authJsonPath(env, ctx.home)),
+    readAgyLogin: readLocalAgyLogin,
     ...overrides,
   });
+}
+
+/** The local agy CLI's Google login from the macOS Keychain, or undefined when agy is not signed in. */
+async function readLocalAgyLogin() {
+  if (process.platform !== "darwin") return undefined;
+  const { readAntigravityKeychainSecret, decodeAntigravityKeychainSecret } = await import("../rubato-pi/src/antigravity-keychain-import.mjs");
+  let secret;
+  try {
+    secret = await readAntigravityKeychainSecret({ signal: AbortSignal.timeout(5_000) });
+  } catch (error) {
+    if (error instanceof Error && error.message.endsWith("is missing")) return undefined;
+    throw error;
+  }
+  return decodeAntigravityKeychainSecret(secret);
 }
 
 export function createJsonInteraction({ stdin = process.stdin, stdout = process.stdout } = {}) {
