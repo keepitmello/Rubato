@@ -24,20 +24,21 @@ export function MacRestartSection(props: {
   const gt = useGT();
   const canMaintain = useEnvironmentScope(props.environmentId, AuthEnvironmentMaintainScope);
   const canRestart = props.supported && props.connected && canMaintain;
-  const [token, setToken] = useState<string | null>(null);
-  const [status, setStatus] = useState<MacRestartStatus | null>(null);
+  const [job, setJob] = useState<{ token: string; startedAt: number } | null>(null);
+  const [view, setView] = useState<ReturnType<typeof describeMacRestart>>({ phase: "idle" });
   const [starting, setStarting] = useState(false);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
     return () => void (mounted.current = false);
   }, []);
-  const view = describeMacRestart(token, status);
-  const settled = view.phase === "idle" || view.phase === "succeeded" || view.phase === "failed";
+  const settled = view.phase === "idle" || view.phase === "succeeded" ||
+    view.phase === "failed" || view.phase === "unconfirmed";
 
   // While a restart runs, ask the Mac again; no answer means it is between processes.
   useEffect(() => {
-    if (token === null || settled) return;
+    if (job === null || settled) return;
+    const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     let stopped = false;
     const poll = async () => {
@@ -46,18 +47,19 @@ export function MacRestartSection(props: {
         APP_ROUTE,
         "restart-status",
         {},
-        { timeoutMs: 5_000 },
+        { timeoutMs: 5_000, signal: controller.signal },
       ).catch(() => null);
       if (stopped) return;
-      setStatus(next);
+      setView(describeMacRestart(job.token, next, Date.now() - job.startedAt));
       timer = setTimeout(poll, POLL_MS);
     };
     void poll();
     return () => {
       stopped = true;
+      controller.abort();
       clearTimeout(timer);
     };
-  }, [props.environmentId, token, settled]);
+  }, [props.environmentId, job, settled]);
 
   function start() {
     Alert.alert(
@@ -72,8 +74,9 @@ export function MacRestartSection(props: {
             postRubato<{ token: string }>(props.environmentId, APP_ROUTE, "restart-app")
               .then((answer) => {
                 if (!mounted.current) return;
-                setStatus(null);
-                setToken(answer.token);
+                if (!answer?.token) throw new Error("Missing restart token");
+                setView({ phase: "building" });
+                setJob({ token: answer.token, startedAt: Date.now() });
               })
               .catch((error: unknown) => {
                 if (!mounted.current) return;
@@ -110,7 +113,7 @@ export function MacRestartSection(props: {
   }
 
   // Keep a requested restart visible while the connection (and its config) is down.
-  if (!props.supported && token === null && !starting) return null;
+  if (!props.supported && job === null && !starting) return null;
   const line = macRestartLine(view);
   const description = !settled
     ? null

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { describeMacRestart, macRestartLine, type MacRestartStatus } from "./macRestart";
+import { describeMacRestart, MAC_RESTART_RESULT_MS, MAC_RESTART_START_MS, macRestartLine, type MacRestartStatus } from "./macRestart";
 
 const idle: MacRestartStatus = { busy: false, job: null, result: null, log: "/mac/update.log" };
 
@@ -20,5 +20,17 @@ describe("describeMacRestart", () => {
     const failed = describeMacRestart("t1", { ...idle, result: { token: "t1", kind: "restart", status: "failed", message: "build broke" } });
     expect(macRestartLine(failed)).toBe("The restart failed: build broke. The Mac's log is at /mac/update.log.");
     expect(describeMacRestart("t1", { ...idle, result: { token: "old", kind: "update", status: "failed", message: "x" } })).toEqual({ phase: "building" });
+  });
+
+  it("stops waiting when the Mac answers but never started this job", () => {
+    expect(describeMacRestart("t1", idle, MAC_RESTART_START_MS - 1)).toEqual({ phase: "building" });
+    expect(describeMacRestart("t1", idle, MAC_RESTART_START_MS)).toEqual({ phase: "unconfirmed" });
+    const running = { ...idle, busy: true, job: { token: "t1", stage: "building" as const, now: false } };
+    expect(describeMacRestart("t1", running, MAC_RESTART_START_MS)).toEqual({ phase: "building" });
+  });
+
+  it("does not wait forever when the Mac cannot be reached", () => {
+    expect(describeMacRestart("t1", null, MAC_RESTART_RESULT_MS - 1)).toEqual({ phase: "reconnecting" });
+    expect(describeMacRestart("t1", null, MAC_RESTART_RESULT_MS)).toEqual({ phase: "unconfirmed" });
   });
 });
