@@ -140,6 +140,7 @@ function registerSettingsTool(pi, sessionLink, telegram) {
           type: "object",
           description: "With propose: { piece, label, before, after } where before is an exact excerpt of the piece now (found once) " +
             "and after its rewrite; or { image: <absolute path of a picture you made>, label } for your profile picture. " +
+            "For a sidebar icon use { target: 'icon', image: <absolute path of the rendered icon PNG>, label }. " +
             "label is a short title in the user's language, e.g. \"말투\".",
         },
         summary: {

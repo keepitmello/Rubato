@@ -44,7 +44,6 @@ import { useOpenRubatoProjectList } from "../settings/RubatoProjectListSettings"
 import { companionRailAction } from "./rubatoCompanionRailAction";
 import { useOpenListAfterSegno } from "../chat/RubatoSegnoSpace";
 import { RubatoCompanionRailIcon } from "./RubatoSegnoIcon";
-import { RubatoCompanionFace } from "../chat/RubatoCompanionFace";
 import { useRubatoProjectList } from "./rubatoProjectList";
 import {
   RUBATO_SIGNAL_DOT,
@@ -375,12 +374,7 @@ export function RubatoProjectRail() {
             }}
           >
             <span className={item.settings.enabled ? "" : "opacity-40"}>
-              {/* Roo and Segno are fixed navigation icons, separate from their profile photos. */}
-              {item.id === "roo" || item.id === "segno" ? (
-                <RubatoCompanionRailIcon id={item.id} />
-              ) : (
-                <RubatoCompanionFace companion={item} className="size-6 text-xs" />
-              )}
+              <RubatoCompanionRailIcon companion={item} />
             </span>
           </RailButton>
         ))}

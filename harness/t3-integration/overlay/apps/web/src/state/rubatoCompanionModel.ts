@@ -264,7 +264,7 @@ export function proposalPlacement<P extends ProposalLike>(
 
 // ── Drafts that open the room ─────────────────────────────────────────────────────────────────
 
-export type CompanionDraft = "who" | "me" | "sum-up-who" | "sum-up-me" | "draw" | "again";
+export type CompanionDraft = "who" | "me" | "sum-up-who" | "sum-up-me" | "draw" | "draw-icon" | "again";
 
 const DRAFTS: Record<CompanionDraft, { readonly en: string; readonly ko: string }> = {
   who: { en: "About the card on who you are: ", ko: "너 소개 카드 말인데, " },
@@ -272,6 +272,7 @@ const DRAFTS: Record<CompanionDraft, { readonly en: string; readonly ko: string 
   "sum-up-who": { en: "Could you sum up who you are for your card?", ko: "너는 어떤 애인지 카드로 정리해 줄래?" },
   "sum-up-me": { en: "Could you sum up what you know about me for your card?", ko: "네가 아는 나를 카드로 정리해 줄래?" },
   draw: { en: "Could you draw a new profile picture of yourself? ", ko: "새 프사 하나 그려 줄래? " },
+  "draw-icon": { en: "Could you make a new sidebar icon for yourself? ", ko: "너 사이드바 아이콘 하나 만들어 줄래? " },
   again: { en: "That change no longer fits the current text. Could you show it again? ", ko: "아까 고친 거 지금 글이랑 안 맞는대. 다시 맞춰서 보여 줄래? " },
 };
 

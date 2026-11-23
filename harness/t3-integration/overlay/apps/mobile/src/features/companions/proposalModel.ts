@@ -21,7 +21,7 @@ export type Proposal =
       readonly after: string;
     }
   | {
-      readonly kind: "avatar";
+      readonly kind: "avatar" | "icon";
       readonly id: string;
       readonly createdAt: number;
       readonly status: ProposalStatus;
@@ -45,9 +45,9 @@ export function decodeProposal(value: unknown): Proposal | null {
   const status = item.status === undefined ? "open" : STATUSES.includes(item.status as ProposalStatus) ? (item.status as ProposalStatus) : null;
   if (status === null) return null;
   const label = typeof item.label === "string" ? item.label : "";
-  if (item.kind === "avatar") {
+  if (item.kind === "avatar" || item.kind === "icon") {
     const url = (item.image as { url?: unknown } | null | undefined)?.url;
-    return typeof url === "string" && url ? { kind: "avatar", id: item.id, createdAt, status, label, image: url } : null;
+    return typeof url === "string" && url ? { kind: item.kind, id: item.id, createdAt, status, label, image: url } : null;
   }
   if (typeof item.before !== "string" || typeof item.after !== "string") return null;
   return {

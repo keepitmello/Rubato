@@ -60,6 +60,7 @@ import { Switch } from "../ui/switch";
 import { Textarea } from "../ui/textarea";
 import { toastManager } from "../ui/toast";
 import { RubatoCompanionPicture } from "./RubatoCompanionPicture";
+import { RubatoCompanionIconSetting } from "./RubatoCompanionIconSetting";
 import { SettingsRow, SettingsSection } from "./settingsLayout";
 
 function reportError(title: string, error: unknown) {
@@ -898,6 +899,8 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
         </Button>
       </header>
 
+      <RubatoCompanionIconSetting key={companion.id} companion={companion} environmentId={environmentId}
+        onAsk={threadId === null ? undefined : () => talk("draw-icon")} />
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <SummaryCard
           id="rubato-companion-who"

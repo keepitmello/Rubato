@@ -23,6 +23,7 @@ export const companionOverlays = [
   'apps/web/src/components/settings/RubatoCompanionSettings.tsx',
   // The profile picture: camera menu, round crop, pictures from the conversation (intent companion-manage).
   'apps/web/src/components/settings/RubatoCompanionPicture.tsx',
+  'apps/web/src/components/settings/RubatoCompanionIconSetting.tsx',
   // A companion's face wherever one is drawn, and the one way the pages open its room with a draft.
   'apps/web/src/components/chat/RubatoCompanionFace.tsx',
   // Proposal cards and onboarding chips in the room.

@@ -15,6 +15,7 @@ import { useRubatoRoomVisible } from "../../hooks/useRubatoRoomVisible";
 import { uiLanguage } from "../../rubatoI18n";
 import {
   acceptCompanionAvatar,
+  acceptCompanionIcon,
   rubatoCompanion,
   type CompanionOnboarding,
   type CompanionProposal,
@@ -100,6 +101,9 @@ export function RubatoProposalCard({
       if (next.kind === "avatar") {
         const answer = await rubatoCompanion.avatar(environmentId, companionId).catch(() => null);
         if (answer) acceptCompanionAvatar(companionId, answer.avatar, true);
+      } else if (next.kind === "icon") {
+        const answer = await rubatoCompanion.icon(environmentId, companionId).catch(() => null);
+        if (answer) acceptCompanionIcon(companionId, answer.icon);
       }
     } catch (cause) {
       if (cause instanceof RubatoRequestError && cause.code === "stale") onUpdate({ ...proposal, status: "stale" });
@@ -128,6 +132,11 @@ export function RubatoProposalCard({
         </header>
         {proposal.kind === "avatar" && proposal.image ? (
           <img data-rubato-proposal-image="" src={proposal.image.url} alt="" draggable={false} />
+        ) : null}
+        {proposal.kind === "icon" && proposal.image ? (
+          <div className="grid size-9 place-items-center rounded-md bg-muted" aria-label="Sidebar icon preview">
+            <img src={proposal.image.url} alt="" draggable={false} className="size-6 object-contain" />
+          </div>
         ) : null}
         {proposal.kind === "piece" && proposal.before !== undefined && proposal.after !== undefined ? (
           <Diff before={proposal.before} after={proposal.after} />

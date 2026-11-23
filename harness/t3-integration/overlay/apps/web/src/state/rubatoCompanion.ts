@@ -51,6 +51,7 @@ export interface CompanionStatus {
   readonly profile?: { readonly callsUser: string | null; readonly since: string | null };
   /** Moves when its picture changes; null when it has none. */
   readonly avatarVersion?: number | null;
+  readonly iconVersion?: number | null;
   /** True only when a picture was set in the app (not the companion's own art). */
   readonly pictureSet?: boolean;
   /** Its first conversation, while it lasts: which topics are settled, open or left for later. */
@@ -68,7 +69,7 @@ export interface CompanionOnboarding {
 /** A change the companion proposes to its own text or picture; nothing is saved before Apply. */
 export interface CompanionProposal {
   readonly id: string;
-  readonly kind: "piece" | "avatar";
+  readonly kind: "piece" | "avatar" | "icon";
   /** Epoch ms. */
   readonly createdAt: number;
   readonly status: "open" | "applied" | "declined" | "superseded" | "stale";
@@ -333,6 +334,10 @@ export const rubatoCompanion = {
   /** A square jpeg, png or webp data URL (at most 2 MB), or null to clear the picture set here. */
   setAvatar: (env: EnvironmentId | null, companionId: string, image: string | null) =>
     call<{ avatar: CompanionAvatar | null }>(env, "set-avatar", { companionId, image }),
+  icon: (env: EnvironmentId | null, companionId: string) =>
+    call<{ icon: CompanionAvatar | null }>(env, "icon", { companionId }),
+  setIcon: (env: EnvironmentId | null, companionId: string, image: string | null) =>
+    call<{ icon: CompanionAvatar | null }>(env, "set-icon", { companionId, image }),
   /** The changes it proposed, newest last. */
   proposals: (env: EnvironmentId | null, companionId: string, signal?: AbortSignal) =>
     call<{ proposals: CompanionProposal[] }>(env, "proposals", { companionId }, signal),
@@ -551,11 +556,19 @@ const subscribeAvatars = (listener: () => void) => {
  * `pictureSet` says whether it is now a picture set in the app; omitted, the next refresh tells.
  */
 export function acceptCompanionAvatar(companionId: string, avatar: CompanionAvatar | null, pictureSet?: boolean): void {
-  avatars.set(companionId, { version: avatar?.version ?? null, url: avatar?.url ?? null });
+  acceptCompanionImage("avatar", companionId, avatar, pictureSet);
+}
+
+export function acceptCompanionIcon(companionId: string, icon: CompanionAvatar | null): void {
+  acceptCompanionImage("icon", companionId, icon);
+}
+
+function acceptCompanionImage(slot: "avatar" | "icon", companionId: string, image: CompanionAvatar | null, pictureSet?: boolean): void {
+  avatars.set(`${slot}:${companionId}`, { version: image?.version ?? null, url: image?.url ?? null });
   publishAvatars();
   publish({ ...view, companions: view.companions.map(item =>
     item.id === companionId
-      ? { ...item, avatarVersion: avatar?.version ?? null, ...(pictureSet === undefined ? {} : { pictureSet }) }
+      ? { ...item, [`${slot}Version`]: image?.version ?? null, ...(pictureSet === undefined ? {} : { pictureSet }) }
       : item) });
 }
 
@@ -564,26 +577,40 @@ export function acceptCompanionAvatar(companionId: string, avatar: CompanionAvat
  * that does not say `avatarVersion` is asked once per app session.
  */
 export function useCompanionAvatar(companionId: string | null | undefined): string | null {
+  return useCompanionImage("avatar", companionId);
+}
+
+export function useCompanionIcon(companionId: string): string | null {
+  return useCompanionImage("icon", companionId);
+}
+
+function useCompanionImage(slot: "avatar" | "icon", companionId: string | null | undefined): string | null {
   const environmentId = useReadyEnvironmentId();
   const current = useSyncExternalStore(subscribe, () => view);
   // Read through the store, not the map: a value read from module state during render would be
   // memoized by the React Compiler and never see the picture arrive.
-  const cached = useSyncExternalStore(subscribeAvatars, () => (companionId ? avatars.get(companionId) : undefined));
-  const known = companionId ? current.companions.some(item => item.id === companionId) : false;
-  const wanted = companionId ? current.companions.find(item => item.id === companionId)?.avatarVersion : undefined;
-  const stale = known && wanted !== null && (cached === undefined || (wanted !== undefined && cached.version !== wanted));
+  const key = `${slot}:${companionId}`;
+  const cached = useSyncExternalStore(subscribeAvatars, () => avatars.get(key));
+  const companion = current.companions.find(item => item.id === companionId);
+  const wanted = companion?.[`${slot}Version`];
+  const stale = !!companion && wanted !== null && (slot === "avatar" || wanted !== undefined)
+    && (cached === undefined || (wanted !== undefined && cached.version !== wanted));
   useEffect(() => {
-    if (!companionId || environmentId === null || !stale || avatarsLoading.has(companionId)) return;
-    avatarsLoading.add(companionId);
-    rubatoCompanion.avatar(environmentId, companionId).then(
-      ({ avatar }) => avatars.set(companionId, { version: avatar?.version ?? wanted ?? null, url: avatar?.url ?? null }),
+    if (!companionId || environmentId === null || !stale || avatarsLoading.has(key)) return;
+    avatarsLoading.add(key);
+    const previous = avatars.get(key);
+    const request = slot === "avatar"
+      ? rubatoCompanion.avatar(environmentId, companionId).then(({ avatar }) => avatar)
+      : rubatoCompanion.icon(environmentId, companionId).then(({ icon }) => icon);
+    request.then(
+      (image) => { if (avatars.get(key) === previous) avatars.set(key, { version: image?.version ?? wanted ?? null, url: image?.url ?? null }); },
       // Asked again only when the version moves.
-      () => avatars.set(companionId, { version: wanted, url: avatars.get(companionId)?.url ?? null }),
+      () => { if (avatars.get(key) === previous) avatars.set(key, { version: wanted, url: previous?.url ?? null }); },
     ).finally(() => {
-      avatarsLoading.delete(companionId);
+      avatarsLoading.delete(key);
       publishAvatars();
     });
-  }, [companionId, environmentId, stale, wanted]);
+  }, [companionId, environmentId, key, slot, stale, wanted]);
   if (!companionId || wanted === null) return null;
   return cached?.url ?? null;
 }

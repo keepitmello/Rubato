@@ -9,6 +9,7 @@ const fake = vi.hoisted(() => ({
   navigate: vi.fn(),
   artCalls: [] as string[],
   avatars: {} as Record<string, string>,
+  icons: {} as Record<string, string>,
   avatarListeners: new Set<() => void>(),
   choices: [] as Array<{ id: string; pictureSet: boolean }>,
 }));
@@ -18,8 +19,8 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("../../state/rubatoCompanion", async () => {
   const { useSyncExternalStore } = await import("react");
-  const choices = ["segno", "roo"].map(id => ({
-    id, title: id === "segno" ? "Segno" : "Roo", threadId: `${id}-thread`,
+  const choices = ["segno", "roo", "mika"].map(id => ({
+    id, title: id === "segno" ? "Segno" : id === "roo" ? "Roo" : "Mika", threadId: `${id}-thread`,
     settings: { enabled: true }, pictureSet: false,
   }));
   fake.choices = choices;
@@ -30,6 +31,10 @@ vi.mock("../../state/rubatoCompanion", async () => {
     useCompanionAvatar: (id: string | undefined) => useSyncExternalStore(
       (listener: () => void) => { fake.avatarListeners.add(listener); return () => fake.avatarListeners.delete(listener); },
       () => (id ? fake.avatars[id] ?? null : null),
+    ),
+    useCompanionIcon: (id: string) => useSyncExternalStore(
+      (listener: () => void) => { fake.avatarListeners.add(listener); return () => fake.avatarListeners.delete(listener); },
+      () => fake.icons[id] ?? null,
     ),
     selectCompanion: (id: string) => { fake.selectedId = id; },
     acceptCompanionStatus: vi.fn(),
@@ -134,6 +139,7 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   fake.choices.find(item => item.id === "segno")!.pictureSet = true;
   fake.avatars.roo = "data:image/png;base64,ROO_PICTURE";
   fake.avatars.segno = "data:image/png;base64,SEGNO_SET";
+  fake.avatars.mika = "data:image/png;base64,MIKA";
   await act(async () => { for (const listener of fake.avatarListeners) listener(); render(); });
   expect([...host.querySelectorAll("[data-testid=profile-faces] img")].map((img) => img.getAttribute("src"))).toEqual([
     fake.avatars.roo,
@@ -143,5 +149,17 @@ it("distinct sidebar icons open their own room; Roo stays art-free after visitin
   expect(segno.querySelector("[data-rubato-segno-icon]")).not.toBeNull();
   expect(roo.querySelector("img")).toBeNull();
   expect(segno.querySelector("img")).toBeNull();
+  const mika = host.querySelector<HTMLButtonElement>("button[aria-label=Mika]")!;
+  expect(mika.textContent).toContain("M");
+  expect(mika.querySelector("img")).toBeNull();
+  fake.icons.roo = "data:image/png;base64,ROO_ICON";
+  fake.icons.mika = "data:image/png;base64,MIKA_ICON";
+  await act(async () => { for (const listener of fake.avatarListeners) listener(); });
+  expect(roo.querySelector("img")?.getAttribute("src")).toBe(fake.icons.roo);
+  expect(mika.querySelector("img")?.getAttribute("src")).toBe(fake.icons.mika);
+  expect(host.querySelector("[data-testid=profile-faces] img")?.getAttribute("src")).toBe(fake.avatars.roo);
+  delete fake.icons.roo;
+  await act(async () => { for (const listener of fake.avatarListeners) listener(); });
+  expect(roo.querySelector("[data-rubato-roo-icon]")).not.toBeNull();
   expect(host.querySelectorAll("[data-rubato-segno-art], aside img")).toHaveLength(0);
 });

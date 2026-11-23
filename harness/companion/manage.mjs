@@ -172,30 +172,31 @@ export function sniffImage(bytes) {
   return undefined;
 }
 
-function storePicture(bytes, env) {
+function storePicture(bytes, env, slot = 'avatar') {
   const mime = sniffImage(bytes);
   if (!mime) throw new ManageError('invalid', 'The picture must be a JPEG, PNG or WebP image');
   const dir = pictureDir(env);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const file = path.join(dir, `avatar.${PICTURE_TYPES[mime]}`);
+  const file = path.join(dir, `${slot}.${PICTURE_TYPES[mime]}`);
   const temporary = `${file}.${randomUUID()}.tmp`;
   writeFileSync(temporary, bytes, { mode: 0o600 });
   renameSync(temporary, file);
-  for (const ext of Object.values(PICTURE_TYPES)) if (ext !== PICTURE_TYPES[mime]) rmSync(path.join(dir, `avatar.${ext}`), { force: true });
+  for (const ext of Object.values(PICTURE_TYPES)) if (ext !== PICTURE_TYPES[mime]) rmSync(path.join(dir, `${slot}.${ext}`), { force: true });
   return file;
 }
 
 /** Sets (or with null clears) the picture from an uploaded data URL. Only the picture folder is written. */
-export function setPicture(image, { env = process.env } = {}) {
+export function setPicture(image, { env = process.env, slot = 'avatar' } = {}) {
+  if (slot !== 'avatar' && slot !== 'icon') throw new ManageError('invalid', 'Unknown picture slot');
   if (image === null) {
-    for (const ext of Object.values(PICTURE_TYPES)) rmSync(path.join(pictureDir(env), `avatar.${ext}`), { force: true });
+    for (const ext of Object.values(PICTURE_TYPES)) rmSync(path.join(pictureDir(env), `${slot}.${ext}`), { force: true });
     return null;
   }
   const match = typeof image === 'string' && /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=\s]+)$/.exec(image);
   if (!match) throw new ManageError('invalid', 'image is a data URL of a JPEG, PNG or WebP picture, or null');
   const bytes = Buffer.from(match[2], 'base64');
   if (bytes.length > PICTURE_LIMIT) throw new ManageError('too-large', `A picture holds at most ${PICTURE_LIMIT / 1024 / 1024} MB`, 413);
-  return storePicture(bytes, env);
+  return storePicture(bytes, env, slot);
 }
 
 // ---- proposals ------------------------------------------------------------------------------
@@ -271,13 +272,15 @@ export function propose(request, { env = process.env, defaultsDir, now = Date.no
     if (typeof request.image !== 'string' || !path.isAbsolute(request.image)) throw new ManageError('invalid', 'image is the absolute path of the picture file');
     let bytes;
     try { bytes = readFileSync(request.image); } catch { throw new ManageError('invalid', 'The picture file cannot be read'); }
-    if (bytes.length > DRAWN_PICTURE_LIMIT) throw new ManageError('too-large', 'The picture is too large');
+    const kind = request.target ?? 'avatar';
+    if (kind !== 'avatar' && kind !== 'icon') throw new ManageError('invalid', 'Image target must be avatar or icon');
+    if (bytes.length > (kind === 'icon' ? PICTURE_LIMIT : DRAWN_PICTURE_LIMIT)) throw new ManageError('too-large', 'The picture is too large');
     const mime = sniffImage(bytes);
     if (!mime) throw new ManageError('invalid', 'The picture must be a JPEG, PNG or WebP image');
     const name = `${id}.${PICTURE_TYPES[mime]}`;
     mkdirSync(companionPaths(env).proposals, { recursive: true, mode: 0o700 });
     writeFileSync(path.join(companionPaths(env).proposals, name), bytes, { mode: 0o600 });
-    proposal = { id, kind: 'avatar', createdAt: now(), status: 'open', label, image: name };
+    proposal = { id, kind, createdAt: now(), status: 'open', label, image: name };
   } else {
     const { piece, before, after } = request;
     if (typeof piece !== 'string' || !PIECES.some((item) => item.id === piece)) throw new ManageError('invalid', `piece is one of ${PIECES.map((item) => item.id).join(', ')}`);
@@ -293,7 +296,7 @@ export function propose(request, { env = process.env, defaultsDir, now = Date.no
     proposal = { id, kind: 'piece', createdAt: now(), status: 'open', label, piece, before, after };
   }
   for (const open of listProposals({ env }).filter((item) => item.status === 'open' && item.kind === proposal.kind
-    && (proposal.kind === 'avatar' || item.piece === proposal.piece)))
+    && (proposal.kind !== 'piece' || item.piece === proposal.piece)))
     saveProposal(env, { ...open, status: 'superseded', closedAt: now() });
   return saveProposal(env, proposal);
 }
@@ -305,9 +308,9 @@ export function propose(request, { env = process.env, defaultsDir, now = Date.no
 export function applyProposal(id, { env = process.env, defaultsDir, now = Date.now } = {}) {
   const proposal = readProposal(env, id);
   if (proposal.status !== 'open') throw new ManageError('closed', `This proposal is ${proposal.status}`, 409);
-  if (proposal.kind === 'avatar') {
+  if (proposal.kind === 'avatar' || proposal.kind === 'icon') {
     const bytes = readFileSync(path.join(companionPaths(env).proposals, proposal.image));
-    storePicture(bytes, env);
+    storePicture(bytes, env, proposal.kind);
   } else {
     const text = currentPieceText(proposal.piece, { env, defaultsDir });
     if (occurrences(text, proposal.before) !== 1) {

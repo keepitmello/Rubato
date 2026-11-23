@@ -14,7 +14,7 @@ const defaultsDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 async function setup(t, { telegram = true } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), 'rubato-companion-service-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home') };
+  const env = { HOME: dir, RUBATO_COMPANION_HOME: path.join(dir, 'home') };
   const service = createCompanionService({ env, defaultsDir, telegram });
   const post = async (action, body = {}) => {
     const response = await handleCompanionRequest(service, new Request(`http://local/rubato/companion/${action}`,
@@ -384,6 +384,16 @@ test('a companion made from the app: create, its nameless row with chips, a pict
   assert.equal(pictured.body.avatar.url, `data:image/png;base64,${png}`);
   const after = (await post('companions')).body.companions[1];
   assert.equal(after.avatarVersion, pictured.body.avatar.version);
+  const iconImage = 'data:image/jpeg;base64,/9j/7g==';
+  assert.equal((await post('icon', { companionId: id })).body.icon, null);
+  const icon = (await post('set-icon', { companionId: id, image: iconImage })).body.icon;
+  assert.equal(icon.url, iconImage);
+  assert.equal((await post('companions')).body.companions.find((item) => item.id === id).iconVersion, icon.version);
+  assert.equal((await post('set-avatar', { companionId: id, image: null })).status, 200);
+  assert.equal((await post('icon', { companionId: id })).body.icon.url, iconImage);
+  await post('set-avatar', { companionId: id, image: pictured.body.avatar.url });
+  assert.equal((await post('set-icon', { companionId: id, image: null })).body.icon, null);
+  assert.equal((await post('avatar', { companionId: id })).body.avatar.url, pictured.body.avatar.url);
   assert.equal(after.pictureSet, true);
   assert.equal(rows[0].pictureSet, false, "Segno's stage art is not a picture set in the app");
   assert.equal((await post('set-avatar', { companionId: id, image: 'data:image/png;base64,AAAA' })).status, 400);
@@ -408,5 +418,17 @@ test('a companion made from the app: create, its nameless row with chips, a pict
   assert.match(readFileSync(soul, 'utf8'), /When I work I say one line;/);
   assert.equal((await post('apply-proposal', { companionId: id, proposalId: 'nope' })).status, 400);
 
+  const drawing = path.join(own.RUBATO_COMPANION_HOME, 'icon.png');
+  writeFileSync(drawing, Buffer.from(png, 'base64'));
+  const proposedAvatar = propose({ image: drawing, label: '새 프로필 사진' }, { env: own, defaultsDir });
+  const avatarBeforeIcon = (await post('avatar', { companionId: id })).body.avatar;
+  const proposedIcon = propose({ target: 'icon', image: drawing, label: '새 사이드바 아이콘' }, { env: own, defaultsDir });
+  const byId = new Map((await post('proposals', { companionId: id })).body.proposals.map((item) => [item.id, item]));
+  assert.equal(byId.get(proposedAvatar.id).status, 'open');
+  assert.equal(byId.get(proposedIcon.id).kind, 'icon');
+  assert.equal((await post('icon', { companionId: id })).body.icon, null, 'proposing cannot change the icon');
+  assert.equal((await post('apply-proposal', { companionId: id, proposalId: proposedIcon.id })).body.proposal.status, 'applied');
+  assert.equal((await post('icon', { companionId: id })).body.icon.url, `data:image/png;base64,${png}`);
+  assert.deepEqual((await post('avatar', { companionId: id })).body.avatar, avatarBeforeIcon);
   assert.deepEqual((await post('summaries', { companionId: id })).body, { who: null, me: null, updatedAt: null });
 });

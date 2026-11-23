@@ -1,9 +1,22 @@
 // Segno on the rail and in Settings: the tilted head with the fox ears, drawn on lucide's 24px grid
 // so it sits among lucide icons (art: segno-rail-1-tilted-main.svg).
 import { RubatoRooIcon } from "./RubatoRooIcon";
+import { useCompanionIcon } from "../../state/rubatoCompanion";
 
-export function RubatoCompanionRailIcon({ id }: { id: "roo" | "segno" }) {
-  return id === "roo" ? <RubatoRooIcon className="size-6" /> : <RubatoSegnoIcon className="size-6" />;
+export function RubatoCompanionRailIcon({ companion, preview }: {
+  companion: { id: string; title: string; nameless?: boolean };
+  preview?: string;
+}) {
+  const icon = useCompanionIcon(companion.id);
+  const url = preview ?? icon;
+  if (url) return <img src={url} alt="" draggable={false} className="size-6 shrink-0 object-contain" />;
+  if (companion.id === "roo") return <RubatoRooIcon className="size-6" />;
+  if (companion.id === "segno") return <RubatoSegnoIcon className="size-6" />;
+  return (
+    <span aria-hidden="true" translate="no" className="flex size-6 items-center justify-center rounded-full border border-border bg-muted font-medium text-xs">
+      {companion.nameless ? "?" : Array.from(companion.title.trim())[0] ?? "?"}
+    </span>
+  );
 }
 // The inner ears carry Segno's violet; everything else follows the text color like the icons beside it.
 const SEGNO_VIOLET = "#8b68a8";

@@ -84,8 +84,8 @@ export function ProposalCard(props: {
         <View className="items-center py-1">
           <Image
             source={{ uri: proposal.image }}
-            contentFit="cover"
-            style={{ width: 132, height: 132, borderRadius: 66 }}
+            contentFit={proposal.kind === "icon" ? "contain" : "cover"}
+            style={proposal.kind === "icon" ? { width: 24, height: 24 } : { width: 132, height: 132, borderRadius: 66 }}
             accessibilityIgnoresInvertColors
           />
         </View>

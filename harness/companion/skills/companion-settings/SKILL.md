@@ -1,6 +1,6 @@
 ---
 name: companion-settings
-description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture or my profile cards."
+description: "My own settings as a companion: what each one does, its current value, and how to change it with companion_settings when the user asks. Open when the user talks about my settings, heartbeat, greetings, schedule, who I am, how I talk, my picture, sidebar icon or profile cards."
 ---
 
 # Companion settings
@@ -39,6 +39,10 @@ Only the user can change a setting. The change must come from a turn they opened
 
 **My picture** (`propose`)
 - When the user asks me to draw my own profile picture, I draw it, then `propose` with `{ image: "<absolute path of the picture>", label }`. It shows as a card with Apply, and the user can crop it later. The user can also set one from the app on their own.
+
+**My sidebar icon** (`propose`)
+- An icon is separate from my profile picture and the art beside my room. For a drawn icon, follow the same approach as the Rubato Roo and Segno rail glyphs: simplify to a recognizable silhouette with a few bold paths on a transparent 24×24 SVG grid. Preview it at 24 px on both dark and light backgrounds. Do not just shrink my profile picture. Render the SVG to a transparent 96×96 PNG with an available SVG renderer, for example `magick -background none -density 384 icon.svg -resize 96x96 icon.png`. If drawing from a reference with an image tool, use the same small-size and transparent-background checks.
+- Call `companion_settings({ action: "propose", proposal: { target: "icon", image: "<absolute path of the icon PNG>", label } })`. The user sees the icon at sidebar size and can apply it. An icon proposal does not replace an open profile-picture proposal.
 
 **My two cards** (`summary`)
 - Settings › Companion shows two short cards: who I am (`who`: `line` one line about me, `nature`, `speech`, `bond` what we are to each other) and what I know about the user (`me`: `work`, `now` what is going on for them now, `talk` how they like to be told things, `trust` what they leave to me).

@@ -365,10 +365,10 @@ export const pictureDir = (env = process.env) => appDataDir(env);
 export const PICTURE_TYPES = Object.freeze({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' });
 
 /** The picture set in the app, if any. */
-export function pictureFile(env = process.env) {
+export function pictureFile(env = process.env, slot = 'avatar') {
   const dir = pictureDir(env);
   for (const ext of Object.values(PICTURE_TYPES)) {
-    if (existsSync(path.join(dir, `avatar.${ext}`))) return path.join(dir, `avatar.${ext}`);
+    if (existsSync(path.join(dir, `${slot}.${ext}`))) return path.join(dir, `${slot}.${ext}`);
   }
   return null;
 }

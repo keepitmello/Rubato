@@ -167,6 +167,7 @@ export function createCompanionService(options = {}) {
             // show their own words then). Registered companions keep their registry title.
             title: about.name ?? (profile.madeInApp ? null : profile.title),
             profile: about.profile, onboarding: about.onboarding, avatarVersion: about.avatarVersion, pictureSet: about.pictureSet,
+            iconVersion: about.iconVersion,
             telegram: profile.telegram === true, madeInApp: profile.madeInApp === true,
             conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
           };
@@ -241,12 +242,13 @@ export function createCompanionService(options = {}) {
       }
       // The companion's face for the phone's list and room (companion.mjs avatarFile); null when
       // it has none.
-      case 'avatar': {
-        const file = companion.avatarFile(env);
-        if (!file) return { avatar: null };
+      case 'avatar':
+      case 'icon': {
+        const file = action === 'avatar' ? companion.avatarFile(env) : companion.pictureFile(env, 'icon');
+        if (!file) return { [action]: null };
         const data = await readFile(file);
         const mime = file.endsWith('.png') ? 'image/png' : /\.jpe?g$/.test(file) ? 'image/jpeg' : 'image/webp';
-        return { avatar: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };
+        return { [action]: { url: `data:${mime};base64,${data.toString('base64')}`, version: (await stat(file)).mtimeMs } };
       }
       // Segno's inbox: its own issue list, which the daily report reads.
       case 'inbox': {
@@ -265,14 +267,19 @@ export function createCompanionService(options = {}) {
       case 'about': {
         const profile = companion.readProfile(env);
         const picture = companion.avatarFile(env);
+        const icon = companion.pictureFile(env, 'icon');
         return { profile: manage.profileView(profile, { createdAt: input.createdAt, home: companion.companionPaths(env).home }),
           onboarding: manage.onboardingView(profile), name: profile.facts.name ?? null,
-          avatarVersion: picture ? (await stat(picture)).mtimeMs : null, pictureSet: Boolean(companion.pictureFile(env)) };
+          avatarVersion: picture ? (await stat(picture)).mtimeMs : null, pictureSet: Boolean(companion.pictureFile(env)),
+          iconVersion: icon ? (await stat(icon)).mtimeMs : null };
       }
       // The picture from the profile on either device, already cropped square by the client; null clears it.
       case 'set-avatar':
         await managed(() => manage.setPicture(input.image, { env }));
         return handle('avatar', {});
+      case 'set-icon':
+        await managed(() => manage.setPicture(input.image, { env, slot: 'icon' }));
+        return handle('icon', {});
       // What the companion proposed to change about itself, each waiting for the person's apply.
       case 'proposals':
         return { proposals: manage.listProposals({ env }).map((item) => manage.proposalView(item, { env })) };
