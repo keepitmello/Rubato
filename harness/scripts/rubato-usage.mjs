@@ -127,6 +127,8 @@ async function readCodex({ slot, fetchImpl }) {
     windows: codexUsageWindows(body),
     ...(typeof body?.email === "string" && body.email ? { email: body.email } : {}),
     ...(typeof body?.plan_type === "string" && body.plan_type ? { plan: `ChatGPT ${titleCase(body.plan_type)}` } : {}),
+    // Reset passes the account holds: each one refills the weekly window once it is used up.
+    ...(Number.isInteger(body?.rate_limit_reset_credits?.available_count) ? { resetCredits: body.rate_limit_reset_credits.available_count } : {}),
   };
 }
 
@@ -427,6 +429,7 @@ export async function collectUsage({
           ...lane(account),
           ...(result.email ? { email: result.email } : {}),
           ...(result.plan ? { plan: result.plan } : {}),
+          ...(result.resetCredits === undefined ? {} : { resetCredits: result.resetCredits }),
           usageLimits: { checkedAt: result.checkedAt ?? checkedAt, windows: result.windows },
         };
       })());
