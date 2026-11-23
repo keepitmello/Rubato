@@ -8,7 +8,8 @@ import path from 'node:path';
 import { handleVoiceRequest } from '../src/voice/http.mjs';
 import { createVoiceRuntime } from '../src/voice/runtime.mjs';
 import { normalizeLanguages, systemLanguages, updateVoiceConfig, voiceLanguages, voiceSettingsStatus } from '../src/voice/settings.mjs';
-import { correctionPairs, correctionsPath, dictationTerms, dictationTermsPath, parseDictationTerms, recordCorrections } from '../src/voice/vocabulary.mjs';
+import { correctionPairs, correctionsPath, dictationTerms, dictationTermsPath, learnTerms, parseDictationTerms, RECENT_TERM_DAYS, recentTerms, recordCorrections } from '../src/voice/vocabulary.mjs';
+import { parseTermAnswer, termModels } from '../src/voice/term-classifier.mjs';
 import { fixture } from './voice-fixture.mjs';
 
 const memoryHome = (t) => {
@@ -98,4 +99,39 @@ test("the live key carries the person's languages and terms", async (t) => {
   assert.match(transcription.prompt, /They speak Japanese and English\./);
   assert.ok(transcription.keywords.includes('INFINOX'));
   assert.ok(transcription.keywords.includes('Rubato'));
+});
+
+// A fix teaches its term at once, before the user dream folds the same fix into the list (user, 2026-11-24).
+test('a fixed name is a hint from the next dictation, first, and leaves once the dream had days to take it', async (t) => {
+  const { env } = memoryHome(t);
+  mkdirSync(path.dirname(dictationTermsPath(env)), { recursive: true });
+  writeFileSync(dictationTermsPath(env), '## Conclusion\n- 세뇨\n- VaultOne\n');
+  let clock = Date.parse('2026-11-24T00:00:00Z');
+  const now = () => clock;
+  const asked = [];
+  const classify = async (pair) => { asked.push(pair.to); return pair.to === 'INFINOX' ? 'INFINOX' : null; };
+  const learned = await learnTerms([{ from: '인피니티', to: 'INFINOX' }, { from: '안녕', to: '아니' }, { from: '세노', to: '세뇨' }], { classify, env, now });
+  assert.deepEqual(learned, ['INFINOX']);
+  assert.deepEqual(asked, ['INFINOX', '아니'], 'a term already in the hints is not asked about');
+  assert.deepEqual(dictationTerms(env, now), ['INFINOX', '세뇨', 'VaultOne']);
+  clock += RECENT_TERM_DAYS * 24 * 60 * 60_000 + 1;
+  assert.deepEqual(recentTerms(env, now), []);
+  assert.deepEqual(dictationTerms(env, now), ['세뇨', 'VaultOne']);
+});
+
+test('the corrections route answers at once and the fix is learned behind it', async (t) => {
+  const { env } = memoryHome(t);
+  const seen = [];
+  recordCorrections({ heard: ['인피니티 출금 확인해 줘'], sent: 'INFINOX 출금 확인해 줘' }, { env, onRecorded: (pairs) => seen.push(...pairs) });
+  assert.deepEqual(seen, [{ from: '인피니티', to: 'INFINOX' }]);
+});
+
+test("the classifier's answer is a term or nothing, and it asks only subscription models", () => {
+  assert.equal(parseTermAnswer('{"term": "INFINOX"}'), 'INFINOX');
+  assert.equal(parseTermAnswer('Sure: {"term": null}'), null);
+  assert.equal(parseTermAnswer('{"term": "<b>x</b>"}'), null);
+  assert.equal(parseTermAnswer('not json'), null);
+  assert.deepEqual(termModels([{ provider: 'opengateway', id: 'deepseek/x' }, { provider: 'anthropic', id: 'claude-haiku-5-5', reasoning: 'off' }]),
+    [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }]);
+  assert.deepEqual(termModels([{ provider: 'opengateway', id: 'deepseek/x' }]), [{ model: 'anthropic/claude-haiku-5-5', reasoning: 'off' }]);
 });

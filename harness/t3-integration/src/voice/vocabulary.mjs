@@ -7,7 +7,11 @@
 // - 고친 기록: 받아쓴 글과 그 사람이 보낸 글을 견줘 바뀐 낱말 쌍만 `agents/user.shared/runtime/
 //   dictation-corrections.jsonl` 에 남긴다. 꿈이 그 중 이름과 용어를 위 목록에 올린다. 이 맥 밖으로
 //   나가지 않는다.
-import { appendFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+// - 최근 용어: 꿈을 기다리지 않는 길. 고친 쌍을 남기는 그 자리에서 작은 모델이 이름·용어로 본 것을
+//   `agents/user.shared/runtime/dictation-recent-terms.json` 에 두고 다음 받아쓰기부터 힌트 맨 앞에
+//   싣는다(term-classifier.mjs). 꿈은 같은 고친 기록을 읽어 본 목록에 합치므로, 최근 용어는
+//   RECENT_TERM_DAYS 가 지나면 빠진다.
+import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
@@ -15,6 +19,9 @@ import path from 'node:path';
 export const DICTATION_TERMS_MAX = 80;
 /** 고친 기록 파일이 이 줄 수를 넘으면 오래된 쪽을 덜어 낸다. */
 const CORRECTIONS_MAX_LINES = 2000;
+/** 최근 용어가 힌트에 머무는 날수. 사용자 꿈이 하루 한 번 같은 고친 기록을 본 목록에 합친다. */
+export const RECENT_TERM_DAYS = 3;
+const RECENT_TERMS_MAX = 40;
 /** 바뀐 토막이 이보다 길면 고친 낱말이 아니라 다시 쓴 문장이다. */
 const CORRECTION_MAX_WORDS = 4;
 
@@ -26,6 +33,24 @@ export function memoryRoot(env = process.env) {
 
 export function dictationTermsPath(env = process.env) {
   return path.join(memoryRoot(env), 'agents', 'user.shared', 'repo', 'vocabulary', 'dictation-terms.md');
+}
+
+export function recentTermsPath(env = process.env) {
+  return path.join(memoryRoot(env), 'agents', 'user.shared', 'runtime', 'dictation-recent-terms.json');
+}
+
+function readRecent(env) {
+  try {
+    const terms = JSON.parse(readFileSync(recentTermsPath(env), 'utf8'))?.terms;
+    return Array.isArray(terms) ? terms.filter((entry) => typeof entry?.term === 'string' && typeof entry?.at === 'string') : [];
+  } catch { return []; }
+}
+
+/** 최근 용어 중 아직 머무는 것, 새것부터. */
+export function recentTerms(env = process.env, now = Date.now) {
+  const since = now() - RECENT_TERM_DAYS * 24 * 60 * 60_000;
+  return readRecent(env).filter((entry) => Date.parse(entry.at) >= since)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).map((entry) => entry.term);
 }
 
 export function correctionsPath(env = process.env) {
@@ -49,10 +74,35 @@ export function parseDictationTerms(markdown) {
   return terms;
 }
 
-/** 꿈이 관리하는 이 사람의 용어. 파일이 없거나 못 읽으면 빈 목록이다. */
-export function dictationTerms(env = process.env) {
-  try { return parseDictationTerms(readFileSync(dictationTermsPath(env), 'utf8')); }
-  catch { return []; }
+/** 이 사람의 용어: 최근 용어를 앞에, 꿈이 관리하는 목록을 뒤에, 겹침 없이 DICTATION_TERMS_MAX 까지. */
+export function dictationTerms(env = process.env, now = Date.now) {
+  let kept = [];
+  try { kept = parseDictationTerms(readFileSync(dictationTermsPath(env), 'utf8')); } catch { /* 목록 없음 */ }
+  return [...new Set([...recentTerms(env, now), ...kept])].slice(0, DICTATION_TERMS_MAX);
+}
+
+/**
+ * 고친 쌍마다 `classify` 에게 이름·용어인지 묻고, 용어면 최근 용어에 둔다. 이미 힌트에 있는 말은 묻지
+ * 않는다. 실패는 힌트 하나를 잃을 뿐이다. 둔 용어를 낸다.
+ */
+export async function learnTerms(pairs, { classify, env = process.env, now = Date.now } = {}) {
+  const learned = [];
+  for (const pair of pairs) {
+    const known = new Set(dictationTerms(env, now));
+    if (known.has(pair.to)) continue;
+    const term = await classify(pair).catch(() => null);
+    if (!term || known.has(term)) continue;
+    const since = now() - RECENT_TERM_DAYS * 24 * 60 * 60_000;
+    const entries = [{ term, heard: pair.from, at: new Date(now()).toISOString() },
+      ...readRecent(env).filter((entry) => entry.term !== term && Date.parse(entry.at) >= since)].slice(0, RECENT_TERMS_MAX);
+    const file = recentTermsPath(env);
+    mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    const temporary = `${file}.${process.pid}.tmp`;
+    writeFileSync(temporary, `${JSON.stringify({ terms: entries }, null, 2)}\n`, { mode: 0o600 });
+    renameSync(temporary, file);
+    learned.push(term);
+  }
+  return learned;
 }
 
 const words = (text) => String(text ?? '').trim().split(/\s+/).filter(Boolean);
@@ -138,16 +188,17 @@ export function correctionPairs(heard, sent) {
  * 클라이언트가 보낸 한 번의 보내기: 그 초안에 받아쓴 글들과 실제로 보낸 글. 고친 쌍만 남기고,
  * 몇 개 남겼는지 답한다.
  */
-export function recordCorrections({ heard, sent }, { env = process.env, now = Date.now } = {}) {
+export function recordCorrections({ heard, sent }, { env = process.env, now = Date.now, onRecorded } = {}) {
   const list = (Array.isArray(heard) ? heard : [heard]).filter((text) => typeof text === 'string').slice(0, 20);
   if (typeof sent !== 'string' || sent.length > 100_000) return 0;
   const at = new Date(now()).toISOString();
-  const lines = [];
+  const pairs = [];
   for (const text of list) {
     if (text.length > 20_000) continue;
-    for (const pair of correctionPairs(text, sent)) lines.push(JSON.stringify({ at, ...pair }));
+    pairs.push(...correctionPairs(text, sent));
   }
-  if (lines.length === 0) return 0;
+  if (pairs.length === 0) return 0;
+  const lines = pairs.map((pair) => JSON.stringify({ at, ...pair }));
   const file = correctionsPath(env);
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   appendFileSync(file, `${lines.join('\n')}\n`, { mode: 0o600 });
@@ -157,5 +208,6 @@ export function recordCorrections({ heard, sent }, { env = process.env, now = Da
       writeFileSync(file, `${kept.join('\n')}\n`, { mode: 0o600 });
     }
   } catch { /* 덜어 내기는 다음 번에 */ }
+  onRecorded?.(pairs);
   return lines.length;
 }
