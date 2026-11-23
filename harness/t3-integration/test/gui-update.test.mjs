@@ -165,6 +165,21 @@ test('a restart with no app here succeeds on exit 0 and never asks for a reopen'
   assert.equal(jobEnv.RUBATO_GUI_UPDATE, undefined, 'the update-only mode stays off');
 });
 
+// The app keeps the environment its launcher had and hands it to its next job.
+test('a job does not pass an agent session or an earlier job\'s markers on to the app it reopens', async (t) => {
+  const h = await fixture(t);
+  const envFile = path.join(h.root, 'job-env.json');
+  const result = await runUpdate({ ...h.options, kind: 'restart', parentPid: 0, readyTimeoutMs: 60_000,
+    env: { ...h.options.env, PI_SESSION_ID: 'agent-session', PI_SESSION_FILE: '/tmp/agent.jsonl', PI_MODEL: 'm',
+      RUBATO_GUI_RESTART_APP: '1', RUBATO_GUI_UPDATE: '1', RUBATO_GUI_UPDATE_RELAUNCH: '1', KEEP_ME: 'yes' },
+    args: ['-e', `require('node:fs').writeFileSync(${JSON.stringify(envFile)},JSON.stringify(process.env))`] });
+  assert.equal(result.status, 'succeeded');
+  const jobEnv = await readJson(envFile);
+  for (const key of ['PI_SESSION_ID', 'PI_SESSION_FILE', 'PI_MODEL', 'RUBATO_GUI_RESTART_APP', 'RUBATO_GUI_UPDATE', 'RUBATO_GUI_UPDATE_RELAUNCH'])
+    assert.equal(jobEnv[key], undefined, key);
+  assert.equal(jobEnv.KEEP_ME, 'yes');
+});
+
 // restart-gui.sh leaves the app open when nothing it runs changed. The job must
 // not wait for a reopened window that never comes and report a failure.
 test('an update that kept the app open succeeds without a reopened window', async (t) => {

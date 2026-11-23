@@ -140,6 +140,12 @@ async function executeUpdate(command, args, options, timeoutMs, signal, did = 'T
   }
 }
 
+/** Values that belong to one session or one job, never to the app a job reopens. */
+export const INHERITED_JOB_ENV = new Set([
+  'PI_SESSION_ID', 'PI_SESSION_FILE', 'PI_MODEL', 'PI_PROVIDER', 'PI_REASONING_LEVEL',
+  'RUBATO_GUI_RESTART_APP', 'RUBATO_GUI_UPDATE', 'RUBATO_GUI_UPDATE_RELAUNCH',
+]);
+
 const WORDS = {
   update: { did: 'The update', failed: 'Rubato update failed' },
   restart: { did: 'The restart', failed: 'Rubato restart failed' },
@@ -196,7 +202,11 @@ export async function runUpdate({
     // The relaunch variables hand the token to the reopened app (its ready file)
     // and detach it from this job's process group. Without an app, restart-gui.sh
     // must not open one.
-    const jobEnv = { ...env, RUBATO_GUI_UPDATE_TOKEN: token, RUBATO_GUI_UPDATE_NODE: process.execPath };
+    // An agent's shell or an earlier job can hand its own markers down. The reopened app keeps its
+    // launcher's environment and passes it to the next job, so one leaked value stayed for good:
+    // an agent session's id, and a phone's "reopen the app" on every later restart.
+    const jobEnv = Object.fromEntries(Object.entries(env).filter(([key]) => !INHERITED_JOB_ENV.has(key)));
+    Object.assign(jobEnv, { RUBATO_GUI_UPDATE_TOKEN: token, RUBATO_GUI_UPDATE_NODE: process.execPath });
     if (kind === 'update') jobEnv.RUBATO_GUI_UPDATE = '1';
     if (app) jobEnv.RUBATO_GUI_UPDATE_RELAUNCH = '1';
     if (reopenApp) jobEnv.RUBATO_GUI_RESTART_APP = '1';
