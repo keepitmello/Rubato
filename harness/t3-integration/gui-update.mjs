@@ -158,6 +158,7 @@ export async function runUpdate({
 } = {}) {
   const words = WORDS[kind];
   const app = parentPid !== 0 || kind !== 'restart';
+  const reopenApp = kind === 'restart' && app;
   if (!words || !tokenPattern.test(token) || !Number.isSafeInteger(parentPid) || (app && parentPid < 2))
     throw new Error('Invalid update request');
   const directory = stateDirectory(env);
@@ -170,8 +171,8 @@ export async function runUpdate({
   // the backend is up, which the first start after a T3 upgrade can hold for minutes while it
   // migrates a large state database; a live launching app gets launchTimeoutMs, a dead one fails.
   const launchingFile = path.join(directory, `launching-${token}.json`);
-  // restart-gui.sh leaves this when the app could stay open: nothing it runs
-  // changed, so it only reconnects to the new engine and no window reopens.
+  // An update can keep the current window when nothing it runs changed.
+  // An explicit desktop restart must instead acknowledge a new window.
   const keptFile = path.join(directory, `kept-${token}.json`);
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -198,9 +199,10 @@ export async function runUpdate({
     const jobEnv = { ...env, RUBATO_GUI_UPDATE_TOKEN: token, RUBATO_GUI_UPDATE_NODE: process.execPath };
     if (kind === 'update') jobEnv.RUBATO_GUI_UPDATE = '1';
     if (app) jobEnv.RUBATO_GUI_UPDATE_RELAUNCH = '1';
+    if (reopenApp) jobEnv.RUBATO_GUI_RESTART_APP = '1';
     await executeUpdate(command, jobArgs, { cwd: root, env: jobEnv }, updateTimeoutMs, controller.signal, words.did);
     if (!app) result = { token, kind, status: 'succeeded', finishedAt: Date.now() };
-    else if ((await readJson(keptFile))?.token === token && alive(parentPid))
+    else if (!reopenApp && (await readJson(keptFile))?.token === token && alive(parentPid))
       result = { token, kind, status: 'succeeded', appPid: parentPid, kept: true, finishedAt: Date.now() };
     const waitStarted = Date.now();
     let launchingPid = null;
