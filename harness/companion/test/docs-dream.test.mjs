@@ -558,3 +558,29 @@ test('a file the repository ignores is left out and does not fail the run', asyn
   });
   assert.deepEqual(git(repo, 'show', '--name-only', '--format=', record.branches[0].branch).trim().split('\n'), ['docs/copy.md']);
 });
+
+test('a case-only rename, a tracked file under node_modules, a folder turned link and an empty nested repository each keep the sibling edit', async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) {
+      put(path.join(repo, 'docs', 'node_modules', 'guide.md'), 'tracked here on purpose\n');
+      put(path.join(repo, 'docs', 'sub', 'file.md'), 'inside\n');
+      git(repo, 'add', '-f', '.');
+      git(repo, 'commit', '--quiet', '-m', 'more docs');
+    },
+    work({ worktree, dir }) {
+      git(worktree, 'mv', 'docs/runbook.md', 'docs/RUNBOOK.md');
+      writeFileSync(path.join(worktree, 'docs', 'node_modules', 'guide.md'), 'tidied\n');
+      put(path.join(dir, 'outside', 'file.md'), 'outside bytes\n');
+      rmSync(path.join(worktree, 'docs', 'sub'), { recursive: true });
+      symlinkSync(path.join(dir, 'outside'), path.join(worktree, 'docs', 'sub'));
+      execFileSync('git', ['init', '--quiet', path.join(worktree, 'docs', 'temp')]);
+      put(path.join(worktree, 'docs', 'temp', 'draft.md'), 'draft\n');
+      writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n');
+    },
+  });
+  const branch = record.branches[0].branch;
+  const names = git(repo, 'show', '--name-status', '--no-renames', '--format=', branch).trim().split('\n').sort();
+  assert.deepEqual(names, ['A\tdocs/RUNBOOK.md', 'D\tdocs/runbook.md', 'M\tdocs/copy.md', 'M\tdocs/node_modules/guide.md'].sort());
+  assert.equal(git(repo, 'show', `${branch}:docs/sub/file.md`), 'inside\n');
+  assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`).sort(), ['docs/sub:link', 'docs/temp:nested repository']);
+});

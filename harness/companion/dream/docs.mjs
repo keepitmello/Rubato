@@ -267,8 +267,9 @@ function scanStamps(worktree, scopes) {
     try { stat = lstatSync(full); } catch { return; }
     if (!stat.isDirectory()) { out.set(rel, stamp(full)); return; }
     if (rel && existsLink(path.join(full, '.git'))) { out.set(rel, `repository:${stamp(full)}`); return; }
+    // Only git's own folder is left out: a tracked document may live anywhere, node_modules included.
     for (const name of readdirSync(full)) {
-      if (SKIPPED_DIRS.has(name)) continue;
+      if (name === '.git') continue;
       walk(path.join(full, name), rel ? `${rel}/${name}` : name);
     }
   };
@@ -337,14 +338,19 @@ function finishWorktree(open, { date, message, runDir }) {
     git(worktree, ['read-tree', base], { env: index });
     // Only what the child touched is taken in, read with the base commit's attributes, so an edited
     // .gitattributes cannot change how anything else is stored and an untouched file is never stored anew.
-    const existing = touched.filter((rel) => existsLink(path.join(worktree, rel)));
+    // Whether a path is there is read from the scan, not asked of the disk again: on a case-insensitive
+    // disk the old spelling of a renamed file still answers, and a path below a new link answers through it.
+    const nested = touched.filter((rel) => now.get(rel)?.startsWith('repository:'));
+    for (const rel of nested) reverted.set(rel, 'nested repository');
+    const existing = touched.filter((rel) => now.has(rel) && !nested.includes(rel));
     // A new file the repository ignores stays out, as `git add -A` of the folder would leave it.
     const ignored = new Set(existing.length ? (git(worktree, ['check-ignore', '-z', '--stdin'], { env: index, input: existing.join('\0'), allowFail: true }) ?? '')
       .split('\0').filter(Boolean) : []);
     const present = existing.filter((rel) => !ignored.has(rel));
-    const gone = touched.filter((rel) => !existing.includes(rel));
+    const gone = touched.filter((rel) => !now.has(rel));
+    // Removals first: on a case-insensitive disk a new spelling is otherwise filed under the old entry.
+    if (gone.length) git(worktree, ['update-index', '-z', '--force-remove', '--stdin'], { env: index, input: gone.join('\0') });
     if (present.length) git(worktree, [`--attr-source=${base}`, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: index, input: present.join('\0') });
-    if (gone.length) git(worktree, ['rm', '-r', '--cached', '--quiet', '--ignore-unmatch', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: index, input: gone.join('\0') });
     for (let round = 0; round < 4; round += 1) {
       const bad = rawChanges(git(worktree, ['diff-index', '--cached', '-z', '--no-renames', '--raw', base], { env: index }))
         .filter((change) => problem(change));
