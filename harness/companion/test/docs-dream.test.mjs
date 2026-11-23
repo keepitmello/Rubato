@@ -109,6 +109,13 @@ test('the user sets the docs job by talking to the companion, and the Settings p
   // The page changes the cadence; the roots the companion set stay.
   await service.handle('save-settings', { patch: { dream: { docs: { cadence: 'monthly' } } } });
   assert.deepEqual(readSettings(env).dream.docs, { cadence: 'monthly', roots });
+  // The page edits the list the same way: the whole list back, through the same checks.
+  const fewer = roots.slice(0, 2).map((root, index) => (index === 1 ? { ...root, mode: 'report' } : root));
+  await service.handle('save-settings', { patch: { dream: { docs: { roots: fewer } } } });
+  assert.deepEqual((await call({ action: 'show' })).settings.companion.dream.docs, { cadence: 'monthly', roots: fewer }, 'the companion sees what the page set');
+  await assert.rejects(service.handle('save-settings', { patch: { dream: { docs: { roots: [...fewer, { path: '/srv/repo', mode: 'edit' }] } } } }),
+    (error) => error.code === 'invalid' && /inside the companion's home/.test(error.message));
+  await service.handle('save-settings', { patch: { dream: { docs: { roots } } } });
 
   for (const bad of [
     { roots: [{ path: '/srv/repo', mode: 'edit' }] },

@@ -193,7 +193,7 @@ export interface CompanionSettingsPatch {
   readonly greetings?: Partial<CompanionSettings["greetings"]>;
   readonly schedule?: Partial<CompanionSettings["schedule"]>;
   readonly call?: Partial<CompanionSettings["call"]>;
-  readonly dream?: { readonly docs?: { readonly cadence?: DocsCadence } };
+  readonly dream?: { readonly docs?: { readonly cadence?: DocsCadence; readonly roots?: readonly DocsRoot[] } };
 }
 
 /** A conversation Segno handed work to and follows until that work ends (engine panel.json). */

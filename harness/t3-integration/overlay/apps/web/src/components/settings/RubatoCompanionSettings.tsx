@@ -420,6 +420,106 @@ function CardRow({ id, title, description, control }: { id?: string; title: Reac
   );
 }
 
+/**
+ * The dream's document upkeep (harness/companion/dream/docs.mjs): how often, and the places it
+ * tends. The companion usually sets these in conversation; the page shows them and can change them,
+ * through the same validation (companion.mjs writeSettings).
+ */
+function DocsUpkeep({
+  docs,
+  busy,
+  save,
+}: {
+  docs: { readonly cadence: DocsCadence; readonly roots: readonly DocsRoot[] };
+  busy: boolean;
+  save: (patch: CompanionSettingsPatch) => Promise<boolean>;
+}) {
+  const [path, setPath] = useState("");
+  const [mode, setMode] = useState<DocsRoot["mode"]>("branch");
+  const saveRoots = (roots: readonly DocsRoot[]) => save({ dream: { docs: { roots } } });
+  const modeSelect = (value: DocsRoot["mode"], onChange: (next: DocsRoot["mode"]) => void, label: string) => (
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        if (typeof next === "string") onChange(next as DocsRoot["mode"]);
+      }}
+    >
+      <SelectTrigger size="sm" className="w-auto min-w-32" aria-label={label} disabled={busy}>
+        <SelectValue>{DOCS_MODE_LABELS[value]}</SelectValue>
+      </SelectTrigger>
+      <SelectPopup align="end" alignItemWithTrigger={false}>
+        {(Object.keys(DOCS_MODE_LABELS) as DocsRoot["mode"][]).map((item) => (
+          <SelectItem key={item} value={item}>
+            {DOCS_MODE_LABELS[item]}
+          </SelectItem>
+        ))}
+      </SelectPopup>
+    </Select>
+  );
+  return (
+    <>
+      <CardRow
+        id="rubato-companion-docs"
+        title="Tidying documents"
+        description={docs.roots.length === 0 ? "Nothing to tend yet. Tell it which folders to keep tidy." : "After its memory, its dream keeps these tidy"}
+        control={
+          <Select
+            value={docs.cadence}
+            onValueChange={(next) => {
+              if (typeof next === "string") void save({ dream: { docs: { cadence: next as DocsCadence } } });
+            }}
+          >
+            <SelectTrigger size="sm" className="w-auto min-w-36" aria-label="How often documents are tidied" disabled={busy}>
+              <SelectValue>{DOCS_CADENCE_LABELS[docs.cadence]}</SelectValue>
+            </SelectTrigger>
+            <SelectPopup align="end" alignItemWithTrigger={false}>
+              {(Object.keys(DOCS_CADENCE_LABELS) as DocsCadence[]).map((cadence) => (
+                <SelectItem key={cadence} value={cadence}>
+                  {DOCS_CADENCE_LABELS[cadence]}
+                </SelectItem>
+              ))}
+            </SelectPopup>
+          </Select>
+        }
+      />
+      {docs.roots.map((root, index) => (
+        <div key={root.path} data-rubato-companion-docs-root="" className="flex items-center gap-2 pb-2">
+          <span className="min-w-0 flex-1 truncate text-muted-foreground text-xs" translate="no" title={root.path}>
+            {root.path}
+          </span>
+          {modeSelect(root.mode, (next) => void saveRoots(docs.roots.map((item, at) => (at === index ? { ...item, mode: next } : item))), "How it is tended")}
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => void saveRoots(docs.roots.filter((_, at) => at !== index))}>
+            Remove
+          </Button>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 pb-2">
+        <Input
+          aria-label="Folder or file to tend"
+          className="h-8 flex-1"
+          placeholder="~/Github-repos/project/docs"
+          value={path}
+          disabled={busy}
+          onChange={(event) => setPath(event.target.value)}
+        />
+        {modeSelect(mode, setMode, "How the new place is tended")}
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || path.trim() === ""}
+          onClick={() => {
+            void saveRoots([...docs.roots, { path: path.trim(), mode }]).then((kept) => {
+              if (kept) setPath("");
+            });
+          }}
+        >
+          Add
+        </Button>
+      </div>
+    </>
+  );
+}
+
 /** "Who it is" or "What it knows about me", in the companion's own words. */
 function SummaryCard({
   id,
@@ -861,14 +961,18 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
     void loadPieces();
   }, [loadPieces]);
 
-  const save = async (patch: CompanionSettingsPatch) => {
+  /** Resolves true when the engine kept the change, false when it refused it (the toast says why). */
+  const save = async (patch: CompanionSettingsPatch): Promise<boolean> => {
     setBusy(true);
+    let kept = false;
     try {
       acceptCompanionStatus(await rubatoCompanion.saveSettings(environmentId, patch));
+      kept = true;
     } catch (cause) {
       reportError("Could not save the companion settings", cause);
     }
     setBusy(false);
+    return kept;
   };
   const savePiece = async (id: CompanionPieceId, text: string) => {
     setBusy(true);
@@ -1037,44 +1141,7 @@ function CompanionDetail({ companion }: { companion: CompanionChoice }) {
               )
             }
           />
-          {settings.dream ? (
-            <CardRow
-              id="rubato-companion-docs"
-              title="Tidying documents"
-              description={
-                settings.dream.docs.roots.length === 0 ? (
-                  "Nothing to tend yet. Tell it which folders to keep tidy."
-                ) : (
-                  <span className="flex flex-col">
-                    {settings.dream.docs.roots.map((root) => (
-                      <span key={root.path}>
-                        <span translate="no">{root.path}</span> · <span>{DOCS_MODE_LABELS[root.mode]}</span>
-                      </span>
-                    ))}
-                  </span>
-                )
-              }
-              control={
-                <Select
-                  value={settings.dream.docs.cadence}
-                  onValueChange={(next) => {
-                    if (typeof next === "string") void save({ dream: { docs: { cadence: next as DocsCadence } } });
-                  }}
-                >
-                  <SelectTrigger size="sm" className="w-auto min-w-36" aria-label="How often documents are tidied" disabled={busy}>
-                    <SelectValue>{DOCS_CADENCE_LABELS[settings.dream.docs.cadence]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectPopup align="end" alignItemWithTrigger={false}>
-                    {(Object.keys(DOCS_CADENCE_LABELS) as DocsCadence[]).map((cadence) => (
-                      <SelectItem key={cadence} value={cadence}>
-                        {DOCS_CADENCE_LABELS[cadence]}
-                      </SelectItem>
-                    ))}
-                  </SelectPopup>
-                </Select>
-              }
-            />
-          ) : null}
+          {settings.dream ? <DocsUpkeep docs={settings.dream.docs} busy={busy} save={save} /> : null}
           {companion.calls ? (
             <CardRow
               id="rubato-companion-call-effort"
