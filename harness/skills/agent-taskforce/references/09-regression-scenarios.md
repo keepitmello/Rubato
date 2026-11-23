@@ -92,11 +92,11 @@ These are behavior scenarios, not claims of live runs. Static contract tests and
 - **unsettled-surface-not-execution-model** — 실제 수정 지점이 아직 드러나지 않았어. → 모른다는 이유로 특정 모델의 오너 역할을 금지하거나 조사를 위한 새 오너를 자동 생성하지 않아. 현재 증거와 권한으로 배정하고 그 오너가 탐색·판단·승인된 구현을 이어 가.
 - **clean-substantial-handoff** — 한 judgment owner가 핵심 수정을 끝냈고 동일 패턴의 대규모 독립 rollout이 남음. → context transfer 비용과 rollout 규모를 비교한다. delegation이나 새 owner를 제안할 수 있지만 조사 지식을 이유 없이 버리지 않는다.
 - **verifier-is-optional** — 명확한 결과에 적절한 자체 검사가 있어. → 독립 검증이 더할 증거가 없다면 자동 생성하지 않아. 담당 오너의 통합 증거로 목표 달성 여부를 논의하고 이를 독립 검증이라고 부르지 않아.
-- **cross-model-verifier-soft-default** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 모델 계열 다양성은 선택 사항이며 승인과 실제 실행 식별자를 지켜.
+- **cross-provider-reviewer** — 독립 검증이 필요해. → 별도 문맥, 실제 산출물과 수용 기준, 판정 책임으로 독립성을 확보해. 리뷰어는 만든 쪽과 다른 제공사(클로드가 만들면 Astra, 코덱스가 만들면 Opus)이고, 그쪽 쿼터가 바닥이면 만든 쪽 제공사의 새 세션이 보고 교차 리뷰가 아니었다고 적어.
 - **owner-different-verifier** — 구현자가 자신의 결과를 독립 검증했다고 하려 해. → 같은 구현 세션의 자체 검사는 독립 검증이 아니야. 같은 계열의 새 유능한 세션은 검증자가 될 수 있어.
 - **no-standing-fable-teammate** — 페이블이나 아스트라를 오너로 배정할 수 있어. → 처음부터 승인된 전체 결과를 맡길 수 있으며, 실패한 하위 모델이나 정식 프레이밍이 선행 조건이 아니야. 이름을 채우기 위한 상시 팀원은 만들지 않아.
-- **default-then-stronger** — 새 배정이야. → 서브에이전트는 DeepSeek나 Opus, 오너는 Opus나 DeepSeek 중에 골라. 순서가 역할별 기울기야. 난이도로 등급을 나누지 않고, 실패나 측정을 선행 조건으로 두지 않아. 팀은 팀원마다 모델을 한 줄 이유와 함께 제안하고, 사용자의 수정이 결정해. (2026-09-24 사용자 합의, 2026-10-06 "딥시크/오푸스 중에 고르는 거임 — 시작 전엔 다 어려워 보이고 제대로 안 해도 되는 일은 없다"로 개정, 같은 날 "에이전트는 deepseek or opus, 오너는 opus or deepseek"로 역할을 가름)
-- **default-verifier-astra** — 독립 검증자를 배정해. → 기본은 Astra xhigh야. 검증 역할로는 모델 승인을 따로 받지 않고, 팀이면 목적·팀 구성 묶음 승인에 그대로 포함돼. Grok은 사용자가 지목할 때만 써. (2026-10-04 사용자 합의: 세 런 연속 "검증은 아스트라 xhigh"로 고쳐야 했던 원인이 model-guide의 Grok 기본값이었음)
+- **provider-by-quota-model-by-role** — 새 배정이야. → `rubato auth usage --json`으로 리셋까지 쿼터가 더 남은 제공사를 고르고(코덱스 리셋권 한 장은 한 주), 그 안에서 오너는 Opus·Astra, 서브에이전트는 Sonnet·Sol이야. 오너가 다시 해야 할 판단이 든 조각이면 서브에이전트도 윗줄을 써. 난이도로 등급을 나누지 않고 윗줄부터 쓰지 않아. DeepSeek은 기본에서 빠졌고 Gemini·Grok은 사용자가 지목할 때만 써. (2026-11-23 사용자 합의: "사라진적 한번도 없고 항상 먼저 바닥남", "클로드 쿼터만 빨리 다는거아닌가", "코덱스 리셋권이 많은 걸 생각을 해야함")
+- **no-model-gate-but-fable** — 오너·검증자에 Astra나 Opus를 배정해. → 모델 승인을 따로 받지 않고 effort도 고정하지 않아. 팀이면 목적·팀 구성 묶음 승인에 포함돼. 모델 승인은 Fable에만 있어.
 
 ## Evidence-first alignment and combined confirmation
 

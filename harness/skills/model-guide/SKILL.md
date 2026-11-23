@@ -42,22 +42,26 @@ Subscription quota runs out before it resets, so every assignment spends a share
 that other work then lacks. Choose the provider first, then the model by role.
 
 **Provider.** Read `rubato auth usage --json` and go where the most quota is left
-for the time until reset. A Codex account's `resetCredits` is how many more times
-its weekly window can be refilled; count each as one more week. An account that
-cannot be read is not proof of room.
+for the time until reset. An account with any window at 100% is out until that
+window's `resetsAt`. A Codex account's `resetCredits` is how many more times its
+weekly window can be refilled; count each as one more week. A row's `modelSuffix`
+is the suffix its model ids carry (`-sub` reads `anthropic/claude-opus-5-5-sub`).
+An account that cannot be read is not proof of room.
 
 **Model by role.**
 
 | Role | Claude | Codex |
 |---|---|---|
 | Owner | Opus | Astra |
-| Subagent | Sonnet; Opus when the piece needs it | Sol; Astra when the piece needs it |
+| Subagent | Sonnet | Sol |
 | Reviewer | Opus, for work Codex built | Astra, for work Claude built |
 
 An owner holds the outcome and the judgement after it, so it runs on the top line.
-A subagent returns one bounded piece, so it starts one line down. An owner can run
-subagents from both providers at once. A reviewer comes from the other provider
-than the builder.
+A subagent returns one bounded piece, so it runs one line down; give it Opus or
+Astra when the piece carries a judgement the owner would otherwise have to redo.
+An owner can run subagents from both providers at once. A reviewer comes from the
+other provider than the builder; when that provider is out, a fresh session from
+the builder's provider reviews.
 
 - **Fable**: with explicit approval.
 - **Gemini** (`agy/*`) and **Grok**: when the user names them. Local `agy` runs one
@@ -121,8 +125,7 @@ brief, making the adviser the owner or stopping that approach, handoff cost incl
 
 Independent verification needs a fresh session reading the authoritative artifacts
 and acceptance criteria, not the builder's reasoning or desired verdict. The reviewer
-comes from the other provider; when that provider is out of quota, a fresh session
-from the builder's provider verifies. The actual builder
+is chosen in the default allocation above. The actual builder
 never certifies its own work as independent. Call it cross-family review only when
 the actual model identities differ. Neither freshness nor a different family
 guarantees correctness.
