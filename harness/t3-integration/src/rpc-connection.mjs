@@ -3,7 +3,7 @@ import { controlCommandFor, rewriteSkillMentions } from './commands.mjs';
 import { applySelectionOptions, serviceTierPrompts } from './model-catalog-order.mjs';
 import { messageFingerprint } from '../../pi-runtime/features/conversation-rewind/rewind.mjs';
 import { cacheFrom, cacheMoved } from './session-state.mjs';
-import { sessionMessageFrom, textOf } from './events.mjs';
+import { T3_RESTART_CONTINUE_TEXT, sessionMessageFrom, textOf } from './events.mjs';
 import { sameWords } from './backfill.mjs';
 import { isBookkeepingTool } from './activity.mjs';
 import { channelItem, createSaidEcho, saidEchoes } from './said-echo.mjs';
@@ -115,8 +115,7 @@ export const RESTART_TITLE = 'Restarting Rubato';
 export const RESTART_RECONNECT_MS = 90_000;
 /** After the reattach, how long a run the engine should have continued may stay silent. */
 export const RESTART_RESUME_GRACE_MS = 5_000;
-/** The prompt T3 sends a turn the app restart cut (T3 orchestration-v2 RestartContinuation.ts). */
-export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
+export { T3_RESTART_CONTINUE_TEXT };
 /** What the inventory sends a thread to show the run the engine started on its session; never reaches Pi. */
 export const ENGINE_RUN_TEXT = 'Show the run Rubato started.';
 /**

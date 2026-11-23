@@ -488,17 +488,29 @@ export class RubatoPiBridge {
    * nowhere (2026-11-01). A list that fails is asked again a few times before the answer is no.
    */
   async companionSession(sessionId, { attempts = 3, retryMs = 1000 } = {}) {
+    return this.markedSession(sessionId, () => this.companionSessions?.get(sessionId) === true, { attempts, retryMs });
+  }
+  /** Whether a session is a lead a companion created (the engine list's `companionLead` mark), kept like companionSession's yes. */
+  async companionLeadSession(sessionId, { attempts = 3, retryMs = 1000 } = {}) {
+    return this.markedSession(sessionId, () => this.companionLeads?.has(sessionId) === true, { attempts, retryMs });
+  }
+  async markedSession(sessionId, marked, { attempts, retryMs }) {
     if (typeof sessionId !== 'string' || !sessionId) return false;
-    this.companionSessions ??= new Map();
-    if (this.companionSessions.get(sessionId) === true) return true;
+    if (marked()) return true;
     for (let attempt = 1; attempt <= attempts; attempt++) {
       const rows = await this.viaInventory((client) => client.list()).catch(() => null);
       if (Array.isArray(rows)) {
-        for (const row of rows) if (typeof row?.sessionId === 'string' && row.companion === true) {
-          this.companionSessions.set(row.sessionId, true);
-          (this.companionIds ??= new Map()).set(row.sessionId, typeof row.companionId === 'string' ? row.companionId : 'segno');
+        this.companionSessions ??= new Map();
+        this.companionLeads ??= new Set();
+        for (const row of rows) {
+          if (typeof row?.sessionId !== 'string') continue;
+          if (row.companion === true) {
+            this.companionSessions.set(row.sessionId, true);
+            (this.companionIds ??= new Map()).set(row.sessionId, typeof row.companionId === 'string' ? row.companionId : 'segno');
+          }
+          if (row.companionLead === true) this.companionLeads.add(row.sessionId);
         }
-        return this.companionSessions.get(sessionId) === true;
+        return marked();
       }
       if (attempt < attempts && !this.closed) await new Promise((resolve) => setTimeout(resolve, retryMs));
     }
@@ -513,15 +525,20 @@ export class RubatoPiBridge {
     return [...this.rpcConnections].find((connection) => connection.threadId === threadId && !connection.closed && connection.sessionId);
   }
   /**
-   * Whether the run in `threadId` is one a companion opened: the last thing its session got
-   * before that run is a message from a companion's conversation, not the person's own.
+   * Whether the run in `threadId` is companion work, not the person's: any run of a lead a companion
+   * created that the person did not type, whatever woke it (another lead's message, its own
+   * background work, a restart); in any other thread, a run a companion or one of its leads opened.
    */
   async companionOpened(threadId, startedAt = null) {
     const sessionId = this.rpcFor(threadId)?.sessionId ?? (await this.boundSession?.(threadId))?.sessionId;
     if (typeof sessionId !== 'string' || !sessionId) return false;
     const opener = runOpener((await this.transcript(sessionId))?.messages, startedAt);
+    if (opener?.kind === 'person') return false;
+    if (opener?.kind === 'session' && opener.companion) return true;
+    if (await this.companionLeadSession(sessionId)) return true;
     if (opener?.kind !== 'session') return false;
-    return opener.companion || (typeof opener.sessionId === 'string' && await this.companionSession(opener.sessionId));
+    return typeof opener.sessionId === 'string'
+      && (await this.companionSession(opener.sessionId) || await this.companionLeadSession(opener.sessionId));
   }
   /** The text of the thread's last agent answer as T3 shows it, or null (push/service.mjs, a finish alert). */
   async lastAnswer(threadId) {

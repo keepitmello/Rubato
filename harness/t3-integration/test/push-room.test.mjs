@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { RubatoPiBridge } from '../src/bridge.mjs';
-import { RubatoRpcConnection } from '../src/rpc-connection.mjs';
+import { RubatoRpcConnection, T3_RESTART_CONTINUE_TEXT } from '../src/rpc-connection.mjs';
 import { REPLY_TOOL } from '../../companion/home.mjs';
 import { createGrantStore } from '../../push-relay/mac/grants.mjs';
 import { createPushService } from '../src/push/service.mjs';
@@ -87,6 +87,9 @@ test("the bridge tells push whether a thread's newest run is one a companion ope
   const session = (from, extra = {}) => ({ role: 'custom', customType: 'rubato-session-message', display: true,
     details: { v: 1, messageId: 'm', kind: 'message', text: 'brief', from, ...extra } });
   const segno = { sessionId: 'SEGNO', title: 'Segno', companion: true, companionId: 'segno' };
+  const sibling = { sessionId: 'SIBLING', title: 'Sibling lead' };
+  const notification = { role: 'custom', customType: 'senpi-terminal', details: {} };
+  const restart = { role: 'user', content: [{ type: 'text', text: `${T3_RESTART_CONTINUE_TEXT} Your last turn was cut short.` }] };
   const transcripts = {
     'T-companion': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }],
     'T-person-after': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }, { role: 'user', content: '이거 이어서 해줘' }],
@@ -95,19 +98,33 @@ test("the bridge tells push whether a thread's newest run is one a companion ope
     'T-lead': [session({ sessionId: 'LEAD', title: 'Other lead' })],
     'T-unmarked': [session({ sessionId: 'ROO', title: 'Roo' })],
     'T-person': [{ role: 'user', content: 'hi' }],
+    // Leads a companion created (2026-11-23: 92 of 279 finished runs in them were opened like these).
+    'L-sibling': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }, session(sibling)],
+    'L-woken': [session(sibling, { kind: 'create' }), { role: 'assistant', content: [] }, notification],
+    'L-restart': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }, restart],
+    'L-person': [session(segno, { kind: 'create' }), { role: 'assistant', content: [] }, { role: 'user', content: '이어 하자' }],
+    'T-from-lead': [{ role: 'user', content: 'hi' }, { role: 'assistant', content: [] }, session(sibling)],
+    'T-person-restart': [{ role: 'user', content: 'hi' }, { role: 'assistant', content: [] }, restart],
   };
   bridge.boundSession = async (threadId) => (transcripts[threadId] ? { sessionId: threadId, serverId: null } : null);
   bridge.transcript = async (sessionId) => ({ messages: transcripts[sessionId] });
-  bridge.viaInventory = async (call) => call({ list: async () => [{ sessionId: 'ROO', companion: true, companionId: 'roo' }] });
+  bridge.viaInventory = async (call) => call({ list: async () => [{ sessionId: 'ROO', companion: true, companionId: 'roo' },
+    ...['SIBLING', 'L-sibling', 'L-woken', 'L-restart', 'L-person'].map((sessionId) => ({ sessionId, companionLead: true }))] });
   const asked = async (threadId) => answer(threadId);
   assert.equal(await asked('T-companion'), true);
   assert.equal(await asked('T-person-after'), false, "a turn the person sent in a lead the companion started is the person's to hear about");
   assert.equal(await asked('T-companion-again'), true);
   assert.equal(await asked('T-clock'), true, "Rubato's clock opens nothing of its own");
-  assert.equal(await asked('T-lead'), false, "another lead's message is not a companion's");
+  assert.equal(await asked('T-lead'), false, "a lead the person started is not a companion's");
   assert.equal(await asked('T-unmarked'), true, 'a sender from before the mark is known by its session');
   assert.equal(await asked('T-person'), false);
   assert.equal(await asked('T-missing'), false);
+  assert.equal(await asked('L-sibling'), true, "another lead's message to a companion's lead is still companion work");
+  assert.equal(await asked('L-woken'), true, "a companion's lead woken by its own background work is companion work");
+  assert.equal(await asked('L-restart'), true, "a restart's continue is not the person's");
+  assert.equal(await asked('L-person'), false, 'what the person typed into a companion lead is theirs to hear about');
+  assert.equal(await asked('T-from-lead'), true, "a companion lead's message opens companion work in any thread");
+  assert.equal(await asked('T-person-restart'), false, "a restart resumes the person's run");
   await bridge.close();
   assert.equal(answer, null, 'a closed bridge answers nothing');
 });

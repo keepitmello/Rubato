@@ -23,11 +23,15 @@ export const SESSION_MESSAGE_ID_PREFIX = 'rubato-session:';
 const CONTEXT_LABEL_MAX = 200;
 export const isSessionMessage = (message) => message?.role === 'custom'
   && message.customType === SESSION_MESSAGE_TYPE && message.display !== false;
+/** The prompt T3 sends a turn the app restart cut (T3 orchestration-v2 RestartContinuation.ts). */
+export const T3_RESTART_CONTINUE_TEXT = 'Continue where you left off.';
 /**
  * Who opened a run of a session, from its messages: the person's own message, or a
  * message another conversation sent (`from` is its sender, `companion` when that sender is a
  * companion's conversation, as session-link marks it). Rubato's clock (a `wake`) and the engine's
  * other custom messages open nothing of their own and are passed over; null when nothing is found.
+ * A restart's continue is not the person's either: it resumes the run the restart cut, so that
+ * run's opener stays the answer.
  * Inputs after its start are steers or later runs, not the opener of this run.
  */
 export function runOpener(messages, startedAt = null) {
@@ -36,7 +40,10 @@ export function runOpener(messages, startedAt = null) {
     const message = messages[index];
     const timestamp = typeof message?.timestamp === 'number' ? message.timestamp : Date.parse(message?.timestamp);
     if (Number.isFinite(cutoff) && timestamp > cutoff) continue;
-    if (message?.role === 'user') return { kind: 'person' };
+    if (message?.role === 'user') {
+      if (textOf(message).includes(T3_RESTART_CONTINUE_TEXT)) continue;
+      return { kind: 'person' };
+    }
     if (message?.role !== 'custom' || message.customType !== SESSION_MESSAGE_TYPE) continue;
     const details = message.details && typeof message.details === 'object' ? message.details : {};
     if (details.kind === 'wake') continue;
