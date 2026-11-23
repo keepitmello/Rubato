@@ -10,7 +10,7 @@ import { AppText as Text } from "../../components/ui/AppText";
 import type { CallRecord } from "./callTypes";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { copy, dateFormat } from "./copy";
-import { callHeadline, callPreviewLines, spokenText } from "./roomModel";
+import { callHeadline, callPreviewLines } from "./roomModel";
 import { useVisibleSecondClock } from "../threads/use-visible-second-clock";
 
 export const clock = { format: (at: number) => dateFormat({ hour: "numeric", minute: "2-digit" }).format(at) };
@@ -21,11 +21,6 @@ export function callIcon(call: CallRecord): string {
   if (call.status === "declined") return "phone.down.fill";
   if (call.status === "active" || call.status === "ringing") return "phone.fill";
   return call.direction === "incoming" ? "phone.arrow.down.left" : "phone.arrow.up.right";
-}
-
-/** What both sides said, without voice directions; empty lines go. */
-export function callLines(call: CallRecord) {
-  return call.transcript.map((line) => ({ ...line, text: spokenText(line.text) })).filter((line) => line.text);
 }
 
 /** A call's length that keeps moving while it is live. */

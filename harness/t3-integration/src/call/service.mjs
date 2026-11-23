@@ -5,7 +5,7 @@
 //
 //   POST companions                   who can be called, and why not
 //   POST live                         calls ringing or on now
-//   POST calls { companion, since }   finished and live calls, with what was said
+//   POST calls { companion, since?, callId? }   history, or just the selected call
 //   POST dial { companion, voice? }   the person calls: { call, url, room, token }
 //   POST answer { callId }            take a ringing call: { call, url, room, token }; 409 if taken
 //
@@ -21,6 +21,7 @@ const ACTIONS = {
   live: { method: 'GET', path: () => '/live' },
   calls: { method: 'GET', path: body => `/calls?${new URLSearchParams({
     ...(typeof body.companion === 'string' ? { companion: body.companion } : {}),
+    ...(typeof body.callId === 'string' ? { callId: body.callId } : {}),
     ...(Number.isFinite(body.since) ? { since: String(body.since) } : {}) })}` },
   dial: { method: 'POST', path: () => '/dial', body: ({ companion, voice }) => ({ companion, voice }) },
   answer: { method: 'POST', path: () => '/answer', body: ({ callId }) => ({ callId }) },

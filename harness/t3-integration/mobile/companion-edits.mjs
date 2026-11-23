@@ -70,6 +70,7 @@ export const mobileCompanionOverlays = [
   `${companions}/CallScreen.tsx`,
   `${companions}/callStore.test.ts`,
   `${companions}/CallTranscriptScreen.tsx`,
+  `${companions}/CallTranscriptScreen.test.tsx`,
   `${companions}/CompanionListScreen.tsx`,
   `${companions}/useCreateCompanion.ts`,
   `${companions}/CompanionRoomScreen.tsx`,

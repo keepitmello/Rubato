@@ -7,6 +7,7 @@ const native = vi.hoisted(() => ({
   endCall: vi.fn(),
   requestEnd: vi.fn(),
   refuseCallKit: true,
+  history: vi.fn(),
 }));
 
 vi.mock("@livekit/react-native", () => ({ registerGlobals: () => {} }));
@@ -37,8 +38,9 @@ vi.mock("../../../modules/rubato-call", () => ({
 vi.mock("./rubatoHttp", () => ({
   pairedEnvironmentIds: () => ["mac"],
   isRubatoRequestError: () => false,
-  postRubato: async (_env: string, _route: string, action: string) =>
-    action === "dial" ? { call: { id: "c1", uuid: "u1", companion: "roo", status: "active" }, url: "wss://mac", token: "t" } : {},
+  postRubato: async (_env: string, _route: string, action: string, ...args: unknown[]) =>
+    action === "calls" ? native.history(...args) :
+      action === "dial" ? { call: { id: "c1", uuid: "u1", companion: "roo", status: "active" }, url: "wss://mac", token: "t" } : {},
 }));
 
 async function store() {
@@ -55,6 +57,15 @@ beforeEach(() => {
 });
 
 describe("a call on the phone", () => {
+  it("asks for just one call and still picks the right one if an older Mac answers with history", async () => {
+    const { callApi } = await store();
+    const wanted = { id: "picked", companion: "roo" };
+    native.history.mockResolvedValue([{ id: "older", companion: "roo" }, { ...wanted, companion: "segno" }, wanted]);
+    const signal = new AbortController().signal;
+    expect(await callApi.call("mac" as never, "roo", "picked", signal)).toEqual(wanted);
+    expect(native.history).toHaveBeenCalledWith({ companion: "roo", callId: "picked" }, { signal });
+    expect(await callApi.call("mac" as never, "roo", "gone")).toBeNull();
+  });
   it("holds off the app-update restart while it is on, which would drop its audio", async () => {
     const { callActions, readCallView, handoff } = await store();
     expect(handoff.isForegroundHandoffActive()).toBe(false);

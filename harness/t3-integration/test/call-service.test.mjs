@@ -38,6 +38,13 @@ test('ringing the person and reporting speech are not reachable from the app', a
   assert.deepEqual(box.seen, []);
 });
 
+test('the selected call filter reaches the loopback log as data, not another query parameter', async t => {
+  const box = await control(t, () => [200, []]);
+  const response = await ask(createCallService({ base: box.base }), 'calls', { companion: 'roo', callId: 'a&since=1' });
+  assert.deepEqual(await response.json(), []);
+  assert.deepEqual(box.seen.map(item => item.url), ['/calls?companion=roo&callId=a%26since%3D1']);
+});
+
 test('a taken call stays a conflict, and a stopped service says so', async t => {
   const box = await control(t, () => [409, { error: 'answered elsewhere' }]);
   const taken = await ask(createCallService({ base: box.base }), 'answer', { callId: 'c1' });

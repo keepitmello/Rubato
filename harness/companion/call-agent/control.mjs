@@ -46,7 +46,7 @@ export function createControl({ livekit, log, companions = () => callableCompani
     // Where a device on the tailnet reaches LiveKit, or why it cannot yet.
     'GET /reach': () => ({ url: livekit.url, remoteUrl: remote().url ?? null, remoteReason: remote().reason ?? null }),
     'GET /calls': (_input, url) => log.history({ companion: url.searchParams.get('companion') ?? undefined,
-      since: Number(url.searchParams.get('since') ?? 0) }),
+      since: Number(url.searchParams.get('since') ?? 0), callId: url.searchParams.get('callId') ?? undefined }),
     // The person calls a companion.
     'POST /dial': async ({ companion, voice }) => {
       const target = callable(companion, voice);

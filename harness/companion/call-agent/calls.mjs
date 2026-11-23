@@ -123,10 +123,15 @@ export function createCallLog({ dir, now = Date.now, ringMs = RING_MS, onChange 
     get: id => view(get(id)),
     /** Ringing and live calls, for a device to show. */
     live: () => Array.from(liveCalls, view),
-    /** Calls of one companion since `since`, oldest first. */
-    history: ({ companion, since = 0 } = {}) => [...calls.values()]
-      .filter(call => (!companion || call.companion === companion) && call.createdAt >= since)
-      .sort((a, b) => a.createdAt - b.createdAt).map(view),
+    /** With an id, look up only the selected call; the room still gets its history oldest first. */
+    history({ companion, since = 0, callId } = {}) {
+      const matches = call => (!companion || call.companion === companion) && call.createdAt >= since;
+      if (callId !== undefined) {
+        const call = calls.get(callId);
+        return call && matches(call) ? [view(call)] : [];
+      }
+      return [...calls.values()].filter(matches).sort((a, b) => a.createdAt - b.createdAt).map(view);
+    },
     close() { for (const timer of timers.values()) clearTimeout(timer); timers.clear(); },
   };
 }

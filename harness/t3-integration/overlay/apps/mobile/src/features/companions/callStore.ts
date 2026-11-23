@@ -57,6 +57,11 @@ export const callApi = {
   live: (env: EnvironmentId) => postRubato<CallRecord[]>(env, CALL_ROUTE, "live", {}, { timeoutMs: 6_000 }),
   calls: (env: EnvironmentId, companion: string, since?: number, signal?: AbortSignal) =>
     postRubato<CallRecord[]>(env, CALL_ROUTE, "calls", since === undefined ? { companion } : { companion, since }, signal ? { signal } : {}),
+  async call(env: EnvironmentId, companion: string, callId: string, signal?: AbortSignal) {
+    const records = await postRubato<CallRecord[]>(env, CALL_ROUTE, "calls", { companion, callId }, signal ? { signal } : {});
+    // Older paired Macs ignore the id filter and return the room's history.
+    return records.find((item) => item.id === callId && item.companion === companion) ?? null;
+  },
   companions: (env: EnvironmentId, options?: { readonly waitForConnectionMs?: number }) =>
     postRubato<CallableCompanion[]>(env, CALL_ROUTE, "companions", {}, options),
   dial: (env: EnvironmentId, companion: string) => postRubato<Joined>(env, CALL_ROUTE, "dial", { companion }),
@@ -223,8 +228,7 @@ async function liveAnswers(): Promise<LiveAnswer[]> {
 /** How a ring that is no longer live ended, for CallKit's reason. */
 async function endedRingReason(environmentId: EnvironmentId | undefined, ring: RubatoCallInfo): Promise<RubatoCallEndReason> {
   if (environmentId && ring.companion && ring.callId) {
-    const past = await callApi.calls(environmentId, ring.companion).catch(() => []);
-    const call = past.find((item) => item.id === ring.callId);
+    const call = await callApi.call(environmentId, ring.companion, ring.callId).catch(() => null);
     if (call?.status === "active" || call?.status === "ended") return "answeredElsewhere";
     if (call?.status === "declined") return "declinedElsewhere";
   }

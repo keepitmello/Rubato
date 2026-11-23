@@ -91,6 +91,21 @@ test('what both sides said is kept on the call while it is live, and the call en
   assert.deepEqual(kept.transcript.map(line => [line.who, line.text]), [['me', '루야 들려?'], ['companion', '응, 들려!']]);
 });
 
+test('opening one call returns only that record and honors the room and time filters', async t => {
+  const box = await service(t);
+  for (let i = 0; i < 100; i++) box.log.end(box.log.dial({ companion: 'roo' }).id);
+  const chosen = box.log.dial({ companion: 'roo' });
+  const read = async params => (await fetch(`${box.base}/calls?${new URLSearchParams(params)}`)).json();
+  const query = { companion: 'roo', callId: chosen.id };
+  assert.deepEqual(await read(query), [chosen]);
+  assert.deepEqual(await read({ ...query, companion: 'segno' }), []);
+  assert.deepEqual(await read({ ...query, since: chosen.createdAt + 1 }), []);
+  assert.deepEqual(await read({ ...query, callId: 'missing' }), []);
+  const ended = box.log.end(chosen.id);
+  assert.deepEqual(await read(query), [ended]);
+  assert.equal((await read({ companion: 'roo' })).length, 101);
+});
+
 test('after an engine restart a ring that was ringing is missed and a live call is over', t => {
   const dir = tmp(t);
   writeFileSync(path.join(dir, 'a.json'), JSON.stringify({ id: 'a', companion: 'roo', status: 'ringing', transcript: [], createdAt: 1 }));
