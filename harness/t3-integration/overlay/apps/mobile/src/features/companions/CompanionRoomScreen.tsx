@@ -656,6 +656,8 @@ function RoomBody(props: {
   readonly threadId: ThreadId;
   /** What stands under the header besides it (a first conversation's chips). */
   readonly topInset: number;
+  readonly showWork: boolean;
+  readonly onCloseWork: () => void;
 }) {
   // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
   const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
@@ -906,6 +908,13 @@ function RoomBody(props: {
         placeholder={placeholder}
       />
       {modals}
+      {props.showWork ? (
+        <RoomLeadsSheet
+          environmentId={props.environmentId}
+          launches={launches}
+          close={props.onCloseWork}
+        />
+      ) : null}
     </>
   );
 }
@@ -982,6 +991,8 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
           environmentId={environmentId as EnvironmentId}
           threadId={threadId as ThreadId}
           topInset={topInset}
+          showWork={showLeads}
+          onCloseWork={() => setShowLeads(false)}
         />
       ) : onboarding ? (
         // A new companion: the Mac is opening its first conversation, which takes a few seconds.
@@ -1010,18 +1021,12 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
         />
         {/* UIKit lays out right-bar items from the outside in. */}
         <Toolbar.Button
-          accessibilityLabel={gt("Lead threads")}
-          icon="list.bullet"
+          accessibilityLabel={gt("Work")}
+          icon="tray"
           onPress={() => setShowLeads(true)}
           disabled={!environmentId || !threadId}
         />
       </Toolbar>
-      {showLeads && environmentId && threadId ? (
-        <RoomLeadsSheet
-          environmentId={environmentId as EnvironmentId} companionId={companionId} roomThreadId={threadId}
-          close={() => setShowLeads(false)}
-        />
-      ) : null}
     </RoomFrame>
   );
 }

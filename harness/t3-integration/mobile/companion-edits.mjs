@@ -63,6 +63,7 @@ export const mobileCompanionOverlays = [
   `${companions}/roomLaunches.ts`,
   `${companions}/RoomLaunchCard.tsx`,
   `${companions}/RoomLeadsSheet.tsx`,
+  `${companions}/RoomLeadsSheet.test.tsx`,
   `${companions}/roomLeadsModel.ts`,
   `${companions}/roomLeadsModel.test.ts`,
   `${companions}/roomPoll.ts`,
