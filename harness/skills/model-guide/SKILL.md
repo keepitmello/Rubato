@@ -48,8 +48,8 @@ room is what its accounts have left together. An account with any window at 0%
 left is out until that window resets. A reset pass refills the Codex weekly window
 to 100% once it is used up and lapses on its expiry, so it counts only if the
 window can be used up before then; a pass close to expiry is a reason to spend
-Codex first. Each account line names the model ids it serves (`-sub` reads
-`anthropic/claude-opus-5-5-sub`). An account that cannot be read is not proof of
+Codex first. A `sub` account serves the model ids ending in `-sub`
+(`anthropic/claude-opus-5-5-sub`). An account that cannot be read is not proof of
 room.
 
 **Model by role.**
