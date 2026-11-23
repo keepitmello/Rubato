@@ -370,12 +370,14 @@ export const rubatoCompanion = {
    * A summary of what the companion did in each span between the room's bubbles: span i ends at
    * bubble i (`boundaries`, ms, oldest first) and the last span runs on after the last bubble.
    */
-  inner: (env: EnvironmentId | null, companionId: string, boundaries: readonly number[], after?: number) =>
-    call<{ spans: ReadonlyArray<SegnoSpanSummary | null> }>(env, "inner", {
+  inner: (env: EnvironmentId | null, companionId: string, boundaries: readonly number[], after?: number, revision?: string, signal?: AbortSignal) =>
+    call<{ spans?: ReadonlyArray<SegnoSpanSummary | null>; revision?: string; unchanged?: true }>(env, "inner", {
       companionId,
       boundaries,
+      versioned: true,
+      revision,
       ...(after === undefined ? {} : { after }),
-    }),
+    }, signal),
   /** The kind of work the companion's tool does right now ('search', 'file', 'terminal', 'other') or null (bridge companion/inner.mjs liveWork). */
   live: (env: EnvironmentId | null, companionId: string, signal?: AbortSignal) => call<{ work: string | null }>(env, "live", { companionId }, signal),
   /** The pieces of one span: after `after`, up to and including `until` (null: up to now). */

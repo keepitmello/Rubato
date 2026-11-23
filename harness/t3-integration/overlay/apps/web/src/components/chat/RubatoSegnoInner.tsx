@@ -5,7 +5,7 @@
 // these pieces are read from the conversation's session file when the room asks (bridge
 // companion/inner.mjs), never written into the thread, so nothing here reaches the phone.
 import type { EnvironmentId } from "@t3tools/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { startLiveWorkPoll } from "@t3tools/shared/rubatoRoomPoll";
 import { useRubatoRoomVisible } from "../../hooks/useRubatoRoomVisible";
 
@@ -233,16 +233,24 @@ export function useSegnoSpanSummaries(input: {
   const [spans, setSpans] = useState<ReadonlyArray<SegnoSpanSummary | null>>([]);
   // The bubble times as one value, so a new array of the same times asks nothing again.
   const key = input.boundaries.join(",");
+  const cacheKey = JSON.stringify([environmentId, companionId, after, key]);
+  const last = useRef<{ key: string; revision?: string } | null>(null);
   const visible = useRubatoRoomVisible(Boolean(environmentId && companionId));
   useEffect(() => {
     if (!visible || !environmentId || !companionId) return;
     let stopped = false;
     let timer: number | undefined;
+    const controller = new AbortController();
+    const boundaries = key ? key.split(",").map(Number) : [];
     const load = async () => {
       if (document.visibilityState === "visible") {
         try {
-          const answer = await rubatoCompanion.inner(environmentId, companionId, key ? key.split(",").map(Number) : [], after);
-          if (!stopped) setSpans(answer.spans);
+          const answer = await rubatoCompanion.inner(environmentId, companionId, boundaries, after,
+            last.current?.key === cacheKey ? last.current.revision : undefined, controller.signal);
+          if (!stopped && answer.spans) {
+            last.current = { key: cacheKey, ...(answer.revision ? { revision: answer.revision } : {}) };
+            setSpans(answer.spans);
+          }
         } catch {
           // The bridge is restarting or older than this room: the lines stay as they were.
         }
@@ -252,8 +260,9 @@ export function useSegnoSpanSummaries(input: {
     void load();
     return () => {
       stopped = true;
+      controller.abort();
       if (timer !== undefined) window.clearTimeout(timer);
     };
-  }, [environmentId, companionId, key, after, working, visible]);
+  }, [environmentId, companionId, key, after, working, visible, cacheKey]);
   return spans;
 }

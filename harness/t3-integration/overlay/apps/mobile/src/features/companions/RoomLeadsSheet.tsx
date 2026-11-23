@@ -17,9 +17,8 @@ import { ThreadUndoNotice } from "../home/ThreadUndoNotice";
 import { useThreadListActions } from "../home/useThreadListActions";
 import { useSelectWorkspaceDetail } from "../layout/workspace/useSelectWorkspaceDetail";
 import { resolveThreadListV2Status } from "../threads/threadListV2";
-import { roomLeadEndStatus, roomWorkSessions, roomWorkThreads } from "./roomLeadsModel";
+import { roomLeadEndStatus, roomWorkThreads } from "./roomLeadsModel";
 import { BUBBLE_PADDING_X, BUBBLE_RADIUS, ROOM_SIDE } from "./roomLayout";
-import type { RoomLaunch } from "./roomModel";
 
 function priority(thread: EnvironmentThreadShell): number {
   const status = resolveThreadListV2Status(thread);
@@ -28,7 +27,7 @@ function priority(thread: EnvironmentThreadShell): number {
 }
 
 export function RoomLeadsSheet(props: {
-  environmentId: EnvironmentId; launches: readonly RoomLaunch[]; close: () => void;
+  environmentId: EnvironmentId; sessions: ReadonlySet<string>; close: () => void;
 }) {
   const gt = useGT();
   const insets = useSafeAreaInsets();
@@ -36,9 +35,8 @@ export function RoomLeadsSheet(props: {
   const selectDetail = useSelectWorkspaceDetail();
   const { settleThread } = useThreadListActions();
   const shells = useAtomValue(steadyNavigationThreadShellsAtom);
-  const sessions = useMemo(() => roomWorkSessions(props.launches), [props.launches]);
-  const rows = useMemo(() => roomWorkThreads(shells, props.environmentId, sessions, priority),
-    [shells, props.environmentId, sessions]);
+  const rows = useMemo(() => roomWorkThreads(shells, props.environmentId, props.sessions, priority),
+    [shells, props.environmentId, props.sessions]);
   const openedSwipe = useRef<SwipeableMethods | null>(null);
 
   return (

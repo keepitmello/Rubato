@@ -85,6 +85,16 @@ export interface RoomLaunch {
   readonly done: number | null;
 }
 
+const ROOM_HISTORY_PAGE = 50;
+
+/** Start at the same boundary for both bubbles and cards; include events tied with the oldest bubble. */
+export function roomLaunchAfter(messages: readonly { createdAt: string }[], pages: number, hasEarlier: boolean): number | undefined {
+  const index = Math.max(0, messages.length - pages * ROOM_HISTORY_PAGE);
+  if (!messages.length || (index === 0 && !hasEarlier)) return undefined;
+  const at = Date.parse(messages[index]!.createdAt);
+  return Number.isFinite(at) ? at - 1 : undefined;
+}
+
 /**
  * The person's words as a bubble shows them. T3 writes an attached picture into the message as a
  * context link (`![image.png](t3-context://…)`) and the call worker tags call speech `[voice] `.

@@ -3,7 +3,7 @@ import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
 import {
-  callHeadline, callPreviewLines, companionTyping, feedRoomPreview, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
+  callHeadline, callPreviewLines, companionTyping, feedRoomPreview, fileLines, roomItems, roomLaunchAfter, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
   type RoomMessageInput,
 } from "./roomModel";
 
@@ -21,6 +21,14 @@ const call = (patch: Partial<CallRecord> & { minutes: number; length?: number })
 };
 
 describe("a companion room", () => {
+  it("scopes work cards to the visible history and opens earlier pages without skipping same-time records", () => {
+    const messages = Array.from({ length: 105 }, (_, i) => message(`m${i}`, "user", "hi", i));
+    expect(roomLaunchAfter(messages, 1, true)).toBe(Date.parse(at(55)) - 1);
+    expect(roomLaunchAfter(messages, 2, true)).toBe(Date.parse(at(5)) - 1);
+    expect(roomLaunchAfter(messages, 3, true)).toBe(Date.parse(at(0)) - 1);
+    expect(roomLaunchAfter(messages, 3, false)).toBeUndefined();
+  });
+
   it("inserts a lead card at launch time and keeps its row when the thread becomes available", () => {
     const messages = [message("ask", "user", "Start a lead", 0), message("reply", "assistant", "I did", 2)];
     const pending = { id: "tool-42", at: Date.parse(at(1)), title: "Fix the list", sessionId: null, error: null, done: null };

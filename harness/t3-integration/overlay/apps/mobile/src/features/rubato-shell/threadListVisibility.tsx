@@ -53,6 +53,7 @@ function useCompanionLaunchSessions(visible: boolean) {
     if (!visible || !active) return;
     const entries = JSON.parse(sources) as readonly (readonly [EnvironmentId, string, string])[];
     if (!entries.length) return;
+    const revisions = new Map<string, string>();
     return startRoomPoll(15_000, async (signal) => {
       const environmentIds = [...new Set(entries.map(([id]) => id))];
       const durable = await Promise.allSettled(environmentIds.map(async (environmentId) => {
@@ -64,10 +65,18 @@ function useCompanionLaunchSessions(visible: boolean) {
       if (signal.aborted) return false;
       // Pairing with an older Mac still works: its companion rooms already expose launch records.
       const results = await Promise.allSettled(entries.map(async ([environmentId, companionId]) => {
-        const { spans } = await postRubato<{ spans: readonly ({ launches?: readonly { sessionId: string | null }[] } | null)[] }>(
-          environmentId, "/rubato/companion", "inner", { companionId, boundaries: [] }, { timeoutMs: 4_000, signal },
+        const key = JSON.stringify([environmentId, companionId]);
+        const answer = await postRubato<{
+          revision?: string; unchanged?: true; workSessionIds?: readonly string[];
+          spans?: readonly ({ launches?: readonly { sessionId: string | null }[] } | null)[];
+        }>(
+          environmentId, "/rubato/companion", "inner",
+          { companionId, boundaries: [], versioned: true, view: "work-ids", revision: revisions.get(key) },
+          { timeoutMs: 4_000, signal },
         );
-        return [environmentId, (spans[0]?.launches ?? []).flatMap(({ sessionId }) => sessionId ? [sessionId] : [])] as const;
+        if (answer.revision && !signal.aborted) revisions.set(key, answer.revision);
+        return [environmentId, answer.workSessionIds ??
+          (answer.spans?.[0]?.launches ?? []).flatMap(({ sessionId }) => sessionId ? [sessionId] : [])] as const;
       }));
       if (signal.aborted) return false;
       setIndex((previous) => {

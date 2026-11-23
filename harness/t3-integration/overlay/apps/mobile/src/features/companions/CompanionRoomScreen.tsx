@@ -50,6 +50,9 @@ import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3Com
 import { useComposerDraft } from "../../state/use-composer-drafts";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
 import { useThreadSelection } from "../../state/use-thread-selection";
+import { useSelectedThreadDetailState } from "../../state/use-thread-detail";
+import { useAtomCommand } from "../../state/use-atom-command";
+import { threadEnvironment } from "../../state/threads";
 import { useSelectedThreadWorktree } from "../../state/use-selected-thread-worktree";
 import { useScaledTextRole } from "../settings/appearance/useScaledTextRole";
 import { appendPendingThreadMessages } from "../threads/pending-thread-feed";
@@ -95,7 +98,7 @@ import {
 } from "./roomLayout";
 import { useRoomLiveWork } from "./roomLive";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
-import { companionTyping, roomItems, separatorParts, typedSoFar, type RoomItem, type RoomMessageInput } from "./roomModel";
+import { companionTyping, roomItems, roomLaunchAfter, separatorParts, typedSoFar, type RoomItem, type RoomMessageInput } from "./roomModel";
 import {
   CompanionTypingBubble,
   hapticReceive,
@@ -659,6 +662,10 @@ function RoomBody(props: {
   readonly showWork: boolean;
   readonly onCloseWork: () => void;
 }) {
+  const gt = useGT();
+  const [historyPages, setHistoryPages] = useState(1);
+  const { history, status: detailStatus } = useSelectedThreadDetailState();
+  const loadEarlier = useAtomCommand(threadEnvironment.loadEarlierHistory, { reportFailure: false });
   // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
   const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
   const { selectedEnvironmentRuntime } = useThreadSelection();
@@ -742,8 +749,17 @@ function RoomBody(props: {
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
   );
-  const launches = useRoomLaunches(props.environmentId, props.companionId, props.threadId, visible, composer.activeThreadBusy);
-  const allItems = useMemo(() => roomItems(messages, calls, Date.now(), proposals, launches), [messages, calls, proposals, launches]);
+  const after = useMemo(() => roomLaunchAfter(messages, historyPages, history.hasMoreHistory),
+    [messages, historyPages, history.hasMoreHistory]);
+  const { launches, ids: workSessions } = useRoomLaunches(
+    props.environmentId, props.companionId, props.threadId,
+    visible && (messages.length > 0 || detailStatus === "live"), composer.activeThreadBusy, after, props.showWork);
+  const allItems = useMemo(() => {
+    const shown = after === undefined ? messages : messages.filter((message) => Date.parse(message.createdAt) > after);
+    return roomItems(shown, after === undefined ? calls : calls.filter((call) => call.createdAt > after),
+      Date.now(), after === undefined ? proposals : proposals.filter((proposal) => proposal.createdAt > after),
+      after === undefined ? launches : launches.filter((launch) => launch.at > after));
+  }, [messages, calls, proposals, launches, after]);
   // A reply that arrives while the room is open comes in one bubble after another, as if typed, with
   // the typing bubble until its last bubble is in.
   const [clock, setClock] = useState(() => Date.now());
@@ -835,6 +851,7 @@ function RoomBody(props: {
             inverted
             // The rows around a bubble that moves in slide to their new places instead of jumping.
             itemLayoutAnimation={ROW_LAYOUT}
+            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
             onScroll={onScroll}
             scrollEventThrottle={32}
             data={reversed}
@@ -862,7 +879,29 @@ function RoomBody(props: {
                 {writing ? <CompanionTypingBubble tool={tool} bubbleColor={colors.received} dotColor={theme["--color-foreground-muted"]} penColor={theme["--color-foreground"]} /> : null}
               </View>
             }
-            ListFooterComponent={<View style={{ height: headerHeight + 10 }} />}
+            ListFooterComponent={
+              <View style={{ paddingBottom: headerHeight + 10 }}>
+                {after === undefined && !history.hasMoreHistory && !history.error ? null : (
+                  <Pressable accessibilityRole="button" className="min-h-11 items-center justify-center"
+                    disabled={history.loading}
+                    onPress={() => {
+                      if (roomLaunchAfter(messages, historyPages, false) !== undefined) {
+                        setHistoryPages((pages) => pages + 1);
+                      } else {
+                        void loadEarlier({ environmentId: props.environmentId, input: { threadId: props.threadId } })
+                          .then((result) => {
+                            if (result._tag === "Success" && result.value._tag !== "error") {
+                              setHistoryPages((pages) => pages + 1);
+                            }
+                          });
+                      }
+                    }}>
+                    <Text className="text-sm text-primary">{history.loading ? gt("Loading…") :
+                      history.error ? gt("Try again") : gt("Load earlier messages")}</Text>
+                  </Pressable>
+                )}
+              </View>
+            }
             contentContainerStyle={{ paddingHorizontal: ROOM_SIDE }}
             contentInsetAdjustmentBehavior="never"
             automaticallyAdjustContentInsets={false}
@@ -911,7 +950,7 @@ function RoomBody(props: {
       {props.showWork ? (
         <RoomLeadsSheet
           environmentId={props.environmentId}
-          launches={launches}
+          sessions={workSessions}
           close={props.onCloseWork}
         />
       ) : null}
@@ -986,6 +1025,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
       <NativeStackScreenOptions options={options} optionsVersion={[title]} />
       {environmentId && threadId ? (
         <RoomBody
+          key={`${environmentId}:${threadId}`}
           companion={companion}
           companionId={companionId}
           environmentId={environmentId as EnvironmentId}

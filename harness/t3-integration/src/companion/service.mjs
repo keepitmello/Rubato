@@ -301,6 +301,9 @@ export function createCompanionService(options = {}) {
         const boundaries = Array.isArray(input.boundaries) ? input.boundaries.filter(Number.isFinite) : null;
         if (!boundaries) throw new CompanionRequestError(400, 'invalid', 'boundaries is missing.');
         const after = Number.isFinite(input.after) ? input.after : -Infinity;
+        if (input.versioned === true && sessionId && typeof inner.versioned === 'function') {
+          return inner.versioned(sessionId, { boundaries, after, view: input.view, revision: input.revision });
+        }
         return { spans: sessionId ? await inner.summaries(sessionId, boundaries, after) : boundaries.concat(null).map(() => null) };
       }
       case 'inner-items': {

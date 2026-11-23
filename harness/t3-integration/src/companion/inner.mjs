@@ -8,6 +8,7 @@
 // the branch that ends at the file's last entry counts. The file only grows, so each read parses
 // what was appended since the last one.
 import { open, readdir, stat } from 'node:fs/promises';
+import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
@@ -35,6 +36,11 @@ function inputOf(args) {
   if (args === undefined || args === null) return '';
   try { return typeof args === 'string' ? args : JSON.stringify(args, null, 2); } catch { return String(args); }
 }
+
+const launchCard = (item) => ({
+  id: item.id, ...item.launch, at: item.at, done: item.done ?? null,
+  error: item.isError ? oneLine(item.output ?? '', 300) : null,
+});
 
 const atOf = (value) => {
   const at = typeof value === 'number' ? value : Date.parse(value ?? '');
@@ -72,9 +78,9 @@ export function commitResult(text) {
 
 /**
  * The items one session entry contributes, oldest first. The person's own messages are bubbles, so
- * they contribute none. A tool result lands on its call (`calls`, by call id).
+ * they contribute none. Tool results are joined on the live branch, not across rewinds.
  */
-export function entryItems(entry, calls) {
+function entryItems(entry) {
   if (entry?.type === 'compaction') {
     const at = atOf(entry.timestamp);
     return at === undefined ? [] : [{ kind: 'compaction', at }];
@@ -108,22 +114,15 @@ export function entryItems(entry, calls) {
           value: { message: typeof args.message === 'string' ? oneLine(args.message, 400) : '',
             files: Array.isArray(args.paths) ? args.paths.filter((file) => typeof file === 'string') : [], sha: null } });
         items.push(tool);
-        if (tool.id) calls.set(tool.id, tool);
       }
     }
     if (message.stopReason === 'error' && message.errorMessage) items.push({ kind: 'error', text: bounded(String(message.errorMessage), LIMITS.output), at });
     return items;
   }
   if (message.role === 'toolResult') {
-    const tool = calls.get(String(message.toolCallId ?? ''));
-    if (tool) {
-      const full = textOf(message.content);
-      if (tool.launch && !message.isError) Object.assign(tool.launch, launchResult(full) ?? {});
-      if (tool.commit && !message.isError) tool.commit.sha = commitResult(full);
-      tool.output = bounded(full, LIMITS.output);
-      if (message.isError) tool.isError = true;
-      tool.done = at;
-    }
+    const full = textOf(message.content);
+    return [{ kind: 'tool-result', id: String(message.toolCallId ?? ''), at, output: bounded(full, LIMITS.output),
+      isError: message.isError === true, launch: launchResult(full), sha: commitResult(full) }];
   }
   return [];
 }
@@ -133,52 +132,95 @@ export function entryItems(entry, calls) {
  */
 export function createSessionReader(file) {
   const entries = new Map(); // id -> { parentId, items }
-  const calls = new Map();
   let offset = 0;
   // The bytes after the last newline: a line still being written, possibly cut inside a character.
   let rest = Buffer.alloc(0);
   let lastId = null;
   let size = -1;
+  const readerId = randomUUID();
+  let version = 0;
+  let identity = '';
+  let stamp = '';
+  let cachedItems = null;
+  let refreshing;
   async function refresh() {
     const info = await stat(file);
-    if (info.size === size) return;
-    // A file that shrank was replaced: read it again from the start.
-    if (info.size < offset) { entries.clear(); calls.clear(); offset = 0; rest = Buffer.alloc(0); lastId = null; }
+    const nextIdentity = `${info.dev}:${info.ino}:${info.birthtimeMs}`;
+    const nextStamp = `${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+    if (nextIdentity === identity && nextStamp === stamp) return;
+    // A replacement, truncate, or same-size rewrite is not an append.
+    if (nextIdentity !== identity || info.size <= size) {
+      entries.clear(); offset = 0; rest = Buffer.alloc(0); lastId = null;
+    }
     const handle = await open(file, 'r');
     try {
-      const length = info.size - offset;
-      const buffer = Buffer.alloc(length);
-      for (let read = 0; read < length;) {
-        const { bytesRead } = await handle.read(buffer, read, length - read, offset + read);
+      const buffer = Buffer.allocUnsafe(Math.min(512 * 1024, info.size - offset));
+      while (offset < info.size) {
+        const { bytesRead } = await handle.read(buffer, 0, Math.min(buffer.length, info.size - offset), offset);
         if (bytesRead === 0) break;
-        read += bytesRead;
+        offset += bytesRead;
+        const chunk = buffer.subarray(0, bytesRead);
+        const bytes = rest.length ? Buffer.concat([rest, chunk]) : chunk;
+        const end = bytes.lastIndexOf(0x0a);
+        // Copy just the partial line; never pin the whole read buffer between polls.
+        rest = Buffer.from(bytes.subarray(end + 1));
+        if (end < 0) continue;
+        const lines = bytes.subarray(0, end).toString('utf8').split('\n');
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let entry;
+          try { entry = JSON.parse(line); } catch { continue; }
+          if (typeof entry?.id !== 'string') continue;
+          entries.set(entry.id, { parentId: entry.parentId ?? null, items: entryItems(entry) });
+          lastId = entry.id;
+        }
       }
-      offset = info.size;
       size = info.size;
-      const bytes = Buffer.concat([rest, buffer]);
-      const end = bytes.lastIndexOf(0x0a);
-      rest = end < 0 ? bytes : bytes.subarray(end + 1);
-      const lines = end < 0 ? [] : bytes.subarray(0, end).toString('utf8').split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        let entry;
-        try { entry = JSON.parse(line); } catch { continue; }
-        if (typeof entry?.id !== 'string') continue;
-        entries.set(entry.id, { parentId: entry.parentId ?? null, items: entryItems(entry, calls) });
-        lastId = entry.id;
-      }
+      identity = nextIdentity;
+      stamp = nextStamp;
+      version += 1;
+      cachedItems = null;
     } finally { await handle.close(); }
+  }
+  const ready = () => refreshing ??= refresh().finally(() => { refreshing = undefined; });
+  function items() {
+    if (cachedItems) return cachedItems;
+    const branch = [];
+    const seen = new Set();
+    const results = new Map();
+    for (let id = lastId; id !== null && entries.has(id) && !seen.has(id); id = entries.get(id).parentId) {
+      seen.add(id);
+      // Walk backwards so a result can only be joined to a call earlier on this branch.
+      const rows = entries.get(id).items;
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const item = rows[i];
+        if (item.kind === 'tool-result') {
+          if (!results.has(item.id)) results.set(item.id, item);
+          continue;
+        }
+        const result = item.kind === 'tool' ? results.get(item.id) : undefined;
+        if (!result) { branch.push(item); continue; }
+        results.delete(item.id);
+        const tool = { ...item, output: result.output, done: result.at, ...(result.isError ? { isError: true } : {}) };
+        if (item.launch) Object.defineProperty(tool, 'launch', {
+          value: { ...item.launch, ...(result.isError ? {} : result.launch) },
+        });
+        if (item.commit) Object.defineProperty(tool, 'commit', {
+          value: { ...item.commit, sha: result.isError ? null : result.sha },
+        });
+        branch.push(tool);
+      }
+    }
+    return cachedItems = branch.reverse();
   }
   return {
     async items() {
-      await refresh();
-      const branch = [];
-      const seen = new Set();
-      for (let id = lastId; id !== null && entries.has(id) && !seen.has(id); id = entries.get(id).parentId) {
-        seen.add(id);
-        branch.push(entries.get(id));
-      }
-      return branch.reverse().flatMap((entry) => entry.items);
+      await ready();
+      return items();
+    },
+    async snapshot() {
+      await ready();
+      return { revision: `${readerId}:${version}`, items: items() };
     },
   };
 }
@@ -209,8 +251,7 @@ export function spanSummary(items) {
     else if (item.kind === 'tool') {
       summary.tools += 1;
       // The conversations it started (a card each) and the records it committed (one grey line each).
-      if (item.launch) summary.launches.push({ id: item.id, ...item.launch, at: item.at, done: item.done ?? null,
-        error: item.isError ? oneLine(item.output ?? '', 300) : null });
+      if (item.launch) summary.launches.push(launchCard(item));
       if (item.commit?.sha) summary.commits.push({ id: item.id, message: item.commit.message, files: item.commit.files,
         sha: item.commit.sha, at: item.done ?? item.at });
     }
@@ -233,11 +274,22 @@ export function spanSummary(items) {
 export function splitSpans(items, boundaries, after = -Infinity) {
   const edges = [after, ...boundaries];
   const spans = edges.map(() => []);
+  const sorted = boundaries.every((boundary, index) => index === 0 || boundaries[index - 1] <= boundary);
   for (const item of items) {
     if (!(item.at > after)) continue;
-    let index = boundaries.findIndex((boundary) => item.at <= boundary);
-    if (index < 0) index = boundaries.length;
-    spans[index].push(item);
+    let lo = 0;
+    let hi = boundaries.length;
+    if (sorted) {
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (item.at <= boundaries[mid]) hi = mid;
+        else lo = mid + 1;
+      }
+    } else {
+      const first = boundaries.findIndex((boundary) => item.at <= boundary);
+      lo = first < 0 ? boundaries.length : first;
+    }
+    spans[lo].push(item);
   }
   return spans;
 }
@@ -245,16 +297,36 @@ export function splitSpans(items, boundaries, after = -Infinity) {
 /** One reader per file, so a room that asks every few seconds parses only what was appended. */
 export function createInnerReader({ env = process.env } = {}) {
   const readers = new Map();
-  async function itemsOf(sessionId) {
+  async function readerOf(sessionId) {
+    if (readers.has(sessionId)) return readers.get(sessionId);
     const file = await sessionFile(sessionId, env);
-    if (!file) return [];
-    if (!readers.has(file)) readers.set(file, createSessionReader(file));
-    return readers.get(file).items();
+    if (!file) return null;
+    if (!readers.has(sessionId)) readers.set(sessionId, createSessionReader(file));
+    return readers.get(sessionId);
   }
+  const itemsOf = async (sessionId) => (await (await readerOf(sessionId))?.items()) ?? [];
   return {
     /** The summary of each span between the given bubble times (see splitSpans). */
     async summaries(sessionId, boundaries, after) {
       return splitSpans(await itemsOf(sessionId), boundaries, after).map(spanSummary);
+    },
+    async versioned(sessionId, { boundaries, after, view, revision }) {
+      const reader = await readerOf(sessionId);
+      const snap = reader ? await reader.snapshot() : { revision: 'missing', items: [] };
+      const token = createHash('sha256').update(JSON.stringify([sessionId, snap.revision, boundaries, after, view])).digest('base64url');
+      if (token === revision) return { revision: token, unchanged: true };
+      if (view === 'launches' || view === 'work-ids') {
+        const launches = [];
+        const workSessionIds = new Set();
+        for (const item of snap.items) {
+          const launch = item.launch;
+          if (!launch) continue;
+          if (!item.isError && launch.sessionId) workSessionIds.add(launch.sessionId);
+          if (view === 'launches' && item.at > after) launches.push(launchCard(item));
+        }
+        return { revision: token, workSessionIds: [...workSessionIds], ...(view === 'launches' ? { launches } : {}) };
+      }
+      return { revision: token, spans: splitSpans(snap.items, boundaries, after).map(spanSummary) };
     },
     /** The items of one span: after `after`, up to and including `until` (null: up to now). */
     async span(sessionId, after, until) {

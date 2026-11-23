@@ -177,6 +177,44 @@ test('the typing bubble learns the kind of work the companion runs right now, an
   assert.equal(await live(), null, 'the reply is the answer, not work');
 });
 
+test('versioned room views skip unchanged history, keep work attribution outside the window, and invalidate on rewind', async (t) => {
+  const dir = sessionDir(t);
+  const env = { RUBATO_COMPANION_HOME: path.join(dir, 'home'), RUBATO_PI_CODING_AGENT_DIR: path.join(dir, 'agent') };
+  const file = path.join(dir, 'agent', 'sessions', 'session_S1.jsonl');
+  writeState({ sessionId: 'S1' }, env);
+  const service = createCompanionService({ env, defaultsDir });
+  const ask = async (body) => (await handleCompanionRequest(service, new Request('http://local/rubato/companion/inner', {
+    method: 'POST', body: JSON.stringify({ boundaries: [], versioned: true, ...body }),
+  }))).json();
+  const a = said(null, 100, [{ type: 'toolCall', id: 'old', name: 'session_create', arguments: {} }]);
+  const b = result(a.id, 200, 'old', 'Created "Earlier" (Earlier)');
+  const c = said(b.id, 300, [{ type: 'toolCall', id: 'new', name: 'session_create', arguments: {} }]);
+  writeFileSync(file, [a, b, c].map(line).join(''));
+  const args = { after: 250, view: 'launches' };
+  const [first, concurrent] = await Promise.all([ask(args), ask(args)]);
+  assert.deepEqual(concurrent, first);
+  assert.deepEqual(first.launches.map(({ id, sessionId }) => [id, sessionId]), [['new', null]]);
+  assert.deepEqual(first.workSessionIds, ['Earlier']);
+  assert.deepEqual(await ask({ ...args, revision: first.revision }), { revision: first.revision, unchanged: true });
+  assert.deepEqual((await ask({ ...args, after: 0, revision: first.revision })).launches.map(({ id }) => id), ['old', 'new']);
+  const summary = await ask({ boundaries: [150, 300] });
+  assert.deepEqual(summary.spans.map((span) => span.launches.length), [1, 1, 0]);
+  assert.deepEqual(await ask({ boundaries: [150, 300], revision: summary.revision }), { revision: summary.revision, unchanged: true });
+  const d = result(c.id, 400, 'new', 'Created "Current" (Current)');
+  appendFileSync(file, line(d));
+  const updated = await ask({ ...args, revision: first.revision });
+  assert.deepEqual(updated.workSessionIds, ['Earlier', 'Current']);
+  assert.equal(updated.launches[0].done, 400);
+  const rewind = entry(c.id, { type: 'custom', customType: 'rewind' });
+  appendFileSync(file, line(rewind));
+  const rewound = await ask({ ...args, revision: updated.revision });
+  assert.deepEqual(rewound.workSessionIds, ['Earlier']);
+  assert.equal(rewound.launches[0].done, null, 'an abandoned result must not stick to a surviving call');
+  const replaced = said(null, 310, [{ type: 'toolCall', id: 'one', name: 'session_create', arguments: {} }]);
+  writeFileSync(file, line(replaced));
+  assert.deepEqual((await ask({ ...args, revision: rewound.revision })).launches.map(({ id }) => id), ['one']);
+});
+
 test('a tool reads as the kind of work it does; an old call left without a result is over', () => {
   assert.deepEqual(['bash', 'read', 'edit', 'notes_append_to_file', 'segno_record', 'web_fetch', 'memory_search', 'session_create', 'reply', 'say', 'call_say'].map(workKind),
     ['terminal', 'file', 'file', 'file', 'file', 'search', 'search', 'other', null, null, null]);

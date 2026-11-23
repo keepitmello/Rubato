@@ -50,7 +50,8 @@ it("opens, settles and removes real work instead of showing historical launches 
   }));
   const host = document.createElement("div");
   const root = createRoot(host);
-  const render = () => root.render(<RoomLeadsSheet environmentId={environmentId} launches={launches} close={state.close} />);
+  const render = () => root.render(<RoomLeadsSheet environmentId={environmentId}
+    sessions={new Set(launches.map(({ sessionId }) => sessionId))} close={state.close} />);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   try {
     state.shells = [row];
