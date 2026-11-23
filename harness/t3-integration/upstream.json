@@ -248,6 +248,7 @@
     "packages/provider-acp/src/server/adapter.ts": "ddf8e1c10a579e5c469f79f07e06ca3bc738657865f9826b105154cdff7cb520",
     "packages/client-runtime/src/operations/threadTitle.ts": "b6c605154ddd2ea596c56f16ef530f0ec446da45eae04d0216fc0fd8f7f6cc1d",
     "apps/mobile/src/features/voice-input/useVoiceInputController.ts": "a3de6d23c60baee8898a94c781349e3c66028162d1a8b065bdf82e0c3a8faf4a",
-    "apps/mobile/src/features/issues/IssueCommentComposer.tsx": "fb1a7c79bc7c0f69fca91404297d47e8f159ccda70efcc78504e02cd3c4a6768"
+    "apps/mobile/src/features/issues/IssueCommentComposer.tsx": "fb1a7c79bc7c0f69fca91404297d47e8f159ccda70efcc78504e02cd3c4a6768",
+    "packages/contracts/src/orchestrationV2.ts": "5315592c553f33938eb9f26c0f4533d22de6148f76a05d6c7857eca35720f250"
   }
 }

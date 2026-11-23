@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { RUBATO_VOICE_MARK } from "@t3tools/contracts";
 
 import {
   arrivals,
@@ -42,6 +43,14 @@ const bubbles = (items: ReturnType<typeof segnoChatItems>) =>
   );
 
 describe("Segno's chat room", () => {
+  it("draws what the person spoke without its voice mark, underlined, and what they typed as typed", () => {
+    const items = segnoChatItems([
+      message("d", "user", 0, `${RUBATO_VOICE_MARK}받아쓴 말`),
+      message("t", "user", 1_000, "[voice] 텔레그램 음성"),
+      message("k", "user", 2_000, "친 말"),
+    ]).flatMap((item) => (item.kind === "bubble" ? [[item.text, item.voiced]] : []));
+    expect(items).toEqual([["받아쓴 말", true], ["텔레그램 음성", true], ["친 말", false]]);
+  });
   it("places restored Telegram history by its original time, not its append order", () => {
     const items = segnoChatItems([message("new", "assistant", 30_000), message("old", "user", 0)]);
     expect(items.filter(item => item.kind === "bubble").map(item => item.id)).toEqual(["old", "new"]);

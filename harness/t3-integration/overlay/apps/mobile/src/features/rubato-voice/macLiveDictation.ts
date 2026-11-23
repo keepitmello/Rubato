@@ -26,6 +26,16 @@ const CORRECTIONS_ROUTE = "/rubato/voice/corrections";
 /** The paired Macs, as the voice provider last handed them over; reports go to the same Mac. */
 let connectionsReader: (() => ReadonlyArray<SavedRemoteConnection>) | null = null;
 const dictatedListeners = new Set<(text: string) => void>();
+/** The app's one dictation, once the voice provider made it. */
+let warmCurrent: (() => void) | null = null;
+
+/**
+ * Opens the Mac's dictation connection ahead: a composer opened or took focus, or the app came
+ * back, so the microphone's first words go up at once (shared rubatoLiveDictation warm).
+ */
+export function warmMacDictation(): void {
+  if (connectionsReader && pickMac(connectionsReader())) warmCurrent?.();
+}
 
 /** Hears the final text of each dictation, before it goes into the draft. */
 export function onDictated(listener: (text: string) => void): () => void {
@@ -204,5 +214,6 @@ export function createMacLiveDictation(
     },
   );
   const transcriber: VoiceTranscriber = live.transcriber;
+  warmCurrent = live.warm;
   return { recorder: live.recorder, transcriber, deleteRecording: live.deleteRecording, warm: live.warm };
 }

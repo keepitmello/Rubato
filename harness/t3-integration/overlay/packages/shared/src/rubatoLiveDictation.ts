@@ -22,6 +22,8 @@
 // The desktop captures through Web Audio, the phone through @livekit/react-native-webrtc's local
 // recording; both hand over PCM at the rate they have and this module brings it to 24 kHz.
 
+import { RUBATO_VOICE_MARK } from "@t3tools/contracts";
+
 export interface LiveDictationKey {
   readonly clientSecret: string;
 }
@@ -61,6 +63,28 @@ export function openLiveSocket(clientSecret: string): LiveSocket {
   return new WebSocket(LIVE_SOCKET_URL, ["realtime", `openai-insecure-api-key.${clientSecret}`]) as never;
 }
 
+/** Opens a socket with the key and resolves once it is open; a failure or timeout closes it. */
+function connectLiveSocket(platform: LiveDictationPlatform, clientSecret: string): Promise<LiveSocket> {
+  const socket = (platform.openSocket ?? openLiveSocket)(clientSecret);
+  return new Promise<LiveSocket>((resolve, reject) => {
+    const fail = (message: string) => {
+      clearTimeout(timer);
+      socket.onopen = socket.onerror = socket.onclose = null;
+      try {
+        socket.close();
+      } catch {}
+      reject(platform.connectionFailed(message));
+    };
+    const timer = setTimeout(() => fail("OpenAI did not answer in time."), CONNECT_TIMEOUT_MS);
+    socket.onopen = () => {
+      clearTimeout(timer);
+      resolve(socket);
+    };
+    socket.onerror = () => fail("OpenAI could not be reached.");
+    socket.onclose = () => fail("The connection to OpenAI closed.");
+  });
+}
+
 export interface LiveDictationPlatform {
   /** Asks the Mac for a key. Rejects with the error the composer should show. */
   readonly mint: (signal: AbortSignal) => Promise<LiveDictationKey>;
@@ -74,10 +98,12 @@ export interface LiveDictationPlatform {
 }
 
 /**
- * How long a key minted ahead (`warm`) is still used. The Mac's key opens a connection for 60 s;
- * the rest is margin for the connection itself.
+ * How long a connection opened ahead (`warm`) waits for a dictation before it is closed. Opening one
+ * takes 1.4–1.9 s from the Mac (key 0.4–0.8 s, socket 1.0–1.35 s, measured 2026-11-24), which is
+ * how late the first words came; an idle connection still transcribed after 70 s. OpenAI counts the
+ * audio, not the time a connection stays open.
  */
-export const LIVE_KEY_REUSE_MS = 40_000;
+export const LIVE_SOCKET_HOLD_MS = 120_000;
 /**
  * How a heard word moves, as ChatGPT's iOS dictation draws it (measured frame by frame from the
  * user's screen recording, 2026-11-20): it fades in, light blue to blue, over FADE_IN; stays blue
@@ -282,46 +308,32 @@ class LiveConnection {
     return this.platform.now?.() ?? Date.now();
   }
 
-  async open(key: Promise<LiveDictationKey>, signal: AbortSignal): Promise<void> {
+  /** `connect` resolves with an open socket: one opened ahead, or a new key's. */
+  async open(connect: Promise<LiveSocket>, signal: AbortSignal): Promise<void> {
     const abort = () => this.close();
     signal.addEventListener("abort", abort, { once: true });
+    // A connection that fails must not leave the microphone open, nor go unhandled while it opens.
+    connect.catch(() => {});
     try {
       // The microphone first and on its own: it hears from now on, while the key is minted and the
       // socket opens, and what it hears waits in `pending`.
-      const microphone = this.platform.openMicrophone((samples, sampleRate) => this.hear(samples, sampleRate));
-      // A key that fails must not leave the microphone open, nor go unhandled while it opens.
-      key.catch(() => {});
-      this.microphone = await microphone;
+      this.microphone = await this.platform.openMicrophone((samples, sampleRate) => this.hear(samples, sampleRate));
       if (this.closed) {
         this.microphone.stop();
         throw this.platform.connectionFailed("Dictation was cancelled.");
       }
-      const minted = await key;
-      if (this.closed) throw this.platform.connectionFailed("Dictation was cancelled.");
-      const socket = (this.platform.openSocket ?? openLiveSocket)(minted.clientSecret);
+      const socket = await connect;
+      if (this.closed) {
+        try {
+          socket.close();
+        } catch {}
+        throw this.platform.connectionFailed("Dictation was cancelled.");
+      }
       this.socket = socket;
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(this.platform.connectionFailed("OpenAI did not answer in time.")),
-          CONNECT_TIMEOUT_MS,
-        );
-        socket.onopen = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-        socket.onerror = () => {
-          clearTimeout(timer);
-          reject(this.platform.connectionFailed("OpenAI could not be reached."));
-        };
-        socket.onclose = () => {
-          clearTimeout(timer);
-          if (!this.closed) reject(this.platform.connectionFailed("The connection to OpenAI closed."));
-          this.notify();
-        };
-      });
+      socket.onopen = null;
       socket.onerror = null;
+      socket.onclose = () => this.notify();
       socket.onmessage = (event) => this.receive(event.data);
-      if (this.closed) throw this.platform.connectionFailed("Dictation was cancelled.");
       // What was said while connecting goes up first, in one piece.
       this.send(true);
     } catch (error) {
@@ -512,13 +524,38 @@ export function createLiveDictation(
   let limitTimer: ReturnType<typeof setTimeout> | null = null;
   let recordingStartedAt: number | null = null;
   let spokenLanguage = "ko";
-  let warmKey: { readonly key: Promise<LiveDictationKey>; readonly at: number } | null = null;
   const now = () => platform.now?.() ?? Date.now();
-  // A key minted ahead, if one is young enough; otherwise a new one. Each key opens one connection.
-  const takeKey = (signal: AbortSignal): Promise<LiveDictationKey> => {
-    const warm = warmKey;
-    warmKey = null;
-    return warm && now() - warm.at < LIVE_KEY_REUSE_MS ? warm.key : platform.mint(signal);
+  // A connection opened ahead, open or still opening, and the timer that closes it unused.
+  let warmSocket: {
+    readonly socket: Promise<LiveSocket>;
+    readonly at: number;
+    readonly timer: ReturnType<typeof setTimeout>;
+  } | null = null;
+  const dropWarm = () => {
+    const warm = warmSocket;
+    warmSocket = null;
+    if (!warm) return;
+    clearTimeout(warm.timer);
+    warm.socket.then(
+      (socket) => {
+        try {
+          socket.close();
+        } catch {}
+      },
+      () => {},
+    );
+  };
+  // The connection opened ahead, if it is young enough and still open; otherwise a new key's.
+  const connect = (signal: AbortSignal): Promise<LiveSocket> => {
+    const warm = warmSocket;
+    const fresh = () => platform.mint(signal).then((key) => connectLiveSocket(platform, key.clientSecret));
+    if (!warm || now() - warm.at >= LIVE_SOCKET_HOLD_MS) {
+      dropWarm();
+      return fresh();
+    }
+    warmSocket = null;
+    clearTimeout(warm.timer);
+    return warm.socket.then((socket) => (socket.readyState === 1 ? socket : fresh()), fresh);
   };
 
   const clearTimers = () => {
@@ -588,7 +625,7 @@ export function createLiveDictation(
       recorder.uri = `live:${serial}`;
       publish(live.snapshot());
       try {
-        await live.open(takeKey(signal), signal);
+        await live.open(connect(signal), signal);
       } catch (error) {
         if (connection === live) end();
         throw error;
@@ -612,14 +649,27 @@ export function createLiveDictation(
     recorder,
     transcriber,
     /**
-     * Starts minting the Mac's key before dictation asks for it, so the wait for the key overlaps
-     * the microphone permission check. Minting costs nothing at OpenAI; only the connection does.
+     * Mints the Mac's key and opens the connection before dictation asks for it: when a composer
+     * opens or takes focus, and when the microphone is pressed (overlapping the permission check).
+     * The microphone's first words then go up at once instead of 1.4–1.9 s later. A connection not
+     * used within LIVE_SOCKET_HOLD_MS is closed; one that closes on its own is forgotten.
      */
     warm(): void {
-      if (warmKey && now() - warmKey.at < LIVE_KEY_REUSE_MS) return;
-      const key = platform.mint(new AbortController().signal);
-      key.catch(() => {});
-      warmKey = { key, at: now() };
+      if (warmSocket && now() - warmSocket.at < LIVE_SOCKET_HOLD_MS) return;
+      dropWarm();
+      const socket = platform
+        .mint(new AbortController().signal)
+        .then((key) => connectLiveSocket(platform, key.clientSecret));
+      const entry = { socket, at: now(), timer: setTimeout(() => entry === warmSocket && dropWarm(), LIVE_SOCKET_HOLD_MS) };
+      warmSocket = entry;
+      const forget = () => {
+        if (warmSocket !== entry) return;
+        clearTimeout(entry.timer);
+        warmSocket = null;
+      };
+      socket.then((opened) => {
+        if (warmSocket === entry) opened.onclose = forget;
+      }, forget);
     },
     /** For the controller's `deleteRecording`: the dictation is over, close everything. */
     deleteRecording(uri: string): void {
@@ -664,26 +714,18 @@ export function createDictationEdits() {
 }
 
 /**
- * Marks a draft that holds dictated text, once at its start. A transcription can mishear words;
- * the model reads the mark and interprets what was meant (user, 2026-11-24).
+ * Marks a draft that holds dictated text: an invisible mark in front, once
+ * (@t3tools/contracts RUBATO_VOICE_MARK). The model reads it as "[voice]" and interprets a misheard
+ * word; a person sees the message with a light underline (user, 2026-11-24).
  */
-export const RUBATO_VOICE_TAG = "[voice]";
-
-/** The draft after dictation committed into it, with the mark in front once and the caret kept. */
-export function withRubatoVoiceTag(draft: {
+export function withRubatoVoiceMark(draft: {
   readonly text: string;
   readonly selection: { readonly start: number; readonly end: number };
 }): { readonly text: string; readonly selection: { readonly start: number; readonly end: number } } {
-  if (draft.text.trimStart().startsWith(RUBATO_VOICE_TAG)) return draft;
-  const prefix = `${RUBATO_VOICE_TAG} `;
+  if (draft.text.startsWith(RUBATO_VOICE_MARK)) return draft;
+  const shift = RUBATO_VOICE_MARK.length;
   return {
-    text: prefix + draft.text,
-    selection: { start: draft.selection.start + prefix.length, end: draft.selection.end + prefix.length },
+    text: RUBATO_VOICE_MARK + draft.text,
+    selection: { start: draft.selection.start + shift, end: draft.selection.end + shift },
   };
-}
-
-/** The text without the mark, for what a person reads as a title. */
-export function withoutRubatoVoiceTag(text: string): string {
-  const trimmed = text.trimStart();
-  return trimmed.startsWith(RUBATO_VOICE_TAG) ? trimmed.slice(RUBATO_VOICE_TAG.length).trimStart() : text;
 }

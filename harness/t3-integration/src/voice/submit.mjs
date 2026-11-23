@@ -5,9 +5,11 @@ export const voiceEntityId = (sessionId, kind) =>
   `voice-${kind}-${createHash('sha256').update(`${sessionId}:${kind}`).digest('hex').slice(0, 32)}`;
 export const voiceThreadId = (id) => voiceEntityId(id, 'thread');
 export const voiceMessageId = (id) => voiceEntityId(id, 'message');
-// The Shortcut's text is a transcription: the model reads the mark and reads past a misheard word.
-// The title keeps the person's words only.
-export const voiceText = (text) => text.trimStart().startsWith('[voice]') ? text : `[voice] ${text}`;
+// The Shortcut's text is a transcription. It goes with the invisible voice mark (T3 contracts
+// RUBATO_VOICE_MARK): the model reads "[voice]" and reads past a misheard word, a person sees the
+// message underlined. The title keeps the person's words only.
+export const RUBATO_VOICE_MARK = '\u2063';
+export const voiceText = (text) => text.startsWith(RUBATO_VOICE_MARK) ? text : `${RUBATO_VOICE_MARK}${text}`;
 export const voiceCommandId = (id, kind) => voiceEntityId(id, `cmd-${kind}`);
 // T3 decides under its thread lock whether the message starts now or waits
 // behind the running turn. A read here could not: a normal message sent in the

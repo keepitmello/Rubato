@@ -11,6 +11,7 @@ export const voiceOverlays = [
   'apps/web/src/components/chat/RubatoVoiceControl.css',
   'packages/shared/src/rubatoLiveDictation.ts',
   'packages/shared/src/rubatoLiveDictation.test.ts',
+  'packages/contracts/src/rubatoVoiceMark.test.ts',
 ];
 
 // Dictation in the Mac composer: a microphone beside the attach control, and
@@ -119,26 +120,79 @@ export const voiceEdits = {
     ['        [WS_METHODS.serverReportClientActivity]: (input, metadata) =>\n          Ref.update(rpcClientIds, (clientIds) => {',
       '        [WS_METHODS.serverReportClientActivity]: (input, metadata) =>\n          Ref.update(rpcClientIds, (clientIds) => {\n            noteVoiceActivity({ ...input, sessionId: currentSessionId, rpcClientId: metadata.client.id });', 'replace'],
   ],
-  // Dictated text goes into the draft behind a "[voice]" mark, once, so the model reads past a
-  // misheard word. Every phone composer dictates through this hook; the Mac composer tags it in
+  // A dictated message carries an invisible mark in front (RUBATO_VOICE_MARK); a call's or
+  // Telegram's voice message carries "[voice] ". The model reads "[voice]" and interprets a misheard
+  // word; a person sees the words with a light underline (user, 2026-11-24). One place says what the
+  // mark is and how each side reads it, beside the model-facing sender note it joins.
+  'packages/contracts/src/orchestrationV2.ts': [
+    ['const LEADING_COMMAND = ',
+      [
+        '/**',
+        ' * Rubato: the invisible mark the composers put in front of dictated text. It travels with the',
+        ' * draft and the message on every path; withMessageSenderNote turns it into "[voice]" for the',
+        ' * model, and the bubbles draw the message underlined instead (rubatoVoiceDisplay).',
+        ' */',
+        'export const RUBATO_VOICE_MARK = "\\u2063";',
+        'const RUBATO_VOICE_TAG = /^\\[voice\\][ \\t]*/;',
+        '',
+        '/** A person\'s view of a message: without the mark or a leading "[voice]", and whether it was spoken. */',
+        'export function rubatoVoiceDisplay(text: string): { readonly text: string; readonly voiced: boolean } {',
+        '  if (text.startsWith(RUBATO_VOICE_MARK)) return { text: text.slice(RUBATO_VOICE_MARK.length), voiced: true };',
+        '  const tag = RUBATO_VOICE_TAG.exec(text);',
+        '  return tag ? { text: text.slice(tag[0].length), voiced: true } : { text, voiced: false };',
+        '}',
+        '',
+        '/** The model\'s view: the mark reads as "[voice] ", so a misheard word is read as one. */',
+        'export function rubatoVoiceForModel(text: string): string {',
+        '  return text.startsWith(RUBATO_VOICE_MARK) ? "[voice] " + text.slice(RUBATO_VOICE_MARK.length) : text;',
+        '}',
+        '',
+        '',
+      ].join('\n')],
+    ['  text: string,\n): string {\n  const agent = message.createdBy === "agent";',
+      '  rawText: string,\n): string {\n  // Rubato: a dictated message reaches the model as "[voice] …".\n  const text = rubatoVoiceForModel(rawText);\n  const agent = message.createdBy === "agent";', 'replace'],
+  ],
+  // Every phone composer dictates through this hook; the Mac composer marks it in
   // useRubatoVoiceInput.ts. A GitHub issue comment is read by people, not a model, so it opts out.
   'apps/mobile/src/features/voice-input/useVoiceInputController.ts': [
     ['import { useGlobalVoiceInput } from "./VoiceInputProvider";\n',
-      'import { withRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";\n'],
+      'import { withRubatoVoiceMark } from "@t3tools/shared/rubatoLiveDictation";\n'],
     ['  readonly onChangeSelection: (selection: ComposerEditorSelection) => void;\n}) {\n',
-      '  readonly onChangeSelection: (selection: ComposerEditorSelection) => void;\n  /** Rubato: true where the text goes to people, not a model; no "[voice]" mark. */\n  readonly withoutVoiceTag?: boolean;\n}) {\n', 'replace'],
+      '  readonly onChangeSelection: (selection: ComposerEditorSelection) => void;\n  /** Rubato: true where the text goes to people, not a model; no voice mark. */\n  readonly withoutVoiceMark?: boolean;\n}) {\n', 'replace'],
     ['        (text, selection) => {\n          captured.onChangeDraftMessage(text);\n',
-      '        (committedText, committedSelection) => {\n          const { text, selection } = captured.withoutVoiceTag\n            ? { text: committedText, selection: committedSelection }\n            : withRubatoVoiceTag({ text: committedText, selection: committedSelection });\n          captured.onChangeDraftMessage(text);\n', 'replace'],
+      '        (committedText, committedSelection) => {\n          const { text, selection } = captured.withoutVoiceMark\n            ? { text: committedText, selection: committedSelection }\n            : withRubatoVoiceMark({ text: committedText, selection: committedSelection });\n          captured.onChangeDraftMessage(text);\n', 'replace'],
   ],
   'apps/mobile/src/features/issues/IssueCommentComposer.tsx': [
     ['    onChangeDraftMessage: changeDraft,\n    onChangeSelection: setSelection,\n  });\n',
-      '    onChangeDraftMessage: changeDraft,\n    onChangeSelection: setSelection,\n    withoutVoiceTag: true,\n  });\n', 'replace'],
+      '    onChangeDraftMessage: changeDraft,\n    onChangeSelection: setSelection,\n    withoutVoiceMark: true,\n  });\n', 'replace'],
   ],
-  // The mark is for the model; a title made from the first message leaves it out.
+  // A title made from the first message is the person's words.
   'packages/client-runtime/src/operations/threadTitle.ts': [
     ['import { truncate } from "@t3tools/shared/String";\n',
-      'import { withoutRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";\n'],
+      'import { rubatoVoiceDisplay } from "@t3tools/contracts";\n'],
     ['  const prose = replaceComposerContextReferences(value, (reference) => {\n',
-      '  const prose = replaceComposerContextReferences(withoutRubatoVoiceTag(value), (reference) => {\n', 'replace'],
+      '  const prose = replaceComposerContextReferences(rubatoVoiceDisplay(value).text, (reference) => {\n', 'replace'],
+  ],
+  // The Mac thread's bubble: a spoken message is drawn underlined, without its mark.
+  'apps/web/src/components/chat/TimelineUserMessageRow.tsx': [
+    ['import ChatMarkdown from "../ChatMarkdown";\n',
+      'import { rubatoVoiceDisplay } from "@t3tools/contracts";\n'],
+    ['  if (props.text.length === 0) {\n    return null;\n  }\n  return (\n    <ChatMarkdown\n      text={props.text}',
+      '  const voice = rubatoVoiceDisplay(props.text);\n  if (voice.text.length === 0) {\n    return null;\n  }\n  return (\n    <ChatMarkdown\n      text={voice.text}', 'replace'],
+    ['      className="text-message-foreground user-message-markdown"\n',
+      '      className={cn(\n        "text-message-foreground user-message-markdown",\n        voice.voiced && RUBATO_VOICE_UNDERLINE,\n      )}\n', 'replace'],
+    ['const UserMessageBody = memo(function UserMessageBody(props: {',
+      '/** Rubato: a spoken message, underlined lightly in its own ink. */\nconst RUBATO_VOICE_UNDERLINE =\n  "[text-decoration-line:underline] [text-decoration-color:color-mix(in_srgb,currentColor_35%,transparent)] [text-underline-offset:0.25em]";\n\n'],
+  ],
+  // The phone thread's bubble: a spoken message without links or chips is plain words, underlined.
+  'apps/mobile/src/features/threads/ThreadFeed.tsx': [
+    ['import type { ToolCallVisibility } from "@t3tools/contracts/settings";\n',
+      'import { rubatoVoiceDisplay } from "@t3tools/contracts";\n'],
+    ['    const renderedText = presentation.text;\n',
+      '    const voice = isUser ? rubatoVoiceDisplay(presentation.text) : { text: presentation.text, voiced: false };\n    const renderedText = voice.text;\n', 'replace'],
+    ['                        <UserMessageContent\n                          text={renderedText}\n',
+      '                        {voice.voiced && !message.context?.records.length && !renderedText.includes("t3-context:") ? (\n                          <Text\n                            selectable\n                            style={{\n                              color: styles.nativeTextStyle.color,\n                              fontSize: styles.nativeTextStyle.fontSize,\n                              lineHeight: styles.nativeTextStyle.lineHeight,\n                              fontFamily: styles.nativeTextStyle.fontFamily,\n                              textDecorationLine: "underline",\n                              // The bubble\'s muted ink: a light line under spoken words.\n                              textDecorationColor: styles.nativeTextStyle.inlineCodeColor,\n                            }}\n                          >\n                            {renderedText}\n                          </Text>\n                        ) : (\n                        <UserMessageContent\n                          text={renderedText}\n', 'replace'],
+    ['                          renderImage={props.renderMarkdownImage}\n                        />\n                      </CollapsibleUserMessageBody>',
+      '                          renderImage={props.renderMarkdownImage}\n                        />\n                        )}\n                      </CollapsibleUserMessageBody>', 'replace'],
   ],
 };

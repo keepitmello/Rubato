@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest";
+import { RUBATO_VOICE_MARK } from "@t3tools/contracts";
 
 import {
   createDictationEdits,
-  withRubatoVoiceTag,
-  withoutRubatoVoiceTag,
+  withRubatoVoiceMark,
   createLiveDictation,
   LIVE_FINISH_TIMEOUT_MS,
   LIVE_HOLD_MS,
   LIVE_NO_SOUND,
+  LIVE_SOCKET_HOLD_MS,
   liveDictationPieces,
   liveDictationStore,
   liveDictationTint,
@@ -242,22 +243,42 @@ describe("live dictation", () => {
     expect(liveDictationStore.snapshot().items.map((item) => item.pieces.map((p) => p.text).join(""))).toEqual([" 새 말"]);
   });
 
-  it("a key minted ahead is the one the dictation uses, and only once", async () => {
+  it("a connection opened ahead is the one the dictation uses, and only once", async () => {
     const h = harness();
     h.live.warm();
     h.live.warm();
+    await vi.advanceTimersByTimeAsync(0);
     expect(h.mints()).toBe(1);
+    expect(h.secrets).toEqual(["ek_1"]);
+    expect(h.socket.readyState).toBe(1);
     await startRecording(h);
-    expect(h.mints()).toBe(1);
+    expect(h.secrets).toHaveLength(1);
+    // Open already: the first words go up as they are heard, not after a connection opens.
+    h.hear(Array.from({ length: 1_200 }, () => 5));
+    expect(h.socket.audio()).toHaveLength(1_200);
     h.live.deleteRecording(h.live.recorder.uri!);
     await startRecording(h);
     expect(h.mints()).toBe(2);
   });
 
-  it("an old key minted ahead is left for a new one", async () => {
+  it("a connection opened ahead and left unused is closed, and the dictation opens its own", async () => {
     const h = harness();
     h.live.warm();
-    h.advance(41_000);
+    await vi.advanceTimersByTimeAsync(0);
+    h.advance(LIVE_SOCKET_HOLD_MS);
+    await vi.advanceTimersByTimeAsync(LIVE_SOCKET_HOLD_MS);
+    expect(h.socket.readyState).toBe(3);
+    await startRecording(h);
+    expect(h.mints()).toBe(2);
+    expect(h.socket.readyState).toBe(1);
+  });
+
+  it("a connection opened ahead that OpenAI closed is forgotten", async () => {
+    const h = harness();
+    h.live.warm();
+    await vi.advanceTimersByTimeAsync(0);
+    h.socket.readyState = 3;
+    h.socket.onclose?.({});
     await startRecording(h);
     expect(h.mints()).toBe(2);
   });
@@ -317,16 +338,11 @@ describe("dictation edits", () => {
 });
 
 describe("the voice mark", () => {
-  it("goes in front of a dictated draft once, and the caret stays after the dictated words", () => {
-    const first = withRubatoVoiceTag({ text: "fix the restart", selection: { start: 15, end: 15 } });
-    expect(first).toEqual({ text: "[voice] fix the restart", selection: { start: 23, end: 23 } });
-    const second = withRubatoVoiceTag({ text: `${first.text} and push`, selection: { start: 32, end: 32 } });
-    expect(second.text).toBe("[voice] fix the restart and push");
-    expect(second.selection).toEqual({ start: 32, end: 32 });
-  });
-
-  it("is left out of a title", () => {
-    expect(withoutRubatoVoiceTag("[voice] fix the restart")).toBe("fix the restart");
-    expect(withoutRubatoVoiceTag("typed text")).toBe("typed text");
+  it("goes in front of a dictated draft once, invisibly, and the caret stays after the dictated words", () => {
+    const first = withRubatoVoiceMark({ text: "fix the restart", selection: { start: 15, end: 15 } });
+    expect(first).toEqual({ text: `${RUBATO_VOICE_MARK}fix the restart`, selection: { start: 16, end: 16 } });
+    const second = withRubatoVoiceMark({ text: `${first.text} and push`, selection: { start: 25, end: 25 } });
+    expect(second.text).toBe(`${RUBATO_VOICE_MARK}fix the restart and push`);
+    expect(second.selection).toEqual({ start: 25, end: 25 });
   });
 });

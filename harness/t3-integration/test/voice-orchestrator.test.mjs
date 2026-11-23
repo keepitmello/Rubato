@@ -100,5 +100,5 @@ test('T3 V2 queues a voice send behind the running turn, replays it once, and le
   assert.equal((await submitter.submit(fresh)).runId, created.runId);
   const shell = await t3Voice.readThread(created.threadId);
   assert.equal(shell.projectId, 'project:voice');
-  assert.deepEqual((await projection(created.threadId)).messages.map((message) => message.text), ['[voice] brand new conversation']);
+  assert.deepEqual((await projection(created.threadId)).messages.map((message) => message.text), ['\u2063brand new conversation']);
 });

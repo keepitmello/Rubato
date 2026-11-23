@@ -14,7 +14,7 @@
 import { liveDictationDisplay } from "@t3tools/client-runtime/voice-input";
 import { createDictationEdits, liveDictationPieces, liveDictationStore } from "@t3tools/shared/rubatoLiveDictation";
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Modal, Pressable, StyleSheet, View } from "react-native";
+import { AppState, Modal, Pressable, StyleSheet, View } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,7 +23,7 @@ import { ComposerEditor, type ComposerEditorProps } from "../../components/Compo
 import { ComposerActionButton } from "../../components/ComposerToolbar";
 import type { ComposerEditorProps as NativeEditorProps, ComposerEditorSelection } from "../../native/T3ComposerEditor.types";
 import { composerFieldHeight } from "./composerFieldLayout";
-import { onDictated, reportDictationEdits } from "./macLiveDictation";
+import { onDictated, reportDictationEdits, warmMacDictation } from "./macLiveDictation";
 
 export type RubatoComposerFieldProps = ComposerEditorProps & {
   /** Live dictation is running for this composer's draft. */
@@ -187,6 +187,16 @@ export function RubatoComposerField({
   useEffect(() => {
     if (dictating) setFullScreen(false);
   }, [dictating]);
+  // The dictation connection opens ahead while a composer is on screen: now, and when the app comes
+  // back. A press then speaks into an open connection.
+  useEffect(() => {
+    if (props.readOnly) return;
+    warmMacDictation();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") warmMacDictation();
+    });
+    return () => subscription.remove();
+  }, [props.readOnly]);
 
   const showsExpand = expand !== undefined && overflows && !dictating;
   return (
@@ -198,6 +208,10 @@ export function RubatoComposerField({
           selection={live?.selection ?? props.selection}
           dictation={live?.dictation ?? null}
           readOnly={props.readOnly || dictating}
+          onFocus={() => {
+            warmMacDictation();
+            props.onFocus?.();
+          }}
           // The display is not the draft: nothing it does may reach the draft's selection.
           onSelectionChange={dictating ? undefined : props.onSelectionChange}
           scrollEnabled

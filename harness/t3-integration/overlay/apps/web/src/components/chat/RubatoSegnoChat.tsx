@@ -89,6 +89,13 @@ import { useRoomCalls } from "../../state/rubatoCall";
 import { proposalPlacement, shownProposals } from "../../state/rubatoCompanionModel";
 import { RubatoOnboardingChips, RubatoProposalCard, useCompanionProposals } from "./RubatoCompanionProposals";
 
+/** Spoken words: a light line in the bubble's own ink, the way ChatGPT marks a dictation. */
+const VOICE_UNDERLINE = {
+  textDecorationLine: "underline",
+  textDecorationColor: "color-mix(in srgb, currentColor 40%, transparent)",
+  textUnderlineOffset: "0.25em",
+} as const;
+
 /** Closer to the end than this, the room follows new bubbles down. */
 const FOLLOW_PX = 64;
 /** How long the room's own smooth scroll to the end may take; its frames do not count as leaving. */
@@ -336,7 +343,9 @@ function Bubble({
         {item.side === "segno" ? (
           <ChatMarkdown text={item.text} cwd={cwd} threadRef={threadRef} isStreaming={item.streaming} lineBreaks />
         ) : item.text ? (
-          <p className="whitespace-pre-wrap break-words">{item.text}</p>
+          <p className="whitespace-pre-wrap break-words" style={item.voiced ? VOICE_UNDERLINE : undefined}>
+            {item.text}
+          </p>
         ) : null}
         {item.files ? <ChatMarkdown text={item.files} cwd={cwd} threadRef={threadRef} isStreaming={false} /> : null}
         {item.attachmentNames.length > 0 ? (

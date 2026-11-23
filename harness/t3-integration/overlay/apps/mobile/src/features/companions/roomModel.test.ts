@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vite-plus/test";
+import { RUBATO_VOICE_MARK } from "@t3tools/contracts";
 import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
@@ -21,6 +22,14 @@ const call = (patch: Partial<CallRecord> & { minutes: number; length?: number })
 };
 
 describe("a companion room", () => {
+  it("draws what the person spoke without its voice mark, underlined, and what they typed as typed", () => {
+    const rows = roomItems([
+      message("d", "user", `${RUBATO_VOICE_MARK}받아쓴 말`, 0),
+      message("t", "user", "[voice] 텔레그램 음성", 1),
+      message("k", "user", "친 말", 2),
+    ], []).flatMap((row) => (row.kind === "bubble" ? [[row.text, row.voiced]] : []));
+    expect(rows).toEqual([["받아쓴 말", true], ["텔레그램 음성", true], ["친 말", false]]);
+  });
   it("scopes work cards to the visible history and opens earlier pages without skipping same-time records", () => {
     const messages = Array.from({ length: 105 }, (_, i) => message(`m${i}`, "user", "hi", i));
     expect(roomLaunchAfter(messages, 1, true)).toBe(Date.parse(at(55)) - 1);

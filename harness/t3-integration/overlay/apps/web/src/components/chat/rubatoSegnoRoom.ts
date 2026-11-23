@@ -4,6 +4,7 @@
 // one side close together form a group whose last bubble carries the tail; a long gap or a new day
 // gets a time line between bubbles instead of a time on every message (user f38c36a6). The room draws
 // the latest days and cuts them by day, each under its own name (user 1d2f3875).
+import { rubatoVoiceDisplay } from "@t3tools/contracts";
 import { replaceComposerContextReferences } from "@t3tools/shared/composerContextReferences";
 
 import { isImageAttachment, type ChatAttachment, type ChatImageAttachment } from "../../types";
@@ -32,6 +33,8 @@ export type SegnoChatItem =
       readonly id: string;
       readonly side: SegnoChatSide;
       readonly text: string;
+      /** The person spoke it (a dictation, a call, Telegram): drawn underlined. */
+      readonly voiced?: boolean;
       readonly at: number;
       readonly streaming: boolean;
       /** The person's pictures, drawn in the bubble (RubatoSegnoChat.tsx). */
@@ -53,10 +56,11 @@ export type SegnoChatItem =
 /**
  * The person's words as the bubble shows them. T3 writes an attached picture into the message as a
  * context link (`![image.png](t3-context://…)`); the picture itself is drawn from the attachment, so
- * the link goes, and any other context link reads as its label.
+ * the link goes, and any other context link reads as its label. Spoken words lose their voice mark
+ * or `[voice] ` (contracts rubatoVoiceDisplay) and are drawn underlined.
  */
 export function personText(text: string): string {
-  return replaceComposerContextReferences(text, (reference) => (reference.image ? "" : reference.label)).trim();
+  return replaceComposerContextReferences(rubatoVoiceDisplay(text).text, (reference) => (reference.image ? "" : reference.label)).trim();
 }
 
 /** A file line as the engine writes it (companion home.mjs filesMarkdown): `![name](</abs>)` or `[name](</abs>)`. */
@@ -110,6 +114,7 @@ export function segnoChatItems(messages: ReadonlyArray<SegnoChatMessageInput>): 
       id: message.id,
       side,
       text: person ? person.words : message.text,
+      voiced: side === "me" && rubatoVoiceDisplay(message.text).voiced,
       at,
       streaming: message.streaming,
       images: (message.attachments ?? []).filter(isImageAttachment),

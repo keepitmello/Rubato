@@ -6,7 +6,9 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createDictationEdits, withRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";
+import { isElectron } from "../../env";
+
+import { createDictationEdits, withRubatoVoiceMark } from "@t3tools/shared/rubatoLiveDictation";
 
 import {
   createRubatoLiveDictation,
@@ -81,6 +83,12 @@ export function useRubatoVoiceInput(input: {
         live.warm();
         const media = navigator.mediaDevices;
         if (media?.getUserMedia === undefined) return { granted: false, canAskAgain: false };
+        // Granted already: no probe. The probe opened the microphone, closed it and opened it again,
+        // and what the person said in between was never heard.
+        const known = await navigator.permissions
+          ?.query({ name: "microphone" as PermissionName })
+          .catch(() => null);
+        if (known?.state === "granted") return { granted: true, canAskAgain: true };
         try {
           // Asking here surfaces the permission prompt before a recording is
           // expected to exist, and lets a denial read as a permission problem
@@ -106,9 +114,10 @@ export function useRubatoVoiceInput(input: {
           selection: { start: draft.start, end: draft.end },
         };
       },
-      // The "[voice]" mark goes in front once, so the model reads past a misheard word.
+      // An invisible voice mark goes in front once: the model reads "[voice]" and reads past a
+      // misheard word; the person sees the sent message underlined.
       commitDraft: (text, selection) => {
-        const tagged = withRubatoVoiceTag({ text, selection });
+        const tagged = withRubatoVoiceMark({ text, selection });
         latest.current.commitDraft(tagged.text, tagged.selection.start);
       },
       onStateChange: (next) => {
@@ -139,6 +148,24 @@ export function useRubatoVoiceInput(input: {
     const report = edits.current.draft(draftText);
     if (report) reportDictationEdits(latest.current.environmentId, report);
   }, [ownerKey, draftText]);
+
+  // The connection opens ahead when a conversation opens, the window comes back, or the pointer
+  // reaches the microphone, so the first words go up as the microphone hears them (shared
+  // rubatoLiveDictation LIVE_SOCKET_HOLD_MS).
+  useEffect(() => {
+    if (ownerKey === null || !isElectron) return;
+    const warm = () => liveRef.current?.warm();
+    const towardMicrophone = (event: PointerEvent) => {
+      if (event.target instanceof Element && event.target.closest(".rubato-voice-mic")) warm();
+    };
+    if (document.hasFocus()) warm();
+    window.addEventListener("focus", warm);
+    document.addEventListener("pointerover", towardMicrophone);
+    return () => {
+      window.removeEventListener("focus", warm);
+      document.removeEventListener("pointerover", towardMicrophone);
+    };
+  }, [ownerKey]);
 
   useEffect(
     () => () => {

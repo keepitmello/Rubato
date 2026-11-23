@@ -7,7 +7,7 @@
 // room draws the same thing (t3-integration overlay apps/web rubatoSegnoRoom.ts, rubatoCallRoom.ts).
 // The companion's reply reads like a messenger chat: each paragraph is its own bubble
 // (packages/shared rubatoReplyBubbles.ts, the same breaks its Telegram messages take).
-import type { ChatAttachment } from "@t3tools/contracts";
+import { rubatoVoiceDisplay, type ChatAttachment } from "@t3tools/contracts";
 import { replyBubbleGapMs, replyBubbles } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { DraftComposerAttachment } from "../../lib/composerImages";
@@ -49,6 +49,8 @@ export type RoomItem =
       readonly id: string;
       readonly side: RoomSide;
       readonly text: string;
+      /** The person spoke it (a dictation, a call, Telegram): drawn underlined. */
+      readonly voiced?: boolean;
       /**
        * The message's file lines (the companion's reply files and a file the person sent from the
        * messenger both arrive as `![name](</abs>)` or `[name](</abs>)`), drawn under the words.
@@ -97,13 +99,13 @@ export function roomLaunchAfter(messages: readonly { createdAt: string }[], page
 
 /**
  * The person's words as a bubble shows them. T3 writes an attached picture into the message as a
- * context link (`![image.png](t3-context://…)`) and the call worker tags call speech `[voice] `.
+ * context link (`![image.png](t3-context://…)`); spoken words carry a voice mark or `[voice] `
+ * (contracts rubatoVoiceDisplay), drawn as an underline instead.
  */
 export function personText(text: string): string {
-  return text
+  return rubatoVoiceDisplay(text).text
     .replace(/!\[[^\]\n]*\]\(t3-context:[^)\n]*\)/g, "")
     .replace(/\[([^\]\n]*)\]\(t3-context:[^)\n]*\)/g, "$1")
-    .replace(/^\[voice\]\s*/, "")
     .trim();
 }
 
@@ -161,6 +163,7 @@ function parseRoomMessage(message: RoomMessageInput) {
   const parts = side === "companion" && !message.streaming ? replyBubbles(words) : [];
   return {
     kind: "message" as const, at: Date.parse(message.createdAt), side, message, text: words, files,
+    voiced: side === "me" && rubatoVoiceDisplay(message.text).voiced,
     texts: parts.length > 1 ? parts : [words],
     bubbles: null as { starts: boolean; ends: boolean; items: RoomItem[] } | null,
   };
@@ -251,6 +254,7 @@ export function roomItems(
         id: part === 0 ? entry.message.id : `${entry.message.id}#${part}`,
         side: entry.side,
         text,
+        voiced: entry.voiced,
         files: last ? entry.files : "",
         attachments: last ? (entry.message.attachments ?? []) : [],
         pending: entry.message.pending ?? null,
