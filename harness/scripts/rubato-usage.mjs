@@ -7,8 +7,8 @@
 // It never renews or writes a credential. Sessions renew tokens while they use them, and
 // Codex and Anthropic rotate the refresh token on renewal, so a second writer here could
 // strand an account. An account whose token has lapsed reports `probeFailed` until a
-// session uses it again. Antigravity is the one exception: Google keeps the refresh token,
-// so a memory-only renewal is harmless.
+// session uses it again. The local agy CLI's Google login is read the same way: its token
+// is used as it is, and a lapsed one waits for agy's next run.
 //
 // Anthropic setup-token accounts cannot call the usage endpoint (their token lacks the
 // scope, and the endpoint rate-limits them for an hour). Their windows come from the last
@@ -295,17 +295,7 @@ export function antigravityModelWindows(body) {
   return [...windows.values()];
 }
 
-async function readAntigravity({ slot, credential, fetchImpl, now, renewAntigravity }) {
-  if (!slot?.access && !slot?.refresh) return { unsupported: true };
-  let access = slot.access;
-  if ((typeof slot.expires !== "number" || slot.expires <= now() + 60_000) && slot.refresh) {
-    try {
-      access = (await renewAntigravity({ ...credential, refresh: slot.refresh }))?.access ?? access;
-    } catch (error) {
-      throw new UsageReadError(`Antigravity could not renew its token in memory (${error instanceof Error ? error.message : String(error)}).`);
-    }
-  }
-  const project = credential?.env?.RUBATO_ANTIGRAVITY_PROJECT;
+async function antigravityWindows({ access, fetchImpl }) {
   const read = async (operation, parse) => {
     let lastError;
     for (const endpoint of ANTIGRAVITY_ENDPOINTS) {
@@ -317,7 +307,7 @@ async function readAntigravity({ slot, credential, fetchImpl, now, renewAntigrav
             "content-type": "application/json",
             "user-agent": ANTIGRAVITY_USER_AGENT,
           },
-          body: JSON.stringify(project ? { project } : {}),
+          body: "{}",
         }, "Antigravity"));
         if (windows.length > 0) return windows;
       } catch (error) {
@@ -330,7 +320,34 @@ async function readAntigravity({ slot, credential, fetchImpl, now, renewAntigrav
   let windows = [];
   try { windows = await read("retrieveUserQuotaSummary", antigravitySummaryWindows); } catch { /* fall back below */ }
   if (windows.length === 0) windows = await read("fetchAvailableModels", antigravityModelWindows);
-  return { windows };
+  return windows;
+}
+
+/**
+ * Gemini quota as the local agy CLI spends it: subagents on `agy/*` run through agy's own
+ * Google login (Keychain `gemini`/`antigravity`), not through a Rubato account.
+ * `readAgyLogin` resolves `{ access, expiry? }`, or undefined when agy is not signed in.
+ */
+async function readLocalAgy({ readAgyLogin, fetchImpl, now }) {
+  const row = { provider: "google-antigravity", providerLabel: "Antigravity (agy)", account: "agy", source: "agy" };
+  const checkedAt = new Date(now()).toISOString();
+  const unavailable = (message) => ({ ...row, usageLimits: { checkedAt, windows: [], unavailable: { reason: "probeFailed", message } } });
+  let login;
+  try {
+    login = await readAgyLogin();
+  } catch (error) {
+    return unavailable(`agy's login could not be read (${error instanceof Error ? error.message : String(error)}).`);
+  }
+  if (!login?.access) return undefined;
+  const expires = login.expiry ? Date.parse(login.expiry) : Number.NaN;
+  if (Number.isFinite(expires) && expires <= now() + 60_000) {
+    return unavailable("agy's token has lapsed. It renews the next time agy runs.");
+  }
+  try {
+    return { ...row, usageLimits: { checkedAt, windows: await antigravityWindows({ access: login.access, fetchImpl }) } };
+  } catch (error) {
+    return unavailable(error instanceof Error ? error.message : String(error));
+  }
 }
 
 // ── Gemini API ──────────────────────────────────────────────────────────────
@@ -360,6 +377,7 @@ export const USAGE_READERS = Object.freeze({
  * @param {(credential: object | undefined, name: string) => object | undefined} input.slotOf
  * @param {object} input.observed  `readObservedUsage(...)`
  * @param {string} [input.geminiRequestsPath]  where the engine counts Gemini API requests
+ * @param {() => Promise<{ access: string, expiry?: string } | undefined>} [input.readAgyLogin]  the local agy CLI's login
  */
 export async function collectUsage({
   providers,
@@ -370,7 +388,7 @@ export async function collectUsage({
   geminiRequestsPath,
   fetchImpl = globalThis.fetch,
   now = Date.now,
-  renewAntigravity = async () => { throw new Error("no renewal configured"); },
+  readAgyLogin = async () => undefined,
 }) {
   const jobs = [];
   for (const provider of providers) {
@@ -385,7 +403,7 @@ export async function collectUsage({
         const checkedAt = new Date(now()).toISOString();
         let result;
         try {
-          result = await reader({ slot, account, credential, observed, geminiRequestsPath, fetchImpl, now, renewAntigravity });
+          result = await reader({ slot, account, credential, observed, geminiRequestsPath, fetchImpl, now });
         } catch (error) {
           return {
             provider: provider.id,
@@ -414,13 +432,15 @@ export async function collectUsage({
       })());
     }
   }
+  jobs.push(readLocalAgy({ readAgyLogin, fetchImpl, now }));
   // Within a provider, the main account first, then sub and sub2, as the model picker names them.
   const rows = (await Promise.all(jobs)).filter(Boolean);
   const order = new Map(providers.map((provider, index) => [provider.id, index]));
+  const rank = (provider) => order.get(provider) ?? providers.length;
   return {
     accounts: rows
       .map((row, index) => ({ row, index }))
-      .sort((left, right) => (order.get(left.row.provider) - order.get(right.row.provider))
+      .sort((left, right) => (rank(left.row.provider) - rank(right.row.provider))
         || (laneOrder(left.row.modelSuffix) - laneOrder(right.row.modelSuffix))
         || (left.index - right.index))
       .map(({ row }) => row),
