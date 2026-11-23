@@ -28,13 +28,13 @@
 // next heartbeat tick (docsReportLine), so the companion reads it when it wakes and tells the user.
 import { createHash, randomBytes } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, existsSync, mkdirSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { companionDefaultsDir } from '../../rubato-pi/src/system-prompt.mjs';
 import { docsRootPath, docsRootProblem, memoryPiecePath } from '../companion.mjs';
-import { commitOwned, ensureHomeRepo, localDate, segnoPaths } from '../home.mjs';
-import { CHILD_TIMEOUT_MS, DREAM_MODELS, bringHome, childArgs, composeDreamPrompt, dreamPaths, dreamWritable, lastLine, localIso,
-  materialize, readDreamState, readJson, readText, snapshot, spawnLogged, takeLock, workEnv, writeJson } from './dream.mjs';
+import { commitOwned, ensureHomeRepo, landsInside, localDate, segnoPaths } from '../home.mjs';
+import { CHILD_TIMEOUT_MS, DREAM_MODELS, WRITABLE, bringHome, childArgs, composeDreamPrompt, dreamPaths, lastLine, localIso,
+  materialize, readDreamState, readJson, readText, releaseLock, snapshot, spawnLogged, takeLock, workEnv, writeJson } from './dream.mjs';
 
 /** Hours between docs runs per cadence, a little under the day, week and four weeks (as dream.mjs CADENCE_HOURS). */
 export const DOCS_CADENCE_HOURS = Object.freeze({ daily: 20, weekly: 160, monthly: 640 });
@@ -74,32 +74,73 @@ export function docsDue({ at, state = {}, settings, manual = false }) {
     : { due: false, lastAt, everyHours, elapsedH, reason: `ran ${elapsedH}h ago, every ${everyHours}h` };
 }
 
-function git(cwd, args, { input, allowFail = false } = {}) {
+function git(cwd, args, { input, allowFail = false, env: extra = {} } = {}) {
   try {
     return execFileSync('git', ['-C', cwd, ...GIT_QUIET, ...args], { encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024,
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0' } });
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...extra } });
   } catch (error) {
     if (allowFail) return undefined;
     throw new Error(`git ${args[0]} in ${cwd}: ${String(error?.stderr || error?.message || error).trim().split('\n')[0]}`);
   }
 }
 
-/**
- * Files under `target` (a folder or one file) that carry the immutable flag. macOS and the BSDs keep
- * it as chflags uchg/schg, which find reads; elsewhere there is no such flag and nothing is locked.
- */
-export function immutableFiles(target, platform = process.platform) {
-  if (!['darwin', 'freebsd', 'openbsd', 'netbsd'].includes(platform) || !existsSync(target)) return [];
-  try {
-    return execFileSync('find', [target, '(', '-name', '.git', '-o', '-name', 'node_modules', ')', '-prune', '-o',
-      '(', '-flags', '+uchg', '-o', '-flags', '+schg', ')', '-type', 'f', '-print0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 64 * 1024 * 1024 }).split('\0').filter(Boolean);
-  } catch { return []; }
+const BSD = new Set(['darwin', 'freebsd', 'openbsd', 'netbsd']);
+
+/** Every file under `dir`, links included, minus .git and node_modules. */
+function filesUnder(dir) {
+  const out = [];
+  const walk = (current) => {
+    let entries;
+    try { entries = readdirSync(current, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries) {
+      if (SKIPPED_DIRS.has(entry.name)) continue;
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else out.push(full);
+    }
+  };
+  walk(dir);
+  return out;
 }
 
+/**
+ * Files under `target` (a folder or one file) that the immutable flag protects: flagged themselves or
+ * inside a flagged folder. macOS and the BSDs keep it as chflags uchg/schg, which find reads; elsewhere
+ * there is no such flag and nothing is locked. A find that cannot read some folders still reports what
+ * it found; one that fails outright stops the run rather than going on as if nothing were locked.
+ */
+export function immutableFiles(target, platform = process.platform) {
+  if (!BSD.has(platform) || !existsSync(target)) return [];
+  let out;
+  try {
+    out = execFileSync('find', [target, '(', '-name', '.git', '-o', '-name', 'node_modules', ')', '-prune', '-o',
+      '(', '-flags', '+uchg', '-o', '-flags', '+schg', ')', '-print0'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 64 * 1024 * 1024 });
+  } catch (error) {
+    if (error?.status === 1 && typeof error.stdout === 'string') out = error.stdout;
+    else throw new Error(`cannot read the immutable flags under ${target}`);
+  }
+  const found = new Set();
+  for (const file of out.split('\0').filter(Boolean)) {
+    let stat;
+    try { stat = lstatSync(file); } catch { continue; }
+    if (stat.isDirectory()) for (const inner of filesUnder(file)) found.add(inner);
+    else found.add(file);
+  }
+  return [...found].sort();
+}
+
+/** Sets or clears the user immutable flag on the link itself, never on what a link points to. */
 function setLocked(file, locked) {
-  try { execFileSync('chflags', [locked ? 'uchg' : 'nouchg', file], { stdio: 'ignore' }); return true; } catch { return false; }
+  try { execFileSync('chflags', ['-h', locked ? 'uchg' : 'nouchg', file], { stdio: 'ignore' }); return true; } catch { return false; }
+}
+
+/** Each listed path's kind, size and time, so a rewrite of an already-changed file still shows. */
+function pathStamps(root, rels) {
+  return rels.map((rel) => {
+    try { const stat = lstatSync(path.join(root, rel)); return `${rel}:${stat.mode}:${stat.size}:${stat.mtimeMs}`; } catch { return `${rel}:gone`; }
+  }).join('\n');
 }
 
 /** What a repository's refs and working tree look like, minus the dream's own branches. */
@@ -107,27 +148,18 @@ function repoFingerprint(top) {
   const refs = (git(top, ['for-each-ref', '--format=%(refname) %(objectname)', 'refs/heads', 'refs/remotes', 'refs/tags'], { allowFail: true }) ?? '')
     .split('\n').filter((line) => line && !line.startsWith(`refs/heads/${DOCS_BRANCH_PREFIX}`)).join('\n');
   const head = `${git(top, ['rev-parse', 'HEAD'], { allowFail: true }) ?? ''}|${git(top, ['symbolic-ref', '-q', 'HEAD'], { allowFail: true }) ?? ''}`;
-  const status = git(top, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], { allowFail: true }) ?? '';
-  return { refs: hash(refs + head), tree: hash(status) };
+  const status = git(top, ['status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all'], { allowFail: true }) ?? '';
+  const changed = status.split('\0').filter(Boolean).map((entry) => entry.slice(3));
+  return { refs: hash(refs + head), tree: hash(`${status}\n${pathStamps(top, changed)}`) };
 }
 
 /** What a folder outside git looks like: its files' sizes and modification times. */
 function folderFingerprint(target) {
-  const lines = [];
-  const walk = (current) => {
-    if (lines.length >= FINGERPRINT_FILE_LIMIT) return;
-    let entries;
-    try { entries = readdirSync(current, { withFileTypes: true }); } catch { return; }
-    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
-      if (SKIPPED_DIRS.has(entry.name)) continue;
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory()) walk(full);
-      else if (entry.isFile()) { const stat = statSync(full); lines.push(`${full}:${stat.size}:${stat.mtimeMs}`); }
-    }
-  };
-  try { if (statSync(target).isFile()) { const stat = statSync(target); return { tree: hash(`${stat.size}:${stat.mtimeMs}`) }; } } catch { return { tree: '' }; }
-  walk(target);
-  return { tree: hash(lines.join('\n')) };
+  let stat;
+  try { stat = lstatSync(target); } catch { return { refs: '', tree: '' }; }
+  if (!stat.isDirectory()) return { refs: '', tree: hash(`${stat.size}:${stat.mtimeMs}`) };
+  const files = filesUnder(target).sort().slice(0, FINGERPRINT_FILE_LIMIT);
+  return { refs: '', tree: hash(pathStamps(target, files.map((file) => path.relative(target, file)))) };
 }
 
 /**
@@ -172,72 +204,121 @@ function freeBranch(repo, date) {
   }
 }
 
-/** One repository's detached worktree at its current commit, with its locked files locked there too. */
+/**
+ * One repository's detached worktree at its current commit, with its locked files locked there too.
+ * The repository's own state is read first, so the run's own worktree is not part of what it saw.
+ */
 function openWorktree(repo, scopes, runDir) {
+  const before = repoFingerprint(repo);
   const base = git(repo, ['rev-parse', 'HEAD']).trim();
+  const locked = [...new Set(scopes.flatMap((scope) => immutableFiles(path.join(repo, scope))))]
+    .map((file) => posix(path.relative(repo, file))).filter((rel) => !rel.startsWith('..')).sort();
   const worktree = path.join(runDir, 'worktrees', `${path.basename(repo)}-${hash(repo).slice(0, 8)}`);
   mkdirSync(path.dirname(worktree), { recursive: true, mode: 0o700 });
   git(repo, ['worktree', 'add', '--detach', '--quiet', worktree, base]);
-  const locked = [...new Set(scopes.flatMap((scope) => immutableFiles(path.join(repo, scope))))]
-    .map((file) => posix(path.relative(repo, file))).filter((rel) => !rel.startsWith('..')).sort();
-  const lockedHere = locked.filter((rel) => existsSync(path.join(worktree, rel)) && setLocked(path.join(worktree, rel), true));
-  return { repo, base, worktree, scopes, locked, lockedHere, before: repoFingerprint(repo) };
-}
-
-/** Lifts the locks in a worktree and removes it; the repository forgets it. */
-function closeWorktree(open) {
-  for (const rel of open.lockedHere) setLocked(path.join(open.worktree, rel), false);
-  open.lockedHere = [];
-  if (git(open.repo, ['worktree', 'remove', '--force', open.worktree], { allowFail: true }) === undefined) {
-    rmSync(open.worktree, { recursive: true, force: true });
-    git(open.repo, ['worktree', 'prune'], { allowFail: true });
-  }
-}
-
-/** Paths that differ from the worktree's base, untracked ones too, after folding any commit the child made. */
-function changedPaths(worktree, base) {
-  if (git(worktree, ['rev-parse', 'HEAD']).trim() !== base) git(worktree, ['reset', '--quiet', '--mixed', base]);
-  const out = git(worktree, ['status', '--porcelain=v1', '-z', '--untracked-files=all', '--no-renames']);
-  return out.split('\0').filter(Boolean).map((entry) => entry.slice(3));
+  const open = { repo, base, worktree, scopes, locked, lockedHere: [], before, closed: false,
+    admin: git(worktree, ['rev-parse', '--absolute-git-dir']).trim() };
+  open.lockedHere = locked.filter((rel) => existsSync(path.join(worktree, rel)) && setLocked(path.join(worktree, rel), true));
+  return open;
 }
 
 /**
- * After the child: changes outside the roots and to locked files are put back, the rest is committed
- * on a new branch at the worktree's base, and the worktree goes. Returns what happened.
+ * Lifts the locks in a worktree and removes it. When git cannot remove it, the folder and this
+ * worktree's own record in the repository go by hand; no other worktree's record is touched.
  */
-function finishWorktree(open, { date, message }) {
+function closeWorktree(open) {
+  if (open.closed) return;
+  for (const rel of open.lockedHere) setLocked(path.join(open.worktree, rel), false);
+  open.lockedHere = [];
+  if (git(open.repo, ['worktree', 'remove', '--force', '--force', open.worktree], { allowFail: true }) === undefined) {
+    if (BSD.has(process.platform)) try { execFileSync('chflags', ['-R', '-h', 'nouchg', open.worktree], { stdio: 'ignore' }); } catch {}
+    rmSync(open.worktree, { recursive: true, force: true });
+    const common = git(open.repo, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { allowFail: true })?.trim();
+    if (common && path.dirname(open.admin) === path.join(common, 'worktrees')) rmSync(open.admin, { recursive: true, force: true });
+  }
+  open.closed = true;
+}
+
+/**
+ * What the child changed under the roots, judged from the worktree's files against the base commit,
+ * whatever the child did to the worktree's index or HEAD: `{ path, mode, oid }` per changed path
+ * (`oid` null when it is gone). Changes outside the roots are named for the report only.
+ */
+function worktreeChanges(open) {
+  const { worktree, base, scopes } = open;
+  const baseEntries = new Map();
+  for (const line of git(worktree, ['ls-tree', '-r', '-z', base, '--', ...scopes.map((scope) => scope || '.')]).split('\0').filter(Boolean)) {
+    const [meta, rel] = line.split('\t');
+    const [mode, , oid] = meta.split(' ');
+    baseEntries.set(rel, { mode, oid });
+  }
+  const listed = git(worktree, ['ls-files', '-z', '--cached', '--others', '--exclude-standard', '--', ...scopes.map((scope) => scope || '.')])
+    .split('\0').filter(Boolean);
+  const candidates = [...new Set([...baseEntries.keys(), ...listed])].filter((rel) => inScope(rel, scopes)).sort();
+  const present = [];
+  const changes = [];
+  const refused = [];
+  for (const rel of candidates) {
+    let stat;
+    try { stat = lstatSync(path.join(worktree, rel)); } catch { stat = undefined; }
+    if (!stat) { if (baseEntries.has(rel)) changes.push({ path: rel, mode: '0', oid: null }); continue; }
+    if (stat.isSymbolicLink()) {
+      // A link the child made or moved could carry a write anywhere; links are left as the base had them.
+      const was = baseEntries.get(rel);
+      if (!was || was.mode !== '120000' || git(worktree, ['hash-object', '--stdin'], { input: readlinkSync(path.join(worktree, rel)) }).trim() !== was.oid)
+        refused.push({ path: rel, reason: 'link' });
+      continue;
+    }
+    if (!stat.isFile() || rel.includes('\n')) continue;
+    present.push({ rel, mode: stat.mode & 0o111 ? '100755' : '100644' });
+  }
+  const oids = present.length ? git(worktree, ['hash-object', '-w', '--no-filters', '--stdin-paths'], { input: present.map((item) => item.rel).join('\n') + '\n' })
+    .trim().split('\n') : [];
+  present.forEach((item, index) => {
+    const was = baseEntries.get(item.rel);
+    if (!was || was.oid !== oids[index] || was.mode !== item.mode) changes.push({ path: item.rel, mode: item.mode, oid: oids[index] });
+  });
+  // Against the base too, so a change the child committed itself is still named.
+  const outside = [...(git(worktree, ['diff', '--name-only', '-z', '--no-renames', base], { allowFail: true }) ?? '').split('\0'),
+    ...(git(worktree, ['ls-files', '-z', '--others', '--exclude-standard'], { allowFail: true }) ?? '').split('\0')]
+    .filter((rel) => rel && !inScope(rel, scopes));
+  return { changes, refused, outside };
+}
+
+/**
+ * After the child: Rubato builds the commit itself, from the base commit plus the changes under the
+ * roots that touch no locked file, in an index of its own, and names it as a new branch; nothing of
+ * the worktree's index, HEAD or any existing branch is used or moved, and no hook runs. Then the
+ * worktree goes. Returns what happened.
+ */
+function finishWorktree(open, { date, message, runDir }) {
   for (const rel of open.lockedHere) setLocked(path.join(open.worktree, rel), false);
   open.lockedHere = [];
   const lockedSet = new Set(open.locked);
-  const kept = [];
-  const reverted = [];
-  for (const rel of changedPaths(open.worktree, open.base)) {
-    const reason = lockedSet.has(rel) ? 'locked' : !inScope(rel, open.scopes) ? 'outside the roots' : undefined;
-    if (!reason) { kept.push(rel); continue; }
-    if (git(open.worktree, ['cat-file', '-e', `${open.base}:${rel}`], { allowFail: true }) !== undefined)
-      git(open.worktree, ['checkout', '--quiet', open.base, '--', rel]);
-    else rmSync(path.join(open.worktree, rel), { force: true });
-    reverted.push({ path: rel, reason });
-  }
+  const { changes, refused, outside } = worktreeChanges(open);
+  const kept = changes.filter((change) => !lockedSet.has(change.path));
+  const reverted = [...changes.filter((change) => lockedSet.has(change.path)).map((change) => ({ path: change.path, reason: 'locked' })),
+    ...refused, ...[...new Set(outside)].map((rel) => ({ path: rel, reason: 'outside the roots' }))];
   let branch = null;
   let commit = null;
-  let files = [];
   if (kept.length) {
-    git(open.worktree, ['add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { input: kept.join('\0') });
-    files = git(open.worktree, ['diff', '--cached', '--name-only']).split('\n').filter(Boolean);
-  }
-  if (files.length) {
+    const index = { GIT_INDEX_FILE: path.join(runDir, `index-${hash(open.repo).slice(0, 8)}`) };
+    git(open.worktree, ['read-tree', open.base], { env: index });
+    git(open.worktree, ['update-index', '-z', '--index-info'], { env: index,
+      input: kept.map((change) => `${change.mode} ${change.oid ?? '0'.repeat(open.base.length)}\t${change.path}\0`).join('') });
+    const tree = git(open.worktree, ['write-tree'], { env: index }).trim();
+    const named = git(open.worktree, ['config', 'user.email'], { allowFail: true })?.trim() ? {}
+      : { GIT_AUTHOR_NAME: 'Rubato dream', GIT_AUTHOR_EMAIL: 'dream@rubato.local', GIT_COMMITTER_NAME: 'Rubato dream', GIT_COMMITTER_EMAIL: 'dream@rubato.local' };
+    const sha = git(open.worktree, ['commit-tree', tree, '-p', open.base, '-m', message], { env: named }).trim();
     branch = freeBranch(open.repo, date);
-    git(open.worktree, ['switch', '--quiet', '-c', branch]);
-    const identity = git(open.worktree, ['config', 'user.email'], { allowFail: true })?.trim()
-      ? [] : ['-c', 'user.name=Rubato dream', '-c', 'user.email=dream@rubato.local'];
-    git(open.worktree, [...identity, 'commit', '--quiet', '--no-verify', '-m', message]);
-    commit = git(open.worktree, ['rev-parse', '--short', 'HEAD']).trim();
+    // An empty old value: the ref is created only if no branch of that name appeared meanwhile.
+    git(open.repo, ['update-ref', `refs/heads/${branch}`, sha, '']);
+    commit = sha.slice(0, 9);
   }
   closeWorktree(open);
   const after = repoFingerprint(open.repo);
   const sourceChanged = after.refs !== open.before.refs || after.tree !== open.before.tree;
-  return { repo: open.repo, base: open.base.slice(0, 12), branch, commit, files, reverted, locked: open.locked, sourceChanged };
+  return { repo: open.repo, base: open.base.slice(0, 12), branch, commit, files: kept.map((change) => change.path), reverted, locked: open.locked, sourceChanged };
 }
 
 /** The report's part Rubato writes from what it checked, under the companion's own report. */
@@ -277,11 +358,15 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
   const state = readDreamState(env);
   const due = docsDue({ at, state, settings, manual });
   if (!due.due) return { status: 'not-due', reason: due.reason };
+  const runDate = localDate(at);
+  const reportFile = path.join(docsReportDir(env), `${runDate}.md`);
+  // Everything the run writes for itself stays inside the home: a link anywhere on those paths runs nothing.
+  const outward = [paths.state, paths.lock, path.join(paths.runs, 'run'), reportFile].find((target) => !landsInside(home, target));
+  if (outward) return { status: 'failed', reason: `${outward} leads outside the companion's home through a link` };
   if (!takeLock(paths.lock, at)) return { status: 'busy', reason: 'another dream is running' };
   const runId = `docs-${localIso(at).replace(/[:+]/g, '-')}-${randomBytes(3).toString('hex')}`;
   const runDir = path.join(paths.runs, runId);
   const outDir = path.join(runDir, 'out');
-  const runDate = localDate(at);
   const base = { runId, startedAt: localIso(at), manual };
   const opened = [];
   const workHome = path.join(runDir, 'home');
@@ -312,7 +397,7 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
 
     const plan = {
       job: 'docs', runAt: localIso(at), runDate, manual, cadence: settings.dream.docs.cadence,
-      previous: { lastAt: state.blocks?.docs?.lastAt ?? null, report: state.blocks?.docs?.report ?? null },
+      previous: { lastAt: state.blocks?.docs?.lastAt ?? null, report: state.docsReport?.report ?? null },
       roots: [
         ...ready.filter((root) => root.mode === 'edit').map((root) => ({ path: root.path, mode: 'edit', work: path.join(workHome, root.scope),
           locked: homeLocked.filter((rel) => inScope(rel, [root.scope])).map((rel) => path.join(workHome, rel)) })),
@@ -353,21 +438,26 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
 
     let homeOutcome;
     if (ok && editScopes.length) {
-      // Only the memory dream's own places inside an edit root; the resident piece stays the memory dream's.
+      // Only memory/ and notes/ inside an edit root, whatever else a registered companion's memory dream
+      // may write; the resident piece stays the memory dream's, and a file shared through a hard link
+      // (another name for the resident piece, or a file outside the home) is never written through.
       const resident = posix(path.relative(home, memoryPiecePath(env)));
-      const ownPlace = dreamWritable(env);
       const locked = new Set(homeLocked);
+      const linked = (rel) => { try { return lstatSync(path.join(home, rel)).nlink > 1; } catch { return false; } };
       const moved = bringHome({ home, base: started, dreamed: snapshot(workHome, env), scratch: runDir,
-        writable: (rel) => rel !== resident && ownPlace(rel) && inScope(rel, editScopes),
-        guard: (rel) => (locked.has(rel) ? { reason: 'locked' } : undefined) });
+        writable: (rel) => rel !== resident && WRITABLE(rel) && inScope(rel, editScopes),
+        guard: (rel) => (locked.has(rel) ? { reason: 'locked' } : linked(rel) ? { reason: 'hard link' } : undefined) });
       const commit = moved.applied.length ? commitOwned(moved.applied, message, { env }) : undefined;
       if (moved.applied.length && reindex) try { reindex(env); } catch { /* search catches up on its next index */ }
       homeOutcome = { ...moved, commit: commit?.commit ?? null };
     }
     const repos = [];
-    for (const open of opened.splice(0)) {
-      repos.push(ok ? finishWorktree(open, { date: runDate, message }) : (closeWorktree(open), { repo: open.repo, branch: null, commit: null, files: [],
-        reverted: [], locked: open.locked, sourceChanged: false }));
+    for (const open of opened) {
+      if (ok) { repos.push(finishWorktree(open, { date: runDate, message, runDir })); continue; }
+      closeWorktree(open);
+      const after = repoFingerprint(open.repo);
+      repos.push({ repo: open.repo, branch: null, commit: null, files: [], reverted: [], locked: open.locked,
+        sourceChanged: after.refs !== open.before.refs || after.tree !== open.before.tree });
     }
     for (const item of reports) {
       const after = item.repo ? repoFingerprint(item.repo) : folderFingerprint(item.resolved);
@@ -377,17 +467,18 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
     const decide = Number.isInteger(result.decide) && result.decide >= 0 ? result.decide : 0;
     const report = [`# 문서 정리 (${localIso(at)})`, readText(plan.out.report) || (ok ? '(꿈이 보고를 안 남김)' : ''),
       factsSection({ repos, home: homeOutcome, reports, skipped, failed })].filter(Boolean).join('\n\n');
-    const reportFile = path.join(docsReportDir(env), `${runDate}.md`);
     mkdirSync(path.dirname(reportFile), { recursive: true, mode: 0o700 });
     appendFileSync(reportFile, `${existsSync(reportFile) ? '\n---\n\n' : ''}${report}\n`, { mode: 0o600 });
     const branches = repos.filter((item) => item.branch).map((item) => ({ repo: item.repo, branch: item.branch, commit: item.commit }));
-    const attention = repos.some((item) => item.sourceChanged || item.reverted.length) || reports.some((item) => item.sourceChanged)
-      || (homeOutcome && (homeOutcome.refused.length || homeOutcome.conflicts.length || homeOutcome.guarded.length));
-    if (ok) {
-      const latest = readDreamState(env);
-      writeJson(paths.state, { ...latest, blocks: { ...(latest.blocks ?? {}), docs: { lastAt: localIso(at), runId, report: reportFile,
-        branches: branches.length, decide } } });
-    }
+    const sourceChanged = repos.some((item) => item.sourceChanged) || reports.some((item) => item.sourceChanged);
+    const attention = sourceChanged || skipped.length > 0 || repos.some((item) => item.reverted.length)
+      || Boolean(homeOutcome && (homeOutcome.refused.length || homeOutcome.conflicts.length || homeOutcome.guarded.length));
+    // The watermark moves only for a run that finished; the companion hears of every finished run, and
+    // of a failed one that found its sources changed.
+    const latest = readDreamState(env);
+    writeJson(paths.state, { ...latest,
+      ...(ok ? { blocks: { ...(latest.blocks ?? {}), docs: { lastAt: localIso(at), runId } } } : {}),
+      ...(ok || sourceChanged ? { docsReport: { runId, report: reportFile, branches: branches.length, decide } } : {}) });
     record = { ...base, status: !ok ? 'failed' : result.status === 'done' && !attention ? 'done' : 'partial', attempts, report: reportFile,
       branches, decide, ...(homeOutcome ? { home: { applied: homeOutcome.applied, commit: homeOutcome.commit } } : {}),
       reverted: repos.flatMap((item) => item.reverted.map((entry) => ({ repo: item.repo, ...entry }))),
@@ -404,7 +495,7 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
       rmSync(workHome, { recursive: true, force: true });
       rmSync(path.join(runDir, 'worktrees'), { recursive: true, force: true });
       writeJson(path.join(runDir, 'run.json'), { ...record, finishedAt: localIso(now()) });
-    } finally { rmSync(paths.lock, { force: true }); }
+    } finally { releaseLock(paths.lock, at); }
   }
 }
 
@@ -413,7 +504,7 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
  * shown (`seen` is the last run id shown, companion state docsReportSeen); else undefined.
  */
 export function docsReportLine(env = process.env, seen) {
-  const docs = readDreamState(env).blocks?.docs;
+  const docs = readDreamState(env).docsReport;
   if (typeof docs?.runId !== 'string' || docs.runId === seen || typeof docs.report !== 'string' || !existsSync(docs.report)) return undefined;
   return { runId: docs.runId, line: `DOCS_REPORT file="${docs.report}" branches=${docs.branches ?? 0} decide=${docs.decide ?? 0}` };
 }

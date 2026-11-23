@@ -2,7 +2,7 @@
 // settings that drive it, and how the companion hears about it.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -11,7 +11,7 @@ import { createCompanionService } from '../../t3-integration/src/companion/servi
 import { DEFAULT_SETTINGS, readSettings, writeSettings, writeState } from '../companion.mjs';
 import { heartbeatText } from '../control-tower.mjs';
 import { DOCS_CADENCE_HOURS, docsDue, docsReportLine, immutableFiles, runDocsDream } from '../dream/docs.mjs';
-import { DREAM_MODELS, companionDreamModels, readDreamState, runCompanionDream } from '../dream/dream.mjs';
+import { DREAM_MODELS, companionDreamModels, dreamPaths, readDreamState, releaseLock, runCompanionDream, takeLock } from '../dream/dream.mjs';
 import { dreamNight, resolveModels } from '../dream/service.mjs';
 import { companionSettings } from '../settings.mjs';
 import { appEntry } from '../messenger/test/helpers.mjs';
@@ -172,7 +172,7 @@ test('a branch root is tended in a worktree: Rubato commits inside the root on a
   assert.match(report, /되돌림: README\.md \(정리 대상 밖\)/);
   const state = readDreamState(env);
   assert.equal(state.blocks.docs.runId, record.runId);
-  assert.equal(state.blocks.docs.decide, 1);
+  assert.equal(state.docsReport.decide, 1);
   const line = docsReportLine(env);
   assert.equal(line.line, `DOCS_REPORT file="${record.report}" branches=1 decide=1`);
   assert.equal(docsReportLine(env, record.runId), undefined, 'shown once');
@@ -195,7 +195,7 @@ test('a run that writes into the user\'s checkout is named in the report, and a 
   } });
   const record = await runDocsDream({ env, settings: readSettings(env), launch, spawnChild: stray.spawnChild, now: () => at(21, 4, 30), defaultsDir });
   assert.equal(record.status, 'partial');
-  assert.deepEqual(record.sourceChanged.sort(), [path.join(dir, 'notes-folder'), repo].map((item) => execFileSync('realpath', [item], { encoding: 'utf8' }).trim()).sort());
+  assert.deepEqual([...record.sourceChanged].sort(), [path.join(dir, 'notes-folder'), repo].map((item) => execFileSync('realpath', [item], { encoding: 'utf8' }).trim()).sort());
   assert.match(readFileSync(record.report, 'utf8'), /확인 필요/);
   assert.deepEqual(record.branches, []);
   git(repo, 'checkout', '--quiet', '--', 'docs/runbook.md');
@@ -204,6 +204,16 @@ test('a run that writes into the user\'s checkout is named in the report, and a 
   const failing = await runDocsDream({ env, settings: readSettings(env), launch, manual: true, models: DREAM_MODELS, now: () => at(28, 4, 30),
     spawnChild: fakeTender({ code: 1 }).spawnChild, defaultsDir });
   assert.equal(failing.status, 'failed');
+  assert.deepEqual(failing.sourceChanged, [], 'compared on failure too');
+  assert.notEqual(readDreamState(env).docsReport.runId, failing.runId, 'a failure that touched nothing is not announced');
+  // A failed run whose child still wrote into the checkout is compared and announced.
+  const touching = await runDocsDream({ env, settings: readSettings(env), launch, manual: true, models: DREAM_MODELS.slice(0, 1), now: () => at(28, 5),
+    spawnChild: async ({ logPath }) => { writeFileSync(path.join(repo, 'docs', 'copy.md'), 'half a rewrite\n'); writeFileSync(logPath, 'quota\n'); return { code: 1 }; },
+    defaultsDir });
+  assert.equal(touching.status, 'failed');
+  assert.equal(touching.sourceChanged.length, 1);
+  assert.equal(readDreamState(env).docsReport.runId, touching.runId);
+  git(repo, 'checkout', '--quiet', '--', 'docs/copy.md');
   assert.equal(failing.attempts.length, DREAM_MODELS.length);
   assert.deepEqual(readDreamState(env).blocks.docs, before, 'tried again next time');
   assert.equal(git(repo, 'branch', '--list', 'dream/*').trim(), '');
@@ -291,4 +301,109 @@ test('a night is the memory dream, then the docs job; the docs job neither hides
   assert.deepEqual(order, ['memory', 'docs']);
   assert.equal(night.status, 'done');
   assert.deepEqual(night.docs, { status: 'failed', reason: 'worktree add failed' });
+});
+
+test('the commit is built from the worktree\'s files, not from what the child did to its index, HEAD or branches', async (t) => {
+  const { dir, env } = sandbox(t);
+  const { repo, head } = userRepo(dir);
+  put(path.join(repo, 'docs', 'extra.md'), 'second commit\n');
+  git(repo, 'add', '.');
+  git(repo, 'commit', '--quiet', '-m', 'second');
+  git(repo, 'branch', 'feature', head);
+  const second = git(repo, 'rev-parse', 'HEAD').trim();
+  writeSettings({ dream: { docs: { roots: [{ path: path.join(repo, 'docs'), mode: 'branch' }] } } }, env);
+  const tender = fakeTender({ work({ plan }) {
+    const worktree = path.dirname(plan.roots[0].work);
+    writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n');
+    writeFileSync(path.join(worktree, 'staged-outside.txt'), 'staged by the child\n');
+    git(worktree, 'add', 'staged-outside.txt');
+    symlinkSync('/etc/hosts', path.join(worktree, 'docs', 'escape.md'));
+    git(worktree, 'switch', '--quiet', '-c', 'child-branch');
+    git(worktree, 'commit', '--quiet', '-m', 'the child commits on its own branch');
+  } });
+  const record = await runDocsDream({ env, settings: readSettings(env), launch, spawnChild: tender.spawnChild, now: () => at(21, 4, 30), defaultsDir });
+  const branch = record.branches[0].branch;
+  assert.equal(git(repo, 'rev-parse', `${branch}^`).trim(), second);
+  assert.deepEqual(git(repo, 'show', '--name-only', '--format=', branch).trim().split('\n'), ['docs/copy.md']);
+  assert.deepEqual(record.reverted.map((item) => `${item.path}:${item.reason}`).sort(), ['docs/escape.md:link', 'staged-outside.txt:outside the roots']);
+  assert.equal(git(repo, 'rev-parse', 'feature').trim(), head, 'an existing branch is not moved');
+  assert.equal(git(repo, 'rev-parse', 'HEAD').trim(), second);
+  assert.equal(git(repo, 'status', '--porcelain'), '');
+  assert.equal(record.sourceChanged.length, 1, 'the branch the child made in the shared repository is named');
+});
+
+test('a dream folder or report file linked outside the home runs nothing', async (t) => {
+  const { dir, env } = sandbox(t);
+  const outside = path.join(dir, 'outside');
+  mkdirSync(outside);
+  mkdirSync(dreamPaths(env).dir, { recursive: true });
+  symlinkSync(outside, path.join(dreamPaths(env).dir, 'docs'));
+  put(path.join(dir, 'notes-folder', 'a.md'), 'x\n');
+  writeSettings({ dream: { docs: { roots: [{ path: path.join(dir, 'notes-folder'), mode: 'report' }] } } }, env);
+  const tender = fakeTender();
+  const record = await runDocsDream({ env, settings: readSettings(env), launch, spawnChild: tender.spawnChild, now: () => at(21, 4, 30), defaultsDir });
+  assert.equal(record.status, 'failed');
+  assert.match(record.reason, /outside the companion's home/);
+  assert.equal(tender.seen.length, 0);
+  assert.equal(existsSync(path.join(outside, '2026-10-21.md')), false);
+});
+
+test('an edit root never writes through a hard link', async (t) => {
+  const { dir, env, home } = sandbox(t);
+  const shared = put(path.join(dir, 'elsewhere.md'), 'shared\n');
+  mkdirSync(path.join(home, 'notes'), { recursive: true });
+  linkSync(shared, path.join(home, 'notes', 'linked.md'));
+  writeSettings({ dream: { docs: { roots: [{ path: path.join(home, 'notes'), mode: 'edit' }] } } }, env);
+  const record = await runDocsDream({ env, settings: readSettings(env), launch, now: () => at(21, 4, 30), defaultsDir,
+    spawnChild: fakeTender({ work: ({ cwd }) => writeFileSync(path.join(cwd, 'notes', 'linked.md'), 'rewritten\n') }).spawnChild });
+  assert.deepEqual(record.home.applied, []);
+  assert.equal(readFileSync(shared, 'utf8'), 'shared\n');
+});
+
+test('the dream lock is not taken from a living dream, and a run lets go only of its own lock', (t) => {
+  const { env } = sandbox(t);
+  const lock = dreamPaths(env).lock;
+  mkdirSync(path.dirname(lock), { recursive: true });
+  const old = at(21, 1);
+  writeFileSync(lock, JSON.stringify({ pid: process.ppid, at: old }));
+  assert.equal(takeLock(lock, at(21, 5)), false, 'three hours old, but its process is alive');
+  writeFileSync(lock, JSON.stringify({ pid: 999_999_9, at: old }));
+  assert.equal(takeLock(lock, at(21, 5)), true, 'its process is gone');
+  writeFileSync(lock, JSON.stringify({ pid: process.ppid, at: at(21, 5) }));
+  releaseLock(lock, at(21, 5));
+  assert.equal(existsSync(lock), true, 'another holder\'s lock stays');
+});
+
+test('a memory dream whose result could not be written to a locked file reads the same ground again', { skip: !darwin }, async (t) => {
+  const { env, home } = sandbox(t);
+  put(path.join(home, 'memory', '2026-10-20.md'), '## 10:05\n하루');
+  const locked = put(path.join(home, 'memory', 'user.md'), '## 지금\n');
+  execFileSync('chflags', ['uchg', locked]);
+  const spawnChild = async ({ cwd, env: childEnv, logPath }) => {
+    writeFileSync(path.join(cwd, 'memory', 'user.md'), '## 지금\n- 하루\n');
+    writeFileSync(path.join(childEnv.DREAM_OUT_DIR, 'result.json'), JSON.stringify({ status: 'done', blocks: { distill: 'done' }, message: '하루' }));
+    writeFileSync(logPath, 'MEMORY_DONE\n');
+    return { code: 0 };
+  };
+  const record = await runCompanionDream({ env, launch, spawnChild, now: () => at(21, 4, 7), defaultsDir, sessionFiles: () => [] });
+  assert.equal(record.watermarks, 'held');
+  assert.equal(readDreamState(env).blocks?.distill, undefined);
+});
+
+test('the same place cannot be named twice with two modes', async (t) => {
+  const { env } = sandbox(t);
+  assert.throws(() => writeSettings({ dream: { docs: { roots: [{ path: '/srv/repo/docs', mode: 'branch' }, { path: '/srv/repo/docs/', mode: 'report' }] } } }, env),
+    /twice/);
+});
+
+test('the ladder honours the [senpi] section, drops an unknown reasoning level, and a file that does not parse is not a ladder', async (t) => {
+  const { dir } = sandbox(t);
+  const env = { HOME: dir };
+  put(path.join(dir, '.rubato', 'rubato.jsonc'), JSON.stringify({ memory: { dream: { models: ['xai/grok-4.7'] } },
+    '[senpi]': { memory: { dream: { models: [{ model: 'anthropic/claude-sonnet-5-5', reasoning: 'nonsense' }] } } } }));
+  assert.deepEqual(await resolveModels(env), [{ model: 'anthropic/claude-sonnet-5-5' }]);
+  put(path.join(dir, '.rubato', 'rubato.jsonc'), '{ "memory": { "dream": { "models": [ "example/model"');
+  const errors = [];
+  assert.equal(await resolveModels(env, (error) => errors.push(error)), DREAM_MODELS);
+  assert.match(errors[0].message, /does not parse/);
 });

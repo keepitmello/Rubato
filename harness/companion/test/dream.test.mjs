@@ -527,7 +527,8 @@ test('a night with nothing new calls no model, and a second dream waits for the 
   assert.equal(dreamer.calls.length, 0);
 
   mkdirSync(dreamPaths(env).dir, { recursive: true });
-  writeFileSync(dreamPaths(env).lock, JSON.stringify({ pid: 1, at: at(22, 4, 0) }));
+  // A process id no running process has: the dream that held the lock is gone.
+  writeFileSync(dreamPaths(env).lock, JSON.stringify({ pid: 999_999_9, at: at(22, 4, 0) }));
   const busy = await runCompanionDream({ env, launch, spawnChild: dreamer.spawnChild, now: () => at(22, 4, 7), defaultsDir });
   assert.equal(busy.status, 'busy');
   // A lock left by a dream that died hours ago does not block the next night.

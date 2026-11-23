@@ -118,14 +118,17 @@ export const DREAM_MODELS = Object.freeze([
 
 /**
  * The models a companion dream runs on: the dream ladder the user set (`memory.dream.models` in
- * ~/.rubato/rubato.jsonc, which Settings › Memory writes), else DREAM_MODELS. `config` is that file
- * as written, so the schema's default ladder never stands in for the user's choice; `ladder` turns
- * entries into rungs (packages/rubato-runtime src/dream/ladder.ts dreamLadder).
+ * ~/.rubato/rubato.jsonc, which Settings › Memory writes; the file's `[senpi]` section wins, as it does
+ * for the engine's own dream), else DREAM_MODELS. `config` is that file as written, so the schema's
+ * default ladder never stands in for the user's choice; `ladder` turns entries into rungs
+ * (packages/rubato-runtime src/dream/ladder.ts dreamLadder); a reasoning level outside `levels`
+ * (config-core REASONING_LEVELS) leaves the rung on the model's own level.
  */
-export function companionDreamModels(config, ladder) {
-  const models = config?.memory?.dream?.models;
+export function companionDreamModels(config, ladder, levels = []) {
+  const models = config?.['[senpi]']?.memory?.dream?.models ?? config?.memory?.dream?.models;
   const entries = (Array.isArray(models) ? models : [])
-    .filter((entry) => typeof entry === 'string' || typeof entry?.model === 'string');
+    .filter((entry) => typeof entry === 'string' || typeof entry?.model === 'string')
+    .map((entry) => (typeof entry === 'string' || levels.includes(entry.reasoning) ? entry : { model: entry.model }));
   const rungs = entries.length ? ladder(entries) : [];
   return rungs.length ? rungs : DREAM_MODELS;
 }
@@ -148,7 +151,7 @@ const INSTRUCTIONS = path.join(import.meta.dirname, 'dream.md');
  * What the dream may change: its memory, and Segno's notes (Roo's dream sweeps notes/당김.md and
  * notes/now.md for self-diagnosis and adds to the held list). The user's prompt/ never comes home.
  */
-const WRITABLE = (rel) => rel.startsWith('memory/') || rel.startsWith('notes/');
+export const WRITABLE = (rel) => rel.startsWith('memory/') || rel.startsWith('notes/');
 /** The resident memory piece and Roo's guard over it (scripts/memory-core-guard.py). */
 const RESIDENT = 'memory/MEMORY.md';
 const PROTECTED_SECTION = '잊으면 안 되는 말들';
@@ -688,6 +691,16 @@ export function guardResidentMemory(before, after, baselineChars) {
   return undefined;
 }
 
+/** Whether a process with this id is running (one owned by another user counts). */
+function processAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (error) { return error?.code === 'EPERM'; }
+}
+
+/**
+ * Takes the dream lock for a run that started at `at`. A lock is taken over only when it is old and
+ * the process that holds it is gone: a dream can run past STALE_LOCK_MS while its models retry.
+ */
 export function takeLock(file, at) {
   mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
   for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -697,11 +710,17 @@ export function takeLock(file, at) {
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       const held = readJson(file);
-      if (!(Number.isFinite(held?.at) && at - held.at > STALE_LOCK_MS)) return false;
+      if (!(Number.isFinite(held?.at) && at - held.at > STALE_LOCK_MS) || (held.pid !== process.pid && processAlive(held.pid))) return false;
       rmSync(file, { force: true });
     }
   }
   return false;
+}
+
+/** Lets go of the lock this process took for the run that started at `at`, and of no one else's. */
+export function releaseLock(file, at) {
+  const held = readJson(file);
+  if (held === undefined || (held.pid === process.pid && held.at === at)) rmSync(file, { force: true });
 }
 
 /** The child's argv: a print-mode engine run with file tools only and no extensions (Rubato's dream childArgs). */
@@ -835,10 +854,12 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
     // next dream reads the same ground again.
     // What did not come home is read again next night. A MEMORY.md the guard turned back is Roo's
     // failed compaction instead: the night counts, the piece stays as it was, and the run says why.
-    const held = conflicts.length > 0 || refused.length > 0;
+    // A file the dream wrote but the home could not take (locked) is not done either.
+    const locked = guarded.filter((item) => String(item.reason).startsWith('locked')).map((item) => item.path);
+    const held = conflicts.length > 0 || refused.length > 0 || locked.length > 0;
     if (!held) advance(env, { at, plan, blocks, result, transcript: plan.transcriptFor === 'selfReview' ? transcript : undefined });
     if (applied.includes(resident)) ratchetResident(env, home, started.get(resident));
-    if (existsSync(checksFile) && !conflicts.includes(plan.layout.held) && !refused.includes(plan.layout.held)) {
+    if (existsSync(checksFile) && ![...conflicts, ...refused, ...locked].includes(plan.layout.held)) {
       writeFileSync(paths.checks, readFileSync(checksFile), { mode: 0o600 });
     }
     // Roo's first step, done last here: what the dream wrote is searchable for Segno from now on.
@@ -871,7 +892,7 @@ export async function runCompanionDream({ env = process.env, launch, spawnChild 
       writeJson(path.join(runDir, 'run.json'), record);
       writeJson(paths.state, { ...readDreamState(env), lastRunAt: base.startedAt, lastRunId: runId, lastStatus: record.status,
         lastAttemptDate: localDate(at) });
-    } finally { rmSync(paths.lock, { force: true }); }
+    } finally { releaseLock(paths.lock, at); }
   }
 }
 

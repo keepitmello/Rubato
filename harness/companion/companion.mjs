@@ -263,9 +263,14 @@ export function writeSettings(patch, env = process.env) {
       if (docs.roots !== undefined) {
         if (!Array.isArray(docs.roots)) throw new TypeError('dream.docs.roots must be a list');
         if (docs.roots.length > DOCS_ROOT_LIMIT) throw new TypeError(`dream.docs.roots holds at most ${DOCS_ROOT_LIMIT} roots`);
+        const seen = new Set();
         for (const root of docs.roots) {
           const problem = docsRootProblem(root, env);
           if (problem) throw new TypeError(problem);
+          // One place, one mode: a second entry for the same place would be dropped on reading.
+          const full = docsRootPath(root.path, env);
+          if (seen.has(full)) throw new TypeError(`dream.docs.roots names ${root.path.trim()} twice; keep one entry with one mode`);
+          seen.add(full);
         }
       }
     }
