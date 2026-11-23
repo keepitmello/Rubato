@@ -662,3 +662,28 @@ export function createDictationEdits() {
     },
   };
 }
+
+/**
+ * Marks a draft that holds dictated text, once at its start. A transcription can mishear words;
+ * the model reads the mark and interprets what was meant (user, 2026-11-24).
+ */
+export const RUBATO_VOICE_TAG = "[voice]";
+
+/** The draft after dictation committed into it, with the mark in front once and the caret kept. */
+export function withRubatoVoiceTag(draft: {
+  readonly text: string;
+  readonly selection: { readonly start: number; readonly end: number };
+}): { readonly text: string; readonly selection: { readonly start: number; readonly end: number } } {
+  if (draft.text.trimStart().startsWith(RUBATO_VOICE_TAG)) return draft;
+  const prefix = `${RUBATO_VOICE_TAG} `;
+  return {
+    text: prefix + draft.text,
+    selection: { start: draft.selection.start + prefix.length, end: draft.selection.end + prefix.length },
+  };
+}
+
+/** The text without the mark, for what a person reads as a title. */
+export function withoutRubatoVoiceTag(text: string): string {
+  const trimmed = text.trimStart();
+  return trimmed.startsWith(RUBATO_VOICE_TAG) ? trimmed.slice(RUBATO_VOICE_TAG.length).trimStart() : text;
+}

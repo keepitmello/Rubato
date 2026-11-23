@@ -5,6 +5,9 @@ export const voiceEntityId = (sessionId, kind) =>
   `voice-${kind}-${createHash('sha256').update(`${sessionId}:${kind}`).digest('hex').slice(0, 32)}`;
 export const voiceThreadId = (id) => voiceEntityId(id, 'thread');
 export const voiceMessageId = (id) => voiceEntityId(id, 'message');
+// The Shortcut's text is a transcription: the model reads the mark and reads past a misheard word.
+// The title keeps the person's words only.
+export const voiceText = (text) => text.trimStart().startsWith('[voice]') ? text : `[voice] ${text}`;
 export const voiceCommandId = (id, kind) => voiceEntityId(id, `cmd-${kind}`);
 // T3 decides under its thread lock whether the message starts now or waits
 // behind the running turn. A read here could not: a normal message sent in the
@@ -66,7 +69,7 @@ export function createSubmitter({ dispatch, readThread, readProject, readRun = a
       const messageId = voiceMessageId(id);
       const result = await dispatch({
         type: 'message.dispatch', commandId: voiceCommandId(id, 'send'), threadId, ...VOICE_AUTHOR,
-        messageId, text: session.text, attachments: [], dispatchMode: VOICE_DISPATCH_MODE,
+        messageId, text: voiceText(session.text), attachments: [], dispatchMode: VOICE_DISPATCH_MODE,
         // A new conversation gets its title the way the composer's first message does.
         ...(newThread ? { titleSeed: session.text.trim().slice(0, 80) || 'Voice message' } : {}),
       });

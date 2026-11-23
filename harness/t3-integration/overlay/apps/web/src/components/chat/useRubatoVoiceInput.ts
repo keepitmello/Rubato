@@ -6,7 +6,7 @@ import {
 } from "@t3tools/client-runtime/voice-input";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { createDictationEdits } from "@t3tools/shared/rubatoLiveDictation";
+import { createDictationEdits, withRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";
 
 import {
   createRubatoLiveDictation,
@@ -106,7 +106,11 @@ export function useRubatoVoiceInput(input: {
           selection: { start: draft.start, end: draft.end },
         };
       },
-      commitDraft: (text, selection) => latest.current.commitDraft(text, selection.start),
+      // The "[voice]" mark goes in front once, so the model reads past a misheard word.
+      commitDraft: (text, selection) => {
+        const tagged = withRubatoVoiceTag({ text, selection });
+        latest.current.commitDraft(tagged.text, tagged.selection.start);
+      },
       onStateChange: (next) => {
         // A new attempt starts clean; an error keeps the reason this attempt failed.
         if (next.phase === "preparing") lastFailure.current = null;

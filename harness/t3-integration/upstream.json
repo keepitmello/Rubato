@@ -245,6 +245,9 @@
     "packages/shared/src/markdownPipeline.test.ts": "bde4990ff4499695a44cf4d6983d5bf13c28a5607dc07f857f52c198fa590dfc",
     "apps/mobile/src/features/threads/ThreadComposer.tsx": "7ecb7aade10dd2a42e10c0c037d71d2771720274a85a85f2808914f0e902105a",
     "apps/mobile/src/lib/threadActivity.ts": "22325e63f902d78233d68c79993e39126f049642d1a0f36c4e72d2840c3468ed",
-    "packages/provider-acp/src/server/adapter.ts": "ddf8e1c10a579e5c469f79f07e06ca3bc738657865f9826b105154cdff7cb520"
+    "packages/provider-acp/src/server/adapter.ts": "ddf8e1c10a579e5c469f79f07e06ca3bc738657865f9826b105154cdff7cb520",
+    "packages/client-runtime/src/operations/threadTitle.ts": "b6c605154ddd2ea596c56f16ef530f0ec446da45eae04d0216fc0fd8f7f6cc1d",
+    "apps/mobile/src/features/voice-input/useVoiceInputController.ts": "a3de6d23c60baee8898a94c781349e3c66028162d1a8b065bdf82e0c3a8faf4a",
+    "apps/mobile/src/features/issues/IssueCommentComposer.tsx": "fb1a7c79bc7c0f69fca91404297d47e8f159ccda70efcc78504e02cd3c4a6768"
   }
 }

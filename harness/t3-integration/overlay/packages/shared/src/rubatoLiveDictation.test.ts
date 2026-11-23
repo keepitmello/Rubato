@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "@effect/vitest"
 
 import {
   createDictationEdits,
+  withRubatoVoiceTag,
+  withoutRubatoVoiceTag,
   createLiveDictation,
   LIVE_FINISH_TIMEOUT_MS,
   LIVE_HOLD_MS,
@@ -311,5 +313,20 @@ describe("dictation edits", () => {
     expect(edits.draft("")).toBeNull();
     edits.draft("손으로만 쓴 말");
     expect(edits.draft("")).toBeNull();
+  });
+});
+
+describe("the voice mark", () => {
+  it("goes in front of a dictated draft once, and the caret stays after the dictated words", () => {
+    const first = withRubatoVoiceTag({ text: "fix the restart", selection: { start: 15, end: 15 } });
+    expect(first).toEqual({ text: "[voice] fix the restart", selection: { start: 23, end: 23 } });
+    const second = withRubatoVoiceTag({ text: `${first.text} and push`, selection: { start: 32, end: 32 } });
+    expect(second.text).toBe("[voice] fix the restart and push");
+    expect(second.selection).toEqual({ start: 32, end: 32 });
+  });
+
+  it("is left out of a title", () => {
+    expect(withoutRubatoVoiceTag("[voice] fix the restart")).toBe("fix the restart");
+    expect(withoutRubatoVoiceTag("typed text")).toBe("typed text");
   });
 });

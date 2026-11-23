@@ -46,7 +46,7 @@ test('concurrent different text is rejected even before the first send completes
   const first = f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'one' });
   await assert.rejects(f.service.submit({ voiceSessionId: s.voiceSessionId, text: 'two' }), /different text/);
   release(); await first;
-  assert.deepEqual(f.sent().map((c) => c.text), ['one']);
+  assert.deepEqual(f.sent().map((c) => c.text), ['[voice] one']);
 });
 
 test('cancel takes a queued message back out of T3\'s queue, but not once its turn began', async (t) => {
@@ -86,6 +86,7 @@ test('new thread is lazy, submitted once, titled like a composer message, with t
   assert.equal(f.threads.size, 2);
   assert.equal(f.sent().length, 1);
   assert.equal(f.sent()[0].titleSeed, '새 대화');
+  assert.equal(f.sent()[0].text, '[voice] 새 대화', 'the model reads it as a transcription');
   const create = f.commands.find((c) => c.type === 'thread.create');
   assert.deepEqual(create.modelSelection, f.projects.get('p').defaultModelSelection);
   assert.equal(result.status, 'sent');
@@ -146,7 +147,7 @@ test('a message the old voice queue was still holding is handed to T3 after the 
   ] }));
   const f = fixture({ filename }); t.after(() => f.service.close());
   await f.service.wake();
-  assert.deepEqual(f.sent().map((c) => c.text), ['held text']);
+  assert.deepEqual(f.sent().map((c) => c.text), ['[voice] held text']);
   assert.equal(f.service.status('held').status, 'sent');
 });
 

@@ -119,4 +119,26 @@ export const voiceEdits = {
     ['        [WS_METHODS.serverReportClientActivity]: (input, metadata) =>\n          Ref.update(rpcClientIds, (clientIds) => {',
       '        [WS_METHODS.serverReportClientActivity]: (input, metadata) =>\n          Ref.update(rpcClientIds, (clientIds) => {\n            noteVoiceActivity({ ...input, sessionId: currentSessionId, rpcClientId: metadata.client.id });', 'replace'],
   ],
+  // Dictated text goes into the draft behind a "[voice]" mark, once, so the model reads past a
+  // misheard word. Every phone composer dictates through this hook; the Mac composer tags it in
+  // useRubatoVoiceInput.ts. A GitHub issue comment is read by people, not a model, so it opts out.
+  'apps/mobile/src/features/voice-input/useVoiceInputController.ts': [
+    ['import { useGlobalVoiceInput } from "./VoiceInputProvider";\n',
+      'import { withRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";\n'],
+    ['  readonly onChangeSelection: (selection: ComposerEditorSelection) => void;\n}) {\n',
+      '  readonly onChangeSelection: (selection: ComposerEditorSelection) => void;\n  /** Rubato: true where the text goes to people, not a model; no "[voice]" mark. */\n  readonly withoutVoiceTag?: boolean;\n}) {\n', 'replace'],
+    ['        (text, selection) => {\n          captured.onChangeDraftMessage(text);\n',
+      '        (committedText, committedSelection) => {\n          const { text, selection } = captured.withoutVoiceTag\n            ? { text: committedText, selection: committedSelection }\n            : withRubatoVoiceTag({ text: committedText, selection: committedSelection });\n          captured.onChangeDraftMessage(text);\n', 'replace'],
+  ],
+  'apps/mobile/src/features/issues/IssueCommentComposer.tsx': [
+    ['    onChangeDraftMessage: changeDraft,\n    onChangeSelection: setSelection,\n  });\n',
+      '    onChangeDraftMessage: changeDraft,\n    onChangeSelection: setSelection,\n    withoutVoiceTag: true,\n  });\n', 'replace'],
+  ],
+  // The mark is for the model; a title made from the first message leaves it out.
+  'packages/client-runtime/src/operations/threadTitle.ts': [
+    ['import { truncate } from "@t3tools/shared/String";\n',
+      'import { withoutRubatoVoiceTag } from "@t3tools/shared/rubatoLiveDictation";\n'],
+    ['  const prose = replaceComposerContextReferences(value, (reference) => {\n',
+      '  const prose = replaceComposerContextReferences(withoutRubatoVoiceTag(value), (reference) => {\n', 'replace'],
+  ],
 };
