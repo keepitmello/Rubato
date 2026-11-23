@@ -51,6 +51,7 @@ const hash = (text) => createHash('sha256').update(text).digest('hex');
 const posix = (rel) => rel.split(path.sep).join('/');
 const inScope = (rel, scopes) => scopes.some((scope) => scope === '' || rel === scope || rel.startsWith(`${scope}/`));
 const real = (file) => { try { return realpathSync(file); } catch { return undefined; } };
+const existsLink = (file) => { try { lstatSync(file); return true; } catch { return false; } };
 
 export function docsReportDir(env = process.env) {
   return path.join(dreamPaths(env).dir, 'docs');
@@ -76,7 +77,9 @@ export function docsDue({ at, state = {}, settings, manual = false }) {
 
 function git(cwd, args, { input, allowFail = false, env: extra = {} } = {}) {
   try {
-    return execFileSync('git', ['-C', cwd, ...GIT_QUIET, ...args], { encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024,
+    // check-ignore reads paths, not pathspecs, and refuses the literal-pathspec switch.
+    const quiet = args[0] === 'check-ignore' ? GIT_QUIET.filter((item) => item !== '--literal-pathspecs') : GIT_QUIET;
+    return execFileSync('git', ['-C', cwd, ...quiet, ...args], { encoding: 'utf8', input, maxBuffer: 256 * 1024 * 1024,
       stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'],
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_OPTIONAL_LOCKS: '0', ...extra } });
   } catch (error) {
@@ -157,7 +160,10 @@ function repoFingerprint(top) {
   const head = `${git(top, ['rev-parse', 'HEAD'], { allowFail: true }) ?? ''}|${git(top, ['symbolic-ref', '-q', 'HEAD'], { allowFail: true }) ?? ''}`;
   const status = git(top, ['status', '--porcelain=v1', '-z', '--no-renames', '--untracked-files=all'], { allowFail: true }) ?? '';
   const changed = status.split('\0').filter(Boolean).map((entry) => entry.slice(3));
-  return { refs: hash(refs + head), tree: hash(`${status}\n${pathStamps(top, changed)}`) };
+  // The repository's own settings shape every checkout of it: its config, attributes, excludes and hooks.
+  const common = git(top, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { allowFail: true })?.trim();
+  const own = common ? ['config', 'info/attributes', 'info/exclude', ...filesUnder(path.join(common, 'hooks')).map((file) => path.relative(common, file))] : [];
+  return { refs: hash(refs + head + (common ? pathStamps(common, own.sort()) : '')), tree: hash(`${status}\n${pathStamps(top, changed)}`) };
 }
 
 /** What a folder outside git looks like: its files' sizes and modification times. */
@@ -209,7 +215,11 @@ function resolveOne(root, env, home) {
     const rel = posix(path.relative(home, repo));
     if (!rel.startsWith('..') && !path.isAbsolute(rel)) return { ...named, status: 'skipped', reason: "it resolves inside the companion's home" };
     if (!git(repo, ['rev-parse', '--verify', '-q', 'HEAD'], { allowFail: true })) return { ...named, status: 'skipped', reason: 'the repository has no commit yet' };
-    return { ...named, status: 'ready', resolved: full, repo, scope: posix(path.relative(repo, full)) };
+    const scope = posix(path.relative(repo, full));
+    // The worktree is the last commit: a place that is only in the user's checkout is not there.
+    if (scope && git(repo, ['cat-file', '-e', `HEAD:${scope}`], { allowFail: true }) === undefined)
+      return { ...named, status: 'skipped', reason: "it is not in the repository's last commit (commit it, or make it a report root)" };
+    return { ...named, status: 'ready', resolved: full, repo, scope };
   }
 }
 
@@ -239,7 +249,31 @@ function openWorktree(repo, scopes, runDir, opened) {
   opened.push(open);
   open.admin = git(worktree, ['rev-parse', '--absolute-git-dir']).trim();
   open.lockedHere = locked.filter((rel) => existsSync(path.join(worktree, rel)) && setLocked(path.join(worktree, rel), true));
+  open.stamps = scanStamps(worktree, scopes);
   return open;
+}
+
+/**
+ * Every entry under the roots in a worktree, keyed by its repository path, with what changes when it is
+ * written: inode, size, modification and change time (the change time cannot be set back). A folder
+ * that is a repository of its own is one entry. Comparing two of these tells which paths the child
+ * touched, so a file it left alone is never stored again.
+ */
+function scanStamps(worktree, scopes) {
+  const out = new Map();
+  const stamp = (full) => { const stat = lstatSync(full, { bigint: true }); return `${stat.ino}:${stat.mode}:${stat.size}:${stat.mtimeNs}:${stat.ctimeNs}`; };
+  const walk = (full, rel) => {
+    let stat;
+    try { stat = lstatSync(full); } catch { return; }
+    if (!stat.isDirectory()) { out.set(rel, stamp(full)); return; }
+    if (rel && existsLink(path.join(full, '.git'))) { out.set(rel, `repository:${stamp(full)}`); return; }
+    for (const name of readdirSync(full)) {
+      if (SKIPPED_DIRS.has(name)) continue;
+      walk(path.join(full, name), rel ? `${rel}/${name}` : name);
+    }
+  };
+  for (const scope of scopes) walk(scope ? path.join(worktree, scope) : worktree, scope);
+  return out;
 }
 
 /**
@@ -282,12 +316,17 @@ function rawChanges(text) {
  * hook runs. Then the worktree goes. Returns what happened.
  */
 function finishWorktree(open, { date, message, runDir }) {
-  for (const rel of open.lockedHere) setLocked(path.join(open.worktree, rel), false);
-  open.lockedHere = [];
   const { worktree, base, scopes, locked } = open;
-  const guarded = (rel) => locked.some((item) => rel === item || rel.startsWith(`${item}/`) || item.startsWith(`${rel}/`));
+  // What the child touched, read while the locks are still on (lifting one changes its change time).
+  const now = scanStamps(worktree, scopes);
+  const touched = [...new Set([...open.stamps.keys(), ...now.keys()])].filter((rel) => open.stamps.get(rel) !== now.get(rel)).sort();
+  for (const rel of open.lockedHere) setLocked(path.join(worktree, rel), false);
+  open.lockedHere = [];
+  // A locked folder guards everything under it ('' is a locked root itself), and a locked path guards its folders.
+  const guarded = (rel) => locked.some((item) => item === '' || rel === item || rel.startsWith(`${item}/`) || item.startsWith(`${rel}/`));
+  const special = (mode) => mode === '120000' ? 'link' : mode === '160000' ? 'nested repository' : undefined;
   const problem = (change) => !inScope(change.path, scopes) ? 'outside the roots' : guarded(change.path) ? 'locked'
-    : change.oldMode === '120000' || change.newMode === '120000' ? 'link' : undefined;
+    : special(change.oldMode) ?? special(change.newMode) ?? (path.posix.basename(change.path) === '.gitattributes' ? 'attributes' : undefined);
   const indexFile = path.join(runDir, `index-${hash(open.repo).slice(0, 8)}`);
   const index = { GIT_INDEX_FILE: indexFile };
   const reverted = new Map();
@@ -296,7 +335,16 @@ function finishWorktree(open, { date, message, runDir }) {
   let files = [];
   try {
     git(worktree, ['read-tree', base], { env: index });
-    git(worktree, ['add', '-A', '--', ...scopes.map((scope) => scope || '.')], { env: index });
+    // Only what the child touched is taken in, read with the base commit's attributes, so an edited
+    // .gitattributes cannot change how anything else is stored and an untouched file is never stored anew.
+    const existing = touched.filter((rel) => existsLink(path.join(worktree, rel)));
+    // A new file the repository ignores stays out, as `git add -A` of the folder would leave it.
+    const ignored = new Set(existing.length ? (git(worktree, ['check-ignore', '-z', '--stdin'], { env: index, input: existing.join('\0'), allowFail: true }) ?? '')
+      .split('\0').filter(Boolean) : []);
+    const present = existing.filter((rel) => !ignored.has(rel));
+    const gone = touched.filter((rel) => !existing.includes(rel));
+    if (present.length) git(worktree, [`--attr-source=${base}`, 'add', '-A', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: index, input: present.join('\0') });
+    if (gone.length) git(worktree, ['rm', '-r', '--cached', '--quiet', '--ignore-unmatch', '--pathspec-from-file=-', '--pathspec-file-nul'], { env: index, input: gone.join('\0') });
     for (let round = 0; round < 4; round += 1) {
       const bad = rawChanges(git(worktree, ['diff-index', '--cached', '-z', '--no-renames', '--raw', base], { env: index }))
         .filter((change) => problem(change));
@@ -317,6 +365,8 @@ function finishWorktree(open, { date, message, runDir }) {
       // An empty old value: the ref is created only if no branch of that name appeared meanwhile.
       git(open.repo, ['update-ref', `refs/heads/${branch}`, sha, '']);
       commit = sha.slice(0, 9);
+      // Named at once, so a run that fails after this still reports the branch it made.
+      open.published = { branch, commit, files: changes.map((change) => change.path) };
     }
   } finally { rmSync(indexFile, { force: true }); }
   // Outside the roots the child's changes are named for the report; they were never taken in.
@@ -395,11 +445,12 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
   /** What a run that stopped part way still owes: its worktrees closed and compared, its branches named. */
   const settleAfterFailure = (reason) => {
     for (const open of opened) {
-      if (open.closed) continue;
+      if (open.reported) continue;
+      open.reported = true;
       try { closeWorktree(open); } catch { /* the folder goes in finally */ }
       const after = repoFingerprint(open.repo);
-      repos.push({ repo: open.repo, branch: null, commit: null, files: [], reverted: [], locked: open.locked,
-        sourceChanged: after.refs !== open.before.refs || after.tree !== open.before.tree });
+      repos.push({ repo: open.repo, branch: open.published?.branch ?? null, commit: open.published?.commit ?? null, files: open.published?.files ?? [],
+        reverted: [], locked: open.locked, sourceChanged: after.refs !== open.before.refs || after.tree !== open.before.tree });
     }
     for (const item of reports) {
       const after = item.repo ? repoFingerprint(item.repo) : folderFingerprint(item.resolved);
@@ -495,8 +546,9 @@ export async function runDocsDream({ env = process.env, settings, launch, spawnC
       homeOutcome = { ...moved, commit: commit?.commit ?? null };
     }
     for (const open of opened) {
-      if (ok) { repos.push(finishWorktree(open, { date: runDate, message, runDir })); continue; }
+      if (ok) { repos.push(finishWorktree(open, { date: runDate, message, runDir })); open.reported = true; continue; }
       closeWorktree(open);
+      open.reported = true;
       const after = repoFingerprint(open.repo);
       repos.push({ repo: open.repo, branch: null, commit: null, files: [], reverted: [], locked: open.locked,
         sourceChanged: after.refs !== open.before.refs || after.tree !== open.before.tree });

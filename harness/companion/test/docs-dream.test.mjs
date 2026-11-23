@@ -491,3 +491,70 @@ test('two roots that are the same place keep the first and name the second as sk
   assert.equal(record.status, 'partial');
   assert.match(record.skipped[0].reason, /same place/);
 });
+
+test('files are stored with the base commit\'s attributes, and attributes, nested repositories and a locked root are never published', async (t) => {
+  // A clean filter from the base commit's attributes: what is stored is upper case.
+  const filtered = await branchRun(t, {
+    setup({ repo }) {
+      git(repo, 'config', 'filter.upper.clean', 'tr a-z A-Z');
+      git(repo, 'config', 'filter.upper.smudge', 'cat');
+      put(path.join(repo, '.gitattributes'), 'docs/*.md filter=upper\n');
+      git(repo, 'add', '.gitattributes');
+      git(repo, 'commit', '--quiet', '-m', 'filter');
+    },
+    work({ worktree }) {
+      writeFileSync(path.join(worktree, '.gitattributes'), '');
+      writeFileSync(path.join(worktree, 'docs', '.gitattributes'), '*.md -filter\n');
+      writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'see runbook\n');
+      execFileSync('git', ['init', '--quiet', path.join(worktree, 'docs', 'scratch')]);
+      put(path.join(worktree, 'docs', 'scratch', 'note.md'), 'scratch\n');
+      git(path.join(worktree, 'docs', 'scratch'), 'add', '.');
+      git(path.join(worktree, 'docs', 'scratch'), 'commit', '--quiet', '-m', 'scratch');
+    },
+  });
+  const branch = filtered.record.branches[0].branch;
+  assert.equal(git(filtered.repo, 'show', `${branch}:docs/copy.md`), 'SEE RUNBOOK\n');
+  assert.deepEqual(git(filtered.repo, 'show', '--name-only', '--format=', branch).trim().split('\n'), ['docs/copy.md']);
+  assert.deepEqual(filtered.record.reverted.map((item) => `${item.path}:${item.reason}`),
+    ['.gitattributes:outside the roots', 'docs/.gitattributes:attributes', 'docs/scratch:nested repository']);
+
+  if (darwin) {
+    const rootLocked = await branchRun(t, {
+      setup({ repo }) { execFileSync('chflags', ['uchg', repo]); },
+      roots: (repo) => [{ path: repo, mode: 'branch' }],
+      work({ plan }) {
+        execFileSync('chflags', ['nouchg', plan.roots[0].work]);
+        writeFileSync(path.join(plan.roots[0].work, 'new.md'), 'new\n');
+      },
+    });
+    assert.deepEqual(rootLocked.record.branches, []);
+    assert.deepEqual(rootLocked.record.reverted.map((item) => `${item.path}:${item.reason}`), ['new.md:locked']);
+    execFileSync('chflags', ['nouchg', rootLocked.repo]);
+  }
+});
+
+test('a root that is only in the user\'s checkout is skipped and does not cost another root its edit', async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) { put(path.join(repo, 'personal.md'), 'not committed\n'); },
+    roots: (repo) => [{ path: path.join(repo, 'docs'), mode: 'branch' }, { path: path.join(repo, 'personal.md'), mode: 'branch' }],
+    work({ worktree }) { writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n'); },
+  });
+  assert.match(record.skipped[0].reason, /last commit/);
+  assert.deepEqual(git(repo, 'show', '--name-only', '--format=', record.branches[0].branch).trim().split('\n'), ['docs/copy.md']);
+});
+
+test('a change to the repository\'s own settings is named as a change to the source', async (t) => {
+  const { record } = await branchRun(t, { work({ repo }) { git(repo, 'config', 'core.hooksPath', '/tmp/elsewhere'); } });
+  assert.equal(record.sourceChanged.length, 1);
+});
+
+test('a file the repository ignores is left out and does not fail the run', async (t) => {
+  const { record, repo } = await branchRun(t, {
+    setup({ repo }) { put(path.join(repo, '.gitignore'), '*.log\n'); git(repo, 'add', '.gitignore'); git(repo, 'commit', '--quiet', '-m', 'ignore'); },
+    work({ worktree }) {
+      writeFileSync(path.join(worktree, 'docs', 'scan.log'), 'scratch output\n');
+      writeFileSync(path.join(worktree, 'docs', 'copy.md'), 'See runbook.\n');
+    },
+  });
+  assert.deepEqual(git(repo, 'show', '--name-only', '--format=', record.branches[0].branch).trim().split('\n'), ['docs/copy.md']);
+});
