@@ -88,6 +88,15 @@ if (homeOwned) {
     }
   }
 }
+// The official CLI does not forward MCP confirmations on its headless ACP path.
+// Local AGY threads reuse the app's existing ACP form handler through this adapter.
+const approvalBridge = path.resolve(import.meta.dirname, 'agy-acp-approval.mjs');
+for (const instance of Object.values(instances)) {
+  if (instance?.driver !== 'antigravity' || instance.enabled === false ||
+      !instance.environment?.some?.(entry => entry.name === 'RUBATO_LOCAL_AGY_AGENT')) continue;
+  instance.environment = [...instance.environment.filter(entry => entry.name !== 'RUBATO_LOCAL_AGY_APPROVAL_BRIDGE'),
+    { name: 'RUBATO_LOCAL_AGY_APPROVAL_BRIDGE', value: approvalBridge, sensitive: false }];
+}
 const { rubato: rubatoInstance, ...otherInstances } = instances;
 settings.providerInstances = { rubato: rubatoInstance, ...otherInstances };
 const prefs = settings.providerModelPreferences && typeof settings.providerModelPreferences === 'object'

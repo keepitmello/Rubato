@@ -456,10 +456,13 @@ export async function handleMcpRequest(input, overrides = {}) {
       serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
     });
   }
-  if (method === "tools/list") return successResponse(id, { tools: TOOLS });
+  if (method === "tools/list") return successResponse(id, { tools: await overrides.sessionTools?.list() ?? TOOLS });
   if (method === "tools/call") {
     const params = isPlainRecord(input.params) ? input.params : {};
     const name = typeof params.name === "string" ? params.name : "";
+    if (overrides.sessionTools) {
+      return successResponse(id, await overrides.sessionTools.call(name, params.arguments, { signal: overrides.signal }));
+    }
     const args = isPlainRecord(params.arguments) ? params.arguments : {};
     return successResponse(id, await runTool(name, args, overrides));
   }
@@ -475,9 +478,38 @@ function writeResponse(output, response, mode) {
   output.write(payload);
 }
 
-export async function runStdioServer(input = process.stdin, output = process.stdout, overrides = {}) {
+export async function runStdioServer(input = process.stdin, output = process.stdout, overrides = {}, handleRequest = handleMcpRequest) {
   let buffer = Buffer.alloc(0);
   const HEADER_SEP = Buffer.from("\r\n\r\n");
+  let clientForms = false;
+  let mode = "line";
+  let nextOutgoing = 0;
+  let queue = Promise.resolve();
+  let disconnected = false;
+  const pending = new Map();
+  const running = new Map();
+  overrides.elicit = (message, requestedSchema, signal) => {
+    if (!clientForms || disconnected || signal?.aborted) return Promise.resolve(undefined);
+    const id = `rubato-form-${++nextOutgoing}`;
+    return new Promise(resolve => {
+      const finish = value => {
+        if (!pending.delete(id)) return;
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+        resolve(value);
+      };
+      const cancel = () => {
+        if (!disconnected && pending.has(id))
+          writeResponse(output, { jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: id } }, mode);
+        finish(undefined);
+      };
+      const timer = setTimeout(cancel, 120_000);
+      pending.set(id, finish);
+      signal?.addEventListener("abort", cancel, { once: true });
+      writeResponse(output, { jsonrpc: "2.0", id, method: "elicitation/create",
+        params: { mode: "form", message, requestedSchema } }, mode);
+    });
+  };
 
   const nextFrame = () => {
     if (buffer.length === 0) return null;
@@ -517,16 +549,65 @@ export async function runStdioServer(input = process.stdin, output = process.std
         writeResponse(output, errorResponse(null, -32700, frame.parseError), frame.mode);
         continue;
       }
-      const response = await handleMcpRequest(frame.payload, overrides);
-      if (response !== undefined) writeResponse(output, response, frame.mode);
+      const payload = frame.payload;
+      if (payload?.method === "initialize") {
+        const options = payload.params?.capabilities?.elicitation;
+        clientForms = isPlainRecord(options) && (isPlainRecord(options.form) || !Object.keys(options).length);
+        mode = frame.mode;
+      }
+      if (payload?.method === "notifications/cancelled") {
+        running.get(payload.params?.requestId)?.abort();
+        pending.get(payload.params?.requestId)?.();
+        continue;
+      }
+      if (isPlainRecord(payload) && !payload.method && ("result" in payload || "error" in payload)) {
+        pending.get(payload.id)?.(payload.result);
+        continue;
+      }
+      const isTool = payload?.method === "tools/call";
+      const call = isTool ? new AbortController() : undefined;
+      if (call) running.set(payload?.id, call);
+      queue = queue.then(async () => {
+        try {
+          if (call?.signal.aborted) return;
+          const response = await handleRequest(payload, { ...overrides, signal: call?.signal });
+          if (response !== undefined && !call?.signal.aborted) writeResponse(output, response, frame.mode);
+        } catch (error) {
+          if (!call?.signal.aborted) writeResponse(output, errorResponse(payload?.id ?? null, -32603, error.message), frame.mode);
+        } finally { if (call) running.delete(payload?.id); }
+      });
     }
   }
+  disconnected = true;
+  for (const finish of pending.values()) finish(undefined);
+  await queue;
 }
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {
-  runStdioServer().catch((error) => {
+  const writeProtocol = process.stdout.write.bind(process.stdout);
+  process.stdout.write = process.stderr.write.bind(process.stderr);
+  const overrides = {};
+  let opened;
+  if (!process.argv.includes("--legacy-four-tools")) {
+    // Start lazily after MCP initialize so a cold Rubato runtime cannot time out the handshake.
+    const url = process.env.RUBATO_AGY_APPROVAL_URL;
+    const token = process.env.RUBATO_AGY_APPROVAL_TOKEN;
+    const native = () => opened ??= import("./agy-native-tools.mjs").then(({ openAgyNativeTools }) =>
+      openAgyNativeTools({ elicit: url && token && /^http:\/\/127\.0\.0\.1:\d+\/form$/.test(url)
+        ? async (message, requestedSchema, signal) => {
+            const response = await fetch(url, { method: "POST", redirect: "error", signal,
+              headers: { authorization: token, "content-type": "application/json" },
+              body: JSON.stringify({ message, requestedSchema }) }).catch(() => undefined);
+            return response?.ok ? await response.json() : undefined;
+          }
+        : overrides.elicit }));
+    overrides.sessionTools = { list: async () => (await native()).list(),
+      call: async (name, args, options) => (await native()).call(name, args, options) };
+  }
+  runStdioServer(process.stdin, { write: writeProtocol }, overrides).catch((error) => {
     process.stderr.write(`${SERVER_NAME}: ${error?.stack ?? error}\n`);
     process.exitCode = 1;
-  });
+  }).finally(async () => { if (opened) await (await opened.catch(() => undefined))?.close(); })
+    .catch(error => { process.stderr.write(`${SERVER_NAME}: ${error.message}\n`); process.exitCode = 1; });
 }

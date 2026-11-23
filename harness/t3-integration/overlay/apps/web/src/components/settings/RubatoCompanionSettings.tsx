@@ -22,6 +22,9 @@
 import { ChevronRightIcon, MessageCircleIcon, PlusIcon, RotateCcwIcon } from "lucide-react";
 import { useCallback, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { companionModelAccounts, companionGeminiStart } from "@t3tools/shared/rubatoCompanionModelChoice";
+import { primaryServerProvidersAtom, primaryServerSettingsAtom } from "../../state/server";
 
 import { cn } from "../../lib/utils";
 import { subscribeUiLanguage, uiLanguage } from "../../rubatoI18n";
@@ -272,11 +275,19 @@ function CompanionList({ companions, selectedId }: { companions: readonly Compan
   const environmentId = useReadyEnvironmentId();
   const openRoom = useOpenCompanionRoom();
   const [creating, setCreating] = useState(false);
+  const [choosing, setChoosing] = useState(false);
+  const [accountId, setAccountId] = useState("");
+  const [model, setModel] = useState("");
+  const providers = useAtomValue(primaryServerProvidersAtom);
+  const settings = useAtomValue(primaryServerSettingsAtom);
+  const accounts = companionModelAccounts(providers ?? [], settings?.providerInstances);
+  const account = accounts.find(item => item.instanceId === accountId);
   const create = async () => {
     if (environmentId === null || creating) return;
     setCreating(true);
     try {
-      const id = await createCompanion(environmentId);
+      const id = await createCompanion(environmentId, account && model ? { instanceId: account.instanceId, model } : null);
+      setChoosing(false);
       const threadId = await waitForCompanionRoom(environmentId, id);
       if (threadId !== null) await openRoom(threadId);
       else
@@ -331,7 +342,7 @@ function CompanionList({ companions, selectedId }: { companions: readonly Compan
         type="button"
         data-rubato-companion-new=""
         disabled={creating || environmentId === null}
-        onClick={() => void create()}
+        onClick={() => accounts.length ? setChoosing(!choosing) : void create()}
         className={cn(
           "mt-2 flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-border px-2 py-2.5 font-medium text-primary text-sm",
           "hover:bg-accent/60 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:opacity-70",
@@ -340,6 +351,33 @@ function CompanionList({ companions, selectedId }: { companions: readonly Compan
         {creating ? <Spinner className="size-3.5" /> : <PlusIcon aria-hidden="true" className="size-4" />}
         <span>{creating ? "Waking it up…" : "New companion"}</span>
       </button>
+      {choosing && accounts.length > 0 ? (
+        <div className="flex flex-col gap-2 px-2 py-1">
+          <label className="text-xs">Provider
+            <select className="w-full rounded border bg-background p-1" value={accountId}
+              onChange={event => {
+                const value = event.target.value;
+                const start = value === "gemini" ? companionGeminiStart(accounts) : null;
+                const next = accounts.find(item => item.instanceId === (start?.instanceId ?? value));
+                setAccountId(next?.instanceId ?? "");
+                setModel(next?.defaultModel ?? "");
+              }}>
+              <option value="">Rubato default</option>
+              {!accountId ? <option value="gemini">Gemini</option> : null}
+              {accounts.map(item => <option key={item.instanceId} value={item.instanceId}>Gemini · {item.label}</option>)}
+            </select>
+          </label>
+          {account ? <label className="text-xs">Model
+            <select className="w-full rounded border bg-background p-1" value={model}
+              onChange={event => setModel(event.target.value)}>
+              <option value="">Select a model</option>
+              {account.models.map(item => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </select>
+          </label> : null}
+          <Button size="sm" disabled={creating || (Boolean(accountId) && !account?.models.some(item => item.slug === model))}
+            onClick={() => void create()}>Create companion</Button>
+        </div>
+      ) : null}
     </nav>
   );
 }

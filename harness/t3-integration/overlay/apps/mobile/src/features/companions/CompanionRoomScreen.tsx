@@ -4,9 +4,11 @@
 // stands while the person's turn runs (roomLive.ts). A change the companion proposes to itself
 // shows as a card to apply, a new companion's first conversation shows its progress as chips under
 // the header, and the face or name at the top opens its profile, where its picture changes
-// (intent companion-manage).
+// (intent companion-manage). The menu beside the call button switches the companion's model at
+// once (roomModelChoice.ts, intent companion-agy-parity).
 import { CommonActions, useIsFocused, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
+import type { CompanionModelSelection } from "@t3tools/shared/rubatoCompanionModelChoice";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
@@ -32,6 +34,7 @@ import { SymbolView } from "../../components/ui/AppSymbol";
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { GlassSurface } from "../../components/ui/GlassSurface";
+import { createNativeHeaderMenu } from "../../components/ui/nativeHeaderMenu.ios";
 import { Toolbar } from "../../components/ui/Toolbar";
 import { ComposerAttachmentButton } from "../threads/ComposerAttachmentButton";
 import { ComposerAttachmentThumbnail } from "../../components/ComposerAttachmentStrip";
@@ -42,6 +45,8 @@ import { NativeStackScreenOptions } from "../../native/StackHeader";
 import { composerStripAttachments } from "../../lib/composerImages";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
 import { useAppActive } from "../../lib/appState";
+import { useQuietThreadShell } from "../../state/entities";
+import { useRemoteEnvironmentRuntime } from "../../state/use-remote-environment-registry";
 import { startRoomPoll } from "./roomPoll";
 import { useRoomLaunches } from "./roomLaunches";
 import { RoomLaunchCard } from "./RoomLaunchCard";
@@ -73,6 +78,7 @@ import { forgetCompanionArt, useCompanion, type CompanionEntry } from "./compani
 import { copy, phoneLocale } from "./copy";
 import { EdgeFade } from "./EdgeFade";
 import { OnboardingChips } from "./OnboardingChips";
+import { withName } from "./profileLines";
 import { ProposalCard } from "./ProposalCard";
 import type { Proposal } from "./proposalModel";
 import { isClosedProposal, isStaleProposal, proposalActions, useProposals } from "./proposalsStore";
@@ -97,6 +103,8 @@ import {
 import { useRoomLiveWork } from "./roomLive";
 import { useRoomMedia, type RoomMedia } from "./roomMedia";
 import { companionTyping, roomItems, separatorParts, typedSoFar, type RoomItem, type RoomMessageInput } from "./roomModel";
+import { roomModelMenu, roomModelRequest, type RoomModelLabels } from "./roomModelChoice";
+import { postRubato } from "./rubatoHttp";
 import {
   CompanionTypingBubble,
   hapticReceive,
@@ -116,6 +124,12 @@ export type CompanionRoomParams = {
 };
 
 const LOCALE = phoneLocale();
+const MODEL_LABELS: RoomModelLabels = {
+  menu: copy.model,
+  rubato: copy.modelRubato,
+  gemini: (account) => withName(copy.modelGemini, account),
+  defaultModel: copy.modelDefault,
+};
 /**
  * The status bar's height, from the window: inside a screen whose stack bar shows, the screen's own
  * top inset also counts the bar, which pushed the face and the blur down over the messages.
@@ -930,6 +944,49 @@ function OtherRoomFrame({ children }: React.PropsWithChildren) {
 }
 const RoomFrame = Platform.OS === "ios" ? IosRoomFrame : OtherRoomFrame;
 
+/**
+ * The header's model menu for a room whose thread is known: what the Mac offers, and the pick sent
+ * at once (roomModelChoice.ts). A refused pick says why; an applied one is ticked while the room is open.
+ */
+function useRoomModelMenu(environmentId: string | undefined, threadId: string | undefined) {
+  const ref = useMemo(
+    () => (environmentId && threadId ? { environmentId: environmentId as EnvironmentId, threadId: threadId as ThreadId } : null),
+    [environmentId, threadId],
+  );
+  const thread = useQuietThreadShell(ref);
+  const serverConfig = useRemoteEnvironmentRuntime(ref?.environmentId ?? null)?.serverConfig ?? null;
+  const [applied, setApplied] = useState<{ readonly threadId: string; readonly selection: CompanionModelSelection } | null>(null);
+  const [switching, setSwitching] = useState(false);
+  const pick = useCallback((selection: CompanionModelSelection) => {
+    if (ref === null) return;
+    setSwitching(true);
+    postRubato(ref.environmentId, "/rubato/companion-room", "model", roomModelRequest(ref.threadId, selection), { timeoutMs: 30_000 })
+      .then(
+        () => {
+          setApplied({ threadId: ref.threadId, selection });
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        },
+        (error: unknown) => Alert.alert(copy.modelFailed, error instanceof Error ? error.message : String(error)),
+      )
+      .finally(() => setSwitching(false));
+  }, [ref]);
+  return useMemo(
+    () =>
+      ref === null || thread === null || serverConfig === null
+        ? null
+        : roomModelMenu({
+            providers: serverConfig.providers,
+            instances: serverConfig.settings.providerInstances,
+            owner: thread.modelSelection.instanceId,
+            applied: applied?.threadId === ref.threadId ? applied.selection : null,
+            busy: switching,
+            labels: MODEL_LABELS,
+            onPick: pick,
+          }),
+    [ref, thread, serverConfig, applied, switching, pick],
+  );
+}
+
 export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParams>) {
   const gt = useGT();
   const route = useRoute<RouteProp<Record<string, CompanionRoomParams>>>();
@@ -973,6 +1030,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
     }
     void callActions.dial(environmentId as EnvironmentId, companionId, title);
   }, [callable, environmentId, companionId, title]);
+  const modelMenu = useRoomModelMenu(environmentId, threadId);
   return (
     <RoomFrame>
       <NativeStackScreenOptions options={options} optionsVersion={[title]} />
@@ -1004,6 +1062,7 @@ export function CompanionRoomScreen(_props: StaticScreenProps<CompanionRoomParam
         </View>
       ) : null}
       <Toolbar placement="right">
+        {modelMenu ? createNativeHeaderMenu(modelMenu) : null}
         <Toolbar.Button
           accessibilityLabel={callable?.ready ? copy.call : copy.cannotCall}
           icon="phone.fill"

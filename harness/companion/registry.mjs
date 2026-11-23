@@ -8,6 +8,27 @@ import path from 'node:path';
 export const DEFAULT_COMPANION_ID = 'segno';
 const ID = /^[a-z][a-z0-9-]{0,47}$/;
 const PRIVATE_ENV = /^RUBATO_COMPANION_|^ROO_|^MSEARCH_/;
+// The app's provider instance slug (t3code contracts providerInstance.ts PROVIDER_SLUG_PATTERN).
+const INSTANCE_ID = /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/;
+const MODEL_LIMIT = 200;
+
+/**
+ * The model a companion's first conversation was chosen to open on, in the app's ModelSelection
+ * shape cut to its two routing fields: `{ instanceId, model }`. Anything else (effort options, the
+ * legacy `provider` key) is refused rather than dropped, so a choice is never kept half. Returns the
+ * trimmed copy; throws TypeError.
+ */
+export function validModelSelection(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('modelSelection is { instanceId, model }');
+  const extra = Object.keys(value).filter((key) => key !== 'instanceId' && key !== 'model');
+  if (extra.length) throw new TypeError(`modelSelection takes only instanceId and model, not ${extra.join(', ')}`);
+  const instanceId = typeof value.instanceId === 'string' ? value.instanceId.trim() : '';
+  if (!INSTANCE_ID.test(instanceId)) throw new TypeError('modelSelection.instanceId is a provider instance id');
+  const model = typeof value.model === 'string' ? value.model.trim() : '';
+  if (!model || model.length > MODEL_LIMIT || /[\u0000-\u001f]/.test(model))
+    throw new TypeError(`modelSelection.model is 1 to ${MODEL_LIMIT} characters`);
+  return { instanceId, model };
+}
 
 /**
  * Whether this companion lives on Rubato's own texts: Segno, and every companion the app made
@@ -93,9 +114,11 @@ export function listCompanions(env = process.env) {
     if (value.extensions !== undefined && (!Array.isArray(value.extensions) ||
       value.extensions.some(file => typeof file !== 'string' || !path.isAbsolute(file)))) throw new TypeError('extensions must be absolute');
     if (value.madeInApp !== undefined && typeof value.madeInApp !== 'boolean') throw new TypeError('madeInApp must be true or false');
+    const modelSelection = value.modelSelection === undefined ? undefined : validModelSelection(value.modelSelection);
     validateCall(value.call, callPorts);
     seen.add(value.id); homes.add(canonicalHome(value.home)); agents.add(value.memoryAgent);
-    return { ...value, home: path.resolve(value.home), title: value.title.trim(), telegram: value.telegram === true };
+    return { ...value, home: path.resolve(value.home), title: value.title.trim(), telegram: value.telegram === true,
+      ...(modelSelection ? { modelSelection } : {}) };
   })];
 }
 
@@ -103,6 +126,17 @@ export function companionProfile(id = DEFAULT_COMPANION_ID, env = process.env) {
   const profile = listCompanions(env).find((item) => item.id === id);
   if (!profile) throw new TypeError(`Unknown companion: ${id}`);
   return profile;
+}
+
+/**
+ * The model a companion was made to open its first conversation on (registry `modelSelection`,
+ * written with its entry before its control tower first runs), or null: Segno, a hand-registered
+ * companion and one made without a choice open on the engine's own default as before. Inside a
+ * companion's scoped environment (companionEnv) the id defaults to that companion. It is the choice
+ * as made; the conversation's own model changes after that are the conversation's.
+ */
+export function companionModelSelection(id, env = process.env) {
+  return companionProfile(id ?? (env.RUBATO_COMPANION_ID || DEFAULT_COMPANION_ID), env).modelSelection ?? null;
 }
 
 /** Never inherit another companion's private environment into a lead or sibling companion. */

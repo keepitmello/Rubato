@@ -30,6 +30,26 @@ A companion changes who it is by proposing (`companion_settings` action `propose
 of one piece and its rewrite, shown to the user as a before/after card. Only the user's apply writes
 the piece; a declined or superseded proposal writes nothing.
 
+### Model chosen in the Add flow
+
+The route's `create` action takes an optional `modelSelection`: the app's ModelSelection cut to
+its routing fields, `{ "instanceId": "<provider instance>", "model": "<model id>" }`. It is stored
+trimmed in the new companion's registry entry, so it is on disk before the engine sees the entry and
+its control tower first runs. A malformed one (another field such as `options` or the legacy
+`provider`, an instance id that is not a provider slug, an empty or overlong model) refuses the
+create with 400 and leaves no home and no entry; it is never dropped. `null` or no field means no
+choice: the entry has no `modelSelection` and the companion opens exactly as before.
+
+The engine side reads it with `companionModelSelection(id, env)` from `registry.mjs`: the choice, or
+`null` for Segno, a hand-registered companion and one made without a choice. Inside a companion's
+scoped environment (`companionEnv`) the id may be left out. The `companions` list carries it as
+`modelSelection` on every row. It is the choice as made at creation; once the conversation exists,
+its model changes are kept in the conversation. The hosted engine applies the initial choice
+before the first turn and reapplies the latest explicit choice after a restart. An Antigravity
+Gemini choice uses the configured official AGY account via ACP; Hydrogen defaults to Medium.
+The conversation still belongs to Rubato, including its wakes, replies and native tool policy.
+An unavailable account or Gemini model does not silently switch to a different provider.
+
 ## Registration
 
 Use `$HOME/.rubato/companions.json`, or set `RUBATO_COMPANIONS_FILE` for an isolated

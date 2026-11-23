@@ -26,7 +26,7 @@ test('local agy is opt-in and uses only the native agent selector', () => {
     command: '/usr/bin/agy',
     args: ['acp', '--sandbox', '--agent', '내 에이전트'],
     cwd: '/project',
-    env: { HOME: '/home/me', PATH: '/usr/bin' },
+    env: { HOME: '/home/me', PATH: '/usr/bin', RUBATO_AGY_WORKSPACE: '/project' },
     shell: false,
     extendEnv: false,
   });
@@ -55,6 +55,7 @@ test('on Windows agy keeps its profile, temp and system folders, whatever the va
     SystemRoot: 'C:\\Windows',
     TEMP: 'C:\\Temp',
     ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+    RUBATO_AGY_WORKSPACE: 'C:\\untrusted',
     GEMINI_API_KEY: 'must-not-forward',
   });
   assert.deepEqual(command.env, {
@@ -66,6 +67,7 @@ test('on Windows agy keeps its profile, temp and system folders, whatever the va
     SystemRoot: 'C:\\Windows',
     TEMP: 'C:\\Temp',
     ComSpec: 'C:\\Windows\\System32\\cmd.exe',
+    RUBATO_AGY_WORKSPACE: 'C:\\work',
   });
 });
 

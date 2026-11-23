@@ -326,7 +326,7 @@ export function editSessionList(draft, previous, next) {
 
 /** Official SessionRouter alone deduplicates runtime acquisition. */
 export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
-  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, threadRequestsPath, log = () => {} } = {}) {
+  workerFactory = (metadata) => new RpcWorker(metadata), pollMs = 2000, onError = () => {}, sessionIndexPath, threadRequestsPath, sessionLink, log = () => {} } = {}) {
   if (idleMs !== null && (!Number.isFinite(idleMs) || idleMs < 0)) throw new TypeError('Invalid idleMs');
   // `sessionIndexPath` keeps parsed session metadata across engine restarts (session-files.mjs).
   const files = new SessionFiles(sessionsDir, { indexPath: sessionIndexPath, onError });
@@ -474,10 +474,19 @@ export function createSessionHost({ sessionsDir, serverId, idleMs = 60000,
     },
     serverServices: {
       attachClient(presentation) {
+        let externalLead;
         return endpoint([
           [Directory, { state: directory, list: async () => (await refresh()).sessions,
             transcript: async (id, options) => wire(await files.transcript(id, options ?? {})), catalogue: async (cwd) => wire(await catalogue(cwd)) }],
           [Management, {
+            externalLeadTool: async (cwd, name, args) => {
+              if (!sessionLink) throw invalid('Native session links are unavailable');
+              if (typeof cwd !== 'string' || !path.isAbsolute(cwd)) throw invalid('Workspace must be absolute');
+              if (!externalLead) externalLead = { sessionId: randomUUID(), title: 'Antigravity', cwd };
+              if (externalLead.cwd !== cwd) throw invalid('This tool connection already belongs to another workspace');
+              try { return wire(await sessionLink.fromExternalLead(externalLead, name, args)); }
+              catch (error) { throw invalid(error.message); }
+            },
             create: async (options) => {
               const created = await files.create(options);
               if (refreshing) await refreshing;

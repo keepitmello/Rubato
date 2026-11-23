@@ -5,6 +5,7 @@
 // `current` also takes it out of the archive on the Mac. A new companion is made here too (`create`),
 // and its picture set (`set-avatar`): the Mac keeps both for every device (intent companion-manage).
 import type { EnvironmentId } from "@t3tools/contracts";
+import { companionCreateBody, type CompanionModelSelection } from "@t3tools/shared/rubatoCompanionModelChoice";
 import { useIsFocused } from "@react-navigation/native";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import { AppState } from "react-native";
@@ -197,8 +198,8 @@ const sameEntry = (a: Pick<CompanionEntry, "environmentId" | "id">) => (b: Compa
  * Makes a new companion on that Mac: the Mac registers its home and wakes it without a name, and its
  * first conversation (the room, once the Mac opened it) is where it learns who it is.
  */
-export async function createCompanion(environmentId: EnvironmentId): Promise<{ readonly id: string }> {
-  const answer = await companionCall<{ companion?: { id?: unknown } }>(environmentId, "create");
+export async function createCompanion(environmentId: EnvironmentId, selection: CompanionModelSelection | null = null): Promise<{ readonly id: string }> {
+  const answer = await companionCall<{ companion?: { id?: unknown } }>(environmentId, "create", companionCreateBody(selection));
   const id = answer.companion?.id;
   if (typeof id !== "string" || !id) throw new Error(copy.createFailed);
   // Shown at once as "새 컴패니언"; the list fills in its conversation as the Mac opens it.

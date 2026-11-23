@@ -143,9 +143,11 @@ export function createCompanionService(options = {}) {
   async function handle(action, input) {
     // A new companion: the app makes its home and registers it (manage.mjs createCompanion); the
     // engine starts its control tower within seconds, which opens its conversation.
+    // `modelSelection` ({ instanceId, model }, optional) is the Add flow's model choice, kept in the
+    // registry entry (registry.mjs companionModelSelection); a malformed one answers 400 and makes nothing.
     if (action === 'create') {
       const { manage, defaultsDir } = await modules();
-      const created = await managed(() => manage.createCompanion({ env, defaultsDir }));
+      const created = await managed(() => manage.createCompanion({ env, defaultsDir, modelSelection: input?.modelSelection }));
       return { companion: { id: created.id, sessionId: null } };
     }
     if (action === 'companions' || input?.companionId !== undefined) {
@@ -169,6 +171,7 @@ export function createCompanionService(options = {}) {
             profile: about.profile, onboarding: about.onboarding, avatarVersion: about.avatarVersion, pictureSet: about.pictureSet,
             iconVersion: about.iconVersion,
             telegram: profile.telegram === true, madeInApp: profile.madeInApp === true,
+            modelSelection: profile.modelSelection ?? null,
             conversations: Array.isArray(rows) ? companionConversations(rows, profile.id) : null,
           };
         })) };

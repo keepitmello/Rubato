@@ -112,7 +112,7 @@ export interface PiBridge {
    * The companion room's model picker: the companion's session takes `model` (provider/modelId)
    * now, so its own runs use it too; fails for any other conversation.
    */
-  setCompanionModel(input: {threadId: string; sessionId: string; model: string}): Promise<{model: string}>;
+  setCompanionModel(input: {threadId: string; sessionId: string; model: string; instanceId?: string}): Promise<{model?: string; provider?: string; id?: string}>;
   /** The call ids made together with `toolCallId`; fails when the engine no longer holds that step. */
   stepBatch(input: {threadId: string; sessionId: string; toolCallId: string}): Promise<ReadonlyArray<string>>;
   /** The message a step rewind's continue sends; the engine connection runs on without it. */

@@ -49,7 +49,7 @@ export const localAgyEdits = {
   [driver]: [
     [
       'import { discoverAntigravitySkills, resolveAntigravityUserHome } from "./AntigravitySkills.ts";\n',
-      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyIsolated, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
+      'import { hasLocalAgyAgent, linkLocalAgyProfileConfig, localAgyAgent, localAgyApprovalSpawn, localAgyIsolated, localAgyModels, localAgySpawn, localAgyWithAgentArgs } from "../RubatoLocalAgy.ts";\n',
     ],
     [
       '    const settings = { ...config, enabled } satisfies AntigravitySettings;\n',
@@ -112,7 +112,7 @@ export const localAgyEdits = {
           managedVersionDirectory: null,
         };
         if (!localIsolated) {
-          return { executable, spawn: localBaseSpawn };
+          return { executable, spawn: localAgyApprovalSpawn(localBaseSpawn, environment) };
         }
         const profile = yield* prepareAntigravityProfile({
           profileDirectory,
@@ -170,7 +170,7 @@ export const localAgyEdits = {
           }),
           localAgent,
         );
-        return { executable, spawn: isolatedSpawn };
+        return { executable, spawn: localAgyApprovalSpawn(isolatedSpawn, environment) };
       }
 `,
     ],

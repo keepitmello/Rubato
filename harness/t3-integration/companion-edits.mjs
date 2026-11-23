@@ -56,12 +56,15 @@ export const companionOverlays = [
   'packages/shared/src/rubatoReplyBubbles.ts',
   'packages/shared/src/rubatoRoomPoll.ts',
   'packages/shared/src/rubatoReplyBubbles.test.ts',
+  // Which models the Add Companion flow offers, for the settings page and the phone's "+".
+  'packages/shared/src/rubatoCompanionModelChoice.ts',
+  'packages/shared/src/rubatoCompanionModelChoice.test.ts',
 ];
 
 export const companionEdits = {
   'packages/shared/package.json': [
     ['    "./delimitedPreview": {\n',
-      '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n    "./rubatoRoomPoll": {\n      "types": "./src/rubatoRoomPoll.ts",\n      "import": "./src/rubatoRoomPoll.ts"\n    },\n'],
+      '    "./rubatoReplyBubbles": {\n      "types": "./src/rubatoReplyBubbles.ts",\n      "import": "./src/rubatoReplyBubbles.ts"\n    },\n    "./rubatoRoomPoll": {\n      "types": "./src/rubatoRoomPoll.ts",\n      "import": "./src/rubatoRoomPoll.ts"\n    },\n    "./rubatoCompanionModelChoice": {\n      "types": "./src/rubatoCompanionModelChoice.ts",\n      "import": "./src/rubatoCompanionModelChoice.ts"\n    },\n'],
   ],
   'apps/server/src/server.ts': [
     ['import * as DeviceHubProxy from "./device/DeviceHubProxy.ts";', 'import { rubatoCompanionRouteLayer } from "./RubatoCompanion.ts";\nimport { rubatoCompanionModelRouteLayer } from "./RubatoCompanionModel.ts";\nimport { rubatoCompanionRewindRouteLayer } from "./RubatoCompanionRewind.ts";\n'],
@@ -95,7 +98,7 @@ export const companionEdits = {
   // v0.1.11 starts the turn in useComposerSend.ts, so the suppression sits there.
   'apps/web/src/components/chat/useComposerSend.ts': [
     ['          modelSelection: ctxSelectedModelSelection,\n          titleSeed: title,\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
-      '          modelSelection: ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
+      '          modelSelection: isCompanionThread(threadIdForSend) ? undefined : ctxSelectedModelSelection,\n          ...(isCompanionThread(threadIdForSend) ? {} : { titleSeed: title }),\n          runtimeMode,\n          interactionMode: DEFAULT_INTERACTION_MODE,\n',
       'replace'],
     ['import { isUsageLimitsCommand } from "@t3tools/shared/usageLimits";\n',
       'import { isCompanionThread } from "../../state/rubatoCompanion";\n'],
@@ -104,7 +107,7 @@ export const companionEdits = {
   // works on its own between messages (applyCompanionModel, user item bceb5547). v0.1.11 keeps the
   // picker's handler in useComposerSelection.ts.
   'apps/web/src/components/chat/useComposerSelection.ts': [
-    ['    setStickyComposerModelSelection(nextModelSelection);\n',
+    ['    const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({\n',
       [
         '    if (activeThread && isCompanionThread(activeThread.id)) {',
         '      void applyCompanionModel(activeThread.environmentId, activeThread.id, nextModelSelection).catch((error: unknown) => {',
@@ -114,9 +117,11 @@ export const companionEdits = {
         '          description: error instanceof Error ? error.message : String(error),',
         '        });',
         '      });',
+        '      return;',
         '    }',
+        '    const modelChangeBlockReason = getStartedThreadModelChangeBlockReason({',
         '',
-      ].join('\n')],
+      ].join('\n'), 'replace'],
     ['import { toastManager } from "../ui/toast";\n',
       'import { applyCompanionModel, isCompanionThread } from "../../state/rubatoCompanion";\n'],
   ],

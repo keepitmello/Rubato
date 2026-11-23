@@ -654,7 +654,12 @@ export class RubatoPiBridge {
    * not only the next turn the person starts (user item bceb5547). Any other conversation changes
    * its model with its next turn, as T3 does.
    */
-  async setCompanionModel({ threadId, sessionId, model }) {
+  async setCompanionModel({ threadId, sessionId, model, instanceId }) {
+    if (instanceId) {
+      if (!await this.companionSession(sessionId)) throw new Error("Only a companion's conversation changes its model outside a turn");
+      return await this.withSession(threadId, sessionId, (client) =>
+        client.command({ type: 'set_companion_model', modelSelection: { instanceId, model } }));
+    }
     const split = typeof model === 'string' ? model.indexOf('/') : -1;
     if (split < 1) throw new Error('Pi model must be provider/modelId');
     if (!await this.companionSession(sessionId)) throw new Error("Only a companion's conversation changes its model outside a turn");

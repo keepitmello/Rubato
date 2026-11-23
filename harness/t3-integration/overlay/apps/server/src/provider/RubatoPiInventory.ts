@@ -138,7 +138,11 @@ export const makeRubatoPiInventory = Effect.gen(function* () {
     // A running session's thread starts on the model it runs on: the turn that shows its run then
     // selects nothing new, even before the session has replied once.
     const running = engineRunning(entry) ? yield* Effect.promise(() => bridge.runningModel(entry.sessionId)) : null;
-    const model = running ?? lastModel ?? preferred?.slug;
+    const engineModel = running ?? lastModel ?? preferred?.slug;
+    // A companion's visible thread stays on the native adapter. ACP is an
+    // engine choice and its private provider slug is not a T3 catalog entry.
+    const model = entry.companion === true && engineModel?.startsWith("rubato-companion-acp-")
+      ? "default" : engineModel;
     if (!model) return;
     const modelSelection: ModelSelection = { instanceId: instance.instanceId as ProviderInstanceId, model };
     const messages = bridge.importedMessages(entry.sessionId, saved.messages, threadId, { companion: entry.companion === true }).flatMap((message): PiSessionThreadInput["messages"] => {

@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { open, readFile, stat, writeFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes, randomUUID } from 'node:crypto';
@@ -32,7 +33,8 @@ export const LIMITS = Object.freeze({ textChars: 8000, pairPerMinute: 8, senderP
  * the whole context would be read again at full price for what is often a one-line check.
  */
 export const COLD_SEND_TOKENS = 100_000;
-const METHODS = ['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming', 'stop', 'rename', 'remove', 'channel', 'telegramSend', 'companionSettings'];
+export const ORDINARY_SESSION_LINK_METHODS = Object.freeze(['list', 'read', 'search', 'wait', 'send', 'create', 'fork', 'cacheWarming']);
+const METHODS = [...ORDINARY_SESSION_LINK_METHODS, 'stop', 'rename', 'remove', 'channel', 'telegramSend', 'companionSettings'];
 const VIEWS = new Set(['messages', 'notes', 'board']);
 // A transcript is append-only (a branch appends too), so its newest lines are the
 // live branch. Bounded tails keep one screenshot-heavy session from costing a full read.
@@ -335,6 +337,7 @@ export async function forkSessionFile({ source, sessionsDir, title, side = false
  * bound once the server listens; until then every method refuses.
  */
 export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPollMs = 2000 } = {}) {
+  const externalLead = new AsyncLocalStorage();
   let bound;
   const files = new Map();
   const recent = [];
@@ -408,6 +411,8 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
    * framed as work that companion leads and assigned, and another companion as a peer's (message.mjs)); callers pass ids only.
    */
   async function sender(id) {
+    const external = externalLead.getStore();
+    if (external?.sessionId === id) return external;
     const known = row(id);
     if (known) return { sessionId: id, title: known.title, cwd: known.cwd,
       ...(known.companion === true ? { companion: true, companionId: known.companionId ?? 'segno' } : {}) };
@@ -1031,6 +1036,13 @@ export function createSessionLink({ now = Date.now, pollMs = POLL_MS, followPoll
   return {
     api: facade,
     ...facade,
+    /** The local engine supplies this ordinary identity; MCP arguments never provide it. */
+    async fromExternalLead(actor, name, args) {
+      if (!ORDINARY_SESSION_LINK_METHODS.includes(name)) throw fail('not_companion', 'Tool is unavailable to an ordinary conversation');
+      const { from: _from, role: _role, ...input } = args ?? {};
+      return externalLead.run(actor, () => facade[name]({ ...input,
+        ...(['create', 'send'].includes(name) || (name === 'fork' && input.text !== undefined) ? { from: actor.sessionId } : {}) }));
+    },
     /** `followStore` keeps the companion's followed handoffs across restarts (harness/companion followingStore). */
     bind({ host, sessionsDir, socketPath, serverId, onError = () => {}, followStore, followStores, followStoreFor }) {
       if (bound) throw new Error('session link is already bound');

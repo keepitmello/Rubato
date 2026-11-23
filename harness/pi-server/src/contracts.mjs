@@ -9,7 +9,7 @@ export const INPUT_COMMANDS = new Set(['prompt', 'steer', 'follow_up']);
 export const COMMANDS = new Set([
   ...INPUT_COMMANDS, 'abort', 'clear_queue', 'get_state', 'get_messages', 'get_entries',
   'get_tree', 'get_session_stats', 'get_available_models', 'get_available_thinking_levels',
-  'get_commands', 'get_last_assistant_text', 'get_fork_messages', 'get_service_tier', 'set_model', 'set_thinking_level',
+  'get_commands', 'get_last_assistant_text', 'get_fork_messages', 'get_service_tier', 'set_model', 'set_companion_model', 'set_thinking_level',
   'set_session_name', 'set_auto_compaction', 'set_auto_retry', 'abort_retry',
   'set_steering_mode', 'set_follow_up_mode', 'compact', 'fork', 'rewind', 'continue', 'reload',
   'get_cache_warming', 'set_session_cache_warming', 'task_send', 'task_cancel', 'task_live_message', 'get_task_snapshot', 'get_awaited_wakes',

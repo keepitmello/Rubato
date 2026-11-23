@@ -25,11 +25,12 @@ const fakeAgy = (directory) => {
 };
 const agentFile = (home, name = LEAD_AGENT) => path.join(home, '.gemini', 'config', 'agents', `${name}.md`);
 
-test('the lead agent comes from the canonical lead prompt, without tools agy does not have', async () => {
+test('the lead agent comes from the canonical lead prompt and enables the Rubato MCP registry', async () => {
   const text = await renderLeadAgent();
   assert.match(text, new RegExp(`^---\\nname: ${LEAD_AGENT}\\n[\\s\\S]*?mainAgent: true\\n[\\s\\S]*?\\n---\\n\\n`));
   assert.ok(text.includes('  - invoke_subagent\n'));
   assert.ok(text.includes('  - manage_subagents\n'));
+  assert.ok(text.includes(`mcpServers: [${MCP_SERVER_NAME}]\n`));
   assert.ok(text.includes(GENERATED_MARK));
   assert.doesNotMatch(text, RUBATO_ONLY);
   const prompts = fileURLToPath(new URL('../../prompts/', import.meta.url));
@@ -78,7 +79,7 @@ const writeSettings = (t3Home, settings) => {
   writeFileSync(path.join(t3Home, 'userdata', 'settings.json'), JSON.stringify(settings));
 };
 
-test('the installer offers the lead once when agy is present and leaves other instances alone', { skip: process.platform === 'win32' }, async (t) => {
+test('the installer offers the lead once and only adds the local AGY approval adapter to existing instances', { skip: process.platform === 'win32' }, async (t) => {
   const root = scratch(t);
   const home = path.join(root, 'home');
   const t3Home = path.join(home, '.rubato', 't3-home');
@@ -95,10 +96,18 @@ test('the installer offers the lead once when agy is present and leaves other in
 
   runWriter(env);
   let instances = readSettings(t3Home).providerInstances;
+  const withApproval = (instance) => ({
+    ...instance,
+    environment: [...instance.environment, {
+      name: 'RUBATO_LOCAL_AGY_APPROVAL_BRIDGE',
+      value: fileURLToPath(new URL('../agy-acp-approval.mjs', import.meta.url)),
+      sensitive: false,
+    }],
+  });
   assert.equal(leadInstance(agy).displayName, 'Antigravity');
   assert.equal(Object.keys(instances)[0], 'rubato');
-  assert.deepEqual(instances[LEAD_INSTANCE_ID], leadInstance(agy));
-  assert.deepEqual(instances['agy-mine'], mine);
+  assert.deepEqual(instances[LEAD_INSTANCE_ID], withApproval(leadInstance(agy)));
+  assert.deepEqual(instances['agy-mine'], withApproval(mine));
   assert.equal(readFileSync(agentFile(home), 'utf8'), await renderLeadAgent());
   assert.equal(readFileSync(agentFile(home, 'my-agent'), 'utf8'), 'mine\n');
   assert.equal(lstatSync(path.join(home, '.gemini', 'config', 'skills', 'aside')).isSymbolicLink(), true);
@@ -112,7 +121,7 @@ test('the installer offers the lead once when agy is present and leaves other in
   runWriter(env);
   instances = readSettings(t3Home).providerInstances;
   assert.equal(instances[LEAD_INSTANCE_ID], undefined);
-  assert.deepEqual(instances['agy-mine'], mine);
+  assert.deepEqual(instances['agy-mine'], withApproval(mine));
 });
 
 test('an existing lead instance is never overwritten', { skip: process.platform === 'win32' }, (t) => {

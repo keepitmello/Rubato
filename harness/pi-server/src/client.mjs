@@ -37,6 +37,9 @@ export class SessionClient {
   transcript(id, options) { return this.call(Directory, 'transcript', options ? [id, options] : [id]); }
   catalogue(cwd) { return this.call(Directory, 'catalogue', [cwd]); }
   create(options) { return this.call(Management, 'create', [options]); }
+  externalLeadTool(cwd, method, args, timeoutMs = 135000) {
+    return this.call(Management, 'externalLeadTool', [cwd, method, args], false, timeoutMs);
+  }
   fork(id, options = {}) { return this.call(Management, 'fork', [id, options]); }
   // Attaching starts the session's runtime, which waits on the agent like session control does,
   // so it has the session deadline, not the directory/management one.

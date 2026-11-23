@@ -187,6 +187,7 @@ import { getDefaultStreamFn } from "./stream-fn.js";`,
 }
 
 export function patchCodingAgentSdk(source) {
+  source = `import { openSessionMcpEndpoint, listSessionMcpTools } from "../../../pi-ai/dist/rubato-features/provider-execution/session-mcp.mjs";\n${source}`;
   // 1.0.1 builds the Agent as `const agent` after buildRequestOptions, so `let agent;` is gone.
   // Declare the session binding right before buildRequestOptions; its closures read it per request.
   let next = replaceOnce(
@@ -208,6 +209,16 @@ export function patchCodingAgentSdk(source) {
                 if (!session)
                     throw new Error("provider-execution session is not initialized");
                 return session.executeTool(toolName, params, executionOptions);
+            },
+            providerOpenSessionMcp: ({ signal, executeTool, alwaysLoad } = {}) => {
+                if (!session)
+                    throw new Error("provider-execution session is not initialized");
+                return openSessionMcpEndpoint({
+                    signal,
+                    alwaysLoad,
+                    listTools: () => listSessionMcpTools(session),
+                    executeTool: executeTool ?? ((name, args, options) => session.executeTool(name, args, options)),
+                });
             },
             providerExecCwd: cwd,
             providerExecAgentDir: agentDir,
@@ -271,6 +282,10 @@ export const files = Object.freeze([
   file(
     "dist/rubato-features/provider-execution/extension.mjs",
     fileURLToPath(new URL("./extension.mjs", import.meta.url)),
+  ),
+  file(
+    "dist/rubato-features/provider-execution/session-mcp.mjs",
+    fileURLToPath(new URL("./session-mcp.mjs", import.meta.url)),
   ),
   file(
     "dist/rubato-features/provider-execution/cursor-exec-bridge.mjs",

@@ -146,7 +146,7 @@ test("deep_research writes packet.md, calls outpost send, and reads response.md"
 });
 
 test("stdio server speaks both newline-delimited JSON and Content-Length framing", async () => {
-  const child = spawn(process.execPath, [SERVER_FILE], { stdio: ["pipe", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [SERVER_FILE, "--legacy-four-tools"], { stdio: ["pipe", "pipe", "pipe"] });
   try {
     const out = [];
     child.stdout.on("data", (chunk) => out.push(chunk.toString("utf8")));

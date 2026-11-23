@@ -3,6 +3,18 @@ import path from "node:path";
 
 export const LOCAL_AGY_AGENT = "RUBATO_LOCAL_AGY_AGENT";
 export const LOCAL_AGY_ISOLATED = "RUBATO_LOCAL_AGY_ISOLATED";
+export const LOCAL_AGY_APPROVAL_BRIDGE = "RUBATO_LOCAL_AGY_APPROVAL_BRIDGE";
+
+export function localAgyApprovalSpawn<T extends {
+  readonly command: string;
+  readonly args: ReadonlyArray<string>;
+  readonly env?: NodeJS.ProcessEnv;
+}>(spawn: T, environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined): T {
+  const bridge = environment?.find(entry => entry.name === LOCAL_AGY_APPROVAL_BRIDGE)?.value;
+  if (!bridge || !path.isAbsolute(bridge)) return spawn;
+  return { ...spawn, command: process.execPath, args: [bridge, spawn.command, ...spawn.args],
+    env: { ...spawn.env, ELECTRON_RUN_AS_NODE: "1" } };
+}
 
 export function localAgyAgent(
   environment: ReadonlyArray<{ readonly name: string; readonly value: string }> | undefined,
@@ -36,6 +48,7 @@ export function localAgySpawn(
   for (const [key, value] of Object.entries(environment)) {
     if (value !== undefined && wanted.has(key.toUpperCase()) && key.toUpperCase() !== "HOME") env[key] = value;
   }
+  env.RUBATO_AGY_WORKSPACE = cwd;
   return {
     command: binary,
     args: ["acp", "--sandbox", "--agent", agent],
@@ -46,13 +59,18 @@ export function localAgySpawn(
   };
 }
 
-export function localAgyWithAgentArgs<Spawn extends { readonly args: ReadonlyArray<string> }>(
+export function localAgyWithAgentArgs<Spawn extends {
+  readonly args: ReadonlyArray<string>;
+  readonly cwd?: string;
+  readonly env?: NodeJS.ProcessEnv;
+}>(
   spawn: Spawn,
   agent: string,
 ): Spawn {
   return {
     ...spawn,
     args: [...spawn.args, "--sandbox", "--agent", agent],
+    ...(spawn.cwd ? { env: { ...spawn.env, RUBATO_AGY_WORKSPACE: spawn.cwd } } : {}),
   };
 }
 

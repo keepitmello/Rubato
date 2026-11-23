@@ -17,7 +17,7 @@ import { randomUUID } from 'node:crypto';
 import { CARD_KEYS, CARD_LIMIT, FACT_LIMIT, ONBOARDING_CORE, ONBOARDING_ITEMS, PICTURE_TYPES, PIECES, PIECE_LIMIT,
   companionPaths, memoryPiecePath, onboardingActive, personalPiecePath, pictureDir, pictureFile, readPieces, readProfile,
   seedPromptPieces, writePiece, writeProfile, writeSettings } from './companion.mjs';
-import { appHomesDir, companionEnv, newCompanionId, registerCompanion, retitleCompanion } from './registry.mjs';
+import { appHomesDir, companionEnv, newCompanionId, registerCompanion, retitleCompanion, validModelSelection } from './registry.mjs';
 
 export class ManageError extends Error {
   constructor(code, message, status = 400) { super(message); this.name = 'ManageError'; this.code = code; this.status = status; }
@@ -30,12 +30,21 @@ export const UNNAMED_TITLE = 'New companion';
  * Makes a new companion: its home, its own copy of the nameless pieces, an open first meeting and
  * the switch on, then its registry entry. The engine picks the entry up and opens its conversation.
  * A home that could not be registered is removed again, so a failed create leaves nothing behind.
+ * `modelSelection` (`{ instanceId, model }`, optional) is the model chosen in the Add flow; it rides in
+ * the registry entry itself, so it is there before the control tower first runs (registry
+ * companionModelSelection). An invalid one refuses the create; it is never dropped.
  */
-export function createCompanion({ env = process.env, defaultsDir, now = Date.now, id = newCompanionId(env) } = {}) {
+export function createCompanion({ env = process.env, defaultsDir, now = Date.now, id = newCompanionId(env), modelSelection } = {}) {
   if (!defaultsDir) throw new TypeError('creating a companion needs the folder the default pieces live in');
+  let chosen;
+  if (modelSelection !== undefined && modelSelection !== null) {
+    try { chosen = validModelSelection(modelSelection); }
+    catch (error) { throw new ManageError('invalid', error.message); }
+  }
   const home = path.join(appHomesDir(env), id);
   if (existsSync(home)) throw new ManageError('exists', 'A folder for that companion already exists', 409);
-  const entry = { id, title: UNNAMED_TITLE, home, memoryAgent: id, madeInApp: true, createdAt: new Date(now()).toISOString() };
+  const entry = { id, title: UNNAMED_TITLE, home, memoryAgent: id, madeInApp: true, createdAt: new Date(now()).toISOString(),
+    ...(chosen ? { modelSelection: chosen } : {}) };
   // The scoped environment the registry would give it, before the entry exists.
   const scoped = { ...env, RUBATO_COMPANION_ID: id, RUBATO_COMPANION_HOME: home, RUBATO_COMPANION_MADE_IN_APP: '1',
     RUBATO_COMPANION_PROMPT_FILES: '{}', RUBATO_COMPANION_LAYOUT: '{}' };

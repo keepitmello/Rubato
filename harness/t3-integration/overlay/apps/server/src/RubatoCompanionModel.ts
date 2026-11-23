@@ -39,13 +39,18 @@ export const rubatoCompanionModelRouteLayer = Layer.unwrap(Effect.gen(function* 
   const apply = Effect.fn("RubatoCompanionModel.apply")(function* (threadId: ThreadId, modelSelection: ModelSelection) {
     const session = yield* piSessionOfThread(threadId).pipe(Effect.mapError((cause) => refused("no-session", describe(cause))));
     if (session === null) return yield* refused("no-session", "This conversation has no Rubato session.");
-    const bridge = yield* rubatoBridge(modelSelection.instanceId);
+    const nativeBridge = yield* rubatoBridge(modelSelection.instanceId);
+    const bridge = nativeBridge ?? (yield* rubatoBridge());
     if (bridge === null) return yield* refused("unavailable", "The Rubato provider is not running.");
     // The engine first: it refuses any conversation that is not a companion's, and then the thread keeps its pick.
     yield* Effect.tryPromise({
-      try: () => bridge.setCompanionModel({ threadId, sessionId: session.sessionId, model: modelSelection.model }),
+      try: () => bridge.setCompanionModel({ threadId, sessionId: session.sessionId, model: modelSelection.model,
+        instanceId: modelSelection.instanceId }),
       catch: (cause) => refused("engine-refused", describe(cause)),
     });
+    // AGY is the model execution lane, not the owner of the companion room.
+    // Keep that thread on the native bridge, which owns reply and wake delivery.
+    if (nativeBridge === null) return {};
     yield* orchestrator.dispatch({
       type: "thread.model-selection.set",
       commandId: CommandId.make(`rubato-companion-model:${threadId}:${yield* Clock.currentTimeMillis}`),

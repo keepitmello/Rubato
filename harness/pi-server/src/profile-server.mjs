@@ -66,7 +66,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
       // Only the lock holder writes it, like the descriptor.
       sessionIndexPath: path.join(serverDir, 'session-index.json'),
       threadRequestsPath: path.join(serverDir, 'thread-requests.json'),
-      serverId: previous?.serverId ?? randomUUID(), idleMs, onError, log,
+      serverId: previous?.serverId ?? randomUUID(), idleMs, onError, log, sessionLink: hosted?.sessionLink,
       workerFactory: workerFactory ?? (hosted ? ((metadata, creation) => new SessionWorker(metadata, workerOptions(metadata, creation))) : ((metadata) => new RpcWorker(metadata, {
         env: { RUBATO_PI_CODING_AGENT_DIR: agentDir },
       }))),
@@ -85,6 +85,7 @@ export async function serveProfile({ agentDir, socketPath, idleMs = 60000, runti
         api: await hosted.loadTerminalApi(), onError });
       descriptor.terminalSocketPath = terminalServer.socketPath;
       descriptor.runtimeRoot = await realpath(runtimeRoot);
+      descriptor.externalLeadTools = true;
     }
     const temporary = `${descriptorPath}.${randomUUID()}.tmp`;
     await writeFile(temporary, JSON.stringify(descriptor, null, 2) + '\n', { mode: 0o600, flag: 'wx' });

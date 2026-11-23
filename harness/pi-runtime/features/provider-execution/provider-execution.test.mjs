@@ -982,6 +982,72 @@ async function bindCursorSession(t, spec) {
   return { ...created, execution };
 }
 
+test("provider MCP requests use the actual native tool inventory and beforeToolCall veto", async t => {
+  const cwd = join(scratchRoot, "mcp-native");
+  const agentDir = join(scratchRoot, "mcp-native-agent");
+  const { createAssistantMessageEventStream } = await import(pathToFileURL(join(piAiRoot, "dist/index.js")).href);
+  mkdirSync(agentDir, { recursive: true });
+  const modelRuntime = await sdk.ModelRuntime.create({ authPath: join(agentDir, "auth.json"), modelsPath: join(agentDir, "models.json") });
+  let callCount = 0;
+  let checked = false;
+  modelRuntime.streamSimple = (model, _context, options) => {
+    const stream = createAssistantMessageEventStream();
+    const message = {
+      role: "assistant", api: model.api, provider: model.provider, model: model.id,
+      content: [{ type: "text", text: "done" }], stopReason: "stop", timestamp: Date.now(),
+      usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { ...ZERO_COST, total: 0 } },
+    };
+    void (async () => {
+      const endpoint = await options.providerOpenSessionMcp({ signal: options.signal });
+      try {
+        const request = async (method, params) => (await fetch(endpoint.url, {
+          method: "POST",
+          headers: { "content-type": "application/json", ...Object.fromEntries(endpoint.headers.map(({ name, value }) => [name, value])) },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        })).json();
+        const list = await request("tools/list");
+        assert.equal(list.result.tools.some(tool => tool.name === "native_fixture"), true);
+        assert.equal(list.result.tools.some(tool => tool.name === "private_fixture"), false);
+        const blocked = await request("tools/call", { name: "native_fixture", arguments: { value: "blocked" } });
+        assert.deepEqual(blocked.result, { isError: true, content: [{ type: "text", text: "denied by native hook" }] });
+        const allowed = await request("tools/call", { name: "native_fixture", arguments: { value: "allowed" } });
+        assert.deepEqual(allowed.result, { content: [{ type: "text", text: "allowed" }] });
+        checked = true;
+      } finally { endpoint.close(); }
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end(message);
+    })().catch(error => {
+      const failure = { ...message, stopReason: "error", errorMessage: error.message };
+      stream.push({ type: "error", reason: "error", error: failure });
+      stream.end(failure);
+    });
+    return stream;
+  };
+  const { session } = await bindCursorSession(t, {
+    cwd, agentDir, tools: ["read", "native_fixture"], modelRuntime, baseUrl: "http://127.0.0.1:1",
+    observer(pi) {
+      for (const [name, exposure] of [["native_fixture", "direct"], ["private_fixture", "hidden"]]) {
+        pi.registerTool({
+          name, exposure, label: name, description: "Fixture",
+          parameters: { type: "object", required: ["value"], properties: { value: { type: "string" } } },
+          async execute(_id, { value }) { callCount++; return { content: [{ type: "text", text: value }] }; },
+        });
+      }
+      pi.on("tool_call", event => {
+        if (event.toolName === "native_fixture" && event.input.value === "blocked") {
+          return { block: true, reason: "denied by native hook" };
+        }
+      });
+    },
+  });
+  session.setActiveToolsByName(["read", "native_fixture"]);
+  await session.prompt("exercise the provider MCP");
+  const last = session.agent.state.messages.at(-1);
+  assert.equal(last?.stopReason, "stop", last?.errorMessage);
+  assert.equal(checked, true);
+  assert.equal(callCount, 1);
+});
+
 test("same Cursor exec identity does not run twice when the transport redelivers it concurrently and sequentially", async (t) => {
   const cwd = join(scratchRoot, "dedup-cwd");
   const agentDir = join(scratchRoot, "dedup-agent");

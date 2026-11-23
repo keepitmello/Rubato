@@ -4,6 +4,7 @@
 // (apps/server/src/RubatoCompanion.ts).
 import { findProjectByPath } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentId } from "@t3tools/contracts";
+import { companionCreateBody, type CompanionModelSelection } from "@t3tools/shared/rubatoCompanionModelChoice";
 import * as Option from "effect/Option";
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 
@@ -326,8 +327,12 @@ export const rubatoCompanion = {
   /** Closes finished work in the panel for good; the conversations stay. Answers the panel after. */
   dismiss: (env: EnvironmentId | null, endings: ReadonlyArray<Pick<SegnoFinished, "sessionId" | "at">>, companionId = selectedCompanionId) =>
     call<SegnoPanel>(env, "dismiss", { companionId, endings: endings.map(({ sessionId, at }) => ({ sessionId, at })) }),
-  /** Makes and registers a new companion's home; the engine opens its first conversation within seconds. */
-  create: (env: EnvironmentId | null) => call<{ companion: { id: string; sessionId: string | null } }>(env, "create"),
+  /**
+   * Makes and registers a new companion's home; the engine opens its first conversation within seconds.
+   * No `modelSelection` is Rubato's default, the same request as before (rubatoCompanionModelChoice.ts).
+   */
+  create: (env: EnvironmentId | null, modelSelection: CompanionModelSelection | null = null) =>
+    call<{ companion: { id: string; sessionId: string | null } }>(env, "create", { ...companionCreateBody(modelSelection) }),
   /** The companion's picture as a data URL; null when it has none. */
   avatar: (env: EnvironmentId | null, companionId: string) =>
     call<{ avatar: CompanionAvatar | null }>(env, "avatar", { companionId }),
@@ -519,9 +524,9 @@ async function refreshNow(env: EnvironmentId): Promise<void> {
  * Makes a new companion and shows it in the list, selected. Its first conversation follows within
  * seconds (waitForCompanionRoom).
  */
-export async function createCompanion(env: EnvironmentId): Promise<string> {
+export async function createCompanion(env: EnvironmentId, modelSelection: CompanionModelSelection | null = null): Promise<string> {
   lastEnvironment = env;
-  const { companion } = await rubatoCompanion.create(env);
+  const { companion } = await rubatoCompanion.create(env, modelSelection);
   await refreshNow(env);
   selectCompanion(companion.id);
   return companion.id;
