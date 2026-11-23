@@ -76,9 +76,8 @@ their sender, are not roster members and do not own the wider outcome.
 Any teammate can use a subagent when its concrete benefit repays briefing,
 duplicate reading and integration. Subagents can investigate, test explanations and
 propose solutions within their assignment; the sender retains its outcome and
-judges the evidence. The user approves a teammate's subagents once per assignment,
-from the teammate's own estimate relayed by the lead (`teammate/workstream-owner.md`);
-within that approval, local delegation does not route through the lead.
+judges the evidence. Local delegation does not route through the lead; the sender's
+result lists each subagent with its model and purpose, so the user sees what was spent.
 Continue related work in the same available session. New work, independent review,
 a persistent wrong premise or an unavailable session may require a new context;
 a stronger model merely becoming available does not.

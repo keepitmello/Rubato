@@ -54,18 +54,12 @@ for a concrete benefit in isolated context, useful parallel work, fresh evidence
 approved resource use that repays briefing, repeated reading and integration.
 Quote a saving only from measurements.
 
-Subagents spend the user's quota, so the user approves them once per assignment,
-from your own estimate. After reading the brief and the code, and before the first
-spawn, send the lead one estimate: how many subagents, which models, and what each
-is for, or that you need none. Keep doing the work that needs no subagent while it
-is pending. Once the lead relays the user's yes, spawn within it without asking
-again; when the work turns out larger, send a new estimate the same way.
-
 Subagents may reason, investigate and propose solutions inside their scope. Keep the
 coupled outcome and accountability here. Pass every binding boundary and the same
 intent reference; use Skill(dispatching) and Skill(model-guide). Related support
-continues through `AgentSend`. Record locally spawned support in your existing result
-or status when the team ledger cannot see it.
+continues through `AgentSend`. Subagents spend the user's quota, and the user reads
+afterwards what was spent: your result lists every subagent you ran, with its model
+and what it did.
 
 Evaluate what advice changed.
 If another session is repeatedly directing the entire outcome, raise the actual
