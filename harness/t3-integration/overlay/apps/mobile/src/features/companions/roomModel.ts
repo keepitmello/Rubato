@@ -133,6 +133,27 @@ export function withoutCallSpeech(
 
 const sameDay = (a: number, b: number) => new Date(a).toDateString() === new Date(b).toDateString();
 
+// Feed messages are immutable: while the last one streams, older ones need neither their file
+// links nor their paragraphs parsed again. The cache lives only as long as the feed's objects.
+function parseRoomMessage(message: RoomMessageInput) {
+  const side: RoomSide = message.role === "user" ? "me" : "companion";
+  const { words, files } = splitFileLines(side === "me" ? personText(message.text) : message.text.trim());
+  const parts = side === "companion" && !message.streaming ? replyBubbles(words) : [];
+  return {
+    kind: "message" as const, at: Date.parse(message.createdAt), side, message, text: words, files,
+    texts: parts.length > 1 ? parts : [words],
+    bubbles: null as { starts: boolean; ends: boolean; items: RoomItem[] } | null,
+  };
+}
+const parsed = new WeakMap<RoomMessageInput, ReturnType<typeof parseRoomMessage>>();
+function messageEntry(message: RoomMessageInput) {
+  const known = parsed.get(message);
+  if (known) return known;
+  const entry = parseRoomMessage(message);
+  parsed.set(message, entry);
+  return entry;
+}
+
 /**
  * Bubbles, call cards, change cards and time lines, oldest first. A change the companion replaced
  * with a newer one (superseded) leaves the room: the newer card stands for it.
@@ -144,17 +165,13 @@ export function roomItems(
   proposals: ReadonlyArray<Proposal> = [],
 ): RoomItem[] {
   type Entry =
-    | { kind: "message"; at: number; side: RoomSide; message: RoomMessageInput; text: string; files: string }
+    | ReturnType<typeof parseRoomMessage>
     | { kind: "call"; at: number; call: CallRecord }
     | { kind: "proposal"; at: number; proposal: Proposal };
   const entries: Entry[] = [
     ...withoutCallSpeech(messages, calls, now)
       .filter((message) => message.role === "user" || message.role === "assistant")
-      .map((message) => {
-        const side: RoomSide = message.role === "user" ? "me" : "companion";
-        const { words, files } = splitFileLines(side === "me" ? personText(message.text) : message.text.trim());
-        return { kind: "message" as const, at: Date.parse(message.createdAt), side, message, text: words, files };
-      })
+      .map(messageEntry)
       .filter((entry) => Number.isFinite(entry.at)
         && (entry.text !== "" || entry.files !== "" || (entry.message.attachments?.length ?? 0) > 0
           || (entry.message.pending?.attachments.length ?? 0) > 0 || entry.message.streaming)),
@@ -188,14 +205,19 @@ export function roomItems(
       next.side === entry.side &&
       next.at - entry.at <= GROUP_GAP_MS &&
       sameDay(entry.at, next.at);
-    // The files and attachments ride with the last words.
-    const parts = entry.side === "companion" && !entry.message.streaming ? replyBubbles(entry.text) : [];
-    const texts = parts.length > 1 ? parts : [entry.text];
+    const starts = separated || previous === null || previous.side !== entry.side || entry.at - previous.at > GROUP_GAP_MS;
+    previous = { at: entry.at, side: entry.side };
+    if (entry.bubbles?.starts === starts && entry.bubbles.ends === !nextJoins) {
+      items.push(...entry.bubbles.items);
+      continue;
+    }
+    // Only the newest message or its immediate neighbours usually change shape.
+    const texts = entry.texts;
     let typedAfter = 0;
-    texts.forEach((text, part) => {
+    const bubbles = texts.map((text, part): RoomItem => {
       const last = part === texts.length - 1;
       if (part > 0) typedAfter += replyBubbleGapMs(text);
-      items.push({
+      return {
         kind: "bubble",
         id: part === 0 ? entry.message.id : `${entry.message.id}#${part}`,
         side: entry.side,
@@ -205,14 +227,14 @@ export function roomItems(
         pending: entry.message.pending ?? null,
         at: entry.at,
         streaming: entry.message.streaming,
-        groupStart:
-          part === 0 && (separated || previous === null || previous.side !== entry.side || entry.at - previous.at > GROUP_GAP_MS),
+        groupStart: part === 0 && starts,
         groupEnd: last && !nextJoins,
         part,
         typedAfter,
-      });
+      };
     });
-    previous = { at: entry.at, side: entry.side };
+    entry.bubbles = { starts, ends: !nextJoins, items: bubbles };
+    items.push(...bubbles);
   }
   return items;
 }
@@ -330,6 +352,20 @@ export function roomPreview(
     if (item.kind === "call") return { text: "", at: item.at, side: null, callKey: callHeadline(item.call).key };
   }
   return null;
+}
+
+/** The list needs one message, not a sorted room full of bubbles. Feed order can differ from
+ * wall-clock order; on ties the later message wins, just as in the room's stable sort. */
+export function feedRoomPreview(feed: ReadonlyArray<{ readonly type: string; readonly message?: RoomMessageInput }>) {
+  let latest: ReturnType<typeof roomPreview> = null;
+  for (let i = feed.length - 1; i >= 0; i--) {
+    const row = feed[i]!;
+    if (row.type !== "message" || !row.message) continue;
+    const at = Date.parse(row.message.createdAt);
+    if (!Number.isFinite(at) || (latest && at <= latest.at)) continue;
+    latest = roomPreview(roomItems([row.message], [])) ?? latest;
+  }
+  return latest;
 }
 
 /** A bubble without words in the list: its file names. */

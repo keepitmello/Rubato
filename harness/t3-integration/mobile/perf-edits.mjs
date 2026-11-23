@@ -2,10 +2,28 @@
 // streaming emits node.updated / attempt.updated without changing existing topology.
 // buildThreadFeed only reads node.id / node.rootNodeId / node.parentNodeId and
 // attempt.id / attempt.runId / attempt.rootNodeId to resolve attemptId for existing rows.
-export const mobilePerfOverlays = [];
+export const mobilePerfOverlays = ['apps/mobile/src/lib/rubatoThreadFeedReuse.test.ts'];
 
 export const mobilePerfEdits = {
   'apps/mobile/src/lib/threadActivity.ts': [
+    [
+      '  readonly feed: ReadonlyArray<ThreadFeedEntry>;\n  /** Grouping is empty',
+      '  readonly feed: ThreadFeedEntry[];\n  /** Grouping is empty',
+      'replace',
+    ],
+    [
+      '  const locale = options?.locale;\n',
+      `  const locale = options?.locale;
+  // Composer, scroll and chrome updates are not new conversation events.
+  const unchanged = options?.cache?.feedBuild;
+  if (unchanged && anchoredMessages.length === 0 && unchanged.rows === visibleTurnItems &&
+      unchanged.locale === locale && unchanged.nodes === options?.nodes &&
+      unchanged.attempts === options?.attempts && unchanged.checkpointSummaries === options?.checkpointSummaries) {
+    return unchanged.feed;
+  }
+`,
+      'replace',
+    ],
     [
       '/** Index of the first entry that differs, or the shorter length when one extends the other. */\n',
       `function attemptTopologyUnchanged(
@@ -47,5 +65,18 @@ function nodeTopologyUnchanged(
       '    attemptTopologyUnchanged(previous.attempts, options?.attempts) &&\n    nodeTopologyUnchanged(previous.nodes, options?.nodes) &&\n',
       'replace',
     ],
+  ],
+  'apps/mobile/src/state/use-thread-composer-state.ts': [
+    ['import { useEffect, useRef, useState } from "react";', 'import { useEffect, useMemo, useRef, useState } from "react";', 'replace'],
+    [`  const selectedThreadQueuedMessages = selectedThreadKey
+    ? (queuedMessagesByThreadKey[selectedThreadKey] ?? []).filter(
+        (message) => message.creation === undefined,
+      )
+    : [];`,
+    `  const threadQueue = selectedThreadKey ? queuedMessagesByThreadKey[selectedThreadKey] : undefined;
+  const selectedThreadQueuedMessages = useMemo(
+    () => threadQueue?.filter((message) => message.creation === undefined) ?? [],
+    [threadQueue],
+  );`, 'replace'],
   ],
 };

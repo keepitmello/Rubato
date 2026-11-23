@@ -4,7 +4,7 @@
 // seconds while it is open, the way it asks for its calls.
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useCallback, useEffect, useSyncExternalStore } from "react";
-import { AppState } from "react-native";
+import { startRoomPoll } from "./roomPoll";
 
 import { decodeProposal, decodeProposals, type Proposal } from "./proposalModel";
 import { isRubatoRequestError, postRubato } from "./rubatoHttp";
@@ -31,9 +31,9 @@ function merge(key: string, proposal: Proposal) {
   put(key, list.some((item) => item.id === proposal.id) ? list.map((item) => (item.id === proposal.id ? proposal : item)) : [...list, proposal]);
 }
 
-async function load(environmentId: EnvironmentId, companionId: string) {
-  const answer = await postRubato<unknown>(environmentId, ROUTE, "proposals", { companionId });
-  put(roomKey(environmentId, companionId), decodeProposals(answer));
+async function load(environmentId: EnvironmentId, companionId: string, signal?: AbortSignal) {
+  const answer = await postRubato<unknown>(environmentId, ROUTE, "proposals", { companionId }, signal ? { signal } : {});
+  if (!signal?.aborted) put(roomKey(environmentId, companionId), decodeProposals(answer));
 }
 
 /** The Mac would not apply it: the text changed since the companion proposed this. */
@@ -63,7 +63,7 @@ export const proposalActions = {
 };
 
 /** A companion's proposals while its room is open; a Mac without the action leaves the list empty. */
-export function useProposals(environmentId: EnvironmentId | null, companionId: string): readonly Proposal[] {
+export function useProposals(environmentId: EnvironmentId | null, companionId: string, visible: boolean): readonly Proposal[] {
   const key = environmentId === null ? null : roomKey(environmentId, companionId);
   const subscribe = useCallback((listener: () => void) => {
     listeners.add(listener);
@@ -71,29 +71,8 @@ export function useProposals(environmentId: EnvironmentId | null, companionId: s
   }, []);
   const proposals = useSyncExternalStore(subscribe, () => (key === null ? NONE : (byRoom.get(key) ?? NONE)));
   useEffect(() => {
-    if (environmentId === null) return;
-    let live = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
-    const stop = () => {
-      if (timer !== null) clearInterval(timer);
-      timer = null;
-    };
-    const ask = () => {
-      if (live) void load(environmentId, companionId).catch(() => undefined);
-    };
-    const sync = (active: boolean) => {
-      stop();
-      if (!active || !live) return;
-      ask();
-      timer = setInterval(ask, POLL_MS);
-    };
-    sync(AppState.currentState === "active");
-    const appSub = AppState.addEventListener("change", (state) => sync(state === "active"));
-    return () => {
-      live = false;
-      appSub.remove();
-      stop();
-    };
-  }, [environmentId, companionId]);
+    if (!visible || environmentId === null) return;
+    return startRoomPoll(POLL_MS, (signal) => load(environmentId, companionId, signal));
+  }, [environmentId, companionId, visible]);
   return proposals;
 }

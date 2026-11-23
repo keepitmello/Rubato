@@ -1,7 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
-import { decodeCompanions, encodeCompanions, knownThreadId, type CompanionEntry } from "./companionModel";
+import { decodeCompanions, encodeCompanions, knownThreadId, sameCompanionsSnapshot, type CompanionEntry } from "./companionModel";
 
 const roo: CompanionEntry = {
   environmentId: "env-mac" as EnvironmentId,
@@ -22,6 +22,11 @@ const roo: CompanionEntry = {
 };
 
 describe("the kept companion list", () => {
+  it("skips identical refreshes but sees a same-size avatar replacement and a call status change", () => {
+    expect(sameCompanionsSnapshot([roo], [{ ...roo }])).toBe(true);
+    expect(sameCompanionsSnapshot([roo], [{ ...roo, art: roo.art!.replace("AAAA", "BBBB") }])).toBe(false);
+    expect(sameCompanionsSnapshot([roo], [{ ...roo, callable: null }])).toBe(false);
+  });
   it("opens the room on the kept thread, and never says a call can go through", () => {
     const [kept] = decodeCompanions(encodeCompanions([roo]));
     expect(kept).toEqual({ ...roo, callable: null });

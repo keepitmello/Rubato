@@ -118,6 +118,7 @@ export function awaitPrepared(
   waitMs: number,
   signal?: AbortSignal,
 ): Promise<PreparedConnection | null> {
+  if (signal?.aborted) return Promise.resolve(null);
   const ready = readPrepared(environmentId);
   if (ready || waitMs <= 0) return Promise.resolve(ready);
   return new Promise((resolve) => {
@@ -163,7 +164,9 @@ export async function postRubato<T>(
   if (!prepared) throw notConnected();
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
-  options.signal?.addEventListener("abort", () => controller.abort());
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener("abort", abort);
   let response: Response;
   try {
     response = await rubatoFetch(prepared, `${prepared.httpBaseUrl.replace(/\/+$/, "")}${route}/${action}`, {
@@ -181,6 +184,7 @@ export async function postRubato<T>(
       status: 0,
     });
   } finally {
+    options.signal?.removeEventListener("abort", abort);
     clearTimeout(timer);
   }
   const value = (await response.json().catch(() => null)) as

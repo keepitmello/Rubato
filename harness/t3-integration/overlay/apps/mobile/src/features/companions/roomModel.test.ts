@@ -3,7 +3,7 @@ import { replyBubbleGapMs } from "@t3tools/shared/rubatoReplyBubbles";
 
 import type { CallRecord } from "./callTypes";
 import {
-  callHeadline, companionTyping, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
+  callHeadline, companionTyping, feedRoomPreview, fileLines, roomItems, roomPreview, roomTool, separatorParts, spokenText, typedSoFar,
   type RoomMessageInput,
 } from "./roomModel";
 
@@ -21,6 +21,30 @@ const call = (patch: Partial<CallRecord> & { minutes: number; length?: number })
 };
 
 describe("a companion room", () => {
+  it("keeps unchanged bubble rows across arrivals, but redraws a previous group tail", () => {
+    const a = message("a", "user", "hi", 0);
+    const b = message("b", "assistant", "one", 2);
+    const c = message("c", "assistant", "two", 2.5);
+    const first = roomItems([a, b], []);
+    const second = roomItems([a, b, c], []);
+    expect(second.find((r) => r.id === "a")).toBe(first.find((r) => r.id === "a"));
+    expect(second.find((r) => r.id === "b")).toMatchObject({ groupEnd: false });
+    expect(first.find((r) => r.id === "b")).toMatchObject({ groupEnd: true });
+  });
+  it("previews the same last bubble without laying out the history (ties, files, reordered rows and blank replies)", () => {
+    const rows = [
+      message("a", "assistant", "First\n\nLast", 5),
+      message("b", "user", "[log](</log>)", 5),
+      message("old", "assistant", "Older", 2),
+      message("blank", "assistant", " ", 8),
+      message("system", "system", "hidden", 9),
+    ];
+    for (let i = 0; i <= rows.length; i++) {
+      const messages = rows.slice(0, i);
+      expect(feedRoomPreview(messages.map((message) => ({ type: "message", message }))))
+        .toEqual(roomPreview(roomItems(messages, [])));
+    }
+  });
   it("puts the person right and the companion left, grouping close messages from one side", () => {
     const items = roomItems([message("a", "user", "hi", 0), message("b", "user", "you there?", 1), message("c", "assistant", "yes!", 2)], []);
     const bubbles = items.filter((item) => item.kind === "bubble");

@@ -14,7 +14,7 @@ import { useAssetUrl } from "../../state/assets";
 import { fetchRoomPicture } from "./avatarPicture";
 import { copy } from "./copy";
 import { roomPictures, type PictureMessage, type RoomPicture } from "./pictureModel";
-import { useRoomThread, useRoomTurnItems } from "./roomThread";
+import { useRoomTurnItems } from "./roomThread";
 
 export type CompanionPicturesParams = {
   readonly companionId: string;
@@ -57,7 +57,6 @@ export function RoomPicturesScreen(_props: StaticScreenProps<CompanionPicturesPa
   const environmentId = route.params.environmentId as EnvironmentId;
   const threadId = route.params.threadId as ThreadId;
   const target = { environmentId, threadId };
-  useRoomThread(target);
   const items = useRoomTurnItems(target);
   const pictures = useMemo(
     () =>

@@ -4,7 +4,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, OrchestrationV2ThreadProjection, ThreadId } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
-import { environmentThreadDetails, useEnvironmentThread } from "../../state/threads";
+import { environmentThreadDetails } from "../../state/threads";
 
 export interface RoomThreadTarget {
   readonly environmentId: EnvironmentId | null;
@@ -15,11 +15,8 @@ const NO_TURN_ITEMS = Atom.make<OrchestrationV2ThreadProjection["visibleTurnItem
   Object.freeze([]),
 ).pipe(Atom.withLabel("rubato-room-turn-items:empty"));
 
-/** Keeps the room's thread subscribed, so what it shows stays current. */
-export function useRoomThread(target: RoomThreadTarget) {
-  return useEnvironmentThread(target.environmentId, target.threadId);
-}
-
+// visibleTurnItemsAtom already mounts the target thread; subscribing to its whole state as
+// well wakes the screen even for changes that do not affect a message.
 export function useRoomTurnItems(
   target: RoomThreadTarget,
 ): OrchestrationV2ThreadProjection["visibleTurnItems"] {

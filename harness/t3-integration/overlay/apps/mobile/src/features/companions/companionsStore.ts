@@ -18,6 +18,7 @@ import {
   decodeCompanions,
   encodeCompanions,
   knownThreadId,
+  sameCompanionsSnapshot,
   type CallEffort,
   type CompanionEntry,
 } from "./companionModel";
@@ -265,20 +266,6 @@ subscribeCompanionNames(() => writeIdentities(view.companions));
 
 let loading: Promise<void> | null = null;
 let lastRefreshedAt = 0;
-
-function sameCompanionsSnapshot(a: readonly CompanionEntry[], b: readonly CompanionEntry[]): boolean {
-  if (a.length !== b.length) return false;
-  return encodeCompanions(a) === encodeCompanions(b) && a.every((item, index) => {
-    const other = b[index]!;
-    return (
-      item.callable?.ready === other.callable?.ready &&
-      item.callable?.reason === other.callable?.reason &&
-      item.calls === other.calls &&
-      item.callEffort === other.callEffort &&
-      JSON.stringify(item.onboarding) === JSON.stringify(other.onboarding)
-    );
-  });
-}
 
 /** Asks every paired Mac again; a Mac that does not answer keeps what it said last. */
 export function refreshCompanions(environmentIds: readonly EnvironmentId[]): Promise<void> {

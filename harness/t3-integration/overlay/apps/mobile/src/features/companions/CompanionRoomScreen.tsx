@@ -5,12 +5,12 @@
 // shows as a card to apply, a new companion's first conversation shows its progress as chips under
 // the header, and the face or name at the top opens its profile, where its picture changes
 // (intent companion-manage).
-import { CommonActions, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
+import { CommonActions, useIsFocused, useNavigation, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId, MessageId, ThreadId } from "@t3tools/contracts";
 import { BlurView } from "expo-blur";
 import * as Haptics from "expo-haptics";
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from "react";
-import { Alert, AppState, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
+import { Alert, Pressable, ScrollView, useWindowDimensions, View, type FlatList, type NativeScrollEvent, type NativeSyntheticEvent } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   FadeInDown,
@@ -39,8 +39,10 @@ import type { FilePreviewSource } from "../../components/ui/FilePreviewModal";
 import { LoadingScreen } from "../../components/LoadingScreen";
 import { NativeScrollViewMarker } from "../../native/NativeScrollViewMarker";
 import { NativeStackScreenOptions } from "../../native/StackHeader";
-import { composerStripAttachments, type DraftComposerAttachment } from "../../lib/composerImages";
+import { composerStripAttachments } from "../../lib/composerImages";
 import { useUniwindTheme } from "../../lib/useUniwindTheme";
+import { useAppActive } from "../../lib/appState";
+import { startRoomPoll } from "./roomPoll";
 import type { ComposerEditorHandle, ComposerTextPaste } from "../../native/T3ComposerEditor.types";
 import { useComposerDraft } from "../../state/use-composer-drafts";
 import { useThreadComposerState } from "../../state/use-thread-composer-state";
@@ -122,44 +124,22 @@ type BubbleColors = { readonly sent: string; readonly received: string; readonly
 type BodyText = { readonly fontSize: number; readonly lineHeight: number };
 
 /** A companion's calls for its room, fetched again when a call this phone saw ends, and every so often. */
-function useRoomCalls(environmentId: EnvironmentId | null, companionId: string) {
+function useRoomCalls(environmentId: EnvironmentId | null, companionId: string, visible: boolean) {
   const { version, current } = useCallView();
   const [calls, setCalls] = useState<readonly CallRecord[]>([]);
   const onCall = current !== null;
   useEffect(() => {
-    if (environmentId === null) return;
-    let live = true;
-    let timer: ReturnType<typeof setInterval> | null = null;
+    if (!visible || environmentId === null) return;
     let lastJson = "";
-    const stop = () => {
-      if (timer !== null) clearInterval(timer);
-      timer = null;
-    };
-    const load = () =>
-      callApi.calls(environmentId, companionId).then(
-        (list) => {
-          if (!live) return;
-          const nextJson = JSON.stringify(list);
-          if (nextJson === lastJson) return;
-          lastJson = nextJson;
-          setCalls(list);
-        },
-        () => undefined,
-      );
-    const sync = (active: boolean) => {
-      stop();
-      if (!active || !live) return;
-      void load();
-      timer = setInterval(load, onCall ? 5_000 : 30_000);
-    };
-    sync(AppState.currentState === "active");
-    const appSub = AppState.addEventListener("change", (state) => sync(state === "active"));
-    return () => {
-      live = false;
-      appSub.remove();
-      stop();
-    };
-  }, [environmentId, companionId, version, onCall]);
+    return startRoomPoll(onCall ? 5_000 : 30_000, async (signal) => {
+      const list = await callApi.calls(environmentId, companionId, undefined, signal);
+      if (signal.aborted) return;
+      const nextJson = JSON.stringify(list);
+      if (nextJson === lastJson) return;
+      lastJson = nextJson;
+      setCalls(list);
+    });
+  }, [environmentId, companionId, version, onCall, visible]);
   return calls;
 }
 
@@ -441,7 +421,6 @@ function SendButton(props: { readonly color: string; readonly disabled: boolean;
  */
 function RoomComposer(props: {
   readonly environmentId: EnvironmentId;
-  readonly attachments: ReadonlyArray<DraftComposerAttachment>;
   readonly supportsFiles: boolean;
   readonly onPickMedia: () => Promise<void>;
   readonly onPickFiles: () => Promise<void>;
@@ -449,7 +428,6 @@ function RoomComposer(props: {
   readonly onPasteImages: (uris: ReadonlyArray<string>) => Promise<unknown>;
   readonly onPasteText: (paste: ComposerTextPaste) => Promise<unknown>;
   readonly onPressPreview: (source: FilePreviewSource) => void;
-  readonly draft: string;
   readonly onChange: (text: string) => void;
   readonly onSend: () => void;
   readonly ownerKey: string | null;
@@ -463,6 +441,8 @@ function RoomComposer(props: {
   readonly placeholder: string;
 }) {
   const insets = useSafeAreaInsets();
+  // Text changes on every keystroke and dictation partial. Only the field needs them.
+  const { text: draft, attachments } = useComposerDraft(props.ownerKey);
   // Where the person put the caret in this room; until then the end. A caret placed in an empty field
   // says nothing about a draft that arrives later (drafts load from storage after the first render),
   // and one past the draft's end belongs to a sent draft: both read as the end. A caret left at 0
@@ -471,13 +451,13 @@ function RoomComposer(props: {
   const [placed, setPlaced] = useState<Placed | null>(null);
   const setSelection = (next: { start: number; end: number }) =>
     setPlaced({ ownerKey: props.ownerKey, start: next.start, end: next.end, inEmpty: draftRef.current.length === 0 });
-  const selection = placed !== null && placed.ownerKey === props.ownerKey && placed.end <= props.draft.length &&
-    !(placed.inEmpty && props.draft.length > 0)
+  const selection = placed !== null && placed.ownerKey === props.ownerKey && placed.end <= draft.length &&
+    !(placed.inEmpty && draft.length > 0)
     ? { start: placed.start, end: placed.end }
-    : { start: props.draft.length, end: props.draft.length };
+    : { start: draft.length, end: draft.length };
   const [height, setHeight] = useState(insets.bottom + 56);
-  const draftRef = useRef(props.draft);
-  draftRef.current = props.draft;
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const dictation = useVoiceInputController({
     ownerKey: props.ownerKey,
     label: props.title,
@@ -504,7 +484,7 @@ function RoomComposer(props: {
     editorRef.current?.focus();
   }, [props.focusRequest]);
   const foreground = useUniwindTheme()["--color-foreground"];
-  const hasText = props.draft.trim().length > 0 || props.attachments.length > 0;
+  const hasText = draft.trim().length > 0 || attachments.length > 0;
   // Send while dictating, as ChatGPT's: stop, and send once the final text is in the draft.
   const sendAfterDictation = useRef(false);
   const sendWhenDictated = () => {
@@ -516,8 +496,8 @@ function RoomComposer(props: {
     if (!sendAfterDictation.current || phase === "recording" || phase === "transcribing") return;
     sendAfterDictation.current = false;
     if (phase === "idle") props.onSend();
-  }, [phase, props.draft, props.onSend]);
-  const strip = composerStripAttachments(props.attachments, () => undefined);
+  }, [phase, draft, props.onSend]);
+  const strip = composerStripAttachments(attachments, () => undefined);
   // Above the home indicator as Messages sits; above the keyboard by the same 16 pt as its sides.
   const bottomPadding = Math.max(insets.bottom - 6, 12);
   const keyboard = useReanimatedKeyboardAnimation();
@@ -582,7 +562,7 @@ function RoomComposer(props: {
                 draftKey={props.ownerKey}
                 environmentId={props.environmentId}
                 multiline
-                value={props.draft}
+                value={draft}
                 selection={selection}
                 onChangeText={props.onChange}
                 onSelectionChange={setSelection}
@@ -669,7 +649,6 @@ function RoomBody(props: {
 }) {
   // A room starts no side chats; its follow-ups steer the companion's work (user item 6b6a88c5).
   const composer = useThreadComposerState({ followUpBehavior: "steer", startSideChat: async () => false });
-  const draft = useComposerDraft(composer.composerDraftKey ?? null);
   const { selectedEnvironmentRuntime } = useThreadSelection();
   const { selectedThreadCwd } = useSelectedThreadWorktree();
   const scaled = useScaledTextRole("body");
@@ -683,8 +662,11 @@ function RoomBody(props: {
   const supportsFiles = Boolean(selectedEnvironmentRuntime?.serverConfig?.environment.capabilities.fileAttachments);
   const [composerHeight, setComposerHeight] = useState(80);
   const title = props.companion?.title ?? props.companionId;
-  const calls = useRoomCalls(props.environmentId, props.companionId);
-  const proposals = useProposals(props.environmentId, props.companionId);
+  const focused = useIsFocused();
+  const active = useAppActive();
+  const visible = focused && active;
+  const calls = useRoomCalls(props.environmentId, props.companionId, visible);
+  const proposals = useProposals(props.environmentId, props.companionId, visible);
   const [focusRequest, setFocusRequest] = useState(0);
   const [placeholder, setPlaceholder] = useState<string>(copy.placeholder);
   const focusComposer = useCallback((text: string | null, hint: string = copy.placeholder) => {
@@ -743,9 +725,7 @@ function RoomBody(props: {
       appendPendingThreadMessages(composer.selectedThreadFeed, composer.selectedThreadFeed, composer.selectedThreadQueuedMessages)
         .flatMap((entry) =>
           entry.type === "message"
-            ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt,
-                streaming: entry.message.streaming, attachments: entry.message.attachments,
-                ...(entry.pendingMessage ? { pending: { attachments: entry.pendingMessage.attachments } } : {}) }]
+            ? [entry.pendingMessage ? { ...entry.message, pending: { attachments: entry.pendingMessage.attachments } } : entry.message]
             : [],
         ),
     [composer.selectedThreadFeed, composer.selectedThreadQueuedMessages],
@@ -765,7 +745,7 @@ function RoomBody(props: {
   const personTurn = companionTyping(items, composer.activeThreadBusy);
   const writing = personTurn || typed.next !== null;
   // Thinking or working: the kind of work the companion's tool does right now, while the person's turn runs.
-  const tool = useRoomLiveWork(props.environmentId, props.companionId, personTurn);
+  const tool = useRoomLiveWork(props.environmentId, props.companionId, visible && personTurn);
   // What the room showed when it opened stays put; what arrives after moves in. A bubble the list
   // recycles back into view later does not move in again.
   const seen = useRef<Set<string> | null>(null);
@@ -896,7 +876,6 @@ function RoomBody(props: {
       ) : null}
       <RoomComposer
         environmentId={props.environmentId}
-        attachments={draft.attachments}
         supportsFiles={supportsFiles}
         onPickMedia={composer.onPickDraftMedia}
         onPickFiles={composer.onPickDraftFiles}
@@ -904,7 +883,6 @@ function RoomBody(props: {
         onPasteImages={composer.onNativePasteImages}
         onPasteText={composer.onNativePasteText}
         onPressPreview={media.onPressPreview}
-        draft={draft.text}
         onChange={composer.onChangeDraftMessage}
         onSend={send}
         ownerKey={composer.composerDraftKey ?? null}

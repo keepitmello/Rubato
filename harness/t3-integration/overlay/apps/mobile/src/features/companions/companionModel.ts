@@ -49,6 +49,18 @@ export function encodeCompanions(companions: readonly CompanionEntry[]): string 
   return JSON.stringify(companions.map(({ callable: _callable, ...entry }) => entry));
 }
 
+/** Faces can be megabytes of base64. Compare their strings directly without copying them
+ * into two JSON buffers every time the Mac reports an unchanged roster. */
+export function sameCompanionsSnapshot(a: readonly CompanionEntry[], b: readonly CompanionEntry[]): boolean {
+  return a.length === b.length && a.every((entry, index) => {
+    const other = b[index]!;
+    if (entry === other) return true;
+    const { art, ...details } = entry;
+    const { art: otherArt, ...otherDetails } = other;
+    return art === otherArt && JSON.stringify(details) === JSON.stringify(otherDetails);
+  });
+}
+
 const text = (value: unknown): value is string => typeof value === "string" && value.length > 0;
 const textOrNull = (value: unknown): string | null => (text(value) ? value : null);
 

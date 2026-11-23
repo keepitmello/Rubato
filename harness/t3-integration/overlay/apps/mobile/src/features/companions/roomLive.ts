@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 
 import { roomTool, type RoomTool } from "./roomModel";
 import { postRubato } from "./rubatoHttp";
+import { startRoomPoll } from "./roomPoll";
 
 const LIVE_EVERY_MS = 1_200;
 
@@ -15,19 +16,12 @@ export function useRoomLiveWork(environmentId: EnvironmentId, companionId: strin
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- polling: the Mac's answer arrives over time
   useEffect(() => {
     if (!active) return;
-    let live = true;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const ask = () =>
-      postRubato<{ work?: unknown }>(environmentId, "/rubato/companion", "live", { companionId }, { timeoutMs: 4_000 })
-        // A Mac without the route answers an error: the bubble stays thinking.
-        .then((answer) => live && setWork(roomTool(answer.work)), () => undefined)
-        .finally(() => {
-          if (live) timer = setTimeout(ask, LIVE_EVERY_MS);
-        });
-    void ask();
+    const stop = startRoomPoll(LIVE_EVERY_MS, async (signal) => {
+      const answer = await postRubato<{ work?: unknown }>(environmentId, "/rubato/companion", "live", { companionId }, { timeoutMs: 4_000, signal });
+      if (!signal.aborted) setWork(roomTool(answer.work));
+    });
     return () => {
-      live = false;
-      clearTimeout(timer);
+      stop();
       setWork(null);
     };
   }, [environmentId, companionId, active]);

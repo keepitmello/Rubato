@@ -3,18 +3,20 @@
 // made from the small "+" in the header (useCreateCompanion.ts).
 import { CommonActions, useNavigation } from "@react-navigation/native";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppText as Text } from "../../components/ui/AppText";
 import { EmptyState } from "../../components/ui/EmptyState";
-import { buildThreadFeed } from "../../lib/threadActivity";
+import { buildThreadFeed, createThreadFeedCache } from "../../lib/threadActivity";
+import { useAppForeground } from "../../lib/appState";
+import { useHomeRouteVisible } from "../home/home-route-visibility";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanions, type CompanionEntry } from "./companionsStore";
 import { copy, dateFormat } from "./copy";
-import { roomItems, roomPreview, type RoomMessageInput } from "./roomModel";
-import { useRoomThread, useRoomTurnItems } from "./roomThread";
+import { feedRoomPreview } from "./roomModel";
+import { useRoomTurnItems } from "./roomThread";
 
 
 /** When the latest message came, as a chat list says it: a time today, a date before. */
@@ -24,25 +26,15 @@ export function listTime(at: number, now = Date.now()): string {
     : dateFormat({ month: "short", day: "numeric" }).format(at);
 }
 
-/** A thread's messages as the room reads them. */
-export function feedMessages(items: Parameters<typeof buildThreadFeed>[0]): RoomMessageInput[] {
-  return buildThreadFeed(items).flatMap((entry) =>
-    entry.type === "message"
-      ? [{ id: entry.message.id, role: entry.message.role, text: entry.message.text, createdAt: entry.message.createdAt, streaming: entry.message.streaming }]
-      : [],
-  );
-}
-
-function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOpen: () => void }) {
+function CompanionRow(props: { readonly companion: CompanionEntry; readonly active: boolean; readonly onOpen: () => void }) {
   const { companion } = props;
   const target = {
-    environmentId: companion.environmentId,
+    environmentId: props.active ? companion.environmentId : null,
     threadId: (companion.threadId ?? null) as ThreadId | null,
   };
-  // Subscribes to the room's thread so the preview stays current.
-  useRoomThread(target);
   const visible = useRoomTurnItems(target);
-  const preview = useMemo(() => roomPreview(roomItems(feedMessages(visible), [])), [visible]);
+  const [cache] = useState(createThreadFeedCache);
+  const preview = useMemo(() => feedRoomPreview(buildThreadFeed(visible, { cache })), [visible, cache]);
   return (
     <Pressable
       accessibilityRole="button"
@@ -66,6 +58,8 @@ function CompanionRow(props: { readonly companion: CompanionEntry; readonly onOp
 }
 
 export function CompanionListScreen() {
+  const visible = useHomeRouteVisible();
+  const foreground = useAppForeground();
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
   const { companions, loaded, error, paired, refresh } = useCompanions();
@@ -86,7 +80,7 @@ export function CompanionListScreen() {
         contentInsetAdjustmentBehavior="never"
         contentContainerStyle={{ paddingTop: insets.top + 8, paddingBottom: insets.bottom + 96, flexGrow: 1 }}
         refreshControl={<RefreshControl refreshing={false} onRefresh={() => void refresh()} />}
-        renderItem={({ item }) => <CompanionRow companion={item} onOpen={() => open(item)} />}
+        renderItem={({ item }) => <CompanionRow companion={item} active={visible && foreground} onOpen={() => open(item)} />}
         ItemSeparatorComponent={() => <View className="h-[0.5px] bg-border" style={{ marginLeft: 90 }} />}
         ListEmptyComponent={
           <View className="flex-1 justify-center pb-24">

@@ -1,7 +1,7 @@
 // One call's whole transcript in an iOS sheet (route CompanionCall; medium and large detents, swipe
 // down to close). The call's summary stays pinned at the top while what both sides said scrolls
 // under it, each line beside its speaker.
-import { useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
+import { useIsFocused, useRoute, type RouteProp, type StaticScreenProps } from "@react-navigation/native";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { useEffect, useState } from "react";
 import { ScrollView, View } from "react-native";
@@ -16,6 +16,8 @@ import type { CallRecord } from "./callTypes";
 import { CompanionAvatar } from "./CompanionAvatar";
 import { useCompanion } from "./companionsStore";
 import { copy } from "./copy";
+import { useAppActive } from "../../lib/appState";
+import { startRoomPoll } from "./roomPoll";
 
 export type CompanionCallParams = {
   readonly companionId: string;
@@ -31,28 +33,23 @@ export function CallTranscriptScreen(_props: StaticScreenProps<CompanionCallPara
   const { companion } = useCompanion(companionId, environmentId);
   const [call, setCall] = useState<CallRecord | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  const focused = useIsFocused();
+  const active = useAppActive();
   useEffect(() => {
-    let live = true;
-    const load = () =>
-      callApi.calls(environmentId as EnvironmentId, companionId).then(
-        (calls) => {
-          if (!live) return;
-          const found = calls.find((item) => item.id === callId) ?? null;
-          setCall(found);
-          if (!found) setFailed(copy.callGone);
-        },
-        (error: unknown) => {
-          if (live) setFailed(error instanceof Error ? error.message : String(error));
-        },
-      );
-    void load();
-    // A live call's transcript keeps growing.
-    const timer = setInterval(() => void load(), 4_000);
-    return () => {
-      live = false;
-      clearInterval(timer);
-    };
-  }, [environmentId, companionId, callId]);
+    if (!focused || !active) return;
+    return startRoomPoll(4_000, async (signal) => {
+      try {
+        const calls = await callApi.calls(environmentId as EnvironmentId, companionId, undefined, signal);
+        if (signal.aborted) return;
+        const found = calls.find((item) => item.id === callId) ?? null;
+        setCall(found);
+        setFailed(found ? null : copy.callGone);
+        if (found && found.status !== "ringing" && found.status !== "active") return false;
+      } catch (error) {
+        if (!signal.aborted) setFailed(error instanceof Error ? error.message : String(error));
+      }
+    });
+  }, [environmentId, companionId, callId, focused, active]);
   const title = companion?.title ?? call?.title ?? companionId;
   const art = companion?.art ?? null;
   const lines = call ? callLines(call) : [];

@@ -55,8 +55,8 @@ export interface CallableCompanion {
 
 export const callApi = {
   live: (env: EnvironmentId) => postRubato<CallRecord[]>(env, CALL_ROUTE, "live", {}, { timeoutMs: 6_000 }),
-  calls: (env: EnvironmentId, companion: string, since?: number) =>
-    postRubato<CallRecord[]>(env, CALL_ROUTE, "calls", since === undefined ? { companion } : { companion, since }),
+  calls: (env: EnvironmentId, companion: string, since?: number, signal?: AbortSignal) =>
+    postRubato<CallRecord[]>(env, CALL_ROUTE, "calls", since === undefined ? { companion } : { companion, since }, signal ? { signal } : {}),
   companions: (env: EnvironmentId, options?: { readonly waitForConnectionMs?: number }) =>
     postRubato<CallableCompanion[]>(env, CALL_ROUTE, "companions", {}, options),
   dial: (env: EnvironmentId, companion: string) => postRubato<Joined>(env, CALL_ROUTE, "dial", { companion }),
