@@ -25,6 +25,8 @@ Edit nothing outside `$MEMORY_DIR`. The user's personality settings and project 
 
 Records are English; the user's words stay verbatim in their language. One file per question; the file does not speak about time.
 
+For a rule in `constraints/`, `working-style/` or `preferences/`, the `description:` is the line sessions can load. Name the action, its reason and the situation it applies to in that line. For a hard boundary, include the safe alternative. Edit the record that owns the responsibility. If renaming or merging it, write `$OUT_DIR/rule-moves.json` as `{"old/path.md":"surviving/path.md"}` for each actual successor; omit outright deletions.
+
 ## Output
 
 If you changed anything, commit from `$MEMORY_DIR`:

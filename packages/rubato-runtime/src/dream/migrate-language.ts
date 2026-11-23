@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { mkdir, rm, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
+import { fileURLToPath } from "node:url"
 
 import {
   GitMemoryRepo,
@@ -202,7 +203,7 @@ async function migrateLocked(options: RunMigrationOptions, now: () => number): P
   const promptPath = join(runDir, "system-prompt.md")
   await writeFile(promptPath, options.systemPrompt, "utf8")
   const spawnChild = options.spawnChild ?? spawnLogged
-  const checkCommand = options.checkCommand ?? [process.execPath, join(import.meta.dir, "verbatim-check.ts")]
+  const checkCommand = options.checkCommand ?? [process.execPath, fileURLToPath(new URL("./verbatim-check.ts", import.meta.url))]
   const batches = packBatches(candidates, options.batchChars ?? DEFAULT_MIGRATION_BATCH_CHARS)
   const attempts: DreamAttempt[] = []
   let usedModel: string | undefined

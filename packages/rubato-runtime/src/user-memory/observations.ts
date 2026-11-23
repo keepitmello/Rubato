@@ -41,6 +41,8 @@ const LEGACY_RUNS_PER_STORE = 30
 export interface Observation {
   /** English statement of the durable fact or preference. */
   readonly claim: string
+  /** The task, decision and circumstances the quoted words were about, not a standing preference. */
+  readonly situation?: string
   /** The user's own words, verbatim. */
   readonly quote?: string
   readonly session?: string
@@ -103,8 +105,13 @@ export function normalizeObservations(
     const quote = typeof value.quote === "string" && value.quote.trim() !== "" ? value.quote.trim() : undefined
     const sessionId = typeof value.session === "string" ? value.session : undefined
     const turn = quote === undefined ? undefined : locateQuote(quote, sessions, sessionId)
+    // If a project child omits the situation, keep what the user actually said around the quote.
+    // Unknown context is surfaced as unknown by the user dream, never inferred from the claim.
+    const situation = typeof value.situation === "string" && value.situation.trim() !== "" ? value.situation.trim()
+      : term === undefined ? turn?.context : undefined
     found.push({
       claim: value.claim.trim(),
+      ...(situation === undefined ? {} : { situation }),
       ...(term === undefined ? {} : { term }),
       ...(quote === undefined ? {} : { quote }),
       ...((turn?.session ?? sessionId) === undefined ? {} : { session: turn?.session ?? sessionId }),
@@ -130,7 +137,12 @@ function locateQuote(quote: string, sessions: readonly CondensedSession[], prefe
   const ordered = [...sessions].sort((a, b) => Number(b.header.id === preferred) - Number(a.header.id === preferred))
   for (const session of ordered) {
     for (const turn of session.userTurns) {
-      if (foldText(turn.text).includes(needle)) return { session: session.header.id, at: turn.at }
+      if (foldText(turn.text).includes(needle)) {
+        const exact = turn.text.indexOf(quote)
+        const start = Math.max(0, exact - 300)
+        const context = turn.text === quote ? undefined : `Same user turn (excerpt): ${turn.text.slice(start, start + 800)}`
+        return { session: session.header.id, at: turn.at, context }
+      }
     }
   }
   return undefined

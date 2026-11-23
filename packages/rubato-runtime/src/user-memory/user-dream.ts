@@ -31,9 +31,11 @@ import {
   type SpawnChild,
 } from "../dream/runner"
 import { resurrections } from "./guard"
+import { consolidationGuide } from "../dream/consolidation"
 import { blockingTombstone, readLedger, type Ledger } from "./ledger"
 import { collectPending, consumeInputs, hasPending, readInputsLedger, recordFailure, type Correction, type Observation, type PendingInputs } from "./observations"
 import { listRecords } from "./records"
+import { isRulePath, reconcileRuleChoices } from "./rule-choices"
 import { ensureUserStore, readJsonFile, userStore, writeJsonFile, type UserStore } from "./store"
 import { mergeSummary, readSummary, writeSummary, type SummaryOut } from "./summary"
 
@@ -106,7 +108,7 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   const kept: Observation[] = []
   let blocked = 0
   for (const observation of pending.observations) {
-    if (blockingTombstone(`${observation.claim}\n${observation.quote ?? ""}`, observation.at, ledger) === undefined) kept.push(observation)
+    if (blockingTombstone(`${observation.claim}\n${observation.quote ?? ""}\n${observation.situation ?? ""}`, observation.at, ledger) === undefined) kept.push(observation)
     else blocked += 1
   }
   const base = { runId, store: store.id, startedAt, sessions: [], observations: kept.length, blocked }
@@ -147,8 +149,13 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   let usedModel: string | undefined
   let childOk = false
   for (const [index, rung] of options.ladder.entries()) {
+    if (index > 0) {
+      await rm(outDir, { recursive: true, force: true })
+      await mkdir(outDir)
+    }
     await removeWorktree(repo, git, worktree, branch)
     await repo.worktreeAdd(worktree, branch, baseRevision)
+    const guide = await consolidationGuide({ git, worktree, paths: store.paths, store: store.id, seed: runId, runDir, env: options.env })
     usedModel = rung.model
     const logPath = join(runDir, `child-${index + 1}.log`)
     const result = await spawnChild({
@@ -160,10 +167,12 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
         ...options.launch.env,
         MEMORY_DIR: worktree,
         INPUTS_DIR: inputsDir,
+        CONSOLIDATION_PATH: guide,
         SUMMARY_IN: summaryIn,
         OUT_DIR: outDir,
         TODAY: startedAt.slice(0, 10),
         DREAM_STORE: store.id,
+        REVIEW_SCOPE: options.force ? "all" : "sample",
       },
       logPath,
       timeoutMs: options.childTimeoutMs ?? CHILD_TIMEOUT_MS,
@@ -199,7 +208,7 @@ async function dreamLocked(options: RunUserDreamOptions, store: UserStore, now: 
   }
 
   const produced = (await git(store.paths.repo, ["rev-parse", branch])).stdout.trim()
-  const landed = await landGuarded({ store, git, repo, branch, subject: `merge(dream): ${runId}`, ledgerFor: () => readLedger(store), newerEvidence: evidenceOf(kept) })
+  const landed = await landGuarded({ store, git, repo, branch, outDir, subject: `merge(dream): ${runId}`, ledgerFor: () => readLedger(store), newerEvidence: evidenceOf(kept) })
   await deleteBranch(git, store.paths.repo, branch)
   if (landed !== true) return finish("failed", { ...modelField, commits, baseRevision, reason: `${landed}; its observations stay for the next run` })
 
@@ -221,6 +230,7 @@ export async function landGuarded(input: {
   readonly git: Git
   readonly repo: GitMemoryRepo
   readonly branch: string
+  readonly outDir: string
   readonly subject: string
   readonly ledgerFor: () => Promise<Ledger>
   readonly newerEvidence: readonly { readonly text: string; readonly at?: string }[]
@@ -231,6 +241,18 @@ export async function landGuarded(input: {
   const { store, git, repo, branch } = input
   return underWriterLock(store.paths, store.id, "user memory merge", async () => {
     await repo.adoptStrayEdits()
+    const rulePaths = async () => {
+      const tree = await git(store.paths.repo, ["ls-tree", "-rz", "HEAD"])
+      if (tree.code !== 0) throw new Error("Could not read user memory records.")
+      return new Set(tree.stdout.split("\0").flatMap(line => {
+        const path = /^100(?:644|755) blob [0-9a-f]+\t(.+)$/.exec(line)?.[1]
+        return path && isRulePath(path) ? [path] : []
+      }))
+    }
+    const before = await rulePaths()
+    const mappings = await readJsonFile<Record<string, unknown>>(join(input.outDir, "rule-moves.json"))
+    const moves = Object.fromEntries(Object.entries(mappings ?? {}).filter((pair): pair is [string, string] =>
+      before.has(pair[0]) && typeof pair[1] === "string" && isRulePath(pair[1])))
     const back = await resurrections(git, store.paths.repo, branch, "HEAD", await input.ledgerFor(), input.newerEvidence)
     if (back.length > 0) {
       const first = back[0]!
@@ -248,6 +270,7 @@ export async function landGuarded(input: {
       return `merge failed: ${(merge.stderr || merge.stdout).trim().split("\n")[0]}`
     }
     await input.afterMerge?.()
+    await reconcileRuleChoices(store, before, await rulePaths(), moves)
     return true
   })
 }
@@ -268,6 +291,7 @@ function renderObservations(list: readonly Observation[]): string {
   const lines = ["# Observations", "", "What project dreams noticed about the user. `said` is the user's own words; `when` is when they said it, checked against the session (absent when the quote could not be found there).", ""]
   list.forEach((entry, index) => {
     lines.push(`## ${index + 1}`, `- claim: ${entry.claim}`)
+    lines.push(`- situation: ${entry.situation ?? "not recorded; use only the scope established by the user's words and project"}`)
     if (entry.term !== undefined) lines.push(`- term: ${entry.term}`)
     if (entry.quote !== undefined) lines.push(`- said: "${entry.quote}"`)
     if (entry.at !== undefined) lines.push(`- when: ${entry.at}`)

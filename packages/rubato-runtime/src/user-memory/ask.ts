@@ -254,6 +254,7 @@ async function askLocked(options: RunUserAskOptions, store: UserStore, request: 
       git,
       repo,
       branch,
+      outDir,
       subject: `merge(ask): ${request.id}`,
       ledgerFor: () => readLedger(store),
       // The user's own words in this request are newer than any forget: saying it again is allowed.

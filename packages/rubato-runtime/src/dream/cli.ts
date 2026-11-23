@@ -25,6 +25,7 @@ import { buildIdentityPaths, readStoreRecord, resolveMemoryRoot } from "@rubato/
 import { loadSenpiRubatoConfig } from "../components/config-resolution"
 import { dreamLadder } from "./ladder"
 import {
+  dreamWindowOpen,
   readDreamState,
   revertDream,
   runDream,
@@ -68,6 +69,10 @@ async function main(argv: readonly string[]): Promise<number> {
   const sinceIso = optionValue(argv, "--since")
   const migrateStore = optionValue(argv, "--migrate")
   const userNow = argv.includes("--user")
+  if (trial && userNow) {
+    process.stderr.write("rubato dream: --trial is for project stores; --user publishes changes\n")
+    return 2
+  }
   const named = argv.filter((arg, index) => !arg.startsWith("--") && !["--base", "--since", "--migrate"].includes(argv[index - 1] ?? ""))
   const env = process.env
   const now = Date.now()
@@ -87,7 +92,10 @@ async function main(argv: readonly string[]): Promise<number> {
   // means the old keys stay; loading already ignores them.
   if (verdict.allowed) {
     try {
-      migrateUserConfigDreamModels({ env })
+      migrateUserConfigDreamModels({ env: {
+        ...(env.HOME ? { HOME: env.HOME } : {}),
+        ...(env.USERPROFILE ? { USERPROFILE: env.USERPROFILE } : {}),
+      } })
     } catch {}
   }
 
@@ -152,14 +160,13 @@ async function main(argv: readonly string[]): Promise<number> {
     const record = readStoreRecord(pathsOf(store).root)
     const enabled = dream.stores[store]?.enabled !== false
     const newSessions = sessionsByStore.get(store)?.length ?? 0
-    const lastMs = state.last_dream_at === undefined ? 0 : Date.parse(state.last_dream_at)
     statuses.push({
       store,
       enabled,
       ...(state.last_dream_at === undefined ? {} : { lastDreamAt: state.last_dream_at }),
       ...(state.lastRunId === undefined ? {} : { lastRunId: state.lastRunId }),
       newSessions,
-      due: enabled && newSessions > 0 && now - lastMs >= minGapMs,
+      due: enabled && newSessions > 0 && dreamWindowOpen(state, now, minGapMs),
       roots: record?.roots ?? [],
       home: record?.home === true,
       files: countStoreFiles(pathsOf(store).repo),
@@ -173,7 +180,7 @@ async function main(argv: readonly string[]): Promise<number> {
     return 0
   }
 
-  const targets = migrateStore !== undefined || userNow ? [] : due ? statuses.filter((status) => status.due).map((status) => status.store) : named
+  const targets = migrateStore !== undefined ? [] : due ? statuses.filter((status) => status.due).map((status) => status.store) : named
   // The English migration runs once per store, before that store's next dream: every enabled store on
   // `--due` (new sessions or not, so a quiet store migrates too), each named store, or `--migrate`.
   const migrations = migrateStore !== undefined
@@ -230,6 +237,7 @@ async function main(argv: readonly string[]): Promise<number> {
       env: childEnv(env),
       projectFolders: [...(scan.folders.get(store) ?? [])],
       force: !due,
+      minGapMs,
       ...(trial ? { trial: { ...(base === undefined ? {} : { baseRevision: base }), ...(trialSinceMs === undefined ? {} : { sinceMs: trialSinceMs }) } } : {}),
     })
     records.push(record)

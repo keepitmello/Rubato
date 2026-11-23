@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 
@@ -61,7 +61,7 @@ describe("condenseSession", () => {
   test("reads only messages after the cursor", () => {
     const dir = tempDir()
     const condensed = condenseSession(sessionFile(dir, dir), Date.parse("2026-09-25T00:00:02.500Z"))!
-    expect(condensed.messages).toBe(3)
+    expect(condensed.messages).toBe(1)
     expect(condensed.markdown).not.toContain("왜 이렇게 됐어?")
   })
 })
@@ -197,7 +197,7 @@ describe("runDream", () => {
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("changed on main meanwhile\n")
     expect(git(paths.repo, "status", "--porcelain")).toBe("")
     expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
-    expect(await readDreamState(paths)).toEqual({})
+    expect((await readDreamState(paths)).cursors).toBeUndefined()
   })
 
   test("a dream an earlier version left waiting for approval lands at the next run", async () => {
@@ -240,9 +240,41 @@ describe("runDream", () => {
     expect(record.status).toBe("failed")
     expect(readFileSync(join(paths.repo, "a.md"), "utf8")).toBe("old\n")
     expect(git(paths.repo, "branch", "--list", "dream/*").trim()).toBe("")
-    expect(await readDreamState(paths)).toEqual({})
+    expect((await readDreamState(paths)).cursors).toBeUndefined()
   })
 
+  test("an exhausted ladder waits a daily window and then reads even the first lookback's oldest message", async () => {
+    const { root, paths } = store()
+    let clock = Date.parse("2026-09-26T00:00:00.000Z")
+    const day = 86_400_000
+    const opts = { now: () => clock, minGapMs: day }
+    const early = session(root, "unseen", "2026-09-19T01:00:00.000Z")
+    expect((await run(paths, [early], { ...opts, ladder: [{ model: "dead" }] })).status).toBe("failed")
+    clock += day - 1
+    const later = session(root, "while-waiting", "2026-09-26T06:00:00.000Z")
+    const retry = await run(paths, [early, later], { ...opts, spawnChild: () => { throw Error("retried too soon") } })
+    expect(retry.runId).toBe("")
+    clock += 1
+    const next = await run(paths, [early, later], opts)
+    expect(next.status).toBe("merged")
+    expect(next.sessions.map(entry => entry.id)).toEqual(["unseen", "while-waiting"])
+    expect((await readDreamState(paths)).failed_at).toBeUndefined()
+  })
+
+  test("after a dream, appended tool results and metadata count zero until conversation resumes", async () => {
+    const { scanStoreSessions } = await import("./stores")
+    const { root, paths } = store()
+    const file = session(root, "s", "2026-09-25T01:00:00.000Z")
+    expect((await run(paths, [file])).status).toBe("merged")
+    const state = await readDreamState(paths)
+    const count = () => scanStoreSessions({ sessionsRoot: root, sinceMs: (_, id) => sessionSinceMs(state, id, Date.now()), resolveStore: () => "demo" }).sessions.get("demo")?.length ?? 0
+    const append = (entry: unknown) => appendFileSync(file.path, `\n${JSON.stringify(entry)}\n`)
+    for (const customType of ["senpi-memory.session-binding", "context-mode"]) append({ type: "custom", customType, timestamp: "2026-09-26T01:00:00.000Z" })
+    append({ type: "message", timestamp: "2026-09-26T02:00:00.000Z", message: { role: "toolResult", content: "x".repeat(40_000) } })
+    expect(count()).toBe(0)
+    append({ type: "message", timestamp: "2026-09-26T02:00:01.000Z", message: { role: "user", content: "Again?" } })
+    expect(count()).toBe(1)
+  })
   test("a session left out for budget is read in full next time", async () => {
     const { root, paths } = store()
     const early = session(root, "early", "2026-09-25T00:00:01.000Z", "a".repeat(100))
@@ -297,7 +329,7 @@ describe("scanStoreSessions store rule", () => {
     const sessions = join(root, "sessions")
     mkdirSync(sessions)
     const write = (id: string, cwd: string) =>
-      writeFileSync(join(sessions, `${id}.jsonl`), JSON.stringify({ type: "session", id, cwd, timestamp: "2026-09-25T00:00:00.000Z" }))
+      writeFileSync(join(sessions, `${id}.jsonl`), [JSON.stringify({ type: "session", id, cwd }), JSON.stringify({ type: "message", timestamp: "2026-09-25T00:00:00.000Z", message: { role: "user", content: "Hi" } })].join("\n"))
     write("in-repo", join(repo, "src"))
     write("at-home", home)
     write("plain", plain)
@@ -326,7 +358,7 @@ describe("scanStoreSessions and the companion", () => {
     const sessions = join(root, "sessions")
     mkdirSync(sessions)
     const write = (id: string, cwd: string) =>
-      writeFileSync(join(sessions, `${id}.jsonl`), JSON.stringify({ type: "session", id, cwd, timestamp: "2026-10-20T00:00:00.000Z" }))
+      writeFileSync(join(sessions, `${id}.jsonl`), [JSON.stringify({ type: "session", id, cwd }), JSON.stringify({ type: "message", timestamp: "2026-10-20T00:00:00.000Z", message: { role: "user", content: "Hi" } })].join("\n"))
     write("segno", companion)
     write("lab", lab)
     const env = { RUBATO_MEMORY_HOME: join(root, "memory"), HOME: join(root, "home") }

@@ -17,6 +17,7 @@ import { launchProductModel } from "@rubato/model-core"
 
 import { OBSERVATIONS_FILE, OBSERVATIONS_OUT, normalizeObservations } from "../user-memory/observations"
 import { condenseSession, type CondensedSession } from "./transcript"
+import { consolidationGuide } from "./consolidation"
 import type { SessionFile } from "./stores"
 
 // One dream = one store. The child edits a worktree branch so the working agent can keep writing to
@@ -87,6 +88,10 @@ export interface DreamAttempt {
 }
 
 export interface DreamState {
+  /** A failed attempt spaces automatic runs without acknowledging a single message. */
+  readonly failed_at?: string
+  /** On a first-ever failure the initial lookback must not slide forward overnight. */
+  readonly unread_since?: string
   /** When the last dream took its input; spaces dreams and is the read floor for sessions with no cursor. */
   readonly last_dream_at?: string
   readonly lastRunId?: string
@@ -106,6 +111,7 @@ export interface RunDreamOptions {
   readonly projectFolders?: readonly string[]
   /** Run the resolve pass even when no session is new (manual runs). */
   readonly force?: boolean
+  readonly minGapMs?: number
   /**
    * Trial run: start from `baseRevision` (default HEAD) and read from `sinceMs` (default the cursors),
    * keep the result on its branch, and touch neither the store nor its cursors.
@@ -133,7 +139,11 @@ const LEFTOVER_REVIEW = "pending.json"
 export function sessionSinceMs(state: DreamState, sessionId: string, now: number): number {
   const cursor = parseTime(state.cursors?.[sessionId])
   if (cursor !== undefined) return cursor
-  return parseTime(state.last_dream_at) ?? now - FIRST_DREAM_LOOKBACK_MS
+  return parseTime(state.last_dream_at) ?? parseTime(state.unread_since) ?? now - FIRST_DREAM_LOOKBACK_MS
+}
+
+export function dreamWindowOpen(state: DreamState, now: number, gap: number): boolean {
+  return now - Math.max(parseTime(state.last_dream_at) ?? 0, parseTime(state.failed_at) ?? 0) >= gap
 }
 
 export async function runDream(options: RunDreamOptions): Promise<DreamRunRecord> {
@@ -154,6 +164,10 @@ export async function runDream(options: RunDreamOptions): Promise<DreamRunRecord
 
 async function runLocked(options: RunDreamOptions, now: () => number): Promise<DreamRunRecord> {
   const startedAt = new Date(now()).toISOString()
+  const state = await readDreamState(options.paths)
+  if (!options.force && !options.trial && !dreamWindowOpen(state, now(), options.minGapMs ?? 0)) {
+    return { runId: "", store: options.store, startedAt, finishedAt: startedAt, status: "noop", reason: "waiting for the next dream window", sessions: [], commits: [] }
+  }
   const runId = `dream-${startedAt.replace(/[:.]/g, "-")}-${randomBytes(3).toString("hex")}`
   const runDir = join(dreamDir(options.paths), "runs", runId)
   const transcriptsDir = join(runDir, "transcripts")
@@ -161,7 +175,6 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   await mkdir(transcriptsDir, { recursive: true })
   await mkdir(outDir, { recursive: true })
 
-  const state = await readDreamState(options.paths)
   const trialSince = options.trial?.sinceMs
   const sinceOf = (id: string) => trialSince ?? sessionSinceMs(state, id, now())
   const picked = pickSessions(options.sessions, sinceOf, options.transcriptBudgetChars ?? DEFAULT_TRANSCRIPT_BUDGET_CHARS)
@@ -197,7 +210,16 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   const finish = async (status: DreamStatus, extra: Partial<DreamRunRecord> = {}): Promise<DreamRunRecord> => {
     const result: DreamRunRecord = { ...base, finishedAt: new Date(now()).toISOString(), status, commits: [], ...extra }
     await writeFile(join(runDir, "run.json"), `${JSON.stringify(result, null, 2)}\n`, "utf8")
-    if (status === "merged" || status === "noop") await consume()
+    if (!options.trial) {
+      if (status === "merged" || status === "noop") await consume()
+      if (status === "failed") {
+        const next: DreamState = {
+          ...state, failed_at: result.finishedAt, lastRunId: runId,
+          ...(state.last_dream_at ? {} : { unread_since: state.unread_since ?? new Date(Date.parse(startedAt) - FIRST_DREAM_LOOKBACK_MS).toISOString() }),
+        }
+        await writeFile(join(dreamDir(options.paths), "state.json"), `${JSON.stringify(next, null, 2)}\n`, "utf8")
+      }
+    }
     return result
   }
 
@@ -251,6 +273,11 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   for (const [index, rung] of options.ladder.entries()) {
     // Every rung starts from a clean branch at the same base: a rung that died leaves nothing behind.
     await prepare()
+    if (index > 0) {
+      await rm(outDir, { recursive: true, force: true })
+      await mkdir(outDir)
+    }
+    const guide = await consolidationGuide({ git, worktree, paths: options.paths, store: options.store, seed: runId, runDir, env: options.env })
     usedModel = rung.model
     const args = childArgs(options.launch, promptPath, join(runDir, "session"), rung, "Run the dream now.")
     const result = await spawnChild({
@@ -264,6 +291,7 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
         TRANSCRIPTS_DIR: transcriptsDir,
         OUT_DIR: outDir,
         CHANGES_PATH: changesPath,
+        CONSOLIDATION_PATH: guide,
         PROJECT_DIRS: projectDirs.join(":"),
         DREAM_STORE: options.store,
       },
@@ -278,6 +306,14 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
     attempts.push({ model: rung.model, ok: false, error: await failureLine(join(runDir, `child-${index + 1}.log`), result.code) })
   }
   const modelField = usedModel === undefined ? { attempts } : { model: usedModel, attempts }
+  // Trials keep the same evidence for comparison; collectPending only consumes landed project runs.
+  if (childOk) {
+    const noticed = await readFile(join(outDir, OBSERVATIONS_OUT), "utf8").catch(() => "")
+    if (noticed.trim() !== "") {
+      const observations = normalizeObservations(noticed, picked, { project: options.store, runId, seenAt: startedAt })
+      await writeFile(join(runDir, OBSERVATIONS_FILE), `${JSON.stringify(observations, null, 2)}\n`, "utf8")
+    }
+  }
   if (options.trial !== undefined) {
     if (childOk && (await git(worktree, ["status", "--porcelain"])).stdout.trim() !== "") {
       await git(worktree, ["add", "-A"])
@@ -291,13 +327,6 @@ async function runLocked(options: RunDreamOptions, now: () => number): Promise<D
   if (!childOk) {
     await removeWorktree(repo, git, worktree, branch)
     return finish("failed", { ...modelField, reason: "every model in the ladder failed; see child-*.log" })
-  }
-  // What the child noticed about the user, each quote dated from the session it came from. The user
-  // dream takes these from runs that finish merged or noop (user-memory/observations.ts).
-  const noticed = await readFile(join(outDir, OBSERVATIONS_OUT), "utf8").catch(() => "")
-  if (noticed.trim() !== "") {
-    const observations = normalizeObservations(noticed, picked, { project: options.store, runId, seenAt: startedAt })
-    await writeFile(join(runDir, OBSERVATIONS_FILE), `${JSON.stringify(observations, null, 2)}\n`, "utf8")
   }
   if ((await git(worktree, ["status", "--porcelain"])).stdout.trim() !== "") {
     await git(worktree, ["add", "-A"])

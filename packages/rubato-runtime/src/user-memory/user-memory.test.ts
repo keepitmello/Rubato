@@ -72,7 +72,7 @@ const noticingChild = (extra: (cwd: string) => void = () => undefined): SpawnChi
     for (const match of text.matchAll(/## user · \S+\n\n(.+)\n/g)) {
       const said = match[1]!
       const claim = said.match(/^claim:(.+?)\|/)?.[1]
-      if (claim !== undefined) lines.push(JSON.stringify({ claim: claim.trim(), quote: said, session }))
+      if (claim !== undefined) lines.push(JSON.stringify({ claim: claim.trim(), quote: said, session, situation: "choosing the format for a single report" }))
     }
   }
   writeFileSync(join(env.OUT_DIR!, "user-observations.jsonl"), `${lines.join("\n")}\n`)
@@ -205,6 +205,7 @@ describe("user facts are noticed in every project and curated into one shared st
     const record = await userDream(w.memoryRoot)
 
     expect(record.status).toBe("merged")
+    expect(readFileSync(join(w.user.paths.runtime, "dream", "runs", record.runId, "inputs", "observations.md"), "utf8")).toContain("- situation: choosing the format for a single report")
     expect(userFiles(w.memoryRoot)).toEqual(["preferences/prefers-short-answers.md", "preferences/works-on-macos.md"])
     const short = parseRecord("x", readFileSync(join(w.user.paths.repo, "preferences/prefers-short-answers.md"), "utf8"))
     expect(short.evidence[0]).toMatchObject({ date: "2026-09-28", where: "project alpha", quote: "claim: Prefers short answers | 짧게 말해줘" })

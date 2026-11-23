@@ -3,7 +3,7 @@ import { join } from "node:path"
 
 import { isUserStore, resolveProjectStore, type MemoryIdentityPaths } from "@rubato/memory-core"
 
-import { readSessionHeader } from "./transcript"
+import { hasUnreadConversation, readSessionHeader } from "./transcript"
 
 // A store is the memory of the folders that resolve to it: by `memory.agent`, by the git project
 // root, or the home directory (resolveProjectStore holds the one rule). Other folders have no store.
@@ -64,7 +64,8 @@ export function scanStoreSessions(options: {
     known.add(header.cwd)
     folders.set(store, known)
     const mtimeMs = statSync(path).mtimeMs
-    if (mtimeMs <= options.sinceMs(store, header.id)) continue
+    const since = options.sinceMs(store, header.id)
+    if (mtimeMs <= since || !hasUnreadConversation(path, since)) continue
     const list = sessions.get(store) ?? []
     list.push({ id: header.id, path, cwd: header.cwd, mtimeMs })
     sessions.set(store, list)

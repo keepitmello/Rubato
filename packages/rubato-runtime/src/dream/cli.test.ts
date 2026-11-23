@@ -12,12 +12,13 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function dreamStatus(userConfig: string | undefined, stores: readonly string[] = []): unknown {
+function dreamStatus(userConfig: string | undefined, stores: readonly string[] = [], setup?: (home: string) => void): unknown {
   const home = mkdtempSync(join(tmpdir(), "dream-cli-test-"))
   dirs.push(home)
   mkdirSync(join(home, ".rubato", "memory"), { recursive: true })
   for (const store of stores) mkdirSync(join(home, ".rubato", "memory", "agents", store, "repo", ".git"), { recursive: true })
   if (userConfig !== undefined) writeFileSync(join(home, ".rubato", "rubato.jsonc"), userConfig)
+  setup?.(home)
   const env: NodeJS.ProcessEnv = {
     PATH: process.env.PATH,
     HOME: home,
@@ -29,6 +30,29 @@ function dreamStatus(userConfig: string | undefined, stores: readonly string[] =
 }
 
 describe("rubato dream --json status", () => {
+  test("counts unread conversation, not newer metadata, and shows a failed store as not due", () => {
+    const status = dreamStatus(undefined, ["demo"], home => {
+      const project = join(home, "demo")
+      mkdirSync(join(project, ".rubato"), { recursive: true })
+      writeFileSync(join(project, ".rubato/rubato.jsonc"), JSON.stringify({ memory: { agent: "demo" } }))
+      const sessions = join(home, "agent/sessions")
+      mkdirSync(sessions, { recursive: true })
+      const read = new Date(Date.now() - 86_400_000 * 2).toISOString()
+      for (const id of ["finished", "unread"]) {
+        const entries = [
+          { type: "session", id, cwd: project },
+          { type: "message", timestamp: read, message: { role: "user", content: "read" } },
+          { type: "custom", customType: "context-mode", timestamp: new Date().toISOString() },
+          ...(id === "unread" ? [{ type: "message", timestamp: new Date().toISOString(), message: { role: "assistant", content: "new reply" } }] : []),
+        ]
+        writeFileSync(join(sessions, `${id}.jsonl`), entries.map(entry => JSON.stringify(entry)).join("\n"))
+      }
+      const state = join(home, ".rubato/memory/agents/demo/runtime/dream")
+      mkdirSync(state, { recursive: true })
+      writeFileSync(join(state, "state.json"), JSON.stringify({ last_dream_at: read, failed_at: new Date().toISOString(), cursors: { finished: read, unread: read } }))
+    }) as { stores: { newSessions: number; due: boolean }[] }
+    expect(status.stores[0]).toMatchObject({ newSessions: 1, due: false })
+  })
   test("#given no dream models in the config #when status is read #then the default ladder is reported as models", () => {
     expect(dreamStatus(undefined)).toEqual({
       models: [

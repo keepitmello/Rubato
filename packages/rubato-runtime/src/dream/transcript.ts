@@ -1,4 +1,4 @@
-import { closeSync, openSync, readFileSync, readSync } from "node:fs"
+import { closeSync, fstatSync, openSync, readFileSync, readSync } from "node:fs"
 
 // A dream reads what happened in a project since the last dream. It reads each user turn as two
 // parts: what the user said, and the assistant's last reply of that turn. The user's words carry the
@@ -43,6 +43,34 @@ export function readSessionHeader(path: string): SessionHeader | undefined {
   }
 }
 
+// The engine appends timestamped entries in order. Most "changed" files only gained metadata
+// after their last conversation, so inspect the tail rather than parsing whole sessions on startup.
+export function hasUnreadConversation(path: string, sinceMs: number): boolean {
+  const fd = openSync(path, "r")
+  try {
+    const size = fstatSync(fd).size
+    const start = Math.max(0, size - 32_768)
+    const tail = Buffer.alloc(size - start)
+    const length = readSync(fd, tail, 0, tail.length, start)
+    const lines = tail.toString("utf8", 0, length).split("\n")
+    for (let index = lines.length - 1; index >= (start === 0 ? 0 : 1); index--) {
+      const turn = conversation(parseLine(lines[index]))
+      if (turn !== undefined) return Date.parse(turn.at) > sinceMs
+    }
+    return start !== 0 && (condenseSession(path, sinceMs)?.messages ?? 0) > 0
+  } finally {
+    closeSync(fd)
+  }
+}
+
+function conversation(entry: Json | undefined) {
+  if (entry?.type !== "message" || !isRecord(entry.message) || typeof entry.timestamp !== "string") return undefined
+  const { role, content } = entry.message
+  if ((role !== "user" && role !== "assistant") || !Number.isFinite(Date.parse(entry.timestamp))) return undefined
+  const text = typeof content === "string" ? content.trim() : joinText(Array.isArray(content) ? content.filter(isRecord) : [])
+  return text === "" ? undefined : { at: entry.timestamp, role, text }
+}
+
 export function condenseSession(path: string, sinceMs: number): CondensedSession | undefined {
   const lines = readFileSync(path, "utf8").split("\n")
   const header = readSessionHeaderFromLine(lines[0])
@@ -61,20 +89,18 @@ export function condenseSession(path: string, sinceMs: number): CondensedSession
     const entry = parseLine(line)
     if (entry === undefined) continue
     if (entry.type === "session_info" && typeof entry.name === "string") name = entry.name
-    if (entry.type !== "message" || !isRecord(entry.message)) continue
-    const at = typeof entry.timestamp === "string" ? entry.timestamp : undefined
-    if (at === undefined || Date.parse(at) <= sinceMs) continue
+    const turn = conversation(entry)
+    if (turn === undefined || Date.parse(turn.at) <= sinceMs) continue
+    const { at, role, text } = turn
     messages += 1
     lastAt = at
-    const message = entry.message
-    const text = joinText(Array.isArray(message.content) ? message.content.filter(isRecord) : [])
-    if (message.role === "user") {
+    if (role === "user") {
       closeTurn()
       if (text !== "") {
         parts.push(`\n## user · ${at}\n\n${text}\n`)
         userTurns.push({ at, text })
       }
-    } else if (message.role === "assistant" && text !== "") {
+    } else {
       reply = text
     }
   }
