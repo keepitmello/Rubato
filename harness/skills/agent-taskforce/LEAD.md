@@ -79,6 +79,11 @@ Owners control local delegation and integration. Give affected peers' identities
 so they can negotiate interfaces and exchange counter-evidence directly. A subagent
 works inside its sender's authority.
 
+The user approves a teammate's subagents once per assignment, from the teammate's
+own estimate. Leave the count out of the brief: the teammate sizes it after reading
+the code. Take each estimate to the user as sent and relay the answer; that answer
+covers the teammate's subagents until it sends a new estimate.
+
 ## 6. Stay with the user while the team executes
 
 Keep the goal, reasons for decisions and open user choices in view. Technical

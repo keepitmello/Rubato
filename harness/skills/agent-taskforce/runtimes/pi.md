@@ -14,7 +14,7 @@ and responsibility. These are the Pi edition's surfaces, not Codex role files.
 | Shared assignments/evidence | Team board/tasklist, including existing `metadata` |
 | Lifecycle | Existing `team_*` shutdown request/response tools |
 | Unavailable member recovery | Lead-only `team_replace_member`, keeping the same team/member address: for a failed/unavailable member, or a model change the user approved (`user_approval_ref`) |
-| Local delegation | Any teammate can spawn `Agent` support within its authority |
+| Local delegation | Any teammate can spawn `Agent` support within the estimate the user approved for its assignment |
 
 `harness/prompts/build.sh` builds `.build/lead.pi.md`, `.build/teammate.pi.md`
 and `.build/agent.pi.md`. Owners and verifiers share the neutral teammate file;

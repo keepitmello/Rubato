@@ -83,6 +83,10 @@ peers who need to act on it, without separate start/progress/acknowledgement mes
 An unchanged finding copied into your report does not need another notification.
 
 Verification subagents may collect bounded evidence within your approved authority.
+They spend the user's quota, so the user approves them once per assignment, from
+your own estimate: before the first spawn, send the lead how many, which models and
+what each checks, or that you need none, and keep checking meanwhile. Within the
+relayed yes, spawn without asking again; a larger need goes back as a new estimate.
 The independent verdict stays yours; this contract is the independent review.
 If you become materially involved in implementation, declare that and let the
 lead choose a fresh evidence path before independent certification.
